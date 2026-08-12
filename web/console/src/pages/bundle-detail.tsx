@@ -91,6 +91,7 @@ import {
   formatCount,
 } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
+import { CORE_AUTHORITY } from "@/lib/api/http"
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import {
   accountKindOf,
@@ -965,8 +966,8 @@ function kindColumns(): ColumnDef<KindRow, unknown>[] {
 }
 
 /** The route each resource kind opens, where the console has one. Functions
- * have no detail route; agents open their chat surface, triggers the triggers
- * list, mappings have none. */
+ * have no detail route; agents open their chat surface, a trigger its own
+ * record under the core kind, mappings have none. */
 function ResourceName({ row }: { row: ResourceRow }) {
   const name = (
     <div className="min-w-0">
@@ -992,7 +993,15 @@ function ResourceName({ row }: { row: ResourceRow }) {
   }
   if (row.kind === "trigger") {
     return (
-      <Link to="/triggers" className="block min-w-0 underline-offset-4 hover:underline">
+      <Link
+        to="/data/$authority/$plural/$id"
+        params={{
+          authority: CORE_AUTHORITY,
+          plural: "triggers",
+          id: row.identity,
+        }}
+        className="block min-w-0 underline-offset-4 hover:underline"
+      >
         {name}
       </Link>
     )

@@ -8,7 +8,6 @@ import {
   GitMergeIcon,
   HomeIcon,
   PackageIcon,
-  ZapIcon,
 } from "lucide-react"
 
 import {
@@ -26,7 +25,6 @@ const pages = [
   { title: "Overview", to: "/", icon: HomeIcon },
   { title: "Changelog", to: "/changelog", icon: ActivityIcon },
   { title: "Registry", to: "/registry", icon: PackageIcon },
-  { title: "Triggers", to: "/triggers", icon: ZapIcon },
   { title: "Agents", to: "/agents", icon: BotIcon },
   { title: "Merge requests", to: "/merge-requests", icon: GitMergeIcon },
 ] as const
