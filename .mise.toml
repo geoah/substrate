@@ -131,14 +131,19 @@ description = "Build the image for THIS arch, loaded into the local docker"
 run = "docker build -t $IMAGE:dev ."
 
 [tasks."image:push"]
-description = "Build multi-arch and push by hand. TAG=<tag> (default: dev)"
-# For a one-off push outside the release flow. Releases go through goreleaser
-# (`release` below), which tags by semver from the git tag.
+description = "Build multi-arch and push. TAG=<tag> (default: dev)"
+# Two callers: a person pushing a one-off, and the `edge` workflow pushing the
+# tip of main. Releases do NOT come through here — they go through goreleaser
+# (`release` below), which versions from the git tag.
 run = '''
     set -e
     docker buildx build --platform linux/amd64,linux/arm64 \
       --provenance=false --sbom=false -t "$IMAGE:${TAG:-dev}" --push .
     '''
+
+[tasks."image:edge"]
+description = "Build and push $IMAGE:edge — the tip of main, never a release"
+run = "TAG=edge mise run image:push"
 
 # =============================================================================
 # Release

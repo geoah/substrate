@@ -64,6 +64,13 @@ dockers_v2:
     dockerfile: Dockerfile.release
     extra_files:
       - web/console/dist
+    # No SBOM or provenance attestations. They push extra manifests beside the
+    # image, and ghcr refuses those against a package that does not exist yet —
+    # the first release fails with `denied: permission_denied: read_package`
+    # even though the token holds packages: write and the build itself is fine.
+    sbom: false
+    flags:
+      - --provenance=false
     tags:
       - "{{ .Version }}"
       - "{{ .Major }}.{{ .Minor }}"
