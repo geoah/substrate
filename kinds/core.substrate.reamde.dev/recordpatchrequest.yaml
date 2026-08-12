@@ -1,0 +1,92 @@
+# a proposed CHANGE to the graph, applied when its decision is accepted: a
+# patch to an existing target (the default, back-compat), or a create/delete
+# the reviewed accept materialises (issue 005).
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/recordpatchrequest
+data:
+  authority: core.substrate.reamde.dev
+  names:
+    singular: recordpatchrequest
+    plural: recordpatchrequests
+  # the envelope a change travels in before anyone has agreed to it: a
+  # learner or an app writes one, the owner decides, and accepting it is
+  # what applies the change (§7). `request` because it waits for a human;
+  # `patch` in the kept name because `mutation` is the write API's own word,
+  # and the kind is extended rather than renamed (minimal churn — the `op`
+  # property carries create/delete now).
+  #
+  # The reviewed envelope is IMMUTABLE after propose (review-p0 #2): op,
+  # targetKind, targetId, diff and the target edge are enforced read-only by
+  # the write path once the request exists, so the values the reviewer read
+  # cannot be swapped under an undecided request. Deciding (the `decision`
+  # transition) additionally requires the request's `ifVersion` on the
+  # owner/generic path, and — for a function/agent accept — the accepting
+  # actor's effective emit set must include the type the accept would write
+  # (review-p0 #1).
+  properties:
+    # the change verb: patch (change an existing target), create (mint a new
+    # record), or delete (tombstone one). ABSENT means patch — an existing
+    # request stores no `op`, so back-compat is by omission.
+    op:
+      type: enum
+      values:
+        - create
+        - patch
+        - delete
+      description: the change verb — patch (default when absent), create,
+        or delete
+    # create only: the full type identity and the stable id of the record the
+    # accept mints (create-if-absent, idempotent on replay).
+    targetKind:
+      type: string
+      description: "op create: the full type identity of the record to mint"
+    targetId:
+      type: string
+      description: "op create: a stable id for the new record"
+    # the target version the diff was computed against; the patch path compares
+    # against it (§7). Stamped by the engine when the target edge is written.
+    targetVersion:
+      type: int
+      description: the target version the diff was computed against
+    diff:
+      type: json
+      description: the proposed change, applied whole when the decision is
+        accepted — property values under `properties` (and, for create, edges
+        under `edges`)
+    rationale:
+      type: string
+      description: why the writer proposes this change
+    # accepting is what applies the change: the transition runs `applyDiff`,
+    # which branches on `op` — a patch checks the diff against `targetVersion`
+    # and fails the transition if the target moved underneath it, a create
+    # mints the named record, a delete tombstones it.
+    decision:
+      type: state
+      description: "proposed until somebody decides; accepting is what applies
+        the change"
+      states:
+        - proposed
+        - accepted
+        - rejected
+      initial: proposed
+      transitions:
+        - from: proposed
+          to: accepted
+          onEnter: applyDiff
+          stamps:
+            decidedAt: now
+        - from: proposed
+          to: rejected
+          stamps:
+            decidedAt: now
+  edges:
+    # `to: any`: anything patchable may be a target, and an edge is the one
+    # way one record points at another. NOT required: a create request names
+    # its target by `targetKind`/`targetId` (the record does not exist yet);
+    # patch and delete requests carry the edge, checked by the transition.
+    target:
+      to: any
+      required: false
+      description: the record the change would patch or delete (patch/delete
+        only)

@@ -1,0 +1,47 @@
+# one content-addressed blob: its MANIFEST is the metadata, its bytes live in
+# the content-addressed byte store behind /blobs (ticket 004). Everything in
+# this system has a manifest, so a blob is an ordinary record — reads,
+# changelog and console all work on it for free — while the bytes are never in
+# the record. The digest IS the id ("blob-sha256-<hex>"), so the same bytes
+# always mint the same blob (dedup by construction). Written by the byte store,
+# not by hand; a blob-ref property elsewhere points at one by digest.
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/blob
+data:
+  authority: core.substrate.reamde.dev
+  names:
+    singular: blob
+    plural: blobs
+  displayTemplate: "{digest}"
+  properties:
+    digest:
+      type: string
+      description: the content hash, equal to this record's id
+    size:
+      type: int
+      description: the byte length of the stored content
+    mimeType:
+      type: string
+      description: the media type declared when the bytes were stored
+    createdBy:
+      type: string
+      description: the actor that stored the bytes, for provenance
+    # pending while a ref exists but no bytes have landed; stored once the byte
+    # store has them and verified the digest; failed on a rejected store.
+    status:
+      type: state
+      description: "pending until bytes land, then stored; failed on a rejected
+        store"
+      states:
+        - pending
+        - stored
+        - failed
+      initial: pending
+      transitions:
+        - from: pending
+          to: stored
+        - from: pending
+          to: failed
+        - from: failed
+          to: stored

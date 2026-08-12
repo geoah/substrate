@@ -1,0 +1,976 @@
+# The Linear bundle — issues assigned to you, mirrored into the graph and
+# projected as tasks. SYNC-ONLY: the substrate reads Linear and never writes
+# it back (completing a task here does NOT move the Linear issue — the
+# outbound-writes outbox, issue 009, is where provider writeback lands; until
+# then this bundle's only writes are substrate writes).
+#
+# It composes from the same primitive set the Google bundle does — bundle +
+# kind + trait + function + recordmapping + trigger — over the host
+# OAUTH facility (Linear's OAuth 2 endpoints as TRUSTED manifest metadata)
+# and the connector runtime (a PEP 723 Python body importing requests through
+# uv). What it adds over Google is the JOINT-OWNERSHIP projection: mirrored
+# issues also mint tasks.substrate.reamde.dev/task rows, and once a task exists it is
+# jointly owned — Linear owns the issue's identity (title, url), the owner
+# owns how they are dealing with it (status, once they have moved it) — so
+# the projection READS the task, DIFFS only the keys Linear owns, and PATCHES
+# under an if_version guard instead of blindly re-putting (the read-diff-patch
+# policy the v4 Linear integration converged on after wholesale upserts kept
+# resurrecting cleared tasks).
+#
+# Install:  substratectl apply -f bundle.yaml -f triggers.yaml
+# Configure: create ONE config record — ONLY the Linear OAuth
+#   client id + secret. Endpoints and the feature→scope mapping are TRUSTED
+#   bundle-manifest metadata (the `oauth2:` block below), never config-record
+#   properties (review-google #1).
+# Connect:  create an account, then run the host OAuth flow against it —
+#   the callback URL registered on the Linear OAuth app is the host's
+#   GET …/api/v1/core.substrate.reamde.dev/oauth/callback (see README).
+# ---- the owned authority ------------------------------------------------------
+kind: core.substrate.reamde.dev/authority
+metadata: {id: linear.bundles.substrate.reamde.dev}
+data:
+  version: v1alpha1
+---
+# ---- the bundle document: the install unit --------------------------------
+# `installs:` names EXACTLY the authority's schema members (every kind but the
+# authority header and the bundle itself): the two config types, the three mirror
+# types, the two functions, and the two →person mappings.
+kind: core.substrate.reamde.dev/bundle
+metadata: {id: linear.bundles.substrate.reamde.dev/linear}
+data:
+  authority: linear.bundles.substrate.reamde.dev
+  description: >-
+    Connects a Linear workspace and syncs the issues assigned to you into
+    issue mirrors projected as tasks — read-only toward Linear, with jointly-owned
+    task state patched, never clobbered.
+  configType: linear.bundles.substrate.reamde.dev/config
+  # The vocabulary this bundle maps ONTO (see google): import it first.
+  requires:
+    - people.substrate.reamde.dev
+    - tasks.substrate.reamde.dev
+  # TRUSTED provider metadata (review-google #1): the host reads endpoints and
+  # the feature→scope mapping ONLY from here — the immutable install artifact —
+  # never from the mutable config record. Linear has no OIDC userinfo GET (the
+  # viewer's address comes off the GraphQL API), so no emailEndpoint is
+  # declared; the sync function stamps the account's email from `viewer`
+  # instead (writer: connector, below).
+  oauth2:
+    authorizationEndpoint: https://linear.app/oauth/authorize
+    tokenEndpoint: https://api.linear.app/oauth/token
+    revocationEndpoint: https://api.linear.app/oauth/revoke
+    featureScopes:
+      enabledIssues:
+        - read
+  installs:
+    - linear.bundles.substrate.reamde.dev/config
+    - linear.bundles.substrate.reamde.dev/account
+    - linear.bundles.substrate.reamde.dev/user
+    - linear.bundles.substrate.reamde.dev/team
+    - linear.bundles.substrate.reamde.dev/issue
+    - linear.bundles.substrate.reamde.dev/issuessync
+    - linear.bundles.substrate.reamde.dev/taskprojection
+    - linear.bundles.substrate.reamde.dev/userperson
+    - linear.bundles.substrate.reamde.dev/issueperson
+---
+# ---- the config type: the one Linear OAuth client --------------------------
+# bundleconfig (the host-enforced singleton) + oauth2 (the OAuth CLIENT
+# credentials the facility uses to exchange codes). One live record per
+# bundle: the Linear OAuth application the owner registers — ONLY its clientId
+# and secret-typed clientSecret. Endpoints live on the bundle manifest above.
+kind: core.substrate.reamde.dev/kind
+metadata: {id: linear.bundles.substrate.reamde.dev/config}
+data:
+  authority: linear.bundles.substrate.reamde.dev
+  names: {singular: config, plural: configs}
+  traits: [bundleconfig, oauth2]
+  displayTemplate: "Linear client {clientId}"
+  properties:
+    clientId:
+      type: string
+      displayName: Client ID
+      description: the Linear OAuth application's client id (workspace settings,
+        API, OAuth applications)
+    clientSecret:
+      type: secret
+      displayName: Client secret
+      description: the Linear OAuth application's client secret — sealed at
+        rest, never read back
+---
+# ---- the account type: one connected Linear workspace login ----------------
+# accountconfig (its records ARE the bundle's connected accounts; the host
+# writes tokenRef + tokenStatus + grantedScopes over the OAuth facility). NOT
+# oauth2: client creds bind on the CONFIG type, endpoints are manifest
+# metadata, and StartOAuth derives the requested scope union from THIS
+# account's enabled toggles. Every property carries a `writer:` role so only
+# its rightful hand may set it (review-google #2).
+kind: core.substrate.reamde.dev/kind
+metadata: {id: linear.bundles.substrate.reamde.dev/account}
+data:
+  authority: linear.bundles.substrate.reamde.dev
+  names: {singular: account, plural: accounts}
+  traits: [accountconfig]
+  displayTemplate: "{email}"
+  properties:
+    # The OAuth facility's hands on the account (writer: oauth — only the
+    # facility's actor may set them).
+    tokenRef:
+      type: secret
+      writer: oauth
+      displayName: Token reference
+      description: the credential-store reference the OAuth facility writes;
+        never a raw token
+    tokenStatus:
+      type: string
+      writer: oauth
+      displayName: Connection status
+      description: "the connection state the facility last reported (pending
+        | connected | erroring)"
+    grantedScopes:
+      type: string
+      repeated: true
+      writer: oauth
+      displayName: Granted scopes
+      description: the OAuth scopes the last consent was granted for; drives
+        reconnect-on-new-feature
+    # The connected login's address. Linear exposes no userinfo GET the OAuth
+    # facility could read at the exchange (its identity lives behind the
+    # GraphQL `viewer` query), so — unlike account's writer:oauth email —
+    # this one is stamped by the SYNC from `viewer.email` (writer: connector).
+    # The user still never types it; it still comes from the grant.
+    email:
+      type: email
+      writer: connector
+      displayName: Email
+      description: the connected Linear login's address, stamped by the sync
+        from the viewer query
+    # The scope toggle the console surfaces. Only issues are wired: the v4
+    # integration synced assigned issues only (Linear projects were mapped,
+    # never synced as records), so no enabledProjects toggle is declared.
+    enabledIssues:
+      type: bool
+      writer: owner
+      displayName: Issues
+      description: sync the issues assigned to this login (the only wired
+        feature)
+    # How often the scheduled tick should re-sync this account. An enum so the
+    # console renders a fixed choice; required with a default so the select
+    # never offers an empty "— none —". The sync body honors it against
+    # lastSyncedAt.
+    syncFrequency:
+      type: enum
+      values:
+        - {value: off, label: Off}
+        - {value: hourly, label: "Every hour"}
+        - {value: daily, label: "Once a day"}
+      required: true
+      default: daily
+      writer: owner
+      displayName: Sync frequency
+      description: "the scheduled sync cadence for this account (default daily)"
+    # How far back the FIRST sync reaches: the updatedAt floor of the initial
+    # issue read. The fleet mapping (F4): none = from connect time, forward
+    # only; last30d/90d/1y = now minus the window; all = no floor. After that
+    # floor is drained, every later sync is incremental off the run-start
+    # watermark stamped into lastSyncedAt.
+    backfillDepth:
+      type: enum
+      values:
+        - {value: none, label: "Don't backfill"}
+        - {value: last30d, label: "Last 30 days"}
+        - {value: last90d, label: "Last 90 days"}
+        - {value: last1y, label: "Last year"}
+        - {value: all, label: Everything}
+      required: true
+      default: last30d
+      writer: owner
+      displayName: Backfill depth
+      description: "the first sync's updatedAt floor (none = from connect
+        time, forward only); later syncs are incremental off the run-start
+        watermark"
+    # Connector STATE the sync body owns (writer: connector — only installed
+    # bundle code may set these).
+    # Stamped at completion but carrying when the drain BEGAN, so the next
+    # incremental floor (this minus a short overlap) can never skip issues
+    # updated while a long drain was still running; doubles as the cadence
+    # anchor and completion marker.
+    lastSyncedAt:
+      type: datetime
+      writer: connector
+      displayName: Last synced
+      description: the last successful drain's run-start watermark — the cadence
+        anchor, incremental floor (minus overlap) and completion marker
+    syncStatus:
+      type: string
+      writer: connector
+      displayName: Sync status
+      description: "the last sync outcome (ok | erroring: <reason>)"
+---
+# ---- mirror: what Linear holds about one user ------------------------------
+# One user per connected account's viewer (the login the issues are assigned
+# to), in Linear's own shape. Its id is the provider key —
+# host.ids.external("linear", account, "user:<uuid>"). The `person` subject
+# edge is left EMPTY on write; the mapping below matches or mints the person
+# and links it in the same transaction.
+kind: core.substrate.reamde.dev/kind
+metadata: {id: linear.bundles.substrate.reamde.dev/user}
+data:
+  authority: linear.bundles.substrate.reamde.dev
+  names: {singular: user, plural: users}
+  displayTemplate: "{displayName|name}"
+  properties:
+    account:
+      type: string
+      displayName: Account
+      description: the account record id this user was synced from
+    providerId:
+      type: string
+      displayName: Linear id
+      description: Linear's user uuid
+    name:
+      type: string
+      displayName: Name
+      description: the user's full name as Linear holds it
+    displayName:
+      type: string
+      displayName: Display name
+      description: the user's short handle
+    email:
+      type: email
+      displayName: Email
+      description: the user's Linear login address — the identity probe
+    url:
+      type: url
+      displayName: URL
+      description: the user's Linear profile URL
+  edges:
+    # The subject edge (§6.1): required, single, not ownerRef, pointing at
+    # person — left empty on write so the substrate resolves it.
+    person:
+      to: people.substrate.reamde.dev/person
+      required: true
+      description: the human this Linear login belongs to
+---
+# ---- mirror: one Linear team ------------------------------------------------
+# Teams arrive as the issues' team refs — enough to hang the issue→team edge
+# off. Id: host.ids.external("linear", account, "team:<uuid>").
+kind: core.substrate.reamde.dev/kind
+metadata: {id: linear.bundles.substrate.reamde.dev/team}
+data:
+  authority: linear.bundles.substrate.reamde.dev
+  names: {singular: team, plural: teams}
+  displayTemplate: "{name}"
+  properties:
+    account:
+      type: string
+      displayName: Account
+      description: the account record id this team was synced from
+    providerId:
+      type: string
+      displayName: Linear id
+      description: Linear's team uuid
+    key:
+      type: string
+      displayName: Key
+      description: "the team's identifier prefix (ENG in ENG-123)"
+    name:
+      type: string
+      displayName: Name
+      description: the team's name
+---
+# ---- mirror: what Linear holds about one issue ------------------------------
+# One issue per assigned issue, in Linear's own shape (record 53). Id:
+# host.ids.external("linear", account, "issue:<uuid>"). The `assignee` subject
+# edge is left EMPTY on write (the mapping resolves it from assigneeEmail);
+# the `team` edge is set directly by the sync, which knows the mirror id it
+# just minted. `title` is the reserved built-in — the sync writes it, no
+# declaration here.
+kind: core.substrate.reamde.dev/kind
+metadata: {id: linear.bundles.substrate.reamde.dev/issue}
+data:
+  authority: linear.bundles.substrate.reamde.dev
+  names: {singular: issue, plural: issues}
+  properties:
+    account:
+      type: string
+      displayName: Account
+      description: the account record id this issue was synced from
+    providerId:
+      type: string
+      displayName: Linear id
+      description: Linear's issue uuid — the stable key (identifiers move
+        when issues change team)
+    identifier:
+      type: string
+      displayName: Identifier
+      description: "the human identifier (ENG-123)"
+    state:
+      type: string
+      displayName: State
+      description: "the workflow state's name (In Progress, Done, …)"
+    stateType:
+      type: string
+      displayName: State type
+      description: "the workflow state's type (triage | backlog | unstarted
+        | started | completed | canceled)"
+    priority:
+      type: string
+      displayName: Priority
+      description: "Linear's 0–4 priority as its label (none | urgent | high
+        | medium | low)"
+    url:
+      type: url
+      displayName: URL
+      description: the issue's Linear URL
+    dueDate:
+      type: string
+      displayName: Due date
+      description: "the issue's due date as Linear sends it (YYYY-MM-DD)"
+    updatedAt:
+      type: string
+      displayName: Updated
+      description: Linear's updatedAt timestamp, verbatim
+    assigneeEmail:
+      type: email
+      displayName: Assignee email
+      description: the assignee's login address — the identity probe the mapping
+        matches on
+    # The task projection's baseline: the LAST upstream stateType the
+    # projection adopted into the task. Status on the jointly-owned task moves
+    # only when stateType departs from this — "Linear still says started" is
+    # not news and must never overwrite a status the owner set (the v4
+    # read-diff-patch policy's `_meta.linear_state_type`, as a mirror
+    # property). Written by the projection function; the sync PATCHES mirrors
+    # (never re-puts them whole) so the stamp survives every re-sync.
+    projectedState:
+      type: string
+      displayName: Projected state
+      description: the upstream state type the task projection last adopted
+        — the joint-ownership baseline
+    raw:
+      type: json
+      displayName: Raw
+      description: the raw issue node as fetched, for provenance
+  edges:
+    # The subject edge (§6.1): required, single, not ownerRef, pointing at
+    # person — left empty on write so the substrate resolves it.
+    assignee:
+      to: people.substrate.reamde.dev/person
+      required: true
+      description: the human this issue is assigned to
+    team:
+      to: linear.bundles.substrate.reamde.dev/team
+      description: the Linear team this issue belongs to
+---
+# ---- the sync function: one page of assigned issues per invocation ---------
+# A PEP 723 Python body importing requests through uv. It reads the account's
+# host-resolved OAuth access token off the injected bundle config, pages the
+# Linear GraphQL API's viewer.assignedIssues connection, and emits mirrors:
+# the viewer as a user, each issue's team, and each issue. Large workspaces
+# drain OFF THE CAUSAL CHAIN through the paged-checkpoint `more`/`resume`
+# contract — one page per invocation, at constant causal depth.
+#
+# Existing mirrors are PATCHED, never re-put whole: a put replaces the whole
+# property set, which would wipe the projection's `projectedState` baseline
+# every sync and break the joint-ownership policy. So each row is a
+# put-if-absent (the mint) followed by a patch (the update) — an identical
+# patch is no-op-suppressed, so an idle re-sync writes nothing and fires no
+# projection deliveries at all.
+#
+# Per-account isolation (F2/F3): one account's provider failure stamps ITS
+# syncStatus "erroring: <reason>" and the queue drains on behind it — a
+# poisoned head never parks the chain. The incremental floor is the RUN-START
+# watermark captured in the page cursor (F5), never the completion clock. The
+# `reads` capability exists for edge hygiene: `link` on the single team edge
+# already replaces a moved issue's previous team (engine single-edge law),
+# but an issue that LOST its team needs the mirror read back to know which
+# stale target to unlink.
+#
+# SYNC-ONLY: no mutation ever goes to Linear (writeback waits on the outbound
+# outbox, issue 009). Deleted/unassigned issues are not swept — their mirrors
+# stay until a future tombstone slice (see README).
+kind: core.substrate.reamde.dev/function
+metadata: {id: linear.bundles.substrate.reamde.dev/issuessync}
+data:
+  authority: linear.bundles.substrate.reamde.dev
+  description: >-
+    Sync a Linear account's assigned issues: page viewer.assignedIssues over
+    its OAuth token, mirror the viewer/teams/issues, and stamp lastSyncedAt.
+  runtime: python
+  timeoutMs: 30000
+  capabilities:
+    emit:
+      - linear.bundles.substrate.reamde.dev/issue
+      - linear.bundles.substrate.reamde.dev/team
+      - linear.bundles.substrate.reamde.dev/user
+      - linear.bundles.substrate.reamde.dev/account
+    reads:
+      kinds:
+        - linear.bundles.substrate.reamde.dev/issue
+      budgets:
+        calls: 128
+        rows: 256
+    network:
+      - "api.linear.app"
+  source: |
+    # /// script
+    # requires-python = ">=3.11"
+    # dependencies = [
+    #   "requests==2.32.3",
+    # ]
+    # ///
+    """Linear issue sync — one page of viewer.assignedIssues per invocation.
+
+    The account's live access token arrives injected on the bundle config
+    (`config.accounts[].token`, host-resolved); this body never sees or
+    refreshes a raw grant, and receives no client secret or credential ref at
+    all (review-google #4). Large workspaces page off the causal chain via the
+    paged-checkpoint `more`/`resume` contract.
+
+    The incremental floor is the RUN-START watermark (F5): when an account
+    reaches the head of the queue the clock is captured into the page cursor,
+    and THAT value — never the completion clock — is what a finished drain
+    stamps into lastSyncedAt, so issues updated while a multi-page drain was
+    still running land on the next run (a short overlap absorbs clock skew).
+    The first sync's reach is the account's backfillDepth (F4: none = from
+    connect time, forward only). Mirrors are minted with put-if-absent and
+    updated with patch, so the projection's joint-ownership baseline
+    (`projectedState`) survives every re-sync.
+
+    Per-account isolation (F2/F3): a provider failure stamps THAT account's
+    syncStatus "erroring: <reason>" and the queue moves on — one poisoned
+    account never parks the accounts behind it.
+    """
+    import datetime as _dt
+    import json
+    from urllib.parse import urlsplit as _urlsplit
+
+    import requests
+
+    GRAPHQL_URL = "https://api.linear.app/graphql"
+    ISSUE_TYPE = "linear.bundles.substrate.reamde.dev/issue"
+    TEAM_TYPE = "linear.bundles.substrate.reamde.dev/team"
+    USER_TYPE = "linear.bundles.substrate.reamde.dev/user"
+    PAGE_SIZE = 50
+    BACKFILL_DAYS = {"last30d": 30, "last90d": 90, "last1y": 365}
+    # A steady-state re-sync reaches this far behind the stored run-start
+    # watermark: covers substrate<->Linear clock skew and the >= boundary.
+    # The patch discipline makes the overlap converge, never duplicate.
+    OVERLAP_MINUTES = 15
+    # An erroring stamp carries a BOUNDED reason — a status line, never a body.
+    REASON_MAX = 200
+
+
+    def _pinned(url):
+        """F1 origin pinning: the bearer token leaves this body only over
+        HTTPS to Linear's production API host, or to loopback (the test
+        seam). Anything else refuses before a byte is sent."""
+        u = _urlsplit(url)
+        host = (u.hostname or "").lower()
+        if u.scheme == "https" and host == "api.linear.app":
+            return True
+        return host in ("127.0.0.1", "localhost", "::1")
+
+
+    def _wants(acct):
+        return bool((acct.get("properties") or {}).get("enabledIssues"))
+
+
+    def _due(props):
+        freq = str(props.get("syncFrequency") or "daily").lower()
+        if freq == "off":
+            return False
+        last = props.get("lastSyncedAt")
+        if not last:
+            return True
+        try:
+            seen = _dt.datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        hours = 1 if freq == "hourly" else 24
+        return _dt.datetime.now(_dt.timezone.utc) - seen >= _dt.timedelta(hours=hours)
+
+
+    def _now():
+        return _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0)
+
+
+    def _since_floor(props, run_start):
+        # The incremental floor. A drained account re-reads from its stored
+        # run-start watermark MINUS the overlap (F5) — never a completion
+        # clock, so an issue updated during a long drain is never skippable
+        # forever. First sync: the backfillDepth window (F4) — none = the
+        # run-start itself (from connect time, forward only), all = "" (no
+        # floor), the dated depths = now minus the window.
+        last = props.get("lastSyncedAt")
+        if last:
+            try:
+                seen = _dt.datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+                return (seen - _dt.timedelta(minutes=OVERLAP_MINUTES)).isoformat()
+            except ValueError:
+                pass  # an unreadable stamp falls back to the backfill window
+        depth = str(props.get("backfillDepth") or "last30d")
+        if depth == "all":
+            return ""
+        if depth == "none":
+            return run_start
+        days = BACKFILL_DAYS.get(depth, 30)
+        return (_now() - _dt.timedelta(days=days)).isoformat()
+
+
+    def _erroring_stamp(host, acct, reason):
+        # One bounded `syncStatus: erroring` stamp for a poisoned account
+        # (F2/F3), skipped when it already carries one: the stamp is written
+        # at most once per episode, so the account's own update cannot
+        # re-fire the on-connect trigger into a loop — the schedule retries
+        # and an ok run overwrites. lastSyncedAt is NOT stamped: the run did
+        # not complete, and the eventual ok run must not find its floor
+        # advanced past issues it never saw.
+        props = acct.get("properties") or {}
+        if str(props.get("syncStatus") or "").startswith("erroring"):
+            return
+        host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), acct.get("id"), properties={
+            "syncStatus": "erroring: " + str(reason)[:REASON_MAX]})
+
+
+    def _priority(p):
+        # Linear: 0 None, 1 Urgent, 2 High, 3 Medium, 4 Low.
+        try:
+            n = int(p or 0)
+        except (TypeError, ValueError):
+            n = 0
+        return {1: "urgent", 2: "high", 3: "medium", 4: "low"}.get(n, "none")
+
+
+    def _issues_query(with_after, with_since, since):
+        # `since` is inlined as a JSON string literal (our own ISO timestamp,
+        # no injection surface) so no GraphQL variable type has to match
+        # Linear's comparator input exactly across schema revisions.
+        # orderBy: updatedAt (Linear's PaginationOrderBy) walks the window in
+        # update order instead of the createdAt default, so an old issue
+        # updated behind the cursor cannot slip out of a filtered drain.
+        decls = ["$after: String"] if with_after else []
+        args = ["first: %d" % PAGE_SIZE, "orderBy: updatedAt"]
+        if with_after:
+            args.append("after: $after")
+        if with_since:
+            args.append("filter: {updatedAt: {gte: %s}}" % json.dumps(since))
+        head = ("query(%s)" % ", ".join(decls)) if decls else "query"
+        return head + """ {
+          viewer {
+            id
+            name
+            displayName
+            email
+            url
+            assignedIssues(%s) {
+              pageInfo { hasNextPage endCursor }
+              nodes {
+                id identifier title url dueDate updatedAt priority
+                state { name type }
+                team { id key name }
+                project { id name }
+              }
+            }
+          }
+        }""" % ", ".join(args)
+
+
+    def _gql(token, query, variables):
+        if not _pinned(GRAPHQL_URL):
+            # F1: a tampered endpoint parks the delivery with a clear error —
+            # the token is NEVER sent to an unpinned origin.
+            raise RuntimeError("linear: refusing unpinned origin: " + GRAPHQL_URL)
+        resp = requests.post(
+            GRAPHQL_URL,
+            json={"query": query, "variables": variables},
+            headers={"Authorization": "Bearer " + token,
+                     "Content-Type": "application/json"},
+            timeout=20)
+        if resp.status_code == 401:
+            raise RuntimeError("linear: token rejected (401)")
+        if resp.status_code >= 300:
+            raise RuntimeError("linear: unexpected status %d" % resp.status_code)
+        body = resp.json()
+        errs = body.get("errors") or []
+        if errs:
+            raise RuntimeError("linear: graphql error: %s"
+                               % (errs[0].get("message") or "unknown"))
+        return body.get("data") or {}
+
+
+    def _mirror(host, type_id, mid, props, edges=None):
+        # Mint-then-update: put-if-absent creates the row (edges included, the
+        # subject edge left empty for the mapping), the patch merges updates
+        # WITHOUT replacing the property set — so projection state parked on
+        # the mirror (projectedState) survives, and an identical patch is
+        # no-op-suppressed (an idle re-sync writes no changelog at all).
+        host.effects.put(type_id, mid, properties=props, edges=edges, if_absent=True)
+        host.effects.patch(type_id, mid, properties=props)
+
+
+    def _viewer_effects(host, aid, viewer):
+        vid = viewer.get("id") or ""
+        if not vid:
+            return
+        props = {"account": aid, "providerId": vid}
+        for key in ("name", "displayName", "url"):
+            if viewer.get(key):
+                props[key] = viewer[key]
+        email = str(viewer.get("email") or "").strip().lower()
+        if email:
+            props["email"] = email
+        _mirror(host, USER_TYPE, host.ids.external("linear", aid, "user:" + vid), props)
+
+
+    def _issue_effects(host, aid, viewer, issue, teams_seen, noted):
+        pid = issue.get("id") or ""
+        if not pid:
+            return 0
+        state = issue.get("state") or {}
+        props = {
+            "account": aid,
+            "providerId": pid,
+            "title": (issue.get("title") or "").strip(),
+            "state": state.get("name") or "",
+            "stateType": state.get("type") or "",
+            "priority": _priority(issue.get("priority")),
+            "raw": issue,
+        }
+        for key in ("identifier", "url", "dueDate", "updatedAt"):
+            if issue.get(key):
+                props[key] = issue[key]
+        edges = {}
+        viewer_email = str(viewer.get("email") or "").strip().lower()
+        vid = viewer.get("id") or ""
+        if viewer_email:
+            # Every synced issue is assigned to the viewer: the identity probe
+            # the assignee mapping matches or mints the person on.
+            props["assigneeEmail"] = viewer_email
+        elif vid:
+            # The viewer's address is hidden (admin-restricted visibility).
+            # An EMPTY probe would mint one person shell PER ISSUE — the
+            # mapping mints whenever nothing decides — so point the subject
+            # edge at the viewer's own user mirror instead: the
+            # engine's one-hop resolution lands it on the SAME person that
+            # record resolves to. A hidden address costs one shell per
+            # login, never one per issue.
+            if not noted.get("hidden"):
+                noted["hidden"] = True
+                host.log("linear-issues: viewer email hidden for %s — "
+                         "assignees resolve through the viewer's mirror" % aid)
+            edges["assignee"] = host.ids.external("linear", aid, "user:" + vid)
+        else:
+            # No address AND no viewer id: nothing to hang identity on, and
+            # staging would spray person shells. Skip the issue, loudly, once.
+            if not noted.get("unmappable"):
+                noted["unmappable"] = True
+                host.log("linear-issues: no viewer identity for %s — "
+                         "issues skipped this run" % aid)
+            return 0
+        team = issue.get("team") or {}
+        if team.get("id"):
+            tid = host.ids.external("linear", aid, "team:" + team["id"])
+            if tid not in teams_seen:
+                teams_seen.add(tid)
+                tprops = {"account": aid, "providerId": team["id"]}
+                if team.get("key"):
+                    tprops["key"] = team["key"]
+                if team.get("name"):
+                    tprops["name"] = team["name"]
+                _mirror(host, TEAM_TYPE, tid, tprops)
+            edges["team"] = tid
+        iid = host.ids.external("linear", aid, "issue:" + pid)
+        _mirror(host, ISSUE_TYPE, iid, props, edges=edges or None)
+        if team.get("id"):
+            # put-if-absent set the edge at mint; on an existing row this
+            # link keeps a moved issue's team current — `team` is a SINGLE
+            # edge, so the engine's link REPLACES any previous target (one
+            # target per rel is the single-edge law; edges never accumulate).
+            host.effects.link(ISSUE_TYPE, iid, "team", edges["team"])
+        else:
+            # The issue LOST its team upstream. A patch cannot clear an edge
+            # and link needs a target, so read the mirror back and unlink
+            # whatever stale team it still carries (a fresh mint reads None
+            # and stages nothing).
+            cur = host.records.get(ISSUE_TYPE, iid)
+            for ref in ((cur or {}).get("edges") or {}).get("team") or []:
+                if ref.get("id"):
+                    host.effects.unlink(ISSUE_TYPE, iid, "team", ref["id"])
+        return 1
+
+
+    def _fresh(queue):
+        # A fresh per-account cursor: the floor and the run-start watermark
+        # compute when the account reaches the head of the queue.
+        return {"queue": queue, "pageToken": "", "since": None, "runStart": ""}
+
+
+    def main(input, host):
+        cfg = input.get("config") or {}
+        accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
+        # The paged-checkpoint wrapper: host.page.resume() is the opaque cursor
+        # the previous page returned; host.page.more(cursor) builds the
+        # continuation that drains the next page off the causal chain.
+        resume = host.page.resume() or None
+        if resume:
+            cur = dict(resume)
+        else:
+            record = (input.get("envelope") or {}).get("record") or {}
+            # The envelope SPLITS identity: `type` is the bare local name and
+            # `authority` the authority, so the full identity (ruling A9) has to be
+            # recomposed. Comparing the local name alone would match any
+            # authority's `account`.
+            etype = (record.get("kind") or "")
+            if etype == "linear.bundles.substrate.reamde.dev/account":
+                # Record-triggered: sync just this account (a connect or edit).
+                queue = [record.get("id")]
+            else:
+                # Schedule-triggered: every connected account that wants issues
+                # and is due by its cadence.
+                queue = [aid for aid, a in accounts.items()
+                         if _wants(a) and _due(a.get("properties") or {})]
+            cur = _fresh(queue)
+
+        # Advance past accounts we cannot or should not sync (issues disabled,
+        # never connected, or gone from the config). A DEAD GRANT is that
+        # account's problem alone (F2): it stamps its own syncStatus —
+        # tokenStatus is the facility's hand (writer: oauth), not this body's
+        # — and the queue moves on.
+        queue = list(cur.get("queue") or [])
+        while queue:
+            acct = accounts.get(queue[0])
+            if acct is not None and acct.get("tokenError"):
+                host.log("linear-issues: skip %s: %s" % (queue[0], acct["tokenError"]))
+                _erroring_stamp(host, acct, acct["tokenError"])
+            if acct is None or not _wants(acct) or acct.get("tokenError") or not acct.get("token"):
+                queue = queue[1:]
+                cur = _fresh(queue)
+                continue
+            break
+        if not queue:
+            return {"output": {"accounts": 0}}
+
+        aid = queue[0]
+        acct = accounts[aid]
+        props = acct.get("properties") or {}
+        token = acct["token"]
+        page_token = cur.get("pageToken") or ""
+        since = cur.get("since")
+        run_start = cur.get("runStart") or ""
+        if since is None:
+            # The account just reached the head: capture the RUN-START
+            # watermark — what a completed drain stamps as the next floor
+            # (F5) — then compute this run's own floor off the stored one.
+            run_start = _now().isoformat()
+            since = _since_floor(props, run_start)
+
+        variables = {}
+        if page_token:
+            variables["after"] = page_token
+        try:
+            data = _gql(token, _issues_query(bool(page_token), bool(since), since),
+                        variables)
+        except Exception as e:
+            # F2 per-account isolation: a provider failure (a 401 on a grant
+            # revoked at Linear, a persistent 5xx/429, a dead network) stamps
+            # THIS account erroring and the drain continues behind it; the
+            # schedule retries next tick. Nothing raises, so the chain never
+            # parks on one poisoned account.
+            host.log("linear-issues: sync failed for %s: %s" % (aid, e))
+            _erroring_stamp(host, acct, e)
+            rest = queue[1:]
+            if rest:
+                return {"more": host.page.more(_fresh(rest))}
+            return {"output": {"account": aid, "erroring": True}}
+        viewer = data.get("viewer") or {}
+        if not page_token:
+            _viewer_effects(host, aid, viewer)
+
+        page = viewer.get("assignedIssues") or {}
+        teams_seen = set()
+        noted = {}
+        count = 0
+        for node in page.get("nodes") or []:
+            count += _issue_effects(host, aid, viewer, node, teams_seen, noted)
+
+        info = page.get("pageInfo") or {}
+        if info.get("hasNextPage") and info.get("endCursor"):
+            # More pages for this account: keep it at the head of the queue and
+            # drain off the causal chain, the run-start watermark riding along.
+            return {"more": host.page.more({"queue": queue,
+                                            "pageToken": info["endCursor"],
+                                            "since": since,
+                                            "runStart": run_start})}
+
+        # Account drained: stamp the RUN-START watermark as lastSyncedAt —
+        # the completion clock would let a long drain's own duration hide
+        # updates behind the next floor — plus syncStatus and the viewer's
+        # address. The on-connect trigger's guard (no lastSyncedAt yet) goes
+        # false after it, so this never re-fires.
+        patch = {"lastSyncedAt": run_start or _now().isoformat(),
+                 "syncStatus": "ok"}
+        viewer_email = str(viewer.get("email") or "").strip().lower()
+        if viewer_email:
+            patch["email"] = viewer_email
+        host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid, properties=patch)
+        rest = queue[1:]
+        if rest:
+            return {"more": host.page.more(_fresh(rest))}
+        return {"output": {"account": aid, "issues": count}}
+---
+# ---- the task projection: the joint-ownership showcase ---------------------
+# Fired per issue write (triggers.yaml). Mints a task for a new open issue
+# and, for an EXISTING task, applies the v4 read-diff-patch policy for JOINT
+# OWNERSHIP: Linear owns the issue's identity (title, url) — those diff and
+# patch whenever they moved; the OWNER owns how they are dealing with the task
+# — `status` moves ONLY when the UPSTREAM state actually departed from the
+# last adopted baseline (`projectedState` on the mirror), compared FOLDED onto
+# the task machine's open/done: an open-family churn (backlog → started,
+# triage → unstarted) is not a departure, so neither "Linear still says
+# started" nor "Linear dragged it to another open column" can undo a task the
+# owner ticked off. On a row with no baseline yet, upstream counts as
+# unchanged — except where adopting it cannot undo anything (a local task not
+# yet done), which lets an issue completed in Linear still close here. Every
+# patch of the task is guarded with if_version=host.version(task) — the SDK's
+# optimistic precondition — so a concurrent owner edit conflicts and the
+# redelivery re-reads, rather than the stale diff clobbering it. This is a
+# SUBSTRATE write; nothing here (or anywhere in this bundle) writes back to
+# Linear.
+kind: core.substrate.reamde.dev/function
+metadata: {id: linear.bundles.substrate.reamde.dev/taskprojection}
+data:
+  authority: linear.bundles.substrate.reamde.dev
+  description: >-
+    Project one issue onto its task: mint open tasks, patch only the Linear-owned
+    keys of existing ones — status moves only on a real upstream transition,
+    under an if_version guard.
+  runtime: python
+  capabilities:
+    emit:
+      - tasks.substrate.reamde.dev/task
+      - linear.bundles.substrate.reamde.dev/issue
+    reads:
+      kinds:
+        - tasks.substrate.reamde.dev/task
+  source: |
+    TASK_TYPE = "tasks.substrate.reamde.dev/task"
+    ISSUE_TYPE = "linear.bundles.substrate.reamde.dev/issue"
+    DONE_TYPES = ("completed", "canceled")
+
+
+    def _fold(state_type):
+        # Linear's six stateTypes fold onto the task machine's two: only this
+        # FOLDED value is ever compared. An open-family transition (backlog ->
+        # started, triage -> unstarted) folds to the same "open" and is
+        # upstream churn, not news — it must never reopen a task the owner
+        # ticked off.
+        return "done" if state_type in DONE_TYPES else "open"
+
+
+    def main(input, host):
+        env = input.get("envelope") or {}
+        issue = env.get("record") or {}
+        props = issue.get("properties") or {}
+        aid = props.get("account") or ""
+        pid = props.get("providerId") or ""
+        if not aid or not pid:
+            return {"output": {"skipped": True}}
+
+        state_type = props.get("stateType") or ""
+        upstream = _fold(state_type)
+        title = (props.get("title") or props.get("identifier") or "").strip()
+        url = props.get("url") or ""
+        baseline = props.get("projectedState")
+
+        # The task id composes off the SAME provider key as the mirror, under
+        # its own namespace (ids are one namespace, so the two must differ).
+        task_id = host.ids.external("linear-task", aid, pid)
+        # The read half of read-diff-patch: committed state, version included.
+        task = host.records.get(TASK_TYPE, task_id)
+
+        if task is None:
+            # Mint only tasks that are still open upstream: backfilling a task
+            # that was already done in Linear would create noise, not work.
+            if upstream == "open" and title:
+                tprops = {"title": title}
+                if url:
+                    tprops["url"] = url
+                host.effects.put(TASK_TYPE, task_id, properties=tprops,
+                                 if_absent=True)
+        else:
+            tprops = task.get("properties") or {}
+            desired = {}
+            # Linear-owned identity keys: diff, and patch only what moved.
+            if title and tprops.get("title") != title:
+                desired["title"] = title
+            if url and tprops.get("url") != url:
+                desired["url"] = url
+            # STATUS IS THE SHARP EDGE (the v4 policy): it moves only when
+            # the upstream state actually departed from the adopted baseline
+            # — compared FOLDED, because raw stateType granularity would call
+            # backlog -> started a departure and reopen an owner-done task on
+            # upstream churn that never left the open family. No baseline (a
+            # pre-stamp row) counts as unchanged — except where adopting
+            # cannot undo anything (a local task not yet done). Only
+            # open<->done transitions exist on the task machine; a proposed
+            # or dropped task is the owner's and is never touched.
+            local = tprops.get("status") or "open"
+            moved = bool(baseline) and _fold(baseline) != upstream
+            adoptable = local in ("open", "done")
+            if adoptable and local != upstream and (
+                    moved or (not baseline and local != "done")):
+                desired["status"] = upstream
+            if desired:
+                # The optimistic precondition: patch applies only against the
+                # exact version read above; a concurrent edit conflicts and the
+                # redelivery re-reads instead of clobbering.
+                host.effects.patch(TASK_TYPE, task_id, properties=desired,
+                                   if_version=host.version(task))
+
+        # Adopt the baseline: stamp the RAW upstream stateType this
+        # projection saw (folding happens at compare time). The stamp carries
+        # this function's own actor, and the dispatcher's self-exclusion
+        # means it is never delivered back to this body.
+        if baseline != state_type:
+            host.effects.patch(ISSUE_TYPE, issue.get("id"),
+                               properties={"projectedState": state_type})
+        return {"output": {"task": task_id}}
+---
+# ---- mapping: user → person -------------------------------------------------
+# The record's `person` edge, and how its properties reach the human (§6.1/
+# §7.1). match probes the login address against people's emails: exactly one
+# live match links it, zero-or-many mints a person shell. map copies the names
+# and unions the address onto the person (machine-managed, yielding to any
+# owner edit).
+kind: core.substrate.reamde.dev/recordmapping
+metadata: {id: linear.bundles.substrate.reamde.dev/userperson}
+data:
+  authority: linear.bundles.substrate.reamde.dev
+  from: linear.bundles.substrate.reamde.dev/user
+  to: people.substrate.reamde.dev/person
+  edge: person
+  match:
+    - from: email
+      to: emails
+  map:
+    name: name
+    displayName: displayName
+    emails:
+      path: email
+      merge: union
+---
+# ---- mapping: issue → person ------------------------------------------------
+# The issue's `assignee` subject edge: match the assignee's address against
+# people's emails (the viewer's user record has usually already minted the
+# person, so this resolves to the same human). No map block — an issue
+# describes work, not the person; nothing of it belongs on the human.
+kind: core.substrate.reamde.dev/recordmapping
+metadata: {id: linear.bundles.substrate.reamde.dev/issueperson}
+data:
+  authority: linear.bundles.substrate.reamde.dev
+  from: linear.bundles.substrate.reamde.dev/issue
+  to: people.substrate.reamde.dev/person
+  edge: assignee
+  match:
+    - from: assigneeEmail
+      to: emails

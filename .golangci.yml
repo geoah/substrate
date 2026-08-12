@@ -1,0 +1,82 @@
+# A deliberately small linter set — the same one the substrate was developed
+# under in the monorepo, minus the rules that only meant something there.
+version: "2"
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - copyloopvar
+    - dogsled
+    # - errcheck  # every ignored error would need a pass of its own first
+    - errorlint
+    - godox
+    - goprintffuncname
+    - intrange
+    - ineffassign
+    - misspell
+    - nakedret
+    - staticcheck
+    - unconvert
+    - unused
+    - whitespace
+  settings:
+    godox:
+      keywords:
+        - FIXME
+    govet:
+      enable:
+        - nilness
+        - shadow
+    errorlint:
+      asserts: false
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        - -ST1003
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        - -QF*
+    misspell:
+      locale: US
+      ignore-rules:
+        # British spelling — the catalogue is deliberately spelled this way.
+        - "catalogue"
+        - "Catalogue"
+        - "catalogues"
+  # Report every occurrence: a truncated list makes a cleanup pass look done
+  # when it is not.
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - std-error-handling
+      - common-false-positives
+      - legacy
+    rules:
+      # Newer staticcheck flags require/assert-guarded pointers in tests.
+      - path: (.+)_test\.go
+        text: "SA5011"
+        linters:
+          - staticcheck
+      # Test helpers are written per-suite and read by a person before they
+      # are read by a compiler; an unused one is scaffolding, not a defect.
+      # Blank identifiers in a test are the same story: a suite ignores the
+      # returns it is not asserting on, and naming them would say less.
+      - path: (.+)_test\.go
+        linters:
+          - unused
+          - dogsled
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      module-path: github.com/geoah/substrate
+      extra-rules: true
+    goimports:
+      local-prefixes:
+        - github.com/geoah/substrate

@@ -1,0 +1,80 @@
+# Every push and every PR, as four jobs so a failure names itself.
+#
+# This file holds NO commands. Each job runs one `mise run ci:*` task, and
+# those tasks are defined once in .mise.toml — so `mise run ci` on a laptop is
+# the same pipeline, not an approximation of it. A check that passes locally
+# and fails here would have to be a difference in the machine, never in the
+# definition. Add a step to .mise.toml; this file does not change.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          experimental: true
+      - run: mise run ci:lint
+
+  go:
+    name: go test
+    runs-on: ubuntu-latest
+    # The database suites start their own pgvector container through
+    # testcontainers when they have to, which is right on a laptop. On a runner
+    # it is fragile — the container has died mid-suite, and every remaining case
+    # then fails with `connection refused`, which reads like a code failure and
+    # is not one. A service container is the runner's own job to keep alive, and
+    # testdb picks it up through SUBSTRATE_TEST_DATABASE_URL. Same task, same
+    # assertions; only the machine differs.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: substrate
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d substrate"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          experimental: true
+      - run: mise run ci:go
+
+  console:
+    name: console
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          experimental: true
+      - run: mise run ci:console
+
+  image:
+    name: image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          experimental: true
+      - run: mise run ci:image

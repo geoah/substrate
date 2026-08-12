@@ -1,0 +1,194 @@
+# Users, tokens, and actors
+
+A **user** is a human principal: a username, a password, and a TOTP second
+factor, all three required. A user owns exactly one **repository**, and a
+**token** is how anything reaches it. Both the credential and every token are
+ordinary [records](data-model.md) in the repository they belong to, so the
+same reads, the same changelog, and the same console pages that show your tasks show
+your account too.
+
+## The invite code
+
+One hard-coded **invite code**, configured on the service, is the only door
+into a fresh substrate. Registering with it creates the user and, in the same
+transaction, the repository, seeded with the shipped vocabulary.
+
+A substrate with no invite code configured is closed to registration:
+`/register` and `/register/enroll` answer `501 unsupported`. That is the right
+resting state for a substrate that already has its user. The code is compared
+in constant time.
+
+Users cannot see each other, and there is no admin user. The operator acts on
+the box, through [substratectl's operator hat](operations.md#operator-recovery).
+
+## Registering
+
+Registration is two calls, and only the second writes anything:
+
+```http
+POST /register/enroll
+{"inviteCode": "…", "username": "ada"}
+
+→ 200 {"totpSecret": "JBSWY3DPEHPK3PXP",
+       "otpauthUri": "otpauth://totp/Substrate:ada?secret=JBSWY3DPEHPK3PXP&issuer=Substrate&algorithm=SHA1&digits=6&period=30"}
+```
+
+The caller holds the seed and hands it back with one code, so an abandoned
+registration leaves no row to expire and nothing to sweep:
+
+```http
+POST /register
+{"inviteCode": "…", "username": "ada", "password": "…",
+ "totpSecret": "JBSWY3DPEHPK3PXP", "totpCode": "123456", "label": "laptop"}
+
+→ 201 {"token": {…}, "secret": "substrate_tok_…"}
+```
+
+That second call is **one creation act**: the seed of the shipped vocabulary,
+the sealed material, the credential record and the first token all commit as
+one transaction in the new repository's changelog, and the control-plane row that
+_is_ the user is written last, so the user exists exactly when the repository
+is already complete. Anything that fails before that erases what it wrote: a
+failed registration creates nothing, and no order of failures leaves a
+half-created user.
+
+Registration therefore ends logged in — the response carries the first token's
+secret. Usernames match `[a-z][a-z0-9]{1,29}`, are unique across the
+substrate, and are permanent.
+
+## Logging in
+
+A login presents both factors directly and mints a token record:
+
+```http
+POST /login
+{"username": "ada", "password": "…", "totpCode": "123456", "label": "laptop"}
+
+→ 201 {"token": {"id": "…", "label": "laptop", "createdAt": "…"},
+       "secret": "substrate_tok_…"}
+```
+
+**There is no session concept beside the token.** A session _is_ a token
+record: the console holds one exactly like a script does, logging out revokes
+it, and there is no sessions table to reap. One consequence worth stating: a
+password change does not sign anything out. Live tokens survive it, because a
+token is data access and the credential is the account.
+
+Every failure — an unknown username, a wrong password, a wrong code — answers
+one identical `401`, and the engine does the same password-hashing and HMAC
+work on all three so timing is not an oracle either.
+
+## Tokens
+
+A token is a record of kind `core.substrate.reamde.dev/token` carrying a `label`, an
+optional `expiresAt`, a coarse `lastUsedAt`, and the SHA-256 of its secret.
+The secret itself is `substrate_tok_` followed by 40 hex characters, shown
+**exactly once** at mint. The prefix is there so leak scanners match it with no
+false positives.
+
+```http
+POST /tokens          # authenticated mint
+{"label": "backup", "expiresAt": "2027-01-01T00:00:00Z"}
+→ 201 {"token": {…}, "secret": "substrate_tok_…"}
+
+GET    /tokens        # → 200 {"tokens": [ … ]} — metadata only, never a hash
+DELETE /tokens/{id}   # revoke
+```
+
+Four things follow from a token being a record:
+
+- **A token has full access to its repository.** There are no scopes, no
+  roles, no ACLs, and no actor set on the token. Authentication is a hash
+  lookup that finds the token record, and the repository holding that record
+  _is_ the request's scope.
+- **Revoking is deleting the record.** No row means no access. The same write
+  reaches from `DELETE /tokens/{id}`, from the generic record delete at
+  `DELETE /api/v1/core.substrate.reamde.dev/tokens/{id}`, from the console, or from
+  `substratectl token revoke`.
+- **Expiry is optional and server-enforced.** A token past its `expiresAt`
+  fails authentication with an `auth` error, no revoke step needed. A token
+  without one lives until it is deleted.
+- **They list and read like anything else.** `GET …/core.substrate.reamde.dev/tokens` is
+  an ordinary collection read, and every mint and revocation is a row in the
+  [changelog](changelog.md).
+
+Present one on every request under `/api`:
+
+```http
+Authorization: Bearer substrate_tok_…
+```
+
+## The credential, and the password-factor rule
+
+The user's own auth material is a singleton record,
+`core.substrate.reamde.dev/credential` at id `self`. It carries the username and two
+secret-typed references into the repository's sealed store — one for the
+password hash (argon2id), one for the TOTP seed and its replay counter. **The
+material itself never enters the changelog or a record's data**, so the changelog shows
+"the credential changed at T" and nothing crackable, and a rotation deletes the
+old sealed rows in the same transaction rather than piling old hashes into an
+append-only sequence.
+
+Three endpoints change auth material, and all three obey one rule:
+
+```http
+POST /password        # {"username","password","totpCode","newPassword"} → 200
+POST /totp/enroll     # {"username","password","totpCode"} → 200 {totpSecret, otpauthUri}
+POST /totp            # + {"newTotpSecret","newTotpCode"} → 200
+```
+
+**The password-factor rule: changing auth material requires the current
+password and TOTP code, presented directly in the request body. A bearer token
+alone is refused — `403 forbidden`, because the endpoint does not accept tokens
+at all.**
+
+This is the one rule that bounds what a leaked token can do. Without it, any
+leaked token could rotate the password and outlive its own revocation; with it,
+a token's blast radius is the data, never the account. It is also why
+`substratectl user password` and `substratectl user totp` send no bearer token at all.
+
+The generic record API cannot touch either auth kind: the credential cannot be
+put, patched, or deleted through REST, GraphQL, or the CLI's record surface,
+and a token can only be **deleted** there, which is exactly revocation. Both
+stay readable and listable. Auth-path writes are attributed to the `substrate`
+actor.
+
+TOTP is RFC 6238: SHA-1, six digits, a 30-second step, one step of skew either
+way. Codes are one-time — the consumed step is compare-and-swapped under a row
+lock, so two requests racing on one code cannot both win.
+
+## Rate limits and lockout
+
+Registration and the credential endpoints are the substrate's only
+unauthenticated write paths, so they share one posture: one attempt per five
+seconds keyed per (client IP, username) and per username, under one global
+bucket 32 attempts wide so a flood is bounded without an honest login waiting
+out somebody else's; plus a consecutive-failure
+lockout (five failures buys a minute, doubling to a one-hour cap, cleared by a
+success). An attempt is a gesture rather than a request: registration is two
+calls — `/register/enroll` then `/register` — and they share one attempt, so
+the pair goes through back to back while the next registration still waits out
+the interval. The peer address is the transport's,
+never a header's. A refusal is `429 rate_limited` with a `Retry-After`.
+
+Everything authenticated is unmetered.
+
+## Actors, again
+
+Writes carry an [actor](api.md#actors), and it is worth restating here what it
+is not: an actor is attribution, not authorization. A token holds its whole
+repository whatever name a request puts in `X-Substrate-Actor`, so the header
+unlocks nothing. What it decides is provenance — which property manager a write
+records, which rows a function's trigger excludes as its own, and what the changelog
+says about who did this.
+
+## Losing both factors
+
+There is no self-serve recovery. A user who has lost both factors is reset by
+the operator, on the box, with `substratectl user reset` — which writes fresh sealed
+material and a new credential record and prints a fresh enrollment. The data is
+untouched; the account gets new keys. [Running a substrate](operations.md)
+covers it.
+
+Next: [GraphQL and search](graphql-and-search.md), the same records at one
+endpoint.

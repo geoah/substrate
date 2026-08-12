@@ -1,0 +1,147 @@
+# The substrate's own machinery as kinds (§9.1, uniformity rule). Shapes are
+# declared here so system kinds list, read, and filter exactly like vocabulary
+# kinds; their BEHAVIOR (repository creation, token minting, bundle
+# installation, merge/split execution) is code, and writes outside that code
+# are rejected.
+#
+# The line between this authority and the vocabulary authorities: CORE is what
+# exists because the substrate exists — the repository, tokens, the
+# vocabulary's own meta-model, connection plumbing, the envelope a proposed
+# change travels in, AND the runtime the substrate itself maintains: the
+# delivery plumbing (`trigger` + `run`) and the agent loop's data (`llm` +
+# `llmthread` + `llmmessage`). The vocabulary authorities (people, messaging,
+# calendar, tasks, media) are what would exist if you kept your data in a
+# shoebox — they ship as importable vocabulary bundles under their own
+# kinds/<authority>/ directories, not here. Nothing else decides the placement.
+#
+# Absorbed here 2026-08-12: the former `automation.substrate.reamde.dev` (subsystem 7 —
+# the bundle tier's delivery plumbing as DATA: a `trigger` binds one source
+# to one callable and owns the cursor, retries, parking and replay; a `run`
+# records one delivery attempt; the cursors and parked failures underneath
+# stay engine tables, never records) and the former `ai.substrate.reamde.dev` (subsystem
+# 8 — the agent runtime's DATA: `llm` is pure configuration over the
+# host-native transport, with `cheap`/`mid`/`strong` as well-known row ids;
+# conversation state is `llmthread` + `llmmessage`, and there is no agent-run
+# kind because the thread IS the run). Both were core parts of the substrate
+# maintained by it, so they live where the rest of the machinery lives. The
+# `agent` KIND was already core. Neither authority declared an actor, a trait
+# or a property type: `run` rows are written as the system actor, threads and
+# messages under the AGENT's actor (`function:<name>`), a chat user message
+# under the caller's — every effect a delivery applies carries the CALLABLE's
+# actor.
+#
+# ALPHA at v1: the agent kind, the llm/llmthread/llmmessage vocabulary and the
+# /agents chat+call wire are explicitly ALPHA and UNFROZEN (ruling A12). They
+# may change or be superseded without a v1 wire break the
+# Agents section.
+kind: core.substrate.reamde.dev/authority
+metadata:
+  id: core.substrate.reamde.dev
+data:
+  # a maturity statement, not a routing key: no envelope carries a version.
+  version: v1alpha1
+---
+# The substrate's own actors: the doors a human write comes through, and the
+# engine's own hand. Attribution, not authorization (§3). The machine hands
+# that carry a prefix — `bundle:<name>`, `connector:<name>`, `function:<name>` —
+# are minted by the substrate at dispatch and are never declared, and never
+# claimable by a request.
+kind: core.substrate.reamde.dev/actor
+metadata:
+  id: api
+data:
+  authority: core.substrate.reamde.dev
+  tier: owner
+---
+# the console's writes: the browser app, holding a token like any other client
+kind: core.substrate.reamde.dev/actor
+metadata:
+  id: console
+data:
+  authority: core.substrate.reamde.dev
+  tier: owner
+---
+# the operator's CLI
+kind: core.substrate.reamde.dev/actor
+metadata:
+  id: substratectl
+data:
+  authority: core.substrate.reamde.dev
+  tier: owner
+---
+# the engine's own writes: mapping recompute, the declaration mirrors, merge
+# execution, the boot-time vocabulary upgrade, and the auth paths that write
+# the credential and token records. A bare word: the actor domain is closed,
+# so nothing has to be forward-qualified to stay out of the vocabulary's way.
+kind: core.substrate.reamde.dev/actor
+metadata:
+  id: substrate
+data:
+  authority: core.substrate.reamde.dev
+---
+# when a thing sits on the timeline — an instant, or a span
+kind: core.substrate.reamde.dev/trait
+metadata:
+  id: core.substrate.reamde.dev/temporal
+data:
+  authority: core.substrate.reamde.dev
+  description: "when a thing sits on the timeline — an instant, or a span"
+  # machinery, not vocabulary: the variants are backed by the physical
+  # `at`/`endsAt`/`dueAt` columns every record row carries, so this lives
+  # with the engine and every vocabulary authority binds it cross-authority.
+  oneOf:
+    point:
+      at: datetime
+    range:
+      at: datetime
+      endsAt: datetime
+---
+# the bundle's one configuration record — a host-recognized interface
+# (substrate-primitives §4): the engine enforces AT MOST ONE live record of
+# a bundle's configType, and the bundle reads "needs configuration" until it
+# exists. A marker: the bundle's own config type declares its fields.
+kind: core.substrate.reamde.dev/trait
+metadata:
+  id: core.substrate.reamde.dev/bundleconfig
+data:
+  authority: core.substrate.reamde.dev
+  description: "the bundle's one configuration record — host-enforced singleton"
+---
+# one connected account of a bundle — a host-recognized interface: the
+# console's "account configs" view is a trait query, and the runner's config
+# resolution enumerates a bundle's accounts as a trait-scoped read. The two
+# required properties are the OAuth facility's hands on the account: a
+# secret-typed credential-store REF (never a raw token) and the connection
+# status it last reported.
+kind: core.substrate.reamde.dev/trait
+metadata:
+  id: core.substrate.reamde.dev/accountconfig
+data:
+  authority: core.substrate.reamde.dev
+  description: "one connected account of a bundle; the host writes its credential
+    ref"
+  # The host-written hands on an account (review-google #2): the account TYPE
+  # redeclares these with `writer: oauth` so only the OAuth facility may set
+  # them — a stranger cannot assign a credential ref, a status, or a scope set.
+  properties:
+    tokenRef: secret
+    tokenStatus: string
+    grantedScopes: string
+---
+# the OAuth CLIENT credentials, on a bundle's configuration type — the host
+# runs the flow, bundles only declare the client (review-google #1). The
+# PROVIDER ENDPOINTS and the feature→scope mapping are NOT here: they are
+# trusted bundle-manifest metadata (schema.BundleOAuth2), compiled at install
+# and immutable at runtime, so a config-row edit can never redirect a token
+# exchange or a revocation. This config carries only the client id and its
+# secret-typed secret.
+kind: core.substrate.reamde.dev/trait
+metadata:
+  id: core.substrate.reamde.dev/oauth2
+data:
+  authority: core.substrate.reamde.dev
+  description: "the OAuth client credentials; endpoints are manifest metadata,
+    the host runs the flow"
+  properties:
+    clientId: string
+    clientSecret: secret

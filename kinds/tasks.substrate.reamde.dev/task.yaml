@@ -1,0 +1,59 @@
+# something to do
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: tasks.substrate.reamde.dev/task
+data:
+  authority: tasks.substrate.reamde.dev
+  names:
+    singular: task
+    plural: tasks
+  traits:
+    - "temporal(point: dueAt)"
+  # the one query the console and every agent make: what is open, soonest
+  # first. `status` sits in `properties` like every other value, so it
+  # indexes like any other one.
+  indices:
+    - - status
+      - dueAt
+  properties:
+    # the same prose slot every other authority calls `description`.
+    description:
+      type: markdown
+      embed: true
+      description: what the task involves, as prose
+    # where the task lives outside the substrate — the GitHub issue, the
+    # ticket, the thread. The `source` edge names the rep record; this is the
+    # provider's own link, so a client can jump straight out.
+    url:
+      type: url
+      description: where this task lives outside the substrate
+    # a learner's proposals are created `proposed` and wait for the owner;
+    # a write that names no state gets `open`. `completedAt` is stamped by
+    # the transition, so nothing has to remember to set it.
+    status:
+      type: state
+      description: "proposed waits for the owner; open until done or dropped"
+      states:
+        - proposed
+        - open
+        - done
+        - dropped
+      initial: open
+      transitions:
+        - from: proposed
+          to: open
+        - from: proposed
+          to: dropped
+        - from: open
+          to: done
+          stamps:
+            completedAt: now
+        - from: done
+          to: open
+  edges:
+    project:
+      to: project
+      description: the project this task groups under
+    source:
+      to: any
+      description: the message, mail, event or transcript the task came from

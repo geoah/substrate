@@ -1,0 +1,37 @@
+# One delivery binding: a source → one callable. The engine admits every
+# write of this type (engine/triggers.go): `source` carries exactly one arm —
+#
+#   record:   {kinds: [<kind reference> | <authority>/* | *], ops: [create|update|
+#             delete], when: <CEL guard over change/record/repository>,
+#             coalesce: bool}
+#   schedule: {recurrence: <RRULE>, timezone: <IANA name>, startsAt?: RFC3339}
+#   webhook:  {}                       # an authenticated wake endpoint
+#
+# and `callable` is a `reference` (ticket 033) naming the registered function
+# or agent a matched delivery invokes: {kind, id} — the kind
+# core.substrate.reamde.dev/function or core.substrate.reamde.dev/agent, the id the callable that
+# dispatch resolves. The trigger owns its cursor:
+# a new trigger starts at head, replay is a cursor reset, park-and-advance
+# and manual run are per-trigger verbs.
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/trigger
+data:
+  authority: core.substrate.reamde.dev
+  names:
+    singular: trigger
+    plural: triggers
+  properties:
+    enabled:
+      type: bool
+      description: whether the dispatcher delivers for this trigger; false
+        stops execution without losing the cursor
+    source:
+      type: json
+      description: "the one source arm: record {kinds, ops, when, coalesce},
+        schedule {recurrence, timezone, startsAt}, or webhook {}"
+    callable:
+      type: reference
+      to: any
+      description: the function or agent a matched delivery invokes ({kind,
+        id})

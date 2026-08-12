@@ -1,0 +1,566 @@
+package engine
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/mail"
+	"net/url"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
+)
+
+// Redacted is what a secret-typed property reads back as, everywhere.
+const Redacted = "<redacted>"
+
+var rePhone = regexp.MustCompile(`^\+[1-9]\d{1,14}$`)
+
+// coerceProps validates a write's properties against the type and returns
+// them in their stored (JSON-safe, normalised) form. A nil value is a
+// delete marker and passes through.
+func coerceProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]any, len(in))
+	var problems []string
+	for _, name := range sortedKeys(in) {
+		p, ok := ty.Prop(name)
+		if !ok {
+			// A null may address ANY stored property: deleting needs no
+			// declaration, or a schema that stops declaring something leaves
+			// its stored values unremovable (record 58's cleanup is the
+			// witness). A VALUE still requires the declaration.
+			if in[name] == nil {
+				out[name] = nil
+				continue
+			}
+			problems = append(problems, fmt.Sprintf("props.%s: not declared on %s", name, ty.Identity))
+			continue
+		}
+		v := in[name]
+		if p.IsState() {
+			// Reached only by engine code building a props map directly: the
+			// write path splits state properties out before validation, and a
+			// state has no value form to coerce (MODEL §11.4).
+			problems = append(problems, fmt.Sprintf("props.%s: a state property moves by transition, not by assignment", name))
+			continue
+		}
+		if v == nil {
+			out[name] = nil
+			continue
+		}
+		// Reads redact secrets: writing the sentinel back is a round trip,
+		// not an assignment, and must leave the stored credential alone.
+		if p.Secret() && v == Redacted {
+			continue
+		}
+		cv, err := coerceValue(p, v)
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("props.%s: %v", name, err))
+			continue
+		}
+		out[name] = cv
+	}
+	if len(problems) > 0 {
+		return nil, &substrate.ValidationError{Problems: problems}
+	}
+	return out, nil
+}
+
+func coerceValue(p *vocabulary.Property, v any) (any, error) {
+	if p.Repeated {
+		items, ok := v.([]any)
+		if !ok {
+			return nil, fmt.Errorf("expected a list of %s", p.Datatype)
+		}
+		out := make([]any, 0, len(items))
+		for i, item := range items {
+			cv, err := coerceScalar(p, item)
+			if err != nil {
+				return nil, fmt.Errorf("[%d]: %w", i, err)
+			}
+			out = append(out, cv)
+		}
+		return out, nil
+	}
+	return coerceScalar(p, v)
+}
+
+// coerceObject validates one object value against its declared fields
+// : undeclared fields are rejected, a field explicitly null is
+// dropped from the stored object, and each field coerces with the scalar
+// rules. An empty object stores as {}.
+func coerceObject(p *vocabulary.Property, v any) (any, error) {
+	in, ok := v.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("expected an object with fields %s", strings.Join(p.FieldOrder, ", "))
+	}
+	out := make(map[string]any, len(in))
+	for _, fname := range sortedKeys(in) {
+		f, declared := p.Fields[fname]
+		if !declared {
+			return nil, fmt.Errorf(".%s: not a declared field", fname)
+		}
+		fv := in[fname]
+		if fv == nil {
+			continue
+		}
+		cv, err := coerceScalar(f, fv)
+		if err != nil {
+			return nil, fmt.Errorf(".%s: %w", fname, err)
+		}
+		out[fname] = cv
+	}
+	return out, nil
+}
+
+// coerceReference validates a reference value's SHAPE and normalizes it toward
+// the canonical {kind, id} pair — the same record reference an
+// edge target wears. Like a blob-ref, this is the PURE half: the existence
+// gate — the referent KIND must be known, and a `to:` constraint must match —
+// is taken inside the transaction (validateReferences). Here we only ensure
+// there is an id and a knowable kind:
+//
+//   - a {kind, id} object,
+//   - a bare id string, ONLY when `to:` pins a concrete kind (the kind comes
+//     from the declaration, mirroring a single-target edge's shorthand).
+func coerceReference(p *vocabulary.Property, v any) (any, error) {
+	var kind, id string
+	switch t := v.(type) {
+	case map[string]any:
+		kind, _ = t["kind"].(string)
+		id, _ = t["id"].(string)
+	case string:
+		id = t
+	default:
+		return nil, fmt.Errorf("a reference is a {kind, id} object")
+	}
+	if id == "" {
+		return nil, fmt.Errorf("a reference needs an id")
+	}
+	// A pinned concrete `to:` supplies the kind a bare value omits, exactly as
+	// a single-target edge's declaration supplies it.
+	if kind == "" && p.To != "" && p.To != vocabulary.ToAny {
+		kind = p.To
+	}
+	if kind == "" {
+		return nil, fmt.Errorf("a reference to any kind needs an explicit kind")
+	}
+	return map[string]any{"kind": kind, "id": id}, nil
+}
+
+func coerceScalar(p *vocabulary.Property, v any) (any, error) {
+	switch p.Datatype {
+	case vocabulary.DatatypeObject:
+		return coerceObject(p, v)
+	case vocabulary.DatatypeReference:
+		return coerceReference(p, v)
+	case vocabulary.DatatypeJSON:
+		return jsonRoundTrip(v)
+	case vocabulary.DatatypeBool:
+		b, ok := v.(bool)
+		if !ok {
+			return nil, fmt.Errorf("expected a bool")
+		}
+		return b, nil
+	case vocabulary.DatatypeInt:
+		f, err := asFloat(v)
+		if err != nil {
+			return nil, err
+		}
+		if f != float64(int64(f)) {
+			return nil, fmt.Errorf("expected an integer")
+		}
+		if err := checkRange(p, f); err != nil {
+			return nil, err
+		}
+		return int64(f), nil
+	case vocabulary.DatatypeFloat:
+		f, err := asFloat(v)
+		if err != nil {
+			return nil, err
+		}
+		if err := checkRange(p, f); err != nil {
+			return nil, err
+		}
+		return f, nil
+	}
+
+	s, err := asString(v)
+	if err != nil {
+		return nil, err
+	}
+	switch p.Datatype {
+	case vocabulary.DatatypeDatetime:
+		ts, err := parseTime(s)
+		if err != nil {
+			return nil, err
+		}
+		return ts.UTC().Format(time.RFC3339Nano), nil
+	case vocabulary.DatatypeDate:
+		if _, err := time.Parse("2006-01-02", s); err != nil {
+			return nil, fmt.Errorf("expected a civil date (2006-01-02)")
+		}
+	case vocabulary.DatatypeDuration:
+		d, err := time.ParseDuration(s)
+		if err != nil {
+			return nil, fmt.Errorf("expected a duration like 47m12s")
+		}
+		s = d.String()
+	case vocabulary.DatatypeEmail:
+		if _, err := mail.ParseAddress(s); err != nil {
+			return nil, fmt.Errorf("expected an RFC 5322 mailbox")
+		}
+	case vocabulary.DatatypeURL:
+		u, err := url.Parse(s)
+		if err != nil || !u.IsAbs() {
+			return nil, fmt.Errorf("expected an absolute URL")
+		}
+	case vocabulary.DatatypePhone:
+		if !rePhone.MatchString(s) {
+			return nil, fmt.Errorf("expected an E.164 phone number")
+		}
+	case vocabulary.DatatypeTimezone:
+		if _, err := time.LoadLocation(s); err != nil {
+			return nil, fmt.Errorf("expected an IANA time zone name")
+		}
+	case vocabulary.DatatypeRecurrence:
+		body := strings.TrimPrefix(s, "RRULE:")
+		if !strings.Contains(body, "FREQ=") {
+			return nil, fmt.Errorf("expected an RFC 5545 RRULE string")
+		}
+	case vocabulary.DatatypeBlobRef:
+		// Shape only here; the txn checks the blob record exists
+		// (validateBlobRefs), because coercion is pure. A blob-ref names bytes
+		// by their digest, which is the blob record's id.
+		if !validBlobDigest(s) {
+			return nil, fmt.Errorf("expected a blob digest (%s<64 hex>)", substrate.BlobDigestPrefix)
+		}
+		return s, nil
+	case vocabulary.DatatypeEnum:
+		if vals := p.ValueStrings(); !containsString(vals, s) {
+			return nil, fmt.Errorf("expected one of %s", strings.Join(vals, ", "))
+		}
+	}
+	if vals := p.ValueStrings(); len(vals) > 0 && p.Datatype != vocabulary.DatatypeEnum && !containsString(vals, s) {
+		return nil, fmt.Errorf("expected one of %s", strings.Join(vals, ", "))
+	}
+	if p.Pattern != nil && !p.Pattern.MatchString(s) {
+		return nil, fmt.Errorf("does not match %s", p.Pattern.String())
+	}
+	return s, nil
+}
+
+func checkRange(p *vocabulary.Property, f float64) error {
+	if p.Min != nil && f < *p.Min {
+		return fmt.Errorf("must be >= %v", *p.Min)
+	}
+	if p.Max != nil && f > *p.Max {
+		return fmt.Errorf("must be <= %v", *p.Max)
+	}
+	return nil
+}
+
+func asFloat(v any) (float64, error) {
+	switch n := v.(type) {
+	case int:
+		return float64(n), nil
+	case int64:
+		return float64(n), nil
+	case float64:
+		return n, nil
+	case float32:
+		return float64(n), nil
+	case json.Number:
+		return n.Float64()
+	default:
+		return 0, fmt.Errorf("expected a number")
+	}
+}
+
+func asString(v any) (string, error) {
+	switch s := v.(type) {
+	case string:
+		return s, nil
+	case time.Time:
+		return s.UTC().Format(time.RFC3339Nano), nil
+	default:
+		return "", fmt.Errorf("expected a string")
+	}
+}
+
+func parseTime(s string) (time.Time, error) {
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05", "2006-01-02"} {
+		if ts, err := time.Parse(layout, s); err == nil {
+			return ts, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("expected an RFC 3339 instant")
+}
+
+func jsonRoundTrip(v any) (any, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("not JSON-encodable: %w", err)
+	}
+	var out any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func containsString(ss []string, s string) bool {
+	for _, x := range ss {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+// --- labels ---
+
+// coerceLabels enforces namespaced keys, the writer's namespace, and the
+// scalar-only shape.
+func coerceLabels(actor substrate.Actor, in map[string]any) (map[string]any, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]any, len(in))
+	for _, k := range sortedKeys(in) {
+		if err := metaKeyAllowed(actor, k); err != nil {
+			return nil, err
+		}
+		v := in[k]
+		switch v.(type) {
+		case nil, bool, string, float64, int, int64, json.Number:
+		default:
+			return nil, fmt.Errorf("%w: label %q must be a scalar (blobs are annotations)", substrate.ErrValidation, k)
+		}
+		cv, err := jsonRoundTrip(v)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = cv
+	}
+	return out, nil
+}
+
+// --- derived title, snippet, FTS bands ---
+
+// titleResolver renders a type's display_template against a stored row,
+// following declared edges to their first target.
+type titleResolver struct {
+	t     *txn
+	ty    *vocabulary.Kind
+	row   *erow
+	edges map[string][]eref
+}
+
+func (r *titleResolver) Prop(name string) string {
+	if v, ok := r.row.Props[name]; ok {
+		return scalarString(v)
+	}
+	if name == "title" {
+		return r.row.Title
+	}
+	return ""
+}
+
+func (r *titleResolver) Snippet() string { return snippetOf(r.ty, r.row) }
+
+func (r *titleResolver) Edge(rel, prop string) string {
+	// A dotted token whose head is an OBJECT PROPERTY reads its field
+	//: `{name.displayName}` renders one level into the object,
+	// empty when the property or field is absent. The loader has already
+	// checked the token names a declared edge or field, so the two forms
+	// cannot collide.
+	if prop != "" {
+		if p, ok := r.ty.Props[rel]; ok && p.Datatype == vocabulary.DatatypeObject {
+			if p.Repeated {
+				return ""
+			}
+			if m, ok := r.row.Props[rel].(map[string]any); ok {
+				return scalarString(m[prop])
+			}
+			return ""
+		}
+	}
+	targets := r.edges[rel]
+	if len(targets) == 0 {
+		return ""
+	}
+	if prop == "" {
+		var titles []string
+		for _, ref := range targets {
+			if tt := r.targetProp(ref, ""); tt != "" {
+				titles = append(titles, tt)
+			}
+		}
+		return strings.Join(titles, ", ")
+	}
+	return r.targetProp(targets[0], prop)
+}
+
+func (r *titleResolver) targetProp(ref eref, prop string) string {
+	row, err := r.t.loadRow(ref, false)
+	if err != nil || row == nil {
+		return ""
+	}
+	if prop == "" {
+		return row.Title
+	}
+	if v, ok := row.Props[prop]; ok {
+		return scalarString(v)
+	}
+	return ""
+}
+
+func scalarString(v any) string {
+	switch s := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return s
+	case []any:
+		var parts []string
+		for _, item := range s {
+			if x := scalarString(item); x != "" {
+				parts = append(parts, x)
+			}
+		}
+		return strings.Join(parts, ", ")
+	case map[string]any:
+		return ""
+	case float64:
+		if s == float64(int64(s)) {
+			return fmt.Sprintf("%d", int64(s))
+		}
+		return fmt.Sprintf("%g", s)
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+// snippetOf is the first 80 characters of the longest text-family property.
+func snippetOf(ty *vocabulary.Kind, row *erow) string {
+	best := ""
+	for _, name := range ty.PropOrder {
+		p := ty.Props[name]
+		if !vocabulary.IsLongText(p.Datatype) || p.Secret() {
+			continue
+		}
+		s := scalarString(row.Props[name])
+		if len(s) > len(best) {
+			best = s
+		}
+	}
+	best = strings.Join(strings.Fields(best), " ")
+	if len(best) > 80 {
+		return strings.TrimSpace(best[:80])
+	}
+	return best
+}
+
+// deriveTitle applies the type's display_template; types without one keep
+// the writer's title.
+func (t *txn) deriveTitle(ty *vocabulary.Kind, row *erow) (string, error) {
+	if ty.Template == nil {
+		return row.Title, nil
+	}
+	edges, err := t.edgesOf(row.ref())
+	if err != nil {
+		return "", err
+	}
+	return ty.Template.Render(&titleResolver{t: t, ty: ty, row: row, edges: edges}), nil
+}
+
+// ftsBands splits a row into the three weighted search bands: title (A),
+// declared short string properties (B), body and prose (C). Properties opt
+// out with fts:false; secrets never index.
+func ftsBands(ty *vocabulary.Kind, row *erow) [3]string {
+	var b, c []string
+	for _, name := range ty.PropOrder {
+		p := ty.Props[name]
+		if !p.FTS || p.Secret() {
+			continue
+		}
+		s := scalarString(row.Props[name])
+		if s == "" {
+			continue
+		}
+		if vocabulary.IsLongText(p.Datatype) {
+			c = append(c, s)
+		} else {
+			b = append(b, s)
+		}
+	}
+	if row.Body != "" {
+		c = append(c, row.Body)
+	}
+	return [3]string{row.Title, strings.Join(b, " "), strings.Join(c, " ")}
+}
+
+// --- projection ---
+
+// recordOf projects a stored row onto the wire type, redacting every
+// secret-typed property. EVERYTHING AUTHORED IS A PROPERTY:
+// storage keeps title, body, the temporal instants and the machine states in
+// their own columns, and the wire shows ONE properties map holding all of
+// them.
+func recordOf(ty *vocabulary.Kind, row *erow) *substrate.Record {
+	e := &substrate.Record{
+		ID: row.ID, Kind: row.Kind, Title: row.Title, Body: row.Body,
+		At: row.At, EndsAt: row.EndsAt, DueAt: row.DueAt,
+		Properties: redactProps(ty, row.Props), Labels: row.Labels,
+		Version: row.Version, CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+		DeletedAt: row.DeletedAt, Finalizers: row.Finalizers,
+	}
+	if e.Properties == nil {
+		e.Properties = map[string]any{}
+	}
+	for name, state := range row.States {
+		e.Properties[name] = state
+	}
+	if row.Title != "" {
+		e.Properties[substrate.PropTitle] = row.Title
+	}
+	if row.Body != "" {
+		e.Properties[substrate.PropBody] = row.Body
+	}
+	for _, hc := range []struct {
+		name string
+		v    *time.Time
+	}{
+		{substrate.PropAt, row.At},
+		{substrate.PropEndsAt, row.EndsAt},
+		{substrate.PropDueAt, row.DueAt},
+	} {
+		if hc.v != nil {
+			e.Properties[hc.name] = hc.v.UTC().Format(time.RFC3339Nano)
+		}
+	}
+	if e.Labels == nil {
+		e.Labels = map[string]any{}
+	}
+	return e
+}
+
+func redactProps(ty *vocabulary.Kind, props map[string]any) map[string]any {
+	out := make(map[string]any, len(props))
+	for k, v := range props {
+		if ty != nil {
+			if p, ok := ty.Prop(k); ok && p.Secret() {
+				out[k] = Redacted
+				continue
+			}
+		}
+		out[k] = v
+	}
+	return out
+}

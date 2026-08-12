@@ -1,0 +1,70 @@
+# one human, one record: every edge that means "a person" lands here. What a
+# single source holds about them — Google's `contact`, Slack's `user` — is its
+# own type in that connector's authority, pointing here through an ordinary edge
+# whose recordmapping (§6.1) says how the record's properties reach the person, so
+# most of the properties below are machine-managed (§7.1) rather than written
+# by hand — and any of them yields to you the moment you write it.
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: people.substrate.reamde.dev/person
+data:
+  authority: people.substrate.reamde.dev
+  names:
+    singular: person
+    # `people`, not `persons`: R5 allows any one-word plural, `people` is the
+    # English one, and the authority is already `people.substrate.reamde.dev`.
+    plural: people
+  # what a human recognizes first is the friendly name; the full name is the
+  # fallback for a person no source has nicknamed.
+  displayTemplate: "{displayName|name}"
+  # A person's id is server-assigned, always: nothing external names a human.
+  properties:
+    # the full name, one string.
+    name:
+      type: string
+      description: the full name, one string
+    # the friendly, Slack-style name — what this person is called.
+    displayName:
+      type: string
+      description: the friendly name — what this person is called
+    # ordinary properties, and nothing matches on their values: two people
+    # holding one address is legal and inert until an owner merges them.
+    emails:
+      type: email
+      repeated: true
+      description: every address seen for this person; nothing matches on
+        them
+    # deliberately NOT the `phone` type: that one is E.164-only and real
+    # provider data arrives as "(020) 7946 0958".
+    phones:
+      type: string
+      repeated: true
+      description: phone numbers as providers send them, not E.164-only
+    # Prominence: the recruiter who emailed once still gets a person, demoted.
+    # Every person starts `utility`; a connector whose records come from an
+    # address book (Google `myContacts`) promotes to `known`, and so does the
+    # owner. Both transitions are unguarded — that connectors never demote is
+    # their own discipline, not a rule the engine enforces. Clients hold the
+    # opinion: the people list defaults to `known`, search ranks `utility`
+    # below it, and the engine stays unopinionated. A future familiarity
+    # taxonomy extends these states; nothing else is reserved for it.
+    prominence:
+      type: state
+      description: "utility until an address book or the owner promotes to
+        known"
+      states:
+        - utility
+        - known
+      initial: utility
+      transitions:
+        - from: utility
+          to: known
+        - from: known
+          to: utility
+  edges:
+    # the employer is an edge; there is no `company` property here. The flat
+    # string a provider holds stays on that provider's own type.
+    memberOf:
+      to: organization
+      many: true
+      description: the employer or workspace; there is no company property

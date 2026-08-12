@@ -1,0 +1,24 @@
+# one mail thread
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: messaging.substrate.reamde.dev/emailthread
+data:
+  authority: messaging.substrate.reamde.dev
+  names:
+    singular: emailthread
+    plural: emailthreads
+  displayTemplate: "{subject}"
+  properties:
+    subject:
+      type: string
+      description: the thread's subject
+  edges:
+    account:
+      to: any
+      required: true
+      ownerRef: true
+      description: the accountconfig record this thread synced through
+    participants:
+      to: person
+      many: true
+      description: everyone on the thread

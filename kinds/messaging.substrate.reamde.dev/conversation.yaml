@@ -1,0 +1,34 @@
+# a DM, an authority chat, or a channel
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: messaging.substrate.reamde.dev/conversation
+data:
+  authority: messaging.substrate.reamde.dev
+  names:
+    singular: conversation
+    plural: conversations
+  displayTemplate: "{name|participants}"
+  properties:
+    # one type over the three real shapes: platforms disagree about the
+    # boundaries but messages don't. `type` is the envelope's own word and
+    # never a property name (R4), so this is `kind`.
+    kind:
+      type: enum
+      values:
+        - direct
+        - group
+        - channel
+      description: a DM, a group chat, or a channel
+    name:
+      type: string
+      description: the conversation's name, where the platform has one
+  edges:
+    account:
+      to: any
+      required: true
+      ownerRef: true
+      description: the accountconfig record this conversation synced through
+    participants:
+      to: person
+      many: true
+      description: the people in the conversation

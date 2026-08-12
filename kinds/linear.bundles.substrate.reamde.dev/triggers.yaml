@@ -1,0 +1,69 @@
+# The Linear bundle's delivery wiring — ordinary DATA records in the shipped
+# automation authority (console-editable, changelog-visible, substratectl get/apply/
+# delete like anything else). Three triggers drive the two functions:
+#
+#   account(connected, issues on, never synced)  --issuessync-->
+#       user + team + issue mirrors  (+ the lastSyncedAt stamp)
+#   hourly schedule  --issuessync-->  every due, connected account
+#   issue(create/update)  --taskprojection-->  the jointly-owned task
+#
+# The on-connect trigger is guarded to fire ONCE per account — its `when`
+# drops the moment the sync stamps lastSyncedAt, so the account's own
+# completion patch cannot re-trigger it. Steady-state re-syncs come from the
+# schedule, which honors each account's syncFrequency.
+# The first backfill: an account whose OAuth just landed (tokenStatus
+# connected), that wants issues, and that has never synced yet.
+kind: core.substrate.reamde.dev/trigger
+metadata: {id: linear-issues-on-connect}
+data:
+  properties:
+    enabled: true
+    source:
+      record:
+        kinds: [linear.bundles.substrate.reamde.dev/account]
+        ops: [create, update]
+        # Every optional property is read through the `in` idiom: tokenStatus
+        # (writer: oauth) and enabledIssues are ABSENT on a freshly-created
+        # account (pre-OAuth), and CEL map-indexing an absent key throws — an
+        # unguarded read would skip the delivery instead of matching it. The
+        # short-circuit `&&` means the value read only runs once its key is
+        # proven present.
+        when: >-
+          record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
+          == "connected" && "enabledIssues" in record.properties && record.properties.enabledIssues
+          == true && !("lastSyncedAt" in record.properties)
+    callable: {kind: core.substrate.reamde.dev/function, id: linear.bundles.substrate.reamde.dev/issuessync}
+---
+# The steady-state re-sync: an hourly tick fires the same function with no
+# envelope record, so the body iterates every connected, issues-enabled
+# account and syncs the ones due by their own syncFrequency.
+kind: core.substrate.reamde.dev/trigger
+metadata: {id: linear-issues-scheduled}
+data:
+  properties:
+    enabled: true
+    source:
+      schedule:
+        recurrence: "FREQ=HOURLY"
+        timezone: Europe/London
+        # A fixed past anchor, so every occurrence since is well-defined
+        # (occurrences compute forward from startsAt).
+        startsAt: "2025-01-06T09:00:00Z"
+    callable: {kind: core.substrate.reamde.dev/function, id: linear.bundles.substrate.reamde.dev/issuessync}
+---
+# The projection: every mirror write flows into the jointly-owned task. The
+# sync's patches are no-op-suppressed, so an idle re-sync produces NO mirror
+# changelog and this never fires; when it does fire, the projection diffs the
+# Linear-owned keys and moves status only on a real upstream transition
+# (bundle.yaml, taskprojection). Deletes carry a null record and are skipped.
+kind: core.substrate.reamde.dev/trigger
+metadata: {id: linear-task-projection}
+data:
+  properties:
+    enabled: true
+    source:
+      record:
+        kinds: [linear.bundles.substrate.reamde.dev/issue]
+        ops: [create, update]
+        when: "record != null"
+    callable: {kind: core.substrate.reamde.dev/function, id: linear.bundles.substrate.reamde.dev/taskprojection}

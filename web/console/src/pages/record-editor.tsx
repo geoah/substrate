@@ -1,0 +1,451 @@
+/** The YAML editor (create + edit a record from its kind). NOT the structured
+ * config form (`RecordConfigForm`, GUIDE §8) — this is the generic, full-manifest
+ * surface: a real text editor over the apply-able envelope with live,
+ * schema-driven validation.
+ *
+ * - **New** (`/data/:authority/:plural/new`) seeds a schema-derived template
+ *   (`templateYAML`) — every declared property, required first, seeded and
+ *   commented, enums listing their values. **Edit** (`/data/:authority/:plural/
+ *   :id/edit`) seeds the record's apply-able YAML (`applyManifestYAML`, the
+ *   manifest view's shape minus server-owned `status`).
+ * - Validation runs debounced as the owner types (`validateApplyDoc`): YAML
+ *   parses, required present, enums admitted, obvious type mismatches — surfaced
+ *   in a problems panel keyed to lines. Save is barred while any error stands.
+ * - Save applies through the record write API (POST for new, PUT upsert for
+ *   edit). A server rejection (schema/admission) is parsed and shown inline; the
+ *   flow never claims success unless the apply returns ok. */
+
+import { useEffect, useMemo, useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Link, useNavigate } from "@tanstack/react-router"
+import {
+  AlertCircleIcon,
+  AlertTriangleIcon,
+  CheckCircle2Icon,
+  FileQuestionIcon,
+} from "lucide-react"
+
+import { Button } from "@/components/ui/button"
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Spinner } from "@/components/ui/spinner"
+import { toast } from "@/components/ui/toast"
+import {
+  createRecord,
+  recordQueryOptions,
+  putRecord,
+} from "@/lib/api/records"
+import { kindsQueryOptions } from "@/lib/api/kinds"
+import { ApiError, type SubstrateRecord, type KindInfo } from "@/lib/api/types"
+import {
+  applyManifestYAML,
+  parseApplyDoc,
+  templateYAML,
+  toPutInput,
+  validateApplyDoc,
+  type Problem,
+} from "@/lib/record-yaml"
+import { kindByCollection } from "@/lib/definition"
+import { cn } from "@/lib/utils"
+import {
+  recordEditRoute,
+  recordNewRoute,
+} from "@/router"
+
+type Mode = "create" | "edit"
+
+/** New-record route wrapper (`/data/:authority/:plural/new`). */
+export function RecordNewPage() {
+  const { authority, plural } = recordNewRoute.useParams()
+  return <RecordEditor authority={authority} plural={plural} mode="create" />
+}
+
+/** Edit route wrapper (`/data/:authority/:plural/:id/edit`). */
+export function RecordEditPage() {
+  const { authority, plural, id } = recordEditRoute.useParams()
+  return (
+    <RecordEditor authority={authority} plural={plural} mode="edit" id={id} />
+  )
+}
+
+function RecordEditor({
+  authority,
+  plural,
+  mode,
+  id,
+}: {
+  authority: string
+  plural: string
+  mode: Mode
+  id?: string
+}) {
+  const registry = useQuery(kindsQueryOptions)
+  const kindInfo = registry.data
+    ? kindByCollection(registry.data, authority, plural)
+    : undefined
+  const record = useQuery({
+    ...recordQueryOptions(authority, plural, id ?? ""),
+    enabled: mode === "edit" && Boolean(id),
+  })
+
+  const ready =
+    !registry.isPending && (mode === "create" || !record.isPending)
+
+  if (!ready) return <EditorSkeleton />
+
+  if (registry.isError || !kindInfo) {
+    return (
+      <EditorEmpty
+        title="Unknown collection"
+        description={`${authority}/${plural} is not in the kind registry.`}
+      />
+    )
+  }
+  if (mode === "edit" && record.isError) {
+    return (
+      <EditorEmpty
+        title="The record didn't load"
+        description={`${authority}/${plural}/${id} — ${record.error.message}`}
+      />
+    )
+  }
+
+  const seed =
+    mode === "edit" && record.data
+      ? applyManifestYAML(record.data)
+      : templateYAML(kindInfo)
+
+  return (
+    <EditorForm
+      authority={authority}
+      plural={plural}
+      mode={mode}
+      kind={kindInfo}
+      record={mode === "edit" ? record.data : undefined}
+      seed={seed}
+    />
+  )
+}
+
+function EditorForm({
+  authority,
+  plural,
+  mode,
+  kind,
+  record,
+  seed,
+}: {
+  authority: string
+  plural: string
+  mode: Mode
+  kind: KindInfo
+  record?: SubstrateRecord
+  seed: string
+}) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+
+  const [text, setText] = useState(seed)
+  // Reseed if the underlying seed changes (e.g. an edit's record finished
+  // loading, or the version bumped) — but never clobber in-flight edits after
+  // the first mount, so key the reseed to the seed value itself.
+  const [seededFrom, setSeededFrom] = useState(seed)
+  if (seededFrom !== seed) {
+    setSeededFrom(seed)
+    setText(seed)
+  }
+
+  // The API's own rejection (schema/admission), shown inline until the next edit.
+  const [serverError, setServerError] = useState<ApiError | undefined>()
+
+  // Debounced text feeds validation so we don't re-tokenize on every keystroke.
+  const [debounced, setDebounced] = useState(text)
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(text), 250)
+    return () => clearTimeout(t)
+  }, [text])
+
+  const problems = useMemo(
+    () => validateApplyDoc(debounced, kind),
+    [debounced, kind]
+  )
+  // Save is gated on the LIVE text, not the debounced copy — a fast Save right
+  // after a fix must see the fix.
+  const liveErrors = useMemo(
+    () => validateApplyDoc(text, kind).filter((p) => p.severity === "error"),
+    [text, kind]
+  )
+  const errorCount = liveErrors.length
+  const warnCount = problems.filter((p) => p.severity === "warning").length
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const parsed = parseApplyDoc(text)
+      if (parsed.error || !parsed.value) {
+        throw new ApiError(
+          "validation",
+          parsed.error?.message ?? "The document did not parse.",
+          0
+        )
+      }
+      const input = toPutInput(parsed.value)
+      return mode === "edit" && record
+        ? putRecord(authority, plural, record.id, input)
+        : createRecord(authority, plural, input)
+    },
+    onSuccess: (saved) => {
+      toast.add({
+        type: "success",
+        title: mode === "edit" ? `${kind.name} updated.` : `${kind.name} created.`,
+      })
+      void queryClient.invalidateQueries()
+      void navigate({
+        to: "/data/$authority/$plural/$id",
+        params: { authority: authority, plural: plural, id: saved.id },
+      })
+    },
+    onError: (error) => {
+      const api =
+        error instanceof ApiError
+          ? error
+          : new ApiError("network", (error as Error).message, 0)
+      setServerError(api)
+      toast.add({
+        type: "error",
+        title:
+          mode === "edit"
+            ? `Could not update the ${kind.name}`
+            : `Could not create the ${kind.name}`,
+        description: api.message,
+      })
+    },
+  })
+
+  function onChange(next: string) {
+    setText(next)
+    if (serverError) setServerError(undefined)
+  }
+
+  const canSave = errorCount === 0 && !mutation.isPending
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-start justify-between gap-3 px-6 pt-5 pb-3">
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-semibold">
+            {mode === "edit" ? `Edit ${kind.name}` : `New ${kind.name}`}
+          </h1>
+          <p className="data text-xs text-muted-foreground">
+            {mode === "edit" && record
+              ? `${authority}/${plural}/${record.id}`
+              : `${authority}/${plural}`}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={mutation.isPending}
+            render={
+              mode === "edit" && record ? (
+                <Link
+                  to="/data/$authority/$plural/$id"
+                  params={{ authority: authority, plural: plural, id: record.id }}
+                />
+              ) : (
+                <Link
+                  to="/data/$authority/$plural"
+                  params={{ authority: authority, plural: plural }}
+                />
+              )
+            }
+          >
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            className="gap-1.5"
+            disabled={!canSave}
+            onClick={() => mutation.mutate()}
+          >
+            {mutation.isPending && <Spinner className="size-3.5" />}
+            {mode === "edit" ? "Save changes" : "Create"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col border-t xl:flex-row">
+        <div className="min-h-0 flex-1">
+          <textarea
+            value={text}
+            onChange={(e) => onChange(e.target.value)}
+            spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
+            aria-label="Record YAML"
+            className="data h-full min-h-[16rem] w-full resize-none bg-transparent p-4 text-xs leading-relaxed outline-none"
+          />
+        </div>
+        <div className="shrink-0 border-t xl:w-[24rem] xl:border-t-0 xl:border-l">
+          <ProblemsPanel
+            problems={problems}
+            errorCount={errorCount}
+            warnCount={warnCount}
+            serverError={serverError}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** The validation surface: a status line, the API's rejection when there is
+ * one, and the live client-side problems, each keyed to its line. */
+function ProblemsPanel({
+  problems,
+  errorCount,
+  warnCount,
+  serverError,
+}: {
+  problems: Problem[]
+  errorCount: number
+  warnCount: number
+  serverError?: ApiError
+}) {
+  const clean = errorCount === 0 && warnCount === 0 && !serverError
+  return (
+    <ScrollArea className="h-full">
+      <div className="flex flex-col gap-3 p-4">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          {clean ? (
+            <>
+              <CheckCircle2Icon className="size-4 text-primary" />
+              <span>Ready to apply</span>
+            </>
+          ) : (
+            <span>
+              {errorCount > 0 && (
+                <span className="text-destructive">
+                  {errorCount} {errorCount === 1 ? "error" : "errors"}
+                </span>
+              )}
+              {errorCount > 0 && warnCount > 0 && ", "}
+              {warnCount > 0 && (
+                <span className="text-muted-foreground">
+                  {warnCount} {warnCount === 1 ? "warning" : "warnings"}
+                </span>
+              )}
+            </span>
+          )}
+        </div>
+
+        {serverError && (
+          <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-destructive">
+              <AlertCircleIcon className="size-4 shrink-0" />
+              The substrate rejected this apply
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {serverError.message}
+            </p>
+            {serverError.problems.length > 0 && (
+              <ul className="mt-2 flex flex-col gap-1">
+                {serverError.problems.map((p, i) => (
+                  <li key={i} className="data text-xs text-muted-foreground">
+                    {p}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {clean ? (
+          <p className="text-xs text-muted-foreground">
+            The document parses and satisfies the kind's schema.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {problems.map((p, i) => (
+              <ProblemRow key={i} problem={p} />
+            ))}
+          </ul>
+        )}
+      </div>
+    </ScrollArea>
+  )
+}
+
+function ProblemRow({ problem }: { problem: Problem }) {
+  const isError = problem.severity === "error"
+  return (
+    <li className="flex items-start gap-2 text-xs">
+      {isError ? (
+        <AlertCircleIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+      ) : (
+        <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
+      )}
+      <div className="min-w-0">
+        <span className={cn(isError ? "text-foreground" : "text-muted-foreground")}>
+          {problem.message}
+        </span>
+        {problem.line !== undefined && (
+          <span className="data ml-1.5 text-muted-foreground">
+            line {problem.line}
+          </span>
+        )}
+      </div>
+    </li>
+  )
+}
+
+function EditorEmpty({
+  title,
+  description,
+}: {
+  title: string
+  description: string
+}) {
+  return (
+    <div className="flex flex-1 p-6">
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <FileQuestionIcon />
+          </EmptyMedia>
+          <EmptyTitle>{title}</EmptyTitle>
+          <EmptyDescription>
+            <span className="data">{description}</span>
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    </div>
+  )
+}
+
+function EditorSkeleton() {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 px-6 pt-5 pb-3">
+        <Skeleton className="h-6 w-40" />
+        <Skeleton className="mt-1.5 h-3.5 w-56" />
+      </div>
+      <div className="flex flex-1 flex-col gap-2 border-t px-6 pt-4">
+        {Array.from({ length: 10 }, (_, i) => (
+          <Skeleton
+            key={i}
+            className="h-3.5"
+            style={{ width: `${[40, 55, 30, 65, 45, 50, 35, 60, 42, 48][i]}%` }}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}

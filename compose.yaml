@@ -1,0 +1,39 @@
+# A whole substrate on this machine: `docker compose up`.
+#
+# Every value below has a default that works, so nothing has to be set before
+# the first run. Override any of them in the environment or a .env file.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-substrate}
+    volumes:
+      - substrate-db:/var/lib/postgresql/data
+    # The substrate waits for this, so `up` never races the first migration.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-substrate}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  substrate:
+    build: .
+    ports:
+      - "${PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-substrate}?sslmode=disable
+      # The one door into a fresh substrate. Registering with this code creates
+      # the user and their repository; UNSET closes registration, which is the
+      # right state once the box has its user.
+      SUBSTRATE_INVITE_CODE: ${SUBSTRATE_INVITE_CODE:-let-me-in}
+      # Seals stored provider tokens at rest. Unset means plaintext and a
+      # warning at boot — fine on a laptop, never on a real deployment.
+      SUBSTRATE_CREDENTIAL_KEY: ${SUBSTRATE_CREDENTIAL_KEY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+volumes:
+  substrate-db:

@@ -1,0 +1,20 @@
+# an ordered collection a book belongs to, in any format
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: media.substrate.reamde.dev/bookseries
+data:
+  authority: media.substrate.reamde.dev
+  names:
+    singular: bookseries
+    # prefixed because bare `series` could be any family's — a TV series, a
+    # lecture series, a calendar event series (R2).
+    plural: bookseries
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      description: the series' name
+    description:
+      type: markdown
+      embed: true
+      description: what the series is, as prose

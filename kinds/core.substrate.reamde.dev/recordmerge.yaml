@@ -1,0 +1,32 @@
+# one performed merge of two records, and what it moved
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/recordmerge
+data:
+  authority: core.substrate.reamde.dev
+  names:
+    singular: recordmerge
+    plural: recordmerges
+  # command-as-record: creating a merge performs it (§6), so it is not a
+  # "request" — nothing waits on a decision. Merging is always somebody's
+  # deliberate act; nothing in the engine merges on its own. The moved sets
+  # recorded here are what makes the split possible.
+  properties:
+    moved:
+      type: json
+      description: the edges and properties the merge moved, what a split
+        reads back
+  edges:
+    # `to: any` because two records of any one type may merge — an edge is
+    # the one way one record points at another, so a merge record's own
+    # history is queryable like everything else. The loser is tombstoned,
+    # never erased: a finalizer holds GC off it, so both ends of this record
+    # survive for `recordsplit` to read.
+    winner:
+      to: any
+      required: true
+      description: the record that survived the merge
+    loser:
+      to: any
+      required: true
+      description: the tombstoned record, kept for a possible split

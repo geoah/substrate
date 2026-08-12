@@ -1,0 +1,38 @@
+# one custom property type: a refinement of a base type, e.g. asin
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/propertytype
+data:
+  authority: core.substrate.reamde.dev
+  # v1alpha2: the display template dropped the authority. A declaration's
+  # identity is `<authority>/<name>` and the dotted composite it used to render
+  # names nothing — the bump is what carries the new template into repositories
+  # that already stored the old one.
+  version: v1alpha2
+  names:
+    singular: propertytype
+    plural: propertytypes
+  # id = "<authority>/<name>". A refinement is authority-local — a property type is
+  # only usable inside the authority that declares it.
+  displayTemplate: "{name}"
+  properties:
+    # Every declaration carries its own version: the
+    # declaring authority's, unless the declaration overrides it. It is what the
+    # boot-time upgrade diffs a repository's shipped vocabulary against, so
+    # it is written on every projected declaration row.
+    version:
+      type: string
+      description: this declaration's version
+    name:
+      type: string
+      description: the refinement's local name
+    authority:
+      type: string
+      description: the one authority it is usable in
+    base:
+      type: string
+      description: the built-in kind it refines
+    definition:
+      type: json
+      description: the parsed manifest data
+    # No sourceYAML (record 61): schema rows store parsed facts only.

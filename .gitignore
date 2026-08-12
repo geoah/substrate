@@ -1,0 +1,19 @@
+# Build output. NOT `/substrate` — that pattern also hides the substrate/
+# package, which is the core of this repo.
+/bin/
+
+# Go
+*.test
+*.out
+go.work
+go.work.sum
+
+# Node
+node_modules/
+dist/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

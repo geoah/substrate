@@ -1,0 +1,49 @@
+# The RELEASE image: same runtime as Dockerfile, but the binary and the console
+# arrive prebuilt from goreleaser instead of being compiled here.
+#
+# `Dockerfile` (the one compose uses) builds everything from source, which is
+# what you want on a laptop. At release time goreleaser has already
+# cross-compiled every platform and built the console once, so recompiling per
+# architecture under emulation would only be slower and less reproducible.
+#
+# Never build this by hand — `mise run release:snapshot` sets up the context.
+
+# The Go toolchain, pulled at the TARGET platform so its binaries actually run
+# in the final image.
+FROM golang:1.26-alpine AS gotoolchain
+
+# ---- runtime ------------------------------------------------------------
+# The shared function runner executes inline bundle code as child processes, so
+# the image must carry the languages it runs: python3 (the Python host) and the
+# Go toolchain (Go functions compile at registration). The runner builds guests
+# hermetically (GOPROXY=off) and cannot download a toolchain, so an apk `go`
+# (older) would break Go-function registration — the exact 1.26 toolchain is
+# copied instead.
+#
+# uv (the Astral installer/runner, a single static binary) is the connector
+# runtime: a Python function body carrying a PEP 723 `# /// script` block
+# declaring `dependencies` runs via `uv run`, which provisions a cached venv
+# with those deps — so a connector can `import googleapiclient` by declaring it
+# inline, with no pip in the base image. Dependency-free Python and all Go
+# functions never touch uv.
+FROM alpine:3.21
+
+ARG TARGETPLATFORM
+
+RUN apk add --no-cache ca-certificates tzdata python3 uv
+COPY --from=gotoolchain /usr/local/go /usr/local/go
+ENV PATH=/usr/local/go/bin:$PATH \
+    GOTOOLCHAIN=local \
+    GOFLAGS=-mod=mod \
+    GOCACHE=/tmp/gocache \
+    HOME=/root
+
+# goreleaser lays the built binaries out under <os>/<arch>/, which is exactly
+# what TARGETPLATFORM spells.
+COPY --chmod=0755 $TARGETPLATFORM/substrated /usr/local/bin/substrate
+COPY web/console/dist /web
+
+ENV WEB_DIR=/web \
+    PORT=8080
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/substrate"]

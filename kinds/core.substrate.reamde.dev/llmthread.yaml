@@ -1,0 +1,72 @@
+# one agent invocation's conversation state — there is no agent-run record,
+# the thread is the run. The loop writes it as it goes: status settles to
+# ok / overbudget / error, the token tally accumulates per assistant turn,
+# and on the ROOT thread the tally includes every sub-agent's spend (cost
+# rolls up — one number answers "what did this chain cost"). A sub-agent's
+# thread carries the `parent` edge; chat threads (mode chat) are the same
+# rows the console renders and continues.
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/llmthread
+data:
+  authority: core.substrate.reamde.dev
+  names:
+    singular: llmthread
+    plural: llmthreads
+  displayTemplate: "{agent}: {status}"
+  indices:
+    - - agent
+      - status
+  properties:
+    agent:
+      type: string
+      description: the agent identity this thread ran
+    llm:
+      type: string
+      description: the llm row id the run resolved
+    mode:
+      type: string
+      description: trigger, schedule, webhook, manual, call, subagent or chat
+    status:
+      type: string
+      description: running, then ok, overbudget or error
+    reason:
+      type: string
+      description: which budget ended an overbudget run, or the error
+    agentDepth:
+      type: int
+      description: how many sub-agent hops sit above this thread (0 = root)
+    turns:
+      type: int
+      description: model calls this thread burned
+    toolCalls:
+      type: int
+      description: tool dispatches this thread burned
+    promptTokens:
+      type: int
+      description: prompt tokens; on the root thread, sub-agents included
+    completionTokens:
+      type: int
+      description: completion tokens; on the root thread, sub-agents included
+    totalTokens:
+      type: int
+      description: total tokens; on the root thread, sub-agents included
+    costUSD:
+      type: float
+      description: the llm row's pricing applied to the tally; 0 when unpriced
+    startedAt:
+      type: datetime
+      description: when the loop opened the thread
+    finishedAt:
+      type: datetime
+      description: when the loop settled
+    leaseUntil:
+      type: datetime
+      description: >-
+        the running turn's lease horizon — one active continuation per thread;
+        a second turn is refused while the lease is live, and a crashed turn's
+        expired lease is taken over
+  edges:
+    parent:
+      to: core.substrate.reamde.dev/llmthread
+      description: the calling agent's thread, on sub-agent threads

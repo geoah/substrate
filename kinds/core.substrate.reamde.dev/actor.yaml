@@ -1,0 +1,46 @@
+# one declared actor, the name writes are attributed to
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/actor
+data:
+  authority: core.substrate.reamde.dev
+  names:
+    singular: actor
+    plural: actors
+  # projections of declared actors — the shipped ones at boot, connector ones
+  # at installation. `source` is the declaring authority's origin, the same closed
+  # set kind carries.
+  displayTemplate: "{name}"
+  properties:
+    # Every declaration carries its own version: the
+    # declaring authority's, unless the declaration overrides it. It is what the
+    # boot-time upgrade diffs a repository's shipped vocabulary against, so
+    # it is written on every projected declaration row.
+    version:
+      type: string
+      description: this declaration's version
+    name:
+      type: string
+      description: the declared actor name writes are attributed to
+    # the authority whose manifests declared this actor — what the registry
+    # rebuild reads to put the actor back under its authority.
+    authority:
+      type: string
+      description: the authority that declares this actor
+    source:
+      type: enum
+      values:
+        - builtin
+        - installed
+      description: builtin for shipped authorities, installed for connector
+        authorities
+    # the actor's manager tier — an explicit attribute of the declaration
+    # (ticket 002), never derived from the actor's spelling. Authority-declared
+    # actors are the sync machinery, so machine is the default.
+    tier:
+      type: enum
+      values:
+        - owner
+        - bundle
+        - machine
+      description: the manager tier this actor's direct writes hold at

@@ -1,0 +1,61 @@
+# One trigger delivery attempt, written by the engine under the system actor
+# after the attempt settles — the generalization of the parked-failure
+# ledger. Cleanup is first-class: parked runs are kept until their failure is
+# retried away, everything else is pruned to the newest few per trigger
+# (engine/triggers.go documents the number). Run rows are the one record
+# type a trigger's record source can NEVER match: every delivery writes one,
+# so a `*` subscription over them would feed itself forever.
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/run
+data:
+  authority: core.substrate.reamde.dev
+  names:
+    singular: run
+    plural: runs
+  indices:
+    - - trigger
+      - status
+  properties:
+    trigger:
+      type: string
+      description: the trigger record this delivery belongs to
+    callable:
+      type: string
+      description: the callable that ran, as its actor spells it — `function:<name>`
+    mode:
+      type: string
+      description: trigger, schedule, webhook or manual
+    seq:
+      type: int
+      description: the changelog seq delivered, for record-sourced runs
+    fireId:
+      type: string
+      description: the stable fire id, for schedule and webhook runs
+    record:
+      type: string
+      description: the delivered record's id, for record-sourced runs
+    status:
+      type: string
+      description: ok (effects applied or nothing to do), skipped (the when
+        guard said no), or parked (retried out; a trigger_failures row holds
+        the retry handle)
+    attempt:
+      type: int
+      description: how many attempts the delivery burned
+    startedAt:
+      type: datetime
+      description: when the attempt began
+    finishedAt:
+      type: datetime
+      description: when the attempt settled
+    error:
+      type: string
+      description: the last error, on parked runs
+    effects:
+      type: json
+      description: "the applied-effects summary: action → count"
+    pages:
+      type: int
+      description: committed pages for a paged (backfill) delivery; absent
+        for a single-shot body, the durable per-chain progress lives in paged_cursors

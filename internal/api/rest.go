@@ -1,0 +1,390 @@
+package api
+
+import (
+	"errors"
+	"net/http"
+	"net/url"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
+)
+
+// collection resolves a REST collection path to a declared kind. The path
+// carries the KIND REFERENCE, split into its segments:
+//
+//	/{authority}/{plural}    a published kind — /tasks.substrate.reamde.dev/tasks
+//	/{plural}                a repository-local kind — /tasks
+//
+// The two are told apart by inspection, not by a route: an authority is a DNS
+// name and always carries a dot, a plural never does. So the two-segment form
+// is a qualified collection when its first segment is dotted and a
+// repository-local RESOURCE (plural + id) when it is not.
+func (h *handler) collection(w http.ResponseWriter, r *http.Request) (substrate.Dataset, substrate.KindInfo, bool) {
+	ctx := r.Context()
+	ds := DatasetFrom(ctx)
+	authority, plural := collectionSegments(r)
+	ti, err := ds.KindByPlural(ctx, authority, plural)
+	if err != nil {
+		if errors.Is(err, substrate.ErrNotFound) {
+			writeError(w, http.StatusNotFound, codeNotFound, "unknown collection "+vocabulary.KindRef(authority, plural))
+			return nil, substrate.KindInfo{}, false
+		}
+		writeSubstrateError(w, err)
+		return nil, substrate.KindInfo{}, false
+	}
+	// There is no scope gate here any more: a token has FULL ACCESS to its
+	// repository, so authentication is the whole authorization
+	// story on this path. What a token cannot do is written into the kinds
+	// themselves — the auth kinds refuse generic writes at the engine's one
+	// chokepoint, not with a per-request capability check.
+	return ds, ti, true
+}
+
+// addressed reads what a REST path addresses: the collection's authority
+// (empty for a repository-local kind), its plural, and the record id ("" on a
+// collection route). It is the ONE place the two path shapes are told apart,
+// by the rule that an authority is a DNS name and a plural is one word.
+func addressed(r *http.Request) (authority, plural, id string) {
+	s1, s2, s3 := pathParam(r, "a1"), pathParam(r, "a2"), pathParam(r, "a3")
+	switch {
+	case s3 != "":
+		return s1, s2, s3
+	case s2 != "":
+		if strings.Contains(s1, ".") {
+			return s1, s2, ""
+		}
+		return "", s1, s2
+	default:
+		return "", s1, ""
+	}
+}
+
+// collectionSegments reads the authority and plural a request addresses.
+func collectionSegments(r *http.Request) (authority, plural string) {
+	authority, plural, _ = addressed(r)
+	return authority, plural
+}
+
+// pathParam reads a chi URL parameter, percent-decoded. chi routes on the RAW
+// path so that an id carrying a `/` — a kind reference IS an id, on every
+// declaration record — stays one path segment when it is written `%2F`; the
+// decoding has to happen here, once, for every handler.
+func pathParam(r *http.Request, name string) string {
+	raw := chi.URLParam(r, name)
+	if dec, err := url.PathUnescape(raw); err == nil {
+		return dec
+	}
+	return raw
+}
+
+// putStatus is 201 for a create, 200 for an update or replace. A
+// fresh row lands at version 1 and every later write bumps it past 1, so
+// POST-to-collection and PUT-at-id report which they did CONSISTENTLY — no
+// more blanket 201 on an upsert that only updated (codex api finding 5).
+func putStatus(e *substrate.Record) int {
+	if e != nil && e.Version == 1 {
+		return http.StatusCreated
+	}
+	return http.StatusOK
+}
+
+// getCollectionOrResource is the two-segment GET: a qualified collection when
+// the first segment is an authority, a repository-local record when it is a
+// plural. One route, one rule (addressed), no ambiguity.
+func (h *handler) getCollectionOrResource(w http.ResponseWriter, r *http.Request) {
+	if _, _, id := addressed(r); id != "" {
+		h.getResource(w, r)
+		return
+	}
+	h.listCollection(w, r)
+}
+
+func (h *handler) listCollection(w http.ResponseWriter, r *http.Request) {
+	ds, ti, ok := h.collection(w, r)
+	if !ok {
+		return
+	}
+
+	// A collection watch is the changelog tail scoped to this type. The list
+	// query grammar does not apply to it — filter/orderBy/first/after/withEdges/
+	// withAnnotations are silently meaningless on a watch — so their presence is
+	// a bad_request naming the param, never silent success. `from`
+	// (the transparent resume seq) IS honored.
+	if r.URL.Query().Get("watch") == "1" {
+		if bad := rejectParams(r, "filter", "orderBy", "first", "after", "withEdges", "withAnnotations"); bad != "" {
+			writeError(w, http.StatusBadRequest, codeBadRequest, bad+" is not supported with watch=1")
+			return
+		}
+		if bad := unsupportedParam(r, watchParams...); bad != "" {
+			writeError(w, http.StatusBadRequest, codeBadRequest, bad)
+			return
+		}
+		h.streamChanges(w, r, ds, substrate.ChangeFilter{Kinds: []string{ti.Identity}}, false)
+		return
+	}
+	if bad := unsupportedParam(r, listParams...); bad != "" {
+		writeError(w, http.StatusBadRequest, codeBadRequest, bad)
+		return
+	}
+
+	q, err := parseQuery(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
+	// The path names the kind, so the collection FORCES filter.kinds (ruling
+	// A8). An explicit, conflicting filter.kinds is not silently overwritten —
+	// it is a bad_request; the caller either drops it or lists a different
+	// collection.
+	if len(q.Filter.Kinds) > 0 {
+		writeError(w, http.StatusBadRequest, codeBadRequest,
+			"filter.kinds is not supported on a collection list — the path already names the kind")
+		return
+	}
+	q.Filter.Kinds = []string{ti.Identity}
+
+	page, err := ds.List(r.Context(), q)
+	if err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
+}
+
+func (h *handler) createInCollection(w http.ResponseWriter, r *http.Request) {
+	ds, ti, ok := h.collection(w, r)
+	if !ok {
+		return
+	}
+	var in substrate.PutInput
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
+	in.Kind = ti.Identity
+	ctx := r.Context()
+	ent, err := ds.Put(ctx, ActorFrom(ctx), in)
+	if err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
+	writeJSON(w, putStatus(ent), ent)
+}
+
+func (h *handler) getResource(w http.ResponseWriter, r *http.Request) {
+	ds, ti, ok := h.collection(w, r)
+	if !ok {
+		return
+	}
+	// The path carries the whole record reference — the collection names the
+	// kind, {id} the id — so the read is kind-scoped by construction.
+	ent, err := ds.Get(r.Context(), ti.Identity, resourceID(r))
+	if err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ent)
+}
+
+func (h *handler) putResource(w http.ResponseWriter, r *http.Request) {
+	ds, ti, ok := h.collection(w, r)
+	if !ok {
+		return
+	}
+	var in substrate.PutInput
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
+	in.Kind = ti.Identity
+	in.ID = resourceID(r)
+	ctx := r.Context()
+	ent, err := ds.Put(ctx, ActorFrom(ctx), in)
+	if err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
+	writeJSON(w, putStatus(ent), ent)
+}
+
+func (h *handler) patchResource(w http.ResponseWriter, r *http.Request) {
+	ds, ti, ok := h.collection(w, r)
+	if !ok {
+		return
+	}
+	var in substrate.PatchInput
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
+	ctx := r.Context()
+	id := resourceID(r)
+	ent, err := ds.Patch(ctx, ActorFrom(ctx), ti.Identity, id, in)
+	if err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ent)
+}
+
+func (h *handler) deleteResource(w http.ResponseWriter, r *http.Request) {
+	ds, ti, ok := h.collection(w, r)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	id := resourceID(r)
+	ent, err := ds.Delete(ctx, ActorFrom(ctx), ti.Identity, id)
+	if err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ent)
+}
+
+// The query parameters each read mode honors. A parameter outside its mode's
+// set is a bad_request naming the key — never silence, because a
+// silently ignored parameter returns UNFILTERED rows that look filtered.
+var (
+	// listParams is the list query grammar: the filter document, the order, the
+	// keyset page, the heavy-data opt-ins, and the mode switch itself.
+	listParams = []string{"filter", "orderBy", "first", "after", "withEdges", "withAnnotations", "watch"}
+	// watchParams is a collection watch: the mode switch and the resume cursor.
+	// The list grammar does not apply, and rejectParams names those keys with a
+	// message of their own before this set is consulted.
+	watchParams = []string{"watch", "from"}
+	// changeParams is the cross-collection changefeed: the two modes' cursors
+	// plus the change filter, whose list-valued keys are all PLURAL.
+	changeParams = []string{
+		"watch", "from", "before", "first",
+		"recordId", "recordKind", "q",
+		"kinds", "excludeKinds", "actors", "excludeActors", "ops", "excludeOps",
+	}
+)
+
+// unsupportedParam names the first query parameter (sorted, so one request
+// gives one deterministic message) outside `allowed`, or "" when every
+// parameter is honored. A near miss — the singular `kind=`/`op=`/`actor=` of
+// the changes feed, or a casing slip — is told the spelling that works, since
+// that guess is exactly the one that used to return the whole unfiltered feed.
+func unsupportedParam(r *http.Request, allowed ...string) string {
+	ok := make(map[string]bool, len(allowed))
+	for _, n := range allowed {
+		ok[n] = true
+	}
+	var unknown []string
+	for name := range r.URL.Query() {
+		if !ok[name] {
+			unknown = append(unknown, name)
+		}
+	}
+	if len(unknown) == 0 {
+		return ""
+	}
+	sort.Strings(unknown)
+	msg := "unknown query parameter " + strconv.Quote(unknown[0])
+	if alt := nearestParam(unknown[0], allowed); alt != "" {
+		msg += " — did you mean " + strconv.Quote(alt) + "?"
+	}
+	return msg
+}
+
+// nearestParam matches a supported parameter that differs only by casing or by
+// the plural `s` the filter keys carry.
+func nearestParam(name string, allowed []string) string {
+	for _, a := range allowed {
+		if strings.EqualFold(a, name) || strings.EqualFold(a, name+"s") || strings.EqualFold(name, a+"s") {
+			return a
+		}
+	}
+	return ""
+}
+
+// rejectParams reports the first named query parameter that is present, "" if
+// none are. It is how a mode names a parameter it does not honor instead of
+// dropping it silently: the caller turns a non-empty return into a
+// bad_request.
+func rejectParams(r *http.Request, names ...string) string {
+	q := r.URL.Query()
+	for _, n := range names {
+		if q.Has(n) {
+			return n
+		}
+	}
+	return ""
+}
+
+// parseQuery reads the list parameters: filter (URL-encoded JSON), orderBy
+// ("at:desc,createdAt" or JSON), first/after, and the heavy-data opt-ins.
+func parseQuery(r *http.Request) (substrate.Query, error) {
+	v := r.URL.Query()
+	var q substrate.Query
+	if raw := v.Get("filter"); raw != "" {
+		// The filter document is decoded STRICTLY: a misspelled
+		// filter key must never broaden the query by silently dropping a
+		// narrowing predicate, so an unknown key is a bad_request naming it.
+		if err := decodeJSONStrict(strings.NewReader(raw), &q.Filter); err != nil {
+			return q, errors.New("filter: " + err.Error())
+		}
+	}
+	if raw := v.Get("orderBy"); raw != "" {
+		orders, err := parseOrderBy(raw)
+		if err != nil {
+			return q, err
+		}
+		q.OrderBy = orders
+	}
+	if raw := v.Get("first"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			return q, errors.New("first: not a number")
+		}
+		q.First = n
+	}
+	q.After = v.Get("after")
+	q.WithEdges = v.Get("withEdges") == "1"
+	q.WithAnnotations = v.Get("withAnnotations") == "1"
+	return q, nil
+}
+
+func parseOrderBy(raw string) ([]substrate.Order, error) {
+	if strings.HasPrefix(strings.TrimSpace(raw), "[") {
+		var orders []substrate.Order
+		if err := decodeJSONStrict(strings.NewReader(raw), &orders); err != nil {
+			return nil, errors.New("orderBy: " + err.Error())
+		}
+		return orders, nil
+	}
+	var orders []substrate.Order
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		name, dir, _ := strings.Cut(part, ":")
+		o := substrate.Order{Property: strings.TrimSpace(name)}
+		switch strings.ToLower(strings.TrimSpace(dir)) {
+		case "", "asc":
+		case "desc":
+			o.Desc = true
+		default:
+			return nil, errors.New("orderBy: direction must be asc or desc")
+		}
+		orders = append(orders, o)
+	}
+	return orders, nil
+}
+
+// resourceID is the id a resource route addresses, percent-decoded. A
+// declaration record's id IS a kind reference and therefore carries a `/`,
+// which a client writes as `%2F`: chi routes on the raw path, so the segment
+// stays whole and is decoded here.
+func resourceID(r *http.Request) string {
+	_, _, id := addressed(r)
+	return id
+}

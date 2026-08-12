@@ -1,0 +1,383 @@
+/** Wire shapes for the substrate REST surface (`/api/v1`). Timestamps are
+ * RFC 3339 strings.
+ *
+ * A record's identity is the pair **(kind, id)**: an id is unique only within
+ * its kind, so nothing here addresses a record by bare id. A KIND is a
+ * reference — `<authority>/<name>` when published, a bare `<name>` when the
+ * kind is this repository's own. There is NO tenant and NO group: one user owns
+ * one repository, and authorities replace the old group concept. */
+
+/** The closed wire error set, plus `network` for a
+ * transport failure that never reached the substrate. Clients switch on it. */
+export type ErrorCode =
+  | "bad_request"
+  | "auth"
+  | "forbidden"
+  | "guard"
+  | "not_found"
+  | "conflict"
+  | "compacted"
+  | "validation"
+  | "rate_limited"
+  | "internal"
+  | "unsupported"
+  | "unavailable"
+  | "network"
+
+/** The one error shape every call rejects with: the REST envelope's
+ * `{code, message, problems}` plus the HTTP status that carried it. */
+export class ApiError extends Error {
+  code: ErrorCode
+  status: number
+  problems: string[]
+  retryAfter?: number
+
+  constructor(
+    code: ErrorCode,
+    message: string,
+    status: number,
+    problems: string[] = [],
+    retryAfter?: number
+  ) {
+    super(message)
+    this.name = "ApiError"
+    this.code = code
+    this.status = status
+    this.problems = problems
+    this.retryAfter = retryAfter
+  }
+}
+
+/** An edge reference: `{kind, id}`. The kind is the whole reference
+ * (`people.substrate.reamde.dev/person`, or a bare `task`); a typed property pointer and
+ * an edge target both name their referent this way. */
+export interface Reference {
+  kind: string
+  id: string
+}
+
+/** An outgoing edge target on the wire: id, the target's kind REFERENCE,
+ * display sugar, and the EDGE's own properties (the wire hangs them off the
+ * target the edge points at, not the target's own). */
+export interface EdgeTarget {
+  id: string
+  /** The target's kind reference (`people.substrate.reamde.dev/person`, or bare `task`). */
+  kind: string
+  title?: string
+  properties?: Record<string, unknown>
+}
+
+/** One record as every read serves it (`substrate.Record`). Everything authored
+ * lives in `properties` (title/state included); `propertyMeta` arrives only on
+ * a single-record read.
+ *
+ * NAME NOTE: the server calls this `Record`; TypeScript already owns that name
+ * for its `Record<K, V>` utility type, and shadowing it here would poison every
+ * `Record<string, unknown>` in the console. `SubstrateRecord` is the same thing
+ * with the collision avoided. */
+export interface SubstrateRecord {
+  id: string
+  /** The record's kind reference. */
+  kind: string
+  /** Present only when the id the read was addressed by was not the canonical
+   * one (the record came back through a merge trail). */
+  canonicalId?: string
+  properties: Record<string, unknown>
+  labels: Record<string, unknown>
+  annotations?: Record<string, unknown>
+  version: number
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+  finalizers?: string[]
+  /** The ids this record used to live under, left by merges and server-set. */
+  formerIds?: string[]
+  edges?: Record<string, EdgeTarget[]>
+  propertyMeta?: Record<string, PropertyMeta>
+}
+
+export interface PropertyMeta {
+  manager: string
+  /** The manager's standing against recompute: `machine` may be replaced,
+   * `owner` and `bundle` hold. Absent on rows written before the tiers. */
+  tier?: "owner" | "bundle" | "machine"
+  updatedAt: string
+  alternatives?: PropertyAlternative[]
+}
+
+export interface PropertyAlternative {
+  actor: string
+  value: unknown
+  updatedAt: string
+}
+
+/** One edge reference as write INPUT: bare `{id}` is legal on an edge whose
+ * declaration pins one target kind, else `{kind, id}`. */
+export interface EdgeRef {
+  kind?: string
+  id: string
+}
+
+export interface EdgeInput {
+  rel: string
+  to: EdgeRef
+  properties?: Record<string, unknown>
+}
+
+/** A create/upsert write body (`substrate.PutInput`). Everything authored
+ * rides in `properties`, state properties included — and `put` refuses to move
+ * one, so a transition travels as a `patch`. `kind` is implied by the
+ * collection path, so the REST body omits it; it is kept here for the editor
+ * dialect that carries the whole envelope. */
+export interface PutInput {
+  kind?: string
+  id?: string
+  properties?: Record<string, unknown>
+  labels?: Record<string, unknown>
+  annotations?: Record<string, unknown>
+  edges?: EdgeInput[]
+  ifVersion?: number
+}
+
+/** One keyset page of a collection list. `cursor` is the OPAQUE continuation
+ * token — store it and resend it VERBATIM as `after=`
+ * for the next page; it is omitted once the walk is exhausted. `head` is the
+ * changelog head seq at the page's snapshot (open `watch?from={head}` for a
+ * gapless handoff). The server has NO offset. */
+export interface Page<T = SubstrateRecord> {
+  records: T[]
+  cursor?: string
+  head?: number
+  total?: number
+}
+
+/** One enabled trigger's stance on one change row; omitted entirely when the
+ * trigger cannot fire on the row. `trigger` is the trigger record's id,
+ * `callable` what it invokes; `error` rides along on `parked` only. */
+export interface ChangeTrigger {
+  trigger: string
+  callable: string
+  state: "pending" | "processed" | "parked"
+  error?: string
+}
+
+/** One row of the cross-collection change feed. The payload's `properties` key
+ * names what moved without its values; the values ride with the write's
+ * recorded EFFECTS, which the console reads through `changeEffects`
+ * (lib/changelog.ts) — never raw, and never by the payload key's own name. */
+export interface ChangeRow {
+  seq: number
+  ts: string
+  actor: string
+  op: string
+  recordId: string
+  /** The changed record's kind reference. */
+  kind: string
+  payload?: Record<string, unknown>
+  triggers?: ChangeTrigger[]
+}
+
+/** One history page of the feed, newest first. `cursor` is the CONTINUATION —
+ * the oldest seq on the page, handed back as the next `before`; absent when
+ * the walk is exhausted. */
+export interface ChangePage {
+  changes: ChangeRow[]
+  cursor?: number
+}
+
+/** One predicate of the filter grammar (`substrate.Cond`). The console writes
+ * eq/in/contains/prefix; the rest of the grammar rides along for completeness. */
+export interface Cond {
+  eq?: unknown
+  in?: unknown[]
+  prefix?: string
+  gt?: unknown
+  gte?: unknown
+  lt?: unknown
+  lte?: unknown
+  contains?: unknown
+  exists?: boolean
+}
+
+/** The one-hop reverse predicate: records carrying an edge `rel` (omitted =
+ * any rel) pointing at `to`. */
+export interface EdgeFilter {
+  rel?: string
+  to: string
+  toKind?: string
+}
+
+/** The subset of `substrate.Filter` the console writes (`?filter=` —
+ * URL-encoded JSON). A state property filters through `properties` like any
+ * other. `kinds` is refused on a collection read (the path names the kind) and
+ * is how a repository-wide GraphQL list narrows. */
+export interface RecordFilter {
+  kinds?: string[]
+  properties?: Record<string, Cond>
+  labels?: Record<string, Cond>
+  edge?: EdgeFilter
+}
+
+/** One incoming edge (record-57 fan-in), served as its own paged resource.
+ * `kind` is the pointing record's kind reference. */
+export interface IncomingEdge {
+  rel: string
+  from: { id: string; kind: string; title?: string }
+}
+
+export interface IncomingPage {
+  incoming: IncomingEdge[]
+  cursor?: string
+  total: number
+}
+
+/** One admitted value of an enum property, as the substrate serves it in a
+ * property's `values` (declaration order). `value` is the raw wire value a
+ * write submits; `label` is the authored display name — ALWAYS present, but an
+ * EMPTY string means "no authored label, humanize the value". */
+export interface EnumValue {
+  value: string
+  label: string
+}
+
+/** Parse a property's raw `values` (the enum admitted set) into `EnumValue[]`.
+ * The wire shape is `[{value, label}]`; a bare string element is tolerated and
+ * read as a value with no authored label. Non-string values are dropped. */
+export function parseEnumValues(raw: unknown): EnumValue[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const out: EnumValue[] = []
+  for (const item of raw) {
+    if (typeof item === "string") {
+      out.push({ value: item, label: "" })
+      continue
+    }
+    if (item && typeof item === "object") {
+      const rec = item as Record<string, unknown>
+      if (typeof rec.value === "string") {
+        out.push({
+          value: rec.value,
+          label: typeof rec.label === "string" ? rec.label : "",
+        })
+      }
+    }
+  }
+  return out.length ? out : undefined
+}
+
+/** KindInfo — the projection of one declared kind (iface.go). Replaces v0
+ * `TypeInfo`: `authority` is what published the kind (empty for a
+ * repository-local one), and `identity` is the kind REFERENCE
+ * `<authority>/<name>` (or a bare `<name>`). There is no `sourceYAML` on the
+ * wire (record 61) — the parsed `definition` IS the document. */
+export interface KindInfo {
+  /** The kind REFERENCE: `<authority>/<name>`, or a bare `<name>` for a
+   * repository-local kind. */
+  identity: string
+  name: string
+  /** Who publishes the kind; empty for a repository-local one. */
+  authority: string
+  version: string
+  /** The collection segment. */
+  plural: string
+  /** `builtin` for vocabulary the substrate ships, `installed` for kinds a
+   * bundle declared, `schema` for repository-declared ones. */
+  source: string
+  /** The reconciled declaration — the `data` of the `core.substrate.reamde.dev/kind`
+   * manifest that declares it (`authority`, `names`, `properties`, `edges`, …),
+   * key order lost to jsonb. */
+  definition?: Record<string, unknown>
+}
+
+/** One token record's metadata — never the hash, never the secret. A token has
+ * FULL ACCESS to its repository: no scopes, no actors, no roles. Sessions ARE
+ * these records. */
+export interface TokenInfo {
+  id: string
+  label: string
+  createdAt: string
+  /** Absent = the token lives until it is deleted. */
+  expiresAt?: string
+  /** Coarse: stamped at most once a minute. */
+  lastUsedAt?: string
+}
+
+/** A mint (login, registration or `POST /tokens`): the record, plus the secret
+ * shown ONCE. The secret is `substrate_tok_<hex>`. */
+export interface MintedToken {
+  token: TokenInfo
+  secret: string
+}
+
+/** The TOTP enrollment a registration or a re-enrollment hands back: the seed
+ * the caller holds until it proves one code, and the URI an authenticator
+ * reads. Nothing is written until the code comes back. */
+export interface TOTPEnrollment {
+  totpSecret: string
+  otpauthUri: string
+}
+
+/** What a bundle installs, by kind — the detail preview before installing. */
+export interface BundleResources {
+  kinds?: string[]
+  functions?: string[]
+  agents?: string[]
+  triggers?: string[]
+  /** Record mappings (source-kind → subject-kind projections). Optional so the
+   * detail surface renders them when a catalog grows the list. */
+  mappings?: string[]
+}
+
+/** One installable bundle from the catalog embedded in the binary, plus
+ * whether THIS repository has it. */
+export interface CatalogBundle {
+  /** The bundle's id — its owned authority, matching BundleStatus.id once
+   * installed. */
+  id: string
+  name: string
+  /** The authority the bundle owns. */
+  authority: string
+  description: string
+  version: string
+  /** The bundleconfig-trait kind the bundle configures through. */
+  configType?: string
+  resources: BundleResources
+  installed: boolean
+  /** Catalog facet (backend-owned): this bundle connects an external
+   * provider, so it earns the Integration badge/filter. */
+  integration?: boolean
+  /** A pure-VOCABULARY bundle (backend-owned): a bare org-domain authority
+   * (`people.substrate.reamde.dev`) shipping kinds and nothing else — no config type, no
+   * functions, no OAuth. Repository creation seeds core alone, so the
+   * substrate's own vocabulary arrives through this catalog like everything
+   * else. Optional on the wire read only because an older server may omit it. */
+  vocabulary?: boolean
+  /** The AUTHORITIES this closure declares against — the vocabulary its
+   * mappings, edges and trigger subscriptions point at. Admission REFUSES the
+   * import while one of them is absent from the repository, naming what to
+   * import first, so the console shows them before the button is pressed. */
+  requires?: string[]
+}
+
+/** One installed bundle's computed status — stored nowhere, recomputed per
+ * read (substrate.BundleStatus). */
+export interface BundleStatus {
+  /** The bundle's id — its owned authority ("web.bundles.substrate.reamde.dev"). */
+  id: string
+  name: string
+  authority: string
+  /** The bundleconfig-trait kind whose one live record configures it. */
+  configType?: string
+  /** False while the uninstalled marker stands: schema + data stay, read-only. */
+  installed: boolean
+  /** False when disabled OR uninstalled: execution is stopped. */
+  enabled: boolean
+  /** The configType's one live record exists. */
+  configured: boolean
+  accounts?: number
+  functions?: number
+  kinds?: number
+  /** Live data rows across the owned authority — what a purge would tombstone. */
+  liveRecords?: number
+  quarantined?: boolean
+  error?: string
+}

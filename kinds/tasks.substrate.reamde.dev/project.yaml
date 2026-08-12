@@ -1,0 +1,14 @@
+# what tasks authority under
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: tasks.substrate.reamde.dev/project
+data:
+  authority: tasks.substrate.reamde.dev
+  names:
+    singular: project
+    plural: projects
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      description: the project's name

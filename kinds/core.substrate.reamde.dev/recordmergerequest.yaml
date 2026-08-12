@@ -1,0 +1,57 @@
+# a proposed merge of two records, performed when its decision is accepted
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/recordmergerequest
+data:
+  authority: core.substrate.reamde.dev
+  names:
+    singular: recordmergerequest
+    plural: recordmergerequests
+  # recordpatchrequest's sibling: the envelope a suggested merge travels in
+  # before anyone has agreed to it. A function (the dupe detector) or an app
+  # writes one, the owner decides, and accepting it is what performs the
+  # merge. NOT a systemType: functions and clients create them, and a writer
+  # may compose a deterministic id — that id is the suggestion dedupe AND the
+  # rejection memory (an existing request in any state suppresses
+  # re-suggesting the pair).
+  properties:
+    rationale:
+      type: string
+      description: why the writer proposes this merge, one human sentence
+    evidence:
+      type: json
+      description: the signals that matched and their scores
+    # accepting is what performs the merge: the transition runs `applyMerge`,
+    # which re-runs Merge's own guards in the same transaction — a stale
+    # request (already merged, deleted, type mismatch) fails the transition
+    # whole and annotates the request.
+    decision:
+      type: state
+      description: "proposed until somebody decides; accepting is what performs
+        the merge"
+      states:
+        - proposed
+        - accepted
+        - rejected
+      initial: proposed
+      transitions:
+        - from: proposed
+          to: accepted
+          onEnter: applyMerge
+          stamps:
+            decidedAt: now
+        - from: proposed
+          to: rejected
+          stamps:
+            decidedAt: now
+  edges:
+    # `to: any` on both: anything mergeable may be named, and Merge itself
+    # guards same-type (and refuses core/system types) at apply.
+    winner:
+      to: any
+      required: true
+      description: the record that survives the merge
+    loser:
+      to: any
+      required: true
+      description: the record merged away into the winner

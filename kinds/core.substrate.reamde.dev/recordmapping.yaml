@@ -1,0 +1,51 @@
+# one declared mapping: how a source record's properties reach the subject
+# its edge points at (§6.1, record 50)
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/recordmapping
+data:
+  authority: core.substrate.reamde.dev
+  # v1alpha2: the display template dropped the authority. A declaration's
+  # identity is `<authority>/<name>` and the dotted composite it used to render
+  # names nothing — the bump is what carries the new template into repositories
+  # that already stored the old one.
+  version: v1alpha2
+  names:
+    singular: recordmapping
+    plural: recordmappings
+  # id = "<authority>/<name>". A mapping is authority-local like a property type: its
+  # `from` type lives in the authority that declares it, exactly one mapping per
+  # source type; `to` is always a full type name.
+  displayTemplate: "{name}"
+  properties:
+    # Every declaration carries its own version: the
+    # declaring authority's, unless the declaration overrides it. It is what the
+    # boot-time upgrade diffs a repository's shipped vocabulary against, so
+    # it is written on every projected declaration row.
+    version:
+      type: string
+      description: this declaration's version
+    name:
+      type: string
+      description: the mapping's local name
+    authority:
+      type: string
+      description: the authority that declares it, the source type's own
+    from:
+      type: string
+      description: the source type whose records project
+    to:
+      type: string
+      description: the subject type, always a full type name
+    # the declared edge on `from` that records the link — ordinary in its own
+    # declaration; the mapping, not a flag, is what the engine recognizes.
+    edge:
+      type: string
+      description: the declared edge on the source type that records the link
+    definition:
+      type: json
+      description: the parsed manifest data
+    # No sourceYAML — first shed here (record 58, mappings are mostly
+    # connector-derived), then everywhere (record 61): schema rows store
+    # parsed facts only. The projection still writes an explicit null —
+    # deletion needs no declaration — so rows written before converge.

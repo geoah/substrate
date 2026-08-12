@@ -1,0 +1,67 @@
+# one message in a conversation; outbound ones walk the delivery states
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: messaging.substrate.reamde.dev/conversationmessage
+data:
+  authority: messaging.substrate.reamde.dev
+  names:
+    singular: conversationmessage
+    plural: conversationmessages
+  traits:
+    - temporal(point)
+  # `{snippet}` is the engine's computed excerpt, not a property.
+  displayTemplate: "{author.name}: {snippet}"
+  properties:
+    text:
+      type: markdown
+      embed: true
+      description: the message body, as markdown
+    # inbound and outbound in one state: a synced message is created
+    # `received` and never moves, while anything meant to be sent is created
+    # as a `draft` and walks the send path. A creating write names the state
+    # it wants; one that names none gets `received`.
+    delivery:
+      type: state
+      description: "received for synced messages; a draft walks queued, sending,
+        sent"
+      states:
+        - received
+        - draft
+        - queued
+        - sending
+        - sent
+        - failed
+      initial: received
+      transitions:
+        - from: draft
+          to: queued
+        - from: queued
+          to: sending
+        - from: sending
+          to: sent
+          stamps:
+            sentAt: now
+        - from: sending
+          to: failed
+        - from: failed
+          to: queued
+  edges:
+    conversation:
+      to: conversation
+      required: true
+      ownerRef: true
+      description: the conversation this message belongs to
+    author:
+      to: person
+      required: true
+      description: the person who sent it
+    mentions:
+      to: person
+      many: true
+      description: the people the message mentions
+    replyTo:
+      to: conversationmessage
+      description: the message this one replies to
+    threadRoot:
+      to: conversationmessage
+      description: the thread's first message, for cheap whole-thread queries

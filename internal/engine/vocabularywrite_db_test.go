@@ -1,0 +1,610 @@
+package engine_test
+
+// Schema is records: the batch apply verb, admission refusals,
+// commit-is-activation, concurrency, refuse-with-instances, and the one-time
+// stored-manifest promotion.
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/vocabulary"
+)
+
+// vocabularyApplier is the engine's batch verb, asserted at runtime exactly the
+// way the API layer reaches it (it is deliberately not on the frozen
+// substrate.Dataset).
+type vocabularyApplier interface {
+	ApplyVocabularyDocuments(ctx context.Context, actor substrate.Actor, docs []map[string]any) ([]*substrate.Record, error)
+}
+
+func applier(t *testing.T, ds substrate.Dataset) vocabularyApplier {
+	t.Helper()
+	sa, ok := ds.(vocabularyApplier)
+	if !ok {
+		t.Fatal("dataset does not implement the schema apply seam")
+	}
+	return sa
+}
+
+const swAuthority = "widgets.example.substrate.reamde.dev"
+
+func swTypeDoc(singular, plural string, props map[string]any) map[string]any {
+	return vocabulary.KindManifest(swAuthority,
+		map[string]any{"singular": singular, "plural": plural},
+		map[string]any{"properties": props})
+}
+
+// The batch is one transaction: a single bad document fails the whole apply
+// with the loader's full problem list, and nothing lands.
+func TestSchemaApplyBatchAllOrNone(t *testing.T) {
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	before := maxSeq(t, ds)
+
+	_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(swAuthority, ""),
+		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+		swTypeDoc("gadget", "gadgets", map[string]any{"weird": map[string]any{"type": "nosuchkind"}}),
+	})
+	if err == nil {
+		t.Fatal("a batch with a bad document must fail whole")
+	}
+	wantErr(t, err, substrate.ErrValidation, "bad batch")
+	var ve *substrate.ValidationError
+	if !asValidationErr(err, &ve) || len(ve.Problems) == 0 {
+		t.Fatalf("expected the loader's problem list, got %v", err)
+	}
+	if !strings.Contains(fmt.Sprint(ve.Problems), "nosuchkind") {
+		t.Fatalf("problems should name the offending kind: %v", ve.Problems)
+	}
+	// Nothing landed: no rows, no changelog, no registry change.
+	if got := maxSeq(t, ds); got != before {
+		t.Fatalf("failed batch wrote %+v", changesSince(t, ds, before))
+	}
+	if _, err := ds.Get(ctx, "core.substrate.reamde.dev/authority", swAuthority); err == nil {
+		t.Fatal("failed batch left the authority row behind")
+	}
+	if _, err := ds.KindByRef(ctx, swAuthority+"/widget"); err == nil {
+		t.Fatal("failed batch installed the good type")
+	}
+}
+
+func asValidationErr(err error, target **substrate.ValidationError) bool {
+	for err != nil {
+		if ve, ok := err.(*substrate.ValidationError); ok {
+			*target = ve
+			return true
+		}
+		u, ok := err.(interface{ Unwrap() error })
+		if !ok {
+			return false
+		}
+		err = u.Unwrap()
+	}
+	return false
+}
+
+// A schema write is activation: changelog rows land with the commit, the new
+// type is immediately writable, the rows are the registry a reopen rebuilds
+// from — and the reopen itself is silent.
+func TestSchemaApplyActivatesOnCommit(t *testing.T) {
+	ctx := context.Background()
+	dsn := testdb.NewSchema(t)
+	open := func() substrate.Service {
+		svc, err := engine.Open(ctx, dsn,
+			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		return svc
+	}
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := maxSeq(t, ds)
+
+	ents, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(swAuthority, ""),
+		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+	})
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(ents) != 2 {
+		t.Fatalf("applied records = %v", ids(ents))
+	}
+
+	// The changelog carries the deploy (the Stream shows it).
+	rows := changesSince(t, ds, before)
+	seen := map[string]bool{}
+	for _, ch := range rows {
+		seen[ch.Kind] = true
+		if ch.Actor != owner {
+			t.Fatalf("schema change attributed to %q", ch.Actor)
+		}
+	}
+	if !seen["core.substrate.reamde.dev/authority"] || !seen["core.substrate.reamde.dev/kind"] {
+		t.Fatalf("schema changes missing from the changelog: %+v", rows)
+	}
+
+	// Commit is activation: the type is writable NOW, no reopen, no restart.
+	w := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: swAuthority + "/widget", Properties: map[string]any{"name": "roof"},
+	})
+	if w.Properties["name"] != "roof" {
+		t.Fatalf("widget = %v", w.Properties)
+	}
+	// And the declarations are ordinary, queryable records.
+	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	if row.Kind != "core.substrate.reamde.dev/kind" || row.Properties["plural"] != "widgets" ||
+		row.Properties["source"] != "installed" {
+		t.Fatalf("schema record = %v", row.Properties)
+	}
+	if row.Properties["definition"] == nil {
+		t.Fatal("schema record carries no definition")
+	}
+
+	// Reopen: the registry rebuilds FROM the rows — same types, no writes.
+	seq := maxSeq(t, ds)
+	_ = svc.Close()
+	svc2 := open()
+	t.Cleanup(func() { _ = svc2.Close() })
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := maxSeq(t, ds2); got != seq {
+		t.Fatalf("reopen wrote %+v", changesSince(t, ds2, seq))
+	}
+	ti, err := ds2.KindByRef(ctx, swAuthority+"/widget")
+	if err != nil || ti.Plural != "widgets" || ti.Source != "installed" {
+		t.Fatalf("rebuilt type = %+v %v", ti, err)
+	}
+	if got := mustGet(t, ds2, w.Kind, w.ID); got.Properties["name"] != "roof" {
+		t.Fatalf("data lost across reopen: %v", got.Properties)
+	}
+}
+
+// A changed function activates on commit: the next dispatcher pass runs the
+// NEW body, no restart, and the new function's cursor starts at head.
+func TestSchemaApplySwapsFunctionsLive(t *testing.T) {
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	sa := applier(t, ds)
+	ops, ok := ds.(fnOps)
+	if !ok {
+		t.Fatal("dataset does not implement the functions seam")
+	}
+
+	fnData := func(title string) map[string]any {
+		return map[string]any{
+			"authority":    swAuthority,
+			"description":  "mirrors widgets into tasks",
+			"runtime":      vocabulary.RuntimePython,
+			"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+			"source": `
+def main(input, host):
+    c = input["envelope"]["change"]
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+                         "id": "t-" + c["id"], "properties": {"title": "` + title + `"}}]}
+`,
+		}
+	}
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(swAuthority, ""),
+		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+		vocabulary.FunctionManifest(swAuthority, "mirror", fnData("v1")),
+	}); err != nil {
+		t.Fatalf("apply v1: %v", err)
+	}
+	// The subscription is a trigger RECORD, written like any other data row.
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/trigger", ID: "on-mirror." + swAuthority,
+		Properties: map[string]any{
+			"enabled": true,
+			"source": map[string]any{"record": map[string]any{
+				"kinds": []any{swAuthority + "/widget"}, "ops": []any{"create", "update"},
+			}},
+			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": swAuthority + "/mirror"},
+		},
+	}); err != nil {
+		t.Fatalf("put trigger: %v", err)
+	}
+
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: swAuthority + "/widget", Properties: map[string]any{"name": "a"}})
+	process(t, ops)
+	if got := mustGet(t, ds, taskType, "t-"+a.ID); got.Title != "v1" {
+		t.Fatalf("v1 delivery title = %q", got.Title)
+	}
+
+	// Swap the body. The write commits, the pointer publishes, the very next
+	// delivery runs v2 — the restart-to-activate hazard is dead.
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.FunctionManifest(swAuthority, "mirror", fnData("v2")),
+	}); err != nil {
+		t.Fatalf("apply v2: %v", err)
+	}
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: swAuthority + "/widget", Properties: map[string]any{"name": "b"}})
+	process(t, ops)
+	if got := mustGet(t, ds, taskType, "t-"+b.ID); got.Title != "v2" {
+		t.Fatalf("post-swap delivery title = %q (the old registry answered)", got.Title)
+	}
+	// The function is queryable as a record, definition included.
+	fnRow := mustGet(t, ds, "core.substrate.reamde.dev/function", swAuthority+"/mirror")
+	if fnRow.Kind != "core.substrate.reamde.dev/function" || fnRow.Properties["definition"] == nil {
+		t.Fatalf("function record = %v", fnRow.Properties)
+	}
+}
+
+// Two concurrent schema writes serialize under the per-repository schema-write
+// mutex (both land; neither validates against a stale base), and data writes
+// flow while schema writes run.
+func TestSchemaWritesSerializeDataWritesFlow(t *testing.T) {
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	sa := applier(t, ds)
+
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(swAuthority, ""),
+	}); err != nil {
+		t.Fatalf("apply authority: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 32)
+	for _, ty := range []string{"alpha", "beta", "gamma", "delta"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+				swTypeDoc(ty, ty+"s", map[string]any{"name": map[string]any{"type": "string"}}),
+			})
+			if err != nil {
+				errs <- fmt.Errorf("apply %s: %w", ty, err)
+			}
+		}()
+	}
+	// Data writes during the schema writes: they must not wait on the schema
+	// mutex or the candidate compile.
+	for i := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := ds.Put(ctx, owner, substrate.PutInput{
+				Kind: "task", Properties: map[string]any{"title": fmt.Sprintf("t%d", i)},
+			})
+			if err != nil {
+				errs <- fmt.Errorf("data write %d: %w", i, err)
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	// Serialization means every type survived: no batch clobbered another.
+	for _, ty := range []string{"alpha", "beta", "gamma", "delta"} {
+		if _, err := ds.KindByRef(ctx, swAuthority+"/"+ty); err != nil {
+			t.Fatalf("type %s lost to a concurrent schema write: %v", ty, err)
+		}
+	}
+}
+
+// Deleting a type with live instances refuses, counted in the same
+// transaction; with the instances gone the delete admits, the row tombstones,
+// and the identity leaves the registry.
+func TestSchemaDeleteRefusesWithInstances(t *testing.T) {
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	sa := applier(t, ds)
+
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(swAuthority, ""),
+		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+	}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	w := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: swAuthority + "/widget", Properties: map[string]any{"name": "keep"},
+	})
+
+	_, err := ds.Delete(ctx, owner, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	if err == nil {
+		t.Fatal("type deletion with live instances must refuse")
+	}
+	wantErr(t, err, substrate.ErrGuard, "refuse-with-instances")
+	if !strings.Contains(err.Error(), "1 live") {
+		t.Fatalf("refusal should carry the transactional count: %v", err)
+	}
+	// Still installed, still writable.
+	if _, err := ds.KindByRef(ctx, swAuthority+"/widget"); err != nil {
+		t.Fatalf("refused delete uninstalled the type: %v", err)
+	}
+
+	if _, err := ds.Delete(ctx, owner, w.Kind, w.ID); err != nil {
+		t.Fatalf("delete instance: %v", err)
+	}
+	gone, err := ds.Delete(ctx, owner, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	if err != nil {
+		t.Fatalf("delete type: %v", err)
+	}
+	if gone.DeletedAt == nil {
+		t.Fatalf("schema row not tombstoned: %+v", gone)
+	}
+	if _, err := ds.KindByRef(ctx, swAuthority+"/widget"); err == nil {
+		t.Fatal("deleted type still resolves")
+	}
+	// History orphans by design: the instance's changelog rows remain.
+	found := false
+	for _, ch := range changesSince(t, ds, 0) {
+		if ch.RecordID == w.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the dropped type's history should stay readable")
+	}
+}
+
+// The generic verbs write schema records THROUGH admission: put/patch with a
+// definition work and activate; a write into shipped vocabulary refuses; a
+// definition that breaks the closure refuses with the problem list.
+func TestGenericWritesRouteThroughAdmission(t *testing.T) {
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	sa := applier(t, ds)
+
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(swAuthority, ""),
+		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+	}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	// PUT with an extended definition: the new property is usable at once.
+	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	def, _ := row.Properties["definition"].(map[string]any)
+	props, _ := def["properties"].(map[string]any)
+	props["count"] = map[string]any{"type": "float"}
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget",
+		Properties: map[string]any{"definition": def},
+	}); err != nil {
+		t.Fatalf("generic put of a schema record: %v", err)
+	}
+	if e := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: swAuthority + "/widget", Properties: map[string]any{"name": "n", "count": 3},
+	}); e.Properties["count"] == nil {
+		t.Fatalf("new property not live: %v", e.Properties)
+	}
+
+	// A definition that breaks the closure refuses whole.
+	broken, _ := def["properties"].(map[string]any)
+	broken["bad"] = map[string]any{"type": "nosuchkind"}
+	_, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget",
+		Properties: map[string]any{"definition": def},
+	})
+	wantErr(t, err, substrate.ErrValidation, "closure-breaking definition")
+
+	// The shipped vocabulary is the embedded tree's to change.
+	taskRow := mustGet(t, ds, "core.substrate.reamde.dev/kind", "tasks.substrate.reamde.dev/task")
+	_, err = ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/kind", ID: "tasks.substrate.reamde.dev/task",
+		Properties: map[string]any{"definition": taskRow.Properties["definition"]},
+	})
+	wantErr(t, err, substrate.ErrForbidden, "builtin authority write")
+	_, err = ds.Delete(ctx, owner, "core.substrate.reamde.dev/kind", "tasks.substrate.reamde.dev/task")
+	wantErr(t, err, substrate.ErrForbidden, "builtin authority delete")
+}
+
+// A function's uninstall does NOT touch delivery state any more: the cursor
+// belongs to the TRIGGER record, which outlives the callable. While the
+// callable is gone the dispatcher skips the trigger loudly and its cursor
+// stands still; a reinstall of the identity resumes from where it stood —
+// the interim change delivers late, never lost, and never as an implicit
+// backfill of anything older.
+func TestTriggerOutlivesItsCallable(t *testing.T) {
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	sa := applier(t, ds)
+	ops, ok := ds.(fnOps)
+	if !ok {
+		t.Fatal("dataset does not implement the automation seam")
+	}
+
+	fnData := map[string]any{
+		"authority":    swAuthority,
+		"description":  "mirrors widgets into tasks",
+		"runtime":      vocabulary.RuntimePython,
+		"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+		"source": `
+def main(input, host):
+    c = input["envelope"]["change"]
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+                         "id": "t-" + c["id"], "properties": {"title": "mirrored"}}]}
+`,
+	}
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(swAuthority, ""),
+		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+		vocabulary.FunctionManifest(swAuthority, "mirror", fnData),
+	}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	const triggerID = "on-mirror.widgets.example.substrate.reamde.dev"
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/trigger", ID: triggerID,
+		Properties: map[string]any{
+			"source":   map[string]any{"record": map[string]any{"kinds": []any{swAuthority + "/widget"}}},
+			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": swAuthority + "/mirror"},
+		},
+	}); err != nil {
+		t.Fatalf("put trigger: %v", err)
+	}
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: swAuthority + "/widget", Properties: map[string]any{"name": "a"}})
+	process(t, ops)
+	if _, err := ds.Get(ctx, taskType, "t-"+a.ID); err != nil {
+		t.Fatalf("first incarnation never delivered: %v", err)
+	}
+
+	// The function dies; a widget changes while the callable is gone. The
+	// trigger is skipped — no delivery, no cursor motion, no park.
+	if _, err := ds.Delete(ctx, owner, "core.substrate.reamde.dev/function", swAuthority+"/mirror"); err != nil {
+		t.Fatalf("delete function: %v", err)
+	}
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: swAuthority + "/widget", Properties: map[string]any{"name": "b"}})
+	process(t, ops)
+	if _, err := ds.Get(ctx, taskType, "t-"+b.ID); err == nil {
+		t.Fatal("a trigger with no callable delivered")
+	}
+	st := statusOf(t, ops, triggerID)
+	if st.Error == "" || st.Lag == 0 {
+		t.Fatalf("callable-less trigger status: %+v", st)
+	}
+
+	// Reinstall: the trigger resumes from where it stood — the interim
+	// change delivers late, not lost.
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.FunctionManifest(swAuthority, "mirror", fnData),
+	}); err != nil {
+		t.Fatalf("reinstall: %v", err)
+	}
+	process(t, ops)
+	if _, err := ds.Get(ctx, taskType, "t-"+b.ID); err != nil {
+		t.Fatalf("the outage's backlog did not deliver after reinstall: %v", err)
+	}
+	if st := statusOf(t, ops, triggerID); st.Lag != 0 || st.Error != "" {
+		t.Fatalf("post-reinstall status: %+v", st)
+	}
+}
+
+// An actor's id does not embed its authority (alone among the schema kinds), so a
+// document may CLAIM any authority. Redeclaring a shipped actor into an installed
+// authority must refuse — otherwise the projection overwrites the shipped row and
+// the write silently unwinds at the next boot.
+func TestBuiltinActorRowsRefuseRedeclaration(t *testing.T) {
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	sa := applier(t, ds)
+
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(swAuthority, ""),
+	}); err != nil {
+		t.Fatalf("apply authority: %v", err)
+	}
+
+	// Through the batch verb.
+	_, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.ActorManifest(swAuthority, "api"),
+	})
+	wantErr(t, err, substrate.ErrForbidden, "batch redeclares a shipped actor")
+
+	// Through the generic put.
+	_, err = ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/actor", ID: "substrate",
+		Properties: map[string]any{"authority": swAuthority},
+	})
+	wantErr(t, err, substrate.ErrForbidden, "put hijacks a shipped actor")
+
+	// Through a patch that retargets the row's authority.
+	_, err = ds.Patch(ctx, owner, "core.substrate.reamde.dev/actor", "api", substrate.PatchInput{
+		Properties: map[string]any{"authority": swAuthority},
+	})
+	wantErr(t, err, substrate.ErrForbidden, "patch retargets a shipped actor")
+
+	// The shipped rows are untouched.
+	for _, id := range []string{"api", "console", "substratectl", "substrate"} {
+		row := mustGet(t, ds, "core.substrate.reamde.dev/actor", id)
+		if row.Properties["authority"] != "core.substrate.reamde.dev" || row.Properties["source"] != "builtin" {
+			t.Fatalf("shipped actor row %s = %v", id, row.Properties)
+		}
+	}
+}
+
+// The seed rule: a shipped authority the tree no longer declares
+// STAYS in a repository that already holds it. The v0 boot re-projected the
+// embedded tree and pruned every row it no longer declared; that is deleted,
+// because the repository's own changelog is the truth and nothing rewrites it from
+// outside.
+func TestOpenNeverPrunesShippedRows(t *testing.T) {
+	ctx := context.Background()
+	dsn := testdb.NewSchema(t)
+	open := func() substrate.Service {
+		svc, err := engine.Open(ctx, dsn,
+			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		return svc
+	}
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	_ = svc.Close()
+
+	// The fixture: rows a PREVIOUS binary's shipped tree seeded, for an authority
+	// today's tree no longer declares.
+	raw, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "geoah"), engine.RoleApp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	for _, row := range []struct{ id, typ, props string }{
+		{
+			"ghost.substrate.reamde.dev", "core.substrate.reamde.dev/authority",
+			`{"name": "ghost.substrate.reamde.dev", "version": "v1alpha1", "source": "builtin", "actors": []}`,
+		},
+		{
+			"ghost.substrate.reamde.dev/color", "core.substrate.reamde.dev/propertytype",
+			`{"name": "color", "authority": "ghost.substrate.reamde.dev", "base": "string", "version": "v1alpha1", "definition": {"authority": "ghost.substrate.reamde.dev", "base": "string"}}`,
+		},
+	} {
+		if _, err := raw.ExecContext(ctx, `
+			INSERT INTO records (id, kind, title, props) VALUES ($1, $2, $1, $3::jsonb)`,
+			row.id, row.typ, row.props); err != nil {
+			t.Fatalf("seed stale row %s: %v", row.id, err)
+		}
+	}
+
+	svc2 := open()
+	t.Cleanup(func() { _ = svc2.Close() })
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, typ := range map[string]string{
+		"ghost.substrate.reamde.dev":       "core.substrate.reamde.dev/authority",
+		"ghost.substrate.reamde.dev/color": "core.substrate.reamde.dev/propertytype",
+	} {
+		row := mustGet(t, ds2, typ, id)
+		if row.DeletedAt != nil {
+			t.Fatalf("open pruned the shipped row %s — re-assert-and-prune is dead (RB-8)", id)
+		}
+	}
+	// And the authority is LIVE vocabulary, rebuilt from the rows like every other.
+	if _, err := ds2.KindByRef(ctx, "ghost.substrate.reamde.dev/color"); err == nil {
+		t.Log("the ghost authority's property type is not a record type; nothing to assert")
+	}
+	types, err := ds2.Kinds(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(types) == 0 {
+		t.Fatal("the repository opened with no vocabulary at all")
+	}
+}

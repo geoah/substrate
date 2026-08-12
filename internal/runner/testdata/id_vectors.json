@@ -1,0 +1,104 @@
+{
+  "external": [
+    {
+      "provider": "prov",
+      "account": "acct1",
+      "externalId": "rec/9",
+      "id": "prov-743191e31fee28539c17cfbfe1124285"
+    },
+    {
+      "provider": "google-contacts",
+      "account": "alice@example.com",
+      "externalId": "people/c123",
+      "id": "google-contacts-a10601044c7fbdcfccac0bbe45d28efe"
+    },
+    {
+      "provider": "Provider Name!!",
+      "account": "acct",
+      "externalId": "id",
+      "id": "provider-name-1bcae87dd17a80d07c2f3d8e65abae1c"
+    },
+    {
+      "provider": "a.b_c~d",
+      "account": "acct",
+      "externalId": "e",
+      "id": "a-b-c-d-e10091dd43874e64dff1520f1fcb87a9"
+    },
+    {
+      "provider": "HALF",
+      "account": "a",
+      "externalId": "b",
+      "id": "half-7177eab1ad0488b85c0dcfe38e91de12"
+    },
+    {
+      "provider": "½x",
+      "account": "a",
+      "externalId": "b",
+      "id": "x-16ced3785a2b084be149011f011dfc17"
+    },
+    {
+      "provider": "ÄÖÜ",
+      "account": "a",
+      "externalId": "b",
+      "id": "6f199c400b4d12d721555639b238ed56"
+    },
+    {
+      "provider": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "account": "acct",
+      "externalId": "e",
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-cb4cca3738a2447132a83d03e7fa11f1"
+    },
+    {
+      "provider": "例え",
+      "account": "acct",
+      "externalId": "id",
+      "id": "7fe8289606879e78be7ef8f03cbe4f2f"
+    }
+  ],
+  "url": [
+    {
+      "url": "https://blog.example.com/how-substrates-compose",
+      "id": "url-fcefb9009d7ccad1e93e92a414039dc3"
+    },
+    {
+      "url": "https://example.test/?next=/",
+      "id": "url-7d1feb604e76d9ba813a11a5ce255047"
+    },
+    {
+      "url": "https://example.test/?next=",
+      "id": "url-552107e72319f463167ba9dc3f78059a"
+    },
+    {
+      "url": "https://Example.test/Path",
+      "id": "url-fe1608c9246afba1d942bef112aeed0e"
+    },
+    {
+      "url": "https://example.test/path",
+      "id": "url-75179585afb05f36ef6324fc9dba9bc0"
+    },
+    {
+      "url": "https://example.test/page",
+      "id": "url-071eb5b2beda8805d2794547711881e8"
+    },
+    {
+      "url": "https://example.test/page/",
+      "id": "url-0c01194cb9c8d8434e8f95c0d6e1c919"
+    },
+    {
+      "url": "http://example.test:80/",
+      "id": "url-fd0ff0830ddec3f3de34dc2dc0ae45f3"
+    },
+    {
+      "url": "https://xn--r8jz45g.test/パス",
+      "id": "url-75892e0feead231c84bfcdcce0aed2d8"
+    },
+    {
+      "url": " https://example.test/x \n",
+      "id": "url-d26a5bf6478a4fa1152af73edee7ab92"
+    },
+    {
+      "url": "https://example.test/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "id": "url-33cc9b462d2070f82c29a17810740c9d"
+    }
+  ]
+}

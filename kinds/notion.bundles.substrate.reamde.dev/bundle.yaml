@@ -1,0 +1,919 @@
+# The Notion bundle — a SYNC-ONLY workspace mirror.
+#
+# Connects a Notion workspace through an INTERNAL-INTEGRATION TOKEN (the
+# pasted `secret_…`/`ntn_…` value) and mirrors the pages and data sources
+# shared with that integration into page / database records. It never creates
+# or edits anything in Notion — reads only. Writeback is deferred by decision,
+# not omission: Notion create-page-then-read-computed-state is the case a
+# future workflow primitive answers; nothing here pre-empts it.
+#
+# API VERSION: pinned to 2025-09-03 — the data-source model. Under the older
+# 2022-06-28 pin, a database that grows a second data source DISAPPEARS from
+# search results entirely (Notion's documented old-version behavior), so the
+# mirror would silently lose whole databases. Under 2025-09-03 search returns
+# one `data_source` object per source, each naming its parent database — the
+# mirror keys on the data source and records the containing database id.
+#
+# WHY A TOKEN AND NOT oauth2: Notion's OAuth token exchange authenticates the
+# client with HTTP BASIC (Authorization: Basic base64(client_id:client_secret)),
+# and the host's OAuth facility declares its auth style once, for every bundle —
+# `AuthStyle: oauth2.AuthStyleInParams` (internal/oauthflow/oauthflow.go), body
+# params only, with no per-bundle style knob on the bundle's oauth2 manifest
+# block (schema.BundleOAuth2). The host therefore cannot run Notion's exchange
+# TODAY, and this bundle does not pretend it can: the account is authorized by
+# an internal-integration token instead — a first-class Notion auth model, the
+# right one for a personal substrate anyway (one workspace, no consent dance).
+# When the facility grows a declared token-endpoint auth style, an oauth2
+# revision of this bundle is mechanical (the google bundle is the template).
+#
+# WHY THE TOKEN LIVES ON THE CONFIG, NOT THE ACCOUNT: the engine seals every
+# secret-typed property of an accountconfig-trait type at rest (write.go
+# sealsSecretsAtRest) and the runner's config resolution injects account
+# properties AS STORED — a pasted token on the account would reach the sync
+# body as sealed ciphertext it cannot use. A bundleconfig-trait type's own
+# secrets are the supported pattern (bundleconfig.go: "a connector's OWN
+# config secrets … ARE still injected", the web bundle's firecrawlKey
+# precedent): injected in plaintext, held to the runner boundary by the
+# invocation scrubber, never read back over the API. One token per install is
+# exactly Notion's internal-integration shape — a token addresses ONE
+# workspace, which is also why the sync enforces ONE account: the
+# lexicographically-first account row is the connection; any other row is
+# stamped ignored.
+#
+# Install:  substratectl apply -f bundle.yaml -f triggers.yaml
+# Configure: create ONE config with the integration token.
+# Connect:  create an account (toggles + cadence) — no OAuth flow runs;
+#   the on-connect trigger fires the first sync directly.
+# ---- the owned authority ------------------------------------------------------
+kind: core.substrate.reamde.dev/authority
+metadata: {id: notion.bundles.substrate.reamde.dev}
+data:
+  version: v1alpha1
+---
+# ---- the bundle document: the install unit --------------------------------
+# `installs:` names EXACTLY the authority's schema members. NO `oauth2:` manifest
+# block and no oauth2 trait anywhere: the loader holds those two paired both
+# ways, and this bundle authenticates by token.
+kind: core.substrate.reamde.dev/bundle
+metadata: {id: notion.bundles.substrate.reamde.dev/notion}
+data:
+  authority: notion.bundles.substrate.reamde.dev
+  description: >-
+    Mirrors the Notion pages and data sources shared with an internal integration
+    into the graph — sync-only, token-authorized, no writeback.
+  configType: notion.bundles.substrate.reamde.dev/config
+  installs:
+    - notion.bundles.substrate.reamde.dev/config
+    - notion.bundles.substrate.reamde.dev/account
+    - notion.bundles.substrate.reamde.dev/page
+    - notion.bundles.substrate.reamde.dev/database
+    - notion.bundles.substrate.reamde.dev/workspacesync
+---
+# ---- the config type: the one integration token ---------------------------
+# bundleconfig only (host-enforced singleton) — NOT oauth2, deliberately: a
+# configType implementing oauth2 must ship an `oauth2:` manifest block, and
+# this bundle has no OAuth flow to declare. The token is a secret the sync
+# body itself spends against api.notion.com; it injects in plaintext and the
+# invocation scrubber holds it to the runner boundary.
+kind: core.substrate.reamde.dev/kind
+metadata: {id: notion.bundles.substrate.reamde.dev/config}
+data:
+  authority: notion.bundles.substrate.reamde.dev
+  names: {singular: config, plural: configs}
+  traits: [bundleconfig]
+  displayTemplate: "Notion integration"
+  properties:
+    integrationToken:
+      type: secret
+      writer: owner
+      displayName: Integration token
+      description: >-
+        the Notion internal-integration token (secret_… / ntn_…) — pasted
+        once, sealed against read-back, spent only by the sync body
+    apiBase:
+      type: url
+      writer: owner
+      displayName: API base URL
+      # The body PINS the origin the token may travel to: exactly
+      # https://api.notion.com, or a loopback host (127.0.0.1 / localhost /: :1, any scheme) as the test seam. Anything else logs and parks the
+      # sync WITHOUT sending — an owner-editable URL must never become a
+      # token exfiltration channel. (The declared network capability is the
+      # future host-side enforcement of the same rule.)
+      description: >-
+        test-only override of https://api.notion.com — loopback hosts only;
+        any other origin refuses to sync. Leave empty in production.
+---
+# ---- the account type: one connected workspace ----------------------------
+# accountconfig, so the console's accounts view and the runner's config
+# resolution see it. tokenRef/tokenStatus/grantedScopes are the TRAIT's
+# required properties — declared (writer: oauth) but DORMANT here: no OAuth
+# flow ever writes them under the token model. Connection health reads off
+# the connector-written lastSyncedAt/syncStatus instead.
+#
+# ONE ACCOUNT PER REPOSITORY: the bundle holds one credential (the singleton
+# config), so a second account row would mirror the same workspace twice under
+# different ids. The sync treats the lexicographically-first account row as
+# THE connection and stamps every other row `syncStatus: "ignored: duplicate
+# account …"` — per-account credentials are issue-011 territory.
+kind: core.substrate.reamde.dev/kind
+metadata: {id: notion.bundles.substrate.reamde.dev/account}
+data:
+  authority: notion.bundles.substrate.reamde.dev
+  names: {singular: account, plural: accounts}
+  traits: [accountconfig]
+  displayTemplate: "{displayName}"
+  properties:
+    # The accountconfig trait's required hands — dormant under the token
+    # model (writer: oauth, and the OAuth facility never runs for this
+    # bundle), declared because the trait contract requires them.
+    tokenRef:
+      type: secret
+      writer: oauth
+      displayName: Token reference
+      description: "dormant: the OAuth facility's credential ref — no OAuth
+        flow runs for this bundle"
+    tokenStatus:
+      type: string
+      writer: oauth
+      displayName: Connection status
+      description: "dormant: the OAuth facility's reported state — no OAuth
+        flow runs for this bundle"
+    grantedScopes:
+      type: string
+      repeated: true
+      writer: oauth
+      displayName: Granted scopes
+      description: "dormant: OAuth consent scopes — no OAuth flow runs for
+        this bundle"
+    # The owner's hands.
+    displayName:
+      type: string
+      writer: owner
+      displayName: Workspace name
+      description: a name for this workspace connection, shown wherever the
+        account is listed
+    enabledPages:
+      type: bool
+      writer: owner
+      displayName: Pages
+      description: mirror the pages shared with the integration
+    enabledDatabases:
+      type: bool
+      writer: owner
+      displayName: Databases
+      description: mirror the data sources of the databases shared with the
+        integration
+    syncFrequency:
+      type: enum
+      values:
+        - {value: off, label: Off}
+        - {value: hourly, label: "Every hour"}
+        - {value: daily, label: "Once a day"}
+      required: true
+      default: daily
+      writer: owner
+      displayName: Sync frequency
+      description: "the scheduled sync cadence for this workspace (default
+        daily)"
+    backfillDepth:
+      type: enum
+      values:
+        - {value: none, label: "Don't backfill"}
+        - {value: last30d, label: "Last 30 days"}
+        - {value: last90d, label: "Last 90 days"}
+        - {value: last1y, label: "Last year"}
+        - {value: all, label: Everything}
+      required: true
+      default: all
+      writer: owner
+      displayName: Backfill depth
+      # none = FROM CONNECT TIME FORWARD: the first sync stamps
+      # backfillAnchor and every run measures from that fixed floor — never
+      # a per-run "cutoff = now" that would skip everything forever.
+      description: >-
+        how far back the mirror reaches — none mirrors only edits after connect
+        (the stamped backfillAnchor), last30d/90d/1y reach back from each
+        run, all mirrors everything (default)
+    # Connector STATE the sync body owns (writer: connector — only installed
+    # bundle code may set these).
+    lastSyncedAt:
+      type: datetime
+      writer: connector
+      displayName: Last synced
+      description: when this workspace's search walk last completed — the
+        cadence anchor and completion marker
+    syncStatus:
+      type: string
+      writer: connector
+      displayName: Sync status
+      description: "the last sync outcome (ok | erroring: <reason> | ignored:
+        duplicate account)"
+    backfillAnchor:
+      type: datetime
+      writer: connector
+      displayName: Backfill anchor
+      description: >-
+        run-start of the first sync — the fixed floor `backfillDepth: none`
+        measures from (connect time, forward-only; never recomputed per run)
+---
+# ---- the page mirror: what Notion holds about one page --------------------
+# One page per page shared with the integration. Its id is
+# host.ids.external("notion", account, pageId) — deterministic, per-account.
+# `title` is the reserved built-in (the sync writes it); `content` is the
+# block tree normalized to markdown-ish text; `raw` keeps the page object
+# VERBATIM — its last_edited_time is the delta marker the short-circuit
+# compares (the engine normalizes datetime properties, json passes byte-true).
+kind: core.substrate.reamde.dev/kind
+metadata: {id: notion.bundles.substrate.reamde.dev/page}
+data:
+  authority: notion.bundles.substrate.reamde.dev
+  names: {singular: page, plural: pages}
+  properties:
+    account:
+      type: string
+      displayName: Account
+      description: the account record id this page was synced from
+    pageId:
+      type: string
+      displayName: Page ID
+      description: Notion's page id, dash-stripped 32-hex (per workspace)
+    url:
+      type: url
+      displayName: URL
+      description: the page's notion.so URL
+    lastEditedAt:
+      type: datetime
+      displayName: Last edited
+      description: Notion's last_edited_time — the change marker the delta
+        sync keys on
+    archived:
+      type: bool
+      displayName: Archived
+      description: whether the page sits in Notion's trash
+    content:
+      type: text
+      displayName: Content
+      description: >-
+        the page's block tree, normalized to markdown-ish text — written by
+        the blocks phase AFTER the page row lands, and re-fetched on a later
+        sync if that phase never completed
+    pendingParent:
+      type: json
+      displayName: Pending parent
+      description: >-
+        a parent awaiting its mirror — [type identity, mirror-id], stored
+        when the parent is not mirrored yet and cleared the moment a later
+        sync finds the target (even if the page is unchanged)
+    raw:
+      type: json
+      displayName: Raw
+      description: the raw Notion page object as fetched, for provenance
+  edges:
+    # Optional: a page parented by another page or by a data source links
+    # here once its parent is mirrored too; workspace-parented pages have
+    # none. `to: any` because the parent is a page OR a database.
+    parent:
+      to: any
+      description: the mirrored parent page or data source, when the parent
+        is shared with the integration
+---
+# ---- the data-source mirror -------------------------------------------------
+# One database per DATA SOURCE shared with the integration (API 2025-09-03:
+# search returns data_source objects, one per source — a multi-source database
+# yields one mirror per source, all naming the same containing databaseId).
+# `title` is the built-in; `raw` keeps the data-source object verbatim (its
+# last_edited_time is the delta marker here too).
+kind: core.substrate.reamde.dev/kind
+metadata: {id: notion.bundles.substrate.reamde.dev/database}
+data:
+  authority: notion.bundles.substrate.reamde.dev
+  names: {singular: database, plural: databases}
+  properties:
+    account:
+      type: string
+      displayName: Account
+      description: the account record id this data source was synced from
+    dataSourceId:
+      type: string
+      displayName: Data source ID
+      description: Notion's data-source id, dash-stripped 32-hex — the mirror's
+        key
+    databaseId:
+      type: string
+      displayName: Database ID
+      description: >-
+        the CONTAINING database's id — the parent database, modeled explicitly;
+        a multi-source database's mirrors share this value
+    url:
+      type: url
+      displayName: URL
+      description: the data source's notion.so URL
+    raw:
+      type: json
+      displayName: Raw
+      description: the raw Notion data-source object as fetched, for provenance
+---
+# ---- the sync function -----------------------------------------------------
+# A PEP 723 python body (stdlib HTTP — the Notion API is plain JSON REST, so
+# the script block declares requires-python only and provisioning needs no
+# package downloads). Three phases, each resumable off the causal chain
+# through the paged-checkpoint more/resume contract:
+#
+#   search — one Notion search page (100 objects) per invocation, DESCENDING
+#     by last_edited_time; the first below-cutoff result ends the whole walk.
+#     Rows land WITHOUT content; pages that need a block walk queue up.
+#   blocks — a bounded batch of block-tree walks per invocation, each
+#     patching its page's `content` (deep pages can no longer eat the budget
+#     before a cursor commits).
+#   links  — deferred parent edges; an unresolved target stays stored as
+#     `pendingParent` on the child and is repaired by a LATER sync even when
+#     the child's content is unchanged.
+#
+# The DELTA short-circuit: an object whose raw last_edited_time (and archived
+# flag) matches its mirror is SKIPPED — no block fetch, no effect — so
+# steady-state syncs cost one search walk and nothing else.
+kind: core.substrate.reamde.dev/function
+metadata: {id: notion.bundles.substrate.reamde.dev/workspacesync}
+data:
+  authority: notion.bundles.substrate.reamde.dev
+  # Deliveries sync the account off the causal chain; a direct call with
+  # {account} drains FULLY inside its one invocation (the call path has no
+  # paged checkpoints) — right for steady-state re-syncs, while a large first
+  # backfill should ride the triggers.
+  description: >-
+    Sync the Notion workspace: mirror the shared pages and data sources over
+    the config's integration token, skip unchanged last_edited_times, stamp
+    the account when the walk completes.
+  runtime: python
+  timeoutMs: 60000
+  input:
+    type: object
+    properties:
+      account:
+        type: string
+        description: >-
+          an account record id to sync immediately, cadence ignored — the
+          whole drain runs inside this one invocation
+  capabilities:
+    emit:
+      - notion.bundles.substrate.reamde.dev/page
+      - notion.bundles.substrate.reamde.dev/database
+      - notion.bundles.substrate.reamde.dev/account
+    # The delta short-circuit reads the mirrors back; the search and links
+    # phases probe parent targets. Budget: one search page reads at most
+    # SEARCH_PAGE mirrors plus a parent probe each.
+    reads:
+      kinds:
+        - notion.bundles.substrate.reamde.dev/page
+        - notion.bundles.substrate.reamde.dev/database
+      budgets: {calls: 300, rows: 3000}
+    network:
+      - "api.notion.com"
+  source: |
+    # /// script
+    # requires-python = ">=3.11"
+    # dependencies = []
+    # ///
+    """Notion workspace sync — search / blocks / links phases, read-only.
+
+    The integration token arrives injected on the bundle config
+    (`config.config.properties.integrationToken`, plaintext inside the runner
+    boundary, scrubbed on every surface that leaves it) and is spent ONLY
+    against the pinned https://api.notion.com origin or a loopback test
+    seam. The body never writes to Notion: no page creation, no edits, no
+    archival — the named future case for that (create page, read computed
+    state, write children) is deferred to a workflow primitive (2026-08
+    function-write-model SYNTHESIS).
+
+    One account per repository: the config holds one workspace token, so the
+    lexicographically-first account row is THE connection; every other
+    row is stamped `syncStatus: "ignored: duplicate account …"`.
+
+    Delta optimization (the linkprovider's last_edited_time short-circuit,
+    kept): before staging anything the mirror is read back and its VERBATIM
+    raw.last_edited_time (json round-trips byte-true; the datetime property
+    normalizes) is compared to the fetched object's — an unchanged page
+    fetches no blocks and stages no effect. Two repairs run INDEPENDENTLY of
+    that skip: a stored pendingParent whose target has since mirrored gets
+    its edge, and a mirror whose blocks phase never completed re-queues its
+    content walk.
+    """
+    import datetime as _dt
+    import json
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    AUTHORITY = "notion.bundles.substrate.reamde.dev"
+    PAGE_TYPE = AUTHORITY + "/page"
+    DB_TYPE = AUTHORITY + "/database"
+    ACCOUNT_TYPE = AUTHORITY + "/account"
+    NOTION_VERSION = "2025-09-03"  # data-source aware; 2022-06-28 LOSES multi-source databases
+    DEFAULT_API = "https://api.notion.com"
+    SEARCH_PAGE = 100   # Notion's search maximum — one provider page per invocation
+    BLOCKS_PAGE = 3     # pages whose block trees are walked per blocks invocation
+    LINKS_PAGE = 15     # deferred parent edges resolved per links invocation
+    MAX_BLOCKS = 500    # block-walker budget per page (truncation marker past it)
+    MAX_DEPTH = 2       # nested-children recursion cap
+    MAX_CALL_STEPS = 2000  # the direct-call internal drain's hard stop
+    BACKFILL_DAYS = {"last30d": 30, "last90d": 90, "last1y": 365}
+    DUPLICATE_NOTE = ("ignored: duplicate account (this provider is "
+                      "one-account-per-repository until issue 011)")
+
+
+    def _req(api, token, method, path, payload=None):
+        headers = {
+            "Authorization": "Bearer " + token,
+            "Notion-Version": NOTION_VERSION,
+            "Accept": "application/json",
+        }
+        data = None
+        if payload is not None:
+            data = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(api + path, data=data, headers=headers,
+                                     method=method)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+
+    def _api_allowed(api):
+        # ORIGIN PINNING: the injected token may travel to (a) HTTPS
+        # api.notion.com — the provider's one production host — or (b) a
+        # loopback host, any scheme, as the test seam. An owner-editable
+        # apiBase that points anywhere else must never see the secret.
+        u = urllib.parse.urlsplit(api)
+        host = (u.hostname or "").lower()
+        if host in ("127.0.0.1", "localhost", "::1"):
+            return True
+        return u.scheme == "https" and host == "api.notion.com"
+
+
+    def _norm_id(raw):
+        s = str(raw or "").replace("-", "").lower()
+        return s if len(s) == 32 else ""
+
+
+    def _dashed(pid):
+        # Notion's API prefers the canonical 8-4-4-4-12 form on the wire.
+        return "-".join((pid[0:8], pid[8:12], pid[12:16], pid[16:20], pid[20:32]))
+
+
+    def _rich(rt):
+        return "".join(t.get("plain_text") or "" for t in rt or [])
+
+
+    def _page_title(page):
+        for prop in (page.get("properties") or {}).values():
+            if isinstance(prop, dict) and prop.get("type") == "title":
+                return _rich(prop.get("title"))
+        return ""
+
+
+    def _render(block, depth):
+        t = block.get("type") or ""
+        body = block.get(t) if isinstance(block.get(t), dict) else {}
+        text = _rich(body.get("rich_text"))
+        indent = "  " * depth
+        if t == "heading_1":
+            return "# " + text
+        if t == "heading_2":
+            return "## " + text
+        if t == "heading_3":
+            return "### " + text
+        if t == "bulleted_list_item" or t == "toggle":
+            return indent + "- " + text
+        if t == "numbered_list_item":
+            return indent + "1. " + text
+        if t == "to_do":
+            return indent + "- [" + ("x" if body.get("checked") else " ") + "] " + text
+        if t in ("quote", "callout"):
+            return indent + "> " + text
+        if t == "code":
+            return "```" + (body.get("language") or "") + "\n" + text + "\n```"
+        if t == "divider":
+            return "---"
+        if t == "child_page":
+            return indent + "[child page: " + (body.get("title") or "") + "]"
+        if t == "child_database":
+            return indent + "[child database: " + (body.get("title") or "") + "]"
+        if t in ("bookmark", "link_preview", "embed"):
+            return indent + (body.get("url") or "")
+        if t == "image":
+            src = ((body.get("file") or {}).get("url")
+                   or (body.get("external") or {}).get("url") or "")
+            return indent + "![image](" + src + ")" if src else ""
+        if t == "paragraph" or text:
+            return indent + text if text else ""
+        return "[unsupported: " + t + "]" if t else ""
+
+
+    def _walk(api, token, block_id, depth, budget, lines):
+        # The block-tree walker: paged children, bounded recursion, and a hard
+        # block budget so a pathological page cannot eat the invocation.
+        cursor = ""
+        while True:
+            path = "/v1/blocks/" + block_id + "/children?page_size=100"
+            if cursor:
+                path += "&start_cursor=" + urllib.parse.quote(cursor)
+            resp = _req(api, token, "GET", path)
+            for b in resp.get("results") or []:
+                if budget[0] <= 0:
+                    lines.append("[content truncated]")
+                    return
+                budget[0] -= 1
+                line = _render(b, depth)
+                if line:
+                    lines.append(line)
+                if (b.get("has_children") and depth < MAX_DEPTH
+                        and (b.get("type") or "") not in ("child_page", "child_database")):
+                    _walk(api, token, b.get("id") or "", depth + 1, budget, lines)
+            cursor = resp.get("next_cursor") or ""
+            if not resp.get("has_more") or not cursor:
+                return
+
+
+    def _wants(acct):
+        p = acct.get("properties") or {}
+        return bool(p.get("enabledPages") or p.get("enabledDatabases"))
+
+
+    def _due(props):
+        freq = (props.get("syncFrequency") or "daily").lower()
+        if freq == "off":
+            return False
+        last = props.get("lastSyncedAt")
+        if not last:
+            return True
+        try:
+            seen = _dt.datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        hours = 1 if freq == "hourly" else 24
+        return _dt.datetime.now(_dt.timezone.utc) - seen >= _dt.timedelta(hours=hours)
+
+
+    def _cutoff(props):
+        # -> (cutoff-iso or "", stamp-anchor?). The fleet mapping: none means
+        # FROM CONNECT TIME FORWARD (the first sync stamps backfillAnchor and
+        # every run measures from it — never a per-run "cutoff = now" that
+        # skips everything), last30d/90d/1y reach back from each run, all
+        # means no cutoff.
+        depth = (props.get("backfillDepth") or "all").lower()
+        if depth == "all":
+            return "", False
+        now = _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0)
+        days = BACKFILL_DAYS.get(depth)
+        if days:
+            return (now - _dt.timedelta(days=days)).isoformat(), False
+        anchor = props.get("backfillAnchor")
+        if anchor:
+            return str(anchor), False
+        return now.isoformat(), True
+
+
+    def _parse_ts(s):
+        try:
+            ts = _dt.datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if ts.tzinfo is None:
+            # A normalized datetime property may round-trip without a zone;
+            # the wire values are UTC, so pin it rather than raise on compare.
+            ts = ts.replace(tzinfo=_dt.timezone.utc)
+        return ts
+
+
+    def _unchanged(existing, obj):
+        # THE DELTA SHORT-CIRCUIT: compare the fetched object's
+        # last_edited_time (Notion's authoritative change marker — the old
+        # linkprovider's ETag) against the mirror's VERBATIM raw copy. json
+        # round-trips byte-true; the lastEditedAt datetime property is
+        # engine-normalized and would false-mismatch.
+        if not existing:
+            return False
+        raw = (existing.get("properties") or {}).get("raw") or {}
+        return (raw.get("last_edited_time") == obj.get("last_edited_time")
+                and bool(raw.get("archived")) == bool(obj.get("archived")))
+
+
+    def _kind(raw):
+        # pendingParent is PERSISTED, so a stored kind can be older than this
+        # build: rows written before the destutter hold "notionpage", rows
+        # written after it held the bare "page". Everything normalizes to a
+        # FULL identity here, because host.records.get takes nothing else.
+        k = str(raw or "")
+        if k in ("page", "notionpage"):
+            return PAGE_TYPE
+        if k in ("database", "notiondatabase"):
+            return DB_TYPE
+        return k
+
+
+    def _ref(kind, mid):
+        # An edge reference is {kind, id} — the same kind reference every
+        # host.records.* / host.effects.* call takes.
+        return {"kind": _kind(kind), "id": mid}
+
+
+    def _stamp_duplicate(host, acct):
+        # F8: one credential, one account — every row that is not the
+        # lexicographically-first is stamped once and never synced.
+        props = acct.get("properties") or {}
+        if props.get("syncStatus") == DUPLICATE_NOTE:
+            return
+        host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), acct.get("id"),
+                           properties={"syncStatus": DUPLICATE_NOTE})
+
+
+    def _stage_data_source(host, aid, mid, dsid, obj, seen, state):
+        if _unchanged(host.records.get(DB_TYPE, mid), obj):
+            return
+        out = {"title": _rich(obj.get("title")), "account": aid,
+               "dataSourceId": dsid, "raw": obj}
+        dbid = _norm_id((obj.get("parent") or {}).get("database_id"))
+        if dbid:
+            out["databaseId"] = dbid
+        if obj.get("url"):
+            out["url"] = obj["url"]
+        host.effects.put(DB_TYPE, mid, properties=out)
+        seen.add(mid)
+        state["count"] += 1
+
+
+    def _stage_page(host, aid, mid, oid, obj, seen, state):
+        existing = host.records.get(PAGE_TYPE, mid)
+        if _unchanged(existing, obj):
+            # Unchanged since the mirror: skip — no block fetch, no put. This
+            # is where a steady-state sync earns its keep. Two REPAIRS run
+            # independently of the skip:
+            props = (existing or {}).get("properties") or {}
+            # 1. A stored pendingParent whose target has since been shared
+            #    gets its edge now — the child being unchanged must not strand
+            #    the link forever.
+            pend = props.get("pendingParent")
+            if isinstance(pend, list) and len(pend) == 2:
+                pkind, pmid = _kind(pend[0]), str(pend[1])
+                if pmid in seen or host.records.get(pkind, pmid):
+                    host.effects.link(PAGE_TYPE, mid, "parent", _ref(pkind, pmid))
+                    host.effects.patch(PAGE_TYPE, mid,
+                                       properties={"pendingParent": None})
+            # 2. A mirror whose blocks phase never completed (content absent)
+            #    re-queues its walk.
+            if not props.get("archived") and not props.get("content"):
+                state["blocks"].append([mid, oid])
+            return
+        archived = bool(obj.get("archived"))
+        out = {"title": _page_title(obj), "account": aid, "pageId": oid,
+               "archived": archived, "raw": obj}
+        if archived:
+            out["content"] = ""
+        if obj.get("last_edited_time"):
+            out["lastEditedAt"] = obj["last_edited_time"]
+        if obj.get("url"):
+            out["url"] = obj["url"]
+        edges = None
+        parent = obj.get("parent") or {}
+        ptype = parent.get("type") or ""
+        pid, pkind = "", ""
+        # The kind is the FULL type identity: host.records.get below takes
+        # nothing less, and a bare "page" is ambiguous the moment a second
+        # bundle declaring a `page` is installed beside this one.
+        if ptype == "page_id":
+            pid, pkind = _norm_id(parent.get("page_id")), PAGE_TYPE
+        elif ptype == "data_source_id":
+            pid, pkind = _norm_id(parent.get("data_source_id")), DB_TYPE
+        elif ptype == "database_id":
+            # 2025-09-03 reports data-source parents for database rows; a
+            # bare database_id parent still resolves against a data-source
+            # mirror only if the ids coincide — otherwise it stays pending.
+            pid, pkind = _norm_id(parent.get("database_id")), DB_TYPE
+        if pid:
+            pmid = host.ids.external("notion", aid, pid)
+            if pmid in seen or host.records.get(pkind, pmid):
+                edges = {"parent": _ref(pkind, pmid)}
+            else:
+                # Parent not mirrored yet: keep the reference ON the child so
+                # a later sync can repair it, and defer to the links phase.
+                out["pendingParent"] = [pkind, pmid]
+                state["pending"].append([mid, pkind, pmid])
+        host.effects.put(PAGE_TYPE, mid, properties=out, edges=edges)
+        seen.add(mid)
+        state["count"] += 1
+        if not archived:
+            # Content arrives in the BLOCKS phase — its own resumable unit,
+            # so a deep page cannot eat this invocation's budget.
+            state["blocks"].append([mid, oid])
+
+
+    def _search_step(host, api, token, acct, state, seen):
+        aid = state["account"]
+        props = acct.get("properties") or {}
+        want_pages = bool(props.get("enabledPages"))
+        want_dbs = bool(props.get("enabledDatabases"))
+        cutoff = _parse_ts(state["cutoff"]) if state.get("cutoff") else None
+
+        payload = {"page_size": SEARCH_PAGE,
+                   "sort": {"direction": "descending", "timestamp": "last_edited_time"}}
+        if want_pages != want_dbs:
+            payload["filter"] = {"property": "object",
+                                 "value": "page" if want_pages else "data_source"}
+        if state.get("cursor"):
+            payload["start_cursor"] = state["cursor"]
+        resp = _req(api, token, "POST", "/v1/search", payload)
+
+        stop = False
+        for obj in resp.get("results") or []:
+            kind = obj.get("object") or ""
+            oid = _norm_id(obj.get("id"))
+            if not oid:
+                continue
+            edited = _parse_ts(obj.get("last_edited_time"))
+            if cutoff is not None and edited is not None and edited < cutoff:
+                # The walk is DESCENDING by last_edited_time: the first
+                # below-cutoff result proves everything after it is older
+                # still. End the WHOLE walk here — never scan history that
+                # the backfill window excludes.
+                stop = True
+                break
+            mid = host.ids.external("notion", aid, oid)
+            if kind == "data_source" and want_dbs:
+                _stage_data_source(host, aid, mid, oid, obj, seen, state)
+            elif kind == "page" and want_pages:
+                _stage_page(host, aid, mid, oid, obj, seen, state)
+
+        next_cursor = resp.get("next_cursor") or ""
+        if not stop and resp.get("has_more") and next_cursor:
+            state["cursor"] = next_cursor
+            return state
+
+        # The search walk concluded (drained, or cutoff-stopped): stamp the
+        # account — the on-connect trigger's guard drops once lastSyncedAt
+        # exists — then hand off to the blocks phase, then links.
+        now = _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()
+        host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid,
+                           properties={"lastSyncedAt": now, "syncStatus": "ok"})
+        state["cursor"] = ""
+        if state["blocks"]:
+            state["phase"] = "blocks"
+            return state
+        if state["pending"]:
+            state["phase"] = "links"
+            return state
+        return None
+
+
+    def _blocks_step(host, api, token, state):
+        # The block traversal, ITS OWN resumable phase: a bounded batch of
+        # walks per invocation, each patching the page it belongs to.
+        take, keep = state["blocks"][:BLOCKS_PAGE], state["blocks"][BLOCKS_PAGE:]
+        for mid, oid in take:
+            lines = []
+            _walk(api, token, _dashed(oid), 0, [MAX_BLOCKS], lines)
+            host.effects.patch(PAGE_TYPE, mid,
+                               properties={"content": "\n".join(lines)})
+        state["blocks"] = keep
+        if keep:
+            return state
+        if state["pending"]:
+            state["phase"] = "links"
+            return state
+        return None
+
+
+    def _links_step(host, state, seen):
+        # Deferred parent edges: a child mirrored before its parent could not
+        # link inline; once the walk drains, this phase probes each target
+        # and links the ones that exist. An absent target stays recorded as
+        # the child's pendingParent — a later sync repairs it if the parent
+        # is ever shared.
+        take, keep = state["pending"][:LINKS_PAGE], state["pending"][LINKS_PAGE:]
+        for child, pkind, pmid in take:
+            pkind = _kind(pkind)
+            if pmid in seen or host.records.get(pkind, pmid):
+                host.effects.link(PAGE_TYPE, child, "parent", _ref(pkind, pmid))
+                host.effects.patch(PAGE_TYPE, child,
+                                   properties={"pendingParent": None})
+            else:
+                host.log("notion: parent of %s is not mirrored; pendingParent "
+                         "stays for a later sync" % child)
+        state["pending"] = keep
+        if keep:
+            return state
+        return None
+
+
+    def _step(host, api, token, accounts, state, seen):
+        # One unit of work -> (next-state or None, output-when-done). The
+        # account is re-validated on EVERY step: if it vanished from config
+        # or dropped its toggles mid-drain, the drain ends HERE — its search
+        # cursor and pending links are minted under THIS account's filter and
+        # must never leak into any later drain.
+        aid = state["account"]
+        acct = accounts.get(aid)
+        if acct is None or not _wants(acct):
+            host.log("notion: account %s is gone or disabled; the drain ends" % aid)
+            return None, {"account": aid, "skipped": True}
+        try:
+            if state["phase"] == "blocks":
+                nxt = _blocks_step(host, api, token, state)
+            elif state["phase"] == "links":
+                nxt = _links_step(host, state, seen)
+            else:
+                nxt = _search_step(host, api, token, acct, state, seen)
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            # Provider trouble degrades THIS account and ends the drain clean
+            # — the stamp is the operator's signal, and lastSyncedAt did not
+            # advance, so the next scheduled fire retries.
+            reason = ("%s" % e)[:200]
+            host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid,
+                               properties={"syncStatus": "erroring: " + reason})
+            host.log("notion: sync of %s failed: %s" % (aid, reason))
+            return None, {"account": aid, "erroring": True}
+        if nxt is not None:
+            return nxt, None
+        return None, {"account": aid, "mirrored": state["count"]}
+
+
+    def main(input, host):
+        cfg = input.get("config") or {}
+        bcfg = ((cfg.get("config") or {}).get("properties")) or {}
+        token = bcfg.get("integrationToken") or ""
+        api = (bcfg.get("apiBase") or DEFAULT_API).rstrip("/")
+        accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
+
+        if not _api_allowed(api):
+            host.log("notion: apiBase %r is neither https://api.notion.com nor "
+                     "loopback — refusing to spend the integration token" % api)
+            raise RuntimeError("notion: apiBase failed origin pinning")
+        if not token:
+            host.log("notion: the bundle config has no integrationToken — nothing to sync")
+            return {"effects": []}
+
+        # Mirror ids staged under this invocation (or under the whole direct-
+        # call drain): probes check here first, because staged effects are
+        # not readable back until they commit.
+        seen = set()
+
+        resume = host.page.resume() or None
+        if resume:
+            state = resume
+        else:
+            primary = min(accounts) if accounts else None
+            args = input.get("args") or {}
+            record = (input.get("envelope") or {}).get("record") or {}
+            target = ""
+            if args.get("account"):
+                # A direct call: sync this account now, cadence ignored.
+                target = str(args["account"])
+            # The envelope SPLITS identity: `type` is the bare local name and
+            # `authority` the authority, so the full identity (ruling A9) has to be
+            # recomposed. Comparing the local name alone would match any
+            # authority's `account`.
+            elif (record.get("kind") or "") == ACCOUNT_TYPE:
+                # Record-triggered: the on-connect backfill for one account.
+                target = record.get("id") or ""
+            if target:
+                if target not in accounts:
+                    host.log("notion: account %s is not in this bundle's config" % target)
+                    return {"effects": []}
+                if target != primary:
+                    _stamp_duplicate(host, accounts[target])
+                    return {"output": {"account": target, "ignored": True}}
+                sync = _wants(accounts[target])
+            else:
+                # Schedule-triggered: stamp every duplicate row, then sync
+                # the primary when its own cadence says so.
+                for aid, acct in accounts.items():
+                    if aid != primary:
+                        _stamp_duplicate(host, acct)
+                sync = (primary is not None and _wants(accounts[primary])
+                        and _due(accounts[primary].get("properties") or {}))
+            if not sync:
+                return {"output": {"synced": False}}
+            props = accounts[primary].get("properties") or {}
+            cutoff, stamp_anchor = _cutoff(props)
+            if stamp_anchor:
+                # First sync under backfillDepth none: pin the floor to THIS
+                # run's start, once — every later run reuses the stamp.
+                host.effects.patch((accounts[primary].get("kind") or ACCOUNT_TYPE), primary,
+                                   properties={"backfillAnchor": cutoff})
+            state = {"phase": "search", "account": primary, "cursor": "",
+                     "cutoff": cutoff, "blocks": [], "pending": [], "count": 0}
+
+        if (input.get("mode") or "") == "call":
+            # The single-shot callers discard `more`, so the call path drains
+            # FULLY inside this one invocation — bounded by the manifest
+            # timeout, the read budget and the frame cap, which is why the
+            # manifest points big first backfills at the triggers instead.
+            out = None
+            for _ in range(MAX_CALL_STEPS):
+                state, out = _step(host, api, token, accounts, state, seen)
+                if state is None:
+                    return {"output": out}
+            raise RuntimeError("notion: direct call exceeded %d steps" % MAX_CALL_STEPS)
+
+        nxt, out = _step(host, api, token, accounts, state, seen)
+        if nxt is not None:
+            return {"more": host.page.more(nxt)}
+        return {"output": out}

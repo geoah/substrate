@@ -1,0 +1,3346 @@
+# The Google bundle — the substrate's FIRST real integration, end to end.
+#
+# THREE streams, one account: CONTACTS (the address book), GMAIL (threads and
+# messages) and CALENDAR (calendars and event instances). Each is a separate
+# account toggle, a separate scope, a separate sync function, a separate pair
+# of triggers and a separate slice of connector state, so one stream erroring
+# never stalls another. It composes from the primitive set the way the
+# URL-harvester does — bundle + kind + trait + function + recordmapping +
+# trigger — but adds the two things a real connector needs and the harvester
+# did not: the host OAUTH facility (the oauth2 trait on the config,
+# accountconfig on the account) and the CONNECTOR RUNTIME (contacts through a
+# PEP 723 body that imports google-api-python-client under uv; gmail and
+# calendar on the dependency-free fast path, stdlib urllib only, so their
+# request origins can be pinned by hand).
+#
+# The record shapes follow the beeper precedent: each provider record is
+# MIRRORED in Google's own shape inside this authority, and the sync ALSO emits the
+# core vocabulary row for the same logical object (emailthread, emailmessage,
+# calendar.substrate.reamde.dev/calendar, calendarevent) under the SAME derived id, with
+# its required edges supplied explicitly. Recordmappings resolve PEOPLE and
+# nothing else: an `emailaddress` record per address seen, mapped onto
+# `person`, which the core rows then reference one hop away. A mapping cannot
+# target emailmessage/emailthread/calendarevent at all — those types are
+# externally named and carry required edges a mapping's shell mint cannot fill
+# (ticket 041 has the three engine blocks written down).
+#
+# Install:  substratectl apply -f bundle.yaml -f triggers.yaml
+# Configure: create ONE config record — ONLY the Google OAuth
+#   client id + secret. The provider ENDPOINTS and the feature→scope mapping
+#   are TRUSTED bundle-manifest metadata (the `oauth2:` block on the bundle
+#   document below), never config-record properties: a config edit can no
+#   longer redirect a token exchange or a revocation (review-google #1).
+# Connect:  create an account, then run the host OAuth flow against it —
+#   the callback URL the user registers in their Google client is the host's
+#   GET …/api/v1/core.substrate.reamde.dev/oauth/callback (see README).
+#
+# This file is the SCHEMA closure (the atomic install unit). The delivery
+# wiring lives beside it in triggers.yaml as ordinary data records.
+# ---- the owned authority ------------------------------------------------------
+kind: core.substrate.reamde.dev/authority
+metadata: {id: google.bundles.substrate.reamde.dev}
+data:
+  version: v1alpha1
+---
+# ---- the bundle document: the install unit --------------------------------
+# `installs:` names EXACTLY the authority's schema members (every kind but the
+# authority header and the bundle itself): the two config types, the four mirror
+# record types plus the shared emailaddress source, the three sync functions,
+# the batched id migration, and the two mappings onto person.
+kind: core.substrate.reamde.dev/bundle
+metadata: {id: google.bundles.substrate.reamde.dev/google}
+data:
+  authority: google.bundles.substrate.reamde.dev
+  description: >-
+    Connects a Google account and syncs its address book, mail and calendars
+    into records mapped onto the core people, messaging and calendar vocabulary.
+  configType: google.bundles.substrate.reamde.dev/config
+  # The vocabulary this bundle maps ONTO. People, messaging and calendar are
+  # importable vocabulary bundles, not seeded, so the closure only admits once
+  # they are present — import them first or this install is refused naming
+  # what is missing.
+  requires:
+    - calendar.substrate.reamde.dev
+    - messaging.substrate.reamde.dev
+    - people.substrate.reamde.dev
+  # TRUSTED provider metadata (review-google #1): the host reads endpoints and
+  # the feature→scope mapping ONLY from here — the immutable install artifact —
+  # never from the mutable config record. https-only (a config edit cannot
+  # point a token exchange at an attacker). All THREE features are wired, each
+  # to its own scope: the requested union is derived per StartOAuth from the
+  # account's enabled toggles, so turning gmail on for an already-connected
+  # account needs a RECONNECT (grantedScopes drives it).
+  #
+  # `gmail.readonly` is one of Google's RESTRICTED scopes: a published client
+  # needs CASA verification, and an External+Testing client has its refresh
+  # tokens revoked after 7 days. `calendar.readonly` is chosen over the
+  # granular pair (calendar.events.readonly + calendar.calendarlist.readonly)
+  # because it covers calendarList.list AND events.list in one consent line.
+  oauth2:
+    authorizationEndpoint: https://accounts.google.com/o/oauth2/v2/auth
+    tokenEndpoint: https://oauth2.googleapis.com/token
+    revocationEndpoint: https://oauth2.googleapis.com/revoke
+    # After the exchange the facility reads the connected account's own address
+    # off People `people/me` (the contacts.readonly grant authorizes it — no
+    # extra identity scope) and writes it into the account's `email` property as
+    # the substrate.oauth actor. The user never types their email; it comes from
+    # the grant (review-google #2 — email is writer: oauth).
+    emailEndpoint: https://people.googleapis.com/v1/people/me?personFields=emailAddresses
+    emailProperty: email
+    featureScopes:
+      enabledContacts:
+        - https://www.googleapis.com/auth/contacts.readonly
+      enabledGmail:
+        - https://www.googleapis.com/auth/gmail.readonly
+      enabledCalendar:
+        - https://www.googleapis.com/auth/calendar.readonly
+  installs:
+    - google.bundles.substrate.reamde.dev/config
+    - google.bundles.substrate.reamde.dev/account
+    - google.bundles.substrate.reamde.dev/contact
+    - google.bundles.substrate.reamde.dev/emailaddress
+    - google.bundles.substrate.reamde.dev/thread
+    - google.bundles.substrate.reamde.dev/message
+    - google.bundles.substrate.reamde.dev/calendar
+    - google.bundles.substrate.reamde.dev/event
+    - google.bundles.substrate.reamde.dev/contactssync
+    - google.bundles.substrate.reamde.dev/contactsidmigration
+    - google.bundles.substrate.reamde.dev/gmailsync
+    - google.bundles.substrate.reamde.dev/calendarsync
+    - google.bundles.substrate.reamde.dev/contactperson
+    - google.bundles.substrate.reamde.dev/emailaddressperson
+---
+# ---- the config type: the one Google OAuth client -------------------------
+# bundleconfig (the host-enforced singleton) + oauth2 (the OAuth CLIENT
+# credentials the facility uses to exchange codes). One live record per bundle:
+# the Google OAuth client the owner registers — ONLY its clientId and
+# secret-typed clientSecret. The provider ENDPOINTS and the feature→scope
+# mapping are trusted manifest metadata (the bundle's `oauth2:` block above),
+# never properties on this mutable row (review-google #1).
+kind: core.substrate.reamde.dev/kind
+metadata: {id: google.bundles.substrate.reamde.dev/config}
+data:
+  authority: google.bundles.substrate.reamde.dev
+  names: {singular: config, plural: configs}
+  traits: [bundleconfig, oauth2]
+  displayTemplate: "Google client {clientId}"
+  properties:
+    clientId:
+      type: string
+      displayName: Client ID
+      description: the Google OAuth client id (from the Google Cloud console)
+    clientSecret:
+      type: secret
+      displayName: Client secret
+      description: the Google OAuth client secret — sealed at rest, never
+        read back
+---
+# ---- the account type: one connected Google account -----------------------
+# accountconfig (its records ARE the bundle's connected accounts; the host
+# writes tokenRef + tokenStatus + grantedScopes over the OAuth facility). NOT
+# oauth2: the client creds bind on the CONFIG type, the provider endpoints are
+# manifest metadata, and StartOAuth derives the requested scope union from THIS
+# account's enabled toggles (engine/oauth.go). The enabled-scopes toggles, the
+# sync cadence and one STREAM-PREFIXED slice of connector state per feature all
+# live here — each with a `writer:` role so only its rightful hand may set it
+# (review-google #2).
+kind: core.substrate.reamde.dev/kind
+metadata: {id: google.bundles.substrate.reamde.dev/account}
+data:
+  authority: google.bundles.substrate.reamde.dev
+  names: {singular: account, plural: accounts}
+  traits: [accountconfig]
+  displayTemplate: "{email}"
+  properties:
+    # The OAuth facility's hands on the account (writer: oauth — only the
+    # facility's actor may set them; a stranger cannot assign a credential ref,
+    # status, or scope set — review-google #2).
+    tokenRef:
+      type: secret
+      writer: oauth
+      displayName: Token reference
+      description: the credential-store reference the OAuth facility writes;
+        never a raw token
+    tokenStatus:
+      type: string
+      writer: oauth
+      displayName: Connection status
+      description: "the connection state the facility last reported (pending
+        | connected | erroring)"
+    grantedScopes:
+      type: string
+      repeated: true
+      writer: oauth
+      displayName: Granted scopes
+      description: the OAuth scopes the last consent was granted for; drives
+        reconnect-on-new-feature
+    # The connected account's address (writer: oauth — the OAuth facility sets
+    # it from People `people/me` after the consent; the user NEVER types it, and
+    # since it is host-managed the console hides it from the create form).
+    email:
+      type: email
+      writer: oauth
+      displayName: Email
+      description: the connected Google account's address, set by the OAuth
+        facility from the grant
+    # The scope toggles the console surfaces. Each maps to its own scope in the
+    # manifest's featureScopes block, so the requested consent union is exactly
+    # the streams this account has turned on — and turning one ON after the
+    # grant landed needs a reconnect before its sync can run.
+    enabledContacts:
+      type: bool
+      writer: owner
+      displayName: Contacts
+      description: sync this account's Google Contacts address book
+    enabledGmail:
+      type: bool
+      writer: owner
+      displayName: Gmail
+      description: sync this account's Gmail threads and messages (a restricted
+        Google scope)
+    enabledCalendar:
+      type: bool
+      writer: owner
+      displayName: Calendar
+      description: sync this account's Google calendars and their event instances
+    # How often the scheduled tick should re-sync this account. An enum so the
+    # console renders a fixed choice instead of a free-text box; each value
+    # carries a human label, and it is required with a default so the select
+    # never offers an empty "— none —". Every sync body honors it against ITS
+    # OWN stream's *LastSyncedAt.
+    syncFrequency:
+      type: enum
+      values:
+        - {value: off, label: Off}
+        - {value: hourly, label: "Every hour"}
+        - {value: daily, label: "Once a day"}
+      required: true
+      default: daily
+      writer: owner
+      displayName: Sync frequency
+      description: "the scheduled sync cadence for this account (default daily)"
+    # How far back a backfill reaches. An enum, required with a default so the
+    # select shows no empty option; each value carries a human label. Contacts
+    # syncs full+incremental via the People sync token and ignores it; gmail
+    # and calendar honor it identically — `none` means FROM CONNECT FORWARD
+    # (the first run's start instant is the floor, stamped once as the stream's
+    # backfill anchor), a window value means `anchor − Δ` computed ONCE from
+    # that stored anchor, and `all` means the epoch.
+    backfillDepth:
+      type: enum
+      values:
+        - {value: none, label: "Don't backfill"}
+        - {value: last30d, label: "Last 30 days"}
+        - {value: last90d, label: "Last 90 days"}
+        - {value: last1y, label: "Last year"}
+        - {value: all, label: Everything}
+      required: true
+      default: last30d
+      writer: owner
+      displayName: Backfill depth
+      description: "how far back gmail and calendar backfill on their first
+        run; contacts ignores it"
+    # Connector STATE the sync bodies own (writer: connector — only installed
+    # bundle code, a sync function, may set these; neither the owner nor
+    # the OAuth facility writes them — review-google #2). Two tiers, and the
+    # split matters:
+    #
+    #   THE ROLLUP — `lastSyncedAt` + `syncStatus`, account-level and
+    #   unprefixed. Every accountconfig type in the fleet declares this pair
+    #   and the console reads it GENERICALLY off any connection ("is this
+    #   healthy, when did it last do anything"), so it stays shared: whichever
+    #   stream finishes stamps it.
+    #
+    #   THE PER-STREAM SLICES — one cadence anchor and one cursor per feature,
+    #   prefixed by the stream that owns them. Each stream's `_due` check and
+    #   each stream's on-connect guard read THEIR OWN anchor, never the
+    #   rollup: a gmail run must not suppress a due contacts run, and an
+    #   account whose contacts already synced must still fire its first gmail
+    #   backfill. Cursors are connector-private (no client reads them), so
+    #   prefixing them is free.
+    lastSyncedAt:
+      type: datetime
+      writer: connector
+      displayName: Last synced
+      description: the account-level rollup — when ANY of this account's streams
+        last finished
+    syncStatus:
+      type: string
+      writer: connector
+      displayName: Sync status
+      description: "the account-level rollup outcome (ok | ok (N skipped)
+        | erroring: <reason>)"
+      # The rollup holds ONE string, so a shared "already erroring, leave it
+      # alone" guard let a gmail failure swallow a calendar one entirely.
+      # Each stream therefore records its OWN outcome below and only RAISES
+      # the rollup (never clears it over the other stream's live failure).
+    # --- contacts stream state ----------------------------------------------
+    contactsSyncToken:
+      type: string
+      writer: connector
+      displayName: Contacts sync token
+      description: the People API sync token — stored each run so the next
+        is incremental
+    contactsLastSyncedAt:
+      type: datetime
+      writer: connector
+      displayName: Contacts last synced
+      description: when contacts last finished — this stream's own cadence
+        anchor and first-run guard
+    # --- gmail stream state -------------------------------------------------
+    gmailHistoryId:
+      type: string
+      writer: connector
+      displayName: Gmail history id
+      description: the highest fully-drained Gmail historyId — the next run's
+        incremental floor
+    gmailBackfillAnchorAt:
+      type: datetime
+      writer: connector
+      displayName: Gmail backfill anchor
+      description: the run-start instant the first gmail sync stamped; backfillDepth
+        reaches back from here
+    gmailBackfillResume:
+      type: json
+      writer: connector
+      displayName: Gmail backfill resume
+      description: the unfinished backfill walk — the query page token and
+        window floor the next run resumes from
+    gmailLastSyncedAt:
+      type: datetime
+      writer: connector
+      displayName: Gmail last synced
+      description: when the gmail stream last drained — this stream's own
+        cadence anchor and first-run guard
+    gmailSyncStatus:
+      type: string
+      writer: connector
+      displayName: Gmail sync status
+      description: "this stream's own outcome, so a calendar failure can never
+        hide a gmail one"
+    # --- calendar stream state ----------------------------------------------
+    # Per-calendar sync tokens do NOT live here: they live on each `calendar`
+    # mirror row, so one calendar's advance can never skip another's tail.
+    calendarBackfillAnchorAt:
+      type: datetime
+      writer: connector
+      displayName: Calendar backfill anchor
+      description: the run-start instant the first calendar sync stamped;
+        backfillDepth reaches back from here
+    calendarLastSyncedAt:
+      type: datetime
+      writer: connector
+      displayName: Calendar last synced
+      description: when the calendar stream last drained — this stream's own
+        cadence anchor and first-run guard
+    calendarSyncStatus:
+      type: string
+      writer: connector
+      displayName: Calendar sync status
+      description: "this stream's own outcome, so a gmail failure can never
+        hide a calendar one"
+    contactsSyncStatus:
+      type: string
+      writer: connector
+      displayName: Contacts sync status
+      description: "this stream's own outcome, so a gmail or calendar failure
+        can never hide a contacts one"
+---
+# ---- the source type: what Google holds about one contact -----------------
+# One contact per address-book connection, in Google's own shape (record 53).
+# Its id is derived from the provider key — ids.external("google-contacts",
+# account, resourceName) — supplied by the sync (legal: a source type is its
+# own subject, never a mapping's `to`). The `person` subject edge is left
+# EMPTY on write; the mapping below matches or mints the person and links it
+# in the same transaction.
+kind: core.substrate.reamde.dev/kind
+metadata: {id: google.bundles.substrate.reamde.dev/contact}
+data:
+  authority: google.bundles.substrate.reamde.dev
+  names: {singular: contact, plural: contacts}
+  displayTemplate: "{name.displayName}"
+  properties:
+    # The account this contact belongs to (the account record id): the
+    # mark-and-sweep filters this account's rows without touching another
+    # connected account's, and it keeps per-account resource-name collisions
+    # legible (review-google #6).
+    account:
+      type: string
+      description: the account record id this contact was synced from
+    # The full-sync generation this row was last seen in: after a full read
+    # the sweep deletes this account's rows NOT stamped with the current
+    # generation — the deletes an expired-sync-token full read cannot tombstone
+    # (review-google #6).
+    syncGeneration:
+      type: string
+      description: the full-sync generation token this contact was last seen
+        in
+    resourceName:
+      type: string
+      description: "Google's People resource name, e.g. people/c123 (per account)"
+    name:
+      type: object
+      description: the contact's primary name, Google's fields
+      fields:
+        displayName: string
+        firstName: string
+        middleName: string
+        lastName: string
+    emails:
+      type: object
+      repeated: true
+      description: the contact's email addresses, deduped and lowercased
+      fields:
+        value: email
+        type: string
+        primary: bool
+        verified: bool
+    phones:
+      type: object
+      repeated: true
+      description: the contact's phone numbers, verbatim plus a canonical
+        form
+      fields:
+        value: string
+        canonical: string
+        type: string
+    organizations:
+      type: object
+      repeated: true
+      description: the employers this address book records
+      fields:
+        name: string
+        jobTitle: string
+        current: bool
+    photoURL:
+      type: url
+      description: the primary contact photo URL
+    etag:
+      type: string
+      description: Google's concurrency token, for a future writeback
+    raw:
+      type: json
+      description: the raw People person as fetched, for provenance and writeback
+  edges:
+    # The subject edge (§6.1): an ordinary declared edge the mapping names.
+    # Required, single, not ownerRef, pointing at person — left empty on write
+    # so the substrate resolves it.
+    person:
+      to: people.substrate.reamde.dev/person
+      required: true
+      description: the human this contact record describes
+---
+# ---- the sync function: the connector runtime's showcase -------------------
+# A PEP 723 Python body that imports google-api-python-client + google-auth
+# through uv (the base image ships no pip; the runner provisions the venv at
+# registration). It reads the account's host-resolved OAuth access token and
+# enabled scopes out of the injected bundle config, pages
+# people/me/connections with a field mask, emits one contact per connection,
+# and stores the People sync token on the account for the next incremental
+# run. A large address book drains OFF THE CAUSAL CHAIN through the
+# paged-checkpoint `more`/`resume` contract — one page per invocation, at
+# constant causal depth.
+#
+# emit names both the contact type (the records) and the account type (the
+# sync-token / completion-marker patch on the final page). No real Google call
+# runs in tests — the body's admission and shape are what the closure test
+# proves; live OAuth + sync is verified against a connected account.
+kind: core.substrate.reamde.dev/function
+metadata: {id: google.bundles.substrate.reamde.dev/contactssync}
+data:
+  authority: google.bundles.substrate.reamde.dev
+  description: >-
+    Sync a Google account's contacts: page people/me/connections over the
+    account's OAuth token, emit contact records mapped to persons, and store
+    the People sync token for the next incremental run.
+  runtime: python
+  timeoutMs: 30000
+  capabilities:
+    emit:
+      - google.bundles.substrate.reamde.dev/contact
+      - google.bundles.substrate.reamde.dev/account
+    # The mark-and-sweep reads this account's own local contacts to find the
+    # rows a full re-read could not tombstone (review-google #6).
+    reads:
+      kinds:
+        - google.bundles.substrate.reamde.dev/contact
+    network:
+      - "people.googleapis.com"
+      - "www.googleapis.com"
+      - "oauth2.googleapis.com"
+  source: |
+    # /// script
+    # requires-python = ">=3.11"
+    # dependencies = [
+    #   "google-api-python-client==2.137.0",
+    #   "google-auth==2.32.0",
+    # ]
+    # ///
+    """Google Contacts sync — one page of people/me/connections per invocation.
+
+    The account's live access token arrives injected on the bundle config
+    (`config.accounts[].token`, host-resolved); this body never sees or
+    refreshes a raw grant, and — since review-google #4 — receives no client
+    secret or credential ref at all. Large address books page off the causal
+    chain via the paged-checkpoint `more`/`resume` contract.
+
+    Deletes and renames reconcile (review-google #6): incremental sync carries
+    tombstones and `previousResourceNames`; a full read (first sync, or an
+    EXPIRED_SYNC_TOKEN fallback — never every 400/410) stamps a fresh
+    generation on every row and hands off to a mark-and-sweep phase that
+    deletes this account's rows the full read did not touch.
+    """
+    import datetime as _dt
+    import json
+    import uuid
+
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+
+    CONTACT_TYPE = "google.bundles.substrate.reamde.dev/contact"
+    ACCOUNT_TYPE = "google.bundles.substrate.reamde.dev/account"
+    PERSON_FIELDS = (
+        "names,emailAddresses,phoneNumbers,organizations,photos,metadata,"
+        "biographies,nicknames,addresses,urls,birthdays"
+    )
+    PAGE_SIZE = 200
+    SWEEP_PAGE = 200
+
+
+    def _wants(acct):
+        return bool((acct.get("properties") or {}).get("enabledContacts"))
+
+
+    def _due(props):
+        freq = (props.get("syncFrequency") or "daily").lower()
+        if freq == "off":
+            return False
+        last = props.get("contactsLastSyncedAt")
+        if not last:
+            return True
+        try:
+            seen = _dt.datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        hours = 1 if freq == "hourly" else 24
+        return _dt.datetime.now(_dt.timezone.utc) - seen >= _dt.timedelta(hours=hours)
+
+
+    def _contact_id(host, account, resource_name):
+        # The SDK id helper: a length-prefixed sha256 over (provider, account,
+        # external_id). Account is a component because People ids are PER
+        # account (people/c1 in two address books is two humans). The old ad
+        # hoc account+"-"+resourceName composition was non-injective (codex sdk
+        # review #5: account `a` + resource `people/b-people-c` collided with
+        # account `a-people-b` + resource `people/c`) and could exceed the
+        # 128-char id cap; rows written under it re-key through the
+        # contactsidmigration callable, run once after this scheme deploys.
+        return host.ids.external("google-contacts", account, resource_name)
+
+
+    def _pick(items):
+        chosen = None
+        for it in items or []:
+            if chosen is None:
+                chosen = it
+            if (it.get("metadata") or {}).get("primary"):
+                return it
+        return chosen
+
+
+    def _name(person):
+        n = _pick(person.get("names"))
+        if not n:
+            return None
+        out = {}
+        for src, dst in (("displayName", "displayName"), ("givenName", "firstName"),
+                         ("middleName", "middleName"), ("familyName", "lastName")):
+            if n.get(src):
+                out[dst] = n[src]
+        return out or None
+
+
+    def _emails(person):
+        out, seen = [], set()
+        for e in person.get("emailAddresses") or []:
+            v = (e.get("value") or "").strip().lower()
+            if not v or v in seen:
+                continue
+            seen.add(v)
+            item = {"value": v}
+            if e.get("type"):
+                # `type` is the declared field name — "home", "work" — and
+                # Google spells its own the same way.
+                item["type"] = e["type"]
+            md = e.get("metadata") or {}
+            if md.get("primary"):
+                item["primary"] = True
+            if md.get("verified"):
+                item["verified"] = True
+            out.append(item)
+        return out
+
+
+    def _phones(person):
+        out, seen = [], set()
+        for p in person.get("phoneNumbers") or []:
+            canonical = p.get("canonicalForm") or p.get("value") or ""
+            if not canonical or canonical in seen:
+                continue
+            seen.add(canonical)
+            item = {"canonical": canonical}
+            if p.get("value"):
+                item["value"] = p["value"]
+            if p.get("type"):
+                item["type"] = p["type"]
+            out.append(item)
+        return out
+
+
+    def _orgs(person):
+        out = []
+        for o in person.get("organizations") or []:
+            if not o.get("name") and not o.get("title"):
+                continue
+            item = {}
+            if o.get("name"):
+                item["name"] = o["name"]
+            if o.get("title"):
+                item["jobTitle"] = o["title"]
+            if o.get("current"):
+                item["current"] = True
+            out.append(item)
+        return out
+
+
+    def _contact_effects(host, account, person, generation):
+        # Returns the ordered effects for ONE person: a delete for every
+        # previous resource name (a rename tombstone, review-google #6), then
+        # the current row's delete (Google's tombstone) or put.
+        resource = person.get("resourceName") or ""
+        if not resource:
+            return []
+        md = person.get("metadata") or {}
+        out = []
+        for prev in md.get("previousResourceNames") or []:
+            if prev and prev != resource:
+                out.append({"action": "delete", "kind": CONTACT_TYPE,
+                            "id": _contact_id(host, account, prev)})
+        cid = _contact_id(host, account, resource)
+        if md.get("deleted"):
+            out.append({"action": "delete", "kind": CONTACT_TYPE, "id": cid})
+            return out
+        props = {"resourceName": resource, "account": account,
+                 "syncGeneration": generation}
+        name = _name(person)
+        if name:
+            props["name"] = name
+        emails = _emails(person)
+        if emails:
+            props["emails"] = emails
+        phones = _phones(person)
+        if phones:
+            props["phones"] = phones
+        orgs = _orgs(person)
+        if orgs:
+            props["organizations"] = orgs
+        photo = _pick(person.get("photos"))
+        if photo and photo.get("url"):
+            props["photoURL"] = photo["url"]
+        if person.get("etag"):
+            props["etag"] = person["etag"]
+        props["raw"] = person
+        # Subject edge omitted: the mapping matches or mints the person.
+        out.append({"action": "put", "kind": CONTACT_TYPE, "id": cid,
+                    "properties": props})
+        return out
+
+
+    def _expired_sync_token(e):
+        # ONLY a structured EXPIRED_SYNC_TOKEN reason triggers a full re-read
+        # (review-google #6): a bare 400/410 is a real request bug, not token
+        # expiry, and must surface rather than silently full-sync.
+        status = getattr(getattr(e, "resp", None), "status", None)
+        if status not in (400, 410):
+            return False
+        try:
+            content = e.content
+            if isinstance(content, bytes):
+                content = content.decode("utf-8", "replace")
+            body = json.loads(content)
+        except Exception:
+            return False
+        err = body.get("error") or {}
+        for d in (err.get("details") or []) + (err.get("errors") or []):
+            if (d.get("reason") or "") == "EXPIRED_SYNC_TOKEN":
+                return True
+        return "EXPIRED_SYNC_TOKEN" in json.dumps(body)
+
+
+    def _fetch_page(token, sync_token, page_token):
+        creds = Credentials(token=token)
+        service = build("people", "v1", credentials=creds, cache_discovery=False)
+        params = {
+            "resourceName": "people/me",
+            "personFields": PERSON_FIELDS,
+            "pageSize": PAGE_SIZE,
+            "requestSyncToken": True,
+        }
+        if sync_token:
+            params["syncToken"] = sync_token
+        if page_token:
+            params["pageToken"] = page_token
+        return service.people().connections().list(**params).execute()
+
+
+    def _sync_cursor(queue):
+        # A fresh per-account sync cursor: a full read until proven otherwise
+        # (the account's stored contactsSyncToken is read when the account
+        # reaches the head of the queue).
+        return {"phase": "sync", "queue": queue, "pageToken": "",
+                "syncToken": "", "generation": ""}
+
+
+    def _sweep_page(host, accounts, resume):
+        # One page of the mark-and-sweep for a fully re-read account: delete
+        # this account's local contacts NOT stamped with the current generation
+        # (review-google #6). Paged off the causal chain, one host.list per
+        # invocation.
+        aid = resume.get("account")
+        generation = resume.get("generation") or ""
+        after = resume.get("after") or ""
+        rest = list(resume.get("rest") or [])
+        page = host.list(
+            filter={"kinds": [CONTACT_TYPE], "properties": {"account": {"eq": aid}}},
+            first=SWEEP_PAGE, after=after)
+        effects = []
+        for ent in page.get("records") or []:
+            gen = (ent.get("properties") or {}).get("syncGeneration")
+            if gen != generation:
+                effects.append({"action": "delete", "kind": CONTACT_TYPE,
+                                "id": ent.get("id")})
+        cursor = page.get("cursor") or ""
+        if cursor:
+            return {"effects": effects,
+                    "more": host.page.more({"phase": "sweep", "account": aid,
+                                            "generation": generation, "after": cursor,
+                                            "rest": rest})}
+        if rest:
+            return {"effects": effects, "more": host.page.more(_sync_cursor(rest))}
+        return {"effects": effects, "output": {"account": aid, "swept": True}}
+
+
+    def main(input, host):
+        cfg = input.get("config") or {}
+        accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
+        # The paged-checkpoint wrapper: host.page.resume() is the opaque cursor
+        # the previous page returned, and host.page.more(cursor) below builds
+        # the continuation that drains the next page off the causal chain.
+        resume = host.page.resume() or None
+
+        # The mark-and-sweep phase drains on its own cursor.
+        if resume and resume.get("phase") == "sweep":
+            return _sweep_page(host, accounts, resume)
+
+        if resume:
+            queue = list(resume.get("queue") or [])
+            page_token = resume.get("pageToken") or ""
+            sync_token = resume.get("syncToken") or ""
+            generation = resume.get("generation") or ""
+        else:
+            page_token, sync_token, generation = "", "", ""
+            record = (input.get("envelope") or {}).get("record") or {}
+            # The envelope SPLITS identity: `type` is the bare local name and
+            # `authority` the authority, so the full identity (ruling A9) has to be
+            # recomposed. Comparing the local name alone would match any
+            # authority's `account`.
+            etype = (record.get("kind") or "")
+            if etype == ACCOUNT_TYPE:
+                # Record-triggered: sync just this account (a connect or edit).
+                queue = [record.get("id")]
+            else:
+                # Schedule-triggered: every connected account that wants
+                # contacts and is due by its cadence.
+                queue = [aid for aid, a in accounts.items()
+                         if _wants(a) and _due(a.get("properties") or {})]
+
+        # Advance past accounts we cannot or should not sync (no token, a dead
+        # grant, contacts disabled, or gone from the config).
+        while queue:
+            acct = accounts.get(queue[0])
+            if acct is None or not _wants(acct) or acct.get("tokenError") or not acct.get("token"):
+                if acct is not None and acct.get("tokenError"):
+                    host.log("google-contacts: skip %s: %s" % (queue[0], acct["tokenError"]))
+                queue = queue[1:]
+                continue
+            break
+        if not queue:
+            return {"effects": []}
+
+        aid = queue[0]
+        acct = accounts[aid]
+        props = acct.get("properties") or {}
+        token = acct["token"]
+        if not resume:
+            sync_token = props.get("contactsSyncToken") or ""
+
+        # A full read (no sync token this run) stamps a fresh generation on
+        # every row and, when drained, hands off to the mark-and-sweep.
+        full = not sync_token
+        if full and not generation:
+            generation = uuid.uuid4().hex
+
+        try:
+            resp = _fetch_page(token, sync_token, page_token)
+        except HttpError as e:
+            if sync_token and _expired_sync_token(e):
+                # ONLY a structured EXPIRED_SYNC_TOKEN: drop the token and
+                # re-read the whole address book, then sweep the deletes the
+                # full read cannot tombstone.
+                host.log("google-contacts: sync token expired for %s, full re-read" % aid)
+                sync_token, full = "", True
+                generation = generation or uuid.uuid4().hex
+                resp = _fetch_page(token, "", "")
+            else:
+                raise
+
+        effects = []
+        for person in resp.get("connections") or []:
+            effects.extend(_contact_effects(host, aid, person, generation))
+
+        next_page = resp.get("nextPageToken") or ""
+        if next_page:
+            # More pages for this account: keep this account at the head of the
+            # queue and drain off the causal chain. The sync token is only
+            # committed on the FINAL page.
+            return {"effects": effects,
+                    "more": host.page.more({"phase": "sync", "queue": queue,
+                                            "pageToken": next_page, "syncToken": sync_token,
+                                            "generation": generation})}
+
+        # Account drained: stamp this stream's own cursor and cadence anchor,
+        # AND the account-level rollup the console reads. This is the account's
+        # one update per sync — the on-connect trigger's guard (no
+        # contactsLastSyncedAt yet) goes false after it, so this never
+        # re-fires, and the gmail and calendar guards read their own anchors
+        # rather than this one.
+        next_sync = resp.get("nextSyncToken") or sync_token
+        now = _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat()
+        stamp = {"contactsSyncToken": next_sync,
+                 "contactsLastSyncedAt": now,
+                 "contactsSyncStatus": "ok",
+                 "lastSyncedAt": now}
+        # The rollup is SHARED with the gmail and calendar streams, so a
+        # contacts success must not clear a live failure of theirs: raise it to
+        # "ok" only when neither of the others is currently erroring. Each
+        # stream's own status is unconditional.
+        if not (str(props.get("gmailSyncStatus") or "").startswith("erroring")
+                or str(props.get("calendarSyncStatus") or "").startswith("erroring")):
+            stamp["syncStatus"] = "ok"
+        effects.append({"action": "patch", "kind": (acct.get("kind") or ACCOUNT_TYPE), "id": aid,
+                        "properties": stamp})
+        rest = queue[1:]
+        if full:
+            # Hand the fully-read account to the mark-and-sweep before moving
+            # on: it deletes the rows this generation did not touch.
+            return {"effects": effects,
+                    "more": host.page.more({"phase": "sweep", "account": aid,
+                                            "generation": generation, "after": "",
+                                            "rest": rest})}
+        if rest:
+            return {"effects": effects, "more": host.page.more(_sync_cursor(rest))}
+        return {"effects": effects, "output": {"account": aid, "records": len(effects) - 1}}
+---
+# ---- the id migration: ad hoc contact ids → SDK external ids ---------------
+# A BOUNDED callable (`substratectl function call`, no trigger wires it): rows the
+# sync wrote under the old account+"-"+resourceName composition re-key onto
+# host.ids.external("google-contacts", account, resourceName), ONE BATCH PER
+# CALL — {limit, cursor} in, {migrated, absorbed, skipped, nextCursor} out;
+# the operator loops until nextCursor comes back empty (fleet review: a
+# whole-book effect list breached the runner's 8 MiB frame; `raw` survives,
+# the batch is what stays small). Each old row is re-put under its new id
+# CARRYING ITS PERSON EDGE — the mapping's email probe would re-link most
+# contacts, but an email-less contact would mint a fresh person shell and
+# orphan its old one; an explicit subject edge at create is legal (only
+# re-POINTING an existing row's subject is refused). Every batch is a FRESH
+# read; a target a sync already wrote is absorbed, not clobbered — and when
+# the raced row re-minted a DIFFERENT person, a person MERGE folds the new
+# shell into the OLD person (codex fleet review #2), which is why this
+# function carries the `mutations: [merge]` grant and person in emit.
+# Idempotent per batch: re-running any batch finds nothing left on the old
+# scheme. Runbook (disable the two triggers first): README "Migrating
+# contact ids".
+kind: core.substrate.reamde.dev/function
+metadata: {id: google.bundles.substrate.reamde.dev/contactsidmigration}
+data:
+  authority: google.bundles.substrate.reamde.dev
+  description: >-
+    Bounded re-key of contact rows onto ids.external: one batch per call,
+    person edges carried, raced re-mints merged back into their original persons;
+    loop with nextCursor until empty.
+  runtime: python
+  timeoutMs: 60000
+  input:
+    type: object
+    properties:
+      limit:
+        type: number
+        description: max contacts examined this call (default 200, capped
+          at 200)
+      cursor:
+        type: string
+        description: the nextCursor a previous call returned — omit on the
+          first call
+  output:
+    type: object
+    properties:
+      migrated: {type: number}
+      absorbed: {type: number}
+      skipped: {type: number}
+      nextCursor:
+        type: string
+        description: feed back as `cursor`; empty means the book is drained
+    required: [migrated, absorbed, skipped, nextCursor]
+  capabilities:
+    emit:
+      - google.bundles.substrate.reamde.dev/contact
+      # The absorbed-orphan fix emits a person MERGE (old person wins);
+      # merge effects gate on BOTH the emit ceiling and the mutations grant.
+      - people.substrate.reamde.dev/person
+    mutations: [merge]
+    reads:
+      kinds:
+        - google.bundles.substrate.reamde.dev/contact
+      budgets:
+        calls: 256
+        rows: 10000
+  source: |
+    """Re-key contact rows onto the SDK external-id scheme — one
+    BOUNDED batch per call (fleet review: Claude P0-2, Codex H2/H6).
+
+    Each call RE-LISTS a fresh page (never a whole-run snapshot), examines at
+    most `limit` contacts, and returns {migrated, absorbed, skipped,
+    nextCursor}; the operator loops `substratectl function call` feeding nextCursor
+    back until it comes back empty, so no single response frame carries a
+    whole address book of effects (`raw` survives — the batch is what stays
+    small).
+
+    The walk orders the listing createdAt-then-id ascending. Every row this
+    migration (or a raced sync) creates is NEWER than every old-scheme row —
+    old rows all predate the id-scheme upgrade — so its own re-puts only ever
+    APPEND past the walk, and the rows it removes only shorten the part
+    behind it: the cursor (the count of examined-but-retained rows at the
+    front of the listing, a plain number) can revisit a row after an insert
+    shifts positions, but can never skip an unexamined one — and every path
+    is idempotent, so a revisit is free. A batch that is ENTIRELY new-scheme
+    proves everything created later is new-scheme too, and the walk ends.
+
+    Per old-scheme row, against a FRESH host.get of the target id:
+      absent     -> put guarded ifVersion:0 (create-only: a sync racing the
+                    commit fails the batch as a clean conflict for a re-run,
+                    never a clobber) carrying the person edge, then the old
+                    row tombstones. Counted `migrated`.
+      live       -> absorbed: the fresher row and its data stand, the old row
+                    only tombstones — and when the two rows resolved
+                    DIFFERENT persons (a raced sync re-minted a shell for an
+                    email-less contact), a person MERGE folds the new shell
+                    into the OLD person, which may carry owner edits and
+                    therefore wins. Counted `absorbed`.
+      tombstoned -> the contact was deleted upstream after the upgrade (the
+                    delete addressed the new id); a re-put would RESURRECT
+                    it, so nothing is written. Counted `skipped` + logged.
+    `skipped` also counts rows with no account/resourceName to derive a key
+    from. Skipped rows are left in place and re-reported on every pass.
+
+    Run with the two google triggers disabled (README "Migrating contact
+    ids") — the ifVersion guard makes a race a clean re-run, not a clobber,
+    but pausing the sync keeps the loop conflict-free.
+    """
+    CONTACT_TYPE = "google.bundles.substrate.reamde.dev/contact"
+    PERSON_TYPE = "people.substrate.reamde.dev/person"
+    MAX_BATCH = 200
+    LIST_PAGE = 200
+
+
+    def _new_id(host, props):
+        account = (props or {}).get("account") or ""
+        resource = (props or {}).get("resourceName") or ""
+        if not account or not resource:
+            return ""
+        return host.ids.external("google-contacts", account, resource)
+
+
+    def _person_of(record):
+        targets = ((record or {}).get("edges") or {}).get("person") or []
+        if not targets:
+            return ""
+        return (targets[0] or {}).get("id") or ""
+
+
+    def _cursor(args):
+        # The cursor is this function's OWN token: the retained-prefix count,
+        # a plain non-negative integer as a string. Empty means a fresh loop.
+        raw = str((args or {}).get("cursor") or "")
+        if not raw:
+            return 0
+        try:
+            n = int(raw)
+        except ValueError:
+            n = -1
+        if n < 0:
+            raise ValueError("cursor is not a value a previous call returned")
+        return n
+
+
+    def _batch(host, skip, limit):
+        # One pass over the live listing, createdAt then id ascending: drop
+        # the retained prefix, take the next `limit` rows. Reads see committed
+        # state and the effects apply only after this body returns, so the
+        # intra-call paging walks one consistent table.
+        batch, after, to_skip, remaining = [], "", skip, False
+        while True:
+            page = host.records.list(
+                CONTACT_TYPE,
+                order=[{"property": "createdAt"}, {"property": "id"}],
+                first=LIST_PAGE, after=after or None, with_edges=True)
+            rows = page.get("records") or []
+            for row in rows:
+                if to_skip > 0:
+                    to_skip -= 1
+                    continue
+                if len(batch) < limit:
+                    batch.append(row)
+                else:
+                    remaining = True
+                    break
+            after = page.get("cursor") or ""
+            if remaining or not after:
+                break
+        return batch, remaining
+
+
+    def main(input, host):
+        args = input.get("args") or {}
+        limit = max(1, min(int(args.get("limit") or MAX_BATCH), MAX_BATCH))
+        skip = _cursor(args)
+
+        batch, remaining = _batch(host, skip, limit)
+        effects = []
+        migrated = absorbed = skipped = retained = on_new_scheme = 0
+        for r in batch:
+            props = r.get("properties") or {}
+            old_id = r.get("id") or ""
+            new_id = _new_id(host, props)
+            if not new_id:
+                # No provider key to re-derive an id from: left in place and
+                # counted, so the operator sees it instead of a silent shrug.
+                skipped += 1
+                retained += 1
+                continue
+            if old_id == new_id:
+                # Already on the new scheme: retained, and remembered — a
+                # batch of NOTHING BUT these proves the walk is past every
+                # old-scheme row (they all predate the upgrade).
+                retained += 1
+                on_new_scheme += 1
+                continue
+            # The FRESH per-batch read of the target (never a run-wide
+            # snapshot): a sync that raced an earlier batch is visible here.
+            target = host.records.get(CONTACT_TYPE, new_id)
+            if target is not None and target.get("deletedAt"):
+                # Deleted upstream after the upgrade: the tombstone at the
+                # new id is fresher truth and a re-put would RESURRECT it.
+                # Nothing is written; the old row stays, counted and logged.
+                host.log("id-migration: skip %s -> %s: target tombstoned "
+                         "(deleted upstream); not resurrecting" % (old_id, new_id))
+                skipped += 1
+                retained += 1
+                continue
+            if target is not None:
+                # A sync already wrote this contact under the new id: the
+                # fresher row stands, the old row only tombstones. And when
+                # the new row resolved a DIFFERENT person — the email-less
+                # re-mint — the new shell folds into the OLD person by
+                # merge: the old person may carry owner edits, so it wins
+                # (codex fleet review #2, the absorbed-orphan hole).
+                old_person = _person_of(r)
+                new_person = _person_of(target)
+                if old_person and new_person and old_person != new_person:
+                    effects.append({"action": "merge", "kind": PERSON_TYPE,
+                                    "id": old_person, "loser": new_person})
+                effects.append({"action": "delete", "kind": CONTACT_TYPE,
+                                "id": old_id})
+                absorbed += 1
+                continue
+            # Target absent on the fresh read: create-only re-put (ifVersion
+            # 0 conflicts the whole batch if a sync lands the id between this
+            # read and the commit — a clean re-run, never a stale clobber),
+            # carrying the person edge so no shell re-mints.
+            put = {"action": "put", "kind": CONTACT_TYPE, "id": new_id,
+                   "properties": props, "ifVersion": 0}
+            person = _person_of(r)
+            if person:
+                put["edges"] = {"person": person}
+            effects.append(put)
+            effects.append({"action": "delete", "kind": CONTACT_TYPE,
+                            "id": old_id})
+            migrated += 1
+
+        done = not remaining or (len(batch) > 0 and on_new_scheme == len(batch))
+        next_cursor = "" if done else str(skip + retained)
+        return {"effects": effects,
+                "output": {"migrated": migrated, "absorbed": absorbed,
+                           "skipped": skipped, "nextCursor": next_cursor}}
+---
+# ---- the mapping: contact → person ----------------------------------------
+# The record's `person` edge, and how its properties reach the human (§6.1/
+# §7.1). match probes the contact's emails against people's emails: exactly one
+# live match links it, zero-or-many mints a person shell — mirroring the old
+# connectors googlepeople identity logic. map copies the name and unions the
+# emails/phones onto the person (machine-managed, yielding to any owner edit).
+kind: core.substrate.reamde.dev/recordmapping
+metadata: {id: google.bundles.substrate.reamde.dev/contactperson}
+data:
+  authority: google.bundles.substrate.reamde.dev
+  from: google.bundles.substrate.reamde.dev/contact
+  to: people.substrate.reamde.dev/person
+  edge: person
+  match:
+    # Block style, and the paths quoted: `[]` is a flow-sequence opener in
+    # YAML flow context, so `{from: emails[].value}` would not parse.
+    - from: "emails[].value"
+      to: emails
+  map:
+    name: name.displayName
+    displayName: name.displayName
+    emails:
+      path: "emails[].value"
+      merge: union
+    phones:
+      path: "phones[].value"
+      merge: union
+---
+# ---- the shared people source: one address, one person --------------------
+# The ONLY mapped source type gmail and calendar add, and the reason the core
+# rows can carry people at all. Every address a mail header or an attendee
+# list carries becomes one of these, keyed by (account, lowercased address);
+# the mapping below matches it onto a person or mints a shell, exactly as
+# contact→person does, so an address-book contact and a mail sender converge
+# on ONE person. The core rows then reference the RECORD (`{authority, type, id}`)
+# and the engine's one-hop rule (§6.2) lands the stored edge on the person.
+#
+# Nothing declares an edge TO this type: a mapping's source may never be an
+# edge target (record 50), which is exactly why the mirrors below carry
+# addresses as object PROPERTIES instead.
+kind: core.substrate.reamde.dev/kind
+metadata: {id: google.bundles.substrate.reamde.dev/emailaddress}
+data:
+  authority: google.bundles.substrate.reamde.dev
+  names: {singular: emailaddress, plural: emailaddresses}
+  displayTemplate: "{displayName|address}"
+  properties:
+    account:
+      type: string
+      displayName: Account
+      description: the account record id this address was first seen through
+    # `email`-kind, and the syncs only ever write an address that parses as an
+    # RFC 5322 mailbox: one malformed header must not fail a whole page.
+    address:
+      type: email
+      displayName: Address
+      description: the address, trimmed and lowercased — the provider key
+        behind this row's id
+    displayName:
+      type: string
+      displayName: Display name
+      description: the name the header or the attendee list carried, when
+        it carried one
+  edges:
+    # The subject edge (§6.1): required, single, not ownerRef, left EMPTY on
+    # write so the mapping resolves it.
+    person:
+      to: people.substrate.reamde.dev/person
+      required: true
+      description: the human this address belongs to
+---
+# ---- the mapping: emailaddress → person -----------------------------------
+# match probes the address against people's emails: exactly one live match
+# links it, zero-or-many mints a shell. `displayName` maps onto the person's
+# `name` and DELIBERATELY NOT onto `displayName`: a header's "Alice Example" is
+# weaker than an address book's nickname, and atomic selection is latest-write
+# wins, so mail volume would otherwise clobber the contact's contribution.
+kind: core.substrate.reamde.dev/recordmapping
+metadata: {id: google.bundles.substrate.reamde.dev/emailaddressperson}
+data:
+  authority: google.bundles.substrate.reamde.dev
+  from: google.bundles.substrate.reamde.dev/emailaddress
+  to: people.substrate.reamde.dev/person
+  edge: person
+  match:
+    - from: address
+      to: emails
+  map:
+    name: displayName
+    emails:
+      path: address
+      merge: union
+---
+# ---- the gmail mirror: one thread ------------------------------------------
+# Derived entirely from the MESSAGE stream — no threads.get call is ever made
+# (it costs 40 quota units against messages.get's 20, and every field below
+# comes off the messages anyway). So there is no `raw` and no `messageCount`
+# here: neither could be filled honestly without that call. `subject`,
+# `preview` and `lastMessageAt` are written NEWEST-WINS — the sync reads the
+# stored row and only moves them when the batch's newest message is at least
+# as new — because a backfill walks a mailbox newest-first, and a blind put
+# would let an older page overwrite a newer one.
+kind: core.substrate.reamde.dev/kind
+metadata: {id: google.bundles.substrate.reamde.dev/thread}
+data:
+  authority: google.bundles.substrate.reamde.dev
+  names: {singular: thread, plural: threads}
+  displayTemplate: "{subject|threadId}"
+  properties:
+    account:
+      type: string
+      displayName: Account
+      description: the account record id this thread was synced from
+    threadId:
+      type: string
+      displayName: Thread ID
+      description: "Gmail's thread id, unique per mailbox"
+    syncGeneration:
+      type: string
+      displayName: Sync generation
+      description: the full-read generation this thread was last seen in
+    subject:
+      type: string
+      displayName: Subject
+      description: the subject of the newest message the sync has seen on
+        this thread
+    preview:
+      type: string
+      displayName: Preview
+      description: Gmail's own snippet for the newest message, kept as written
+    lastMessageAt:
+      type: datetime
+      displayName: Last message
+      description: the internalDate of the newest message the sync has seen
+        on this thread
+    participants:
+      type: object
+      repeated: true
+      displayName: Participants
+      description: every address seen on the thread, deduped and lowercased
+      fields:
+        address: string
+        name: string
+---
+# ---- the gmail mirror: one message -----------------------------------------
+# Google's own shape, one row per message. Named `text`, `preview` and `from`
+# rather than `body`, `snippet` and `sender`: `body` and `title` are RESERVED
+# built-in columns (a property may not shadow one), `{snippet}` is the display
+# template engine's computed-excerpt token, and `from` is the header's name.
+# Attachment BYTES are not fetched this slice — the runner has no
+# in-invocation atomic blob-write primitive (ticket 008) — so `attachments`
+# keeps the metadata and the `attachmentId` a later slice fetches by, and
+# `raw` is the messages.get payload with every base64 `data` field stripped
+# (a page of inline bodies would eat the 8 MiB frame twice over).
+kind: core.substrate.reamde.dev/kind
+metadata: {id: google.bundles.substrate.reamde.dev/message}
+data:
+  authority: google.bundles.substrate.reamde.dev
+  names: {singular: message, plural: messages}
+  displayTemplate: "{subject|messageId}"
+  properties:
+    account:
+      type: string
+      displayName: Account
+      description: the account record id this message was synced from
+    messageId:
+      type: string
+      displayName: Message ID
+      description: "Gmail's message id, unique per mailbox — the provider
+        key behind this row's id"
+    threadId:
+      type: string
+      displayName: Thread ID
+      description: the Gmail thread this message belongs to
+    rfcMessageId:
+      type: string
+      displayName: RFC Message-ID
+      description: "the RFC 5322 Message-ID header, for cross-mailbox joins"
+    historyId:
+      type: string
+      displayName: History ID
+      description: the message's Gmail historyId as last fetched
+    syncGeneration:
+      type: string
+      displayName: Sync generation
+      description: the full-read generation this message was last seen in
+    labelIds:
+      type: string
+      repeated: true
+      displayName: Labels
+      description: "Gmail's label ids on this message, verbatim (INBOX, UNREAD,
+        ...)"
+    subject:
+      type: string
+      displayName: Subject
+      description: the Subject header, as written
+    preview:
+      type: string
+      displayName: Preview
+      description: "Gmail's own snippet for this message, kept as written"
+    text:
+      type: text
+      displayName: Text
+      description: the message body, text/plain preferred and text/html stripped,
+        bounded
+    # The header objects keep `address` as a plain string, not the `email`
+    # kind: a mirror records what the header SAID, malformed or not. The
+    # validated, canonical copy is the emailaddress record.
+    from:
+      type: object
+      displayName: From
+      description: the From header, parsed
+      fields:
+        address: string
+        name: string
+    to:
+      type: object
+      repeated: true
+      displayName: To
+      description: the To header, parsed and deduped
+      fields:
+        address: string
+        name: string
+    cc:
+      type: object
+      repeated: true
+      displayName: Cc
+      description: the Cc header, parsed and deduped
+      fields:
+        address: string
+        name: string
+    bcc:
+      type: object
+      repeated: true
+      displayName: Bcc
+      description: the Bcc header, parsed and deduped
+      fields:
+        address: string
+        name: string
+    sentAt:
+      type: datetime
+      displayName: Sent at
+      description: "internalDate — when Gmail says the message arrived"
+    sizeEstimate:
+      type: int
+      displayName: Size
+      description: Gmail's estimated size of the message in bytes
+    attachments:
+      type: object
+      repeated: true
+      displayName: Attachments
+      description: attachment metadata only — the bytes are not fetched this
+        slice
+      fields:
+        filename: string
+        mimeType: string
+        sizeBytes: int
+        attachmentId: string
+    raw:
+      type: json
+      displayName: Raw message
+      description: the messages.get payload with the base64 body data stripped,
+        for provenance
+---
+# ---- the gmail sync --------------------------------------------------------
+# Dependency-free: stdlib urllib + json + email.utils, NO PEP 723 block, so it
+# runs on the shared python3 fast path (no uv provisioning at registration)
+# and the request origin is ours to pin by hand — a discovery client picks its
+# own hosts, and `capabilities.network` is declared-but-unenforced.
+#
+# emit names the two mirrors, the shared emailaddress source, the account (the
+# stream's own stamp) AND the two core messaging types: the emit ceiling is
+# the only thing standing between this body and a refused core write, and the
+# core rows are emitted DIRECTLY because no recordmapping may target them (a
+# mapping's shell mint cannot fill emailmessage.thread, which is required).
+kind: core.substrate.reamde.dev/function
+metadata: {id: google.bundles.substrate.reamde.dev/gmailsync}
+data:
+  authority: google.bundles.substrate.reamde.dev
+  description: >-
+    Sync a Google account's mail: drain Gmail history (or a bounded backfill
+    window), mirror threads and messages, and emit core emailthread and emailmessage
+    rows with person-resolved addresses.
+  runtime: python
+  timeoutMs: 30000
+  capabilities:
+    emit:
+      - google.bundles.substrate.reamde.dev/thread
+      - google.bundles.substrate.reamde.dev/message
+      - google.bundles.substrate.reamde.dev/emailaddress
+      - google.bundles.substrate.reamde.dev/account
+      - messaging.substrate.reamde.dev/emailthread
+      - messaging.substrate.reamde.dev/emailmessage
+    # The mirrors drive the newest-wins thread merge and the sweep; the core
+    # types are read ONLY to prove a row exists before retracting it (a
+    # delete of something never written is ErrNotFound and would fail the
+    # whole delivery).
+    reads:
+      kinds:
+        - google.bundles.substrate.reamde.dev/thread
+        - google.bundles.substrate.reamde.dev/message
+        - messaging.substrate.reamde.dev/emailthread
+        - messaging.substrate.reamde.dev/emailmessage
+      budgets:
+        calls: 256
+        rows: 10000
+    network:
+      - "gmail.googleapis.com"
+  source: |
+    """Gmail sync — one provider page, or one hydrate batch, per invocation.
+
+    The account's live access token arrives injected on the bundle config
+    (`config.accounts[].token`, host-resolved); this body never sees a client
+    secret or a credential ref, and it refuses to send the token anywhere but
+    https://gmail.googleapis.com or loopback (the test seam) — REDIRECTS
+    included, which urllib would otherwise follow with the bearer attached.
+
+    The incremental contract is Gmail's historyId. The RUN-START profile
+    historyId is the watermark (F5): captured before a single message is read
+    and stamped only when the account's drain COMPLETES, so a message that
+    changes mid-drain falls inside the next run's window rather than through
+    the gap a completion clock would open. A too-old startHistoryId is HTTP
+    404 — and ONLY 404, never a 400 or a 403 — which drops to a WINDOWED full
+    re-read under a fresh generation, followed by a sweep scoped to that same
+    window. An unscoped generation sweep would delete the archive the window
+    never touched.
+
+    Per-account isolation (F2/F3): the per-account drain is try/except; a
+    failure stamps THAT account's rollup syncStatus "erroring: <reason>" ONCE
+    and leaves both lastSyncedAt and gmailLastSyncedAt alone, so the schedule
+    retries, the window floor never advances past unread mail, and the queue
+    moves on.
+    """
+    import base64
+    import datetime as _dt
+    import json as _json
+    import re
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    import uuid
+    from email.utils import getaddresses
+
+    AUTHORITY = "google.bundles.substrate.reamde.dev"
+    ACCOUNT_TYPE = AUTHORITY + "/account"
+    ADDRESS_TYPE = AUTHORITY + "/emailaddress"
+    THREAD_TYPE = AUTHORITY + "/thread"
+    MESSAGE_TYPE = AUTHORITY + "/message"
+    CORE_THREAD = "messaging.substrate.reamde.dev/emailthread"
+    CORE_MESSAGE = "messaging.substrate.reamde.dev/emailmessage"
+
+    GMAIL_API = "https://gmail.googleapis.com"
+    GMAIL_HOST = "gmail.googleapis.com"
+    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+    LIST_PAGE = 100      # ids per messages.list page (5 quota units)
+    HYDRATE = 25         # messages.get per invocation, 20 units each: a
+                         # 6,000 units/min/user ceiling is ~300 gets a minute,
+                         # and 25 payloads is ~50 KiB against an 8 MiB frame.
+    SWEEP_PAGE = 200
+    MAX_LIST_PAGES = 20  # per-run backfill cap; the rest resumes next run
+    # The INVOCATION cap, and the one that actually binds. The engine's paged
+    # drain is bounded by cumulative WALL CLOCK from the chain's first
+    # committed page (functions.go drainDeadline), and it refuses a middle
+    # page BEFORE committing it — so a chain that keeps asking for one more
+    # page is cut off with nothing persisted and the next run restarts from
+    # page one, forever. 20 list pages x (1 list + 4 hydrates) is ~100
+    # invocations and would never finish; ~12 leaves the resume state
+    # committed well inside the deadline, and every run makes real progress.
+    MAX_CALLS = 12
+    MAX_RECIPIENTS = 200  # per-message person refs; the mirror keeps them all
+    TEXT_MAX = 8000
+    REASON_MAX = 200
+    BACKFILL_DAYS = {"none": 0, "last30d": 30, "last90d": 90, "last1y": 365}
+    # An address reaches an `email`-kind property only if it parses as an RFC
+    # 5322 mailbox — one malformed header must not fail a whole page. This is
+    # the DOT-ATOM production, deliberately narrower than Go's
+    # net/mail.ParseAddress (which is what the engine validates an `email`
+    # property with at effect APPLY, where this body's try/except cannot see
+    # it): a pattern that admitted `.a@x.com`, `a..b@x.com` or `a(b@x.com`
+    # would roll the page's transaction back and park the drain on every
+    # retry. Quoted local parts are refused rather than wrong.
+    _ATEXT = r"[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+"
+    _LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
+    _RE_ADDR = re.compile(
+        r"^" + _ATEXT + r"(?:\." + _ATEXT + r")*@"
+        + _LABEL + r"(?:\." + _LABEL + r")+$")
+    _RE_TAG = re.compile(r"<[^>]+>")
+
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        """A redirect is a request to send the bearer somewhere else. urllib
+        re-sends the Authorization header across one, so refuse instead: a
+        None new-request turns the 30x into an ordinary HTTPError."""
+
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+
+    # An EMPTY ProxyHandler, explicitly: the default opener honours
+    # http_proxy/https_proxy from the runner's environment, which would route
+    # the bearer through whatever that variable names and defeat the origin
+    # pin below.
+    _OPENER = urllib.request.build_opener(
+        _NoRedirect, urllib.request.ProxyHandler({}))
+
+
+    def _pinned(url):
+        u = urllib.parse.urlsplit(url)
+        host = (u.hostname or "").lower()
+        if host in LOOPBACK_HOSTS:
+            return True
+        return u.scheme == "https" and host == GMAIL_HOST
+
+
+    def _get(token, path, params=None):
+        # F1 origin pinning: the engine's `network` capability is declared but
+        # NOT enforced, so this refusal is the defense until host-side egress
+        # enforcement exists. It raises inside the per-account try/except, so
+        # a tampered base stamps THAT account erroring rather than parking the
+        # whole delivery.
+        url = GMAIL_API + path
+        if params:
+            url = url + "?" + urllib.parse.urlencode(params, doseq=True)
+        if not _pinned(url):
+            parts = urllib.parse.urlsplit(url)
+            raise RuntimeError(
+                "google-gmail: refusing to send credentials to %s://%s — only "
+                "https://%s or loopback"
+                % (parts.scheme, parts.hostname or "?", GMAIL_HOST))
+        req = urllib.request.Request(url, headers={
+            "Authorization": "Bearer " + token, "Accept": "application/json"})
+        with _OPENER.open(req, timeout=20) as resp:
+            return _json.loads(resp.read().decode("utf-8"))
+
+
+    def _status(e):
+        return getattr(e, "code", None)
+
+
+    def _reason(e):
+        code = _status(e)
+        if code == 401:
+            return "unauthorized (was the grant revoked at Google?)"
+        if code == 403:
+            return "forbidden (is gmail.readonly granted? a reconnect may be needed)"
+        if code is not None:
+            return "gmail returned HTTP %d" % code
+        return str(e) or type(e).__name__
+
+
+    def _address_id(host, aid, addr):
+        return host.ids.external("google-address", aid, addr)
+
+
+    def _thread_id(host, aid, tid):
+        return host.ids.external("gmail-thread", aid, tid)
+
+
+    def _message_id(host, aid, mid):
+        return host.ids.external("gmail-message", aid, mid)
+
+
+    def _person_ref(host, aid, addr):
+        # The ONE-HOP reference (§6.2): the core edge declares `person`, this
+        # names the emailaddress RECORD, and the engine lands the stored edge
+        # on whatever person that record's mapping resolved. This body never
+        # mints a person and never names one.
+        return {"kind": AUTHORITY + "/emailaddress",
+                "id": _address_id(host, aid, addr)}
+
+
+    def _now():
+        return _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0)
+
+
+    def _iso(ts):
+        return ts.isoformat().replace("+00:00", "Z")
+
+
+    def _parse(ts):
+        try:
+            return _dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+
+
+    def _instant(ms):
+        try:
+            n = int(ms)
+        except (TypeError, ValueError):
+            return ""
+        return _iso(_dt.datetime.fromtimestamp(
+            n / 1000.0, _dt.timezone.utc).replace(microsecond=0))
+
+
+    def _wants(acct):
+        return bool((acct.get("properties") or {}).get("enabledGmail"))
+
+
+    def _due(props):
+        freq = (props.get("syncFrequency") or "daily").lower()
+        if freq == "off":
+            return False
+        last = _parse(props.get("gmailLastSyncedAt"))
+        if last is None:
+            return True
+        hours = 1 if freq == "hourly" else 24
+        return _dt.datetime.now(_dt.timezone.utc) - last >= _dt.timedelta(hours=hours)
+
+
+    def _floor(props, anchor):
+        # F4: the full-read window floor comes off the stream's stored backfill
+        # ANCHOR — the first run's start instant — never off a clock read per
+        # run, so the reach cannot creep forward every night. `none` means
+        # from-connect-forward (the anchor itself); `all` reaches the epoch.
+        depth = str(props.get("backfillDepth") or "last30d").lower()
+        if depth == "all":
+            return ""
+        base = _parse(anchor) or _now()
+        return _iso(base - _dt.timedelta(days=BACKFILL_DAYS.get(depth, 30)))
+
+
+    def _query(floor):
+        ts = _parse(floor) if floor else None
+        if ts is None:
+            return ""
+        return "after:%d" % int(ts.timestamp())
+
+
+    def _headers(payload):
+        out = {}
+        for h in (payload or {}).get("headers") or []:
+            name = str(h.get("name") or "").lower()
+            if name and name not in out:
+                out[name] = h.get("value") or ""
+        return out
+
+
+    def _addrs(value):
+        out, seen = [], set()
+        for name, addr in getaddresses([value or ""]):
+            a = (addr or "").strip().lower()
+            if not a or a in seen:
+                continue
+            seen.add(a)
+            item = {"address": a}
+            label = (name or "").strip()
+            if label:
+                item["name"] = label
+            out.append(item)
+        return out
+
+
+    def _decode(data):
+        if not data:
+            return ""
+        pad = "=" * (-len(data) % 4)
+        try:
+            return base64.urlsafe_b64decode(data + pad).decode("utf-8", "replace")
+        except Exception:
+            return ""
+
+
+    def _walk(part, plain, html):
+        mime = str((part or {}).get("mimeType") or "").lower()
+        body = (part or {}).get("body") or {}
+        if body.get("data"):
+            if mime == "text/plain":
+                plain.append(_decode(body["data"]))
+            elif mime == "text/html":
+                html.append(_decode(body["data"]))
+        for child in (part or {}).get("parts") or []:
+            _walk(child, plain, html)
+
+
+    def _text(payload):
+        plain, html = [], []
+        _walk(payload or {}, plain, html)
+        if plain:
+            body = "\n".join(plain)
+        elif html:
+            body = _RE_TAG.sub(" ", "\n".join(html))
+            for record, ch in (("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"),
+                               ("&gt;", ">"), ("&quot;", '"')):
+                body = body.replace(record, ch)
+        else:
+            body = ""
+        return body.strip()[:TEXT_MAX]
+
+
+    def _attachments(part, out):
+        part = part or {}
+        if part.get("filename"):
+            body = part.get("body") or {}
+            item = {"filename": part["filename"],
+                    "mimeType": part.get("mimeType") or ""}
+            if isinstance(body.get("size"), int):
+                item["sizeBytes"] = body["size"]
+            if body.get("attachmentId"):
+                item["attachmentId"] = body["attachmentId"]
+            out.append(item)
+        for child in part.get("parts") or []:
+            _attachments(child, out)
+
+
+    def _strip(node):
+        # `data` is the ONLY key Gmail puts base64 payload bytes under, and a
+        # page of inline bodies would eat the frame twice over.
+        if isinstance(node, dict):
+            return {k: _strip(v) for k, v in node.items() if k != "data"}
+        if isinstance(node, list):
+            return [_strip(v) for v in node]
+        return node
+
+
+    def _plan(host, aid, msgs):
+        """Turn a hydrate batch into ORDERED write intents: the addresses, one
+        aggregate per thread, then the messages. Nothing stages here — an edge
+        target must already exist when the row referencing it applies, and the
+        effect list applies in order."""
+        addresses, threads, records = {}, {}, []
+        for msg in msgs:
+            mid = str(msg.get("id") or "")
+            if not mid:
+                continue
+            tid = str(msg.get("threadId") or mid)
+            payload = msg.get("payload") or {}
+            hdr = _headers(payload)
+            frm = _addrs(hdr.get("from"))
+            to = _addrs(hdr.get("to"))
+            cc = _addrs(hdr.get("cc"))
+            bcc = _addrs(hdr.get("bcc"))
+            everyone = frm + to + cc + bcc
+            atts = []
+            _attachments(payload, atts)
+            sent_at = _instant(msg.get("internalDate"))
+            subject = hdr.get("subject") or ""
+            preview = msg.get("snippet") or ""
+            for item in everyone:
+                a = item["address"]
+                if not _RE_ADDR.match(a):
+                    continue
+                held = addresses.setdefault(a, {})
+                if item.get("name") and not held.get("name"):
+                    held["name"] = item["name"]
+            records.append({
+                "id": mid, "threadId": tid, "subject": subject,
+                "preview": preview, "text": _text(payload), "sentAt": sent_at,
+                "from": frm[0] if frm else None, "to": to, "cc": cc, "bcc": bcc,
+                "labelIds": [str(x) for x in (msg.get("labelIds") or [])],
+                "historyId": str(msg.get("historyId") or ""),
+                "rfcMessageId": hdr.get("message-id") or "",
+                "sizeEstimate": msg.get("sizeEstimate"),
+                "attachments": atts, "raw": _strip(msg),
+            })
+            agg = threads.setdefault(tid, {"subject": "", "preview": "",
+                                           "lastMessageAt": "", "people": {}})
+            for item in everyone:
+                a = item["address"]
+                if _RE_ADDR.match(a) and a not in agg["people"]:
+                    agg["people"][a] = item.get("name") or ""
+            if sent_at and sent_at >= (agg["lastMessageAt"] or ""):
+                agg["subject"] = subject or agg["subject"]
+                agg["preview"] = preview
+                agg["lastMessageAt"] = sent_at
+        return addresses, threads, records
+
+
+    def _stage_threads(host, aid, threads, generation):
+        # NEWEST-WINS: a backfill walks the mailbox newest-first, so a blind
+        # put from a later (older) page would overwrite the newer subject,
+        # preview and lastMessageAt this row already holds. The committed row
+        # is read once per thread per invocation (at most HYDRATE reads) and
+        # the participant set is UNIONED rather than replaced.
+        for tid in sorted(threads):
+            agg = threads[tid]
+            tref = _thread_id(host, aid, tid)
+            stored = host.records.get(THREAD_TYPE, tref) or {}
+            held = stored.get("properties") or {}
+            people = dict(agg["people"])
+            for p in held.get("participants") or []:
+                addr = str((p or {}).get("address") or "")
+                if addr and addr not in people:
+                    people[addr] = (p or {}).get("name") or ""
+            newest = _parse(agg["lastMessageAt"])
+            previous = _parse(held.get("lastMessageAt"))
+            fresher = newest is not None and (previous is None or newest >= previous)
+            props = {"account": aid, "threadId": tid,
+                     "syncGeneration": generation,
+                     "participants": [
+                         ({"address": a, "name": people[a]} if people[a]
+                          else {"address": a}) for a in sorted(people)]}
+            subject = str(held.get("subject") or "")
+            if fresher:
+                if agg["subject"]:
+                    props["subject"] = agg["subject"]
+                    subject = agg["subject"]
+                props["preview"] = agg["preview"]
+                props["lastMessageAt"] = agg["lastMessageAt"]
+            host.effects.put(THREAD_TYPE, tref, properties=props)
+            core = {"subject": subject} if subject else {}
+            # Same edge cap as the message recipients, and for the same
+            # reason: the mirror's `participants` property keeps the whole
+            # union, the core edge is bounded.
+            everyone = sorted(people)
+            if len(everyone) > MAX_RECIPIENTS:
+                host.log("google-gmail: thread %s has %d participants past "
+                         "the %d-edge cap for %s — the mirror keeps them all"
+                         % (tid, len(everyone) - MAX_RECIPIENTS,
+                            MAX_RECIPIENTS, aid))
+                everyone = everyone[:MAX_RECIPIENTS]
+            host.effects.put(
+                CORE_THREAD, tref, properties=core,
+                edges={"account": {"kind": AUTHORITY + "/account", "id": aid},
+                       "participants": [_person_ref(host, aid, a)
+                                        for a in everyone]})
+
+
+    def _stage_messages(host, aid, records, generation):
+        for rec in records:
+            mref = _message_id(host, aid, rec["id"])
+            tref = _thread_id(host, aid, rec["threadId"])
+            props = {"account": aid, "messageId": rec["id"],
+                     "threadId": rec["threadId"], "syncGeneration": generation,
+                     "raw": rec["raw"]}
+            for key in ("rfcMessageId", "historyId", "subject", "preview",
+                        "text", "sentAt"):
+                if rec[key]:
+                    props[key] = rec[key]
+            for key in ("labelIds", "to", "cc", "bcc", "attachments"):
+                if rec[key]:
+                    props[key] = rec[key]
+            if rec["from"]:
+                props["from"] = rec["from"]
+            if isinstance(rec["sizeEstimate"], int):
+                props["sizeEstimate"] = rec["sizeEstimate"]
+            host.effects.put(MESSAGE_TYPE, mref, properties=props)
+
+            core = {}
+            for key in ("subject", "preview", "text", "labelIds"):
+                if rec[key]:
+                    core[key] = rec[key]
+            if rec["sentAt"]:
+                # `at` is the temporal(point) trait's own column.
+                core["at"] = rec["sentAt"]
+            # `thread` is single-target, so a bare id names it; `sender` and
+            # `recipients` declare `person` and take the one-hop record ref.
+            edges = {"thread": tref}
+            sender = rec["from"]
+            if sender and _RE_ADDR.match(sender["address"]):
+                edges["sender"] = _person_ref(host, aid, sender["address"])
+            recipients, seen, over = [], set(), 0
+            for item in rec["to"] + rec["cc"] + rec["bcc"]:
+                a = item["address"]
+                if a in seen or not _RE_ADDR.match(a):
+                    continue
+                seen.add(a)
+                if len(recipients) >= MAX_RECIPIENTS:
+                    # BOUNDED FRAMES: every edge target is locked in the page's
+                    # ONE transaction, so a 1,000-recipient list across a
+                    # 25-message hydrate is 25,000 locked targets. The mirror
+                    # keeps the full to/cc/bcc lists — nothing is lost, the
+                    # core edge is capped — and the truncation is logged.
+                    over += 1
+                    continue
+                recipients.append(_person_ref(host, aid, a))
+            if over:
+                host.log("google-gmail: message %s has %d recipients past the "
+                         "%d-edge cap for %s — the mirror keeps them all"
+                         % (rec["id"], over, MAX_RECIPIENTS, aid))
+            if recipients:
+                edges["recipients"] = recipients
+            host.effects.put(CORE_MESSAGE, mref, properties=core, edges=edges)
+
+
+    def _live(host, types, ids):
+        """Which of these rows actually EXIST, as a set of `type|id`. Deleting
+        a row that was never written is ErrNotFound and fails the WHOLE
+        delivery — and a history delta always carries retractions for messages
+        this account's window never stored. One list call per 200 ids, both
+        types at once, rather than a read per id."""
+        found = set()
+        ids = sorted({i for i in ids if i})
+        for start in range(0, len(ids), 200):
+            chunk = ids[start:start + 200]
+            page = host.list(filter={"kinds": list(types), "ids": chunk},
+                             first=len(types) * len(chunk))
+            for ent in page.get("records") or []:
+                found.add("%s|%s" % (ent.get("kind") or "", ent.get("id") or ""))
+        return found
+
+
+    def _drop(host, aid, mids):
+        # Both halves of each logical message, core first (the mirror is the
+        # provenance copy, and outliving it by one effect is harmless), and
+        # only the halves that are actually there.
+        refs = {mid: _message_id(host, aid, mid) for mid in mids}
+        live = _live(host, (CORE_MESSAGE, MESSAGE_TYPE), refs.values())
+        for mid in sorted(refs):
+            ref = refs[mid]
+            if ("%s|%s" % (CORE_MESSAGE, ref)) in live:
+                host.effects.delete(CORE_MESSAGE, ref)
+            if ("%s|%s" % (MESSAGE_TYPE, ref)) in live:
+                host.effects.delete(MESSAGE_TYPE, ref)
+
+
+    def _retract_threads(host, aid, dropped, alive):
+        """`dropped` maps a thread id to the message ROW ids just retracted
+        from it. Deleting a thread's LAST message would otherwise leave the
+        derived thread rows — mirror AND core — live and stale forever:
+        nothing in this stream ever revisits a thread whose messages are all
+        gone. `alive` is the set of threads this same history page also ADDED
+        to, which the hydrate behind us is about to re-put."""
+        for tid in sorted(dropped):
+            if not tid or tid in alive:
+                continue
+            gone = dropped[tid]
+            limit = min(len(gone) + 1, SWEEP_PAGE)
+            page = host.records.list(MESSAGE_TYPE,
+                                      where={"account": {"eq": aid},
+                                             "threadId": {"eq": tid}},
+                                      first=limit)
+            rows = [str(e.get("id") or "")
+                    for e in (page.get("records") or [])]
+            # The deletes above are STAGED, not applied, so the rows they will
+            # retract are still listed: a survivor is a row this page did not
+            # drop. A full page is ambiguous — leave the thread standing.
+            if len(rows) >= limit or [r for r in rows if r not in gone]:
+                continue
+            tref = _thread_id(host, aid, tid)
+            live = _live(host, (CORE_THREAD, THREAD_TYPE), [tref])
+            if ("%s|%s" % (CORE_THREAD, tref)) in live:
+                host.effects.delete(CORE_THREAD, tref)
+            if ("%s|%s" % (THREAD_TYPE, tref)) in live:
+                host.effects.delete(THREAD_TYPE, tref)
+
+
+    def _erroring(host, acct, reason):
+        # ONE bounded stamp per episode (F2/F3). The failure is recorded on
+        # THIS STREAM's own status property, so a gmail failure can never
+        # swallow a calendar one (and vice versa) the way a single shared
+        # rollup did; the account-level rollup the console reads generically
+        # is raised too, but only when it is not already erroring — that is
+        # what keeps the account's own update from re-firing the on-connect
+        # trigger into a two-stream ping-pong. NEITHER lastSyncedAt NOR
+        # gmailLastSyncedAt is written — the run did not complete, so the
+        # cadence must keep retrying and the next window floor must not
+        # advance past mail this run never read.
+        props = acct.get("properties") or {}
+        status = "erroring: " + str(reason)[:REASON_MAX]
+        if str(props.get("gmailSyncStatus") or "") == status:
+            return
+        stamp = {"gmailSyncStatus": status}
+        if not str(props.get("syncStatus") or "").startswith("erroring"):
+            stamp["syncStatus"] = status
+        host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), acct.get("id"), properties=stamp)
+
+
+    def _fresh(queue, calls=0):
+        return {"phase": "plan", "queue": queue, "runHistoryId": "",
+                "historyId": "", "generation": "", "floor": "", "anchor": "",
+                "pageToken": "", "pages": 0, "pending": [], "back": "backfill",
+                "after": "", "sweep": False, "resume": {}, "records": 0,
+                "skipped": 0, "calls": calls}
+
+
+    def _spent(cur):
+        # The engine's drain deadline is CUMULATIVE over the whole chain, so
+        # the counter rides across accounts too rather than resetting per
+        # account.
+        return int(cur.get("calls") or 0) >= MAX_CALLS
+
+
+    def _hold(host, aid, cur, next_page):
+        """Persist the unfinished walk and stop walking for this run: the page
+        token, its window, its generation, its watermark AND whether a sweep
+        is still owed.
+
+        The sweep is cleared LOCALLY. A truncated walk has NOT re-stamped the
+        rows it never reached, so running the generation compare now would
+        delete every in-window row behind the page token — the whole archive
+        under `backfillDepth: all`, where the window has no floor at all. The
+        run that finally drains the walk restores the flag and sweeps then."""
+        host.log("google-gmail: backfill walk truncated for %s — resuming "
+                 "next run" % aid)
+        cur["resume"] = {"pageToken": next_page,
+                         "floor": cur.get("floor") or "",
+                         "generation": cur.get("generation") or "",
+                         "historyId": cur.get("runHistoryId") or "",
+                         "sweep": bool(cur.get("sweep"))}
+        cur["pageToken"] = ""
+        cur["sweep"] = False
+        cur["back"] = "finish"
+
+
+    def _plan_account(host, aid, props, token, cur):
+        # The WATERMARK (F5), one quota unit: the run-start historyId, read
+        # before a single message is, stamped only on completion.
+        profile = _get(token, "/gmail/v1/users/me/profile")
+        cur["runHistoryId"] = str(profile.get("historyId") or "")
+        anchor = str(props.get("gmailBackfillAnchorAt") or "")
+        if not anchor:
+            anchor = _iso(_now())
+            cur["anchor"] = anchor
+        held = props.get("gmailBackfillResume") or {}
+        if isinstance(held, str):
+            try:
+                held = _json.loads(held)
+            except ValueError:
+                held = {}
+        if isinstance(held, dict) and held.get("pageToken"):
+            # An earlier run hit a per-run cap: resume ITS walk, under ITS
+            # window and generation — and under ITS watermark. The historyId
+            # must NOT advance to this run's: a backfill walks newest-first,
+            # so mail that arrived after the walk began sits BEHIND the page
+            # token, and only the original run-start floor will let the next
+            # incremental pass pick it up.
+            #
+            # `sweep` is restored with the rest. Without it the reconciliation
+            # a 404 full re-read owes would be silently lost the moment that
+            # walk was truncated — _fresh defaults the flag False, so the run
+            # that finally drains the walk would never sweep at all.
+            cur.update({"phase": "backfill", "pageToken": held["pageToken"],
+                        "floor": held.get("floor") or "",
+                        "generation": held.get("generation") or uuid.uuid4().hex,
+                        "sweep": bool(held.get("sweep")),
+                        "runHistoryId": (held.get("historyId")
+                                         or cur["runHistoryId"])})
+            return cur
+        history_id = str(props.get("gmailHistoryId") or "")
+        if history_id:
+            cur.update({"phase": "history", "historyId": history_id})
+            return cur
+        cur.update({"phase": "backfill", "floor": _floor(props, anchor),
+                    "generation": uuid.uuid4().hex})
+        return cur
+
+
+    def _backfill(host, aid, acct, token, cur):
+        if cur.get("pageToken") and _spent(cur):
+            # The invocation budget is gone MID-WALK: persist the token we
+            # already hold and let this run stamp, rather than spending one
+            # more provider call the engine would refuse to commit.
+            _hold(host, aid, cur, cur["pageToken"])
+            cur["pending"] = []
+            return _stamp(host, aid, acct, cur)
+        params = {"maxResults": LIST_PAGE}
+        query = _query(cur.get("floor") or "")
+        if query:
+            params["q"] = query
+        if cur.get("pageToken"):
+            params["pageToken"] = cur["pageToken"]
+        try:
+            resp = _get(token, "/gmail/v1/users/me/messages", params)
+        except urllib.error.HTTPError as e:
+            if _status(e) != 400 or not cur.get("pageToken"):
+                raise
+            # A Gmail list page token is SHORT-LIVED. Held across a run
+            # boundary it goes stale, 400s, stamps erroring, and the next run
+            # resumes the same dead token — forever. Restart THIS window from
+            # page one under the same floor and the same generation instead;
+            # the pages already walked simply re-stamp.
+            host.log("google-gmail: stale backfill page token for %s — "
+                     "restarting the window" % aid)
+            cur.update({"pageToken": "", "pages": 0})
+            params.pop("pageToken", None)
+            resp = _get(token, "/gmail/v1/users/me/messages", params)
+        cur["pending"] = [str(m.get("id")) for m in (resp.get("messages") or [])
+                          if m.get("id")]
+        cur["pages"] = int(cur.get("pages") or 0) + 1
+        next_page = resp.get("nextPageToken") or ""
+        if next_page and (cur["pages"] >= MAX_LIST_PAGES or _spent(cur)):
+            # F13 / beeper H5: a cold start is bounded — by list pages AND by
+            # invocations — and the truncation is never silent: the unfinished
+            # walk is logged AND persisted on the account, and the next run
+            # resumes it before anything else.
+            _hold(host, aid, cur, next_page)
+        elif next_page:
+            cur["pageToken"] = next_page
+            cur["back"] = "backfill"
+        else:
+            cur["pageToken"] = ""
+            cur["back"] = "finish"
+        cur["phase"] = "hydrate"
+        return {"more": host.page.more(cur)}
+
+
+    def _history(host, aid, acct, token, cur):
+        params = {"startHistoryId": cur.get("historyId") or "", "maxResults": 500}
+        if cur.get("pageToken"):
+            params["pageToken"] = cur["pageToken"]
+        try:
+            resp = _get(token, "/gmail/v1/users/me/history", params)
+        except urllib.error.HTTPError as e:
+            if _status(e) != 404:
+                # ONLY 404 means "that historyId is too old to serve". A 400
+                # is a request bug and a 403 a scope problem; neither may
+                # silently become a full re-read.
+                raise
+            host.log("google-gmail: historyId too old for %s — windowed full "
+                     "re-read" % aid)
+            props = acct.get("properties") or {}
+            anchor = (cur.get("anchor")
+                      or str(props.get("gmailBackfillAnchorAt") or "")
+                      or _iso(_now()))
+            cur.update({"phase": "backfill", "pageToken": "", "pages": 0,
+                        "floor": _floor(props, anchor),
+                        "generation": uuid.uuid4().hex, "sweep": True})
+            return _backfill(host, aid, acct, token, cur)
+        touched, dropped, threads, alive = [], set(), {}, set()
+        for h in resp.get("history") or []:
+            for item in h.get("messagesDeleted") or []:
+                msg = (item or {}).get("message") or {}
+                mid = str(msg.get("id") or "")
+                if not mid:
+                    continue
+                dropped.add(mid)
+                tid = str(msg.get("threadId") or "")
+                if tid:
+                    # The thread each retraction leaves behind, so a thread
+                    # whose LAST message just died can be retracted too.
+                    threads.setdefault(tid, set()).add(
+                        _message_id(host, aid, mid))
+            for key in ("messagesAdded", "labelsAdded", "labelsRemoved"):
+                for item in h.get(key) or []:
+                    msg = (item or {}).get("message") or {}
+                    mid = str(msg.get("id") or "")
+                    if not mid:
+                        continue
+                    touched.append(mid)
+                    tid = str(msg.get("threadId") or "")
+                    if tid:
+                        alive.add(tid)
+        if dropped:
+            _drop(host, aid, sorted(dropped))
+            _retract_threads(host, aid, threads, alive)
+        pending, seen = [], set()
+        for mid in touched:
+            if mid in dropped or mid in seen:
+                continue
+            seen.add(mid)
+            pending.append(mid)
+        cur["pending"] = pending
+        next_page = resp.get("nextPageToken") or ""
+        if next_page and _spent(cur):
+            # The invocation budget is gone and a history walk has no resume
+            # state to persist. STOP without stamping: the run-start watermark
+            # only lands in _stamp, so the next run re-reads this same delta
+            # from the same startHistoryId and every write it repeats is
+            # idempotent. Hydrating what this page already listed first is
+            # free progress.
+            host.log("google-gmail: history delta truncated for %s — the "
+                     "watermark stands and the next run re-reads it" % aid)
+            next_page = ""
+            cur["back"] = "stop"
+        else:
+            cur["back"] = "history" if next_page else "finish"
+        cur["pageToken"] = next_page
+        cur["phase"] = "hydrate"
+        return {"more": host.page.more(cur)}
+
+
+    def _hydrate(host, aid, token, cur):
+        pending = list(cur.get("pending") or [])
+        batch, rest = pending[:HYDRATE], pending[HYDRATE:]
+        msgs, vanished = [], []
+        skipped = int(cur.get("skipped") or 0)
+        for mid in batch:
+            path = "/gmail/v1/users/me/messages/" + urllib.parse.quote(mid, safe="")
+            try:
+                msgs.append(_get(token, path, {"format": "full"}))
+            except urllib.error.HTTPError as e:
+                if _status(e) != 404:
+                    raise
+                # Gone between the listing and the fetch: retract whatever is
+                # there and count it, so the stamp says "ok (N skipped)".
+                host.log("google-gmail: message %s vanished for %s" % (mid, aid))
+                vanished.append(mid)
+                skipped += 1
+        if vanished:
+            _drop(host, aid, vanished)
+        generation = cur.get("generation") or ""
+        addresses, threads, records = _plan(host, aid, msgs)
+        for a in sorted(addresses):
+            props = {"account": aid, "address": a}
+            if addresses[a].get("name"):
+                props["displayName"] = addresses[a]["name"]
+            host.effects.put(ADDRESS_TYPE, _address_id(host, aid, a),
+                             properties=props)
+        _stage_threads(host, aid, threads, generation)
+        _stage_messages(host, aid, records, generation)
+        cur["pending"] = rest
+        cur["skipped"] = skipped
+        cur["records"] = int(cur.get("records") or 0) + len(records)
+        if not rest:
+            cur["phase"] = cur.get("back") or "finish"
+        return {"more": host.page.more(cur)}
+
+
+    def _sweep(host, aid, acct, cur, mirror, core, column):
+        # SCOPED to the re-read WINDOW: Gmail's full read is a window, not the
+        # whole mailbox, so an unscoped generation compare would delete the
+        # archive the window never touched.
+        generation = cur.get("generation") or ""
+        where = {"account": {"eq": aid}}
+        floor = cur.get("floor") or ""
+        if floor:
+            where[column] = {"gte": floor}
+        page = host.records.list(mirror, where=where, first=SWEEP_PAGE,
+                                  after=cur.get("after") or None)
+        stale = []
+        for ent in page.get("records") or []:
+            row = ent.get("properties") or {}
+            eid = str(ent.get("id") or "")
+            if eid and row.get("syncGeneration") != generation:
+                stale.append(eid)
+        live = _live(host, (core,), stale)
+        for eid in stale:
+            if ("%s|%s" % (core, eid)) in live:
+                host.effects.delete(core, eid)
+            host.effects.delete(mirror, eid)
+        cur["after"] = page.get("cursor") or ""
+        return bool(cur["after"])
+
+
+    def _stamp(host, aid, acct, cur):
+        # This stream's own cadence anchor AND the account-level rollup the
+        # console reads: whichever stream finishes last owns the rollup, while
+        # each stream's `_due` and on-connect guard read their own anchor.
+        props = acct.get("properties") or {}
+        skipped = int(cur.get("skipped") or 0)
+        status = "ok" if skipped == 0 else "ok (%d skipped)" % skipped
+        now = _iso(_now())
+        stamp = {"gmailLastSyncedAt": now, "lastSyncedAt": now,
+                 "gmailSyncStatus": status,
+                 "gmailBackfillResume": cur.get("resume") or {}}
+        # The shared rollup is NOT cleared over the other stream's live
+        # failure: a healthy gmail run must not make a broken calendar read
+        # "ok" on the console.
+        if not (str(props.get("syncStatus") or "").startswith("erroring")
+                and str(props.get("calendarSyncStatus") or "").startswith(
+                    "erroring")):
+            stamp["syncStatus"] = status
+        if cur.get("runHistoryId"):
+            # The RUN-START watermark, never the completion clock.
+            stamp["gmailHistoryId"] = cur["runHistoryId"]
+        if cur.get("anchor"):
+            stamp["gmailBackfillAnchorAt"] = cur["anchor"]
+        host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid, properties=stamp)
+        rest = list(cur.get("queue") or [])[1:]
+        if rest:
+            # The invocation counter rides on: the engine's drain deadline is
+            # cumulative over the WHOLE chain, accounts included.
+            return {"more": host.page.more(
+                _fresh(rest, int(cur.get("calls") or 0)))}
+        return {"output": {"account": aid, "records": int(cur.get("records") or 0),
+                           "skipped": skipped}}
+
+
+    def _drain(host, aid, acct, props, token, cur):
+        # One invocation, counted. Everything that can outrun the engine's
+        # cumulative drain deadline reads this counter.
+        cur["calls"] = int(cur.get("calls") or 0) + 1
+        phase = cur.get("phase") or "plan"
+        if phase == "plan":
+            cur = _plan_account(host, aid, props, token, cur)
+            phase = cur["phase"]
+        if phase == "stop":
+            # A truncated history delta: no stamp, so the watermark stands and
+            # the next scheduled run re-reads the same delta.
+            return {}
+        if phase == "hydrate":
+            return _hydrate(host, aid, token, cur)
+        if phase == "backfill":
+            return _backfill(host, aid, acct, token, cur)
+        if phase == "history":
+            return _history(host, aid, acct, token, cur)
+        if phase == "sweepthreads":
+            if _sweep(host, aid, acct, cur, THREAD_TYPE, CORE_THREAD,
+                      "lastMessageAt"):
+                return {"more": host.page.more(cur)}
+            cur.update({"phase": "sweepmessages", "after": ""})
+            return {"more": host.page.more(cur)}
+        if phase == "sweepmessages":
+            if _sweep(host, aid, acct, cur, MESSAGE_TYPE, CORE_MESSAGE, "sentAt"):
+                return {"more": host.page.more(cur)}
+            return _stamp(host, aid, acct, cur)
+        if cur.get("sweep"):
+            # A full re-read happened: the deletes it could not tombstone are
+            # the rows this generation never stamped. Threads first — a
+            # deleted core thread GCs its messages through the ownerRef.
+            cur.update({"phase": "sweepthreads", "after": "", "sweep": False})
+            return {"more": host.page.more(cur)}
+        return _stamp(host, aid, acct, cur)
+
+
+    def main(input, host):
+        cfg = input.get("config") or {}
+        accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
+        # The paged-checkpoint wrapper: host.page.resume() is the opaque cursor
+        # the previous page returned, host.page.more(cursor) builds the
+        # continuation. The access token NEVER enters it (the host would
+        # refuse the whole invocation if it did).
+        resume = host.page.resume() or None
+        if resume:
+            cur = dict(resume)
+        else:
+            record = (input.get("envelope") or {}).get("record") or {}
+            # The envelope SPLITS identity: `type` is the bare local name and
+            # `authority` the authority, so the full identity (ruling A9) has to be
+            # recomposed. Comparing the local name alone would match any
+            # authority's `account`.
+            etype = (record.get("kind") or "")
+            if etype == ACCOUNT_TYPE:
+                # Record-triggered: sync just this account (a connect or edit).
+                queue = [record.get("id")]
+            else:
+                # Schedule-triggered: every connected account that wants gmail
+                # and is due by its cadence.
+                queue = [aid for aid, a in accounts.items()
+                         if _wants(a) and _due(a.get("properties") or {})]
+            cur = _fresh(queue)
+
+        # Advance past accounts we cannot or should not sync. A dead grant is
+        # that account's problem alone (F2): it stamps its own status —
+        # tokenStatus is the facility's hand — and the queue moves on.
+        queue = list(cur.get("queue") or [])
+        while queue:
+            acct = accounts.get(queue[0])
+            if acct is not None and acct.get("tokenError"):
+                host.log("google-gmail: skip %s: %s" % (queue[0], acct["tokenError"]))
+                _erroring(host, acct, acct["tokenError"])
+            if acct is None or not _wants(acct) or acct.get("tokenError") \
+                    or not acct.get("token"):
+                queue = queue[1:]
+                cur = _fresh(queue, int(cur.get("calls") or 0))
+                continue
+            break
+        if not queue:
+            return {}
+
+        aid = queue[0]
+        acct = accounts[aid]
+        cur["queue"] = queue
+        try:
+            return _drain(host, aid, acct, acct.get("properties") or {},
+                          acct["token"], cur)
+        except Exception as e:
+            # F2: a provider failure, a refused origin or a dead grant stamps
+            # THIS account and the drain continues behind it.
+            host.log("google-gmail: %s failed for %s: %s"
+                     % (cur.get("phase"), aid, e))
+            _erroring(host, acct, _reason(e))
+            rest = queue[1:]
+            if rest:
+                return {"more": host.page.more(
+                    _fresh(rest, int(cur.get("calls") or 0)))}
+            return {}
+---
+# ---- the calendar mirror: one Google calendar ------------------------------
+# A calendarList entry, in Google's own shape. Named `calendar` and not
+# `calendarlist`: a bundle's names never repeat their authority (ticket 035),
+# and the substrate addresses by FULL identity everywhere — so this sits
+# beside core's `calendar.substrate.reamde.dev/calendar` without ambiguity.
+#
+# The per-calendar SYNC TOKEN lives here rather than on the account: a
+# `{calendarId: token}` map on one account row would let one calendar's
+# advance skip another's tail, which is exactly the per-stage-cursor bug the
+# github review had to fix.
+kind: core.substrate.reamde.dev/kind
+metadata: {id: google.bundles.substrate.reamde.dev/calendar}
+data:
+  authority: google.bundles.substrate.reamde.dev
+  names: {singular: calendar, plural: calendars}
+  displayTemplate: "{summary|calendarId}"
+  properties:
+    account:
+      type: string
+      displayName: Account
+      description: the account record id this calendar was synced from
+    calendarId:
+      type: string
+      displayName: Calendar ID
+      description: "Google's calendar id — usually an address"
+    summary:
+      type: string
+      displayName: Name
+      description: the calendar's name, summaryOverride preferred over summary
+    timezone:
+      type: timezone
+      displayName: Timezone
+      description: the calendar's default timezone, when Google sends a name
+        that resolves
+    accessRole:
+      type: string
+      displayName: Access role
+      description: "owner, writer or reader — a freeBusyReader share carries
+        no content and is never synced"
+    primary:
+      type: bool
+      displayName: Primary
+      description: whether this is the account's primary calendar
+    selected:
+      type: bool
+      displayName: Selected
+      description: whether the owner has this calendar visible in Google's
+        own UI
+    syncToken:
+      type: string
+      displayName: Sync token
+      description: this calendar's events sync token — stored per calendar,
+        never on the account
+    syncGeneration:
+      type: string
+      displayName: Sync generation
+      description: the full-read generation this calendar's events were last
+        stamped with
+    raw:
+      type: json
+      displayName: Raw entry
+      description: the calendarList entry as fetched, for provenance
+---
+# ---- the calendar mirror: one event instance -------------------------------
+# `singleEvents=true`, so every row is a concrete OCCURRENCE, which is what
+# core's calendarevent is documented to be. Series masters are NOT expanded
+# into `calendareventseries` this slice (that needs a separate events.get per
+# distinct master and a second core type with its own required calendar edge);
+# `recurringEventId` and `recurrence` ride along so the series slice is a pure
+# follow-up. Attendee `responseStatus`, `optional` and `resource` stay HERE:
+# an edge carries no properties, so the core row's `attendees` edge cannot
+# hold them.
+kind: core.substrate.reamde.dev/kind
+metadata: {id: google.bundles.substrate.reamde.dev/event}
+data:
+  authority: google.bundles.substrate.reamde.dev
+  names: {singular: event, plural: events}
+  displayTemplate: "{summary|eventId}"
+  properties:
+    account:
+      type: string
+      displayName: Account
+      description: the account record id this event was synced from
+    calendarId:
+      type: string
+      displayName: Calendar ID
+      description: the Google calendar id this event lives in
+    eventId:
+      type: string
+      displayName: Event ID
+      description: "Google's event id — unique per calendar, not globally,
+        so the row id nests the calendar's"
+    icalUID:
+      type: string
+      displayName: iCal UID
+      description: "the iCalendar UID, stable across copies of the same event"
+    syncGeneration:
+      type: string
+      displayName: Sync generation
+      description: the full-read generation this event was last seen in
+    status:
+      type: string
+      displayName: Status
+      description: "confirmed or tentative — a cancelled event is deleted,
+        never stored"
+    summary:
+      type: string
+      displayName: Summary
+      description: iCalendar's SUMMARY, the event's title line
+    description:
+      type: text
+      displayName: Description
+      description: iCalendar's DESCRIPTION, as written
+    location:
+      type: string
+      displayName: Location
+      description: iCalendar's LOCATION, as written
+    startAt:
+      type: datetime
+      displayName: Starts
+      description: the instance start, all-day dates resolved in the event
+        or calendar timezone
+    endAt:
+      type: datetime
+      displayName: Ends
+      description: the instance end, all-day dates resolved in the event or
+        calendar timezone
+    allDay:
+      type: bool
+      displayName: All day
+      description: whether Google sent a date instead of a dateTime
+    timezone:
+      type: timezone
+      displayName: Timezone
+      description: the event's own timezone, when it carries one that resolves
+    recurringEventId:
+      type: string
+      displayName: Series ID
+      description: the master event id when this instance was exploded from
+        a series
+    recurrence:
+      type: string
+      repeated: true
+      displayName: Recurrence
+      description: "the master's RRULE and EXDATE lines, verbatim (series
+        masters only)"
+    meetingURL:
+      type: url
+      displayName: Meeting link
+      description: hangoutLink, or the first video entry point in conferenceData
+    eventType:
+      type: string
+      displayName: Event type
+      description: "default, outOfOffice, focusTime or workingLocation"
+    transparency:
+      type: string
+      displayName: Transparency
+      description: "opaque (busy) or transparent (free)"
+    visibility:
+      type: string
+      displayName: Visibility
+      description: "default, public, private or confidential"
+    providerUpdatedAt:
+      type: datetime
+      displayName: Updated
+      description: Google's own last-modified instant for this event
+    organizer:
+      type: object
+      displayName: Organizer
+      description: the organizer, as Google sent it
+      fields:
+        address: string
+        name: string
+    attendees:
+      type: object
+      repeated: true
+      displayName: Attendees
+      description: "attendees with the fields an edge cannot carry (responseStatus,
+        optional, resource)"
+      fields:
+        address: string
+        name: string
+        responseStatus: string
+        optional: bool
+        resource: bool
+    raw:
+      type: json
+      displayName: Raw event
+      description: the events.list item as fetched, for provenance
+---
+# ---- the calendar sync -----------------------------------------------------
+# Dependency-free stdlib, same reasons as gmailsync: the fast path, a
+# hand-pinned origin, and a body a test can point at an httptest server.
+#
+# Google Calendar's incremental rules are honored verbatim: nextSyncToken
+# arrives ONLY on the final page, an incremental call repeats the initial
+# query parameters exactly (and may carry no time bounds beside a token), a
+# 410 GONE means the token is dead, and a delta always carries `cancelled`
+# entries which are DELETES — core's calendarevent is documented as retracted
+# rather than tombstoned, so a reader never filters cancellations.
+kind: core.substrate.reamde.dev/function
+metadata: {id: google.bundles.substrate.reamde.dev/calendarsync}
+data:
+  authority: google.bundles.substrate.reamde.dev
+  description: >-
+    Sync a Google account's calendars: drain each calendar's events on its
+    own sync token, mirror them, and emit core calendar and calendarevent
+    rows with person-resolved attendees.
+  runtime: python
+  timeoutMs: 30000
+  capabilities:
+    emit:
+      - google.bundles.substrate.reamde.dev/calendar
+      - google.bundles.substrate.reamde.dev/event
+      - google.bundles.substrate.reamde.dev/emailaddress
+      - google.bundles.substrate.reamde.dev/account
+      - calendar.substrate.reamde.dev/calendar
+      - calendar.substrate.reamde.dev/calendarevent
+    # The calendar mirror holds each calendar's own sync token; the event
+    # mirror drives the sweep. The core types are read ONLY to prove a row
+    # exists before retracting it — every delta carries `cancelled` entries
+    # for events this window never stored, and deleting one that was never
+    # written is ErrNotFound and would fail the whole delivery.
+    reads:
+      kinds:
+        - google.bundles.substrate.reamde.dev/calendar
+        - google.bundles.substrate.reamde.dev/event
+        - calendar.substrate.reamde.dev/calendar
+        - calendar.substrate.reamde.dev/calendarevent
+      budgets:
+        calls: 256
+        rows: 10000
+    network:
+      - "www.googleapis.com"
+  source: |
+    """Google Calendar sync — one events page per calendar per invocation.
+
+    The account's live access token arrives injected on the bundle config
+    (`config.accounts[].token`, host-resolved); this body never sees a client
+    secret or a credential ref, and it refuses to send the token anywhere but
+    https://www.googleapis.com or loopback (the test seam) — redirects
+    included.
+
+    One SYNC TOKEN PER CALENDAR, stored on that calendar's own mirror row, so
+    one calendar's advance can never skip another's tail. The token commits
+    ONLY from the page that carries nextSyncToken (the final one), so a page
+    that fails leaves the previous token standing and the whole delta re-reads
+    next run: a sync token is all or nothing.
+
+    A 410 GONE — and only a 410 — means the token died. That drops to a
+    WINDOWED full re-read of that ONE calendar under a fresh generation,
+    followed by a sweep scoped to the same window, which is what turns the
+    deletes a full read cannot tombstone into actual retractions.
+
+    Per-account isolation (F2/F3): the per-account drain is try/except; a
+    failure stamps THAT account's rollup syncStatus "erroring: <reason>" once
+    and leaves both lastSyncedAt and calendarLastSyncedAt alone.
+    """
+    import datetime as _dt
+    import json as _json
+    import re
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    import uuid
+    from zoneinfo import ZoneInfo
+
+    AUTHORITY = "google.bundles.substrate.reamde.dev"
+    ACCOUNT_TYPE = AUTHORITY + "/account"
+    ADDRESS_TYPE = AUTHORITY + "/emailaddress"
+    CALENDAR_TYPE = AUTHORITY + "/calendar"
+    EVENT_TYPE = AUTHORITY + "/event"
+    CORE_CALENDAR = "calendar.substrate.reamde.dev/calendar"
+    CORE_EVENT = "calendar.substrate.reamde.dev/calendarevent"
+
+    CAL_API = "https://www.googleapis.com"
+    CAL_HOST = "www.googleapis.com"
+    LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+    LIST_PATH = "/calendar/v3/users/me/calendarList"
+
+    # The initial query parameters, PINNED in one place: an incremental call
+    # must repeat them exactly or Google 400s the request.
+    EVENT_PARAMS = {"singleEvents": "true", "showDeleted": "true",
+                    "maxResults": 250}
+    CALENDAR_PAGE = 250
+    SWEEP_PAGE = 200
+    # A full read never reaches past a year ahead: a calendar with a recurring
+    # event exploded to 2099 would otherwise page forever.
+    HORIZON_DAYS = 365
+    REASON_MAX = 200
+    BACKFILL_DAYS = {"none": 0, "last30d": 30, "last90d": 90, "last1y": 365}
+    # The RFC 5322 dot-atom production, the same one gmailsync uses and for
+    # the same reason: `emailaddress.address` is an `email`-kind property and
+    # the engine validates it with Go's net/mail.ParseAddress at effect APPLY,
+    # where this body's try/except cannot see the failure. A looser pattern
+    # (`.a@x.com`, `a..b@x.com`, `a(b@x.com` …) rolls the page's transaction
+    # back and parks the drain deterministically on every retry.
+    _ATEXT = r"[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+"
+    _LABEL = r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
+    _RE_ADDR = re.compile(
+        r"^" + _ATEXT + r"(?:\." + _ATEXT + r")*@"
+        + _LABEL + r"(?:\." + _LABEL + r")+$")
+
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        """urllib re-sends the Authorization header across a redirect. Refuse
+        instead: a None new-request turns the 30x into an ordinary error."""
+
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+
+    # An EMPTY ProxyHandler, explicitly: the default opener honours
+    # http_proxy/https_proxy from the runner's environment, which would route
+    # the bearer through whatever that variable names.
+    _OPENER = urllib.request.build_opener(
+        _NoRedirect, urllib.request.ProxyHandler({}))
+
+
+    def _pinned(url):
+        u = urllib.parse.urlsplit(url)
+        host = (u.hostname or "").lower()
+        if host in LOOPBACK_HOSTS:
+            return True
+        return u.scheme == "https" and host == CAL_HOST
+
+
+    def _get(token, path, params=None):
+        # F1 origin pinning: `capabilities.network` is declared but NOT
+        # enforced, so this refusal is the defense. It raises inside the
+        # per-account try/except, so a tampered base stamps THAT account
+        # erroring rather than parking the whole delivery.
+        url = CAL_API + path
+        if params:
+            url = url + "?" + urllib.parse.urlencode(params, doseq=True)
+        if not _pinned(url):
+            parts = urllib.parse.urlsplit(url)
+            raise RuntimeError(
+                "google-calendar: refusing to send credentials to %s://%s — "
+                "only https://%s or loopback"
+                % (parts.scheme, parts.hostname or "?", CAL_HOST))
+        req = urllib.request.Request(url, headers={
+            "Authorization": "Bearer " + token, "Accept": "application/json"})
+        with _OPENER.open(req, timeout=20) as resp:
+            return _json.loads(resp.read().decode("utf-8"))
+
+
+    def _status(e):
+        return getattr(e, "code", None)
+
+
+    def _reason(e):
+        code = _status(e)
+        if code == 401:
+            return "unauthorized (was the grant revoked at Google?)"
+        if code == 403:
+            return "forbidden (is calendar.readonly granted? a reconnect may be needed)"
+        if code is not None:
+            return "calendar returned HTTP %d" % code
+        return str(e) or type(e).__name__
+
+
+    def _events_path(cid):
+        return "/calendar/v3/calendars/%s/events" % urllib.parse.quote(cid, safe="")
+
+
+    def _calendar_id(host, aid, cid):
+        return host.ids.external("gcal-calendar", aid, cid)
+
+
+    def _event_id(host, cref, eid):
+        # NESTED, never composed: a Google event id is unique per CALENDAR,
+        # and "cal/event" string composition is not injective ("a/b" + "/" +
+        # "c" reads the same as "a" + "/" + "b/c") — the very bug the contact
+        # id migration exists to undo. The calendar's own derived id is the
+        # account component of the event's.
+        return host.ids.external("gcal-event", cref, eid)
+
+
+    def _address_id(host, aid, addr):
+        return host.ids.external("google-address", aid, addr)
+
+
+    def _person_ref(host, aid, addr):
+        # The ONE-HOP reference (§6.2): the core edge declares `person`, this
+        # names the emailaddress RECORD, and the engine lands the stored edge
+        # on whatever person that record's mapping resolved.
+        return {"kind": AUTHORITY + "/emailaddress",
+                "id": _address_id(host, aid, addr)}
+
+
+    def _now():
+        return _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0)
+
+
+    def _iso(ts):
+        return ts.astimezone(_dt.timezone.utc).replace(
+            microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+    def _parse(ts):
+        try:
+            return _dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+
+
+    def _zone_name(name):
+        # A `timezone`-kind property only admits a name the host can load, so
+        # anything else is dropped rather than failing the whole page.
+        name = str(name or "").strip()
+        if not name:
+            return ""
+        try:
+            ZoneInfo(name)
+        except Exception:
+            return ""
+        return name
+
+
+    def _zone(name):
+        try:
+            return ZoneInfo(name)
+        except Exception:
+            return _dt.timezone.utc
+
+
+    def _wants(acct):
+        return bool((acct.get("properties") or {}).get("enabledCalendar"))
+
+
+    def _due(props):
+        freq = (props.get("syncFrequency") or "daily").lower()
+        if freq == "off":
+            return False
+        last = _parse(props.get("calendarLastSyncedAt"))
+        if last is None:
+            return True
+        hours = 1 if freq == "hourly" else 24
+        return _dt.datetime.now(_dt.timezone.utc) - last >= _dt.timedelta(hours=hours)
+
+
+    def _floor(props, anchor):
+        # F4, the same table gmail uses: the window floor comes off the
+        # stream's stored backfill ANCHOR — the first run's start instant —
+        # never off a clock read per run. `none` is from-connect-forward.
+        depth = str(props.get("backfillDepth") or "last30d").lower()
+        if depth == "all":
+            return ""
+        base = _parse(anchor) or _now()
+        return _iso(base - _dt.timedelta(days=BACKFILL_DAYS.get(depth, 30)))
+
+
+    def _params(cur):
+        params = dict(EVENT_PARAMS)
+        token = cur.get("syncToken") or ""
+        if token:
+            # Google refuses timeMin/timeMax beside a syncToken, and every
+            # other parameter must repeat the initial request exactly.
+            params["syncToken"] = token
+        else:
+            if cur.get("floor"):
+                params["timeMin"] = cur["floor"]
+            params["timeMax"] = cur.get("ceil") or ""
+        if cur.get("pageToken"):
+            params["pageToken"] = cur["pageToken"]
+        return params
+
+
+    def _party(raw):
+        raw = raw or {}
+        out = {}
+        addr = str(raw.get("email") or "").strip().lower()
+        if addr:
+            out["address"] = addr
+        name = str(raw.get("displayName") or "").strip()
+        if name:
+            out["name"] = name
+        return out or None
+
+
+    def _meeting_url(item):
+        link = str(item.get("hangoutLink") or "").strip()
+        if link.startswith("http"):
+            return link
+        for entry in ((item.get("conferenceData") or {}).get("entryPoints") or []):
+            if str((entry or {}).get("entryPointType") or "") != "video":
+                continue
+            uri = str((entry or {}).get("uri") or "").strip()
+            if uri.startswith("http"):
+                return uri
+        return ""
+
+
+    def _instant(value, zone):
+        value = value or {}
+        if value.get("dateTime"):
+            ts = _parse(value["dateTime"])
+            if ts is None:
+                return ""
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=zone)
+            return _iso(ts)
+        if value.get("date"):
+            try:
+                day = _dt.date.fromisoformat(str(value["date"]))
+            except ValueError:
+                return ""
+            return _iso(_dt.datetime(day.year, day.month, day.day, tzinfo=zone))
+        return ""
+
+
+    def _event_props(host, aid, cid, item, cal_zone, generation):
+        eid = str(item.get("id") or "")
+        start, end = item.get("start") or {}, item.get("end") or {}
+        tzname = (_zone_name(start.get("timeZone"))
+                  or _zone_name(end.get("timeZone")))
+        zone = _zone(tzname) if tzname else cal_zone
+        props = {"account": aid, "calendarId": cid, "eventId": eid,
+                 "syncGeneration": generation, "raw": item,
+                 "allDay": bool(start.get("date")),
+                 "status": str(item.get("status") or "confirmed")}
+        for src, dst in (("iCalUID", "icalUID"), ("summary", "summary"),
+                         ("description", "description"),
+                         ("location", "location"),
+                         ("recurringEventId", "recurringEventId"),
+                         ("eventType", "eventType"),
+                         ("transparency", "transparency"),
+                         ("visibility", "visibility")):
+            if item.get(src):
+                props[dst] = str(item[src])
+        if tzname:
+            props["timezone"] = tzname
+        if item.get("recurrence"):
+            props["recurrence"] = [str(r) for r in item["recurrence"]]
+        updated = _parse(item.get("updated"))
+        if updated is not None:
+            props["providerUpdatedAt"] = _iso(updated)
+        link = _meeting_url(item)
+        if link:
+            props["meetingURL"] = link
+        starts, ends = _instant(start, zone), _instant(end, zone)
+        if starts:
+            props["startAt"] = starts
+        if ends:
+            props["endAt"] = ends
+        organizer = _party(item.get("organizer"))
+        if organizer:
+            props["organizer"] = organizer
+        attendees = []
+        for raw in item.get("attendees") or []:
+            party = _party(raw)
+            if not party:
+                continue
+            if raw.get("responseStatus"):
+                party["responseStatus"] = str(raw["responseStatus"])
+            if raw.get("optional"):
+                party["optional"] = True
+            if raw.get("resource"):
+                party["resource"] = True
+            attendees.append(party)
+        if attendees:
+            props["attendees"] = attendees
+        return props, starts, ends, organizer, attendees
+
+
+    def _valid(party):
+        addr = str((party or {}).get("address") or "")
+        return addr if _RE_ADDR.match(addr) else ""
+
+
+    def _live(host, types, ids):
+        """Which of these rows actually EXIST, as a set of `type|id`. Deleting
+        a row that was never written is ErrNotFound and fails the WHOLE
+        delivery — and every delta carries `cancelled` entries for events this
+        window never stored. One list call per 200 ids, both types at once."""
+        found = set()
+        ids = sorted({i for i in ids if i})
+        for start in range(0, len(ids), 200):
+            chunk = ids[start:start + 200]
+            page = host.list(filter={"kinds": list(types), "ids": chunk},
+                             first=len(types) * len(chunk))
+            for ent in page.get("records") or []:
+                found.add("%s|%s" % (ent.get("kind") or "", ent.get("id") or ""))
+        return found
+
+
+    def _stage_events(host, aid, cid, cref, items, cal_zone, generation):
+        """Stage one events page IN ORDER: the addresses first (an edge target
+        must exist when the row referencing it applies), then the deletes a
+        delta's `cancelled` entries mean, then the puts."""
+        addresses, drops, keeps = {}, [], []
+        for item in items:
+            eid = str(item.get("id") or "")
+            if not eid:
+                continue
+            if str(item.get("status") or "") == "cancelled":
+                drops.append(eid)
+                continue
+            parsed = _event_props(host, aid, cid, item, cal_zone, generation)
+            keeps.append((eid,) + parsed)
+            props, _, _, organizer, attendees = parsed
+            for party in ([organizer] if organizer else []) + attendees:
+                addr = _valid(party)
+                if not addr:
+                    continue
+                held = addresses.setdefault(addr, {})
+                if party.get("name") and not held.get("name"):
+                    held["name"] = party["name"]
+        for addr in sorted(addresses):
+            props = {"account": aid, "address": addr}
+            if addresses[addr].get("name"):
+                props["displayName"] = addresses[addr]["name"]
+            host.effects.put(ADDRESS_TYPE, _address_id(host, aid, addr),
+                             properties=props)
+        # Core RETRACTS rather than tombstones a cancellation: a reader never
+        # filters cancelled events, so both halves go — but only the halves
+        # that are actually there.
+        refs = [_event_id(host, cref, eid) for eid in drops]
+        live = _live(host, (CORE_EVENT, EVENT_TYPE), refs)
+        for eref in refs:
+            if ("%s|%s" % (CORE_EVENT, eref)) in live:
+                host.effects.delete(CORE_EVENT, eref)
+            if ("%s|%s" % (EVENT_TYPE, eref)) in live:
+                host.effects.delete(EVENT_TYPE, eref)
+        for eid, props, starts, ends, organizer, attendees in keeps:
+            eref = _event_id(host, cref, eid)
+            host.effects.put(EVENT_TYPE, eref, properties=props)
+            core = {}
+            for key in ("summary", "location", "description", "status",
+                        "meetingURL", "eventType"):
+                if props.get(key):
+                    core[key] = props[key]
+            if starts:
+                # `at`/`endsAt` are the temporal(range) trait's own columns.
+                core["at"] = starts
+            if ends:
+                core["endsAt"] = ends
+            edges = {"calendar": cref}
+            addr = _valid(organizer)
+            if addr:
+                edges["organizer"] = _person_ref(host, aid, addr)
+            refs, seen = [], set()
+            for party in attendees:
+                addr = _valid(party)
+                if not addr or addr in seen:
+                    continue
+                seen.add(addr)
+                refs.append(_person_ref(host, aid, addr))
+            if refs:
+                edges["attendees"] = refs
+            host.effects.put(CORE_EVENT, eref, properties=core, edges=edges)
+        return len(keeps), len(drops)
+
+
+    def _erroring(host, acct, reason):
+        # ONE bounded stamp per episode (F2/F3). The failure is recorded on
+        # THIS STREAM's own status property, so a gmail failure can never
+        # swallow a calendar one; the shared rollup the console reads
+        # generically is raised too, but only when it is not already erroring
+        # — that is what keeps the account's own update from re-firing the
+        # on-connect trigger into a two-stream ping-pong. NEITHER lastSyncedAt
+        # NOR calendarLastSyncedAt is written: the run did not complete, so
+        # the cadence must keep retrying and the window floor must not advance.
+        props = acct.get("properties") or {}
+        status = "erroring: " + str(reason)[:REASON_MAX]
+        if str(props.get("calendarSyncStatus") or "") == status:
+            return
+        stamp = {"calendarSyncStatus": status}
+        if not str(props.get("syncStatus") or "").startswith("erroring"):
+            stamp["syncStatus"] = status
+        host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), acct.get("id"), properties=stamp)
+
+
+    def _fresh(queue):
+        return {"phase": "plan", "queue": queue, "pageToken": "", "cals": [],
+                "dead": [], "started": False, "syncToken": "",
+                "generation": "", "calTz": "", "floor": "", "ceil": "",
+                "after": "", "anchor": "", "sweep": False, "records": 0,
+                # `cancelled` is the provider's own housekeeping — a delta
+                # ALWAYS carries cancellations — and `skipped` is a failure.
+                # Counting the first as the second made an ordinary calendar
+                # sync read "ok (N skipped)" on the console forever.
+                "cancelled": 0, "skipped": 0}
+
+
+    def _plan_account(props, cur):
+        anchor = str(props.get("calendarBackfillAnchorAt") or "")
+        if not anchor:
+            anchor = _iso(_now())
+            cur["anchor"] = anchor
+        cur["floor"] = _floor(props, anchor)
+        cur["ceil"] = _iso(_now() + _dt.timedelta(days=HORIZON_DAYS))
+        cur["phase"] = "calendars"
+        return cur
+
+
+    def _calendars(host, aid, token, cur):
+        # `showDeleted=true` is what makes an UNSUBSCRIBED or deleted calendar
+        # observable at all. Without it the entry simply stops appearing, the
+        # calendar is never walked again, its per-calendar 410 never comes,
+        # and its mirror, its core row and every one of its events stay live
+        # and stale forever — the sweep is per-calendar and only a walk
+        # reaches it.
+        params = {"maxResults": CALENDAR_PAGE, "showHidden": "true",
+                  "showDeleted": "true"}
+        if cur.get("pageToken"):
+            params["pageToken"] = cur["pageToken"]
+        resp = _get(token, LIST_PATH, params)
+        cals = list(cur.get("cals") or [])
+        dead = list(cur.get("dead") or [])
+        for item in resp.get("items") or []:
+            cid = str(item.get("id") or "")
+            if not cid:
+                continue
+            if item.get("deleted"):
+                # Retracted below, in its own bounded phase — and NOT enqueued
+                # for event sync.
+                dead.append(cid)
+                continue
+            role = str(item.get("accessRole") or "")
+            if role == "freeBusyReader":
+                # A free/busy share carries no content: nothing to mirror.
+                continue
+            cref = _calendar_id(host, aid, cid)
+            summary = str(item.get("summaryOverride") or item.get("summary")
+                          or cid)
+            tzname = _zone_name(item.get("timeZone"))
+            props = {"account": aid, "calendarId": cid, "summary": summary,
+                     "accessRole": role, "primary": bool(item.get("primary")),
+                     "selected": bool(item.get("selected")), "raw": item}
+            if tzname:
+                props["timezone"] = tzname
+            # A put MERGES and never prunes, so this calendar's stored
+            # syncToken and syncGeneration survive the refresh.
+            host.effects.put(CALENDAR_TYPE, cref, properties=props)
+            core = {"name": summary}
+            if tzname:
+                core["timezone"] = tzname
+            host.effects.put(
+                CORE_CALENDAR, cref, properties=core,
+                edges={"account": {"kind": AUTHORITY + "/account", "id": aid}})
+            cals.append(cid)
+        cur["cals"] = cals
+        cur["dead"] = dead
+        next_page = resp.get("nextPageToken") or ""
+        if next_page:
+            cur["pageToken"] = next_page
+            return {"more": host.page.more(cur)}
+        cur.update({"pageToken": "", "phase": "purge", "started": False,
+                    "after": ""})
+        return {"more": host.page.more(cur)}
+
+
+    def _purge(host, aid, cur):
+        """Retract one DELETED calendar, a bounded page at a time: its event
+        mirrors and their core rows first, then both halves of the calendar
+        itself. Only rows that are actually there — deleting one that was
+        never written is ErrNotFound and fails the whole delivery."""
+        dead = list(cur.get("dead") or [])
+        if not dead:
+            cur.update({"phase": "events", "after": "", "started": False})
+            return {"more": host.page.more(cur)}
+        cid = dead[0]
+        cref = _calendar_id(host, aid, cid)
+        page = host.records.list(EVENT_TYPE,
+                                  where={"account": {"eq": aid},
+                                         "calendarId": {"eq": cid}},
+                                  first=SWEEP_PAGE,
+                                  after=cur.get("after") or None)
+        eids = [str(e.get("id") or "") for e in (page.get("records") or [])]
+        eids = [e for e in eids if e]
+        if eids:
+            live = _live(host, (CORE_EVENT,), eids)
+            for eid in eids:
+                if ("%s|%s" % (CORE_EVENT, eid)) in live:
+                    host.effects.delete(CORE_EVENT, eid)
+                host.effects.delete(EVENT_TYPE, eid)
+        cur["after"] = page.get("cursor") or ""
+        if cur["after"]:
+            return {"more": host.page.more(cur)}
+        host.log("google-calendar: calendar %s is gone for %s — retracted "
+                 "with its events" % (cid, aid))
+        live = _live(host, (CORE_CALENDAR, CALENDAR_TYPE), [cref])
+        if ("%s|%s" % (CORE_CALENDAR, cref)) in live:
+            host.effects.delete(CORE_CALENDAR, cref)
+        if ("%s|%s" % (CALENDAR_TYPE, cref)) in live:
+            host.effects.delete(CALENDAR_TYPE, cref)
+        cur.update({"dead": dead[1:], "after": ""})
+        return {"more": host.page.more(cur)}
+
+
+    def _next_calendar(cur):
+        cur.update({"cals": list(cur.get("cals") or [])[1:], "started": False,
+                    "pageToken": "", "syncToken": "", "generation": "",
+                    "calTz": "", "sweep": False, "after": ""})
+        cur["phase"] = "events" if cur["cals"] else "finish"
+        return cur
+
+
+    def _events(host, aid, token, cur):
+        cals = list(cur.get("cals") or [])
+        if not cals:
+            cur["phase"] = "finish"
+            return {"more": host.page.more(cur)}
+        cid = cals[0]
+        cref = _calendar_id(host, aid, cid)
+        if not cur.get("started"):
+            # The calendar reached the head: its OWN stored token decides
+            # whether this walk is incremental or a windowed full read.
+            row = host.records.get(CALENDAR_TYPE, cref) or {}
+            held = row.get("properties") or {}
+            token_held = str(held.get("syncToken") or "")
+            cur.update({"syncToken": token_held, "pageToken": "",
+                        "started": True,
+                        "calTz": str(held.get("timezone") or ""),
+                        "generation": "" if token_held else uuid.uuid4().hex})
+        try:
+            resp = _get(token, _events_path(cid), _params(cur))
+        except urllib.error.HTTPError as e:
+            if _status(e) != 410 or not cur.get("syncToken"):
+                # ONLY a 410 means the token died. A 400 is a request bug and
+                # a 403 a scope problem; neither may become a full re-read.
+                raise
+            host.log("google-calendar: sync token gone for %s/%s — windowed "
+                     "full re-read" % (aid, cid))
+            cur.update({"syncToken": "", "generation": uuid.uuid4().hex,
+                        "pageToken": "", "sweep": True})
+            resp = _get(token, _events_path(cid), _params(cur))
+        cal_zone = _zone(cur.get("calTz") or "UTC")
+        kept, dropped = _stage_events(host, aid, cid, cref,
+                                      resp.get("items") or [], cal_zone,
+                                      cur.get("generation") or "")
+        cur["records"] = int(cur.get("records") or 0) + kept
+        cur["cancelled"] = int(cur.get("cancelled") or 0) + dropped
+        next_page = resp.get("nextPageToken") or ""
+        if next_page:
+            cur["pageToken"] = next_page
+            return {"more": host.page.more(cur)}
+        # The FINAL page, and the only one that carries nextSyncToken.
+        stamp = {}
+        if resp.get("nextSyncToken"):
+            stamp["syncToken"] = str(resp["nextSyncToken"])
+        if cur.get("generation"):
+            stamp["syncGeneration"] = cur["generation"]
+        if stamp:
+            host.effects.patch(CALENDAR_TYPE, cref, properties=stamp)
+        if cur.get("sweep"):
+            cur.update({"phase": "sweep", "after": ""})
+            return {"more": host.page.more(cur)}
+        return {"more": host.page.more(_next_calendar(cur))}
+
+
+    def _sweep(host, aid, cid, cur):
+        # SCOPED to this ONE calendar and to the re-read WINDOW — BOTH ends of
+        # it. The floor is obvious; the CEILING is the one that bit: an
+        # incremental delta carries no time bounds at all, so it legitimately
+        # stores an event eighteen months out, which the windowed re-read
+        # (bounded by timeMax = ceil) can never re-stamp. Without the `lte`
+        # the generation compare would then delete it. condJSON ANDs the ops
+        # on one Cond, so both bounds ride the same clause.
+        generation = cur.get("generation") or ""
+        where = {"account": {"eq": aid}, "calendarId": {"eq": cid}}
+        bounds = {}
+        if cur.get("floor"):
+            bounds["gte"] = cur["floor"]
+        if cur.get("ceil"):
+            bounds["lte"] = cur["ceil"]
+        if bounds:
+            where["startAt"] = bounds
+        page = host.records.list(EVENT_TYPE, where=where, first=SWEEP_PAGE,
+                                  after=cur.get("after") or None)
+        stale = []
+        for ent in page.get("records") or []:
+            eid = str(ent.get("id") or "")
+            row = ent.get("properties") or {}
+            if eid and row.get("syncGeneration") != generation:
+                stale.append(eid)
+        live = _live(host, (CORE_EVENT,), stale)
+        for eid in stale:
+            if ("%s|%s" % (CORE_EVENT, eid)) in live:
+                host.effects.delete(CORE_EVENT, eid)
+            host.effects.delete(EVENT_TYPE, eid)
+        cur["after"] = page.get("cursor") or ""
+        return bool(cur["after"])
+
+
+    def _stamp(host, aid, acct, cur):
+        # This stream's own cadence anchor AND the account-level rollup the
+        # console reads.
+        props = acct.get("properties") or {}
+        skipped = int(cur.get("skipped") or 0)
+        status = "ok" if skipped == 0 else "ok (%d skipped)" % skipped
+        now = _iso(_now())
+        stamp = {"calendarLastSyncedAt": now, "lastSyncedAt": now,
+                 "calendarSyncStatus": status}
+        # The shared rollup is NOT cleared over the other stream's live
+        # failure: a healthy calendar run must not make a broken gmail read
+        # "ok" on the console.
+        if not (str(props.get("syncStatus") or "").startswith("erroring")
+                and str(props.get("gmailSyncStatus") or "").startswith(
+                    "erroring")):
+            stamp["syncStatus"] = status
+        if cur.get("anchor"):
+            stamp["calendarBackfillAnchorAt"] = cur["anchor"]
+        host.effects.patch((acct.get("kind") or ACCOUNT_TYPE), aid, properties=stamp)
+        rest = list(cur.get("queue") or [])[1:]
+        if rest:
+            return {"more": host.page.more(_fresh(rest))}
+        return {"output": {"account": aid,
+                           "records": int(cur.get("records") or 0),
+                           "cancelled": int(cur.get("cancelled") or 0),
+                           "skipped": skipped}}
+
+
+    def _drain(host, aid, acct, props, token, cur):
+        phase = cur.get("phase") or "plan"
+        if phase == "plan":
+            cur = _plan_account(props, cur)
+            phase = cur["phase"]
+        if phase == "calendars":
+            return _calendars(host, aid, token, cur)
+        if phase == "purge":
+            return _purge(host, aid, cur)
+        if phase == "events":
+            return _events(host, aid, token, cur)
+        if phase == "sweep":
+            cals = list(cur.get("cals") or [])
+            if cals and _sweep(host, aid, cals[0], cur):
+                return {"more": host.page.more(cur)}
+            return {"more": host.page.more(_next_calendar(cur))}
+        return _stamp(host, aid, acct, cur)
+
+
+    def main(input, host):
+        cfg = input.get("config") or {}
+        accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
+        # The paged-checkpoint wrapper. The access token NEVER enters the
+        # cursor (the host would refuse the whole invocation if it did).
+        resume = host.page.resume() or None
+        if resume:
+            cur = dict(resume)
+        else:
+            record = (input.get("envelope") or {}).get("record") or {}
+            # The envelope SPLITS identity: `type` is the bare local name and
+            # `authority` the authority, so the full identity (ruling A9) has to be
+            # recomposed. Comparing the local name alone would match any
+            # authority's `account`.
+            etype = (record.get("kind") or "")
+            if etype == ACCOUNT_TYPE:
+                # Record-triggered: sync just this account (a connect or edit).
+                queue = [record.get("id")]
+            else:
+                # Schedule-triggered: every connected account that wants
+                # calendar and is due by its cadence.
+                queue = [aid for aid, a in accounts.items()
+                         if _wants(a) and _due(a.get("properties") or {})]
+            cur = _fresh(queue)
+
+        # Advance past accounts we cannot or should not sync. A dead grant is
+        # that account's problem alone (F2).
+        queue = list(cur.get("queue") or [])
+        while queue:
+            acct = accounts.get(queue[0])
+            if acct is not None and acct.get("tokenError"):
+                host.log("google-calendar: skip %s: %s"
+                         % (queue[0], acct["tokenError"]))
+                _erroring(host, acct, acct["tokenError"])
+            if acct is None or not _wants(acct) or acct.get("tokenError") \
+                    or not acct.get("token"):
+                queue = queue[1:]
+                cur = _fresh(queue)
+                continue
+            break
+        if not queue:
+            return {}
+
+        aid = queue[0]
+        acct = accounts[aid]
+        cur["queue"] = queue
+        try:
+            return _drain(host, aid, acct, acct.get("properties") or {},
+                          acct["token"], cur)
+        except Exception as e:
+            host.log("google-calendar: %s failed for %s: %s"
+                     % (cur.get("phase"), aid, e))
+            _erroring(host, acct, _reason(e))
+            rest = queue[1:]
+            if rest:
+                return {"more": host.page.more(_fresh(rest))}
+            return {}

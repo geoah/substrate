@@ -1,0 +1,44 @@
+# one authority whose kinds this repository holds, id = the authority's DNS name
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/authority
+data:
+  authority: core.substrate.reamde.dev
+  names:
+    singular: authority
+    plural: authorities
+  # the authority-level keys a kind projection cannot carry: who may write
+  # under the authority, and where its declarations came from.
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      description: the authority's DNS name
+    version:
+      type: string
+      description: the declared maturity statement, v1alpha1 unless said otherwise
+    actors:
+      type: string
+      repeated: true
+      description: the actors declared under this authority
+    source:
+      type: enum
+      values:
+        - builtin
+        - installed
+      description: builtin for seeded authorities, installed for bundle
+        ones
+    # Issue 010 runtime state, owned by repository-open: set when a stored
+    # bundle closure no longer admits under the current binary — the authority
+    # is left out of the live registry and the repository opens without it; a
+    # re-install (which re-projects this row) clears both. Never part of a
+    # declaration.
+    quarantined:
+      type: bool
+      description: set at repository-open when the authority's stored closure
+        fails admission — the bundle needs a re-install; cleared by re-applying
+        the closure
+    quarantineReason:
+      type: string
+      description: the admission error that quarantined the authority
+    # No sourceYAML (record 61): declaration rows store parsed facts only.

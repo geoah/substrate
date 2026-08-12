@@ -1,0 +1,38 @@
+# one declared kind, so the vocabulary is browsable through the same API as data
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/kind
+data:
+  authority: core.substrate.reamde.dev
+  names:
+    singular: kind
+    plural: kinds
+  # the declarations this repository holds; id is the kind REFERENCE
+  # ("calendar.substrate.reamde.dev/calendarevent", or a bare "task" for a
+  # repository-local kind) — the one id form that carries a slash.
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      description: the kind's singular name
+    authority:
+      type: string
+      description: who publishes it; absent on a repository-local kind
+    version:
+      type: string
+      description: this declaration's version
+    plural:
+      type: string
+      description: the collection segment
+    source:
+      type: enum
+      values:
+        - builtin
+        - installed
+      description: builtin for seeded kinds, installed for bundle ones
+    definition:
+      type: json
+      description: the parsed data map, exactly as authored — descriptions
+        included
+    # No sourceYAML (record 61): the parsed definition is the document, and
+    # the source view re-renders it. Comments live in the authored files.

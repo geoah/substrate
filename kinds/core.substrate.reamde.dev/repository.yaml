@@ -1,0 +1,34 @@
+# the repository's own read-only description of itself
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/repository
+data:
+  authority: core.substrate.reamde.dev
+  names:
+    singular: repository
+    plural: repositories
+  # ONE record, id = the repository's opaque internal id: the store you are
+  # reading, describing itself. The control-plane row is the
+  # truth; this is its projection inside the repository, so a client that only
+  # ever speaks the record API can still say which repository it is in.
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      description: the username this repository belongs to
+    # a repository is born `active`; suspend and resume are the operator's,
+    # and `deleting` is terminal and reached by the teardown path, not by a
+    # declared transition.
+    lifecycle:
+      type: state
+      description: "active until the operator suspends it"
+      states:
+        - active
+        - suspended
+        - deleting
+      initial: active
+      transitions:
+        - from: active
+          to: suspended
+        - from: suspended
+          to: active

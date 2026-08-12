@@ -1,0 +1,20 @@
+# the undo of one merge, likewise performed on creation
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/recordsplit
+data:
+  authority: core.substrate.reamde.dev
+  names:
+    singular: recordsplit
+    plural: recordsplits
+  properties:
+    result:
+      type: json
+      description: what the split put back where
+  edges:
+    # named, not polymorphic: a split undoes exactly one recorded merge, and
+    # that merge's `moved` set is what tells it where each edge goes back to.
+    merge:
+      to: recordmerge
+      required: true
+      description: the recorded merge this split undoes

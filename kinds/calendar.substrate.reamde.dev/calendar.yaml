@@ -1,0 +1,23 @@
+# one provider calendar
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: calendar.substrate.reamde.dev/calendar
+data:
+  authority: calendar.substrate.reamde.dev
+  names:
+    singular: calendar
+    plural: calendars
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      description: the calendar's name
+    timezone:
+      type: timezone
+      description: the calendar's default timezone
+  edges:
+    account:
+      to: any
+      required: true
+      ownerRef: true
+      description: the accountconfig record this calendar synced through
