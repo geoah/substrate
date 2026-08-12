@@ -20,7 +20,6 @@ import { AuthorityPage } from "@/pages/authority"
 import { HomePage } from "@/pages/home"
 import { LoginPage } from "@/pages/login"
 import { MergeRequestDetailPage } from "@/pages/merge-request-detail"
-import { MergeRequestsPage } from "@/pages/merge-requests"
 import { RecordPage } from "@/pages/record"
 import { RecordEditPage, RecordNewPage } from "@/pages/record-editor"
 import { RegisterPage } from "@/pages/register"
@@ -106,12 +105,6 @@ export const agentChatRoute = createRoute({
   component: AgentChatPage,
 })
 
-export const mergeRequestsRoute = createRoute({
-  getParentRoute: () => shellRoute,
-  path: "/merge-requests",
-  component: MergeRequestsPage,
-})
-
 export const mergeRequestDetailRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/merge-requests/$id",
@@ -181,7 +174,6 @@ const routeTree = rootRoute.addChildren([
     bundleDetailRoute,
     agentsRoute,
     agentChatRoute,
-    mergeRequestsRoute,
     mergeRequestDetailRoute,
     authorityRoute,
     kindBrowseRoute,

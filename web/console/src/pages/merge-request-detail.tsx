@@ -76,7 +76,7 @@ import {
 } from "@/lib/mergerequests"
 import { splitKind, kindByIdentity } from "@/lib/definition"
 import { cn } from "@/lib/utils"
-import { EvidenceChips } from "@/pages/merge-requests"
+import { EvidenceChips } from "@/components/merge-request"
 import { mergeRequestDetailRoute } from "@/router"
 
 function refTitle(ref?: EdgeTarget): string {

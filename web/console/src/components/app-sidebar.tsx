@@ -12,7 +12,6 @@ import {
   ChevronRightIcon,
   ChevronsUpDownIcon,
   FileCode2Icon,
-  GitMergeIcon,
   HomeIcon,
   KeyRoundIcon,
   LayersIcon,
@@ -50,7 +49,6 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSkeleton,
@@ -61,8 +59,6 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import { logout } from "@/lib/api/auth"
-import { formatCount } from "@/lib/api/records"
-import { pendingMergeCountQueryOptions } from "@/lib/api/mergerequests"
 import {
   buildKindNav,
   kindsQueryOptions,
@@ -75,20 +71,7 @@ const consoleItems = [
   { title: "Changelog", to: "/changelog", icon: ActivityIcon },
   { title: "Registry", to: "/registry", icon: PackageIcon },
   { title: "Agents", to: "/agents", icon: BotIcon },
-  { title: "Merge requests", to: "/merge-requests", icon: GitMergeIcon },
 ] as const
-
-/** The Merge requests badge: pending suggestions waiting on a verdict —
- * actionable, not alarming, so it keeps the muted voice. Silent at zero. */
-function MergeRequestsBadge() {
-  const count = useQuery(pendingMergeCountQueryOptions())
-  if (!count.data?.value) return null
-  return (
-    <SidebarMenuBadge className="text-muted-foreground">
-      {formatCount(count.data)}
-    </SidebarMenuBadge>
-  )
-}
 
 /* Rule 1 (GUIDE §5): sub rows hover full-width, exactly like top-level rows —
  * the default inset/border of SidebarMenuSub is removed and depth is carried
@@ -321,7 +304,6 @@ export function AppSidebar() {
                     <item.icon />
                     <span>{item.title}</span>
                   </SidebarMenuButton>
-                  {item.to === "/merge-requests" && <MergeRequestsBadge />}
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
