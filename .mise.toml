@@ -84,6 +84,69 @@ run = '''
     '''
 
 # =============================================================================
+# Development
+# =============================================================================
+#
+# A substrate on this machine you can restart in a second: one throwaway
+# Postgres in a container, and the server as a BINARY FROM THIS TREE — not the
+# image. `docker compose up` is the demo path and rebuilds an image on every
+# change; this is the one you keep open while you work.
+#
+# Every task below is one subcommand of .mise/dev.sh, which holds the shape of
+# it: the container and its volume, the pid and the log under .dev/, and the
+# environment the server boots with (invite code `let-me-in`, the console at /
+# when web/console/dist exists).
+#
+# `dev:wipe` is not a convenience — it is the only way back to a FRESH
+# substrate. Registration is one-shot per user and there is no unregister, so
+# testing the door means throwing the database away.
+
+[tasks.dev]
+description = "The dev substrate in the foreground on :8080 (ctrl-c stops it)"
+depends = ["build"]
+run = ".mise/dev.sh run"
+
+[tasks."dev:up"]
+description = "The dev substrate in the background; waits for /healthz"
+depends = ["build"]
+run = ".mise/dev.sh up"
+
+[tasks."dev:stop"]
+description = "Stop the background substrate and its Postgres; keeps the data"
+run = ".mise/dev.sh stop"
+
+[tasks."dev:restart"]
+description = "Rebuild and restart the background substrate; keeps the data"
+depends = ["build"]
+run = ".mise/dev.sh restart"
+
+[tasks."dev:wipe"]
+description = "Stop everything and DELETE the database: the next start is a fresh substrate"
+run = ".mise/dev.sh wipe"
+
+[tasks."dev:reset"]
+description = "dev:wipe then dev:up — a fresh substrate, running"
+depends = ["build"]
+run = [".mise/dev.sh wipe", ".mise/dev.sh up"]
+
+[tasks."dev:status"]
+description = "What is running: the database, the substrate, the console, the URLs"
+run = ".mise/dev.sh status"
+
+[tasks."dev:logs"]
+description = "Follow the background substrate's log"
+run = ".mise/dev.sh logs"
+
+[tasks."dev:psql"]
+description = "A psql shell in the dev database"
+run = ".mise/dev.sh psql"
+
+[tasks."dev:dsn"]
+description = "Print the dev DSN — what the operator hat takes as --dsn"
+quiet = true
+run = ".mise/dev.sh dsn"
+
+# =============================================================================
 # Console (web/console)
 # =============================================================================
 

@@ -17,3 +17,6 @@ dist/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# The dev substrate: the pid and the log of `mise run dev:up`.
+/.dev/
