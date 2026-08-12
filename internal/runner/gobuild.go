@@ -195,7 +195,7 @@ func (r *Runner) binDir() (string, error) {
 // base (childEnv — PATH, HOME, TMPDIR, locale) plus ONLY the Go toolchain
 // variables a hermetic build legitimately reads (the build/module caches and
 // the module/toolchain locations), then the pinned build flags. Default-deny
-// like every runner child: no SUBSTRATE_*/DATABASE_URL/LITELLM_*
+// like every runner child: no SUBSTRATE_*/DATABASE_URL
 // reach the build — a `go build` never needs a host secret. GOROOT/GOFLAGS/
 // GOWORK are deliberately NOT passed through: the found `go` knows its own
 // root, and GOFLAGS/GOWORK are pinned by goBuildEnv, appended LAST so they win.

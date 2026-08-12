@@ -109,11 +109,11 @@ console-editable and changelog-visible like anything else
 So is the agent runtime's data. **Agents are alpha**, so these three are a
 preview, unfrozen at v1 and not part of the frozen core:
 
-| Kind         | What it is                                                       |
-| ------------ | ---------------------------------------------------------------- |
-| `llm`        | One model row: provider, base URL, model, pricing, optional key. |
-| `llmthread`  | One agent run's conversation state, written as the loop runs.    |
-| `llmmessage` | One turn in a thread, with its tool-call audit.                  |
+| Kind          | What it is                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------ |
+| `llmprovider` | One place completions are bought: `wire`, `baseURL`, `apiKey`, `headers`, `defaults`, `pricing`. |
+| `llmthread`   | One agent run's conversation state, written as the loop runs — its `provider` and `model` included. |
+| `llmmessage`  | One turn in a thread, with its tool-call audit.                                                  |
 
 The nine [declarable kinds](vocabulary.md#the-declarable-kinds) — `authority`,
 `kind`, `propertytype`, `trait`, `recordmapping`, `function`, `agent`,

@@ -1,8 +1,8 @@
 /** Agents (`/agents`): the declared agents (a callable whose body is an LLM
- * loop) and the llm connection rows they resolve (cheap/mid/strong). Both on
- * THE table system, off the record surface. An agent row opens the chat
- * surface; an llm row and an agent's manifest open their record page (where
- * the prompt/tools/budgets live and edit). */
+ * loop) and the llmprovider rows they complete against. Both on THE table
+ * system, off the record surface. An agent row opens the chat surface; a
+ * provider row and an agent's manifest open their record page (where the
+ * prompt/tools/budgets live and edit). */
 
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -24,9 +24,15 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
-import { agentsQueryOptions, llmsQueryOptions } from "@/lib/api/agents"
+import {
+  agentsQueryOptions,
+  providerEndpoint,
+  providerHasKey,
+  providersQueryOptions,
+} from "@/lib/api/agents"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { cellValue } from "@/lib/format"
+import { cn } from "@/lib/utils"
 
 function definitionField(agent: SubstrateRecord, key: string): string {
   const def = agent.properties.definition
@@ -56,16 +62,31 @@ function agentColumns(): ColumnDef<SubstrateRecord, unknown>[] {
       meta: { label: "agent", size: { min: 200, max: 400, weight: 1.5 } },
     },
     {
-      id: "llm",
-      accessorFn: (a) => definitionField(a, "llm"),
+      id: "provider",
+      accessorFn: (a) => definitionField(a, "provider"),
       enableSorting: false,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="llm" />,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="provider" />,
       cell: ({ row }) => (
         <span className="block truncate data text-muted-foreground">
-          {definitionField(row.original, "llm") || "—"}
+          {definitionField(row.original, "provider") || "—"}
         </span>
       ),
-      meta: { label: "llm", width: 120 },
+      meta: { label: "provider", width: 120 },
+    },
+    {
+      id: "model",
+      accessorFn: (a) => definitionField(a, "model"),
+      enableSorting: false,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="model" />,
+      cell: ({ row }) => (
+        <span
+          className="block truncate data text-muted-foreground"
+          title={definitionField(row.original, "model")}
+        >
+          {definitionField(row.original, "model") || "—"}
+        </span>
+      ),
+      meta: { label: "model", size: { min: 140, weight: 1 } },
     },
     {
       id: "chat",
@@ -93,7 +114,7 @@ function agentColumns(): ColumnDef<SubstrateRecord, unknown>[] {
   ]
 }
 
-function llmColumns(): ColumnDef<SubstrateRecord, unknown>[] {
+function providerColumns(): ColumnDef<SubstrateRecord, unknown>[] {
   const text = (key: string, title: string, width?: number): ColumnDef<SubstrateRecord, unknown> => ({
     id: key,
     accessorFn: (e) => e.properties[key],
@@ -123,32 +144,63 @@ function llmColumns(): ColumnDef<SubstrateRecord, unknown>[] {
       ),
       meta: { label: "row", size: { min: 140, max: 240, weight: 1 } },
     },
-    text("provider", "provider", 120),
-    text("model", "model"),
-    text("baseURL", "baseURL"),
+    text("wire", "wire", 110),
+    {
+      id: "endpoint",
+      accessorFn: (e) => providerEndpoint(e),
+      enableSorting: false,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="endpoint" />,
+      cell: ({ row }) => {
+        const endpoint = providerEndpoint(row.original)
+        const own = Boolean(row.original.properties.baseURL)
+        return (
+          <span
+            className={cn("block truncate text-muted-foreground", own && "data")}
+            title={endpoint}
+          >
+            {endpoint}
+          </span>
+        )
+      },
+      meta: { label: "endpoint", size: { min: 160, weight: 1.5 } },
+    },
+    {
+      id: "key",
+      accessorFn: (e) => (providerHasKey(e) ? "set" : "not set"),
+      enableSorting: false,
+      // A secret reads back redacted, so the row can only say whether one is
+      // there — never which.
+      header: ({ column }) => <DataTableColumnHeader column={column} title="key" />,
+      cell: ({ row }) => (
+        <span className="block truncate text-muted-foreground">
+          {providerHasKey(row.original) ? "set" : "not set"}
+        </span>
+      ),
+      meta: { label: "key", width: 90 },
+    },
   ]
 }
 
 export function AgentsPage() {
   const navigate = useNavigate()
   const agents = useQuery(agentsQueryOptions())
-  const llms = useQuery(llmsQueryOptions())
+  const providers = useQuery(providersQueryOptions())
 
   const agentRows = useMemo(() => agents.data?.records ?? [], [agents.data])
-  const llmRows = useMemo(() => llms.data?.records ?? [], [llms.data])
+  const providerRows = useMemo(() => providers.data?.records ?? [], [providers.data])
   const aCols = useMemo(() => agentColumns(), [])
-  const lCols = useMemo(() => llmColumns(), [])
+  const pCols = useMemo(() => providerColumns(), [])
   const aTable = useDataTable({
     columns: aCols,
     data: agentRows,
     getRowId: (r) => r.id,
     prefsKey: "agents",
   })
-  const lTable = useDataTable({
-    columns: lCols,
-    data: llmRows,
+  const pTable = useDataTable({
+    columns: pCols,
+    data: providerRows,
     getRowId: (r) => r.id,
-    prefsKey: "llms",
+    prefsKey: "llmproviders",
   })
 
   if (agents.isPending) return <AgentsSkeleton />
@@ -208,29 +260,29 @@ export function AgentsPage() {
       <section className="mt-6 flex flex-col">
         <div className="flex items-end justify-between px-6 pb-1">
           <div>
-            <h2 className="text-sm font-medium">Models</h2>
+            <h2 className="text-sm font-medium">Providers</h2>
             <p className="text-xs text-muted-foreground">
-              The llm connection rows agents resolve, from{" "}
-              <span className="data">core.substrate.reamde.dev/llms</span>
+              The endpoints agents complete against, from{" "}
+              <span className="data">core.substrate.reamde.dev/llmproviders</span>
             </p>
           </div>
-          <DataTableViewOptions table={lTable} />
+          <DataTableViewOptions table={pTable} />
         </div>
-        {llms.isError ? (
-          // An LLM query failure is its own state — never an empty "No models"
-          // table, which would read as "none declared" when the read simply
-          // failed.
+        {providers.isError ? (
+          // A provider query failure is its own state — never an empty "No
+          // providers" table, which would read as "none declared" when the read
+          // simply failed.
           <div className="px-6">
             <Empty className="rounded-md border py-10">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
                   <SearchXIcon />
                 </EmptyMedia>
-                <EmptyTitle>The models didn't load</EmptyTitle>
-                <EmptyDescription>{llms.error.message}</EmptyDescription>
+                <EmptyTitle>The providers didn't load</EmptyTitle>
+                <EmptyDescription>{providers.error.message}</EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
-                <Button variant="outline" size="sm" onClick={() => void llms.refetch()}>
+                <Button variant="outline" size="sm" onClick={() => void providers.refetch()}>
                   Retry
                 </Button>
               </EmptyContent>
@@ -238,14 +290,14 @@ export function AgentsPage() {
           </div>
         ) : (
           <DataTable
-            table={lTable}
+            table={pTable}
             density="compact"
-            loading={llms.isPending}
+            loading={providers.isPending}
             empty={
               <Empty className="py-10">
                 <EmptyHeader>
-                  <EmptyTitle>No models</EmptyTitle>
-                  <EmptyDescription>No llm rows are declared yet.</EmptyDescription>
+                  <EmptyTitle>No providers</EmptyTitle>
+                  <EmptyDescription>No llmprovider rows are declared yet.</EmptyDescription>
                 </EmptyHeader>
               </Empty>
             }

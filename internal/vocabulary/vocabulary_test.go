@@ -2108,7 +2108,7 @@ func TestShippedSchemaLoads(t *testing.T) {
 	// automation.substrate.reamde.dev / ai.substrate.reamde.dev authorities.
 	for _, ident := range []string{
 		"core.substrate.reamde.dev/trigger", "core.substrate.reamde.dev/run",
-		"core.substrate.reamde.dev/llm", "core.substrate.reamde.dev/llmthread", "core.substrate.reamde.dev/llmmessage",
+		"core.substrate.reamde.dev/llmprovider", "core.substrate.reamde.dev/llmthread", "core.substrate.reamde.dev/llmmessage",
 		"core.substrate.reamde.dev/agent", "core.substrate.reamde.dev/function", "core.substrate.reamde.dev/bundle",
 	} {
 		if _, ok := r.ByIdentity(ident); !ok {

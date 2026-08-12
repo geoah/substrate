@@ -15,7 +15,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// The agent-loop vocabulary is CORE's: llm/llmthread/llmmessage resolve there
+// The agent-loop vocabulary is CORE's: llmprovider/llmthread/llmmessage resolve there
 // — the substrate maintains the agent runtime, so it publishes its data kinds
 // beside the rest of its machinery — and NOT under the retired
 // agents.substrate.reamde.dev or the folded-away ai.substrate.reamde.dev.
@@ -23,7 +23,7 @@ func TestAgentLoopKindsResolveInCore(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	for _, id := range []string{"core.substrate.reamde.dev/llm", "core.substrate.reamde.dev/llmthread", "core.substrate.reamde.dev/llmmessage"} {
+	for _, id := range []string{"core.substrate.reamde.dev/llmprovider", "core.substrate.reamde.dev/llmthread", "core.substrate.reamde.dev/llmmessage"} {
 		ti, err := ds.KindByRef(ctx, id)
 		if err != nil {
 			t.Fatalf("agent-loop kind %s does not resolve: %v", id, err)
@@ -41,10 +41,10 @@ func TestAgentLoopKindsResolveInCore(t *testing.T) {
 			t.Fatalf("the retired type %s still resolves", id)
 		}
 	}
-	// The seeded well-known llm rows land in core, create-only.
-	cheap := mustGet(t, ds, "core.substrate.reamde.dev/llm", "cheap")
-	if cheap.Kind != "core.substrate.reamde.dev/llm" {
-		t.Fatalf("seeded llm row type = %q", cheap.Kind)
+	// The seeded well-known provider row lands in core, create-only.
+	seeded := mustGet(t, ds, "core.substrate.reamde.dev/llmprovider", "default")
+	if seeded.Kind != "core.substrate.reamde.dev/llmprovider" {
+		t.Fatalf("seeded llmprovider row kind = %q", seeded.Kind)
 	}
 }
 

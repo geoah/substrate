@@ -40,12 +40,18 @@ boot.
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. Unset mints a random key per boot, with a warning: flows in progress break on restart. |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers.                                                        |
 | `SUBSTRATE_CONSOLE_URL`        | —                                      | The console origin the OAuth return-page posts to and falls back to redirecting into. Empty is local dev. |
-| `LITELLM_BASE_URL`             | — (unset: no embedder)                 | The OpenAI-compatible gateway backing embeddings and the agent loop.                                      |
-| `LITELLM_API_KEY`              | — (falls back to `LITELLM_MASTER_KEY`) | Absent means no embedder: the embed queue simply does not drain.                                          |
-| `LITELLM_EMBED_MODEL`          | `openai/text-embedding-3-small`        | Must be a 1536-dimension model.                                                                           |
+| `SUBSTRATE_LLM_BASE_URL`       | — (unset: no embedder)                 | The host's OpenAI-compatible gateway: it backs embeddings, and it is what the seeded `default` provider resolves to. |
+| `SUBSTRATE_LLM_API_KEY`        | —                                      | The bearer for that gateway, and the fallback key for a provider row that names neither a `baseURL` nor an `apiKey`. Absent means no embedder: the embed queue simply does not drain. |
+| `SUBSTRATE_LLM_EMBED_MODEL`    | `text-embedding-3-small`               | Must be a 1536-dimension model.                                                                           |
 
 `SUBSTRATE_CREDENTIAL_KEY` is the one that must be backed up beside the
 database: without it, sealed material is unreadable.
+
+`SUBSTRATE_LLM_API_KEY` travels to `SUBSTRATE_LLM_BASE_URL` and nowhere else:
+an [`llmprovider`](agents.md#providers) row that names its own `baseURL` must
+carry its own `apiKey`, so a repository-chosen endpoint can never be handed the
+host's bearer. These three replace the old `LITELLM_*` names — `LITELLM_MASTER_KEY`
+is gone with them, since one gateway key needs one variable.
 
 ## The invite code
 

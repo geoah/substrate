@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The engine's agent plumbing around the loop (agentloop.go): the schema-row
-// projection, the well-known llm tier rows, and the two direct entry points
+// projection, the well-known llmprovider row, and the two direct entry points
 // — the call API and chat. Trigger dispatch enters through functions.go's
 // deliver/deliverFire, which branch on the trigger's callable kind.
 
@@ -43,7 +44,8 @@ func groupAgentDeclarations(g *vocabulary.Authority, add func(short, typeIdent, 
 		}
 		props := map[string]any{
 			"name": a.Name, "authority": a.Authority,
-			"description": a.Description, "prompt": a.Prompt, "llm": a.LLM,
+			"description": a.Description, "prompt": a.Prompt,
+			"provider": a.Provider, "model": a.Model,
 			"definition": def, "sourceYAML": nil,
 		}
 		if len(functions) > 0 {
@@ -137,49 +139,39 @@ func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string,
 	return ares.EffectsByAction, applied, nil
 }
 
-// llmSeeds are the three well-known tier rows:
-// referenced by id, re-tiered by one patch, per-agent overrides are just a
-// different reference. Models are the litellm gateway's tier aliases;
-// pricing is the coarse class table the thread cost tally applies.
-var llmSeeds = []struct {
-	id, name, model string
-	inPer1M, out1M  float64
-}{
-	{"cheap", "cheap", "anthropic/claude-haiku-4.5", 1, 5},
-	{"mid", "mid", "anthropic/claude-sonnet-5-low", 3, 15},
-	{"strong", "strong", "anthropic/claude-opus-4.7", 5, 25},
-}
+// providerSeedID is the one well-known llmprovider row: the host's own
+// gateway, on the OpenAI wire, with no baseURL and no key of its own — so it
+// resolves to whatever gateway the host was configured with. There is no tier
+// indirection any more: an agent names this provider and its OWN model, so
+// re-pointing every agent is one patch here and re-modeling one agent is a
+// patch on that agent.
+const providerSeedID = "default"
 
-// seedAgentDefaults writes the cheap/mid/strong llm rows at repository open,
-// CREATE-ONLY. A row already at a seed id is left exactly as the owner had
-// it — live (possibly re-tiered) or tombstoned (deliberately deleted).
-// Identity is the (type, id) pair, so `cheap`/`mid`/`strong`
-// are ordinary ids OF THE LLM TYPE — another type holding the same id is no
-// collision and no reservation exists: the pre-re-key fail-open occupant
-// check died with the repository-global id space.
+// seedAgentDefaults writes the `default` llmprovider row at repository open,
+// CREATE-ONLY. A row already at that id is left exactly as the owner had
+// it — live (possibly re-pointed) or tombstoned (deliberately deleted).
+// Identity is the (kind, id) pair, so `default` is an ordinary id OF THE
+// LLMPROVIDER KIND — another kind holding the same id is no collision and no
+// reservation exists: the pre-re-key fail-open occupant check died with the
+// repository-global id space.
 func (ds *dataset) seedAgentDefaults(ctx context.Context) error {
 	return ds.inTx(ctx, substrate.ActorSystem, false, func(t *txn) error {
-		for _, seed := range llmSeeds {
-			ref := eref{Kind: typeLLM, ID: seed.id}
-			if err := t.lockRecord(ref); err != nil {
-				return err
-			}
-			row, err := t.loadRow(ref, false)
-			if err != nil {
-				return err
-			}
-			if row != nil {
-				continue
-			}
-			if _, err := t.put(substrate.PutInput{
-				Kind: typeLLM, ID: seed.id,
-				Properties: map[string]any{
-					"name": seed.name, "provider": "litellm", "model": seed.model,
-					"pricing": map[string]any{"inputPer1M": seed.inPer1M, "outputPer1M": seed.out1M},
-				},
-			}); err != nil {
-				return fmt.Errorf("substrate/engine: seed llm row %s: %w", seed.id, err)
-			}
+		ref := eref{Kind: typeProvider, ID: providerSeedID}
+		if err := t.lockRecord(ref); err != nil {
+			return err
+		}
+		row, err := t.loadRow(ref, false)
+		if err != nil {
+			return err
+		}
+		if row != nil {
+			return nil
+		}
+		if _, err := t.put(substrate.PutInput{
+			Kind: typeProvider, ID: providerSeedID,
+			Properties: map[string]any{"name": providerSeedID, "wire": string(llm.WireOpenAI)},
+		}); err != nil {
+			return fmt.Errorf("substrate/engine: seed llmprovider row %s: %w", providerSeedID, err)
 		}
 		return nil
 	})

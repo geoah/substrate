@@ -5,12 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"slices"
 	"strings"
 	"time"
 
-	"github.com/sashabaranov/go-openai"
-
+	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -18,8 +17,8 @@ import (
 
 // THE ONE LOOP (primitives §5, ticket 007 ruling 3). Every agent invocation
 // — a trigger delivery, the call API, a sub-agent call, an interactive chat
-// turn — runs this loop: completions against the llm row's OpenAI-compatible
-// endpoint, tool schemas from function manifests, tool calls dispatched
+// turn — runs this loop: completions through internal/llm against the
+// provider row's wire, tool schemas from function manifests, tool calls dispatched
 // through the existing callable machinery with effects held to the AGENT's
 // emit and applied under `function:<name>`, and the transcript + tally
 // written as thread/message records AS THE LOOP RUNS. Streaming and mid-run
@@ -32,11 +31,11 @@ import (
 
 // The core data kinds the loop reads and writes. The agent runtime is part of
 // the substrate, so its vocabulary is core's like the rest of the machinery —
-// the `llm`/`llmthread`/`llmmessage` names carry the subsystem instead of a
+// the `llmprovider`/`llmthread`/`llmmessage` names carry the subsystem instead of a
 // separate authority (the former `ai.substrate.reamde.dev`, folded in 2026-08-12), and
 // the `agent` kind was always core's.
 const (
-	typeLLM       = "core.substrate.reamde.dev/llm"
+	typeProvider  = "core.substrate.reamde.dev/llmprovider"
 	typeThread    = "core.substrate.reamde.dev/llmthread"
 	typeMessage   = "core.substrate.reamde.dev/llmmessage"
 	msgRelThread  = "thread"
@@ -119,62 +118,139 @@ func (t *agentTally) effectsTotal() int {
 	return n
 }
 
-// llmConfig is one llm row resolved against the host's gateway fallbacks.
-// The apiKey property is secret-typed, so this reads the RAW row — the
-// redacting read surface never sees the key.
-type llmConfig struct {
-	id          string
-	model       string
-	baseURL     string
-	key         string
-	temperature *float32
-	inPer1M     float64
-	outPer1M    float64
+// providerConfig is one llmprovider row resolved against the host's gateway
+// fallbacks: WHERE completions are bought. The apiKey property is
+// secret-typed, so this reads the RAW row — the redacting read surface never
+// sees the key.
+type providerConfig struct {
+	id       string
+	wire     llm.Wire
+	cfg      llm.Config
+	defaults map[string]any
+	// pricing is USD per 1M tokens keyed by model id; a model absent from the
+	// table costs 0 and only the token tally is authoritative.
+	pricing map[string]modelPrice
 }
 
-func (ds *dataset) resolveLLM(ctx context.Context, id string) (*llmConfig, error) {
-	row, err := ds.loadRowDB(ctx, eref{Kind: typeLLM, ID: id})
+type modelPrice struct {
+	inPer1M  float64
+	outPer1M float64
+}
+
+func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerConfig, error) {
+	row, err := ds.loadRowDB(ctx, eref{Kind: typeProvider, ID: id})
 	if err != nil {
 		return nil, err
 	}
-	if row == nil || row.DeletedAt != nil || row.Kind != typeLLM {
-		return nil, fmt.Errorf("%w: llm row %q does not resolve — agents reference an llm record id (cheap, mid, strong, or a custom row)",
+	if row == nil || row.DeletedAt != nil || row.Kind != typeProvider {
+		return nil, fmt.Errorf("%w: llmprovider row %q does not resolve — agents reference an llmprovider record id (default, or a custom row)",
 			substrate.ErrValidation, id)
 	}
-	cfg := &llmConfig{id: id}
-	cfg.model, _ = row.Props["model"].(string)
-	cfg.baseURL, _ = row.Props["baseURL"].(string)
-	cfg.key, _ = row.Props["apiKey"].(string)
-	if defaults, ok := row.Props["defaults"].(map[string]any); ok {
-		if v, ok := anyFloat(defaults["temperature"]); ok {
-			f := float32(v)
-			cfg.temperature = &f
+	pc := &providerConfig{id: id, pricing: map[string]modelPrice{}}
+	wire, _ := row.Props["wire"].(string)
+	pc.wire = llm.Wire(wire)
+	pc.cfg.BaseURL, _ = row.Props["baseURL"].(string)
+	pc.cfg.APIKey, _ = row.Props["apiKey"].(string)
+	if headers, ok := row.Props["headers"].(map[string]any); ok && len(headers) > 0 {
+		pc.cfg.Headers = map[string]string{}
+		for k, v := range headers {
+			pc.cfg.Headers[k] = fmt.Sprint(v)
 		}
 	}
+	pc.defaults, _ = row.Props["defaults"].(map[string]any)
 	if pricing, ok := row.Props["pricing"].(map[string]any); ok {
-		cfg.inPer1M, _ = anyFloat(pricing["inputPer1M"])
-		cfg.outPer1M, _ = anyFloat(pricing["outputPer1M"])
-	}
-	// The host gateway fallbacks are ONE unit: the host key travels ONLY to
-	// the host URL. A row that selects its own baseURL must carry its own
-	// apiKey — falling back independently would send the host-wide
-	// LITELLM_API_KEY bearer to an arbitrary repository-chosen endpoint.
-	if cfg.baseURL == "" {
-		cfg.baseURL = ds.svc.llmBaseURL
-		if cfg.key == "" {
-			cfg.key = ds.svc.llmAPIKey
+		for model, raw := range pricing {
+			entry, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			in, _ := anyFloat(entry["inputPer1M"])
+			out, _ := anyFloat(entry["outputPer1M"])
+			pc.pricing[model] = modelPrice{inPer1M: in, outPer1M: out}
 		}
-	} else if cfg.key == "" {
-		return nil, fmt.Errorf("%w: llm row %q declares its own baseURL without an apiKey — the host gateway key never travels to a custom endpoint",
-			substrate.ErrValidation, id)
 	}
-	if cfg.model == "" {
-		return nil, fmt.Errorf("%w: llm row %q declares no model", substrate.ErrValidation, id)
+
+	switch pc.wire {
+	case "":
+		return nil, fmt.Errorf("%w: llmprovider row %q declares no wire — one of %s",
+			substrate.ErrValidation, id, llm.WireNames())
+	case llm.WireOpenAI:
+		// The host gateway fallbacks are ONE unit: the host key travels ONLY to
+		// the host URL. A row that selects its own baseURL must carry its own
+		// apiKey — falling back independently would send the host-wide
+		// gateway bearer to an arbitrary repository-chosen endpoint.
+		if pc.cfg.BaseURL == "" {
+			pc.cfg.BaseURL = ds.svc.llmBaseURL
+			if pc.cfg.APIKey == "" {
+				pc.cfg.APIKey = ds.svc.llmAPIKey
+			}
+			if pc.cfg.BaseURL == "" {
+				return nil, fmt.Errorf("%w: llmprovider row %q has no baseURL and the host has no LLM gateway configured",
+					substrate.ErrValidation, id)
+			}
+		} else if pc.cfg.APIKey == "" {
+			return nil, fmt.Errorf("%w: llmprovider row %q declares its own baseURL without an apiKey — the host gateway key never travels to a custom endpoint",
+				substrate.ErrValidation, id)
+		}
+	case llm.WireAnthropic:
+		// No gateway fallback: the host key belongs to the host's gateway, and
+		// this row talks to Anthropic. An empty baseURL is the official endpoint.
+		if pc.cfg.APIKey == "" {
+			return nil, fmt.Errorf("%w: llmprovider row %q declares no apiKey — the host gateway key never travels to an anthropic endpoint",
+				substrate.ErrValidation, id)
+		}
+	case llm.WireAzure:
+		if pc.cfg.BaseURL == "" || pc.cfg.APIKey == "" {
+			return nil, fmt.Errorf("%w: llmprovider row %q needs both a baseURL and an apiKey — an azure deployment has no host default",
+				substrate.ErrValidation, id)
+		}
+	default:
+		return nil, fmt.Errorf("%w: llmprovider row %q declares wire %q — one of %s",
+			substrate.ErrValidation, id, wire, llm.WireNames())
 	}
-	if cfg.baseURL == "" {
-		return nil, fmt.Errorf("%w: llm row %q has no baseURL and the host has no LLM gateway configured", substrate.ErrValidation, id)
+	return pc, nil
+}
+
+// mergeParams folds the provider row's defaults UNDER the agent's own params —
+// the agent wins on every key it names — and parses the result once. Both maps
+// are held to the recognized set (the loader already held the agent's), so a
+// typo in a provider row is a refusal rather than a knob that does nothing.
+func mergeParams(providerID string, defaults, own map[string]any) (llm.Params, error) {
+	recognized := strings.Join(vocabulary.AgentParamKeys, ", ")
+	merged := map[string]any{}
+	for k, v := range defaults {
+		if !slices.Contains(vocabulary.AgentParamKeys, k) {
+			return llm.Params{}, fmt.Errorf("%w: llmprovider row %q: defaults.%s is not a request param — one of %s",
+				substrate.ErrValidation, providerID, k, recognized)
+		}
+		merged[k] = v
 	}
-	return cfg, nil
+	for k, v := range own {
+		if !slices.Contains(vocabulary.AgentParamKeys, k) {
+			return llm.Params{}, fmt.Errorf("%w: params.%s is not a request param — one of %s",
+				substrate.ErrValidation, k, recognized)
+		}
+		merged[k] = v
+	}
+	var p llm.Params
+	if v, ok := merged[vocabulary.AgentParamTemperature]; ok {
+		f, ok := anyFloat(v)
+		if !ok {
+			return llm.Params{}, fmt.Errorf("%w: params.%s: %v — a number",
+				substrate.ErrValidation, vocabulary.AgentParamTemperature, v)
+		}
+		t := float32(f)
+		p.Temperature = &t
+	}
+	if v, ok := merged[vocabulary.AgentParamMaxTokens]; ok {
+		f, ok := anyFloat(v)
+		if !ok || f != float64(int(f)) || int(f) < 1 {
+			return llm.Params{}, fmt.Errorf("%w: params.%s: %v — a positive whole number",
+				substrate.ErrValidation, vocabulary.AgentParamMaxTokens, v)
+		}
+		p.MaxTokens = int(f)
+	}
+	return p, nil
 }
 
 func anyFloat(v any) (float64, bool) {
@@ -201,12 +277,16 @@ type agentTool struct {
 
 // agentLoop is one running invocation's state.
 type agentLoop struct {
-	ds     *dataset
-	ag     *vocabulary.Agent
-	cfg    *llmConfig
-	client *openai.Client
-	in     agentInvocation
-	actor  substrate.Actor
+	ds *dataset
+	ag *vocabulary.Agent
+	// provider is WHERE this run buys completions; model is WHAT it asks for,
+	// the agent's own word, sent verbatim.
+	provider *providerConfig
+	model    string
+	params   llm.Params
+	client   llm.Client
+	in       agentInvocation
+	actor    substrate.Actor
 
 	threadID string
 	turn     int // next message ordinal on the thread
@@ -217,7 +297,7 @@ type agentLoop struct {
 	// agent's declared emit alone.
 	emit []string
 
-	defs   []openai.Tool
+	defs   []llm.Tool
 	byName map[string]agentTool
 
 	// own counters (the thread row's); the tally aggregates across the chain
@@ -235,9 +315,17 @@ type agentLoop struct {
 // budget leaves a readable trace; the delivery machinery around it stays
 // at-least-once (a retried delivery is a fresh thread).
 func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentInvocation) (*substrate.AgentResult, error) {
-	cfg, err := ds.resolveLLM(ctx, ag.LLM)
+	provider, err := ds.resolveProvider(ctx, ag.Provider)
 	if err != nil {
 		return nil, err
+	}
+	params, err := mergeParams(provider.id, provider.defaults, ag.Params)
+	if err != nil {
+		return nil, err
+	}
+	client, err := llm.New(provider.wire, provider.cfg)
+	if err != nil {
+		return nil, fmt.Errorf("%w: agent %s: %w", substrate.ErrValidation, ag.Identity(), err)
 	}
 	if in.tally == nil {
 		in.tally = &agentTally{effects: map[string]int{}}
@@ -251,11 +339,9 @@ func (ds *dataset) runAgent(ctx context.Context, ag *vocabulary.Agent, in agentI
 		}
 		in.delivery = fmt.Sprintf("%s/agentrun/%s", ds.Repository().Name, id)
 	}
-	oc := openai.DefaultConfig(cfg.key)
-	oc.BaseURL = cfg.baseURL
 	l := &agentLoop{
-		ds: ds, ag: ag, cfg: cfg, in: in,
-		client: openai.NewClientWithConfig(oc),
+		ds: ds, ag: ag, provider: provider, model: ag.Model, params: params, in: in,
+		client: client,
 		actor:  substrate.Actor(ag.Actor()),
 		emit:   effectiveEmit(ag.Emit, in.emitCeiling, in.ceilinged),
 	}
@@ -280,15 +366,17 @@ loop:
 			break
 		}
 		l.turns++
-		content, calls, usage, err := l.complete(lctx, messages)
+		res, err := l.complete(lctx, messages)
 		if err != nil {
 			serr := l.settle(ctx, threadError, err.Error(), reply)
 			return nil, errors.Join(fmt.Errorf("agent %s: llm: %w", l.ag.Identity(), err), serr)
 		}
+		content, calls, usage := res.Content, res.ToolCalls, res.Usage
 		if usage != nil {
+			price := l.provider.pricing[l.model]
 			l.prompt += usage.PromptTokens
 			l.completion += usage.CompletionTokens
-			turnCost := (float64(usage.PromptTokens)*l.cfg.inPer1M + float64(usage.CompletionTokens)*l.cfg.outPer1M) / 1e6
+			turnCost := (float64(usage.PromptTokens)*price.inPer1M + float64(usage.CompletionTokens)*price.outPer1M) / 1e6
 			l.cost += turnCost
 			l.in.tally.prompt += usage.PromptTokens
 			l.in.tally.completion += usage.CompletionTokens
@@ -304,7 +392,7 @@ loop:
 		}
 		callsJSON := make([]any, 0, len(calls))
 		for _, tc := range calls {
-			callsJSON = append(callsJSON, map[string]any{"id": tc.ID, "name": tc.Function.Name, "arguments": tc.Function.Arguments})
+			callsJSON = append(callsJSON, map[string]any{"id": tc.ID, "name": tc.Name, "arguments": tc.Arguments})
 		}
 		props := map[string]any{"role": "assistant", "toolCalls": callsJSON}
 		if content != "" {
@@ -313,8 +401,8 @@ loop:
 		if err := l.putMessage(ctx, l.actor, props); err != nil {
 			return nil, err
 		}
-		messages = append(messages, openai.ChatCompletionMessage{
-			Role: openai.ChatMessageRoleAssistant, Content: content, ToolCalls: calls,
+		messages = append(messages, llm.Message{
+			Role: llm.RoleAssistant, Content: content, ToolCalls: calls,
 		})
 		for _, tc := range calls {
 			var out string
@@ -335,12 +423,12 @@ loop:
 			}
 			l.toolEvent(substrate.AgentEventToolFinished, tc, &ok)
 			if err := l.putMessage(ctx, l.actor, map[string]any{
-				"role": "tool", "content": out, "toolCallId": tc.ID, "tool": tc.Function.Name,
+				"role": "tool", "content": out, "toolCallId": tc.ID, "tool": tc.Name,
 			}); err != nil {
 				return nil, err
 			}
-			messages = append(messages, openai.ChatCompletionMessage{
-				Role: openai.ChatMessageRoleTool, ToolCallID: tc.ID, Name: tc.Function.Name, Content: out,
+			messages = append(messages, llm.Message{
+				Role: llm.RoleTool, ToolCallID: tc.ID, ToolName: tc.Name, Content: out,
 			})
 		}
 		if lctx.Err() != nil {
@@ -409,13 +497,13 @@ func (l *agentLoop) event(ev substrate.AgentEvent) {
 	}
 }
 
-func (l *agentLoop) toolEvent(kind string, tc openai.ToolCall, ok *bool) {
+func (l *agentLoop) toolEvent(kind string, tc llm.ToolCall, ok *bool) {
 	if l.in.emit == nil {
 		return
 	}
-	ev := substrate.AgentEvent{Kind: kind, Tool: tc.Function.Name, OK: ok}
+	ev := substrate.AgentEvent{Kind: kind, Tool: tc.Name, OK: ok}
 	if kind == substrate.AgentEventToolStarted {
-		ev.Args = tc.Function.Arguments
+		ev.Args = tc.Arguments
 	}
 	l.in.emit(ev)
 }
@@ -423,10 +511,11 @@ func (l *agentLoop) toolEvent(kind string, tc openai.ToolCall, ok *bool) {
 // --- thread + message rows -------------------------------------------------------
 
 // openThread mints (or continues) the thread and returns the chat history —
-// system prompt, prior user/assistant turns on a continued thread, and the
-// new user message, whose row lands before the first completion.
-func (l *agentLoop) openThread(ctx context.Context) ([]openai.ChatCompletionMessage, error) {
-	messages := []openai.ChatCompletionMessage{{Role: openai.ChatMessageRoleSystem, Content: l.ag.Prompt}}
+// prior user/assistant turns on a continued thread, and the new user message,
+// whose row lands before the first completion. The system prompt is not a
+// message: it rides llm.Request.System, and each wire places it.
+func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
+	var messages []llm.Message
 	if l.in.threadID != "" {
 		// The lease FIRST: a second active turn is rejected before anything
 		// lands on the thread.
@@ -446,7 +535,7 @@ func (l *agentLoop) openThread(ctx context.Context) ([]openai.ChatCompletionMess
 		}
 		l.threadID = id
 		props := map[string]any{
-			"agent": l.ag.Identity(), "llm": l.cfg.id, "mode": l.in.mode,
+			"agent": l.ag.Identity(), "provider": l.provider.id, "model": l.model, "mode": l.in.mode,
 			"status": threadRunning, "agentDepth": l.in.depth,
 			"startedAt":  nowUTC().Format(time.RFC3339Nano),
 			"leaseUntil": l.leaseUntil().Format(time.RFC3339Nano),
@@ -466,7 +555,7 @@ func (l *agentLoop) openThread(ctx context.Context) ([]openai.ChatCompletionMess
 	if err := l.putMessage(ctx, userActor, map[string]any{"role": "user", "content": l.in.user}); err != nil {
 		return nil, err
 	}
-	messages = append(messages, openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: l.in.user})
+	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: l.in.user})
 	return messages, nil
 }
 
@@ -518,7 +607,7 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 // loadHistory rebuilds a continued thread's prose history: user and
 // assistant turns in order. Tool exchanges are per-run artifacts — audit,
 // not context — so the replay stays robust against tool renames.
-func (l *agentLoop) loadHistory(ctx context.Context) ([]openai.ChatCompletionMessage, int, error) {
+func (l *agentLoop) loadHistory(ctx context.Context) ([]llm.Message, int, error) {
 	rows, err := l.ds.db.QueryContext(ctx, `
 		SELECT e.props FROM records e
 		JOIN edges ed ON ed.rel = $1 AND ed.src_kind = e.kind AND ed.src = e.id
@@ -530,7 +619,7 @@ func (l *agentLoop) loadHistory(ctx context.Context) ([]openai.ChatCompletionMes
 		return nil, 0, err
 	}
 	defer func() { _ = rows.Close() }()
-	var out []openai.ChatCompletionMessage
+	var out []llm.Message
 	maxTurn := -1
 	for rows.Next() {
 		var raw []byte
@@ -548,10 +637,10 @@ func (l *agentLoop) loadHistory(ctx context.Context) ([]openai.ChatCompletionMes
 		content, _ := props["content"].(string)
 		switch role {
 		case "user":
-			out = append(out, openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: content})
+			out = append(out, llm.Message{Role: llm.RoleUser, Content: content})
 		case "assistant":
 			if content != "" && props["toolCalls"] == nil {
-				out = append(out, openai.ChatCompletionMessage{Role: openai.ChatMessageRoleAssistant, Content: content})
+				out = append(out, llm.Message{Role: llm.RoleAssistant, Content: content})
 			}
 		}
 	}
@@ -636,12 +725,7 @@ func (l *agentLoop) buildTools() error {
 	l.byName = map[string]agentTool{}
 	add := func(name, description string, params any, t agentTool) {
 		l.byName[name] = t
-		l.defs = append(l.defs, openai.Tool{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name: name, Description: description, Parameters: params,
-			},
-		})
+		l.defs = append(l.defs, llm.Tool{Name: name, Description: description, Parameters: params})
 	}
 	openObject := map[string]any{"type": "object"}
 	for _, t := range l.ag.Tools {
@@ -713,13 +797,13 @@ func toolJSON(v any) string {
 // dispatch runs one tool call. A tool failure is a RESULT the model sees and
 // steers around, never a delivery failure — only the LLM transport itself
 // fails the loop.
-func (l *agentLoop) dispatch(ctx context.Context, tc openai.ToolCall) (string, bool) {
-	tool, ok := l.byName[tc.Function.Name]
+func (l *agentLoop) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool) {
+	tool, ok := l.byName[tc.Name]
 	if !ok {
-		return toolError("unknown tool: " + tc.Function.Name), false
+		return toolError("unknown tool: " + tc.Name), false
 	}
 	var args map[string]any
-	if s := strings.TrimSpace(tc.Function.Arguments); s != "" {
+	if s := strings.TrimSpace(tc.Arguments); s != "" {
 		if err := json.Unmarshal([]byte(s), &args); err != nil {
 			return toolError("arguments are not a JSON object: " + err.Error()), false
 		}
@@ -1075,98 +1159,20 @@ func (l *agentLoop) dispatchSubAgent(ctx context.Context, sub *vocabulary.Agent,
 
 // --- the completion transport ------------------------------------------------------
 
-// complete runs one model turn: streaming (deltas through emit) when a
-// client is attached, one-shot otherwise — v4's proven split, normalized to
-// one return shape so the loop never branches on transport.
-func (l *agentLoop) complete(ctx context.Context, messages []openai.ChatCompletionMessage) (string, []openai.ToolCall, *openai.Usage, error) {
-	req := openai.ChatCompletionRequest{Model: l.cfg.model, Messages: messages}
-	if l.cfg.temperature != nil {
-		req.Temperature = *l.cfg.temperature
+// complete runs one model turn through the provider's wire adapter:
+// streaming (deltas through emit) when a client is attached, one-shot
+// otherwise. The wire lives in internal/llm; the loop only ever sees the
+// neutral request and result.
+func (l *agentLoop) complete(ctx context.Context, messages []llm.Message) (*llm.Result, error) {
+	req := llm.Request{
+		Model: l.model, System: l.ag.Prompt, Messages: messages,
+		Tools: l.defs, Params: l.params,
 	}
-	if len(l.defs) > 0 {
-		req.Tools = l.defs
-	}
-	if l.in.emit == nil {
-		resp, err := l.client.CreateChatCompletion(ctx, req)
-		if err != nil {
-			return "", nil, nil, err
-		}
-		if len(resp.Choices) == 0 {
-			return "", nil, &resp.Usage, errors.New("empty response: no choices")
-		}
-		msg := resp.Choices[0].Message
-		return msg.Content, msg.ToolCalls, &resp.Usage, nil
-	}
-	req.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
-	stream, err := l.client.CreateChatCompletionStream(ctx, req)
-	if err != nil {
-		return "", nil, nil, err
-	}
-	defer func() { _ = stream.Close() }()
-	var content strings.Builder
-	var usage *openai.Usage
-	acc := &toolCallAccumulator{byIndex: map[int]*openai.ToolCall{}}
-	for {
-		chunk, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			return "", nil, nil, err
-		}
-		if chunk.Usage != nil {
-			u := *chunk.Usage
-			usage = &u
-		}
-		if len(chunk.Choices) == 0 {
-			continue
-		}
-		delta := chunk.Choices[0].Delta
-		if delta.Content != "" {
-			content.WriteString(delta.Content)
-			l.event(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: delta.Content})
-		}
-		acc.absorb(delta.ToolCalls)
-	}
-	return content.String(), acc.finalize(), usage, nil
-}
-
-// toolCallAccumulator collects streamed tool-call fragments: each chunk
-// carries a partial (index, optional name, argument fragment); the full
-// arguments string is the per-index concatenation (v4's shape).
-type toolCallAccumulator struct {
-	byIndex map[int]*openai.ToolCall
-	order   []int
-}
-
-func (a *toolCallAccumulator) absorb(deltas []openai.ToolCall) {
-	for _, d := range deltas {
-		i := 0
-		if d.Index != nil {
-			i = *d.Index
-		}
-		tc, ok := a.byIndex[i]
-		if !ok {
-			tc = &openai.ToolCall{Type: openai.ToolTypeFunction}
-			a.byIndex[i] = tc
-			a.order = append(a.order, i)
-		}
-		if d.ID != "" {
-			tc.ID = d.ID
-		}
-		if d.Function.Name != "" {
-			tc.Function.Name = d.Function.Name
-		}
-		if d.Function.Arguments != "" {
-			tc.Function.Arguments += d.Function.Arguments
+	var onDelta func(string)
+	if l.in.emit != nil {
+		onDelta = func(text string) {
+			l.event(substrate.AgentEvent{Kind: substrate.AgentEventDelta, Text: text})
 		}
 	}
-}
-
-func (a *toolCallAccumulator) finalize() []openai.ToolCall {
-	out := make([]openai.ToolCall, 0, len(a.order))
-	for _, i := range a.order {
-		out = append(out, *a.byIndex[i])
-	}
-	return out
+	return l.client.Complete(ctx, req, onDelta)
 }

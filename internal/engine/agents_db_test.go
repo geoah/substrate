@@ -2,7 +2,7 @@ package engine
 
 // The agent loop's regressions, driven by an in-process fake
 // OpenAI-compatible server with scripted tool-calling turns — deterministic,
-// no live LLM (the real LiteLLM connection is exercised in the live run,
+// no live LLM (a real gateway is exercised in the live run,
 // never in suites): trigger→agent dispatch end-to-end (function-tool patch
 // held to the agent's emit, sub-agent child thread + parent edge, propose
 // landing a recordpatchrequest, cost rolled up to the root thread), budget
@@ -46,7 +46,7 @@ type fakeTurn struct {
 
 // fakeLLM scripts /chat/completions per MODEL: each request pops the next
 // turn for its model, so one server drives a whole agent chain as long as
-// every loop under test resolves an llm row with its own model id.
+// every loop under test names its own model id.
 type fakeLLM struct {
 	mu       sync.Mutex
 	scripts  map[string][]fakeTurn
@@ -171,7 +171,7 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 
 const crewAuthority = "crew.test.dev"
 
-// openAgentDataset provisions a repository, points a set of llm rows at the fake
+// openAgentDataset provisions a repository, points a set of llmprovider rows at the fake
 // server (one model id per loop under test), and installs one authority carrying
 // a widget type, the annotate function tool, and every agent the tests
 // exercise.
@@ -183,15 +183,15 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm"} {
 		model := strings.TrimSuffix(id, "llm")
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: typeLLM, ID: id,
+			Kind: typeProvider, ID: id,
 			Properties: map[string]any{
 				// A row-defined baseURL REQUIRES a row-defined apiKey (the
 				// host gateway key never travels to a custom endpoint).
-				"model": model, "baseURL": fake.srv.URL, "apiKey": "row-key-" + id,
-				"pricing": map[string]any{"inputPer1M": 1.0, "outputPer1M": 5.0},
+				"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-" + id,
+				"pricing": map[string]any{model: map[string]any{"inputPer1M": 1.0, "outputPer1M": 5.0}},
 			},
 		}); err != nil {
-			t.Fatalf("put llm row %s: %v", id, err)
+			t.Fatalf("put llmprovider row %s: %v", id, err)
 		}
 	}
 	agent := func(name string, data map[string]any) map[string]any {
@@ -229,43 +229,43 @@ def main(input, host):
 `,
 		}),
 		agent("classifier", map[string]any{
-			"llm":    "rootllm",
+			"provider": "rootllm", "model": "root",
 			"tools":  []any{crewAuthority + "/annotate", "propose"},
 			"agents": []any{crewAuthority + "/scribe"},
 			"emit":   []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
 		}),
-		agent("scribe", map[string]any{"llm": "subllm"}),
+		agent("scribe", map[string]any{"provider": "subllm", "model": "sub"}),
 		agent("rogue", map[string]any{
-			"llm":   "roguellm",
+			"provider": "roguellm", "model": "rogue",
 			"tools": []any{crewAuthority + "/annotate"},
 			// annotate emits tasks, but THIS agent's emit does not allow them.
 		}),
 		agent("budgeter", map[string]any{
-			"llm": "budgetllm", "tools": []any{crewAuthority + "/annotate"},
+			"provider": "budgetllm", "model": "budget", "tools": []any{crewAuthority + "/annotate"},
 			"emit": []any{"tasks.substrate.reamde.dev/task"}, "budgets": map[string]any{"maxTurns": 2},
 		}),
-		agent("chatter", map[string]any{"llm": "chatllm"}),
+		agent("chatter", map[string]any{"provider": "chatllm", "model": "chat"}),
 		// warden writes NOTHING (empty emit) but delegates to minion, whose
 		// own emit could write tasks — the ceiling test pair.
 		agent("warden", map[string]any{
-			"llm": "wardenllm", "agents": []any{crewAuthority + "/minion"},
+			"provider": "wardenllm", "model": "warden", "agents": []any{crewAuthority + "/minion"},
 		}),
 		agent("minion", map[string]any{
-			"llm":   "minionllm",
+			"provider": "minionllm", "model": "minion",
 			"tools": []any{crewAuthority + "/annotate", "propose"},
 			"emit":  []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
 		}),
 		// keeper's keyecho tool records its idempotency key — the stable-key
 		// retry test.
 		agent("keeper", map[string]any{
-			"llm": "keepllm", "tools": []any{crewAuthority + "/keyecho"},
+			"provider": "keepllm", "model": "keep", "tools": []any{crewAuthority + "/keyecho"},
 			"emit": []any{"tasks.substrate.reamde.dev/task"},
 		}),
-		agent("e", map[string]any{"llm": "chainllm"}),
-		agent("d", map[string]any{"llm": "chainllm", "agents": []any{crewAuthority + "/e"}}),
-		agent("c", map[string]any{"llm": "chainllm", "agents": []any{crewAuthority + "/d"}}),
-		agent("b", map[string]any{"llm": "chainllm", "agents": []any{crewAuthority + "/c"}}),
-		agent("a", map[string]any{"llm": "chainllm", "agents": []any{crewAuthority + "/b"}}),
+		agent("e", map[string]any{"provider": "chainllm", "model": "chain"}),
+		agent("d", map[string]any{"provider": "chainllm", "model": "chain", "agents": []any{crewAuthority + "/e"}}),
+		agent("c", map[string]any{"provider": "chainllm", "model": "chain", "agents": []any{crewAuthority + "/d"}}),
+		agent("b", map[string]any{"provider": "chainllm", "model": "chain", "agents": []any{crewAuthority + "/c"}}),
+		agent("a", map[string]any{"provider": "chainllm", "model": "chain", "agents": []any{crewAuthority + "/b"}}),
 	}
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
 		t.Fatalf("install crew authority: %v", err)
@@ -643,16 +643,15 @@ func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 	ctx := context.Background()
 	const abAuthority = "abundle.bundles.substrate.reamde.dev"
 	for _, id := range []string{"greetllm", "callerllm"} {
-		model := strings.TrimSuffix(id, "llm")
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-			Kind: typeLLM, ID: id,
-			Properties: map[string]any{"model": model, "baseURL": fake.srv.URL, "apiKey": "row-key-" + id},
+			Kind: typeProvider, ID: id,
+			Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-" + id},
 		}); err != nil {
-			t.Fatalf("put llm row %s: %v", id, err)
+			t.Fatalf("put llmprovider row %s: %v", id, err)
 		}
 	}
 	greeter := vocabulary.AgentManifest(abAuthority, "greeter", map[string]any{
-		"description": "greets", "prompt": "You greet.", "llm": "greetllm",
+		"description": "greets", "prompt": "You greet.", "provider": "greetllm", "model": "greet",
 	})
 	docs := []map[string]any{
 		vocabulary.AuthorityManifest(abAuthority, ""),
@@ -674,7 +673,7 @@ func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 	const hostAuthority = "hostcrew.test.dev"
 	caller := vocabulary.AgentManifest(hostAuthority, "caller", map[string]any{
 		"description": "delegates to greeter", "prompt": "You delegate.",
-		"llm": "callerllm", "agents": []any{abAuthority + "/greeter"},
+		"provider": "callerllm", "model": "caller", "agents": []any{abAuthority + "/greeter"},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.AuthorityManifest(hostAuthority, ""), caller,
@@ -966,40 +965,51 @@ func TestChatThreadSingleActiveTurn(t *testing.T) {
 }
 
 func TestCustomLLMEndpointNeverReceivesHostKey(t *testing.T) {
-	// The P0 boundary: the host's LITELLM_API_KEY may travel ONLY to the
+	// The P0 boundary: the host's SUBSTRATE_LLM_API_KEY may travel ONLY to the
 	// host's own gateway URL. A row that selects its own baseURL must carry
 	// its own apiKey — resolving the two independently would hand the
 	// host-wide bearer to an arbitrary repository-chosen endpoint.
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	ds.svc.llmBaseURL = "https://litellm.host.internal"
+	ds.svc.llmBaseURL = "https://gateway.example.com"
 	ds.svc.llmAPIKey = "host-secret-key"
 
 	// A custom baseURL without a row apiKey refuses to resolve at all.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: typeLLM, ID: "leaky",
-		Properties: map[string]any{"model": "leak", "baseURL": fake.srv.URL},
+		Kind: typeProvider, ID: "leaky",
+		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL},
 	}); err != nil {
-		t.Fatalf("put leaky llm row: %v", err)
+		t.Fatalf("put leaky llmprovider row: %v", err)
 	}
-	if _, err := ds.resolveLLM(ctx, "leaky"); err == nil || !errors.Is(err, substrate.ErrValidation) {
+	if _, err := ds.resolveProvider(ctx, "leaky"); err == nil || !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("a row-defined baseURL resolved without a row-defined apiKey: %v", err)
+	}
+	// The anthropic wire has no host fallback at all: the host's gateway key
+	// belongs to the host's gateway, never to Anthropic.
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeProvider, ID: "keyless-anthropic",
+		Properties: map[string]any{"wire": "anthropic"},
+	}); err != nil {
+		t.Fatalf("put keyless anthropic row: %v", err)
+	}
+	if _, err := ds.resolveProvider(ctx, "keyless-anthropic"); err == nil || !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("an anthropic row resolved without its own apiKey: %v", err)
 	}
 
 	// A row with both uses ITS key; a row with neither uses the host pair.
-	keyed, err := ds.resolveLLM(ctx, "rootllm")
+	keyed, err := ds.resolveProvider(ctx, "rootllm")
 	if err != nil {
 		t.Fatalf("resolve rootllm: %v", err)
 	}
-	if keyed.key != "row-key-rootllm" || keyed.baseURL != fake.srv.URL {
-		t.Fatalf("row-defined llm resolved to %q @ %q", keyed.key, keyed.baseURL)
+	if keyed.cfg.APIKey != "row-key-rootllm" || keyed.cfg.BaseURL != fake.srv.URL {
+		t.Fatalf("row-defined provider resolved to %q @ %q", keyed.cfg.APIKey, keyed.cfg.BaseURL)
 	}
-	hosted, err := ds.resolveLLM(ctx, "cheap") // the seeded tier row: no baseURL, no key
+	hosted, err := ds.resolveProvider(ctx, providerSeedID) // the seeded row: no baseURL, no key
 	if err != nil {
-		t.Fatalf("resolve cheap: %v", err)
+		t.Fatalf("resolve %s: %v", providerSeedID, err)
 	}
-	if hosted.baseURL != "https://litellm.host.internal" || hosted.key != "host-secret-key" {
-		t.Fatalf("host fallback pair: %q @ %q", hosted.key, hosted.baseURL)
+	if hosted.cfg.BaseURL != "https://gateway.example.com" || hosted.cfg.APIKey != "host-secret-key" {
+		t.Fatalf("host fallback pair: %q @ %q", hosted.cfg.APIKey, hosted.cfg.BaseURL)
 	}
 
 	// End to end: a chat against a custom-endpoint agent — the fake server
@@ -1219,14 +1229,32 @@ func TestProposeCoercesBareDiffAndCreates(t *testing.T) {
 // json diff), and value coercion, nested-field and edge declaration checks run
 // in a non-writing pass so a malformed proposal never reaches the inbox.
 func TestProposeDiffValidation(t *testing.T) {
+	ctx := context.Background()
 	ds := openInternalDataset(t)
-	llm, err := ds.resolveType(typeLLM)
+	// A gauge kind carries what the checks need in one place: a secret, an
+	// object property with declared fields, and no edges.
+	const gaugeAuthority = "gauge.example.com"
+	docs := []map[string]any{
+		vocabulary.AuthorityManifest(gaugeAuthority, ""),
+		vocabulary.KindManifest(gaugeAuthority, map[string]any{"singular": "gauge", "plural": "gauges"},
+			map[string]any{"properties": map[string]any{
+				"model":  map[string]any{"type": "string"},
+				"apiKey": map[string]any{"type": "secret"},
+				"pricing": map[string]any{"type": "object", "fields": map[string]any{
+					"inputPer1M": "float", "outputPer1M": "float",
+				}},
+			}}),
+	}
+	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
+		t.Fatalf("install gauge authority: %v", err)
+	}
+	gauge, err := ds.resolveType(gaugeAuthority + "/gauge")
 	if err != nil {
-		t.Fatalf("resolve llm type: %v", err)
+		t.Fatalf("resolve gauge kind: %v", err)
 	}
 	refused := func(what string, diff map[string]any, op string) {
 		t.Helper()
-		_, err := normalizeDiff(llm, diff, op)
+		_, err := normalizeDiff(gauge, diff, op)
 		if err == nil {
 			t.Fatalf("%s: not refused", what)
 		}
@@ -1235,11 +1263,11 @@ func TestProposeDiffValidation(t *testing.T) {
 		}
 	}
 
-	// #4: a secret-typed property (llm.apiKey) is refused — on both create and
-	// patch — because the request diff is a non-secret json column.
+	// #4: a secret-typed property is refused — on both create and patch —
+	// because the request diff is a non-secret json column.
 	for _, op := range []string{opCreate, opPatch} {
 		diff := map[string]any{"properties": map[string]any{"apiKey": "sk-super-secret"}}
-		if _, err := normalizeDiff(llm, diff, op); err == nil {
+		if _, err := normalizeDiff(gauge, diff, op); err == nil {
 			t.Fatalf("op %s: proposing a secret apiKey was not refused", op)
 		} else if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "secret") {
 			t.Fatalf("op %s: secret refusal unclear: %v", op, err)
@@ -1264,8 +1292,8 @@ func TestProposeDiffValidation(t *testing.T) {
 	refused("undeclared null property", map[string]any{"properties": map[string]any{"bogus": nil}}, opPatch)
 
 	// A well-formed diff still normalises.
-	if _, err := normalizeDiff(llm, map[string]any{
-		"properties": map[string]any{"model": "gpt-5"},
+	if _, err := normalizeDiff(gauge, map[string]any{
+		"properties": map[string]any{"model": "claude-opus-5"},
 	}, opPatch); err != nil {
 		t.Fatalf("a well-formed diff was refused: %v", err)
 	}

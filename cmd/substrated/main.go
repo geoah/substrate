@@ -21,7 +21,7 @@ import (
 	"github.com/geoah/substrate/internal/api"
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/config"
-	litellmembed "github.com/geoah/substrate/internal/embed"
+	"github.com/geoah/substrate/internal/embed"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/kinds"
@@ -52,27 +52,27 @@ func run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	litellm, err := litellmembed.New(litellmembed.Config{
-		BaseURL: cfg.LiteLLMBaseURL,
-		APIKey:  cfg.LiteLLMAPIKey,
-		Model:   cfg.LiteLLMModel,
+	embedClient, err := embed.New(embed.Config{
+		BaseURL: cfg.LLMBaseURL,
+		APIKey:  cfg.LLMAPIKey,
+		Model:   cfg.LLMEmbedModel,
 	})
 	if err != nil {
 		return err
 	}
 	// A typed nil pointer must not become a non-nil interface.
 	var embedder substrate.Embedder
-	if litellm != nil {
-		embedder = litellm
+	if embedClient != nil {
+		embedder = embedClient
 	} else {
-		slog.Warn("no LITELLM_API_KEY: embed queue will not drain")
+		slog.Warn("no SUBSTRATE_LLM_BASE_URL/SUBSTRATE_LLM_API_KEY: embed queue will not drain")
 	}
 
 	opts := []engine.Option{
 		engine.WithKindsFS(kinds.Seed()),
-		// The agent loop's gateway fallbacks: an llm row's own
+		// The agent loop's gateway fallbacks: an llmprovider row's own
 		// baseURL/apiKey win over these.
-		engine.WithLLMGateway(cfg.LiteLLMBaseURL, cfg.LiteLLMAPIKey),
+		engine.WithLLMGateway(cfg.LLMBaseURL, cfg.LLMAPIKey),
 		engine.WithCredentialKey(cfg.CredentialKey),
 	}
 	if cfg.OAuthCallbackURL != "" {

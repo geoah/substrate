@@ -1,11 +1,10 @@
-// Package embeddings provides a unified interface for generating vector
-// embeddings from text, with support for multiple providers.
+// Package embeddings turns text into vectors over an OpenAI-wire embeddings
+// endpoint — the same wire every gateway that copied it speaks, so the base
+// URL is what selects one.
 package embeddings
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"time"
 )
 
@@ -28,24 +27,9 @@ type Config struct {
 	Timeout time.Duration // Optional, defaults to 30s
 }
 
-// New creates an Embedder. Model format: "provider:model-name"
-// e.g. "openai:text-embedding-3-small", "ollama:nomic-embed-text"
+// New creates an Embedder for a model id. A gateway alias
+// (`openai/text-embedding-3-small`) is accepted: the dimension lookup reads
+// the base name after the last slash.
 func New(model string, cfg Config) (Embedder, error) {
-	parts := strings.SplitN(model, ":", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return nil, fmt.Errorf("invalid model format %q: expected 'provider:model'", model)
-	}
-
-	provider, modelName := parts[0], parts[1]
-
-	switch provider {
-	case "openai":
-		return newOpenAIEmbedder(modelName, cfg)
-	case "ollama":
-		return newOllamaEmbedder(modelName, cfg)
-	case "litellm":
-		return newLiteLLMEmbedder(modelName, cfg)
-	default:
-		return nil, fmt.Errorf("unknown embedding provider: %q", provider)
-	}
+	return newOpenAIEmbedder(model, cfg)
 }

@@ -78,9 +78,9 @@ the same path in full.
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                               | the one redirect URI providers register                        |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                               | signs OAuth flow state                                         |
 | `SUBSTRATE_CONSOLE_URL`        | —                               | postMessage origin for the OAuth return page                   |
-| `LITELLM_BASE_URL`             | —                               | unset ⇒ no embedder and the embed queue idles                  |
-| `LITELLM_API_KEY`              | —                               | falls back to `LITELLM_MASTER_KEY`                             |
-| `LITELLM_EMBED_MODEL`          | `openai/text-embedding-3-small` | must be 1536-dim                                               |
+| `SUBSTRATE_LLM_BASE_URL`       | —                               | the host gateway: embeddings, and the seeded `default` provider |
+| `SUBSTRATE_LLM_API_KEY`        | —                               | its bearer; unset ⇒ no embedder and the embed queue idles      |
+| `SUBSTRATE_LLM_EMBED_MODEL`    | `text-embedding-3-small`        | must be 1536-dim                                               |
 
 ## Development
 

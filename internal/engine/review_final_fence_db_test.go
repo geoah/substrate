@@ -175,17 +175,17 @@ func TestFinalFenceDrainsBundledAgentTrigger(t *testing.T) {
 }
 
 // installToolBundle stands up a bundle with one effectful function, plus a
-// non-bundled agent that names the bundled function as a tool and a live llm
-// row for it — the cross-bundle function-tool fixture.
+// non-bundled agent that names the bundled function as a tool and a live
+// llmprovider row for it — the cross-bundle function-tool fixture.
 func installToolBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
 	const tbAuthority = "toolb.bundles.substrate.reamde.dev"
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: typeLLM, ID: "userllm",
-		Properties: map[string]any{"model": "user", "baseURL": fake.srv.URL, "apiKey": "row-key-userllm"},
+		Kind: typeProvider, ID: "userllm",
+		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-userllm"},
 	}); err != nil {
-		t.Fatalf("put llm row: %v", err)
+		t.Fatalf("put llmprovider row: %v", err)
 	}
 	writer := vocabulary.FunctionManifest(tbAuthority, "writer", map[string]any{
 		"description":  "writes one task",
@@ -218,7 +218,7 @@ def main(input, host):
 	const uAuthority = "userc.test.dev"
 	user := vocabulary.AgentManifest(uAuthority, "user", map[string]any{
 		"description": "uses the bundled writer tool", "prompt": "You write.",
-		"llm":   "userllm",
+		"provider": "userllm", "model": "user",
 		"tools": []any{tbAuthority + "/writer"},
 		"emit":  []any{"tasks.substrate.reamde.dev/task"},
 	})

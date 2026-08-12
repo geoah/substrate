@@ -6,14 +6,14 @@ package substrate
 // transport around one invocation.
 //
 // ALPHA, UNFROZEN AT v1. Unlike the rest of this package, the
-// agent kind, the agent-loop vocabulary (llm/llmthread/llmmessage) and the
+// agent kind, the agent-loop vocabulary (llmprovider/llmthread/llmmessage) and the
 // /agents chat+call wire are NOT part of the frozen v1 contract: they may
 // change or be superseded without a v1 wire break. Everything an agent does
 // is layerable over the frozen function+trigger+effect core, so the loop is
 // shipped host-side for the streaming path but held OUT of the freeze.
 
 // AgentStability is the declared stability of the agent kind, its
-// llm/llmthread/llmmessage vocabulary and the /agents wire: "alpha" at v1.
+// llmprovider/llmthread/llmmessage vocabulary and the /agents wire: "alpha" at v1.
 // It is the cheap machine-visible marker the discovery/features surface
 // reads to mark agents alpha; StabilityAlpha is the value it
 // carries.

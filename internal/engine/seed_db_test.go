@@ -152,7 +152,7 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 	}
 	// …and opening it writes no DECLARATION at all: the tree does not
 	// re-assert, and the upgrade diff against the binary that seeded it is
-	// empty. (Open still seeds the create-only llm tier rows, which are data.)
+	// empty. (Open still seeds the create-only llmprovider row, which is data.)
 	for _, ch := range changesSince(t, ds, atCreation) {
 		if strings.HasSuffix(ch.Kind, ".core.substrate.reamde.dev") && declarationKinds[ch.Kind] {
 			t.Fatalf("opening a freshly seeded repository re-wrote declaration %s %s", ch.Kind, ch.RecordID)

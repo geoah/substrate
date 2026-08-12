@@ -1,9 +1,9 @@
 # Agents
 
 **Agents are alpha and not part of the frozen v1 contract.** The `agent`
-kind, the agent-loop vocabulary (`llm`, `llmthread`, `llmmessage`), and the
-`/agents` chat and call wire are all alpha and unfrozen at v1. They are marked
-alpha in the docs and in [API discovery](api.md#discovery),
+kind, the agent-loop vocabulary (`llmprovider`, `llmthread`, `llmmessage`),
+and the `/agents` chat and call wire are all alpha and unfrozen at v1. They
+are marked alpha in the docs and in [API discovery](api.md#discovery),
 which lists the agent surface under the `agents` feature carrying the
 stability `alpha`, and they may change, or be superseded, without counting as
 a v1 wire break. Build on the frozen core (records, the API, functions,
@@ -21,8 +21,9 @@ disabled or uninstalled, every entry refuses with a guard error.
 
 The `agent` kind is a first-class core kind, `core.substrate.reamde.dev/agent`, declared
 like every other core kind. Its runtime vocabulary lives in one authority of
-core's own — `core.substrate.reamde.dev/llm`, `core.substrate.reamde.dev/llmthread` and
-`core.substrate.reamde.dev/llmmessage` — beside the rest of the substrate's machinery.
+core's own — `core.substrate.reamde.dev/llmprovider`,
+`core.substrate.reamde.dev/llmthread` and `core.substrate.reamde.dev/llmmessage`
+— beside the rest of the substrate's machinery.
 
 ## The manifest
 
@@ -39,7 +40,8 @@ data:
     You are the page classifier. Read the page in the first message, decide
     whether it is an article, a tool, or a video, set its class with the
     setclass tool, then hand the page to the reading-list agent.
-  llm: strong
+  provider: default
+  model: anthropic/claude-opus-5
   tools: [web.bundles.substrate.reamde.dev/setclass]
   agents: [web.bundles.substrate.reamde.dev/readinglistagent]
   budgets: {maxTurns: 4, maxToolCalls: 8, depth: 3}
@@ -54,8 +56,16 @@ data:
   wherever it appears as a sub-agent.
 - **`prompt`** (required, at most 64 KiB): the row is the prompt store, and the
   changelog's full retention is its version history.
-- **`llm`** (required): a `core.substrate.reamde.dev/llm` record id, resolved at dispatch
-  and never at load.
+- **`provider`** (required): a `core.substrate.reamde.dev/llmprovider` record id — WHERE
+  the completions are bought, resolved at dispatch and never at load.
+- **`model`** (required): the model id sent on every completion, a plain string
+  the provider's endpoint understands — `anthropic/claude-opus-5` through the
+  host gateway's alias, the bare `claude-opus-5` on an `anthropic`-wire row.
+  The substrate keeps no model table: re-pointing an agent at a cheaper model
+  is one word here.
+- optional **`params`**: `{temperature, maxTokens}` for this agent's calls,
+  merged over the provider row's `defaults`. It lives in the manifest only —
+  there is no first-class column for it.
 - **`tools:`**, the callables the model may invoke (below).
 - **`agents:`**, sub-agent references (self-reference is a load error).
 - **`budgets:`** bounds one run: `maxTurns` (default 8, max 64),
@@ -89,10 +99,11 @@ data:
 
 Because vocabulary is records, a parsed agent projects to a row the console lists
 and creates like any other, with first-class columns (`name`, `authority`,
-`description`, `prompt`, `llm`, `functions`, `subagents`) mirroring the
-manifest beside a `definition` json carrying the authoritative envelope. The
-loader rebuilds the registry from `definition` alone, so a create must set it
-and the columns stay its faithful mirror rather than a second source of truth.
+`description`, `prompt`, `provider`, `model`, `functions`, `subagents`)
+mirroring the manifest beside a `definition` json carrying the authoritative
+envelope. The loader rebuilds the registry from `definition` alone, so a create
+must set it and the columns stay its faithful mirror rather than a second
+source of truth.
 
 ## Tools
 
@@ -149,9 +160,10 @@ the accept refuses. An owner's acceptance stays unbounded.
 ## Threads, messages, and cost
 
 The conversation state is the run: there is no separate run record. A `thread`
-is written as the loop runs under the agent's actor, carrying `agent`, `llm`,
-`mode`, `status` (`running` then `ok`/`overbudget`/`error`), `agentDepth`, the
-tallies (`turns`, `toolCalls`, the token counts, `costUSD`), and
+is written as the loop runs under the agent's actor, carrying `agent`,
+`provider`, `model`, `mode`, `status` (`running` then
+`ok`/`overbudget`/`error`), `agentDepth`, the tallies (`turns`, `toolCalls`,
+the token counts, `costUSD`), and
 `startedAt`/`finishedAt`. A `message` carries role, content, turn, and the
 tool-call audit, plus the required `thread` edge. Self-actor exclusion covers
 the transcript, so an agent's own trigger never redelivers its thread and
@@ -159,10 +171,10 @@ message writes.
 
 **Cost rolls up onto the root thread**: every loop on a chain adds to one
 shared tally, so the root thread's numbers include every descendant while a
-child thread carries only its own. Pricing is data on the `llm` row, never a
-table in code. The loop terminates on the final tool-free reply, any budget, or
-its deadline; over-budget is a settled outcome (thread `overbudget` with a
-reason), never a park.
+child thread carries only its own. Pricing is data on the provider row, keyed
+by model id, never a table in code. The loop terminates on the final tool-free
+reply, any budget, or its deadline; over-budget is a settled outcome (thread
+`overbudget` with a reason), never a park.
 
 An agent delivery is **at-least-once** where a function delivery is
 effectively-once: the loop's writes are incremental and the cursor advances
@@ -174,20 +186,41 @@ delivery identifier plus the call path and the tool ordinal, so an effectful
 tool that honors keys never double-fires across a retry. Thread ids are trace
 ids only; they never enter a key.
 
-## LLM rows
+## Providers
 
-`llm` rows are pure data over the host-native OpenAI-compatible transport:
-`name`, `provider`, `baseURL`, `model`, `defaults` (temperature), `pricing`
-(`inputPer1M` and `outputPer1M`), and an optional secret `apiKey`. An empty
-`baseURL` selects the host's configured gateway, and only then may an empty
-`apiKey` fall back to the host key: a row that declares its own `baseURL` must
-declare its own `apiKey`, or it refuses to resolve, because the host gateway
-key never travels to a row-defined endpoint. Three well-known rows, `cheap`,
-`mid`, and `strong`, seed at repository open create-only, each pinning a
-concrete gateway model id and its pricing pair, so an owner's re-tiering or
-deliberate delete stands. Those are ordinary ids of the `core.substrate.reamde.dev/llm`
-kind and reserve nothing: a record of another kind wearing the same id is no
-collision. Exotic providers wrap as function tools, never as the transport.
+An `llmprovider` row is one place completions are bought, as pure data:
+`name`, `wire`, `baseURL`, a secret `apiKey`, `headers`, `defaults`
+(request params the agent's own `params` merge over), and `pricing`.
+
+**`wire` is a protocol, not a company** — `openai`, `anthropic`, or `azure`,
+the three wires an adapter speaks. OpenRouter, LiteLLM, Together, Groq and a
+local Ollama are all `wire: openai` rows differing only in `baseURL`, so adding
+one is a record and never code; Anthropic's own API is `wire: anthropic`,
+spoken natively rather than through a translating gateway; `azure` needs its
+deployment `baseURL` spelled out. New code is only ever needed for a new wire,
+and a model that speaks none of these three wraps as a function tool, never as
+the transport.
+
+`pricing` is a table keyed by the model id **as sent**, because one row serves
+many models: `{"claude-opus-5": {"inputPer1M": 5, "outputPer1M": 25}}` on an
+`anthropic`-wire row, the gateway's alias (`anthropic/claude-opus-5`) on a row
+that speaks to a gateway. A model absent from the table leaves the thread's
+`costUSD` at 0 and the token tally authoritative.
+
+**The host key travels only to the host gateway.** An `openai` row with an
+empty `baseURL` means the host's configured gateway
+(`SUBSTRATE_LLM_BASE_URL`), and only then may an empty `apiKey` fall back to
+the host's own (`SUBSTRATE_LLM_API_KEY`). A row that names its own `baseURL`
+must carry its own `apiKey` or it refuses to resolve; on `anthropic` the row's
+key is required for the same reason, and on `azure` both are.
+
+One row seeds at repository open, create-only: `default`, `{name: default,
+wire: openai}` with no `baseURL` — the host's gateway — so a fresh
+substrate can run an agent without an owner writing a row first. There are no
+`cheap`/`mid`/`strong` rows any more: a tier was a model id hiding behind a
+name, and the model is the agent's own word now. `default` is an ordinary id
+of the `core.substrate.reamde.dev/llmprovider` kind and reserves nothing: a record of
+another kind wearing the same id is no collision.
 
 ## Calling an agent
 

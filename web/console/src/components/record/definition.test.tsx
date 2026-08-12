@@ -1,5 +1,5 @@
-/** The kind Definition view (owner ask: "I go to the LLMs kind … I don't have
- * a tab to see its definition — I want to see the kind YAML"). It must show
+/** The kind Definition view (owner ask: "I go to the llmproviders kind … I
+ * don't have a tab to see its definition — I want to see the kind YAML"). It must show
  * the declaration as YAML AND as a readable table — name, type, description,
  * required — and it must do both off the registry it was handed, with no
  * fetch of its own. */
@@ -34,22 +34,22 @@ vi.mock("@tanstack/react-router", () => ({
 import { KindDefinition } from "./definition"
 import type { KindInfo } from "@/lib/api/types"
 
-const llm: KindInfo = {
-  identity: "core.substrate.reamde.dev/llm",
-  name: "llm",
+const llmprovider: KindInfo = {
+  identity: "core.substrate.reamde.dev/llmprovider",
+  name: "llmprovider",
   authority: "core.substrate.reamde.dev",
   version: "1",
-  plural: "llms",
+  plural: "llmproviders",
   source: "builtin",
   definition: {
     authority: "core.substrate.reamde.dev",
-    names: { singular: "llm", plural: "llms" },
-    displayTemplate: "{name} ({model})",
+    names: { singular: "llmprovider", plural: "llmproviders" },
+    displayTemplate: "{name} ({wire})",
     properties: {
-      model: {
+      wire: {
         type: "string",
         required: true,
-        description: "the model id sent on every completion",
+        description: "the wire protocol this endpoint speaks",
       },
       apiKey: { type: "secret" },
       tags: { type: "string", repeated: true },
@@ -78,13 +78,13 @@ const account: KindInfo = {
   source: "builtin",
 }
 
-function renderDefinition(kind: KindInfo = llm) {
+function renderDefinition(kind: KindInfo = llmprovider) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   return render(
     <QueryClientProvider client={client}>
-      <KindDefinition kind={kind} kinds={[llm, account]} />
+      <KindDefinition kind={kind} kinds={[llmprovider, account]} />
     </QueryClientProvider>
   )
 }
@@ -96,9 +96,9 @@ describe("KindDefinition", () => {
     const { container } = renderDefinition()
     const yaml = container.querySelector("pre")!.textContent ?? ""
     expect(yaml).toContain("kind: core.substrate.reamde.dev/kind")
-    expect(yaml).toContain("id: core.substrate.reamde.dev/llm")
+    expect(yaml).toContain("id: core.substrate.reamde.dev/llmprovider")
     expect(yaml).toContain("displayTemplate: ")
-    expect(yaml).toContain("description: the model id sent on every completion")
+    expect(yaml).toContain("description: the wire protocol this endpoint speaks")
   })
 
   it("tints that YAML with the record manifest's own renderer", async () => {
@@ -121,7 +121,7 @@ describe("KindDefinition", () => {
     // repeated reads as a list in the declared spelling
     expect(text).toContain("string[]")
     expect(text).toContain("required")
-    expect(text).toContain("the model id sent on every completion")
+    expect(text).toContain("the wire protocol this endpoint speaks")
   })
 
   it("carries a state machine's states on the type's hover", () => {
@@ -145,7 +145,7 @@ describe("KindDefinition", () => {
   })
 
   it("says so plainly when the registry stored no declaration", () => {
-    const { container } = renderDefinition({ ...llm, definition: undefined })
+    const { container } = renderDefinition({ ...llmprovider, definition: undefined })
     expect(container.textContent).toContain("No stored declaration")
     expect(container.querySelector("pre")).toBeNull()
   })

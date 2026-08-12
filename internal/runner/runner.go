@@ -592,7 +592,7 @@ func start(name string, args ...string) (*proc, error) {
 // the master secrets — SUBSTRATE_CREDENTIAL_KEY (unseals every repository's OAuth
 // tokens and client secrets), DATABASE_URL (direct Postgres as the app role,
 // past all repository isolation), SUBSTRATE_OPERATOR_OTP (mint operator tokens),
-// SUBSTRATE_OAUTH_STATE_KEY, LITELLM_* keys. Filtering os.Environ()
+// SUBSTRATE_OAUTH_STATE_KEY, SUBSTRATE_LLM_API_KEY. Filtering os.Environ()
 // to drop those would be a standing regression: the next secret added to the
 // host env would leak until someone remembered to deny it. A named allowlist
 // default-denies whatever it does not list, so a new host secret is safe by

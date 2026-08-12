@@ -1,0 +1,59 @@
+# one place completions are bought: pure data naming a WIRE, an endpoint and
+# a key. `wire` is the protocol the adapter speaks — openai, anthropic or
+# azure — NEVER a company: OpenRouter, LiteLLM, Together, Groq and
+# a local Ollama are all `wire: openai` rows differing only in baseURL, so
+# adding one of them is a record, never code. New code is only ever needed for
+# a new wire.
+#
+# The host gateway key travels ONLY to the host gateway URL. An openai row with
+# an empty baseURL means "the host's configured gateway", and then the host's
+# key applies; a row that names its own baseURL must carry its own apiKey, or
+# the host-wide bearer would reach a repository-chosen endpoint. On wire
+# anthropic the row's own apiKey is required for the same reason; on azure both
+# baseURL and apiKey are.
+#
+# An agent references a row by id (`provider: default`) and names its model as
+# a plain string, so re-pointing every agent on `default` is one patch here.
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/llmprovider
+data:
+  authority: core.substrate.reamde.dev
+  description: >-
+    One place completions are bought: the wire an adapter speaks, the
+    endpoint, the key that reaches it, and what its models cost. An agent
+    names a provider and a model, so re-pointing every agent on a provider
+    is one patch to this row.
+  names:
+    singular: llmprovider
+    plural: llmproviders
+  displayTemplate: "{name} ({wire})"
+  properties:
+    name:
+      type: string
+      description: a human label for the row (the id is the reference)
+    wire:
+      type: string
+      description: the wire protocol the adapter speaks — openai, anthropic or
+        azure; a gateway that speaks OpenAI's wire is an openai row
+    baseURL:
+      type: url
+      description: the endpoint; empty on openai means the host's configured
+        gateway, empty on anthropic the official endpoint, and azure requires it
+    apiKey:
+      type: secret
+      description: bearer for the endpoint; empty is only meaningful on an
+        openai row that also leaves baseURL empty
+    headers:
+      type: json
+      description: extra request headers, e.g. a gateway's attribution headers
+    defaults:
+      type: json
+      description: "request params merged UNDER the agent's own: temperature, maxTokens"
+    # data-driven cost estimation: USD per 1M tokens per model id; a model
+    # absent from the table means the thread's costUSD stays 0 and only the
+    # token tally is authoritative.
+    pricing:
+      type: json
+      description: 'approximate USD per 1M tokens by model id, e.g.
+        {"claude-opus-5": {"inputPer1M": 5, "outputPer1M": 25}}'

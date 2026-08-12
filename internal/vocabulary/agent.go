@@ -12,8 +12,9 @@ import (
 // An agent is a manifest kind (deliberately unnumbered — the normative kind
 // list lives in the contract): a callable whose body is an LLM loop
 // (primitives §5). The row IS the prompt store — the changelog is its version
-// history — and everything else on it is references: one `llm` data-record
-// id, `tools:` (the built-ins `query` and `propose` plus callable functions,
+// history — and everything else on it is references: one `provider`
+// data-record id plus the `model` it asks that provider for,
+// `tools:` (the built-ins `query` and `propose` plus callable functions,
 // each optionally aliased for the agent's own prompt context), `agents:`
 // (sub-agents), `budgets:` and `emit:`. Agents dispatch exactly like
 // functions — triggers, the call API, sub-agent calls — under the actor
@@ -27,6 +28,18 @@ const (
 	AgentToolQuery   = "query"
 	AgentToolPropose = "propose"
 )
+
+// The request params an agent may name in `params:`. The set is closed on
+// purpose: a param the loop cannot pass to every dialect is a knob that
+// silently does nothing, so an unrecognized key is a load error. A provider
+// row's `defaults` is validated against the same set at dispatch.
+const (
+	AgentParamTemperature = "temperature"
+	AgentParamMaxTokens   = "maxTokens"
+)
+
+// AgentParamKeys is the recognized set, in the order the errors name it.
+var AgentParamKeys = []string{AgentParamMaxTokens, AgentParamTemperature}
 
 // KindRecordPatchRequest is the request type `propose` emits — the one
 // `*request` vocabulary the built-in speaks in this build.
@@ -56,10 +69,16 @@ type Agent struct {
 	Description string
 	// Prompt is the system prompt; the row is the prompt store.
 	Prompt string
-	// LLM is an llm data-record id (`cheap`/`mid`/`strong` or a custom row).
-	// Data rows are runtime state, so the reference resolves at dispatch,
-	// never at load.
-	LLM string
+	// Provider is an llmprovider data-record id (`default` or a custom row):
+	// WHERE the loop buys completions. Data rows are runtime state, so the
+	// reference resolves at dispatch, never at load.
+	Provider string
+	// Model is WHAT the loop asks that provider for, sent verbatim on every
+	// completion.
+	Model string
+	// Params are this agent's request knobs (temperature, maxTokens); the
+	// provider row's defaults sit under them at dispatch.
+	Params map[string]any
 	// Tools lists what the model may call, in declaration order.
 	Tools []AgentTool
 	// Agents lists sub-agent identities the loop exposes as tools.
@@ -130,7 +149,8 @@ var reToolName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`)
 // --- the loader's half ---------------------------------------------------------
 
 var agentDataKeys = map[string]bool{
-	"authority": true, "description": true, "prompt": true, "llm": true,
+	"authority": true, "description": true, "prompt": true,
+	"provider": true, "model": true, "params": true,
 	"tools": true, "agents": true, "budgets": true, "emit": true, "reads": true,
 }
 
@@ -163,7 +183,7 @@ func (l *loader) buildAuthorityAgents(gd *authorityDocs, g *Authority) {
 
 // parseAgent parses one agent document. Emit, reads, tool callables and
 // sub-agents resolve against the registry in Finalize/Install, like a
-// function's capability envelope; the llm reference is a DATA row and
+// function's capability envelope; the provider reference is a DATA row and
 // resolves at dispatch instead.
 func (l *loader) parseAgent(d Document) *Agent {
 	g := l.authority
@@ -191,13 +211,21 @@ func (l *loader) parseAgent(d Document) *Agent {
 		l.errf("%s: data.prompt is %d bytes — the cap is %d", where, len(a.Prompt), AgentPromptMaxBytes)
 		return nil
 	}
-	a.LLM = mstr(d.Data, "llm")
-	if a.LLM == "" {
-		l.errf("%s: data.llm is required — an llm record id (cheap, mid, strong, or a custom row)", where)
+	a.Provider = mstr(d.Data, "provider")
+	if a.Provider == "" {
+		l.errf("%s: data.provider is required — an llmprovider record id (default, or a custom row)", where)
 		return nil
 	}
-	if !ValidID(a.LLM) {
-		l.errf("%s: data.llm: %q is not a record id", where, a.LLM)
+	if !ValidID(a.Provider) {
+		l.errf("%s: data.provider: %q is not a record id", where, a.Provider)
+		return nil
+	}
+	a.Model = strings.TrimSpace(mstr(d.Data, "model"))
+	if a.Model == "" {
+		l.errf("%s: data.model is required — the model id sent to the provider on every completion", where)
+		return nil
+	}
+	if !l.parseAgentParams(where, d.Data, a) {
 		return nil
 	}
 
@@ -263,6 +291,38 @@ func (l *loader) parseAgent(d Document) *Agent {
 		}
 	}
 	return a
+}
+
+// parseAgentParams reads `params:` — the agent's own request knobs, which the
+// provider row's defaults sit under at dispatch. Both the keys and the value
+// types are checked here: a knob the loop would silently drop is worse than a
+// refusal at load.
+func (l *loader) parseAgentParams(where string, data map[string]any, a *Agent) bool {
+	params := mmap(data, "params")
+	if len(params) == 0 {
+		return true
+	}
+	for _, k := range sortedKeys(params) {
+		switch k {
+		case AgentParamTemperature:
+			if _, ok := mfloat(params, k); !ok {
+				l.errf("%s: data.params.%s: %v — a number", where, k, params[k])
+				return false
+			}
+		case AgentParamMaxTokens:
+			f, ok := mfloat(params, k)
+			if !ok || f != float64(int(f)) || int(f) < 1 {
+				l.errf("%s: data.params.%s: %v — a positive whole number", where, k, params[k])
+				return false
+			}
+		default:
+			l.errf("%s: data.params.%s is not a request param — one of %s",
+				where, k, strings.Join(AgentParamKeys, ", "))
+			return false
+		}
+	}
+	a.Params = params
+	return true
 }
 
 // parseAgentTools reads the `tools:` list: bare strings are built-ins or

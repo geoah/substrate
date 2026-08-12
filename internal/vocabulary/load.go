@@ -486,7 +486,7 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 	sort.Strings(g.FunctionOrder)
 
 	// Agents (agent.go): tool callables, sub-agents and emit resolve against
-	// the registry in Finalize/Install; the llm data row resolves at dispatch.
+	// the registry in Finalize/Install; the llmprovider data row resolves at dispatch.
 	l.buildAuthorityAgents(gd, g)
 
 	// The bundle document (bundle.go): the owned-authority rule and the install
