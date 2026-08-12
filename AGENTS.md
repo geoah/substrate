@@ -170,4 +170,11 @@ Do not half-do it.
   that writes `records` directly is wrong.
 - **Comments carry constraints, not narration.** Say why a thing must be so,
   or say nothing.
+- **Every commit title is a conventional commit** —
+  `type(scope): what changed`, with `!` before the colon for a break. The
+  types in use here are `feat`, `fix`, `docs`, `refactor`, `test`, `chore`,
+  `ci`. This is not style: release-please reads these titles off `main` to
+  decide the version and write `CHANGELOG.md`, so a title it cannot parse is a
+  release that does not happen. A PR title is one too — the merge is a squash,
+  so the PR title IS the commit release-please reads.
 - Keep `mise run lint` and `mise run fmt:check` at zero. CI runs both.
