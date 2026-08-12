@@ -1,32 +1,28 @@
 /** Dashboard zone: the data section at a glance — authorities → kinds with
  * live counts, every row a door into that kind's browse and every authority
  * title a door into the authority page. Counts are probe walks (see
- * api/overview.ts) so the zone is deliberately cheap three ways: rows paint
+ * api/overview.ts) so the zone is deliberately cheap two ways: rows paint
  * from the registry at once and the probes wait until every OTHER zone has
  * its data (a one-way latch on the query cache going idle — the glance
- * answers "is everything okay" before the ledger starts counting), the walks
- * run behind the shared concurrency gate and cache for minutes, and the
- * System authorities (core + installed machinery) sit collapsed — their counts
- * don't fire until someone opens them. */
+ * answers "is everything okay" before the ledger starts counting), and the
+ * walks run behind the shared concurrency gate and cache for minutes.
+ *
+ * It shows the repository's OWN authorities. The substrate's machinery (core
+ * and whatever a bundle installed) is not a glance question — it is always
+ * there, and counting its two dozen kinds cost the overview a probe walk each
+ * — so it lives in the data nav, one click away, and nowhere on this page. */
 
 import { useState } from "react"
 import { useIsFetching, useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
-import { ChevronRightIcon } from "lucide-react"
 
 import { ZoneHeader } from "@/components/home/zone"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
 import { Skeleton } from "@/components/ui/skeleton"
 import { formatCount } from "@/lib/api/records"
 import { authorityCountsQueryOptions } from "@/lib/api/overview"
 import { isMachineryAuthority, type AuthorityNav } from "@/lib/api/kinds"
 import type { KindInfo } from "@/lib/api/types"
-import { cn } from "@/lib/utils"
 
 function AuthorityCard({ nav, armed }: { nav: AuthorityNav; armed: boolean }) {
   const counts = useQuery({
@@ -94,18 +90,9 @@ function AuthorityCard({ nav, armed }: { nav: AuthorityNav; armed: boolean }) {
 const AUTHORITY_GRID = "grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-3"
 
 export function DataCountsZone({ authorities }: { authorities: AuthorityNav[] }) {
-  const [systemOpen, setSystemOpen] = useState(false)
-  // The left nav lists every authority flat; this dashboard zone keeps its own
-  // System collapse so the machinery authorities' count probes stay deferred
-  // until opened (the whole point of the latch below). The split is local to
-  // this surface — the shared nav model stays flat.
-  const vocabularyAuthorities = authorities.filter(
+  const own = authorities.filter(
     (a) => !isMachineryAuthority(a.authority, a.kinds)
   )
-  const systemAuthorities = authorities.filter((a) =>
-    isMachineryAuthority(a.authority, a.kinds)
-  )
-
   // The latch: probes hold until the rest of the dashboard has fetched —
   // the count zone's own (disabled) queries never keep it closed, and once
   // open it stays open across the other zones' periodic refetches.
@@ -123,52 +110,25 @@ export function DataCountsZone({ authorities }: { authorities: AuthorityNav[] })
       <ZoneHeader
         title="Data"
         to={
-          vocabularyAuthorities[0]
-            ? `/data/${vocabularyAuthorities[0].authority}`
-            : systemAuthorities[0]
-              ? `/data/${systemAuthorities[0].authority}`
+          own[0]
+            ? `/data/${own[0].authority}`
+            : authorities[0]
+              ? `/data/${authorities[0].authority}`
               : "/"
         }
         linkLabel="Browse"
       />
-      {vocabularyAuthorities.length === 0 ? (
+      {own.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          No schema authorities are declared yet — the substrate's own
-          machinery lives under System below.
+          No schema authorities are declared yet — install a vocabulary bundle
+          from the registry, or declare a kind of your own.
         </p>
       ) : (
         <div className={AUTHORITY_GRID}>
-          {vocabularyAuthorities.map((nav) => (
+          {own.map((nav) => (
             <AuthorityCard key={nav.authority} nav={nav} armed={armed} />
           ))}
         </div>
-      )}
-      {systemAuthorities.length > 0 && (
-        <Collapsible open={systemOpen} onOpenChange={setSystemOpen}>
-          <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-            <ChevronRightIcon
-              className={cn(
-                "size-3 transition-transform",
-                systemOpen && "rotate-90"
-              )}
-            />
-            System
-            <span className="data text-muted-foreground">
-              {systemAuthorities.length}{" "}
-              {systemAuthorities.length === 1 ? "authority" : "authorities"}
-            </span>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            {/* Mounted only while open — a closed System costs no probes. */}
-            {systemOpen && (
-              <div className={cn(AUTHORITY_GRID, "pt-2.5")}>
-                {systemAuthorities.map((nav) => (
-                  <AuthorityCard key={nav.authority} nav={nav} armed={armed} />
-                ))}
-              </div>
-            )}
-          </CollapsibleContent>
-        </Collapsible>
       )}
     </section>
   )

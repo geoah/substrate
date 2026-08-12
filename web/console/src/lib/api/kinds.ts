@@ -103,8 +103,8 @@ export interface KindNav {
 
 /** An authority is machinery-shaped when it is the core authority itself or
  * when every kind in it was installed by a bundle rather than declared as
- * schema. Used to order the flat nav list; exported so the dashboard's Data
- * zone can keep its lazy System collapse. */
+ * schema. It orders the flat nav list, and the dashboard's Data zone reads it
+ * to stay off the machinery's count probes. */
 export function isMachineryAuthority(
   authority: string,
   kinds: KindInfo[]
