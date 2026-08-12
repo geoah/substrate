@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"time"
@@ -20,7 +21,7 @@ import (
 // by digest, both repository-scoped. Deliberately off substrate.Dataset, which is
 // frozen — the vocabularyApplier pattern.
 type blobStore interface {
-	PutBlob(ctx context.Context, actor substrate.Actor, mimeType string, data []byte, wantDigest string) (*substrate.BlobInfo, error)
+	PutBlob(ctx context.Context, actor substrate.Actor, up substrate.BlobUpload, data []byte, wantDigest string) (*substrate.BlobInfo, error)
 	GetBlob(ctx context.Context, digest string) (*substrate.BlobInfo, []byte, error)
 }
 
@@ -82,14 +83,37 @@ func (h *handler) putBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mimeType := r.Header.Get("Content-Type")
-	info, err := bs.PutBlob(ctx, ActorFrom(ctx), mimeType, data, wantDigest)
+	info, err := bs.PutBlob(ctx, ActorFrom(ctx), substrate.BlobUpload{
+		Name:     uploadName(r),
+		MimeType: r.Header.Get("Content-Type"),
+	}, data, wantDigest)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
 	}
 	w.Header().Set("Location", "/api/"+APIVersion+"/blobs/"+info.Digest)
 	writeJSON(w, http.StatusCreated, info)
+}
+
+// uploadName reads the display name a PUT gives its bytes: `?name=` first,
+// because a query parameter is what a curl or a browser fetch can set without
+// ceremony, and the `filename` of a Content-Disposition header second, because
+// that is what an upload form already sends. Neither is required — a blob
+// without a name is a blob addressed by its digest, which is what it always
+// was. The engine validates; this only finds the string.
+func uploadName(r *http.Request) string {
+	if name := r.URL.Query().Get("name"); name != "" {
+		return name
+	}
+	cd := r.Header.Get("Content-Disposition")
+	if cd == "" {
+		return ""
+	}
+	_, params, err := mime.ParseMediaType(cd)
+	if err != nil {
+		return ""
+	}
+	return params["filename"]
 }
 
 // errBlobTooLarge distinguishes a body that overran the cap (or read error)
@@ -140,11 +164,19 @@ func (h *handler) getBlob(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
+	// The mime type is OPTIONAL on the manifest, so the read falls back to the
+	// honest "some bytes" rather than guessing from the content.
 	ct := info.MimeType
 	if ct == "" {
 		ct = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", ct)
+	// A named blob says its name back, so a browser save keeps the filename.
+	// `inline`: the name is metadata, not an instruction to download.
+	if info.Name != "" {
+		w.Header().Set("Content-Disposition",
+			mime.FormatMediaType("inline", map[string]string{"filename": info.Name}))
+	}
 	w.Header().Set("ETag", `"`+info.Digest+`"`)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)

@@ -10,10 +10,16 @@ metadata:
   id: core.substrate.reamde.dev/blob
 data:
   authority: core.substrate.reamde.dev
+  # v1alpha2 added `name`. Both it and `mimeType` are DESCRIPTIVE and optional:
+  # the digest is the identity, so neither is part of dedup, and a second
+  # upload of the same bytes under a different name gets the first one back.
+  version: v1alpha2
   names:
     singular: blob
     plural: blobs
-  displayTemplate: "{digest}"
+  # The name if it has one, the digest if it doesn't: a blob reads as
+  # "invoice.pdf", not as 76 characters of sha-256.
+  displayTemplate: "{name|digest}"
   properties:
     digest:
       type: string
@@ -21,9 +27,13 @@ data:
     size:
       type: int
       description: the byte length of the stored content
+    name:
+      type: string
+      description: an optional display name, typically the filename the bytes
+        arrived as; never a path
     mimeType:
       type: string
-      description: the media type declared when the bytes were stored
+      description: the optional media type declared when the bytes were stored
     createdBy:
       type: string
       description: the actor that stored the bytes, for provenance

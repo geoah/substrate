@@ -18,7 +18,7 @@ import (
 // blobStore is the engine's byte-store seam, asserted at runtime the way the
 // API layer reaches it (it is deliberately off the frozen substrate.Dataset).
 type blobStore interface {
-	PutBlob(ctx context.Context, actor substrate.Actor, mimeType string, data []byte, wantDigest string) (*substrate.BlobInfo, error)
+	PutBlob(ctx context.Context, actor substrate.Actor, up substrate.BlobUpload, data []byte, wantDigest string) (*substrate.BlobInfo, error)
 	GetBlob(ctx context.Context, digest string) (*substrate.BlobInfo, []byte, error)
 }
 
@@ -53,7 +53,7 @@ func TestBlobPutStoresMintsAndStreams(t *testing.T) {
 	bs := blobStoreOf(t, ds)
 	data := []byte("the untransformed provider payload")
 
-	info, err := bs.PutBlob(ctx, owner, "text/plain", data, "")
+	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, data, "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -98,12 +98,12 @@ func TestBlobDedupOnSameBytes(t *testing.T) {
 	bs := blobStoreOf(t, ds)
 	data := []byte("same bytes, same blob")
 
-	a, err := bs.PutBlob(ctx, owner, "application/octet-stream", data, "")
+	a, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "application/octet-stream"}, data, "")
 	if err != nil {
 		t.Fatalf("put a: %v", err)
 	}
 	before := maxSeq(t, ds)
-	b, err := bs.PutBlob(ctx, owner, "application/octet-stream", data, "")
+	b, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "application/octet-stream"}, data, "")
 	if err != nil {
 		t.Fatalf("put b: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestBlobDigestMismatchRefused(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	bs := blobStoreOf(t, ds)
-	_, err := bs.PutBlob(ctx, owner, "text/plain", []byte("hello"),
+	_, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, []byte("hello"),
 		substrate.BlobDigestPrefix+"0000000000000000000000000000000000000000000000000000000000000000")
 	wantErr(t, err, substrate.ErrValidation, "digest mismatch")
 }
@@ -132,7 +132,7 @@ func TestBlobRefRendersManifestNotBytes(t *testing.T) {
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, blobDocDocs("attachment", false)); err != nil {
 		t.Fatalf("install doc type: %v", err)
 	}
-	info, err := bs.PutBlob(ctx, owner, "image/png", []byte("\x89PNG fake bytes"), "")
+	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "image/png"}, []byte("\x89PNG fake bytes"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestBlobGetIsRepositoryScoped(t *testing.T) {
 	ctx := context.Background()
 	svc, ds := newDataset(t)
 	bs := blobStoreOf(t, ds)
-	info, err := bs.PutBlob(ctx, owner, "text/plain", []byte("repository A secret archive"), "")
+	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, []byte("repository A secret archive"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -212,11 +212,11 @@ func TestBlobGCCollectsUnreferenced(t *testing.T) {
 		t.Fatalf("install doc type: %v", err)
 	}
 
-	kept, err := bs.PutBlob(ctx, owner, "text/plain", []byte("referenced payload"), "")
+	kept, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, []byte("referenced payload"), "")
 	if err != nil {
 		t.Fatalf("put kept: %v", err)
 	}
-	orphan, err := bs.PutBlob(ctx, owner, "text/plain", []byte("orphan payload"), "")
+	orphan, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, []byte("orphan payload"), "")
 	if err != nil {
 		t.Fatalf("put orphan: %v", err)
 	}
@@ -254,5 +254,102 @@ func TestBlobGCCollectsUnreferenced(t *testing.T) {
 	}
 	if _, err := ds.Get(ctx, "core.substrate.reamde.dev/blob", orphan.Digest); err == nil {
 		t.Fatal("tombstoned orphan manifest survived a later gc")
+	}
+}
+
+// A blob carries an optional NAME beside its optional mime type: the manifest
+// holds it, a blob-ref resolves it, and the read hands it back. The digest is
+// still the identity, so a second upload of the same bytes under a different
+// name gets the FIRST name back rather than renaming the blob.
+func TestBlobNameIsDescriptiveAndFirstWins(t *testing.T) {
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	bs := blobStoreOf(t, ds)
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, blobDocDocs("attachment", false)); err != nil {
+		t.Fatalf("install doc type: %v", err)
+	}
+	data := []byte("%PDF-1.7 fake bytes")
+
+	info, err := bs.PutBlob(ctx, owner,
+		substrate.BlobUpload{Name: "invoice.pdf", MimeType: "application/pdf"}, data, "")
+	if err != nil {
+		t.Fatalf("put blob: %v", err)
+	}
+	if info.Name != "invoice.pdf" {
+		t.Fatalf("name = %q, want invoice.pdf", info.Name)
+	}
+	ent := mustGet(t, ds, "core.substrate.reamde.dev/blob", info.Digest)
+	if ent.Properties["name"] != "invoice.pdf" {
+		t.Fatalf("manifest name = %v", ent.Properties["name"])
+	}
+
+	// The same bytes under another name are the same blob, still named as the
+	// first upload named it — the store never lies about what it holds.
+	again, err := bs.PutBlob(ctx, owner,
+		substrate.BlobUpload{Name: "copy.pdf", MimeType: "application/pdf"}, data, "")
+	if err != nil {
+		t.Fatalf("re-put blob: %v", err)
+	}
+	if again.Digest != info.Digest || again.Name != "invoice.pdf" {
+		t.Fatalf("re-put = %+v, want the first blob back", again)
+	}
+
+	// A blob-ref resolves the name with the rest of the manifest.
+	doc := mustPut(t, ds, owner, substrate.PutInput{
+		Kind:       blobAuthority + "/doc",
+		Properties: map[string]any{"attachment": info.Digest},
+	})
+	got := mustGet(t, ds, doc.Kind, doc.ID)
+	m, ok := got.Properties["attachment"].(map[string]any)
+	if !ok {
+		t.Fatalf("attachment did not resolve to a manifest: %v", got.Properties["attachment"])
+	}
+	if m["name"] != "invoice.pdf" {
+		t.Fatalf("resolved manifest name = %v", m["name"])
+	}
+
+	// And the read says it too.
+	read, _, err := bs.GetBlob(ctx, info.Digest)
+	if err != nil {
+		t.Fatalf("get blob: %v", err)
+	}
+	if read.Name != "invoice.pdf" {
+		t.Fatalf("read name = %q", read.Name)
+	}
+}
+
+// Both descriptors are OPTIONAL: bytes with neither still store, and the
+// manifest says nothing rather than claiming an empty name or type.
+func TestBlobNameAndMimeTypeAreOptional(t *testing.T) {
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	bs := blobStoreOf(t, ds)
+
+	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{}, []byte("anonymous bytes"), "")
+	if err != nil {
+		t.Fatalf("put blob: %v", err)
+	}
+	if info.Name != "" || info.MimeType != "" {
+		t.Fatalf("unnamed blob = %+v", info)
+	}
+	ent := mustGet(t, ds, "core.substrate.reamde.dev/blob", info.Digest)
+	if _, ok := ent.Properties["name"]; ok {
+		t.Fatalf("manifest claims a name: %v", ent.Properties["name"])
+	}
+	if _, ok := ent.Properties["mimeType"]; ok {
+		t.Fatalf("manifest claims a mime type: %v", ent.Properties["mimeType"])
+	}
+}
+
+// A name names the blob; it does not address anything. A path separator or a
+// control character is refused rather than quietly rewritten, so nothing that
+// renders the name can be talked into reading it as a location.
+func TestBlobNameRefusesAPath(t *testing.T) {
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	bs := blobStoreOf(t, ds)
+	for _, name := range []string{"../../etc/passwd", `dir\file.pdf`, "line\nbreak.pdf"} {
+		_, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{Name: name}, []byte("payload "+name), "")
+		wantErr(t, err, substrate.ErrValidation, "blob name")
 	}
 }

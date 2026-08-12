@@ -24,8 +24,24 @@ const (
 type BlobInfo struct {
 	// Digest is the content hash and the blob record's id
 	// ("blob-sha256-<hex>").
-	Digest   string     `json:"digest"`
-	Size     int64      `json:"size"`
+	Digest string `json:"digest"`
+	Size   int64  `json:"size"`
+	// Name and MimeType are both OPTIONAL and both descriptive: the digest is
+	// the identity, so neither takes part in dedup and neither can be trusted
+	// as a fact about the bytes. Absent = the uploader said nothing.
+	Name     string     `json:"name,omitempty"`
 	MimeType string     `json:"mimeType,omitempty"`
 	Status   BlobStatus `json:"status"`
+}
+
+// BlobUpload is what a caller SAYS about the bytes it is storing, as opposed
+// to what the store derives from them (the digest and the size). Every field
+// is optional, and a second upload of the same bytes does not overwrite what
+// the first one said — dedup is by digest, and the stored manifest wins.
+type BlobUpload struct {
+	// Name is a display name, typically the filename the bytes arrived as. It
+	// must not contain a path separator: it names the blob, it does not
+	// address anything.
+	Name     string
+	MimeType string
 }

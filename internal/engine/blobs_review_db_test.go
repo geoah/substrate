@@ -33,7 +33,7 @@ func TestBlobGCCannotDangleUncommittedRef(t *testing.T) {
 		t.Fatalf("install doc type: %v", err)
 	}
 	bs := blobStoreOf(t, ds)
-	blob, err := bs.PutBlob(ctx, owner, "text/plain", []byte("racy payload"), "")
+	blob, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, []byte("racy payload"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestBlobUploadGraceSparesFreshBlob(t *testing.T) {
 	bs := blobStoreOf(t, ds)
 
 	engine.BlobUploadGrace = time.Hour
-	blob, err := bs.PutBlob(ctx, owner, "text/plain", []byte("fresh, not yet referenced"), "")
+	blob, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, []byte("fresh, not yet referenced"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -137,11 +137,11 @@ func TestBlobManifestForgeRefusedAndDedupAuthoritative(t *testing.T) {
 	wantErr(t, err, substrate.ErrForbidden, "a forged generic blob manifest must be refused")
 
 	data := []byte("same bytes, different claimed mime")
-	first, err := bs.PutBlob(ctx, owner, "text/plain", data, "")
+	first, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, data, "")
 	if err != nil {
 		t.Fatalf("put first: %v", err)
 	}
-	second, err := bs.PutBlob(ctx, owner, "image/png", data, "")
+	second, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "image/png"}, data, "")
 	if err != nil {
 		t.Fatalf("put second (dedup): %v", err)
 	}
@@ -171,7 +171,7 @@ func TestBlobGCTombstonesStoredManifest(t *testing.T) {
 	ctx := context.Background()
 	ds, raw := newDatasetWithDB(t)
 	bs := blobStoreOf(t, ds)
-	blob, err := bs.PutBlob(ctx, owner, "text/plain", []byte("orphan to tombstone"), "")
+	blob, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, []byte("orphan to tombstone"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}

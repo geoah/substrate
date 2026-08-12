@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -38,10 +40,15 @@ const kindBlob = "core.substrate.reamde.dev/blob"
 const (
 	blobPropDigest    = "digest"
 	blobPropSize      = "size"
+	blobPropName      = "name"
 	blobPropMimeType  = "mimeType"
 	blobPropCreatedBy = "createdBy"
 	blobStateStatus   = "status"
 )
+
+// maxBlobNameLen bounds the display name. A name is metadata on a row that
+// also holds the bytes; it is a filename, not a document.
+const maxBlobNameLen = 255
 
 // reBlobDigest matches a blob digest — the fixed prefix plus 64 lowercase hex
 // characters (a sha-256). It is both the wire form and the blob record's id.
@@ -61,11 +68,18 @@ func blobDigest(data []byte) string {
 // status=stored. Dedup is by construction: the same bytes always yield the same
 // digest, so a re-store is a no-op on the bytes and on the manifest. When
 // wantDigest is non-empty, the derived digest must equal it (a client that
-// addressed PUT /blobs/{digest}); a mismatch is a validation error.
-func (ds *dataset) PutBlob(ctx context.Context, actor substrate.Actor, mimeType string, data []byte, wantDigest string) (*substrate.BlobInfo, error) {
+// addressed PUT /blobs/{digest}); a mismatch is a validation error. What the
+// caller SAYS about the bytes — up.Name, up.MimeType — is optional and
+// descriptive; the digest is the identity, so neither field takes part in
+// dedup and neither displaces what a first upload already said.
+func (ds *dataset) PutBlob(ctx context.Context, actor substrate.Actor, up substrate.BlobUpload, data []byte, wantDigest string) (*substrate.BlobInfo, error) {
 	digest := blobDigest(data)
 	if wantDigest != "" && wantDigest != digest {
 		return nil, fmt.Errorf("%w: digest mismatch — the bytes hash to %s, not %s", substrate.ErrValidation, digest, wantDigest)
+	}
+	name, err := checkBlobName(up.Name)
+	if err != nil {
+		return nil, err
 	}
 	size := int64(len(data))
 	var info *substrate.BlobInfo
@@ -73,31 +87,35 @@ func (ds *dataset) PutBlob(ctx context.Context, actor substrate.Actor, mimeType 
 	// lock: a GC sweep can no longer delete the byte row between
 	// its insert and the manifest settling, and no reader ever observes a stored
 	// manifest whose bytes are missing.
-	err := ds.inTx(ctx, actor, true, func(t *txn) error {
+	err = ds.inTx(ctx, actor, true, func(t *txn) error {
 		if err := t.lockKey(blobLockKey(digest)); err != nil {
 			return err
 		}
 		// The byte store is dedup-by-digest: first bytes win, a re-store is a
 		// no-op. The row and the manifest carry the same digest.
 		if _, err := t.exec(`
-			INSERT INTO blobs (digest, mime_type, size, bytes)
-			VALUES ($1, $2, $3, $4)
-			ON CONFLICT (repository, digest) DO NOTHING`, digest, mimeType, size, data); err != nil {
+			INSERT INTO blobs (digest, name, mime_type, size, bytes)
+			VALUES ($1, $2, $3, $4, $5)
+			ON CONFLICT (repository, digest) DO NOTHING`, digest, name, up.MimeType, size, data); err != nil {
 			return fmt.Errorf("substrate/engine: store blob bytes: %w", err)
 		}
 		// The AUTHORITATIVE metadata is the stored row's, not this request's
-		//: on a dedup PUT the first writer's mime/size win, so a
-		// second PUT of the same bytes as a different mime returns — and settles
+		//: on a dedup PUT the first writer's name/mime/size win, so a
+		// second PUT of the same bytes as a different name returns — and settles
 		// — the original, never a lie.
-		var authMime string
+		var authName, authMime string
 		var authSize int64
-		if err := t.row(`SELECT mime_type, size FROM blobs WHERE digest = $1`, digest).Scan(&authMime, &authSize); err != nil {
+		if err := t.row(`SELECT name, mime_type, size FROM blobs WHERE digest = $1`, digest).
+			Scan(&authName, &authMime, &authSize); err != nil {
 			return err
 		}
-		if err := t.settleBlobRecord(actor, digest, authSize, authMime); err != nil {
+		if err := t.settleBlobRecord(actor, digest, authSize, authName, authMime); err != nil {
 			return err
 		}
-		info = &substrate.BlobInfo{Digest: digest, Size: authSize, MimeType: authMime, Status: substrate.BlobStored}
+		info = &substrate.BlobInfo{
+			Digest: digest, Size: authSize, Name: authName,
+			MimeType: authMime, Status: substrate.BlobStored,
+		}
 		return nil
 	})
 	if err != nil {
@@ -106,12 +124,35 @@ func (ds *dataset) PutBlob(ctx context.Context, actor substrate.Actor, mimeType 
 	return info, nil
 }
 
+// checkBlobName validates and normalizes an uploaded blob's display name. A
+// name is metadata, so an absent one is fine — but a name that carries a path
+// separator or a control character would read as an address somewhere it is
+// rendered, and it is refused rather than quietly rewritten.
+func checkBlobName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", nil
+	}
+	if len(name) > maxBlobNameLen {
+		return "", fmt.Errorf("%w: a blob name is at most %d bytes", substrate.ErrValidation, maxBlobNameLen)
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("%w: a blob name must not contain a path separator — it names the blob, it does not address one", substrate.ErrValidation)
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return "", fmt.Errorf("%w: a blob name must not contain control characters", substrate.ErrValidation)
+		}
+	}
+	return name, nil
+}
+
 // settleBlobRecord mints the blob manifest at status=stored, or transitions an
 // existing pending/failed manifest to stored, INSIDE the caller's byte-store
 // transaction. A manifest already stored is a no-op (no-op
 // suppression writes no changelog). The bytes have already been inserted in this
 // same transaction, so guardBlobWrite's "stored ⇒ bytes exist" invariant holds.
-func (t *txn) settleBlobRecord(actor substrate.Actor, digest string, size int64, mimeType string) error {
+func (t *txn) settleBlobRecord(actor substrate.Actor, digest string, size int64, name, mimeType string) error {
 	var status sql.NullString
 	err := t.row(
 		`SELECT states->>'`+blobStateStatus+`' FROM records WHERE id = $1 AND kind = $2 AND deleted_at IS NULL`,
@@ -120,14 +161,20 @@ func (t *txn) settleBlobRecord(actor substrate.Actor, digest string, size int64,
 	case errors.Is(err, sql.ErrNoRows):
 		// Mint the manifest fresh, born directly in `stored` (a creating write
 		// may name any declared state); a tombstoned manifest resurrects.
-		_, err := t.put(substrate.PutInput{
-			Kind: kindBlob, ID: digest,
-			Properties: map[string]any{
-				blobPropDigest: digest, blobPropSize: size,
-				blobPropMimeType: mimeType, blobPropCreatedBy: string(actor),
-				blobStateStatus: string(substrate.BlobStored),
-			},
-		})
+		props := map[string]any{
+			blobPropDigest: digest, blobPropSize: size,
+			blobPropCreatedBy: string(actor),
+			blobStateStatus:   string(substrate.BlobStored),
+		}
+		// Name and mime type are optional: an empty one is written as nothing
+		// at all, so a manifest never claims the uploader said "".
+		if name != "" {
+			props[blobPropName] = name
+		}
+		if mimeType != "" {
+			props[blobPropMimeType] = mimeType
+		}
+		_, err := t.put(substrate.PutInput{Kind: kindBlob, ID: digest, Properties: props})
 		return err
 	case err != nil:
 		return err
@@ -137,12 +184,17 @@ func (t *txn) settleBlobRecord(actor substrate.Actor, digest string, size int64,
 	if status.Valid && status.String == string(substrate.BlobStored) {
 		return nil
 	}
-	_, err = t.patch(eref{Kind: kindBlob, ID: digest}, substrate.PatchInput{
-		Properties: map[string]any{
-			blobPropSize: size, blobPropMimeType: mimeType,
-			blobStateStatus: string(substrate.BlobStored),
-		},
-	})
+	props := map[string]any{
+		blobPropSize:    size,
+		blobStateStatus: string(substrate.BlobStored),
+	}
+	if name != "" {
+		props[blobPropName] = name
+	}
+	if mimeType != "" {
+		props[blobPropMimeType] = mimeType
+	}
+	_, err = t.patch(eref{Kind: kindBlob, ID: digest}, substrate.PatchInput{Properties: props})
 	return err
 }
 
@@ -186,19 +238,24 @@ func (ds *dataset) GetBlob(ctx context.Context, digest string) (*substrate.BlobI
 		return nil, nil, fmt.Errorf("%w: %q is not a blob digest", substrate.ErrValidation, digest)
 	}
 	var (
+		name     string
 		mimeType string
 		size     int64
 		data     []byte
 	)
 	err := ds.db.QueryRowContext(ctx,
-		`SELECT mime_type, size, bytes FROM blobs WHERE digest = $1`, digest).Scan(&mimeType, &size, &data)
+		`SELECT name, mime_type, size, bytes FROM blobs WHERE digest = $1`, digest).
+		Scan(&name, &mimeType, &size, &data)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, fmt.Errorf("%w: blob %s", substrate.ErrNotFound, digest)
 	}
 	if err != nil {
 		return nil, nil, err
 	}
-	return &substrate.BlobInfo{Digest: digest, Size: size, MimeType: mimeType, Status: substrate.BlobStored}, data, nil
+	return &substrate.BlobInfo{
+		Digest: digest, Size: size, Name: name,
+		MimeType: mimeType, Status: substrate.BlobStored,
+	}, data, nil
 }
 
 // validateBlobRefs checks that every blob-ref value in a coerced property map
@@ -256,8 +313,8 @@ func (t *txn) blobExists(digest string) (bool, error) {
 }
 
 // resolveBlobRefs rewrites a projected record's blob-ref properties from the
-// stored digest string into the blob's manifest ({digest, mimeType, size,
-// status}) — the resolved reference reads never carry the bytes inline (ticket
+// stored digest string into the blob's manifest ({digest, name, mimeType,
+// size, status}) — the resolved reference reads never carry the bytes inline (ticket
 // 004). A digest whose manifest has vanished renders as the bare {digest}.
 func (ds *dataset) resolveBlobRefs(ctx context.Context, x dbx, ty *vocabulary.Kind, e *substrate.Record) error {
 	if ty == nil {
@@ -513,19 +570,23 @@ func (ds *dataset) referencedDigests(ctx context.Context) (map[string]bool, erro
 func (ds *dataset) blobManifest(ctx context.Context, x dbx, digest string) (map[string]any, error) {
 	m := map[string]any{blobPropDigest: digest}
 	var (
+		name     sql.NullString
 		mimeType sql.NullString
 		size     sql.NullInt64
 		status   sql.NullString
 	)
 	err := x.QueryRowContext(ctx, `
-		SELECT props->>'`+blobPropMimeType+`', (props->>'`+blobPropSize+`')::bigint, states->>'`+blobStateStatus+`'
+		SELECT props->>'`+blobPropName+`', props->>'`+blobPropMimeType+`', (props->>'`+blobPropSize+`')::bigint, states->>'`+blobStateStatus+`'
 		FROM records WHERE id = $1 AND kind = $2 AND deleted_at IS NULL`, digest, kindBlob).
-		Scan(&mimeType, &size, &status)
+		Scan(&name, &mimeType, &size, &status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return m, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	if name.Valid && name.String != "" {
+		m[blobPropName] = name.String
 	}
 	if mimeType.Valid && mimeType.String != "" {
 		m[blobPropMimeType] = mimeType.String

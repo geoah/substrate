@@ -371,7 +371,15 @@ live in the repository's content-addressed blob store
 (`PUT /api/v1/blobs`, `GET /api/v1/blobs/{digest}`), and their metadata is an
 ordinary `core.substrate.reamde.dev/blob` record whose id **is** the digest, so the same
 bytes always mint the same blob. A read resolves the ref to
-`{digest, mimeType, size, status}`, never to the bytes inline.
+`{digest, name, mimeType, size, status}`, never to the bytes inline.
+
+A blob's `name` and `mimeType` are both **optional and descriptive**. The
+upload says them — the name as `?name=` or a `Content-Disposition` filename,
+the type as the `Content-Type` header — and neither takes part in dedup,
+because the digest is the identity: the same bytes uploaded again under
+another name are the same blob, still carrying the first name. A name is a
+filename, never a path; one with a separator in it is refused. The read hands
+both back, as `Content-Type` and a `Content-Disposition` filename.
 
 **Your own property types.** A custom property type is a **refinement** of a
 base type plus validations, declared as a `propertytype` manifest and local to

@@ -29,7 +29,7 @@ type blockingBlobDS struct {
 	release  chan struct{}
 }
 
-func (b *blockingBlobDS) PutBlob(_ context.Context, _ substrate.Actor, mimeType string, data []byte, _ string) (*substrate.BlobInfo, error) {
+func (b *blockingBlobDS) PutBlob(_ context.Context, _ substrate.Actor, up substrate.BlobUpload, data []byte, _ string) (*substrate.BlobInfo, error) {
 	n := atomic.AddInt32(&b.inflight, 1)
 	for {
 		m := atomic.LoadInt32(&b.maxSeen)
@@ -42,7 +42,8 @@ func (b *blockingBlobDS) PutBlob(_ context.Context, _ substrate.Actor, mimeType 
 	atomic.AddInt32(&b.inflight, -1)
 	return &substrate.BlobInfo{
 		Digest: substrate.BlobDigestPrefix + strings.Repeat("a", 64),
-		Size:   int64(len(data)), MimeType: mimeType, Status: substrate.BlobStored,
+		Size:   int64(len(data)), Name: up.Name, MimeType: up.MimeType,
+		Status: substrate.BlobStored,
 	}, nil
 }
 
