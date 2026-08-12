@@ -7,9 +7,9 @@ data:
   names:
     singular: authority
     plural: authorities
+  displayTemplate: "{name}"
   # the authority-level keys a kind projection cannot carry: who may write
   # under the authority, and where its declarations came from.
-  displayTemplate: "{name}"
   properties:
     name:
       type: string
@@ -29,15 +29,21 @@ data:
       description: builtin for seeded authorities, installed for bundle
         ones
     # Issue 010 runtime state, owned by repository-open: set when a stored
-    # bundle closure no longer admits under the current binary — the authority
-    # is left out of the live registry and the repository opens without it; a
-    # re-install (which re-projects this row) clears both. Never part of a
-    # declaration.
+    # closure no longer admits under the current binary — the authority
+    # is left out of the live registry and the repository opens without it.
+    # Re-applying a valid closure re-projects this row and clears both, and so
+    # does the next open under a binary that admits the stored one again.
+    # Never part of a declaration.
+    #
+    # It lives HERE and not on the bundle row because admission is
+    # authority-scoped: a repository-local authority — a user's own kinds,
+    # declared through the API with no bundle document — can fail admission
+    # too, and has no bundle row to carry the mark.
     quarantined:
       type: bool
       description: set at repository-open when the authority's stored closure
-        fails admission — the bundle needs a re-install; cleared by re-applying
-        the closure
+        fails admission; cleared by re-applying a valid closure, or by an open
+        that admits the stored one
     quarantineReason:
       type: string
       description: the admission error that quarantined the authority
