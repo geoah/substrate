@@ -20,6 +20,8 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { CORE_AUTHORITY } from "@/lib/api/http"
+import { MR_PLURAL } from "@/lib/api/mergerequests"
 
 interface Crumb {
   label: string
@@ -62,13 +64,18 @@ function crumbsFor(pathname: string): Crumb[] {
   if (pathname.startsWith("/registry")) return [{ label: "Registry" }]
   if (pathname.startsWith("/merge-requests/")) {
     const id = decodeURIComponent(pathname.slice("/merge-requests/".length))
+    // The queue is the kind's own collection — there is no bespoke one — so
+    // the parent crumb walks back into the data tree.
     return [
-      { label: "Merge requests", to: "/merge-requests" },
+      { label: "Data" },
+      { label: CORE_AUTHORITY, to: `/data/${CORE_AUTHORITY}`, mono: true },
+      {
+        label: MR_PLURAL,
+        to: `/data/${CORE_AUTHORITY}/${MR_PLURAL}`,
+        mono: true,
+      },
       { label: id, mono: true },
     ]
-  }
-  if (pathname.startsWith("/merge-requests")) {
-    return [{ label: "Merge requests" }]
   }
   if (pathname.startsWith("/actors/")) {
     const id = decodeURIComponent(pathname.slice("/actors/".length))

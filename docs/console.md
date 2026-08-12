@@ -12,8 +12,8 @@ which is why logging out revokes it. A substrate that is open for registration
 also serves a registration page at `/register`, with the invite code as its
 first field.
 
-Five destinations — Overview, Changelog, Registry, Agents and Merge
-requests — with the account behind the session menu.
+Four destinations — Overview, Changelog, Registry and Agents — with the
+account behind the session menu.
 
 ## Overview and data
 
@@ -50,7 +50,9 @@ because there is only one changelog.
 
 ## Merge requests
 
-The queue of proposed [merges](projection.md#merge-requests): each with the
+A proposed [merge](projection.md#merge-requests) is an ordinary record, so the
+queue is its collection — `core.substrate.reamde.dev/recordmergerequests` in
+the data nav, with the pending pile also on the overview. Opening one shows the
 matcher's evidence, a field-by-field comparison of the two records, and accept
 or reject. Accepting is an ordinary state transition, and performing the merge
 is what that transition does.

@@ -1,8 +1,9 @@
 /** Dashboard zone 3: what needs a verdict — the pending count and the top of
- * the queue as the queue page's own evidence voice (MergePair + EvidenceChips,
- * imported from the surface, not re-invented). Each card opens its request;
- * the header opens the queue. The count rides the page read where the queue
- * is short (a cursorless page IS the count) and probes only when it isn't. */
+ * the queue in the shared merge-request voice (MergePair + EvidenceChips).
+ * Each card opens its request; the header opens the kind's collection, which
+ * is the queue now that the console has no bespoke one. The count rides the
+ * page read where the queue is short (a cursorless page IS the count) and
+ * probes only when it isn't. */
 
 import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
@@ -17,13 +18,15 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { CORE_AUTHORITY } from "@/lib/api/http"
 import {
+  MR_PLURAL,
   mergeRequestsQueryOptions,
   pendingMergeCountQueryOptions,
 } from "@/lib/api/mergerequests"
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import { relativeTime } from "@/lib/format"
-import { EvidenceChips, MergePair } from "@/pages/merge-requests"
+import { EvidenceChips, MergePair } from "@/components/merge-request"
 
 /** Evidence cards the zone shows; the queue holds the rest. */
 const TOP_N = 3
@@ -82,7 +85,8 @@ export function MergeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
       <CardHeader>
         <CardTitle className="flex items-baseline gap-2">
           <Link
-            to="/merge-requests"
+            to="/data/$authority/$plural"
+            params={{ authority: CORE_AUTHORITY, plural: MR_PLURAL }}
             className="underline-offset-4 hover:underline"
           >
             Merge requests
@@ -96,7 +100,8 @@ export function MergeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
         </CardTitle>
         <CardAction>
           <Link
-            to="/merge-requests"
+            to="/data/$authority/$plural"
+            params={{ authority: CORE_AUTHORITY, plural: MR_PLURAL }}
             className="text-xs text-muted-foreground underline-offset-4 hover:underline"
           >
             View queue
@@ -127,7 +132,8 @@ export function MergeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
             ))}
             {pending !== undefined && pending > rows.length && (
               <Link
-                to="/merge-requests"
+                to="/data/$authority/$plural"
+                params={{ authority: CORE_AUTHORITY, plural: MR_PLURAL }}
                 className="text-xs text-muted-foreground underline-offset-4 hover:underline"
               >
                 +{(pending - rows.length).toLocaleString()}

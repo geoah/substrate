@@ -5,7 +5,6 @@ import {
   ActivityIcon,
   BotIcon,
   FolderIcon,
-  GitMergeIcon,
   HomeIcon,
   PackageIcon,
 } from "lucide-react"
@@ -26,7 +25,6 @@ const pages = [
   { title: "Changelog", to: "/changelog", icon: ActivityIcon },
   { title: "Registry", to: "/registry", icon: PackageIcon },
   { title: "Agents", to: "/agents", icon: BotIcon },
-  { title: "Merge requests", to: "/merge-requests", icon: GitMergeIcon },
 ] as const
 
 /** ⌘K: jump to any page or type. Records join the list in a later slice. */
