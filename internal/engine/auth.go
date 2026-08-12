@@ -11,8 +11,9 @@ package engine
 //     data, so the changelog carries an audit trail — "the credential changed at T"
 //     — and nothing crackable.
 //   - `core.substrate.reamde.dev/token`, one per token — a label, the SHA-256 of the
-//     secret, an optional expiry and a coarse last-used stamp. Sessions ARE
-//     these records; login mints one and hands back its secret once.
+//     secret and an optional expiry. Nothing records use, so authenticating
+//     writes nothing. Sessions ARE these records; login mints one and hands
+//     back its secret once.
 //
 // THE MAINT-POOL PATHS ARE ENUMERATED HERE AND NOWHERE ELSE. Authentication
 // cannot start from a repository scope — a login knows a username and a
@@ -50,10 +51,6 @@ const (
 	// The sealed-store refs the credential record points at are namespaced so
 	// a connector credential and a password hash can never collide on one.
 	sealedAuthPrefix = "auth:"
-
-	// lastUsedInterval is how coarse the token's last-used stamp is: a busy
-	// token writes one changelog entry a minute, not one a request.
-	lastUsedInterval = time.Minute
 
 	// minPasswordLength is the only password policy v1 has. Length is the
 	// property that matters and the one a user can act on; a composition rule
@@ -725,7 +722,7 @@ func (t *txn) mintToken(label string, expiresAt *time.Time) (substrate.TokenInfo
 // only: the hash is a secret-typed property and never leaves the store.
 func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT id, props->>'label', props->>'expiresAt', props->>'lastUsedAt', created_at
+		SELECT id, props->>'label', props->>'expiresAt', created_at
 		FROM records
 		WHERE kind = $1 AND deleted_at IS NULL
 		ORDER BY created_at DESC, id`, kindToken)
@@ -736,13 +733,12 @@ func (ds *dataset) Tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
 	var out []substrate.TokenInfo
 	for rows.Next() {
 		var info substrate.TokenInfo
-		var label, expires, lastUsed sql.NullString
-		if err := rows.Scan(&info.ID, &label, &expires, &lastUsed, &info.Created); err != nil {
+		var label, expires sql.NullString
+		if err := rows.Scan(&info.ID, &label, &expires, &info.Created); err != nil {
 			return nil, err
 		}
 		info.Label = label.String
 		info.ExpiresAt = parseStamp(expires)
-		info.LastUsedAt = parseStamp(lastUsed)
 		out = append(out, info)
 	}
 	return out, rows.Err()
@@ -798,7 +794,6 @@ func (s *service) Authenticate(ctx context.Context, tokenSecret string) (substra
 		// the API maps it to a 5xx instead of a misleading "invalid token".
 		return nil, zero, fmt.Errorf("open repository %s: %w", repo.Username, err)
 	}
-	s.stampLastUsed(ctx, ds, info)
 	return ds, info, nil
 }
 
@@ -809,14 +804,13 @@ func (s *service) tokenByHash(ctx context.Context, hash string) (string, substra
 	var zero substrate.TokenInfo
 	var repoID string
 	var info substrate.TokenInfo
-	var label, got, expires, lastUsed sql.NullString
+	var label, got, expires sql.NullString
 	err := s.maint.QueryRowContext(ctx, `
-		SELECT repository, id, props->>'label', props->>'hash', props->>'expiresAt',
-		       props->>'lastUsedAt', created_at
+		SELECT repository, id, props->>'label', props->>'hash', props->>'expiresAt', created_at
 		FROM records
 		WHERE kind = $1 AND deleted_at IS NULL AND props @> jsonb_build_object('hash', $2::text)`,
 		kindToken, hash).
-		Scan(&repoID, &info.ID, &label, &got, &expires, &lastUsed, &info.Created)
+		Scan(&repoID, &info.ID, &label, &got, &expires, &info.Created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", zero, fmt.Errorf("%w: unknown token", substrate.ErrAuth)
 	}
@@ -827,7 +821,6 @@ func (s *service) tokenByHash(ctx context.Context, hash string) (string, substra
 		return "", zero, fmt.Errorf("%w: unknown token", substrate.ErrAuth)
 	}
 	info.Label = label.String
-	info.LastUsedAt = parseStamp(lastUsed)
 	// Expiry is SERVER-ENFORCED here: a token past its stamp authenticates as
 	// a spent credential, so no dataset is ever handed out for it. An
 	// unreadable stamp fails closed for the same reason.
@@ -842,20 +835,4 @@ func (s *service) tokenByHash(ctx context.Context, hash string) (string, substra
 		info.ExpiresAt = &exp
 	}
 	return repoID, info, nil
-}
-
-// stampLastUsed records that a token authenticated, at most once a minute. It
-// is an ordinary record write — there is no second way to change a record — so
-// a token in constant use costs one changelog entry a minute, and a failure to stamp
-// never fails the request that was otherwise authentic.
-func (s *service) stampLastUsed(ctx context.Context, ds *dataset, info substrate.TokenInfo) {
-	now := nowUTC()
-	if info.LastUsedAt != nil && now.Sub(*info.LastUsedAt) < lastUsedInterval {
-		return
-	}
-	if _, err := ds.patchInternal(ctx, substrate.ActorSystem, kindToken, info.ID, substrate.PatchInput{
-		Properties: map[string]any{"lastUsedAt": now.Format(time.RFC3339)},
-	}); err != nil {
-		s.log.Warn("substrate: stamping a token's last use", "error", err)
-	}
 }

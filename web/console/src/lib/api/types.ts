@@ -297,8 +297,6 @@ export interface TokenInfo {
   createdAt: string
   /** Absent = the token lives until it is deleted. */
   expiresAt?: string
-  /** Coarse: stamped at most once a minute. */
-  lastUsedAt?: string
 }
 
 /** A mint (login, registration or `POST /tokens`): the record, plus the secret

@@ -153,11 +153,11 @@ func parseExpiry(in string, now time.Time) (*time.Time, error) {
 
 func printTokenTable(w io.Writer, tokens []substrate.TokenInfo, now time.Time) error {
 	tw := newTable(w)
-	fmt.Fprintln(tw, "ID\tLABEL\tCREATED\tEXPIRES\tLAST USED")
+	fmt.Fprintln(tw, "ID\tLABEL\tCREATED\tEXPIRES")
 	for _, t := range tokens {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n",
 			dash(t.ID), dash(t.Label), humanAge(now, t.Created),
-			instant(t.ExpiresAt), age(now, t.LastUsedAt))
+			instant(t.ExpiresAt))
 	}
 	return tw.Flush()
 }
@@ -169,11 +169,4 @@ func instant(t *time.Time) string {
 		return "never"
 	}
 	return t.UTC().Format(time.RFC3339)
-}
-
-func age(now time.Time, t *time.Time) string {
-	if t == nil {
-		return "-"
-	}
-	return humanAge(now, *t)
 }

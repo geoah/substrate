@@ -395,9 +395,10 @@ func TestTokenLookupScopesTheRequest(t *testing.T) {
 	}
 }
 
-// The coarse last-used stamp: the first authentication records
-// one, and a burst behind it does not write a changelog entry per request.
-func TestLastUsedIsCoarse(t *testing.T) {
+// Authentication is a READ. A token no longer carries a last-used stamp, so
+// no number of authentications appends anything to the changelog — the
+// changelog is the user's data, not the substrate's access log.
+func TestAuthenticationWritesNothing(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newService(t)
 	registerUser(t, svc, "geoah")
@@ -409,9 +410,6 @@ func TestLastUsedIsCoarse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	if _, _, err := svc.Authenticate(ctx, secret); err != nil {
-		t.Fatalf("authenticate: %v", err)
-	}
 	seq := maxSeq(t, ds)
 	for range 5 {
 		if _, _, err := svc.Authenticate(ctx, secret); err != nil {
@@ -420,19 +418,6 @@ func TestLastUsedIsCoarse(t *testing.T) {
 	}
 	if got := maxSeq(t, ds); got != seq {
 		t.Fatalf("a burst of authentications wrote %d entries", got-seq)
-	}
-	tokens, err := ds.Tokens(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	stamped := false
-	for _, tok := range tokens {
-		if tok.Label == "scripted" && tok.LastUsedAt != nil {
-			stamped = true
-		}
-	}
-	if !stamped {
-		t.Fatalf("no token carries a last-used stamp: %+v", tokens)
 	}
 }
 

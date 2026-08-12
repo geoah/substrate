@@ -261,12 +261,6 @@ function TokenRows({
           >
             {t.expiresAt ? relativeTime(t.expiresAt) : "never"}
           </TableCell>
-          <TableCell
-            className="data text-muted-foreground"
-            title={t.lastUsedAt ? shortDateTime(t.lastUsedAt) : undefined}
-          >
-            {t.lastUsedAt ? relativeTime(t.lastUsedAt) : "never"}
-          </TableCell>
           <TableCell className="text-right">
             <Button
               variant="destructive"
@@ -365,7 +359,6 @@ export function TokensPage() {
                       <TableHead>Label</TableHead>
                       <TableHead>Created</TableHead>
                       <TableHead>Expires</TableHead>
-                      <TableHead>Last used</TableHead>
                       <TableHead className="text-right">Revoke</TableHead>
                     </TableRow>
                   </TableHeader>

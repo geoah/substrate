@@ -473,9 +473,8 @@ func (f *fakeSubstrate) handleMint(w http.ResponseWriter, r *http.Request) {
 func (f *fakeSubstrate) handleTokens(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
 	expires := testNow.Add(720 * time.Hour)
-	used := testNow.Add(-90 * time.Minute)
 	writeJSON(w, http.StatusOK, map[string]any{"tokens": []substrate.TokenInfo{
-		{ID: "tk01", Label: "substratectl@laptop", Created: testNow.Add(-48 * time.Hour), LastUsedAt: &used},
+		{ID: "tk01", Label: "substratectl@laptop", Created: testNow.Add(-48 * time.Hour)},
 		{ID: "tk02", Label: "backup-script", Created: testNow.Add(-time.Hour), ExpiresAt: &expires},
 	}})
 }
