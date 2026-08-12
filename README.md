@@ -101,14 +101,17 @@ tree, so a change is a restart rather than a rebuild. The invite code is
 `let-me-in`, the database is a container of its own on `:5433`, and the pid and
 log live in `.dev/`.
 
-**`dev:wipe` is the only route back to a fresh substrate.** Registration is
-one-shot per user and there is no unregister, so testing the door means
-throwing the database away.
+**A fresh substrate means deleting the database.** Registration is one-shot per
+user and there is no unregister, so testing the door twice means throwing it
+away: `mise run dev:wipe` on this path, `docker compose down -v` on the compose
+one.
 
-The server binds every interface, so the machine's own address reaches it from
-another box on the same network — `dev:status` prints the addresses it finds,
-including a tailnet one. Nothing is exposed publicly by that; it is a laptop
-listening on a laptop's networks.
+The server binds every interface, so anything on the same LAN or tailnet
+reaches it — `dev:status` prints the addresses it finds. That is the point when
+you are testing from a phone or a second laptop, and it also means the invite
+code is reachable by everyone on those networks: registration is open for as
+long as one is set. Set `SUBSTRATE_INVITE_CODE` to something of your own, or
+`mise run dev:stop` when you are done. None of it reaches the internet.
 
 The console is served at `/` once it is built, and `dev:restart` picks it up:
 

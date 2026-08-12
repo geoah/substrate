@@ -44,12 +44,12 @@ mise run dev            # foreground; dev:up is the same in the background
 mise run dev:status     # database, server, console, URLs
 mise run dev:restart    # rebuild and restart; the data stays
 mise run dev:logs
-mise run dev:wipe       # DELETE the database: the ONLY route to a fresh substrate
+mise run dev:wipe       # DELETE the database: the next start is a fresh substrate
 ```
 
 `dev:wipe` matters more than it looks: registration is one-shot per user and
 there is no unregister, so any change to the door is tested by throwing the
-database away. `bin/substratectl --dsn "$(mise run dev:dsn)" …` is the operator
+database away — `dev:wipe` here, `docker compose down -v` on the compose path. `bin/substratectl --dsn "$(mise run dev:dsn)" …` is the operator
 hat against it, and `mise run console:build` puts the console at `/`.
 
 **Run the engine suite on its own.** `internal/engine`'s `*_db_test.go` files

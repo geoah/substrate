@@ -100,11 +100,16 @@ db_wipe() {
 
 # server_pid prints the pid of a LIVE background server and fails if there is
 # none; a pidfile left by a crash is not a running server.
+#
+# The command name is checked, not just the pid. A pid is not an identity —
+# the kernel reuses numbers — so a pidfile that outlived a crash would aim
+# `dev:stop` at whatever inherited that number. Only our own binary answers.
 server_pid() {
 	[ -f "$PIDFILE" ] || return 1
 	local pid
 	pid="$(cat "$PIDFILE")"
-	[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || return 1
+	[ -n "$pid" ] || return 1
+	[ "$(ps -p "$pid" -o comm= 2>/dev/null)" = "substrate" ] || return 1
 	echo "$pid"
 }
 
@@ -149,6 +154,10 @@ server_start() {
 	if ! wait_healthy; then
 		echo "dev: the server did not come up; tail -n 40 ${LOGFILE}" >&2
 		tail -n 40 "$LOGFILE" >&2 || true
+		# Leave nothing behind: a process that never got healthy still holds
+		# the port, and its pidfile would make the next `dev:up` report a
+		# running server.
+		server_stop >/dev/null
 		return 1
 	fi
 	echo "dev: substrate up (pid $(cat "$PIDFILE")), invite code ${INVITE}"
@@ -214,6 +223,13 @@ cmd_restart() {
 
 cmd_wipe() {
 	server_stop
+	# A foreground `mise run dev` has no pidfile, so server_stop did not touch
+	# it — and pulling the database out from under a live server is how you get
+	# one that is half migrated. The port still answering is exactly that case.
+	if curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1; then
+		echo "dev: something is still serving :${PORT} — a foreground \`mise run dev\`? stop it first; the database is untouched" >&2
+		return 1
+	fi
 	db_wipe
 	rm -rf "$STATE"
 	echo "dev: wiped — the next start is a fresh substrate with no users"
