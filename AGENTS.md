@@ -34,6 +34,24 @@ mise run lint           # golangci-lint; keep it at zero
 mise run console:dev    # the console on :5173, proxying /api to :8080
 ```
 
+**A substrate to work against** — a Postgres container of its own on `:5433`
+and the binary from the tree on `:8080`, invite code `let-me-in`, pid and log
+under `.dev/`. `docker compose up` builds an image; this does not, so a change
+is a restart. Every task is a subcommand of `.mise/dev.sh`.
+
+```bash
+mise run dev            # foreground; dev:up is the same in the background
+mise run dev:status     # database, server, console, URLs
+mise run dev:restart    # rebuild and restart; the data stays
+mise run dev:logs
+mise run dev:wipe       # DELETE the database: the ONLY route to a fresh substrate
+```
+
+`dev:wipe` matters more than it looks: registration is one-shot per user and
+there is no unregister, so any change to the door is tested by throwing the
+database away. `bin/substratectl --dsn "$(mise run dev:dsn)" …` is the operator
+hat against it, and `mise run console:build` puts the console at `/`.
+
 **Run the engine suite on its own.** `internal/engine`'s `*_db_test.go` files
 each start a pgvector testcontainer, and they starve under a full-tree parallel
 run — `go test ./...` can fail there while `go test ./internal/engine/...` passes
@@ -52,7 +70,7 @@ bin/substratectl register                    # invite code, username, password, 
 bin/substratectl login --username <you>      # password + TOTP; mints a token record
 bin/substratectl kinds                       # every installed kind
 bin/substratectl get kinds <ref> -o yaml     # one kind's definition
-bin/substratectl get people <id> -o yaml     # one record, apply-able envelope
+bin/substratectl get tasks <id> -o yaml      # one record, apply-able envelope
 bin/substratectl apply -f record.yaml        # put (merge, never prune)
 bin/substratectl watch                       # resumable change stream
 
@@ -61,6 +79,14 @@ bin/substratectl --dsn "$DATABASE_URL" repository list
 bin/substratectl --dsn "$DATABASE_URL" repository rebuild <username>
 bin/substratectl --dsn "$DATABASE_URL" user reset <username>   # needs SUBSTRATE_CREDENTIAL_KEY
 ```
+
+**Registration seeds `core` and nothing else.** `tasks` above is a vocabulary
+bundle the repository imports, so a walkthrough that reaches for any non-core
+collection installs one first — `apply -f` of the closure's files, the
+console's Registry page, or `POST
+/api/v1/core.substrate.reamde.dev/catalog/{id}/install`, which are three doors
+to the same admission. A snippet that opens with `get people` on a fresh
+substrate is wrong, and was.
 
 Config is `~/.config/substratectl/config.yaml` (override with
 `SUBSTRATECTL_CONFIG`): named contexts of `{name, server, username, token,
