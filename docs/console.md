@@ -12,7 +12,7 @@ which is why logging out revokes it. A substrate that is open for registration
 also serves a registration page at `/register`, with the invite code as its
 first field.
 
-Six destinations — Overview, Changelog, Registry, Triggers, Agents and Merge
+Five destinations — Overview, Changelog, Registry, Agents and Merge
 requests — with the account behind the session menu.
 
 ## Overview and data
@@ -66,12 +66,12 @@ uninstall points you at — and its connections: one row per configured provider
 account, where the [OAuth consent flow](bundles.md#the-oauth-facility)
 starts and where a connection's token status is visible.
 
-## Triggers and agents
+## Agents
 
-**Triggers** lists every [trigger](functions.md#triggers) in the repository with
-its delivery state: where its cursor stands, what it last ran, and what parked
-if anything did. **Agents** lists the declared [agents](agents.md) and opens a
-chat against one.
+**Agents** lists the declared [agents](agents.md) and opens a chat against one.
+[Triggers](functions.md#triggers) have no section of their own: they are
+ordinary records, so `core.substrate.reamde.dev/triggers` in the data nav is
+the list, and one trigger's record page is the trigger.
 
 ## Account
 

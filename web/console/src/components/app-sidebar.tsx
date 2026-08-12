@@ -22,7 +22,6 @@ import {
   SunIcon,
   SunMoonIcon,
   UserRoundIcon,
-  ZapIcon,
 } from "lucide-react"
 
 import { useTheme } from "@/components/theme-provider"
@@ -75,7 +74,6 @@ const consoleItems = [
   { title: "Overview", to: "/", icon: HomeIcon },
   { title: "Changelog", to: "/changelog", icon: ActivityIcon },
   { title: "Registry", to: "/registry", icon: PackageIcon },
-  { title: "Triggers", to: "/triggers", icon: ZapIcon },
   { title: "Agents", to: "/agents", icon: BotIcon },
   { title: "Merge requests", to: "/merge-requests", icon: GitMergeIcon },
 ] as const
