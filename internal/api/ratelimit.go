@@ -25,9 +25,8 @@ const defaultAuthInterval = 5 * time.Second
 // `/register`, one human action) spend half each. So the pair fires back to
 // back — the console and substratectl do exactly that — while a SECOND gesture still
 // waits the full interval, and login, the password change and the TOTP change
-// keep the unchanged one-per-interval pacing. Loosening the pair costs nothing
-// the lockout below does not already hold: the enroll call verifies the invite
-// code and writes nothing.
+// keep the unchanged one-per-interval pacing. Loosening the pair is safe: the
+// enroll call verifies the invite code and writes nothing.
 const (
 	authAllowance = 2
 	costRequest   = authAllowance
@@ -196,110 +195,4 @@ func limiterUsername(name string) string {
 		return name
 	}
 	return "-"
-}
-
-// The FAILURE LOCKOUT. The rate limiter above
-// spaces attempts; this one makes a RUN of failures cost exponentially more,
-// which is what a 10^6 code space and a guessable password need. It is keyed
-// the same way — the caller and the username — and a success clears the run,
-// so an honest user who fat-fingers a code twice never notices it.
-const (
-	lockoutThreshold = 5
-	lockoutBase      = time.Minute
-	lockoutCap       = time.Hour
-)
-
-type lockoutEntry struct {
-	fails int
-	until time.Time
-	seen  time.Time
-}
-
-type lockout struct {
-	now func() time.Time
-
-	mu      sync.Mutex
-	entries map[string]*lockoutEntry
-}
-
-func newLockout(now func() time.Time) *lockout {
-	return &lockout{now: now, entries: map[string]*lockoutEntry{}}
-}
-
-// locked reports whether any key is inside its lockout, and for how long.
-func (l *lockout) locked(keys ...string) (bool, time.Duration) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	now := l.now()
-	var wait time.Duration
-	for _, key := range keys {
-		e, ok := l.entries[key]
-		if !ok {
-			continue
-		}
-		if d := e.until.Sub(now); d > wait {
-			wait = d
-		}
-	}
-	return wait > 0, wait
-}
-
-// fail counts one failure against every key and extends the lockout past the
-// threshold: one minute, doubling per further failure, capped at an hour.
-func (l *lockout) fail(keys ...string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	now := l.now()
-	l.trimLocked(now)
-	for _, key := range keys {
-		e, ok := l.entries[key]
-		if !ok {
-			e = &lockoutEntry{}
-			l.entries[key] = e
-		}
-		e.fails++
-		e.seen = now
-		if e.fails >= lockoutThreshold {
-			d := lockoutBase << min(e.fails-lockoutThreshold, 16)
-			if d > lockoutCap {
-				d = lockoutCap
-			}
-			e.until = now.Add(d)
-		}
-	}
-}
-
-// succeed clears the run on every key: the lockout counts CONSECUTIVE
-// failures, not lifetime ones.
-func (l *lockout) succeed(keys ...string) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	for _, key := range keys {
-		delete(l.entries, key)
-	}
-}
-
-// trimLocked bounds the map the same way the limiter's does: keys embed
-// client-controlled input, so entries that can no longer refuse anything go
-// first, then the oldest half.
-func (l *lockout) trimLocked(now time.Time) {
-	if len(l.entries) < maxLimiterEntries {
-		return
-	}
-	for k, e := range l.entries {
-		if now.After(e.until) && now.Sub(e.seen) >= lockoutCap {
-			delete(l.entries, k)
-		}
-	}
-	if len(l.entries) < maxLimiterEntries {
-		return
-	}
-	keys := make([]string, 0, len(l.entries))
-	for k := range l.entries {
-		keys = append(keys, k)
-	}
-	sort.Slice(keys, func(i, j int) bool { return l.entries[keys[i]].seen.Before(l.entries[keys[j]].seen) })
-	for _, k := range keys[:len(keys)/2] {
-		delete(l.entries, k)
-	}
 }

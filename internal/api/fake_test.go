@@ -23,7 +23,7 @@ type fakeService struct {
 	// passwords and codes are what this fake's users know: a registration
 	// records both, and login checks them. The real verifier is the engine's
 	// (engine/auth.go); what the HTTP layer owes is the invite gate, the rate
-	// limit, the lockout and the password-factor rule, and those are what
+	// limit and the password-factor rule, and those are what
 	// these tests exercise.
 	passwords map[string]string
 	codes     map[string]string

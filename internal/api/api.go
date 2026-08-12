@@ -54,7 +54,7 @@ type Config struct {
 	// the endpoints answer `unsupported`, exactly like any capability this
 	// deployment lacks.
 	InviteCode string
-	// Now is an optional clock seam for the auth rate limiter and lockout.
+	// Now is an optional clock seam for the auth rate limiter.
 	Now func() time.Time
 	// AuthInterval is the minimum spacing between unauthenticated auth
 	// requests per (client IP, username), per username and globally; zero
@@ -66,7 +66,6 @@ type handler struct {
 	svc        substrate.Service
 	now        func() time.Time
 	authRate   *rateLimiter
-	authLock   *lockout
 	inviteCode string
 	catalog    *catalog.Catalog
 	consoleURL string
@@ -90,7 +89,6 @@ func New(cfg Config) http.Handler {
 		svc:         cfg.Service,
 		now:         now,
 		authRate:    newRateLimiter(interval, now),
-		authLock:    newLockout(now),
 		inviteCode:  cfg.InviteCode,
 		catalog:     cfg.Catalog,
 		consoleURL:  strings.TrimRight(cfg.ConsoleURL, "/"),

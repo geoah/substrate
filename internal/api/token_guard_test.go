@@ -3,14 +3,13 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
 // The door's guards: a per-IP, per-username
-// and GLOBAL rate limit, a consecutive-failure lockout, and a bounded body —
+// and GLOBAL rate limit and a bounded body —
 // all in front of the service, so a refused request never reaches it.
 
 const (
@@ -60,93 +59,6 @@ func TestLoginRateLimitIsGlobal(t *testing.T) {
 	if env.svc.loginCalls != 1 {
 		t.Fatalf("Login called %d times; a spray across usernames must share the global bucket", env.svc.loginCalls)
 	}
-}
-
-// Failures compound: past the threshold the caller is locked out for longer
-// than the interval, and a SUCCESS clears the run.
-func TestLoginLockoutAfterConsecutiveFailures(t *testing.T) {
-	env := newTestEnv(t)
-	bad := loginBody("geoah", "wrong-password", "000000")
-	for range lockoutThreshold {
-		rec := env.do(t, http.MethodPost, loginPath, "", bad)
-		wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
-		env.clock.advance(defaultAuthInterval + time.Millisecond)
-	}
-	// Spacing no longer buys an attempt: the run itself is the refusal.
-	rec := env.do(t, http.MethodPost, loginPath, "", bad)
-	wantErrorCode(t, rec, http.StatusTooManyRequests, codeRateLimited)
-	retry, err := strconv.Atoi(rec.Header().Get("Retry-After"))
-	if err != nil || retry < 1 {
-		t.Fatalf("Retry-After = %q, want a positive integer", rec.Header().Get("Retry-After"))
-	}
-	calls := env.svc.loginCalls
-
-	// Past the lockout a good credential is admitted, and it clears the run.
-	env.clock.advance(lockoutBase + time.Minute)
-	good := loginBody("geoah", env.svc.passwords["geoah"], fakeCode("geoah"))
-	wantStatus(t, env.do(t, http.MethodPost, loginPath, "", good), http.StatusCreated)
-	if env.svc.loginCalls != calls+1 {
-		t.Fatalf("the locked-out request reached the service")
-	}
-	env.clock.advance(defaultAuthInterval + time.Millisecond)
-	wantStatus(t, env.do(t, http.MethodPost, loginPath, "", good), http.StatusCreated)
-}
-
-// A lockout is one caller's or one username's, NEVER the substrate's. The
-// global key is the rate bucket's alone: feeding it to the lockout let five
-// unauthenticated failures against a username nobody has — from IPs nobody
-// shares — take login, registration and both credential changes offline for
-// every user, doubling to the hour cap on every further request and clearing
-// for nobody, since only a request that gets PAST the lockout can clear it.
-func TestOneUsernamesFailuresDoNotLockOutEverybodyElse(t *testing.T) {
-	env := newTestEnv(t)
-	bad := loginBody("nobody-by-that-name", "wrong-password", "000000")
-	for i := range lockoutThreshold {
-		env.doFrom(t, fmt.Sprintf("203.0.113.%d", i), http.MethodPost, loginPath, "", bad)
-		env.clock.advance(defaultAuthInterval + time.Millisecond)
-	}
-	good := loginBody("geoah", env.svc.passwords["geoah"], fakeCode("geoah"))
-	rec := env.doFrom(t, "198.51.100.7", http.MethodPost, loginPath, "", good)
-	wantStatus(t, rec, http.StatusCreated)
-}
-
-// /register/enroll proves the shared invite code and authenticates NOBODY, so
-// it must not clear a username's login lockout. Treating it as a success let an
-// invite-code holder POST /register/enroll{username: victim} to reset the
-// victim's consecutive-failure run and keep the exponential lockout pinned at
-// its floor — many more login guesses per hour. The run must be UNCHANGED by an
-// enroll: after one, a further failure still escalates rather than starting
-// over. (The lockout is keyed by the username string, present or not, so the
-// mechanism is the same whichever the victim.)
-func TestRegisterEnrollDoesNotResetTheLoginLockout(t *testing.T) {
-	env := newTestEnv(t)
-	const victim = "victim"
-	bad := loginBody(victim, "wrong-password", "000000")
-
-	// Run the consecutive failures up to the threshold: the last one locks.
-	for range lockoutThreshold {
-		env.do(t, http.MethodPost, loginPath, "", bad)
-		env.clock.advance(defaultAuthInterval + time.Millisecond)
-	}
-	// Step past the lockout window: unlocked by time, but the run still stands.
-	env.clock.advance(lockoutBase + time.Millisecond)
-
-	// The attacker holds the invite code and tries to wipe the run via enroll.
-	wantStatus(t, env.do(t, http.MethodPost, registerEnrolPath, "", map[string]any{
-		"inviteCode": testInviteCode, "username": victim,
-	}), http.StatusOK)
-
-	// One more failed login. With the run intact this is the SIXTH failure, so
-	// it re-locks (a longer window); had the enroll reset it, this would be the
-	// first failure and lock nothing.
-	env.clock.advance(defaultAuthInterval + time.Millisecond)
-	env.do(t, http.MethodPost, loginPath, "", bad)
-
-	// The rate buckets are full (only 5s passed) yet the next attempt is
-	// refused: the refusal is the LOCKOUT, which proves the run survived enroll.
-	env.clock.advance(defaultAuthInterval + time.Millisecond)
-	wantErrorCode(t, env.do(t, http.MethodPost, loginPath, "", bad),
-		http.StatusTooManyRequests, codeRateLimited)
 }
 
 func TestAuthBodyIsBounded(t *testing.T) {
@@ -259,43 +171,40 @@ func TestLoginKeepsOneAttemptPerInterval(t *testing.T) {
 	wantStatus(t, env.do(t, http.MethodPost, loginPath, "", good), http.StatusCreated)
 }
 
-func TestLockoutMapIsBounded(t *testing.T) {
-	clock := &testClock{t: time.Unix(1_700_000_000, 0).UTC()}
-	l := newLockout(clock.now)
-	for i := range 20 * maxLimiterEntries {
-		l.fail(fmt.Sprintf("10.0.0.%d|geoah", i))
-	}
-	if len(l.entries) > maxLimiterEntries {
-		t.Fatalf("lockout holds %d entries, want at most %d", len(l.entries), maxLimiterEntries)
-	}
-}
+// The removed lockout, as a standing test. Two halves, both of which the old
+// exponential lockout failed:
+//
+//   - a stranger hammering ANY username must not take the door offline for
+//     everyone. The lockout's key set once included a substrate-wide key, so
+//     five bad requests — no credentials needed — refused login, registration
+//     and both credential changes for every user, doubling to an hour cap and
+//     unclearable, since only a request that got past the lock cleared the run.
+//   - a user's own failures must not lock the user out, because the key is a
+//     username anybody may name.
+func TestFailuresNeverLockAnybodyOut(t *testing.T) {
+	env := newTestEnv(t)
 
-func TestLockoutBackoffIsExponentialAndCapped(t *testing.T) {
-	clock := &testClock{t: time.Unix(1_700_000_000, 0).UTC()}
-	l := newLockout(clock.now)
-	for range lockoutThreshold - 1 {
-		l.fail("k")
-	}
-	if locked, _ := l.locked("k"); locked {
-		t.Fatal("locked before the threshold")
-	}
-	l.fail("k")
-	locked, wait := l.locked("k")
-	if !locked || wait != lockoutBase {
-		t.Fatalf("first lockout = %v (locked %v), want %v", wait, locked, lockoutBase)
-	}
-	l.fail("k")
-	if _, wait := l.locked("k"); wait != 2*lockoutBase {
-		t.Fatalf("second lockout = %v, want %v", wait, 2*lockoutBase)
-	}
+	// A stranger sprays a username that does not exist.
+	stranger := loginBody("victim", "wrong-password", "000000")
 	for range 20 {
-		l.fail("k")
+		wantErrorCode(t, env.do(t, http.MethodPost, loginPath, "", stranger),
+			http.StatusUnauthorized, codeAuth)
+		env.clock.advance(defaultAuthInterval + time.Millisecond)
 	}
-	if _, wait := l.locked("k"); wait != lockoutCap {
-		t.Fatalf("runaway lockout = %v, want the %v cap", wait, lockoutCap)
+
+	// The door is still open to an unrelated, honest user.
+	good := loginBody("geoah", env.svc.passwords["geoah"], fakeCode("geoah"))
+	wantStatus(t, env.do(t, http.MethodPost, loginPath, "", good), http.StatusCreated)
+
+	// Now geoah fails repeatedly against their own account...
+	env.clock.advance(defaultAuthInterval + time.Millisecond)
+	ownBad := loginBody("geoah", "wrong-password", "000000")
+	for range 20 {
+		wantErrorCode(t, env.do(t, http.MethodPost, loginPath, "", ownBad),
+			http.StatusUnauthorized, codeAuth)
+		env.clock.advance(defaultAuthInterval + time.Millisecond)
 	}
-	l.succeed("k")
-	if locked, _ := l.locked("k"); locked {
-		t.Fatal("a success must clear the run")
-	}
+
+	// ...and the right credentials still work on the very next attempt.
+	wantStatus(t, env.do(t, http.MethodPost, loginPath, "", good), http.StatusCreated)
 }

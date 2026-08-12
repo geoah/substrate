@@ -10,7 +10,6 @@ package api
 //
 //   - a per-IP, per-username and GLOBAL rate limit (h.authRate), so a
 //     distributed attempt costs what a single one does;
-//   - a consecutive-failure lockout (h.authLock) on the same keys;
 //   - one answer for every failure — an unknown username, a wrong password
 //     and a wrong code are indistinguishable, which is why the engine does
 //     the same argon2id and HMAC work on all three;
@@ -88,37 +87,31 @@ type tokenListResponse struct {
 
 // --- the shared gate ---
 
-// authGate applies the rate limit and the lockout to one unauthenticated auth
-// request and returns the keys the caller reports the outcome on. A refusal
-// has already written the response. `cost` is what this call spends of the
-// interval's allowance: costRequest for a request that IS the attempt,
-// costPaired for one of the two calls of the registration gesture.
-// The two limiters take DIFFERENT keys, and the difference is the whole point.
+// authGate rate-limits one unauthenticated auth request. A refusal has already
+// written the response. `cost` is what this call spends of the interval's
+// allowance: costRequest for a request that IS the attempt, costPaired for one
+// of the two calls of the registration gesture.
+//
+// There is NO failure lockout. One keyed off the caller is a denial-of-service
+// lever rather than a defense: the keys include a username anybody may name,
+// so a stranger could lock any account — and while a substrate-wide key sat in
+// that set, five unauthenticated failures took login, registration and both
+// credential changes offline for EVERY user, doubling to an hour and
+// unclearable, because only a request that got past the lock could clear the
+// run. Pacing is what remains, and it is per-key: a flood costs the flooder.
+//
 // The bucket is substrate-wide on purpose: globalKey holds globalBurst
 // attempts, so a spray across many usernames is capped without any one honest
-// user losing their own allowance. The LOCKOUT must never see that key. It
-// makes a run of failures cost exponentially more and clears only on a
-// success, so a global entry could be driven by anyone and cleared by nobody —
-// five unauthenticated failures would take login, registration and both
-// credential changes offline for every user, and further requests would double
-// the outage to the hour cap. The lockout is therefore keyed by caller and by
-// username, and by nothing that a stranger shares with the victim.
-func (h *handler) authGate(w http.ResponseWriter, r *http.Request, username string, cost int) ([]string, bool) {
+// user losing their own allowance.
+func (h *handler) authGate(w http.ResponseWriter, r *http.Request, username string, cost int) bool {
 	name := limiterUsername(username)
-	lockKeys := []string{peerIP(r) + "|" + name, "user|" + name}
-	rateKeys := append(append([]string{}, lockKeys...), globalKey)
-	if locked, wait := h.authLock.locked(lockKeys...); locked {
-		w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds(wait)))
-		writeError(w, http.StatusTooManyRequests, codeRateLimited,
-			"too many failed attempts; wait and try again")
-		return nil, false
-	}
-	if ok, wait := h.authRate.allow(cost, rateKeys...); !ok {
+	keys := []string{peerIP(r) + "|" + name, "user|" + name, globalKey}
+	if ok, wait := h.authRate.allow(cost, keys...); !ok {
 		w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds(wait)))
 		writeError(w, http.StatusTooManyRequests, codeRateLimited, "too many requests")
-		return nil, false
+		return false
 	}
-	return lockKeys, true
+	return true
 }
 
 // inviteOK compares the presented invite code with the configured one in
@@ -157,27 +150,20 @@ func (h *handler) postRegisterBegin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	keys, ok := h.authGate(w, r, req.Username, costPaired)
+	ok := h.authGate(w, r, req.Username, costPaired)
 	if !ok {
 		return
 	}
 	if !h.inviteOK(w, req.InviteCode) {
-		h.authLock.fail(keys...)
 		return
 	}
 	enrollment, err := h.svc.BeginRegistration(r.Context(), req.Username)
 	if err != nil {
-		h.authLock.fail(keys...)
 		writeSubstrateError(w, err)
 		return
 	}
 	// Enroll proves the shared invite code and NOTHING about the named user —
-	// the engine authenticates nobody here. So it must NOT clear the lockout:
-	// treating it as a success let an invite-code holder POST
-	// /register/enroll{username: victim} to reset the victim's consecutive-
-	// failure count and pin the exponential login lockout at its floor. Only a
-	// real identity proof (login, register-commit, a verified factor change)
-	// clears the run.
+	// the engine authenticates nobody here, and it writes nothing.
 	writeJSON(w, http.StatusOK, enrollment)
 }
 
@@ -189,12 +175,11 @@ func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	keys, ok := h.authGate(w, r, req.Username, costPaired)
+	ok := h.authGate(w, r, req.Username, costPaired)
 	if !ok {
 		return
 	}
 	if !h.inviteOK(w, req.InviteCode) {
-		h.authLock.fail(keys...)
 		return
 	}
 	info, secret, err := h.svc.Register(r.Context(), substrate.RegisterInput{
@@ -205,11 +190,9 @@ func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
 		Label:      req.Label,
 	})
 	if err != nil {
-		h.authLock.fail(keys...)
 		writeSubstrateError(w, err)
 		return
 	}
-	h.authLock.succeed(keys...)
 	writeJSON(w, http.StatusCreated, tokenResponse{Token: info, Secret: secret})
 }
 
@@ -223,7 +206,7 @@ func (h *handler) postLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	keys, ok := h.authGate(w, r, req.Username, costRequest)
+	ok := h.authGate(w, r, req.Username, costRequest)
 	if !ok {
 		return
 	}
@@ -232,11 +215,9 @@ func (h *handler) postLogin(w http.ResponseWriter, r *http.Request) {
 		TOTPCode: req.TOTPCode, Label: req.Label,
 	})
 	if err != nil {
-		h.authLock.fail(keys...)
 		writeAuthFailure(w, err)
 		return
 	}
-	h.authLock.succeed(keys...)
 	writeJSON(w, http.StatusCreated, tokenResponse{Token: info, Secret: secret})
 }
 
@@ -250,7 +231,7 @@ func (h *handler) postPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	keys, ok := h.authGate(w, r, req.Username, costRequest)
+	ok := h.authGate(w, r, req.Username, costRequest)
 	if !ok {
 		return
 	}
@@ -261,11 +242,9 @@ func (h *handler) postPassword(w http.ResponseWriter, r *http.Request) {
 		Username: req.Username, Password: req.Password, TOTPCode: req.TOTPCode,
 	}, req.NewPassword)
 	if err != nil {
-		h.authLock.fail(keys...)
 		writeAuthFailure(w, err)
 		return
 	}
-	h.authLock.succeed(keys...)
 	writeJSON(w, http.StatusOK, map[string]string{"username": req.Username})
 }
 
@@ -277,7 +256,7 @@ func (h *handler) postTOTPBegin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	keys, ok := h.authGate(w, r, req.Username, costRequest)
+	ok := h.authGate(w, r, req.Username, costRequest)
 	if !ok {
 		return
 	}
@@ -288,11 +267,9 @@ func (h *handler) postTOTPBegin(w http.ResponseWriter, r *http.Request) {
 		Username: req.Username, Password: req.Password, TOTPCode: req.TOTPCode,
 	})
 	if err != nil {
-		h.authLock.fail(keys...)
 		writeAuthFailure(w, err)
 		return
 	}
-	h.authLock.succeed(keys...)
 	writeJSON(w, http.StatusOK, enrollment)
 }
 
@@ -304,7 +281,7 @@ func (h *handler) postTOTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	keys, ok := h.authGate(w, r, req.Username, costRequest)
+	ok := h.authGate(w, r, req.Username, costRequest)
 	if !ok {
 		return
 	}
@@ -315,11 +292,9 @@ func (h *handler) postTOTP(w http.ResponseWriter, r *http.Request) {
 		Username: req.Username, Password: req.Password, TOTPCode: req.TOTPCode,
 	}, req.NewTOTPSecret, req.NewTOTPCode)
 	if err != nil {
-		h.authLock.fail(keys...)
 		writeAuthFailure(w, err)
 		return
 	}
-	h.authLock.succeed(keys...)
 	writeJSON(w, http.StatusOK, map[string]string{"username": req.Username})
 }
 
