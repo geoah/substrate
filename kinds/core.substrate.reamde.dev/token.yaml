@@ -4,13 +4,17 @@ metadata:
   id: core.substrate.reamde.dev/token
 data:
   authority: core.substrate.reamde.dev
+  # v1alpha2 dropped `lastUsedAt`: authentication stamped it, so every token in
+  # use wrote a changelog entry a minute and buried the user's own history
+  # under the substrate's access log. Authentication is a READ now.
+  version: v1alpha2
   names:
     singular: token
     plural: tokens
   # A token has FULL ACCESS to its repository: no scopes, no actor set, no
   # roles. What it carries is what it is — a label, the SHA-256
-  # of a high-entropy secret shown once at mint, an optional expiry, and a
-  # coarse last-used stamp. Sessions ARE these records: login mints one.
+  # of a high-entropy secret shown once at mint, and an optional expiry.
+  # Sessions ARE these records: login mints one.
   #
   # Minting is the auth endpoints' (attributed to the substrate) and the
   # generic surface refuses writes to this kind — but REVOKING is an ordinary
@@ -28,8 +32,3 @@ data:
     expiresAt:
       type: datetime
       description: when the token stops authenticating; absent = until deleted
-    # Stamped at most once a minute: a busy token must not write
-    # a changelog entry per request.
-    lastUsedAt:
-      type: datetime
-      description: coarse last use, stamped at most once a minute

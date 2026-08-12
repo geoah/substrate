@@ -14,9 +14,6 @@ type TokenInfo struct {
 	// no revoke step needed. Nil = lives until the record is deleted.
 	Created   time.Time  `json:"createdAt"`
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
-	// LastUsedAt is COARSE: authentication stamps it at most
-	// once a minute, so a busy token does not write a changelog entry per request.
-	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
 }
 
 // TOTPEnrollment is a candidate second factor: the base32 seed and the

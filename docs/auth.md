@@ -81,7 +81,8 @@ work on all three so timing is not an oracle either.
 ## Tokens
 
 A token is a record of kind `core.substrate.reamde.dev/token` carrying a `label`, an
-optional `expiresAt`, a coarse `lastUsedAt`, and the SHA-256 of its secret.
+optional `expiresAt`, and the SHA-256 of its secret. Nothing on it records
+use: authentication is a read, so a busy token never appends to the changelog.
 The secret itself is `substrate_tok_` followed by 40 hex characters, shown
 **exactly once** at mint. The prefix is there so leak scanners match it with no
 false positives.

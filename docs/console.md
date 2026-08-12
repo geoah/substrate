@@ -82,8 +82,8 @@ Behind the session menu, beside logging out:
   password and code in the form, because
   [the password-factor rule](auth.md#the-credential-and-the-password-factor-rule)
   refuses a bearer token here.
-- **Tokens** lists every token in the repository — label, created, last used,
-  expiry — and mints and revokes them. It is also the sessions page: every
+- **Tokens** lists every token in the repository — label, created, expiry —
+  and mints and revokes them. It is also the sessions page: every
   browser and every script that holds access is one of these rows, and
   revoking one is deleting it.
 

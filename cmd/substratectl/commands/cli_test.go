@@ -1579,9 +1579,9 @@ func TestTokenListShowsMetadataAndNeverASecret(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	out, _ := h.mustRun("token", "list")
-	want := "ID     LABEL                 CREATED   EXPIRES                LAST USED\n" +
-		"tk01   substratectl@laptop   2d        never                  1h\n" +
-		"tk02   backup-script         1h        2026-09-01T12:00:00Z   -\n"
+	want := "ID     LABEL                 CREATED   EXPIRES\n" +
+		"tk01   substratectl@laptop   2d        never\n" +
+		"tk02   backup-script         1h        2026-09-01T12:00:00Z\n"
 	if out != want {
 		t.Fatalf("token list =\n%q\nwant\n%q", out, want)
 	}
