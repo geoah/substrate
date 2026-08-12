@@ -30,9 +30,10 @@ data:
         ones
     # Issue 010 runtime state, owned by repository-open: set when a stored
     # closure no longer admits under the current binary — the authority
-    # is left out of the live registry and the repository opens without it; a
-    # re-install (which re-projects this row) clears both. Never part of a
-    # declaration.
+    # is left out of the live registry and the repository opens without it.
+    # Re-applying a valid closure re-projects this row and clears both, and so
+    # does the next open under a binary that admits the stored one again.
+    # Never part of a declaration.
     #
     # It lives HERE and not on the bundle row because admission is
     # authority-scoped: a repository-local authority — a user's own kinds,
@@ -41,8 +42,8 @@ data:
     quarantined:
       type: bool
       description: set at repository-open when the authority's stored closure
-        fails admission — the bundle needs a re-install; cleared by re-applying
-        the closure
+        fails admission; cleared by re-applying a valid closure, or by an open
+        that admits the stored one
     quarantineReason:
       type: string
       description: the admission error that quarantined the authority
