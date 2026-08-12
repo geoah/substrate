@@ -2,9 +2,10 @@
  * tile a door, nothing decorative (IA ticket 003; charts deferred). Zone 1
  * answers what just happened (the changelog's feed, 60s refetch, no watch), zone 2
  * what needs a verdict (the queue's evidence cards), zone 3 what the substrate
- * holds (per-kind counts behind a concurrency gate, System collapsed so its
- * probes never fire unasked). Each zone loads, empties and fails on its own —
- * one slow surface never blanks the glance. */
+ * holds (per-kind counts behind a concurrency gate, the repository's own
+ * authorities only — the machinery is in the nav, not on the glance). Each
+ * zone loads, empties and fails on its own — one slow surface never blanks
+ * the glance. */
 
 import { useQuery } from "@tanstack/react-query"
 
