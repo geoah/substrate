@@ -38,7 +38,19 @@ const (
 	DatatypeRecurrence Datatype = "recurrence"
 	DatatypeEnum       Datatype = "enum"
 	DatatypeJSON       Datatype = "json"
-	DatatypeSecret     Datatype = "secret"
+	// DatatypeSecret is confidential MATERIAL: the record and the changelog
+	// store only an opaque ref into the engine's sealed store, where the
+	// value itself lives encrypted. Reads redact even the ref; only the host
+	// reads that spend the material ever resolve it. The credential's
+	// passwordRef/totpRef and the accountconfig tokenRef are the same shape
+	// with engine-minted refs.
+	DatatypeSecret Datatype = "secret"
+	// DatatypeDigest is a one-way hash the server minted to COMPARE, never to
+	// reveal: redacted on the wire like a secret, but stored as the value
+	// itself, because the engine matches it in SQL (a token authenticates by
+	// digest containment on every request). The value is 64 lowercase hex
+	// characters, a SHA-256, and only substrate paths write it.
+	DatatypeDigest Datatype = "digest"
 	// DatatypeBlobRef references a content-addressed blob by its digest (the blob
 	// record's id). The stored value is the digest string; reads resolve it to
 	// the blob's manifest ({digest, mimeType, size, status}), never the bytes
@@ -82,7 +94,8 @@ var builtinKinds = map[Datatype]bool{
 	DatatypeFloat: true, DatatypeBool: true, DatatypeDatetime: true, DatatypeDate: true,
 	DatatypeDuration: true, DatatypeEmail: true, DatatypeURL: true, DatatypePhone: true,
 	DatatypeTimezone: true, DatatypeRecurrence: true, DatatypeEnum: true,
-	DatatypeJSON: true, DatatypeSecret: true, DatatypeState: true, DatatypeBlobRef: true,
+	DatatypeJSON: true, DatatypeSecret: true, DatatypeDigest: true,
+	DatatypeState: true, DatatypeBlobRef: true,
 }
 
 // shortStringKinds are the string-family kinds that carry FTS band B and
@@ -229,8 +242,18 @@ func (p *Property) ValueStrings() []string {
 // IsState reports whether the property is a state machine.
 func (p *Property) IsState() bool { return p.Datatype == DatatypeState }
 
-// Secret reports whether reads must redact the property.
+// Secret reports whether the property is confidential MATERIAL: the stored
+// value is a ref into the sealed store and the material is scrubbed at the
+// runner boundary. Every secret is also Sensitive.
 func (p *Property) Secret() bool { return p.Datatype == DatatypeSecret }
+
+// Sensitive reports whether reads must redact the property and search,
+// filtering, ordering, templates and change payloads must exclude it. Wider
+// than Secret: a digest is server-minted and reveals no material, but it has
+// no business on any wire either.
+func (p *Property) Sensitive() bool {
+	return p.Datatype == DatatypeSecret || p.Datatype == DatatypeDigest
+}
 
 // Edge is one declared relationship on a type. Nothing here marks a subject
 // edge: a recordmapping names it, so the edge declaration stays ordinary and

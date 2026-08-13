@@ -61,8 +61,9 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 	configType, _ := ds.registry().ByIdentity(b.ConfigType)
 	oauthEnabled := configType != nil && configType.Implements(vocabulary.TraitOAuth2Core) && b.OAuth2 != nil
 	if configRow != nil {
-		cfg["config"] = injectedRecordView(configType, configRow)
-		secrets = append(secrets, injectedSecretValues(configType, configRow)...)
+		view, vsecrets := ds.injectedRecordConfig(ctx, configType, configRow)
+		cfg["config"] = view
+		secrets = append(secrets, vsecrets...)
 	}
 
 	// The refresh endpoints (client creds + token endpoint from the manifest,
@@ -90,8 +91,8 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 			return nil, nil, err
 		}
 		for _, row := range rows {
-			entry := injectedRecordView(t, row)
-			secrets = append(secrets, injectedSecretValues(t, row)...)
+			entry, esecrets := ds.injectedRecordConfig(ctx, t, row)
+			secrets = append(secrets, esecrets...)
 			if oauthEnabled {
 				ref, _ := ds.svc.openPropValue(propString(row, propTokenRef))
 				switch {
@@ -130,17 +131,39 @@ func propString(row *erow, name string) string {
 	return s
 }
 
-// injectedRecordView flattens one record row for the invocation config: id,
-// type and its properties AS STORED, but with the OAUTH-FACILITY secrets
-// (clientSecret, tokenRef) omitted — the function gets a
-// resolved token, never those. A connector's own config secrets stay, and
-// they are scrubbed on the way out. State values merge in; the title rides
-// along.
-func injectedRecordView(ty *vocabulary.Kind, row *erow) map[string]any {
+// injectedRecordConfig flattens one record row for the invocation config:
+// id, kind, states, title, and its properties with every secret-typed value
+// RESOLVED to the material the body needs, plus those materials as the
+// strings the invocation scrubber holds to the runner boundary. View and
+// scrubber list are built in ONE pass so they cannot disagree: injecting the
+// stored ref while arming the scrubber with the resolved value would break
+// the body and leak the stored form in the same move. The OAUTH-FACILITY
+// secrets (clientSecret, tokenRef) are omitted entirely; the function gets a
+// resolved token, never those. A secret that fails to resolve (a dangling
+// ref, a wrong credential key) surfaces INLINE under `secretErrors`, the
+// same shape as tokenError: one bad value must not park every delivery of
+// the whole bundle.
+func (ds *dataset) injectedRecordConfig(ctx context.Context, ty *vocabulary.Kind, row *erow) (map[string]any, []string) {
 	props := map[string]any{}
+	secretErrors := map[string]string{}
+	var secrets []string
 	for k, v := range row.Props {
 		if isOAuthFacilitySecret(ty, k) {
 			continue
+		}
+		if s, isStr := v.(string); isStr && ty != nil {
+			if p, ok := ty.Prop(k); ok && p.Secret() {
+				plain, err := ds.openSecretValue(ctx, s)
+				if err != nil {
+					secretErrors[k] = err.Error()
+					continue
+				}
+				props[k] = plain
+				if plain != "" {
+					secrets = append(secrets, plain)
+				}
+				continue
+			}
 		}
 		props[k] = v
 	}
@@ -150,7 +173,11 @@ func injectedRecordView(ty *vocabulary.Kind, row *erow) map[string]any {
 	if row.Title != "" {
 		props["title"] = row.Title
 	}
-	return map[string]any{"id": row.ID, "kind": row.Kind, "properties": props}
+	out := map[string]any{"id": row.ID, "kind": row.Kind, "properties": props}
+	if len(secretErrors) > 0 {
+		out["secretErrors"] = secretErrors
+	}
+	return out, secrets
 }
 
 // isOAuthFacilitySecret reports whether a property is one the OAuth facility
@@ -168,27 +195,6 @@ func isOAuthFacilitySecret(ty *vocabulary.Kind, name string) bool {
 		return true
 	}
 	return false
-}
-
-// injectedSecretValues lists the secret-typed property values that ARE
-// injected into a function (every secret except the omitted OAuth-facility
-// ones) — the strings the invocation scrubber must hold to the runner
-// boundary.
-func injectedSecretValues(ty *vocabulary.Kind, row *erow) []string {
-	if ty == nil {
-		return nil
-	}
-	var out []string
-	for k, v := range row.Props {
-		p, ok := ty.Prop(k)
-		if !ok || !p.Secret() || isOAuthFacilitySecret(ty, k) {
-			continue
-		}
-		if s, ok := v.(string); ok && s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 // oneLiveRowOf reads the single live record of a type, nil when none exists.

@@ -36,7 +36,7 @@ boot.
 | `LOG_LEVEL`                    | `info`                                 | `debug`, `info`, `warn`, `error`.                                                                         |
 | `WEB_DIR`                      | —                                      | The built console, served at `/`. Empty disables static serving.                                          |
 | `SUBSTRATE_INVITE_CODE`        | — (unset: registration is off)         | The one door. See below.                                                                                  |
-| `SUBSTRATE_CREDENTIAL_KEY`     | —                                      | Seals the credential store (AES-256-GCM). Unset stores provider tokens unsealed, with a boot warning.     |
+| `SUBSTRATE_CREDENTIAL_KEY`     | —                                      | Seals the sealed store, which holds every secret-typed property's material (AES-256-GCM). Unset stores payloads unsealed, with a boot warning; `repository reseal` upgrades once it is set. |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. Unset mints a random key per boot, with a warning: flows in progress break on restart. |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers.                                                        |
 | `SUBSTRATE_CONSOLE_URL`        | —                                      | The console origin the OAuth return-page posts to and falls back to redirecting into. Empty is local dev. |
@@ -152,6 +152,7 @@ anything without one.
 DATABASE_URL=… substratectl repository list
 DATABASE_URL=… substratectl repository inspect ada
 DATABASE_URL=… substratectl repository rebuild ada
+SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl repository reseal ada
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl user reset ada
 ```
 
@@ -166,6 +167,14 @@ SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl user reset ada
   repository. It does not touch blobs or sealed rows — those were never in the
   changelog — and it leaves runtime state (trigger cursors, OAuth flows) alone,
   because a cursor is a consumer's position in the changelog, not a fold of it.
+- **`repository reseal <username>`** moves every legacy secret value into
+  the sealed store and re-points record rows and the changelog's stored
+  payloads at the refs; it also upgrades sealed-store payloads written while
+  the server ran without `SUBSTRATE_CREDENTIAL_KEY`. Run it once after
+  upgrading past the release that moved secrets into the store: the
+  changelog is immutable, so plaintext it already carries can be removed by
+  nothing else. Values-only and idempotent, and it refuses until the server
+  has opened the repository once under the upgraded binary.
 - **`user reset <username>`** is the answer to a user who has lost both
   factors. It writes fresh sealed material and a new credential record and
   prints a fresh TOTP enrollment. The data is untouched; the account gets new

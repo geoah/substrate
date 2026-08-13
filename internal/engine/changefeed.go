@@ -79,6 +79,11 @@ func (ds *dataset) buildChangeFilter(b *builder, f substrate.ChangeFilter) error
 		// One substring over the row's text: metacharacters escaped so the
 		// query is always a literal, payload cast to text so a value or a
 		// property name both hit. Sequential at personal scale by design.
+		// Matching the payload is safe BY CONSTRUCTION of the store: a
+		// secret's delta value is an opaque ref and a digest is a one-way
+		// comparator, so the searchable bytes are never material. The one
+		// exception is legacy plaintext written before secrets moved into
+		// the store, and `repository reseal` is what removes it.
 		p := b.arg("%" + escapeLike(f.Q) + "%")
 		b.add(`(kind ILIKE ` + p + ` OR actor ILIKE ` + p +
 			` OR record_id ILIKE ` + p + ` OR payload::text ILIKE ` + p + `)`)
@@ -111,9 +116,42 @@ func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, l
 		if err != nil {
 			return nil, err
 		}
+		ds.redactChangePayload(&c)
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// redactChangePayload blanks sensitive property VALUES inside a change's
+// replayable fold effects before the row leaves the engine. The changelog
+// stores refs for secrets, but a digest, a ref, or a legacy plaintext
+// written before secrets moved into the store would otherwise ride the feed,
+// the watch stream and GraphQL in the clear: the one read surface recordOf's
+// redaction did not cover. The stored row is untouched: this shapes the
+// READ. Rebuild replays raw SQL rows and never comes through here, so the
+// fold still folds exactly what the log holds.
+//
+// A kind that no longer resolves (uninstalled bundle, quarantined authority)
+// fails CLOSED: with no declaration to say which properties are sensitive,
+// every string value in its delta redacts, because history written before an
+// uninstall is exactly where legacy plaintext hides.
+func (ds *dataset) redactChangePayload(c *substrate.Change) {
+	forEachRecordDeltaSet(c.Payload, func(kindRef, _ string, set map[string]any) {
+		ty, err := ds.resolveType(kindRef)
+		if err != nil || ty == nil {
+			for name, v := range set {
+				if _, isStr := v.(string); isStr {
+					set[name] = Redacted
+				}
+			}
+			return
+		}
+		for name := range set {
+			if p, ok := ty.Prop(name); ok && p.Sensitive() {
+				set[name] = Redacted
+			}
+		}
+	})
 }
 
 // ChangesBefore reads history newest-first: rows with seq < before, at most

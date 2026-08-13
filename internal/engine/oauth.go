@@ -165,7 +165,7 @@ func (ds *dataset) oauthClientOf(ctx context.Context, b *vocabulary.Bundle) (cli
 			substrate.ErrGuard, b.Authority, b.ConfigType)
 	}
 	clientID = propString(configRow, "clientId")
-	clientSecret, err = ds.svc.openPropValue(propString(configRow, "clientSecret"))
+	clientSecret, err = ds.openSecretValue(ctx, propString(configRow, "clientSecret"))
 	if err != nil {
 		return "", "", err
 	}

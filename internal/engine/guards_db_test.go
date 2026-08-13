@@ -145,13 +145,11 @@ func TestSecretRoundTripLeavesStoredValue(t *testing.T) {
 	if back.Properties["label"] != "personal" {
 		t.Fatalf("round trip lost the ordinary property: %v", back.Properties)
 	}
-	var stored string
-	if err := raw.QueryRowContext(ctx,
-		`SELECT props->>'apiKey' FROM records WHERE id = $1`, cfg.ID).Scan(&stored); err != nil {
-		t.Fatalf("read stored secret: %v", err)
-	}
-	if stored != "hunter2" {
-		t.Fatalf("round trip destroyed the credential: stored %q", stored)
+	// The stored form is SEALED now (plain-marked here: this service holds no
+	// credential key), so the round-trip assertion decodes the engine's own
+	// framing to prove the credential survived intact.
+	if got := storedSecretPlain(t, raw, cfg.ID); got != "hunter2" {
+		t.Fatalf("round trip destroyed the credential: stored %q", got)
 	}
 	rows := changesSince(t, ds, before)
 	if len(rows) != 1 {
@@ -167,13 +165,34 @@ func TestSecretRoundTripLeavesStoredValue(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("rotate secret: %v", err)
 	}
-	if err := raw.QueryRowContext(ctx,
-		`SELECT props->>'apiKey' FROM records WHERE id = $1`, cfg.ID).Scan(&stored); err != nil {
-		t.Fatalf("read stored secret: %v", err)
+	if got := storedSecretPlain(t, raw, cfg.ID); got != "hunter3" {
+		t.Fatalf("secret rotation did not land: %q", got)
 	}
-	if stored != "hunter3" {
-		t.Fatalf("secret rotation did not land: %q", stored)
+}
+
+// storedSecretPlain reads the raw stored apiKey ref, follows it into the
+// sealed store, and opens the KEYLESS plain framing: this suite's service
+// holds no credential key, so the inner plaintext is recoverable and the
+// assertion stays exact.
+func storedSecretPlain(t *testing.T, raw *sql.DB, id string) string {
+	t.Helper()
+	var ref string
+	if err := raw.QueryRow(
+		`SELECT props->>'apiKey' FROM records WHERE id = $1`, id).Scan(&ref); err != nil {
+		t.Fatalf("read stored secret ref: %v", err)
 	}
+	if !strings.HasPrefix(ref, "secret:") {
+		t.Fatalf("stored secret is not a sealed-store ref: %q", ref)
+	}
+	var payload []byte
+	if err := raw.QueryRow(
+		`SELECT payload FROM sealed WHERE ref = $1`, ref).Scan(&payload); err != nil {
+		t.Fatalf("read sealed payload for %s: %v", ref, err)
+	}
+	if len(payload) == 0 || payload[0] != 'p' {
+		t.Fatalf("sealed payload is not the keyless plain framing")
+	}
+	return string(payload[1:])
 }
 
 // The filter grammar must not become a decryption oracle.

@@ -28,7 +28,8 @@ run anywhere.
 
 **The operator's hat** speaks to the box's Postgres directly and holds no token
 at all: `user reset`, `repository list`, `repository inspect`,
-`repository rebuild`. It needs `--dsn` (or `DATABASE_URL`), and without one
+`repository rebuild`, `repository reseal`. It needs `--dsn` (or
+`DATABASE_URL`), and without one
 every operator command refuses before touching anything.
 [Running a substrate](operations.md) is where that hat lives.
 

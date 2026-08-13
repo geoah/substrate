@@ -18,6 +18,8 @@ const Redacted = "<redacted>"
 
 var rePhone = regexp.MustCompile(`^\+[1-9]\d{1,14}$`)
 
+var reDigest = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
 // coerceProps validates a write's properties against the type and returns
 // them in their stored (JSON-safe, normalised) form. A nil value is a
 // delete marker and passes through.
@@ -53,9 +55,9 @@ func coerceProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, error)
 			out[name] = nil
 			continue
 		}
-		// Reads redact secrets: writing the sentinel back is a round trip,
-		// not an assignment, and must leave the stored credential alone.
-		if p.Secret() && v == Redacted {
+		// Reads redact sensitive values: writing the sentinel back is a round
+		// trip, not an assignment, and must leave the stored value alone.
+		if p.Sensitive() && v == Redacted {
 			continue
 		}
 		cv, err := coerceValue(p, v)
@@ -241,6 +243,12 @@ func coerceScalar(p *vocabulary.Property, v any) (any, error) {
 			return nil, fmt.Errorf("expected a blob digest (%s<64 hex>)", substrate.BlobDigestPrefix)
 		}
 		return s, nil
+	case vocabulary.DatatypeDigest:
+		// Server-minted comparator: exactly a lowercase hex SHA-256. Anything
+		// else is material masquerading as a digest, and material is `secret`.
+		if !reDigest.MatchString(s) {
+			return nil, fmt.Errorf("expected a SHA-256 digest (64 lowercase hex)")
+		}
 	case vocabulary.DatatypeEnum:
 		if vals := p.ValueStrings(); !containsString(vals, s) {
 			return nil, fmt.Errorf("expected one of %s", strings.Join(vals, ", "))
@@ -363,6 +371,12 @@ type titleResolver struct {
 }
 
 func (r *titleResolver) Prop(name string) string {
+	// The loader refuses a sensitive property in a template, but a legacy
+	// declaration may predate that rule: render empty rather than copy a
+	// value every read surface redacts into the unsealed, FTS-indexed title.
+	if p, ok := r.ty.Prop(name); ok && p.Sensitive() {
+		return ""
+	}
 	if v, ok := r.row.Props[name]; ok {
 		return scalarString(v)
 	}
@@ -415,6 +429,14 @@ func (r *titleResolver) targetProp(ref eref, prop string) string {
 	if prop == "" {
 		return row.Title
 	}
+	// The loader cannot check an edge target's property (the target is
+	// another type's business, and `to: any` has no target at all), so the
+	// sensitive skip is enforced here.
+	if ty, terr := r.t.ds.resolveType(row.Kind); terr == nil && ty != nil {
+		if p, ok := ty.Prop(prop); ok && p.Sensitive() {
+			return ""
+		}
+	}
 	if v, ok := row.Props[prop]; ok {
 		return scalarString(v)
 	}
@@ -452,7 +474,7 @@ func snippetOf(ty *vocabulary.Kind, row *erow) string {
 	best := ""
 	for _, name := range ty.PropOrder {
 		p := ty.Props[name]
-		if !vocabulary.IsLongText(p.Datatype) || p.Secret() {
+		if !vocabulary.IsLongText(p.Datatype) || p.Sensitive() {
 			continue
 		}
 		s := scalarString(row.Props[name])
@@ -487,7 +509,7 @@ func ftsBands(ty *vocabulary.Kind, row *erow) [3]string {
 	var b, c []string
 	for _, name := range ty.PropOrder {
 		p := ty.Props[name]
-		if !p.FTS || p.Secret() {
+		if !p.FTS || p.Sensitive() {
 			continue
 		}
 		s := scalarString(row.Props[name])
@@ -509,7 +531,7 @@ func ftsBands(ty *vocabulary.Kind, row *erow) [3]string {
 // --- projection ---
 
 // recordOf projects a stored row onto the wire type, redacting every
-// secret-typed property. EVERYTHING AUTHORED IS A PROPERTY:
+// sensitive property. EVERYTHING AUTHORED IS A PROPERTY:
 // storage keeps title, body, the temporal instants and the machine states in
 // their own columns, and the wire shows ONE properties map holding all of
 // them.
@@ -555,7 +577,7 @@ func redactProps(ty *vocabulary.Kind, props map[string]any) map[string]any {
 	out := make(map[string]any, len(props))
 	for k, v := range props {
 		if ty != nil {
-			if p, ok := ty.Prop(k); ok && p.Secret() {
+			if p, ok := ty.Prop(k); ok && p.Sensitive() {
 				out[k] = Redacted
 				continue
 			}

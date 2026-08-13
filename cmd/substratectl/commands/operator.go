@@ -59,11 +59,11 @@ func (a *app) dsn() (string, error) {
 	return "", fmt.Errorf("no database URL: pass --dsn or set %s — the operator commands act on the box's Postgres directly, never over HTTP", dsnEnv)
 }
 
-// openEngineRead opens the substrate engine for a command that only READS
-// (rebuild re-links existing sealed material, never re-seals it), so a missing
-// credential key is not fatal here: the key is passed when present and its
-// absence is silent, because nothing this engine writes is sealed. The caller
-// closes it.
+// openEngineRead opens the substrate engine with whatever credential key the
+// environment holds; its absence is not fatal HERE. Rebuild re-links existing
+// sealed material and never opens it, and reseal enforces its own key
+// requirement in the engine (a keyless reseal writes nothing but markers, so
+// it refuses loudly there). The caller closes it.
 func (a *app) openEngineRead(ctx context.Context) (substrate.Service, error) {
 	return a.openEngineWithKey(ctx, os.Getenv(credentialKeyEnv))
 }
@@ -229,6 +229,10 @@ type resetter interface {
 
 type rebuilder interface {
 	RebuildRepository(ctx context.Context, username string) (engine.RebuildReport, error)
+}
+
+type resealer interface {
+	ResealRepository(ctx context.Context, username string) (engine.ResealReport, error)
 }
 
 // seamMissing is what an engine build without one of the operator seams gets:

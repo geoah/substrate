@@ -62,8 +62,11 @@ func newW3Env(t *testing.T, opts ...engine.Option) (substrate.Service, substrate
 
 func w3CredentialCount(t *testing.T, db *sql.DB) int {
 	t.Helper()
+	// OAuth token credentials only: secret-typed PROPERTY values (the
+	// config's clientSecret) live in the same table now under the `secret:`
+	// ref namespace, and teardown of an account must not be judged by them.
 	var n int
-	if err := db.QueryRow(`SELECT count(*) FROM sealed`).Scan(&n); err != nil {
+	if err := db.QueryRow(`SELECT count(*) FROM sealed WHERE ref NOT LIKE 'secret:%'`).Scan(&n); err != nil {
 		t.Fatalf("count credentials: %v", err)
 	}
 	return n

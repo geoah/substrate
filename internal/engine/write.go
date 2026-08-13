@@ -3,6 +3,8 @@ package engine
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -848,11 +850,13 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	}
 	row.Title = title
 
-	// Secret-typed property values seal at rest: the JSONB
-	// that lands in the row carries ciphertext, never the plaintext a database
-	// reader could lift. Comparison and projection above ran on plaintext;
-	// sealing here, at the storage boundary, keeps both unchanged.
-	if err := t.sealSecretProps(sp.ty, row); err != nil {
+	// Secret-typed property values move into the sealed store here, at the
+	// storage boundary: the JSONB that lands in the row, and the changelog
+	// delta derived from it, carry an opaque ref and never the material.
+	// Comparison and projection above ran on plaintext; substitution here
+	// keeps both unchanged.
+	accepted, err = t.storeSecretProps(sp.ty, sp.ref(), before, row, accepted)
+	if err != nil {
 		return nil, err
 	}
 
@@ -1069,14 +1073,6 @@ func isBundleOwnerGated(ty *vocabulary.Kind) bool {
 	return ty.Implements(vocabulary.TraitBundleConfigCore) || ty.Implements(vocabulary.TraitAccountConfigCore)
 }
 
-// sealsSecretsAtRest reports whether a type's secret-typed properties seal in
-// JSONB: the OAuth-facility bundle secrets (oauth2's
-// clientSecret, accountconfig's tokenRef), whose only host readers open the
-// sealed value. Core auth secrets stay as-is.
-func sealsSecretsAtRest(ty *vocabulary.Kind) bool {
-	return ty.Implements(vocabulary.TraitOAuth2Core) || ty.Implements(vocabulary.TraitAccountConfigCore)
-}
-
 // checkPropertyOwnership holds every CHANGED property with a `writer:`
 // restriction to its role's actor. Enforced uniformly —
 // including internal writes — so the OAuth facility, the connector function
@@ -1112,32 +1108,118 @@ func (t *txn) actorMayWriteProp(writer string) bool {
 	return true
 }
 
-// sealSecretProps seals the OAuth-facility secret-typed property values in the
-// row at the storage boundary, leaving an already-sealed
-// value untouched so an unrelated patch does not re-encrypt (and needlessly
-// bump) a secret it never named. Scope: types implementing the oauth2 or
-// accountconfig trait (clientSecret, tokenRef) — NOT core auth material (the
-// token hash is a SQL-queried digest, the repository totpSecret is bootstrap
-// bytes), which is read on paths that never open a sealed value.
-func (t *txn) sealSecretProps(ty *vocabulary.Kind, row *erow) error {
-	if !sealsSecretsAtRest(ty) {
-		return nil
-	}
+// storeSecretProps moves every ACCEPTED secret-typed property value into the
+// sealed store at the storage boundary, leaving the ref in its place, so the
+// records fold and the changelog delta both carry an opaque address and
+// never the material. Authorship and server-side state decide what each
+// value is, never the value's own bytes:
+//
+//   - a property this write did not accept carries its stored ref through
+//     the merge untouched (legacy plaintext is the reseal migration's to
+//     move, not an unrelated patch's);
+//   - an accepted value naming an existing sealed row OF THIS RECORD is a
+//     carried ref: the auth and OAuth machinery insert their material first
+//     and put the ref through here second, in one transaction;
+//   - an accepted plaintext equal to the current material keeps the current
+//     ref AND leaves the accepted list, so a re-pasted secret neither mints
+//     a delta nor steals the property's manager attribution;
+//   - any other accepted value stores under a fresh ref, and the ref it
+//     replaces is DELETED: rotation erases material rather than retiring it
+//     into an immutable log. An accepted deletion erases the same way.
+//
+// Returns the accepted list with the no-op names pruned.
+func (t *txn) storeSecretProps(ty *vocabulary.Kind, owner eref, before, row *erow, accepted []string) ([]string, error) {
+	hasSecret := false
 	for _, name := range ty.PropOrder {
-		if !ty.Props[name].Secret() {
+		if ty.Props[name].Secret() {
+			hasSecret = true
+			break
+		}
+	}
+	if !hasSecret {
+		return accepted, nil
+	}
+	authored := make(map[string]bool, len(accepted))
+	for _, name := range accepted {
+		authored[name] = true
+	}
+	beforeRef := func(name string) string {
+		if before == nil {
+			return ""
+		}
+		if old, ok := before.Props[name].(string); ok && strings.HasPrefix(old, secretRefPrefix) {
+			return old
+		}
+		return ""
+	}
+	drop := map[string]bool{}
+	for _, name := range ty.PropOrder {
+		if !ty.Props[name].Secret() || !authored[name] {
 			continue
 		}
 		s, ok := row.Props[name].(string)
 		if !ok || s == "" {
+			// An accepted deletion (or clear) with a stored ref behind it
+			// erases the material now.
+			if old := beforeRef(name); old != "" {
+				if _, err := t.exec(`DELETE FROM sealed WHERE ref = $1`, old); err != nil {
+					return nil, err
+				}
+			}
 			continue
 		}
-		sealed, err := t.ds.svc.sealPropValue(s)
+		carried, err := t.sealedRefOf(s, owner)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		row.Props[name] = sealed
+		if carried {
+			continue
+		}
+		old := beforeRef(name)
+		if old != "" {
+			// openSealedRef locks the row FOR UPDATE, serializing the compare
+			// with a concurrent rotation's delete.
+			cur, err := t.openSealedRef(old)
+			switch {
+			case err == nil:
+				if subtle.ConstantTimeCompare(cur, []byte(s)) == 1 {
+					row.Props[name] = old
+					drop[name] = true
+					continue
+				}
+			case errors.Is(err, sql.ErrNoRows):
+				// The row is gone (a concurrent rotation or teardown won):
+				// nothing to compare against and nothing to erase.
+				old = ""
+			default:
+				// A row that exists but does not open means the credential
+				// key is wrong: rotating THROUGH that state would erase
+				// material the corrected key could still read, and mask the
+				// misconfiguration. Fail the write instead.
+				return nil, fmt.Errorf("substrate/engine: open stored secret %s.%s: %w", ty.Identity, name, err)
+			}
+		}
+		ref, err := t.storeSecretValue(owner, s)
+		if err != nil {
+			return nil, err
+		}
+		row.Props[name] = ref
+		if old != "" {
+			if _, err := t.exec(`DELETE FROM sealed WHERE ref = $1`, old); err != nil {
+				return nil, err
+			}
+		}
 	}
-	return nil
+	if len(drop) == 0 {
+		return accepted, nil
+	}
+	pruned := make([]string, 0, len(accepted))
+	for _, name := range accepted {
+		if !drop[name] {
+			pruned = append(pruned, name)
+		}
+	}
+	return pruned, nil
 }
 
 // asInt64 reads an integer stored in jsonb. A json.Number (the runner decodes
@@ -1215,11 +1297,11 @@ func propertyWritable(ty *vocabulary.Kind, name string) bool {
 	return ok
 }
 
-// secretProp reports whether name is a secret-typed property of ty — the ones
+// sensitiveProp reports whether name is a sensitive property of ty — the ones
 // a proposed diff must never carry.
-func secretProp(ty *vocabulary.Kind, name string) bool {
+func sensitiveProp(ty *vocabulary.Kind, name string) bool {
 	p, ok := ty.Prop(name)
-	return ok && p.Secret()
+	return ok && p.Sensitive()
 }
 
 // normalizeDiff validates and normalises a proposed change against the target
@@ -1283,11 +1365,11 @@ func normalizeDiff(ty *vocabulary.Kind, diff map[string]any, op string) (map[str
 			problems = append(problems, fmt.Sprintf("%q is not a property of %s", name, ty.Identity))
 			continue
 		}
-		// A raw secret must never sit in the request's non-secret json diff:
+		// A raw sensitive value must never sit in the request's json diff:
 		// redaction guards the target, but the pending request would expose
 		// the value under diff.properties to every reader.
-		if secretProp(ty, name) {
-			problems = append(problems, fmt.Sprintf("%q is a secret — a change request must not carry a raw secret value", name))
+		if sensitiveProp(ty, name) {
+			problems = append(problems, fmt.Sprintf("%q is sensitive: a change request must not carry a raw value for it", name))
 		}
 	}
 	if len(problems) > 0 {

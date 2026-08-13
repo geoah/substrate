@@ -1269,7 +1269,7 @@ func TestProposeDiffValidation(t *testing.T) {
 		diff := map[string]any{"properties": map[string]any{"apiKey": "sk-super-secret"}}
 		if _, err := normalizeDiff(gauge, diff, op); err == nil {
 			t.Fatalf("op %s: proposing a secret apiKey was not refused", op)
-		} else if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "secret") {
+		} else if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "sensitive") {
 			t.Fatalf("op %s: secret refusal unclear: %v", op, err)
 		}
 	}

@@ -17,6 +17,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -226,45 +227,123 @@ func deriveCredentialKey(key string) []byte {
 	return sum[:]
 }
 
-// --- secret-property sealing at rest ---------------------
+// --- secret-property refs ------------------------------------------------
 //
-// An OAuth-facility secret-typed property value (the config's clientSecret,
-// an account's tokenRef) is sealed with the SAME AEAD key the credential store
-// uses BEFORE it lands in the record's JSONB, and opened only at the host reads
-// that need the plaintext. The wire redaction and blank-on-edit behavior are
-// unchanged; this closes the at-rest gap where a database reader, backup, or
-// replica saw the plaintext client secret. The sealed form is self-describing
-// (a fixed prefix), so a reader opens it without knowing the type; without a
-// credential key it is a reversible plain-marked payload, exactly like the
-// credential store's dev fallback.
+// A secret-typed property's STORED value is a ref into the sealed store: the
+// material lives in `sealed`, encrypted under the credential key and owned
+// by the record; the records fold and the changelog delta both carry only
+// the opaque address. The append-only log therefore never holds material,
+// not even ciphertext; rotation DELETES the old sealed row instead of
+// retiring old ciphertexts into immutable history; and re-keying touches one
+// table. The engine-minted auth and OAuth refs (passwordRef, totpRef,
+// tokenRef) are the same shape written by their own machinery, and the write
+// path recognizes any value naming an existing sealed row of the same record
+// as a carried ref: a check against server-side state, never trust in caller
+// bytes.
 //
-// Sealing is SCOPED to OAuth bundle secrets (write.go sealSecretProps): the
-// token type's `hash` is a SQL-queried digest and the repository's `totpSecret` is
-// control-plane bootstrap material — neither is plaintext-at-rest in the sense
-// #3 flags, and both are read on paths that never open a sealed value.
+// A record hard-deleted outside the OAuth teardown path may orphan its
+// sealed rows; an orphan is encrypted material addressed by nothing, and the
+// reseal migration reports nothing about it. Erasure-on-delete beyond the
+// OAuth teardown is future work, not a leak.
 
-// sealedPropPrefix marks a sealed secret-property value. It is printable
-// (JSONB rejects a literal NUL) and improbable in a real secret; a value
-// already carrying it is treated as already sealed.
+// secretRefPrefix namespaces the refs storeSecretProps mints, so a generic
+// reader recognizes a resolvable ref without probing the store for every
+// legacy plaintext.
+const secretRefPrefix = "secret:"
+
+// sealedPropPrefix marks the RETIRED inline-sealed form: releases before the
+// store-backed design encrypted the value directly into JSONB under this
+// prefix. openSecretValue still opens it, and the reseal migration moves it
+// into the store.
 const sealedPropPrefix = "substrate:sealsecret:v1:"
 
-// sealPropValue renders a secret plaintext as its at-rest sealed string. An
-// empty value stays empty (nothing to seal), and an already-sealed value is
-// returned unchanged (an untouched property re-persists its ciphertext).
-func (s *service) sealPropValue(plaintext string) (string, error) {
-	if plaintext == "" || strings.HasPrefix(plaintext, sealedPropPrefix) {
-		return plaintext, nil
+// newSecretRef mints an unguessable ref for one stored secret value.
+func newSecretRef() (string, error) {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
 	}
-	sealed, err := s.sealCredential([]byte(plaintext))
+	return secretRefPrefix + hex.EncodeToString(raw), nil
+}
+
+// storeSecretValue seals one plaintext into the sealed store under a fresh
+// ref owned by the record, inside the caller's transaction.
+func (t *txn) storeSecretValue(owner eref, plaintext string) (string, error) {
+	ref, err := newSecretRef()
 	if err != nil {
 		return "", err
 	}
-	return sealedPropPrefix + base64.StdEncoding.EncodeToString(sealed), nil
+	payload, err := t.ds.svc.sealCredential([]byte(plaintext))
+	if err != nil {
+		return "", err
+	}
+	if _, err := t.exec(`
+		INSERT INTO sealed (ref, record_kind, record_id, payload, updated_at)
+		VALUES ($1, $2, $3, $4, now())`,
+		ref, owner.Kind, owner.ID, payload); err != nil {
+		return "", fmt.Errorf("substrate/engine: store secret value: %w", err)
+	}
+	return ref, nil
 }
 
-// openPropValue reverses sealPropValue. A value without the prefix is returned
-// as-is: an unsealed legacy value, or a plaintext the caller passed straight
-// through.
+// sealedRefOf reports whether ref names an existing sealed row owned by the
+// record: the carried-ref test the write path uses in place of trusting the
+// value's bytes.
+func (t *txn) sealedRefOf(ref string, owner eref) (bool, error) {
+	var one int
+	err := t.row(`SELECT 1 FROM sealed WHERE ref = $1 AND record_kind = $2 AND record_id = $3`,
+		ref, owner.Kind, owner.ID).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// openSecretValue resolves one stored secret value to its material: a secret
+// ref reads its sealed row, the retired inline-sealed form opens in place,
+// and a legacy plaintext passes through unchanged, so every read works
+// before and after the reseal migration.
+func (ds *dataset) openSecretValue(ctx context.Context, stored string) (string, error) {
+	switch {
+	case stored == "":
+		return "", nil
+	case strings.HasPrefix(stored, secretRefPrefix):
+		var payload []byte
+		err := ds.db.QueryRowContext(ctx,
+			`SELECT payload FROM sealed WHERE ref = $1`, stored).Scan(&payload)
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("substrate/engine: secret ref has no sealed row")
+		}
+		if err != nil {
+			return "", err
+		}
+		raw, err := ds.svc.openCredential(payload)
+		if err != nil {
+			return "", fmt.Errorf("substrate/engine: open stored secret: %w", err)
+		}
+		return string(raw), nil
+	case strings.HasPrefix(stored, sealedPropPrefix):
+		raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(stored, sealedPropPrefix))
+		if err != nil {
+			return "", fmt.Errorf("substrate/engine: decode sealed property: %w", err)
+		}
+		out, err := ds.svc.openCredential(raw)
+		if err != nil {
+			return "", fmt.Errorf("substrate/engine: open sealed property: %w", err)
+		}
+		return string(out), nil
+	default:
+		return stored, nil
+	}
+}
+
+// openPropValue opens the retired inline-sealed form, or passes any other
+// value through: the tokenRef read sites want the REF a legacy release
+// sealed inline, never the material behind it, so they must not resolve a
+// store-backed ref the way openSecretValue does.
 func (s *service) openPropValue(stored string) (string, error) {
 	if !strings.HasPrefix(stored, sealedPropPrefix) {
 		return stored, nil

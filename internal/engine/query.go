@@ -188,6 +188,15 @@ func (ds *dataset) propertyMeta(ctx context.Context, e *substrate.Record) (map[s
 		if len(raw) > 0 {
 			_ = json.Unmarshal(raw, &value)
 		}
+		// An offer's stored value bypasses recordOf, so a property that is
+		// sensitive TODAY redacts here too: a stale offer minted before a
+		// re-type must not hand out what the main value hides. Unresolvable
+		// kinds fail closed the same way.
+		if ty, err := ds.resolveType(e.Kind); err != nil || ty == nil {
+			value = Redacted
+		} else if p, ok := ty.Prop(property); ok && p.Sensitive() {
+			value = Redacted
+		}
 		if jsonEqual(value, e.Properties[property]) {
 			continue
 		}
@@ -621,8 +630,8 @@ func (ds *dataset) condProp(b *builder, types []*vocabulary.Kind, name string, c
 	if ds.stateProp(types, name) {
 		return condJSON(b, `states`, name, c, vocabulary.DatatypeString)
 	}
-	if ds.secretProp(types, name) {
-		return fmt.Errorf("%w: %s is secret-typed and cannot be filtered", substrate.ErrValidation, name)
+	if ds.sensitiveProp(types, name) {
+		return fmt.Errorf("%w: %s is sensitive and cannot be filtered", substrate.ErrValidation, name)
 	}
 	kind := vocabulary.Datatype("")
 	for _, t := range types {
@@ -638,7 +647,7 @@ func (ds *dataset) condProp(b *builder, types []*vocabulary.Kind, name string, c
 }
 
 // stateProp reports whether name is a state property on any candidate type —
-// every loaded type when the query names none, the same way secretProp asks.
+// every loaded type when the query names none, the same way sensitiveProp asks.
 func (ds *dataset) stateProp(types []*vocabulary.Kind, name string) bool {
 	if len(types) == 0 {
 		types = ds.registry().Kinds()
@@ -651,15 +660,15 @@ func (ds *dataset) stateProp(types []*vocabulary.Kind, name string) bool {
 	return false
 }
 
-// secretProp reports whether name is secret-typed on any candidate type —
+// sensitiveProp reports whether name is sensitive on any candidate type —
 // every loaded type when the query names none. A filter or ordering over a
 // redacted value is an oracle that reconstructs it one comparison at a time.
-func (ds *dataset) secretProp(types []*vocabulary.Kind, name string) bool {
+func (ds *dataset) sensitiveProp(types []*vocabulary.Kind, name string) bool {
 	if len(types) == 0 {
 		types = ds.registry().Kinds()
 	}
 	for _, t := range types {
-		if p, ok := t.Prop(name); ok && p.Secret() {
+		if p, ok := t.Prop(name); ok && p.Sensitive() {
 			return true
 		}
 	}
@@ -836,8 +845,8 @@ func (ds *dataset) orderExpr(property string) (string, error) {
 		// quote, and sqlLiteral is the defense-in-depth that does not rely on it.
 		return `states->>` + sqlLiteral(property), nil
 	case vocabulary.ValidCamel(property):
-		if ds.secretProp(nil, property) {
-			return "", fmt.Errorf("%w: %s is secret-typed and cannot be ordered by",
+		if ds.sensitiveProp(nil, property) {
+			return "", fmt.Errorf("%w: %s is sensitive and cannot be ordered by",
 				substrate.ErrValidation, property)
 		}
 		return `props->>` + sqlLiteral(property), nil

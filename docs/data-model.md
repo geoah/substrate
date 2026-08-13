@@ -270,7 +270,8 @@ offers for it. Nothing else about a property is special; `title` and
 | `recurrence`       | RFC 5545 RRULE string                                       | eq               |
 | `enum`             | one of declared `values`                                    | eq, in           |
 | `state`            | a state machine: `states`, `initial`, `transitions`, stamps | eq, in           |
-| `secret`           | a credential: written like a string, read back redacted     | (none)           |
+| `secret`           | a credential: written like a string, read back redacted, stored in the sealed store | (none) |
+| `digest`           | a server-minted SHA-256 comparator, redacted like a secret  | (none)           |
 | `blobref`          | names stored bytes by digest                                | (none)           |
 | `object`           | inline `fields:` of scalar types, one level                 | (none)           |
 | `reference`        | a typed pointer at another record: `{kind, id}`             | (none)           |
@@ -310,15 +311,23 @@ empty label leaves the client to humanize the value. Declaration order is
 render order.
 
 **Secrets.** A `secret` property stores a credential. Writes take a string
-like any other property, but every read, whatever the surface, returns the
-sentinel `<redacted>` in its place, and applying a document carrying the
-sentinel back leaves the stored value alone, so a read-edit-apply round trip
-never wipes a credential. A secret offers no filter operators and cannot be
-ordered by (comparing against a redacted value would reconstruct it one probe
-at a time), never indexes into [search](graphql-and-search.md#search), and
-an [record mapping](projection.md) may never read one: a secret never leaves
-its record. The `core.substrate.reamde.dev/token` kind stores its hash this way
-([users and tokens](auth.md)).
+like any other property, but the material never lands in the record: the
+engine moves it into the sealed store (encrypted, AES-256-GCM under the
+deployment's credential key) and the record and the changelog carry only an
+opaque ref, so rotation deletes the old material instead of retiring it into
+an immutable log. Every read, whatever the surface, returns the sentinel
+`<redacted>`. Applying a document carrying the sentinel back leaves the
+stored value alone, so a read-edit-apply round trip never wipes a
+credential. A secret offers no filter operators and cannot be ordered by
+(comparing against a redacted value would reconstruct it one probe at a
+time), never indexes into [search](graphql-and-search.md#search), never
+renders into a title, and a [record mapping](projection.md) may never read
+one: a secret never leaves its record.
+
+A `digest` shares the redaction but not the indirection, because the engine
+itself must compare it in SQL: a one-way SHA-256 the server minted, stored
+as the value. The `core.substrate.reamde.dev/token` kind stores its hash
+this way ([users and tokens](auth.md)).
 
 **Objects.** An `object` property declares its fields inline, each a scalar
 type, one level deep, no object inside an object. This is how an
