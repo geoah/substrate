@@ -107,15 +107,26 @@ func (s Spec) Key() string {
 	return s.Repository + "|" + s.Function + "|" + s.contentHash()
 }
 
-// contentHash fingerprints the body plus its shared modules: a module change
-// re-keys the installation exactly like a body change, so a new process is
-// started and (Python) re-registered or (Go) rebuilt against the new sources.
+// contentHash fingerprints the body, its shared modules AND the part of the
+// capability envelope the sandbox enforces at process start: a change to any
+// of them re-keys the installation, so a new process is started and (Python)
+// re-registered or (Go) rebuilt against the new inputs.
+//
+// The network state has to be in here. The sandbox policy is applied ONCE, when
+// the process starts, so a manifest that drops `capabilities.network` without
+// touching a line of source would otherwise leave the running process — started
+// when egress was granted — serving deliveries with its sockets intact. A
+// capability that is only withdrawn on the next unrelated edit is not withdrawn.
 func (s Spec) contentHash() string {
 	h := sha256.New()
 	h.Write([]byte(s.Runtime + "\x00" + s.Source))
 	for _, name := range sortedKeys(s.Modules) {
 		h.Write([]byte{0})
 		h.Write([]byte(name + "\x00" + s.Modules[name]))
+	}
+	h.Write([]byte{0})
+	if len(s.Network) > 0 {
+		h.Write([]byte("network"))
 	}
 	return hex.EncodeToString(h.Sum(nil)[:16])
 }
@@ -353,6 +364,7 @@ func (r *Runner) goProc(ctx context.Context, spec Spec) (*proc, error) {
 				return cur, nil
 			}
 			r.gos[key] = p
+			r.reap()
 			r.mu.Unlock()
 			return p, nil
 		}
@@ -550,9 +562,17 @@ func (r *Runner) reap() {
 // skipped rather than waited on: roundtrip holds proc.mu for the whole
 // exchange, so a failed TryLock means busy, and busy means recently used
 // anyway.
+//
+// The kill happens while proc.mu is still HELD, not after releasing it. A
+// caller can hold a pointer it took from the map before this sweep deleted the
+// entry; releasing the lock first would let that caller start a roundtrip into
+// a process about to be killed, and the delivery would fail with "child exited
+// mid-request" for no reason it could act on. Holding the lock across the kill
+// makes the retirement atomic with respect to roundtrip, which takes the same
+// lock and will then find the process dead and restart it.
 func (r *Runner) sweep(now time.Time) {
 	r.mu.Lock()
-	var stop []*proc
+	defer r.mu.Unlock()
 	for _, live := range []map[string]*proc{r.gos, r.pys} {
 		for key, p := range live {
 			if !p.alive() {
@@ -565,14 +585,10 @@ func (r *Runner) sweep(now time.Time) {
 			if !p.mu.TryLock() {
 				continue
 			}
-			p.mu.Unlock()
 			delete(live, key)
-			stop = append(stop, p)
+			p.kill()
+			p.mu.Unlock()
 		}
-	}
-	r.mu.Unlock()
-	for _, p := range stop {
-		p.kill()
 	}
 }
 

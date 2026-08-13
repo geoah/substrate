@@ -69,15 +69,22 @@ var goToolchain = sync.OnceValues(func() (toolchain, error) {
 	if err != nil {
 		return toolchain{}, fmt.Errorf("runner: probe go toolchain: %w", err)
 	}
-	f := strings.Fields(string(out))
-	if len(f) < 6 {
-		return toolchain{}, fmt.Errorf("runner: probe go toolchain: got %d values, want 6", len(f))
+	// ONE VALUE PER LINE, split on newlines and not on whitespace: `go env`
+	// prints a line per variable, a value may legitimately be EMPTY (GOMODCACHE
+	// on a box that never set it), and a value may legitimately CONTAIN SPACES
+	// (a GOCACHE under `/Users/My Name/Library/Caches`). Splitting on fields
+	// would drop the empty ones and shatter the spaced ones, and every value
+	// after the first offender would be assigned a fragment of its neighbor —
+	// which the sandbox would then grant, denying the build its own caches.
+	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+	if len(lines) < 6 {
+		return toolchain{}, fmt.Errorf("runner: probe go toolchain: got %d lines, want 6", len(lines))
 	}
 	return toolchain{
-		ID:       strings.Join(f[:3], "/"),
-		Root:     f[3],
-		Cache:    f[4],
-		ModCache: f[5],
+		ID:       strings.Join(lines[:3], "/"),
+		Root:     lines[3],
+		Cache:    lines[4],
+		ModCache: lines[5],
 	}, nil
 })
 

@@ -347,3 +347,46 @@ func TestIdleProcessesAreReaped(t *testing.T) {
 		t.Fatal("the reaped process came back")
 	}
 }
+
+// Withdrawing `capabilities.network` has to take effect on the NEXT delivery,
+// not on the next unrelated source edit. The sandbox policy is applied once,
+// when the process starts, so a manifest change that left the content hash
+// alone would keep serving deliveries from the process that was started while
+// egress was granted — with its sockets still open.
+func TestWithdrawingNetworkRetiresTheProcess(t *testing.T) {
+	r := New()
+	requireSandbox(t, r)
+	ctx := context.Background()
+	const probe = `
+import socket
+def main(input, host):
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.close()
+        return {"output": "opened"}
+    except OSError:
+        return {"output": "denied"}
+`
+	granted := Spec{
+		Repository: "t1", Function: "revoke.g.test", Runtime: "python",
+		Source: probe, TimeoutMs: 5000, Network: []string{"api.example.com"},
+	}
+	if got, err := r.Invoke(ctx, granted, testInput(), nil); err != nil || got.Output != "opened" {
+		t.Fatalf("with the capability granted: %+v %v", got, err)
+	}
+
+	// The SAME source, the same function, the same repository — only the
+	// declaration is gone.
+	withdrawn := granted
+	withdrawn.Network = nil
+	if granted.Key() == withdrawn.Key() {
+		t.Fatal("withdrawing the network capability did not re-key the installation")
+	}
+	got, err := r.Invoke(ctx, withdrawn, testInput(), nil)
+	if err != nil {
+		t.Fatalf("after withdrawal: %v", err)
+	}
+	if got.Output != "denied" {
+		t.Fatalf("a body kept its sockets after the capability was withdrawn: %v", got.Output)
+	}
+}

@@ -37,10 +37,29 @@ var systemReadExec = []string{
 	"/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/opt",
 }
 
-// systemReadOnly is configuration a runtime reads and must never execute: the
-// certificate store, the resolver configuration, the user database musl and
-// glibc both consult.
-var systemReadOnly = []string{"/etc"}
+// systemReadOnly is configuration a runtime reads and must never execute,
+// named FILE BY FILE rather than as `/etc`.
+//
+// Granting the whole directory would be simpler and wrong: /etc is where a
+// container platform mounts secrets by default, and /etc/shadow is readable
+// when the substrate runs as root — which the image does. This package claims a
+// body cannot reach the substrate's credentials, and a blanket /etc grant would
+// make that claim false for anything an operator happens to mount there. A path
+// that does not exist is skipped, so one list covers alpine, a Debian box and a
+// macOS-hosted container.
+var systemReadOnly = []string{
+	// The certificate store, under the name each distribution uses.
+	"/etc/ssl", "/etc/pki", "/etc/ca-certificates", "/etc/ca-certificates.conf",
+	// Name resolution: musl and glibc both read all of these.
+	"/etc/resolv.conf", "/etc/hosts", "/etc/host.conf", "/etc/nsswitch.conf",
+	"/etc/services", "/etc/gai.conf", "/etc/protocols",
+	// The user database, which the C library consults on any getpwuid.
+	"/etc/passwd", "/etc/group",
+	// Local time, which datetime formatting reads.
+	"/etc/localtime", "/etc/timezone",
+	// The dynamic linker's search configuration.
+	"/etc/ld.so.conf", "/etc/ld.so.conf.d", "/etc/ld.so.cache",
+}
 
 // deviceReadWrite are the character devices every runtime opens as a matter of
 // course — CPython rebinds stdin to /dev/null before a body runs, the Go

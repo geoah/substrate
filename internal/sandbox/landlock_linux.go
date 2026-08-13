@@ -111,9 +111,11 @@ func handledFor(abi int) uint64 {
 // no paths at all still enforces: the domain then denies every handled right
 // everywhere, which is the correct answer for a body that needs nothing.
 func applyLandlock(p Policy) error {
-	if len(p.ReadExec)+len(p.ReadOnly)+len(p.ReadWrite) == 0 {
-		return nil
-	}
+	// NOTE the absence of an early return for a policy with no paths. A policy
+	// that grants nothing means a body that may touch nothing, and enforcing it
+	// is one ruleset with zero rules — whereas skipping would hand a
+	// mis-assembled empty policy the whole filesystem, including the /proc entry
+	// this layer exists to close. Fail closed.
 	abi, err := landlockABI()
 	if err != nil {
 		// best-effort: the parent already reported the degradation at boot,

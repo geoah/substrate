@@ -83,7 +83,16 @@ type sockFprog struct {
 // means an outer profile denies seccomp(2) entirely; EINVAL means the kernel
 // predates SECCOMP_GET_ACTION_AVAIL (4.14) but still has filters, so it counts
 // as available.
+//
+// An architecture this package has no syscall table for counts as UNAVAILABLE
+// however willing the kernel is: a filter is written against one numbering, and
+// a wrong one does not fail loudly, it denies and permits the wrong calls. The
+// report has to say so, or SUBSTRATE_SANDBOX=enforce would pass its check at
+// boot and every body would then fail to launch.
 func seccompAvailable() bool {
+	if auditArch == 0 {
+		return false
+	}
 	action := uint32(seccompRetErrno)
 	_, _, errno := unix.Syscall(unix.SYS_SECCOMP, seccompGetActionAvail, 0,
 		uintptr(unsafe.Pointer(&action)))
@@ -102,19 +111,43 @@ func seccompAvailable() bool {
 // gets here, but a kernel that cannot honor TSYNC tells us so rather than
 // leaving a thread uncovered.
 func applySeccomp(p Policy) error {
+	if auditArch == 0 {
+		// No syscall table for this architecture. Reported as a degradation at
+		// boot (seccompAvailable says so), so carrying on here is the
+		// best-effort contract rather than a silent gap — and refusing would
+		// take down every delivery on a platform the operator was told about.
+		return nil
+	}
 	prog, err := buildFilter(p)
 	if err != nil {
 		return err
 	}
 	fprog := sockFprog{Len: uint16(len(prog)), Fil: &prog[0]}
+	err = installFilter(&fprog, seccompFilterFlagTSync)
+	if errors.Is(err, unix.EINVAL) {
+		// TSYNC is a request, not a requirement: a kernel that has filters but
+		// not the flag (or refuses to sync because a sibling thread carries a
+		// different filter) still applies one to the calling thread — which is
+		// the thread the stub locked and is about to exec from, so the filter
+		// still reaches the body.
+		err = installFilter(&fprog, 0)
+	}
+	if errors.Is(err, unix.ENOSYS) || errors.Is(err, unix.EPERM) {
+		// Reported as a degradation at boot; a delivery is not the place to
+		// discover it.
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("set filter: %w", err)
+	}
+	return nil
+}
+
+// installFilter attaches one assembled program.
+func installFilter(fprog *sockFprog, flags uintptr) error {
 	if _, _, errno := unix.Syscall(unix.SYS_SECCOMP, seccompSetModeFilter,
-		seccompFilterFlagTSync, uintptr(unsafe.Pointer(&fprog))); errno != 0 {
-		if errors.Is(errno, unix.ENOSYS) || errors.Is(errno, unix.EPERM) {
-			// Reported as a degradation at boot; a delivery is not the place
-			// to discover it.
-			return nil
-		}
-		return fmt.Errorf("set filter: %w", errno)
+		flags, uintptr(unsafe.Pointer(fprog))); errno != 0 {
+		return errno
 	}
 	return nil
 }

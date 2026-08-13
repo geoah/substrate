@@ -118,6 +118,7 @@ func ref(name string) string { return name }
 // cannot read the server's own environment, where the credential key that
 // unseals every stored provider token lives.
 func TestFunctionCannotReadTheServersEnvironment(t *testing.T) {
+	testenv.RequireSandbox(t)
 	t.Setenv("SUBSTRATE_CREDENTIAL_KEY", "LEAK-CREDENTIAL-KEY-END-TO-END")
 	env := testenv.Start(t)
 	env.ApplyVocabularyYAML(probeBundle(probeFn{name: "peek", source: `
@@ -150,6 +151,7 @@ def main(input, host):
 // nothing about egress, so the body gets none — and the same body with a
 // declaration gets its socket.
 func TestNetworkCapabilityIsEnforcedEndToEnd(t *testing.T) {
+	testenv.RequireSandbox(t)
 	env := testenv.Start(t)
 	const probe = `
 import socket

@@ -5,10 +5,11 @@ import "regexp"
 // PEP 723 inline script metadata (https://peps.python.org/pep-0723/): a
 // `# /// script` … `# ///` comment block a Python body may carry to declare
 // its own `dependencies` (and `requires-python`). When a function body carries
-// one, the runner provisions it with `uv sync --script` — which reads the block,
-// provisions an ephemeral (cached) venv with those deps, and runs the body —
-// instead of the shared dependency-free `python3` host. A body with no block
-// keeps the fast shared-host path unchanged.
+// one, the runner provisions it with `uv sync --script` — which reads the block
+// and builds a cached venv holding those deps — and then runs that venv's
+// interpreter. A body with no block runs the system `python3` instead. Either
+// way it is one process for that installation alone; the block decides only
+// whether uv has to provision an environment first.
 //
 // The regex is the one PEP 723 specifies for extracting the metadata block.
 var pep723Re = regexp.MustCompile(`(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$`)

@@ -34,6 +34,7 @@ import (
 	"github.com/geoah/substrate/internal/api"
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/sandbox"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/kinds"
@@ -292,4 +293,22 @@ func yamlDocuments(stream string) ([]map[string]any, error) {
 		return nil, fmt.Errorf("no documents")
 	}
 	return out, nil
+}
+
+// RequireSandbox skips a test whose assertion is a DENIAL the kernel has to
+// perform. `test:db` runs this package on developer machines too — macOS has
+// no Landlock or seccomp at all, and a Linux box can have Landlock left out of
+// its lsm= list — and on those hosts a body legitimately opens the socket the
+// test expects to be refused. Reporting "this platform cannot enforce the
+// policy" is the honest outcome; failing would read as a regression in code
+// that is fine.
+//
+// Tests asserting what a body may still DO need no guard, and neither does the
+// harness itself.
+func RequireSandbox(t *testing.T) {
+	t.Helper()
+	rep := sandbox.New(sandbox.ModeBestEffort).Report()
+	if !rep.FS() || !rep.Seccomp {
+		t.Skipf("this platform cannot enforce the sandbox: %s", rep)
+	}
 }
