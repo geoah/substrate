@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1178,11 +1179,24 @@ func (t *txn) storeSecretProps(ty *vocabulary.Kind, owner eref, before, row *ero
 		if old != "" {
 			// openSealedRef locks the row FOR UPDATE, serializing the compare
 			// with a concurrent rotation's delete.
-			if cur, err := t.openSealedRef(old); err == nil &&
-				subtle.ConstantTimeCompare(cur, []byte(s)) == 1 {
-				row.Props[name] = old
-				drop[name] = true
-				continue
+			cur, err := t.openSealedRef(old)
+			switch {
+			case err == nil:
+				if subtle.ConstantTimeCompare(cur, []byte(s)) == 1 {
+					row.Props[name] = old
+					drop[name] = true
+					continue
+				}
+			case errors.Is(err, sql.ErrNoRows):
+				// The row is gone (a concurrent rotation or teardown won):
+				// nothing to compare against and nothing to erase.
+				old = ""
+			default:
+				// A row that exists but does not open means the credential
+				// key is wrong: rotating THROUGH that state would erase
+				// material the corrected key could still read, and mask the
+				// misconfiguration. Fail the write instead.
+				return nil, fmt.Errorf("substrate/engine: open stored secret %s.%s: %w", ty.Identity, name, err)
 			}
 		}
 		ref, err := t.storeSecretValue(owner, s)
