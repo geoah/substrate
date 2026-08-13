@@ -61,7 +61,3 @@ export async function tokenize(
     }))
   )
 }
-
-export function tokenizeYAML(source: string): Promise<CodeToken[][]> {
-  return tokenize(source, "yaml")
-}

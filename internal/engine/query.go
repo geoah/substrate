@@ -646,6 +646,26 @@ func (ds *dataset) condProp(b *builder, types []*vocabulary.Kind, name string, c
 	return condJSON(b, `props`, name, c, kind)
 }
 
+// numericProp reports whether EVERY loaded kind that declares this property
+// declares it as a number. Every one, and not any: a name that is an int on one
+// kind and a string on another cannot be cast without failing the query for the
+// rows that hold text, so a disagreement falls back to the text ordering it has
+// always had.
+func (ds *dataset) numericProp(name string) bool {
+	found := false
+	for _, t := range ds.registry().Kinds() {
+		p, ok := t.Prop(name)
+		if !ok {
+			continue
+		}
+		if p.Repeated || (p.Datatype != vocabulary.DatatypeInt && p.Datatype != vocabulary.DatatypeFloat) {
+			return false
+		}
+		found = true
+	}
+	return found
+}
+
 // stateProp reports whether name is a state property on any candidate type —
 // every loaded type when the query names none, the same way sensitiveProp asks.
 func (ds *dataset) stateProp(types []*vocabulary.Kind, name string) bool {
@@ -848,6 +868,14 @@ func (ds *dataset) orderExpr(property string) (string, error) {
 		if ds.sensitiveProp(nil, property) {
 			return "", fmt.Errorf("%w: %s is sensitive and cannot be ordered by",
 				substrate.ErrValidation, property)
+		}
+		// A NUMBER sorts as a number. `props->>` is text, so ordering by an
+		// int-typed property sorted it lexicographically — 0, 1, 10, 11, 2 —
+		// which is not an ordering anyone asked for and is silent about it.
+		// The declared datatype is the only thing that can say otherwise, and
+		// the same cast the FILTER already applies (condJSON) applies here.
+		if ds.numericProp(property) {
+			return `(props->>` + sqlLiteral(property) + `)::numeric`, nil
 		}
 		return `props->>` + sqlLiteral(property), nil
 	default:

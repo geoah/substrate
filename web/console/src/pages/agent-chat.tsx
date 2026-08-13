@@ -7,9 +7,15 @@
  * TWO SOURCES, ONE RENDER PATH. The persisted rows are the truth; the live
  * ndjson stream is an overlay on top of them, folded into the same `TurnView`
  * shape (lib/api/transcript.ts). The overlay exists because the records query
- * is deliberately NOT refetched mid-run — a partial read would double every
- * turn the stream is already showing. When the run settles, the refetch is
- * awaited BEFORE the overlay is dropped, so the handover never blinks. */
+ * is deliberately NOT read mid-run — a partial read would double every turn
+ * the stream is already showing.
+ *
+ * The handover is the delicate part. When a run settles the rows are marked
+ * stale and the query re-enables; the overlay is dropped only once that fetch
+ * has LANDED, watched through the query itself. Awaiting the invalidation
+ * instead does not work — `invalidateQueries` will not refetch a disabled
+ * query, so the await returns before the rows it is waiting for exist, and the
+ * conversation blinks back to its pre-run state for a round trip. */
 
 import { useEffect, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -26,6 +32,7 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   streamChat,
   threadMessagesQueryOptions,
+  transcriptOrder,
   type AgentEvent,
   type AgentResult,
   type ChatHandle,
@@ -70,16 +77,47 @@ function pushToolStart(live: Live, call: ToolCallView, seq: number): Live {
 }
 
 /** Settles a call BY ID: one turn may dispatch the same tool twice, and
- * settling by name would close the wrong card. */
-function settleTool(live: Live, id: string, output: string, ok: boolean): Live {
+ * settling by name would close the wrong card.
+ *
+ * A finish with no card is not a no-op. The loop refuses a dispatch past the
+ * tool-call budget WITHOUT starting it — the refusal is a finished event and
+ * nothing else — so the one card a reader most needs ("stop calling tools")
+ * would never appear live, only on reload. An unclaimed finish opens its own
+ * card, already settled. */
+function settleTool(
+  live: Live,
+  call: ToolCallView,
+  output: string,
+  ok: boolean,
+  seq: number
+): Live {
+  const settled = { ...call, output, ok }
+  // An empty id cannot identify anything, so it settles the OLDEST card still
+  // running rather than every id-less card at once.
+  const match = (c: ToolCallView) =>
+    call.id ? c.id === call.id : c.ok === undefined
+  let claimed = false
   const turns = live.turns.map((turn) => {
-    if (!turn.tools.some((c) => c.id === id)) return turn
+    if (claimed || !turn.tools.some(match)) return turn
+    claimed = true
+    let done = false
     return {
       ...turn,
-      tools: turn.tools.map((c) => (c.id === id ? { ...c, output, ok } : c)),
+      tools: turn.tools.map((c) => {
+        if (done || !match(c)) return c
+        done = true
+        return { ...c, output, ok }
+      }),
     }
   })
-  return { turns, closed: true }
+  if (claimed) return { turns, closed: true }
+  return {
+    turns: [
+      ...turns,
+      { key: `live-a${seq}`, role: "assistant", content: "", tools: [settled] },
+    ],
+    closed: true,
+  }
 }
 
 /** Keying the surface on the agent id remounts it fresh when navigating
@@ -105,6 +143,16 @@ function ChatSurface({ id }: { id: string }) {
   const liveRef = useRef<Live>(EMPTY)
   const seqRef = useRef(0)
   const scrollRef = useRef<HTMLDivElement>(null)
+  // Every run gets a number, and a callback carrying a stale one is ignored:
+  // aborting a stream does not un-queue what it already delivered, so without
+  // this an abandoned run can still write into the thread that replaced it.
+  const runRef = useRef(0)
+  // When the last run settled, or 0 when none is waiting to be handed over.
+  // The handover is DERIVED from it against the query's own `dataUpdatedAt`:
+  // an effect that cleared the overlay would be a setState inside a render
+  // cascade, and there is nothing to store that the two timestamps do not
+  // already say. Written only from callbacks, read only in render.
+  const [settledAt, setSettledAt] = useState(0)
 
   // The stored transcript. Held still while the run streams: a mid-run read
   // returns rows the overlay is already showing, and the two would double.
@@ -115,8 +163,26 @@ function ChatSurface({ id }: { id: string }) {
 
   useEffect(() => () => handleRef.current?.stop(), [])
 
-  const persisted = messages.data?.records ?? []
-  const turns = [...transcriptOf(persisted), ...live.turns]
+  // The wire hands back the NEWEST window first; the fold wants loop order.
+  const persisted = transcriptOrder(messages.data?.records ?? [])
+  // THE HANDOVER, derived: the transcript that landed after the run settled
+  // contains everything the overlay was showing, so the overlay stops being
+  // rendered the moment that read lands — and not one render earlier, which
+  // would blank the conversation for a round trip.
+  const handedOver = settledAt > 0 && messages.dataUpdatedAt >= settledAt
+  const turns = handedOver
+    ? transcriptOf(persisted)
+    : [...transcriptOf(persisted), ...live.turns]
+  // A run that has settled but whose rows have not arrived is still busy: a
+  // send in that window would push onto an overlay the refetch is about to
+  // duplicate.
+  const busy = streaming || (settledAt > 0 && !handedOver)
+  // The caret belongs to the turn still ARRIVING, which is only ever one the
+  // overlay owns. Marking "the last assistant turn" would put it on the
+  // previous run's settled answer between send and the first delta.
+  const liveKey = streaming
+    ? [...live.turns].reverse().find((t) => t.role === "assistant")?.key
+    : undefined
 
   useEffect(() => {
     const el = scrollRef.current
@@ -128,7 +194,8 @@ function ChatSurface({ id }: { id: string }) {
     setLive(next)
   }
 
-  function onEvent(ev: AgentEvent) {
+  function onEvent(ev: AgentEvent, run: number) {
+    if (run !== runRef.current) return
     switch (ev.kind) {
       case "thread":
         // A minted thread names itself on the first event; putting it in the
@@ -149,7 +216,13 @@ function ChatSurface({ id }: { id: string }) {
         break
       case "toolFinished":
         update(
-          settleTool(liveRef.current, ev.id ?? "", ev.output ?? "", ev.ok ?? true)
+          settleTool(
+            liveRef.current,
+            { id: ev.id ?? "", name: ev.tool ?? "tool", arguments: ev.args ?? "" },
+            ev.output ?? "",
+            ev.ok ?? true,
+            seqRef.current++
+          )
         )
         break
       case "done":
@@ -160,38 +233,46 @@ function ChatSurface({ id }: { id: string }) {
 
   function send() {
     const message = input.trim()
-    if (!message || streaming) return
+    if (!message || busy) return
     setInput("")
     setError(null)
     setResult(null)
     seqRef.current++
+    // The previous run's overlay is the persisted transcript's job now.
+    setSettledAt(0)
     update({
       turns: [
-        ...liveRef.current.turns,
         { key: `live-u${seqRef.current}`, role: "user", content: message, tools: [] },
       ],
       closed: false,
     })
     setStreaming(true)
+    const run = ++runRef.current
+
+    // Both endings hand over the same way: the rows the loop wrote are the
+    // truth, so they are marked stale and the effect above swaps the overlay
+    // out once they land. An error ends a run too — leaving the overlay up
+    // beside a refetched transcript would double every turn it had shown.
+    const settle = () => {
+      if (run !== runRef.current) return
+      setSettledAt(Date.now())
+      setStreaming(false)
+      // Marking stale is all this has to do: re-enabling the query is what
+      // fetches, and `handedOver` above watches for the result.
+      void client.invalidateQueries({ queryKey: ["records"] })
+    }
 
     handleRef.current = streamChat({
       agent: id,
       thread: thread || undefined,
       message,
-      onEvent,
+      onEvent: (ev) => onEvent(ev, run),
       onError: (err) => {
+        if (run !== runRef.current) return
         setError(err.message)
-        setStreaming(false)
+        settle()
       },
-      onDone: () => {
-        setStreaming(false)
-        // The refetch lands BEFORE the overlay is dropped: clearing first
-        // would blank the conversation until the rows arrived.
-        void (async () => {
-          await client.invalidateQueries({ queryKey: ["records"] })
-          update(EMPTY)
-        })()
-      },
+      onDone: settle,
     })
   }
 
@@ -199,6 +280,10 @@ function ChatSurface({ id }: { id: string }) {
    * already written, so the transcript is not lost — only this view of it. */
   function selectThread(next: string) {
     handleRef.current?.stop()
+    // Past this the old run's callbacks are nobody's: they cannot write into
+    // the thread being opened.
+    runRef.current++
+    setSettledAt(0)
     setStreaming(false)
     setResult(null)
     setError(null)
@@ -251,19 +336,21 @@ function ChatSurface({ id }: { id: string }) {
               ref={scrollRef}
               className="mx-auto flex max-w-3xl flex-col gap-3 px-6 py-5"
             >
-              {messages.isPending && thread && (
+              {/* `isPending` is true for a DISABLED query too, so it cannot
+                  mean "loading" here — only a fetch in flight can. */}
+              {messages.isPending && messages.isFetching && (
                 <p className="py-8 text-center text-sm text-muted-foreground">
                   Loading the transcript…
                 </p>
               )}
-              {turns.length === 0 && !streaming && !messages.isPending && (
+              {turns.length === 0 && !streaming && !messages.isFetching && (
                 <p className="py-8 text-center text-sm text-muted-foreground">
                   {thread
                     ? "This thread has no turns."
                     : "Send a message to open a thread against this agent."}
                 </p>
               )}
-              <Transcript turns={turns} streaming={streaming} />
+              <Transcript turns={turns} liveKey={liveKey} />
               {error && (
                 <div className="rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2 text-xs text-destructive">
                   {error}
@@ -298,10 +385,10 @@ function ChatSurface({ id }: { id: string }) {
                     ? "Continue this thread…  (⌘↵ to send)"
                     : "Message the agent…  (⌘↵ to send)"
                 }
-                disabled={streaming}
+                disabled={busy}
                 className="min-h-0 resize-none"
               />
-              <Button onClick={send} disabled={streaming || !input.trim()}>
+              <Button onClick={send} disabled={busy || !input.trim()}>
                 {streaming ? (
                   <Spinner className="size-3.5" />
                 ) : (

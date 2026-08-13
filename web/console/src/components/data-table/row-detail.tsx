@@ -207,7 +207,10 @@ export function ChangeDetail({ row }: { row: ChangeRow }) {
               <li key={i} className="min-w-0">
                 {effect.verb}
                 {effect.target && (
-                  <span className="data break-all"> {effect.target}</span>
+                  <span className="data break-all" title={effect.target}>
+                    {" "}
+                    {effect.target}
+                  </span>
                 )}
                 {effect.detail && (
                   <span className="text-muted-foreground"> — {effect.detail}</span>

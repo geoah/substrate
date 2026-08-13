@@ -1,7 +1,11 @@
-/** The conversation itself: user turns as bubbles, assistant turns as prose
- * with their tool calls above the text (the loop dispatches, then answers), and
- * a caret on the turn still streaming. Everything here renders `TurnView`s, so
- * the live run and the reloaded thread are one render path. */
+/** The conversation itself: user turns as bubbles, assistant turns as their
+ * tool calls and their prose, and a caret on the turn still arriving.
+ * Everything here renders `TurnView`s, so the live run and the reloaded thread
+ * are one render path.
+ *
+ * Cards sit ABOVE the text of their own turn, though one completion produces
+ * both: what the model said before deciding to call something reads as the
+ * lead-in to the calls, and the reply that follows is the next turn's. */
 
 import { ToolCallCard } from "@/components/agent/tool-call"
 import type { TurnView } from "@/lib/api/transcript"
@@ -40,19 +44,17 @@ export function Turn({ turn, live }: { turn: TurnView; live?: boolean }) {
 
 export function Transcript({
   turns,
-  streaming,
+  liveKey,
 }: {
   turns: TurnView[]
-  /** Marks the last assistant turn as still arriving. */
-  streaming?: boolean
+  /** The turn still arriving, by key — never "the last one", which between a
+   * send and the first delta is the PREVIOUS run's settled answer. */
+  liveKey?: string
 }) {
-  const lastAssistant = streaming
-    ? turns.map((t) => t.role).lastIndexOf("assistant")
-    : -1
   return (
     <>
-      {turns.map((turn, i) => (
-        <Turn key={turn.key} turn={turn} live={i === lastAssistant} />
+      {turns.map((turn) => (
+        <Turn key={turn.key} turn={turn} live={turn.key === liveKey} />
       ))}
     </>
   )

@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest"
 
-import { lastReply, toolOK, transcriptOf } from "./transcript"
+import { toolOK, transcriptOf } from "./transcript"
 import type { SubstrateRecord } from "./types"
 
 let seq = 0
@@ -96,13 +96,28 @@ describe("transcriptOf", () => {
     expect(turns[1].tools).toHaveLength(0)
   })
 
-  it("shows an orphaned result rather than dropping a dispatch", () => {
+  it("gives an orphaned result its own turn rather than another turn's", () => {
+    // Attributing the dispatch to a turn that did not make it is worse than
+    // showing it unattached: the turn above really did not call this tool.
     const turns = transcriptOf([
       row({ role: "assistant", content: "prose" }),
       row({ role: "tool", content: "out", toolCallId: "gone", tool: "ghost" }),
     ])
-    expect(turns).toHaveLength(1)
-    expect(turns[0].tools[0]).toMatchObject({ name: "ghost", output: "out" })
+    expect(turns).toHaveLength(2)
+    expect(turns[0].tools).toEqual([])
+    expect(turns[1].tools[0]).toMatchObject({ name: "ghost", output: "out" })
+  })
+
+  it("does not let a duplicate result settle a second card", () => {
+    const turns = transcriptOf([
+      row({ role: "assistant", toolCalls: [call("c1", "t", "{}")] }),
+      row({ role: "tool", content: "first", toolCallId: "c1", tool: "t" }),
+      row({ role: "tool", content: "again", toolCallId: "c1", tool: "t" }),
+    ])
+    expect(turns[0].tools[0].output).toBe("first")
+    // The second is an orphan, on its own — never overwriting the first.
+    expect(turns).toHaveLength(2)
+    expect(turns[1].tools[0].output).toBe("again")
   })
 
   it("drops a malformed call rather than rendering a nameless card", () => {
@@ -137,15 +152,5 @@ describe("toolOK", () => {
 
   it("treats a non-JSON payload as a success", () => {
     expect(toolOK(row({ role: "tool", content: "plain text" }))).toBe(true)
-  })
-})
-
-describe("lastReply", () => {
-  it("looks past a turn that only dispatched tools", () => {
-    const turns = transcriptOf([
-      row({ role: "assistant", content: "the answer" }),
-      row({ role: "assistant", toolCalls: [call("c1", "t", "{}")] }),
-    ])
-    expect(lastReply(turns)).toBe("the answer")
   })
 })

@@ -39,12 +39,17 @@ function str(value: unknown): string {
   return typeof value === "string" ? value : ""
 }
 
-/** Whether a tool row reports a failure. The `ok` property is authoritative
- * where the row carries one; older rows predate it, and for those the loop's
- * own failure envelope — `toolError` writes `{"error": …}` and nothing else —
- * is the only evidence. A SUCCESSFUL result that happens to carry an `error`
- * key alongside other keys is not mistaken for one, because the envelope has
- * exactly one key. */
+/** Whether a tool row reports a failure.
+ *
+ * The loop KNOWS the answer — it streams `ok` on the finished event — but does
+ * not store it on the row, so a replayed transcript has only the payload to go
+ * on: `toolError` writes `{"error": …}` and nothing else, and that envelope is
+ * the evidence. It is read strictly (exactly one key, named `error`) so a
+ * successful result that merely carries an `error` field is not mistaken for a
+ * failed dispatch — but a failure whose payload is shaped differently reads as
+ * a success on reload while the live card said `failed`. Persisting `ok` is
+ * what closes that, and the declaration is read first here so it does the
+ * moment the row carries one. */
 export function toolOK(record: SubstrateRecord): boolean {
   const declared = record.properties.ok
   if (typeof declared === "boolean") return declared
@@ -61,8 +66,11 @@ export function toolOK(record: SubstrateRecord): boolean {
 }
 
 /** The declared calls on an assistant row: `toolCalls` is a json property, so
- * it arrives as whatever was stored. Anything that is not a well-shaped call
- * is dropped rather than rendered as a nameless card. */
+ * it arrives as whatever was stored. An entry with neither an id nor a name is
+ * dropped — there is nothing to render and nothing to pair. One with a name and
+ * no id IS kept, because its request is still worth showing, but nothing can
+ * settle it: pairing is by id, so it stays open and its result (if any) arrives
+ * as an unattributed card. */
 function callsOf(record: SubstrateRecord): ToolCallView[] {
   const raw = record.properties.toolCalls
   if (!Array.isArray(raw)) return []
@@ -112,35 +120,25 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
       continue
     }
     // An orphan: a result whose call is not in this window (the assistant row
-    // was compacted away, or the id never matched). Showing it under its own
-    // name beats dropping a dispatch that really happened.
-    const orphan: ToolCallView = {
-      id: str(record.properties.toolCallId),
-      name: str(record.properties.tool),
-      arguments: "",
-      output,
-      ok,
-    }
-    const last = turns[turns.length - 1]
-    if (last && last.role === "assistant") {
-      last.tools.push(orphan)
-    } else {
-      turns.push({
-        key: record.id,
-        role: "assistant",
-        content: "",
-        tools: [orphan],
-      })
-    }
+    // was compacted away, the id never matched, a duplicate result arrived).
+    // It gets its OWN turn rather than being appended to whichever assistant
+    // turn happens to be last — that turn did not make this call, and showing
+    // it there would attribute a dispatch to the wrong one. Dropping it would
+    // hide a dispatch that really happened, so neither.
+    turns.push({
+      key: record.id,
+      role: "assistant",
+      content: "",
+      tools: [
+        {
+          id: str(record.properties.toolCallId),
+          name: str(record.properties.tool),
+          arguments: "",
+          output,
+          ok,
+        },
+      ],
+    })
   }
   return turns
-}
-
-/** The assistant's settled reply: the newest assistant turn's prose. A turn
- * that only dispatched tools has none, so this looks past it. */
-export function lastReply(turns: TurnView[]): string | undefined {
-  for (let i = turns.length - 1; i >= 0; i--) {
-    if (turns[i].role === "assistant" && turns[i].content) return turns[i].content
-  }
-  return undefined
 }

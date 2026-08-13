@@ -82,13 +82,30 @@ export function threadMessagesQueryOptions(threadId: string) {
     ...recordsQueryOptions({
       authority: CORE_AUTHORITY,
       plural: "llmmessages",
-      first: 500,
+      first: TRANSCRIPT_WINDOW,
       filter: { edge: { rel: "thread", to: threadId } },
-      orderBy: "turn:asc,createdAt:asc",
+      // DESCENDING, then reversed by the reader: the page cap is a cap, and a
+      // long conversation must lose its oldest turns rather than the reply
+      // that just streamed. `turn` is int-typed, so this is a numeric sort.
+      orderBy: "turn:desc,createdAt:desc",
     }),
     // A live chat re-reads the settled transcript once the stream ends.
     enabled: Boolean(threadId),
+    // NOT the list default: `placeholderData: (prev) => prev` would hold the
+    // PREVIOUS thread's transcript on screen under the next thread's id — and
+    // hold it forever on a new conversation, where the query never runs.
+    placeholderData: undefined,
   })
+}
+
+/** How many turns of one thread the surface reads. The wire caps a page at
+ * 500, and nothing here pages further: past this a conversation shows its most
+ * recent window. */
+export const TRANSCRIPT_WINDOW = 500
+
+/** The transcript in loop order, from the newest-first page the wire returns. */
+export function transcriptOrder(records: SubstrateRecord[]): SubstrateRecord[] {
+  return [...records].reverse()
 }
 
 // ── the chat stream ─────────────────────────────────────────────────────────
