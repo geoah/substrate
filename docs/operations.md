@@ -50,8 +50,7 @@ database: without it, sealed material is unreadable.
 `SUBSTRATE_LLM_API_KEY` travels to `SUBSTRATE_LLM_BASE_URL` and nowhere else:
 an [`llmprovider`](agents.md#providers) row that names its own `baseURL` must
 carry its own `apiKey`, so a repository-chosen endpoint can never be handed the
-host's bearer. These three replace the old `LITELLM_*` names — `LITELLM_MASTER_KEY`
-is gone with them, since one gateway key needs one variable.
+host's bearer.
 
 ## The invite code
 

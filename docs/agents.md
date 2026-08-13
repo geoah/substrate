@@ -222,15 +222,6 @@ name, and the model is the agent's own word now. `default` is an ordinary id
 of the `core.substrate.reamde.dev/llmprovider` kind and reserves nothing: a record of
 another kind wearing the same id is no collision.
 
-**Upgrading across the change.** An agent manifest written before this — one
-that still says `llm: cheap` instead of `provider:` + `model:` — no longer
-loads, and `llm` is a deleted key the loader names when it refuses. Nothing is
-lost: at repository open the authority whose agents still carry it is
-QUARANTINED — left out of the live registry, marked on its authority row, and
-reported on its bundle's status with the reason — while every other authority
-opens normally. Re-apply the corrected manifests, or re-install the bundle, and
-the mark clears on the next projection.
-
 ### Registering a provider
 
 A provider is a record, so adding one is a write — `apply -f`, or the console's
