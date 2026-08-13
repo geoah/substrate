@@ -319,10 +319,10 @@ func droppedBundleCallables(current, candidate *vocabulary.Registry, touched map
 // admission with the full list. The kind matches on the callable reference's
 // `type`: a reference always carries an explicit type, so the
 // former no-kind-means-function default is gone.
-func (t *txn) droppedCallableGuards(dropped []droppedCallable) ([]string, error) {
+func droppedCallableGuards(q sqlReader, dropped []droppedCallable) ([]string, error) {
 	var out []string
 	for _, d := range dropped {
-		rows, err := t.query(`
+		rows, err := q.query(`
 			SELECT id FROM records
 			WHERE kind = $1 AND deleted_at IS NULL
 			  AND props->'callable'->>'id' = $2

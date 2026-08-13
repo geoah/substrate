@@ -101,6 +101,10 @@ description = "golangci-lint over the module"
 # not. Report everything.
 run = "golangci-lint run --max-same-issues 0 --max-issues-per-linter 0"
 
+[tasks."kinds:check"]
+description = "Refuse a kinds/ change that does not bump a declaration version"
+run = ".mise/kindscheck.sh"
+
 [tasks.fmt]
 description = "gofmt the module in place"
 run = "gofmt -w ."
@@ -268,8 +272,8 @@ run = "goreleaser release --clean"
 # here; the workflow needs no edit.
 
 [tasks."ci:lint"]
-description = "CI job `lint` — formatting, the linter, and the release config"
-depends = ["fmt:check", "lint", "release:check"]
+description = "CI job `lint` — formatting, the linter, the release config, and the kinds/ version-bump guard"
+depends = ["fmt:check", "lint", "release:check", "kinds:check"]
 
 [tasks."ci:go"]
 description = "CI job `go test`: the cross-compile check, then the suite in its two halves"

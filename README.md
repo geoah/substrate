@@ -185,6 +185,22 @@ Postgres in a throwaway container. `mise run test:llm` is the one suite that
 talks to real LLM providers; it skips itself without keys, and
 [docs/testing.md](docs/testing.md) says how to give it some.
 
+## Changing a kind
+
+Every declaration under `kinds/` carries a `version` (Kubernetes-style:
+`v1alpha1`, `v1beta2`, `v1`), either its own `data.version` on a kind or the
+authority's in `bundle.yaml`. That version is the entire upgrade signal: a
+repository picks up a changed declaration only when its version moved, at boot
+for core and through the console's Registry for installed bundles. So the rule
+is one sentence: **change a declaration's `data`, bump its version.** Adding a
+property or an enum value is a bump; removing or retyping one is a breaking
+change the server refuses while live records hold the old shape, so keep the
+old property and add a new one instead.
+
+CI enforces the rule (`mise run kinds:check`): a PR that edits a declaration
+without moving its version, or removes one without bumping its authority, does
+not merge.
+
 ## Docs
 
 [`docs/`](docs/README.md) builds one thing — a to-do list — from registration

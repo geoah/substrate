@@ -394,4 +394,92 @@ describe("RegistryPage", () => {
       ).toBeTruthy()
     })
   })
+
+  describe("upgrades: the shipped closure moved past the stored one", () => {
+    const MOVED = {
+      ...PEOPLE,
+      installed: true,
+      upgrade: {
+        available: true,
+        from: "v1alpha1",
+        to: "v1alpha2",
+        changes: [
+          {
+            kind: "kind",
+            id: "people.substrate.reamde.dev/person",
+            from: "v1alpha1",
+            to: "v1alpha2",
+          },
+        ],
+      },
+    }
+
+    it("offers Upgrade on the moved row and rides the install verb", async () => {
+      serve({ statuses: [peopleStatus()], catalog: [MOVED, GOOGLE] })
+      renderPage(<RegistryPage />)
+      const people = await rowOf("people")
+      expect(within(people).getByText("update v1alpha1 → v1alpha2")).toBeTruthy()
+      fireEvent.click(within(people).getByRole("button", { name: /Upgrade/ }))
+      await waitFor(() => {
+        expect(
+          fetchMock.mock.calls.some(
+            ([url, init]) =>
+              String(url).endsWith("/install") &&
+              (init as RequestInit | undefined)?.method === "POST" &&
+              decodeURIComponent(String(url)).includes(PEOPLE.id)
+          )
+        ).toBe(true)
+      })
+    })
+
+    it("a blocked upgrade is stated, never offered", async () => {
+      serve({
+        statuses: [peopleStatus()],
+        catalog: [
+          {
+            ...MOVED,
+            upgrade: {
+              ...MOVED.upgrade,
+              blockers: [
+                'type people.substrate.reamde.dev/person: property "middleName" dropped while 3 live records still carry it — null it on them first',
+              ],
+            },
+          },
+          GOOGLE,
+        ],
+      })
+      renderPage(<RegistryPage />)
+      const people = await rowOf("people")
+      expect(within(people).getByText("upgrade blocked")).toBeTruthy()
+      expect(
+        within(people).queryByRole("button", { name: /Upgrade/ })
+      ).toBeNull()
+      const detail = expand(people)
+      expect(within(detail).getByText(/middleName/)).toBeTruthy()
+    })
+
+    it("the Upgrades facet narrows to the moved rows", async () => {
+      serve({ statuses: [peopleStatus()], catalog: [MOVED, GOOGLE] })
+      renderPage(<RegistryPage />)
+      await rowOf("people")
+      fireEvent.click(screen.getByRole("button", { name: "Upgrades" }))
+      await waitFor(() => {
+        expect(screen.queryByText("google")).toBeNull()
+      })
+      expect(screen.getByText("people")).toBeTruthy()
+    })
+
+    it("a current bundle offers nothing", async () => {
+      serve({
+        statuses: [peopleStatus()],
+        catalog: [{ ...PEOPLE, installed: true }, GOOGLE],
+      })
+      renderPage(<RegistryPage />)
+      const people = await rowOf("people")
+      expect(
+        within(people).queryByRole("button", { name: /Upgrade/ })
+      ).toBeNull()
+      expect(within(people).queryByText(/update v1/)).toBeNull()
+    })
+  })
 })

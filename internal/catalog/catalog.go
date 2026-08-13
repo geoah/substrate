@@ -173,6 +173,13 @@ type bundleInstaller interface {
 	InstallBundleClosure(ctx context.Context, actor substrate.Actor, vocabularyDocs []map[string]any, dataDocs []substrate.PutInput) ([]*substrate.Record, error)
 }
 
+// bundleUpgradePlanner is the read-only preview beside the install verb: what
+// installing the shipped closure over the stored declarations would move, and
+// the guard lines the install would refuse it on.
+type bundleUpgradePlanner interface {
+	PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[string]any) (substrate.BundleUpgrade, error)
+}
+
 // Load parses every shipped bundle directory in fsys (each a top-level
 // directory of manifests). A directory that carries no bundle document is not
 // a bundle and is skipped; a directory that fails to parse is dropped with a
@@ -386,6 +393,27 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 		return nil, err
 	}
 	return b, nil
+}
+
+// Upgrade previews what re-installing a shipped bundle over ds's stored
+// declarations would do: the version motion and the blockers, computed by the
+// dataset against the same closure Install applies. A dataset that offers no
+// preview answers nil, not an error: the catalog still lists and installs
+// there, it just cannot say what an install would change.
+func (c *Catalog) Upgrade(ctx context.Context, id string, ds substrate.Dataset) (*substrate.BundleUpgrade, error) {
+	b, ok := c.byID[id]
+	if !ok {
+		return nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
+	}
+	p, ok := ds.(bundleUpgradePlanner)
+	if !ok {
+		return nil, nil
+	}
+	plan, err := p.PlanBundleUpgrade(ctx, b.vocabularyDocs)
+	if err != nil {
+		return nil, err
+	}
+	return &plan, nil
 }
 
 // dataPutInput turns one data-record manifest (a trigger) into a PutInput the

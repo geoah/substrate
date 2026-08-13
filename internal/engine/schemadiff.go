@@ -25,6 +25,7 @@ package engine
 // are not classified.
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 
@@ -245,17 +246,43 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 	return out
 }
 
-// narrowingGuards runs each narrowing's count inside the batch transaction
-// and renders a guard line for every one that strands live rows.
-func (t *txn) narrowingGuards(narrowings []narrowing) ([]string, error) {
+// sqlReader is the read surface the refuse-breakage counts run over: the
+// batch transaction on the apply door, the bare pool on the read-only upgrade
+// preview (PlanBundleUpgrade). Same queries either way; a count only one
+// door could run would let the preview and the refusal disagree.
+type sqlReader interface {
+	row(sqlText string, args ...any) *sql.Row
+	query(sqlText string, args ...any) (*sql.Rows, error)
+}
+
+// narrowingGuards runs each narrowing's count and renders a guard line for
+// every one that strands live rows.
+func narrowingGuards(q sqlReader, narrowings []narrowing) ([]string, error) {
 	var guards []string
 	for _, n := range narrowings {
 		var count int64
-		if err := t.row(n.query, n.args...).Scan(&count); err != nil {
+		if err := q.row(n.query, n.args...).Scan(&count); err != nil {
 			return nil, err
 		}
 		if count > 0 {
 			guards = append(guards, fmt.Sprintf(n.format, count))
+		}
+	}
+	return guards, nil
+}
+
+// droppedTypeGuards renders refuse-with-instances: a kind the candidate stops
+// declaring, counted while live rows exist.
+func droppedTypeGuards(q sqlReader, droppedTypes []string) ([]string, error) {
+	var guards []string
+	for _, ident := range droppedTypes {
+		var n int64
+		if err := q.row(`SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL`, ident).Scan(&n); err != nil {
+			return nil, err
+		}
+		if n > 0 {
+			guards = append(guards, fmt.Sprintf("type %s has %d live records — delete or migrate them first (identities are never reused)",
+				ident, n))
 		}
 	}
 	return guards, nil

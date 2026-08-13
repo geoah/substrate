@@ -1,0 +1,129 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+const baseBundle = `kind: core.substrate.reamde.dev/authority
+metadata: {id: t.example.com}
+data: {version: v1alpha1}
+---
+kind: core.substrate.reamde.dev/bundle
+metadata: {id: t.example.com/t}
+data:
+  authority: t.example.com
+  installs: [t.example.com/thing, t.example.com/other]
+`
+
+const baseThing = `kind: core.substrate.reamde.dev/kind
+metadata: {id: t.example.com/thing}
+data:
+  authority: t.example.com
+  names: {singular: thing, plural: things}
+  properties:
+    label: {type: string}
+`
+
+const baseOther = `kind: core.substrate.reamde.dev/kind
+metadata: {id: t.example.com/other}
+data:
+  authority: t.example.com
+  names: {singular: other, plural: others}
+`
+
+func writeTree(t *testing.T, files map[string]string) *tree {
+	t.Helper()
+	root := t.TempDir()
+	for rel, doc := range files {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tr, err := loadTree(root)
+	if err != nil {
+		t.Fatalf("load tree: %v", err)
+	}
+	return tr
+}
+
+func baseFiles() map[string]string {
+	return map[string]string{
+		"t.example.com/bundle.yaml": baseBundle,
+		"t.example.com/thing.yaml":  baseThing,
+		"t.example.com/other.yaml":  baseOther,
+	}
+}
+
+func TestUnchangedTreePasses(t *testing.T) {
+	if got := diffTrees(writeTree(t, baseFiles()), writeTree(t, baseFiles())); len(got) != 0 {
+		t.Fatalf("an identical tree violates: %v", got)
+	}
+}
+
+func TestChangedKindNeedsABump(t *testing.T) {
+	head := baseFiles()
+	head["t.example.com/thing.yaml"] = strings.Replace(baseThing,
+		"    label: {type: string}", "    label: {type: string}\n    extra: {type: string}", 1)
+	got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head))
+	if len(got) != 1 || !strings.Contains(got[0], "t.example.com/thing") {
+		t.Fatalf("a changed kind under an unmoved version passes: %v", got)
+	}
+
+	// The kind's own version bump admits the same change.
+	head["t.example.com/thing.yaml"] = strings.Replace(head["t.example.com/thing.yaml"],
+		"  authority: t.example.com", "  authority: t.example.com\n  version: v1alpha2", 1)
+	if got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head)); len(got) != 0 {
+		t.Fatalf("a bumped kind still violates: %v", got)
+	}
+}
+
+func TestAuthorityBumpCoversItsDeclarations(t *testing.T) {
+	head := baseFiles()
+	head["t.example.com/thing.yaml"] = strings.Replace(baseThing,
+		"    label: {type: string}", "    label: {type: string}\n    extra: {type: string}", 1)
+	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "v1alpha1", "v1alpha2", 1)
+	if got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head)); len(got) != 0 {
+		t.Fatalf("an authority bump does not cover its kinds: %v", got)
+	}
+}
+
+func TestRemovedDeclarationNeedsAnAuthorityBump(t *testing.T) {
+	head := baseFiles()
+	delete(head, "t.example.com/other.yaml")
+	got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head))
+	if len(got) != 1 || !strings.Contains(got[0], "t.example.com/other") {
+		t.Fatalf("a pruned declaration under an unmoved authority passes: %v", got)
+	}
+
+	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "v1alpha1", "v1alpha2", 1)
+	if got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head)); len(got) != 0 {
+		t.Fatalf("a pruned declaration under a bumped authority violates: %v", got)
+	}
+}
+
+func TestRemovedBundleDirectoryPasses(t *testing.T) {
+	if got := diffTrees(writeTree(t, baseFiles()), writeTree(t, map[string]string{})); len(got) != 0 {
+		t.Fatalf("a bundle leaving the tree whole violates: %v", got)
+	}
+}
+
+func TestVersionNeverMovesBackward(t *testing.T) {
+	head := baseFiles()
+	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "v1alpha1", "v1beta1", 1)
+	got := diffTrees(writeTree(t, head), writeTree(t, baseFiles()))
+	if len(got) == 0 {
+		t.Fatal("a downgraded tree passes")
+	}
+	for _, v := range got {
+		if !strings.Contains(v, "backward") {
+			t.Fatalf("the violation does not say backward: %v", got)
+		}
+	}
+}

@@ -32,6 +32,7 @@ import {
   BotIcon,
   BoxesIcon,
   CheckIcon,
+  CircleArrowUpIcon,
   DownloadIcon,
   FunctionSquareIcon,
   SearchXIcon,
@@ -70,6 +71,7 @@ import {
 import { catalogQueryOptions, importBundle } from "@/lib/api/catalog"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { KindInfo } from "@/lib/api/types"
+import { splitKind } from "@/lib/definition"
 import {
   bundleResourceRows,
   filterBundles,
@@ -80,6 +82,9 @@ import {
   presentAuthorities,
   requirementsOf,
   requiresHint,
+  upgradeAvailable,
+  upgradeBlocked,
+  upgradeMotion,
   type BundleFacet,
   type BundleRow,
   type Requirement,
@@ -207,6 +212,96 @@ function ImportButton({
   )
 }
 
+/** Upgrade: re-import the shipped closure, which is the bundle's own upgrade
+ * verb (the wire still POSTs `…/catalog/{id}/install`). Offered only when the
+ * server's preview says the closure moved AND nothing blocks it; a BLOCKED
+ * upgrade renders as UpgradeBlockedChip instead, because the server would
+ * refuse it, so the console never offers the click (owner decision: no
+ * force). */
+function UpgradeButton({ row }: { row: BundleRow }) {
+  const queryClient = useQueryClient()
+  const upgrade = row.upgrade
+  const upgrading = useMutation({
+    mutationFn: () => importBundle(row.id),
+    onSuccess: (status) => {
+      toast.add({
+        type: "success",
+        title: upgrade?.to
+          ? `${row.name} upgraded to ${upgrade.to}.`
+          : `${row.name} upgraded.`,
+      })
+      seedBundleStatus(queryClient, status)
+      // The upgrade lands schema the whole console reads, and the catalog's
+      // preview must re-read as current: refresh everything.
+      void queryClient.invalidateQueries()
+      refetchBundleStateSoon(queryClient)
+    },
+    onError: (error) => {
+      toast.add({
+        type: "error",
+        title: `Could not upgrade ${row.name}`,
+        description: importFailureText(error),
+      })
+    },
+  })
+  const motion = upgrade ? upgradeMotion(upgrade) : ""
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={upgrading.isPending}
+            onClick={(e) => {
+              e.stopPropagation()
+              upgrading.mutate()
+            }}
+          />
+        }
+      >
+        {upgrading.isPending ? (
+          <Spinner className="size-3.5" />
+        ) : (
+          <CircleArrowUpIcon />
+        )}
+        {upgrading.isPending ? "Upgrading…" : "Upgrade"}
+      </TooltipTrigger>
+      {motion && <TooltipContent>{motion}</TooltipContent>}
+    </Tooltip>
+  )
+}
+
+/** A blocked upgrade, stated instead of offered: the shipped closure moved,
+ * but re-importing it would strand live records, and the server refuses that
+ * (refuse-breakage). The chip's tooltip carries the server's own guard lines,
+ * which name the kind, the property and the count: the reader's migration
+ * instructions. */
+function UpgradeBlockedChip({ row }: { row: BundleRow }) {
+  const blockers = row.upgrade?.blockers ?? []
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="inline-flex cursor-help" />}>
+        <Badge
+          variant="outline"
+          className="gap-1 border-warning/40 font-normal text-warning"
+        >
+          <TriangleAlertIcon className="size-3 shrink-0" />
+          <span className="data">upgrade blocked</span>
+        </Badge>
+        <span className="sr-only">{blockers.join("; ")}</span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-96">
+        <div className="space-y-1">
+          {blockers.map((b) => (
+            <p key={b}>{b}</p>
+          ))}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 /** The two catalog facets said plainly. They are disjoint by construction (a
  * vocabulary bundle owns a bare authority and ships kinds alone; an
  * integration owns a categorized one and connects a provider), so a row wears
@@ -294,6 +389,11 @@ function buildColumns(
                 needs {missing.map((r) => r.authority).join(", ")}
               </div>
             )}
+            {row.original.upgrade && upgradeAvailable(row.original) && (
+              <div className="truncate pt-0.5 data text-xs text-muted-foreground">
+                update {upgradeMotion(row.original.upgrade)}
+              </div>
+            )}
           </div>
         )
       },
@@ -309,7 +409,17 @@ function buildColumns(
       enableHiding: false,
       header: () => <span className="sr-only">action</span>,
       cell: ({ row }) =>
-        row.original.installed ? null : row.original.catalog ? (
+        row.original.installed ? (
+          upgradeAvailable(row.original) ? (
+            <div className="flex justify-end">
+              {upgradeBlocked(row.original) ? (
+                <UpgradeBlockedChip row={row.original} />
+              ) : (
+                <UpgradeButton row={row.original} />
+              )}
+            </div>
+          ) : null
+        ) : row.original.catalog ? (
           <div className="flex justify-end">
             <ImportButton
               row={row.original}
@@ -395,6 +505,26 @@ function BundleDisclosure({
             </span>
           )}
         </Line>
+        {row.upgrade?.available && (
+          <Line label="upgrade">
+            <span className="data">{upgradeMotion(row.upgrade)}</span>
+            {(row.upgrade.changes ?? []).map((ch) => (
+              <span
+                key={`${ch.kind} ${ch.id}`}
+                className="inline-flex items-center gap-1 rounded border bg-background px-1.5 py-0.5 data text-muted-foreground"
+                title={
+                  ch.to
+                    ? ch.from
+                      ? `${ch.id}: ${ch.from} → ${ch.to}`
+                      : `${ch.id}: new at ${ch.to}`
+                    : `${ch.id}: removed by this upgrade`
+                }
+              >
+                {ch.kind} {splitKind(ch.id).name}
+              </span>
+            ))}
+          </Line>
+        )}
         <Line label="bundle">
           <span>
             {row.vocabulary
@@ -519,6 +649,19 @@ function BundleDisclosure({
       {missing.length > 0 && (
         <p className="text-warning">{requiresHint(missing)}</p>
       )}
+      {(row.upgrade?.blockers?.length ?? 0) > 0 && (
+        <div className="space-y-1 text-warning">
+          <p>
+            The upgrade is blocked: live records still hold the shape it would
+            drop, and the server refuses to strand them.
+          </p>
+          {row.upgrade?.blockers?.map((b) => (
+            <p key={b} className="data text-xs">
+              {b}
+            </p>
+          ))}
+        </div>
+      )}
       {!catalog && (
         <p className="text-muted-foreground">
           This bundle was applied directly — the shipped catalog has no closure
@@ -541,7 +684,13 @@ function BundleDisclosure({
   )
 }
 
-const FACETS = ["all", "vocabulary", "integrations", "examples"] as const
+const FACETS = [
+  "all",
+  "vocabulary",
+  "integrations",
+  "examples",
+  "upgrades",
+] as const
 
 /** The catalog facet toggle: All / Vocabulary / Integrations, orthogonal to
  * whether a row is imported. Full-size h-8 outline controls (GUIDE rule 3 —
@@ -558,6 +707,7 @@ function FacetFilter({
     { value: "vocabulary", label: "Vocabulary" },
     { value: "integrations", label: "Integrations" },
     { value: "examples", label: "Examples" },
+    { value: "upgrades", label: "Upgrades" },
   ]
   return (
     <div className="flex h-8 items-center rounded-md border p-0.5">
@@ -669,7 +819,9 @@ export function RegistryPage() {
               ? " (integrations)"
               : facet === "vocabulary"
                 ? " (vocabulary)"
-                : ""}
+                : facet === "upgrades"
+                  ? " (upgrades)"
+                  : ""}
             , from <span className="data">core.substrate.reamde.dev/catalog</span>
           </p>
           <p className="pt-0.5 text-xs text-muted-foreground">
@@ -711,14 +863,18 @@ export function RegistryPage() {
                     ? "No integrations"
                     : facet === "vocabulary"
                       ? "No vocabulary bundles"
-                      : "No bundles"}
+                      : facet === "upgrades"
+                        ? "Everything is current"
+                        : "No bundles"}
                 </EmptyTitle>
                 <EmptyDescription>
                   {facet === "integrations"
                     ? "No bundle in the catalog connects an external provider."
                     : facet === "vocabulary"
                       ? "No bundle in the catalog ships vocabulary alone."
-                      : "Nothing is imported and the catalog is empty."}
+                      : facet === "upgrades"
+                        ? "Every imported bundle matches the closure this binary ships."
+                        : "Nothing is imported and the catalog is empty."}
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
