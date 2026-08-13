@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"filippo.io/age"
+
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -33,6 +35,7 @@ type fakeService struct {
 	loginErr            error
 	registerCalls       int
 	loginCalls          int
+	recoveryEnrolled    map[string]bool
 	// authErr, when non-nil and NOT substrate.ErrAuth, models a repository
 	// that could not be opened: the API maps it to 503.
 	authErr error
@@ -146,25 +149,60 @@ func (s *fakeService) BeginRegistration(_ context.Context, username string) (sub
 	return fakeEnrollment(username), nil
 }
 
-func (s *fakeService) Register(_ context.Context, in substrate.RegisterInput) (substrate.TokenInfo, string, error) {
+func (s *fakeService) Register(_ context.Context, in substrate.RegisterInput) (substrate.RegisterResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.registerCalls++
 	if s.registerErr != nil {
-		return substrate.TokenInfo{}, "", s.registerErr
+		return substrate.RegisterResult{}, s.registerErr
 	}
 	if _, taken := s.datasets[in.Username]; taken {
-		return substrate.TokenInfo{}, "", fmt.Errorf("%w: user %q already exists", substrate.ErrValidation, in.Username)
+		return substrate.RegisterResult{}, fmt.Errorf("%w: user %q already exists", substrate.ErrValidation, in.Username)
 	}
 	if in.TOTPCode != fakeCode(in.Username) {
-		return substrate.TokenInfo{}, "", fmt.Errorf("%w: bad code", substrate.ErrAuth)
+		return substrate.RegisterResult{}, fmt.Errorf("%w: bad code", substrate.ErrAuth)
 	}
 	s.addRepository(in.Username)
 	s.passwords[in.Username] = in.Password
 	secret := s.token(in.Username)
 	info := s.tokens[secret].info
 	info.Label = in.Label
-	return info, secret, nil
+	out := substrate.RegisterResult{Token: info, Secret: secret, RecoveryPublicKey: in.RecoveryPublicKey}
+	if out.RecoveryPublicKey == "" {
+		// The fake's stand-in for the server-minted pair: shape, not crypto.
+		out.RecoveryKey = "AGE-SECRET-KEY-FAKE"
+		out.RecoveryPublicKey = "age1fake"
+	}
+	return out, nil
+}
+
+// EnrollRecoveryKey mirrors the engine's factors-gated, one-time enrollment
+// with REAL age material, so the endpoint's recipient propagation and
+// one-time identity delivery are exercised, not just the route.
+func (s *fakeService) EnrollRecoveryKey(_ context.Context, in substrate.LoginInput, publicKey string) (string, string, error) {
+	if err := s.verify(in); err != nil {
+		return "", "", err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.recoveryEnrolled == nil {
+		s.recoveryEnrolled = map[string]bool{}
+	}
+	if s.recoveryEnrolled[in.Username] {
+		return "", "", fmt.Errorf("%w: a recovery key is already enrolled; rotation is not yet supported", substrate.ErrConflict)
+	}
+	identity := ""
+	if publicKey == "" {
+		id, err := age.GenerateX25519Identity()
+		if err != nil {
+			return "", "", err
+		}
+		identity, publicKey = id.String(), id.Recipient().String()
+	} else if _, err := age.ParseX25519Recipient(publicKey); err != nil {
+		return "", "", fmt.Errorf("%w: recovery public key is not an age recipient", substrate.ErrValidation)
+	}
+	s.recoveryEnrolled[in.Username] = true
+	return identity, publicKey, nil
 }
 
 // verify is the fake's whole factor check: the recorded password and the

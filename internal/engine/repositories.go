@@ -21,6 +21,9 @@ type Repository struct {
 	ID        string
 	Username  string
 	CreatedAt time.Time
+	// DEK is the repository's data-encryption key, WRAPPED under the host
+	// credential key. Nil marks a pre-DEK repository; open adopts one.
+	DEK []byte
 }
 
 // scope is the repository's query scope.
@@ -183,8 +186,8 @@ func (s *service) assertAppPoolPrincipal(ctx context.Context) error {
 // it erases on the way out.
 func (s *service) insertRepositoryRow(ctx context.Context, r *Repository) error {
 	err := s.maint.QueryRowContext(ctx, `
-		INSERT INTO repositories (id, username) VALUES ($1, $2)
-		RETURNING created_at`, r.ID, r.Username).Scan(&r.CreatedAt)
+		INSERT INTO repositories (id, username, dek) VALUES ($1, $2, $3)
+		RETURNING created_at`, r.ID, r.Username, r.DEK).Scan(&r.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: create repository %q: %w", r.Username, err)
 	}
@@ -315,17 +318,17 @@ var repositoryScopedTables = []string{
 
 func (s *service) repositoryByUsername(ctx context.Context, username string) (Repository, error) {
 	return s.scanRepository(s.maint.QueryRowContext(ctx,
-		`SELECT id, username, created_at FROM repositories WHERE username = $1`, username), username)
+		`SELECT id, username, created_at, dek FROM repositories WHERE username = $1`, username), username)
 }
 
 func (s *service) repositoryByID(ctx context.Context, id string) (Repository, error) {
 	return s.scanRepository(s.maint.QueryRowContext(ctx,
-		`SELECT id, username, created_at FROM repositories WHERE id = $1`, id), id)
+		`SELECT id, username, created_at, dek FROM repositories WHERE id = $1`, id), id)
 }
 
 func (s *service) scanRepository(row *sql.Row, what string) (Repository, error) {
 	var r Repository
-	if err := row.Scan(&r.ID, &r.Username, &r.CreatedAt); err != nil {
+	if err := row.Scan(&r.ID, &r.Username, &r.CreatedAt, &r.DEK); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Repository{}, fmt.Errorf("%w: repository %q", substrate.ErrNotFound, what)
 		}

@@ -718,7 +718,7 @@ func TestOneHopResolution(t *testing.T) {
 // anything resolves through it.
 func TestUnlinkedSourceGetsAShell(t *testing.T) {
 	ctx := context.Background()
-	ds, raw := newDatasetWithDB(t)
+	ds, raw, _ := newDatasetWithDB(t)
 	installPeopleSources(t, ds)
 
 	g := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
@@ -910,7 +910,7 @@ func TestNestedMergeSplitKeepsOneSubjectEdge(t *testing.T) {
 // is what makes it a guarantee.
 func TestConcurrentShellBirthMintsOneShell(t *testing.T) {
 	ctx := context.Background()
-	ds, raw := newDatasetWithDB(t)
+	ds, raw, _ := newDatasetWithDB(t)
 	installPeopleSources(t, ds)
 
 	src := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})

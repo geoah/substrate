@@ -321,51 +321,87 @@ func (t *txn) resealChangelog(report *ResealReport, secretProps map[string][]str
 	}
 }
 
-// resealSealedStore upgrades keyless plain-framed sealed payloads, filtered
-// in SQL so an already-sealed store transfers nothing.
+// resealSealedStore is the migration's sealed-store half.
 func (t *txn) resealSealedStore(report *ResealReport) error {
+	n, err := t.rekeySealedStore()
+	report.SealedRows += n
+	return err
+}
+
+// rekeySealedStore re-keys every sealed payload the DEK does not already
+// open: keyless plain framings and host-key-sealed legacies alike. The scan
+// takes every row FOR UPDATE, so a concurrent TOTP step consume or token
+// refresh serializes behind this transaction instead of being overwritten by
+// a stale buffered copy. A payload the DEK already opens passes
+// byte-identical, which is the idempotency. Shared by `repository reseal`
+// and recovery enrollment: the recovery promise is only true once every
+// payload is under the DEK the recovery key wraps.
+func (t *txn) rekeySealedStore() (int, error) {
+	dekAEAD, err := aeadOf(t.ds.dek)
+	if err != nil {
+		return 0, err
+	}
 	type pending struct {
 		ref     string
 		payload []byte
 	}
-	var updates []pending
-	rows, err := t.query(`SELECT ref, payload FROM sealed WHERE get_byte(payload, 0) = $1`,
-		int(credPlain))
-	if err != nil {
-		return err
-	}
-	for rows.Next() {
-		var ref string
-		var payload []byte
-		if err := rows.Scan(&ref, &payload); err != nil {
-			_ = rows.Close()
-			return err
-		}
-		raw, err := t.ds.svc.openCredential(payload)
+	total := 0
+	after := ""
+	// One page of rows at a time, flushed before the next loads, so memory
+	// stays bounded by the batch; the FOR UPDATE locks accumulate for the
+	// transaction either way, which is what keeps a concurrent step consume
+	// or token refresh serialized behind the rewrite.
+	for {
+		var updates []pending
+		rows, err := t.query(`
+			SELECT ref, payload FROM sealed
+			WHERE ref > $1 ORDER BY ref LIMIT $2 FOR UPDATE`, after, rebuildBatch)
 		if err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("substrate/engine: reseal sealed %s: %w", ref, err)
+			return total, err
 		}
-		sealed, err := t.ds.svc.sealCredential(raw)
-		if err != nil {
-			_ = rows.Close()
-			return err
+		n := 0
+		for rows.Next() {
+			var ref string
+			var payload []byte
+			if err := rows.Scan(&ref, &payload); err != nil {
+				_ = rows.Close()
+				return total, err
+			}
+			n++
+			after = ref
+			if len(payload) > 0 && payload[0] == credSealed && dekAEAD != nil {
+				if _, err := openWith(dekAEAD, payload); err == nil {
+					continue
+				}
+			}
+			raw, err := t.ds.openPayload(payload)
+			if err != nil {
+				_ = rows.Close()
+				return total, fmt.Errorf("substrate/engine: re-key sealed %s: %w", ref, err)
+			}
+			sealed, err := t.ds.sealPayload(raw)
+			if err != nil {
+				_ = rows.Close()
+				return total, err
+			}
+			updates = append(updates, pending{ref: ref, payload: sealed})
 		}
-		updates = append(updates, pending{ref: ref, payload: sealed})
-	}
-	if err := rows.Err(); err != nil {
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return total, err
+		}
 		_ = rows.Close()
-		return err
-	}
-	_ = rows.Close()
-	for _, u := range updates {
-		if _, err := t.exec(`UPDATE sealed SET payload = $1 WHERE ref = $2`,
-			u.payload, u.ref); err != nil {
-			return err
+		for _, u := range updates {
+			if _, err := t.exec(`UPDATE sealed SET payload = $1 WHERE ref = $2`,
+				u.payload, u.ref); err != nil {
+				return total, err
+			}
+			total++
 		}
-		report.SealedRows++
+		if n < rebuildBatch {
+			return total, nil
+		}
 	}
-	return nil
 }
 
 // decodeNumberPreserving decodes stored JSONB without flattening numbers to

@@ -76,7 +76,7 @@ never HTTP, and refuses before touching anything without one.
 
 ```bash
 # the user's hat — HTTP + a token
-bin/substratectl register                    # invite code, username, password, TOTP enroll
+bin/substratectl register                    # invite code, username, password, TOTP enroll, recovery key (auto-saved to 1Password when `op` is signed in)
 bin/substratectl login --username <you>      # password + TOTP; mints a token record
 bin/substratectl kinds                       # every installed kind
 bin/substratectl get kinds <ref> -o yaml     # one kind's definition

@@ -47,13 +47,27 @@ export interface RegisterInput {
   totpSecret: string
   totpCode: string
   label?: string
+  /** A client-generated age recipient; absent asks the substrate to mint the
+   * pair and return the identity once. */
+  recoveryPublicKey?: string
+}
+
+/** What registration hands back beyond the token: the recovery identity
+ * (present only when the server minted the pair; shown once, never stored)
+ * and the enrolled recipient. */
+export interface RegisterResult extends MintedToken {
+  recoveryKey?: string
+  recoveryPublicKey?: string
 }
 
 /** Step two: the same code proves the seed, and one transaction creates the
- * repository, the sealed material, the credential and the first token.
- * Registration ends LOGGED IN — the response carries the token secret. */
-export function register(input: RegisterInput): Promise<MintedToken> {
-  return request<MintedToken>("POST", "/register", input, { anonymous: true })
+ * repository, the sealed material, the credential, the recovery key and the
+ * first token. Registration ends LOGGED IN — the response carries the token
+ * secret, and the recovery identity rides beside it, once. */
+export function register(input: RegisterInput): Promise<RegisterResult> {
+  return request<RegisterResult>("POST", "/register", input, {
+    anonymous: true,
+  })
 }
 
 // ── login ─────────────────────────────────────────────────────────────────

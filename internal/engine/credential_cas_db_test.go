@@ -38,7 +38,7 @@ func openCredentialService(t *testing.T) (*service, Repository) {
 	if err != nil {
 		t.Fatalf("code: %v", err)
 	}
-	if _, _, err := s.Register(ctx, substrate.RegisterInput{
+	if _, err := s.Register(ctx, substrate.RegisterInput{
 		Username: "geoah", Password: "correct-horse-battery-staple",
 		TOTPSecret: seed, TOTPCode: code, Label: "cli",
 	}); err != nil {

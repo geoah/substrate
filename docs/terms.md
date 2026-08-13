@@ -69,8 +69,10 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 | **sensitive** | The umbrella over `secret` and `digest`: redacted on every read surface, excluded from search, filtering, ordering, titles and change payloads. |
 | **secret** | Confidential material as a property. The record and the changelog store only an opaque ref; the material lives encrypted in the sealed store, resolved only by the host reads that spend it. Rotation deletes the old material. |
 | **digest** | A one-way SHA-256 the server minted to compare, never to reveal (a token's `hash`). Redacted like a secret but stored as the value itself: auth matches it in SQL. |
-| **sealed store** | The engine table holding secret material (property secrets, OAuth tokens, the password hash, the TOTP seed) encrypted under the credential key, addressed by refs. |
-| **reseal** | The operator migration that moves legacy secret values into the sealed store and re-points records and changelog at the refs. The one sanctioned, values-only rewrite of history. |
+| **sealed store** | The engine table holding secret material (property secrets, OAuth tokens, the password hash, the TOTP seed) encrypted under the repository's DEK, addressed by refs. |
+| **DEK** | The repository's own data-encryption key. Wrapped twice: under the host credential key in the control plane (live operation) and to the user's age recipient in the `recoverykey` record (recovery). |
+| **recovery key** | The age identity the user keeps and the substrate never stores. It opens the `recoverykey` record's wrap, so a backup plus the identity is a complete recovery with no host key. Enrolled at registration, or once via `recovery enroll`. |
+| **reseal** | The operator migration that moves legacy secret values into the sealed store, re-points records and changelog at the refs, and re-keys payloads under the DEK. The one sanctioned, values-only rewrite of history. |
 
 ## The wire
 

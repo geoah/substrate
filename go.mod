@@ -3,6 +3,7 @@ module github.com/geoah/substrate
 go 1.26.5
 
 require (
+	filippo.io/age v1.3.1
 	github.com/anthropics/anthropic-sdk-go v1.63.0
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/google/cel-go v0.30.0
@@ -26,6 +27,7 @@ require (
 	cel.dev/expr v0.25.1 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	entgo.io/ent v0.14.6 // indirect
+	filippo.io/hpke v0.4.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect

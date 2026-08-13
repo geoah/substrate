@@ -35,8 +35,9 @@ const MIN_PASSWORD = 12
 function CopyBlock({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false)
   async function copy() {
+    if (!navigator.clipboard?.writeText) return
     try {
-      await navigator.clipboard?.writeText(value)
+      await navigator.clipboard.writeText(value)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
@@ -53,6 +54,45 @@ function CopyBlock({ value, label }: { value: string; label: string }) {
         variant="outline"
         size="icon-sm"
         aria-label={`Copy ${label}`}
+        onClick={copy}
+      >
+        {copied ? <CheckIcon /> : <CopyIcon />}
+      </Button>
+    </div>
+  )
+}
+
+/** The recovery key, once: a selectable field with the copy affordance
+ * beside it. A named input rather than a display block, so a password
+ * manager that captures submitted fields has something to take. */
+function RecoveryKeyField({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    if (!navigator.clipboard?.writeText) return
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      /* clipboard unreachable — the value is selectable by hand */
+    }
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <Input
+        id="recovery-key"
+        name="recovery-key"
+        className="data min-w-0 flex-1"
+        readOnly
+        autoComplete="off"
+        value={value}
+        onFocus={(e) => e.currentTarget.select()}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="icon-sm"
+        aria-label="Copy recovery key"
         onClick={copy}
       >
         {copied ? <CheckIcon /> : <CopyIcon />}
@@ -78,6 +118,7 @@ export function RegisterPage() {
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
   const [code, setCode] = useState("")
+  const [recoveryKey, setRecoveryKey] = useState<string | null>(null)
   const [enrollment, setEnrollment] = useState<TOTPEnrollment | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setBusy] = useState(false)
@@ -140,6 +181,13 @@ export function RegisterPage() {
         label: "console",
       })
       saveSession(minted.secret, name, minted.token.id)
+      // The recovery identity arrives ONCE, on this response, and the
+      // substrate never stores it: hold the reader here until they carry it
+      // off instead of navigating past the only showing.
+      if (minted.recoveryKey) {
+        setRecoveryKey(minted.recoveryKey)
+        return
+      }
       await navigate({ to: "/", replace: true })
     } catch (err) {
       if (err instanceof ApiError && err.code === "auth") {
@@ -164,6 +212,38 @@ export function RegisterPage() {
           </div>
           <span className="text-lg font-semibold">substrate</span>
         </div>
+        {recoveryKey !== null && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Your recovery key</CardTitle>
+              <CardDescription>
+                Shown once, never stored by the substrate. Put it in your
+                password manager now: with it, a backup of your repository is
+                recoverable on any substrate; without it, only this
+                server&rsquo;s own key can read your secrets.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void navigate({ to: "/", replace: true })
+                }}
+              >
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor="recovery-key">Recovery key</FieldLabel>
+                    <RecoveryKeyField value={recoveryKey} />
+                  </Field>
+                  <Field>
+                    <Button type="submit">I saved it — continue</Button>
+                  </Field>
+                </FieldGroup>
+              </form>
+            </CardContent>
+          </Card>
+        )}
+        {recoveryKey === null && (
         <Card>
           <CardHeader>
             <CardTitle>Register</CardTitle>
@@ -339,6 +419,7 @@ export function RegisterPage() {
             )}
           </CardContent>
         </Card>
+        )}
         <p className="text-center text-xs text-muted-foreground">
           Already registered?{" "}
           <Link
