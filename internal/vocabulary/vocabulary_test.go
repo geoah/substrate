@@ -530,6 +530,12 @@ data:
 	if w.Description != two {
 		t.Errorf("kind description = %q", w.Description)
 	}
+	// The bound is CHARACTERS, not bytes: a description of em dashes is held
+	// to the same length as one of ASCII, and 400 of them is admitted.
+	dashes := strings.Repeat("—", 400)
+	if got, _ := loadFixture(t, mk(dashes)).ByIdentity("d.example.com/widget"); got.Description != dashes {
+		t.Errorf("400 non-ASCII chars refused; the bound counts bytes")
+	}
 	// The mirror shape: the definition IS the data map, so a console reading
 	// the stored declaration sees the same text.
 	if w.Definition["description"] != two {
@@ -537,8 +543,9 @@ data:
 	}
 
 	for what, desc := range map[string]string{
-		"newline": "two\\nlines",
-		"long":    strings.Repeat("x", 401),
+		"newline":       "two\\nlines",
+		"long":          strings.Repeat("x", 401),
+		"over in chars": strings.Repeat("—", 401),
 	} {
 		fsys := fstest.MapFS{}
 		for fname, fbody := range mk(desc) {

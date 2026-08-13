@@ -320,6 +320,10 @@ export interface TOTPEnrollment {
 /** What a bundle installs, by kind — the detail preview before installing. */
 export interface BundleResources {
   kinds?: string[]
+  /** Each kind's declared description, keyed by identity — what the closure's
+   * kinds ARE before an install has put them in the registry. Absent for a
+   * kind that declares none, and from an older server whole. */
+  kindDescriptions?: Record<string, string>
   functions?: string[]
   agents?: string[]
   triggers?: string[]

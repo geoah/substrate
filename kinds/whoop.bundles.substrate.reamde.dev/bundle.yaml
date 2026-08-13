@@ -242,9 +242,9 @@ data:
   authority: whoop.bundles.substrate.reamde.dev
   description: >-
     One WHOOP recovery score, keyed by the physiological cycle it scores
-    rather than by the day. WHOOP re-scores a cycle as data settles, so a
-    re-sync converges on the same row, and the calendar date is display
-    data rather than identity.
+    rather than by the day — by its sleep when the record carries no
+    cycle. WHOOP re-scores a cycle as data settles, so a re-sync converges
+    on the same row, and the calendar date is display data, not identity.
   names: {singular: recovery, plural: recoveries}
   displayTemplate: "Recovery {date}"
   properties:

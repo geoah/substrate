@@ -59,6 +59,10 @@ func authorityHeader(tree, authority string) string {
 // declaredVersion is the version a shipped authority's header carries. Read from
 // the TREE rather than written into these tests as a literal: bumping a shipped
 // authority is an ordinary change, and it must not break the upgrade suite.
+//
+// The FIRST document only. core.yaml is a stream — the authority header, then
+// actors and traits — and a later document that grows a `version:` must not be
+// the one this answers with.
 var reAuthorityVersion = regexp.MustCompile(`(?m)^  version: (\S+)$`)
 
 func declaredVersion(t *testing.T, tree, authority string) string {
@@ -68,15 +72,17 @@ func declaredVersion(t *testing.T, tree, authority string) string {
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
-	m := reAuthorityVersion.FindStringSubmatch(string(raw))
+	header, _, _ := strings.Cut(string(raw), "\n---")
+	m := reAuthorityVersion.FindStringSubmatch(header)
 	if m == nil {
-		t.Fatalf("%s declares no version", path)
+		t.Fatalf("%s declares no version in its first document", path)
 	}
 	return m[1]
 }
 
 // bumpGroupVersion rewrites one shipped authority's declared version — the whole
-// of what "the binary shipped a newer vocabulary" means.
+// of what "the binary shipped a newer vocabulary" means. The header document
+// alone, for declaredVersion's reason.
 func bumpGroupVersion(t *testing.T, tree, authority, to string) {
 	t.Helper()
 	path := authorityHeader(tree, authority)
@@ -85,7 +91,11 @@ func bumpGroupVersion(t *testing.T, tree, authority, to string) {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	from := declaredVersion(t, tree, authority)
-	src := strings.Replace(string(raw), "version: "+from, "version: "+to, 1)
+	header, rest, split := strings.Cut(string(raw), "\n---")
+	src := strings.Replace(header, "version: "+from, "version: "+to, 1)
+	if split {
+		src += "\n---" + rest
+	}
 	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}

@@ -156,8 +156,8 @@ data:
   description: >-
     One connected Google account. The OAuth facility writes its credential
     reference, status and granted scopes; the owner enables features and
-    picks the cadence, and each feature keeps its own sync cursor and
-    status here.
+    picks the cadence, and each feature keeps its own sync state here —
+    except the per-calendar cursor, which lives on the calendar row.
   names: {singular: account, plural: accounts}
   traits: [accountconfig]
   displayTemplate: "{email}"
@@ -1152,10 +1152,10 @@ metadata: {id: google.bundles.substrate.reamde.dev/emailaddress}
 data:
   authority: google.bundles.substrate.reamde.dev
   description: >-
-    One address, one person: every address a mail header or an attendee
-    list carries becomes one of these, keyed per account. It is how gmail
-    and calendar rows reach people at all, mapped onto a person exactly as
-    a contact is.
+    One address, one person: every mail header or attendee address that
+    parses as a mailbox becomes one of these, keyed per account. It is how
+    gmail and calendar rows reach people at all, mapped onto a person
+    exactly as a contact is.
   names: {singular: emailaddress, plural: emailaddresses}
   displayTemplate: "{displayName|address}"
   properties:

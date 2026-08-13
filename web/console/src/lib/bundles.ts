@@ -214,8 +214,9 @@ export interface KindRow {
   authority?: string
   plural?: string
   role?: "config" | "account"
-  /** The kind's declared description, where the registry knows the kind — a
-   * chip says what it is on hover, before the import. */
+  /** The kind's declared description: a chip says what it is on hover. From
+   * the registry once the bundle is imported, and from the catalog's own
+   * closure before it is — which is when the reader most needs it. */
   description?: string
 }
 
@@ -236,6 +237,9 @@ export function installedKindRows(
           .filter((k) => k.authority === bundle.authority)
           .map((k) => k.identity)
   const accountKind = accountKindOf(kinds, bundle.authority)
+  // A bundle the repository has NOT imported has no registry entry for any of
+  // its kinds, so the closure's own descriptions are the only ones there are.
+  const described = catalog?.resources.kindDescriptions ?? {}
   const rows = identities.map((identity): KindRow => {
     const k = kindByIdentity(kinds, identity)
     const role: KindRow["role"] =
@@ -250,7 +254,7 @@ export function installedKindRows(
       authority: k?.authority,
       plural: k?.plural,
       role,
-      description: k?.description,
+      description: k?.description || described[identity],
     }
   })
   return rows.sort((a, b) => a.name.localeCompare(b.name))

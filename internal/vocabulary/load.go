@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -850,16 +851,22 @@ func (l *loader) parseDescription(where string, d map[string]any) string {
 // parseDescriptionMax is parseDescription with the bound named, so a kind can
 // carry two sentences where a property carries one. Newlines are refused
 // either way: comments are the long-form home.
+//
+// The bound counts CHARACTERS, which is what the error says and what an author
+// counts. Bytes would make the limit depend on the spelling — an em dash costs
+// three of them — so a description of dashes would be held to a third of one
+// in ASCII.
 func (l *loader) parseDescriptionMax(where string, d map[string]any, max int) string {
 	desc := mstr(d, "description")
+	n := utf8.RuneCountInString(desc)
 	switch {
 	case desc == "":
 		return ""
 	case strings.ContainsAny(desc, "\n\r"):
 		l.errf("%s.description: one short sentence, no newlines — comments are the long-form home", where)
 		return ""
-	case len(desc) > max:
-		l.errf("%s.description: one short sentence (at most %d chars), got %d", where, max, len(desc))
+	case n > max:
+		l.errf("%s.description: one short sentence (at most %d chars), got %d", where, max, n)
 		return ""
 	}
 	return desc
