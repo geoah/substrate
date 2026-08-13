@@ -399,10 +399,10 @@ loop:
 				}
 			} else {
 				l.toolCalls++
-				l.toolEvent(substrate.AgentEventToolStarted, tc, nil)
+				l.toolEvent(substrate.AgentEventToolStarted, tc, nil, "")
 				out, ok = l.dispatch(lctx, tc)
 			}
-			l.toolEvent(substrate.AgentEventToolFinished, tc, &ok)
+			l.toolEvent(substrate.AgentEventToolFinished, tc, &ok, out)
 			if err := l.putMessage(ctx, l.actor, map[string]any{
 				"role": "tool", "content": out, "toolCallId": tc.ID, "tool": tc.Name,
 			}); err != nil {
@@ -478,13 +478,18 @@ func (l *agentLoop) event(ev substrate.AgentEvent) {
 	}
 }
 
-func (l *agentLoop) toolEvent(kind string, tc llm.ToolCall, ok *bool) {
+// toolEvent emits one side of a dispatch's lifecycle. The call ID rides both
+// sides: a turn may dispatch one tool several times, so a client pairing by
+// NAME settles the wrong card.
+func (l *agentLoop) toolEvent(kind string, tc llm.ToolCall, ok *bool, out string) {
 	if l.in.emit == nil {
 		return
 	}
-	ev := substrate.AgentEvent{Kind: kind, Tool: tc.Name, OK: ok}
+	ev := substrate.AgentEvent{Kind: kind, ID: tc.ID, Tool: tc.Name, OK: ok}
 	if kind == substrate.AgentEventToolStarted {
 		ev.Args = tc.Arguments
+	} else {
+		ev.Output = out
 	}
 	l.in.emit(ev)
 }

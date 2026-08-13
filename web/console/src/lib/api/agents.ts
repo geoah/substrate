@@ -116,10 +116,16 @@ export interface AgentEvent {
   thread?: string
   /** A streamed content delta. */
   text?: string
-  /** Tool lifecycle. */
+  /** Tool lifecycle. `id` is the tool CALL's id and rides both sides: one turn
+   * may dispatch the same tool twice, so a client pairing by name settles the
+   * wrong card. It is the id the transcript's tool rows carry as
+   * `toolCallId`, so a live card and its replayed row are the same card.
+   * `output` rides the finished event: the dispatch's result payload. */
+  id?: string
   tool?: string
   args?: string
   ok?: boolean
+  output?: string
   /** Rides the done event. */
   result?: AgentResult
   /** Rides the error event: a post-200 loop failure. */
