@@ -378,12 +378,104 @@ func (r *titleResolver) Prop(name string) string {
 		return ""
 	}
 	if v, ok := r.row.Props[name]; ok {
+		// A reference is a {kind, id} OBJECT, which scalarString renders as ""
+		// — a template naming one would silently lose its whole token. It
+		// follows the pointer instead, exactly as a bare edge token does, and
+		// falls back to the id when the referent is not there to read: a
+		// reference may name a row that does not exist (references.go).
+		if p, ok := r.ty.Prop(name); ok && p.Datatype == vocabulary.DatatypeReference {
+			return r.reference(name, "")
+		}
 		return scalarString(v)
 	}
 	if name == "title" {
 		return r.row.Title
 	}
 	return ""
+}
+
+// reference renders a reference property: the referent's title, or the named
+// property of it. Repeated references render each, comma-joined, the way a
+// many-edge does.
+func (r *titleResolver) reference(name, prop string) string {
+	refs := referenceTargets(r.row.Props[name])
+	if len(refs) == 0 {
+		return ""
+	}
+	if len(refs) == 1 {
+		return r.referenceProp(refs[0], prop)
+	}
+	var parts []string
+	for _, ref := range refs {
+		if s := r.referenceProp(ref, prop); s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+// referenceProp reads the referent, and answers with the bare id when there is
+// no referent to read — a dangling pointer still NAMES something, and
+// rendering "" would make a template lose the only identifier it had.
+//
+// The fallback turns on the row's ABSENCE, not on an empty answer: a referent
+// that exists and has no title legitimately renders as nothing, and printing
+// its id instead would claim the id was its title.
+func (r *titleResolver) referenceProp(ref eref, prop string) string {
+	row, err := r.t.loadRow(ref, false)
+	if err != nil || row == nil {
+		if prop == "" {
+			return ref.ID
+		}
+		return ""
+	}
+	if prop == "" {
+		return row.Title
+	}
+	if v, ok := row.Props[prop]; ok {
+		return scalarString(v)
+	}
+	return ""
+}
+
+// referenceID reads the id a stored reference names, "" when the value is not
+// one. A reference is a {kind, id} pair, so nothing reads it as a string.
+func referenceID(v any) string {
+	refs := referenceTargets(v)
+	if len(refs) == 0 {
+		return ""
+	}
+	return refs[0].ID
+}
+
+// referenceTargets reads the stored shape of a reference property — one
+// canonical {kind, id} pair, or a list of them when repeated.
+func referenceTargets(v any) []eref {
+	one := func(m map[string]any) (eref, bool) {
+		kind, _ := m["kind"].(string)
+		id, _ := m["id"].(string)
+		if id == "" {
+			return eref{}, false
+		}
+		return eref{Kind: kind, ID: id}, true
+	}
+	switch t := v.(type) {
+	case map[string]any:
+		if ref, ok := one(t); ok {
+			return []eref{ref}
+		}
+	case []any:
+		var out []eref
+		for _, item := range t {
+			if m, ok := item.(map[string]any); ok {
+				if ref, ok := one(m); ok {
+					out = append(out, ref)
+				}
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 func (r *titleResolver) Snippet() string { return snippetOf(r.ty, r.row) }
@@ -403,6 +495,13 @@ func (r *titleResolver) Edge(rel, prop string) string {
 				return scalarString(m[prop])
 			}
 			return ""
+		}
+		// `{agent.name}` where `agent` is a REFERENCE reads the referent's
+		// property, the same hop a dotted edge token takes. The loader has
+		// checked the head names a declared edge, object or reference, so the
+		// three forms cannot collide.
+		if p, ok := r.ty.Prop(rel); ok && p.Datatype == vocabulary.DatatypeReference {
+			return r.reference(rel, prop)
 		}
 	}
 	targets := r.edges[rel]

@@ -254,6 +254,9 @@ var (
 	// listParams is the list query grammar: the filter document, the order, the
 	// keyset page, the heavy-data opt-ins, and the mode switch itself.
 	listParams = []string{"filter", "orderBy", "first", "after", "withEdges", "withAnnotations", "watch"}
+	// incomingParams is the reverse read's grammar: the keyset page, and the
+	// two narrowings a drill-down expands one group with.
+	incomingParams = []string{"first", "after", "rel", "fromKind"}
 	// watchParams is a collection watch: the mode switch and the resume cursor.
 	// The list grammar does not apply, and rejectParams names those keys with a
 	// message of their own before this set is consulted.

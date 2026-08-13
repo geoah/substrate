@@ -3,7 +3,7 @@
 # ok / overbudget / error, the token tally accumulates per assistant turn,
 # and on the ROOT thread the tally includes every sub-agent's spend (cost
 # rolls up — one number answers "what did this chain cost"). A sub-agent's
-# thread carries the `parent` edge; chat threads (mode chat) are the same
+# thread names its caller in `parent`; chat threads (mode chat) are the same
 # rows the console renders and continues.
 kind: core.substrate.reamde.dev/kind
 metadata:
@@ -19,18 +19,28 @@ data:
   # WHERE it bought its completions and WHAT model it sent. The bump is what
   # carries the new columns into repositories that stored the authority's
   # v1alpha2 projection.
-  version: v1alpha3
+  # v1alpha4: `agent` and `parent` became REFERENCES. A thread is the audit row
+  # of a run and must keep naming the agent that ran it, which an edge cannot
+  # do — a purge deletes edges by either endpoint, so deleting an agent would
+  # erase every thread's record of what ran. A reference survives as a dangling
+  # pointer, and the graph reads it in reverse either way.
+  version: v1alpha4
   names:
     singular: llmthread
     plural: llmthreads
-  displayTemplate: "{agent}: {status}"
+  displayTemplate: "{agent.name}: {status}"
+  # No index on `agent`: a reference filters by containment, which rides the
+  # repository-wide GIN index on props.
   indices:
-    - - agent
-      - status
+    - - status
   properties:
     agent:
-      type: string
-      description: the agent identity this thread ran
+      type: reference
+      to: core.substrate.reamde.dev/agent
+      required: true
+      inverse: threads
+      inverseDescription: the runs this agent has had
+      description: the agent this thread ran
     provider:
       type: string
       description: the llmprovider row id the run resolved
@@ -80,7 +90,9 @@ data:
         the running turn's lease horizon — one active continuation per thread;
         a second turn is refused while the lease is live, and a crashed turn's
         expired lease is taken over
-  edges:
     parent:
+      type: reference
       to: core.substrate.reamde.dev/llmthread
+      inverse: subAgentThreads
+      inverseDescription: the sub-agent runs this thread called
       description: the calling agent's thread, on sub-agent threads

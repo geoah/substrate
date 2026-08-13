@@ -77,10 +77,19 @@ type AgentEvent struct {
 	Thread string `json:"thread,omitempty"`
 	// Text is a streamed content delta.
 	Text string `json:"text,omitempty"`
-	// Tool/Args/OK shape the tool lifecycle events.
+	// Tool/Args/OK shape the tool lifecycle events, and ID is the tool call
+	// they belong to: a turn may dispatch the same tool twice, so the NAME
+	// cannot pair a started event with its finished one — only the id can.
+	// It is the same id the `llmmessage` transcript keys its tool rows by
+	// (`toolCallId`), so a live card and its replayed row are the same card.
+	ID   string `json:"id,omitempty"`
 	Tool string `json:"tool,omitempty"`
 	Args string `json:"args,omitempty"`
 	OK   *bool  `json:"ok,omitempty"`
+	// Output rides the finished event: the dispatched call's result payload,
+	// verbatim, as the tool row stores it. Named apart from Result because
+	// that one is the whole run's tally.
+	Output string `json:"output,omitempty"`
 	// Result rides the done event.
 	Result *AgentResult `json:"result,omitempty"`
 	// Error rides the error event: a post-200 loop failure the client routes to

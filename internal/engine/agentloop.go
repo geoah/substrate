@@ -24,7 +24,7 @@ import (
 // input are transport concerns of the API surface (api/agents.go), never a
 // second runtime. Sub-agents are child invocations: their OWN budgets, an
 // `agentDepth` counter separate from causal depth (cap ≤ 3), a child thread
-// carrying a `parent` edge, and a token/cost tally that rolls up onto the
+// naming its caller in `parent`, and a token/cost tally that rolls up onto the
 // ROOT thread. The loop terminates on a final tool-free reply, any budget,
 // or its deadline — over-budget is a SETTLED outcome, not a failure.
 
@@ -142,7 +142,10 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 		return nil, err
 	}
 	if row == nil || row.DeletedAt != nil || row.Kind != typeProvider {
-		return nil, fmt.Errorf("%w: llmprovider row %q does not resolve — agents reference an llmprovider record id (default, or a custom row)",
+		// Nothing seeds a provider: a repository holds none until its owner
+		// writes one, so the row an agent names is ABSENT rather than
+		// misconfigured — and the message says which, and what to do.
+		return nil, fmt.Errorf("%w: llmprovider row %q does not resolve — create it: a row carries the wire, the endpoint and the key, and the llm example bundle ships two ready to key",
 			substrate.ErrValidation, id)
 	}
 	pc := &providerConfig{id: id, pricing: map[string]modelPrice{}}
@@ -399,12 +402,15 @@ loop:
 				}
 			} else {
 				l.toolCalls++
-				l.toolEvent(substrate.AgentEventToolStarted, tc, nil)
+				l.toolEvent(substrate.AgentEventToolStarted, tc, nil, "")
 				out, ok = l.dispatch(lctx, tc)
 			}
-			l.toolEvent(substrate.AgentEventToolFinished, tc, &ok)
+			l.toolEvent(substrate.AgentEventToolFinished, tc, &ok, out)
+			// `ok` is stored, not inferred: a replayed transcript otherwise has
+			// to sniff the failure envelope out of the payload, and a
+			// successful result carrying an `error` key would counterfeit it.
 			if err := l.putMessage(ctx, l.actor, map[string]any{
-				"role": "tool", "content": out, "toolCallId": tc.ID, "tool": tc.Name,
+				"role": "tool", "content": out, "toolCallId": tc.ID, "tool": tc.Name, "ok": ok,
 			}); err != nil {
 				return nil, err
 			}
@@ -478,13 +484,18 @@ func (l *agentLoop) event(ev substrate.AgentEvent) {
 	}
 }
 
-func (l *agentLoop) toolEvent(kind string, tc llm.ToolCall, ok *bool) {
+// toolEvent emits one side of a dispatch's lifecycle. The call ID rides both
+// sides: a turn may dispatch one tool several times, so a client pairing by
+// NAME settles the wrong card.
+func (l *agentLoop) toolEvent(kind string, tc llm.ToolCall, ok *bool, out string) {
 	if l.in.emit == nil {
 		return
 	}
-	ev := substrate.AgentEvent{Kind: kind, Tool: tc.Name, OK: ok}
+	ev := substrate.AgentEvent{Kind: kind, ID: tc.ID, Tool: tc.Name, OK: ok}
 	if kind == substrate.AgentEventToolStarted {
 		ev.Args = tc.Arguments
+	} else {
+		ev.Output = out
 	}
 	l.in.emit(ev)
 }
@@ -516,15 +527,18 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 		}
 		l.threadID = id
 		props := map[string]any{
+			// `agent` and `parent` are REFERENCES: a bare id, which each `to:`
+			// resolves to the kind it pins, the same shorthand a single-target
+			// edge took.
 			"agent": l.ag.Identity(), "provider": l.provider.id, "model": l.model, "mode": l.in.mode,
 			"status": threadRunning, "agentDepth": l.in.depth,
 			"startedAt":  nowUTC().Format(time.RFC3339Nano),
 			"leaseUntil": l.leaseUntil().Format(time.RFC3339Nano),
 		}
-		in := substrate.PutInput{Kind: typeThread, ID: id, Properties: props}
 		if l.in.parent != "" {
-			in.Edges = []substrate.EdgeInput{{Rel: threadRelPare, To: substrate.EdgeRef{ID: l.in.parent}}}
+			props[threadRelPare] = l.in.parent
 		}
+		in := substrate.PutInput{Kind: typeThread, ID: id, Properties: props}
 		if err := l.putRow(ctx, l.actor, in); err != nil {
 			return nil, err
 		}
@@ -566,8 +580,10 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 		if row == nil || row.DeletedAt != nil || row.Kind != typeThread {
 			return fmt.Errorf("%w: thread %s", substrate.ErrNotFound, l.in.threadID)
 		}
-		if agent, _ := row.Props["agent"].(string); agent != l.ag.Identity() {
-			return fmt.Errorf("%w: thread %s belongs to agent %v — open a new thread", substrate.ErrValidation, l.in.threadID, row.Props["agent"])
+		// `agent` is a reference — a {kind, id} pair — so the ownership check
+		// reads the id it names, not the value's spelling.
+		if agent := referenceID(row.Props["agent"]); agent != l.ag.Identity() {
+			return fmt.Errorf("%w: thread %s belongs to agent %q — open a new thread", substrate.ErrValidation, l.in.threadID, agent)
 		}
 		if status, _ := row.Props["status"].(string); status == threadRunning {
 			if until, _ := row.Props["leaseUntil"].(string); until != "" {
@@ -589,13 +605,19 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 // assistant turns in order. Tool exchanges are per-run artifacts — audit,
 // not context — so the replay stays robust against tool renames.
 func (l *agentLoop) loadHistory(ctx context.Context) ([]llm.Message, int, error) {
+	probe, err := json.Marshal(map[string]any{
+		msgRelThread: map[string]any{"kind": typeThread, "id": l.threadID},
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	// `thread` is a reference, so the transcript read is a containment probe
+	// — which rides the repository-wide GIN index on props.
 	rows, err := l.ds.db.QueryContext(ctx, `
 		SELECT e.props FROM records e
-		JOIN edges ed ON ed.rel = $1 AND ed.src_kind = e.kind AND ed.src = e.id
-			AND ed.dst_kind = $4 AND ed.dst = $2
-		WHERE e.kind = $3 AND e.deleted_at IS NULL
+		WHERE e.kind = $1 AND e.deleted_at IS NULL AND e.props @> $2::jsonb
 		ORDER BY e.created_at, e.id`,
-		msgRelThread, l.threadID, typeMessage, typeThread)
+		typeMessage, string(probe))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -635,9 +657,11 @@ func (l *agentLoop) putMessage(ctx context.Context, actor substrate.Actor, props
 	}
 	props["turn"] = l.turn
 	l.turn++
+	// The thread is a REFERENCE now: a bare id, which `to:` resolves, the same
+	// shorthand a single-target edge took.
+	props[msgRelThread] = l.threadID
 	return l.putRow(ctx, actor, substrate.PutInput{
 		Kind: typeMessage, ID: id, Properties: props,
-		Edges: []substrate.EdgeInput{{Rel: msgRelThread, To: substrate.EdgeRef{ID: l.threadID}}},
 	})
 }
 
@@ -1102,7 +1126,7 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 // --- sub-agents ------------------------------------------------------------------
 
 // dispatchSubAgent is the child invocation: its OWN budgets, agentDepth+1
-// against the CALLER's depth cap, a child thread carrying the parent edge,
+// against the CALLER's depth cap, a child thread naming its parent,
 // the shared tally rolling cost onto the root. Synchronous — the child
 // settles before the caller's loop continues.
 func (l *agentLoop) dispatchSubAgent(ctx context.Context, sub *vocabulary.Agent, args map[string]any) (string, bool) {

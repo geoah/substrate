@@ -685,19 +685,34 @@ func (l *loader) parseType(doc Document) *Kind {
 			l.errf("%s: data.edges.%s: to is required", where, ename)
 			continue
 		}
+		ewhere := fmt.Sprintf("%s: data.edges.%s", where, ename)
+		inverse, inverseDesc := l.parseInverse(ewhere, ed)
 		t.Edges[ename] = &Edge{
-			Name:        ename,
-			Description: l.parseDescription(fmt.Sprintf("%s: data.edges.%s", where, ename), ed),
-			To:          to,
-			Many:        mbool(ed, "many"),
-			Required:    mbool(ed, "required"),
-			OwnerRef:    mbool(ed, "ownerRef"),
+			Name:               ename,
+			Description:        l.parseDescription(ewhere, ed),
+			To:                 to,
+			Many:               mbool(ed, "many"),
+			Required:           mbool(ed, "required"),
+			OwnerRef:           mbool(ed, "ownerRef"),
+			Inverse:            inverse,
+			InverseDescription: inverseDesc,
 		}
 	}
 	for n := range t.Edges {
 		t.EdgeOrder = append(t.EdgeOrder, n)
 	}
 	sort.Strings(t.EdgeOrder)
+	// One name, one pointer. A kind declaring an edge AND a property under one
+	// name leaves every reader to pick which it meant, and they do not agree:
+	// a display template resolves the edge, the graph emits both, the write
+	// path writes one and validates the other. Cheap to refuse, and refusing
+	// keeps "an edge and a reference are the same relationship differently
+	// stored" true — two of them under one name is two relationships.
+	for _, n := range t.EdgeOrder {
+		if _, dup := t.Props[n]; dup {
+			l.errf("%s: %q is declared as both an edge and a property — one name is one pointer", where, n)
+		}
+	}
 
 	// traits
 	for _, cv := range mslice(d, "traits") {
@@ -766,6 +781,14 @@ func (l *loader) checkTemplate(where string, t *Kind, tmpl *Template) {
 			if _, ok := t.Edges[ref.Edge]; ok {
 				continue
 			}
+			// A dotted token over a REFERENCE reads the referent's property,
+			// the same hop an edge takes — the head is a pointer either way,
+			// and only the storage differs. The property it names belongs to
+			// the referent's kind, which `to:` may not even pin, so it is not
+			// checkable here; the renderer answers "" for one that is absent.
+			if p, ok := t.Props[ref.Edge]; ok && p.Datatype == DatatypeReference {
+				continue
+			}
 			if p, ok := t.Props[ref.Edge]; ok && p.Datatype == DatatypeObject {
 				if _, ok := p.Fields[ref.Prop]; ok {
 					continue
@@ -774,7 +797,7 @@ func (l *loader) checkTemplate(where string, t *Kind, tmpl *Template) {
 					where, ref.Edge, ref.Prop, ref.Edge, ref.Prop)
 				continue
 			}
-			l.errf("%s: data.displayTemplate: {%s.%s}: %s declares no edge or object property %q",
+			l.errf("%s: data.displayTemplate: {%s.%s}: %s declares no edge, reference or object property %q",
 				where, ref.Edge, ref.Prop, t.Name, ref.Edge)
 		default:
 			if p, ok := t.Props[ref.Prop]; ok {
@@ -819,7 +842,7 @@ func mapOfAny[V any](m map[string]V) map[string]any {
 // to prevent.
 var edgeKeys = map[string]bool{
 	"to": true, "many": true, "required": true, "ownerRef": true,
-	"description": true,
+	"description": true, "inverse": true, "inverseDescription": true,
 }
 
 // reservedProps are the five properties EVERY record already carries, each
@@ -880,6 +903,35 @@ func (l *loader) parseDescriptionMax(where string, d map[string]any, max int) st
 		return ""
 	}
 	return desc
+}
+
+// parseInverse reads the OPTIONAL name the other side of a pointer goes by —
+// `thread` on a message declaring `inverse: messages`, which is what a reader
+// standing on the thread calls the set pointing at it.
+//
+// It is a LABEL, never an identifier (Property.Inverse says why), so the only
+// thing enforced HERE is that it is spelled like every other declared name, and
+// that a description does not describe an inverse nobody declared. Collisions
+// are settled where the authority is finalized (checkAuthorityInverses) and
+// only within one authority — the name lives on the TARGET's side, so what the
+// declaring kind happens to call its own properties cannot conflict with it.
+func (l *loader) parseInverse(where string, d map[string]any) (name, description string) {
+	name = mstr(d, "inverse")
+	if name == "" {
+		if mstr(d, "inverseDescription") != "" {
+			l.errf("%s.inverseDescription: describes an `inverse` that is not declared", where)
+		}
+		return "", ""
+	}
+	if !ValidCamel(name) {
+		l.errf("%s.inverse: %q must be %s", where, name, camelRule)
+		return "", ""
+	}
+	return name, l.parseDescriptionMax(
+		where+".inverseDescription",
+		map[string]any{"description": mstr(d, "inverseDescription")},
+		maxDescription,
+	)
 }
 
 // maxDisplayName bounds a declared human label: it is a field caption, not a
@@ -1203,6 +1255,7 @@ var objectPropKeys = map[string]bool{
 var referencePropKeys = map[string]bool{
 	"type": true, "to": true, "repeated": true, "description": true,
 	"displayName": true, "required": true, "renamedFrom": true,
+	"inverse": true, "inverseDescription": true,
 }
 
 // fieldForbiddenKinds are the kinds an object field may not be:
@@ -1290,6 +1343,7 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 			p.To = to
 		}
 		p.Required = mbool(d, "required")
+		p.Inverse, p.InverseDescription = l.parseInverse(where, d)
 		if rf := mstr(d, "renamedFrom"); rf != "" {
 			switch {
 			case !ValidCamel(rf):
@@ -1589,6 +1643,54 @@ func (r *Registry) remove(authority string) {
 	}
 }
 
+// checkAuthorityInverses refuses two pointers of ONE authority that claim the
+// same inverse name on the same target: standing on that target, both would say
+// `messages` and mean different sets, and the author who wrote both is the one
+// who can fix it.
+//
+// Deliberately per-authority. Two authorities colliding is legal — an inverse is
+// a label, never an identifier (Property.Inverse), so the reader sees two groups
+// sharing a word, each named by the kind it comes from. Refusing that would let
+// any bundle claim a common word and break every install that came after it,
+// which is a far worse failure than a repeated label.
+//
+// Runs after `to:` resolution, so the target compared is the resolved identity;
+// an unconstrained pointer (`any`, or no `to:`) names no target to collide on.
+func (r *Registry) checkAuthorityInverses(g *Authority) []string {
+	type claim struct{ kind, pointer string }
+	seen := map[string]claim{}
+	var problems []string
+	take := func(where, target, inverse string, c claim) {
+		if inverse == "" || target == "" || target == ToAny {
+			return
+		}
+		key := target + "\x00" + inverse
+		if prev, dup := seen[key]; dup {
+			problems = append(problems, fmt.Sprintf(
+				"%s: inverse %q on %s is already claimed by %s.%s — one authority cannot call two things by one name on one target",
+				where, inverse, target, prev.kind, prev.pointer))
+			return
+		}
+		seen[key] = c
+	}
+	for _, tn := range g.KindOrder {
+		t := g.Kinds[tn]
+		where := DocKind + " " + t.Identity
+		for _, en := range t.EdgeOrder {
+			e := t.Edges[en]
+			take(where+": data.edges."+en, e.To, e.Inverse, claim{t.Name, en})
+		}
+		for _, pn := range t.PropOrder {
+			p := t.Props[pn]
+			if p.Datatype != DatatypeReference {
+				continue
+			}
+			take(where+": data.properties."+pn, p.To, p.Inverse, claim{t.Name, pn})
+		}
+	}
+	return problems
+}
+
 func (r *Registry) resolveAuthority(g *Authority) []string {
 	var problems []string
 	for _, tn := range g.KindOrder {
@@ -1643,6 +1745,7 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 			p.To = resolved.Identity
 		}
 	}
+	problems = append(problems, r.checkAuthorityInverses(g)...)
 	// Mappings, once the authority's edge targets are resolved identities: the
 	// registry-wide invariants (bipartite, one mapping per source, no edge
 	// onto a source type) run after every authority has, in Finalize and Install.

@@ -7,13 +7,10 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-type incomingReader interface {
-	Incoming(context.Context, string, string, int, string) (*substrate.IncomingPage, error)
-}
-
 func readIncoming(t *testing.T, ds substrate.Dataset, typ, id string, first int, after string) *substrate.IncomingPage {
 	t.Helper()
-	page, err := ds.(incomingReader).Incoming(context.Background(), typ, id, first, after)
+	page, err := ds.Incoming(context.Background(), typ, id,
+		substrate.IncomingOptions{First: first, After: after})
 	if err != nil {
 		t.Fatalf("incoming: %v", err)
 	}

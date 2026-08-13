@@ -615,7 +615,7 @@ func (d *fakeDataset) Get(_ context.Context, typ, id string) (*substrate.Record,
 	return e, nil
 }
 
-func (d *fakeDataset) Incoming(_ context.Context, typ, id string, first int, after string) (*substrate.IncomingPage, error) {
+func (d *fakeDataset) Incoming(_ context.Context, typ, id string, opts substrate.IncomingOptions) (*substrate.IncomingPage, error) {
 	_ = typ
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -623,12 +623,28 @@ func (d *fakeDataset) Incoming(_ context.Context, typ, id string, first int, aft
 		id = canonical
 	}
 	rows := d.incoming[id]
+	// The narrowings a drill-down sends, honored so a handler test can assert
+	// that one group's expansion asks for that group alone.
+	if opts.Rel != "" || opts.FromKind != "" {
+		var kept []substrate.IncomingEdge
+		for _, row := range rows {
+			if opts.Rel != "" && row.Rel != opts.Rel {
+				continue
+			}
+			if opts.FromKind != "" && row.From.Kind != opts.FromKind {
+				continue
+			}
+			kept = append(kept, row)
+		}
+		rows = kept
+	}
+	first := opts.First
 	if first <= 0 {
 		first = 50
 	}
 	start := 0
-	if after != "" {
-		_, _ = fmt.Sscanf(after, "offset:%d", &start)
+	if opts.After != "" {
+		_, _ = fmt.Sscanf(opts.After, "offset:%d", &start)
 	}
 	start = min(start, len(rows))
 	end := min(start+first, len(rows))
