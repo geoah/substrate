@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -137,62 +136,6 @@ func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string,
 		applied = 1
 	}
 	return ares.EffectsByAction, applied, nil
-}
-
-// providerSeedID is the one well-known llmprovider row: the host's own
-// gateway, on the OpenAI wire, with no baseURL and no key of its own — so it
-// resolves to whatever gateway the host was configured with. There is no tier
-// indirection any more: an agent names this provider and its OWN model, so
-// re-pointing every agent is one patch here and re-modeling one agent is a
-// patch on that agent.
-const providerSeedID = "default"
-
-// providerSeedPricing is USD per 1M tokens for exactly the models the SHIPPED
-// bundle agents ask `default` for. The keys are the model string AS SENT (the
-// gateway alias, since the seeded row has no baseURL of its own), because that
-// is what the loop looks the price up by — a key spelled any other way silently
-// prices the run at zero. It seeds ONCE, with the row: an owner who re-points
-// or re-prices `default` owns the whole map from then on, and an agent asking
-// for a model absent from it still runs, just uncosted.
-func providerSeedPricing() map[string]any {
-	return map[string]any{
-		"anthropic/claude-opus-5":    map[string]any{"inputPer1M": 5.0, "outputPer1M": 25.0},
-		"anthropic/claude-sonnet-5":  map[string]any{"inputPer1M": 3.0, "outputPer1M": 15.0},
-		"anthropic/claude-haiku-4-5": map[string]any{"inputPer1M": 1.0, "outputPer1M": 5.0},
-	}
-}
-
-// seedAgentDefaults writes the `default` llmprovider row at repository open,
-// CREATE-ONLY. A row already at that id is left exactly as the owner had
-// it — live (possibly re-pointed) or tombstoned (deliberately deleted).
-// Identity is the (kind, id) pair, so `default` is an ordinary id OF THE
-// LLMPROVIDER KIND — another kind holding the same id is no collision and no
-// reservation exists: the pre-re-key fail-open occupant check died with the
-// repository-global id space.
-func (ds *dataset) seedAgentDefaults(ctx context.Context) error {
-	return ds.inTx(ctx, substrate.ActorSystem, false, func(t *txn) error {
-		ref := eref{Kind: typeProvider, ID: providerSeedID}
-		if err := t.lockRecord(ref); err != nil {
-			return err
-		}
-		row, err := t.loadRow(ref, false)
-		if err != nil {
-			return err
-		}
-		if row != nil {
-			return nil
-		}
-		if _, err := t.put(substrate.PutInput{
-			Kind: typeProvider, ID: providerSeedID,
-			Properties: map[string]any{
-				"name": providerSeedID, "wire": string(llm.WireOpenAI),
-				"pricing": providerSeedPricing(),
-			},
-		}); err != nil {
-			return fmt.Errorf("substrate/engine: seed llmprovider row %s: %w", providerSeedID, err)
-		}
-		return nil
-	})
 }
 
 // The callable lifecycle gate for agents is callableGroupBlocked (bundles.go),

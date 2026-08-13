@@ -28,28 +28,3 @@ func TestAgentUserContentRefusesAnEmptyInput(t *testing.T) {
 		t.Fatalf("agentUserContent(map) = %q, %v", got, err)
 	}
 }
-
-// The seed prices the models the SHIPPED bundle agents actually send, keyed
-// the way they send them — a key spelled any other way reports costUSD 0 for
-// every run on a fresh substrate.
-func TestProviderSeedPricesTheShippedModels(t *testing.T) {
-	pricing := providerSeedPricing()
-	for _, model := range []string{
-		"anthropic/claude-opus-5",
-		"anthropic/claude-sonnet-5",
-		"anthropic/claude-haiku-4-5",
-	} {
-		entry, ok := pricing[model].(map[string]any)
-		if !ok {
-			t.Fatalf("no price for %q: %+v", model, pricing)
-		}
-		in, _ := anyFloat(entry["inputPer1M"])
-		out, _ := anyFloat(entry["outputPer1M"])
-		if in <= 0 || out <= 0 {
-			t.Fatalf("price for %q = %+v", model, entry)
-		}
-	}
-	if len(pricing) != 3 {
-		t.Fatalf("the seed prices models no shipped agent asks for: %+v", pricing)
-	}
-}

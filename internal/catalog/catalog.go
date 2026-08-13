@@ -71,6 +71,13 @@ type Bundle struct {
 	// substrate publishes, shipping kinds and nothing else. It is what the
 	// creation seed used to write.
 	Vocabulary bool `json:"vocabulary"`
+	// Example is the curated catalog facet marking a bundle that exists to be
+	// READ and run once: a worked demonstration of a substrate mechanism,
+	// self-contained and safe to install on a fresh repository. It is
+	// presentation metadata keyed by bundle id (exampleFacets), like
+	// Integration, and for the same reason — nothing about a closure's shape
+	// says "this is here to teach you something".
+	Example bool `json:"example"`
 	// Integration is the curated catalog facet marking a bundle whose
 	// purpose is an ongoing connection to an external provider (the console's
 	// Integration badge and filter). It is catalog PRESENTATION metadata keyed
@@ -116,6 +123,22 @@ type Resources struct {
 // does not. A bundle absent from the map is not an integration. A future
 // remote-registry format can carry the same facet once its compatibility rules
 // exist.
+// exampleFacets curates the `example` facet — the bundles the console groups
+// under Examples. They are ordinary bundles: installable, uninstallable, and
+// no different at runtime from any other. The facet only says what they are
+// FOR.
+var exampleFacets = map[string]bool{
+	// The two provider rows a substrate needs before an agent can run, plus an
+	// agent chain to prove them.
+	"llm.bundles.substrate.reamde.dev/llm": true,
+	// The smallest bundle showing an agent calling functions as tools and
+	// delegating to a sub-agent.
+	"notes.bundles.substrate.reamde.dev/notes": true,
+	// The URL harvester: triggers, a sub-agent chain, and a change request an
+	// owner accepts. A bigger read than the other two.
+	"web.bundles.substrate.reamde.dev/web": true,
+}
+
 var integrationFacets = map[string]bool{
 	"google.bundles.substrate.reamde.dev/google": true,
 	"github.bundles.substrate.reamde.dev/github": true,
@@ -181,6 +204,7 @@ func Load(fsys fs.FS) (*Catalog, error) {
 		// stored bundle document (a bundle absent from the map is not an
 		// integration).
 		b.Integration = integrationFacets[b.ID]
+		b.Example = exampleFacets[b.ID]
 		c.bundles = append(c.bundles, b)
 		c.byID[b.ID] = b
 	}

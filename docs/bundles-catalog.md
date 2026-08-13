@@ -31,8 +31,27 @@ ids, shipped beside the closure in `triggers.yaml`.
 | WHOOP         | Integration | OAuth          | 5     | 1         | 2        | 0      |
 | Notion        | Integration | Internal token | 4     | 1         | 2        | 0      |
 | Beeper        | Integration | Pasted token   | 4     | 1         | 2        | 0      |
+| LLM           | Example     | Key, per row   | 0     | 1         | 2        | 0      |
 | Firecrawl     | Capability  | API key        | 2     | 2         | 0        | 0      |
 | Web harvester | Capability  | none           | 2     | 4         | 4        | 3      |
+
+## LLM (example)
+
+Authority `llm.bundles.substrate.reamde.dev`. The bundle a fresh substrate
+installs FIRST if it wants to run an agent at all: nothing seeds an
+`llmprovider` row, so this ships the two an agent can name — `anthropic` and
+`openai`, correctly shaped for their wires and deliberately KEYLESS — plus a
+`wordcount` function, a `summarizer` sub-agent and the `echo` agent that calls
+both, so a working install can be proved in one chat.
+
+Installing it gives you rows that refuse until you key them. The key is a
+record write: **Data → llmproviders → `anthropic` → Edit**, put it in `apiKey`,
+apply. It is secret-typed, so it reads back redacted from then on and rotating
+it is the same write again. The `openai` row is the other wire, and with an
+empty `baseURL` it means whatever gateway the host was configured with.
+
+See [agents.md](agents.md#providers) for wires, pricing and the host-gateway
+rule.
 
 ## Google
 

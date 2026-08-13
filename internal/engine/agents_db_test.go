@@ -277,7 +277,7 @@ func agentThreadsOf(t *testing.T, ds *dataset, agent string) []map[string]any {
 	t.Helper()
 	rows, err := ds.db.QueryContext(context.Background(), `
 		SELECT id, props FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props->>'agent' = $2
+		WHERE kind = $1 AND deleted_at IS NULL AND props->'agent'->>'id' = $2
 		ORDER BY created_at, id`, typeThread, crewAuthority+"/"+agent)
 	if err != nil {
 		t.Fatal(err)
@@ -302,8 +302,7 @@ func threadMessages(t *testing.T, ds *dataset, threadID string) []map[string]any
 	t.Helper()
 	rows, err := ds.db.QueryContext(context.Background(), `
 		SELECT e.props FROM records e
-		JOIN edges ed ON ed.rel = 'thread' AND ed.src = e.id AND ed.dst = $1
-		WHERE e.kind = $2 AND e.deleted_at IS NULL
+		WHERE e.kind = $2 AND e.deleted_at IS NULL AND e.props->'thread'->>'id' = $1
 		ORDER BY e.created_at, e.id`, threadID, typeMessage)
 	if err != nil {
 		t.Fatal(err)
@@ -329,7 +328,7 @@ func threadCountOf(t *testing.T, ds *dataset, identity string) int {
 	var n int
 	if err := ds.db.QueryRowContext(context.Background(), `
 		SELECT count(*) FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props->>'agent' = $2`,
+		WHERE kind = $1 AND deleted_at IS NULL AND props->'agent'->>'id' = $2`,
 		typeThread, identity).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +444,8 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	}
 	var parent string
 	if err := ds.db.QueryRowContext(ctx, `
-		SELECT dst FROM edges WHERE rel = 'parent' AND src = $1`, child["__id"]).Scan(&parent); err != nil {
+		SELECT props->'parent'->>'id' FROM records WHERE kind = $2 AND id = $1`,
+		child["__id"], typeThread).Scan(&parent); err != nil {
 		t.Fatal(err)
 	}
 	if parent != root["__id"] {
@@ -1004,9 +1004,17 @@ func TestCustomLLMEndpointNeverReceivesHostKey(t *testing.T) {
 	if keyed.cfg.APIKey != "row-key-rootllm" || keyed.cfg.BaseURL != fake.srv.URL {
 		t.Fatalf("row-defined provider resolved to %q @ %q", keyed.cfg.APIKey, keyed.cfg.BaseURL)
 	}
-	hosted, err := ds.resolveProvider(ctx, providerSeedID) // the seeded row: no baseURL, no key
+	// A row with no baseURL and no key of its own falls back to the host
+	// gateway. Nothing seeds one — the test writes it, like an owner would.
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeProvider, ID: "hosted",
+		Properties: map[string]any{"name": "hosted", "wire": "openai"},
+	}); err != nil {
+		t.Fatalf("put the hosted provider row: %v", err)
+	}
+	hosted, err := ds.resolveProvider(ctx, "hosted")
 	if err != nil {
-		t.Fatalf("resolve %s: %v", providerSeedID, err)
+		t.Fatalf("resolve hosted: %v", err)
 	}
 	if hosted.cfg.BaseURL != "https://gateway.example.com" || hosted.cfg.APIKey != "host-secret-key" {
 		t.Fatalf("host fallback pair: %q @ %q", hosted.cfg.APIKey, hosted.cfg.BaseURL)
@@ -1296,5 +1304,34 @@ func TestProposeDiffValidation(t *testing.T) {
 		"properties": map[string]any{"model": "claude-opus-5"},
 	}, opPatch); err != nil {
 		t.Fatalf("a well-formed diff was refused: %v", err)
+	}
+}
+
+// Nothing seeds an llmprovider. A repository holds none until its owner writes
+// one, because a row with an openai wire, no endpoint and no key answers
+// nothing — it only postpones the failure to the first dispatch, wearing the
+// name `default` as if it were configured.
+func TestFreshRepositoryHoldsNoProvider(t *testing.T) {
+	ctx := context.Background()
+	ds := openInternalDataset(t)
+
+	page, err := ds.List(ctx, substrate.Query{
+		Filter: substrate.Filter{Kinds: []string{typeProvider}},
+	})
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	if len(page.Records) != 0 {
+		t.Fatalf("a fresh repository holds %d llmprovider rows, want none", len(page.Records))
+	}
+
+	// And an agent naming one it does not have says so, in terms an owner can
+	// act on rather than "does not resolve".
+	_, err = ds.resolveProvider(ctx, "default")
+	if err == nil {
+		t.Fatal("resolving an absent provider must fail")
+	}
+	if !strings.Contains(err.Error(), "create it") {
+		t.Fatalf("the refusal must say what to do, got: %v", err)
 	}
 }

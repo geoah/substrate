@@ -34,7 +34,7 @@ const (
 	webPageType   = webAuthority + "/page"
 	convMsgType   = "messaging.substrate.reamde.dev/conversationmessage"
 
-	// The models the shipped agents name on the seeded `default` provider:
+	// The models the shipped agents name on the `default` provider row:
 	// distinct, so one fake server drives the whole chain by model.
 	modelStrong = "anthropic/claude-opus-5"    // pageclassifier
 	modelMid    = "anthropic/claude-sonnet-5"  // readinglistagent
@@ -200,12 +200,19 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		t.Fatalf("install account type: %v", err)
 	}
 
-	// Point the HOST gateway at the fake server: the shipped agents name the
-	// seeded `default` provider, which carries no baseURL of its own — no
-	// custom llmprovider row is installed.
+	// Point the HOST gateway at the fake server and write the row the shipped
+	// agents name. Nothing seeds a provider, so `default` is created here —
+	// an openai-wire row with no baseURL of its own, which is what makes it
+	// resolve to the host gateway.
 	fake := newFakeLLM(t)
 	ds.svc.llmBaseURL = fake.srv.URL
 	ds.svc.llmAPIKey = "host-gateway-key"
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeProvider, ID: "default",
+		Properties: map[string]any{"name": "default", "wire": "openai"},
+	}); err != nil {
+		t.Fatalf("put the default provider row: %v", err)
+	}
 
 	// --- install the bundle atomically, from the shipped manifests ---------
 	vocabularyDocs := loadYAMLDocs(t, exampleDir+"/bundle.yaml")
@@ -364,7 +371,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	// the model saw, and NOTHING may have landed on the config.
 	var childThread string
 	if err := ds.db.QueryRowContext(ctx, `
-		SELECT id FROM records WHERE kind = $1 AND deleted_at IS NULL AND props->>'agent' = $2
+		SELECT id FROM records WHERE kind = $1 AND deleted_at IS NULL AND props->'agent'->>'id' = $2
 		ORDER BY created_at DESC, id DESC LIMIT 1`,
 		typeThread, webAuthority+"/readinglistagent").Scan(&childThread); err != nil {
 		t.Fatalf("the reading-list child thread: %v", err)
