@@ -5,6 +5,18 @@
 # the same pipeline, not an approximation of it. A check that passes locally
 # and fails here would have to be a difference in the machine, never in the
 # definition. Add a step to .mise.toml; this file does not change.
+#
+# The actions/cache steps below are the one thing that IS about the machine and
+# so belongs here rather than in .mise.toml: a laptop keeps ~/.cache and
+# ~/go/pkg/mod between runs and a runner does not. They restore those
+# directories, nothing more — no job's behaviour depends on a hit. (The
+# toolchain itself — go, node, pnpm, golangci-lint — is cached by
+# jdx/mise-action, which does that by default.)
+#
+# Keys are per-job on purpose. A cache entry is immutable once written, so two
+# jobs sharing one key means whichever finishes first wins and the other
+# uploads nothing; the lint job's golangci-lint build cache and the test job's
+# `go test` build cache are different working sets anyway.
 name: ci
 
 on:
@@ -28,6 +40,16 @@ jobs:
       - uses: jdx/mise-action@v2
         with:
           experimental: true
+      # golangci-lint typechecks the module, so it wants the same module and
+      # build caches `go test` does, plus its own analysis cache.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: ${{ runner.os }}-go-lint-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-go-lint-
       - run: mise run ci:lint
 
   go:
@@ -57,6 +79,17 @@ jobs:
       - uses: jdx/mise-action@v2
         with:
           experimental: true
+      # ~/go/pkg/mod is the download cache (`go mod download`); ~/.cache/go-build
+      # is the compiled-package cache, which is what makes the second half of
+      # the suite cheap. mise does not relocate either — GOPATH and GOCACHE keep
+      # their defaults under HOME.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-test-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-go-test-
       - run: mise run ci:go
 
   console:
@@ -67,6 +100,17 @@ jobs:
       - uses: jdx/mise-action@v2
         with:
           experimental: true
+      # pnpm's content-addressed store, NOT node_modules: `console:install` runs
+      # `pnpm install --frozen-lockfile`, and with the store warm that is a link
+      # step against packages already on disk instead of a download. The store
+      # lives at $XDG_DATA_HOME/pnpm/store, which on a runner (XDG_DATA_HOME
+      # unset) is the path below; the version segment sits inside it, so a pnpm
+      # major bump invalidates itself rather than the key.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('web/console/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
       - run: mise run ci:console
 
   image:
