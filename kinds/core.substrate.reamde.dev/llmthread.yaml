@@ -10,6 +10,11 @@ metadata:
   id: core.substrate.reamde.dev/llmthread
 data:
   authority: core.substrate.reamde.dev
+  description: >-
+    One agent invocation's conversation state; there is no agent-run
+    record, the thread IS the run. Status, turns, tokens and cost
+    accumulate as the loop goes, and a root thread's tally rolls up every
+    sub-agent's spend, so one number answers what a chain cost.
   names:
     singular: llmthread
     plural: llmthreads

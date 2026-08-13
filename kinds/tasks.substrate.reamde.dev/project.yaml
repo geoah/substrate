@@ -4,6 +4,10 @@ metadata:
   id: tasks.substrate.reamde.dev/project
 data:
   authority: tasks.substrate.reamde.dev
+  description: >-
+    What tasks group under: a name, and the tasks pointing at it.
+    Deliberately thin — a project is a heading, and everything else about
+    the work lives on the tasks themselves.
   names:
     singular: project
     plural: projects

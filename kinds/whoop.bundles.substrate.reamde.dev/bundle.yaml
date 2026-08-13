@@ -90,6 +90,10 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: whoop.bundles.substrate.reamde.dev/config}
 data:
   authority: whoop.bundles.substrate.reamde.dev
+  description: >-
+    The one WHOOP OAuth client this bundle authenticates through: a client
+    id and a sealed client secret. A host-enforced singleton; the
+    endpoints and the feature-to-scope mapping are manifest metadata.
   names: {singular: config, plural: configs}
   traits: [bundleconfig, oauth2]
   displayTemplate: "WHOOP client {clientId}"
@@ -115,6 +119,10 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: whoop.bundles.substrate.reamde.dev/account}
 data:
   authority: whoop.bundles.substrate.reamde.dev
+  description: >-
+    One connected WHOOP account. The OAuth facility writes its credential
+    reference, status and granted scopes; the owner chooses which
+    measurements sync and how often the scheduled tick asks.
   names: {singular: account, plural: accounts}
   traits: [accountconfig]
   displayTemplate: "{email}"
@@ -232,6 +240,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: whoop.bundles.substrate.reamde.dev/recovery}
 data:
   authority: whoop.bundles.substrate.reamde.dev
+  description: >-
+    One WHOOP recovery score, keyed by the physiological cycle it scores
+    rather than by the day. WHOOP re-scores a cycle as data settles, so a
+    re-sync converges on the same row, and the calendar date is display
+    data rather than identity.
   names: {singular: recovery, plural: recoveries}
   displayTemplate: "Recovery {date}"
   properties:
@@ -271,6 +284,10 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: whoop.bundles.substrate.reamde.dev/sleep}
 data:
   authority: whoop.bundles.substrate.reamde.dev
+  description: >-
+    One WHOOP sleep activity: when it began and ended, whether WHOOP
+    called it a nap, the performance percentage and how long was spent in
+    each stage.
   names: {singular: sleep, plural: sleeps}
   displayTemplate: "Sleep {start}"
   properties:
@@ -315,6 +332,9 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: whoop.bundles.substrate.reamde.dev/workout}
 data:
   authority: whoop.bundles.substrate.reamde.dev
+  description: >-
+    One WHOOP workout: the sport, when it ran, the strain score, and the
+    energy burned in kcal converted from WHOOP's kilojoules.
   names: {singular: workout, plural: workouts}
   displayTemplate: "{sport}"
   properties:

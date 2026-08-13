@@ -10,6 +10,11 @@ metadata:
   id: core.substrate.reamde.dev/run
 data:
   authority: core.substrate.reamde.dev
+  description: >-
+    One trigger delivery attempt, written by the engine after the attempt
+    settles: what fired, what ran, what it applied, and why it parked.
+    Parked runs are kept until their failure is retried away; the rest are
+    pruned to the newest few per trigger.
   names:
     singular: run
     plural: runs

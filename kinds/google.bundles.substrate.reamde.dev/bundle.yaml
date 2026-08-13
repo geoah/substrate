@@ -121,6 +121,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: google.bundles.substrate.reamde.dev/config}
 data:
   authority: google.bundles.substrate.reamde.dev
+  description: >-
+    The one Google OAuth client this bundle authenticates through: a
+    client id and a sealed client secret. A host-enforced singleton — the
+    endpoints and the feature-to-scope mapping are trusted manifest
+    metadata, never properties on this row.
   names: {singular: config, plural: configs}
   traits: [bundleconfig, oauth2]
   displayTemplate: "Google client {clientId}"
@@ -148,6 +153,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: google.bundles.substrate.reamde.dev/account}
 data:
   authority: google.bundles.substrate.reamde.dev
+  description: >-
+    One connected Google account. The OAuth facility writes its credential
+    reference, status and granted scopes; the owner enables features and
+    picks the cadence, and each feature keeps its own sync cursor and
+    status here.
   names: {singular: account, plural: accounts}
   traits: [accountconfig]
   displayTemplate: "{email}"
@@ -357,6 +367,10 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: google.bundles.substrate.reamde.dev/contact}
 data:
   authority: google.bundles.substrate.reamde.dev
+  description: >-
+    What Google holds about one address-book contact, in Google's own
+    shape. It points at a person — matched on an address or minted as a
+    shell — so a contact and a mail sender end up on the same human.
   names: {singular: contact, plural: contacts}
   displayTemplate: "{name.displayName}"
   properties:
@@ -1137,6 +1151,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: google.bundles.substrate.reamde.dev/emailaddress}
 data:
   authority: google.bundles.substrate.reamde.dev
+  description: >-
+    One address, one person: every address a mail header or an attendee
+    list carries becomes one of these, keyed per account. It is how gmail
+    and calendar rows reach people at all, mapped onto a person exactly as
+    a contact is.
   names: {singular: emailaddress, plural: emailaddresses}
   displayTemplate: "{displayName|address}"
   properties:
@@ -1199,6 +1218,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: google.bundles.substrate.reamde.dev/thread}
 data:
   authority: google.bundles.substrate.reamde.dev
+  description: >-
+    One Gmail thread, derived entirely from the message stream — no
+    threads.get call is ever made. Its subject, preview and last-message
+    time are written newest-wins, so a backfill walking a mailbox
+    backwards cannot stale them.
   names: {singular: thread, plural: threads}
   displayTemplate: "{subject|threadId}"
   properties:
@@ -1251,6 +1275,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: google.bundles.substrate.reamde.dev/message}
 data:
   authority: google.bundles.substrate.reamde.dev
+  description: >-
+    One Gmail message in Google's own shape: headers, body text, labels
+    and attachment metadata. Attachment BYTES are not fetched, and the raw
+    payload keeps everything but the inline data, so one page of mirrors
+    stays inside the frame cap.
   names: {singular: message, plural: messages}
   displayTemplate: "{subject|messageId}"
   properties:
@@ -2367,6 +2396,10 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: google.bundles.substrate.reamde.dev/calendar}
 data:
   authority: google.bundles.substrate.reamde.dev
+  description: >-
+    One entry of a Google calendar list, in Google's own shape. The
+    per-calendar sync token lives here rather than on the account, so one
+    calendar advancing can never skip another calendar's tail.
   names: {singular: calendar, plural: calendars}
   displayTemplate: "{summary|calendarId}"
   properties:
@@ -2429,6 +2462,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: google.bundles.substrate.reamde.dev/event}
 data:
   authority: google.bundles.substrate.reamde.dev
+  description: >-
+    One Google calendar event, always a concrete occurrence — the sync
+    expands single events. Attendee response status and the recurrence
+    fields stay here, because the core record reaches attendees by edge
+    and an edge carries no properties.
   names: {singular: event, plural: events}
   displayTemplate: "{summary|eventId}"
   properties:

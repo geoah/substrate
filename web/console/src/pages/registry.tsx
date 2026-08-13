@@ -440,9 +440,14 @@ function BundleDisclosure({
               // singleton `config` record type and the `account` type the
               // connect flow writes tokens onto are the two the reader must be
               // able to tell from ordinary vocabulary.
-              const title = k.role
+              const named = k.role
                 ? `${k.identity} — the ${k.role} record type`
                 : k.identity
+              // What the kind is, on the same hover: a reader deciding on an
+              // import should not have to install it to find out.
+              const title = k.description
+                ? `${named}\n\n${k.description}`
+                : named
               return k.authority && k.plural ? (
                 <Link
                   key={k.identity}

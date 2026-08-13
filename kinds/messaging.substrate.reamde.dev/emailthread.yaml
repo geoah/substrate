@@ -4,6 +4,10 @@ metadata:
   id: messaging.substrate.reamde.dev/emailthread
 data:
   authority: messaging.substrate.reamde.dev
+  description: >-
+    One mail thread: its subject, the account it synced through, and
+    everyone on it. Messages point here, so the thread is what a reader
+    lists and the messages are what they open.
   names:
     singular: emailthread
     plural: emailthreads

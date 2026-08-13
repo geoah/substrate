@@ -4,6 +4,11 @@ metadata:
   id: calendar.substrate.reamde.dev/calendarevent
 data:
   authority: calendar.substrate.reamde.dev
+  description: >-
+    One concrete occurrence on the timeline — title, location, prose, the
+    join link, and who is coming. Connectors explode recurring definitions
+    into these, and a cancelled event is DELETED rather than flagged, so a
+    reader never has to filter tombstones.
   names:
     singular: calendarevent
     plural: calendarevents

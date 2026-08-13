@@ -7,11 +7,18 @@ metadata:
   id: core.substrate.reamde.dev/function
 data:
   authority: core.substrate.reamde.dev
+  description: >-
+    One declared function: a callable reaction to the substrate's own
+    changes, invoked by a trigger or called directly. The declaration IS
+    the record — a write admits it, the commit activates it, and the
+    dispatcher reads the registry this row rebuilds into.
   # v1alpha2: the display template dropped the authority. A declaration's
   # identity is `<authority>/<name>` and the dotted composite it used to render
   # names nothing — the bump is what carries the new template into repositories
   # that already stored the old one.
-  version: v1alpha2
+  # v1alpha3: the declaration gained a `description` — the bump is what
+  # carries it into repositories that already stored the v1alpha2 one.
+  version: v1alpha3
   names:
     singular: function
     plural: functions

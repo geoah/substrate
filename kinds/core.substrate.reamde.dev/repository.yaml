@@ -4,6 +4,11 @@ metadata:
   id: core.substrate.reamde.dev/repository
 data:
   authority: core.substrate.reamde.dev
+  description: >-
+    The repository's own read-only description of itself — one record, the
+    store you are reading. The control-plane row is the truth and this is
+    its projection inside the repository, so a client that only speaks the
+    record API can still say where it is.
   names:
     singular: repository
     plural: repositories

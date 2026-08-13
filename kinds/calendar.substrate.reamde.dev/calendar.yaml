@@ -4,6 +4,10 @@ metadata:
   id: calendar.substrate.reamde.dev/calendar
 data:
   authority: calendar.substrate.reamde.dev
+  description: >-
+    One provider calendar: the container its events and series live in. It
+    hangs off the account record it synced through, so disconnecting that
+    account takes the calendar and everything under it along.
   names:
     singular: calendar
     plural: calendars

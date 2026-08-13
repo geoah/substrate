@@ -214,6 +214,9 @@ export interface KindRow {
   authority?: string
   plural?: string
   role?: "config" | "account"
+  /** The kind's declared description, where the registry knows the kind — a
+   * chip says what it is on hover, before the import. */
+  description?: string
 }
 
 /** The kinds an bundle installed, one row each, resolved for the Kinds
@@ -247,6 +250,7 @@ export function installedKindRows(
       authority: k?.authority,
       plural: k?.plural,
       role,
+      description: k?.description,
     }
   })
   return rows.sort((a, b) => a.name.localeCompare(b.name))

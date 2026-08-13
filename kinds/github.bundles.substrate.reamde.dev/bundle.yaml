@@ -101,6 +101,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: github.bundles.substrate.reamde.dev/config}
 data:
   authority: github.bundles.substrate.reamde.dev
+  description: >-
+    The one GitHub OAuth app this bundle authenticates through — its
+    client id and a sealed client secret, and nothing else. A
+    host-enforced singleton; endpoints and scopes are manifest metadata
+    rather than editable rows.
   names: {singular: config, plural: configs}
   traits: [bundleconfig, oauth2]
   displayTemplate: "GitHub app {clientId}"
@@ -126,6 +131,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: github.bundles.substrate.reamde.dev/account}
 data:
   authority: github.bundles.substrate.reamde.dev
+  description: >-
+    One connected GitHub account: these records ARE the bundle's
+    connections. The OAuth facility writes the credential reference and
+    the connection status, the owner flips the feature toggles, and the
+    scopes asked for are derived from them.
   names: {singular: account, plural: accounts}
   traits: [accountconfig]
   # The public email when GitHub exposes one, else the connector-stamped
@@ -260,6 +270,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: github.bundles.substrate.reamde.dev/user}
 data:
   authority: github.bundles.substrate.reamde.dev
+  description: >-
+    What GitHub holds about one user, in GitHub's own shape: login, name,
+    public email and profile URL. It points at a person, so a GitHub
+    identity and the same human's address-book contact converge on one
+    record.
   names: {singular: user, plural: users}
   displayTemplate: "{name|login}"
   properties:
@@ -311,6 +326,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: github.bundles.substrate.reamde.dev/repository}
 data:
   authority: github.bundles.substrate.reamde.dev
+  description: >-
+    One GitHub repository as GitHub describes it — full name, visibility,
+    default branch, page URL. Issues and pull requests hang off it, and a
+    stub is minted for repositories the listing never covered, so that
+    edge always resolves.
   names: {singular: repository, plural: repositories}
   displayTemplate: "{fullName}"
   properties:
@@ -366,6 +386,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: github.bundles.substrate.reamde.dev/issue}
 data:
   authority: github.bundles.substrate.reamde.dev
+  description: >-
+    One GitHub issue, mirrored plainly: number, state, labels, author
+    login and the timestamps the sync watermarks on. GitHub owns the
+    lifecycle, so the state is a plain string — the mirror reports it and
+    never decides it.
   names: {singular: issue, plural: issues}
   properties:
     account:
@@ -424,6 +449,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: github.bundles.substrate.reamde.dev/pullrequest}
 data:
   authority: github.bundles.substrate.reamde.dev
+  description: >-
+    One GitHub pull request, mirrored like an issue with the merge facts
+    added. Its state folds GitHub's separate fields into one word — merged
+    beats closed beats draft beats open — and stays a plain string GitHub
+    owns.
   names: {singular: pullrequest, plural: pullrequests}
   properties:
     account:

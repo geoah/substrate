@@ -4,6 +4,10 @@ metadata:
   id: core.substrate.reamde.dev/recordsplit
 data:
   authority: core.substrate.reamde.dev
+  description: >-
+    The undo of one merge, performed on creation exactly as the merge was.
+    It names the recordmerge it reverses and reads that merge's recorded
+    moves to put every edge and property back where it came from.
   names:
     singular: recordsplit
     plural: recordsplits

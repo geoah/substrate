@@ -89,15 +89,16 @@ func decodeTypeInfo(raw json.RawMessage) (substrate.KindInfo, bool) {
 	// version in the record shape (whose declared version rides in properties),
 	// so it cannot decode into a typed field.
 	var r struct {
-		Identity   string         `json:"identity"`
-		ID         string         `json:"id"`
-		Name       string         `json:"name"`
-		Authority  string         `json:"authority"`
-		Version    any            `json:"version"`
-		Plural     string         `json:"plural"`
-		Source     string         `json:"source"`
-		Definition map[string]any `json:"definition"`
-		Properties map[string]any `json:"properties"`
+		Identity    string         `json:"identity"`
+		ID          string         `json:"id"`
+		Name        string         `json:"name"`
+		Authority   string         `json:"authority"`
+		Version     any            `json:"version"`
+		Plural      string         `json:"plural"`
+		Source      string         `json:"source"`
+		Description string         `json:"description"`
+		Definition  map[string]any `json:"definition"`
+		Properties  map[string]any `json:"properties"`
 	}
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return substrate.KindInfo{}, false
@@ -107,14 +108,19 @@ func decodeTypeInfo(raw json.RawMessage) (substrate.KindInfo, bool) {
 	if definition == nil {
 		definition, _ = r.Properties["definition"].(map[string]any)
 	}
+	// A kind's description is the DECLARATION's — core's `kind` projects no
+	// column for it (kinds/core.substrate.reamde.dev/kind.yaml says why), so the
+	// record shape reads it out of `definition` and the bare shape off the field.
+	description, _ := definition["description"].(string)
 	ti := substrate.KindInfo{
-		Identity:   r.Identity,
-		Name:       firstNonEmpty(r.Name, propString(r.Properties, "name")),
-		Authority:  firstNonEmpty(r.Authority, propString(r.Properties, "authority")),
-		Version:    firstNonEmpty(version, propString(r.Properties, "version")),
-		Plural:     firstNonEmpty(r.Plural, propString(r.Properties, "plural")),
-		Source:     firstNonEmpty(r.Source, propString(r.Properties, "source")),
-		Definition: definition,
+		Identity:    r.Identity,
+		Name:        firstNonEmpty(r.Name, propString(r.Properties, "name")),
+		Authority:   firstNonEmpty(r.Authority, propString(r.Properties, "authority")),
+		Version:     firstNonEmpty(version, propString(r.Properties, "version")),
+		Plural:      firstNonEmpty(r.Plural, propString(r.Properties, "plural")),
+		Source:      firstNonEmpty(r.Source, propString(r.Properties, "source")),
+		Description: firstNonEmpty(r.Description, description),
+		Definition:  definition,
 	}
 	if ti.Identity == "" {
 		ti.Identity = r.ID

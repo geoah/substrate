@@ -4,6 +4,11 @@ metadata:
   id: core.substrate.reamde.dev/recordmerge
 data:
   authority: core.substrate.reamde.dev
+  description: >-
+    One performed merge of two records, and what it moved.
+    Command-as-record: creating it performs the merge, nothing waits on a
+    decision, and the loser is tombstoned rather than erased so the
+    recorded moves can be undone by a split.
   names:
     singular: recordmerge
     plural: recordmerges

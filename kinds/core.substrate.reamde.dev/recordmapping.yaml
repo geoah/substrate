@@ -5,11 +5,18 @@ metadata:
   id: core.substrate.reamde.dev/recordmapping
 data:
   authority: core.substrate.reamde.dev
+  description: >-
+    One declared mapping: how a source record's properties reach the
+    subject its edge points at, so a Google contact keeps a person up to
+    date. One mapping per source kind, declared by the authority that owns
+    that kind.
   # v1alpha2: the display template dropped the authority. A declaration's
   # identity is `<authority>/<name>` and the dotted composite it used to render
   # names nothing — the bump is what carries the new template into repositories
   # that already stored the old one.
-  version: v1alpha2
+  # v1alpha3: the declaration gained a `description` — the bump is what
+  # carries it into repositories that already stored the v1alpha2 one.
+  version: v1alpha3
   names:
     singular: recordmapping
     plural: recordmappings

@@ -697,6 +697,12 @@ func authorityDeclarations(g *vocabulary.Authority) ([]declaration, error) {
 		// The type's OWN version (the loader defaults it to the authority's and a
 		// `version:` in the declaration overrides it) — the one kind that
 		// carries a per-declaration version today.
+		//
+		// The kind's `description` is NOT projected as a column: it rides in
+		// `definition` like the rest of the declaration, and a new property on
+		// core's `kind` would be one every declaration row carries at once —
+		// which a repository still holding the old `kind` declaration refuses,
+		// taking the boot upgrade (and the open) down with it.
 		add(vocabulary.DocKind, kindKind, ty.Identity, map[string]any{
 			"name": ty.Name, "authority": ty.Authority, "version": ty.Version,
 			"plural": ty.Plural, "source": ty.Source, "definition": def,

@@ -18,11 +18,18 @@ metadata:
   id: core.substrate.reamde.dev/agent
 data:
   authority: core.substrate.reamde.dev
+  description: >-
+    One declared agent: a callable whose body is an LLM loop, dispatched
+    like a function by a trigger, the call API or another agent. The row
+    IS the prompt store, so changing what an agent does is a record write
+    and the changelog is its version history.
   # v1alpha2: the display template dropped the authority. A declaration's
   # identity is `<authority>/<name>` and the dotted composite it used to render
   # names nothing — the bump is what carries the new template into repositories
   # that already stored the old one.
-  version: v1alpha2
+  # v1alpha3: the declaration gained a `description` — the bump is what
+  # carries it into repositories that already stored the v1alpha2 one.
+  version: v1alpha3
   names:
     singular: agent
     plural: agents

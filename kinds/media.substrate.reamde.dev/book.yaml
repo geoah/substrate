@@ -6,6 +6,11 @@ metadata:
   id: media.substrate.reamde.dev/book
 data:
   authority: media.substrate.reamde.dev
+  description: >-
+    One book as the WORK — what an author wrote, independent of any copy
+    you hold. The paperback, the ebook and the audiobook are bookedition
+    records pointing here, so the blurb, the genres and the place in a
+    series are stated once.
   names:
     singular: book
     plural: books

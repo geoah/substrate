@@ -4,6 +4,11 @@ metadata:
   id: core.substrate.reamde.dev/authority
 data:
   authority: core.substrate.reamde.dev
+  description: >-
+    One authority whose kinds this repository holds, named by its
+    DNS-style label. The row says who may write under it and where its
+    declarations came from, and carries the quarantine mark set when a
+    stored closure no longer admits.
   names:
     singular: authority
     plural: authorities

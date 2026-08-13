@@ -39,7 +39,12 @@ metadata:
   id: core.substrate.reamde.dev
 data:
   # a maturity statement, not a routing key: no envelope carries a version.
-  version: v1alpha1
+  #
+  # v1alpha2: every kind in this authority gained a `description` — what the
+  # thing is and what writes it, read above its collection. A declaration
+  # takes this version unless it pins its own, and the bump is what carries
+  # the new text into repositories that already stored the old declarations.
+  version: v1alpha2
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands
