@@ -50,12 +50,13 @@ func stubMain(encoded string, argv []string) {
 	}
 
 	// Anything the parent left open above stderr is marked close-on-exec, so
-	// an inherited descriptor cannot survive into the body. Go already opens
-	// its own descriptors CLOEXEC and os/exec passes only 0, 1 and 2, so this
-	// is belt and braces — and it is CLOEXEC rather than an outright close
-	// because closing the runtime's epoll descriptor under a live runtime
-	// would crash before the exec that makes it moot.
-	_ = unix.CloseRange(3, ^uint(0), unix.CLOSE_RANGE_CLOEXEC)
+	// an inherited descriptor cannot survive into the body — a descriptor is a
+	// capability neither Landlock nor seccomp can revoke once it is open.
+	//
+	// CLOEXEC rather than an outright close: closing the runtime's epoll
+	// descriptor under a live runtime would crash before the exec that makes it
+	// moot.
+	markCloexec()
 
 	if err := applyRlimits(p); err != nil {
 		dief("rlimits: %v", err)
@@ -174,4 +175,35 @@ func setRlimit(which int, v uint64) error {
 		}
 	}
 	return unix.Setrlimit(which, &lim)
+}
+
+// markCloexec marks every descriptor above stderr close-on-exec.
+//
+// close_range(2) with CLOSE_RANGE_CLOEXEC does it in one call, but it needs
+// Linux 5.11 — below the floor this package otherwise targets — so a failure
+// falls back to walking the descriptor table by hand. The fallback is bounded
+// by RLIMIT_NOFILE, which is what the kernel would have walked anyway, and
+// capped besides: a host with a soft limit in the millions must not turn a
+// process start into a million syscalls.
+//
+// A failure is NOT fatal, and deliberately so. os/exec passes only 0, 1 and 2,
+// and the Go runtime opens everything O_CLOEXEC, so there is normally nothing
+// here to find; refusing to launch would take the substrate's functions down on
+// an old kernel to close a gap that is already closed by other means. This is
+// the belt beside those braces.
+func markCloexec() {
+	if err := unix.CloseRange(3, ^uint(0), unix.CLOSE_RANGE_CLOEXEC); err == nil {
+		return
+	}
+	const maxWalk = 4096
+	limit := uint64(maxWalk)
+	var lim unix.Rlimit
+	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &lim); err == nil && lim.Cur < limit {
+		limit = lim.Cur
+	}
+	for fd := 3; fd < int(limit); fd++ {
+		// EBADF is the ordinary answer for a descriptor that is not open, which
+		// is most of them.
+		_, _ = unix.FcntlInt(uintptr(fd), unix.F_SETFD, unix.FD_CLOEXEC)
+	}
 }
