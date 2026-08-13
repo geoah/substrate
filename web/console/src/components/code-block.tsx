@@ -41,7 +41,7 @@ export function CodeBlock({
       )}
     >
       {lines.map((line, i) => {
-        const runs = tokens.data?.[i]
+        const runs = tokens?.[i]
         return (
           <span key={i} className="block min-h-[1lh]">
             {runs

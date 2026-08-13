@@ -178,7 +178,7 @@ export function YamlView({
         {lines.map((line, i) => (
           <LineView
             key={i}
-            tokens={tokens.data?.[i]}
+            tokens={tokens?.[i]}
             line={line}
             docs={docs}
             targets={targets}

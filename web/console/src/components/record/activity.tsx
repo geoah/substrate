@@ -56,7 +56,10 @@ function activityColumns(recordId: string): ColumnDef<ChangeRow, unknown>[] {
       voice: "relative",
       width: 70,
     }),
-    changeActorColumn({ width: 110 }),
+    // No fixed width: an actor is identity-length, and 110px truncated every
+    // chip while the action column sat half empty. The shared factory's
+    // weighted share (min 140, max 240) already knows the answer.
+    changeActorColumn(),
     {
       id: "action",
       accessorFn: (row) => verbOf(row),
