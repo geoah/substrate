@@ -75,6 +75,11 @@ data:
   `propose` may emit. Empty means the agent writes nothing.
 - optional **`reads:`**, the function envelope's read shape verbatim: a
   `kinds:` allowlist plus `budgets:` calls and rows.
+- optional **`subagentOnly:`**, the chat-surface withholding: `true` keeps the
+  agent off the console's chat list and makes the chat API refuse it, while
+  sub-agent calls, the call API and triggers still dispatch it. An
+  llm-as-judge is the shape it exists for. Any agent, marked or not, remains
+  selectable as another agent's sub-agent.
 
 Tool callables, sub-agents, and every emitted and read kind resolve against
 the registry at admission, where same-batch installs count.
@@ -107,7 +112,7 @@ source of truth.
 
 ## Tools
 
-A `tools:` entry is a bare string, one of the two built-ins or a function
+A `tools:` entry is a bare string, one of the four built-ins or a function
 reference, or a `{callable, name, description}` alias that recolors this
 agent's prompt context without changing the function's canonical description.
 Tool names are unique per agent.
@@ -116,6 +121,22 @@ Tool names are unique per agent.
   error otherwise. A get outside the allowlist answers like an absent id; list
   and search clamp to the remaining row budget; a blown budget is a tool error
   the model sees.
+- **`graphql`** is the whole-repository read: the SAME schema and resolvers
+  the `/graphql` endpoint executes (`internal/gql`), run in-process against
+  the loop's dataset under the agent's actor. Declaring it is the grant, and
+  it grants reads only: the document is parsed first, and a mutation or
+  subscription in it is a tool error naming where those verbs live. A result
+  over 64KB is refused with a narrowing hint rather than truncated. Use
+  `query` instead when an agent should read a few named kinds under a row
+  budget; use `graphql` when the agent's job is the graph itself.
+- **`mutate`** executes GraphQL mutations (`put`, `patch`, `delete`, `link`,
+  `unlink`) through the same resolvers, and requires a non-empty `emit:` (a
+  load error otherwise). Every written kind is resolved and held to the
+  agent's EFFECTIVE emit before the write applies, so a sub-agent's ceiling
+  narrows it like any other effect; `merge` and `split` refuse outright, as
+  fusing identities is the owner's reviewed decision. Writes ride the full
+  public path (kind guards, schema-record admission) under the agent's
+  actor.
 - **`propose`** is the reviewed write, and requires `emit:` to name
   `core.substrate.reamde.dev/recordpatchrequest`. It lands one
   [`recordpatchrequest`](projection.md#the-patch-request-sibling), never a

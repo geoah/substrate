@@ -770,6 +770,12 @@ func (l *agentLoop) buildTools() error {
 					"q":      map[string]any{"type": "string", "description": "search query"},
 					"k":      map[string]any{"type": "number", "description": "max search hits"},
 				}}, agentTool{builtin: vocabulary.AgentToolQuery})
+		case vocabulary.AgentToolGraphQL:
+			add(t.Name, "Run a read-only GraphQL query against the repository. The schema is introspectable (__schema / __type): every kind is a GraphQL type with its declared properties. Roots: record(kind, id) for one record; records(filter, orderBy, first, after) to list (a connection, so descend through nodes { ... }); search(q, kinds, k) for hybrid lexical+semantic lookup that tolerates near-matches; changelog(from, filter, first) for history. Do not guess field names: introspect when unsure, and batch related lookups into one query. Mutations and subscriptions are rejected. Responses over 64KB are refused; narrow the query.",
+				graphqlToolParams(), agentTool{builtin: vocabulary.AgentToolGraphQL})
+		case vocabulary.AgentToolMutate:
+			add(t.Name, "Run a GraphQL mutation against the repository. Roots: put(input: {kind, id, properties, edges}) merges and never prunes; patch(kind, id, input, ifVersion); delete(kind, id); link/unlink(rel, srcKind, src, dstKind, dst). Every record written must be of a kind in the agent's emit allowlist; merge and split are refused. Ids must come from query results, never invented.",
+				graphqlToolParams(), agentTool{builtin: vocabulary.AgentToolMutate})
 		case vocabulary.AgentToolPropose:
 			add(t.Name, "Propose a reviewed change to the graph instead of writing it: lands a recordpatchrequest the owner decides on. op patch (default) changes an existing record (needs target + diff); op create mints a new record on accept (needs kind + id + diff); op delete tombstones an existing record (needs target). A diff wraps property changes under \"properties\".",
 				map[string]any{"type": "object", "properties": map[string]any{
@@ -843,6 +849,10 @@ func (l *agentLoop) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool
 		return l.dispatchQuery(ctx, args)
 	case tool.builtin == vocabulary.AgentToolPropose:
 		return l.dispatchPropose(ctx, args)
+	case tool.builtin == vocabulary.AgentToolGraphQL:
+		return l.dispatchGraphQL(ctx, args)
+	case tool.builtin == vocabulary.AgentToolMutate:
+		return l.dispatchMutate(ctx, args)
 	case tool.sub != nil:
 		return l.dispatchSubAgent(ctx, tool.sub, args)
 	default:

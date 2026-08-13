@@ -9,13 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/gql"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -71,8 +71,9 @@ type handler struct {
 	consoleURL string
 	maxDialect int
 
-	schemaMu    sync.Mutex
-	schemaCache map[string]*cachedSchema
+	// schemas is the GraphQL schema cache, one entry per repository, rebuilt
+	// on registry-fingerprint changes (internal/gql owns the key and builder).
+	schemas *gql.Cache
 }
 
 // New builds the router.
@@ -86,14 +87,14 @@ func New(cfg Config) http.Handler {
 		interval = defaultAuthInterval
 	}
 	h := &handler{
-		svc:         cfg.Service,
-		now:         now,
-		authRate:    newRateLimiter(interval, now),
-		inviteCode:  cfg.InviteCode,
-		catalog:     cfg.Catalog,
-		consoleURL:  strings.TrimRight(cfg.ConsoleURL, "/"),
-		maxDialect:  cfg.MaxDialect,
-		schemaCache: map[string]*cachedSchema{},
+		svc:        cfg.Service,
+		now:        now,
+		authRate:   newRateLimiter(interval, now),
+		inviteCode: cfg.InviteCode,
+		catalog:    cfg.Catalog,
+		consoleURL: strings.TrimRight(cfg.ConsoleURL, "/"),
+		maxDialect: cfg.MaxDialect,
+		schemas:    gql.NewCache(),
 	}
 
 	r := chi.NewRouter()

@@ -26,6 +26,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/geoah/substrate/internal/gql"
 	"github.com/geoah/substrate/internal/oauthflow"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -131,6 +132,9 @@ type service struct {
 	// credKey seals the sealed store (AES-256-GCM); empty stores plain.
 	credKey []byte
 	log     *slog.Logger
+	// gqlSchemas caches the agent loop's GraphQL schema per repository
+	// (internal/gql owns the key and builder); the API layer holds its own.
+	gqlSchemas *gql.Cache
 
 	mu sync.Mutex
 	// datasets is keyed by REPOSITORY ID, never by username: a username is a
@@ -197,6 +201,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		llmAPIKey:  o.llmAPIKey,
 		credKey:    deriveCredentialKey(o.credKey),
 		log:        o.log,
+		gqlSchemas: gql.NewCache(),
 		datasets:   map[string]*dataset{},
 		opening:    map[string]chan struct{}{},
 	}

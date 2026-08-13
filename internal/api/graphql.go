@@ -1,19 +1,15 @@
 package api
 
 import (
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"sort"
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/gqlerrors"
 
-	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/gql"
 )
 
 // decodeGraphQLBody decodes the GraphQL request body with the same strict
@@ -82,13 +78,6 @@ type graphqlRequest struct {
 	Extensions map[string]any `json:"bundles,omitempty"`
 }
 
-// cachedSchema is one repository's built schema plus the registry fingerprint it
-// was built from.
-type cachedSchema struct {
-	key    string
-	schema graphql.Schema
-}
-
 func (h *handler) postGraphQL(w http.ResponseWriter, r *http.Request) {
 	var req graphqlRequest
 	if err := decodeGraphQLBody(r, &req); err != nil {
@@ -101,7 +90,12 @@ func (h *handler) postGraphQL(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)
-	schema, err := h.schemaFor(ctx, ds)
+	types, err := ds.Kinds(ctx)
+	if err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
+	schema, err := h.schemas.SchemaFor(ds.Repository().Name, types)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -111,7 +105,9 @@ func (h *handler) postGraphQL(w http.ResponseWriter, r *http.Request) {
 		RequestString:  req.Query,
 		VariableValues: req.Variables,
 		OperationName:  req.OperationName,
-		Context:        ctx,
+		// The resolvers read gql's own context, bound here: this transport's
+		// dataset and actor, exactly as the auth middleware resolved them.
+		Context: gql.WithRequest(ctx, ds, ActorFrom(ctx)),
 	})
 	attachProblemExtensions(result)
 	writeJSON(w, http.StatusOK, result)
@@ -138,47 +134,4 @@ func attachProblemExtensions(result *graphql.Result) {
 		}
 		result.Errors[i].Extensions = ext
 	}
-}
-
-// schemaFor returns the repository's schema, rebuilding it when the type
-// registry's fingerprint changed (connector installs, schema deploys).
-func (h *handler) schemaFor(ctx context.Context, ds substrate.Dataset) (*graphql.Schema, error) {
-	types, err := ds.Kinds(ctx)
-	if err != nil {
-		return nil, err
-	}
-	key := registryKey(types)
-	repository := ds.Repository().Name
-
-	h.schemaMu.Lock()
-	defer h.schemaMu.Unlock()
-	if c, ok := h.schemaCache[repository]; ok && c.key == key {
-		return &c.schema, nil
-	}
-	schema, err := buildSchema(types)
-	if err != nil {
-		return nil, err
-	}
-	c := &cachedSchema{key: key, schema: schema}
-	h.schemaCache[repository] = c
-	return &c.schema, nil
-}
-
-func registryKey(types []substrate.KindInfo) string {
-	ids := make([]string, 0, len(types))
-	for _, t := range types {
-		// The schema builds fields from the DEFINITION, so the key must move
-		// with it: schema is records, and a property added through the
-		// record path activates on commit — not on the next type add/remove.
-		// json.Marshal sorts map keys, so equal definitions hash equal.
-		def, _ := json.Marshal(t.Definition)
-		ids = append(ids, t.Identity+"@"+t.Version+"@"+t.Plural+"@"+string(def))
-	}
-	sort.Strings(ids)
-	sum := sha256.New()
-	for _, id := range ids {
-		_, _ = sum.Write([]byte(id))
-		_, _ = sum.Write([]byte{0})
-	}
-	return hex.EncodeToString(sum.Sum(nil))
 }

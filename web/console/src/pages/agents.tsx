@@ -138,7 +138,17 @@ export function AgentsPage() {
   const navigate = useNavigate()
   const agents = useQuery(agentsQueryOptions())
 
-  const agentRows = useMemo(() => agents.data?.records ?? [], [agents.data])
+  // This page is the CHAT list, so a subagent-only agent (an llm-as-judge,
+  // callable only by other agents) stays off it; the row is still an ordinary
+  // record under Data → agents, and still selectable as another agent's
+  // sub-agent. The chat API refuses such an agent too, so this filter hides
+  // nothing that would have worked.
+  const allRows = useMemo(() => agents.data?.records ?? [], [agents.data])
+  const agentRows = useMemo(
+    () => allRows.filter((r) => r.properties.subagentOnly !== true),
+    [allRows]
+  )
+  const subagentOnlyCount = allRows.length - agentRows.length
   const aCols = useMemo(() => agentColumns(), [])
   const aTable = useDataTable({
     columns: aCols,
@@ -177,6 +187,8 @@ export function AgentsPage() {
         <p className="text-xs text-muted-foreground">
           {agentRows.length.toLocaleString()} declared, from{" "}
           <span className="data">core.substrate.reamde.dev/agents</span>
+          {subagentOnlyCount > 0 &&
+            ` (${subagentOnlyCount.toLocaleString()} more subagent-only, under Data)`}
         </p>
       </div>
 

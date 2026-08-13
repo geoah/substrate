@@ -75,8 +75,8 @@ tree:
 
 ```sh
 bin/substratectl apply \
-  -f kinds/llm.bundles.substrate.reamde.dev/bundle.yaml \
-  -f kinds/llm.bundles.substrate.reamde.dev/providers.yaml
+  -f kinds/llm.examples.substrate.reamde.dev/bundle.yaml \
+  -f kinds/llm.examples.substrate.reamde.dev/providers.yaml
 ```
 
 Then put a key on the row — it is an ordinary record write, and `apiKey` is

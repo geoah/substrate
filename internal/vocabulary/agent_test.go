@@ -119,6 +119,43 @@ func TestAgentLoadsWithoutCoreEmit(t *testing.T) {
 	}
 }
 
+// The graphql built-in needs no grant beyond its declaration (it is read-only
+// and repository-wide by design), mutate rides the emit allowlist, and
+// subagentOnly is an ordinary parsed flag: one manifest proves all three.
+func TestAgentGraphQLBuiltinsAndSubagentOnly(t *testing.T) {
+	r, err := loadAgAuthority(t, agAuthority(`  description: reads and writes the graph
+  prompt: You tend widgets.
+  provider: default
+  model: claude-opus-5
+  subagentOnly: true
+  tools: [graphql, mutate]
+  emit: [ag.example.com/widget]
+`))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	ag, err := r.ResolveAgent("ag.example.com/classifier")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ag.SubagentOnly {
+		t.Fatal("subagentOnly did not parse")
+	}
+	if len(ag.Tools) != 2 ||
+		ag.Tools[0].Builtin != vocabulary.AgentToolGraphQL ||
+		ag.Tools[1].Builtin != vocabulary.AgentToolMutate {
+		t.Fatalf("tools %+v", ag.Tools)
+	}
+	// The unmarked sibling reads as chattable.
+	sorter, err := r.ResolveAgent("ag.example.com/sorter")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sorter.SubagentOnly {
+		t.Fatal("sorter is not declared subagentOnly")
+	}
+}
+
 func TestAgentRefusals(t *testing.T) {
 	cases := []struct {
 		name string
@@ -166,6 +203,12 @@ func TestAgentRefusals(t *testing.T) {
   model: claude-opus-5
   tools: [propose]
 `, "propose needs core.substrate.reamde.dev/recordpatchrequest in data.emit"},
+		{"mutate without emit", `  description: d
+  prompt: p
+  provider: default
+  model: claude-opus-5
+  tools: [mutate]
+`, "mutate needs data.emit"},
 		{"self sub-agent", `  description: d
   prompt: p
   provider: default
@@ -197,7 +240,7 @@ func TestAgentRefusals(t *testing.T) {
   provider: default
   model: claude-opus-5
   tools: [frobnicate]
-`, "query, propose, or a full function identity"},
+`, "a built-in (query, propose, graphql, mutate) or a full function identity"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

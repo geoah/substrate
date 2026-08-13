@@ -180,7 +180,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	fake := newFakeLLM(t)
-	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm"} {
+	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm"} {
 		model := strings.TrimSuffix(id, "llm")
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: typeProvider, ID: id,
@@ -262,6 +262,26 @@ def main(input, host):
 		agent("keeper", map[string]any{
 			"provider": "keepllm", "model": "keep", "tools": []any{crewAuthority + "/keyecho"},
 			"emit": []any{"tasks.substrate.reamde.dev/task"},
+		}),
+		// archivist reads the whole graph through the graphql built-in and
+		// writes nothing; editor holds both graphql tools, its mutate gated to
+		// widgets alone.
+		agent("archivist", map[string]any{
+			"provider": "gqlllm", "model": "gql", "tools": []any{"graphql"},
+		}),
+		agent("editor", map[string]any{
+			"provider": "mutllm", "model": "mut",
+			"tools": []any{"graphql", "mutate"},
+			"emit":  []any{crewAuthority + "/widget"},
+		}),
+		// judge is subagentOnly: off the chat surface, still a callable and
+		// still justice's sub-agent.
+		agent("judge", map[string]any{
+			"provider": "judgellm", "model": "judge", "subagentOnly": true,
+		}),
+		agent("justice", map[string]any{
+			"provider": "justicellm", "model": "justice",
+			"agents": []any{crewAuthority + "/judge"},
 		}),
 		agent("e", map[string]any{"provider": "chainllm", "model": "chain"}),
 		agent("d", map[string]any{"provider": "chainllm", "model": "chain", "agents": []any{crewAuthority + "/e"}}),

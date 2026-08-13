@@ -14,20 +14,34 @@ import (
 // (primitives §5). The row IS the prompt store — the changelog is its version
 // history — and everything else on it is references: one `provider`
 // data-record id plus the `model` it asks that provider for,
-// `tools:` (the built-ins `query` and `propose` plus callable functions,
-// each optionally aliased for the agent's own prompt context), `agents:`
+// `tools:` (the built-ins query, propose, graphql and mutate, plus callable
+// functions, each optionally aliased for the agent's own prompt context), `agents:`
 // (sub-agents), `budgets:` and `emit:`. Agents dispatch exactly like
 // functions — triggers, the call API, sub-agent calls — under the actor
 // `function:<name>`; the loop itself is host-side (engine/agentloop.go).
 
 // The built-in agent tools. `query` is the capability-scoped read (gated by
 // the agent's `reads:`); `propose` emits `recordpatchrequest` records (gated
-// by `emit:` naming the request type). Everything else in `tools:` is a
-// callable function.
+// by `emit:` naming the request type); `graphql` is the WHOLE-repository
+// read-only GraphQL surface (declaring it is the grant: there is no
+// narrower scope to declare, which is why the scoped `query` survives beside
+// it); `mutate` executes GraphQL mutations, each written kind held to the
+// agent's effective emit (so it needs a non-empty `emit:`). Everything else
+// in `tools:` is a callable function.
 const (
 	AgentToolQuery   = "query"
 	AgentToolPropose = "propose"
+	AgentToolGraphQL = "graphql"
+	AgentToolMutate  = "mutate"
 )
+
+// agentBuiltins is the closed set `tools:` accepts as bare built-in names.
+var agentBuiltins = map[string]bool{
+	AgentToolQuery:   true,
+	AgentToolPropose: true,
+	AgentToolGraphQL: true,
+	AgentToolMutate:  true,
+}
 
 // The request params an agent may name in `params:`. The set is closed on
 // purpose: a param the loop cannot pass to every dialect is a knob that
@@ -92,6 +106,11 @@ type Agent struct {
 	// Reads scopes the `query` built-in exactly like a function's
 	// capability-scoped reads; nil means `query` is not granted.
 	Reads *FunctionReads
+	// SubagentOnly withholds the agent from the interactive chat surface: the
+	// console keeps it off the chat list and ChatAgent refuses it. Everything
+	// else still dispatches it: sub-agent calls (the point, an llm-as-judge
+	// exists to be called by other agents), the call API, and triggers.
+	SubagentOnly bool
 
 	// Definition is the manifest's data map, exactly as authored.
 	Definition map[string]any
@@ -101,7 +120,7 @@ type Agent struct {
 // function with an optional per-agent alias (name/description override the
 // prompt-facing card; the function manifest stays the canonical source).
 type AgentTool struct {
-	// Builtin is "query" or "propose"; empty for callables.
+	// Builtin is one of the agentBuiltins names; empty for callables.
 	Builtin string
 	// Callable is the function identity, for callable entries.
 	Callable string
@@ -152,6 +171,7 @@ var agentDataKeys = map[string]bool{
 	"authority": true, "description": true, "prompt": true,
 	"provider": true, "model": true, "params": true,
 	"tools": true, "agents": true, "budgets": true, "emit": true, "reads": true,
+	"subagentOnly": true,
 }
 
 var agentBudgetKeys = map[string]bool{
@@ -225,6 +245,7 @@ func (l *loader) parseAgent(d Document) *Agent {
 		l.errf("%s: data.model is required — the model id sent to the provider on every completion", where)
 		return nil
 	}
+	a.SubagentOnly = mbool(d.Data, "subagentOnly")
 	if !l.parseAgentParams(where, d.Data, a) {
 		return nil
 	}
@@ -275,7 +296,9 @@ func (l *loader) parseAgent(d Document) *Agent {
 	}
 	a.Reads = fn.Caps.Reads
 
-	// The built-ins' grants are load errors, not dispatch surprises.
+	// The built-ins' grants are load errors, not dispatch surprises. `graphql`
+	// alone needs none: it is read-only and repository-wide by design, and the
+	// declaration is the grant.
 	for _, t := range a.Tools {
 		switch t.Builtin {
 		case AgentToolQuery:
@@ -286,6 +309,11 @@ func (l *loader) parseAgent(d Document) *Agent {
 		case AgentToolPropose:
 			if !a.EmitAllows(KindRecordPatchRequest) {
 				l.errf("%s: data.tools: propose needs %s in data.emit — emit names which request types the agent may propose", where, KindRecordPatchRequest)
+				return nil
+			}
+		case AgentToolMutate:
+			if len(a.Emit) == 0 {
+				l.errf("%s: data.tools: mutate needs data.emit — emit names which kinds the agent may write", where)
 				return nil
 			}
 		}
@@ -370,14 +398,14 @@ func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bo
 	for i, tv := range mslice(data, "tools") {
 		switch entry := tv.(type) {
 		case string:
-			if entry == AgentToolQuery || entry == AgentToolPropose {
+			if agentBuiltins[entry] {
 				if !add(i, AgentTool{Builtin: entry, Name: entry}) {
 					return false
 				}
 				continue
 			}
 			if !Qualified(entry) || strings.Contains(entry, "*") {
-				l.errf("%s: data.tools[%d]: %q — query, propose, or a full function identity", where, i, entry)
+				l.errf("%s: data.tools[%d]: %q — a built-in (query, propose, graphql, mutate) or a full function identity", where, i, entry)
 				return false
 			}
 			name := KindName(entry)

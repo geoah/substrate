@@ -9,6 +9,7 @@ import (
 
 	"github.com/graphql-go/graphql"
 
+	"github.com/geoah/substrate/internal/gql"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -49,16 +50,16 @@ func TestRegistryKeyTracksDefinitions(t *testing.T) {
 		"name":  map[string]any{"type": "string"},
 		"count": map[string]any{"type": "float"},
 	})
-	if registryKey(base) != registryKey(same) {
+	if gql.RegistryKey(base) != gql.RegistryKey(same) {
 		t.Fatal("identical registries must share a key")
 	}
-	if registryKey(base) == registryKey(extended) {
+	if gql.RegistryKey(base) == gql.RegistryKey(extended) {
 		t.Fatal("a definition change must move the registry key, or the cached GraphQL schema serves the old shape")
 	}
 }
 
 func TestGraphQLSchemaBuildsFromTheRegistry(t *testing.T) {
-	schema, err := buildSchema(testTypes())
+	schema, err := gql.BuildSchema(testTypes())
 	if err != nil {
 		t.Fatalf("buildSchema: %v", err)
 	}
@@ -382,7 +383,7 @@ func TestGraphQLNamesAreAFunctionOfIdentityNotTheRegistry(t *testing.T) {
 		Definition: map[string]any{"properties": map[string]any{"note": map[string]any{"type": "string"}}},
 	}
 
-	schema, err := buildSchema([]substrate.KindInfo{shipped, installed})
+	schema, err := gql.BuildSchema([]substrate.KindInfo{shipped, installed})
 	if err != nil {
 		t.Fatalf("buildSchema: %v", err)
 	}
@@ -402,7 +403,7 @@ func TestGraphQLNamesAreAFunctionOfIdentityNotTheRegistry(t *testing.T) {
 		t.Fatalf("Alpha_Task resolves to %q", prefixed.Description())
 	}
 	// The order the two arrive in must not change either name.
-	schema2, err := buildSchema([]substrate.KindInfo{installed, shipped})
+	schema2, err := gql.BuildSchema([]substrate.KindInfo{installed, shipped})
 	if err != nil {
 		t.Fatalf("buildSchema (reordered): %v", err)
 	}
@@ -419,7 +420,7 @@ func TestGraphQLReservedNameCollisionIsRefused(t *testing.T) {
 		Version: "v1alpha1", Plural: "changes", Source: "builtin",
 		Definition: map[string]any{"properties": map[string]any{}},
 	}
-	_, err := buildSchema([]substrate.KindInfo{bad})
+	_, err := gql.BuildSchema([]substrate.KindInfo{bad})
 	if err == nil {
 		t.Fatal("a type named Change must be refused — it collides with the structural Change type")
 	}
@@ -477,7 +478,7 @@ func TestGraphQLPropertyTypesListAndObject(t *testing.T) {
 			"count":   map[string]any{"type": "int"},
 		}},
 	}
-	schema, err := buildSchema([]substrate.KindInfo{widget})
+	schema, err := gql.BuildSchema([]substrate.KindInfo{widget})
 	if err != nil {
 		t.Fatalf("buildSchema: %v", err)
 	}
@@ -495,7 +496,7 @@ func TestGraphQLPropertyTypesListAndObject(t *testing.T) {
 	if !ok || tags.OfType != graphql.String {
 		t.Fatalf("repeated string `tags` = %v, want [String]", fields["tags"].Type)
 	}
-	if fields["address"].Type != jsonScalar {
+	if fields["address"].Type.Name() != "JSON" {
 		t.Fatalf("object `address` = %v, want the JSON scalar (not String)", fields["address"].Type)
 	}
 	if fields["count"].Type != graphql.Int {

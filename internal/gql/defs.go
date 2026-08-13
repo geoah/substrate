@@ -1,4 +1,4 @@
-package api
+package gql
 
 import (
 	"encoding/json"
@@ -7,6 +7,8 @@ import (
 	"unicode"
 
 	"github.com/graphql-go/graphql"
+
+	"github.com/geoah/substrate/internal/strictjson"
 )
 
 // The type definition is the raw YAML-shaped map the schema loader
@@ -204,5 +206,5 @@ func remarshal(v, dst any) error {
 	if err != nil {
 		return err
 	}
-	return decodeStrictBytes(raw, dst, false)
+	return strictjson.DecodeBytes(raw, dst, false)
 }

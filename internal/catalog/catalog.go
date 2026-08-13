@@ -131,7 +131,7 @@ type Resources struct {
 var exampleFacets = map[string]bool{
 	// The two provider rows a substrate needs before an agent can run, plus an
 	// agent chain to prove them.
-	"llm.bundles.substrate.reamde.dev/llm": true,
+	"llm.examples.substrate.reamde.dev/llm": true,
 	// The smallest bundle showing an agent calling functions as tools and
 	// delegating to a sub-agent.
 	"notes.bundles.substrate.reamde.dev/notes": true,
