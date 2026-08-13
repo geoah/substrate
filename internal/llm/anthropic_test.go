@@ -189,6 +189,139 @@ func TestAnthropicGroupsConsecutiveToolResultsIntoOneUserTurn(t *testing.T) {
 	}
 }
 
+// The wire alternates roles, and a CONTINUED thread's replayed history
+// legally holds two user turns in a row: loadHistory drops assistant turns
+// that carried tool calls, and a thread that settled on an error stored no
+// assistant reply at all, so the new user message lands straight after an
+// older one. Such a continuation must not 400 forever.
+func TestAnthropicFoldsConsecutiveSameRoleTurns(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		messages []Message
+		// wantRoles is the wire's messages, in order.
+		wantRoles []string
+		// wantBlocks is each wire message's content-block count.
+		wantBlocks []int
+	}{
+		{
+			name: "user then user",
+			messages: []Message{
+				{Role: RoleUser, Content: "first"},
+				{Role: RoleUser, Content: "second"},
+			},
+			wantRoles:  []string{"user"},
+			wantBlocks: []int{2},
+		},
+		{
+			name: "user, an orphan tool answer, then user",
+			messages: []Message{
+				{Role: RoleUser, Content: "first"},
+				{Role: RoleTool, ToolCallID: "toolu_0", ToolName: "peek", Content: "result"},
+				{Role: RoleUser, Content: "second"},
+			},
+			wantRoles:  []string{"user"},
+			wantBlocks: []int{3},
+		},
+		{
+			name: "an assistant turn still separates them",
+			messages: []Message{
+				{Role: RoleUser, Content: "first"},
+				{Role: RoleAssistant, Content: "reply"},
+				{Role: RoleUser, Content: "second"},
+				{Role: RoleUser, Content: "third"},
+			},
+			wantRoles:  []string{"user", "assistant", "user"},
+			wantBlocks: []int{1, 1, 2},
+		},
+		{
+			name: "an empty turn never splits a run",
+			messages: []Message{
+				{Role: RoleUser, Content: "first"},
+				{Role: RoleAssistant, Content: ""},
+				{Role: RoleUser, Content: "second"},
+			},
+			wantRoles:  []string{"user"},
+			wantBlocks: []int{2},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newAnthropicServer(t, func(w http.ResponseWriter, _ map[string]any) {
+				jsonBody(w, map[string]any{
+					"id": "msg_1", "type": "message", "role": "assistant", "model": "m",
+					"content": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1},
+				})
+			})
+			if _, err := srv.client(t, nil).Complete(context.Background(), Request{
+				Model: "m", Messages: tc.messages,
+			}, nil); err != nil {
+				t.Fatalf("complete: %v", err)
+			}
+			messages, _ := srv.last["messages"].([]any)
+			if len(messages) != len(tc.wantRoles) {
+				t.Fatalf("messages = %s", mustJSON(srv.last["messages"]))
+			}
+			for i, wantRole := range tc.wantRoles {
+				m, _ := messages[i].(map[string]any)
+				blocks, _ := m["content"].([]any)
+				if m["role"] != wantRole || len(blocks) != tc.wantBlocks[i] {
+					t.Fatalf("message %d = %s, want role %q with %d blocks", i, mustJSON(m), wantRole, tc.wantBlocks[i])
+				}
+			}
+		})
+	}
+}
+
+// tool_use.input must be an OBJECT: `null`, `[]` and `5` are all valid JSON
+// that 400s the turn echoing the call back, so anything else travels as `{}`.
+func TestAnthropicToolInputIsAlwaysAnObject(t *testing.T) {
+	for _, tc := range []struct{ arguments, want string }{
+		{"null", "{}"},
+		{"", "{}"},
+		{"[]", "{}"},
+		{"5", "{}"},
+		{`"a string"`, "{}"},
+		{"{not json", "{}"},
+		{`{"id":"x"}`, `{"id":"x"}`},
+	} {
+		t.Run(tc.arguments, func(t *testing.T) {
+			got := mustJSON(toolInput(tc.arguments))
+			if got != tc.want {
+				t.Fatalf("toolInput(%q) = %s, want %s", tc.arguments, got, tc.want)
+			}
+		})
+	}
+}
+
+// The same, on the wire: a null-argument call echoed back carries an object.
+func TestAnthropicSendsNullToolArgumentsAsAnObject(t *testing.T) {
+	srv := newAnthropicServer(t, func(w http.ResponseWriter, _ map[string]any) {
+		jsonBody(w, map[string]any{
+			"id": "msg_1", "type": "message", "role": "assistant", "model": "m",
+			"content": []any{}, "usage": map[string]any{"input_tokens": 1, "output_tokens": 1},
+		})
+	})
+	if _, err := srv.client(t, nil).Complete(context.Background(), Request{
+		Model: "m",
+		Messages: []Message{
+			{Role: RoleUser, Content: "go"},
+			{Role: RoleAssistant, ToolCalls: []ToolCall{{ID: "toolu_0", Name: "peek", Arguments: "null"}}},
+			{Role: RoleTool, ToolCallID: "toolu_0", ToolName: "peek", Content: "done"},
+		},
+	}, nil); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	messages, _ := srv.last["messages"].([]any)
+	if len(messages) != 3 {
+		t.Fatalf("messages = %s", mustJSON(srv.last["messages"]))
+	}
+	assistant, _ := messages[1].(map[string]any)
+	blocks, _ := assistant["content"].([]any)
+	block, _ := blocks[0].(map[string]any)
+	if _, ok := block["input"].(map[string]any); !ok {
+		t.Fatalf("tool_use input is not an object: %s", mustJSON(block))
+	}
+}
+
 func TestAnthropicStreamsDeltasAndAccumulatesToolInput(t *testing.T) {
 	events := []string{
 		`{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[],"usage":{"input_tokens":5,"output_tokens":0}}}`,

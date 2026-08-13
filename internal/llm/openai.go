@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 
@@ -18,7 +19,7 @@ type openaiClient struct {
 	client *openai.Client
 }
 
-func newOpenAI(cfg Config, azure bool) (*openaiClient, error) {
+func newOpenAI(cfg Config, azure bool) *openaiClient {
 	var oc openai.ClientConfig
 	if azure {
 		oc = openai.DefaultAzureConfig(cfg.APIKey, cfg.BaseURL)
@@ -31,7 +32,7 @@ func newOpenAI(cfg Config, azure bool) (*openaiClient, error) {
 	if len(cfg.Headers) > 0 {
 		oc.HTTPClient = &headerDoer{inner: oc.HTTPClient, headers: cfg.Headers}
 	}
-	return &openaiClient{client: openai.NewClientWithConfig(oc)}, nil
+	return &openaiClient{client: openai.NewClientWithConfig(oc)}
 }
 
 // headerDoer injects the provider row's extra headers on every request. The
@@ -50,8 +51,16 @@ func (d *headerDoer) Do(req *http.Request) (*http.Response, error) {
 
 func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(string)) (*Result, error) {
 	oreq := openai.ChatCompletionRequest{Model: req.Model, Messages: openaiMessages(req)}
-	if req.Params.Temperature != nil {
-		oreq.Temperature = *req.Params.Temperature
+	if t := req.Params.Temperature; t != nil {
+		// The SDK tags Temperature `omitempty`, so a true zero never reaches
+		// the wire and the endpoint silently samples at its own default. The
+		// documented workaround: send the smallest representable float
+		// instead, which is indistinguishable from 0 to the sampler and does
+		// survive the marshal.
+		oreq.Temperature = *t
+		if *t == 0 {
+			oreq.Temperature = math.SmallestNonzeroFloat32
+		}
 	}
 	if req.Params.MaxTokens > 0 {
 		oreq.MaxTokens = req.Params.MaxTokens

@@ -20,3 +20,4 @@ dist/
 
 # The dev substrate: the pid and the log of `mise run dev:up`.
 /.dev/
+.mise.local.toml

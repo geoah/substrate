@@ -147,6 +147,21 @@ func (ds *dataset) agentFire(ctx context.Context, tr *trigger, mode, fid string,
 // patch on that agent.
 const providerSeedID = "default"
 
+// providerSeedPricing is USD per 1M tokens for exactly the models the SHIPPED
+// bundle agents ask `default` for. The keys are the model string AS SENT (the
+// gateway alias, since the seeded row has no baseURL of its own), because that
+// is what the loop looks the price up by — a key spelled any other way silently
+// prices the run at zero. It seeds ONCE, with the row: an owner who re-points
+// or re-prices `default` owns the whole map from then on, and an agent asking
+// for a model absent from it still runs, just uncosted.
+func providerSeedPricing() map[string]any {
+	return map[string]any{
+		"anthropic/claude-opus-5":    map[string]any{"inputPer1M": 5.0, "outputPer1M": 25.0},
+		"anthropic/claude-sonnet-5":  map[string]any{"inputPer1M": 3.0, "outputPer1M": 15.0},
+		"anthropic/claude-haiku-4-5": map[string]any{"inputPer1M": 1.0, "outputPer1M": 5.0},
+	}
+}
+
 // seedAgentDefaults writes the `default` llmprovider row at repository open,
 // CREATE-ONLY. A row already at that id is left exactly as the owner had
 // it — live (possibly re-pointed) or tombstoned (deliberately deleted).
@@ -169,7 +184,10 @@ func (ds *dataset) seedAgentDefaults(ctx context.Context) error {
 		}
 		if _, err := t.put(substrate.PutInput{
 			Kind: typeProvider, ID: providerSeedID,
-			Properties: map[string]any{"name": providerSeedID, "wire": string(llm.WireOpenAI)},
+			Properties: map[string]any{
+				"name": providerSeedID, "wire": string(llm.WireOpenAI),
+				"pricing": providerSeedPricing(),
+			},
 		}); err != nil {
 			return fmt.Errorf("substrate/engine: seed llmprovider row %s: %w", providerSeedID, err)
 		}
@@ -255,12 +273,18 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name, t
 }
 
 // agentUserContent renders a call input as the first user message: a string
-// passes through, anything else travels as JSON.
+// passes through, anything else travels as JSON. An EMPTY string is refused
+// exactly like a nil one — a wire that rejects an empty user text block
+// (anthropic 400s on it) would otherwise settle the thread on an error after
+// its rows had already landed.
 func agentUserContent(input any) (string, error) {
 	switch v := input.(type) {
 	case nil:
 		return "", fmt.Errorf("%w: a call needs an input", substrate.ErrValidation)
 	case string:
+		if v == "" {
+			return "", fmt.Errorf("%w: a call needs an input", substrate.ErrValidation)
+		}
 		return v, nil
 	default:
 		buf, err := json.Marshal(v)

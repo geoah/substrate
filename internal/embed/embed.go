@@ -1,14 +1,18 @@
-// Package embed provides the substrate.Embedder the embed queue drains
-// through: the host's OpenAI-wire embeddings endpoint, over
-// github.com/geoah/substrate/internal/embeddings.
+// Package embed is the substrate.Embedder the embed queue drains through: an
+// OpenAI-wire embeddings endpoint — the same wire every gateway that copied it
+// speaks, so the base URL is what selects one.
 package embed
 
 import (
 	"context"
 	"fmt"
+	"maps"
+	"net/http"
+	"slices"
+	"strings"
 	"time"
 
-	"github.com/geoah/substrate/internal/embeddings"
+	openai "github.com/sashabaranov/go-openai"
 )
 
 // Dim is the width of the embeddings column; a model of any other
@@ -18,7 +22,14 @@ const Dim = 1536
 // DefaultModel is cheap, fast and 1536-dim.
 const DefaultModel = "text-embedding-3-small"
 
-// Config configures the embedder.
+// modelDimensions maps base embedding model names to their vector dimensions.
+var modelDimensions = map[string]int{
+	"text-embedding-3-small": 1536,
+	"text-embedding-3-large": 3072,
+	"text-embedding-ada-002": 1536,
+}
+
+// Config configures the embedder. An empty Timeout means 30s.
 type Config struct {
 	BaseURL string
 	APIKey  string
@@ -28,7 +39,9 @@ type Config struct {
 
 // Client implements substrate.Embedder.
 type Client struct {
-	inner embeddings.Embedder
+	client    *openai.Client
+	model     string
+	dimension int
 }
 
 // New builds the embedder. It returns (nil, nil) when no endpoint or API key
@@ -45,18 +58,29 @@ func New(cfg Config) (*Client, error) {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30 * time.Second
 	}
-	inner, err := embeddings.New(cfg.Model, embeddings.Config{
-		APIKey:  cfg.APIKey,
-		BaseURL: cfg.BaseURL,
-		Timeout: cfg.Timeout,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("embed: %w", err)
+	// The model may carry a gateway's routing prefix
+	// ("openai/text-embedding-3-small"), so the dimension lookup reads the
+	// base name after the last slash.
+	baseModel := cfg.Model
+	if idx := strings.LastIndex(cfg.Model, "/"); idx >= 0 {
+		baseModel = cfg.Model[idx+1:]
 	}
-	if got := inner.Dimension(); got != Dim {
-		return nil, fmt.Errorf("embed: model %q has dim %d; the embeddings column is vector(%d)", cfg.Model, got, Dim)
+	dim, ok := modelDimensions[baseModel]
+	if !ok {
+		return nil, fmt.Errorf("embed: unknown embedding model %q (base: %q); known: %s",
+			cfg.Model, baseModel, strings.Join(slices.Sorted(maps.Keys(modelDimensions)), ", "))
 	}
-	return &Client{inner: inner}, nil
+	if dim != Dim {
+		return nil, fmt.Errorf("embed: model %q has dim %d; the embeddings column is vector(%d)", cfg.Model, dim, Dim)
+	}
+	clientCfg := openai.DefaultConfig(cfg.APIKey)
+	clientCfg.BaseURL = cfg.BaseURL
+	clientCfg.HTTPClient = &http.Client{Timeout: cfg.Timeout}
+	return &Client{
+		client:    openai.NewClientWithConfig(clientCfg),
+		model:     cfg.Model,
+		dimension: dim,
+	}, nil
 }
 
 // Embed returns one vector per input text, in order.
@@ -64,8 +88,24 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 	if len(texts) == 0 {
 		return nil, nil
 	}
-	return e.inner.EmbedBatch(ctx, texts)
+	resp, err := e.client.CreateEmbeddings(ctx, openai.EmbeddingRequest{
+		Model: openai.EmbeddingModel(e.model),
+		Input: texts,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("embed: embedding request failed: %w", err)
+	}
+	// The queue pairs each vector with its input BY POSITION, so a short or
+	// long answer is a failure, never something to zip against.
+	if len(resp.Data) != len(texts) {
+		return nil, fmt.Errorf("embed: the embeddings endpoint returned %d embeddings for %d inputs", len(resp.Data), len(texts))
+	}
+	out := make([][]float32, len(resp.Data))
+	for i, d := range resp.Data {
+		out[i] = d.Embedding
+	}
+	return out, nil
 }
 
 // Dimension returns the model's output width.
-func (e *Client) Dimension() int { return e.inner.Dimension() }
+func (e *Client) Dimension() int { return e.dimension }

@@ -172,6 +172,13 @@ describe("provider rows", () => {
       "default endpoint"
     )
   })
+  it("reads an empty azure baseURL as missing, never as a default", () => {
+    // An azure deployment has no host default — the loop refuses such a row.
+    expect(providerEndpoint(provider({ wire: "azure", baseURL: "" }))).toBe(
+      "missing baseURL"
+    )
+    expect(providerEndpoint(provider({ wire: "azure" }))).toBe("missing baseURL")
+  })
   it("shows a declared baseURL verbatim", () => {
     const row = provider({ wire: "openai", baseURL: "https://example.com/v1" })
     expect(providerEndpoint(row)).toBe("https://example.com/v1")

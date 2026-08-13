@@ -222,6 +222,133 @@ name, and the model is the agent's own word now. `default` is an ordinary id
 of the `core.substrate.reamde.dev/llmprovider` kind and reserves nothing: a record of
 another kind wearing the same id is no collision.
 
+**Upgrading across the change.** An agent manifest written before this — one
+that still says `llm: cheap` instead of `provider:` + `model:` — no longer
+loads, and `llm` is a deleted key the loader names when it refuses. Nothing is
+lost: at repository open the authority whose agents still carry it is
+QUARANTINED — left out of the live registry, marked on its authority row, and
+reported on its bundle's status with the reason — while every other authority
+opens normally. Re-apply the corrected manifests, or re-install the bundle, and
+the mark clears on the next projection.
+
+### Registering a provider
+
+A provider is a record, so adding one is a write — `apply -f`, or the console's
+Agents page, which lists the same rows and opens each on its record page. All
+three below are ordinary data documents: `data.properties`, never a
+declaration.
+
+```yaml
+# OpenRouter — the OpenAI wire at its own endpoint. So is LiteLLM, Together,
+# Groq or a local Ollama: same wire, different baseURL.
+kind: core.substrate.reamde.dev/llmprovider
+metadata: {id: openrouter}
+data:
+  properties:
+    name: OpenRouter
+    wire: openai
+    baseURL: https://openrouter.ai/api/v1
+    apiKey: sk-or-…
+    headers:
+      HTTP-Referer: https://substrate.example
+      X-Title: substrate
+---
+# Anthropic, natively. No baseURL: the official endpoint.
+kind: core.substrate.reamde.dev/llmprovider
+metadata: {id: anthropic}
+data:
+  properties:
+    name: Anthropic
+    wire: anthropic
+    apiKey: sk-ant-…
+    pricing:
+      claude-opus-5: {inputPer1M: 5, outputPer1M: 25}
+---
+# Azure OpenAI. The deployment endpoint is the row's, and so is the key.
+kind: core.substrate.reamde.dev/llmprovider
+metadata: {id: azure}
+data:
+  properties:
+    name: Azure OpenAI
+    wire: azure
+    baseURL: https://example-resource.openai.azure.com
+    apiKey: …
+```
+
+Every one of the three carries its own `apiKey`, and must: the host's gateway
+key travels only to the host's gateway, so an `openai` row that names a
+`baseURL` needs its own key, and an `anthropic` or `azure` row always does.
+Nothing checks that at write time — a half-written row applies fine and
+refuses at the first dispatch that resolves it, naming the row and what it
+lacks.
+
+`apiKey` is secret-typed: every read surface hands back `<redacted>`, and
+writing the sentinel back is a round trip, so
+
+```
+substratectl get llmproviders -o yaml
+```
+
+is both a safe way to read the rows and directly `apply -f`-able — an edit of
+the baseURL beside an untouched key is one round trip, and the key never
+leaves the box.
+
+### Testing a provider
+
+Point an agent at the row and run it once. The smallest agent that proves a
+provider works is a throwaway of your own authority:
+
+```yaml
+kind: core.substrate.reamde.dev/authority
+metadata: {id: smoke.example.com}
+data:
+  version: v1alpha1
+---
+kind: core.substrate.reamde.dev/agent
+metadata: {id: smoke.example.com/echo}
+data:
+  authority: smoke.example.com
+  description: Smoke-test one provider.
+  prompt: Reply with exactly OK.
+  provider: anthropic
+  model: claude-haiku-4-5
+  budgets: {maxTurns: 1}
+```
+
+No `tools:` and no `emit:`, so it can write nothing at all. Swap `provider:`
+for the row under test and `model:` for an id that row serves — on the
+`default` gateway row the alias form (`anthropic/claude-haiku-4-5`), on a
+native `anthropic` row the bare id.
+
+There is no agent verb on `substratectl` — `function call` is functions only —
+so a run is the call API or the console's chat:
+
+```
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"input": "ping"}' \
+  http://localhost:8080/api/v1/core.substrate.reamde.dev/agents/smoke.example.com%2Fecho/call
+```
+
+The id carries a `/`, so the path segment spells it `%2F`. The answer carries
+`reply` and the `thread` id, and the thread is the durable half:
+
+```
+substratectl get llmthreads <thread> -o yaml
+```
+
+`status: ok` with a `turns`/`promptTokens`/`completionTokens` tally is a
+working provider, and `costUSD` is non-zero exactly when the row prices the
+model it just used. The two failures read differently, and the difference is
+where they happen:
+
+- **A row that cannot resolve** — no `wire`, a `baseURL` without an `apiKey`,
+  an `azure` row missing either — refuses **before** a thread exists. The call
+  answers `422` naming the row and what it lacks; nothing is minted.
+- **A row that resolves but does not work** — a wrong key, an unreachable
+  endpoint, a model id the endpoint does not serve — settles the thread it
+  already opened at `status: error`, with the transport's own words in
+  `reason`.
+
 ## Calling an agent
 
 `POST /api/v1/core.substrate.reamde.dev/agents/{name}/call` with `{"input": …}` runs the

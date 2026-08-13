@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -170,87 +169,63 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 		}
 	}
 
-	switch pc.wire {
-	case "":
-		return nil, fmt.Errorf("%w: llmprovider row %q declares no wire — one of %s",
-			substrate.ErrValidation, id, llm.WireNames())
-	case llm.WireOpenAI:
-		// The host gateway fallbacks are ONE unit: the host key travels ONLY to
-		// the host URL. A row that selects its own baseURL must carry its own
-		// apiKey — falling back independently would send the host-wide
-		// gateway bearer to an arbitrary repository-chosen endpoint.
-		if pc.cfg.BaseURL == "" {
-			pc.cfg.BaseURL = ds.svc.llmBaseURL
-			if pc.cfg.APIKey == "" {
-				pc.cfg.APIKey = ds.svc.llmAPIKey
-			}
-			if pc.cfg.BaseURL == "" {
-				return nil, fmt.Errorf("%w: llmprovider row %q has no baseURL and the host has no LLM gateway configured",
-					substrate.ErrValidation, id)
-			}
-		} else if pc.cfg.APIKey == "" {
-			return nil, fmt.Errorf("%w: llmprovider row %q declares its own baseURL without an apiKey — the host gateway key never travels to a custom endpoint",
-				substrate.ErrValidation, id)
+	// What each wire needs from a row is internal/llm's own fact (llm.Wire.Policy);
+	// what the engine owns is the host-gateway pairing and the wording.
+	policy, known := pc.wire.Policy()
+	if !known {
+		if pc.wire == "" {
+			return nil, fmt.Errorf("%w: llmprovider row %q declares no wire — one of %s",
+				substrate.ErrValidation, id, llm.WireNames())
 		}
-	case llm.WireAnthropic:
-		// No gateway fallback: the host key belongs to the host's gateway, and
-		// this row talks to Anthropic. An empty baseURL is the official endpoint.
-		if pc.cfg.APIKey == "" {
-			return nil, fmt.Errorf("%w: llmprovider row %q declares no apiKey — the host gateway key never travels to an anthropic endpoint",
-				substrate.ErrValidation, id)
-		}
-	case llm.WireAzure:
-		if pc.cfg.BaseURL == "" || pc.cfg.APIKey == "" {
-			return nil, fmt.Errorf("%w: llmprovider row %q needs both a baseURL and an apiKey — an azure deployment has no host default",
-				substrate.ErrValidation, id)
-		}
-	default:
 		return nil, fmt.Errorf("%w: llmprovider row %q declares wire %q — one of %s",
 			substrate.ErrValidation, id, wire, llm.WireNames())
+	}
+	// The host gateway fallbacks are ONE unit: the host key travels ONLY to
+	// the host URL. A row that selects its own baseURL must carry its own
+	// apiKey — falling back independently would send the host-wide gateway
+	// bearer to an arbitrary repository-chosen endpoint.
+	if policy.HostGatewayFallback && pc.cfg.BaseURL == "" {
+		pc.cfg.BaseURL = ds.svc.llmBaseURL
+		if pc.cfg.APIKey == "" {
+			pc.cfg.APIKey = ds.svc.llmAPIKey
+		}
+		if pc.cfg.BaseURL == "" {
+			return nil, fmt.Errorf("%w: llmprovider row %q has no baseURL and the host has no LLM gateway configured",
+				substrate.ErrValidation, id)
+		}
+	}
+	if policy.RequiresBaseURL && pc.cfg.BaseURL == "" {
+		return nil, fmt.Errorf("%w: llmprovider row %q declares no baseURL — the %s wire has no host default, so the row names its own endpoint",
+			substrate.ErrValidation, id, pc.wire)
+	}
+	if policy.RequiresAPIKey && pc.cfg.APIKey == "" {
+		return nil, fmt.Errorf("%w: llmprovider row %q declares no apiKey — the host gateway key travels to the host's own gateway and nowhere else",
+			substrate.ErrValidation, id)
 	}
 	return pc, nil
 }
 
 // mergeParams folds the provider row's defaults UNDER the agent's own params —
-// the agent wins on every key it names — and parses the result once. Both maps
-// are held to the recognized set (the loader already held the agent's), so a
-// typo in a provider row is a refusal rather than a knob that does nothing.
+// the agent wins on every key it names — and runs the result through the
+// LOADER's own validator, so a provider row is held to exactly the rules an
+// agent manifest is and neither can carry a knob the loop would drop.
 func mergeParams(providerID string, defaults, own map[string]any) (llm.Params, error) {
-	recognized := strings.Join(vocabulary.AgentParamKeys, ", ")
-	merged := map[string]any{}
+	merged := make(map[string]any, len(defaults)+len(own))
 	for k, v := range defaults {
-		if !slices.Contains(vocabulary.AgentParamKeys, k) {
-			return llm.Params{}, fmt.Errorf("%w: llmprovider row %q: defaults.%s is not a request param — one of %s",
-				substrate.ErrValidation, providerID, k, recognized)
-		}
 		merged[k] = v
 	}
 	for k, v := range own {
-		if !slices.Contains(vocabulary.AgentParamKeys, k) {
-			return llm.Params{}, fmt.Errorf("%w: params.%s is not a request param — one of %s",
-				substrate.ErrValidation, k, recognized)
-		}
 		merged[k] = v
 	}
-	var p llm.Params
-	if v, ok := merged[vocabulary.AgentParamTemperature]; ok {
-		f, ok := anyFloat(v)
-		if !ok {
-			return llm.Params{}, fmt.Errorf("%w: params.%s: %v — a number",
-				substrate.ErrValidation, vocabulary.AgentParamTemperature, v)
-		}
-		t := float32(f)
-		p.Temperature = &t
+	p, err := vocabulary.ParseAgentParams(merged)
+	if err != nil {
+		// The agent's own params were validated at LOAD, so whatever the
+		// merged map fails on came from the row's defaults — and the row id is
+		// the only thing in the message that finds it again.
+		return llm.Params{}, fmt.Errorf("%w: llmprovider row %q: defaults.%w",
+			substrate.ErrValidation, providerID, err)
 	}
-	if v, ok := merged[vocabulary.AgentParamMaxTokens]; ok {
-		f, ok := anyFloat(v)
-		if !ok || f != float64(int(f)) || int(f) < 1 {
-			return llm.Params{}, fmt.Errorf("%w: params.%s: %v — a positive whole number",
-				substrate.ErrValidation, vocabulary.AgentParamMaxTokens, v)
-		}
-		p.MaxTokens = int(f)
-	}
-	return p, nil
+	return llm.Params{Temperature: p.Temperature, MaxTokens: p.MaxTokens}, nil
 }
 
 func anyFloat(v any) (float64, bool) {

@@ -82,6 +82,12 @@ the same path in full.
 | `SUBSTRATE_LLM_API_KEY`        | —                               | its bearer; unset ⇒ no embedder and the embed queue idles      |
 | `SUBSTRATE_LLM_EMBED_MODEL`    | `text-embedding-3-small`        | must be 1536-dim                                               |
 
+Those three configure the **host gateway** and nothing else. Anywhere else an
+agent buys completions — OpenRouter, Anthropic natively, an Azure deployment —
+is a record, not configuration:
+[registering a provider](docs/agents.md#registering-a-provider) writes one, and
+[testing a provider](docs/agents.md#testing-a-provider) proves it.
+
 ## Development
 
 Toolchain is [mise](https://mise.jdx.dev). `mise install` once, then:
@@ -136,7 +142,9 @@ mise tasks              # everything else
 ```
 
 Docker is needed for the engine suite, which runs each case against a real
-Postgres in a throwaway container.
+Postgres in a throwaway container. `mise run test:llm` is the one suite that
+talks to real LLM providers; it skips itself without keys, and
+[docs/testing.md](docs/testing.md) says how to give it some.
 
 ## Docs
 

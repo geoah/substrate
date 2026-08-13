@@ -41,6 +41,39 @@ function definitionField(agent: SubstrateRecord, key: string): string {
   return value === undefined ? "" : cellValue(value)
 }
 
+/** The flat columns of both tables are one shape: a string off the record,
+ * truncated, in the muted voice. The cell renders the accessor's value — a cell
+ * that recomputed it could disagree with what the column sorts and filters on. */
+function textColumn(opts: {
+  id: string
+  title: string
+  value: (record: SubstrateRecord) => string
+  meta: ColumnDef<SubstrateRecord, unknown>["meta"]
+  /** The data voice, for a value the substrate itself carries. */
+  data?: boolean
+  /** A title attribute, for a value the column is likely to truncate away. */
+  tooltip?: boolean
+}): ColumnDef<SubstrateRecord, unknown> {
+  return {
+    id: opts.id,
+    accessorFn: opts.value,
+    enableSorting: false,
+    header: ({ column }) => <DataTableColumnHeader column={column} title={opts.title} />,
+    cell: ({ getValue }) => {
+      const text = getValue<string>()
+      return (
+        <span
+          className={cn("block truncate text-muted-foreground", opts.data && "data")}
+          title={opts.tooltip ? text : undefined}
+        >
+          {text || "—"}
+        </span>
+      )
+    },
+    meta: opts.meta,
+  }
+}
+
 function agentColumns(): ColumnDef<SubstrateRecord, unknown>[] {
   return [
     {
@@ -61,33 +94,21 @@ function agentColumns(): ColumnDef<SubstrateRecord, unknown>[] {
       ),
       meta: { label: "agent", size: { min: 200, max: 400, weight: 1.5 } },
     },
-    {
+    textColumn({
       id: "provider",
-      accessorFn: (a) => definitionField(a, "provider"),
-      enableSorting: false,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="provider" />,
-      cell: ({ row }) => (
-        <span className="block truncate data text-muted-foreground">
-          {definitionField(row.original, "provider") || "—"}
-        </span>
-      ),
+      title: "provider",
+      value: (a) => definitionField(a, "provider"),
+      data: true,
       meta: { label: "provider", width: 120 },
-    },
-    {
+    }),
+    textColumn({
       id: "model",
-      accessorFn: (a) => definitionField(a, "model"),
-      enableSorting: false,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="model" />,
-      cell: ({ row }) => (
-        <span
-          className="block truncate data text-muted-foreground"
-          title={definitionField(row.original, "model")}
-        >
-          {definitionField(row.original, "model") || "—"}
-        </span>
-      ),
+      title: "model",
+      value: (a) => definitionField(a, "model"),
+      data: true,
+      tooltip: true,
       meta: { label: "model", size: { min: 140, weight: 1 } },
-    },
+    }),
     {
       id: "chat",
       accessorFn: () => "",
@@ -115,18 +136,6 @@ function agentColumns(): ColumnDef<SubstrateRecord, unknown>[] {
 }
 
 function providerColumns(): ColumnDef<SubstrateRecord, unknown>[] {
-  const text = (key: string, title: string, width?: number): ColumnDef<SubstrateRecord, unknown> => ({
-    id: key,
-    accessorFn: (e) => e.properties[key],
-    enableSorting: false,
-    header: ({ column }) => <DataTableColumnHeader column={column} title={title} />,
-    cell: ({ row }) => (
-      <span className="block truncate data text-muted-foreground" title={cellValue(row.original.properties[key])}>
-        {cellValue(row.original.properties[key]) || "—"}
-      </span>
-    ),
-    meta: width ? { label: title, width } : { label: title, size: { min: 140, weight: 1 } },
-  })
   return [
     {
       id: "row",
@@ -144,40 +153,42 @@ function providerColumns(): ColumnDef<SubstrateRecord, unknown>[] {
       ),
       meta: { label: "row", size: { min: 140, max: 240, weight: 1 } },
     },
-    text("wire", "wire", 110),
+    textColumn({
+      id: "wire",
+      title: "wire",
+      value: (p) => cellValue(p.properties.wire),
+      data: true,
+      tooltip: true,
+      meta: { label: "wire", width: 110 },
+    }),
     {
       id: "endpoint",
-      accessorFn: (e) => providerEndpoint(e),
+      accessorFn: (p) => providerEndpoint(p),
       enableSorting: false,
       header: ({ column }) => <DataTableColumnHeader column={column} title="endpoint" />,
-      cell: ({ row }) => {
-        const endpoint = providerEndpoint(row.original)
-        const own = Boolean(row.original.properties.baseURL)
-        return (
-          <span
-            className={cn("block truncate text-muted-foreground", own && "data")}
-            title={endpoint}
-          >
-            {endpoint}
-          </span>
-        )
-      },
-      meta: { label: "endpoint", size: { min: 160, weight: 1.5 } },
-    },
-    {
-      id: "key",
-      accessorFn: (e) => (providerHasKey(e) ? "set" : "not set"),
-      enableSorting: false,
-      // A secret reads back redacted, so the row can only say whether one is
-      // there — never which.
-      header: ({ column }) => <DataTableColumnHeader column={column} title="key" />,
-      cell: ({ row }) => (
-        <span className="block truncate text-muted-foreground">
-          {providerHasKey(row.original) ? "set" : "not set"}
+      // Only a row that declares its own baseURL speaks in the data voice: the
+      // rest read as prose about where the host sends them.
+      cell: ({ row, getValue }) => (
+        <span
+          className={cn(
+            "block truncate text-muted-foreground",
+            Boolean(row.original.properties.baseURL) && "data"
+          )}
+          title={getValue<string>()}
+        >
+          {getValue<string>()}
         </span>
       ),
-      meta: { label: "key", width: 90 },
+      meta: { label: "endpoint", size: { min: 160, weight: 1.5 } },
     },
+    // A secret reads back redacted, so the row can only say whether one is
+    // there — never which.
+    textColumn({
+      id: "key",
+      title: "key",
+      value: (p) => (providerHasKey(p) ? "set" : "not set"),
+      meta: { label: "key", width: 90 },
+    }),
   ]
 }
 
@@ -293,6 +304,18 @@ export function AgentsPage() {
             table={pTable}
             density="compact"
             loading={providers.isPending}
+            // A provider row is an ordinary record: editing its endpoint or
+            // re-keying it happens on the record page, not here.
+            onRowClick={(row) =>
+              void navigate({
+                to: "/data/$authority/$plural/$id",
+                params: {
+                  authority: "core.substrate.reamde.dev",
+                  plural: "llmproviders",
+                  id: row.id,
+                },
+              })
+            }
             empty={
               <Empty className="py-10">
                 <EmptyHeader>

@@ -15,7 +15,7 @@ import (
 
 // A row of ANOTHER kind at the seed id is no collision: seeding mints the
 // llmprovider row beside it, and each row answers to its own (kind, id).
-func TestFinalSeedCoexistsWithOtherTypeAtSeedID(t *testing.T) {
+func TestFinalSeedCoexistsWithOtherKindAtSeedID(t *testing.T) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	// Simulate the pre-re-key repository the old reservation guarded against: the
@@ -49,7 +49,7 @@ func TestFinalSeedCoexistsWithOtherTypeAtSeedID(t *testing.T) {
 
 // A same-kind row is preserved: an owner's re-pointing stands and a deliberate
 // tombstone is not resurrected — re-seeding is a no-op on both.
-func TestFinalSeedSameTypePreserved(t *testing.T) {
+func TestFinalSeedSameKindPreserved(t *testing.T) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	// Owner re-points `default` at their own gateway.

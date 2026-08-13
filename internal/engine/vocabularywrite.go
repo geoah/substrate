@@ -961,10 +961,21 @@ const (
 	quarantineReasonMax = 2000
 )
 
-// quarantinedAuthority pairs a stored authority that failed admission with the reason.
+// quarantinedAuthority pairs a stored authority that could not join the live
+// registry with the reason. It carries the NAME, not a built authority: a
+// closure that fails to PARSE never produces one, and the name is all the
+// marker needs.
 type quarantinedAuthority struct {
-	authority *vocabulary.Authority
-	reason    string
+	name   string
+	reason string
+}
+
+// cappedQuarantineReason holds the stored reason to quarantineReasonMax.
+func cappedQuarantineReason(reason string) string {
+	if len(reason) > quarantineReasonMax {
+		return reason[:quarantineReasonMax]
+	}
+	return reason
 }
 
 // loadStoredVocabulary rebuilds THE WHOLE VOCABULARY from the repository's own
@@ -981,34 +992,39 @@ type quarantinedAuthority struct {
 // admissible subset opens and every closure that still fails is QUARANTINED —
 // logged, marked on its authority row (a state the console/status shows),
 // and left out of the live registry — so the repository opens with the rest. A
-// re-install of the offending bundle clears the mark.
+// re-install of the offending bundle clears the mark. The same holds one step
+// earlier, for a closure that no longer PARSES (storedAuthorities): both
+// failures arrive here as quarantine candidates and are marked identically.
 func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
-	built, err := ds.storedAuthorities(ctx, nil)
+	built, unparsed, err := ds.storedAuthorities(ctx, nil)
 	if err != nil {
 		return err
 	}
 	if len(built) == 0 {
 		// A repository is SEEDED at creation, so no vocabulary at all means
 		// the store was made some other way — say so loudly rather than serve
-		// a repository in which nothing resolves.
+		// a repository in which nothing resolves. Core's own parse failure is
+		// a hard error upstream, so this is never a quarantine cascade.
 		return fmt.Errorf("substrate/engine: repository %s holds no vocabulary — it was never seeded", ds.info.Name)
 	}
 	// Fast path: the whole stored set admits together. A binary that RELAXED
 	// a contract also clears any stale quarantine markers here.
-	if err := ds.reg.InstallAll(built); err == nil {
-		return ds.clearGroupQuarantine(ctx, built)
+	good, quarantined := built, unparsed
+	if err := ds.reg.InstallAll(built); err != nil {
+		// Slow path: install the admissible subset and quarantine the rest. The
+		// failed InstallAll removed everything it added, so ds.reg is clean
+		// again.
+		var inadmissible []quarantinedAuthority
+		good, inadmissible = ds.admissibleSubset(built)
+		quarantined = append(quarantined, inadmissible...)
 	}
-	// Slow path: install the admissible subset and quarantine the rest. The
-	// failed fast-path InstallAll removed everything it added, so ds.reg is
-	// clean again.
-	good, quarantined := ds.admissibleSubset(built)
 	if err := ds.clearGroupQuarantine(ctx, good); err != nil {
 		return err
 	}
 	for _, q := range quarantined {
-		ds.svc.log.Error("substrate: quarantining a stored closure that no longer admits under this binary — the repository opens WITHOUT it; re-install the bundle to clear",
-			"repository", ds.info.Name, "authority", q.authority.Name, "reason", q.reason)
-		if err := ds.markGroupQuarantined(ctx, q.authority, q.reason); err != nil {
+		ds.svc.log.Error("substrate: quarantining a stored closure that no longer loads under this binary — the repository opens WITHOUT it; re-install the bundle to clear",
+			"repository", ds.info.Name, "authority", q.name, "reason", q.reason)
+		if err := ds.markGroupQuarantined(ctx, q.name, q.reason); err != nil {
 			return err
 		}
 	}
@@ -1047,10 +1063,7 @@ func (ds *dataset) admissibleSubset(built []*vocabulary.Authority) (good []*voca
 		if err := ds.reg.Install(g); err != nil {
 			reason = err.Error()
 		}
-		if len(reason) > quarantineReasonMax {
-			reason = reason[:quarantineReasonMax]
-		}
-		quarantined = append(quarantined, quarantinedAuthority{authority: g, reason: reason})
+		quarantined = append(quarantined, quarantinedAuthority{name: g.Name, reason: cappedQuarantineReason(reason)})
 	}
 	return good, quarantined
 }
@@ -1058,8 +1071,8 @@ func (ds *dataset) admissibleSubset(built []*vocabulary.Authority) (good []*voca
 // markGroupQuarantined records the quarantine state on the authority's authority
 // row, so BundleStatuses can surface it and a later re-install (which
 // re-projects the row, clearing these props) lifts it.
-func (ds *dataset) markGroupQuarantined(ctx context.Context, g *vocabulary.Authority, reason string) error {
-	_, err := ds.patchInternal(ctx, substrate.ActorSystem, kindAuthority, g.Name, substrate.PatchInput{
+func (ds *dataset) markGroupQuarantined(ctx context.Context, authority, reason string) error {
+	_, err := ds.patchInternal(ctx, substrate.ActorSystem, kindAuthority, authority, substrate.PatchInput{
 		Properties: map[string]any{
 			propAuthorityQuarantined:      true,
 			propAuthorityQuarantineReason: reason,
@@ -1102,14 +1115,15 @@ func (ds *dataset) clearGroupQuarantine(ctx context.Context, authorities []*voca
 // creation seed (or a shipped upgrade) wrote, `installed` for everything a
 // user or a bundle declared — so authority reads the same answer at open
 // as it did at the write. It parses and returns the authorities without installing
-// them anywhere.
-func (ds *dataset) storedAuthorities(ctx context.Context, skip func(string) bool) ([]*vocabulary.Authority, error) {
+// them anywhere, alongside the ones that no longer parse under this binary —
+// quarantine candidates for the caller to mark.
+func (ds *dataset) storedAuthorities(ctx context.Context, skip func(string) bool) ([]*vocabulary.Authority, []quarantinedAuthority, error) {
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT id, COALESCE(props->>'source', $2) FROM records
 		WHERE kind = $1 AND deleted_at IS NULL
 		ORDER BY created_at, id`, kindAuthority, vocabulary.SourceInstalled)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	bySource := map[string]map[string]bool{}
 	authorities := map[string]bool{}
@@ -1117,7 +1131,7 @@ func (ds *dataset) storedAuthorities(ctx context.Context, skip func(string) bool
 		var name, source string
 		if err := rows.Scan(&name, &source); err != nil {
 			_ = rows.Close()
-			return nil, err
+			return nil, nil, err
 		}
 		if skip != nil && skip(name) {
 			continue
@@ -1133,19 +1147,20 @@ func (ds *dataset) storedAuthorities(ctx context.Context, skip func(string) bool
 	}
 	if err := rows.Err(); err != nil {
 		_ = rows.Close()
-		return nil, err
+		return nil, nil, err
 	}
 	_ = rows.Close()
 	if len(authorities) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	docs, err := ds.vocabularyDocumentRows(ctx, authorities)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// One BuildAuthorities pass per source: an authority is built with the origin its
 	// own row claims, and the rebuilt types carry it (`Type.Source`).
 	var built []*vocabulary.Authority
+	var unparsed []quarantinedAuthority
 	for _, source := range []string{vocabulary.SourceBuiltin, vocabulary.SourceInstalled} {
 		names := bySource[source]
 		if len(names) == 0 {
@@ -1158,12 +1173,55 @@ func (ds *dataset) storedAuthorities(ctx context.Context, skip func(string) bool
 			}
 		}
 		gs, err := vocabulary.BuildAuthorities(all, source)
-		if err != nil {
-			return nil, fmt.Errorf("substrate/engine: rebuild stored schema: %w", err)
+		if err == nil {
+			built = append(built, gs...)
+			continue
 		}
-		built = append(built, gs...)
+		// BuildAuthorities reports every problem in the whole stream at once,
+		// so one authority whose manifests no longer parse under this binary
+		// (an agent still naming the deleted `llm` key, say) would take down
+		// every authority that shares its source — and with it the repository's
+		// open. Issue 010's quarantine, one step earlier: rebuild per
+		// authority, keep the ones that still parse.
+		good, bad, cerr := buildAuthoritiesSeparately(all, source)
+		if cerr != nil {
+			return nil, nil, fmt.Errorf("substrate/engine: rebuild stored schema: %w", cerr)
+		}
+		built = append(built, good...)
+		unparsed = append(unparsed, bad...)
 	}
-	return built, nil
+	return built, unparsed, nil
+}
+
+// buildAuthoritiesSeparately rebuilds a source's documents ONE AUTHORITY AT A
+// TIME — every authority is bucketed and built independently anyway, so this
+// changes nothing but the blast radius of a failure. Core is the exception it
+// returns an error for: a repository whose own meta-kinds do not parse
+// resolves nothing, so quarantining core would be a lie dressed as a recovery.
+func buildAuthoritiesSeparately(docs []vocabulary.Document, source string) ([]*vocabulary.Authority, []quarantinedAuthority, error) {
+	byAuthority := map[string][]vocabulary.Document{}
+	var order []string
+	for _, d := range docs {
+		name := d.DeclaredAuthority()
+		if _, seen := byAuthority[name]; !seen {
+			order = append(order, name)
+		}
+		byAuthority[name] = append(byAuthority[name], d)
+	}
+	var built []*vocabulary.Authority
+	var unparsed []quarantinedAuthority
+	for _, name := range order {
+		gs, err := vocabulary.BuildAuthorities(byAuthority[name], source)
+		if err == nil {
+			built = append(built, gs...)
+			continue
+		}
+		if name == vocabulary.AuthorityCore {
+			return nil, nil, err
+		}
+		unparsed = append(unparsed, quarantinedAuthority{name: name, reason: cappedQuarantineReason(err.Error())})
+	}
+	return built, unparsed, nil
 }
 
 // --- the generic verbs, routed through admission --------------------------------

@@ -44,6 +44,47 @@ func jsonBody(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// An explicit temperature of 0 must REACH the wire. The SDK tags the field
+// `omitempty`, so a true zero marshals away and the endpoint samples at its
+// own default instead — the agent's declared determinism silently lost.
+func TestOpenAISendsAnExplicitZeroTemperature(t *testing.T) {
+	srv := newOpenAIServer(t, func(w http.ResponseWriter, _ map[string]any) {
+		jsonBody(w, map[string]any{
+			"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "ok"}}},
+			"usage":   map[string]any{"prompt_tokens": 1, "completion_tokens": 1},
+		})
+	})
+	client, err := New(WireOpenAI, Config{BaseURL: srv.srv.URL, APIKey: "k"})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	zero := float32(0)
+	if _, err := client.Complete(context.Background(), Request{
+		Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+		Params: Params{Temperature: &zero},
+	}, nil); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	sent, ok := srv.last["temperature"].(float64)
+	if !ok {
+		t.Fatalf("temperature never reached the wire: %v", srv.last)
+	}
+	// Indistinguishable from 0 to the sampler; the point is only that the key
+	// travels at all.
+	if sent > 1e-30 {
+		t.Fatalf("temperature = %v, want an effective zero", sent)
+	}
+	// A nil Temperature still sends nothing: "do not send one" is not zero.
+	if _, err := client.Complete(context.Background(), Request{
+		Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+	}, nil); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if _, sent := srv.last["temperature"]; sent {
+		t.Fatalf("temperature was sent unasked: %v", srv.last["temperature"])
+	}
+}
+
 func TestOpenAIOneShotCarriesSystemToolsAndUsage(t *testing.T) {
 	srv := newOpenAIServer(t, func(w http.ResponseWriter, _ map[string]any) {
 		jsonBody(w, map[string]any{

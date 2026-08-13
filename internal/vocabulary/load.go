@@ -538,6 +538,7 @@ var deletedDataKeys = map[string]string{
 	"identifying":        "identity is the id and nothing else",
 	"id":                 "a writer supplies metadata.id; there are no id strategies",
 	"merge":              "merge is manual and owner-driven",
+	"llm":                "provider + model — an llmprovider record id and the model string sent on every completion",
 	"binding":            "an ordinary edge plus a recordmapping document (record 50)",
 	"projects":           "an ordinary edge plus a recordmapping document (record 50)",
 	"actor":              "transitions carry no guard — anyone may perform any of them",

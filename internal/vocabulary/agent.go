@@ -293,33 +293,58 @@ func (l *loader) parseAgent(d Document) *Agent {
 	return a
 }
 
+// AgentParams are the parsed request knobs. Temperature is a pointer because
+// current models differ on whether a sampling param is even accepted: nil
+// means "do not send one", which is not the same as sending zero.
+type AgentParams struct {
+	Temperature *float32
+	MaxTokens   int
+}
+
+// ParseAgentParams validates a request-param map and parses it. The set is
+// closed on purpose: a param the loop cannot pass to every dialect is a knob
+// that silently does nothing, so an unrecognized key is a refusal. ONE
+// validator serves both callers — the loader holding an agent manifest and the
+// dispatcher holding a provider row's defaults merged under it — so a provider
+// row can never accept a value a manifest could not. The error leads with the
+// offending KEY, and each caller prefixes its own position.
+func ParseAgentParams(params map[string]any) (AgentParams, error) {
+	var out AgentParams
+	for _, k := range sortedKeys(params) {
+		switch k {
+		case AgentParamTemperature:
+			f, ok := mfloat(params, k)
+			if !ok {
+				return AgentParams{}, fmt.Errorf("%s: %v — a number", k, params[k])
+			}
+			t := float32(f)
+			out.Temperature = &t
+		case AgentParamMaxTokens:
+			f, ok := mfloat(params, k)
+			if !ok || f != float64(int(f)) || int(f) < 1 {
+				return AgentParams{}, fmt.Errorf("%s: %v — a positive whole number", k, params[k])
+			}
+			out.MaxTokens = int(f)
+		default:
+			return AgentParams{}, fmt.Errorf("%s is not a request param — one of %s",
+				k, strings.Join(AgentParamKeys, ", "))
+		}
+	}
+	return out, nil
+}
+
 // parseAgentParams reads `params:` — the agent's own request knobs, which the
-// provider row's defaults sit under at dispatch. Both the keys and the value
-// types are checked here: a knob the loop would silently drop is worse than a
-// refusal at load.
+// provider row's defaults sit under at dispatch. The manifest keeps the RAW
+// map (the dispatcher merges maps, not parsed structs); validating it here is
+// what makes a knob the loop would silently drop a refusal at load instead.
 func (l *loader) parseAgentParams(where string, data map[string]any, a *Agent) bool {
 	params := mmap(data, "params")
 	if len(params) == 0 {
 		return true
 	}
-	for _, k := range sortedKeys(params) {
-		switch k {
-		case AgentParamTemperature:
-			if _, ok := mfloat(params, k); !ok {
-				l.errf("%s: data.params.%s: %v — a number", where, k, params[k])
-				return false
-			}
-		case AgentParamMaxTokens:
-			f, ok := mfloat(params, k)
-			if !ok || f != float64(int(f)) || int(f) < 1 {
-				l.errf("%s: data.params.%s: %v — a positive whole number", where, k, params[k])
-				return false
-			}
-		default:
-			l.errf("%s: data.params.%s is not a request param — one of %s",
-				where, k, strings.Join(AgentParamKeys, ", "))
-			return false
-		}
+	if _, err := ParseAgentParams(params); err != nil {
+		l.errf("%s: data.params.%s", where, err)
+		return false
 	}
 	a.Params = params
 	return true

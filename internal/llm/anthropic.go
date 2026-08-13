@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -10,19 +11,23 @@ import (
 
 // The Anthropic-wire adapter. Three shapes differ from the OpenAI wire and
 // they are the whole of this file: the system prompt is a top-level param and
-// never a message; a tool result is a content block inside a USER turn, so
-// consecutive tool answers must be grouped into ONE turn (the API alternates
-// roles); and max_tokens is required on every request.
+// never a message; the API alternates roles, so consecutive same-side turns —
+// tool answers, which are user-side content blocks here, and repeated user
+// turns alike — fold into ONE turn carrying several blocks; and max_tokens is
+// required on every request.
 
 // anthropicDefaultMaxTokens is what a request carries when the agent names no
-// maxTokens: the wire REQUIRES the field, so there is no "unset" to send.
+// maxTokens: the wire REQUIRES the field, so there is no "unset" to send. 8192
+// is inside every current model's output cap; an older model with a lower one
+// needs params.maxTokens on the agent, since the wire rejects a ceiling above
+// what the model allows.
 const anthropicDefaultMaxTokens = 8192
 
 type anthropicClient struct {
 	client anthropic.Client
 }
 
-func newAnthropic(cfg Config) (*anthropicClient, error) {
+func newAnthropic(cfg Config) *anthropicClient {
 	opts := []option.RequestOption{option.WithAPIKey(cfg.APIKey)}
 	if cfg.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(cfg.BaseURL))
@@ -30,7 +35,7 @@ func newAnthropic(cfg Config) (*anthropicClient, error) {
 	for k, v := range cfg.Headers {
 		opts = append(opts, option.WithHeader(k, v))
 	}
-	return &anthropicClient{client: anthropic.NewClient(opts...)}, nil
+	return &anthropicClient{client: anthropic.NewClient(opts...)}
 }
 
 func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta func(string)) (*Result, error) {
@@ -66,6 +71,9 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta fun
 		return anthropicResult(msg), nil
 	}
 	stream := c.client.Messages.NewStreaming(ctx, params)
+	// Only Close releases the response body; Next never does, so a streamed
+	// turn leaks it without this.
+	defer func() { _ = stream.Close() }()
 	var msg anthropic.Message
 	for stream.Next() {
 		event := stream.Current()
@@ -99,7 +107,8 @@ func anthropicSchema(params any) anthropic.ToolInputSchemaParam {
 		case "properties":
 			out.Properties = v
 		case "required":
-			for _, rv := range anySlice(v) {
+			req, _ := v.([]any)
+			for _, rv := range req {
 				if s, ok := rv.(string); ok {
 					out.Required = append(out.Required, s)
 				}
@@ -114,66 +123,84 @@ func anthropicSchema(params any) anthropic.ToolInputSchemaParam {
 	return out
 }
 
-func anySlice(v any) []any {
-	switch s := v.(type) {
-	case []any:
-		return s
-	case []string:
-		out := make([]any, 0, len(s))
-		for _, e := range s {
-			out = append(out, e)
-		}
-		return out
-	default:
-		return nil
-	}
-}
-
-// anthropicMessages maps the neutral turns onto the wire's alternating roles.
-// A run of tool answers becomes ONE user turn carrying every tool_result
-// block, because the API refuses two user turns in a row.
+// anthropicMessages maps the neutral turns onto the wire's ALTERNATING roles:
+// consecutive same-side turns fold into one message carrying several content
+// blocks. A run of tool answers is the obvious case, but not the only one — a
+// continued thread's replayed history legally holds two user turns in a row
+// (loadHistory drops assistant turns that carried tool calls, and a thread
+// that settled on an error stored no assistant reply at all), and openThread
+// then appends the new user message after it. Without the fold such a
+// continuation 400s on every attempt, forever.
 func anthropicMessages(messages []Message) []anthropic.MessageParam {
 	var out []anthropic.MessageParam
-	var pending []anthropic.ContentBlockParamUnion // tool results awaiting their user turn
+	var side string // the side the pending blocks belong to; "" while none
+	var pending []anthropic.ContentBlockParamUnion
 	flush := func() {
-		if len(pending) > 0 {
-			out = append(out, anthropic.NewUserMessage(pending...))
-			pending = nil
+		if len(pending) == 0 {
+			return
 		}
+		if side == RoleAssistant {
+			out = append(out, anthropic.NewAssistantMessage(pending...))
+		} else {
+			out = append(out, anthropic.NewUserMessage(pending...))
+		}
+		pending = nil
 	}
 	for _, m := range messages {
-		switch m.Role {
-		case RoleTool:
-			pending = append(pending, anthropic.NewToolResultBlock(m.ToolCallID, m.Content, false))
-		case RoleAssistant:
-			flush()
-			var blocks []anthropic.ContentBlockParamUnion
-			if m.Content != "" {
-				blocks = append(blocks, anthropic.NewTextBlock(m.Content))
-			}
-			for _, tc := range m.ToolCalls {
-				blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, toolInput(tc.Arguments), tc.Name))
-			}
-			if len(blocks) > 0 {
-				out = append(out, anthropic.NewAssistantMessage(blocks...))
-			}
-		default:
-			flush()
-			out = append(out, anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
+		mside, blocks := anthropicBlocks(m)
+		// A turn that renders no blocks is skipped entirely rather than
+		// flushed: an empty message would otherwise split a run and put two
+		// same-side messages back on the wire.
+		if len(blocks) == 0 {
+			continue
 		}
+		if mside != side {
+			flush()
+			side = mside
+		}
+		pending = append(pending, blocks...)
 	}
 	flush()
 	return out
 }
 
-// toolInput carries the call's arguments through as the JSON the model wrote;
-// the wire wants an object, so an empty or unparseable string travels as one.
+// anthropicBlocks renders one neutral turn as wire content blocks, and the
+// SIDE they belong to: a tool answer is a user-side block on this wire, never
+// a turn of its own.
+func anthropicBlocks(m Message) (string, []anthropic.ContentBlockParamUnion) {
+	switch m.Role {
+	case RoleTool:
+		return RoleUser, []anthropic.ContentBlockParamUnion{
+			anthropic.NewToolResultBlock(m.ToolCallID, m.Content, false),
+		}
+	case RoleAssistant:
+		var blocks []anthropic.ContentBlockParamUnion
+		if m.Content != "" {
+			blocks = append(blocks, anthropic.NewTextBlock(m.Content))
+		}
+		for _, tc := range m.ToolCalls {
+			blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, toolInput(tc.Arguments), tc.Name))
+		}
+		return RoleAssistant, blocks
+	default:
+		if m.Content == "" {
+			return RoleUser, nil
+		}
+		return RoleUser, []anthropic.ContentBlockParamUnion{anthropic.NewTextBlock(m.Content)}
+	}
+}
+
+// toolInput carries the call's arguments through as the JSON the model wrote.
+// The Messages API requires tool_use.input to be an OBJECT, and validity is
+// not enough: `null`, `[]` and `5` all parse, and all 400 the request that
+// echoes the call back on the next turn. Anything that is not an object — an
+// empty or unparseable string included — travels as one.
 func toolInput(arguments string) any {
-	raw := json.RawMessage(arguments)
-	if !json.Valid(raw) {
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(arguments), &obj); err != nil || obj == nil {
 		return json.RawMessage(`{}`)
 	}
-	return raw
+	return json.RawMessage(arguments)
 }
 
 func anthropicResult(msg *anthropic.Message) *Result {
@@ -181,15 +208,17 @@ func anthropicResult(msg *anthropic.Message) *Result {
 		PromptTokens:     int(msg.Usage.InputTokens),
 		CompletionTokens: int(msg.Usage.OutputTokens),
 	}}
+	var content strings.Builder
 	for _, block := range msg.Content {
 		switch block.Type {
 		case "text":
-			res.Content += block.Text
+			content.WriteString(block.Text)
 		case "tool_use":
 			res.ToolCalls = append(res.ToolCalls, ToolCall{
 				ID: block.ID, Name: block.Name, Arguments: string(block.Input),
 			})
 		}
 	}
+	res.Content = content.String()
 	return res
 }

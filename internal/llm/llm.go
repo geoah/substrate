@@ -25,14 +25,52 @@ const (
 	WireAzure     Wire = "azure"
 )
 
-// Wires is the valid set, in the order an error names them.
-var Wires = []Wire{WireOpenAI, WireAnthropic, WireAzure}
+// WirePolicy states what a wire needs from a provider row before an adapter
+// can be built. The facts live here, beside the adapters that make them true,
+// so adding a wire declares its own rules instead of widening a caller's
+// switch. The caller owns the host-gateway pairing and the error wording.
+type WirePolicy struct {
+	// HostGatewayFallback: on this wire an empty baseURL MEANS the host's
+	// configured gateway. The URL and the key fall back as ONE unit — a row
+	// naming its own baseURL never inherits the host's key, or a host-wide
+	// gateway bearer would travel to a repository-chosen endpoint.
+	HostGatewayFallback bool
+	// RequiresBaseURL: the wire has neither an endpoint of its own nor a
+	// fallback, so the row must name one — an azure deployment IS its URL.
+	RequiresBaseURL bool
+	// RequiresAPIKey: the row must end up holding a key, its own or (only
+	// under HostGatewayFallback) the host's.
+	RequiresAPIKey bool
+}
+
+// wirePolicies is the valid wire set and what each one needs, in the order an
+// error names them. One table: New's switch maps a wire to code, this maps it
+// to its facts, and nothing else enumerates wires.
+var wirePolicies = []struct {
+	wire   Wire
+	policy WirePolicy
+}{
+	{WireOpenAI, WirePolicy{HostGatewayFallback: true, RequiresAPIKey: true}},
+	{WireAnthropic, WirePolicy{RequiresAPIKey: true}},
+	{WireAzure, WirePolicy{RequiresBaseURL: true, RequiresAPIKey: true}},
+}
+
+// Policy reports what a wire needs from a provider row. The second result is
+// false for exactly the wires New refuses.
+func (w Wire) Policy() (WirePolicy, bool) {
+	for _, e := range wirePolicies {
+		if e.wire == w {
+			return e.policy, true
+		}
+	}
+	return WirePolicy{}, false
+}
 
 // WireNames renders the valid set for an error message.
 func WireNames() string {
-	out := make([]string, 0, len(Wires))
-	for _, w := range Wires {
-		out = append(out, string(w))
+	out := make([]string, 0, len(wirePolicies))
+	for _, e := range wirePolicies {
+		out = append(out, string(e.wire))
 	}
 	return strings.Join(out, ", ")
 }
@@ -118,15 +156,16 @@ type Client interface {
 	Complete(ctx context.Context, req Request, onDelta func(string)) (*Result, error)
 }
 
-// New builds the adapter for a wire.
+// New builds the adapter for a wire. An unknown wire is the only way this
+// fails: every adapter's constructor is total, so the error lives here alone.
 func New(w Wire, cfg Config) (Client, error) {
 	switch w {
 	case WireOpenAI:
-		return newOpenAI(cfg, false)
+		return newOpenAI(cfg, false), nil
 	case WireAzure:
-		return newOpenAI(cfg, true)
+		return newOpenAI(cfg, true), nil
 	case WireAnthropic:
-		return newAnthropic(cfg)
+		return newAnthropic(cfg), nil
 	default:
 		return nil, fmt.Errorf("llm: unknown wire %q — one of %s", w, WireNames())
 	}

@@ -90,7 +90,8 @@ data:
   prompt: |
     Search with websearch, read the promising hits with scrapepage, and
     answer with the document ids you drew on.
-  llm: strong
+  provider: default
+  model: anthropic/claude-opus-5
   tools:
     - firecrawl.bundles.substrate.reamde.dev/websearch
     - firecrawl.bundles.substrate.reamde.dev/scrapepage

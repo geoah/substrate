@@ -39,11 +39,20 @@ export function providersQueryOptions() {
 
 /** Where a provider row sends its completions. `wire` is the protocol, not the
  * vendor, so an empty `baseURL` means that wire's own default endpoint — for
- * `openai` that is the host's configured gateway. */
+ * `openai` that is the host's configured gateway. `azure` has no such default:
+ * a deployment IS its host, so the loop refuses a row without a baseURL and the
+ * console must not read that row as if it would work. */
 export function providerEndpoint(record: SubstrateRecord): string {
   const base = record.properties.baseURL
   if (typeof base === "string" && base) return base
-  return record.properties.wire === "openai" ? "host gateway" : "default endpoint"
+  switch (record.properties.wire) {
+    case "openai":
+      return "host gateway"
+    case "azure":
+      return "missing baseURL"
+    default:
+      return "default endpoint"
+  }
 }
 
 /** Whether a provider row carries its own key. A secret-typed property reads

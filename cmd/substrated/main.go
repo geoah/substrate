@@ -10,9 +10,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
@@ -48,6 +50,7 @@ func run() error {
 		return err
 	}
 	setupLogger(cfg.LogLevel)
+	warnLegacyEnv()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -314,4 +317,27 @@ func setupLogger(level string) {
 		lvl = slog.LevelError
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl})))
+}
+
+// legacyEnv names the variables the LiteLLM-era configuration used and what
+// took each one's job. Nothing reads them any more, so a deployment still
+// setting one is silently running on defaults — say so once, at boot.
+var legacyEnv = map[string]string{
+	"LITELLM_BASE_URL":    "SUBSTRATE_LLM_BASE_URL",
+	"LITELLM_API_KEY":     "SUBSTRATE_LLM_API_KEY",
+	"LITELLM_EMBED_MODEL": "SUBSTRATE_LLM_EMBED_MODEL",
+	"LITELLM_MASTER_KEY":  "nothing — the gateway's master key has no replacement",
+}
+
+func warnLegacyEnv() {
+	var stale []string
+	for _, name := range slices.Sorted(maps.Keys(legacyEnv)) {
+		if _, set := os.LookupEnv(name); set {
+			stale = append(stale, name+" → "+legacyEnv[name])
+		}
+	}
+	if len(stale) > 0 {
+		slog.Warn("ignoring legacy LITELLM_* environment: nothing reads these any more",
+			"renamed", strings.Join(stale, ", "))
+	}
 }
