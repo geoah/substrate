@@ -74,7 +74,7 @@ the same path in full.
 | `LOG_LEVEL`                    | `info`                          | debug/info/warn/error                                          |
 | `WEB_DIR`                      | —                               | the built console, served at `/`; empty disables it            |
 | `SUBSTRATE_INVITE_CODE`        | — (unset ⇒ registration closed) | the one door: `POST /register` needs it                        |
-| `SUBSTRATE_CREDENTIAL_KEY`     | —                               | seals stored provider tokens; unset ⇒ plaintext and a warning  |
+| `SUBSTRATE_CREDENTIAL_KEY`     | —                               | seals the sealed store (provider tokens, every secret property's material); unset ⇒ plaintext and a warning |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                               | the one redirect URI providers register                        |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                               | signs OAuth flow state                                         |
 | `SUBSTRATE_CONSOLE_URL`        | —                               | postMessage origin for the OAuth return page                   |

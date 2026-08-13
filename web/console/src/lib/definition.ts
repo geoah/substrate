@@ -127,7 +127,7 @@ export function stateProperties(k: KindInfo): DeclaredProperty[] {
 
 /** Datatypes that never earn a table column or a filter control: opaque blobs
  * and values the server refuses to compare. */
-const OPAQUE_KINDS = new Set(["json", "secret", "object"])
+const OPAQUE_KINDS = new Set(["json", "secret", "digest", "object"])
 
 /** Datatypes whose values are paragraphs, not cells. They stay filterable
  * (contains/eq work server-side) but make bad columns. */

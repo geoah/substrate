@@ -62,6 +62,16 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 | **trigger** | One delivery binding: exactly one source (`record`, `schedule` or `webhook`) to one callable. |
 | **run** | One settled delivery attempt of a trigger. |
 
+## Sensitive values
+
+| Term | What it is |
+| ---- | ---------- |
+| **sensitive** | The umbrella over `secret` and `digest`: redacted on every read surface, excluded from search, filtering, ordering, titles and change payloads. |
+| **secret** | Confidential material as a property. The record and the changelog store only an opaque ref; the material lives encrypted in the sealed store, resolved only by the host reads that spend it. Rotation deletes the old material. |
+| **digest** | A one-way SHA-256 the server minted to compare, never to reveal (a token's `hash`). Redacted like a secret but stored as the value itself: auth matches it in SQL. |
+| **sealed store** | The engine table holding secret material (property secrets, OAuth tokens, the password hash, the TOTP seed) encrypted under the credential key, addressed by refs. |
+| **reseal** | The operator migration that moves legacy secret values into the sealed store and re-points records and changelog at the refs. The one sanctioned, values-only rewrite of history. |
+
 ## The wire
 
 | Term | What it is |

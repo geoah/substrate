@@ -342,11 +342,12 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 		case DatatypeObject:
 			errf("%s: %s is an object — a map path ends at a field, never a whole object", mwhere, rule.Path)
 			continue
-		case DatatypeSecret:
-			errf("%s: %s is a secret — a secret never leaves its record", mwhere, rule.Path)
-			continue
 		case DatatypeState:
 			errf("%s: %s is a state — a state moves through its transitions, never a mapping (record 40)", mwhere, rule.Path)
+			continue
+		}
+		if sp.Sensitive() {
+			errf("%s: %s is %s-typed: a sensitive value never leaves its record", mwhere, rule.Path, sp.Datatype)
 			continue
 		}
 		tp, ok := to.Props[tname]

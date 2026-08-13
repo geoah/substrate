@@ -149,8 +149,8 @@ func TestReviewGooglePropertyOwnership(t *testing.T) {
 	})
 }
 
-// #3: the clientSecret seals at rest — a raw database read of the config
-// record's JSONB never shows the plaintext.
+// #3: the clientSecret never sits in the record's JSONB — the stored value
+// is a sealed-store ref, and a raw database read shows no plaintext.
 func TestReviewGoogleClientSecretSealedAtRest(t *testing.T) {
 	_, _, db, _, _, _ := installW3OAuthBundle(t)
 	var props string
@@ -162,8 +162,9 @@ func TestReviewGoogleClientSecretSealedAtRest(t *testing.T) {
 	if strings.Contains(props, "s3cret") {
 		t.Fatalf("the client secret is plaintext at rest: %s", props)
 	}
-	if !strings.Contains(props, "substrate:sealsecret:") {
-		t.Fatalf("the client secret was not sealed at rest: %s", props)
+	if !strings.Contains(props, `"clientSecret": "secret:`) &&
+		!strings.Contains(props, `"clientSecret":"secret:`) {
+		t.Fatalf("the client secret is not a sealed-store ref: %s", props)
 	}
 }
 

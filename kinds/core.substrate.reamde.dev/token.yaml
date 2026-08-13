@@ -14,7 +14,12 @@ data:
   # under the substrate's access log. Authentication is a READ now.
   # v1alpha3: the declaration gained a `description` — the bump is what
   # carries it into repositories that already stored the v1alpha2 one.
-  version: v1alpha3
+  # v1alpha4: `hash` re-typed secret -> digest. It was never material (the
+  # secret itself is shown once at mint and only its SHA-256 is stored), and
+  # auth matches it by SQL containment on every request, which the sealed
+  # store indirection every `secret` now gets would break. A digest stays
+  # redacted on the wire.
+  version: v1alpha4
   names:
     singular: token
     plural: tokens
@@ -33,7 +38,7 @@ data:
       type: string
       description: what the token is for, chosen at mint
     hash:
-      type: secret
+      type: digest
       description: the SHA-256 of the secret; the secret itself is shown once,
         at mint
     expiresAt:

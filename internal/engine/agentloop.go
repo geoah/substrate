@@ -149,7 +149,13 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 	wire, _ := row.Props["wire"].(string)
 	pc.wire = llm.Wire(wire)
 	pc.cfg.BaseURL, _ = row.Props["baseURL"].(string)
-	pc.cfg.APIKey, _ = row.Props["apiKey"].(string)
+	// apiKey is secret-typed: the stored value is a ref into the sealed
+	// store, resolved here, at the one read that pays with it.
+	storedKey, _ := row.Props["apiKey"].(string)
+	pc.cfg.APIKey, err = ds.openSecretValue(ctx, storedKey)
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: open llmprovider %q apiKey: %w", id, err)
+	}
 	if headers, ok := row.Props["headers"].(map[string]any); ok && len(headers) > 0 {
 		pc.cfg.Headers = map[string]string{}
 		for k, v := range headers {

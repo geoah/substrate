@@ -777,7 +777,16 @@ func (l *loader) checkTemplate(where string, t *Kind, tmpl *Template) {
 			l.errf("%s: data.displayTemplate: {%s.%s}: %s declares no edge or object property %q",
 				where, ref.Edge, ref.Prop, t.Name, ref.Edge)
 		default:
-			if _, ok := t.Props[ref.Prop]; ok {
+			if p, ok := t.Props[ref.Prop]; ok {
+				// A title is an unredacted, FTS-indexed column: a sensitive
+				// property rendered into it would leak around every
+				// read-surface redaction. The runtime resolver skips them too
+				// (edge targets and legacy vocabularies), but a declaration
+				// should fail loudly, not render empty.
+				if p.Sensitive() {
+					l.errf("%s: data.displayTemplate: {%s}: %s is %s-typed and a sensitive value never renders into a title",
+						where, ref.Prop, ref.Prop, p.Datatype)
+				}
 				continue
 			}
 			if _, ok := t.Edges[ref.Prop]; ok {
@@ -1204,6 +1213,7 @@ var fieldForbiddenKinds = map[Datatype]string{
 	DatatypeObject:  "object fields are one level deep — no nested objects",
 	DatatypeJSON:    "a field is a declared scalar; `json` is only for shapes we do not own",
 	DatatypeSecret:  "a secret is its own property, never a field",
+	DatatypeDigest:  "a digest is its own property, never a field",
 	DatatypeState:   "a machine is its own property, never a field",
 	DatatypeBlobRef: "a blob-ref is its own property, never a field — reads resolve it to a manifest",
 }
@@ -1346,12 +1356,17 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 	}
 	p.Embed = mbool(d, "embed")
 	p.FTS = IsShortString(p.Datatype) || IsLongText(p.Datatype)
-	if p.Datatype == DatatypeSecret {
+	if p.Sensitive() {
 		p.FTS = false
 		p.Embed = false
 	}
 	if v, ok := d["fts"].(bool); ok {
-		p.FTS = v && p.Datatype != DatatypeSecret
+		p.FTS = v && !p.Sensitive()
+	}
+	// A sensitive list would seal and scrub element-wise, and nothing needs
+	// one: refusing it here keeps "redacted" meaning "the whole value".
+	if p.Repeated && p.Sensitive() {
+		l.errf("%s: a %s property holds one value, never a list", where, p.Datatype)
 	}
 	if p.Embed && !IsLongText(p.Datatype) && !IsShortString(p.Datatype) {
 		l.errf("%s: embed is only meaningful for string-family properties", where)

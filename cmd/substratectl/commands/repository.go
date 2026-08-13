@@ -28,7 +28,8 @@ func (a *app) repositoryCommand() *cobra.Command {
 		Short:   "Operator: inspect and rebuild repositories (direct database, no HTTP)",
 		Aliases: []string{"repositories", "repo"},
 	}
-	cmd.AddCommand(a.repositoryListCommand(), a.repositoryInspectCommand(), a.repositoryRebuildCommand())
+	cmd.AddCommand(a.repositoryListCommand(), a.repositoryInspectCommand(),
+		a.repositoryRebuildCommand(), a.repositoryResealCommand())
 	return cmd
 }
 
@@ -181,6 +182,56 @@ unit.`,
 			fmt.Fprintf(a.out, "  replayed: %d entries to head %d\n", report.Entries, report.Head)
 			fmt.Fprintf(a.out, "  records:  %d\n", report.Records)
 			fmt.Fprintf(a.out, "  took:     %s\n", report.Took.Round(time.Millisecond))
+			return nil
+		},
+	}
+}
+
+func (a *app) repositoryResealCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "reseal <username>",
+		Short: "Move a repository's legacy secret values into the sealed store",
+		Long: `Move every legacy secret value into the sealed store and re-point the
+records fold and the changelog at the refs.
+
+Secret-typed properties store a ref now; the material lives encrypted in the
+sealed store. Values written by earlier releases sit in the database as
+plaintext (or as the retired inline-sealed form), and because the changelog
+is immutable no ordinary write can ever remove them. This command is the one
+sanctioned rewrite of history, and it is values-only: no entry is added,
+removed or reordered, no seq moves, and every historical value of a secret
+property becomes the record's current ref, so a rebuild afterwards folds the
+changelog to byte-identical rows. It also upgrades sealed-store payloads
+written while the server ran without a credential key.
+
+It needs the SAME key the server runs with (SUBSTRATE_CREDENTIAL_KEY), holds
+the repository's write lock for the duration, and runs as ONE transaction.
+It refuses until the repository has been opened once under the upgraded
+server (the boot-time vocabulary upgrade must land first), and it is
+idempotent. Kinds uninstalled before the migration keep their old bytes: no
+declaration survives to say which properties were secret, and the change
+feed redacts those kinds' payloads wholesale instead.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			svc, err := a.openEngineRead(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer func() { _ = svc.Close() }()
+			r, ok := svc.(resealer)
+			if !ok {
+				return seamMissing("ResealRepository")
+			}
+			report, err := r.ResealRepository(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(a.out, "repository %s resealed\n", report.Username)
+			fmt.Fprintf(a.out, "  id:        %s\n", report.Repository)
+			fmt.Fprintf(a.out, "  records:   %d rows migrated into the store\n", report.Records)
+			fmt.Fprintf(a.out, "  changelog: %d payloads rewritten\n", report.Entries)
+			fmt.Fprintf(a.out, "  sealed:    %d payloads upgraded\n", report.SealedRows)
+			fmt.Fprintf(a.out, "  took:      %s\n", report.Took.Round(time.Millisecond))
 			return nil
 		},
 	}

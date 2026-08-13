@@ -32,9 +32,10 @@ Beneath that readable half, the stored payload also carries the write's
 **values**, which is what makes the changelog replayable rather than merely
 informative: `substratectl repository rebuild` clears the fold and replays the whole
 changelog through the same code a live write uses, reproducing the records bit for
-bit and appending nothing. Secret-typed values are sealed before they reach the
-changelog, and every read surface — REST, GraphQL, and this feed — renders them
-`<redacted>`.
+bit and appending nothing. A secret-typed value never reaches the changelog at
+all: the delta carries an opaque ref into the sealed store, the material lives
+there encrypted, and every read surface — REST, GraphQL, and this feed —
+renders the property `<redacted>`.
 
 Two guarantees consumers may lean on:
 

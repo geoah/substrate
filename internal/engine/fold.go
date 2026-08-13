@@ -768,6 +768,36 @@ func foldOpsOf(ch substrate.Change) ([]foldOp, error) {
 // foldPayloadKey is where an entry's effects live in its payload.
 const foldPayloadKey = "fold"
 
+// forEachRecordDeltaSet walks a DECODED payload's record-delta effects and
+// hands each one's `set` map to fn, with the kind reference and record id it
+// lands on. It is the one place the raw payload shape (fold, op.kind==record,
+// delta.set) is spelled outside the typed foldOp structs: the change feed's
+// redaction and the reseal migration both walk through here, so extending the
+// delta cannot update one and silently miss the other.
+func forEachRecordDeltaSet(payload map[string]any, fn func(kindRef, recordID string, set map[string]any)) {
+	effects, ok := payload[foldPayloadKey].([]any)
+	if !ok {
+		return
+	}
+	for _, e := range effects {
+		op, ok := e.(map[string]any)
+		if !ok || op["kind"] != string(foldRecord) {
+			continue
+		}
+		ref, _ := op["ref"].(string)
+		id, _ := op["id"].(string)
+		delta, ok := op["delta"].(map[string]any)
+		if !ok {
+			continue
+		}
+		set, ok := delta["set"].(map[string]any)
+		if !ok {
+			continue
+		}
+		fn(ref, id, set)
+	}
+}
+
 // foldRefuses reports an entry the fold cannot faithfully replay, so a rebuild
 // stops instead of producing a fold that is quietly not the changelog's.
 //
