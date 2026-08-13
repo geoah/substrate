@@ -41,6 +41,7 @@ const (
 	pathRegister       = "/register"
 	pathLogin          = "/login"
 	pathPassword       = "/password"
+	pathRecoveryEnroll = "/recovery/enroll"
 	pathTOTPEnroll     = "/totp/enroll"
 	pathTOTP           = "/totp"
 	pathTokens         = "/tokens"
@@ -333,6 +334,26 @@ type registerRequest struct {
 	TOTPSecret string `json:"totpSecret"`
 	TOTPCode   string `json:"totpCode"`
 	Label      string `json:"label,omitempty"`
+	// RecoveryPublicKey is the age recipient generated CLIENT-SIDE, so the
+	// matching identity never rides the wire.
+	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
+}
+
+// registerResult is a tokenResult plus the recovery half: the enrolled
+// recipient, and the identity ONLY when the server minted the pair.
+type registerResult struct {
+	tokenResult
+	RecoveryKey       string `json:"recoveryKey,omitempty"`
+	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
+}
+
+type recoveryEnrollRequest struct {
+	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
+}
+
+type recoveryEnrollResult struct {
+	RecoveryKey       string `json:"recoveryKey,omitempty"`
+	RecoveryPublicKey string `json:"recoveryPublicKey"`
 }
 
 // factors is both current factors presented directly: it authenticates a
@@ -371,9 +392,17 @@ func (c *client) registerEnroll(ctx context.Context, in registerBeginRequest) (*
 	return &out, nil
 }
 
-func (c *client) register(ctx context.Context, in registerRequest) (*tokenResult, error) {
-	var out tokenResult
+func (c *client) register(ctx context.Context, in registerRequest) (*registerResult, error) {
+	var out registerResult
 	if err := c.do(ctx, http.MethodPost, pathRegister, nil, in, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *client) recoveryEnroll(ctx context.Context, in recoveryEnrollRequest) (*recoveryEnrollResult, error) {
+	var out recoveryEnrollResult
+	if err := c.do(ctx, http.MethodPost, pathRecoveryEnroll, nil, in, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

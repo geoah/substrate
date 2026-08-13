@@ -285,7 +285,7 @@ func stringSet(v any) map[string]bool {
 // is corruption rather than a clean failure.
 func TestSplitReadsTheLegacyMovedSet(t *testing.T) {
 	ctx := context.Background()
-	ds, raw := newDatasetWithDB(t)
+	ds, raw, _ := newDatasetWithDB(t)
 	installPeopleSources(t, ds)
 
 	g := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})

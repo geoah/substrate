@@ -28,7 +28,7 @@ func TestBlobGCCannotDangleUncommittedRef(t *testing.T) {
 	t.Cleanup(func() { engine.BlobUploadGrace = prev })
 
 	ctx := context.Background()
-	ds, raw := newDatasetWithDB(t)
+	ds, raw, _ := newDatasetWithDB(t)
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, blobDocDocs("attachment", false)); err != nil {
 		t.Fatalf("install doc type: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestBlobGCTombstonesStoredManifest(t *testing.T) {
 	t.Cleanup(func() { engine.BlobUploadGrace = prev })
 
 	ctx := context.Background()
-	ds, raw := newDatasetWithDB(t)
+	ds, raw, _ := newDatasetWithDB(t)
 	bs := blobStoreOf(t, ds)
 	blob, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, []byte("orphan to tombstone"), "")
 	if err != nil {

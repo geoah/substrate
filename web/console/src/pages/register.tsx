@@ -78,6 +78,7 @@ export function RegisterPage() {
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
   const [code, setCode] = useState("")
+  const [recoveryKey, setRecoveryKey] = useState<string | null>(null)
   const [enrollment, setEnrollment] = useState<TOTPEnrollment | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setBusy] = useState(false)
@@ -140,6 +141,13 @@ export function RegisterPage() {
         label: "console",
       })
       saveSession(minted.secret, name, minted.token.id)
+      // The recovery identity arrives ONCE, on this response, and the
+      // substrate never stores it: hold the reader here until they carry it
+      // off instead of navigating past the only showing.
+      if (minted.recoveryKey) {
+        setRecoveryKey(minted.recoveryKey)
+        return
+      }
       await navigate({ to: "/", replace: true })
     } catch (err) {
       if (err instanceof ApiError && err.code === "auth") {
@@ -164,6 +172,29 @@ export function RegisterPage() {
           </div>
           <span className="text-lg font-semibold">substrate</span>
         </div>
+        {recoveryKey !== null && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Your recovery key</CardTitle>
+              <CardDescription>
+                Shown once, never stored by the substrate. Put it in your
+                password manager now: with it, a backup of your repository is
+                recoverable on any substrate; without it, only this
+                server&rsquo;s own key can read your secrets.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <CopyBlock value={recoveryKey} label="recovery key" />
+              <Button
+                type="button"
+                onClick={() => void navigate({ to: "/", replace: true })}
+              >
+                I saved it — continue
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+        {recoveryKey === null && (
         <Card>
           <CardHeader>
             <CardTitle>Register</CardTitle>
@@ -339,6 +370,7 @@ export function RegisterPage() {
             )}
           </CardContent>
         </Card>
+        )}
         <p className="text-center text-xs text-muted-foreground">
           Already registered?{" "}
           <Link

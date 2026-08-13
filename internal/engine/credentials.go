@@ -41,7 +41,7 @@ func (ds *dataset) sealToken(tok *oauth2.Token) (payload []byte, expires any, er
 	if err != nil {
 		return nil, nil, err
 	}
-	payload, err = ds.svc.sealCredential(raw)
+	payload, err = ds.sealPayload(raw)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -116,7 +116,7 @@ func (ds *dataset) getCredential(ctx context.Context, ref string) (*oauth2.Token
 	if err != nil {
 		return nil, eref{}, time.Time{}, err
 	}
-	raw, err := ds.svc.openCredential(payload)
+	raw, err := ds.openPayload(payload)
 	if err != nil {
 		return nil, eref{}, time.Time{}, fmt.Errorf("substrate/engine: open credential %s: %w", ref, err)
 	}
@@ -164,19 +164,46 @@ func (ds *dataset) expiringCredentials(ctx context.Context, horizon time.Time) (
 
 // --- sealing -------------------------------------------------------------------
 
-// credentialAEAD derives the AES-GCM cipher off the configured key; nil
-// means the store writes plain.
-func (s *service) credentialAEAD() (cipher.AEAD, error) {
-	if len(s.credKey) == 0 {
-		return nil, nil
-	}
-	block, err := aes.NewCipher(s.credKey)
+// newAEAD builds the AES-256-GCM cipher for one 32-byte key.
+func newAEAD(key []byte) (cipher.AEAD, error) {
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
 	return cipher.NewGCM(block)
 }
 
+// sealWith frames and seals one payload under an AEAD.
+func sealWith(aead cipher.AEAD, raw []byte) ([]byte, error) {
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
+	out := append([]byte{credSealed}, nonce...)
+	return aead.Seal(out, nonce, raw, nil), nil
+}
+
+// openWith opens one sealed-framed payload under an AEAD.
+func openWith(aead cipher.AEAD, payload []byte) ([]byte, error) {
+	body := payload[1:]
+	if len(body) < aead.NonceSize() {
+		return nil, errors.New("sealed credential too short")
+	}
+	return aead.Open(nil, body[:aead.NonceSize()], body[aead.NonceSize():], nil)
+}
+
+// credentialAEAD derives the AES-GCM cipher off the configured HOST key; nil
+// means the host runs keyless and host-keyed wraps write plain.
+func (s *service) credentialAEAD() (cipher.AEAD, error) {
+	if len(s.credKey) == 0 {
+		return nil, nil
+	}
+	return newAEAD(s.credKey)
+}
+
+// sealCredential seals under the HOST key: the DEK wraps in the control
+// plane and nothing else. Repository payloads seal under the repository's
+// own DEK (dataset.sealPayload).
 func (s *service) sealCredential(raw []byte) ([]byte, error) {
 	aead, err := s.credentialAEAD()
 	if err != nil {
@@ -185,12 +212,7 @@ func (s *service) sealCredential(raw []byte) ([]byte, error) {
 	if aead == nil {
 		return append([]byte{credPlain}, raw...), nil
 	}
-	nonce := make([]byte, aead.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, err
-	}
-	out := append([]byte{credSealed}, nonce...)
-	return aead.Seal(out, nonce, raw, nil), nil
+	return sealWith(aead, raw)
 }
 
 func (s *service) openCredential(payload []byte) ([]byte, error) {
@@ -208,11 +230,7 @@ func (s *service) openCredential(payload []byte) ([]byte, error) {
 		if aead == nil {
 			return nil, errors.New("sealed credential but no credential key configured")
 		}
-		body := payload[1:]
-		if len(body) < aead.NonceSize() {
-			return nil, errors.New("sealed credential too short")
-		}
-		return aead.Open(nil, body[:aead.NonceSize()], body[aead.NonceSize():], nil)
+		return openWith(aead, payload)
 	default:
 		return nil, fmt.Errorf("unknown credential framing %q", payload[0])
 	}
@@ -273,7 +291,7 @@ func (t *txn) storeSecretValue(owner eref, plaintext string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	payload, err := t.ds.svc.sealCredential([]byte(plaintext))
+	payload, err := t.ds.sealPayload([]byte(plaintext))
 	if err != nil {
 		return "", err
 	}
@@ -320,7 +338,7 @@ func (ds *dataset) openSecretValue(ctx context.Context, stored string) (string, 
 		if err != nil {
 			return "", err
 		}
-		raw, err := ds.svc.openCredential(payload)
+		raw, err := ds.openPayload(payload)
 		if err != nil {
 			return "", fmt.Errorf("substrate/engine: open stored secret: %w", err)
 		}
@@ -330,7 +348,7 @@ func (ds *dataset) openSecretValue(ctx context.Context, stored string) (string, 
 		if err != nil {
 			return "", fmt.Errorf("substrate/engine: decode sealed property: %w", err)
 		}
-		out, err := ds.svc.openCredential(raw)
+		out, err := openWithFallback(raw, ds.dek, ds.svc.credKey)
 		if err != nil {
 			return "", fmt.Errorf("substrate/engine: open sealed property: %w", err)
 		}

@@ -21,14 +21,15 @@ import (
 
 func (a *app) registerCommand() *cobra.Command {
 	var (
-		server        string
-		invite        string
-		username      string
-		secret        string
-		code          string
-		label         string
-		contextName   string
-		passwordStdin bool
+		server            string
+		invite            string
+		username          string
+		secret            string
+		code              string
+		label             string
+		contextName       string
+		recoveryPublicKey string
+		passwordStdin     bool
 	)
 	cmd := &cobra.Command{
 		Use:   "register",
@@ -107,10 +108,23 @@ substrate and the code is prompted for.`,
 			// than throw away a seed the user has already typed into an
 			// authenticator, wait exactly as long as the substrate asks and
 			// send it once more.
-			res, err := a.retryWhenPaced(cmd.Context(), func() (*tokenResult, error) {
+			// The recovery pair is generated HERE, before the commit: only
+			// the recipient rides the wire, and the identity is handed over
+			// after registration lands (1Password when `op` is signed in,
+			// printed once otherwise). --recovery-public-key brings your own
+			// recipient and skips the handover entirely.
+			recoveryIdentity := ""
+			if recoveryPublicKey == "" {
+				var rerr error
+				if recoveryIdentity, recoveryPublicKey, rerr = newRecoveryIdentity(); rerr != nil {
+					return rerr
+				}
+			}
+			res, err := a.retryWhenPaced(cmd.Context(), func() (*registerResult, error) {
 				return cl.register(cmd.Context(), registerRequest{
 					InviteCode: invite, Username: username, Password: password,
 					TOTPSecret: secret, TOTPCode: code, Label: label,
+					RecoveryPublicKey: recoveryPublicKey,
 				})
 			})
 			if err != nil {
@@ -129,6 +143,7 @@ substrate and the code is prompted for.`,
 			fmt.Fprintf(a.out, "registered %s on %s\n", username, server)
 			fmt.Fprintf(a.out, "  token:   %s (%s)\n", dash(res.Token.Label), dash(res.Token.ID))
 			fmt.Fprintf(a.out, "  context: %s -> %s\n", contextName, a.configPath)
+			a.handOverRecoveryKey(cmd.Context(), server, username, recoveryIdentity, res.RecoveryPublicKey)
 			return nil
 		},
 	}
@@ -140,6 +155,7 @@ substrate and the code is prompted for.`,
 	f.StringVar(&code, "totp-code", "", "6-digit code from the new enrollment (prompted for when omitted)")
 	f.StringVar(&label, "label", "", "label for the first token (default: substratectl@<hostname>)")
 	f.StringVar(&contextName, "context", "", "name for the stored context (default: the username)")
+	f.StringVar(&recoveryPublicKey, "recovery-public-key", "", "age recipient for the recovery key (default: generate the pair locally and hand you the key)")
 	f.BoolVar(&passwordStdin, "password-stdin", false, "read the password from stdin (one line) instead of prompting")
 	return cmd
 }
@@ -152,7 +168,7 @@ const pacedWait = 15 * time.Second
 // retryWhenPaced sends once more after a 429 that names a wait, and only
 // then. It exists for ONE sequence — the enrollment and the commit behind it —
 // where the second request is substratectl's own doing.
-func (a *app) retryWhenPaced(ctx context.Context, send func() (*tokenResult, error)) (*tokenResult, error) {
+func (a *app) retryWhenPaced(ctx context.Context, send func() (*registerResult, error)) (*registerResult, error) {
 	res, err := send()
 	if err == nil {
 		return res, nil

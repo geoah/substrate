@@ -216,6 +216,7 @@ user and no privileged endpoint: ` + "`user reset`" + `, ` + "`repository inspec
 		a.loginCommand(),
 		a.logoutCommand(),
 		a.tokenCommand(),
+		a.recoveryCommand(),
 		// The records.
 		a.kindsCommand(),
 		a.getCommand(),

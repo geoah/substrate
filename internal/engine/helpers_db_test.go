@@ -134,14 +134,14 @@ func registerUser(t *testing.T, svc substrate.Service, username string) (*authUs
 		t.Fatalf("begin registration: %v", err)
 	}
 	u := &authUser{username: username, password: testPassword, seed: enrollment.Secret}
-	info, secret, err := svc.Register(ctx, substrate.RegisterInput{
+	res, err := svc.Register(ctx, substrate.RegisterInput{
 		Username: username, Password: u.password,
 		TOTPSecret: u.seed, TOTPCode: u.code(t), Label: "cli",
 	})
 	if err != nil {
 		t.Fatalf("register %q: %v", username, err)
 	}
-	return u, info, secret
+	return u, res.Token, res.Secret
 }
 
 func maxSeq(t *testing.T, ds substrate.Dataset) int64 {

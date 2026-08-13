@@ -146,25 +146,31 @@ func (s *fakeService) BeginRegistration(_ context.Context, username string) (sub
 	return fakeEnrollment(username), nil
 }
 
-func (s *fakeService) Register(_ context.Context, in substrate.RegisterInput) (substrate.TokenInfo, string, error) {
+func (s *fakeService) Register(_ context.Context, in substrate.RegisterInput) (substrate.RegisterResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.registerCalls++
 	if s.registerErr != nil {
-		return substrate.TokenInfo{}, "", s.registerErr
+		return substrate.RegisterResult{}, s.registerErr
 	}
 	if _, taken := s.datasets[in.Username]; taken {
-		return substrate.TokenInfo{}, "", fmt.Errorf("%w: user %q already exists", substrate.ErrValidation, in.Username)
+		return substrate.RegisterResult{}, fmt.Errorf("%w: user %q already exists", substrate.ErrValidation, in.Username)
 	}
 	if in.TOTPCode != fakeCode(in.Username) {
-		return substrate.TokenInfo{}, "", fmt.Errorf("%w: bad code", substrate.ErrAuth)
+		return substrate.RegisterResult{}, fmt.Errorf("%w: bad code", substrate.ErrAuth)
 	}
 	s.addRepository(in.Username)
 	s.passwords[in.Username] = in.Password
 	secret := s.token(in.Username)
 	info := s.tokens[secret].info
 	info.Label = in.Label
-	return info, secret, nil
+	out := substrate.RegisterResult{Token: info, Secret: secret, RecoveryPublicKey: in.RecoveryPublicKey}
+	if out.RecoveryPublicKey == "" {
+		// The fake's stand-in for the server-minted pair: shape, not crypto.
+		out.RecoveryKey = "AGE-SECRET-KEY-FAKE"
+		out.RecoveryPublicKey = "age1fake"
+	}
+	return out, nil
 }
 
 // verify is the fake's whole factor check: the recorded password and the

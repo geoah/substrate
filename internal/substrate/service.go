@@ -26,7 +26,7 @@ type Service interface {
 	// exist. An abandoned registration leaves no row, no seed and no record.
 	// The invite code gating both is the HTTP layer's (it holds the config).
 	BeginRegistration(ctx context.Context, username string) (TOTPEnrollment, error)
-	Register(ctx context.Context, in RegisterInput) (TokenInfo, string, error)
+	Register(ctx context.Context, in RegisterInput) (RegisterResult, error)
 
 	// Login verifies username + password + TOTP and MINTS A TOKEN RECORD,
 	// returning its secret exactly once (ruling RB-5: sessions ARE token

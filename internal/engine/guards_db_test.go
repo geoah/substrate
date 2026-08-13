@@ -15,7 +15,7 @@ import (
 
 // newDatasetWithDB provisions a repository and also hands back a raw connection to
 // its schema, for assertions about what is actually stored under a redaction.
-func newDatasetWithDB(t *testing.T) (substrate.Dataset, *sql.DB) {
+func newDatasetWithDB(t *testing.T) (substrate.Dataset, *sql.DB, string) {
 	t.Helper()
 	dsn := testdb.NewSchema(t)
 	ctx := context.Background()
@@ -38,7 +38,7 @@ func newDatasetWithDB(t *testing.T) (substrate.Dataset, *sql.DB) {
 		t.Fatalf("open raw: %v", err)
 	}
 	t.Cleanup(func() { _ = raw.Close() })
-	return ds, raw
+	return ds, raw, dsn
 }
 
 // secretCRD is a connector CRD with a secret property: the only realistic
@@ -125,7 +125,7 @@ func TestResyncIsSilentUnderAnyActor(t *testing.T) {
 // Reading redacts a secret; writing the redaction back must not store it.
 func TestSecretRoundTripLeavesStoredValue(t *testing.T) {
 	ctx := context.Background()
-	ds, raw := newDatasetWithDB(t)
+	ds, raw, dsn := newDatasetWithDB(t)
 	ty := installSecretCRD(t, ds)
 
 	cfg := mustPut(t, ds, gmail, substrate.PutInput{
@@ -148,7 +148,7 @@ func TestSecretRoundTripLeavesStoredValue(t *testing.T) {
 	// The stored form is SEALED now (plain-marked here: this service holds no
 	// credential key), so the round-trip assertion decodes the engine's own
 	// framing to prove the credential survived intact.
-	if got := storedSecretPlain(t, raw, cfg.ID); got != "hunter2" {
+	if got := storedSecretPlain(t, raw, dsn, cfg.ID); got != "hunter2" {
 		t.Fatalf("round trip destroyed the credential: stored %q", got)
 	}
 	rows := changesSince(t, ds, before)
@@ -165,16 +165,17 @@ func TestSecretRoundTripLeavesStoredValue(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("rotate secret: %v", err)
 	}
-	if got := storedSecretPlain(t, raw, cfg.ID); got != "hunter3" {
+	if got := storedSecretPlain(t, raw, dsn, cfg.ID); got != "hunter3" {
 		t.Fatalf("secret rotation did not land: %q", got)
 	}
 }
 
 // storedSecretPlain reads the raw stored apiKey ref, follows it into the
-// sealed store, and opens the KEYLESS plain framing: this suite's service
-// holds no credential key, so the inner plaintext is recoverable and the
-// assertion stays exact.
-func storedSecretPlain(t *testing.T, raw *sql.DB, id string) string {
+// sealed store, and opens the payload under the repository's DEK. This
+// suite's HOST runs keyless, so the DEK's control-plane wrap is the
+// plain-marked framing and the test can lift the key the way an operator's
+// tooling would; the payload itself is encrypted regardless.
+func storedSecretPlain(t *testing.T, raw *sql.DB, dsn, id string) string {
 	t.Helper()
 	var ref string
 	if err := raw.QueryRow(
@@ -189,10 +190,25 @@ func storedSecretPlain(t *testing.T, raw *sql.DB, id string) string {
 		`SELECT payload FROM sealed WHERE ref = $1`, ref).Scan(&payload); err != nil {
 		t.Fatalf("read sealed payload for %s: %v", ref, err)
 	}
-	if len(payload) == 0 || payload[0] != 'p' {
-		t.Fatalf("sealed payload is not the keyless plain framing")
+	// The scoped app pool cannot see the control plane (that is the
+	// isolation working); the DEK read takes the schema's own connection.
+	cp, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("open control-plane connection: %v", err)
 	}
-	return string(payload[1:])
+	defer func() { _ = cp.Close() }()
+	var wrapped []byte
+	if err := cp.QueryRow(`SELECT dek FROM repositories LIMIT 1`).Scan(&wrapped); err != nil {
+		t.Fatalf("read wrapped dek: %v", err)
+	}
+	if len(wrapped) == 0 || wrapped[0] != 'p' {
+		t.Fatalf("keyless host should wrap the DEK plain-marked")
+	}
+	plain, err := engine.OpenPayloadWithKey(wrapped[1:], payload)
+	if err != nil {
+		t.Fatalf("open payload under the DEK: %v", err)
+	}
+	return string(plain)
 }
 
 // The filter grammar must not become a decryption oracle.

@@ -48,6 +48,11 @@ const (
 	kindCredential = "core.substrate.reamde.dev/credential"
 	credentialID   = "self"
 
+	// kindRecoveryKey is the singleton recovery record: the age recipient the
+	// user enrolled and the repository's DEK wrapped to it.
+	kindRecoveryKey = "core.substrate.reamde.dev/recoverykey"
+	recoveryKeyID   = "self"
+
 	// The sealed-store refs the credential record points at are namespaced so
 	// a connector credential and a password hash can never collide on one.
 	sealedAuthPrefix = "auth:"
@@ -208,7 +213,9 @@ func (s *service) authMaterialOf(ctx context.Context, repoID string) (authMateri
 	return m, nil
 }
 
-// openSealed reads and unseals one row by ref, on the maintenance pool.
+// openSealed reads and unseals one row by ref, on the maintenance pool. The
+// payload opens under the repository's DEK, with the host-key fallback for
+// material sealed before DEKs existed.
 func (s *service) openSealed(ctx context.Context, repoID, ref string) ([]byte, error) {
 	if ref == "" {
 		return nil, fmt.Errorf("%w: credential incomplete", substrate.ErrAuth)
@@ -222,7 +229,11 @@ func (s *service) openSealed(ctx context.Context, repoID, ref string) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	return s.openCredential(payload)
+	dek, err := s.repoDEK(ctx, repoID)
+	if err != nil {
+		return nil, err
+	}
+	return openWithFallback(payload, dek, s.credKey)
 }
 
 // consumeTOTPStep spends a code by recording its step on the sealed TOTP row.
@@ -246,7 +257,11 @@ func (s *service) consumeTOTPStep(ctx context.Context, repoID, ref string, to in
 	if err != nil {
 		return false, err
 	}
-	raw, err := s.openCredential(payload)
+	dek, err := s.repoDEK(ctx, repoID)
+	if err != nil {
+		return false, err
+	}
+	raw, err := openWithFallback(payload, dek, s.credKey)
 	if err != nil {
 		return false, err
 	}
@@ -258,7 +273,7 @@ func (s *service) consumeTOTPStep(ctx context.Context, repoID, ref string, to in
 		return false, nil
 	}
 	m.Step = to
-	sealed, err := s.sealCredential(mustJSON(m))
+	sealed, err := s.sealRepoPayload(dek, mustJSON(m))
 	if err != nil {
 		return false, err
 	}
@@ -306,18 +321,18 @@ func newEnrollment(username string) (substrate.TOTPEnrollment, error) {
 // row that makes the user exist is the last thing written
 // (createSeededRepository holds the atomicity story). A failed registration
 // creates nothing.
-func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (substrate.TokenInfo, string, error) {
-	var zero substrate.TokenInfo
+func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (substrate.RegisterResult, error) {
+	var zero substrate.RegisterResult
 	if err := validPassword(in.Password); err != nil {
-		return zero, "", err
+		return zero, err
 	}
 	seed, err := normalizeTOTPSecret(in.TOTPSecret)
 	if err != nil {
-		return zero, "", fmt.Errorf("%w: the totp secret is not base32: %w", substrate.ErrValidation, err)
+		return zero, fmt.Errorf("%w: the totp secret is not base32: %w", substrate.ErrValidation, err)
 	}
 	key, err := decodeTOTPSecret(seed)
 	if err != nil || len(key) < totpMinSeedBytes {
-		return zero, "", fmt.Errorf("%w: the totp secret must decode to at least %d bytes",
+		return zero, fmt.Errorf("%w: the totp secret must decode to at least %d bytes",
 			substrate.ErrValidation, totpMinSeedBytes)
 	}
 	// The code proves the enrollment landed in an authenticator before the
@@ -326,18 +341,32 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 	// cannot also log in.
 	step, ok := totpVerify(key, in.TOTPCode, nowUTC(), 0)
 	if !ok {
-		return zero, "", fmt.Errorf("%w: that code does not match the enrollment", substrate.ErrAuth)
+		return zero, fmt.Errorf("%w: that code does not match the enrollment", substrate.ErrAuth)
 	}
 	hash, err := hashPassword(in.Password)
 	if err != nil {
-		return zero, "", err
+		return zero, err
+	}
+	// The recovery pair: a client that generated its own identity sends only
+	// the recipient and the identity never touches the server; a bare
+	// registration asks the server to mint the pair, and the identity is
+	// returned once below, never stored. Parsed BEFORE anything durable
+	// exists, so a bad recipient refuses cleanly.
+	out := substrate.RegisterResult{RecoveryPublicKey: in.RecoveryPublicKey}
+	if out.RecoveryPublicKey == "" {
+		identity, publicKey, err := generateRecoveryIdentity()
+		if err != nil {
+			return zero, err
+		}
+		out.RecoveryKey, out.RecoveryPublicKey = identity, publicKey
+	}
+	if _, err := wrapDEKToRecipient(make([]byte, 32), out.RecoveryPublicKey); err != nil {
+		return zero, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 	}
 	label := in.Label
 	if label == "" {
 		label = "login"
 	}
-	var tok substrate.TokenInfo
-	var secret string
 	if _, err := s.createSeededRepository(ctx, in.Username, func(t *txn) error {
 		// Fresh account: no prior credential to compare against, so no CAS.
 		if err := t.writeCredential(credentialWrite{
@@ -346,12 +375,66 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 		}); err != nil {
 			return err
 		}
-		tok, secret, err = t.mintToken(label, nil)
-		return err
+		if err := t.writeRecoveryKey(out.RecoveryPublicKey); err != nil {
+			return err
+		}
+		var terr error
+		out.Token, out.Secret, terr = t.mintToken(label, nil)
+		return terr
 	}); err != nil {
-		return zero, "", err
+		return zero, err
 	}
-	return tok, secret, nil
+	return out, nil
+}
+
+// EnrollRecoveryKey wraps the repository's DEK to an age recipient and
+// writes the recoverykey singleton, CREATE-ONLY: a repository from before
+// recovery keys enrolls one here, and rotation is deliberately not v1. An
+// empty publicKey asks the server to mint the pair; the identity returns
+// once and is never stored.
+func (ds *dataset) EnrollRecoveryKey(ctx context.Context, publicKey string) (identity, recipient string, err error) {
+	if publicKey == "" {
+		if identity, publicKey, err = generateRecoveryIdentity(); err != nil {
+			return "", "", err
+		}
+	}
+	ref := eref{Kind: kindRecoveryKey, ID: recoveryKeyID}
+	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		if err := t.lockRecord(ref); err != nil {
+			return err
+		}
+		row, err := t.loadRow(ref, false)
+		if err != nil {
+			return err
+		}
+		if row != nil && row.DeletedAt == nil {
+			return fmt.Errorf("%w: a recovery key is already enrolled; rotation is not yet supported", substrate.ErrConflict)
+		}
+		return t.writeRecoveryKey(publicKey)
+	})
+	if err != nil {
+		return "", "", err
+	}
+	return identity, publicKey, nil
+}
+
+// writeRecoveryKey wraps the repository's DEK to the enrolled age recipient
+// and writes the recoverykey singleton: the changelog-borne half of the
+// recovery story, ciphertext only the user's identity opens.
+func (t *txn) writeRecoveryKey(publicKey string) error {
+	wrapped, err := wrapDEKToRecipient(t.ds.dek, publicKey)
+	if err != nil {
+		return err
+	}
+	_, err = t.put(substrate.PutInput{
+		Kind: kindRecoveryKey, ID: recoveryKeyID,
+		Properties: map[string]any{
+			"algorithm": recoveryAlgorithm,
+			"publicKey": publicKey,
+			"sealedKey": base64.StdEncoding.EncodeToString(wrapped),
+		},
+	})
+	return err
 }
 
 func validPassword(p string) error {
@@ -609,11 +692,11 @@ func (t *txn) writeCredential(cw credentialWrite) error {
 	if err != nil {
 		return err
 	}
-	sealedPassword, err := t.ds.svc.sealCredential([]byte(cw.passwordHash))
+	sealedPassword, err := t.ds.sealPayload([]byte(cw.passwordHash))
 	if err != nil {
 		return err
 	}
-	sealedTOTP, err := t.ds.svc.sealCredential(mustJSON(totpMaterial{Secret: cw.totp.Secret, Step: step}))
+	sealedTOTP, err := t.ds.sealPayload(mustJSON(totpMaterial{Secret: cw.totp.Secret, Step: step}))
 	if err != nil {
 		return err
 	}
@@ -655,7 +738,7 @@ func (t *txn) openSealedRef(ref string) ([]byte, error) {
 	if err := t.row(`SELECT payload FROM sealed WHERE ref = $1 FOR UPDATE`, ref).Scan(&payload); err != nil {
 		return nil, err
 	}
-	return t.ds.svc.openCredential(payload)
+	return t.ds.openPayload(payload)
 }
 
 // rewriteCredential is writeCredential's outer half: one transaction on the

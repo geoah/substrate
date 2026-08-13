@@ -53,7 +53,7 @@ var systemKinds = map[string]bool{
 	kindKind: true, kindAuthority: true, kindTrait: true,
 	kindPropertyType: true, kindRecordMapping: true, kindFunction: true,
 	kindAgent: true, kindBundle: true,
-	kindRepository: true, kindToken: true, kindCredential: true, kindActor: true,
+	kindRepository: true, kindToken: true, kindCredential: true, kindRecoveryKey: true, kindActor: true,
 	kindRecordMerge: true, kindRecordSplit: true,
 	// The blob manifest is byte-store-managed: the generic record
 	// API may not forge one, only the byte-store path writes it.
@@ -69,6 +69,11 @@ type dataset struct {
 	// scope is the repository the pool above is pinned to. It also keys the
 	// per-repository advisory locks (identity.go lockKey).
 	scope Scope
+	// dek is the repository's data-encryption key, unwrapped at open: every
+	// sealed-store payload seals under it. The control plane holds it
+	// wrapped under the host credential key; the repository's recoverykey
+	// record holds it wrapped to the user's age recipient.
+	dek   []byte
 	watch *broadcaster
 
 	mu   sync.RWMutex
