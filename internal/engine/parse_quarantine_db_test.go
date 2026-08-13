@@ -35,13 +35,11 @@ func lqDocs() []map[string]any {
 		vocabulary.ActorManifest(lqAuthority, vocabulary.AuthorityActor(lqAuthority)),
 		vocabulary.BundleManifest(lqAuthority, map[string]any{
 			"description": "a bundle carrying one agent",
-			"configType":  lqConfigType,
 			"installs":    []any{lqConfigType, lqAgent},
 		}),
 		vocabulary.KindManifest(lqAuthority,
 			map[string]any{"singular": "legacyconfig", "plural": "legacyconfigs"},
 			map[string]any{
-				"traits":     []any{"bundleconfig"},
 				"properties": map[string]any{"note": map[string]any{"type": "string"}},
 			}),
 		vocabulary.AgentManifest(lqAuthority, "summarizer", map[string]any{

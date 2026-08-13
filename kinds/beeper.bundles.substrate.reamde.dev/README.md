@@ -40,9 +40,11 @@ room mint-then-patch  +  message if_absent puts (immutable event ids)
 hourly schedule ──▶ messagessync ──▶ the ONE live account, when due
 ```
 
-- **`config`** (bundleconfig only — NOT oauth2): the homeserver base URL
-  (defaults to `https://matrix.beeper.com`) and the secret-typed
-  **`accessToken`** the owner pastes. Redacted on every read surface,
+- **`config`** (NOT oauth2), the `connector` input's kind: the homeserver
+  base URL (defaults to `https://matrix.beeper.com`) and the secret-typed
+  **`accessToken`** the owner pastes; the bundle's `connector` input
+  resolves one record of this kind into the sync body (the sole record,
+  the one named `default`, or a bound one). Redacted on every read surface,
   blank-on-edit, injected only into the sync body and scrubbed from everything
   that leaves the runner. **Origin pinning**: the body refuses to send the
   token anywhere except `https` on a `beeper.com` host or loopback (the test
@@ -78,7 +80,8 @@ hourly schedule ──▶ messagessync ──▶ the ONE live account, when due
 ## Honest limits
 
 - **One account per repository, enforced.** The pasted token lives on the
-  host-enforced config singleton, so there is one credential; the sync
+  `connector` input's one resolved config record, so there is one
+  credential; the sync
   processes only the lexicographically-first live account and stamps any
   other live account row `syncStatus: "ignored: duplicate account (this
   provider is one-account-per-repository until issue 011)"`.
@@ -107,14 +110,14 @@ An engine necessity, not a taste call: every **secret**-typed property on an
 `accountconfig`-trait type is AEAD-**sealed at the storage boundary**
 (review-google #3, `write.go sealSecretProps`), and the runner's config
 resolution injects account properties **as stored** — a token pasted onto the
-account would reach the sync body as `substrate:sealsecret:v1:…` ciphertext. Only
-the `bundleconfig` singleton stores a connector-own secret un-sealed and so
-injects it usable (the proven `apiToken` pattern the scrubber tests pin
-down). The body detects the sealed prefix and says so rather than failing
-opaquely.
+account would reach the sync body as `substrate:sealsecret:v1:…` ciphertext. A
+non-accountconfig config kind stores a connector-own secret un-sealed, and
+the injected `connector` input hands it over usable (the proven `apiToken`
+pattern the scrubber tests pin down). The body detects the sealed prefix and
+says so rather than failing opaquely.
 
-Consequence: **one Beeper account per repository** (the config is a
-host-enforced singleton, and the sync enforces the one-account rule — see
+Consequence: **one Beeper account per repository** (the `connector` input
+resolves one config record, and the sync enforces the one-account rule — see
 Honest limits). Beeper is one account per human, so this fits; a future
 engine wave that opens sealed connector secrets at injection (issue 011)
 would let the token move onto the account and lift the limit.
@@ -178,8 +181,8 @@ because one window happened to carry only the owner's replies.
 
 `engine/beeper_bundle_db_test.go` installs this closure from these very
 files. It admits the schema through the loader (the non-OAuth shapes: a
-bundleconfig-only config type, an accountconfig account WITHOUT oauth2, no
-manifest `oauth2:` block, no mapping) and, where uv is available, applies the
+`connector` input injected into functions, an accountconfig account WITHOUT
+oauth2, no manifest `oauth2:` block, no mapping) and, where uv is available, applies the
 closure into a test repository and drives the sync against a **fake homeserver**
 (httptest): a first sync of MORE rooms than one page holds drains across
 pages and mirrors every room and message; a partial incremental delta

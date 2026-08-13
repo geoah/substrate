@@ -35,9 +35,8 @@ data:
 # ---- the bundle document: the import unit -------------------------------------
 # A VOCABULARY bundle: a bare authority the substrate publishes, delivered
 # through the registry instead of the creation seed. It ships kinds and
-# nothing else — no config type, no functions, no agents, no OAuth, no
-# triggers — so `configType:` is absent and `installs:` is exactly the
-# authority's declared members.
+# nothing else — no inputs, no functions, no agents, no OAuth, no
+# triggers — so `installs:` is exactly the authority's declared members.
 kind: core.substrate.reamde.dev/bundle
 metadata: {id: people.substrate.reamde.dev/people}
 data:

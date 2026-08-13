@@ -72,12 +72,13 @@ contact and a mail sender therefore converge on **one** person.
 
 ## The pieces
 
-- **`config`** (bundleconfig + oauth2): the ONE Google OAuth client —
-  `clientId` and secret-typed `clientSecret`. The endpoints and the
-  feature-to-scope mapping are **trusted manifest metadata** on the bundle
-  document, never properties on this mutable row. The host enforces one live
-  config record per bundle; until it exists the bundle reads "needs
-  configuration" and the OAuth flow refuses.
+- **`config`** (oauth2): the Google OAuth client — `clientId` and
+  secret-typed `clientSecret`. The endpoints and the feature-to-scope mapping
+  are **trusted manifest metadata** on the bundle document, never properties
+  on this mutable row. The bundle's `client` input resolves one record of
+  this kind for the host OAuth facility (the sole record, the one named
+  `default`, or a bound one); while it is unresolved or incomplete the bundle
+  status carries a setup step and the OAuth flow refuses.
 - **`account`** (accountconfig): one connected account — `email`, the three
   toggles, `syncFrequency`, `backfillDepth`, the host-written
   `tokenRef`/`tokenStatus`/`grantedScopes`, and connector state in **two

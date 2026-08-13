@@ -66,8 +66,8 @@ stream erroring never stalls another. The account-level `lastSyncedAt` and
 `syncStatus` stay shared: they are the rollup every connection reports, and
 whichever stream finishes stamps them.
 
-- **Kinds (8)**: `config` (the configuration kind, `bundleconfig` and
-  `oauth2`), `account` (the Connection, `accountconfig`), `contact` (the
+- **Kinds (8)**: `config` (the OAuth client kind, `oauth2`, named by the
+  bundle's `client` input), `account` (the Connection, `accountconfig`), `contact` (the
   mirrored contact), `emailaddress` (one address, the shared people source),
   `thread` and `message` (the Gmail mirrors), `calendar` and `event` (the
   Calendar mirrors).

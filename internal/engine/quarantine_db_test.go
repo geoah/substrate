@@ -18,12 +18,11 @@ import (
 )
 
 // TestIncompatibleClosureQuarantinesInsteadOfBricking installs the mail bundle
-// with a valid closure, then rewrites its stored bundle row to drop the oauth2
-// block — the exact prod shape: the configType still implements the oauth2
-// trait, but the stored closure now ships no oauth2 metadata, which admission
-// refuses. On the next open the repository must OPEN (not 401 the world) with the
-// mail bundle quarantined and everything else working; re-installing the valid
-// closure clears the quarantine.
+// with a valid closure, then rewrites its stored bundle row to drop the
+// inputs map — the oauth2 block's clientInput now names no declared input,
+// which admission refuses. On the next open the repository must OPEN (not 401
+// the world) with the mail bundle quarantined and everything else working;
+// re-installing the valid closure clears the quarantine.
 func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
@@ -55,9 +54,9 @@ func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = raw.Close() })
 
-	// Strip the oauth2 block from the STORED bundle definition: the configType
-	// still implements the oauth2 trait, so on the next open admission refuses
-	// the closure ("ships no data.oauth2 block") — the prod landmine.
+	// Strip the inputs map from the STORED bundle definition: the oauth2
+	// block's clientInput then names no declared input, so on the next open
+	// admission refuses the closure — the prod landmine.
 	var defRaw []byte
 	if err := raw.QueryRowContext(ctx,
 		`SELECT props->'definition' FROM records WHERE id = $1`, mbBundleRow).Scan(&defRaw); err != nil {
@@ -67,7 +66,7 @@ func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
 	if err := json.Unmarshal(defRaw, &def); err != nil {
 		t.Fatal(err)
 	}
-	delete(def, "oauth2")
+	delete(def, "inputs")
 	newDef, err := json.Marshal(def)
 	if err != nil {
 		t.Fatal(err)

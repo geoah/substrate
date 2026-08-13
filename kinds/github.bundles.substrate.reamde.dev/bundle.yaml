@@ -12,8 +12,9 @@
 # arrives as a separate slice on these same mirror types.
 #
 # Install:  substratectl apply -f bundle.yaml -f triggers.yaml
-# Configure: create ONE config record — ONLY the GitHub OAuth
-#   app's client id + secret. The provider ENDPOINTS and the feature→scope
+# Configure: create a config record — ONLY the GitHub OAuth app's client
+#   id + secret; the `client` input resolves it (sole record, the one named
+#   `default`, or a bound one). The provider ENDPOINTS and the feature→scope
 #   mapping are TRUSTED bundle-manifest metadata (the `oauth2:` block below),
 #   never config-record properties (review-google #1).
 # Connect:  create an account, then run the host OAuth flow against it —
@@ -40,7 +41,13 @@ data:
     Connects a GitHub account and mirrors the owner's code work — the connected
     user, their repositories, and every issue and pull request they are involved
     in — as mirror records, sync-only.
-  configType: github.bundles.substrate.reamde.dev/config
+  # The one declared input: the OAuth client record. NO inject: the host
+  # OAuth facility reads it (oauth2.clientInput below); no function body ever
+  # sees the client credentials.
+  inputs:
+    client:
+      kind: github.bundles.substrate.reamde.dev/config
+      description: the GitHub OAuth app the host exchanges codes through
   # The vocabulary this bundle maps ONTO (see google): import it first.
   requires:
     - people.substrate.reamde.dev
@@ -53,6 +60,7 @@ data:
   # `public_repo`). The sync
   # itself only ever reads.
   oauth2:
+    clientInput: client
     authorizationEndpoint: https://github.com/login/oauth/authorize
     tokenEndpoint: https://github.com/login/oauth/access_token
     # No revocationEndpoint: GitHub revokes app grants over a Basic-auth
@@ -92,22 +100,21 @@ data:
     - github.bundles.substrate.reamde.dev/githubsync
     - github.bundles.substrate.reamde.dev/userperson
 ---
-# ---- the config type: the one GitHub OAuth app -----------------------------
-# bundleconfig (the host-enforced singleton) + oauth2 (the OAuth CLIENT
-# credentials the facility uses to exchange codes). One live record per
-# bundle: the GitHub OAuth app the owner registers — ONLY its clientId and
+# ---- the config type: the `client` input's kind ----------------------------
+# oauth2 (the OAuth CLIENT credentials the facility uses to exchange codes):
+# the GitHub OAuth app the owner registers — ONLY its clientId and
 # secret-typed clientSecret. Endpoints and scopes are manifest metadata above.
 kind: core.substrate.reamde.dev/kind
 metadata: {id: github.bundles.substrate.reamde.dev/config}
 data:
   authority: github.bundles.substrate.reamde.dev
   description: >-
-    The one GitHub OAuth app this bundle authenticates through — its
-    client id and a sealed client secret, and nothing else. A
-    host-enforced singleton; endpoints and scopes are manifest metadata
-    rather than editable rows.
+    The GitHub OAuth app this bundle authenticates through — its client
+    id and a sealed client secret, and nothing else. The record the
+    bundle's client input resolves; endpoints and scopes are manifest
+    metadata rather than editable rows.
   names: {singular: config, plural: configs}
-  traits: [bundleconfig, oauth2]
+  traits: [oauth2]
   displayTemplate: "GitHub app {clientId}"
   properties:
     clientId:

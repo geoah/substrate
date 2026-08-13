@@ -12,17 +12,19 @@
 # needs the outbox contract (issue 009), which is pending. See README.md.
 #
 # Install:   substratectl apply -f bundle.yaml -f triggers.yaml
-# Configure: create ONE config — the homeserver base URL and the
-#   pasted access token. The token lives HERE, not on the account, by
-#   engine necessity: every secret-typed property on an accountconfig-trait
-#   type is AEAD-sealed at the storage boundary (write.go sealSecretProps,
-#   review-google #3) and the runner injects account properties AS STORED —
-#   an account-held token would reach the sync body as ciphertext. Only the
-#   bundleconfig singleton injects a connector-own secret usable (and the
-#   invocation scrubber holds it to the runner boundary). One consequence:
-#   ONE Beeper account per repository — and the sync ENFORCES it (fleet F8):
-#   only the lexicographically-first live account syncs; any other live
-#   account row is stamped `syncStatus: ignored: duplicate account …`.
+# Configure: create a config record — the homeserver base URL and the
+#   pasted access token; the `connector` input resolves it (sole record,
+#   the one named `default`, or a bound one). The token lives HERE, not on
+#   the account, by engine necessity: every secret-typed property on an
+#   accountconfig-trait type is AEAD-sealed at the storage boundary
+#   (write.go sealSecretProps, review-google #3) and the runner injects
+#   account properties AS STORED — an account-held token would reach the
+#   sync body as ciphertext. An injected input's own secret arrives usable
+#   (and the invocation scrubber holds it to the runner boundary). One
+#   consequence: ONE Beeper account per repository — and the sync ENFORCES
+#   it (fleet F8): only the lexicographically-first live account syncs; any
+#   other live account row is stamped `syncStatus: ignored: duplicate
+#   account …`.
 # Connect:   create an account (your @user id, enabledMessages: true).
 #   No OAuth flow: the on-connect trigger fires straight off the create.
 # ---- the owned authority ------------------------------------------------------
@@ -32,9 +34,9 @@ data:
   version: v1alpha1
 ---
 # ---- the bundle document: the install unit --------------------------------
-# NO `oauth2:` block — a configType implementing oauth2 MUST ship one and
-# vice-versa; this config implements bundleconfig only,
-# so the manifest stays credential-flow-free and StartOAuth refuses the authority.
+# NO `oauth2:` block — an oauth2 block would demand a client input, and this
+# bundle authenticates with a pasted token, so the manifest stays
+# credential-flow-free and StartOAuth refuses the authority.
 kind: core.substrate.reamde.dev/bundle
 metadata: {id: beeper.bundles.substrate.reamde.dev/beeper}
 data:
@@ -42,7 +44,14 @@ data:
   description: >-
     Connects a Beeper (Matrix) account with a pasted access token and mirrors
     its bridged rooms and messages into the graph — sync-only, no sending.
-  configType: beeper.bundles.substrate.reamde.dev/config
+  # The one declared input: the connector record the sync body reads.
+  # `inject: functions` hands the resolved record (token in plaintext inside
+  # the runner boundary) to every invocation under config.inputs.connector.
+  inputs:
+    connector:
+      kind: beeper.bundles.substrate.reamde.dev/config
+      inject: functions
+      description: the Beeper homeserver URL and the pasted access token
   installs:
     - beeper.bundles.substrate.reamde.dev/config
     - beeper.bundles.substrate.reamde.dev/account
@@ -50,25 +59,24 @@ data:
     - beeper.bundles.substrate.reamde.dev/message
     - beeper.bundles.substrate.reamde.dev/messagessync
 ---
-# ---- the config type: homeserver + the pasted token ------------------------
-# bundleconfig ONLY (host-enforced singleton) — NOT oauth2: there is no client
-# id/secret pair and no host-run flow. The access token is the connector's OWN
-# provider credential, secret-typed and owner-written: redacted on every read
-# surface, blank-on-edit, injected into the sync body's config and scrubbed
-# from everything that leaves the runner. It sits on THIS type (not the
-# account) because only a bundleconfig-only type stores it un-sealed and so
-# injects it usable — see the header note.
+# ---- the config type: the `connector` input's kind -------------------------
+# NOT oauth2: there is no client id/secret pair and no host-run flow. The
+# access token is the connector's OWN provider credential, secret-typed and
+# owner-written: redacted on every read surface, blank-on-edit, injected into
+# the sync body's config and scrubbed from everything that leaves the runner.
+# It sits on THIS type (not the account) because a non-accountconfig kind
+# stores it un-sealed and the injected input hands it over usable — see the
+# header note.
 kind: core.substrate.reamde.dev/kind
 metadata: {id: beeper.bundles.substrate.reamde.dev/config}
 data:
   authority: beeper.bundles.substrate.reamde.dev
   description: >-
     The Beeper homeserver and the Matrix access token this bundle spends,
-    as a host-enforced singleton. The token is owner-written and
-    origin-pinned: it travels to a beeper.com host over https and nowhere
-    else.
+    the record the bundle's connector input resolves. The token is
+    owner-written and origin-pinned: it travels to a beeper.com host over
+    https and nowhere else.
   names: {singular: config, plural: configs}
-  traits: [bundleconfig]
   displayTemplate: "Beeper at {homeserverUrl}"
   properties:
     homeserverUrl:
@@ -377,9 +385,9 @@ data:
     # ///
     """Beeper message sync — at most one Matrix HTTP call per invocation.
 
-    The pasted access token arrives injected on the bundle config
-    (config.config.properties.accessToken — the connector-own-secret path;
-    the OAuth facility is not involved and no tokenStatus ever exists). The
+    The pasted access token arrives injected on the connector input
+    (config.inputs.connector.properties.accessToken — the connector-own-secret
+    path; the OAuth facility is not involved and no tokenStatus ever exists). The
     token leaves this body ONLY toward a pinned origin — https on a
     beeper.com host, or loopback (the test seam); an owner-editable
     homeserverUrl pointing anywhere else parks the delivery with a clear
@@ -757,18 +765,20 @@ data:
 
     def main(input, host):
         cfg = input.get("config") or {}
-        conf = ((cfg.get("config") or {}).get("properties")) or {}
+        conf = (((cfg.get("inputs") or {}).get("connector") or {}).get("properties")) or {}
         accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
         token = conf.get("accessToken") or ""
         base = (conf.get("homeserverUrl") or DEFAULT_HOMESERVER).rstrip("/")
 
         if not token:
-            host.log("beeper: no accessToken on the bundle config; nothing to sync")
+            host.log("beeper: the connector input carries no accessToken "
+                     "(or did not resolve); nothing to sync")
             return {"output": {"skipped": "unconfigured"}}
         if token.startswith(SEALED_PREFIX):
             # A token pasted onto the ACCOUNT would arrive like this: the
             # engine seals every secret on an accountconfig-trait type and
-            # injects it as stored. The config singleton is the usable slot.
+            # injects it as stored. The connector's config record is the
+            # usable slot.
             host.log("beeper: accessToken arrived sealed — paste it on the "
                      "config, not the account")
             return {"output": {"skipped": "sealed-token"}}

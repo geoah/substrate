@@ -2,7 +2,7 @@ package engine
 
 // OAuth as a host facility (substrate-primitives §4): the connectors
 // service's OAuth engine, ported. Bundles DECLARE auth — the oauth2 trait's
-// standard fields live on the bundle's one configuration record — and the
+// standard fields live on the client input's resolved record — and the
 // host runs it: the start/callback pair connects an account record, tokens
 // land in the credential store as secret-typed refs, a refresh loop keeps
 // them fresh, and account deletion revokes the grant through the ordinary
@@ -145,33 +145,31 @@ func bundleOAuthMeta(b *vocabulary.Bundle) (*vocabulary.BundleOAuth2, error) {
 	return b.OAuth2, nil
 }
 
-// oauthClientOf reads the OAuth CLIENT credentials off the bundle's one
-// configuration record — the only oauth values that live on the (mutable)
-// row. "Needs configuration" is a first-class refusal: no config record, no
-// flow. The sealed-at-rest clientSecret is opened HERE, the one host read that
-// needs the plaintext.
+// oauthClientOf reads the OAuth CLIENT credentials off the bundle's resolved
+// client input — the only oauth values that live on a (mutable) row. An
+// unresolved input is a first-class refusal: no client record, no flow. The
+// sealed-at-rest clientSecret is opened HERE, the one host read that needs
+// the plaintext.
 func (ds *dataset) oauthClientOf(ctx context.Context, b *vocabulary.Bundle) (clientID, clientSecret string, err error) {
-	ct, ok := ds.registry().ByIdentity(b.ConfigType)
-	if !ok || !ct.Implements(vocabulary.TraitOAuth2Core) {
-		return "", "", fmt.Errorf("%w: bundle %s declares no oauth2 configuration (its configType does not implement the %s trait)",
-			substrate.ErrGuard, b.Authority, vocabulary.TraitOAuth2Core)
+	if b.OAuth2 == nil {
+		return "", "", fmt.Errorf("%w: bundle %s declares no oauth2 block", substrate.ErrGuard, b.Authority)
 	}
-	configRow, err := ds.oneLiveRowOf(ctx, b.ConfigType)
+	ri, err := ds.resolveBundleInput(ctx, b, b.OAuth2.ClientInput)
 	if err != nil {
 		return "", "", err
 	}
-	if configRow == nil {
-		return "", "", fmt.Errorf("%w: bundle %s needs configuration — create its %s record first",
-			substrate.ErrGuard, b.Authority, b.ConfigType)
+	if ri.Row == nil {
+		return "", "", fmt.Errorf("%w: bundle %s's %q input does not resolve (%s) — the OAuth client record carries clientId and clientSecret",
+			substrate.ErrGuard, b.Authority, b.OAuth2.ClientInput, ri.Detail)
 	}
-	clientID = propString(configRow, "clientId")
-	clientSecret, err = ds.openSecretValue(ctx, propString(configRow, "clientSecret"))
+	clientID = propString(ri.Row, "clientId")
+	clientSecret, err = ds.openSecretValue(ctx, propString(ri.Row, "clientSecret"))
 	if err != nil {
 		return "", "", err
 	}
 	if clientID == "" || clientSecret == "" {
-		return "", "", fmt.Errorf("%w: bundle %s's configuration is missing clientId or clientSecret",
-			substrate.ErrGuard, b.Authority)
+		return "", "", fmt.Errorf("%w: bundle %s's client record %s/%s is missing clientId or clientSecret",
+			substrate.ErrGuard, b.Authority, ri.Input.Kind, ri.Row.ID)
 	}
 	return clientID, clientSecret, nil
 }

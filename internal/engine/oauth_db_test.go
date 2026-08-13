@@ -234,7 +234,8 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 	if cfg["bundle"] != mbAuthority {
 		t.Fatalf("config bundle: %v", cfg["bundle"])
 	}
-	conf, _ := cfg["config"].(map[string]any)
+	ins, _ := cfg["inputs"].(map[string]any)
+	conf, _ := ins["client"].(map[string]any)
 	confProps, _ := conf["properties"].(map[string]any)
 	// The client secret is NEVER injected now: the body
 	// receives the config with every secret-typed property OMITTED, so a

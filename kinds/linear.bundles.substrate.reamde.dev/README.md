@@ -34,8 +34,10 @@ team ◀──team edge── issue ──mapping──▶ person (assignee)
 hourly schedule ──▶ issuessync ──▶ every connected account due by its syncFrequency
 ```
 
-- **`config`** (bundleconfig + oauth2): the ONE Linear OAuth application —
-  `clientId` and secret-typed `clientSecret`. Endpoints and the feature→scope
+- **`config`** (oauth2): the Linear OAuth application — `clientId` and
+  secret-typed `clientSecret`, resolved by the bundle's `client` input for
+  the host OAuth facility (the sole record, the one named `default`, or a
+  bound one). Endpoints and the feature→scope
   mapping are TRUSTED manifest metadata on the bundle document (`oauth2:`
   block), never config-record properties (review-google #1).
 - **`account`** (accountconfig): one connected login — the `enabledIssues`

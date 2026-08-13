@@ -51,6 +51,8 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 | **bundle** | The unit of installation: a closure of declarations and behavior, applied and removed as one unit, owning exactly one authority. |
 | **integration** | A bundle whose job includes an ongoing connection to an outside provider. A catalog facet of a bundle, not a different thing. |
 | **vocabulary bundle** | A bundle that ships only kinds and rules — no functions, no provider. |
+| **input** | A bundle's named configuration need: it names a kind, and the engine resolves ONE record per input — the bound record, else the record whose id is `default`, else the sole live record, else nothing, surfaced per input on the bundle's status. No cardinality is enforced on the kind. |
+| **bind** | The explicit step of input resolution: an edge on the bundle's own record row (`rel` = the input name) pointing the input at a chosen record. `POST /bundles/{id}/bind`; an empty record unbinds. |
 | **account** | One configured connection to a provider: a record of an `accountconfig`-trait kind. The console groups these under **Connections**. |
 | **catalog** | The read-only list of the bundle closures built into the binary. A source to install from, never an authority. |
 | **callable** | The union of function and agent — what a trigger binds and what dispatch invokes. |

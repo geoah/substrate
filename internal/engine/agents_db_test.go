@@ -659,12 +659,11 @@ func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 		vocabulary.AuthorityManifest(abAuthority, ""),
 		vocabulary.BundleManifest(abAuthority, map[string]any{
 			"description": "the agent bundle",
-			"configType":  abAuthority + "/abconfig",
 			"installs":    []any{abAuthority + "/abconfig", abAuthority + "/greeter"},
 		}),
 		vocabulary.KindManifest(abAuthority,
 			map[string]any{"singular": "abconfig", "plural": "abconfigs"},
-			map[string]any{"traits": []any{"bundleconfig"}, "properties": map[string]any{
+			map[string]any{"properties": map[string]any{
 				"note": map[string]any{"type": "string"},
 			}}),
 		greeter,

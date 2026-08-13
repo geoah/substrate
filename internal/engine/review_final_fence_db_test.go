@@ -202,12 +202,11 @@ def main(input, host):
 		vocabulary.AuthorityManifest(tbAuthority, ""),
 		vocabulary.BundleManifest(tbAuthority, map[string]any{
 			"description": "the tool bundle",
-			"configType":  tbAuthority + "/tbconfig",
 			"installs":    []any{tbAuthority + "/tbconfig", tbAuthority + "/writer"},
 		}),
 		vocabulary.KindManifest(tbAuthority,
 			map[string]any{"singular": "tbconfig", "plural": "tbconfigs"},
-			map[string]any{"traits": []any{"bundleconfig"}, "properties": map[string]any{
+			map[string]any{"properties": map[string]any{
 				"note": map[string]any{"type": "string"},
 			}}),
 		writer,
@@ -290,12 +289,11 @@ def main(input, host):
 		vocabulary.AuthorityManifest(cbAuthority, ""),
 		vocabulary.BundleManifest(cbAuthority, map[string]any{
 			"description": "the caller bundle",
-			"configType":  cbAuthority + "/cbconfig",
 			"installs":    []any{cbAuthority + "/cbconfig", cbAuthority + "/caller"},
 		}),
 		vocabulary.KindManifest(cbAuthority,
 			map[string]any{"singular": "cbconfig", "plural": "cbconfigs"},
-			map[string]any{"traits": []any{"bundleconfig"}, "properties": map[string]any{
+			map[string]any{"properties": map[string]any{
 				"note": map[string]any{"type": "string"},
 			}}),
 		caller,

@@ -35,7 +35,10 @@ func (d statusErrDataset) BundleStatus(context.Context, string) (substrate.Bundl
 func (d statusErrDataset) BundleAuthority(context.Context, string) (string, error) {
 	return "web.bundles.substrate.reamde.dev", nil
 }
-func (d statusErrDataset) DisableBundle(context.Context, string) error   { return nil }
+func (d statusErrDataset) DisableBundle(context.Context, string) error { return nil }
+func (d statusErrDataset) BindBundleInput(context.Context, string, string, string) error {
+	return nil
+}
 func (d statusErrDataset) EnableBundle(context.Context, string) error    { return nil }
 func (d statusErrDataset) UninstallBundle(context.Context, string) error { return nil }
 func (d statusErrDataset) PurgeBundle(context.Context, string) (int, error) {

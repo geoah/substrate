@@ -8,8 +8,8 @@ import (
 )
 
 // A bundle is the install unit (substrate-primitives §4, record 63): one
-// document declaring the authority it owns, the record type its ONE
-// configuration record wears, and the exact identities of everything it ships
+// document declaring the authority it owns, the INPUTS it configures
+// through (each naming a kind), and the exact identities of everything it ships
 // into that authority. Install, upgrade and teardown are whole-authority applies —
 // the closure the document lists IS the authority, so the loader refuses any
 // authority whose declared members and `installs:` disagree. Lifecycle state
@@ -18,7 +18,7 @@ import (
 //
 // TWO SHAPES, told apart by the owned authority's own name (SCHEME.md R1):
 // an EXTENSION owns a CATEGORIZED authority (`<name>.bundles.substrate.reamde.dev`) and
-// carries a config type and, optionally, callables and a provider flow; a
+// may carry inputs, callables and a provider flow; a
 // VOCABULARY bundle owns a BARE org-domain authority (`people.substrate.reamde.dev`) and
 // ships kinds and nothing else. The second exists because repository creation
 // seeds core alone — the substrate's own vocabulary is delivered through the
@@ -37,15 +37,11 @@ const OrgDomainSuffix = ".substrate.reamde.dev"
 // The host-recognized trait interfaces: traits
 // the loader and the engine key behavior on, shipped in core.
 const (
-	// TraitBundleConfig marks a bundle's configuration type: at most one
-	// live record, host-enforced; the bundle "needs configuration" until it
-	// exists.
-	TraitBundleConfig = "bundleconfig"
 	// TraitAccountConfig marks a bundle's account types: records are the
 	// bundle's connected accounts, enumerated by trait-scoped reads.
 	TraitAccountConfig = "accountconfig"
-	// TraitOAuth2 marks a config type carrying the standard OAuth fields;
-	// creating an account of its bundle runs the host connect flow.
+	// TraitOAuth2 marks a kind carrying the standard OAuth client fields;
+	// the oauth2 block's clientInput names an input of such a kind.
 	TraitOAuth2 = "oauth2"
 )
 
@@ -54,7 +50,6 @@ const (
 // bare names above, and its types would satisfy a bare-name check; the
 // resolved binding identity is the only thing a local trait cannot spoof.
 const (
-	TraitBundleConfigCore  = AuthorityCore + "/" + TraitBundleConfig
 	TraitAccountConfigCore = AuthorityCore + "/" + TraitAccountConfig
 	TraitOAuth2Core        = AuthorityCore + "/" + TraitOAuth2
 )
@@ -69,9 +64,18 @@ type Bundle struct {
 	// header's id, and ids are one namespace.
 	Authority   string
 	Description string
-	// ConfigType is the full identity of the bundle's configuration record
-	// type: declared in the bundle's own authority, implementing bundleconfig.
-	ConfigType string
+	// Inputs are the bundle's declared configuration needs, by name: each
+	// names a KIND whose records satisfy it, and the engine resolves one
+	// record per input (bound edge, the id `default`, or the sole live
+	// record — in that order). No cardinality is enforced on the kind
+	// itself: any number of records may exist, resolution picks one.
+	// A bundle with no needs declares no inputs, and nothing anywhere
+	// implies configuration.
+	Inputs map[string]BundleInput
+	// InputOrder is Inputs' name order (sorted): the YAML map loses its
+	// authored order in parsing, so sorted names are the one deterministic
+	// order status and error output can promise.
+	InputOrder []string
 	// Installs lists the full identities of everything the bundle ships —
 	// its types, traits, property types, mappings, functions and agents.
 	// The loader holds it equal to the authority's declared members.
@@ -86,7 +90,7 @@ type Bundle struct {
 	Requires []string
 	// Vocabulary marks a VOCABULARY bundle: one that owns a BARE authority
 	// under the org domain ("people.substrate.reamde.dev") and ships kinds and nothing
-	// else — no config type, no functions, no agents, no OAuth. It is the
+	// else — no inputs, no functions, no agents, no OAuth. It is the
 	// substrate's own vocabulary, delivered through the registry instead of
 	// the creation seed, so its declarations stay SHIPPED (`source: builtin`)
 	// and only a substrate path may write them.
@@ -116,11 +120,35 @@ type Bundle struct {
 	SourceYAML string
 }
 
+// BundleInput is one declared configuration need: a kind whose records can
+// satisfy it, and who consumes the resolved record.
+type BundleInput struct {
+	// Kind is the full identity of the kind whose records satisfy this
+	// input. Any number of records may exist; the engine resolves one.
+	Kind string
+	// Inject names the consumer the resolved record is handed to:
+	// "functions" injects it (secrets resolved) into every function
+	// invocation of the bundle under the input's name; empty means the
+	// input is read by a host facility alone (the OAuth client).
+	Inject string
+	// Description says what the input is for, for the console.
+	Description string
+}
+
+// BundleInputInjectFunctions is the one Inject value: the resolved record
+// crosses into function invocations. Facility-read inputs leave it empty.
+const BundleInputInjectFunctions = "functions"
+
 // BundleOAuth2 is a bundle's compiled OAuth provider metadata (review-google
-// #1). The config record keeps only the client id and secret; every endpoint
+// #1). The client record keeps only the client id and secret; every endpoint
 // and the feature→scope mapping are here, admitted from the manifest and
 // immutable at runtime.
 type BundleOAuth2 struct {
+	// ClientInput names the bundle input whose resolved record carries the
+	// OAuth CLIENT credentials (an oauth2-trait kind: clientId +
+	// clientSecret). Required: an oauth2 block without a client is a flow
+	// that can never start.
+	ClientInput string
 	// AuthorizationEndpoint and TokenEndpoint are required; RevocationEndpoint
 	// is optional (best-effort revocation on teardown). All are https absolute
 	// URLs (http is admitted only for a loopback host, so tests may run a local
@@ -152,14 +180,14 @@ type BundleOAuth2 struct {
 func (b *Bundle) Identity() string { return KindRef(b.Authority, b.Name) }
 
 var bundleDataKeys = map[string]bool{
-	"authority": true, "description": true, "configType": true, "installs": true,
+	"authority": true, "description": true, "inputs": true, "installs": true,
 	"modules": true, "oauth2": true, "requires": true,
 }
 
 var oauth2MetaKeys = map[string]bool{
 	"authorizationEndpoint": true, "tokenEndpoint": true,
 	"revocationEndpoint": true, "featureScopes": true,
-	"emailEndpoint": true, "emailProperty": true,
+	"emailEndpoint": true, "emailProperty": true, "clientInput": true,
 }
 
 // ModuleSourceMaxBytes bounds one shared module's inline source — the same
@@ -288,15 +316,7 @@ func (l *loader) buildBundle(gd *authorityDocs) {
 		Definition:  d.Data,
 		SourceYAML:  d.Source,
 	}
-	b.ConfigType = mstr(d.Data, "configType")
-	switch {
-	case vocabulary && b.ConfigType != "":
-		l.errf("%s: data.configType: a vocabulary bundle ships kinds and nothing else — it configures nothing, so it declares no config type", where)
-		return
-	case !vocabulary && b.ConfigType == "":
-		l.errf("%s: data.configType is required — the record type (bundleconfig trait) whose one live record configures the bundle", where)
-		return
-	}
+	l.parseBundleInputs(where, b, d.Data)
 	b.Requires = l.parseBundleRequires(where, g.Name, d.Data)
 	for i, iv := range mslice(d.Data, "installs") {
 		id := fmt.Sprint(iv)
@@ -317,8 +337,8 @@ func (l *loader) buildBundle(gd *authorityDocs) {
 		// callable or a provider flow here would be a bundle wearing a
 		// shipped authority's name, which is exactly what the bare/categorized
 		// split exists to prevent.
-		if len(b.Modules) > 0 || b.OAuth2 != nil || len(g.Functions) > 0 || len(g.Agents) > 0 {
-			l.errf("%s: a vocabulary bundle ships kinds and nothing else — no functions, agents, shared modules or oauth2 block; ship those from a %q authority",
+		if len(b.Inputs) > 0 || len(b.Modules) > 0 || b.OAuth2 != nil || len(g.Functions) > 0 || len(g.Agents) > 0 {
+			l.errf("%s: a vocabulary bundle ships kinds and nothing else — no inputs, functions, agents, shared modules or oauth2 block; ship those from a %q authority",
 				where, "<name>"+BundleAuthoritySuffix)
 			return
 		}
@@ -346,6 +366,65 @@ func (l *loader) buildBundle(gd *authorityDocs) {
 		}
 	}
 	g.Bundle = b
+}
+
+// bundleInputKeys is one input's key set: the kind whose records satisfy it,
+// who consumes it, and what it is for.
+var bundleInputKeys = map[string]bool{
+	"kind": true, "inject": true, "description": true,
+}
+
+// parseBundleInputs reads the optional `inputs:` map — the bundle's declared
+// configuration needs, each naming a kind. Names are camelCase; the kind is a
+// full identity; `inject` is absent or "functions". Whether the kind RESOLVES
+// is resolveBundle's check, against the registry the install admits into.
+func (l *loader) parseBundleInputs(where string, b *Bundle, data map[string]any) {
+	raw, has := data["inputs"]
+	if !has {
+		return
+	}
+	m := asMap(raw)
+	if len(m) == 0 {
+		l.errf("%s: data.inputs is present but empty — omit it or declare at least one input", where)
+		return
+	}
+	b.Inputs = map[string]BundleInput{}
+	names := make([]string, 0, len(m))
+	for name := range m {
+		names = append(names, name)
+	}
+	for _, name := range sortedStrings(names) {
+		w := fmt.Sprintf("%s: data.inputs[%q]", where, name)
+		if !ValidCamel(name) {
+			l.errf("%s: an input name must be %s", w, camelRule)
+			continue
+		}
+		im := asMap(m[name])
+		if len(im) == 0 {
+			l.errf("%s: an input declares at least its kind", w)
+			continue
+		}
+		l.checkKeys(w, im, bundleInputKeys)
+		in := BundleInput{
+			Kind:        mstr(im, "kind"),
+			Inject:      mstr(im, "inject"),
+			Description: l.parseDescription(w, im),
+		}
+		if !Qualified(in.Kind) {
+			l.errf("%s.kind: %q — an input names a kind's full identity", w, in.Kind)
+			continue
+		}
+		if in.Inject != "" && in.Inject != BundleInputInjectFunctions {
+			l.errf("%s.inject: %q — %q is the one consumer, or omit it for a facility-read input",
+				w, in.Inject, BundleInputInjectFunctions)
+			continue
+		}
+		b.Inputs[name] = in
+		b.InputOrder = append(b.InputOrder, name)
+	}
+	if len(b.Inputs) == 0 {
+		b.Inputs = nil
+	}
 }
 
 // parseBundleRequires reads the optional `requires:` list — the AUTHORITIES a
@@ -465,11 +544,15 @@ func (l *loader) parseBundleOAuth2(where string, data map[string]any) *BundleOAu
 	}
 	l.checkKeys(w, m, oauth2MetaKeys)
 	o := &BundleOAuth2{
+		ClientInput:           mstr(m, "clientInput"),
 		AuthorizationEndpoint: mstr(m, "authorizationEndpoint"),
 		TokenEndpoint:         mstr(m, "tokenEndpoint"),
 		RevocationEndpoint:    mstr(m, "revocationEndpoint"),
 		EmailEndpoint:         mstr(m, "emailEndpoint"),
 		EmailProperty:         mstr(m, "emailProperty"),
+	}
+	if o.ClientInput == "" {
+		l.errf("%s.clientInput is required — the input whose resolved record carries the OAuth client credentials", w)
 	}
 	l.checkOAuthEndpoint(w, "authorizationEndpoint", o.AuthorizationEndpoint, true)
 	l.checkOAuthEndpoint(w, "tokenEndpoint", o.TokenEndpoint, true)
@@ -546,9 +629,10 @@ func isLoopbackHost(host string) bool {
 }
 
 // resolveBundle validates a bundle against the loaded registry, after trait
-// bindings resolve: the configType exists in the bundle's own authority and
-// implements bundleconfig, and it is the ONLY bundleconfig-trait type the
-// bundle ships — one bundle, one configuration record type.
+// bindings resolve: every input's kind exists and is reachable (the bundle's
+// own authority, core, or a required one), an injected input's kind is the
+// bundle's own (another authority's secrets never cross into its functions),
+// and the oauth2 block's clientInput names an oauth2-trait input.
 func (r *Registry) resolveBundle(g *Authority) []string {
 	b := g.Bundle
 	if b == nil {
@@ -568,40 +652,78 @@ func (r *Registry) resolveBundle(g *Authority) []string {
 				where, req))
 		}
 	}
-	if b.ConfigType == "" {
-		// A vocabulary bundle configures nothing; the config-type rules below
-		// are the bundle tier's and have nothing to say about it.
-		return problems
+	required := map[string]bool{AuthorityCore: true, g.Name: true}
+	for _, req := range b.Requires {
+		required[req] = true
 	}
-	ct, ok := r.ByIdentity(b.ConfigType)
-	switch {
-	case !ok:
-		problems = append(problems, fmt.Sprintf("%s: data.configType: unknown type %q", where, b.ConfigType))
-	case ct.Authority != g.Name:
-		problems = append(problems, fmt.Sprintf("%s: data.configType: %q is declared in %s — a bundle's config type lives in its own authority",
-			where, b.ConfigType, ct.Authority))
-	case !ct.Implements(TraitBundleConfigCore):
-		problems = append(problems, fmt.Sprintf("%s: data.configType: %q does not implement the %s trait (%s — a same-named local trait does not count)",
-			where, b.ConfigType, TraitBundleConfig, TraitBundleConfigCore))
-	}
-	for _, tn := range g.KindOrder {
-		t := g.Kinds[tn]
-		if t.Implements(TraitBundleConfigCore) && t.Identity != b.ConfigType {
-			problems = append(problems, fmt.Sprintf("%s: type %s also implements %s — one bundle carries one config type, the declared configType",
-				where, t.Identity, TraitBundleConfig))
+	for _, name := range b.InputOrder {
+		in := b.Inputs[name]
+		w := fmt.Sprintf("%s: data.inputs[%q]", where, name)
+		ik, ok := r.ByIdentity(in.Kind)
+		switch {
+		case !ok:
+			problems = append(problems, fmt.Sprintf("%s.kind: unknown kind %q", w, in.Kind))
+			continue
+		case !required[ik.Authority]:
+			problems = append(problems, fmt.Sprintf("%s.kind: %q is declared in %s — an input's kind lives in the bundle's own authority, core, or an authority the bundle requires",
+				w, in.Kind, ik.Authority))
+		}
+		// An injected input's records cross into the bundle's function
+		// invocations, secrets resolved. Only the bundle's own records may:
+		// injecting another authority's kind would hand this bundle's
+		// functions secrets their owner never addressed to it.
+		if in.Inject == BundleInputInjectFunctions && ik.Authority != g.Name {
+			problems = append(problems, fmt.Sprintf("%s: an injected input's kind must be the bundle's own — %q is declared in %s",
+				w, in.Kind, ik.Authority))
 		}
 	}
-	// OAuth2 metadata and the oauth2 config trait travel together: a bundle
-	// whose config declares the oauth2 flow must ship trusted provider
-	// metadata (endpoints come from the manifest, never the row), and metadata
-	// without an oauth2 config is meaningless.
-	if ok && ct.Implements(TraitOAuth2Core) && b.OAuth2 == nil {
-		problems = append(problems, fmt.Sprintf("%s: data.configType implements the %s trait but the bundle ships no data.oauth2 block — the provider endpoints are manifest metadata, not config-record properties",
-			where, TraitOAuth2))
+	// The oauth2 trait and the oauth2 block travel together, both directions:
+	// a client kind without trusted endpoints can never serve the facility,
+	// and two client kinds would leave the flow no one record to read.
+	for _, tn := range g.KindOrder {
+		t := g.Kinds[tn]
+		if !t.Implements(TraitOAuth2Core) {
+			continue
+		}
+		switch {
+		case b.OAuth2 == nil:
+			problems = append(problems, fmt.Sprintf("%s: type %s implements the %s trait but the bundle ships no data.oauth2 block — the provider endpoints are manifest metadata, not record properties",
+				where, t.Identity, TraitOAuth2))
+		case b.Inputs[b.OAuth2.ClientInput].Kind != t.Identity:
+			problems = append(problems, fmt.Sprintf("%s: type %s also implements %s — one bundle carries one client kind, the declared clientInput's",
+				where, t.Identity, TraitOAuth2))
+		}
 	}
 	if b.OAuth2 != nil {
-		if ok && !ct.Implements(TraitOAuth2Core) {
-			problems = append(problems, fmt.Sprintf("%s: data.oauth2 is declared but the configType does not implement the %s trait", where, TraitOAuth2))
+		// The client credentials live on an input's resolved record; the
+		// endpoints stay manifest metadata. The named input's kind implements
+		// the oauth2 trait so the facility finds clientId/clientSecret where
+		// the trait contract puts them — and it is the bundle's OWN kind,
+		// always: the facility opens the resolved record's sealed
+		// clientSecret and sends it to THIS bundle's declared token endpoint,
+		// so a client input naming another authority's kind would let one
+		// bundle exfiltrate another's client secret through its own
+		// attacker-chosen endpoints.
+		ci, ok := b.Inputs[b.OAuth2.ClientInput]
+		ck, ckExists := (*Kind)(nil), false
+		if ok {
+			ck, ckExists = r.ByIdentity(ci.Kind)
+		}
+		switch {
+		case !ok:
+			problems = append(problems, fmt.Sprintf("%s: data.oauth2.clientInput %q names no declared input", where, b.OAuth2.ClientInput))
+		case ckExists && ck.Authority != g.Name:
+			problems = append(problems, fmt.Sprintf("%s: data.oauth2.clientInput %q: its kind %q is declared in %s — the client kind is the bundle's own, so one bundle's flow can never open another's client secret",
+				where, b.OAuth2.ClientInput, ci.Kind, ck.Authority))
+		case ckExists && !ck.Implements(TraitOAuth2Core):
+			problems = append(problems, fmt.Sprintf("%s: data.oauth2.clientInput %q: its kind %q does not implement the %s trait (%s — a same-named local trait does not count)",
+				where, b.OAuth2.ClientInput, ci.Kind, TraitOAuth2, TraitOAuth2Core))
+		case ckExists && ck.Implements(TraitAccountConfigCore):
+			// A client is not a Connection: purge tears accounts down first
+			// (revocation reads the still-live client), so one kind wearing
+			// both hats would have no consistent teardown order.
+			problems = append(problems, fmt.Sprintf("%s: data.oauth2.clientInput %q: its kind %q also implements the %s trait — the client kind and an account kind are never one",
+				where, b.OAuth2.ClientInput, ci.Kind, TraitAccountConfig))
 		}
 		// Every featureScopes key names a bool toggle the bundle declares:
 		// StartOAuth reads it off the account row to decide whether its scopes

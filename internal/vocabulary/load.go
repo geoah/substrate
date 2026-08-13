@@ -490,7 +490,7 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 	l.buildAuthorityAgents(gd, g)
 
 	// The bundle document (bundle.go): the owned-authority rule and the install
-	// closure check against the authority's own members; the configType resolves
+	// closure check against the authority's own members; the inputs resolve
 	// in Finalize/Install, after trait bindings.
 	l.buildBundle(gd)
 	return g
@@ -542,6 +542,7 @@ var deletedDataKeys = map[string]string{
 	"binding":            "an ordinary edge plus a recordmapping document (record 50)",
 	"projects":           "an ordinary edge plus a recordmapping document (record 50)",
 	"actor":              "transitions carry no guard — anyone may perform any of them",
+	"configType":         "inputs — named configuration needs, each naming a kind; resolution is bound edge, the id \"default\", then the sole live record",
 }
 
 // sortDocs orders a type's manifests by identity, so the registry a stream
@@ -1795,7 +1796,7 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 				where, p.Prop, p.Cap, p.Datatype, prop.Datatype))
 		}
 	}
-	// The bundle's configType, after trait bindings resolved (bundle.go).
+	// The bundle's inputs, after trait bindings resolved (bundle.go).
 	problems = append(problems, r.resolveBundle(g)...)
 	return problems
 }

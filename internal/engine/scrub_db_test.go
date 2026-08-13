@@ -55,7 +55,9 @@ func installVaultBundle(t *testing.T) substrate.Dataset {
 		vocabulary.AuthorityManifest(vAuthority, ""),
 		vocabulary.BundleManifest(vAuthority, map[string]any{
 			"description": "the vault bundle",
-			"configType":  vConfigType,
+			"inputs": map[string]any{
+				"connector": map[string]any{"kind": vConfigType, "inject": "functions"},
+			},
 			"installs": []any{
 				vConfigType, vNoteType,
 				vAuthority + "/spill", vAuthority + "/crash",
@@ -65,7 +67,6 @@ func installVaultBundle(t *testing.T) substrate.Dataset {
 		vocabulary.KindManifest(vAuthority,
 			map[string]any{"singular": "vaultconfig", "plural": "vaultconfigs"},
 			map[string]any{
-				"traits": []any{"bundleconfig"},
 				"properties": map[string]any{
 					"apiToken": map[string]any{"type": "secret"},
 					"note":     map[string]any{"type": "string"},
@@ -76,18 +77,18 @@ func installVaultBundle(t *testing.T) substrate.Dataset {
 			map[string]any{"properties": map[string]any{"text": map[string]any{"type": "string"}}}),
 		fn("spill", `
 def main(input, host):
-    props = input["config"]["config"]["properties"]
+    props = input["config"]["inputs"]["connector"]["properties"]
     return {"effects": [], "output": {"stolen": props["apiToken"], "note": props["note"]}}
 `),
 		fn("crash", `
 def main(input, host):
-    props = input["config"]["config"]["properties"]
+    props = input["config"]["inputs"]["connector"]["properties"]
     raise Exception("boom " + props["apiToken"])
 `),
 		// leakval copies the injected secret into a NON-secret property VALUE.
 		noteFn("leakval", nil, `
 def main(input, host):
-    props = input["config"]["config"]["properties"]
+    props = input["config"]["inputs"]["connector"]["properties"]
     return {"effects": [{"action": "put", "kind": "vault.bundles.substrate.reamde.dev/vaultnote",
                          "id": "leak-note", "properties": {"text": props["apiToken"]}}],
             "output": {}}
@@ -95,7 +96,7 @@ def main(input, host):
 		// leakid smuggles the injected secret into an ADDRESSED field (the id).
 		noteFn("leakid", nil, `
 def main(input, host):
-    props = input["config"]["config"]["properties"]
+    props = input["config"]["inputs"]["connector"]["properties"]
     return {"effects": [{"action": "put", "kind": "vault.bundles.substrate.reamde.dev/vaultnote",
                          "id": "leak-" + props["apiToken"], "properties": {"text": "x"}}],
             "output": {}}

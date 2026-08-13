@@ -5,10 +5,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
+  bindBundleInput,
   bundleState,
   parseSubstrateOAuthMessage,
   purgeBundle,
   runBundleVerb,
+  setupCount,
   startOAuth,
   SUBSTRATE_OAUTH_SOURCE,
   type BundleStatus,
@@ -19,10 +21,16 @@ function status(over: Partial<BundleStatus> = {}): BundleStatus {
     id: "web.bundles.substrate.reamde.dev",
     name: "web",
     authority: "web.bundles.substrate.reamde.dev",
-    configType: "web.bundles.substrate.reamde.dev/webbundleconfig",
     installed: true,
     enabled: true,
-    configured: true,
+    inputs: [
+      {
+        name: "connector",
+        kind: "web.bundles.substrate.reamde.dev/config",
+        record: "default",
+        via: "default",
+      },
+    ],
     accounts: 0,
     functions: 1,
     kinds: 2,
@@ -38,11 +46,41 @@ describe("bundleState", () => {
   it("reads disabled when installed but execution stopped", () => {
     expect(bundleState(status({ enabled: false }))).toBe("disabled")
   })
-  it("reads needs-configuration when enabled but no config record", () => {
-    expect(bundleState(status({ configured: false }))).toBe("needs-configuration")
-  })
-  it("reads enabled when installed, running and configured", () => {
+  it("reads enabled when installed and running; setup never moves it", () => {
     expect(bundleState(status())).toBe("enabled")
+    expect(
+      bundleState(
+        status({
+          setup: [
+            {
+              code: "missing",
+              input: "connector",
+              kind: "web.bundles.substrate.reamde.dev/config",
+              message: "no config record exists yet",
+            },
+          ],
+        })
+      )
+    ).toBe("enabled")
+  })
+})
+
+describe("setupCount", () => {
+  it("is zero for a bundle with no setup key (ready is the absent list)", () => {
+    expect(setupCount(status())).toBe(0)
+    expect(setupCount(status({ setup: [] }))).toBe(0)
+  })
+  it("counts the standing steps", () => {
+    expect(
+      setupCount(
+        status({
+          setup: [
+            { code: "missing", input: "connector", message: "m" },
+            { code: "provider", record: "openai", message: "p" },
+          ],
+        })
+      )
+    ).toBe(2)
   })
 })
 
@@ -69,6 +107,39 @@ describe("lifecycle verbs", () => {
     const res = await purgeBundle("web.bundles.substrate.reamde.dev")
     expect(String(fetchMock.mock.calls[0][0])).toContain("/bundles/web.bundles.substrate.reamde.dev/purge")
     expect(res.purged).toBe(12)
+  })
+
+  it("bind POSTs the input name and record to the bundle's bind verb", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify(status()), { status: 200 })
+    )
+    const res = await bindBundleInput(
+      "web.bundles.substrate.reamde.dev",
+      "connector",
+      "rec-1"
+    )
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(String(url)).toBe(
+      "/api/v1/core.substrate.reamde.dev/bundles/web.bundles.substrate.reamde.dev/bind"
+    )
+    expect(init?.method).toBe("POST")
+    expect(JSON.parse(String(init?.body))).toEqual({
+      input: "connector",
+      record: "rec-1",
+    })
+    expect(res.id).toBe("web.bundles.substrate.reamde.dev")
+  })
+
+  it("bind with an empty record is the unbind", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify(status()), { status: 200 })
+    )
+    await bindBundleInput("web.bundles.substrate.reamde.dev", "connector", "")
+    const [, init] = fetchMock.mock.calls[0]
+    expect(JSON.parse(String(init?.body))).toEqual({
+      input: "connector",
+      record: "",
+    })
   })
 
   it("oauth/start sends the account record id and returns the consent url", async () => {

@@ -4,7 +4,9 @@ package engine
 // the shipped closure at ../../kinds/whoop.bundles.substrate.reamde.dev:
 //
 //  1. TestWhoopBundleAdmitsSchema — the closure ADMITS through the schema
-//     loader: the config type wears bundleconfig+oauth2, the account wears
+//     loader: the bundle declares the `client` input (facility-read, never
+//     injected) the oauth2 block names, the config kind wears oauth2, the
+//     account wears
 //     accountconfig (and NOT oauth2), the trusted oauth2 block compiles with
 //     all three feature toggles mapped (each carrying offline + read:profile
 //     so any one toggle mints a refresh token and derives the email) and NO
@@ -88,13 +90,21 @@ func TestWhoopBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("the bundle closure did not admit: %v", err)
 	}
 
-	// The bundle exists and its config type is the one it declares.
+	// The bundle exists and declares the `client` input the oauth2 block
+	// names: facility-read, so it must NOT inject.
 	b, ok := reg.BundleOf(whoopAuthority)
 	if !ok {
 		t.Fatalf("no bundle owns %s after install", whoopAuthority)
 	}
-	if b.ConfigType != whoopConfigType {
-		t.Fatalf("bundle configType = %q, want %q", b.ConfigType, whoopConfigType)
+	in, ok := b.Inputs["client"]
+	if !ok {
+		t.Fatalf("bundle declares no client input: %v", b.InputOrder)
+	}
+	if in.Kind != whoopConfigType {
+		t.Fatalf("client input kind = %q, want %q", in.Kind, whoopConfigType)
+	}
+	if in.Inject != "" {
+		t.Fatalf("client input inject = %q, but the OAuth client is facility-read, never injected", in.Inject)
 	}
 
 	// The trusted oauth2 block compiled: WHOOP endpoints, the email derivation
@@ -102,6 +112,9 @@ func TestWhoopBundleAdmitsSchema(t *testing.T) {
 	// plus offline (the refresh token) and read:profile (the email grant).
 	if b.OAuth2 == nil {
 		t.Fatal("bundle compiled no oauth2 metadata")
+	}
+	if b.OAuth2.ClientInput != "client" {
+		t.Fatalf("oauth2 clientInput = %q, want %q", b.OAuth2.ClientInput, "client")
 	}
 	if b.OAuth2.AuthorizationEndpoint != whoopProdBase+"/oauth/oauth2/auth" ||
 		b.OAuth2.TokenEndpoint != whoopProdBase+"/oauth/oauth2/token" {
@@ -142,13 +155,10 @@ func TestWhoopBundleAdmitsSchema(t *testing.T) {
 		}
 	}
 
-	// The config type: bundleconfig (host singleton) + oauth2 (client fields).
+	// The config type: oauth2 (client fields), the client input's kind.
 	cfg, ok := reg.ByIdentity(whoopConfigType)
 	if !ok {
 		t.Fatalf("config type %s missing", whoopConfigType)
-	}
-	if !cfg.Implements(vocabulary.TraitBundleConfigCore) {
-		t.Fatalf("config type does not implement %s", vocabulary.TraitBundleConfigCore)
 	}
 	if !cfg.Implements(vocabulary.TraitOAuth2Core) {
 		t.Fatalf("config type does not implement %s", vocabulary.TraitOAuth2Core)
@@ -269,11 +279,14 @@ func TestWhoopBundleInstalls(t *testing.T) {
 	if !st.Installed || !st.Enabled {
 		t.Fatalf("bundle not live: installed=%v enabled=%v", st.Installed, st.Enabled)
 	}
-	if st.Configured {
-		t.Fatal("bundle reports configured with no config record created")
+	if len(st.Inputs) != 1 || st.Inputs[0].Name != "client" || st.Inputs[0].Kind != whoopConfigType {
+		t.Fatalf("status inputs = %+v, want the one client input", st.Inputs)
 	}
-	if st.ConfigType != whoopConfigType {
-		t.Fatalf("status configType = %q, want %q", st.ConfigType, whoopConfigType)
+	if st.Inputs[0].Record != "" || st.Inputs[0].Via != "" {
+		t.Fatalf("client input resolved with no config record created: %+v", st.Inputs[0])
+	}
+	if len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupMissing || st.Setup[0].Input != "client" {
+		t.Fatalf("status setup = %+v, want the one missing-input item", st.Setup)
 	}
 	if st.Functions != 1 {
 		t.Fatalf("status functions = %d, want 1", st.Functions)
@@ -548,8 +561,8 @@ func TestWhoopBundleFakeSyncMirrors(t *testing.T) {
 		}
 	}
 
-	// Configure the singleton client, then add one pending account with every
-	// collection on.
+	// Configure the client record (the sole record resolves the input), then
+	// add one pending account with every collection on.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: whoopConfigType,
 		Properties: map[string]any{

@@ -33,7 +33,7 @@ closure. connect starts the host OAuth flow for an account record.`,
 		a.bundleStatusCommand(),
 		a.bundleVerbCommand("disable", "Stop a bundle's execution (reversible): triggers pause, functions refuse, accounts freeze"),
 		a.bundleVerbCommand("enable", "Reverse a disable; backlogged triggers resume from their cursors"),
-		a.bundleVerbCommand("uninstall", "Tear down the schema, callables and runtime registration; refused while live data remains (purge first)"),
+		a.bundleUninstallCommand(),
 		a.bundlePurgeCommand(),
 		a.bundleConnectCommand(),
 	)
@@ -57,10 +57,10 @@ func (a *app) bundleListCommand() *cobra.Command {
 				return err
 			}
 			tw := newTable(a.out)
-			fmt.Fprintln(tw, "ID\tINSTALLED\tENABLED\tCONFIGURED\tACCOUNTS\tFUNCTIONS\tKINDS\tRECORDS")
+			fmt.Fprintln(tw, "ID\tINSTALLED\tENABLED\tSETUP\tACCOUNTS\tFUNCTIONS\tKINDS\tRECORDS")
 			for _, b := range res.Bundles {
-				fmt.Fprintf(tw, "%s\t%t\t%t\t%t\t%d\t%d\t%d\t%d\n",
-					b.ID, b.Installed, b.Enabled, b.Configured, b.Accounts, b.Functions, b.Kinds, b.LiveRecords)
+				fmt.Fprintf(tw, "%s\t%t\t%t\t%s\t%d\t%d\t%d\t%d\n",
+					b.ID, b.Installed, b.Enabled, setupSummary(b), b.Accounts, b.Functions, b.Kinds, b.LiveRecords)
 			}
 			return tw.Flush()
 		},
@@ -91,11 +91,32 @@ func printBundleStatus(a *app, st substrate.BundleStatus) {
 	fmt.Fprintf(a.out, "bundle:      %s\n", st.ID)
 	fmt.Fprintf(a.out, "installed:   %t\n", st.Installed)
 	fmt.Fprintf(a.out, "enabled:     %t\n", st.Enabled)
-	fmt.Fprintf(a.out, "configured:  %t (configType %s)\n", st.Configured, st.ConfigType)
+	if st.Quarantined {
+		fmt.Fprintf(a.out, "quarantined: %s — re-install the bundle to clear it\n", st.QuarantineReason)
+	}
+	for _, in := range st.Inputs {
+		if in.Record != "" {
+			fmt.Fprintf(a.out, "input:       %s → %s/%s (%s)\n", in.Name, in.Kind, in.Record, in.Via)
+		} else {
+			fmt.Fprintf(a.out, "input:       %s (%s) unresolved\n", in.Name, in.Kind)
+		}
+	}
+	for _, s := range st.Setup {
+		fmt.Fprintf(a.out, "setup:       [%s] %s\n", s.Code, s.Message)
+	}
 	fmt.Fprintf(a.out, "accounts:    %d\n", st.Accounts)
 	fmt.Fprintf(a.out, "functions:   %d\n", st.Functions)
 	fmt.Fprintf(a.out, "kinds:       %d\n", st.Kinds)
 	fmt.Fprintf(a.out, "records:    %d\n", st.LiveRecords)
+}
+
+// setupSummary compresses a status's setup list for the table: "ready", or
+// the item count.
+func setupSummary(st substrate.BundleStatus) string {
+	if len(st.Setup) == 0 {
+		return "ready"
+	}
+	return fmt.Sprintf("%d steps", len(st.Setup))
 }
 
 func (a *app) bundleVerbCommand(verb, short string) *cobra.Command {
@@ -114,6 +135,30 @@ func (a *app) bundleVerbCommand(verb, short string) *cobra.Command {
 			}
 			fmt.Fprintf(a.out, "bundle %s: %s applied\n", args[0], verb)
 			printBundleStatus(a, st)
+			return nil
+		},
+	}
+}
+
+// bundleUninstallCommand is not a bundleVerbCommand: uninstall tears the
+// bundle row down, so there is no status to decode — the server acks.
+func (a *app) bundleUninstallCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "uninstall <id>",
+		Short: "Tear down the schema, callables and runtime registration; refused while live data remains (purge first)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cl, err := a.client()
+			if err != nil {
+				return err
+			}
+			var res struct {
+				Uninstalled bool `json:"uninstalled"`
+			}
+			if err := cl.do(cmd.Context(), http.MethodPost, bundlesPath(args[0], "uninstall"), nil, map[string]any{}, &res); err != nil {
+				return err
+			}
+			fmt.Fprintf(a.out, "bundle %s: uninstalled\n", args[0])
 			return nil
 		},
 	}

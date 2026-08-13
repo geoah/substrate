@@ -27,7 +27,7 @@ one `data_source` object per source, each naming its **containing database**:
 
 ## One account per repository
 
-The bundle holds **one** credential (the singleton config's token), and a
+The bundle holds **one** credential (the `connector` input's token), and a
 Notion internal-integration token addresses one workspace — so a second
 `account` row could only mirror the same workspace twice under different ids.
 The sync treats the **lexicographically-first** account row as the connection;
@@ -56,11 +56,11 @@ an oauth2 revision of this bundle is mechanical against the google template
 secret-typed property of an `accountconfig`-trait type at rest
 (`engine/write.go` `sealsSecretsAtRest`) and the runner's config resolution
 injects account properties _as stored_ — a token pasted onto the `account`
-would reach the sync body as sealed ciphertext. A `bundleconfig`-trait type's
-own secrets are the host's supported pattern (`engine/bundleconfig.go`: "a
-connector's OWN config secrets … ARE still injected"; the web bundle's
-`firecrawlKey` is the precedent): injected in plaintext inside the runner
-boundary, held there by the invocation scrubber, never read back over the API.
+would reach the sync body as sealed ciphertext. An injected input's own
+secrets are the host's supported pattern (`engine/invocationconfig.go`: a
+connector's OWN input secrets ARE injected; the web bundle's `firecrawlKey`
+is the precedent): injected in plaintext inside the runner boundary, held
+there by the invocation scrubber, never read back over the API.
 
 **Where the token may travel — origin pinning.** The body refuses to send the
 token anywhere except HTTPS `api.notion.com` or a **loopback** host
@@ -93,9 +93,12 @@ hourly schedule ──▶ workspacesync ──▶ the primary account, when due 
                                       syncFrequency; duplicate rows stamped
 ```
 
-- **`config`** (bundleconfig): the ONE integration token — secret-typed
-  `integrationToken` (writer: owner), plus `apiBase`, a loopback-only test
-  override of `https://api.notion.com` (anything else refuses to sync).
+- **`config`**, the `connector` input's kind: the integration token,
+  secret-typed `integrationToken` (writer: owner), plus `apiBase`, a
+  loopback-only test override of `https://api.notion.com` (anything else
+  refuses to sync). The bundle's `connector` input resolves one record of
+  this kind into the sync body (the sole record, the one named `default`,
+  or a bound one).
 - **`account`** (accountconfig): the connected workspace — `displayName`, the
   `enabledPages`/`enabledDatabases` toggles, labeled required `syncFrequency`
   (default daily) and `backfillDepth` (default everything) enums, and the

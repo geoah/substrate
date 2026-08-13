@@ -30,18 +30,19 @@
 # secret-typed property of an accountconfig-trait type at rest (write.go
 # sealsSecretsAtRest) and the runner's config resolution injects account
 # properties AS STORED — a pasted token on the account would reach the sync
-# body as sealed ciphertext it cannot use. A bundleconfig-trait type's own
-# secrets are the supported pattern (bundleconfig.go: "a connector's OWN
-# config secrets … ARE still injected", the web bundle's firecrawlKey
-# precedent): injected in plaintext, held to the runner boundary by the
-# invocation scrubber, never read back over the API. One token per install is
-# exactly Notion's internal-integration shape — a token addresses ONE
-# workspace, which is also why the sync enforces ONE account: the
-# lexicographically-first account row is the connection; any other row is
+# body as sealed ciphertext it cannot use. An injected input's own secrets
+# are the supported pattern (invocationconfig.go: a connector's OWN input secrets
+# ARE injected; the web bundle's firecrawlKey precedent): injected in
+# plaintext, held to the runner boundary by the invocation scrubber, never
+# read back over the API. The `connector` input resolves ONE config record
+# per install, exactly Notion's internal-integration shape: a token
+# addresses ONE workspace, which is also why the sync enforces ONE account:
+# the lexicographically-first account row is the connection; any other row is
 # stamped ignored.
 #
 # Install:  substratectl apply -f bundle.yaml -f triggers.yaml
-# Configure: create ONE config with the integration token.
+# Configure: create a config record with the integration token; the
+#   `connector` input resolves it (sole record, `default`, or a bound one).
 # Connect:  create an account (toggles + cadence) — no OAuth flow runs;
 #   the on-connect trigger fires the first sync directly.
 # ---- the owned authority ------------------------------------------------------
@@ -61,7 +62,14 @@ data:
   description: >-
     Mirrors the Notion pages and data sources shared with an internal integration
     into the graph — sync-only, token-authorized, no writeback.
-  configType: notion.bundles.substrate.reamde.dev/config
+  # The one declared input: the connector record the sync body reads.
+  # `inject: functions` hands the resolved record (token in plaintext inside
+  # the runner boundary) to every invocation under config.inputs.connector.
+  inputs:
+    connector:
+      kind: notion.bundles.substrate.reamde.dev/config
+      inject: functions
+      description: the Notion integration token and the pinned API origin
   installs:
     - notion.bundles.substrate.reamde.dev/config
     - notion.bundles.substrate.reamde.dev/account
@@ -69,23 +77,21 @@ data:
     - notion.bundles.substrate.reamde.dev/database
     - notion.bundles.substrate.reamde.dev/workspacesync
 ---
-# ---- the config type: the one integration token ---------------------------
-# bundleconfig only (host-enforced singleton) — NOT oauth2, deliberately: a
-# configType implementing oauth2 must ship an `oauth2:` manifest block, and
-# this bundle has no OAuth flow to declare. The token is a secret the sync
-# body itself spends against api.notion.com; it injects in plaintext and the
-# invocation scrubber holds it to the runner boundary.
+# ---- the config type: the `connector` input's kind ------------------------
+# NOT oauth2, deliberately: a kind implementing oauth2 is an OAuth client's
+# shape, and this bundle has no OAuth flow to declare. The token is a secret
+# the sync body itself spends against api.notion.com; it injects in plaintext
+# and the invocation scrubber holds it to the runner boundary.
 kind: core.substrate.reamde.dev/kind
 metadata: {id: notion.bundles.substrate.reamde.dev/config}
 data:
   authority: notion.bundles.substrate.reamde.dev
   description: >-
-    The one Notion integration token this bundle spends, and the API
-    origin it may be sent to. A host-enforced singleton; the token is
-    sealed against read-back and the origin is pinned, so an owner edit
-    cannot become an exfiltration channel.
+    The Notion integration token this bundle spends, and the API origin
+    it may be sent to. The bundle's connector input resolves one record
+    of this kind; the token is sealed against read-back and the origin is
+    pinned, so an owner edit cannot become an exfiltration channel.
   names: {singular: config, plural: configs}
-  traits: [bundleconfig]
   displayTemplate: "Notion integration"
   properties:
     integrationToken:
@@ -115,8 +121,8 @@ data:
 # flow ever writes them under the token model. Connection health reads off
 # the connector-written lastSyncedAt/syncStatus instead.
 #
-# ONE ACCOUNT PER REPOSITORY: the bundle holds one credential (the singleton
-# config), so a second account row would mirror the same workspace twice under
+# ONE ACCOUNT PER REPOSITORY: the bundle holds one credential (the connector
+# input's token), so a second account row would mirror the same workspace twice under
 # different ids. The sync treats the lexicographically-first account row as
 # THE connection and stamps every other row `syncStatus: "ignored: duplicate
 # account …"` — per-account credentials are issue-011 territory.
@@ -394,18 +400,18 @@ data:
     # ///
     """Notion workspace sync — search / blocks / links phases, read-only.
 
-    The integration token arrives injected on the bundle config
-    (`config.config.properties.integrationToken`, plaintext inside the runner
-    boundary, scrubbed on every surface that leaves it) and is spent ONLY
-    against the pinned https://api.notion.com origin or a loopback test
-    seam. The body never writes to Notion: no page creation, no edits, no
+    The integration token arrives injected on the connector input
+    (`config.inputs.connector.properties.integrationToken`, plaintext inside
+    the runner boundary, scrubbed on every surface that leaves it) and is
+    spent ONLY against the pinned https://api.notion.com origin or a loopback
+    test seam. The body never writes to Notion: no page creation, no edits, no
     archival — the named future case for that (create page, read computed
     state, write children) is deferred to a workflow primitive (2026-08
     function-write-model SYNTHESIS).
 
-    One account per repository: the config holds one workspace token, so the
-    lexicographically-first account row is THE connection; every other
-    row is stamped `syncStatus: "ignored: duplicate account …"`.
+    One account per repository: the connector input holds one workspace
+    token, so the lexicographically-first account row is THE connection;
+    every other row is stamped `syncStatus: "ignored: duplicate account …"`.
 
     Delta optimization (the linkprovider's last_edited_time short-circuit,
     kept): before staging anything the mirror is read back and its VERBATIM
@@ -855,7 +861,7 @@ data:
 
     def main(input, host):
         cfg = input.get("config") or {}
-        bcfg = ((cfg.get("config") or {}).get("properties")) or {}
+        bcfg = (((cfg.get("inputs") or {}).get("connector") or {}).get("properties")) or {}
         token = bcfg.get("integrationToken") or ""
         api = (bcfg.get("apiBase") or DEFAULT_API).rstrip("/")
         accounts = {a.get("id"): a for a in (cfg.get("accounts") or [])}
@@ -865,7 +871,8 @@ data:
                      "loopback — refusing to spend the integration token" % api)
             raise RuntimeError("notion: apiBase failed origin pinning")
         if not token:
-            host.log("notion: the bundle config has no integrationToken — nothing to sync")
+            host.log("notion: the connector input carries no integrationToken "
+                     "(or did not resolve); nothing to sync")
             return {"effects": []}
 
         # Mirror ids staged under this invocation (or under the whole direct-

@@ -28,6 +28,9 @@ type bundleOps interface {
 	BundleAuthority(ctx context.Context, id string) (string, error)
 	DisableBundle(ctx context.Context, id string) error
 	EnableBundle(ctx context.Context, id string) error
+	// BindBundleInput points a bundle's input at a chosen record (empty
+	// record clears the choice) — the explicit step of input resolution.
+	BindBundleInput(ctx context.Context, id, input, record string) error
 	UninstallBundle(ctx context.Context, id string) error
 	PurgeBundle(ctx context.Context, id string) (int, error)
 	StartOAuth(ctx context.Context, actor substrate.Actor, recordID string) (string, error)
@@ -65,8 +68,8 @@ func (h *handler) getBundleStatuses(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"bundles": statuses})
 }
 
-// getBundleStatus is one bundle's computed state — lifecycle, the
-// needs-configuration signal, account and record counts.
+// getBundleStatus is one bundle's computed state — lifecycle, input
+// resolution, setup steps, account and record counts.
 func (h *handler) getBundleStatus(w http.ResponseWriter, r *http.Request) {
 	ops, ok := bundlesFrom(r.Context())
 	if !ok {
@@ -120,6 +123,43 @@ func (h *handler) postBundleVerb(verb func(bundleOps, context.Context, string) e
 		}
 		writeJSON(w, http.StatusOK, st)
 	}
+}
+
+// postBundleBind points one input at a chosen record, or clears the choice
+// (record "" or absent), then answers with the refreshed status so the
+// caller sees the resolution it just changed.
+func (h *handler) postBundleBind(w http.ResponseWriter, r *http.Request) {
+	ops, ok := bundlesFrom(r.Context())
+	if !ok {
+		writeNoBundles(w)
+		return
+	}
+	if _, ok := h.bundleLifecycleGate(w, r, ops); !ok {
+		return
+	}
+	var body struct {
+		Input  string `json:"input"`
+		Record string `json:"record"`
+	}
+	if err := decodeBody(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
+	if body.Input == "" {
+		writeError(w, http.StatusBadRequest, codeBadRequest, "input is required — the declared input name to bind")
+		return
+	}
+	id := pathParam(r, "id")
+	if err := ops.BindBundleInput(r.Context(), id, body.Input, body.Record); err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
+	st, err := ops.BundleStatus(r.Context(), id)
+	if err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
 }
 
 // postBundleUninstall tears the bundle down and acks with a tombstone (codex

@@ -32,8 +32,10 @@ recovery / sleep / workout mirrors  (plain puts — re-sync converges)
 hourly schedule ──▶ sync ──▶ every connected account due by its syncFrequency
 ```
 
-- **`config`** (bundleconfig + oauth2): the ONE WHOOP OAuth client — `clientId`
-  and secret-typed `clientSecret`. The provider endpoints and the feature→scope
+- **`config`** (oauth2): the WHOOP OAuth client — `clientId` and
+  secret-typed `clientSecret`, resolved by the bundle's `client` input for
+  the host OAuth facility (the sole record, the one named `default`, or a
+  bound one). The provider endpoints and the feature→scope
   mapping are TRUSTED manifest metadata on the bundle document, never config
   properties (review-google #1).
 - **`account`** (accountconfig): one connected WHOOP account — the host-written
@@ -104,8 +106,8 @@ shipped here):
    (The value is the host's `SUBSTRATE_OAUTH_CALLBACK_URL`.)
 
 3. **Create the config.** One `config` carrying the app's `clientId` +
-   `clientSecret`. Until it exists the bundle reads "needs configuration" and
-   the OAuth flow refuses.
+   `clientSecret`; the `client` input resolves it. Until one resolves the
+   bundle status carries a setup step and the OAuth flow refuses.
 
 4. **Add an account.** Create an `account`, turn on the collections you want
    (`enabledRecovery`/`enabledSleep`/`enabledWorkouts`), pick a `syncFrequency`

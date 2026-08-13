@@ -138,6 +138,7 @@ words, and what each one replaced:
 | **vocabulary**| kinds, traits and property types together; `/vocabulary/apply` | schema   |
 | **changelog** | the append-only sequence of deltas; the `changelog` table  | log          |
 | **bundle**    | the install unit; `/bundles`, and the `bundle` tier         | extension    |
+| **input**     | a bundle's named configuration need; one record resolves per input (bound edge, the id `default`, then the sole record) | config, configType, singleton |
 | **edge**      | a named (`rel`), directed link between records              | relationship |
 
 `docs/terms.md` is the full list, and it is the one the docs are held to.

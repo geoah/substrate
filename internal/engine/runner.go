@@ -143,9 +143,10 @@ func (ds *dataset) runCallable(ctx context.Context, fn *vocabulary.Function, in 
 // this; everyone else takes runCallable and ignores paging.
 func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, in runner.Input) ([]effect, any, *runner.Continuation, error) {
 	inv := &invocation{ds: ds, stack: []string{fn.Identity()}, scrub: newScrubber()}
-	// The runner's `config` field, resolved per invocation (bundleconfig.go):
-	// a bundle function receives its bundle's config record properties —
-	// secrets resolved — and its account records, live tokens injected. The
+	// The runner's `config` field, resolved per invocation (invocationconfig.go):
+	// a bundle function receives its bundle's `inject: functions` inputs,
+	// each resolved to one record — secrets resolved, keyed by input name —
+	// and its account records, live tokens injected. The
 	// injected values arm the invocation SCRUBBER: nothing that leaves the
 	// runner boundary (logs, error text — and so run rows and parked
 	// failures — outputs, and so tool transcripts and API responses) may

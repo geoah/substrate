@@ -25,8 +25,10 @@
 # (ticket 041 has the three engine blocks written down).
 #
 # Install:  substratectl apply -f bundle.yaml -f triggers.yaml
-# Configure: create ONE config record — ONLY the Google OAuth
-#   client id + secret. The provider ENDPOINTS and the feature→scope mapping
+# Configure: create a config record — ONLY the Google OAuth client id +
+#   secret; the `client` input resolves it (sole record, the one named
+#   `default`, or a bound one), and the host OAuth facility reads it.
+#   The provider ENDPOINTS and the feature→scope mapping
 #   are TRUSTED bundle-manifest metadata (the `oauth2:` block on the bundle
 #   document below), never config-record properties: a config edit can no
 #   longer redirect a token exchange or a revocation (review-google #1).
@@ -54,7 +56,13 @@ data:
   description: >-
     Connects a Google account and syncs its address book, mail and calendars
     into records mapped onto the core people, messaging and calendar vocabulary.
-  configType: google.bundles.substrate.reamde.dev/config
+  # The one declared input: the OAuth client record. NO inject: the host
+  # OAuth facility reads it (oauth2.clientInput below); no function body ever
+  # sees the client credentials.
+  inputs:
+    client:
+      kind: google.bundles.substrate.reamde.dev/config
+      description: the Google OAuth client the host exchanges codes through
   # The vocabulary this bundle maps ONTO. People, messaging and calendar are
   # importable vocabulary bundles, not seeded, so the closure only admits once
   # they are present — import them first or this install is refused naming
@@ -77,6 +85,7 @@ data:
   # granular pair (calendar.events.readonly + calendar.calendarlist.readonly)
   # because it covers calendarList.list AND events.list in one consent line.
   oauth2:
+    clientInput: client
     authorizationEndpoint: https://accounts.google.com/o/oauth2/v2/auth
     tokenEndpoint: https://oauth2.googleapis.com/token
     revocationEndpoint: https://oauth2.googleapis.com/revoke
@@ -110,9 +119,8 @@ data:
     - google.bundles.substrate.reamde.dev/contactperson
     - google.bundles.substrate.reamde.dev/emailaddressperson
 ---
-# ---- the config type: the one Google OAuth client -------------------------
-# bundleconfig (the host-enforced singleton) + oauth2 (the OAuth CLIENT
-# credentials the facility uses to exchange codes). One live record per bundle:
+# ---- the config type: the `client` input's kind ---------------------------
+# oauth2 (the OAuth CLIENT credentials the facility uses to exchange codes):
 # the Google OAuth client the owner registers — ONLY its clientId and
 # secret-typed clientSecret. The provider ENDPOINTS and the feature→scope
 # mapping are trusted manifest metadata (the bundle's `oauth2:` block above),
@@ -122,12 +130,12 @@ metadata: {id: google.bundles.substrate.reamde.dev/config}
 data:
   authority: google.bundles.substrate.reamde.dev
   description: >-
-    The one Google OAuth client this bundle authenticates through: a
-    client id and a sealed client secret. A host-enforced singleton — the
-    endpoints and the feature-to-scope mapping are trusted manifest
-    metadata, never properties on this row.
+    The Google OAuth client this bundle authenticates through: a client id
+    and a sealed client secret, the record the bundle's client input
+    resolves. The endpoints and the feature-to-scope mapping are trusted
+    manifest metadata, never properties on this row.
   names: {singular: config, plural: configs}
-  traits: [bundleconfig, oauth2]
+  traits: [oauth2]
   displayTemplate: "Google client {clientId}"
   properties:
     clientId:

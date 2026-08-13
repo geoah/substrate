@@ -46,8 +46,8 @@ func TestCatalogListsShippedBundle(t *testing.T) {
 	if b.Version != "v1alpha1" {
 		t.Errorf("version = %q, want v1alpha1", b.Version)
 	}
-	if b.ConfigType != "web.bundles.substrate.reamde.dev/config" {
-		t.Errorf("configType = %q", b.ConfigType)
+	if _, ok := b.Inputs["connector"]; !ok {
+		t.Errorf("inputs = %v, want a connector input", b.Inputs)
 	}
 	if b.Description == "" {
 		t.Error("description is empty")

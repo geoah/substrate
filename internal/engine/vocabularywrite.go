@@ -746,7 +746,7 @@ func authorityDeclarations(g *vocabulary.Authority) ([]declaration, error) {
 		// wrote — uninstall is a whole-authority teardown now (bundles.go), so no
 		// live bundle row ever carries it, and the null is a no-op otherwise.
 		add(vocabulary.DocBundle, kindBundle, b.Identity(), map[string]any{
-			"name": b.Name, "authority": b.Authority, "configType": b.ConfigType,
+			"name": b.Name, "authority": b.Authority,
 			"definition": def, "uninstalled": nil, "sourceYAML": nil,
 		})
 	}
@@ -810,11 +810,43 @@ func (t *txn) pruneSchemaRows(authorities, live map[string]bool) error {
 		gone = append(gone, stale{s.id, s.typ})
 	}
 	for _, s := range gone {
-		if _, err := t.softDelete(eref{Kind: s.typ, ID: s.id}); err != nil {
+		ref := eref{Kind: s.typ, ID: s.id}
+		if s.typ == kindBundle {
+			// The bundle row's outgoing edges are its input BINDINGS
+			// (inputs.go). A tombstone leaves edges standing, so without
+			// this a later re-install of the same bundle would resurrect a
+			// binding the uninstall was supposed to clear — fresh install,
+			// stale explicit choice. The deletes ride the tombstone's own
+			// changelog entry, so a rebuild replays them.
+			edges, err := t.edgesOf(ref)
+			if err != nil {
+				return err
+			}
+			rels := mapKeysOf(edges)
+			sort.Strings(rels)
+			for _, rel := range rels {
+				for _, dst := range edges[rel] {
+					if _, err := t.deleteEdge(rel, ref, dst); err != nil {
+						return fmt.Errorf("substrate/engine: prune bundle binding %s: %w", rel, err)
+					}
+				}
+			}
+		}
+		if _, err := t.softDelete(ref); err != nil {
 			return fmt.Errorf("substrate/engine: prune schema row %s: %w", s.id, err)
 		}
 	}
 	return nil
+}
+
+// mapKeysOf lists a map's keys, for deterministic iteration through
+// sortedStrings.
+func mapKeysOf[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 // --- rows back into documents -------------------------------------------------
