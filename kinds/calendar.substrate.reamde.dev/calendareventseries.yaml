@@ -26,6 +26,9 @@ data:
       type: datetime
       repeated: true
       description: occurrence datetimes the rule skips
+    timezone:
+      type: timezone
+      description: the IANA zone a time-of-day rule resolves in
   edges:
     calendar:
       to: calendar

@@ -37,11 +37,18 @@ bin/substratectl register --server http://localhost:8080
 
 # A new repository holds the CORE vocabulary and nothing else — there is no
 # `tasks` collection to get yet. Install the bundle that ships one. This is
-# the same closure the catalog serves, applied from the tree:
+# the same closure the catalog serves, applied from the tree. Tasks name an
+# assignee, so people comes first:
+bin/substratectl apply \
+  -f kinds/people.substrate.reamde.dev/bundle.yaml \
+  -f kinds/people.substrate.reamde.dev/organization.yaml \
+  -f kinds/people.substrate.reamde.dev/person.yaml \
+  -f kinds/people.substrate.reamde.dev/team.yaml
 bin/substratectl apply \
   -f kinds/tasks.substrate.reamde.dev/bundle.yaml \
   -f kinds/tasks.substrate.reamde.dev/project.yaml \
-  -f kinds/tasks.substrate.reamde.dev/task.yaml
+  -f kinds/tasks.substrate.reamde.dev/task.yaml \
+  -f kinds/tasks.substrate.reamde.dev/tasklog.yaml
 
 bin/substratectl kinds                   # what this repository knows now
 bin/substratectl get tasks               # empty, but the collection is there

@@ -40,6 +40,9 @@ data:
       type: string
       repeated: true
       description: the provider's label ids on this message, verbatim
+    read:
+      type: bool
+      description: the owner has read it, as the provider reports
   edges:
     thread:
       to: emailthread

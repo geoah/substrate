@@ -300,9 +300,10 @@ for the kinds themselves), because implementing a trait is queryable.
 ## The catalog
 
 The **catalog** lists everything shipped in the binary and ready to install —
-the bundles, and the five **vocabulary bundles** (`people`, `tasks`,
-`messaging`, `calendar`, `media`) a repository imports because creation seeds
-`core.substrate.reamde.dev` alone. A vocabulary bundle ships kinds and nothing else: no
+the bundles, and the thirteen **vocabulary bundles** (`people`, `tasks`,
+`messaging`, `calendar`, `media`, and the mneme-ported `health`, `fitness`,
+`routines`, `journal`, `places`, `food`, `commerce`, `memory`) a repository
+imports because creation seeds `core.substrate.reamde.dev` alone. A vocabulary bundle ships kinds and nothing else: no
 inputs, no functions, no OAuth. Its entry carries `vocabulary: true`.
 
 The catalog is a read model over the bundle closures baked in, parsed once at

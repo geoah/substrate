@@ -78,6 +78,60 @@ func loadCatalog(t *testing.T) *catalog.Catalog {
 	return c
 }
 
+// Every shipped VOCABULARY bundle installs into one repository, requires
+// first: the whole set has to coexist, so a GraphQL-name collision or an
+// unresolvable edge between two vocabulary authorities surfaces here rather
+// than on a user's substrate.
+func TestVocabularyBundlesInstall(t *testing.T) {
+	ds := newDataset(t)
+	c := loadCatalog(t)
+	ctx := context.Background()
+
+	byAuthority := map[string]*catalog.Bundle{}
+	for _, b := range c.Bundles() {
+		byAuthority[b.Authority] = b
+	}
+	installed := map[string]bool{}
+	var install func(b *catalog.Bundle)
+	install = func(b *catalog.Bundle) {
+		if installed[b.ID] {
+			return
+		}
+		installed[b.ID] = true
+		for _, req := range b.Requires {
+			rb, ok := byAuthority[req]
+			if !ok {
+				t.Fatalf("%s requires %s, which no shipped bundle owns", b.ID, req)
+			}
+			install(rb)
+		}
+		if _, err := c.Install(ctx, substrate.ActorAPI, b.ID, ds); err != nil {
+			t.Fatalf("install %s: %v", b.ID, err)
+		}
+	}
+	for _, b := range c.Bundles() {
+		if !b.Vocabulary {
+			continue
+		}
+		install(b)
+	}
+	for _, b := range c.Bundles() {
+		if !b.Vocabulary {
+			continue
+		}
+		st, err := ds.(bundleStatuser).BundleStatus(ctx, b.ID)
+		if err != nil {
+			t.Fatalf("bundle status %s: %v", b.ID, err)
+		}
+		if !st.Installed {
+			t.Errorf("%s not marked installed", b.ID)
+		}
+		if want := len(b.Resources.Kinds); st.Kinds != want {
+			t.Errorf("%s kinds = %d, want %d", b.ID, st.Kinds, want)
+		}
+	}
+}
+
 func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 	ds := newDataset(t)
 	c := loadCatalog(t)

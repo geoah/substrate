@@ -1,0 +1,34 @@
+# a reusable session plan built from the exercise catalog
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: fitness.substrate.reamde.dev/workouttemplate
+data:
+  authority: fitness.substrate.reamde.dev
+  description: >-
+    A reusable session plan: which exercises, with the defaults a session
+    starts from. Starting a workout from a template copies nothing; the
+    workout just points back here, and set order lives on the sets.
+  names:
+    singular: workouttemplate
+    plural: workouttemplates
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the plan's name, Push day or 5k intervals
+    estimatedDuration:
+      type: duration
+      description: how long a session usually takes, 45m or 1h30m
+    defaultRest:
+      type: duration
+      description: the rest between sets a session starts from, 90s or 2m
+    details:
+      type: markdown
+      embed: true
+      description: the plan's structure and intent, as prose
+  edges:
+    exercises:
+      to: exercise
+      many: true
+      description: the movements the plan is built from

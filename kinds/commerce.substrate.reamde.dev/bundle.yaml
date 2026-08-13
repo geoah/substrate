@@ -1,0 +1,41 @@
+# Shipped vocabulary ported from mneme v4: what was bought. An
+# order's lifecycle is a state machine that stamps its own shipped and
+# delivered times, so a status flip is never accompanied by a forgotten
+# timestamp. The amount and its currency stay two properties: a joined
+# "12.99 USD" string would be unfilterable and unsummable.
+#
+# `source: {to: any}` is the one untyped edge: an order is usually seen in
+# an email or a message, and naming each would couple this authority to
+# every other one.
+#
+# no new actors: writes arrive under the actor of whatever runs.
+kind: core.substrate.reamde.dev/authority
+metadata:
+  id: commerce.substrate.reamde.dev
+data:
+  version: v1alpha1
+---
+# ---- the currency code, refined once and used by every money property -------
+kind: core.substrate.reamde.dev/propertytype
+metadata:
+  id: commerce.substrate.reamde.dev/currency
+data:
+  authority: commerce.substrate.reamde.dev
+  description: "an ISO 4217 currency code, three uppercase letters"
+  base: string
+  pattern: "^[A-Z]{3}$"
+---
+# ---- the bundle document: the import unit -----------------------------------
+# A VOCABULARY bundle: kinds only, imported from the registry.
+kind: core.substrate.reamde.dev/bundle
+metadata: {id: commerce.substrate.reamde.dev/commerce}
+data:
+  authority: commerce.substrate.reamde.dev
+  description: >-
+    What was bought: orders whose lifecycle stamps its own shipped and
+    delivered times, the items inside them, and an ISO 4217 currency type
+    kept separate from the amount.
+  installs:
+    - commerce.substrate.reamde.dev/currency
+    - commerce.substrate.reamde.dev/order
+    - commerce.substrate.reamde.dev/orderitem

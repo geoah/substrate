@@ -1,0 +1,39 @@
+# a working group finer than an organization
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: people.substrate.reamde.dev/team
+data:
+  authority: people.substrate.reamde.dev
+  description: >-
+    A working group finer than an organization: the people who share a
+    backlog. Teams nest through the parent edge, and leadership is the
+    leads edge rather than a flag on the member, so one person can lead
+    one team and merely sit on another.
+  names:
+    singular: team
+    plural: teams
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the team's name
+    groupEmail:
+      type: email
+      description: the address that reaches the whole team
+    details:
+      type: markdown
+      embed: true
+      description: what the team owns and how it works, as prose
+  edges:
+    parent:
+      to: team
+      description: the team this one nests under
+    members:
+      to: person
+      many: true
+      description: the people on the team
+    leads:
+      to: person
+      many: true
+      description: the people who lead it; leading is not membership

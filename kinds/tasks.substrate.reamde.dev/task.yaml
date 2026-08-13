@@ -32,6 +32,30 @@ data:
     url:
       type: url
       description: where this task lives outside the substrate
+    priority:
+      type: enum
+      description: how urgent it is, mirroring the common tracker ladder
+      default: none
+      values:
+        - none
+        - low
+        - medium
+        - high
+        - urgent
+    # a repeating task: the rule seeds off dueAt and the substrate never
+    # expands it. An occurrence exists only when a tasklog marks it, so
+    # missed is computed from absence, exactly as the mneme-ported logs
+    # do it.
+    recurrence:
+      type: recurrence
+      description: the RRULE seeded off dueAt, stored and never expanded
+    exdates:
+      type: datetime
+      repeated: true
+      description: occurrence datetimes the rule skips
+    timezone:
+      type: timezone
+      description: the IANA zone a time-of-day rule resolves in
     # a learner's proposals are created `proposed` and wait for the owner;
     # a write that names no state gets `open`. `completedAt` is stamped by
     # the transition, so nothing has to remember to set it.
@@ -59,6 +83,9 @@ data:
     project:
       to: project
       description: the project this task groups under
+    assignee:
+      to: person
+      description: the person the task is on; absent means the owner
     source:
       to: any
       description: the message, mail, event or transcript the task came from

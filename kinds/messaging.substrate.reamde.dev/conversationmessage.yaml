@@ -21,6 +21,19 @@ data:
       type: markdown
       embed: true
       description: the message body, as markdown
+    # mneme's owed-reply signals, stamped at ingestion: whether the owner
+    # wrote it, is named in it, or is being asked something by it. They are
+    # writer-computed facts, not engine derivations, and an agent deciding
+    # "do I owe a reply" reads these instead of re-parsing every message.
+    fromOwner:
+      type: bool
+      description: the owner sent it
+    mentionsOwner:
+      type: bool
+      description: the message names the owner
+    directedAtOwner:
+      type: bool
+      description: the message expects the owner to answer
     # inbound and outbound in one state: a synced message is created
     # `received` and never moves, while anything meant to be sent is created
     # as a `draft` and walks the send path. A creating write names the state

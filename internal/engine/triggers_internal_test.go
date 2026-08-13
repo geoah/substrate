@@ -15,7 +15,7 @@ func TestTriggerSourceResolvesBareKinds(t *testing.T) {
 	// `task` is an IMPORTED vocabulary bundle now — creation seeds core alone
 	// — so the registry a trigger resolves against is the seed plus what the
 	// repository imported.
-	reg, err := enginetest.SeededRegistry("../../kinds/core.substrate.reamde.dev", "tasks")
+	reg, err := enginetest.SeededRegistry("../../kinds/core.substrate.reamde.dev", "people", "tasks")
 	if err != nil {
 		t.Fatalf("build the repository registry: %v", err)
 	}

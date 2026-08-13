@@ -12,6 +12,11 @@ data:
     singular: conversation
     plural: conversations
   displayTemplate: "{name|participants}"
+  # `at` is the last activity, so an inbox orders conversations without
+  # opening their messages. Optional: a conversation nothing wrote it for
+  # simply has no place on the timeline.
+  traits:
+    - temporal(point)
   properties:
     # one type over the three real shapes: platforms disagree about the
     # boundaries but messages don't. `type` is the envelope's own word and
@@ -26,6 +31,18 @@ data:
     name:
       type: string
       description: the conversation's name, where the platform has one
+    topic:
+      type: string
+      description: the channel topic, where the platform has one
+    archived:
+      type: bool
+      description: the platform's archived flag, as synced
+    muted:
+      type: bool
+      description: the platform's muted flag, as synced
+    pinned:
+      type: bool
+      description: the platform's pinned flag, as synced
   edges:
     account:
       to: any

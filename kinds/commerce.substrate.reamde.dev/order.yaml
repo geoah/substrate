@@ -1,0 +1,78 @@
+# one purchase and its delivery lifecycle
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: commerce.substrate.reamde.dev/order
+data:
+  authority: commerce.substrate.reamde.dev
+  description: >-
+    One purchase: who sold it, what it cost, and where it is between placed
+    and delivered. A transition stamps shippedAt or deliveredAt by itself;
+    an importer creating a record already shipped supplies its own times.
+    What was in the box lives on its orderitems.
+  names:
+    singular: order
+    plural: orders
+  displayTemplate: "{name}"
+  # `at` is when the order was placed.
+  traits:
+    - temporal(point)
+  indices:
+    - - status
+  properties:
+    name:
+      type: string
+      required: true
+      description: what the order is, one line
+    vendor:
+      type: string
+      description: who sold it
+    status:
+      type: state
+      description: "placed until it ships, shipped until it lands; stamps itself"
+      states:
+        - placed
+        - shipped
+        - delivered
+        - canceled
+        - returned
+      initial: placed
+      transitions:
+        - from: placed
+          to: shipped
+          stamps:
+            shippedAt: now
+        - from: shipped
+          to: delivered
+          stamps:
+            deliveredAt: now
+        - from: placed
+          to: canceled
+        - from: shipped
+          to: canceled
+        - from: delivered
+          to: returned
+    totalAmount:
+      type: float
+      description: the order total, in the currency beside it
+    currency:
+      type: currency
+      description: the ISO 4217 code totalAmount is denominated in
+    orderNumber:
+      type: string
+      description: the vendor's own order number, as printed
+    carrier:
+      type: string
+      description: who is delivering it
+    trackingURL:
+      type: url
+      description: the carrier's tracking page
+    details:
+      type: markdown
+      description: anything worth saying about the purchase, as prose
+  edges:
+    # untyped on purpose: an order is usually first seen in an email or a
+    # message, and naming each source would couple this authority to every
+    # other one.
+    source:
+      to: any
+      description: the email or message the order was seen in

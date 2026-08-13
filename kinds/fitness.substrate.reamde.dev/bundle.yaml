@@ -1,0 +1,31 @@
+# Shipped vocabulary ported from mneme v4: training. The exercise
+# catalog, workout templates built from it, workouts on the timeline with
+# their sets, and the log that marks a recurring workout done or skipped.
+#
+# A workout doubles as the planned recurring session (it carries an RRULE)
+# and the session that happened (it carries sets and tracker numbers); the
+# workoutlog is only the done-or-skipped mark against the recurrence.
+#
+# no new actors: writes arrive under the actor of whatever runs.
+kind: core.substrate.reamde.dev/authority
+metadata:
+  id: fitness.substrate.reamde.dev
+data:
+  version: v1alpha1
+---
+# ---- the bundle document: the import unit -----------------------------------
+# A VOCABULARY bundle: kinds only, imported from the registry.
+kind: core.substrate.reamde.dev/bundle
+metadata: {id: fitness.substrate.reamde.dev/fitness}
+data:
+  authority: fitness.substrate.reamde.dev
+  description: >-
+    Training: the exercise catalog, workout templates, workouts with their
+    sets and tracker numbers, and the done-or-skipped log against a
+    recurring workout.
+  installs:
+    - fitness.substrate.reamde.dev/exercise
+    - fitness.substrate.reamde.dev/workout
+    - fitness.substrate.reamde.dev/workoutlog
+    - fitness.substrate.reamde.dev/workoutset
+    - fitness.substrate.reamde.dev/workouttemplate

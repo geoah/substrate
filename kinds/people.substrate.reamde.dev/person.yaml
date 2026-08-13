@@ -45,6 +45,31 @@ data:
       type: string
       repeated: true
       description: phone numbers as providers send them, not E.164-only
+    # mneme's pronouns rule, kept whole: free text and never an enum, because
+    # no fixed list survives contact with real people. Empty means UNKNOWN,
+    # never a license to guess: a surface rendering this person without a
+    # value says so and falls back to they/them.
+    pronouns:
+      type: string
+      description: free text, never an enum; empty means unknown, use they/them
+    # no `author` here: a role (author, narrator, attendee) is a property of
+    # the RELATION, per this bundle's own rule, and the media authority
+    # already carries it as an edge.
+    relationship:
+      type: enum
+      description: how this person relates to the owner
+      values:
+        - unknown
+        - friend
+        - acquaintance
+        - relative
+        - coworker
+        - value: publicfigure
+          label: Public figure
+    details:
+      type: markdown
+      embed: true
+      description: what is worth remembering about this person, as prose
     # Prominence: the recruiter who emailed once still gets a person, demoted.
     # Every person starts `utility`; a connector whose records come from an
     # address book (Google `myContacts`) promotes to `known`, and so does the

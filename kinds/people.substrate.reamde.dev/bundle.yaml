@@ -42,8 +42,9 @@ metadata: {id: people.substrate.reamde.dev/people}
 data:
   authority: people.substrate.reamde.dev
   description: >-
-    People and organizations — one record per human, the target every connector's
-    contact, attendee, author and sender maps onto.
+    People, organizations and teams — one record per human, the target every
+    connector's contact, attendee, author and sender maps onto.
   installs:
     - people.substrate.reamde.dev/organization
     - people.substrate.reamde.dev/person
+    - people.substrate.reamde.dev/team

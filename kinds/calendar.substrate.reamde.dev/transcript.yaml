@@ -14,10 +14,19 @@ data:
     plural: transcripts
   traits:
     - temporal(range)
-  # no displayTemplate and no `title` property: a transcript has a real
+  # no displayTemplate and no `name` property: a transcript has a real
   # title and the writer's title stands (`title` is a property every record
-  # already carries, so declaring one of that name would shadow it — R4).
+  # already carries; a template here would shadow the stored one and blank
+  # every transcript written without the new property on the next re-fold).
   properties:
+    # a plain string rather than an enum: transcript tools appear faster
+    # than any fixed list would keep up with.
+    source:
+      type: string
+      description: the tool that produced it, as it names itself
+    language:
+      type: string
+      description: the transcript's language, as a BCP 47 tag
     text:
       type: text
       embed: true

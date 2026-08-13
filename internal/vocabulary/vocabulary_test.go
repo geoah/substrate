@@ -2317,18 +2317,20 @@ func TestShippedVocabularyBundles(t *testing.T) {
 		len(m.Match) != 0 || len(m.Map) != 0 {
 		t.Errorf("bookedition mapping = %+v", m)
 	}
-	// Person carries no structured name parts and no pronouns (owner ruling):
-	// the full name and the friendly one, nothing else name-shaped.
+	// Person carries no structured name parts (owner ruling): the full name
+	// and the friendly one, nothing else name-shaped. Pronouns exist by a
+	// later ruling (the mneme unification), free text with empty meaning
+	// unknown, and never an enum.
 	person, ok := r.ByIdentity("people.substrate.reamde.dev/person")
 	if !ok {
 		t.Fatal("people.substrate.reamde.dev/person missing")
 	}
-	for _, p := range []string{"name", "displayName"} {
+	for _, p := range []string{"name", "displayName", "pronouns"} {
 		if prop, ok := person.Prop(p); !ok || prop.Datatype != vocabulary.DatatypeString {
 			t.Errorf("person.%s missing", p)
 		}
 	}
-	for _, p := range []string{"firstName", "middleName", "lastName", "pronouns"} {
+	for _, p := range []string{"firstName", "middleName", "lastName"} {
 		if _, ok := person.Prop(p); ok {
 			t.Errorf("person.%s must not exist", p)
 		}

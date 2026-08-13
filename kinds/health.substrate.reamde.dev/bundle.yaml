@@ -1,0 +1,33 @@
+# Shipped vocabulary ported from mneme v4: the body. Observations
+# (the generic tracked measure and its entries), medications with their dose
+# schedules and dose logs, and blood tests.
+#
+# The recurrence stance is the substrate's, not mneme's: a schedule stores an
+# RRULE and the substrate never expands it. An occurrence exists only when
+# something logs it (a dose taken, an entry recorded), so adherence is
+# "expected minus logged", computed by a reader, never stored.
+#
+# no new actors: writes arrive under the actor of whatever runs.
+kind: core.substrate.reamde.dev/authority
+metadata:
+  id: health.substrate.reamde.dev
+data:
+  version: v1alpha1
+---
+# ---- the bundle document: the import unit -----------------------------------
+# A VOCABULARY bundle: kinds only, imported from the registry.
+kind: core.substrate.reamde.dev/bundle
+metadata: {id: health.substrate.reamde.dev/health}
+data:
+  authority: health.substrate.reamde.dev
+  description: >-
+    The body: observations and their logged entries, medications with dose
+    schedules and dose logs, and blood tests. Schedules carry RRULEs; the
+    substrate stores the rule and never expands it.
+  installs:
+    - health.substrate.reamde.dev/bloodtest
+    - health.substrate.reamde.dev/medication
+    - health.substrate.reamde.dev/medicationschedule
+    - health.substrate.reamde.dev/medicationschedulelog
+    - health.substrate.reamde.dev/observation
+    - health.substrate.reamde.dev/observationlog
