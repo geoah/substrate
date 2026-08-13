@@ -36,6 +36,16 @@ const (
 )
 
 func main() {
+	// FIRST, before anything reads configuration or opens a connection: every
+	// moment between execve and this call is a moment a same-uid process can
+	// read this one's environment, and the environment is where the credential
+	// key and the database URL are. The window cannot be closed entirely,
+	// there is always some: only made as small as a Go program can make it.
+	if err := hideProcess(); err != nil {
+		slog.Error("fatal", "error", err)
+		os.Exit(1)
+	}
+
 	if err := run(); err != nil {
 		slog.Error("fatal", "error", err)
 		os.Exit(1)
@@ -48,6 +58,7 @@ func run() error {
 		return err
 	}
 	setupLogger(cfg.LogLevel)
+	reportSandbox()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

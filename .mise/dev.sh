@@ -134,6 +134,21 @@ urls() {
 	fi
 }
 
+# llm_env passes the host's LLM settings through to the dev server when the
+# shell has them. Without a gateway the seeded `default` llmprovider row buys
+# no completions, so every agent refuses and the agent example cannot be run at
+# all: a dev substrate that cannot run the shipped example is not much of a dev
+# substrate. Nothing is invented here, and an unset variable is simply not
+# passed, so this stays a pass-through rather than a second place configuration
+# lives.
+llm_env() {
+	local name
+	for name in SUBSTRATE_LLM_BASE_URL SUBSTRATE_LLM_API_KEY SUBSTRATE_LLM_EMBED_MODEL; do
+		[ -n "${!name:-}" ] && printf '%s=%s ' "$name" "${!name}"
+	done
+	return 0
+}
+
 server_start() {
 	if server_pid >/dev/null; then
 		echo "dev: already running (pid $(server_pid)); mise run dev:restart"
@@ -149,6 +164,7 @@ server_start() {
 		"SUBSTRATE_INVITE_CODE=${INVITE}" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
 		"${web[@]}" \
+		$(llm_env) \
 		bin/substrate >>"$LOGFILE" 2>&1 &
 	echo $! >"$PIDFILE"
 	if ! wait_healthy; then
@@ -202,6 +218,7 @@ cmd_run() {
 		"SUBSTRATE_INVITE_CODE=${INVITE}" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
 		"${web[@]}" \
+		$(llm_env) \
 		bin/substrate
 }
 

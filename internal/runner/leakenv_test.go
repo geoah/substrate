@@ -66,7 +66,7 @@ func assertNoLeak(t *testing.T, out any) {
 	}
 }
 
-func TestSharedPythonChildEnvOmitsHostSecrets(t *testing.T) {
+func TestPythonChildEnvOmitsHostSecrets(t *testing.T) {
 	setHostSecrets(t)
 	r := New()
 	spec := Spec{
@@ -80,19 +80,15 @@ func TestSharedPythonChildEnvOmitsHostSecrets(t *testing.T) {
 	assertNoLeak(t, res.Output)
 }
 
-func TestIsolatedPythonChildEnvOmitsHostSecrets(t *testing.T) {
+func TestSharedModulePythonChildEnvOmitsHostSecrets(t *testing.T) {
 	setHostSecrets(t)
 	r := New()
-	// A shared `.py` module forces the ISOLATED path (startIsoPython) without
-	// needing uv or the network — that path is the one that used to do
-	// append(os.Environ(), …).
+	// A shared `.py` module exercises the module-materializing half of the
+	// python path without needing uv or the network.
 	spec := Spec{
 		Repository: "t1", Function: "leakiso.g.test",
 		Runtime: "python", Source: pySecretProbe, TimeoutMs: 5000,
 		Modules: map[string]string{"unused.py": "x = 1\n"},
-	}
-	if !spec.pythonIsolated() {
-		t.Fatal("test setup: expected the isolated path")
 	}
 	res, err := r.Invoke(context.Background(), spec, testInput(), nil)
 	if err != nil {
