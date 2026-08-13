@@ -113,7 +113,10 @@ func TestSecretMovesIntoTheStore(t *testing.T) {
 	if err := db.QueryRow(`SELECT payload FROM sealed WHERE ref = $1`, ref).Scan(&payload); err != nil {
 		t.Fatalf("the ref has no sealed row: %v", err)
 	}
-	if len(payload) == 0 || payload[0] != 's' {
+	if len(payload) == 0 {
+		t.Fatal("sealed payload is empty")
+	}
+	if payload[0] != 's' {
 		t.Fatalf("sealed payload is not encrypted (marker %q)", payload[0])
 	}
 	// Neither the fold nor the append-only log ever held the material.
