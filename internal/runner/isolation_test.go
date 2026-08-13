@@ -20,7 +20,7 @@ func nowPlus(d time.Duration) time.Time { return time.Now().Add(d) }
 
 // requireSandbox skips when the kernel does not offer the confinement. A CI
 // runner or a laptop with Landlock left out of its lsm= list is an environment
-// difference, not a regression — but the LEAK tests below do not use this,
+// difference, not a regression, but the LEAK tests below do not use this,
 // because process separation needs no kernel help and must hold everywhere.
 func requireSandbox(t *testing.T, r *Runner) {
 	t.Helper()
@@ -32,7 +32,7 @@ func requireSandbox(t *testing.T, r *Runner) {
 // The exploit that motivated retiring the shared interpreter: a function in
 // ONE repository reading a secret handed to a function in ANOTHER. Both bodies
 // were exec'd into the same CPython, so `sys.modules['__main__']` was a shared
-// scratchpad — and the connector bundles receive live provider access tokens
+// scratchpad, and the connector bundles receive live provider access tokens
 // on exactly the config this test plants.
 func TestFunctionCannotReadAnotherFunctionsConfig(t *testing.T) {
 	r := New()
@@ -116,7 +116,7 @@ def main(input, host):
 	after := r.pys[victim.Key()]
 	r.mu.Unlock()
 	if before != after {
-		t.Fatal("the victim's process was restarted — another body reached it")
+		t.Fatal("the victim's process was restarted: another body reached it")
 	}
 }
 
@@ -352,7 +352,7 @@ func TestIdleProcessesAreReaped(t *testing.T) {
 // not on the next unrelated source edit. The sandbox policy is applied once,
 // when the process starts, so a manifest change that left the content hash
 // alone would keep serving deliveries from the process that was started while
-// egress was granted — with its sockets still open.
+// egress was granted, with its sockets still open.
 func TestWithdrawingNetworkRetiresTheProcess(t *testing.T) {
 	r := New()
 	requireSandbox(t, r)
@@ -375,7 +375,7 @@ def main(input, host):
 		t.Fatalf("with the capability granted: %+v %v", got, err)
 	}
 
-	// The SAME source, the same function, the same repository — only the
+	// The SAME source, the same function, the same repository: only the
 	// declaration is gone.
 	withdrawn := granted
 	withdrawn.Network = nil

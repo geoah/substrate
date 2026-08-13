@@ -46,7 +46,7 @@ def main(input, host):
 func TestPathClassification(t *testing.T) {
 	// The dispatch decision, no process started. Every python body now gets
 	// its own process, so the only question left is whether uv has to
-	// provision one first — which is exactly the PEP 723 declaration and
+	// provision one first, which is exactly the PEP 723 declaration and
 	// nothing else.
 	plain := Spec{Runtime: "python", Source: "def main(input, host):\n    return {}\n"}
 	if _, uv := plain.pep723(); uv {

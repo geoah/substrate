@@ -13,7 +13,7 @@ import (
 // The Python path: ONE process per installation, no exceptions. The process
 // runs host.py's protocol loop (register / describe / invoke, host-call frames,
 // more/resume, scrubbing) against exactly one body, materialized in a work dir
-// keyed by Spec.workID() — the full installation key, so two byte-identical
+// keyed by Spec.workID(): the full installation key, so two byte-identical
 // bodies in different repositories or bundles never share a file.
 //
 // Two things are provisioned around it:
@@ -31,14 +31,14 @@ import (
 //     the host is established and a json.py shadow the serializer).
 //
 // TRUST POSTURE: a body that declares dependencies pulls arbitrary code off
-// PyPI at resolution time — the same trust surface as running the inline body,
+// PyPI at resolution time: the same trust surface as running the inline body,
 // which is already arbitrary code execution. The declaration is legible on the
 // manifest and the resolve is the author's, not a hidden fetch. The RESOLVED
 // code then runs under the same sandbox as the body itself.
 
 // uvProvisionTimeout is the floor for provisioning: a cold uv resolve
 // (download, build a venv) can outlast a body's invoke timeout, so it gets its
-// own budget. It only takes effect under a context that allows it — Warm
+// own budget. It only takes effect under a context that allows it: Warm
 // (registration) does; a cold Invoke is still clamped by the manifest timeout,
 // exactly like the Go build path.
 const uvProvisionTimeout = 120 * time.Second
@@ -95,8 +95,8 @@ func (r *Runner) pythonProc(ctx context.Context, spec Spec) (*proc, error) {
 // startPython materializes the host script and shared modules for one
 // installation and launches its interpreter.
 //
-// The work dir is keyed by Spec.workID() — a hash of the full installation KEY
-// (repository + function + content hash), NOT the bare content hash — so two
+// The work dir is keyed by Spec.workID(): a hash of the full installation KEY
+// (repository + function + content hash), NOT the bare content hash, so two
 // byte-identical modules in different repositories or bundles get SEPARATE
 // physical files. Files are materialized ATOMICALLY as READ-ONLY (temp +
 // rename, mode 0o444), which stops an accident; what stops a hostile body is
@@ -154,7 +154,7 @@ func (r *Runner) startPython(ctx context.Context, spec Spec) (*proc, error) {
 		// would let one installation rewrite a module another imports.
 		extraExec = append(extraExec, uvCache)
 	}
-	// The interpreter's own tree — which is not under /usr on a dev box or a
+	// The interpreter's own tree, which is not under /usr on a dev box or a
 	// CI runner, where a version manager owns it.
 	extraExec = append(extraExec, runtimeRoot(interpreter)...)
 
@@ -164,7 +164,7 @@ func (r *Runner) startPython(ctx context.Context, spec Spec) (*proc, error) {
 	// the END of sys.path AFTER detaching its protocol FDs.
 	// PYTHONUNBUFFERED keeps the line protocol from stalling in a pipe buffer;
 	// PYTHONDONTWRITEBYTECODE keeps the interpreter from dropping __pycache__
-	// beside the read-only module files — and out of the read-only venv.
+	// beside the read-only module files, and out of the read-only venv.
 	// TMPDIR is the installation's OWN scratch, not the shared /tmp: the
 	// sandbox grants exactly this directory, so a body's tempfile lands
 	// somewhere no other installation can read.
@@ -219,7 +219,7 @@ func provisionUV(ctx context.Context, hostFile, work, uvCache string, timeout ti
 // writeFileRO materializes one file atomically as READ-ONLY: write a temp file
 // in the destination directory, flush it to mode 0o444, then rename it over the
 // target. Rename is atomic within a directory and replaces any prior read-only
-// copy (the file mode does not block rename — the directory's write bit does,
+// copy (the file mode does not block rename: the directory's write bit does,
 // and the work dir stays 0o755). A restart re-materializes deterministically.
 func writeFileRO(path string, data []byte) error {
 	dir := filepath.Dir(path)

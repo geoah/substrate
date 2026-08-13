@@ -10,8 +10,8 @@ const auditArch = 0xc000003e
 
 const (
 	sysSocket = unix.SYS_SOCKET
-	// clone3 is 435 on every architecture — the syscall numbers from 424
-	// onwards were deliberately aligned across all of them — but
+	// clone3 is 435 on every architecture: the syscall numbers from 424
+	// onwards were deliberately aligned across all of them, but
 	// golang.org/x/sys does not export it, so it is named here rather than
 	// left as a bare number in the deny-list.
 	sysClone3 = 435

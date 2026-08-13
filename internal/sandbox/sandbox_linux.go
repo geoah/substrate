@@ -33,7 +33,7 @@ func init() {
 //
 // The thread lock is load-bearing. no_new_privs, seccomp(2) without TSYNC and
 // landlock_restrict_self all act on the CALLING THREAD, and the Go runtime
-// moves goroutines between OS threads at any preemption point — including
+// moves goroutines between OS threads at any preemption point, including
 // between applying the policy and exec'ing. Locking pins all of it to one
 // thread, and execve then keeps that thread as the sole survivor, so the
 // policy is what the real program starts with.
@@ -50,7 +50,7 @@ func stubMain(encoded string, argv []string) {
 	}
 
 	// Anything the parent left open above stderr is marked close-on-exec, so
-	// an inherited descriptor cannot survive into the body — a descriptor is a
+	// an inherited descriptor cannot survive into the body: a descriptor is a
 	// capability neither Landlock nor seccomp can revoke once it is open.
 	//
 	// CLOEXEC rather than an outright close: closing the runtime's epoll
@@ -86,8 +86,8 @@ func stubMain(encoded string, argv []string) {
 	}
 }
 
-// dief reports a confinement failure on stderr — where the runner's capped
-// stderr ring picks it up and surfaces it on the delivery error — and exits.
+// dief reports a confinement failure on stderr, where the runner's capped
+// stderr ring picks it up and surfaces it on the delivery error, and exits.
 func dief(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "substrate sandbox: "+format+"\n", args...)
 	os.Exit(126)
@@ -102,8 +102,8 @@ func New(mode Mode) *Confiner {
 // probe asks the kernel what it actually supports. Landlock answers its own
 // version query; seccomp is probed for REACHABILITY rather than by installing
 // a filter, because a filter cannot be uninstalled and the probe runs in the
-// substrate's own process. An outer profile that denies seccomp(2) — the case
-// that matters — answers EPERM to the probe just as it would to the install.
+// substrate's own process. An outer profile that denies seccomp(2), the case
+// that matters, answers EPERM to the probe just as it would to the install.
 func probe() Report {
 	r := Report{OS: runtime.GOOS}
 	abi, err := landlockABI()
@@ -117,7 +117,7 @@ func probe() Report {
 // wrap rewrites cmd to run through the stub. The policy rides argv rather than
 // the environment: the child env is a default-deny allowlist the runner builds
 // deliberately, and a sandbox variable added to it would be one more name a
-// body reads — and one more the runner has to remember to strip.
+// body reads, and one more the runner has to remember to strip.
 func (c *Confiner) wrap(cmd *exec.Cmd, p Policy) error {
 	if len(cmd.Args) == 0 {
 		return fmt.Errorf("sandbox: command has no argv")
@@ -145,8 +145,8 @@ func (c *Confiner) wrap(cmd *exec.Cmd, p Policy) error {
 // applyRlimits sets the ceilings rlimits bound honestly. Every one is set on
 // BOTH cur and max so the body cannot raise its own.
 func applyRlimits(p Policy) error {
-	// A core dump of a body would write the body's memory — including whatever
-	// config secrets it was handed — to disk outside its work dir.
+	// A core dump of a body would write the body's memory, including whatever
+	// config secrets it was handed, to disk outside its work dir.
 	if err := setRlimit(unix.RLIMIT_CORE, 0); err != nil {
 		return err
 	}
@@ -180,7 +180,7 @@ func setRlimit(which int, v uint64) error {
 // markCloexec marks every descriptor above stderr close-on-exec.
 //
 // close_range(2) with CLOSE_RANGE_CLOEXEC does it in one call, but it needs
-// Linux 5.11 — below the floor this package otherwise targets — so a failure
+// Linux 5.11 (below the floor this package otherwise targets), so a failure
 // falls back to walking the descriptor table by hand. The fallback is bounded
 // by RLIMIT_NOFILE, which is what the kernel would have walked anyway, and
 // capped besides: a host with a soft limit in the millions must not turn a

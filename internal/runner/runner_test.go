@@ -348,7 +348,7 @@ func TestTimeoutReapsProcessTree(t *testing.T) {
 	//
 	// The spawn and the hang must be the SAME installation. One process per
 	// installation means one process group per installation, so a timeout on
-	// a NEIGHBOUR's body no longer reaps this body's descendants — which is
+	// a NEIGHBOUR's body no longer reaps this body's descendants, which is
 	// the isolation working, not a leak. TimeoutMs is not part of Spec.Key, so
 	// the two specs below are one installation with two deadlines.
 	r := New()
@@ -395,7 +395,7 @@ def main(input, host):
 func TestRegistrationTiedToProcessGeneration(t *testing.T) {
 	// Review W1 #7: registration state lives on the process GENERATION. With
 	// one process per installation the generation IS the process, so a killed
-	// body's registration cannot outlive it — the map entry is replaced
+	// body's registration cannot outlive it: the map entry is replaced
 	// wholesale by the restart.
 	ctx := context.Background()
 	r := New()
@@ -525,7 +525,7 @@ def main(input, host):
 
 func TestReconcileRetiresStaleRegistrations(t *testing.T) {
 	// Review W1 #15: after a registry publish, the process serving an
-	// installation the registry no longer references stops — scoped to the
+	// installation the registry no longer references stops: scoped to the
 	// repository, so a neighbor's identical key survives.
 	r := New()
 	src := "def main(input, host):\n    return {\"output\": \"ok\"}\n"
@@ -546,7 +546,7 @@ func TestReconcileRetiresStaleRegistrations(t *testing.T) {
 	if !kept || dropped || !others {
 		t.Fatalf("reconcile: keep=%v drop=%v other-repository=%v", kept, dropped, others)
 	}
-	// The dropped body starts a fresh process if reinstalled — nothing is
+	// The dropped body starts a fresh process if reinstalled: nothing is
 	// wedged, just retired.
 	if _, err := r.Invoke(context.Background(), drop, testInput(), nil); err != nil {
 		t.Fatalf("reinstalled body: %v", err)

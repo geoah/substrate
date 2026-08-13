@@ -1,5 +1,5 @@
-// Package sandbox confines one runner child — an arbitrary third-party
-// function body — to the syscalls and paths its capability envelope entitles
+// Package sandbox confines one runner child (an arbitrary third-party
+// function body) to the syscalls and paths its capability envelope entitles
 // it to, using only the kernel facilities an unprivileged process can apply to
 // ITSELF: Landlock for the filesystem, seccomp-bpf for the syscall surface,
 // rlimits for the cheap resource ceilings.
@@ -7,8 +7,8 @@
 // It exists because the runner's env allowlist is NOT a boundary on its own.
 // Every body runs as the substrate's own uid in the substrate's own container
 // (the image declares no USER, so that uid is root), which means
-// `open("/proc/1/environ")` reads the substrate's environment — the credential
-// key that unseals every repository's OAuth, the database URL — straight past
+// `open("/proc/1/environ")` reads the substrate's environment (the credential
+// key that unseals every repository's OAuth, the database URL) straight past
 // the allowlist that so carefully kept them out of the child's own env.
 // Landlock is what closes that, and it is the layer this package is really
 // for; the rest is defense in depth around it.
@@ -18,11 +18,11 @@
 // CLONE_NEWUSER (the clone(2) arg mask 0x7E020000 includes it) and refuses
 // unshare(2) without CAP_SYS_ADMIN, and Ubuntu ≥23.10 additionally transitions
 // unprivileged user namespaces into an AppArmor profile that cannot write a
-// uid_map — so bubblewrap, nsjail and rootless runsc are all out inside a stock
+// uid_map, so bubblewrap, nsjail and rootless runsc are all out inside a stock
 // container. cgroup v2 is unavailable for the same class of reason:
 // /sys/fs/cgroup is a read-only mount, so memory.max and pids.max cannot be
 // written. Landlock and seccomp are the two things that DO work unprivileged in
-// a default container, on musl, as root or not — measured, not assumed.
+// a default container, on musl, as root or not. Measured, not assumed.
 //
 // HOW THE POLICY IS APPLIED. There is no pre-exec hook in os/exec, and the
 // three mechanisms are per-thread, so the policy cannot be applied from a
@@ -30,8 +30,8 @@
 //
 //	/proc/self/exe <stubArgv> <policy> -- <real argv...>
 //
-// and the stub — an init() in THIS package, so every binary that links the
-// runner carries it, test binaries included — locks its OS thread, applies the
+// and the stub (an init() in THIS package, so every binary that links the
+// runner carries it, test binaries included) locks its OS thread, applies the
 // policy, and exec's the real program. no_new_privs, the seccomp filter and the
 // Landlock domain all survive execve and are inherited by every descendant, so
 // a body that spawns a helper inherits the same jail.
@@ -59,7 +59,7 @@ const (
 	// Landlock and no seccomp, and the escape hatch when a kernel surprises us.
 	ModeOff Mode = "off"
 	// ModeBestEffort applies every layer the kernel actually supports and
-	// carries on — loudly — without the rest. The default, because refusing to
+	// carries on, loudly, without the rest. The default, because refusing to
 	// boot on an old kernel is a worse failure than a logged degradation.
 	ModeBestEffort Mode = "best-effort"
 	// ModeEnforce refuses to start a body at all unless the filesystem and
@@ -79,7 +79,7 @@ func ParseMode(s string) (Mode, error) {
 	case ModeEnforce:
 		return ModeEnforce, nil
 	default:
-		return "", fmt.Errorf("sandbox: unknown mode %q — want off, best-effort or enforce", s)
+		return "", fmt.Errorf("sandbox: unknown mode %q: want off, best-effort or enforce", s)
 	}
 }
 
@@ -90,13 +90,13 @@ func ParseMode(s string) (Mode, error) {
 type Policy struct {
 	// ReadExec are the prefixes the child may read and execute: the
 	// interpreter, its standard library, the shared libraries it links, the
-	// certificate store, the Go toolchain. Read-only — a body cannot rewrite
+	// certificate store, the Go toolchain. Read-only: a body cannot rewrite
 	// its own interpreter.
 	ReadExec []string `json:"readExec,omitempty"`
 	// ReadOnly are prefixes the child may read but not execute.
 	ReadOnly []string `json:"readOnly,omitempty"`
 	// ReadWrite are the prefixes the child owns: ITS installation's work dir
-	// and its private scratch. Never a shared cache — a writable shared cache
+	// and its private scratch. Never a shared cache: a writable shared cache
 	// is a cross-installation code-execution vector, which is most of the
 	// reason this package exists.
 	ReadWrite []string `json:"readWrite,omitempty"`
@@ -109,7 +109,7 @@ type Policy struct {
 	// NoFile, FileSize bound the cheap things rlimits actually bound well.
 	// RLIMIT_AS and RLIMIT_NPROC are deliberately absent: AS counts virtual
 	// address space, which the Go runtime and CPython reserve far more of than
-	// they commit, and NPROC is per-UID — a child's NPROC limit is charged
+	// they commit, and NPROC is per-UID: a child's NPROC limit is charged
 	// against the SUBSTRATE's process count, so it would starve the server
 	// rather than isolate the body.
 	NoFile   uint64 `json:"noFile,omitempty"`
@@ -119,7 +119,7 @@ type Policy struct {
 // Report is what the platform actually offered, resolved once at boot.
 type Report struct {
 	// OS is the platform the probe ran on, so a caller can tell "this kernel
-	// is missing a layer" from "this operating system has none of them" —
+	// is missing a layer" from "this operating system has none of them",
 	// two different problems with two different answers, and only the first
 	// one an operator can fix.
 	OS string
@@ -138,6 +138,18 @@ func (r Report) FS() bool { return r.LandlockABI > 0 }
 // Landlock and seccomp are Linux facilities; macOS's Seatbelt is a different
 // design with its own policy language, and nothing stands in for them.
 func (r Report) Supported() bool { return r.OS == "linux" }
+
+// Degraded reports whether a mode asks for more than this platform gave. It
+// hangs off Report rather than Confiner alone so a caller can ask the question
+// of a report it constructed, which is how the boot line's
+// unsupported-platform branch is tested from a machine that supports the
+// sandbox.
+func (r Report) Degraded(mode Mode) bool {
+	if mode == ModeOff {
+		return false
+	}
+	return !r.FS() || !r.Seccomp
+}
 
 // String is the one line an operator reads at boot.
 func (r Report) String() string {
@@ -167,25 +179,20 @@ func (c *Confiner) Mode() Mode { return c.mode }
 // Report is what the kernel offered.
 func (c *Confiner) Report() Report { return c.report }
 
-// Degraded reports whether the configured mode is doing less than it says —
-// the state an operator must be told about rather than left to infer.
-func (c *Confiner) Degraded() bool {
-	if c.mode == ModeOff {
-		return false
-	}
-	return !c.report.FS() || !c.report.Seccomp
-}
+// Degraded reports whether the configured mode is doing less than it says: the
+// state an operator must be told about rather than left to infer.
+func (c *Confiner) Degraded() bool { return c.report.Degraded(c.mode) }
 
 // Wrap rewrites cmd to run under the policy. It never mutates cmd on failure,
 // so a caller that ignores the error still launches an unconfined child rather
-// than a broken one — which is why ModeEnforce returns the error instead of
+// than a broken one, which is why ModeEnforce returns the error instead of
 // relying on the caller to notice.
 func (c *Confiner) Wrap(cmd *exec.Cmd, p Policy) error {
 	if c.mode == ModeOff {
 		return nil
 	}
 	if c.mode == ModeEnforce && (!c.report.FS() || !c.report.Seccomp) {
-		return fmt.Errorf("sandbox: SUBSTRATE_SANDBOX=enforce, but %s — "+
+		return fmt.Errorf("sandbox: SUBSTRATE_SANDBOX=enforce, but %s: "+
 			"set SUBSTRATE_SANDBOX=best-effort to run bodies unconfined anyway", c.report)
 	}
 	return c.wrap(cmd, p)

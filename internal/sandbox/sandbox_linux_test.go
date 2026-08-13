@@ -16,7 +16,7 @@ import (
 )
 
 // These tests exercise the REAL kernel facilities against real child
-// processes — a confinement that is only unit-tested against its own BPF
+// processes: a confinement that is only unit-tested against its own BPF
 // assembler proves nothing. Where the kernel does not offer a layer the test
 // skips rather than fails: a CI runner or a developer laptop with Landlock
 // left out of its lsm= list is an environment difference, not a regression.
@@ -68,7 +68,7 @@ func TestConfinedChildCannotReadParentEnviron(t *testing.T) {
 	// this the test could pass on a box where the read fails for an unrelated
 	// reason and prove nothing.
 	if _, err := os.ReadFile(self); err != nil {
-		t.Skipf("this process's own environ is already unreadable (%v) — nothing to prove", err)
+		t.Skipf("this process's own environ is already unreadable (%v): nothing to prove", err)
 	}
 
 	out, err := runConfined(t, c, shellPolicy(), "cat "+self)

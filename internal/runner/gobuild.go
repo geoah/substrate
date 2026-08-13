@@ -51,7 +51,7 @@ go 1.26
 var goBuildEnv = []string{"GOFLAGS=-mod=mod", "GOPROXY=off", "GOWORK=off", "CGO_ENABLED=0"}
 
 // toolchain is what one `go env` probe tells us: the identity that keys the
-// build cache, and the directories the build reads and writes — which the
+// build cache, and the directories the build reads and writes, which the
 // sandbox needs by name, because a confined build cannot discover them.
 type toolchain struct {
 	// ID is version/os/arch, the part that participates in the cache key.
@@ -74,7 +74,7 @@ var goToolchain = sync.OnceValues(func() (toolchain, error) {
 	// on a box that never set it), and a value may legitimately CONTAIN SPACES
 	// (a GOCACHE under `/Users/My Name/Library/Caches`). Splitting on fields
 	// would drop the empty ones and shatter the spaced ones, and every value
-	// after the first offender would be assigned a fragment of its neighbor —
+	// after the first offender would be assigned a fragment of its neighbor,
 	// which the sandbox would then grant, denying the build its own caches.
 	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
 	if len(lines) < 6 {
@@ -199,7 +199,7 @@ func (r *Runner) ensureBinary(ctx context.Context, spec Spec) (string, error) {
 	// Hermetic: no network, no workspace interference, and no stale GOROOT
 	// leaking in from the parent environment — the found toolchain knows its
 	// own root.
-	// The toolchain writes its own scratch — a link step, a vet run — and it
+	// The toolchain writes its own scratch (a link step, a vet run) and it
 	// takes the path from TMPDIR. Pointing it inside the build's work dir
 	// keeps the shared /tmp out of the policy.
 	buildTmp, err := scratch(work)
@@ -207,7 +207,7 @@ func (r *Runner) ensureBinary(ctx context.Context, spec Spec) (string, error) {
 		return "", err
 	}
 	cmd.Env = append(goBuildChildEnv(), "TMPDIR="+buildTmp)
-	// The build compiles UNTRUSTED source, so it is confined too — a looser
+	// The build compiles UNTRUSTED source, so it is confined too: a looser
 	// policy than a body's, because a build legitimately writes the module and
 	// build caches, but the same shape: no network (the module is stdlib-only
 	// and GOPROXY is off, so a build that reaches for the network is a build
@@ -229,7 +229,7 @@ func (r *Runner) ensureBinary(ctx context.Context, spec Spec) (string, error) {
 
 // goWorkDir is one installation's runtime directory for a Go body: where its
 // scratch lives and the only writable path its sandbox grants. Keyed by
-// workID() — the full installation key — like the python one, so two
+// workID(), the full installation key, like the python one, so two
 // repositories running byte-identical source never share a directory.
 func (r *Runner) goWorkDir(spec Spec) (string, error) {
 	base, err := os.UserCacheDir()
@@ -279,7 +279,7 @@ func goBuildChildEnv() []string {
 }
 
 // buildPolicy confines one `go build`. The build cache and module cache are
-// writable — a build cannot work otherwise, and they are content-addressed —
+// writable: a build cannot work otherwise, and they are content-addressed,
 // and so is the artifact directory, because the build writes its output there
 // and renames it into place. Every one of those is shared across
 // installations, which is why the BODY that comes out gets a policy where they

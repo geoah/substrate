@@ -56,7 +56,7 @@ host's bearer.
 ## The function sandbox
 
 Function bodies are third-party code, and the substrate confines them with
-Landlock, seccomp and rlimits — see [the sandbox](functions.md#the-sandbox) for
+Landlock, seccomp and rlimits: see [the sandbox](functions.md#the-sandbox) for
 what each layer closes. Two things an operator needs to know:
 
 **Check the boot log.** The substrate reports the sandbox once at startup,
@@ -65,7 +65,7 @@ ERROR, not a warning, because a confinement that silently does less than it
 claims is worse than none. A real deployment should run `SUBSTRATE_SANDBOX=enforce`,
 which turns that into a refusal to run bodies at all.
 
-**Both layers work in a stock container** — Docker's and containerd's default
+**Both layers work in a stock container**: Docker's and containerd's default
 seccomp profiles permit the `landlock_*` and `seccomp` syscalls, and neither
 needs a capability. What does NOT work in a stock container is anything built
 on user namespaces or cgroup delegation: `CLONE_NEWUSER` is denied by the

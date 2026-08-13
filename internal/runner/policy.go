@@ -18,8 +18,8 @@ import (
 //   - Nothing SHARED is writable. The Go build cache, uv's cache and the
 //     interpreter prefixes are read-and-execute; only the installation's own
 //     work dir and its private scratch are writable. A writable shared cache is
-//     a cross-installation code-execution vector — plant an artifact under the
-//     hash a neighbor will exec — and it survives one-process-per-installation
+//     a cross-installation code-execution vector: plant an artifact under the
+//     hash a neighbor will exec, and it survives one-process-per-installation
 //     untouched, so the filesystem layer is the only thing that closes it.
 //   - Nothing is granted under /proc. That is what makes the runner's env
 //     allowlist a boundary rather than a gesture: with no rule naming it,
@@ -32,7 +32,7 @@ import (
 
 // systemReadExec are the prefixes an interpreter needs to run at all: the
 // binary, its shared libraries, its standard library. Read and execute, never
-// write — a body cannot rewrite the interpreter the next one will start.
+// write: a body cannot rewrite the interpreter the next one will start.
 var systemReadExec = []string{
 	"/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/opt",
 }
@@ -42,7 +42,7 @@ var systemReadExec = []string{
 //
 // Granting the whole directory would be simpler and wrong: /etc is where a
 // container platform mounts secrets by default, and /etc/shadow is readable
-// when the substrate runs as root — which the image does. This package claims a
+// when the substrate runs as root, which the image does. This package claims a
 // body cannot reach the substrate's credentials, and a blanket /etc grant would
 // make that claim false for anything an operator happens to mount there. A path
 // that does not exist is skipped, so one list covers alpine, a Debian box and a
@@ -62,7 +62,7 @@ var systemReadOnly = []string{
 }
 
 // deviceReadWrite are the character devices every runtime opens as a matter of
-// course — CPython rebinds stdin to /dev/null before a body runs, the Go
+// course: CPython rebinds stdin to /dev/null before a body runs, the Go
 // toolchain writes build output to it, and both draw seeds from urandom. They
 // are named ONE BY ONE rather than granting /dev, which would hand a body the
 // block devices, /dev/mem and the terminal along with them.
@@ -70,7 +70,7 @@ var deviceReadWrite = []string{
 	"/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom",
 }
 
-// The rlimit ceilings. Both are generous — they exist to stop an accident from
+// The rlimit ceilings. Both are generous: they exist to stop an accident from
 // filling a disk or exhausting the substrate's descriptors, not to meter a
 // body, which needs a cgroup the deployment cannot give us (/sys/fs/cgroup is
 // a read-only mount in a stock container).
@@ -80,7 +80,7 @@ const (
 )
 
 // policyFor builds the confinement for one body process. work is the
-// installation's own directory — the one thing it may write — and readExec
+// installation's own directory: the one thing it may write, and readExec
 // carries whatever else it must be able to run: the venv interpreter uv
 // provisioned, or the build cache the compiled binary lives in.
 func policyFor(spec Spec, work string, readExec ...string) sandbox.Policy {
@@ -90,7 +90,7 @@ func policyFor(spec Spec, work string, readExec ...string) sandbox.Policy {
 		ReadWrite: append([]string{work}, deviceReadWrite...),
 		// The whole enforcement of `capabilities.network`: a manifest that
 		// declares no egress gets none, at the syscall. It is binary on
-		// purpose — a syscall filter cannot read the sockaddr behind a
+		// purpose: a syscall filter cannot read the sockaddr behind a
 		// pointer, so per-host allowlisting needs an egress proxy, and
 		// pretending otherwise would be worse than saying so.
 		Network:  len(spec.Network) > 0,
@@ -103,8 +103,8 @@ func policyFor(spec Spec, work string, readExec ...string) sandbox.Policy {
 // rather than taken from PATH.
 //
 // PATH is not good enough once children are confined. A version manager (mise,
-// pyenv, asdf) puts a SHIM on PATH — a wrapper that re-execs the real
-// interpreter from a versioned directory somewhere else entirely — so a policy
+// pyenv, asdf) puts a SHIM on PATH: a wrapper that re-execs the real
+// interpreter from a versioned directory somewhere else entirely, so a policy
 // derived from the PATH entry would grant the wrapper and deny what it runs.
 // `sys.executable` is the interpreter's own answer to "where am I", so the
 // runner execs the real binary and the grant below names the tree it actually
@@ -123,7 +123,7 @@ var pythonInterpreter = sync.OnceValues(func() (string, error) {
 })
 
 // runtimeRoot is the tree an interpreter needs granted, given its binary: the
-// directory holding it, and — when that directory is a `bin` — its parent, so
+// directory holding it, and, when that directory is a `bin`, its parent, so
 // the `lib` beside it comes too. That is the layout of every prefix-installed
 // runtime, from /usr on down.
 //

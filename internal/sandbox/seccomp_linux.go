@@ -12,16 +12,16 @@ import (
 
 // seccomp: the syscall half, a hand-assembled classic BPF program.
 //
-// Hand-assembled rather than github.com/elastic/go-seccomp-bpf — which is pure
-// Go, current, and does support argument conditions — because that package
+// Hand-assembled rather than github.com/elastic/go-seccomp-bpf, which is pure
+// Go, current, and does support argument conditions. It is not used because
 // hardcodes EPERM as its errno, and this filter needs two others to be
 // CORRECT, not merely tidy:
 //
 //   - clone3 must answer ENOSYS. glibc ≥2.34 calls clone3 for pthread_create
 //     and falls back to clone ONLY on ENOSYS; EPERM would break every threaded
 //     body on a glibc image. It must be denied at all, rather than left alone,
-//     because clone3 passes its flags behind a POINTER — seccomp cannot read
-//     them — so "deny clone with namespace flags" is trivially bypassed through
+//     because clone3 passes its flags behind a POINTER: seccomp cannot read
+//     them, so "deny clone with namespace flags" is trivially bypassed through
 //     clone3 unless clone3 is gone.
 //   - socket(2) must answer EAFNOSUPPORT, the error a program gets for an
 //     address family the kernel lacks. A body that is denied the network should
@@ -30,8 +30,8 @@ import (
 //
 // SHAPE. A deny-list, not an allowlist, and this is a deliberate limit on what
 // the layer claims. An allowlist over CPython, uv and the Go toolchain would be
-// a standing breakage risk for third-party bodies — every wheel with a new
-// syscall is an outage — and it would not be the boundary anyway: Landlock is.
+// a standing breakage risk for third-party bodies: every wheel with a new
+// syscall is an outage, and it would not be the boundary anyway: Landlock is.
 // This filter removes the classes with no legitimate use in a function body and
 // enforces the network capability. It is defense in depth, and the comments do
 // not pretend otherwise.
@@ -78,7 +78,7 @@ type sockFprog struct {
 	Fil *sockFilter
 }
 
-// seccompAvailable reports whether an unprivileged filter can be installed —
+// seccompAvailable reports whether an unprivileged filter can be installed,
 // probed WITHOUT attaching one, because a filter cannot be removed. EPERM here
 // means an outer profile denies seccomp(2) entirely; EINVAL means the kernel
 // predates SECCOMP_GET_ACTION_AVAIL (4.14) but still has filters, so it counts
@@ -114,7 +114,7 @@ func applySeccomp(p Policy) error {
 	if auditArch == 0 {
 		// No syscall table for this architecture. Reported as a degradation at
 		// boot (seccompAvailable says so), so carrying on here is the
-		// best-effort contract rather than a silent gap — and refusing would
+		// best-effort contract rather than a silent gap, and refusing would
 		// take down every delivery on a platform the operator was told about.
 		return nil
 	}
@@ -127,7 +127,7 @@ func applySeccomp(p Policy) error {
 	if errors.Is(err, unix.EINVAL) {
 		// TSYNC is a request, not a requirement: a kernel that has filters but
 		// not the flag (or refuses to sync because a sibling thread carries a
-		// different filter) still applies one to the calling thread — which is
+		// different filter) still applies one to the calling thread, which is
 		// the thread the stub locked and is about to exec from, so the filter
 		// still reaches the body.
 		err = installFilter(&fprog, 0)
@@ -160,7 +160,7 @@ func retErrno(e unix.Errno) uint32 { return seccompRetErrno | (uint32(e) & 0x000
 // Layout, so the relative jumps below are readable: a prologue that pins the
 // architecture, one compare per denied syscall, an optional socket-domain
 // block, then the four terminal returns. Every compare jumps FORWARD to a
-// terminal, so no offset ever exceeds the number of remaining instructions —
+// terminal, so no offset ever exceeds the number of remaining instructions,
 // which stays far below BPF's 255-offset and 4096-instruction ceilings.
 func buildFilter(p Policy) ([]sockFilter, error) {
 	if auditArch == 0 {
@@ -191,7 +191,7 @@ func buildFilter(p Policy) ([]sockFilter, error) {
 	prog := make([]sockFilter, 0, eafnosupportAt+1)
 	// 0: load the architecture.
 	prog = append(prog, sockFilter{Code: bpfLdAbsW, K: sdArch})
-	// 1: a foreign architecture skips to the ENOSYS terminal — this filter's
+	// 1: a foreign architecture skips to the ENOSYS terminal: this filter's
 	// syscall numbers mean nothing there.
 	jt, err := jumpTo(1, enosysAt)
 	if err != nil {
@@ -205,7 +205,7 @@ func buildFilter(p Policy) ([]sockFilter, error) {
 		return nil, err
 	}
 	prog = append(prog, sockFilter{Code: bpfJgeK, JT: jt, JF: 0, K: x32Bit})
-	// 4: reload the number — the jge above left A holding it, but keeping the
+	// 4: reload the number: the jge above left A holding it, but keeping the
 	// prologue a fixed five instructions is worth one redundant load.
 	prog = append(prog, sockFilter{Code: bpfLdAbsW, K: sdNR})
 
@@ -223,7 +223,7 @@ func buildFilter(p Policy) ([]sockFilter, error) {
 
 	if socketBlock > 0 {
 		// A still holds the syscall number: none of the compares above touch
-		// it. Not socket(2) — allow, and let the terminals handle the rest.
+		// it. Not socket(2): allow, and let the terminals handle the rest.
 		base := prologue + len(deny)
 		jf, err := jumpTo(base, allowAt)
 		if err != nil {
@@ -231,7 +231,7 @@ func buildFilter(p Policy) ([]sockFilter, error) {
 		}
 		prog = append(prog, sockFilter{Code: bpfJeqK, JT: 0, JF: jf, K: uint32(sysSocket)})
 		// The domain is arg0, an INTEGER copied into seccomp_data by the
-		// kernel — not a pointer, so there is nothing for user space to change
+		// kernel, not a pointer, so there is nothing for user space to change
 		// behind the filter's back. Comparing the low half is exactly right:
 		// the kernel truncates the argument to int, so the low half IS the
 		// domain.
@@ -272,7 +272,7 @@ type denial struct {
 // few that exist on only one architecture live in the arch files beside it.
 func deniedSyscalls() []denial {
 	d := []denial{
-		// Reach into another process — the same-uid siblings and the
+		// Reach into another process: the same-uid siblings and the
 		// substrate itself are all in this process's pid namespace.
 		{nr: unix.SYS_PTRACE},
 		{nr: unix.SYS_PROCESS_VM_READV},
@@ -293,12 +293,12 @@ func deniedSyscalls() []denial {
 		{nr: unix.SYS_FSMOUNT},
 		{nr: unix.SYS_MOVE_MOUNT},
 		{nr: unix.SYS_OPEN_TREE},
-		// Name a file by handle rather than by path — Landlock is path-based,
+		// Name a file by handle rather than by path: Landlock is path-based,
 		// so a handle is precisely the way around it.
 		{nr: unix.SYS_OPEN_BY_HANDLE_AT},
 		{nr: unix.SYS_NAME_TO_HANDLE_AT},
 		// io_uring performs opens, connects and sends from a RING, not from
-		// syscalls, so nothing in this filter — least of all the socket gate —
+		// syscalls, so nothing in this filter: least of all the socket gate,
 		// can see them. It has to go entirely or the network capability is
 		// decorative.
 		{nr: unix.SYS_IO_URING_SETUP},
@@ -312,8 +312,8 @@ func deniedSyscalls() []denial {
 		{nr: unix.SYS_DELETE_MODULE},
 		{nr: unix.SYS_KEXEC_LOAD},
 		{nr: unix.SYS_KEXEC_FILE_LOAD},
-		// Namespaces. Denied not because they would succeed — a container's
-		// own profile already refuses them — but because a body that could
+		// Namespaces. Denied not because they would succeed: a container's
+		// own profile already refuses them, but because a body that could
 		// enter one would leave this filter's assumptions behind.
 		{nr: unix.SYS_SETNS},
 		{nr: unix.SYS_UNSHARE},

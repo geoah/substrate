@@ -14,7 +14,7 @@ import (
 // Landlock: the filesystem half, called directly rather than through
 // github.com/landlock-lsm/go-landlock. That library is good and current, but it
 // carries kernel.org/pub/linux/libs/security/libcap/psx to apply a domain
-// across every OS thread — machinery this stub does not need, because it locks
+// across every OS thread: machinery this stub does not need, because it locks
 // one thread and exec's immediately, and a dependency that compiles a C
 // implementation whenever cgo is on. The whole surface used here is three
 // syscalls and two structs.
@@ -44,8 +44,8 @@ const (
 	llTruncate // ABI 3 (Linux 6.2)
 	// LANDLOCK_ACCESS_FS_IOCTL_DEV (ABI 5) is deliberately NOT handled:
 	// handling a right obliges us to grant it everywhere it is legitimately
-	// used, and an unforeseen ioctl on a device file — a tty, a terminal size
-	// query in a body's logging — would fail for no security gain here.
+	// used, and an unforeseen ioctl on a device file (a tty, a terminal size
+	// query in a body's logging) would fail for no security gain here.
 )
 
 // llCreateRulesetVersion asks landlock_create_ruleset for the ABI version
@@ -54,7 +54,7 @@ const llCreateRulesetVersion = 1
 
 // rulesetAttr is struct landlock_ruleset_attr. Only handled_access_fs is
 // passed (size 8, the ABI 1 struct): the kernel accepts a short struct and
-// zero-fills the rest, and neither the network nor the scope fields are used —
+// zero-fills the rest, and neither the network nor the scope fields are used,
 // Landlock's network rules are TCP PORT rules, useless against connectors that
 // all speak 443, and scoping is ABI 6.
 type rulesetAttr struct {
@@ -62,7 +62,7 @@ type rulesetAttr struct {
 }
 
 // pathBeneathAttr is struct landlock_path_beneath_attr, which is PACKED: the
-// kernel copies exactly 12 bytes — a u64 then an s32 — so the trailing pad
+// kernel copies exactly 12 bytes (a u64 then an s32), so the trailing pad
 // below is never read.
 type pathBeneathAttr struct {
 	AllowedAccess uint64
@@ -72,7 +72,7 @@ type pathBeneathAttr struct {
 
 // landlockABI returns the kernel's Landlock ABI version. ENOSYS means the
 // kernel was built without it; EOPNOTSUPP means it was built in but left out of
-// the boot-time LSM list — two different operator problems, so both are named.
+// the boot-time LSM list: two different operator problems, so both are named.
 func landlockABI() (int, error) {
 	ret, _, errno := unix.Syscall(unix.SYS_LANDLOCK_CREATE_RULESET, 0, 0, llCreateRulesetVersion)
 	switch {
@@ -81,7 +81,7 @@ func landlockABI() (int, error) {
 	case errors.Is(errno, unix.ENOSYS):
 		return 0, fmt.Errorf("landlock: not supported by this kernel")
 	case errors.Is(errno, unix.EOPNOTSUPP):
-		return 0, fmt.Errorf("landlock: built in but disabled — add it to the kernel's lsm= list")
+		return 0, fmt.Errorf("landlock: built in but disabled: add it to the kernel's lsm= list")
 	default:
 		return 0, fmt.Errorf("landlock: %w", errno)
 	}
@@ -113,7 +113,7 @@ func handledFor(abi int) uint64 {
 func applyLandlock(p Policy) error {
 	// NOTE the absence of an early return for a policy with no paths. A policy
 	// that grants nothing means a body that may touch nothing, and enforcing it
-	// is one ruleset with zero rules — whereas skipping would hand a
+	// is one ruleset with zero rules, whereas skipping would hand a
 	// mis-assembled empty policy the whole filesystem, including the /proc entry
 	// this layer exists to close. Fail closed.
 	abi, err := landlockABI()
@@ -170,8 +170,8 @@ func addPath(rulesetFD int, path string, access uint64) error {
 	}
 	defer func() { _ = unix.Close(pathFD) }()
 	// A rule on a NON-DIRECTORY may only carry the rights that mean something
-	// for a file; naming a directory-only right — READ_DIR, any MAKE_* or
-	// REMOVE_*, REFER — on one is EINVAL, not a no-op. Policies grant
+	// for a file; naming a directory-only right (READ_DIR, any MAKE_* or
+	// REMOVE_*, REFER) on one is EINVAL, not a no-op. Policies grant
 	// individual device nodes (/dev/null and friends) alongside directories, so
 	// the mask is applied here rather than left to every caller.
 	if fi, statErr := statFD(pathFD); statErr == nil && fi&unix.S_IFMT != unix.S_IFDIR {

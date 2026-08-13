@@ -7,7 +7,7 @@ import (
 )
 
 // The platform-independent half of the package, so `go test ./internal/sandbox`
-// does something on a macOS laptop instead of compiling to an empty suite —
+// does something on a macOS laptop instead of compiling to an empty suite,
 // which is exactly where a mistake in the OFF path would otherwise hide.
 
 func TestParseMode(t *testing.T) {
@@ -43,7 +43,7 @@ func TestOffNeverRefuses(t *testing.T) {
 		t.Fatalf("off mode refused a child: %v", err)
 	}
 	if c.Degraded() {
-		t.Fatal("off mode is not a degradation — it is the setting asked for")
+		t.Fatal("off mode is not a degradation: it is the setting asked for")
 	}
 }
 

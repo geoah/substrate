@@ -1,5 +1,5 @@
-// Package runner is the function runner: a child process of the substrate —
-// same host, same container, NEVER in-process — for every installed function
+// Package runner is the function runner: a child process of the substrate
+// (same host, same container, NEVER in-process) for every installed function
 // body. ONE PROCESS PER INSTALLATION, always: python bodies get their own
 // interpreter with the source exec'd into it, go bodies compile at
 // registration to a binary in a content-addressed build cache and run
@@ -8,15 +8,15 @@
 // build cache alone is shared, because its artifacts are immutable and it is
 // mounted read-only into every body. Both runtimes speak the same JSON-lines
 // protocol (protocol.go documents the frames), pinned so moving to Connect
-// Describe/Invoke on a local socket — or moving a bundle into its own
-// container — is a placement change, not a contract change.
+// Describe/Invoke on a local socket, or moving a bundle into its own
+// container, is a placement change, not a contract change.
 //
 // WHY ONE PROCESS PER INSTALLATION. Python bodies used to share one
 // interpreter per call level for the whole substrate, one module namespace
 // each. A module namespace is not a boundary: a body could read a neighbor's
 // globals straight off `sys.modules['__main__']`, monkeypatch `json` or
-// `urllib` to intercept what another function was handed — including the live
-// provider tokens the connector bundles receive on their config — and reach the
+// `urllib` to intercept what another function was handed, including the live
+// provider tokens the connector bundles receive on their config, and reach the
 // protocol's own file descriptors to forge frames at the parent. That was
 // cross-REPOSITORY, not merely cross-function. The shared host is gone; the
 // cost is one interpreter per live installation, which the idle reaper below
@@ -25,7 +25,7 @@
 // Every child is CONFINED (internal/sandbox): Landlock for the filesystem,
 // seccomp for the syscall surface and the network capability, rlimits for the
 // cheap ceilings. That is what makes the env allowlist below a boundary rather
-// than a gesture — without it a body reads the substrate's own environment out
+// than a gesture: without it a body reads the substrate's own environment out
 // of /proc and helps itself to the credential key.
 //
 // Supervision is lazy: a crashed or timed-out process is killed — the whole
@@ -84,8 +84,8 @@ type Spec struct {
 	// identities the body's host Call may invoke. Empty means every
 	// sub-call trips.
 	CallTargets []string
-	// Network is the `capabilities.network` declaration. Its CONTENT — the
-	// host patterns — is still only documentation, but its EMPTINESS is
+	// Network is the `capabilities.network` declaration. Its CONTENT (the
+	// host patterns) is still only documentation, but its EMPTINESS is
 	// enforced: a body that declares no egress is denied AF_INET and AF_INET6
 	// sockets by the sandbox's seccomp filter. Holding it to the declared
 	// hosts needs an egress proxy, because a syscall filter cannot read the
@@ -114,8 +114,9 @@ func (s Spec) Key() string {
 //
 // The network state has to be in here. The sandbox policy is applied ONCE, when
 // the process starts, so a manifest that drops `capabilities.network` without
-// touching a line of source would otherwise leave the running process — started
-// when egress was granted — serving deliveries with its sockets intact. A
+// touching a line of source would otherwise leave the running process,
+// started when egress was granted, serving deliveries with its sockets
+// intact. A
 // capability that is only withdrawn on the next unrelated edit is not withdrawn.
 func (s Spec) contentHash() string {
 	h := sha256.New()
@@ -135,7 +136,7 @@ func (s Spec) contentHash() string {
 // Key (repository + function + content hash), so two byte-identical
 // bodies/modules in different repositories or bundles materialize to SEPARATE
 // on-disk files. Keying the dir on contentHash alone would share writable files
-// across installations — one could mutate a module another reloads. The
+// across installations: one could mutate a module another reloads. The
 // separation is also what the sandbox grants against: a body may write ITS work
 // dir and no other.
 func (s Spec) workID() string {
@@ -199,9 +200,9 @@ type Runner struct {
 	mu sync.Mutex
 	// pys and gos hold the live processes, one per INSTALLATION (Spec.Key) in
 	// both cases. There is no per-call-level pool any more and none is needed:
-	// a body N host-Calls deep is by definition a DIFFERENT function — the
+	// a body N host-Calls deep is by definition a DIFFERENT function: the
 	// engine refuses direct and mutual recursion before the call reaches here
-	// (engine/runner.go, the identity stack) — so a nested invocation never
+	// (engine/runner.go, the identity stack), so a nested invocation never
 	// queues on the process its caller is blocking.
 	pys map[string]*proc
 	gos map[string]*proc
@@ -219,7 +220,7 @@ var Shared = New()
 
 // New returns an empty runner; processes start on first use. The sandbox mode
 // comes from SUBSTRATE_SANDBOX here rather than from a caller, so a test
-// binary and the server confine bodies identically — an isolation property
+// binary and the server confine bodies identically: an isolation property
 // that only holds in production is not one worth having.
 func New() *Runner {
 	mode, err := sandbox.ParseMode(os.Getenv("SUBSTRATE_SANDBOX"))
@@ -230,7 +231,7 @@ func New() *Runner {
 	return &Runner{pys: map[string]*proc{}, gos: map[string]*proc{}, sandbox: sandbox.New(mode)}
 }
 
-// Sandbox is the confiner every child goes through — for the boot log, which
+// Sandbox is the confiner every child goes through, for the boot log, which
 // is where an operator learns whether the deployment's kernel actually offers
 // what the mode claims.
 func (r *Runner) Sandbox() *sandbox.Confiner { return r.sandbox }
@@ -245,8 +246,8 @@ func (r *Runner) Warm(ctx context.Context, spec Spec) error {
 		_, err := r.goProc(ctx, spec)
 		return err
 	case vocabulary.RuntimePython:
-		// Provision at registration — where a slow cold uv resolve belongs,
-		// not on the first delivery's timeout — and register the body, so a
+		// Provision at registration, where a slow cold uv resolve belongs,
+		// not on the first delivery's timeout, and register the body, so a
 		// syntax error or a missing declared dependency fails schema admission
 		// instead of parking the first delivery.
 		_, err := r.pythonProc(ctx, spec)
@@ -256,12 +257,12 @@ func (r *Runner) Warm(ctx context.Context, spec Spec) error {
 	}
 }
 
-// Reconcile retires live runner state the repository no longer references —
+// Reconcile retires live runner state the repository no longer references,
 // the registry-publish hook: the process serving a removed or superseded
 // installation stops. With one process per installation there is nothing to
 // deregister any more; retiring a body is closing its process, which takes its
 // module namespace, its open descriptors and its scratch with it. The
-// content-addressed BUILD cache is deliberately untouched — its artifacts are
+// content-addressed BUILD cache is deliberately untouched: its artifacts are
 // immutable and read-only to every body; eviction is a later, bounded policy.
 func (r *Runner) Reconcile(_ context.Context, repository string, live []Spec) {
 	keep := map[string]bool{}
@@ -389,7 +390,7 @@ func (r *Runner) startVerified(ctx context.Context, spec Spec, bin string) (*pro
 	}
 	cmd := exec.Command(bin)
 	cmd.Dir = work
-	// The compiled body's own scratch, not the shared /tmp — the sandbox
+	// The compiled body's own scratch, not the shared /tmp: the sandbox
 	// grants this directory and no other writable path.
 	cmd.Env = childEnv("TMPDIR=" + tmpDir)
 	// The build cache is read-and-EXECUTE: the binary lives there and every
@@ -536,9 +537,9 @@ func (p *proc) idleFor(now time.Time) time.Duration {
 // The reaper's dials. One process per installation is the right isolation
 // boundary but the wrong steady state for a substrate with many bundles
 // installed: an interpreter is tens of megabytes of RSS whether or not its
-// trigger ever fires again. So an idle body is closed and restarted on demand
-// — the cost of a restart is one register roundtrip, and for a uv body the
-// environment is already provisioned.
+// trigger ever fires again. So an idle body is closed and restarted on
+// demand: the cost of a restart is one register roundtrip, and for a uv body
+// the environment is already provisioned.
 const (
 	idleTTL      = 10 * time.Minute
 	reapInterval = time.Minute

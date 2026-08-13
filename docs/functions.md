@@ -196,7 +196,7 @@ path.
 ## The sandbox
 
 Every function body is arbitrary third-party code, and it runs **one process
-per installation** — keyed by repository plus function plus content hash — with
+per installation**: keyed by repository plus function plus content hash, with
 that process confined by the kernel. There is no shared interpreter: two
 functions never meet in one address space, whether they belong to one bundle,
 one repository or two.
@@ -207,13 +207,13 @@ unprivileged, none requiring a container runtime:
 - **Landlock** confines the filesystem. A body may read and execute its
   interpreter and the system libraries; it may read and write its **own** work
   directory and its own `TMPDIR`; and it may touch nothing else. Notably it
-  gets no `/proc` at all, so it cannot read the substrate's own environment —
+  gets no `/proc` at all, so it cannot read the substrate's own environment,
   which is what makes the environment allowlist below a boundary rather than a
-  gesture — and the shared build and `uv` caches are read-and-execute, so one
+  gesture, and the shared build and `uv` caches are read-and-execute, so one
   installation cannot plant an artifact another will run.
-- **seccomp** removes the syscall classes a body has no use for — `ptrace` and
+- **seccomp** removes the syscall classes a body has no use for: `ptrace` and
   the other reach-into-another-process calls, the mount APIs, `io_uring`,
-  `bpf`, the kernel keyring, module loading — and enforces
+  `bpf`, the kernel keyring, module loading, and enforces
   `capabilities.network`: **a function that declares no `network:` is denied
   `AF_INET` and `AF_INET6` sockets outright.** The enforcement is binary. A
   syscall filter cannot read the address behind a `connect(2)` pointer, so
@@ -230,7 +230,7 @@ construction rather than by filtering.
 ### Platforms
 
 The sandbox is **Linux only**, and both layers work on `linux/amd64` and
-`linux/arm64` — the two architectures the image ships. The seccomp filter
+`linux/arm64`: the two architectures the image ships. The seccomp filter
 carries a syscall table per architecture, because a filter written against the
 wrong numbering does not fail loudly, it denies and permits the wrong calls; an
 architecture with no table gets no filter rather than a guess, and says so.
@@ -245,7 +245,7 @@ what enforcing means when nothing can be enforced. Running the substrate in
 Docker on a Mac is a different case: the body runs in the Linux VM and is
 confined by *its* kernel.
 
-`SUBSTRATE_SANDBOX` chooses how hard the substrate insists — `off`,
+`SUBSTRATE_SANDBOX` chooses how hard the substrate insists: `off`,
 `best-effort` (the default: apply every layer the kernel offers, and log
 loudly about any it does not) or `enforce` (refuse to run a body at all unless
 the filesystem and syscall layers both applied). The effective state is logged
@@ -256,7 +256,7 @@ quietly does less than it claims is worse than none.
 pid namespace with the substrate, so it can signal it. There is no memory or
 process-count ceiling, because that needs a cgroup and `/sys/fs/cgroup` is
 read-only in a stock container. A body that *is* granted network reaches
-loopback, and therefore the substrate's own HTTP port — where it still needs a
+loopback, and therefore the substrate's own HTTP port, where it still needs a
 token it does not have. On non-Linux hosts (a macOS laptop running
 `mise run dev`) none of it applies, and the boot log says so.
 

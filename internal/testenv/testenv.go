@@ -1,7 +1,7 @@
 // Package testenv starts a WHOLE substrate for one test: a Postgres+pgvector
 // container, the real engine on a throwaway schema, the real HTTP handler on a
 // real listener, and one registered user holding a real token. Tests then
-// speak the substrate's own HTTP API — no fakes, no in-process shortcuts, no
+// speak the substrate's own HTTP API, no fakes, no in-process shortcuts, no
 // handler called directly with a synthetic request.
 //
 // It exists because a growing class of behavior is only true END TO END. The
@@ -42,7 +42,7 @@ import (
 
 // InviteCode is the one door into the substrate a test starts. It is a
 // constant rather than a knob because there is exactly one interesting thing
-// to say about it — a test registers through it — and a per-test value would
+// to say about it: a test registers through it, and a per-test value would
 // only make failures harder to read.
 const InviteCode = "test-invite"
 
@@ -212,8 +212,8 @@ func (e *Env) mustJSON(method, path string, body, into any) {
 	}
 }
 
-// ApplyVocabulary installs vocabulary documents — kinds, traits, bundles,
-// functions — through the one admission path, the batch apply verb. A body
+// ApplyVocabulary installs vocabulary documents: kinds, traits, bundles,
+// functions: through the one admission path, the batch apply verb. A body
 // that cannot compile or load fails HERE, which is the point: registration
 // prepares bodies, so an apply that returns 2xx has already run the function
 // through the runner and its sandbox.
@@ -296,9 +296,9 @@ func yamlDocuments(stream string) ([]map[string]any, error) {
 }
 
 // RequireSandbox skips a test whose assertion is a DENIAL the kernel has to
-// perform. `test:db` runs this package on developer machines too — macOS has
+// perform. `test:db` runs this package on developer machines too: macOS has
 // no Landlock or seccomp at all, and a Linux box can have Landlock left out of
-// its lsm= list — and on those hosts a body legitimately opens the socket the
+// its lsm= list, and on those hosts a body legitimately opens the socket the
 // test expects to be refused. Reporting "this platform cannot enforce the
 // policy" is the honest outcome; failing would read as a regression in code
 // that is fine.

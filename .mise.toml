@@ -272,7 +272,7 @@ description = "CI job `lint` — formatting, the linter, and the release config"
 depends = ["fmt:check", "lint", "release:check"]
 
 [tasks."ci:go"]
-description = "CI job `go test` — the cross-compile check, then the suite in its two halves"
+description = "CI job `go test`: the cross-compile check, then the suite in its two halves"
 # See `test` above: the two halves MUST NOT run concurrently.
 run = ["mise run cross", "mise run test:short", "mise run test:db"]
 

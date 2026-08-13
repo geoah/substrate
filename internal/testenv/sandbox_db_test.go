@@ -11,23 +11,23 @@ import (
 // The function sandbox, end to end: a real substrate, a real repository, a
 // bundle installed through the real admission path, and its functions invoked
 // over HTTP with a real token. Every assertion here is about a property no
-// single package can establish on its own — the runner confines what it is
+// single package can establish on its own: the runner confines what it is
 // handed, the engine decides what to hand it, and the API decides who may ask.
 
 const probeAuthority = "probe.bundles.substrate.reamde.dev"
 
 // probeBundle assembles a one-kind, N-function bundle around the given bodies.
-// It is written the way a real bundle is written — an authority header, a
+// It is written the way a real bundle is written: an authority header, a
 // bundle document whose `installs` names every member, a kind, then the
-// functions — because the point of these tests is that a function arriving the
+// functions: because the point of these tests is that a function arriving the
 // ORDINARY way is confined.
 func probeBundle(fns ...probeFn) []string {
 	installs := []string{probeAuthority + "/config", probeAuthority + "/note"}
 	docs := []string{
 		"kind: core.substrate.reamde.dev/authority\nmetadata: {id: " + probeAuthority + "}\ndata:\n  version: v1alpha1\n",
 	}
-	// The config kind exists because every bundle must name one — it is the
-	// bundleconfig-trait record a user fills in — not because these probes
+	// The config kind exists because every bundle must name one: it is the
+	// bundleconfig-trait record a user fills in, not because these probes
 	// read it.
 	body := []string{fmt.Sprintf(`kind: core.substrate.reamde.dev/kind
 metadata: {id: %s/config}
@@ -148,7 +148,7 @@ def main(input, host):
 }
 
 // capabilities.network, enforced through the whole stack: the manifest says
-// nothing about egress, so the body gets none — and the same body with a
+// nothing about egress, so the body gets none, and the same body with a
 // declaration gets its socket.
 func TestNetworkCapabilityIsEnforcedEndToEnd(t *testing.T) {
 	testenv.RequireSandbox(t)
@@ -176,7 +176,7 @@ def main(input, host):
 	}
 }
 
-// Two functions in ONE repository and ONE bundle — the ordinary case — still
+// Two functions in ONE repository and ONE bundle: the ordinary case: still
 // cannot see each other. A shared interpreter made `sys.modules['__main__']` a
 // scratchpad between every body in the substrate.
 func TestTwoFunctionsCannotSeeEachOther(t *testing.T) {
