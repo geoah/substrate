@@ -184,13 +184,36 @@ export function RegisterPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <CopyBlock value={recoveryKey} label="recovery key" />
-              <Button
-                type="button"
-                onClick={() => void navigate({ to: "/", replace: true })}
+              {/* A real, NAMED form field, not a display block: a password
+                  manager's save/update prompt captures named inputs at
+                  submit, so continuing offers to attach the value to the
+                  login it just saved, as a field called "recovery key".
+                  Read-only; the copy affordance is the by-hand fallback. */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void navigate({ to: "/", replace: true })
+                }}
               >
-                I saved it — continue
-              </Button>
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor="recovery-key">Recovery key</FieldLabel>
+                    <Input
+                      id="recovery-key"
+                      name="recovery-key"
+                      className="data"
+                      readOnly
+                      autoComplete="off"
+                      value={recoveryKey}
+                      onFocus={(e) => e.currentTarget.select()}
+                    />
+                  </Field>
+                  <Field>
+                    <Button type="submit">I saved it — continue</Button>
+                  </Field>
+                </FieldGroup>
+              </form>
+              <CopyBlock value={recoveryKey} label="recovery key" />
             </CardContent>
           </Card>
         )}
