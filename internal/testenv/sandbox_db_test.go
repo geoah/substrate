@@ -22,30 +22,20 @@ const probeAuthority = "probe.bundles.substrate.reamde.dev"
 // functions: because the point of these tests is that a function arriving the
 // ORDINARY way is confined.
 func probeBundle(fns ...probeFn) []string {
-	installs := []string{probeAuthority + "/config", probeAuthority + "/note"}
+	installs := []string{probeAuthority + "/note"}
 	docs := []string{
 		"kind: core.substrate.reamde.dev/authority\nmetadata: {id: " + probeAuthority + "}\ndata:\n  version: v1alpha1\n",
 	}
-	// The config kind exists because every bundle must name one: it is the
-	// bundleconfig-trait record a user fills in, not because these probes
-	// read it.
+	// No inputs: these probes read no configuration, so the bundle declares
+	// none and nothing anywhere implies any.
 	body := []string{fmt.Sprintf(`kind: core.substrate.reamde.dev/kind
-metadata: {id: %s/config}
-data:
-  authority: %s
-  names: {singular: config, plural: configs}
-  traits: [bundleconfig]
-  properties:
-    unused: {type: string, description: the bundle needs a config kind}
----
-kind: core.substrate.reamde.dev/kind
 metadata: {id: %s/note}
 data:
   authority: %s
   names: {singular: note, plural: notes}
   properties:
     note: {type: string, description: what a probe would emit if it emitted}
-`, probeAuthority, probeAuthority, probeAuthority, probeAuthority)}
+`, probeAuthority, probeAuthority)}
 
 	for _, fn := range fns {
 		installs = append(installs, probeAuthority+"/"+fn.name)
@@ -56,10 +46,9 @@ metadata: {id: %s/probe}
 data:
   authority: %s
   description: sandbox probes, installed the way a bundle installs
-  configType: %s/config
   installs:
 %s
-`, probeAuthority, probeAuthority, probeAuthority, indent(installs, "    - "))
+`, probeAuthority, probeAuthority, indent(installs, "    - "))
 	return append(append(docs, bundle), body...)
 }
 

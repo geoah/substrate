@@ -4,7 +4,8 @@ package engine
 // closure at ../../kinds/notion.bundles.substrate.reamde.dev. Three tests:
 //
 //  1. TestNotionBundleAdmitsSchema — the closure ADMITS through the schema
-//     loader: the config wears bundleconfig (and deliberately NOT oauth2 —
+//     loader: the bundle declares one `connector` input injected into its
+//     functions (and the config deliberately NOT oauth2 —
 //     the bundle authenticates by pasted integration token because the host's
 //     token exchange speaks AuthStyleInParams only, never Notion's required
 //     Basic auth), the account wears accountconfig, the page mirror carries
@@ -126,28 +127,33 @@ func TestNotionBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("the bundle closure did not admit: %v", err)
 	}
 
-	// The bundle exists, names its config type, and — the token model —
-	// declares NO oauth2 manifest block: the host's exchange cannot speak
-	// Notion's Basic-auth token endpoint, so nothing here pretends to.
+	// The bundle exists, declares the one `connector` input injected into
+	// its functions, and — the token model — declares NO oauth2 manifest
+	// block: the host's exchange cannot speak Notion's Basic-auth token
+	// endpoint, so nothing here pretends to.
 	b, ok := reg.BundleOf(notionAuthority)
 	if !ok {
 		t.Fatalf("no bundle owns %s after install", notionAuthority)
 	}
-	if b.ConfigType != notionConfigType {
-		t.Fatalf("bundle configType = %q, want %q", b.ConfigType, notionConfigType)
+	in, ok := b.Inputs["connector"]
+	if !ok {
+		t.Fatalf("bundle declares no connector input: %v", b.InputOrder)
+	}
+	if in.Kind != notionConfigType {
+		t.Fatalf("connector input kind = %q, want %q", in.Kind, notionConfigType)
+	}
+	if in.Inject != vocabulary.BundleInputInjectFunctions {
+		t.Fatalf("connector input inject = %q, want %q", in.Inject, vocabulary.BundleInputInjectFunctions)
 	}
 	if b.OAuth2 != nil {
 		t.Fatalf("bundle declares oauth2 provider metadata — the token model must not")
 	}
 
-	// The config type: bundleconfig only (the host singleton), NOT oauth2 —
-	// its integrationToken is the connector's own secret, injected plaintext.
+	// The config type: NOT oauth2 — its integrationToken is the connector's
+	// own secret, injected plaintext.
 	cfg, ok := reg.ByIdentity(notionConfigType)
 	if !ok {
 		t.Fatalf("config type %s missing", notionConfigType)
-	}
-	if !cfg.Implements(vocabulary.TraitBundleConfigCore) {
-		t.Fatalf("%s does not implement %s", notionConfigType, vocabulary.TraitBundleConfigCore)
 	}
 	if cfg.Implements(vocabulary.TraitOAuth2Core) {
 		t.Fatalf("%s implements oauth2 — a token-model bundle must not (the loader pairs the trait with an oauth2 manifest block)", notionConfigType)
@@ -416,7 +422,8 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 		}
 	}
 
-	// Computed status: installed, enabled, one function, unconfigured so far.
+	// Computed status: installed, enabled, one function, the connector input
+	// unresolved so far.
 	st, err := ds.BundleStatus(ctx, notionAuthority)
 	if err != nil {
 		t.Fatalf("bundle status: %v", err)
@@ -424,8 +431,14 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	if !st.Installed || !st.Enabled {
 		t.Fatalf("bundle not live: installed=%v enabled=%v", st.Installed, st.Enabled)
 	}
-	if st.Configured {
-		t.Fatalf("bundle reports configured with no config record created")
+	if len(st.Inputs) != 1 || st.Inputs[0].Name != "connector" || st.Inputs[0].Kind != notionConfigType {
+		t.Fatalf("status inputs = %+v, want the one connector input", st.Inputs)
+	}
+	if st.Inputs[0].Record != "" || st.Inputs[0].Via != "" {
+		t.Fatalf("connector input resolved with no config record created: %+v", st.Inputs[0])
+	}
+	if len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupMissing || st.Setup[0].Input != "connector" {
+		t.Fatalf("status setup = %+v, want the one missing-input item", st.Setup)
 	}
 	if st.Functions != 1 {
 		t.Fatalf("status functions = %d, want 1", st.Functions)

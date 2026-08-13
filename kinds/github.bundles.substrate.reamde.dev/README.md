@@ -20,8 +20,8 @@ mirror types.
 
 It composes from the exact primitive set the google bundle proved:
 **bundle · kind · trait · function · recordmapping · trigger**, the
-host OAuth facility (the `oauth2:` manifest block + the `bundleconfig`/
-`accountconfig`/`oauth2` traits), and the connector runtime (a PEP 723
+host OAuth facility (the `oauth2:` manifest block with its `client` input +
+the `accountconfig`/`oauth2` traits), and the connector runtime (a PEP 723
 Python body pulling `requests` through uv).
 
 ## What it does
@@ -46,8 +46,10 @@ pullrequest ──repository edge──▶ repository
 hourly schedule ──▶ sync ──▶ every connected account due by its syncFrequency
 ```
 
-- **`config`** (bundleconfig + oauth2): the ONE GitHub OAuth app — `clientId`
-  and the secret-typed `clientSecret`, nothing else. The provider endpoints and
+- **`config`** (oauth2): the GitHub OAuth app — `clientId` and the
+  secret-typed `clientSecret`, nothing else. The bundle's `client` input
+  resolves one record of this kind for the host OAuth facility (the sole
+  record, the one named `default`, or a bound one). The provider endpoints and
   the feature→scope mapping are TRUSTED manifest metadata on the bundle
   document (review-google #1), never config properties.
 - **`account`** (accountconfig): one connected account — the `enabledUser` /
@@ -187,8 +189,8 @@ shipped here):
    (The value is the host's `SUBSTRATE_OAUTH_CALLBACK_URL`.)
 
 2. **Create the config.** One `config` carrying the app's `clientId` +
-   `clientSecret`. Until it exists the bundle reads "needs configuration" and
-   the OAuth flow refuses.
+   `clientSecret`; the `client` input resolves it. Until one resolves the
+   bundle status carries a setup step and the OAuth flow refuses.
 
 3. **Add an account.** Create an `account`, switch on the features you want
    (`enabledIssues`, `enabledPullRequests`, …), pick a `syncFrequency` and a

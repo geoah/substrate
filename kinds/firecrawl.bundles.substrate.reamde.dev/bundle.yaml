@@ -1,14 +1,15 @@
 # The Firecrawl bundle — web search + page scraping as CALLABLE AGENT TOOLS.
 #
 # A capability bundle, not an account integration: one API key on the
-# bundle config, no accountconfig, no oauth2, no host OAuth flow — the shape
-# the URL-harvester stubbed (`firecrawlKey`, unused there) made real. And no
-# triggers: both functions are pure callables (`mode: call`) an agent binds
-# as tools or a client invokes over the call API — nothing here subscribes to
-# the changelog, so the closure ships with ZERO delivery wiring.
+# `connector` input's record, no accountconfig, no oauth2, no host OAuth flow —
+# the shape the URL-harvester stubbed (`firecrawlKey`, unused there) made real.
+# And no triggers: both functions are pure callables (`mode: call`) an agent
+# binds as tools or a client invokes over the call API — nothing here
+# subscribes to the changelog, so the closure ships with ZERO delivery wiring.
 #
 # Install:  substratectl apply -f bundle.yaml
-# Configure: create ONE config record carrying the apiKey.
+# Configure: create a config record carrying the apiKey; the `connector`
+#   input resolves it (sole record, the one named `default`, or a bound one).
 #
 # This file is the SCHEMA closure (the atomic install unit) — and the whole
 # bundle: with no triggers there is no second file.
@@ -30,19 +31,27 @@ data:
     Web search and page scraping over the Firecrawl API — two callable functions
     an agent binds as tools: search the live web, and read any page as markdown
     kept as a webdocument.
-  configType: firecrawl.bundles.substrate.reamde.dev/config
+  # The one declared input: the connector record both function bodies read.
+  # `inject: functions` hands the resolved record (apiKey resolved to plaintext,
+  # held to the runner boundary by the scrubber) to every invocation under
+  # config.inputs.connector.
+  inputs:
+    connector:
+      kind: firecrawl.bundles.substrate.reamde.dev/config
+      inject: functions
+      description: the Firecrawl API key and the pinned API root
   installs:
     - firecrawl.bundles.substrate.reamde.dev/config
     - firecrawl.bundles.substrate.reamde.dev/webdocument
     - firecrawl.bundles.substrate.reamde.dev/websearch
     - firecrawl.bundles.substrate.reamde.dev/scrapepage
 ---
-# ---- the config type: a bundleconfig-trait record -------------------------
-# ONLY bundleconfig — deliberately NOT oauth2 (there is no OAuth client; the
-# key is a bearer token) and NOT accountconfig (there are no per-user
-# accounts; one key serves the repository). The apiKey is the bundle's own config
-# secret: injected into its functions' invocations (and held to the runner
-# boundary by the invocation scrubber), never read back over the API.
+# ---- the config type: the `connector` input's kind ------------------------
+# Deliberately NOT oauth2 (there is no OAuth client; the key is a bearer
+# token) and NOT accountconfig (there are no per-user accounts; one key
+# serves the repository). The apiKey is the connector's own secret: injected
+# into its functions' invocations (and held to the runner boundary by the
+# invocation scrubber), never read back over the API.
 kind: core.substrate.reamde.dev/kind
 metadata: {id: firecrawl.bundles.substrate.reamde.dev/config}
 data:
@@ -53,7 +62,6 @@ data:
     and the origin is pinned, so editing the URL cannot redirect the
     credential.
   names: {singular: config, plural: configs}
-  traits: [bundleconfig]
   displayTemplate: "Firecrawl {baseUrl}"
   properties:
     apiKey:
@@ -162,7 +170,7 @@ data:
     LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 
     def _config(input):
-        return ((input.get("config") or {}).get("config") or {}).get("properties") or {}
+        return (((input.get("config") or {}).get("inputs") or {}).get("connector") or {}).get("properties") or {}
 
     def _base(cfg):
         # Origin pinning (fleet F1 / codex review #1): the apiKey is only ever
@@ -193,7 +201,7 @@ data:
         key = cfg.get("apiKey") or ""
         if not key:
             raise ValueError(
-                "the firecrawl bundle is not configured: create the "
+                "the firecrawl connector input did not resolve: create a "
                 "config record carrying an apiKey")
         limit = int(args.get("limit") or 5)
         limit = max(1, min(limit, 20))
@@ -267,7 +275,7 @@ data:
     MAX_CONTENT = 24000
 
     def _config(input):
-        return ((input.get("config") or {}).get("config") or {}).get("properties") or {}
+        return (((input.get("config") or {}).get("inputs") or {}).get("connector") or {}).get("properties") or {}
 
     def _base(cfg):
         # Origin pinning (fleet F1 / codex review #1): the apiKey is only ever
@@ -312,7 +320,7 @@ data:
         key = cfg.get("apiKey") or ""
         if not key:
             raise ValueError(
-                "the firecrawl bundle is not configured: create the "
+                "the firecrawl connector input did not resolve: create a "
                 "config record carrying an apiKey")
         base = _base(cfg)
         body = json.dumps({"url": url, "formats": ["markdown"]}).encode("utf-8")

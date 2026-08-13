@@ -38,7 +38,7 @@ pnpm lint        # eslint
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `/` `/stream`                             | overview, live change feed                                                                                                              |
 | `/connectors`, `/connectors/:id`          | connector health + sync runs                                                                                                            |
-| `/bundles`, `/bundles/:id`                | installed bundles: lifecycle verbs (disable/enable/uninstall/purge), the bundleconfig entity, accountconfig trait query + OAuth connect |
+| `/bundles`, `/bundles/:id`                | installed bundles: lifecycle verbs (disable/enable/uninstall/purge), input resolution + bind, accountconfig trait query + OAuth connect |
 | `/triggers`                               | trigger bindings, run ledger, parked failures, wake/replay/retry verbs                                                                  |
 | `/agents`, `/agents/:id`                  | declared agents + llm rows; the `:id` route is the ndjson streaming chat                                                                |
 | `/merge-requests`, `/merge-requests/:id`  | duplicate-suggestion queue + verdicts                                                                                                   |

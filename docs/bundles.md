@@ -35,7 +35,10 @@ metadata:
   id: web.bundles.substrate.reamde.dev/web
 data:
   authority: web.bundles.substrate.reamde.dev
-  configType: web.bundles.substrate.reamde.dev/config
+  inputs:
+    connector:
+      kind: web.bundles.substrate.reamde.dev/config
+      inject: functions
   installs:
     - web.bundles.substrate.reamde.dev/config
     - web.bundles.substrate.reamde.dev/page
@@ -58,10 +61,19 @@ authority manifest declares it` — and the rule cuts both ways, because a
 `*.bundles.substrate.reamde.dev` authority declaring no bundle document is a closure with
 no owner and is refused too.
 
-Two more fields matter, both covered below: `configType`, the bundle's one
-configuration kind — declared in its own authority, implementing the
-`bundleconfig` trait, and the only such kind it ships — and an optional
-`oauth2:` block of trusted provider endpoints and scopes. A bundle may also
+Two more fields matter, both covered below. `inputs:` declares the bundle's
+configuration needs by name, each naming a kind whose records satisfy it. No
+cardinality is enforced on such a kind: any number of records may exist, and
+the engine resolves ONE per input — the bound record (an edge the bind verb
+writes on the bundle's own row), else the record whose id is `default`, else
+the sole live record, else nothing, a first-class state the status reports
+per input rather than tie-breaking. An input with `inject: functions` crosses
+into the bundle's function invocations under its name; one without is read by
+a host facility alone (the OAuth client). A bundle that needs nothing
+declares no inputs, and nothing anywhere implies configuration. The second
+field is an optional `oauth2:` block of trusted provider endpoints and
+scopes, whose `clientInput:` names the input carrying the client
+credentials. A bundle may also
 carry `modules:`, inline shared library source its functions import
 ([Functions](functions.md#shared-modules)); modules are sources rather than
 closure members, so they never appear in `installs:`.
@@ -134,9 +146,15 @@ gets.
 
 Status is computed, never stored. `GET …/core.substrate.reamde.dev/bundles/status` answers
 every installed bundle and `…/core.substrate.reamde.dev/bundles/{id}/status` answers
-one: `{id, name, authority, configType, installed, enabled, configured,
-accounts, functions, kinds, liveRecords}`, plus the quarantine pair when it
-applies. The verbs are `POST …/core.substrate.reamde.dev/bundles/{id}/disable` and its
+one: `{id, name, authority, installed, enabled, inputs, setup, accounts,
+functions, kinds, liveRecords}`, plus the quarantine pair when it applies.
+`inputs` is each declared input's resolution (`{name, kind, record?, via?}`,
+`via` one of `bound`/`default`/`sole`); `setup` lists what stands between the
+bundle and every runtime path it ships (`{code, input?, kind?, record?,
+message}` — codes `missing`, `ambiguous`, `dangling`, `oauth-client`,
+`provider`), mirrors only refusals dispatch would actually make, and is
+empty when the bundle is ready. `POST …/bundles/{id}/bind` with `{input,
+record}` binds an input to a chosen record (empty `record` unbinds). The verbs are `POST …/core.substrate.reamde.dev/bundles/{id}/disable` and its
 `enable`, `uninstall` and `purge` siblings. Every path on this page hangs off
 `/api/v1`, and none of them names a repository: the token does. The CLI faces
 are `substratectl bundle list/status/disable/enable/uninstall/purge` (purge takes
@@ -160,9 +178,9 @@ classification is stated rather than guessed.
 A provider integration ships, on top of the usual closure, the pieces the
 substrate's OAuth facility recognizes by [trait](data-model.md#traits): an
 `accountconfig` kind (the Connection, one record per account, required to carry
-`tokenRef`, `tokenStatus` and `grantedScopes`), the `bundleconfig` kind named
-by `configType`, and, when it speaks OAuth, the `oauth2` trait on that config
-kind — client id and secret, nothing else — plus the trusted `oauth2:` block on
+`tokenRef`, `tokenStatus` and `grantedScopes`) and a client kind wearing the
+`oauth2` trait — client id and secret, nothing else — named by the bundle's
+`oauth2.clientInput`, plus the trusted `oauth2:` block on
 the bundle. Every host check compares the resolved trait reference
 (`core.substrate.reamde.dev/accountconfig` and its siblings), so a bundle's own trait
 wearing a core name cannot counterfeit the interface.
@@ -191,6 +209,7 @@ every `featureScopes` key must name a toggle the bundle declares.
 
 ```yaml
 oauth2:
+  clientInput: client
   authorizationEndpoint: https://accounts.google.com/o/oauth2/v2/auth
   tokenEndpoint: https://oauth2.googleapis.com/token
   revocationEndpoint: https://oauth2.googleapis.com/revoke
@@ -218,7 +237,7 @@ in the console.
 The flow itself is two endpoints. `POST …/core.substrate.reamde.dev/oauth/start` takes the
 account record's id as `record` and answers the consent URL as `url`; it is
 owner-tier only — the three human doors, never installed code — and refuses
-while the bundle still needs configuration. The state is HMAC-signed over
+while the client input does not resolve. The state is HMAC-signed over
 the repository, the record, and a random nonce, expires in fifteen minutes, and
 is persisted beside a sealed PKCE verifier, so a captured state cannot replay:
 the callback consumes it exactly once. The provider redirects the browser to
@@ -252,10 +271,10 @@ A **Connection** is one configured provider account: a record of an
 there by the OAuth facility rather than by hand: the token reference, a
 `tokenStatus` (`pending`, `connected` or `erroring`), and the `grantedScopes`
 the account actually holds. A single provider can back several accounts, so a
-Connection is one account, not one provider. Creating a second live record of a
-`bundleconfig`-trait kind is refused with a guard error: there is exactly one
-configuration record per bundle, and until it exists the bundle reads
-"needs configuration" and the OAuth flow refuses.
+Connection is one account, not one provider. The client record is ordinary
+too — several may exist, resolution picks one — and until the client input
+resolves to a record carrying its credentials, the status says so and the
+OAuth flow refuses.
 
 A connected Google account reads back as:
 
@@ -284,11 +303,11 @@ The **catalog** lists everything shipped in the binary and ready to install —
 the bundles, and the five **vocabulary bundles** (`people`, `tasks`,
 `messaging`, `calendar`, `media`) a repository imports because creation seeds
 `core.substrate.reamde.dev` alone. A vocabulary bundle ships kinds and nothing else: no
-config type, no functions, no OAuth. Its entry carries `vocabulary: true`.
+inputs, no functions, no OAuth. Its entry carries `vocabulary: true`.
 
 The catalog is a read model over the bundle closures baked in, parsed once at
 boot: each entry carries `id`, `name`, `authority`, `description`, `version`,
-`configType`, `requires`, `vocabulary`, the `integration` facet above, and
+`inputs`, `requires`, `vocabulary`, the `integration` facet above, and
 `resources`, which previews the `kinds`, `functions`, `agents`, and `triggers`
 the closure installs, so the console can show what an install will add before
 it runs. A shipped directory carrying no bundle document is not an entry, and a

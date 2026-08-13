@@ -47,7 +47,7 @@ const accountType = typeWith({
   syncStatus: { type: "string", writer: "connector" },
 })
 
-const configType = typeWith({
+const configKind = typeWith({
   clientId: { type: "string" },
   clientSecret: { type: "secret" },
   scopes: { type: "string", repeated: true },
@@ -56,7 +56,7 @@ const configType = typeWith({
 
 // The post-finding-1/8 shape: clientId/clientSecret required, no endpoints or
 // provider scopes, and an enum cadence on the account.
-const typedConfigType = typeWith({
+const typedConfigKind = typeWith({
   clientId: { type: "string", required: true },
   clientSecret: { type: "secret", required: true },
 })
@@ -135,7 +135,7 @@ describe("buildFormFields", () => {
 
   it("maps kinds to controls: secret→secret, repeated→list, bool→bool, email→text", () => {
     const byName = Object.fromEntries(
-      buildFormFields(configType).map((f) => [f.name, f])
+      buildFormFields(configKind).map((f) => [f.name, f])
     )
     expect(byName.clientSecret.control).toBe("secret")
     expect(byName.scopes.control).toBe("list")
@@ -151,7 +151,7 @@ describe("buildFormFields", () => {
 
 describe("initialValues", () => {
   it("seeds text/bool/list from the record but NEVER a secret", () => {
-    const fields = buildFormFields(configType)
+    const fields = buildFormFields(configKind)
     const record = {
       properties: {
         clientId: "123.apps.googleusercontent.com",
@@ -189,7 +189,7 @@ describe("toProperties", () => {
   })
 
   it("config: a blank secret is omitted (the sealed value stands), scopes parse to a list", () => {
-    const fields = buildFormFields(configType)
+    const fields = buildFormFields(configKind)
     const values = initialValues(fields)
     values.clientId = "id"
     values.clientSecret = ""
@@ -201,7 +201,7 @@ describe("toProperties", () => {
   })
 
   it("config: a filled secret IS sent", () => {
-    const fields = buildFormFields(configType)
+    const fields = buildFormFields(configKind)
     const values = initialValues(fields)
     values.clientSecret = "s3cr3t"
     expect(toProperties(fields, values).clientSecret).toBe("s3cr3t")
@@ -266,7 +266,7 @@ describe("schema-driven controls", () => {
 
   it("marks required fields from the declared `required: true`", () => {
     const byName = Object.fromEntries(
-      buildFormFields(typedConfigType).map((f) => [f.name, f])
+      buildFormFields(typedConfigKind).map((f) => [f.name, f])
     )
     expect(byName.clientId.required).toBe(true)
     expect(byName.clientSecret.required).toBe(true)
@@ -330,7 +330,7 @@ describe("default seeding", () => {
 
 describe("validate", () => {
   it("create: a blank secret is a hard error (an empty config must NOT configure)", () => {
-    const fields = buildFormFields(typedConfigType)
+    const fields = buildFormFields(typedConfigKind)
     const values = initialValues(fields) // clientId "", clientSecret ""
     const errors = validate(fields, values, "create")
     const byName = Object.fromEntries(errors.map((e) => [e.name, e.message]))
@@ -339,8 +339,8 @@ describe("validate", () => {
   })
 
   it("create: a required secret is required even without a declared flag", () => {
-    // configType.clientSecret has no `required`, but a create still demands it.
-    const fields = buildFormFields(configType)
+    // configKind.clientSecret has no `required`, but a create still demands it.
+    const fields = buildFormFields(configKind)
     const values = initialValues(fields)
     values.clientId = "id"
     const errors = validate(fields, values, "create")
@@ -355,7 +355,7 @@ describe("validate", () => {
   })
 
   it("create: a filled required config passes", () => {
-    const fields = buildFormFields(typedConfigType)
+    const fields = buildFormFields(typedConfigKind)
     const values = initialValues(fields)
     values.clientId = "123.apps.googleusercontent.com"
     values.clientSecret = "s3cr3t"
@@ -363,7 +363,7 @@ describe("validate", () => {
   })
 
   it("patch: a blank secret is fine (it preserves the sealed value)", () => {
-    const fields = buildFormFields(typedConfigType)
+    const fields = buildFormFields(typedConfigKind)
     const values = initialValues(fields)
     values.clientId = "id"
     values.clientSecret = "" // unchanged

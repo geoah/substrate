@@ -29,7 +29,8 @@ message ──findurls──▶ page(pending) ──fetchpage──▶ page(fetc
 ```
 
 - **`findurls`** (python) walks every string property of the triggering
-  record, extracts URLs, honors `denyDomains` from the bundle config, and mints
+  record, extracts URLs, honors `denyDomains` from the injected `connector`
+  input, and mints
   a pending `page` per allowed URL with **put-if-absent** — so re-feeding the
   same message re-mints nothing.
 - **`fetchpage`** (python) turns a pending page into markdown and marks it
@@ -60,11 +61,14 @@ message ──findurls──▶ page(pending) ──fetchpage──▶ page(fetc
 
 ```sh
 substratectl apply -f bundle.yaml -f triggers.yaml
-# then create ONE config record carrying denyDomains + firecrawlKey
+# then create a config record carrying denyDomains + firecrawlKey
 ```
 
 The config record is per-repository (deny list, secret key), so it is not
-shipped here — the bundle reads "needs configuration" until one exists.
+shipped here. The bundle declares one input, `connector`, satisfied by a
+`config` record: the sole record resolves on its own, several resolve through
+the one named `default` or an explicit bind, and until one resolves the bundle
+status reports the unresolved input as a setup step.
 
 ## The gate
 

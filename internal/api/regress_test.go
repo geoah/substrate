@@ -9,6 +9,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -25,6 +26,9 @@ type bundleDataset struct {
 	authority   string
 	statusErr   error
 	uninstalled bool
+	// boundInput/boundRecord record the last bind call, for the handler test.
+	boundInput  string
+	boundRecord string
 }
 
 func (d *bundleDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, error) {
@@ -42,7 +46,11 @@ func (d *bundleDataset) BundleAuthority(context.Context, string) (string, error)
 	return d.authority, nil
 }
 func (d *bundleDataset) DisableBundle(context.Context, string) error { return nil }
-func (d *bundleDataset) EnableBundle(context.Context, string) error  { return nil }
+func (d *bundleDataset) BindBundleInput(_ context.Context, _, input, record string) error {
+	d.boundInput, d.boundRecord = input, record
+	return nil
+}
+func (d *bundleDataset) EnableBundle(context.Context, string) error { return nil }
 func (d *bundleDataset) UninstallBundle(context.Context, string) error {
 	d.uninstalled = true
 	return nil
@@ -79,6 +87,40 @@ func newBundleEnv(t *testing.T) (*testEnv, *bundleDataset) {
 }
 
 const uninstallPath = "/api/v1/core.substrate.reamde.dev/bundles/widgets.bundles.substrate.reamde.dev/uninstall"
+
+const bindPath = "/api/v1/core.substrate.reamde.dev/bundles/widgets.bundles.substrate.reamde.dev/bind"
+
+// TestBundleBindValidatesAndAnswersStatus drives the bind endpoint: a bind
+// reaches the engine with its input and record and answers the refreshed
+// status; an empty record is the unbind spelling; a missing input is a 400
+// before the engine is touched.
+func TestBundleBindValidatesAndAnswersStatus(t *testing.T) {
+	env, bd := newBundleEnv(t)
+	tok := env.svc.token("geoah")
+
+	rec := env.do(t, http.MethodPost, bindPath, tok, map[string]any{"input": "client", "record": "cfg-1"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("bind status = %d (body %s)", rec.Code, rec.Body.String())
+	}
+	if bd.boundInput != "client" || bd.boundRecord != "cfg-1" {
+		t.Fatalf("bind reached the engine as (%q, %q)", bd.boundInput, bd.boundRecord)
+	}
+	var st substrate.BundleStatus
+	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil || !st.Installed {
+		t.Fatalf("bind answers the refreshed status: %v %s", err, rec.Body.String())
+	}
+
+	rec = env.do(t, http.MethodPost, bindPath, tok, map[string]any{"input": "client", "record": ""})
+	if rec.Code != http.StatusOK || bd.boundRecord != "" {
+		t.Fatalf("unbind: %d (record %q)", rec.Code, bd.boundRecord)
+	}
+
+	bd.boundInput = ""
+	rec = env.do(t, http.MethodPost, bindPath, tok, map[string]any{"record": "cfg-1"})
+	if rec.Code != http.StatusBadRequest || bd.boundInput != "" {
+		t.Fatalf("empty input must 400 before the engine: %d (%q)", rec.Code, bd.boundInput)
+	}
+}
 
 // TestBundleUninstallAcksTombstone pins codex regress #4: uninstall deletes the
 // bundle row, so reloading its status afterward always fails — the handler must

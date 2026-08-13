@@ -19,6 +19,10 @@
 #
 # The emit ceiling is worth watching here: `titler` declares no emit at all, so
 # no matter what it is asked to do, a sub-agent on this chain writes nothing.
+#
+# This bundle declares NO inputs. It once shipped a config kind, but nothing
+# ever read it (not a function body, not a prompt), and a knob no code reads
+# is a lie, so it is gone.
 kind: core.substrate.reamde.dev/authority
 metadata: {id: notes.bundles.substrate.reamde.dev}
 data:
@@ -32,30 +36,12 @@ data:
     A worked example of the agent loop: one agent that calls two functions as
     tools and hands the hard part to a sub-agent, ending in a saved note. It
     needs no network, no credentials and no other bundle.
-  configType: notes.bundles.substrate.reamde.dev/config
   installs:
-    - notes.bundles.substrate.reamde.dev/config
     - notes.bundles.substrate.reamde.dev/note
     - notes.bundles.substrate.reamde.dev/stats
     - notes.bundles.substrate.reamde.dev/savenote
     - notes.bundles.substrate.reamde.dev/titler
     - notes.bundles.substrate.reamde.dev/notekeeper
----
-# ---- the config: every bundle names one, and this one carries the house style
-kind: core.substrate.reamde.dev/kind
-metadata: {id: notes.bundles.substrate.reamde.dev/config}
-data:
-  authority: notes.bundles.substrate.reamde.dev
-  description: >-
-    How the note-taking example behaves: the one knob is how long a title the
-    sub-agent is asked for. Created by the owner, read by nothing but the
-    agents' prompts.
-  names: {singular: config, plural: configs}
-  traits: [bundleconfig]
-  properties:
-    maxTitleWords:
-      type: int
-      description: the ceiling the titler is asked to keep its title under
 ---
 # ---- the note: what the whole bundle exists to produce
 kind: core.substrate.reamde.dev/kind

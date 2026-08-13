@@ -5,8 +5,9 @@ package engine
 // shipped closure at ../../kinds/firecrawl.bundles.substrate.reamde.dev:
 //
 //  1. TestFirecrawlBundleAdmitsSchema — the closure ADMITS through the schema
-//     loader: the config type wears bundleconfig ONLY (no oauth2, no
-//     accountconfig — one bearer key, no OAuth client, no per-user accounts),
+//     loader: the bundle declares one `connector` input injected into its
+//     functions (no oauth2, no accountconfig — one bearer key, no OAuth
+//     client, no per-user accounts),
 //     the webdocument type carries the scrape's durable shape, and both
 //     functions register as callables with input schemas (their own tool
 //     cards). No DB, no network — pure schema admission. And no triggers:
@@ -81,27 +82,32 @@ func TestFirecrawlBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("the bundle closure did not admit: %v", err)
 	}
 
-	// The bundle exists, its config type is the one it declares, and it ships
-	// no oauth2 manifest block — a capability bundle, not an integration.
+	// The bundle exists, it declares the one `connector` input injected into
+	// its functions, and it ships no oauth2 manifest block — a capability
+	// bundle, not an integration.
 	b, ok := reg.BundleOf(firecrawlAuthority)
 	if !ok {
 		t.Fatalf("no bundle owns %s after install", firecrawlAuthority)
 	}
-	if b.ConfigType != firecrawlConfigType {
-		t.Fatalf("bundle configType = %q, want %q", b.ConfigType, firecrawlConfigType)
+	in, ok := b.Inputs["connector"]
+	if !ok {
+		t.Fatalf("bundle declares no connector input: %v", b.InputOrder)
+	}
+	if in.Kind != firecrawlConfigType {
+		t.Fatalf("connector input kind = %q, want %q", in.Kind, firecrawlConfigType)
+	}
+	if in.Inject != vocabulary.BundleInputInjectFunctions {
+		t.Fatalf("connector input inject = %q, want %q", in.Inject, vocabulary.BundleInputInjectFunctions)
 	}
 	if b.OAuth2 != nil {
 		t.Fatalf("bundle carries an oauth2 block — a bearer-key bundle declares no OAuth client")
 	}
 
-	// The config type: bundleconfig ONLY — deliberately neither oauth2 (no
-	// client creds) nor accountconfig (no per-user accounts).
+	// The config type: deliberately neither oauth2 (no client creds) nor
+	// accountconfig (no per-user accounts).
 	cfg, ok := reg.ByIdentity(firecrawlConfigType)
 	if !ok {
 		t.Fatalf("config type %s missing", firecrawlConfigType)
-	}
-	if !cfg.Implements(vocabulary.TraitBundleConfigCore) {
-		t.Fatalf("%s does not implement %s", firecrawlConfigType, vocabulary.TraitBundleConfigCore)
 	}
 	if cfg.Implements(vocabulary.TraitOAuth2Core) {
 		t.Fatalf("%s implements oauth2 — the apiKey is a bearer token, not an OAuth client", firecrawlConfigType)
@@ -253,8 +259,14 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 	if !st.Installed || !st.Enabled {
 		t.Fatalf("the zero-trigger bundle is not live: installed=%v enabled=%v", st.Installed, st.Enabled)
 	}
-	if st.Configured {
-		t.Fatalf("bundle reports configured with no config record created")
+	if len(st.Inputs) != 1 || st.Inputs[0].Name != "connector" || st.Inputs[0].Kind != firecrawlConfigType {
+		t.Fatalf("status inputs = %+v, want the one connector input", st.Inputs)
+	}
+	if st.Inputs[0].Record != "" || st.Inputs[0].Via != "" {
+		t.Fatalf("connector input resolved with no config record created: %+v", st.Inputs[0])
+	}
+	if len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupMissing || st.Setup[0].Input != "connector" {
+		t.Fatalf("status setup = %+v, want the one missing-input item", st.Setup)
 	}
 	if st.Functions != 2 {
 		t.Fatalf("status functions = %d, want 2", st.Functions)
@@ -269,8 +281,14 @@ func TestFirecrawlBundleCallsTools(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create the firecrawl config: %v", err)
 	}
-	if st, err = ds.BundleStatus(ctx, firecrawlAuthority); err != nil || !st.Configured {
-		t.Fatalf("bundle not configured after the config record: %+v %v", st, err)
+	if st, err = ds.BundleStatus(ctx, firecrawlAuthority); err != nil {
+		t.Fatalf("bundle status after the config record: %v", err)
+	}
+	if len(st.Inputs) != 1 || st.Inputs[0].Record != "firecrawl" || st.Inputs[0].Via != substrate.InputViaSole {
+		t.Fatalf("connector input did not resolve to the sole record: %+v", st.Inputs)
+	}
+	if len(st.Setup) != 0 {
+		t.Fatalf("status setup = %+v, want empty once the input resolves", st.Setup)
 	}
 	for fn, input := range map[string]map[string]any{
 		firecrawlSearchFn: {"query": "anything"},

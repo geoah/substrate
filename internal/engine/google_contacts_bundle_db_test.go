@@ -5,8 +5,10 @@ package engine
 // ./../kinds/google.bundles.substrate.reamde.dev:
 //
 //  1. TestGoogleContactsBundleAdmitsSchema — the closure ADMITS through the
-//     schema loader: the two config types wear the right host-recognized
-//     traits (bundleconfig+oauth2 on the config, accountconfig on the account),
+//     schema loader: the bundle declares the `client` input (facility-read,
+//     never injected) the oauth2 block names, the two config kinds wear the
+//     right host-recognized
+//     traits (oauth2 on the config, accountconfig on the account),
 //     the source type carries its required `person` subject edge, the bundle's
 //     install-closure balances, and the contact→person mapping type-checks. No
 //     DB, no uv — pure schema admission.
@@ -91,22 +93,30 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("the bundle closure did not admit: %v", err)
 	}
 
-	// The bundle exists and its config type is the one it declares.
+	// The bundle exists and declares the `client` input the oauth2 block
+	// names: facility-read, so it must NOT inject.
 	b, ok := reg.BundleOf(googleAuthority)
 	if !ok {
 		t.Fatalf("no bundle owns %s after install", googleAuthority)
 	}
-	if b.ConfigType != googleConfigType {
-		t.Fatalf("bundle configType = %q, want %q", b.ConfigType, googleConfigType)
+	in, ok := b.Inputs["client"]
+	if !ok {
+		t.Fatalf("bundle declares no client input: %v", b.InputOrder)
+	}
+	if in.Kind != googleConfigType {
+		t.Fatalf("client input kind = %q, want %q", in.Kind, googleConfigType)
+	}
+	if in.Inject != "" {
+		t.Fatalf("client input inject = %q, but the OAuth client is facility-read, never injected", in.Inject)
+	}
+	if b.OAuth2 == nil || b.OAuth2.ClientInput != "client" {
+		t.Fatalf("oauth2 clientInput does not name the client input: %+v", b.OAuth2)
 	}
 
-	// The config type: bundleconfig (host singleton) + oauth2 (client fields).
+	// The config type: oauth2 (client fields), the client input's kind.
 	cfg, ok := reg.ByIdentity(googleConfigType)
 	if !ok {
 		t.Fatalf("config type %s missing", googleConfigType)
-	}
-	if !cfg.Implements(vocabulary.TraitBundleConfigCore) {
-		t.Fatalf("config type does not implement %s", vocabulary.TraitBundleConfigCore)
 	}
 	if !cfg.Implements(vocabulary.TraitOAuth2Core) {
 		t.Fatalf("config type does not implement %s", vocabulary.TraitOAuth2Core)
@@ -278,11 +288,14 @@ func TestGoogleContactsBundleInstalls(t *testing.T) {
 	if !st.Installed || !st.Enabled {
 		t.Fatalf("bundle not live: installed=%v enabled=%v", st.Installed, st.Enabled)
 	}
-	if st.Configured {
-		t.Fatalf("bundle reports configured with no config record created")
+	if len(st.Inputs) != 1 || st.Inputs[0].Name != "client" || st.Inputs[0].Kind != googleConfigType {
+		t.Fatalf("status inputs = %+v, want the one client input", st.Inputs)
 	}
-	if st.ConfigType != googleConfigType {
-		t.Fatalf("status configType = %q, want %q", st.ConfigType, googleConfigType)
+	if st.Inputs[0].Record != "" || st.Inputs[0].Via != "" {
+		t.Fatalf("client input resolved with no config record created: %+v", st.Inputs[0])
+	}
+	if len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupMissing || st.Setup[0].Input != "client" {
+		t.Fatalf("status setup = %+v, want the one missing-input item", st.Setup)
 	}
 	if st.Functions != 4 {
 		t.Fatalf("status functions = %d, want 4 (contacts sync + id migration + gmail sync + calendar sync)", st.Functions)

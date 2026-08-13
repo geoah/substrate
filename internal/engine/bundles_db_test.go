@@ -2,8 +2,9 @@ package engine_test
 
 // The bundle model's acceptance gate (substrate-primitives §4, ticket 034):
 // atomic closure install (a batch carrying a bundle document replaces the
-// owned authority whole), the install-closure refusals, the one-configType-record
-// singleton, disable-stops-delivery (reversibly, cursor standing), the
+// owned authority whole), the install-closure refusals, input resolution
+// (bound edge, the id "default", the sole record — never a tie-break),
+// disable-stops-delivery (reversibly, cursor standing), the
 // refuse-breakage upgrade, uninstall-tears-the-authority-down (its types leave the
 // registry, its triggers go, a data-bearing uninstall refuses with the count),
 // and purge through the ordinary soft-delete flow.
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -53,13 +55,14 @@ func bundler(t *testing.T, ds substrate.Dataset) bundleOps {
 	return b
 }
 
-// mbConfigTypeDoc declares the bundle's configuration type: bundleconfig +
-// oauth2, so it carries the standard client fields.
+// mbConfigTypeDoc declares the bundle's client kind: oauth2, so it carries
+// the standard client fields. Records of it are ordinary — any number may
+// exist; the bundle's `client` input resolves one.
 func mbConfigTypeDoc() map[string]any {
 	return vocabulary.KindManifest(mbAuthority,
 		map[string]any{"singular": "mailconfig", "plural": "mailconfigs"},
 		map[string]any{
-			"traits": []any{"bundleconfig", "oauth2"},
+			"traits": []any{"oauth2"},
 			"properties": map[string]any{
 				"authorizationEndpoint": map[string]any{"type": "url"},
 				"tokenEndpoint":         map[string]any{"type": "url"},
@@ -142,12 +145,17 @@ func mbDocs(installs []string, members ...map[string]any) []map[string]any {
 		vocabulary.ActorManifest(mbAuthority, vocabulary.AuthorityActor(mbAuthority)),
 		vocabulary.BundleManifest(mbAuthority, map[string]any{
 			"description": "the mail bundle",
-			"configType":  mbConfigType,
-			"installs":    list,
+			"inputs": map[string]any{
+				// Injected on purpose: the oauth tests assert clientId
+				// crosses into a function while clientSecret never does.
+				"client": map[string]any{"kind": mbConfigType, "inject": "functions"},
+			},
+			"installs": list,
 			// Trusted provider metadata. Static https here;
 			// the OAuth round-trip fixtures rewrite the endpoints to their
 			// loopback fake provider (mbPointOAuthAt).
 			"oauth2": map[string]any{
+				"clientInput":           "client",
 				"authorizationEndpoint": "https://provider.example/authorize",
 				"tokenEndpoint":         "https://provider.example/token",
 				"revocationEndpoint":    "https://provider.example/revoke",
@@ -248,15 +256,23 @@ func TestBundleInstallAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
-	if !st.Installed || !st.Enabled || st.Configured {
+	if !st.Installed || !st.Enabled {
 		t.Fatalf("fresh bundle status: %+v", st)
+	}
+	// The client input has nothing to resolve yet, and the status says so —
+	// per input, with a machine-readable code.
+	if len(st.Inputs) != 1 || st.Inputs[0].Name != "client" || st.Inputs[0].Record != "" {
+		t.Fatalf("fresh input status: %+v", st.Inputs)
+	}
+	if len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupMissing || st.Setup[0].Input != "client" {
+		t.Fatalf("fresh setup: %+v", st.Setup)
 	}
 	if st.Kinds != 4 || st.Functions != 2 {
 		t.Fatalf("closure counts: %+v", st)
 	}
 
-	// Traits are queryable interfaces: the config type answers bundleconfig.
-	types, err := ops.TypesImplementing(ctx, "core.substrate.reamde.dev/bundleconfig")
+	// Traits are queryable interfaces: the client kind answers oauth2.
+	types, err := ops.TypesImplementing(ctx, "core.substrate.reamde.dev/oauth2")
 	if err != nil {
 		t.Fatalf("implementors: %v", err)
 	}
@@ -267,13 +283,13 @@ func TestBundleInstallAtomic(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("bundleconfig implementors missing %s: %+v", mbConfigType, types)
+		t.Fatalf("oauth2 implementors missing %s: %+v", mbConfigType, types)
 	}
 }
 
 // The loader refuses an install whose members and installs disagree, whose
-// authority is uncategorized, or whose configType is not the bundle's one
-// bundleconfig type.
+// authority is uncategorized, or whose oauth2 clientInput names a
+// non-oauth2 kind.
 func TestBundleInstallClosureRefusals(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -308,18 +324,20 @@ func TestBundleInstallClosureRefusals(t *testing.T) {
 		t.Fatalf("headless bundle authority must refuse: %v", err)
 	}
 
-	// configType must implement bundleconfig.
+	// The oauth2 clientInput must name an input whose kind implements oauth2.
 	badConfig := mbDocs([]string{mbAccountType, mbItemType, mbMessageType, mbMarkFn, mbEchoFn},
 		mbAccountTypeDoc(), mbItemTypeDoc(), mbMessageTypeDoc(),
 		mbFnDoc("mark", mbMarkSource), mbFnDoc("echo", mbEchoSource))
 	for _, d := range badConfig {
 		if d["kind"] == vocabulary.CoreKind(vocabulary.DocBundle) {
-			d["data"].(map[string]any)["configType"] = mbMessageType
+			d["data"].(map[string]any)["inputs"] = map[string]any{
+				"client": map[string]any{"kind": mbMessageType},
+			}
 		}
 	}
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, badConfig); err == nil ||
-		!strings.Contains(err.Error(), "does not implement the bundleconfig trait") {
-		t.Fatalf("non-bundleconfig configType must refuse: %v", err)
+		!strings.Contains(err.Error(), "does not implement the oauth2 trait") {
+		t.Fatalf("non-oauth2 clientInput must refuse: %v", err)
 	}
 }
 
@@ -334,38 +352,128 @@ func mbConfigProps() map[string]any {
 	}
 }
 
-// One bundle, one configuration record: the second create refuses, delete
-// frees the slot, and the status flips configured.
-func TestBundleConfigSingleton(t *testing.T) {
+// Input resolution, no singleton anywhere: one record resolves as the sole
+// live row, a second makes the input AMBIGUOUS (surfaced, never tie-broken),
+// bind chooses explicitly, unbind returns to the default rules, and the
+// record named "default" wins where nothing is bound.
+func TestBundleInputResolution(t *testing.T) {
 	ctx := context.Background()
 	ds, ops := installMailBundle(t)
 
 	first := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
 	st, err := ops.BundleStatus(ctx, mbAuthority)
-	if err != nil || !st.Configured {
-		t.Fatalf("configured after the config record: %+v %v", st, err)
+	if err != nil || len(st.Setup) != 0 {
+		t.Fatalf("sole record must resolve: %+v %v", st, err)
 	}
-	_, err = ds.Put(ctx, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
-	wantErr(t, err, substrate.ErrGuard, "second config record")
-	if !strings.Contains(err.Error(), "one live") {
-		t.Fatalf("singleton refusal message: %v", err)
+	if len(st.Inputs) != 1 || st.Inputs[0].Record != first.ID || st.Inputs[0].Via != substrate.InputViaSole {
+		t.Fatalf("sole resolution: %+v", st.Inputs)
 	}
-	// The slot frees with the record.
-	if _, err := ds.Delete(ctx, owner, first.Kind, first.ID); err != nil {
-		t.Fatalf("delete config: %v", err)
+
+	// A second record is an ordinary create — no cardinality is enforced —
+	// and the input turns ambiguous until one is chosen.
+	second := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
+	st, err = ops.BundleStatus(ctx, mbAuthority)
+	if err != nil || len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupAmbiguous {
+		t.Fatalf("two records must read ambiguous: %+v %v", st, err)
 	}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
+
+	// Bind is the explicit choice, and beats everything.
+	if err := ds.(interface {
+		BindBundleInput(ctx context.Context, id, input, record string) error
+	}).BindBundleInput(ctx, mbBundleRow, "client", second.ID); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+	st, err = ops.BundleStatus(ctx, mbAuthority)
+	if err != nil || len(st.Setup) != 0 || st.Inputs[0].Record != second.ID || st.Inputs[0].Via != substrate.InputViaBound {
+		t.Fatalf("bound resolution: %+v %v", st, err)
+	}
+
+	// Deleting the bound record leaves a DANGLING binding — a problem to
+	// show, never silently papered over by the default rules.
+	if _, err := ds.Delete(ctx, owner, second.Kind, second.ID); err != nil {
+		t.Fatalf("delete bound: %v", err)
+	}
+	st, err = ops.BundleStatus(ctx, mbAuthority)
+	if err != nil || len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupDangling {
+		t.Fatalf("dangling binding must surface: %+v %v", st, err)
+	}
+
+	// Unbind returns resolution to the default rules: the sole survivor.
+	if err := ds.(interface {
+		BindBundleInput(ctx context.Context, id, input, record string) error
+	}).BindBundleInput(ctx, mbBundleRow, "client", ""); err != nil {
+		t.Fatalf("unbind: %v", err)
+	}
+	st, err = ops.BundleStatus(ctx, mbAuthority)
+	if err != nil || len(st.Setup) != 0 || st.Inputs[0].Record != first.ID || st.Inputs[0].Via != substrate.InputViaSole {
+		t.Fatalf("post-unbind resolution: %+v %v", st, err)
+	}
+
+	// The well-known id "default" beats the sole rule the moment it exists.
+	mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, ID: "default", Properties: mbConfigProps()})
+	st, err = ops.BundleStatus(ctx, mbAuthority)
+	if err != nil || len(st.Setup) != 0 || st.Inputs[0].Record != "default" || st.Inputs[0].Via != substrate.InputViaDefault {
+		t.Fatalf("default-id resolution: %+v %v", st, err)
+	}
 
 	// The secret never reads back.
-	replaced := mustGet(t, ds, "core.substrate.reamde.dev/bundle", mbBundleRow)
-	_ = replaced
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{mbConfigType}}})
-	if err != nil || len(page.Records) != 1 {
+	if err != nil || len(page.Records) != 2 {
 		t.Fatalf("config list: %v %v", page, err)
 	}
 	if got := page.Records[0].Properties["clientSecret"]; got != "<redacted>" {
 		t.Fatalf("clientSecret leaked: %v", got)
 	}
+}
+
+// A binding is a changelog write like any other: clear the fold, replay, and
+// the bound resolution must come back — the bind verb's edge and version bump
+// ride its entry's fold ops.
+func TestBundleInputBindSurvivesRebuild(t *testing.T) {
+	ctx := context.Background()
+	svc, ds := newDataset(t)
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
+		t.Fatalf("install bundle: %v", err)
+	}
+	ops := bundler(t, ds)
+	mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
+	chosen := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
+	if err := ds.(interface {
+		BindBundleInput(ctx context.Context, id, input, record string) error
+	}).BindBundleInput(ctx, mbBundleRow, "client", chosen.ID); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+	rb, ok := svc.(interface {
+		RebuildRepository(ctx context.Context, username string) (engine.RebuildReport, error)
+	})
+	if !ok {
+		t.Fatal("the service cannot rebuild a repository")
+	}
+	if _, err := rb.RebuildRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	st, err := ops.BundleStatus(ctx, mbAuthority)
+	if err != nil || len(st.Setup) != 0 {
+		t.Fatalf("post-rebuild status: %+v %v", st, err)
+	}
+	if st.Inputs[0].Record != chosen.ID || st.Inputs[0].Via != substrate.InputViaBound {
+		t.Fatalf("the binding did not survive the rebuild: %+v", st.Inputs)
+	}
+}
+
+// Bind refuses while the bundle is disabled: bind IS configuration, and a
+// disabled bundle's configuration is frozen.
+func TestBundleInputBindFrozenWhileDisabled(t *testing.T) {
+	ctx := context.Background()
+	ds, ops := installMailBundle(t)
+	row := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
+	if err := ops.DisableBundle(ctx, mbAuthority); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	err := ds.(interface {
+		BindBundleInput(ctx context.Context, id, input, record string) error
+	}).BindBundleInput(ctx, mbAuthority, "client", row.ID)
+	wantErr(t, err, substrate.ErrGuard, "bind while disabled")
 }
 
 // Disable stops delivery with the cursor standing still; enable resumes the
@@ -611,7 +719,7 @@ func TestBundlePurgeDeletesData(t *testing.T) {
 		t.Fatalf("purged %d, want 3", purged)
 	}
 	st, err := ops.BundleStatus(ctx, mbAuthority)
-	if err != nil || st.LiveRecords != 0 || st.Configured {
+	if err != nil || st.LiveRecords != 0 || len(st.Setup) == 0 {
 		t.Fatalf("post-purge status: %+v %v", st, err)
 	}
 	// Nothing holds the tombstones: GC hard-deletes them.

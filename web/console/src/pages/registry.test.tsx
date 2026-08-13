@@ -89,7 +89,12 @@ const GOOGLE = bundle({
   name: "google",
   authority: "google.bundles.substrate.reamde.dev",
   description: "Connects a Google account — contacts, gmail and calendar.",
-  configType: "google.bundles.substrate.reamde.dev/config",
+  inputs: {
+    client: {
+      kind: "google.bundles.substrate.reamde.dev/config",
+      description: "The OAuth client record.",
+    },
+  },
   integration: true,
   requires: ["people.substrate.reamde.dev", "messaging.substrate.reamde.dev", "calendar.substrate.reamde.dev"],
   resources: {
@@ -128,7 +133,6 @@ function peopleStatus(): BundleStatus {
     authority: "people.substrate.reamde.dev",
     installed: true,
     enabled: true,
-    configured: true,
     kinds: 2,
     liveRecords: 0,
   }
@@ -182,7 +186,6 @@ describe("RegistryPage", () => {
             authority: "people.substrate.reamde.dev",
             installed: true,
             enabled: true,
-            configured: true,
           })
         )
       }
@@ -217,6 +220,40 @@ describe("RegistryPage", () => {
     renderPage(<RegistryPage />)
     await screen.findByText("people")
     expect(screen.getByText(/A new repository ships/)).toBeTruthy()
+  })
+
+  it("shows the setup chip beside the lifecycle badge, never instead of it", async () => {
+    serve({
+      statuses: [
+        {
+          id: GOOGLE.id,
+          name: "google",
+          authority: "google.bundles.substrate.reamde.dev",
+          installed: true,
+          enabled: true,
+          inputs: [
+            { name: "client", kind: "google.bundles.substrate.reamde.dev/config" },
+          ],
+          setup: [
+            {
+              code: "missing",
+              input: "client",
+              kind: "google.bundles.substrate.reamde.dev/config",
+              message: "no config record exists yet",
+            },
+          ],
+        },
+        peopleStatus(),
+      ],
+    })
+    renderPage(<RegistryPage />)
+    const google = await rowOf("google")
+    expect(within(google).getByText("enabled")).toBeTruthy()
+    expect(within(google).getByText("1 setup step")).toBeTruthy()
+    // A bundle with no setup shows the lifecycle badge alone.
+    const people = await rowOf("people")
+    expect(within(people).getByText("enabled")).toBeTruthy()
+    expect(within(people).queryByText(/setup step/)).toBeNull()
   })
 
   it("tells vocabulary and integration apart on the row", async () => {

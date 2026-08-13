@@ -379,13 +379,14 @@ from the last committed page.
 
 **Configuration and connected accounts.** `host.config()` (`host.Config()` in
 Go) returns the callable's resolved configuration: the owning `bundle`
-authority, the bundle's single `bundleconfig` record under `config`, and
-every [connection](bundles.md#connections) the bundle declares under
-`accounts`, each flattened to its id, kind and stored properties. For an OAuth
+authority, the bundle's `inject: functions` inputs each resolved to one
+record under `inputs` (keyed by input name; an unresolved input's key is
+absent), and every [connection](bundles.md#connections) the bundle declares
+under `accounts`, each flattened to its id, kind and stored properties. For an OAuth
 bundle the host resolves each account's credential itself and hands the body
 a live `token` on the account entry, or a `tokenError` string when the grant is
 dead, so one broken account never parks the whole delivery. The OAuth
-facility's own secrets, the config's `clientSecret` and an account's
+facility's own secrets, the client record's `clientSecret` and an account's
 `tokenRef`, are never injected: a body gets the resolved token and nothing it
 could exfiltrate a credential with. Every injected secret value is scrubbed out
 of whatever crosses back over the runner boundary.

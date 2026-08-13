@@ -12,8 +12,8 @@ import { API_BASE, CORE_AUTHORITY, corePath, request, seg } from "./http"
 import type { BundleStatus, SubstrateRecord, Page } from "./types"
 
 /** Re-exported so the pages keep their `@/lib/api/bundles` import for the
- * computed status shape (the wire type lives in types.ts). */
-export type { BundleStatus } from "./types"
+ * computed status shape (the wire types live in types.ts). */
+export type { BundleStatus, InputStatus, SetupItem } from "./types"
 
 /** The account-config trait, host-recognized — its full identity, so a
  * bundle-local look-alike can never answer for it (api/bundles.go note).
@@ -58,16 +58,37 @@ export function bundleStatusQueryOptions(id: string) {
   })
 }
 
-/** The lifecycle verbs. disable/enable/uninstall answer with the fresh status;
- * purge answers with the tombstoned-row count. */
+/** The lifecycle verbs. disable/enable answer with the fresh status;
+ * uninstall tears the bundle row down, so there is no status to answer and
+ * the server acks instead; purge answers with the tombstoned-row count. */
 export type BundleVerb = "disable" | "enable" | "uninstall"
 
-export function runBundleVerb(id: string, verb: BundleVerb): Promise<BundleStatus> {
+export function runBundleVerb(
+  id: string,
+  verb: "disable" | "enable"
+): Promise<BundleStatus> {
   return request<BundleStatus>("POST", `${BUNDLES}/${seg(id)}/${verb}`)
+}
+
+export function uninstallBundle(id: string): Promise<{ uninstalled: boolean }> {
+  return request<{ uninstalled: boolean }>("POST", `${BUNDLES}/${seg(id)}/uninstall`)
 }
 
 export function purgeBundle(id: string): Promise<{ purged: number }> {
   return request<{ purged: number }>("POST", `${BUNDLES}/${seg(id)}/purge`)
+}
+
+/** Bind one input to a record (an edge on the bundle's record row, rel = the
+ * input name); an empty record unbinds. Answers with the refreshed status. */
+export function bindBundleInput(
+  id: string,
+  input: string,
+  record: string
+): Promise<BundleStatus> {
+  return request<BundleStatus>("POST", `${BUNDLES}/${seg(id)}/bind`, {
+    input,
+    record,
+  })
 }
 
 /** Fold one fresh BundleStatus — the answer a lifecycle verb or a catalog
@@ -190,16 +211,22 @@ export function parseSubstrateOAuthMessage(data: unknown): SubstrateOAuthMessage
   return null
 }
 
-/** A bundle's human-readable lifecycle stance, for a status chip. */
-export type BundleState =
-  | "needs-configuration"
-  | "uninstalled"
-  | "disabled"
-  | "enabled"
+/** A bundle's lifecycle stance, for a status chip. LIFECYCLE ONLY: setup is a
+ * separate signal (the setup list on the status), never folded in here.
+ * Quarantined comes first: the only installed:false statuses the server
+ * emits are quarantined ones (uninstall stops listing the bundle at all),
+ * and the fix is a re-install, not an install. */
+export type BundleState = "quarantined" | "uninstalled" | "disabled" | "enabled"
 
 export function bundleState(b: BundleStatus): BundleState {
+  if (b.quarantined) return "quarantined"
   if (!b.installed) return "uninstalled"
   if (!b.enabled) return "disabled"
-  if (!b.configured) return "needs-configuration"
   return "enabled"
+}
+
+/** How many setup steps stand between the bundle and readiness. Zero means
+ * ready, and every surface showing the count shows nothing at zero. */
+export function setupCount(b: Pick<BundleStatus, "setup">): number {
+  return b.setup?.length ?? 0
 }

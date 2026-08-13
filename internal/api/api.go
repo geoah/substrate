@@ -217,6 +217,7 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Get("/"+coreAuthority+"/bundles/{id}/status", h.getBundleStatus)
 			r.Post("/"+coreAuthority+"/bundles/{id}/disable", h.postBundleVerb(bundleOps.DisableBundle))
 			r.Post("/"+coreAuthority+"/bundles/{id}/enable", h.postBundleVerb(bundleOps.EnableBundle))
+			r.Post("/"+coreAuthority+"/bundles/{id}/bind", h.postBundleBind)
 			r.Post("/"+coreAuthority+"/bundles/{id}/uninstall", h.postBundleUninstall)
 			r.Post("/"+coreAuthority+"/bundles/{id}/purge", h.postBundlePurge)
 			// The catalog: the installable bundle closures shipped in the

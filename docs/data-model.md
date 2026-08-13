@@ -469,11 +469,8 @@ lives in core.)
 **Bundle traits.** A few traits are more than shared properties: the host
 recognizes them by identity and builds behavior on top. These are how an
 [bundle](bundles.md) declares the pieces the substrate's OAuth
-facility and lifecycle machinery need to see. Three ship in core:
+facility and lifecycle machinery need to see. Two ship in core:
 
-- **`bundleconfig`** is a marker: the one kind a bundle names as its
-  `configType` binds it, and that kind is the bundle's single
-  configuration record.
 - **`accountconfig`** is a **Connection** kind. Binding it gives the kind
   `tokenRef` (a secret), `tokenStatus`, and a repeated `grantedScopes`, the
   properties the OAuth facility owns and writes as a provider account connects

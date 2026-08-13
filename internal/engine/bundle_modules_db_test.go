@@ -39,10 +39,13 @@ def main(input, host):
 		vocabulary.ActorManifest(mbAuthority, vocabulary.AuthorityActor(mbAuthority)),
 		vocabulary.BundleManifest(mbAuthority, map[string]any{
 			"description": "the mail bundle",
-			"configType":  mbConfigType,
-			"installs":    installs,
-			"modules":     modules,
+			"inputs": map[string]any{
+				"client": map[string]any{"kind": mbConfigType},
+			},
+			"installs": installs,
+			"modules":  modules,
 			"oauth2": map[string]any{
+				"clientInput":           "client",
 				"authorizationEndpoint": "https://provider.example/authorize",
 				"tokenEndpoint":         "https://provider.example/token",
 				"revocationEndpoint":    "https://provider.example/revoke",

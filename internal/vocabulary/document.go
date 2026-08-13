@@ -361,7 +361,7 @@ func FunctionManifest(authority, name string, data map[string]any) map[string]an
 
 // BundleManifest renders a bundle document: the identity derives from the
 // owned authority ("<first label>.<authority>"), so a caller cannot spell them
-// inconsistently. data carries description/configType/installs.
+// inconsistently. data carries description/inputs/installs.
 func BundleManifest(authority string, data map[string]any) map[string]any {
 	full := map[string]any{"authority": authority}
 	for _, k := range sortedKeys(data) {

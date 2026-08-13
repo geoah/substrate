@@ -117,9 +117,9 @@ preview, unfrozen at v1 and not part of the frozen core:
 
 The nine [declarable kinds](vocabulary.md#the-declarable-kinds) — `authority`,
 `kind`, `propertytype`, `trait`, `recordmapping`, `function`, `agent`,
-`bundle`, `actor` — live in core too, and so do the four shipped traits:
-`temporal`, which puts a record on the timeline, and the `bundleconfig`,
-`accountconfig`, and `oauth2` interfaces the OAuth facility recognizes.
+`bundle`, `actor` — live in core too, and so do the three shipped traits:
+`temporal`, which puts a record on the timeline, and the `accountconfig` and
+`oauth2` interfaces the OAuth facility recognizes.
 
 Back to [substrate.reamde.dev](../README.md), or reread the [introduction](introduction.md) with the pieces
 in place.

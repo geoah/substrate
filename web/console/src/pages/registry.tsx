@@ -3,7 +3,7 @@
  * closures shipped in the catalog that have not been imported yet. One row per
  * bundle on THE table system; a not-imported row carries an Import button,
  * an imported row opens the bundle's detail with the lifecycle verbs, the
- * config form and the accounts/connect flow. Integration bundles (backend
+ * setup/inputs surface and the accounts/connect flow. Integration bundles (backend
  * `integration` facet) carry an Integration badge and can be narrowed with the
  * All / Vocabulary / Integrations filter, orthogonal to the imported state.
  *
@@ -44,7 +44,7 @@ import { DataTable, useDataTable } from "@/components/data-table/data-table"
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
 import { DataTableViewOptions } from "@/components/data-table/data-table-view-options"
 import { RowDetail } from "@/components/data-table/row-detail"
-import { BundleStateBadge } from "@/components/bundle-state-badge"
+import { BundleStateBadge, SetupBadge } from "@/components/bundle-state-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -65,6 +65,7 @@ import {
   bundleStatusesQueryOptions,
   refetchBundleStateSoon,
   seedBundleStatus,
+  setupCount,
 } from "@/lib/api/bundles"
 import { catalogQueryOptions, importBundle } from "@/lib/api/catalog"
 import { kindsQueryOptions } from "@/lib/api/kinds"
@@ -264,9 +265,10 @@ function buildColumns(
         <DataTableColumnHeader column={column} title="state" />
       ),
       // An imported bundle shows its own runtime lifecycle (enabled /
-      // disabled / needs configuration); one that has never been imported has
-      // no lifecycle to show, only the invitation — and, when its closure
-      // declares against vocabulary this repository lacks, what blocks it.
+      // disabled / uninstalled) with the setup chip BESIDE it when steps
+      // stand; one that has never been imported has no lifecycle to show, only
+      // the invitation — and, when its closure declares against vocabulary
+      // this repository lacks, what blocks it.
       cell: ({ row }) => {
         const missing = row.original.installed
           ? []
@@ -274,7 +276,10 @@ function buildColumns(
         return (
           <div className="min-w-0">
             {row.original.status ? (
-              <BundleStateBadge state={bundleState(row.original.status)} />
+              <span className="inline-flex flex-wrap items-center gap-1.5">
+                <BundleStateBadge state={bundleState(row.original.status)} />
+                <SetupBadge count={setupCount(row.original.status)} />
+              </span>
             ) : (
               <Badge variant="outline" className="gap-1.5 font-normal">
                 <span className="size-1.5 rounded-full bg-muted-foreground/40" />
@@ -369,15 +374,11 @@ function BundleDisclosure({
   kinds: KindInfo[]
 }) {
   const catalog = row.catalog
-  const configType = catalog?.configType ?? row.status?.configType
+  const inputs = row.status?.inputs
   const kindRows = useMemo(
     () =>
-      installedKindRows(
-        { authority: row.authority, configType },
-        kinds,
-        catalog
-      ),
-    [row.authority, configType, kinds, catalog]
+      installedKindRows({ authority: row.authority, inputs }, kinds, catalog),
+    [row.authority, inputs, kinds, catalog]
   )
   const resources = useMemo(() => bundleResourceRows(catalog), [catalog])
   const missing = missingRequirements(requirements)
@@ -403,6 +404,23 @@ function BundleDisclosure({
                 : "Bundle — ships callables and configuration in its own authority."}
           </span>
         </Line>
+        {catalog?.inputs && Object.keys(catalog.inputs).length > 0 && (
+          <Line label="inputs">
+            {Object.entries(catalog.inputs).map(([name, input]) => (
+              <span
+                key={name}
+                className="inline-flex items-center gap-1 rounded border bg-background px-1.5 py-0.5 data text-muted-foreground"
+                title={
+                  input.description
+                    ? `${input.kind}\n\n${input.description}`
+                    : input.kind
+                }
+              >
+                {name}
+              </span>
+            ))}
+          </Line>
+        )}
         {requirements.length > 0 && (
           <Line label="requires">
             {requirements.map((req) => (
@@ -436,13 +454,16 @@ function BundleDisclosure({
         <Line label="kinds">
           {kindRows.length ? (
             kindRows.map((k) => {
-              // The host's own roles ride the hover, not a second chip: the
-              // singleton `config` record type and the `account` type the
-              // connect flow writes tokens onto are the two the reader must be
-              // able to tell from ordinary vocabulary.
-              const named = k.role
-                ? `${k.identity} — the ${k.role} record type`
-                : k.identity
+              // The host's own roles ride the hover, not a second chip: a kind
+              // a declared input resolves records of, and the `account` kind
+              // the connect flow writes tokens onto, are the two the reader
+              // must be able to tell from ordinary vocabulary.
+              const named =
+                k.role === "input"
+                  ? `${k.identity} (its records satisfy a declared input)`
+                  : k.role === "account"
+                    ? `${k.identity} (the account record kind)`
+                    : k.identity
               // What the kind is, on the same hover: a reader deciding on an
               // import should not have to install it to find out.
               const title = k.description

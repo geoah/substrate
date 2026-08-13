@@ -20,7 +20,12 @@ function item(over: Partial<CatalogItem> = {}): CatalogItem {
     authority: "google.bundles.substrate.reamde.dev",
     description: "Connects a Google account.",
     version: "v1",
-    configType: "google.bundles.substrate.reamde.dev/config",
+    inputs: {
+      client: {
+        kind: "google.bundles.substrate.reamde.dev/config",
+        description: "The OAuth client record.",
+      },
+    },
     resources: { kinds: ["a", "b"], functions: ["c"] },
     installed: false,
     ...over,

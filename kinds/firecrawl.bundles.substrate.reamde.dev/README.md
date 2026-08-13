@@ -44,7 +44,7 @@ scrapepage {url}            ──▶  Firecrawl /v2/scrape  ──▶  {documen
 - **`webdocument`** — `url`, `content` (text), `truncated`, `fetchedAt`,
   `raw` (the scrape metadata, for provenance). `title` is the reserved
   built-in; scrapepage writes it.
-- **`config`** (bundleconfig) — the one config record: a secret-typed `apiKey`
+- **`config`**, the `connector` input's kind: a secret-typed `apiKey`
   (`writer: owner`, injected only into this bundle's functions and scrubbed at
   the runner boundary, never read back) and an optional `baseUrl` (default
   `https://api.firecrawl.dev`).
@@ -68,12 +68,15 @@ deliberate: a config edit must never be able to redirect the credential.
 
 ```sh
 substratectl apply -f bundle.yaml
-# then create ONE config record carrying your Firecrawl API key
+# then create a config record carrying your Firecrawl API key
 ```
 
 The config record is per-repository (the key is a credential), so it is not
-shipped here — the bundle reads "needs configuration" until one exists.
-Keys come from https://www.firecrawl.dev (they look like `fc-…`).
+shipped here. The bundle declares one input, `connector`, satisfied by a
+`config` record: the sole record resolves on its own, several resolve through
+the one named `default` or an explicit bind, and the bundle status reports an
+unresolved input as a setup step until one lands. Keys come from
+https://www.firecrawl.dev (they look like `fc-…`).
 
 ## Binding the tools to an agent
 
@@ -115,8 +118,9 @@ another function's `host.call` (gated by that caller's `capabilities.call`).
 ## Tested
 
 `engine/firecrawl_bundle_db_test.go` installs this closure from these very
-files: the loader admits it (bundleconfig-only config, no oauth2/
-accountconfig, both callables registered, display metadata present), the
+files: the loader admits it (a `connector` input injected into functions,
+no oauth2/accountconfig, both callables registered, display metadata
+present), the
 zero-trigger closure installs into a live repository, and both functions run
 against a fake Firecrawl server — websearch answers hits and applies zero
 effects; scrapepage caps the markdown, writes the webdocument, and a

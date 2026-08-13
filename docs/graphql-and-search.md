@@ -69,8 +69,8 @@ Two bundles may declare the same singular and stay distinct, because the
 full reference separates them: `notion.bundles.substrate.reamde.dev/page` is
 `Notion_Page` and `web.bundles.substrate.reamde.dev/page` is `Web_Page`, and the
 underscore keeps both out of reach of any bare name. Interfaces follow the
-same determinism: one per trait that carries properties (a pure marker trait
-like `bundleconfig` adds none), and one per distinct state-property name
+same determinism: one per trait that carries properties (a pure marker
+trait adds none), and one per distinct state-property name
 (`HasStatus`, `HasProminence`).
 
 Two kinds that still resolve to one name are **refused when the second is

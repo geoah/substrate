@@ -228,7 +228,8 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		putDataDoc(t, ds, m)
 	}
 
-	// --- the bundle's ONE config record (denyDomains + a secret key) --------
+	// --- the config record (denyDomains + a secret key): the sole record
+	// resolves the bundle's `connector` input, which injects into findurls --
 	cfg := mustPutInternal(t, ds, substrate.PutInput{
 		Kind: webConfigType,
 		Properties: map[string]any{

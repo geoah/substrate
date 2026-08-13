@@ -21,6 +21,7 @@ import {
   installedKindRows,
   mergeBundles,
   missingRequirements,
+  oauthConnectBlocked,
   presentAuthorities,
   requirementsOf,
   requiresHint,
@@ -31,10 +32,16 @@ function status(over: Partial<BundleStatus> = {}): BundleStatus {
     id: "google.bundles.substrate.reamde.dev",
     name: "google",
     authority: "google.bundles.substrate.reamde.dev",
-    configType: "google.bundles.substrate.reamde.dev/config",
     installed: true,
     enabled: true,
-    configured: true,
+    inputs: [
+      {
+        name: "client",
+        kind: "google.bundles.substrate.reamde.dev/config",
+        record: "default",
+        via: "default",
+      },
+    ],
     accounts: 2,
     functions: 1,
     kinds: 3,
@@ -50,7 +57,9 @@ function catalog(over: Partial<CatalogItem> = {}): CatalogItem {
     authority: "google.bundles.substrate.reamde.dev",
     description: "Connects a Google account.",
     version: "v1",
-    configType: "google.bundles.substrate.reamde.dev/config",
+    inputs: {
+      client: { kind: "google.bundles.substrate.reamde.dev/config" },
+    },
     resources: { kinds: ["a", "b"], functions: ["c"] },
     installed: false,
     integration: true,
@@ -339,7 +348,7 @@ describe("installedKindRows — the Kinds table", () => {
     name: "config",
     authority: "google.bundles.substrate.reamde.dev",
     plural: "configs",
-    definition: { traits: ["bundleconfig"] },
+    definition: { traits: ["oauth2"] },
   })
   const accountKind = kindInfo({
     identity: "google.bundles.substrate.reamde.dev/account",
@@ -374,14 +383,24 @@ describe("installedKindRows — the Kinds table", () => {
     expect(contact.plural).toBe("contacts")
   })
 
-  it("marks the config and account kinds by role", () => {
+  it("marks the input and account kinds by role", () => {
     const rows = installedKindRows(status(), registry, catalog({
       resources: { kinds: registry.map((k) => k.identity) },
     }))
     const byId = Object.fromEntries(rows.map((r) => [r.identity, r]))
-    expect(byId[configKind.identity].role).toBe("config")
+    expect(byId[configKind.identity].role).toBe("input")
     expect(byId[accountKind.identity].role).toBe("account")
     expect(byId[contactKind.identity].role).toBeUndefined()
+  })
+
+  it("marks an input's kind from the catalog declaration alone (not yet imported)", () => {
+    const rows = installedKindRows(
+      { authority: "google.bundles.substrate.reamde.dev", inputs: undefined },
+      registry,
+      catalog({ resources: { kinds: registry.map((k) => k.identity) } })
+    )
+    const byId = Object.fromEntries(rows.map((r) => [r.identity, r]))
+    expect(byId[configKind.identity].role).toBe("input")
   })
 
   it("falls back to the registry's owned-authority kinds when there is no catalog entry", () => {
@@ -474,6 +493,13 @@ describe("declaresProviderInterfaces", () => {
     plural: "accounts",
     definition: { traits: ["accountconfig"] },
   })
+  const clientKind = kindInfo({
+    identity: "google.bundles.substrate.reamde.dev/config",
+    name: "config",
+    authority: "google.bundles.substrate.reamde.dev",
+    plural: "configs",
+    definition: { traits: ["oauth2"] },
+  })
 
   it("is true when the bundle authority ships an accountconfig account kind", () => {
     expect(accountKindOf([accountKind], "google.bundles.substrate.reamde.dev")).toBe(
@@ -481,49 +507,101 @@ describe("declaresProviderInterfaces", () => {
     )
     expect(
       declaresProviderInterfaces(
-        {
-          authority: "google.bundles.substrate.reamde.dev",
-          configType: "google.bundles.substrate.reamde.dev/config",
-        },
+        { authority: "google.bundles.substrate.reamde.dev", inputs: [] },
         [accountKind]
       )
     ).toBe(true)
   })
 
-  it("is true when the bundleconfig kind carries the oauth2 trait", () => {
-    const configKind = kindInfo({
-      identity: "google.bundles.substrate.reamde.dev/config",
-      name: "config",
-      authority: "google.bundles.substrate.reamde.dev",
-      plural: "configs",
-      definition: { traits: ["bundleconfig", "oauth2"] },
-    })
+  it("is true when a declared input's kind carries the oauth2 trait", () => {
     expect(
       declaresProviderInterfaces(
         {
           authority: "google.bundles.substrate.reamde.dev",
-          configType: "google.bundles.substrate.reamde.dev/config",
+          inputs: [
+            { name: "client", kind: "google.bundles.substrate.reamde.dev/config" },
+          ],
         },
-        [configKind]
+        [clientKind]
       )
     ).toBe(true)
   })
 
-  it("is false for a non-provider bundle (no account kind, no oauth2)", () => {
-    const configKind = kindInfo({
-      identity: "urlharvester.bundles.substrate.reamde.dev/urlbundleconfig",
-      name: "urlbundleconfig",
-      authority: "urlharvester.bundles.substrate.reamde.dev",
-      plural: "urlbundleconfigs",
-      definition: { traits: ["bundleconfig"] },
+  it("is false for a non-provider bundle (no account kind, no oauth2 input)", () => {
+    const connectorKind = kindInfo({
+      identity: "web.bundles.substrate.reamde.dev/config",
+      name: "config",
+      authority: "web.bundles.substrate.reamde.dev",
+      plural: "configs",
     })
     expect(
       declaresProviderInterfaces(
         {
-          authority: "urlharvester.bundles.substrate.reamde.dev",
-          configType: "urlharvester.bundles.substrate.reamde.dev/urlbundleconfig",
+          authority: "web.bundles.substrate.reamde.dev",
+          inputs: [
+            { name: "connector", kind: "web.bundles.substrate.reamde.dev/config" },
+          ],
         },
-        [configKind]
+        [connectorKind]
+      )
+    ).toBe(false)
+  })
+})
+
+describe("oauthConnectBlocked, the connect gate", () => {
+  const clientKind = kindInfo({
+    identity: "google.bundles.substrate.reamde.dev/config",
+    name: "config",
+    authority: "google.bundles.substrate.reamde.dev",
+    plural: "configs",
+    definition: { traits: ["oauth2"] },
+  })
+  const inputs = [
+    { name: "client", kind: "google.bundles.substrate.reamde.dev/config" },
+  ]
+
+  it("does not block while nothing stands", () => {
+    expect(oauthConnectBlocked({ inputs, setup: [] }, [clientKind])).toBe(false)
+    expect(oauthConnectBlocked({ inputs }, [clientKind])).toBe(false)
+  })
+
+  it("blocks on an oauth-client item, and on the client input's own problems", () => {
+    expect(
+      oauthConnectBlocked(
+        {
+          inputs,
+          setup: [
+            { code: "oauth-client", input: "client", record: "default", message: "m" },
+          ],
+        },
+        [clientKind]
+      )
+    ).toBe(true)
+    for (const code of ["missing", "ambiguous", "dangling"] as const) {
+      expect(
+        oauthConnectBlocked(
+          { inputs, setup: [{ code, input: "client", message: "m" }] },
+          [clientKind]
+        )
+      ).toBe(true)
+    }
+  })
+
+  it("does not block on an unrelated input's step or a provider step", () => {
+    const both = [
+      ...inputs,
+      { name: "connector", kind: "google.bundles.substrate.reamde.dev/other" },
+    ]
+    expect(
+      oauthConnectBlocked(
+        { inputs: both, setup: [{ code: "missing", input: "connector", message: "m" }] },
+        [clientKind]
+      )
+    ).toBe(false)
+    expect(
+      oauthConnectBlocked(
+        { inputs, setup: [{ code: "provider", record: "openai", message: "m" }] },
+        [clientKind]
       )
     ).toBe(false)
   })

@@ -18,6 +18,11 @@
 # with an EMPTY baseURL means "the host's configured gateway", which is a real
 # deployment mode and the reason it ships keyless too.
 #
+# This bundle declares NO inputs: nothing here reads a configuration record.
+# The agents name their provider row directly, and the one setup signal (a
+# provider row that is still keyless) is the host's own status probe, surfaced
+# on the bundle status as a "provider" setup item with no declaration needed.
+#
 # For functions as tools — a pure one and one that writes a record — install
 # the notes example beside this one. This bundle deliberately has none: it is
 # about where completions are bought.
@@ -33,28 +38,9 @@ data:
   description: >-
     The two provider rows an agent needs, keyless and ready to key, plus an
     agent and the sub-agent it delegates to. Install it, set one key, chat.
-  configType: llm.bundles.substrate.reamde.dev/config
   installs:
-    - llm.bundles.substrate.reamde.dev/config
     - llm.bundles.substrate.reamde.dev/summarizer
     - llm.bundles.substrate.reamde.dev/echo
----
-# ---- the config: every bundle names one. This bundle's only knob is which
-# row its agents complete against, so re-pointing the example at your own
-# provider is one edit here rather than two agent patches.
-kind: core.substrate.reamde.dev/kind
-metadata: {id: llm.bundles.substrate.reamde.dev/config}
-data:
-  authority: llm.bundles.substrate.reamde.dev
-  description: >-
-    How the LLM example runs: which provider row its agents buy completions
-    from. Created by the owner; the agents read it through their prompts.
-  names: {singular: config, plural: configs}
-  traits: [bundleconfig]
-  properties:
-    provider:
-      type: string
-      description: the llmprovider row id the example's agents should name
 ---
 # ---- a SUB-AGENT: its own loop, its own budget, its own thread. It declares
 # no emit at all, so nothing it is asked to do can write a record.

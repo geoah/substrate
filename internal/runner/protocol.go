@@ -98,8 +98,8 @@ type Input struct {
 	// `input:` schema when one is declared.
 	Args any `json:"args,omitempty"`
 	// Config is the callable's resolved configuration, as the engine resolves
-	// it from the bundle's config and account rows (engine/bundleconfig.go);
-	// nil for a callable whose bundle declares none.
+	// it from the bundle's injected inputs and account rows
+	// (engine/invocationconfig.go); nil for a callable outside any bundle.
 	Config map[string]any `json:"config,omitempty"`
 	// Resume is the PAGED-CHECKPOINT cursor: the opaque `more.cursor` the
 	// previous page of THIS invocation chain returned, handed straight back so

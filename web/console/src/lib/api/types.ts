@@ -338,6 +338,18 @@ export interface BundleResources {
   mappings?: string[]
 }
 
+/** One declared input as the catalog previews it, verbatim from the bundle
+ * manifest: the kind whose records satisfy it, whether its record is injected
+ * into function invocations, and its declared purpose. */
+export interface CatalogInput {
+  /** Full identity of the kind whose records satisfy the input. */
+  kind: string
+  /** Only value: "functions", meaning the resolved record rides function
+   * invocations. Absent means facility-read only. */
+  inject?: string
+  description?: string
+}
+
 /** One installable bundle from the catalog embedded in the binary, plus
  * whether THIS repository has it. */
 export interface CatalogBundle {
@@ -349,8 +361,8 @@ export interface CatalogBundle {
   authority: string
   description: string
   version: string
-  /** The bundleconfig-trait kind the bundle configures through. */
-  configType?: string
+  /** The declared inputs, input name keyed. A bundle with no needs omits it. */
+  inputs?: Record<string, CatalogInput>
   resources: BundleResources
   installed: boolean
   /** Catalog facet (backend-owned): this bundle connects an external
@@ -360,7 +372,7 @@ export interface CatalogBundle {
    * Curated by the catalog, never derived from the closure's shape. */
   example?: boolean
   /** A pure-VOCABULARY bundle (backend-owned): a bare org-domain authority
-   * (`people.substrate.reamde.dev`) shipping kinds and nothing else — no config type, no
+   * (`people.substrate.reamde.dev`) shipping kinds and nothing else: no inputs, no
    * functions, no OAuth. Repository creation seeds core alone, so the
    * substrate's own vocabulary arrives through this catalog like everything
    * else. Optional on the wire read only because an older server may omit it. */
@@ -372,6 +384,45 @@ export interface CatalogBundle {
   requires?: string[]
 }
 
+/** How an input's record was chosen: an explicit bind edge, the record named
+ * `default`, or the sole live record of the kind. */
+export type InputVia = "bound" | "default" | "sole"
+
+/** One declared input's resolution (substrate.InputStatus), in declaration
+ * order on the status. `record`/`via` are empty while unresolved, a
+ * first-class state the status surfaces as a setup item, never tie-broken. */
+export interface InputStatus {
+  /** The input's declared name, also the edge rel the bind verb writes. */
+  name: string
+  /** Full identity of the kind whose records satisfy the input. */
+  kind: string
+  description?: string
+  /** The resolved record's id; empty while unresolved. */
+  record?: string
+  via?: InputVia
+}
+
+/** The stable setup-item reasons: missing/ambiguous/dangling are an input's
+ * own resolution problems; oauth-client is a resolved client record without
+ * clientId/clientSecret; provider is an agent's llmprovider row absent or
+ * keyless (kind core.substrate.reamde.dev/llmprovider). */
+export type SetupCode =
+  "missing" | "ambiguous" | "dangling" | "oauth-client" | "provider"
+
+/** One thing standing between a bundle and a runtime path it ships
+ * (substrate.SetupItem). Problems only: an empty setup list means ready. */
+export interface SetupItem {
+  code: SetupCode
+  /** The unresolved input's name, when the item is an input's. */
+  input?: string
+  /** The kind whose record would clear the item. */
+  kind?: string
+  /** The existing record to fix, when one exists. */
+  record?: string
+  /** One sentence naming the fix. */
+  message: string
+}
+
 /** One installed bundle's computed status — stored nowhere, recomputed per
  * read (substrate.BundleStatus). */
 export interface BundleStatus {
@@ -379,19 +430,23 @@ export interface BundleStatus {
   id: string
   name: string
   authority: string
-  /** The bundleconfig-trait kind whose one live record configures it. */
-  configType?: string
-  /** False while the uninstalled marker stands: schema + data stay, read-only. */
+  /** False only for a quarantined bundle surfaced from its stored rows; an
+   * uninstalled bundle has no status at all (uninstall tears its rows down). */
   installed: boolean
-  /** False when disabled OR uninstalled: execution is stopped. */
+  /** False when disabled: execution is stopped. */
   enabled: boolean
-  /** The configType's one live record exists. */
-  configured: boolean
+  /** Each declared input's resolution, name order. Omitted when the bundle
+   * declares none. */
+  inputs?: InputStatus[]
+  /** What stands between the bundle and every runtime path it ships. Omitted
+   * when ready; lifecycle is separate from setup. */
+  setup?: SetupItem[]
   accounts?: number
   functions?: number
   kinds?: number
   /** Live data rows across the owned authority — what a purge would tombstone. */
   liveRecords?: number
   quarantined?: boolean
-  error?: string
+  /** The admission error that quarantined the bundle. */
+  quarantineReason?: string
 }

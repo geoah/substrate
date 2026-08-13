@@ -1,13 +1,14 @@
 package engine
 
-// The runner's config resolution (substrate-primitives §6): a bundle
-// function's invocation carries `config` — the bundle's ONE configuration
-// record (secrets resolved) and the bundle's account records, each with a
-// live access token injected when the bundle authenticates over the host
-// OAuth facility. The resolved map crosses only into the invocation; the
-// invocation SCRUBBER (scrub.go) holds every surface that leaves the runner
-// boundary — logs, errors, outputs — to the injected values. Functions
-// outside any bundle get nil, exactly as wave 1 left it.
+// The runner's config resolution: a bundle function's invocation carries
+// `config` — the bundle's `inject: functions` inputs, each resolved to one
+// record (secrets resolved, keyed by input name under `inputs`), and the
+// bundle's account records, each with a live access token injected when the
+// bundle authenticates over the host OAuth facility. The resolved map
+// crosses only into the invocation; the invocation SCRUBBER (scrub.go)
+// holds every surface that leaves the runner boundary — logs, errors,
+// outputs — to the injected values. Functions outside any bundle get nil,
+// exactly as wave 1 left it.
 
 import (
 	"context"
@@ -47,24 +48,40 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 	}
 
 	// The OAUTH-FACILITY secrets are never injected: the
-	// config's clientSecret and each account's tokenRef are the host's inputs
-	// to resolve a token — the function receives the resolved access token
-	// instead, so a compromised dependency has no client secret or credential
-	// ref to exfiltrate. A connector's OWN config secrets (an apiToken it needs
-	// to call its provider) ARE still injected, and — like the access token —
-	// the invocation scrubber holds them to the runner boundary.
+	// client input's clientSecret and each account's tokenRef are the host's
+	// inputs to resolve a token — the function receives the resolved access
+	// token instead, so a compromised dependency has no client secret or
+	// credential ref to exfiltrate. A connector's OWN input secrets (an
+	// apiToken it needs to call its provider) ARE injected, and — like the
+	// access token — the invocation scrubber holds them to the runner
+	// boundary. Only `inject: functions` inputs cross; a facility-read input
+	// (the OAuth client) never does.
 	var secrets []string
-	configRow, err := ds.oneLiveRowOf(ctx, b.ConfigType)
-	if err != nil {
-		return nil, nil, err
-	}
-	configType, _ := ds.registry().ByIdentity(b.ConfigType)
-	oauthEnabled := configType != nil && configType.Implements(vocabulary.TraitOAuth2Core) && b.OAuth2 != nil
-	if configRow != nil {
-		view, vsecrets := ds.injectedRecordConfig(ctx, configType, configRow)
-		cfg["config"] = view
+	inputs := map[string]any{}
+	for _, name := range b.InputOrder {
+		in := b.Inputs[name]
+		if in.Inject != vocabulary.BundleInputInjectFunctions {
+			continue
+		}
+		ri, err := ds.resolveBundleInput(ctx, b, name)
+		if err != nil {
+			return nil, nil, err
+		}
+		if ri.Row == nil {
+			// An unresolved input injects nothing; the body sees the key
+			// absent and refuses in its own words. Which record was wanted
+			// is the status page's story, not the invocation's.
+			continue
+		}
+		ity, _ := ds.registry().ByIdentity(in.Kind)
+		view, vsecrets := ds.injectedRecordConfig(ctx, ity, ri.Row)
+		inputs[name] = view
 		secrets = append(secrets, vsecrets...)
 	}
+	if len(inputs) > 0 {
+		cfg["inputs"] = inputs
+	}
+	oauthEnabled := b.OAuth2 != nil
 
 	// The refresh endpoints (client creds + token endpoint from the manifest,
 	// no scopes) are resolved once for the whole bundle. A configuration that
@@ -72,7 +89,7 @@ func (ds *dataset) resolveFunctionConfig(ctx context.Context, fn *vocabulary.Fun
 	// carries a tokenError the body can surface.
 	var refreshEP oauthEndpoints
 	haveClient := false
-	if oauthEnabled && configRow != nil {
+	if oauthEnabled {
 		clientID, clientSecret, cerr := ds.oauthClientOf(ctx, b)
 		if cerr == nil {
 			refreshEP = oauthEndpointsFor(b.OAuth2, clientID, clientSecret, nil)
@@ -195,18 +212,6 @@ func isOAuthFacilitySecret(ty *vocabulary.Kind, name string) bool {
 		return true
 	}
 	return false
-}
-
-// oneLiveRowOf reads the single live record of a type, nil when none exists.
-func (ds *dataset) oneLiveRowOf(ctx context.Context, typeIdent string) (*erow, error) {
-	rows, err := ds.liveRowsOf(ctx, typeIdent)
-	if err != nil {
-		return nil, err
-	}
-	if len(rows) == 0 {
-		return nil, nil
-	}
-	return rows[0], nil
 }
 
 // liveRowsOf reads every live record row of one type, ordered by id.

@@ -826,8 +826,8 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	}
 
 	// Bundle-owned types carry the lifecycle rules (engine/bundles.go):
-	// read-only when uninstalled, config/accounts frozen when disabled, and
-	// the configType's one-live-record singleton on create.
+	// a disabled bundle's inputs and accounts are frozen. No cardinality
+	// rule lives here: records of an input's kind are ordinary.
 	if err := t.checkBundleWrite(sp.ty, sp.id, create || sp.resurrect); err != nil {
 		return nil, err
 	}
@@ -1089,7 +1089,7 @@ func (t *txn) checkRequiredPointers(sp *applySpec, row *erow) error {
 // writes (facility teardown, purge, mirrors) bypass; patches are governed by
 // per-property ownership below, not this coarse gate.
 func (t *txn) checkBundleOwnerGate(ty *vocabulary.Kind, creating bool) error {
-	if t.internal || !creating || !isBundleOwnerGated(ty) {
+	if t.internal || !creating || !t.isBundleOwnerGated(ty) {
 		return nil
 	}
 	if t.tier != substrate.TierOwner {
@@ -1099,10 +1099,14 @@ func (t *txn) checkBundleOwnerGate(ty *vocabulary.Kind, creating bool) error {
 	return nil
 }
 
-// isBundleOwnerGated reports whether a type is a bundle's config or account
-// record — the records whose external create/delete is owner-only.
-func isBundleOwnerGated(ty *vocabulary.Kind) bool {
-	return ty.Implements(vocabulary.TraitBundleConfigCore) || ty.Implements(vocabulary.TraitAccountConfigCore)
+// isBundleOwnerGated reports whether a type is a bundle input's kind or an
+// account record — the records whose external create/delete is owner-only.
+func (t *txn) isBundleOwnerGated(ty *vocabulary.Kind) bool {
+	if ty.Implements(vocabulary.TraitAccountConfigCore) {
+		return true
+	}
+	b, ok := t.ds.registry().BundleOf(ty.Authority)
+	return ok && bundleInputKind(b, ty.Identity)
 }
 
 // checkPropertyOwnership holds every CHANGED property with a `writer:`
@@ -1960,7 +1964,7 @@ func (t *txn) softDelete(ref eref) (*substrate.Record, error) {
 	// External delete of a bundle's config/account record is owner-only: the
 	// facility's finalizer teardown and purge run internally and bypass; a
 	// non-owner API actor may not tear down a connection.
-	if !t.internal && isBundleOwnerGated(ty) && t.tier != substrate.TierOwner {
+	if !t.internal && t.isBundleOwnerGated(ty) && t.tier != substrate.TierOwner {
 		return nil, fmt.Errorf("%w: only the owner may delete a %s — connections are owner-managed",
 			substrate.ErrForbidden, ty.Name)
 	}

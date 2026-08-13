@@ -37,7 +37,7 @@ func installSecretToolBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 		"capabilities": map[string]any{"emit": []any{secretToolAuthority + "/snote"}},
 		"source": `
 def main(input, host):
-    props = input["config"]["config"]["properties"]
+    props = input["config"]["inputs"]["connector"]["properties"]
     return {"effects": [{"action": "put", "kind": "secretb.bundles.substrate.reamde.dev/snote",
                          "id": "s-note", "properties": {"text": props["apiToken"]}}],
             "output": {"ok": True}}
@@ -47,12 +47,14 @@ def main(input, host):
 		vocabulary.AuthorityManifest(secretToolAuthority, ""),
 		vocabulary.BundleManifest(secretToolAuthority, map[string]any{
 			"description": "the secret tool bundle",
-			"configType":  secretToolAuthority + "/sconfig",
-			"installs":    []any{secretToolAuthority + "/sconfig", secretToolAuthority + "/snote", secretToolAuthority + "/leaktool"},
+			"inputs": map[string]any{
+				"connector": map[string]any{"kind": secretToolAuthority + "/sconfig", "inject": "functions"},
+			},
+			"installs": []any{secretToolAuthority + "/sconfig", secretToolAuthority + "/snote", secretToolAuthority + "/leaktool"},
 		}),
 		vocabulary.KindManifest(secretToolAuthority,
 			map[string]any{"singular": "sconfig", "plural": "sconfigs"},
-			map[string]any{"traits": []any{"bundleconfig"}, "properties": map[string]any{
+			map[string]any{"properties": map[string]any{
 				"apiToken": map[string]any{"type": "secret"},
 			}}),
 		vocabulary.KindManifest(secretToolAuthority,

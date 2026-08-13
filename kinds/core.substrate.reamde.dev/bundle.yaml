@@ -1,6 +1,6 @@
 # one installed bundle: the install unit (substrate-primitives §4). The id
-# IS the owned authority ("web.bundles.substrate.reamde.dev"); the declaration names the
-# configType and the exact closure it ships, and a batch carrying a bundle
+# IS the owned authority ("web.bundles.substrate.reamde.dev"); the declaration names its
+# inputs and the exact closure it ships, and a batch carrying a bundle
 # document REPLACES the owned authority whole — install and upgrade are one
 # atomic apply, breakage refused. `disabled`/`uninstalled` are runtime state
 # the lifecycle verbs own, never part of the declaration.
@@ -32,10 +32,6 @@ data:
     authority:
       type: string
       description: the authority the bundle owns ("<name>.bundles.substrate.reamde.dev")
-    configType:
-      type: string
-      description: the bundleconfig-trait record type holding the bundle's
-        one configuration record
     definition:
       type: json
       description: the parsed manifest data, installs closure included

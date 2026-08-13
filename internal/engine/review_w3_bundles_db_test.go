@@ -465,25 +465,25 @@ func w3TraitDoc(name string, props map[string]any) map[string]any {
 	}
 }
 
-// A bundle whose configType binds a LOCAL trait named "bundleconfig" is not
-// configured at all: the host key is the resolved identity
-// core.substrate.reamde.dev/bundleconfig, and a same-named local trait does not count.
-func TestW3ShadowBundleConfigRefused(t *testing.T) {
+// A bundle whose oauth2 clientInput kind binds a LOCAL trait named "oauth2"
+// declares no client at all: the host key is the resolved identity
+// core.substrate.reamde.dev/oauth2, and a same-named local trait does not count.
+func TestW3ShadowOAuth2Refused(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	docs := mbDocs(nil,
-		w3TraitDoc("bundleconfig", nil),
+		w3TraitDoc("oauth2", map[string]any{"clientId": "string", "clientSecret": "secret"}),
 		vocabulary.KindManifest(mbAuthority,
 			map[string]any{"singular": "mailconfig", "plural": "mailconfigs"},
 			map[string]any{
 				// Resolves in-authority FIRST: this binds the local shadow, never core.
-				"traits":     []any{"bundleconfig"},
+				"traits":     []any{"oauth2"},
 				"properties": map[string]any{"note": map[string]any{"type": "string"}},
 			}),
 		mbMessageTypeDoc())
 	_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs)
-	if err == nil || !strings.Contains(err.Error(), "does not implement the bundleconfig trait") {
-		t.Fatalf("a shadow bundleconfig trait satisfied bundle admission: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "does not implement the oauth2 trait") {
+		t.Fatalf("a shadow oauth2 trait satisfied bundle admission: %v", err)
 	}
 }
 
@@ -667,12 +667,11 @@ def main(input, host):
 	}
 }
 
-// A split that would resurrect a bundle's configuration record takes the
-// same singleton guard a create does: while another config lives, the
-// resurrection refuses. The two-live-config precondition cannot be built
-// through the write surface (that is the point), so the merge record is
-// fabricated the way legacy/imported data would carry it.
-func TestW3SplitConfigSingletonGuard(t *testing.T) {
+// A split that resurrects a second record of an input's kind is an ordinary
+// resurrection now — no cardinality is enforced anywhere — and the input
+// simply reads AMBIGUOUS until one record is bound or named "default". The
+// merge record is fabricated the way legacy/imported data would carry it.
+func TestW3SplitInputTurnsAmbiguous(t *testing.T) {
 	ctx := context.Background()
 	_, ds, db := newW3Env(t)
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
@@ -699,21 +698,19 @@ func TestW3SplitConfigSingletonGuard(t *testing.T) {
 		}
 	}
 
-	_, err := ds.Split(ctx, owner, rec)
-	wantErr(t, err, substrate.ErrGuard, "split resurrecting a second live config")
-	if !strings.Contains(err.Error(), "one live") {
-		t.Fatalf("singleton refusal message: %v", err)
-	}
-	// Free the slot: the same split then resurrects cleanly.
-	if _, err := ds.Delete(ctx, owner, c2.Kind, c2.ID); err != nil {
-		t.Fatalf("delete c2: %v", err)
-	}
 	if _, err := ds.Split(ctx, owner, rec); err != nil {
-		t.Fatalf("split with a free slot: %v", err)
+		t.Fatalf("split resurrecting a second record of an input's kind: %v", err)
 	}
 	got := mustGet(t, ds, c1.Kind, c1.ID)
 	if got.DeletedAt != nil {
 		t.Fatalf("c1 not resurrected: %+v", got)
+	}
+	// Two live records, none bound or named "default": the input is
+	// ambiguous — surfaced per input, never tie-broken, never a refusal of
+	// the split itself.
+	st, err := bundler(t, ds).BundleStatus(ctx, mbAuthority)
+	if err != nil || len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupAmbiguous {
+		t.Fatalf("post-split status: %+v %v", st, err)
 	}
 }
 
@@ -853,7 +850,7 @@ func TestW3BundledAgentUpgradeGuard(t *testing.T) {
 	const wagAuthority = "wagent.bundles.substrate.reamde.dev"
 	configDoc := vocabulary.KindManifest(wagAuthority,
 		map[string]any{"singular": "wagconfig", "plural": "wagconfigs"},
-		map[string]any{"traits": []any{"bundleconfig"}, "properties": map[string]any{
+		map[string]any{"properties": map[string]any{
 			"note": map[string]any{"type": "string"},
 		}})
 	agentDoc := vocabulary.AgentManifest(wagAuthority, "helper", map[string]any{
@@ -864,7 +861,6 @@ func TestW3BundledAgentUpgradeGuard(t *testing.T) {
 		vocabulary.AuthorityManifest(wagAuthority, ""),
 		vocabulary.BundleManifest(wagAuthority, map[string]any{
 			"description": "the agent bundle",
-			"configType":  wagAuthority + "/wagconfig",
 			"installs":    []any{wagAuthority + "/wagconfig", wagAuthority + "/helper"},
 		}),
 		configDoc, agentDoc,
@@ -887,7 +883,6 @@ func TestW3BundledAgentUpgradeGuard(t *testing.T) {
 		vocabulary.AuthorityManifest(wagAuthority, ""),
 		vocabulary.BundleManifest(wagAuthority, map[string]any{
 			"description": "the agent bundle",
-			"configType":  wagAuthority + "/wagconfig",
 			"installs":    []any{wagAuthority + "/wagconfig"},
 		}),
 		configDoc,

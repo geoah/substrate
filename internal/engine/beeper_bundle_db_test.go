@@ -4,9 +4,10 @@ package engine
 // the shipped closure at ../../kinds/beeper.bundles.substrate.reamde.dev:
 //
 //  1. TestBeeperBundleAdmitsSchema — the closure ADMITS through the schema
-//     loader with the non-OAuth shapes intact: the config type wears
-//     bundleconfig ONLY (no oauth2 trait, no manifest `oauth2:` block, and the
-//     pasted accessToken is its own secret-typed property), the account type
+//     loader with the non-OAuth shapes intact: the bundle declares one
+//     `connector` input injected into its functions (no oauth2 trait, no
+//     manifest `oauth2:` block, and the
+//     pasted accessToken is the config kind's own secret-typed property), the account type
 //     wears accountconfig WITHOUT oauth2 (its trait-contracted tokenRef/
 //     tokenStatus/grantedScopes admit as dormant declarations, and the
 //     resumable-walk state backfillResume is connector-written), the message
@@ -106,29 +107,34 @@ func TestBeeperBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("the bundle closure did not admit: %v", err)
 	}
 
-	// The bundle exists, names its config type, and carries NO oauth2 manifest
-	// block — a Matrix access token is pasted, never exchanged.
+	// The bundle exists, declares the one `connector` input injected into its
+	// functions, and carries NO oauth2 manifest block — a Matrix access token
+	// is pasted, never exchanged.
 	b, ok := reg.BundleOf(beeperAuthority)
 	if !ok {
 		t.Fatalf("no bundle owns %s after install", beeperAuthority)
 	}
-	if b.ConfigType != beeperConfigType {
-		t.Fatalf("bundle configType = %q, want %q", b.ConfigType, beeperConfigType)
+	in, ok := b.Inputs["connector"]
+	if !ok {
+		t.Fatalf("bundle declares no connector input: %v", b.InputOrder)
+	}
+	if in.Kind != beeperConfigType {
+		t.Fatalf("connector input kind = %q, want %q", in.Kind, beeperConfigType)
+	}
+	if in.Inject != vocabulary.BundleInputInjectFunctions {
+		t.Fatalf("connector input inject = %q, want %q", in.Inject, vocabulary.BundleInputInjectFunctions)
 	}
 	if b.OAuth2 != nil {
 		t.Fatalf("bundle carries an oauth2 manifest block — Beeper is not OAuth")
 	}
 
-	// The config type: bundleconfig ONLY. The oauth2 trait would both demand a
-	// manifest block and put the accessToken under at-rest sealing the runner
-	// injects unopened — the pasted token works BECAUSE this type stays
-	// bundleconfig-only.
+	// The config type: no oauth2 trait. That trait would both demand a
+	// manifest block and mark the client secret facility-owned; the pasted
+	// token works BECAUSE this kind stays a plain connector config whose
+	// secret injects usable.
 	cfg, ok := reg.ByIdentity(beeperConfigType)
 	if !ok {
 		t.Fatalf("config type %s missing", beeperConfigType)
-	}
-	if !cfg.Implements(vocabulary.TraitBundleConfigCore) {
-		t.Fatalf("config type does not implement %s", vocabulary.TraitBundleConfigCore)
 	}
 	if cfg.Implements(vocabulary.TraitOAuth2Core) {
 		t.Fatalf("config type implements oauth2 — there is no OAuth client to declare")
@@ -152,7 +158,7 @@ func TestBeeperBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("account type implements oauth2 — the non-OAuth shape is the point")
 	}
 	if _, ok := acct.Prop("accessToken"); ok {
-		t.Fatalf("account declares accessToken — the pasted token belongs on the config singleton")
+		t.Fatalf("account declares accessToken — the pasted token belongs on the connector's config record")
 	}
 	for _, dormant := range []string{"tokenRef", "tokenStatus", "grantedScopes"} {
 		if _, ok := acct.Prop(dormant); !ok {
@@ -492,8 +498,9 @@ func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 		}
 	}
 
-	// Computed status: installed, enabled, unconfigured until the config row
-	// exists, one function.
+	// Computed status: installed, enabled, the connector input unresolved
+	// (surfaced as a missing setup item) until a config row exists, one
+	// function.
 	st, err := ds.BundleStatus(ctx, beeperAuthority)
 	if err != nil {
 		t.Fatalf("bundle status: %v", err)
@@ -501,11 +508,14 @@ func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 	if !st.Installed || !st.Enabled {
 		t.Fatalf("bundle not live: installed=%v enabled=%v", st.Installed, st.Enabled)
 	}
-	if st.Configured {
-		t.Fatalf("bundle reports configured with no config record created")
+	if len(st.Inputs) != 1 || st.Inputs[0].Name != "connector" || st.Inputs[0].Kind != beeperConfigType {
+		t.Fatalf("status inputs = %+v, want the one connector input", st.Inputs)
 	}
-	if st.ConfigType != beeperConfigType {
-		t.Fatalf("status configType = %q, want %q", st.ConfigType, beeperConfigType)
+	if st.Inputs[0].Record != "" || st.Inputs[0].Via != "" {
+		t.Fatalf("connector input resolved with no config record created: %+v", st.Inputs[0])
+	}
+	if len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupMissing || st.Setup[0].Input != "connector" {
+		t.Fatalf("status setup = %+v, want the one missing-input item", st.Setup)
 	}
 	if st.Functions != 1 {
 		t.Fatalf("status functions = %d, want 1", st.Functions)
@@ -521,8 +531,8 @@ func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 	}
 
 	// Configure against the fake homeserver (loopback — the pinning rule's
-	// test seam): the singleton config carries the pasted token, and the
-	// account carries only the owner's toggles.
+	// test seam): the connector's config record carries the pasted token, and
+	// the account carries only the owner's toggles.
 	f := newBeeperFakeHS(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: beeperConfigType, ID: "beeper-config",

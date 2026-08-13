@@ -101,17 +101,6 @@ data:
       at: datetime
       endsAt: datetime
 ---
-# the bundle's one configuration record — a host-recognized interface
-# (substrate-primitives §4): the engine enforces AT MOST ONE live record of
-# a bundle's configType, and the bundle reads "needs configuration" until it
-# exists. A marker: the bundle's own config type declares its fields.
-kind: core.substrate.reamde.dev/trait
-metadata:
-  id: core.substrate.reamde.dev/bundleconfig
-data:
-  authority: core.substrate.reamde.dev
-  description: "the bundle's one configuration record — host-enforced singleton"
----
 # one connected account of a bundle — a host-recognized interface: the
 # console's "account configs" view is a trait query, and the runner's config
 # resolution enumerates a bundle's accounts as a trait-scoped read. The two
@@ -133,7 +122,8 @@ data:
     tokenStatus: string
     grantedScopes: string
 ---
-# the OAuth CLIENT credentials, on a bundle's configuration type — the host
+# the OAuth CLIENT credentials, on the kind a bundle's oauth2 clientInput
+# names — the host
 # runs the flow, bundles only declare the client (review-google #1). The
 # PROVIDER ENDPOINTS and the feature→scope mapping are NOT here: they are
 # trusted bundle-manifest metadata (schema.BundleOAuth2), compiled at install

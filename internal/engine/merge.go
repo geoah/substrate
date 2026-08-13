@@ -637,11 +637,9 @@ func (t *txn) split(mergeID string) (*substrate.Record, error) {
 		return nil, err
 	}
 	// Split RESURRECTS the loser, so it passes the same admission a create
-	// does: the bundle lifecycle rules, and — when the
-	// loser is a bundle's configType — the type-scoped advisory lock and the
-	// one-live-config singleton count, which the winner (same type, still
-	// live) would otherwise violate silently. Checked BEFORE any graph
-	// surgery below, so a refusal leaves nothing half-moved.
+	// does: the bundle lifecycle rules (a disabled bundle's inputs and
+	// accounts are frozen). Checked BEFORE any graph surgery below, so a
+	// refusal leaves nothing half-moved.
 	if err := t.checkBundleWrite(loserTy, loserID, true); err != nil {
 		return nil, err
 	}

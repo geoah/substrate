@@ -5,7 +5,9 @@
 # point of the gate.
 #
 # Install:  substratectl apply -f bundle.yaml -f triggers.yaml
-# Configure: create ONE config record (denyDomains + firecrawlKey).
+# Configure: create a config record (denyDomains + firecrawlKey); the
+#   `connector` input resolves it: the sole record, the one named `default`,
+#   or an explicitly bound one.
 #
 # This file is the SCHEMA closure (the atomic install unit). The delivery
 # wiring lives beside it in triggers.yaml as ordinary data records.
@@ -29,7 +31,14 @@ data:
     Harvests URLs out of any message, fetches each page, classifies it, and
     proposes reading-list and weekly-digest notes — the substrate's end-to-end
     conformance example.
-  configType: web.bundles.substrate.reamde.dev/config
+  # The one declared input: the connector record the function bodies read.
+  # `inject: functions` hands the resolved record (secrets resolved) to every
+  # function invocation under config.inputs.connector.
+  inputs:
+    connector:
+      kind: web.bundles.substrate.reamde.dev/config
+      inject: functions
+      description: the deny list, the fetch credential and the newest digest
   # The harvester subscribes to conversation messages (triggers.yaml), so the
   # messaging vocabulary has to be imported first.
   requires:
@@ -45,19 +54,20 @@ data:
     - web.bundles.substrate.reamde.dev/readinglistagent
     - web.bundles.substrate.reamde.dev/weeklyrollup
 ---
-# ---- the config type: a bundleconfig-trait record -------------------------
+# ---- the config type: the `connector` input's kind ------------------------
 # denyDomains gates the harvester; firecrawlKey is the (unused-in-this-stub)
-# fetch credential, carried as a secret so it never reads back.
+# fetch credential, carried as a secret so it never reads back. Records of
+# this kind are ordinary (any number may exist); the bundle's `connector`
+# input picks the one the functions see.
 kind: core.substrate.reamde.dev/kind
 metadata: {id: web.bundles.substrate.reamde.dev/config}
 data:
   authority: web.bundles.substrate.reamde.dev
   description: >-
-    This bundle's one configuration record: the URL substrings that are
+    This bundle's configuration record: the URL substrings that are
     never harvested, the page-fetch credential, and the newest weekly
     digest a rollup produced.
   names: {singular: config, plural: configs}
-  traits: [bundleconfig]
   properties:
     denyDomains:
       type: string
@@ -109,8 +119,10 @@ data:
 ---
 # ---- function: findurls ---------------------------------------------------
 # Walks every string property of the triggering record, extracts URLs, honors
-# denyDomains from the bundle config, and mints one pending page per allowed
-# URL with put-if-absent — so re-feeding the same message re-mints nothing.
+# denyDomains from the injected `connector` input, and mints one pending page
+# per allowed URL with put-if-absent — so re-feeding the same message re-mints
+# nothing. The input arrives injected (config.inputs.connector); an unresolved
+# input's key is simply absent and the deny list falls back empty.
 kind: core.substrate.reamde.dev/function
 metadata: {id: web.bundles.substrate.reamde.dev/findurls}
 data:
@@ -119,7 +131,6 @@ data:
     pages.
   runtime: python
   capabilities:
-    reads: {kinds: [web.bundles.substrate.reamde.dev/config]}
     emit: [web.bundles.substrate.reamde.dev/page]
   source: |
     import re
@@ -130,7 +141,7 @@ data:
         env = input.get("envelope") or {}
         record = env.get("record") or {}
         change = env.get("change") or {}
-        cfg = ((input.get("config") or {}).get("config") or {}).get("properties") or {}
+        cfg = (((input.get("config") or {}).get("inputs") or {}).get("connector") or {}).get("properties") or {}
         deny = cfg.get("denyDomains") or []
         msg_id = record.get("id")
         # The page.source edge is `to: any`, which needs the full reference:

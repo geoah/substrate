@@ -2290,8 +2290,8 @@ func TestShippedVocabularyBundles(t *testing.T) {
 			t.Errorf("%s ships no bundle document — it would not be importable", g.Name)
 			continue
 		}
-		if !g.Bundle.Vocabulary || g.Bundle.ConfigType != "" {
-			t.Errorf("%s: vocabulary=%v configType=%q", g.Name, g.Bundle.Vocabulary, g.Bundle.ConfigType)
+		if !g.Bundle.Vocabulary || len(g.Bundle.Inputs) != 0 {
+			t.Errorf("%s: vocabulary=%v inputs=%d", g.Name, g.Bundle.Vocabulary, len(g.Bundle.Inputs))
 		}
 		if g.Bundle.Identity() != id {
 			t.Errorf("%s bundle id = %q, want %q", g.Name, g.Bundle.Identity(), id)

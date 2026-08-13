@@ -5,8 +5,8 @@
 // delivery wiring (triggers.yaml — ordinary data records).
 //
 // TWO KINDS OF ENTRY, one install path. A BUNDLE owns a categorized
-// authority (`google.bundles.substrate.reamde.dev`), configures through one config type
-// and may ship callables. A VOCABULARY bundle owns a bare authority
+// authority (`google.bundles.substrate.reamde.dev`), configures through its declared
+// inputs and may ship callables. A VOCABULARY bundle owns a bare authority
 // (`people.substrate.reamde.dev`, `media.substrate.reamde.dev`) and ships kinds and nothing else —
 // it is the substrate's own vocabulary, which repository creation no longer
 // seeds: a fresh repository holds core alone and imports the rest from here.
@@ -58,9 +58,10 @@ type Bundle struct {
 	// Version is the bundle authority's authority version (the closure's
 	// version; a per-bundle semver is future — ticket 011).
 	Version string `json:"version"`
-	// ConfigType is the bundleconfig-trait record type the bundle configures
-	// through. A VOCABULARY bundle configures nothing and carries none.
-	ConfigType string `json:"configType,omitempty"`
+	// Inputs are the bundle's declared configuration needs, verbatim from
+	// the manifest: input name → {kind, inject?, description?}. A bundle
+	// with no needs carries none, and the console previews nothing.
+	Inputs map[string]any `json:"inputs,omitempty"`
 	// Requires names the AUTHORITIES this bundle's closure declares against —
 	// the vocabulary its mappings, edges and trigger subscriptions point at.
 	// Vocabulary is IMPORTED now rather than seeded (repository creation seeds
@@ -283,7 +284,7 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 			b.ID = id
 			b.Authority = mstr(data, "authority")
 			b.Description = mstr(data, "description")
-			b.ConfigType = mstr(data, "configType")
+			b.Inputs = mmap(data, "inputs")
 			for _, rv := range mslice(data, "requires") {
 				b.Requires = append(b.Requires, fmt.Sprint(rv))
 			}

@@ -13,7 +13,7 @@
 # own completion patch cannot re-fire it; steady-state re-syncs come from the
 # schedule, which honors each account's syncFrequency. Whether the pasted
 # token EXISTS is the body's check, not the guard's: the token lives on the
-# bundle config singleton, not on this trigger's record.
+# connector input's config record, not on this trigger's record.
 # The first backfill: an account that wants messages and has never synced.
 kind: core.substrate.reamde.dev/trigger
 metadata: {id: beeper-messages-on-connect}

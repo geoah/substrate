@@ -170,11 +170,12 @@ func (ds *dataset) admitCallable(ctx context.Context, authority, identity string
 // --- write-path enforcement -------------------------------------------------------
 
 // checkBundleWrite is the put/patch admission for records of bundle-owned
-// types: a disabled bundle's config and accounts are frozen, and a bundle's
-// configType holds AT MOST ONE live record — the host-enforced singleton
-// behind "needs configuration". (Uninstall no longer freezes writes: it tears
-// the types down, so an uninstalled authority's types stop resolving entirely.)
-// Internal writes (projection, lifecycle verbs, the OAuth facility) bypass.
+// types: a disabled bundle's inputs and accounts are frozen. No cardinality
+// is enforced on any kind — records of an input's kind are ordinary and
+// unbounded, and resolution (inputs.go) picks one. (Uninstall no longer
+// freezes writes: it tears the types down, so an uninstalled authority's
+// types stop resolving entirely.) Internal writes (projection, lifecycle
+// verbs, the OAuth facility) bypass.
 func (t *txn) checkBundleWrite(ty *vocabulary.Kind, id string, create bool) error {
 	if t.internal {
 		return nil
@@ -187,29 +188,22 @@ func (t *txn) checkBundleWrite(ty *vocabulary.Kind, id string, create bool) erro
 	if err != nil {
 		return err
 	}
-	isConfig := ty.Implements(vocabulary.TraitBundleConfigCore)
-	isAccount := ty.Implements(vocabulary.TraitAccountConfigCore)
-	if st.Disabled && (isConfig || isAccount) {
+	if st.Disabled && (bundleInputKind(b, ty.Identity) || ty.Implements(vocabulary.TraitAccountConfigCore)) {
 		return fmt.Errorf("%w: bundle %s is disabled — its configuration and accounts are frozen",
 			substrate.ErrGuard, b.Authority)
 	}
-	if create && isConfig {
-		// The singleton is atomic: the type-scoped advisory lock serializes
-		// two concurrent creates, the count sees whichever landed first.
-		if err := t.lockKey("bundleconfig|" + ty.Identity); err != nil {
-			return err
-		}
-		var n int64
-		if err := t.row(`SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL AND id <> $2`,
-			ty.Identity, id).Scan(&n); err != nil {
-			return err
-		}
-		if n > 0 {
-			return fmt.Errorf("%w: bundle %s already has its configuration record — one live %s per bundle, host-enforced",
-				substrate.ErrGuard, b.Authority, ty.Identity)
+	return nil
+}
+
+// bundleInputKind reports whether a kind is named by any of the bundle's
+// inputs — the kinds whose records configure it.
+func bundleInputKind(b *vocabulary.Bundle, identity string) bool {
+	for _, name := range b.InputOrder {
+		if b.Inputs[name].Kind == identity {
+			return true
 		}
 	}
-	return nil
+	return false
 }
 
 // checkBundleDelete is the delete-side twin: a disabled bundle's config and
@@ -226,7 +220,7 @@ func (t *txn) checkBundleDelete(ty *vocabulary.Kind) error {
 	if err != nil {
 		return err
 	}
-	if st.Disabled && (ty.Implements(vocabulary.TraitBundleConfigCore) || ty.Implements(vocabulary.TraitAccountConfigCore)) {
+	if st.Disabled && (bundleInputKind(b, ty.Identity) || ty.Implements(vocabulary.TraitAccountConfigCore)) {
 		return fmt.Errorf("%w: bundle %s is disabled — its configuration and accounts are frozen",
 			substrate.ErrGuard, b.Authority)
 	}
@@ -631,23 +625,30 @@ func (ds *dataset) PurgeBundle(ctx context.Context, id string) (int, error) {
 	}); err != nil {
 		return 0, err
 	}
-	// Accounts first, everything else after; the config type is deferred to
-	// the very end of the second pass as belt and braces.
+	// Accounts first, everything else after; the OAuth CLIENT input's kind is
+	// deferred to the very end of the second pass as belt and braces — the
+	// accounts' revocation below runs against the still-live client.
+	clientKind := ""
+	if b.OAuth2 != nil {
+		if ci, ok := b.Inputs[b.OAuth2.ClientInput]; ok {
+			clientKind = ci.Kind
+		}
+	}
 	var accountTypes, otherTypes []string
-	seenConfig := false
+	seenClient := false
 	for _, tn := range g.KindOrder {
 		t := g.Kinds[tn]
 		switch {
-		case t.Identity == b.ConfigType:
-			seenConfig = true
+		case t.Identity == clientKind:
+			seenClient = true
 		case t.Implements(vocabulary.TraitAccountConfigCore):
 			accountTypes = append(accountTypes, t.Identity)
 		default:
 			otherTypes = append(otherTypes, t.Identity)
 		}
 	}
-	if seenConfig {
-		otherTypes = append(otherTypes, b.ConfigType)
+	if seenClient {
+		otherTypes = append(otherTypes, clientKind)
 	}
 	purged, err := ds.purgeTypes(ctx, accountTypes)
 	if err != nil {
@@ -726,7 +727,7 @@ func (ds *dataset) liveIDsOf(ctx context.Context, typeIdent string, limit int) (
 // --- status ---------------------------------------------------------------------
 
 // BundleStatuses computes every installed bundle's runtime state: lifecycle,
-// the "needs configuration" signal, and what it ships. Stored nowhere. A
+// input resolution and setup steps, and what it ships. Stored nowhere. A
 // bundle QUARANTINED at repository-open is not in the live registry,
 // so it is listed separately from its stored rows — the console needs to show
 // it needs a re-install.
@@ -753,7 +754,7 @@ func (ds *dataset) BundleStatuses(ctx context.Context) ([]substrate.BundleStatus
 // status comes from the store.
 func (ds *dataset) quarantinedBundleStatuses(ctx context.Context) ([]substrate.BundleStatus, error) {
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT b.id, COALESCE(b.props->>'name', ''), g.id, COALESCE(b.props->>'configType', ''),
+		SELECT b.id, COALESCE(b.props->>'name', ''), g.id,
 		       COALESCE(g.props->>$3, '')
 		FROM records g
 		JOIN records b ON b.kind = $2 AND b.deleted_at IS NULL AND b.props->>'authority' = g.id
@@ -766,12 +767,12 @@ func (ds *dataset) quarantinedBundleStatuses(ctx context.Context) ([]substrate.B
 	defer func() { _ = rows.Close() }()
 	var out []substrate.BundleStatus
 	for rows.Next() {
-		var id, name, authority, configType, reason string
-		if err := rows.Scan(&id, &name, &authority, &configType, &reason); err != nil {
+		var id, name, authority, reason string
+		if err := rows.Scan(&id, &name, &authority, &reason); err != nil {
 			return nil, err
 		}
 		out = append(out, substrate.BundleStatus{
-			ID: id, Name: name, Authority: authority, ConfigType: configType,
+			ID: id, Name: name, Authority: authority,
 			Installed: false, Enabled: false,
 			Quarantined: true, QuarantineReason: reason,
 		})
@@ -790,7 +791,7 @@ func (ds *dataset) BundleStatus(ctx context.Context, id string) (substrate.Bundl
 
 func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle) (substrate.BundleStatus, error) {
 	st := substrate.BundleStatus{
-		ID: b.Identity(), Name: b.Name, Authority: b.Authority, ConfigType: b.ConfigType,
+		ID: b.Identity(), Name: b.Name, Authority: b.Authority,
 		Installed: true, Enabled: true,
 	}
 	state, err := ds.bundleStateOf(ctx, b.Authority)
@@ -816,11 +817,56 @@ func (ds *dataset) bundleStatus(ctx context.Context, b *vocabulary.Bundle) (subs
 			return st, err
 		}
 		st.LiveRecords += n
-		if t.Identity == b.ConfigType {
-			st.Configured = n > 0
-		}
 		if t.Implements(vocabulary.TraitAccountConfigCore) {
 			st.Accounts += int(n)
+		}
+	}
+	// Setup mirrors what dispatch would refuse, and nothing else: each
+	// input's resolution, the resolved OAuth client's completeness, and each
+	// agent's provider row. A non-refusal (zero accounts, say) is never a
+	// setup step — that inflation is how the old always-on "needs
+	// configuration" badge happened.
+	ris, err := ds.resolveBundleInputs(ctx, b)
+	if err != nil {
+		return st, err
+	}
+	for _, ri := range ris {
+		is := substrate.InputStatus{Name: ri.Name, Kind: ri.Input.Kind, Description: ri.Input.Description}
+		if ri.Row != nil {
+			is.Record, is.Via = ri.Row.ID, ri.Via
+		}
+		st.Inputs = append(st.Inputs, is)
+		switch {
+		case ri.Problem != "":
+			st.Setup = append(st.Setup, substrate.SetupItem{
+				Code: ri.Problem, Input: ri.Name, Kind: ri.Input.Kind, Message: ri.Detail,
+			})
+		case b.OAuth2 != nil && ri.Name == b.OAuth2.ClientInput:
+			// The client resolved; mirror oauthClientOf's completeness
+			// refusal without opening the sealed secret.
+			if propString(ri.Row, "clientId") == "" || propString(ri.Row, "clientSecret") == "" {
+				st.Setup = append(st.Setup, substrate.SetupItem{
+					Code: substrate.SetupOAuthClient, Input: ri.Name, Kind: ri.Input.Kind, Record: ri.Row.ID,
+					Message: fmt.Sprintf("%s/%s is missing clientId or clientSecret", ri.Input.Kind, ri.Row.ID),
+				})
+			}
+		}
+	}
+	// The agents' providers live OUTSIDE the bundle (core llmprovider rows),
+	// and are still half of "will this bundle run": dry-run the same
+	// resolution dispatch performs and surface its refusal verbatim.
+	probed := map[string]bool{}
+	for _, an := range g.AgentOrder {
+		ag := g.Agents[an]
+		if ag.Provider == "" || probed[ag.Provider] {
+			continue
+		}
+		probed[ag.Provider] = true
+		if _, err := ds.resolveProvider(ctx, ag.Provider); err != nil {
+			st.Setup = append(st.Setup, substrate.SetupItem{
+				Code: substrate.SetupProvider, Kind: typeProvider, Record: ag.Provider,
+				Message: err.Error(),
+			})
 		}
 	}
 	return st, nil

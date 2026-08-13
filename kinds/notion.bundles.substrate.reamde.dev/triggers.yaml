@@ -11,7 +11,7 @@
 # The on-connect trigger fires ONCE per account — its `when` drops the moment
 # the sync stamps lastSyncedAt. There is no OAuth "connected" moment under the
 # token model, so the guard keys on the owner's toggles alone; an account
-# created BEFORE the bundle config exists syncs nothing (the body logs and
+# created BEFORE the connector input resolves syncs nothing (the body logs and
 # stamps nothing) and the hourly schedule picks it up once the token lands.
 # The first backfill: an account that wants pages or databases and has never
 # synced. Every optional property reads through the `in` idiom — CEL

@@ -246,7 +246,9 @@ func installPagedSecretBundle(t *testing.T, ds *dataset) string {
 			vocabulary.ActorManifest(pagedSecretAuthority, vocabulary.AuthorityActor(pagedSecretAuthority)),
 			vocabulary.BundleManifest(pagedSecretAuthority, map[string]any{
 				"description": "the paged secret bundle",
-				"configType":  pagedSecretAuthority + "/sconfig",
+				"inputs": map[string]any{
+					"connector": map[string]any{"kind": pagedSecretAuthority + "/sconfig", "inject": "functions"},
+				},
 				"installs": []any{
 					pagedSecretAuthority + "/sconfig", pagedSecretAuthority + "/widget",
 					pagedSecretAuthority + "/pnote", pagedSecretAuthority + "/leakpage",
@@ -254,7 +256,7 @@ func installPagedSecretBundle(t *testing.T, ds *dataset) string {
 			}),
 			vocabulary.KindManifest(pagedSecretAuthority,
 				map[string]any{"singular": "sconfig", "plural": "sconfigs"},
-				map[string]any{"traits": []any{"bundleconfig"}, "properties": map[string]any{
+				map[string]any{"properties": map[string]any{
 					"apiToken": map[string]any{"type": "secret"},
 				}}),
 			vocabulary.KindManifest(pagedSecretAuthority, map[string]any{"singular": "widget", "plural": "widgets"},
@@ -267,7 +269,7 @@ func installPagedSecretBundle(t *testing.T, ds *dataset) string {
 				"capabilities": map[string]any{"emit": []any{pagedSecretAuthority + "/pnote"}},
 				"source": `
 def main(input, host):
-    tok = input["config"]["config"]["properties"]["apiToken"]
+    tok = input["config"]["inputs"]["connector"]["properties"]["apiToken"]
     return {"effects": [{"action": "put", "kind": "pagedsecret.bundles.substrate.reamde.dev/pnote",
                          "id": "pn-1", "properties": {"text": "hi"}}],
             "more": {"cursor": tok}}

@@ -14,7 +14,7 @@
  * (backend `vocabulary`): a bare authority shipping kinds and nothing else,
  * which a fresh repository must import before anything can map onto it. */
 
-import type { BundleStatus } from "@/lib/api/bundles"
+import type { BundleStatus, InputStatus, SetupItem } from "@/lib/api/bundles"
 import type { CatalogItem } from "@/lib/api/catalog"
 import type { KindInfo } from "@/lib/api/types"
 import { kindByIdentity, splitKind } from "@/lib/definition"
@@ -214,19 +214,33 @@ export function accountKindOf(
 
 /** One row of the bundle's Kinds table: an kind its closure
  * installed, resolved against the registry for its collection route, plus its
- * role when the host treats it specially (the singleton `config` record, the
- * `account` kind the connect flow writes tokens onto). `authority`/`plural` are
- * absent only when the registry has not (yet) reconciled the kind. */
+ * role when the host treats it specially (a kind some declared input resolves
+ * records of, the `account` kind the connect flow writes tokens onto).
+ * `authority`/`plural` are absent only when the registry has not (yet)
+ * reconciled the kind. */
 export interface KindRow {
   identity: string
   name: string
   authority?: string
   plural?: string
-  role?: "config" | "account"
+  role?: "input" | "account"
   /** The kind's declared description: a chip says what it is on hover. From
    * the registry once the bundle is imported, and from the catalog's own
    * closure before it is — which is when the reader most needs it. */
   description?: string
+}
+
+/** The kind identities a bundle's declared inputs resolve records of, from the
+ * two places a declaration can be read: the computed status (once installed)
+ * and the shipped catalog entry (before). */
+export function inputKindsOf(
+  inputs?: InputStatus[],
+  catalog?: CatalogItem
+): Set<string> {
+  const out = new Set<string>()
+  for (const input of inputs ?? []) out.add(input.kind)
+  for (const input of Object.values(catalog?.inputs ?? {})) out.add(input.kind)
+  return out
 }
 
 /** The kinds an bundle installed, one row each, resolved for the Kinds
@@ -234,7 +248,7 @@ export interface KindRow {
  * bundle is a catalog entry; otherwise from the registry itself — every
  * reconciled kind in the bundle's owned authority. Sorted by display name. */
 export function installedKindRows(
-  bundle: Pick<BundleStatus, "authority" | "configType">,
+  bundle: Pick<BundleStatus, "authority" | "inputs">,
   kinds: KindInfo[],
   catalog?: CatalogItem
 ): KindRow[] {
@@ -246,17 +260,17 @@ export function installedKindRows(
           .filter((k) => k.authority === bundle.authority)
           .map((k) => k.identity)
   const accountKind = accountKindOf(kinds, bundle.authority)
+  const inputKinds = inputKindsOf(bundle.inputs, catalog)
   // A bundle the repository has NOT imported has no registry entry for any of
   // its kinds, so the closure's own descriptions are the only ones there are.
   const described = catalog?.resources.kindDescriptions ?? {}
   const rows = identities.map((identity): KindRow => {
     const k = kindByIdentity(kinds, identity)
-    const role: KindRow["role"] =
-      identity === bundle.configType
-        ? "config"
-        : accountKind && identity === accountKind.identity
-          ? "account"
-          : undefined
+    const role: KindRow["role"] = inputKinds.has(identity)
+      ? "input"
+      : accountKind && identity === accountKind.identity
+        ? "account"
+        : undefined
     return {
       identity,
       name: k?.name ?? splitKind(identity).name,
@@ -298,17 +312,52 @@ export function bundleResourceRows(catalog?: CatalogItem): ResourceRow[] {
 
 /** Whether the bundle actually declares the provider interfaces that earn
  * the OAuth/callback/connect copy on its detail page. True when it ships an
- * `accountconfig` account kind in its owned authority, or its bundleconfig kind
- * carries the `oauth2` trait. Derived from the bundle's own declared traits —
- * never from names or authority suffixes. */
+ * `accountconfig` account kind in its owned authority, or one of its declared
+ * inputs resolves records of an `oauth2`-trait kind (the OAuth client input).
+ * Derived from the bundle's own declared traits, never from names or authority
+ * suffixes. */
 export function declaresProviderInterfaces(
-  bundle: Pick<BundleStatus, "authority" | "configType">,
+  bundle: Pick<BundleStatus, "authority" | "inputs">,
   kinds: KindInfo[]
 ): boolean {
   if (accountKindOf(kinds, bundle.authority)) return true
-  const configKind = bundle.configType
-    ? kindByIdentity(kinds, bundle.configType)
-    : undefined
-  if (configKind && hasTrait(configKind, "oauth2")) return true
-  return false
+  return Boolean(oauthClientInput(bundle, kinds))
+}
+
+/** The OAuth client input: the declared input whose kind implements the core
+ * `oauth2` trait (clientId + clientSecret). The status does not name it, so it
+ * is read the way the loader validated it, off the input kinds' traits. */
+export function oauthClientInput(
+  bundle: Pick<BundleStatus, "inputs">,
+  kinds: KindInfo[]
+): InputStatus | undefined {
+  return bundle.inputs?.find((input) => {
+    const k = kindByIdentity(kinds, input.kind)
+    return Boolean(k && hasTrait(k, "oauth2"))
+  })
+}
+
+/** The setup codes that are an input's own resolution problems; the rest
+ * (oauth-client, provider) stand on their own as warning rows. */
+export const INPUT_SETUP_CODES = ["missing", "ambiguous", "dangling"] as const
+
+export function isInputSetupCode(code: SetupItem["code"]): boolean {
+  return (INPUT_SETUP_CODES as readonly string[]).includes(code)
+}
+
+/** Whether the connect flow should be gated on setup: the server refuses
+ * `oauth/start` while the client input is unresolved or its record is missing
+ * clientId/clientSecret, so the console refuses first. Only the CLIENT input's
+ * problems block connecting; an unrelated input's step does not. */
+export function oauthConnectBlocked(
+  bundle: Pick<BundleStatus, "inputs" | "setup">,
+  kinds: KindInfo[]
+): boolean {
+  const setup = bundle.setup ?? []
+  if (setup.some((item) => item.code === "oauth-client")) return true
+  const client = oauthClientInput(bundle, kinds)
+  if (!client) return false
+  return setup.some(
+    (item) => item.input === client.name && isInputSetupCode(item.code)
+  )
 }

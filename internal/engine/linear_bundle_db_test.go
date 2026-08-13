@@ -5,8 +5,10 @@ package engine
 // ./../kinds/linear.bundles.substrate.reamde.dev:
 //
 //  1. TestLinearBundleAdmitsSchema — the closure ADMITS through the schema
-//     loader: the config types wear the right host-recognized traits
-//     (bundleconfig+oauth2 on the config, accountconfig on the account), the
+//     loader: the bundle declares the `client` input (facility-read, never
+//     injected) the oauth2 block names, the config kinds wear the right
+//     host-recognized traits
+//     (oauth2 on the config, accountconfig on the account), the
 //     bundle's trusted oauth2 manifest metadata compiles (Linear endpoints +
 //     the enabledIssues→read scope map), the mirror types carry their subject
 //     edges, both →person mappings type-check, the install-closure balances.
@@ -107,18 +109,29 @@ func TestLinearBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("the bundle closure did not admit: %v", err)
 	}
 
-	// The bundle exists, names its config type, and carries the TRUSTED
+	// The bundle exists, declares the `client` input the oauth2 block names
+	// (facility-read, never injected), and carries the TRUSTED
 	// oauth2 provider metadata: Linear's endpoints and the
 	// enabledIssues→read scope map live on the immutable install artifact.
 	b, ok := reg.BundleOf(linearAuthority)
 	if !ok {
 		t.Fatalf("no bundle owns %s after install", linearAuthority)
 	}
-	if b.ConfigType != linearConfigType {
-		t.Fatalf("bundle configType = %q, want %q", b.ConfigType, linearConfigType)
+	in, ok := b.Inputs["client"]
+	if !ok {
+		t.Fatalf("bundle declares no client input: %v", b.InputOrder)
+	}
+	if in.Kind != linearConfigType {
+		t.Fatalf("client input kind = %q, want %q", in.Kind, linearConfigType)
+	}
+	if in.Inject != "" {
+		t.Fatalf("client input inject = %q, but the OAuth client is facility-read, never injected", in.Inject)
 	}
 	if b.OAuth2 == nil {
 		t.Fatal("the bundle compiled no oauth2 manifest metadata")
+	}
+	if b.OAuth2.ClientInput != "client" {
+		t.Fatalf("oauth2 clientInput = %q, want %q", b.OAuth2.ClientInput, "client")
 	}
 	if b.OAuth2.AuthorizationEndpoint != "https://linear.app/oauth/authorize" ||
 		b.OAuth2.TokenEndpoint != "https://api.linear.app/oauth/token" {
@@ -128,13 +141,10 @@ func TestLinearBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("enabledIssues scope map = %v, want [read]", scopes)
 	}
 
-	// The config type: bundleconfig (host singleton) + oauth2 (client fields).
+	// The config type: oauth2 (client fields), the client input's kind.
 	cfg, ok := reg.ByIdentity(linearConfigType)
 	if !ok {
 		t.Fatalf("config type %s missing", linearConfigType)
-	}
-	if !cfg.Implements(vocabulary.TraitBundleConfigCore) {
-		t.Fatalf("config type does not implement %s", vocabulary.TraitBundleConfigCore)
 	}
 	if !cfg.Implements(vocabulary.TraitOAuth2Core) {
 		t.Fatalf("config type does not implement %s", vocabulary.TraitOAuth2Core)
@@ -249,11 +259,14 @@ func TestLinearBundleInstalls(t *testing.T) {
 	if !st.Installed || !st.Enabled {
 		t.Fatalf("bundle not live: installed=%v enabled=%v", st.Installed, st.Enabled)
 	}
-	if st.Configured {
-		t.Fatalf("bundle reports configured with no config record created")
+	if len(st.Inputs) != 1 || st.Inputs[0].Name != "client" || st.Inputs[0].Kind != linearConfigType {
+		t.Fatalf("status inputs = %+v, want the one client input", st.Inputs)
 	}
-	if st.ConfigType != linearConfigType {
-		t.Fatalf("status configType = %q, want %q", st.ConfigType, linearConfigType)
+	if st.Inputs[0].Record != "" || st.Inputs[0].Via != "" {
+		t.Fatalf("client input resolved with no config record created: %+v", st.Inputs[0])
+	}
+	if len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupMissing || st.Setup[0].Input != "client" {
+		t.Fatalf("status setup = %+v, want the one missing-input item", st.Setup)
 	}
 	if st.Functions != 2 {
 		t.Fatalf("status functions = %d, want 2", st.Functions)
@@ -570,7 +583,8 @@ func TestLinearBundleFakeSyncJointOwnership(t *testing.T) {
 		putDataDoc(t, ds, m)
 	}
 
-	// Configure and connect: config singleton, pending account, host OAuth
+	// Configure and connect: the client's config record (the sole record
+	// resolves the input), pending account, host OAuth
 	// round trip against the fake provider. The callback patch (tokenStatus:
 	// connected) is the change the on-connect trigger fires on.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
