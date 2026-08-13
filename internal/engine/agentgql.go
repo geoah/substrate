@@ -1,0 +1,221 @@
+package engine
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/graphql/language/ast"
+	"github.com/graphql-go/graphql/language/parser"
+	"github.com/graphql-go/graphql/language/source"
+
+	"github.com/geoah/substrate/internal/gql"
+	"github.com/geoah/substrate/internal/substrate"
+)
+
+// The graphql and mutate built-ins: the SAME schema and resolvers the API's
+// /graphql endpoint executes (internal/gql), run in-process against the
+// loop's own dataset. The v4 split holds: the chat-grade `graphql` tool is
+// read-only at the AST (a mutation in its document is a tool error the model
+// sees, pointing at propose), and `mutate` is the separately granted write
+// surface, every written kind held to the loop's EFFECTIVE emit by a dataset
+// wrapper the resolvers cannot see around.
+
+// agentGQLMaxBytes caps one tool result. The number is v4's: past 64KB a
+// result stops informing the model and starts evicting its context, so the
+// tool refuses with the narrowing hint instead.
+const agentGQLMaxBytes = 64 << 10
+
+// graphqlToolParams is the shared card shape of the graphql and mutate
+// built-ins: v4's two-field contract, a document plus its variables.
+func graphqlToolParams() map[string]any {
+	return map[string]any{"type": "object", "properties": map[string]any{
+		"query":     map[string]any{"type": "string", "description": "the GraphQL document to execute"},
+		"variables": map[string]any{"type": "object", "description": "values for the variables the document declares"},
+	}, "required": []any{"query"}}
+}
+
+// dispatchGraphQL runs the read-only built-in.
+func (l *agentLoop) dispatchGraphQL(ctx context.Context, args map[string]any) (string, bool) {
+	return l.execGraphQL(ctx, args, false)
+}
+
+// dispatchMutate runs the write built-in: the same executor, mutations
+// admitted, writes emit-gated.
+func (l *agentLoop) dispatchMutate(ctx context.Context, args map[string]any) (string, bool) {
+	return l.execGraphQL(ctx, args, true)
+}
+
+func (l *agentLoop) execGraphQL(ctx context.Context, args map[string]any, mutate bool) (string, bool) {
+	query, _ := args["query"].(string)
+	if strings.TrimSpace(query) == "" {
+		return toolError("query is required"), false
+	}
+	variables, _ := args["variables"].(map[string]any)
+	if err := checkGraphQLOperations(query, mutate); err != nil {
+		return toolError(err.Error()), false
+	}
+	types, err := l.ds.Kinds(ctx)
+	if err != nil {
+		return toolError(err.Error()), false
+	}
+	schema, err := l.ds.svc.gqlSchemas.SchemaFor(l.ds.Repository().Name, types)
+	if err != nil {
+		return toolError(err.Error()), false
+	}
+	// The resolvers read gql's own context: this loop's dataset, under the
+	// agent's actor. The mutate wrapper is what holds every write to the
+	// effective emit set; the read-only tool passes the dataset bare, since
+	// its document was refused above if it named a mutation at all.
+	var target substrate.Dataset = l.ds
+	if mutate {
+		target = &agentMutateDataset{Dataset: l.ds, loop: l}
+	}
+	res := graphql.Do(graphql.Params{
+		Schema:         *schema,
+		RequestString:  query,
+		VariableValues: variables,
+		Context:        gql.WithRequest(ctx, target, l.actor),
+	})
+	out, err := json.Marshal(res)
+	if err != nil {
+		return toolError("marshal result: " + err.Error()), false
+	}
+	if len(out) > agentGQLMaxBytes {
+		return toolError(fmt.Sprintf(
+			"response is %d bytes (cap %d): narrow the query with fewer fields, a smaller first, or one record instead of a list",
+			len(out), agentGQLMaxBytes)), false
+	}
+	// Resolver errors are a RESULT the model steers around, but they are
+	// still a failed call: ok is stored on the message row and drives the
+	// transcript's red chip, exactly like a refused function tool.
+	return string(out), !res.HasErrors()
+}
+
+// checkGraphQLOperations parses the document and holds it to the tool's
+// grant BEFORE execution: fragments pass, anonymous operations count as
+// queries, and the refusals tell the model where the verb it wanted lives.
+func checkGraphQLOperations(query string, allowMutation bool) error {
+	doc, err := parser.Parse(parser.ParseParams{
+		Source: source.NewSource(&source.Source{Body: []byte(query)}),
+	})
+	if err != nil {
+		return fmt.Errorf("parse: %w", err)
+	}
+	for _, def := range doc.Definitions {
+		op, ok := def.(*ast.OperationDefinition)
+		if !ok {
+			continue
+		}
+		switch op.Operation {
+		case "", "query":
+		case "mutation":
+			if !allowMutation {
+				return errors.New("mutations are not allowed via graphql: propose the change instead, or use the mutate tool where the agent declares it")
+			}
+		case "subscription":
+			return errors.New("subscriptions are not supported: poll with a query, or read changelog(from, first)")
+		default:
+			return fmt.Errorf("operation %q is not supported", op.Operation)
+		}
+	}
+	return nil
+}
+
+// agentMutateDataset is the mutate built-in's write gate: the resolvers see
+// an ordinary substrate.Dataset, and every mutation lands here first, where
+// the written kind is held to the loop's EFFECTIVE emit (the agent's own,
+// narrowed by any sub-agent ceiling) before the embedded dataset applies it
+// through the full public write path (schema-record admission, kind guards,
+// conflict annotations, all of it). Merge and split refuse outright: fusing or
+// splitting identities is the owner's decision, with its own reviewed flow
+// (recordmergerequest), and no emit grant makes it an agent's.
+type agentMutateDataset struct {
+	substrate.Dataset
+	loop *agentLoop
+}
+
+// allow resolves the written kind and holds it to the effective emit set.
+func (m *agentMutateDataset) allow(kindRef, verb string) error {
+	ty, err := m.loop.ds.resolveType(kindRef)
+	if err != nil {
+		return err
+	}
+	if !m.loop.emitAllows(ty.Identity) {
+		return fmt.Errorf("%w: %s %s: %s is not in agent %s's effective emit allowlist, nothing applied",
+			substrate.ErrForbidden, verb, kindRef, ty.Identity, m.loop.ag.Identity())
+	}
+	return nil
+}
+
+func (m *agentMutateDataset) tally(action string) {
+	m.loop.in.tally.effects[action]++
+}
+
+func (m *agentMutateDataset) Put(ctx context.Context, actor substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
+	if err := m.allow(in.Kind, "put"); err != nil {
+		return nil, err
+	}
+	e, err := m.Dataset.Put(ctx, actor, in)
+	if err == nil {
+		m.tally("put")
+	}
+	return e, err
+}
+
+func (m *agentMutateDataset) Patch(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput) (*substrate.Record, error) {
+	if err := m.allow(typ, "patch"); err != nil {
+		return nil, err
+	}
+	e, err := m.Dataset.Patch(ctx, actor, typ, id, in)
+	if err == nil {
+		m.tally("patch")
+	}
+	return e, err
+}
+
+func (m *agentMutateDataset) Delete(ctx context.Context, actor substrate.Actor, typ, id string) (*substrate.Record, error) {
+	if err := m.allow(typ, "delete"); err != nil {
+		return nil, err
+	}
+	e, err := m.Dataset.Delete(ctx, actor, typ, id)
+	if err == nil {
+		m.tally("delete")
+	}
+	return e, err
+}
+
+// Link and Unlink gate on the SOURCE kind: an edge is part of its source
+// record, so writing one is writing that record.
+func (m *agentMutateDataset) Link(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef, props map[string]any) error {
+	if err := m.allow(srcType, "link"); err != nil {
+		return err
+	}
+	if err := m.Dataset.Link(ctx, actor, srcType, src, rel, to, props); err != nil {
+		return err
+	}
+	m.tally("link")
+	return nil
+}
+
+func (m *agentMutateDataset) Unlink(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef) error {
+	if err := m.allow(srcType, "unlink"); err != nil {
+		return err
+	}
+	if err := m.Dataset.Unlink(ctx, actor, srcType, src, rel, to); err != nil {
+		return err
+	}
+	m.tally("unlink")
+	return nil
+}
+
+func (m *agentMutateDataset) Merge(context.Context, substrate.Actor, string, string, string) (*substrate.Record, error) {
+	return nil, fmt.Errorf("%w: merge is the owner's decision: its reviewed flow is a recordmergerequest, not an agent mutation", substrate.ErrForbidden)
+}
+
+func (m *agentMutateDataset) Split(context.Context, substrate.Actor, string) (*substrate.Record, error) {
+	return nil, fmt.Errorf("%w: split is the owner's decision: it reverses a reviewed merge, not an agent mutation", substrate.ErrForbidden)
+}

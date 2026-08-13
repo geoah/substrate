@@ -31,18 +31,21 @@ ids, shipped beside the closure in `triggers.yaml`.
 | WHOOP         | Integration | OAuth          | 5     | 1         | 2        | 0      |
 | Notion        | Integration | Internal token | 4     | 1         | 2        | 0      |
 | Beeper        | Integration | Pasted token   | 4     | 1         | 2        | 0      |
-| LLM           | Example     | Key, per row   | 0     | 1         | 2        | 0      |
+| LLM           | Example     | Key, per row   | 0     | 0         | 0        | 3      |
 | Firecrawl     | Capability  | API key        | 2     | 2         | 0        | 0      |
 | Web harvester | Capability  | none           | 2     | 4         | 4        | 3      |
 
 ## LLM (example)
 
-Authority `llm.bundles.substrate.reamde.dev`. The bundle a fresh substrate
+Authority `llm.examples.substrate.reamde.dev`. The bundle a fresh substrate
 installs FIRST if it wants to run an agent at all: nothing seeds an
 `llmprovider` row, so this ships the two an agent can name — `anthropic` and
-`openai`, correctly shaped for their wires and deliberately KEYLESS — plus a
-`wordcount` function, a `summarizer` sub-agent and the `echo` agent that calls
-both, so a working install can be proved in one chat.
+`openai`, correctly shaped for their wires and deliberately KEYLESS — plus
+three agents. `substrate` is the one to chat with: it reads the whole graph
+through the `graphql` built-in and writes nothing directly, proposing every
+change as a `recordpatchrequest` the owner decides on. `substrate-echo` and
+`substrate-summarizer` are the delegation demo, and the summarizer is
+`subagentOnly`: off the chat list, callable only by other agents.
 
 Installing it gives you rows that refuse until you key them. The key is a
 record write: **Data → llmproviders → `anthropic` → Edit**, put it in `apiKey`,

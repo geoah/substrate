@@ -1,4 +1,4 @@
-package api
+package gql
 
 import (
 	"context"
@@ -194,8 +194,8 @@ type schemaBuilder struct {
 	generic   *graphql.Object
 }
 
-// buildSchema generates the repository's schema from its type registry.
-func buildSchema(types []substrate.KindInfo) (graphql.Schema, error) {
+// BuildSchema generates the repository's schema from its type registry.
+func BuildSchema(types []substrate.KindInfo) (graphql.Schema, error) {
 	sorted := make([]substrate.KindInfo, len(types))
 	copy(sorted, types)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Identity < sorted[j].Identity })

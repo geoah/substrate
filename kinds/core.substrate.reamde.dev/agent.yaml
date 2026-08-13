@@ -12,7 +12,8 @@
 # carries the full envelope the first-class columns summarize — the built-in
 # tools (query/propose), tool aliases, budgets, emit and reads — and a create
 # must set it. The first-class columns are the projection's faithful mirror,
-# not a second source of truth.
+# not a second source of truth. The built-in tool set is query/propose/
+# graphql/mutate; like the aliases and budgets, a grant lives in `definition`.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: core.substrate.reamde.dev/agent
@@ -31,7 +32,10 @@ data:
   # carries it into repositories that already stored the v1alpha2 one.
   # v1alpha4: the `llm` reference split into `provider` + `model` — an agent
   # names WHERE it buys completions and WHAT model it wants, separately.
-  version: v1alpha4
+  # v1alpha5: the declaration gained `subagentOnly`, the chat-surface
+  # withholding (an llm-as-judge exists to be called by other agents); the
+  # bump carries the column into repositories that stored the v1alpha4 shape.
+  version: v1alpha5
   names:
     singular: agent
     plural: agents
@@ -79,6 +83,13 @@ data:
       type: string
       repeated: true
       description: the sub-agent records this agent may delegate to
+    # Withholds the agent from the interactive chat surface only: the console
+    # keeps it off the chat list and the chat API refuses it, while sub-agent
+    # calls, the call API and triggers still dispatch it. Any agent, marked or
+    # not, remains selectable as another agent's sub-agent.
+    subagentOnly:
+      type: bool
+      description: only callable by other agents; withheld from the chat surface
     # The authoritative manifest data — prompt/provider/model/params/tools/
     # agents/budgets/emit/reads, exactly as authored. The loader rebuilds the agent from this; the
     # first-class columns above are its projected summary.

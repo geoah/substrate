@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -871,7 +872,12 @@ func containsString(hay []string, needle string) bool {
 }
 
 func sortedRecordIDs(m map[string]*substrate.Record) []string {
-	return sortedKeys(m)
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 var errBoom = errors.New("boom")

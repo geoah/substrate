@@ -1,0 +1,131 @@
+# The LLM example: the provider rows a substrate needs before any agent can
+# run, and the agents that prove them.
+#
+# NOTHING SEEDS A PROVIDER. A repository holds no `llmprovider` row until its
+# owner writes one, because a row is where the wire, the endpoint and the KEY
+# live — and a substrate cannot invent a key. A row shipped without one would
+# only postpone the failure to the first dispatch while looking configured.
+#
+# So this bundle is the shortcut, and it asks one thing of you afterwards:
+#
+#   1. Install it (Registry → Examples, or `substratectl apply -f`).
+#   2. Data → llmproviders → `anthropic` → Edit, and put your key in `apiKey`.
+#      It is secret-typed: it reads back redacted ever after, and writing it
+#      again is how a rotation is done.
+#   3. Agents → `llm.examples.substrate.reamde.dev/substrate` → chat.
+#
+# The `openai` row is the same shape for the other wire. An openai-wire row
+# with an EMPTY baseURL means "the host's configured gateway", which is a real
+# deployment mode and the reason it ships keyless too.
+#
+# This bundle declares NO inputs: nothing here reads a configuration record.
+# The agents name their provider row directly, and the one setup signal (a
+# provider row that is still keyless) is the host's own status probe, surfaced
+# on the bundle status as a "provider" setup item with no declaration needed.
+#
+# Three agents, three lessons. `substrate` is the flagship: the mneme-v4 chat
+# shape, reading the whole graph through the `graphql` built-in and writing
+# NOTHING directly (every change is a proposed recordpatchrequest the owner
+# decides on). `substrate-echo` demonstrates delegation, and
+# `substrate-summarizer` is the sub-agent it delegates to, marked
+# `subagentOnly` so the chat list never offers it: it exists to be called.
+# For functions as tools, install the notes example beside this one.
+kind: core.substrate.reamde.dev/authority
+metadata: {id: llm.examples.substrate.reamde.dev}
+data:
+  version: v1alpha1
+---
+kind: core.substrate.reamde.dev/bundle
+metadata: {id: llm.examples.substrate.reamde.dev/llm}
+data:
+  authority: llm.examples.substrate.reamde.dev
+  description: >-
+    The two provider rows an agent needs, keyless and ready to key, plus the
+    substrate assistant (GraphQL reads, proposed writes) and a delegation
+    pair. Install it, set one key, chat.
+  installs:
+    - llm.examples.substrate.reamde.dev/substrate
+    - llm.examples.substrate.reamde.dev/substrate-summarizer
+    - llm.examples.substrate.reamde.dev/substrate-echo
+---
+# ---- the flagship: chat with the substrate itself ---------------------------
+# The v4 chat contract, ported: `graphql` is the only read surface (the whole
+# repository, introspectable), and `propose` is the only write, so nothing this
+# agent is talked into can land without the owner accepting it. Its emit names
+# exactly one kind, the request type propose emits.
+kind: core.substrate.reamde.dev/agent
+metadata: {id: llm.examples.substrate.reamde.dev/substrate}
+data:
+  authority: llm.examples.substrate.reamde.dev
+  description: >-
+    Chat with your substrate: answers from the records, and proposes changes
+    the owner reviews before anything lands.
+  prompt: |
+    You are the substrate assistant. You answer from the owner's records and
+    you propose changes; you never write the graph directly.
+
+    Reading. The graphql tool runs a read-only query against the repository's
+    own schema, which is introspectable (__schema, __type): every kind is a
+    GraphQL type carrying its declared properties. The roots:
+
+      record(kind: "...", id: "...")          one record
+      records(filter: ..., first: N)          a page; descend through nodes { ... }
+      search(q: "...", kinds: [...], k: N)    hybrid search, tolerates near-matches
+      changelog(from: N, first: N)            the change history
+
+    Every list field returns a connection, never a bare list, so descend
+    through nodes { ... }. Do not guess field names: one introspection call
+    beats five blind retries, and every failed query burns a tool call from a
+    small budget. Batch related lookups into one query. Per-kind list fields
+    match exactly; when a name might be spelled another way, use search.
+
+    Writing. Every change is one propose call, which lands a
+    recordpatchrequest the owner decides on: op create mints a record, op
+    patch changes one, op delete tombstones one, and the diff wraps property
+    values under "properties". Ids must come from graphql results, never
+    invented. Before proposing a create, search for the record first. A
+    proposal is not applied when the call returns: say what you proposed and
+    stop. Do not re-propose it, and do not query to verify it.
+
+    Reply. Your final message is the prose the owner reads. Keep it short,
+    name records by kind and id, and put changes in propose calls, never in
+    the reply text. Chat-only turns with no proposal are normal.
+  provider: anthropic
+  model: claude-sonnet-5
+  tools: [graphql, propose]
+  emit: [core.substrate.reamde.dev/recordpatchrequest]
+  budgets: {maxTurns: 16, maxToolCalls: 12, deadlineSeconds: 300}
+---
+# ---- a SUB-AGENT: its own loop, its own budget, its own thread. It declares
+# no emit at all, so nothing it is asked to do can write a record; and it is
+# subagentOnly, so the chat list never offers it while the loop still
+# dispatches it when substrate-echo calls.
+kind: core.substrate.reamde.dev/agent
+metadata: {id: llm.examples.substrate.reamde.dev/substrate-summarizer}
+data:
+  authority: llm.examples.substrate.reamde.dev
+  description: Summarize a piece of text in one sentence.
+  prompt: |
+    Summarize what you are given in ONE short sentence. No preamble, no
+    bullet points, no closing remark — the sentence alone.
+  provider: anthropic
+  model: claude-haiku-4-5
+  subagentOnly: true
+  budgets: {maxTurns: 2, maxToolCalls: 1}
+---
+# ---- the delegation demo: calls the sub-agent, which is a tool call like
+# any other and shows up as one in the console's transcript.
+kind: core.substrate.reamde.dev/agent
+metadata: {id: llm.examples.substrate.reamde.dev/substrate-echo}
+data:
+  authority: llm.examples.substrate.reamde.dev
+  description: Answers you, and summarizes what you said through a sub-agent.
+  prompt: |
+    You are a demonstration agent. Whatever you are given, hand it to the
+    summarizer sub-agent, then answer in one short line: the summary it
+    returned, and one sentence of your own. Always call the sub-agent rather
+    than summarizing yourself — the point is to show the call.
+  provider: anthropic
+  model: claude-haiku-4-5
+  agents: [llm.examples.substrate.reamde.dev/substrate-summarizer]
+  budgets: {maxTurns: 4, maxToolCalls: 2, depth: 2}
