@@ -1,10 +1,17 @@
 /** The agent chat transport: one ndjson AgentEvent per line (thread, delta,
- * tool lifecycle, done), and the transcript read-back that pulls the newest
- * assistant reply off a settled thread's messages. */
+ * tool lifecycle, done), the transcript read-back that pulls the newest
+ * assistant reply off a settled thread's messages, and how a provider row
+ * reads on the agents page. */
 
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { lastAssistantReply, parseAgentEvent, streamChat } from "./agents"
+import {
+  lastAssistantReply,
+  parseAgentEvent,
+  providerEndpoint,
+  providerHasKey,
+  streamChat,
+} from "./agents"
 import type { AgentEvent } from "./agents"
 import type { SubstrateRecord } from "./types"
 
@@ -141,5 +148,46 @@ describe("lastAssistantReply", () => {
   })
   it("returns undefined when no assistant turn has prose", () => {
     expect(lastAssistantReply([msg("user", "hello")])).toBeUndefined()
+  })
+})
+
+describe("provider rows", () => {
+  const provider = (properties: Record<string, unknown>): SubstrateRecord => ({
+    id: "default",
+    kind: "core.substrate.reamde.dev/llmprovider",
+    properties,
+    labels: {},
+    version: 1,
+    createdAt: "2026-08-08T00:00:00Z",
+    updatedAt: "2026-08-08T00:00:00Z",
+  })
+
+  it("reads an empty openai baseURL as the host's gateway", () => {
+    expect(providerEndpoint(provider({ name: "default", wire: "openai" }))).toBe(
+      "host gateway"
+    )
+  })
+  it("reads an empty non-openai baseURL as that wire's own endpoint", () => {
+    expect(providerEndpoint(provider({ wire: "anthropic", baseURL: "" }))).toBe(
+      "default endpoint"
+    )
+  })
+  it("reads an empty azure baseURL as missing, never as a default", () => {
+    // An azure deployment has no host default — the loop refuses such a row.
+    expect(providerEndpoint(provider({ wire: "azure", baseURL: "" }))).toBe(
+      "missing baseURL"
+    )
+    expect(providerEndpoint(provider({ wire: "azure" }))).toBe("missing baseURL")
+  })
+  it("shows a declared baseURL verbatim", () => {
+    const row = provider({ wire: "openai", baseURL: "https://example.com/v1" })
+    expect(providerEndpoint(row)).toBe("https://example.com/v1")
+  })
+
+  it("reads a redacted apiKey as set, and an absent or empty one as not", () => {
+    // The read surface redacts a secret, so only its presence is legible.
+    expect(providerHasKey(provider({ apiKey: "<redacted>" }))).toBe(true)
+    expect(providerHasKey(provider({ apiKey: "" }))).toBe(false)
+    expect(providerHasKey(provider({}))).toBe(false)
   })
 })

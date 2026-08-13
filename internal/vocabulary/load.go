@@ -486,7 +486,7 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 	sort.Strings(g.FunctionOrder)
 
 	// Agents (agent.go): tool callables, sub-agents and emit resolve against
-	// the registry in Finalize/Install; the llm data row resolves at dispatch.
+	// the registry in Finalize/Install; the llmprovider data row resolves at dispatch.
 	l.buildAuthorityAgents(gd, g)
 
 	// The bundle document (bundle.go): the owned-authority rule and the install
@@ -538,6 +538,7 @@ var deletedDataKeys = map[string]string{
 	"identifying":        "identity is the id and nothing else",
 	"id":                 "a writer supplies metadata.id; there are no id strategies",
 	"merge":              "merge is manual and owner-driven",
+	"llm":                "provider + model — an llmprovider record id and the model string sent on every completion",
 	"binding":            "an ordinary edge plus a recordmapping document (record 50)",
 	"projects":           "an ordinary edge plus a recordmapping document (record 50)",
 	"actor":              "transitions carry no guard — anyone may perform any of them",

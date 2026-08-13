@@ -854,7 +854,8 @@ func TestW3BundledAgentUpgradeGuard(t *testing.T) {
 			"note": map[string]any{"type": "string"},
 		}})
 	agentDoc := vocabulary.AgentManifest(wagAuthority, "helper", map[string]any{
-		"description": "a bundled agent", "prompt": "You help.", "llm": "cheap",
+		"description": "a bundled agent", "prompt": "You help.",
+		"provider": "default", "model": "claude-opus-5",
 	})
 	withAgent := []map[string]any{
 		vocabulary.AuthorityManifest(wagAuthority, ""),

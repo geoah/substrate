@@ -34,11 +34,11 @@ const (
 	webPageType   = webAuthority + "/page"
 	convMsgType   = "messaging.substrate.reamde.dev/conversationmessage"
 
-	// The seeded tier rows the shipped agents reference (cheap/mid/strong):
-	// distinct models, so one fake server drives the whole chain by model.
-	modelStrong = "anthropic/claude-opus-4.7"     // pageclassifier → strong
-	modelMid    = "anthropic/claude-sonnet-5-low" // readinglistagent → mid
-	modelCheap  = "anthropic/claude-haiku-4.5"    // weeklyrollup → cheap
+	// The models the shipped agents name on the seeded `default` provider:
+	// distinct, so one fake server drives the whole chain by model.
+	modelStrong = "anthropic/claude-opus-5"    // pageclassifier
+	modelMid    = "anthropic/claude-sonnet-5"  // readinglistagent
+	modelCheap  = "anthropic/claude-haiku-4-5" // weeklyrollup
 
 	exampleDir = "../../kinds/web.bundles.substrate.reamde.dev"
 
@@ -200,8 +200,9 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		t.Fatalf("install account type: %v", err)
 	}
 
-	// Point the seeded cheap/mid/strong rows at the fake gateway. The shipped
-	// agents reference those tiers verbatim — no custom llm row is installed.
+	// Point the HOST gateway at the fake server: the shipped agents name the
+	// seeded `default` provider, which carries no baseURL of its own — no
+	// custom llmprovider row is installed.
 	fake := newFakeLLM(t)
 	ds.svc.llmBaseURL = fake.srv.URL
 	ds.svc.llmAPIKey = "host-gateway-key"
@@ -229,7 +230,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		},
 	})
 
-	// The two agents that fire during the reactive chain. weeklyrollup (cheap)
+	// The two agents that fire during the reactive chain. weeklyrollup
 	// is scripted later, just before the schedule tick.
 	blogPage := webPageID(blogURL)
 	fake.script(modelStrong, // pageclassifier

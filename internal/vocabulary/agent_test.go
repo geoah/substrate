@@ -44,7 +44,8 @@ data:
   authority: ag.example.com
   description: files widgets where they belong
   prompt: You sort widgets.
-  llm: cheap
+  provider: default
+  model: claude-opus-5
 ---
 kind: core.substrate.reamde.dev/agent
 metadata:
@@ -63,7 +64,8 @@ func loadAgAuthority(t *testing.T, agData string) (*vocabulary.Registry, error) 
 func TestAgentLoads(t *testing.T) {
 	r, err := loadAgAuthority(t, agAuthority(`  description: classifies widgets
   prompt: You classify widgets.
-  llm: cheap
+  provider: default
+  model: claude-opus-5
   tools:
     - propose
     - {callable: ag.example.com/annotate, name: markWidget, description: marks one widget}
@@ -86,7 +88,8 @@ func TestAgentLoads(t *testing.T) {
 func TestAgentLoadsWithoutCoreEmit(t *testing.T) {
 	r, err := loadAgAuthority(t, agAuthority(`  description: classifies widgets
   prompt: You classify widgets.
-  llm: cheap
+  provider: default
+  model: claude-opus-5
   tools:
     - {callable: ag.example.com/annotate, name: markWidget}
   agents: [ag.example.com/sorter]
@@ -123,46 +126,76 @@ func TestAgentRefusals(t *testing.T) {
 		want string
 	}{
 		{"no prompt", `  description: d
-  llm: cheap
+  provider: default
+  model: claude-opus-5
 `, "data.prompt is required"},
-		{"no llm", `  description: d
+		{"no provider", `  description: d
   prompt: p
-`, "data.llm is required"},
+`, "data.provider is required"},
+		{"no model", `  description: d
+  prompt: p
+  provider: default
+`, "data.model is required"},
+		{"unknown param", `  description: d
+  prompt: p
+  provider: default
+  model: claude-opus-5
+  params: {topP: 0.5}
+`, "data.params.topP is not a request param"},
+		{"non-numeric temperature", `  description: d
+  prompt: p
+  provider: default
+  model: claude-opus-5
+  params: {temperature: warm}
+`, "data.params.temperature"},
+		{"fractional maxTokens", `  description: d
+  prompt: p
+  provider: default
+  model: claude-opus-5
+  params: {maxTokens: 1.5}
+`, "data.params.maxTokens"},
 		{"query without reads", `  description: d
   prompt: p
-  llm: cheap
+  provider: default
+  model: claude-opus-5
   tools: [query]
 `, "query needs data.reads"},
 		{"propose without emit", `  description: d
   prompt: p
-  llm: cheap
+  provider: default
+  model: claude-opus-5
   tools: [propose]
 `, "propose needs core.substrate.reamde.dev/recordpatchrequest in data.emit"},
 		{"self sub-agent", `  description: d
   prompt: p
-  llm: cheap
+  provider: default
+  model: claude-opus-5
   agents: [ag.example.com/classifier]
 `, "may not name itself"},
 		{"depth above cap", `  description: d
   prompt: p
-  llm: cheap
+  provider: default
+  model: claude-opus-5
   budgets: {depth: 4}
 `, "between 1 and 3"},
 		{"unknown sub-agent", `  description: d
   prompt: p
-  llm: cheap
+  provider: default
+  model: claude-opus-5
   agents: [ag.example.com/ghost]
 `, "unknown agent"},
 		{"tool collides with sub-agent", `  description: d
   prompt: p
-  llm: cheap
+  provider: default
+  model: claude-opus-5
   tools:
     - {callable: ag.example.com/annotate, name: sorter}
   agents: [ag.example.com/sorter]
 `, "collides with tool name"},
 		{"unknown tool string", `  description: d
   prompt: p
-  llm: cheap
+  provider: default
+  model: claude-opus-5
   tools: [frobnicate]
 `, "query, propose, or a full function identity"},
 	}

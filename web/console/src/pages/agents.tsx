@@ -1,8 +1,8 @@
 /** Agents (`/agents`): the declared agents (a callable whose body is an LLM
- * loop) and the llm connection rows they resolve (cheap/mid/strong). Both on
- * THE table system, off the record surface. An agent row opens the chat
- * surface; an llm row and an agent's manifest open their record page (where
- * the prompt/tools/budgets live and edit). */
+ * loop) and the llmprovider rows they complete against. Both on THE table
+ * system, off the record surface. An agent row opens the chat surface; a
+ * provider row and an agent's manifest open their record page (where the
+ * prompt/tools/budgets live and edit). */
 
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -24,15 +24,54 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
-import { agentsQueryOptions, llmsQueryOptions } from "@/lib/api/agents"
+import {
+  agentsQueryOptions,
+  providerEndpoint,
+  providerHasKey,
+  providersQueryOptions,
+} from "@/lib/api/agents"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { cellValue } from "@/lib/format"
+import { cn } from "@/lib/utils"
 
 function definitionField(agent: SubstrateRecord, key: string): string {
   const def = agent.properties.definition
   if (typeof def !== "object" || def === null) return ""
   const value = (def as Record<string, unknown>)[key]
   return value === undefined ? "" : cellValue(value)
+}
+
+/** The flat columns of both tables are one shape: a string off the record,
+ * truncated, in the muted voice. The cell renders the accessor's value — a cell
+ * that recomputed it could disagree with what the column sorts and filters on. */
+function textColumn(opts: {
+  id: string
+  title: string
+  value: (record: SubstrateRecord) => string
+  meta: ColumnDef<SubstrateRecord, unknown>["meta"]
+  /** The data voice, for a value the substrate itself carries. */
+  data?: boolean
+  /** A title attribute, for a value the column is likely to truncate away. */
+  tooltip?: boolean
+}): ColumnDef<SubstrateRecord, unknown> {
+  return {
+    id: opts.id,
+    accessorFn: opts.value,
+    enableSorting: false,
+    header: ({ column }) => <DataTableColumnHeader column={column} title={opts.title} />,
+    cell: ({ getValue }) => {
+      const text = getValue<string>()
+      return (
+        <span
+          className={cn("block truncate text-muted-foreground", opts.data && "data")}
+          title={opts.tooltip ? text : undefined}
+        >
+          {text || "—"}
+        </span>
+      )
+    },
+    meta: opts.meta,
+  }
 }
 
 function agentColumns(): ColumnDef<SubstrateRecord, unknown>[] {
@@ -55,18 +94,21 @@ function agentColumns(): ColumnDef<SubstrateRecord, unknown>[] {
       ),
       meta: { label: "agent", size: { min: 200, max: 400, weight: 1.5 } },
     },
-    {
-      id: "llm",
-      accessorFn: (a) => definitionField(a, "llm"),
-      enableSorting: false,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="llm" />,
-      cell: ({ row }) => (
-        <span className="block truncate data text-muted-foreground">
-          {definitionField(row.original, "llm") || "—"}
-        </span>
-      ),
-      meta: { label: "llm", width: 120 },
-    },
+    textColumn({
+      id: "provider",
+      title: "provider",
+      value: (a) => definitionField(a, "provider"),
+      data: true,
+      meta: { label: "provider", width: 120 },
+    }),
+    textColumn({
+      id: "model",
+      title: "model",
+      value: (a) => definitionField(a, "model"),
+      data: true,
+      tooltip: true,
+      meta: { label: "model", size: { min: 140, weight: 1 } },
+    }),
     {
       id: "chat",
       accessorFn: () => "",
@@ -93,19 +135,7 @@ function agentColumns(): ColumnDef<SubstrateRecord, unknown>[] {
   ]
 }
 
-function llmColumns(): ColumnDef<SubstrateRecord, unknown>[] {
-  const text = (key: string, title: string, width?: number): ColumnDef<SubstrateRecord, unknown> => ({
-    id: key,
-    accessorFn: (e) => e.properties[key],
-    enableSorting: false,
-    header: ({ column }) => <DataTableColumnHeader column={column} title={title} />,
-    cell: ({ row }) => (
-      <span className="block truncate data text-muted-foreground" title={cellValue(row.original.properties[key])}>
-        {cellValue(row.original.properties[key]) || "—"}
-      </span>
-    ),
-    meta: width ? { label: title, width } : { label: title, size: { min: 140, weight: 1 } },
-  })
+function providerColumns(): ColumnDef<SubstrateRecord, unknown>[] {
   return [
     {
       id: "row",
@@ -123,32 +153,65 @@ function llmColumns(): ColumnDef<SubstrateRecord, unknown>[] {
       ),
       meta: { label: "row", size: { min: 140, max: 240, weight: 1 } },
     },
-    text("provider", "provider", 120),
-    text("model", "model"),
-    text("baseURL", "baseURL"),
+    textColumn({
+      id: "wire",
+      title: "wire",
+      value: (p) => cellValue(p.properties.wire),
+      data: true,
+      tooltip: true,
+      meta: { label: "wire", width: 110 },
+    }),
+    {
+      id: "endpoint",
+      accessorFn: (p) => providerEndpoint(p),
+      enableSorting: false,
+      header: ({ column }) => <DataTableColumnHeader column={column} title="endpoint" />,
+      // Only a row that declares its own baseURL speaks in the data voice: the
+      // rest read as prose about where the host sends them.
+      cell: ({ row, getValue }) => (
+        <span
+          className={cn(
+            "block truncate text-muted-foreground",
+            Boolean(row.original.properties.baseURL) && "data"
+          )}
+          title={getValue<string>()}
+        >
+          {getValue<string>()}
+        </span>
+      ),
+      meta: { label: "endpoint", size: { min: 160, weight: 1.5 } },
+    },
+    // A secret reads back redacted, so the row can only say whether one is
+    // there — never which.
+    textColumn({
+      id: "key",
+      title: "key",
+      value: (p) => (providerHasKey(p) ? "set" : "not set"),
+      meta: { label: "key", width: 90 },
+    }),
   ]
 }
 
 export function AgentsPage() {
   const navigate = useNavigate()
   const agents = useQuery(agentsQueryOptions())
-  const llms = useQuery(llmsQueryOptions())
+  const providers = useQuery(providersQueryOptions())
 
   const agentRows = useMemo(() => agents.data?.records ?? [], [agents.data])
-  const llmRows = useMemo(() => llms.data?.records ?? [], [llms.data])
+  const providerRows = useMemo(() => providers.data?.records ?? [], [providers.data])
   const aCols = useMemo(() => agentColumns(), [])
-  const lCols = useMemo(() => llmColumns(), [])
+  const pCols = useMemo(() => providerColumns(), [])
   const aTable = useDataTable({
     columns: aCols,
     data: agentRows,
     getRowId: (r) => r.id,
     prefsKey: "agents",
   })
-  const lTable = useDataTable({
-    columns: lCols,
-    data: llmRows,
+  const pTable = useDataTable({
+    columns: pCols,
+    data: providerRows,
     getRowId: (r) => r.id,
-    prefsKey: "llms",
+    prefsKey: "llmproviders",
   })
 
   if (agents.isPending) return <AgentsSkeleton />
@@ -208,29 +271,29 @@ export function AgentsPage() {
       <section className="mt-6 flex flex-col">
         <div className="flex items-end justify-between px-6 pb-1">
           <div>
-            <h2 className="text-sm font-medium">Models</h2>
+            <h2 className="text-sm font-medium">Providers</h2>
             <p className="text-xs text-muted-foreground">
-              The llm connection rows agents resolve, from{" "}
-              <span className="data">core.substrate.reamde.dev/llms</span>
+              The endpoints agents complete against, from{" "}
+              <span className="data">core.substrate.reamde.dev/llmproviders</span>
             </p>
           </div>
-          <DataTableViewOptions table={lTable} />
+          <DataTableViewOptions table={pTable} />
         </div>
-        {llms.isError ? (
-          // An LLM query failure is its own state — never an empty "No models"
-          // table, which would read as "none declared" when the read simply
-          // failed.
+        {providers.isError ? (
+          // A provider query failure is its own state — never an empty "No
+          // providers" table, which would read as "none declared" when the read
+          // simply failed.
           <div className="px-6">
             <Empty className="rounded-md border py-10">
               <EmptyHeader>
                 <EmptyMedia variant="icon">
                   <SearchXIcon />
                 </EmptyMedia>
-                <EmptyTitle>The models didn't load</EmptyTitle>
-                <EmptyDescription>{llms.error.message}</EmptyDescription>
+                <EmptyTitle>The providers didn't load</EmptyTitle>
+                <EmptyDescription>{providers.error.message}</EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
-                <Button variant="outline" size="sm" onClick={() => void llms.refetch()}>
+                <Button variant="outline" size="sm" onClick={() => void providers.refetch()}>
                   Retry
                 </Button>
               </EmptyContent>
@@ -238,14 +301,26 @@ export function AgentsPage() {
           </div>
         ) : (
           <DataTable
-            table={lTable}
+            table={pTable}
             density="compact"
-            loading={llms.isPending}
+            loading={providers.isPending}
+            // A provider row is an ordinary record: editing its endpoint or
+            // re-keying it happens on the record page, not here.
+            onRowClick={(row) =>
+              void navigate({
+                to: "/data/$authority/$plural/$id",
+                params: {
+                  authority: "core.substrate.reamde.dev",
+                  plural: "llmproviders",
+                  id: row.id,
+                },
+              })
+            }
             empty={
               <Empty className="py-10">
                 <EmptyHeader>
-                  <EmptyTitle>No models</EmptyTitle>
-                  <EmptyDescription>No llm rows are declared yet.</EmptyDescription>
+                  <EmptyTitle>No providers</EmptyTitle>
+                  <EmptyDescription>No llmprovider rows are declared yet.</EmptyDescription>
                 </EmptyHeader>
               </Empty>
             }

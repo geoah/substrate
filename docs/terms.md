@@ -56,6 +56,9 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 | **callable** | The union of function and agent — what a trigger binds and what dispatch invokes. |
 | **function** | A callable whose body is inline Python or Go, bounded by a declared `capabilities` envelope. |
 | **agent** | A callable whose body is an LLM loop. Alpha. |
+| **llmprovider** | One place an agent buys completions: a wire, an endpoint and a key, as data. Alpha. |
+| **wire** | The protocol an `llmprovider`'s adapter speaks — `openai`, `anthropic` or `azure` — never a company: a gateway that speaks OpenAI's wire is an `openai` row. |
+| **model** | The model id an agent sends on every completion, a plain string its provider understands. There is no model record and no tier. |
 | **trigger** | One delivery binding: exactly one source (`record`, `schedule` or `webhook`) to one callable. |
 | **run** | One settled delivery attempt of a trigger. |
 

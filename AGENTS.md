@@ -58,6 +58,16 @@ run — `go test ./...` can fail there while `go test ./internal/engine/...` pas
 clean. A `*_db_test.go` failure that looks arbitrary usually is; confirm it
 alone before believing it. The full engine suite takes ~4 minutes.
 
+**`mise run test:llm` is the live suite** — the wire adapters and one whole
+agent chain against the REAL OpenAI and Anthropic APIs. It runs when
+`OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are in the environment, which on a dev
+box they are: they arrive from a gitignored `.mise.local.toml`. Without them
+every case skips and the task exits 0, so CI is untouched, and `mise run test`
+excludes the set by name either way. It SPENDS REAL MONEY — a pass is well
+under a cent, but run it once to confirm a change, never in a loop. Key
+material is never committed, never echoed, and never written into a file in
+this tree. [docs/testing.md](docs/testing.md) has the rest.
+
 ## Talk to a substrate
 
 `substratectl` wears **two hats** and they do not meet. The user's hat speaks

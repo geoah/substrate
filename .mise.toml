@@ -61,7 +61,23 @@ description = "The suites that want a database: a pgvector container, or SUBSTRA
 # concurrently — two binaries racing there fail on pg_extension_name_index.
 # With a container per binary that never happened; against one shared server
 # (SUBSTRATE_TEST_DATABASE_URL, which is how CI runs) it does.
-run = "go test -p 1 ./internal/engine/... ./internal/catalog/..."
+#
+# -skip '^TestLive': the live set BUYS COMPLETIONS. It skips itself without
+# keys, but a dev box has keys in its environment — so the default suite
+# excludes it by name and `test:llm` selects it by the same name.
+run = "go test -p 1 -skip '^TestLive' ./internal/engine/... ./internal/catalog/..."
+
+[tasks."test:llm"]
+description = "The LIVE suite: real completions from real providers, when the keys are there"
+# Every case skips itself unless its key is in the environment, so this exits 0
+# on a machine (or a CI runner) that has none. The keys arrive from a
+# gitignored .mise.local.toml — never a committed file; docs/testing.md has the
+# shape. The engine half also wants a database, like every other *_db_test.go:
+# a pgvector container, or SUBSTRATE_TEST_DATABASE_URL.
+#
+# It SPENDS MONEY. Cheap models and tiny prompts keep a pass well under a cent,
+# but do not loop it.
+run = "go test -count=1 -run '^TestLive' -v ./internal/llm/... ./internal/engine/..."
 
 [tasks.lint]
 description = "golangci-lint over the module"

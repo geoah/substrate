@@ -64,9 +64,10 @@ func WithRegistry(r *vocabulary.Registry) Option { return func(o *options) { o.r
 // WithEmbedder enables the semantic search arm and the embed queue.
 func WithEmbedder(e substrate.Embedder) Option { return func(o *options) { o.embedder = e } }
 
-// WithLLMGateway sets the host-native LLM transport defaults the agent loop
-// falls back to when an llm row declares no baseURL or apiKey of its own
-// (LITELLM_BASE_URL / LITELLM_API_KEY in production).
+// WithLLMGateway sets the host's own gateway — the endpoint an openai-dialect
+// llmprovider row falls back to when it declares no baseURL of its own
+// (SUBSTRATE_LLM_BASE_URL / SUBSTRATE_LLM_API_KEY in production). The key
+// travels only to that URL.
 func WithLLMGateway(baseURL, apiKey string) Option {
 	return func(o *options) { o.llmBaseURL, o.llmAPIKey = baseURL, apiKey }
 }
@@ -121,7 +122,7 @@ type service struct {
 	base     *vocabulary.Registry
 	embedder substrate.Embedder
 	// llmBaseURL/llmAPIKey are the agent loop's gateway fallbacks
-	// (WithLLMGateway); an llm row's own baseURL/apiKey win.
+	// (WithLLMGateway); an llmprovider row's own baseURL/apiKey win.
 	llmBaseURL string
 	llmAPIKey  string
 	// oauth runs the host connect/refresh flows for oauth2-trait bundles;
@@ -405,8 +406,8 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.loadStoredVocabulary,
 		ds.upgradeShippedVocabulary,
 		ds.ensureTriggerCursors,
-		// The well-known llm tier rows (cheap/mid/strong), create-only: an
-		// owner's re-tiering or deliberate delete stands.
+		// The well-known `default` llmprovider row, create-only: an owner's
+		// re-pointing or deliberate delete stands.
 		ds.seedAgentDefaults,
 	} {
 		if err := step(ctx); err != nil {

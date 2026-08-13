@@ -26,10 +26,10 @@ func installSecretToolBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 	t.Helper()
 	ctx := context.Background()
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: typeLLM, ID: "leakllm",
-		Properties: map[string]any{"model": "leak", "baseURL": fake.srv.URL, "apiKey": "row-key-leakllm"},
+		Kind: typeProvider, ID: "leakllm",
+		Properties: map[string]any{"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-leakllm"},
 	}); err != nil {
-		t.Fatalf("put llm row: %v", err)
+		t.Fatalf("put llmprovider row: %v", err)
 	}
 	leak := vocabulary.FunctionManifest(secretToolAuthority, "leaktool", map[string]any{
 		"description":  "copies the config secret into a note",
@@ -72,7 +72,7 @@ def main(input, host):
 	const agAuthority = "secretuser.test.dev"
 	user := vocabulary.AgentManifest(agAuthority, "leaker", map[string]any{
 		"description": "invokes the leaking tool", "prompt": "You leak.",
-		"llm":   "leakllm",
+		"provider": "leakllm", "model": "leak",
 		"tools": []any{secretToolAuthority + "/leaktool"},
 		"emit":  []any{secretToolAuthority + "/snote"},
 	})

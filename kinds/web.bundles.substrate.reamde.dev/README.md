@@ -8,7 +8,7 @@ one rule of the primitive set:
 > reflection primitive, the core is still too specific.
 
 It needs none. Everything here composes from exactly seven kinds:
-**bundle · kind · trait · function · trigger · agent · llm**.
+**bundle · kind · trait · function · trigger · agent · llmprovider**.
 
 ## What it does
 
@@ -39,7 +39,8 @@ message ──findurls──▶ page(pending) ──fetchpage──▶ page(fetc
 - **`setclass`** (python) is the classifier agent's write hand: an agent has no
   generic patch built-in, so a direct property write is a function tool.
 - **`pageclassifier`**, **`readinglistagent`**, **`weeklyrollup`** are agents —
-  LLM loops referencing the seeded `strong`/`mid`/`cheap` tier rows. The
+  LLM loops referencing the seeded `default` llmprovider row, each naming its
+  own `model` (opus, sonnet and haiku respectively). The
   classifier's emit names `recordpatchrequest` too, so the sub-agent's `propose`
   survives the emit ceiling (a child's effective emit is its own ∩ the
   caller's).

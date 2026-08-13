@@ -1,6 +1,6 @@
 # The URL-harvester bundle — the substrate's shipped conformance example
 # (substrate-primitives §8). It composes ONLY from the primitive set:
-# bundle + kind + trait + function + agent + trigger + llm. No workflow,
+# bundle + kind + trait + function + agent + trigger + llmprovider. No workflow,
 # connector, link, or reflection primitive appears anywhere — that is the whole
 # point of the gate.
 #
@@ -263,7 +263,8 @@ data:
     You are the page classifier. Read the page in the first message, decide
     whether it is an article, a tool, or a video, set its class with the
     setclass tool, then hand the page to the reading-list agent.
-  llm: strong
+  provider: default
+  model: anthropic/claude-opus-5
   tools: [web.bundles.substrate.reamde.dev/setclass]
   agents: [web.bundles.substrate.reamde.dev/readinglistagent]
   budgets: {maxTurns: 4, maxToolCalls: 8, depth: 3}
@@ -285,7 +286,8 @@ data:
     identity: type web.bundles.substrate.reamde.dev/page plus its target id. Do not write
     directly. You also carry a stampconfig tool, but under a caller whose emit
     does not name config it will be refused — propose instead.
-  llm: mid
+  provider: default
+  model: anthropic/claude-sonnet-5
   tools: [propose, web.bundles.substrate.reamde.dev/stampconfig]
   budgets: {maxTurns: 4, maxToolCalls: 4, depth: 3}
   emit:
@@ -305,7 +307,8 @@ data:
     propose a patch that stores the summary as the config's lastDigest —
     address the config by full identity (type web.bundles.substrate.reamde.dev/config
     plus its target id); reads name a type beside the id too.
-  llm: cheap
+  provider: default
+  model: anthropic/claude-haiku-4-5
   tools: [query, propose]
   reads: {kinds: [web.bundles.substrate.reamde.dev/page]}
   budgets: {maxTurns: 6, maxToolCalls: 16, depth: 3}

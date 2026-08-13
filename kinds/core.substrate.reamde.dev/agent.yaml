@@ -5,8 +5,8 @@
 # functions — trigger deliveries, the call API, sub-agent calls — under the
 # actor `function:<name>`.
 #
-# The row surfaces the agent's shape as first-class fields — prompt, the llm
-# reference, the function tools and the sub-agents — so an ordinary
+# The row surfaces the agent's shape as first-class fields — prompt, the
+# provider + model, the function tools and the sub-agents — so an ordinary
 # create-from-type form can compose one. `definition` remains the authoritative
 # manifest store (the loader rebuilds the registry from it, record 61): it
 # carries the full envelope the first-class columns summarize — the built-in
@@ -29,7 +29,9 @@ data:
   # that already stored the old one.
   # v1alpha3: the declaration gained a `description` — the bump is what
   # carries it into repositories that already stored the v1alpha2 one.
-  version: v1alpha3
+  # v1alpha4: the `llm` reference split into `provider` + `model` — an agent
+  # names WHERE it buys completions and WHAT model it wants, separately.
+  version: v1alpha4
   names:
     singular: agent
     plural: agents
@@ -55,11 +57,16 @@ data:
     prompt:
       type: text
       description: the system prompt; the row is the prompt store
-    # The llm data-record id (`cheap`/`mid`/`strong` or a custom row); the loop
-    # reads baseURL/model/defaults off that row at dispatch (core.substrate.reamde.dev/llm).
-    llm:
+    # The llmprovider data-record id (`default` or a custom row); the loop reads
+    # wire/baseURL/apiKey off that row at dispatch
+    # (core.substrate.reamde.dev/llmprovider). The model is the agent's own
+    # word, sent verbatim on every completion.
+    provider:
       type: string
-      description: the llm record id this agent's loop completes against
+      description: the llmprovider record id this agent's loop completes against
+    model:
+      type: string
+      description: the model id sent on every completion
     # The callable function identities the agent may call, in declaration order
     # (a ref-typed list — each value is a core.substrate.reamde.dev/function record id).
     functions:
@@ -72,8 +79,8 @@ data:
       type: string
       repeated: true
       description: the sub-agent records this agent may delegate to
-    # The authoritative manifest data — prompt/llm/tools/agents/budgets/emit/
-    # reads, exactly as authored. The loader rebuilds the agent from this; the
+    # The authoritative manifest data — prompt/provider/model/params/tools/
+    # agents/budgets/emit/reads, exactly as authored. The loader rebuilds the agent from this; the
     # first-class columns above are its projected summary.
     definition:
       type: json

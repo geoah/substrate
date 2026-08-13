@@ -70,10 +70,12 @@ starts and where a connection's token status is visible.
 
 ## Agents
 
-**Agents** lists the declared [agents](agents.md) and opens a chat against one.
-[Triggers](functions.md#triggers) have no section of their own: they are
-ordinary records, so `core.substrate.reamde.dev/triggers` in the data nav is
-the list, and one trigger's record page is the trigger.
+**Agents** lists the declared [agents](agents.md) with the provider and model
+each resolves and the [`llmprovider`](agents.md#providers) rows beneath them,
+and opens a chat against one. [Triggers](functions.md#triggers) have no
+section of their own: they are ordinary records, so
+`core.substrate.reamde.dev/triggers` in the data nav is the list, and one
+trigger's record page is the trigger.
 
 ## Account
 

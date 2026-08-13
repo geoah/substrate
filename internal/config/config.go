@@ -35,20 +35,20 @@ type Config struct {
 	// target. Empty (local dev) uses targetOrigin "*" and renders no redirect.
 	ConsoleURL string `envconfig:"SUBSTRATE_CONSOLE_URL" default:""`
 
-	// LiteLLM backs the embed queue. Without an API key the embedder is
-	// nil and the queue simply does not drain.
-	LiteLLMBaseURL string `envconfig:"LITELLM_BASE_URL" default:""`
-	LiteLLMAPIKey  string `envconfig:"LITELLM_API_KEY"`
-	LiteLLMMaster  string `envconfig:"LITELLM_MASTER_KEY"`
-	LiteLLMModel   string `envconfig:"LITELLM_EMBED_MODEL" default:"openai/text-embedding-3-small"`
+	// The host's own LLM gateway: an OpenAI-wire endpoint. It backs the embed
+	// queue — without a base URL and key the embedder is nil and the queue
+	// simply does not drain — and it is what an openai-dialect llmprovider row
+	// with no baseURL of its own falls back to. The key travels ONLY to this
+	// URL. The embed model is a bare model id; a gateway that wants an alias
+	// (`openai/…`) is naming its own configuration, so it belongs in the env.
+	LLMBaseURL    string `envconfig:"SUBSTRATE_LLM_BASE_URL" default:""`
+	LLMAPIKey     string `envconfig:"SUBSTRATE_LLM_API_KEY"`
+	LLMEmbedModel string `envconfig:"SUBSTRATE_LLM_EMBED_MODEL" default:"text-embedding-3-small"`
 }
 
 // Load reads the configuration from the environment.
 func Load() (Config, error) {
 	var c Config
 	err := envconfig.Process("", &c)
-	if c.LiteLLMAPIKey == "" {
-		c.LiteLLMAPIKey = c.LiteLLMMaster
-	}
 	return c, err
 }

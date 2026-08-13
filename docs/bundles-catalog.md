@@ -225,7 +225,7 @@ owner-editable `baseUrl` can never redirect the key.
 
 Authority `web.bundles.substrate.reamde.dev`. A capability bundle, and the substrate's
 shipped end-to-end conformance example: it proves that `bundle`, `kind`,
-`function`, `agent`, `trigger`, and `llm` declarations compose into a real
+`function`, `agent`, and `trigger` declarations compose into a real
 feature (harvest URLs from a message, fetch and classify each page, propose
 reading-list and weekly-digest notes) with no bespoke workflow primitive. It is
 the running example these pages build on.
@@ -245,8 +245,9 @@ the running example these pages build on.
 - **Agents (3)**: `pageclassifier` classifies a page and delegates to
   `readinglistagent`, which proposes reading-list notes; `weeklyrollup` queries
   the week's pages and proposes a digest. Both proposals travel as
-  `core.substrate.reamde.dev/recordpatchrequest` records for the owner to accept. They run
-  on the seeded `strong`, `mid`, and `cheap` llm rows respectively.
+  `core.substrate.reamde.dev/recordpatchrequest` records for the owner to accept. All
+  three run on the seeded `default` provider, each naming its own `model` —
+  what the agent does is what picks the model, not a tier.
 
 This is the only shipped bundle with agents, and the only one whose
 functions are deterministic stubs, because it exists to exercise the machinery

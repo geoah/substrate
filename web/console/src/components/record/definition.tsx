@@ -1,6 +1,6 @@
-/** A kind's DECLARATION, read (owner ask, 2026-08-12: "I go to the LLMs kind,
- * I can see the table of records but I don't have a tab to see its definition
- * — I want to see the kind YAML").
+/** A kind's DECLARATION, read (owner ask, 2026-08-12: "I go to the
+ * llmproviders kind, I can see the table of records but I don't have a tab to
+ * see its definition — I want to see the kind YAML").
  *
  * Three readings of one thing, top to bottom: the declaration YAML through the
  * SAME renderer the record manifest uses (shiki, lazy, css-variables), then

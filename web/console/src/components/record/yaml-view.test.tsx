@@ -17,29 +17,32 @@ vi.mock("@tanstack/react-router", () => ({
 import { YamlView } from "./yaml-view"
 import type { KeyDocs } from "@/lib/yaml-annotations"
 
-const SOURCE = `kind: core.substrate.reamde.dev/llm
+const SOURCE = `kind: core.substrate.reamde.dev/llmprovider
 metadata:
-  id: cheap
+  id: default
 data:
   properties:
-    model: gpt-5-mini
-    provider: litellm
+    name: default
+    wire: openai
 `
 
 const DOCS: KeyDocs = {
   properties: {
-    model: {
+    name: {
       type: "string",
-      description: "the model id sent on every completion",
+      description: "a human label for the row (the id is the reference)",
     },
-    provider: { type: "string" },
+    wire: { type: "string" },
   },
   edges: {},
 }
 
 const TARGETS = {
   ids: {},
-  kinds: { "core.substrate.reamde.dev/llm": "/data/core.substrate.reamde.dev/llms" },
+  kinds: {
+    "core.substrate.reamde.dev/llmprovider":
+      "/data/core.substrate.reamde.dev/llmproviders",
+  },
 }
 
 function renderView() {
@@ -82,7 +85,7 @@ describe("YamlView", () => {
     // late) may cost the color, never the schema.
     const { container } = renderView()
     expect(container.querySelector("pre span[style]")).toBeNull()
-    expect(triggers(container)).toEqual(["model", "provider"])
+    expect(triggers(container)).toEqual(["name", "wire"])
   })
 
   it("keeps the same hovers once tinted", async () => {
@@ -90,7 +93,7 @@ describe("YamlView", () => {
     await waitFor(() => {
       expect(container.querySelector("pre span[style]")).toBeTruthy()
     })
-    expect(triggers(container)).toEqual(["model", "provider"])
+    expect(triggers(container)).toEqual(["name", "wire"])
   })
 
   it("renders the whole document, tinted or not — line for line", async () => {
@@ -119,7 +122,9 @@ describe("YamlView", () => {
       expect(container.querySelector("pre span[style]")).toBeTruthy()
     })
     const link = container.querySelector("a")
-    expect(link?.getAttribute("href")).toBe("/data/core.substrate.reamde.dev/llms")
-    expect(link?.textContent).toBe("core.substrate.reamde.dev/llm")
+    expect(link?.getAttribute("href")).toBe(
+      "/data/core.substrate.reamde.dev/llmproviders"
+    )
+    expect(link?.textContent).toBe("core.substrate.reamde.dev/llmprovider")
   })
 })

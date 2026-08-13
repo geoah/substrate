@@ -15,6 +15,11 @@ data:
     record, the thread IS the run. Status, turns, tokens and cost
     accumulate as the loop goes, and a root thread's tally rolls up every
     sub-agent's spend, so one number answers what a chain cost.
+  # v1alpha3: the `llm` column split into `provider` + `model` — the run records
+  # WHERE it bought its completions and WHAT model it sent. The bump is what
+  # carries the new columns into repositories that stored the authority's
+  # v1alpha2 projection.
+  version: v1alpha3
   names:
     singular: llmthread
     plural: llmthreads
@@ -26,9 +31,12 @@ data:
     agent:
       type: string
       description: the agent identity this thread ran
-    llm:
+    provider:
       type: string
-      description: the llm row id the run resolved
+      description: the llmprovider row id the run resolved
+    model:
+      type: string
+      description: the model id the run sent
     mode:
       type: string
       description: trigger, schedule, webhook, manual, call, subagent or chat
@@ -58,7 +66,8 @@ data:
       description: total tokens; on the root thread, sub-agents included
     costUSD:
       type: float
-      description: the llm row's pricing applied to the tally; 0 when unpriced
+      description: the provider row's pricing for the model applied to the
+        tally; 0 when unpriced
     startedAt:
       type: datetime
       description: when the loop opened the thread

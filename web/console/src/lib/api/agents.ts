@@ -1,12 +1,13 @@
-/** Agents: the agent registry rows, the llm connection rows (cheap/mid/strong),
- * the llmthread/llmmessage transcript records, and the ndjson chat stream.
- * Agents/llms/llmthreads/llmmessages are ordinary records the generic browse
- * renders; this module adds the agent-scoped reads and the one thing the record
- * API cannot do — the streaming chat loop.
+/** Agents: the agent registry rows, the llmprovider rows they complete
+ * against, the llmthread/llmmessage transcript records, and the ndjson chat
+ * stream. Agents/llmproviders/llmthreads/llmmessages are ordinary records the
+ * generic browse renders; this module adds the agent-scoped reads and the one
+ * thing the record API cannot do — the streaming chat loop.
  *
  * The whole agent-loop vocabulary lives in CORE: core absorbed the runtime
- * kinds, so `llm`, `llmthread` and `llmmessage` sit beside `agent` under
- * `core.substrate.reamde.dev` — there is no separate runtime authority to seed. */
+ * kinds, so `llmprovider`, `llmthread` and `llmmessage` sit beside `agent`
+ * under `core.substrate.reamde.dev` — there is no separate runtime authority
+ * to seed. */
 
 import { queryOptions } from "@tanstack/react-query"
 
@@ -25,15 +26,41 @@ export function agentsQueryOptions() {
   })
 }
 
-/** The llm connection rows (cheap/mid/strong) — pure data over the
- * OpenAI-compatible transport. */
-export function llmsQueryOptions() {
+/** The llmprovider rows — one endpoint each, addressed by an agent's
+ * `provider` beside the plain `model` id it sends. */
+export function providersQueryOptions() {
   return recordsQueryOptions({
     authority: CORE_AUTHORITY,
-    plural: "llms",
+    plural: "llmproviders",
     first: 200,
     orderBy: "createdAt:desc",
   })
+}
+
+/** Where a provider row sends its completions. `wire` is the protocol, not the
+ * vendor, so an empty `baseURL` means that wire's own default endpoint — for
+ * `openai` that is the host's configured gateway. `azure` has no such default:
+ * a deployment IS its host, so the loop refuses a row without a baseURL and the
+ * console must not read that row as if it would work. */
+export function providerEndpoint(record: SubstrateRecord): string {
+  const base = record.properties.baseURL
+  if (typeof base === "string" && base) return base
+  switch (record.properties.wire) {
+    case "openai":
+      return "host gateway"
+    case "azure":
+      return "missing baseURL"
+    default:
+      return "default endpoint"
+  }
+}
+
+/** Whether a provider row carries its own key. A secret-typed property reads
+ * back redacted, so set / not set is the only question the console can answer;
+ * not set means the host's key, and only over the host's gateway. */
+export function providerHasKey(record: SubstrateRecord): boolean {
+  const key = record.properties.apiKey
+  return typeof key === "string" && key !== ""
 }
 
 /** One agent's threads, newest first — its run history (a thread IS a run). */
