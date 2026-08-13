@@ -348,6 +348,9 @@ type registerResult struct {
 }
 
 type recoveryEnrollRequest struct {
+	Username          string `json:"username"`
+	Password          string `json:"password"`
+	TOTPCode          string `json:"totpCode"`
 	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
 }
 

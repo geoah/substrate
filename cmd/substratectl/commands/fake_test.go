@@ -375,9 +375,15 @@ func (f *fakeSubstrate) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	var label string
 	_ = json.Unmarshal(f.lastBody["label"], &label)
+	// Echo the recovery half the way the server does: the client-generated
+	// recipient comes straight back, and nothing mints server-side when one
+	// was supplied.
+	var recipient string
+	_ = json.Unmarshal(f.lastBody["recoveryPublicKey"], &recipient)
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"token":  substrate.TokenInfo{ID: "tk01", Label: label, Created: testNow},
-		"secret": fakeSecret,
+		"token":             substrate.TokenInfo{ID: "tk01", Label: label, Created: testNow},
+		"secret":            fakeSecret,
+		"recoveryPublicKey": recipient,
 	})
 }
 

@@ -392,11 +392,33 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 // recovery keys enrolls one here, and rotation is deliberately not v1. An
 // empty publicKey asks the server to mint the pair; the identity returns
 // once and is never stored.
-func (ds *dataset) EnrollRecoveryKey(ctx context.Context, publicKey string) (identity, recipient string, err error) {
+//
+// It carries the PASSWORD-FACTOR RULE, both current factors in the input: a
+// bearer token is not evidence here. Enrollment permanently claims the
+// repository's only recovery slot and hands out an offline decryption key,
+// which is materially more than the repository API can ever do, so a stolen
+// token must not be enough.
+//
+// The same transaction re-keys the whole sealed store under the DEK: a
+// pre-DEK repository's payloads sat under the host key, and the recovery
+// promise (a backup plus this key, no host involved) is only true once
+// nothing in the store needs the host to open.
+func (s *service) EnrollRecoveryKey(ctx context.Context, in substrate.LoginInput, publicKey string) (identity, recipient string, err error) {
+	repo, _, err := s.verifyFactors(ctx, in)
+	if err != nil {
+		return "", "", err
+	}
 	if publicKey == "" {
 		if identity, publicKey, err = generateRecoveryIdentity(); err != nil {
 			return "", "", err
 		}
+	}
+	if _, err := wrapDEKToRecipient(make([]byte, 32), publicKey); err != nil {
+		return "", "", fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+	}
+	ds, err := s.open(ctx, repo)
+	if err != nil {
+		return "", "", err
 	}
 	ref := eref{Kind: kindRecoveryKey, ID: recoveryKeyID}
 	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
@@ -410,7 +432,11 @@ func (ds *dataset) EnrollRecoveryKey(ctx context.Context, publicKey string) (ide
 		if row != nil && row.DeletedAt == nil {
 			return fmt.Errorf("%w: a recovery key is already enrolled; rotation is not yet supported", substrate.ErrConflict)
 		}
-		return t.writeRecoveryKey(publicKey)
+		if err := t.writeRecoveryKey(publicKey); err != nil {
+			return err
+		}
+		_, err = t.rekeySealedStore()
+		return err
 	})
 	if err != nil {
 		return "", "", err

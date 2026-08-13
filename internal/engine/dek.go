@@ -141,22 +141,32 @@ func openWithFallback(payload, dek, hostKey []byte) ([]byte, error) {
 	if payload[0] != credSealed {
 		return nil, fmt.Errorf("unknown credential framing %q", payload[0])
 	}
-	var lastErr error
+	// The FIRST failure is the authoritative one: the DEK is tried first,
+	// and a malformed DEK must not hide behind a host-key attempt's error.
+	var firstErr error
 	for _, key := range [][]byte{dek, hostKey} {
 		aead, err := aeadOf(key)
-		if err != nil || aead == nil {
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if aead == nil {
 			continue
 		}
 		out, err := openWith(aead, payload)
 		if err == nil {
 			return out, nil
 		}
-		lastErr = err
+		if firstErr == nil {
+			firstErr = err
+		}
 	}
-	if lastErr == nil {
-		lastErr = errors.New("sealed payload but no key opens it")
+	if firstErr == nil {
+		firstErr = errors.New("sealed payload but no key opens it")
 	}
-	return nil, lastErr
+	return nil, firstErr
 }
 
 // --- the age recovery wrap -------------------------------------------------

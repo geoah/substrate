@@ -353,13 +353,16 @@ func (h *handler) postMintToken(w http.ResponseWriter, r *http.Request) {
 }
 
 // recoveryEnroller is the engine seam behind one-time recovery enrollment,
-// deliberately off the frozen substrate.Dataset: it exists for repositories
-// that predate recovery keys, and registration is the ordinary door.
+// deliberately off the frozen contract: it exists for repositories that
+// predate recovery keys, and registration is the ordinary door.
 type recoveryEnroller interface {
-	EnrollRecoveryKey(ctx context.Context, publicKey string) (identity, recipient string, err error)
+	EnrollRecoveryKey(ctx context.Context, in substrate.LoginInput, publicKey string) (identity, recipient string, err error)
 }
 
 type recoveryEnrollRequest struct {
+	Username          string `json:"username"`
+	Password          string `json:"password"`
+	TOTPCode          string `json:"totpCode"`
 	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
 }
 
@@ -368,21 +371,32 @@ type recoveryEnrollResponse struct {
 	RecoveryPublicKey string `json:"recoveryPublicKey"`
 }
 
+// postRecoveryEnroll enrolls a recovery key on a repository that predates
+// them. Both current factors in the body, a bearer refused as evidence,
+// exactly like the credential changes: a stolen token must not be able to
+// claim the one recovery slot and walk away with an offline key.
 func (h *handler) postRecoveryEnroll(w http.ResponseWriter, r *http.Request) {
 	var req recoveryEnrollRequest
 	if err := decodeBody(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
-	ctx := r.Context()
-	enroller, ok := DatasetFrom(ctx).(recoveryEnroller)
+	if ok := h.authGate(w, r, req.Username, costRequest); !ok {
+		return
+	}
+	if !h.factorsPresented(w, req.Password, req.TOTPCode) {
+		return
+	}
+	enroller, ok := h.svc.(recoveryEnroller)
 	if !ok {
 		writeError(w, http.StatusNotImplemented, codeBadRequest, "this build does not support recovery enrollment")
 		return
 	}
-	identity, recipient, err := enroller.EnrollRecoveryKey(ctx, req.RecoveryPublicKey)
+	identity, recipient, err := enroller.EnrollRecoveryKey(r.Context(), substrate.LoginInput{
+		Username: req.Username, Password: req.Password, TOTPCode: req.TOTPCode,
+	}, req.RecoveryPublicKey)
 	if err != nil {
-		writeSubstrateError(w, err)
+		writeAuthFailure(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, recoveryEnrollResponse{

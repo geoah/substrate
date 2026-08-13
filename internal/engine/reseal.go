@@ -321,29 +321,41 @@ func (t *txn) resealChangelog(report *ResealReport, secretProps map[string][]str
 	}
 }
 
-// resealSealedStore re-keys every payload not already under the repository's
-// DEK: keyless plain framings and host-key-sealed legacies alike. A payload
-// the DEK already opens passes byte-identical, which is the idempotency.
+// resealSealedStore is the migration's sealed-store half.
 func (t *txn) resealSealedStore(report *ResealReport) error {
+	n, err := t.rekeySealedStore()
+	report.SealedRows += n
+	return err
+}
+
+// rekeySealedStore re-keys every sealed payload the DEK does not already
+// open: keyless plain framings and host-key-sealed legacies alike. The scan
+// takes every row FOR UPDATE, so a concurrent TOTP step consume or token
+// refresh serializes behind this transaction instead of being overwritten by
+// a stale buffered copy. A payload the DEK already opens passes
+// byte-identical, which is the idempotency. Shared by `repository reseal`
+// and recovery enrollment: the recovery promise is only true once every
+// payload is under the DEK the recovery key wraps.
+func (t *txn) rekeySealedStore() (int, error) {
 	dekAEAD, err := aeadOf(t.ds.dek)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	type pending struct {
 		ref     string
 		payload []byte
 	}
 	var updates []pending
-	rows, err := t.query(`SELECT ref, payload FROM sealed`)
+	rows, err := t.query(`SELECT ref, payload FROM sealed FOR UPDATE`)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	for rows.Next() {
 		var ref string
 		var payload []byte
 		if err := rows.Scan(&ref, &payload); err != nil {
 			_ = rows.Close()
-			return err
+			return 0, err
 		}
 		if len(payload) > 0 && payload[0] == credSealed && dekAEAD != nil {
 			if _, err := openWith(dekAEAD, payload); err == nil {
@@ -353,28 +365,27 @@ func (t *txn) resealSealedStore(report *ResealReport) error {
 		raw, err := t.ds.openPayload(payload)
 		if err != nil {
 			_ = rows.Close()
-			return fmt.Errorf("substrate/engine: reseal sealed %s: %w", ref, err)
+			return 0, fmt.Errorf("substrate/engine: re-key sealed %s: %w", ref, err)
 		}
 		sealed, err := t.ds.sealPayload(raw)
 		if err != nil {
 			_ = rows.Close()
-			return err
+			return 0, err
 		}
 		updates = append(updates, pending{ref: ref, payload: sealed})
 	}
 	if err := rows.Err(); err != nil {
 		_ = rows.Close()
-		return err
+		return 0, err
 	}
 	_ = rows.Close()
 	for _, u := range updates {
 		if _, err := t.exec(`UPDATE sealed SET payload = $1 WHERE ref = $2`,
 			u.payload, u.ref); err != nil {
-			return err
+			return 0, err
 		}
-		report.SealedRows++
 	}
-	return nil
+	return len(updates), nil
 }
 
 // decodeNumberPreserving decodes stored JSONB without flattening numbers to

@@ -125,6 +125,12 @@ func New(cfg Config) http.Handler {
 	r.Post("/password", h.postPassword)
 	r.Post("/totp/enroll", h.postTOTPBegin)
 	r.Post("/totp", h.postTOTP)
+	// One-time recovery-key enrollment, for repositories that predate it:
+	// registration is the ordinary door. It carries the password-factor rule
+	// like the credential changes above: enrollment claims the repository's
+	// only recovery slot and hands out an offline decryption key, so a
+	// bearer token is not evidence here.
+	r.Post("/recovery/enroll", h.postRecoveryEnroll)
 	// Tokens: minting and revoking need a token already, so these sit behind
 	// the ordinary bearer check. Revoking is a record delete either way — the
 	// same write the generic surface performs.
@@ -133,9 +139,6 @@ func New(cfg Config) http.Handler {
 		r.Post("/tokens", h.postMintToken)
 		r.Get("/tokens", h.getTokens)
 		r.Delete("/tokens/{id}", h.deleteToken)
-		// One-time recovery-key enrollment, for repositories that predate it:
-		// registration is the ordinary door.
-		r.Post("/recovery/enroll", h.postRecoveryEnroll)
 	})
 
 	r.Route("/api/"+APIVersion, h.mountResources)

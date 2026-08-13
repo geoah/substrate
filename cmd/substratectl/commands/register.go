@@ -128,6 +128,16 @@ substrate and the code is prompted for.`,
 				})
 			})
 			if err != nil {
+				// A clean 4xx refusal created nothing. Anything else is
+				// AMBIGUOUS: the server may have committed and the response
+				// died, and a lost response must not take the only copy of a
+				// key that can never be re-issued.
+				var ae *apiError
+				clean := errors.As(err, &ae) && ae.Status >= 400 && ae.Status < 500
+				if recoveryIdentity != "" && !clean {
+					fmt.Fprintln(a.errOut, "registration did not confirm; if it actually landed, the key below is the ONLY copy:")
+					a.printRecoveryKey(recoveryIdentity, recoveryPublicKey)
+				}
 				return authError(err)
 			}
 			if contextName == "" {

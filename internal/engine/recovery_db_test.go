@@ -9,6 +9,10 @@ package engine_test
 import (
 	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"io"
@@ -184,31 +188,75 @@ func TestServerMintedRecoveryKeyAndEnrollOnce(t *testing.T) {
 		t.Fatalf("recovered DEK is %d bytes", len(dek))
 	}
 
-	// A second enrollment refuses: one recovery key, no rotation yet.
-	type enroller interface {
-		EnrollRecoveryKey(ctx context.Context, publicKey string) (string, string, error)
-	}
-	if _, _, err := ds.(enroller).EnrollRecoveryKey(ctx, ""); err == nil {
+	// A second enrollment refuses: one recovery key, no rotation yet. The
+	// enrollment carries the password-factor rule, so a fresh code goes in.
+	if _, _, err := svc.(recoveryEnroller).EnrollRecoveryKey(ctx, substrate.LoginInput{
+		Username: "bo", Password: testPassword, TOTPCode: u.code(t),
+	}, ""); err == nil {
 		t.Fatal("a second recovery enrollment was accepted")
 	}
 }
 
-func TestEnrollRecoveryKeyOnPreRecoveryRepository(t *testing.T) {
+// recoveryEnroller is the service seam the API asserts.
+type recoveryEnroller interface {
+	EnrollRecoveryKey(ctx context.Context, in substrate.LoginInput, publicKey string) (string, string, error)
+}
+
+// TestEnrollRecoveryKeyMigratesLegacyPayloads is the pre-recovery
+// repository's whole story: its payloads sat sealed under the HOST key, and
+// enrollment must re-key them under the DEK in the same commit, or "a backup
+// plus the recovery key, no host involved" is a false promise.
+func TestEnrollRecoveryKeyMigratesLegacyPayloads(t *testing.T) {
 	ctx := context.Background()
-	// CreateRepository is the test-only door with no registration ceremony:
-	// exactly the shape of a repository that predates recovery keys.
-	svc, _ := newService(t, engine.WithCredentialKey("test-cred-key"))
-	if _, err := svc.CreateRepository(ctx, "cleo"); err != nil {
-		t.Fatalf("create: %v", err)
+	svc, dsn := newService(t, engine.WithCredentialKey("test-cred-key"))
+	enrollment, err := svc.BeginRegistration(ctx, "cleo")
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	u := &authUser{username: "cleo", password: testPassword, seed: enrollment.Secret}
+	if _, err := svc.Register(ctx, substrate.RegisterInput{
+		Username: "cleo", Password: testPassword,
+		TOTPSecret: u.seed, TOTPCode: u.code(t),
+	}); err != nil {
+		t.Fatalf("register: %v", err)
 	}
 	ds, err := svc.Dataset(ctx, "cleo")
 	if err != nil {
 		t.Fatalf("dataset: %v", err)
 	}
-	type enroller interface {
-		EnrollRecoveryKey(ctx context.Context, publicKey string) (string, string, error)
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("open raw db: %v", err)
 	}
-	identity, recipient, err := ds.(enroller).EnrollRecoveryKey(ctx, "")
+	t.Cleanup(func() { _ = db.Close() })
+
+	// Simulate the pre-recovery store: drop the enrollment registration
+	// wrote, and plant a payload sealed under the HOST key, exactly what a
+	// pre-DEK release left behind.
+	if _, err := db.Exec(`DELETE FROM records WHERE kind = $1 AND id = 'self'`, recoveryKeyKind); err != nil {
+		t.Fatalf("drop recovery record: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/llmprovider", ID: "prov",
+		Properties: map[string]any{
+			"name": "prov", "wire": "openai",
+			"baseURL": "https://llm.example.com/v1", "apiKey": "sk-legacy-material",
+		},
+	})
+	var ref string
+	if err := db.QueryRow(`SELECT props->>'apiKey' FROM records WHERE kind = $1 AND id = 'prov'`,
+		"core.substrate.reamde.dev/llmprovider").Scan(&ref); err != nil {
+		t.Fatalf("read ref: %v", err)
+	}
+	hostKey := sha256.Sum256([]byte("test-cred-key"))
+	if _, err := db.Exec(`UPDATE sealed SET payload = $1 WHERE ref = $2`,
+		sealUnder(t, hostKey[:], []byte("sk-legacy-material")), ref); err != nil {
+		t.Fatalf("plant host-key payload: %v", err)
+	}
+
+	identity, recipient, err := svc.(recoveryEnroller).EnrollRecoveryKey(ctx, substrate.LoginInput{
+		Username: "cleo", Password: testPassword, TOTPCode: u.code(t),
+	}, "")
 	if err != nil {
 		t.Fatalf("enroll: %v", err)
 	}
@@ -220,7 +268,46 @@ func TestEnrollRecoveryKeyOnPreRecoveryRepository(t *testing.T) {
 		t.Fatalf("recoverykey record: %v", err)
 	}
 	sealedKey, _ := rec.Properties["sealedKey"].(string)
-	if dek := unwrapWithIdentity(t, identity, sealedKey); len(dek) != 32 {
-		t.Fatalf("recovered DEK is %d bytes", len(dek))
+	dek := unwrapWithIdentity(t, identity, sealedKey)
+
+	// The planted host-key payload was re-keyed in the enrollment's own
+	// transaction: the identity-recovered DEK alone opens it now.
+	var payload []byte
+	if err := db.QueryRow(`SELECT payload FROM sealed WHERE ref = $1`, ref).Scan(&payload); err != nil {
+		t.Fatalf("read payload: %v", err)
 	}
+	plain, err := engine.OpenPayloadWithKey(dek, payload)
+	if err != nil {
+		t.Fatalf("enrollment left the payload host-keyed: %v", err)
+	}
+	if string(plain) != "sk-legacy-material" {
+		t.Fatalf("recovered %q", plain)
+	}
+
+	// And a wrong-factors enrollment never gets that far.
+	if _, _, err := svc.(recoveryEnroller).EnrollRecoveryKey(ctx, substrate.LoginInput{
+		Username: "cleo", Password: "wrong-password-entirely", TOTPCode: "000000",
+	}, ""); err == nil {
+		t.Fatal("enrollment accepted without valid factors")
+	}
+}
+
+// sealUnder seals raw under an explicit AES-256-GCM key with the store's
+// framing: the test's stand-in for a pre-DEK release's host-key writes.
+func sealUnder(t *testing.T, key, raw []byte) []byte {
+	t.Helper()
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		t.Fatalf("cipher: %v", err)
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatalf("gcm: %v", err)
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		t.Fatalf("nonce: %v", err)
+	}
+	out := append([]byte{'s'}, nonce...)
+	return aead.Seal(out, nonce, raw, nil)
 }

@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -190,4 +191,48 @@ func TestConsoleRoutesFallThroughToTheSPA(t *testing.T) {
 	// Under an API prefix the method really is wrong, and says so.
 	rec := env.do(t, http.MethodDelete, "/api", "", nil)
 	wantStatus(t, rec, http.StatusMethodNotAllowed)
+}
+
+// The recovery enrollment carries the password-factor rule: both current
+// factors in the body buy the one-time enrollment, a bearer or bad factors
+// buy nothing, and the second attempt conflicts.
+func TestRecoveryEnrollFactorsAndOneTime(t *testing.T) {
+	env := newTestEnv(t)
+
+	// No factors: refused before the service is reached, exactly as the
+	// credential changes refuse a bearer as evidence.
+	rec := env.do(t, http.MethodPost, "/recovery/enroll", "", map[string]any{
+		"username": "geoah",
+	})
+	wantStatus(t, rec, http.StatusForbidden)
+
+	// Wrong factors: the one auth error.
+	env.clock.advance(defaultAuthInterval + time.Millisecond)
+	rec = env.do(t, http.MethodPost, "/recovery/enroll", "", map[string]any{
+		"username": "geoah", "password": "wrong", "totpCode": "000000",
+	})
+	wantStatus(t, rec, http.StatusUnauthorized)
+
+	// Right factors: enrolled once, the server-minted key delivered once.
+	env.clock.advance(defaultAuthInterval + time.Millisecond)
+	rec = env.do(t, http.MethodPost, "/recovery/enroll", "", map[string]any{
+		"username": "geoah", "password": "correct-horse-battery-staple",
+		"totpCode": fakeCode("geoah"),
+	})
+	wantStatus(t, rec, http.StatusCreated)
+	out := decodeJSON[map[string]string](t, rec)
+	if !strings.HasPrefix(out["recoveryKey"], "AGE-SECRET-KEY-1") {
+		t.Fatalf("no server-minted key: %+v", out)
+	}
+	if !strings.HasPrefix(out["recoveryPublicKey"], "age1") {
+		t.Fatalf("no recipient: %+v", out)
+	}
+
+	// One-time: the slot is claimed.
+	env.clock.advance(defaultAuthInterval + time.Millisecond)
+	rec = env.do(t, http.MethodPost, "/recovery/enroll", "", map[string]any{
+		"username": "geoah", "password": "correct-horse-battery-staple",
+		"totpCode": fakeCode("geoah"),
+	})
+	wantStatus(t, rec, http.StatusConflict)
 }
