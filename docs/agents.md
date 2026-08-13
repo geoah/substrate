@@ -276,7 +276,7 @@ lacks.
 `apiKey` is secret-typed: every read surface hands back `<redacted>`, and
 writing the sentinel back is a round trip, so
 
-```
+```sh
 substratectl get llmproviders -o yaml
 ```
 
@@ -314,7 +314,7 @@ native `anthropic` row the bare id.
 There is no agent verb on `substratectl` — `function call` is functions only —
 so a run is the call API or the console's chat:
 
-```
+```sh
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" -d '{"input": "ping"}' \
   http://localhost:8080/api/v1/core.substrate.reamde.dev/agents/smoke.example.com%2Fecho/call
@@ -323,7 +323,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 The id carries a `/`, so the path segment spells it `%2F`. The answer carries
 `reply` and the `thread` id, and the thread is the durable half:
 
-```
+```sh
 substratectl get llmthreads <thread> -o yaml
 ```
 
