@@ -776,10 +776,10 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		}
 	}
 
-	// Required edges are asserted at birth: a record is created with them or
-	// not at all. A later patch that does not touch edges is unaffected.
+	// Required pointers are asserted at birth: a record is created with them or
+	// not at all. A later patch that does not touch them is unaffected.
 	if create {
-		if err := t.checkRequiredEdges(sp); err != nil {
+		if err := t.checkRequiredPointers(sp, row); err != nil {
 			return nil, err
 		}
 	}
@@ -1023,9 +1023,41 @@ func (t *txn) stampTargetVersion(sp *applySpec, row *erow, target eref, accepted
 	return nil
 }
 
-// checkRequiredEdges asserts every declared required edge is present on a
-// freshly created record.
-func (t *txn) checkRequiredEdges(sp *applySpec) error {
+// checkRequiredPointers asserts every declared required POINTER is present on a
+// freshly created record — a required edge, and a required reference property.
+//
+// References are here because a pointer that moves from an edge to a reference
+// must not silently lose the invariant it was written under: `required` on an
+// edge has always been enforced at birth, and a declaration that changed only
+// its storage would otherwise become a suggestion.
+//
+// Required on any OTHER kind of property stays what it has always been —
+// declaration-level documentation a client honors — because `default:` is
+// consumed by the form and never applied server-side, so enforcing it here
+// would refuse creates that legitimately rely on a declared default. Making
+// those enforceable is its own change, and it needs defaults first.
+func (t *txn) checkRequiredPointers(sp *applySpec, row *erow) error {
+	var missingRefs []string
+	for _, name := range sp.ty.PropOrder {
+		p := sp.ty.Props[name]
+		if p.Datatype != vocabulary.DatatypeReference || !p.Required {
+			continue
+		}
+		v, ok := row.Props[name]
+		// An empty LIST names nothing, so a required repeated reference is as
+		// absent with `[]` as it is with no key at all — the write would
+		// otherwise satisfy "requires a target" by carrying none.
+		if list, isList := v.([]any); isList && len(list) == 0 {
+			ok = false
+		}
+		if !ok || v == nil {
+			missingRefs = append(missingRefs, name)
+		}
+	}
+	if len(missingRefs) > 0 {
+		return fmt.Errorf("%w: %s requires reference %s", substrate.ErrValidation,
+			sp.ty.Name, strings.Join(missingRefs, ", "))
+	}
 	var required []string
 	for _, name := range sp.ty.EdgeOrder {
 		if sp.ty.Edges[name].Required {

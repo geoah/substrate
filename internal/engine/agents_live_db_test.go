@@ -191,11 +191,12 @@ def main(input, host):
 	}
 	var parent string
 	if err := ds.db.QueryRowContext(ctx, `
-		SELECT dst FROM edges WHERE rel = 'parent' AND src = $1`, child["__id"]).Scan(&parent); err != nil {
-		t.Fatalf("the child's parent edge: %v", err)
+		SELECT props->'parent'->>'id' FROM records WHERE kind = $2 AND id = $1`,
+		child["__id"], typeThread).Scan(&parent); err != nil {
+		t.Fatalf("the child's parent: %v", err)
 	}
 	if parent != root["__id"] {
-		t.Fatalf("child parent edge points at %q, root is %q", parent, root["__id"])
+		t.Fatalf("child parent points at %q, root is %q", parent, root["__id"])
 	}
 	childTokens := intProp(child, "totalTokens")
 	if childTokens <= 0 {

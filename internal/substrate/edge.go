@@ -1,11 +1,42 @@
 package substrate
 
-// IncomingEdge is one reverse edge: some other live record points here with
-// rel. From is the shallow source, shaped like an outgoing edge's target. Its
-// Properties are never set because a reverse row names only the source.
+import "time"
+
+// IncomingEdge is one reverse pointer: some other live record points here
+// under rel. From is the shallow source, shaped like an outgoing edge's target.
+// Its Properties are never set because a reverse row names only the source.
 type IncomingEdge struct {
 	Rel  string     `json:"rel"`
 	From EdgeTarget `json:"from"`
+	// Via says HOW the source points here — ViaEdge for a row in the edges
+	// table, ViaReference for a reference property naming this record. The two
+	// are one relationship to a reader and two mechanisms to the store, and a
+	// record can be reached by both at once (a kind mid-migration), so this is
+	// part of a row's identity in the page, not decoration.
+	Via string `json:"via,omitempty"`
+	// CreatedAt is the SOURCE record's creation, so a reverse read can be
+	// ordered by when the thing that points here came into being.
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// How a reverse pointer reaches a record.
+const (
+	ViaEdge      = "edge"
+	ViaReference = "reference"
+)
+
+// IncomingOptions narrows and pages a reverse read. Rel and FromKind are what
+// let a drill-down expand ONE group without pulling the rest: a record with a
+// thousand inbound rows across five relationships is five small reads, not one
+// large one.
+type IncomingOptions struct {
+	First int
+	After string
+	// Rel narrows to one relationship name — an edge's rel or a reference
+	// property's name, which are the same word to a reader.
+	Rel string
+	// FromKind narrows to one source kind, by full identity.
+	FromKind string
 }
 
 // IncomingPage is one page of edges pointing at a record. Incoming edges are

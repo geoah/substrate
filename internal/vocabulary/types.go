@@ -162,6 +162,22 @@ type Property struct {
 	// name to a full identity in Finalize, exactly like an edge target. Empty
 	// for every non-reference kind.
 	To string
+	// Inverse names this relationship as the TARGET reads it — `thread` on a
+	// message is `messages` on the thread — so a graph view standing on the
+	// target can say what points at it in the model's own words instead of
+	// reading back the pointer's name, which is written from the other side.
+	//
+	// IT IS A LABEL, NEVER AN IDENTIFIER. Nothing filters, routes, resolves or
+	// looks anything up by it, and no two declarations are reconciled through
+	// it. That is what makes a collision harmless: two authorities may both
+	// call their side `messages`, and the result is two groups sharing a word,
+	// each named by the kind it comes from. Only a collision INSIDE one
+	// authority is refused, because there it is an author's own slip.
+	//
+	// InverseDescription is the one-liner that side carries, same rule as a
+	// property's Description.
+	Inverse            string
+	InverseDescription string
 	// Fields are an object property's declared fields: scalar
 	// kinds or authority-local refinements, one level deep, one value each. Nil
 	// for every other kind. Object properties stay out of FTS, embed and the
@@ -267,6 +283,11 @@ type Edge struct {
 	Many        bool
 	Required    bool
 	OwnerRef    bool
+	// Inverse names this relationship as the TARGET reads it: `thread` on a
+	// message is `messages` on the thread. See Inverse on Property — the rule
+	// is one rule, and it is written there.
+	Inverse            string
+	InverseDescription string
 }
 
 // Transition is one legal machine move. It carries no guard: anyone may

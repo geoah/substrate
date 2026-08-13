@@ -77,8 +77,12 @@ type Dataset interface {
 	MintToken(ctx context.Context, label string, expiresAt *time.Time) (TokenInfo, string, error)
 	Tokens(ctx context.Context) ([]TokenInfo, error)
 
-	// Incoming pages the reverse edges of one record.
-	Incoming(ctx context.Context, typ, id string, first int, after string) (*IncomingPage, error)
+	// Incoming pages what points at one record — edges and reference
+	// properties alike, narrowable to one relationship or one source kind so a
+	// drill-down expands a group without pulling the rest. A reference with no
+	// declared target kind names nothing the registry can search for, so those
+	// are outside what this answers.
+	Incoming(ctx context.Context, typ, id string, opts IncomingOptions) (*IncomingPage, error)
 
 	// --- background loops (service wiring calls these) ---
 	// RunGC performs one owner-reference mark-and-collect sweep for

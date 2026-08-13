@@ -14,6 +14,11 @@ data:
     written by the loop as it runs. A user turn is the envelope or the
     human's message, an assistant turn its prose and tool calls, a tool
     turn one dispatched call's result.
+  # v1alpha3: `thread` became a REFERENCE and tool rows gained `ok`. The
+  # declaration carried no version of its own before this, inheriting the
+  # authority's — and an unbumped edit is a no-op to the upgrade, so this key
+  # is what carries the change into repositories that already hold the row.
+  version: v1alpha3
   names:
     singular: llmmessage
     plural: llmmessages
@@ -37,8 +42,13 @@ data:
     tool:
       type: string
       description: the tool name a tool row answers for
-  edges:
+    ok:
+      type: bool
+      description: whether the dispatch a tool row answers for succeeded
     thread:
+      type: reference
       to: core.substrate.reamde.dev/llmthread
       required: true
+      inverse: messages
+      inverseDescription: the turns of this thread, in loop order
       description: the thread this turn belongs to
