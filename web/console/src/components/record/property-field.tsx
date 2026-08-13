@@ -30,7 +30,17 @@ import { recordsQueryOptions } from "@/lib/api/records"
 import type { KindInfo } from "@/lib/api/types"
 import { kindByIdentity } from "@/lib/definition"
 import { recordTitle } from "@/lib/format"
-import { humanizeName, isRefValue, type FormField, type FormMode, type FormValue } from "@/lib/record-form"
+import {
+  asBag,
+  asRef,
+  asRows,
+  humanizeName,
+  objectFields,
+  type FieldBag,
+  type FormField,
+  type FormMode,
+  type FormValue,
+} from "@/lib/record-form"
 import { TO_ANY } from "@/lib/record-schema"
 import { cn } from "@/lib/utils"
 
@@ -198,6 +208,66 @@ export function PropertyField({
     )
   }
 
+  if (field.control === "object") {
+    return (
+      <Field>
+        {label}
+        <ObjectRow
+          field={field}
+          bag={asBag(value)}
+          onChange={(bag) => onChange(bag)}
+          mode={mode}
+          kinds={kinds}
+          idPrefix={id}
+        />
+        {help()}
+        {error && <FieldError>{error}</FieldError>}
+      </Field>
+    )
+  }
+
+  if (field.control === "objectList") {
+    const rows = asRows(value)
+    return (
+      <Field>
+        {label}
+        <div className="flex flex-col gap-2">
+          {rows.map((bag, i) => (
+            <div key={i} className="relative">
+              <ObjectRow
+                field={field}
+                bag={bag}
+                onChange={(next) =>
+                  onChange(rows.map((row, at) => (at === i ? next : row)))
+                }
+                mode={mode}
+                kinds={kinds}
+                idPrefix={`${id}-${i}`}
+              />
+              <button
+                type="button"
+                aria-label={`Remove ${field.label} row ${i + 1}`}
+                className="absolute top-1.5 right-1.5 text-xs text-muted-foreground underline-offset-4 hover:underline"
+                onClick={() => onChange(rows.filter((_, at) => at !== i))}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="self-start text-xs text-muted-foreground underline-offset-4 hover:underline"
+            onClick={() => onChange([...rows, {} as FieldBag])}
+          >
+            Add row
+          </button>
+        </div>
+        {help()}
+        {error && <FieldError>{error}</FieldError>}
+      </Field>
+    )
+  }
+
   if (field.control === "list") {
     return (
       <Field>
@@ -300,7 +370,7 @@ function ReferenceField({
   label: React.ReactNode
   help: (hint?: string) => React.ReactNode
 }) {
-  const ref = isRefValue(value) ? value : { kind: "", id: "" }
+  const ref = asRef(value)
   const pinned = field.spec.to && field.spec.to !== TO_ANY ? field.spec.to : ""
   const target = kindByIdentity(kinds, ref.kind || pinned)
 
@@ -352,5 +422,41 @@ function ReferenceField({
       {help(pinned ? `Points at a ${pinned}.` : "Points at any kind: name it.")}
       {error && <FieldError>{error}</FieldError>}
     </Field>
+  )
+}
+
+/** One object's declared fields, edited inline. An object is one level deep by
+ * declaration, so this never recurses: every field is a scalar control. */
+function ObjectRow({
+  field,
+  bag,
+  onChange,
+  mode,
+  kinds,
+  idPrefix,
+}: {
+  field: FormField
+  bag: FieldBag
+  onChange: (bag: FieldBag) => void
+  mode: FormMode
+  kinds: KindInfo[]
+  idPrefix: string
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-input p-3">
+      {objectFields(field).map((sub) => (
+        <PropertyField
+          key={sub.name}
+          field={sub}
+          value={bag[sub.name] ?? ""}
+          onChange={(next) =>
+            onChange({ ...bag, [sub.name]: next as string | boolean | null })
+          }
+          mode={mode}
+          kinds={kinds}
+          idPrefix={idPrefix}
+        />
+      ))}
+    </div>
   )
 }

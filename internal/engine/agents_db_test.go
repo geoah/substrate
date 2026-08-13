@@ -188,7 +188,9 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 				// A row-defined baseURL REQUIRES a row-defined apiKey (the
 				// host gateway key never travels to a custom endpoint).
 				"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-" + id,
-				"pricing": map[string]any{model: map[string]any{"inputPer1M": 1.0, "outputPer1M": 5.0}},
+				// pricing is a repeated object: one row per model, keyed by
+				// the `model` field.
+				"pricing": []any{map[string]any{"model": model, "inputPer1M": 1.0, "outputPer1M": 5.0}},
 			},
 		}); err != nil {
 			t.Fatalf("put llmprovider row %s: %v", id, err)

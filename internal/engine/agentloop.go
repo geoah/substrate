@@ -159,23 +159,29 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: open llmprovider %q apiKey: %w", id, err)
 	}
-	if headers, ok := row.Props["headers"].(map[string]any); ok && len(headers) > 0 {
-		pc.cfg.Headers = map[string]string{}
-		for k, v := range headers {
-			pc.cfg.Headers[k] = fmt.Sprint(v)
+	// headers and pricing are REPEATED OBJECTS: the substrate has no map
+	// datatype, so a keyed table is a list whose key is a declared field
+	// (`name`, `model`). Coercion has already checked the fields; a later row
+	// for the same key wins, which is what a table means.
+	for _, entry := range objectRows(row.Props["headers"]) {
+		name, _ := entry["name"].(string)
+		if name == "" {
+			continue
 		}
+		if pc.cfg.Headers == nil {
+			pc.cfg.Headers = map[string]string{}
+		}
+		pc.cfg.Headers[name] = fmt.Sprint(entry["value"])
 	}
 	pc.defaults, _ = row.Props["defaults"].(map[string]any)
-	if pricing, ok := row.Props["pricing"].(map[string]any); ok {
-		for model, raw := range pricing {
-			entry, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
-			in, _ := anyFloat(entry["inputPer1M"])
-			out, _ := anyFloat(entry["outputPer1M"])
-			pc.pricing[model] = modelPrice{inPer1M: in, outPer1M: out}
+	for _, entry := range objectRows(row.Props["pricing"]) {
+		model, _ := entry["model"].(string)
+		if model == "" {
+			continue
 		}
+		in, _ := anyFloat(entry["inputPer1M"])
+		out, _ := anyFloat(entry["outputPer1M"])
+		pc.pricing[model] = modelPrice{inPer1M: in, outPer1M: out}
 	}
 
 	// What each wire needs from a row is internal/llm's own fact (llm.Wire.Policy);
@@ -235,6 +241,25 @@ func mergeParams(providerID string, defaults, own map[string]any) (llm.Params, e
 			substrate.ErrValidation, providerID, err)
 	}
 	return llm.Params{Temperature: p.Temperature, MaxTokens: p.MaxTokens}, nil
+}
+
+// objectRows reads a repeated-object property's stored value: a list of
+// mappings, each already coerced against the declared fields. Anything else
+// (an absent property, a legacy map from before the shape was declared) reads
+// as no rows rather than a panic — the boot upgrade is what refuses the old
+// shape, not a dispatch.
+func objectRows(v any) []map[string]any {
+	items, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		if entry, ok := item.(map[string]any); ok {
+			out = append(out, entry)
+		}
+	}
+	return out
 }
 
 func anyFloat(v any) (float64, bool) {

@@ -207,11 +207,23 @@ deployment `baseURL` spelled out. New code is only ever needed for a new wire,
 and a model that speaks none of these three wraps as a function tool, never as
 the transport.
 
-`pricing` is a table keyed by the model id **as sent**, because one row serves
-many models: `{"claude-opus-5": {"inputPer1M": 5, "outputPer1M": 25}}` on an
+`pricing` is a table, one row per model, keyed by the model id **as sent** —
+because one provider row serves many models: `claude-opus-5` on an
 `anthropic`-wire row, the gateway's alias (`anthropic/claude-opus-5`) on a row
 that speaks to a gateway. A model absent from the table leaves the thread's
 `costUSD` at 0 and the token tally authoritative.
+
+```yaml
+pricing:
+  - {model: claude-opus-5, inputPer1M: 5, outputPer1M: 25}
+```
+
+**Every one of these is declared, not a json blob.** `wire` is an enum of the
+three wires, so a typo is refused at the write; `defaults` is an object of the
+two request knobs there are (`temperature`, `maxTokens`); `headers` and
+`pricing` are repeated objects, because the substrate has no map datatype and a
+keyed table is a list whose key is a declared field (`name`, `model`). A later
+row for the same key wins.
 
 **The host key travels only to the host gateway.** An `openai` row with an
 empty `baseURL` means the host's configured gateway
@@ -254,8 +266,8 @@ data:
     baseURL: https://openrouter.ai/api/v1
     apiKey: sk-or-…
     headers:
-      HTTP-Referer: https://substrate.example
-      X-Title: substrate
+      - {name: HTTP-Referer, value: https://substrate.example}
+      - {name: X-Title, value: substrate}
 ---
 # Anthropic, natively. No baseURL: the official endpoint.
 kind: core.substrate.reamde.dev/llmprovider
@@ -266,7 +278,7 @@ data:
     wire: anthropic
     apiKey: sk-ant-…
     pricing:
-      claude-opus-5: {inputPer1M: 5, outputPer1M: 25}
+      - {model: claude-opus-5, inputPer1M: 5, outputPer1M: 25}
 ---
 # Azure OpenAI. The deployment endpoint is the row's, and so is the key.
 kind: core.substrate.reamde.dev/llmprovider

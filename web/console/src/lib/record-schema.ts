@@ -48,8 +48,10 @@ export interface PropSpec {
   initial?: string
   /** `reference`: the kind this pointer is pinned to, or `any`. */
   to?: string
-  /** `object`: the declared field names, so an undeclared field is caught. */
-  fields?: string[]
+  /** `object`: the declared fields, each a property in its own right (a field
+   * may narrow, range or enumerate exactly as a property does). One level
+   * deep: a field is never itself an object, and never repeated. */
+  fields?: PropSpec[]
   min?: number
   max?: number
   pattern?: string
@@ -72,6 +74,8 @@ export type Control =
   | "number"
   | "datetime"
   | "json"
+  | "object"
+  | "objectList"
   | "list"
   | "reference"
 
@@ -140,10 +144,18 @@ function numberOr(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined
 }
 
-function fieldNames(v: unknown): string[] | undefined {
+/** An object's declared fields, in declaration-name order. A field is written
+ * either as a block (`{type: string, description: …}`) or as the bare datatype
+ * (`value: string`), which the loader accepts and so does this. */
+function fieldSpecs(v: unknown): PropSpec[] | undefined {
   if (!v || typeof v !== "object" || Array.isArray(v)) return undefined
-  const names = Object.keys(v as Record<string, unknown>)
-  return names.length ? names : undefined
+  const raw = v as Record<string, unknown>
+  const out = Object.keys(raw)
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) =>
+      specOf(name, typeof raw[name] === "string" ? { type: raw[name] } : (raw[name] as Record<string, unknown>) ?? {})
+    )
+  return out.length ? out : undefined
 }
 
 function specOf(name: string, def: Record<string, unknown>): PropSpec {
@@ -162,7 +174,7 @@ function specOf(name: string, def: Record<string, unknown>): PropSpec {
     states: stringList(def.states),
     initial: typeof def.initial === "string" ? def.initial : undefined,
     to: typeof def.to === "string" ? def.to : undefined,
-    fields: fieldNames(def.fields),
+    fields: fieldSpecs(def.fields),
     min: numberOr(def.min),
     max: numberOr(def.max),
     pattern: typeof def.pattern === "string" ? def.pattern : undefined,
@@ -221,6 +233,11 @@ export function controlFor(spec: PropSpec): Control {
   if (spec.kind === "secret") return "secret"
   if (spec.kind === "state") return "state"
   if (spec.kind === "reference") return "reference"
+  // A DECLARED object is a set of fields and is edited as one; `json` is the
+  // shape nobody owns, and stays a text box.
+  if (spec.kind === "object" && spec.fields?.length) {
+    return spec.repeated ? "objectList" : "object"
+  }
   if (isObjectKind(spec.kind)) return "json"
   if (spec.repeated) return "list"
   if (spec.values?.length) return "select"
@@ -346,10 +363,13 @@ export function checkItem(spec: PropSpec, value: unknown): string | undefined {
       return "expected an object"
     }
     if (spec.fields) {
-      const undeclared = Object.keys(value as Record<string, unknown>).find(
-        (f) => !spec.fields?.includes(f)
-      )
-      if (undeclared) return `\`${undeclared}\` is not a declared field`
+      const entries = Object.entries(value as Record<string, unknown>)
+      for (const [name, field] of entries) {
+        const declared = spec.fields.find((f) => f.name === name)
+        if (!declared) return `\`${name}\` is not a declared field`
+        const problem = checkValue(declared, field)
+        if (problem) return `\`${name}\`: ${problem}`
+      }
     }
     return undefined
   }

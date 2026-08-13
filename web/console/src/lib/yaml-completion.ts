@@ -66,21 +66,29 @@ const ENVELOPE: Record<string, { keys: Suggestion[] }> = {
 
 const indentOf = (line: string): number => /^\s*/.exec(line)?.[0].length ?? 0
 
+/** Where a line's CONTENT starts. A list item's `- ` is part of the indent as
+ * far as nesting goes: `- model: x` and the `inputPer1M:` under it are
+ * siblings inside the same item, not parent and child. */
+function contentIndent(line: string): number {
+  const m = /^(\s*)(- +)?/.exec(line)
+  return (m?.[1].length ?? 0) + (m?.[2]?.length ?? 0)
+}
+
 /** The mapping keys the cursor line sits under, outermost first: the line
  * `    title: x` inside `data:` → `properties:` answers `["data",
  * "properties"]`. A list item (`- rel: x`) belongs to the key that opened the
  * list. */
 export function pathAt(lines: string[], line: number): string[] {
   const path: string[] = []
-  let want = indentOf(lines[line] ?? "")
+  let want = contentIndent(lines[line] ?? "")
   for (let i = line - 1; i >= 0; i--) {
     const text = lines[i]
     if (!text.trim() || text.trim().startsWith("#")) continue
-    const indent = indentOf(text)
+    const indent = contentIndent(text)
     if (indent >= want) continue
-    const key = /^\s*(?:- )?([\w.]+):/.exec(text)?.[1]
+    const key = /^\s*(?:- +)?([\w.]+):/.exec(text)?.[1]
     if (key) path.unshift(key)
-    want = indent
+    want = indentOf(text)
     if (want === 0) break
   }
   return path
@@ -89,6 +97,16 @@ export function pathAt(lines: string[], line: number): string[] {
 /** Whether this path addresses the declared properties block. */
 function inProperties(path: string[]): boolean {
   return path.length === 2 && path[0] === "data" && path[1] === "properties"
+}
+
+/** The OBJECT property whose block this path sits inside, if any: the fields
+ * of `data.properties.<name>` are completable exactly as properties are. */
+function objectAt(path: string[], byName: Map<string, PropSpec>): PropSpec | undefined {
+  if (path.length !== 3 || path[0] !== "data" || path[1] !== "properties") {
+    return undefined
+  }
+  const spec = byName.get(path[2])
+  return spec?.fields?.length ? spec : undefined
 }
 
 function suggestValues(spec: PropSpec): Suggestion[] {
@@ -140,6 +158,43 @@ export function writtenProperties(lines: string[]): Set<string> {
   return taken
 }
 
+/** The keys the object ROW around `line` already writes. A repeated object is
+ * a list of rows, so the row is bounded by its own `- ` item, not by the
+ * property block. */
+export function writtenFields(lines: string[], line: number): Set<string> {
+  const taken = new Set<string>()
+  const want = contentIndent(lines[line] ?? "")
+  const bounds = (i: number) => {
+    const text = lines[i]
+    if (!text.trim() || text.trim().startsWith("#")) return "skip"
+    if (contentIndent(text) < want) return "stop"
+    if (contentIndent(text) > want) return "skip"
+    // A new list item at this depth starts a new row.
+    return /^\s*- +/.test(text) ? "edge" : "take"
+  }
+  const read = (i: number) => {
+    const key = /^\s*(?:- +)?([\w.]+):/.exec(lines[i])?.[1]
+    if (key) taken.add(key)
+  }
+  // A cursor on a `- ` line IS the start of its row: nothing above it belongs
+  // to this row, so the walk only goes forward.
+  const startsRow = /^\s*- +/.test(lines[line] ?? "")
+  for (let i = line - 1; !startsRow && i >= 0; i--) {
+    const at = bounds(i)
+    if (at === "skip") continue
+    if (at === "stop") break
+    read(i)
+    if (at === "edge") break
+  }
+  for (let i = line + 1; i < lines.length; i++) {
+    const at = bounds(i)
+    if (at === "skip") continue
+    if (at === "stop" || at === "edge") break
+    read(i)
+  }
+  return taken
+}
+
 /** What may be written at (line, column), or null where nothing useful can be
  * said. `column` is 0-based and the text before it on the line is what decides:
  * a partial key completes to a key, a partial value after `name:` completes to
@@ -186,7 +241,10 @@ export function completionsAt(
       }))
       return options.length ? { from, options } : null
     }
-    const spec = inProperties(path) ? byName.get(key) : undefined
+    const object = objectAt(path, byName)
+    const spec = inProperties(path)
+      ? byName.get(key)
+      : object?.fields?.find((f) => f.name === key)
     if (!spec) return null
     const options = suggestValues(spec)
     return options.length ? { from, options } : null
@@ -203,6 +261,18 @@ export function completionsAt(
     // The key being typed is not "already written" from its own point of view.
     taken.delete(partial)
     const options = specs
+      .map((spec) => propertySuggestion(spec, taken))
+      .filter((s): s is Suggestion => s !== null)
+    return options.length ? { from, options } : null
+  }
+
+  // Inside an object property: its declared fields, minus the ones this row
+  // already writes.
+  const object = objectAt(path, byName)
+  if (object?.fields) {
+    const taken = writtenFields(lines, line)
+    taken.delete(partial)
+    const options = object.fields
       .map((spec) => propertySuggestion(spec, taken))
       .filter((s): s is Suggestion => s !== null)
     return options.length ? { from, options } : null

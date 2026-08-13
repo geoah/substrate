@@ -34,6 +34,16 @@ const taskKind: KindInfo = {
         initial: "open",
       },
       pinned: { type: "bool" },
+      // A repeated object: the substrate's map, with the key as a field.
+      pricing: {
+        type: "object",
+        repeated: true,
+        fields: {
+          model: { type: "string", description: "the model id as sent" },
+          inputPer1M: { type: "float", min: 0 },
+          outputPer1M: { type: "float", min: 0 },
+        },
+      },
     },
     edges: {
       assignee: {
@@ -138,6 +148,36 @@ describe("completionsAt", () => {
     const found = at("data:\n  edges:\n    - rel: ")
     expect(found?.options.map((o) => o.label)).toEqual(["assignee"])
     expect(found?.options[0].detail).toBe("→ people.substrate.reamde.dev/person")
+  })
+
+  it("offers an object's declared fields inside its block", () => {
+    const found = at("data:\n  properties:\n    pricing:\n      - m")
+    expect(found?.options.map((o) => o.label)).toEqual([
+      "inputPer1M",
+      "model",
+      "outputPer1M",
+    ])
+    expect(found?.options.find((o) => o.label === "model")?.info).toBe(
+      "the model id as sent"
+    )
+  })
+
+  it("does not offer a field the same row already writes, but does offer it to the next row", () => {
+    const rows =
+      "data:\n  properties:\n    pricing:\n      - model: gpt-5\n        i"
+    expect(labels(rows)).toEqual(["inputPer1M", "outputPer1M"])
+    // A new item is a new row: `model` is offerable again.
+    const next =
+      "data:\n  properties:\n    pricing:\n      - model: gpt-5\n        inputPer1M: 1\n      - m"
+    expect(labels(next)).toContain("model")
+  })
+
+  it("completes a field's value against the FIELD's declaration", () => {
+    // A float field takes an example, not the property's.
+    const found = at(
+      "data:\n  properties:\n    pricing:\n      - model: gpt-5\n        inputPer1M: "
+    )
+    expect(found?.options.map((o) => o.label)).toEqual(["0"])
   })
 
   it("says nothing where nothing useful can be said", () => {

@@ -20,6 +20,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -45,6 +46,22 @@ func patchShipped(t *testing.T, path string, replace func(string) string) {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
+
+// pinVersion rewrites a declaration's own `version:`, whatever it stands at.
+// llmprovider pins one of its own, so a test that wants an OLDER pin replaces
+// it rather than adding a second key the parser would refuse.
+func pinVersion(t *testing.T, doc, version string) string {
+	t.Helper()
+	at := reDeclaredVersion.FindStringIndex(doc)
+	if at == nil {
+		t.Fatal("llmprovider no longer pins a version of its own")
+	}
+	return reDeclaredVersion.ReplaceAllString(doc, "\n  version: "+version+"\n")
+}
+
+// The declaration's OWN version line: at the `data:` block's indentation, so a
+// property named `version` (the kind declares one) is never the match.
+var reDeclaredVersion = regexp.MustCompile(`\n  version: \S+\n`)
 
 // narrowName turns llmprovider's `name` from a string into an int — the same
 // datatype change `/vocabulary/apply` refuses while a live row holds a string.
@@ -161,10 +178,7 @@ func TestBootUpgradeIgnoresAKindItDoesNotRewrite(t *testing.T) {
 	// touched authority, rather than the ones actually being rewritten, would
 	// refuse this boot over a change nobody is making.
 	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
-		doc = narrowName(t, doc)
-		return strings.Replace(doc,
-			"  authority: core.substrate.reamde.dev\n",
-			"  authority: core.substrate.reamde.dev\n  version: v1alpha1\n", 1)
+		return pinVersion(t, narrowName(t, doc), "v1alpha1")
 	})
 	if err := openMoved(t, dsn, tree); err != nil {
 		t.Fatalf("a kind the upgrade will not rewrite must not refuse the boot: %v", err)

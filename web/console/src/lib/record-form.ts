@@ -51,6 +51,11 @@ export interface RefValue {
   id: string
 }
 
+/** One object's fields as the form holds them: the same text-per-control bag
+ * every other value uses, keyed by field name. A repeated object holds a list
+ * of these, one per row. */
+export type FieldBag = Record<string, string | boolean | null>
+
 /** One editable field, projected from a declared property. `spec` is the whole
  * declaration, so a control can reach for the states, the `to:` target or the
  * range without the projection having to flatten every one of them. */
@@ -115,19 +120,30 @@ export function requiredFirst(fields: FormField[]): FormField[] {
  * newlines, a json control carries its JSON text), a bool carries a boolean, a
  * reference carries `{kind, id}`, and `null` marks a field the person
  * EXPLICITLY cleared (distinct from a merely-blank, untouched one). */
-export type FormValue = string | boolean | null | RefValue
+export type FormValue = string | boolean | null | RefValue | FieldBag | FieldBag[]
 export type FormValues = Record<string, FormValue>
 
-export function isRefValue(v: FormValue): v is RefValue {
-  return typeof v === "object" && v !== null
+/** Which shape a value is in is the CONTROL's business, never a guess at the
+ * value: a reference and an object row are both bags of strings. */
+export function asRef(value: FormValue): RefValue {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as RefValue)
+    : { kind: "", id: "" }
 }
 
-/** The text a control shows for a value, whatever its shape. */
-export function fieldText(value: FormValue): string {
-  if (value === null || value === undefined) return ""
-  if (typeof value === "boolean") return String(value)
-  if (isRefValue(value)) return value.id
-  return value
+export function asBag(value: FormValue): FieldBag {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as FieldBag)
+    : {}
+}
+
+export function asRows(value: FormValue): FieldBag[] {
+  return Array.isArray(value) ? value : []
+}
+
+/** The fields of an object property, as form fields in their own right. */
+export function objectFields(field: FormField): FormField[] {
+  return (field.spec.fields ?? []).map(fieldOf)
 }
 
 /** Seed one field from a stored value (absent on a create). A secret NEVER
@@ -155,6 +171,12 @@ export function seedField(field: FormField, stored: unknown, creating: boolean):
       if (typeof stored === "string") return { kind: pinned, id: stored }
       return { kind: pinned, id: "" }
     }
+    case "object":
+      return seedBag(field, stored)
+    case "objectList":
+      return (Array.isArray(stored) ? stored : []).map((row) =>
+        seedBag(field, row)
+      )
     case "state":
       if (typeof stored === "string" && stored) return stored
       return creating ? (field.spec.initial ?? field.spec.states?.[0] ?? "") : ""
@@ -164,6 +186,16 @@ export function seedField(field: FormField, stored: unknown, creating: boolean):
       }
       return formatValue(field.spec, stored)
   }
+}
+
+/** One object row's fields, seeded from the stored mapping. */
+function seedBag(field: FormField, stored: unknown): FieldBag {
+  const row = (stored ?? {}) as Record<string, unknown>
+  const bag: FieldBag = {}
+  for (const sub of objectFields(field)) {
+    bag[sub.name] = seedField(sub, row[sub.name], false) as string | boolean | null
+  }
+  return bag
 }
 
 /** Seed the whole form from a record (absent seeds a create). */
@@ -202,11 +234,25 @@ export function toFieldValue(field: FormField, value: FormValue): FieldValue {
     const s = typeof value === "string" ? value : ""
     return s.length ? { value: s } : {}
   }
+  if (field.control === "object") {
+    const row = bagValue(field, asBag(value))
+    if (row.error) return row
+    return row.value && Object.keys(row.value).length ? { value: row.value } : {}
+  }
+  if (field.control === "objectList") {
+    const out: Record<string, unknown>[] = []
+    for (const bag of asRows(value)) {
+      const row = bagValue(field, bag)
+      if (row.error) return row
+      if (row.value && Object.keys(row.value).length) out.push(row.value)
+    }
+    return out.length ? { value: out } : {}
+  }
   if (field.control === "reference") {
-    if (!isRefValue(value)) return {}
-    const id = value.id.trim()
+    const ref = asRef(value)
+    const id = ref.id.trim()
     if (!id) return {}
-    const kind = value.kind.trim()
+    const kind = ref.kind.trim()
     if (!kind) return { error: "a reference to any kind needs an explicit kind" }
     return { value: { kind, id } }
   }
@@ -216,6 +262,23 @@ export function toFieldValue(field: FormField, value: FormValue): FieldValue {
     return parseValue(field.spec, items.join("\n"))
   }
   return parseValue(field.spec, typeof value === "string" ? value : "")
+}
+
+/** One object row, coerced field by field. A field that fails its datatype
+ * carries the field's name into the message: the row alone would not say
+ * which control is wrong. */
+function bagValue(
+  field: FormField,
+  bag: FieldBag
+): { value?: Record<string, unknown>; error?: string } {
+  const out: Record<string, unknown> = {}
+  for (const sub of objectFields(field)) {
+    const submitted = toFieldValue(sub, bag[sub.name] ?? "")
+    if (submitted.error) return { error: `${sub.name}: ${submitted.error}` }
+    if (submitted.value === undefined || submitted.value === null) continue
+    out[sub.name] = submitted.value
+  }
+  return { value: out }
 }
 
 /** One validation failure, keyed to the field that produced it. */
