@@ -61,6 +61,44 @@ function CopyBlock({ value, label }: { value: string; label: string }) {
   )
 }
 
+/** The recovery key, once: a selectable field with the copy affordance
+ * beside it. A named input rather than a display block, so a password
+ * manager that captures submitted fields has something to take. */
+function RecoveryKeyField({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    try {
+      await navigator.clipboard?.writeText(value)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      /* clipboard unreachable — the value is selectable by hand */
+    }
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <Input
+        id="recovery-key"
+        name="recovery-key"
+        className="data min-w-0 flex-1"
+        readOnly
+        autoComplete="off"
+        value={value}
+        onFocus={(e) => e.currentTarget.select()}
+      />
+      <Button
+        type="button"
+        variant="outline"
+        size="icon-sm"
+        aria-label="Copy recovery key"
+        onClick={copy}
+      >
+        {copied ? <CheckIcon /> : <CopyIcon />}
+      </Button>
+    </div>
+  )
+}
+
 /** Registration, in two steps.
  *
  * Step one collects the invite code, username AND password, then buys a TOTP
@@ -184,11 +222,6 @@ export function RegisterPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              {/* A real, NAMED form field, not a display block: a password
-                  manager's save/update prompt captures named inputs at
-                  submit, so continuing offers to attach the value to the
-                  login it just saved, as a field called "recovery key".
-                  Read-only; the copy affordance is the by-hand fallback. */}
               <form
                 onSubmit={(e) => {
                   e.preventDefault()
@@ -198,22 +231,13 @@ export function RegisterPage() {
                 <FieldGroup>
                   <Field>
                     <FieldLabel htmlFor="recovery-key">Recovery key</FieldLabel>
-                    <Input
-                      id="recovery-key"
-                      name="recovery-key"
-                      className="data"
-                      readOnly
-                      autoComplete="off"
-                      value={recoveryKey}
-                      onFocus={(e) => e.currentTarget.select()}
-                    />
+                    <RecoveryKeyField value={recoveryKey} />
                   </Field>
                   <Field>
                     <Button type="submit">I saved it — continue</Button>
                   </Field>
                 </FieldGroup>
               </form>
-              <CopyBlock value={recoveryKey} label="recovery key" />
             </CardContent>
           </Card>
         )}
