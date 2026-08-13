@@ -111,7 +111,7 @@ preview, unfrozen at v1 and not part of the frozen core:
 
 | Kind          | What it is                                                                                       |
 | ------------- | ------------------------------------------------------------------------------------------------ |
-| `llmprovider` | One place completions are bought: `wire`, `baseURL`, `apiKey`, `headers`, `defaults`, `pricing`. |
+| `llmprovider` | One place completions are bought: `wire` (enum), `baseURL`, `apiKey`, `headers` and `pricing` (repeated objects), `defaults` (object). |
 | `llmthread`   | One agent run's conversation state, written as the loop runs — its `provider` and `model` included. |
 | `llmmessage`  | One turn in a thread, with its tool-call audit.                                                  |
 

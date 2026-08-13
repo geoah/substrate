@@ -23,8 +23,38 @@ collection at `/data/{authority}/{plural}`.
 
 A kind opens on two tabs — its **Records**, a filterable and pageable
 collection, and its **Definition**, the declaration rendered as the manifest it
-is. From the records tab you can create one: the form is composed from the
-declaration, and it goes out as the ordinary `put`.
+is. From the records tab you can create one, and from a record you can edit it:
+either way the editor is the same surface, and it goes out as the ordinary
+`put`.
+
+## The record editor
+
+Creating and editing a record are two **lenses over one document**, and the
+document is the apply-able [envelope](data-model.md#the-envelope).
+
+- **Form**, the default, is composed from the declaration: one control per
+  declared property, carrying its description and a worked example. An enum is
+  a dropdown of what the kind admits, a `state` offers its machine's states, a
+  `reference` picks a record of the kind it points at, a `secret` is write-only
+  (a read serves `<redacted>`, and leaving the field blank keeps the sealed
+  value), and a `json` property gets a JSON editor. Host-managed properties
+  (a declared `writer:` that is not the owner) are never offered.
+- **YAML** is the expert lens: the whole envelope in a code editor that knows
+  the kind. **Completion** offers what may be written where the cursor is (the
+  envelope's keys, the declared properties with their datatype and one-liner
+  and never one already written, an enum's admitted values, a state machine's
+  states, the declared edge rels), **diagnostics** underline a refused value on
+  the line it sits on and mark it in the gutter, and **hovering** a property
+  line shows what the kind says about it. There is a formatter, and the tint
+  is the manifest view's own colours.
+
+Both lenses edit the same text, so switching loses nothing and a hand-written
+comment survives being edited on the form. Everything is checked against the
+declaration **as you type** — the datatypes, required properties, unknown keys,
+the edge list's shape, and the two rules that belong to the write rather than
+the value: a `put` may not move a state (that transition is a `patch`), and the
+id in the document is not a rename. Problems key to their line, the gutter
+marks them, and Save is barred while an error stands.
 
 A record opens on four tabs:
 
