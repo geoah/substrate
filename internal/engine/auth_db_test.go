@@ -439,3 +439,96 @@ func TestEnrollmentURIShape(t *testing.T) {
 		t.Fatalf("the issued seed produces no code: %v", err)
 	}
 }
+
+// THE SECOND FACTOR, OFF (WithInsecureDisableTOTP — the local-development
+// escape hatch). A registration needs no seed and no code, every door after it
+// takes the password alone, and a WRONG password is still refused: the factor
+// that is gone is the only thing that is gone.
+func TestInsecureDisableTOTPTakesThePasswordAlone(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newService(t, engine.WithInsecureDisableTOTP())
+
+	res, err := svc.Register(ctx, substrate.RegisterInput{
+		Username: "geoah", Password: testPassword, Label: "cli",
+	})
+	if err != nil {
+		t.Fatalf("register without a second factor: %v", err)
+	}
+	if res.Secret == "" {
+		t.Fatal("registration must still end logged in")
+	}
+
+	// Login, and the credential change behind the password-factor rule, both
+	// without a code.
+	if _, _, err := svc.Login(ctx, substrate.LoginInput{
+		Username: "geoah", Password: testPassword, Label: "cli",
+	}); err != nil {
+		t.Fatalf("login without a code: %v", err)
+	}
+	if _, _, err := svc.Login(ctx, substrate.LoginInput{
+		Username: "geoah", Password: "not-the-password",
+	}); err == nil {
+		t.Fatal("a wrong password logged in: the password is the whole credential now")
+	}
+	if err := svc.ChangePassword(ctx, substrate.LoginInput{
+		Username: "geoah", Password: testPassword,
+	}, "a-second-correct-horse"); err != nil {
+		t.Fatalf("change the password without a code: %v", err)
+	}
+	if _, _, err := svc.Login(ctx, substrate.LoginInput{
+		Username: "geoah", Password: "a-second-correct-horse",
+	}); err != nil {
+		t.Fatalf("login with the new password: %v", err)
+	}
+
+	// A seed WAS minted and sealed: the factor is off, not absent, so turning
+	// the flag back off restores a credential that has one.
+	ds, _, err := svc.Authenticate(ctx, res.Secret)
+	if err != nil {
+		t.Fatalf("authenticate the registration token: %v", err)
+	}
+	cred, err := ds.Get(ctx, "core.substrate.reamde.dev/credential", "self")
+	if err != nil {
+		t.Fatalf("the credential record: %v", err)
+	}
+	if cred.Properties["totpRef"] != "<redacted>" {
+		t.Fatalf("no sealed second factor behind the credential: %v", cred.Properties)
+	}
+}
+
+// The seed a caller BRINGS is still stored when the factor is off, so a user
+// who enrolled an authenticator ahead of time keeps it — and the code that
+// comes with it is simply not checked.
+func TestInsecureDisableTOTPKeepsASuppliedSeed(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newService(t, engine.WithInsecureDisableTOTP())
+
+	seed, err := engine.NewTOTPSecret()
+	if err != nil {
+		t.Fatalf("mint a seed: %v", err)
+	}
+	if _, err := svc.Register(ctx, substrate.RegisterInput{
+		Username: "geoah", Password: testPassword, TOTPSecret: seed,
+		TOTPCode: "000000", Label: "cli",
+	}); err != nil {
+		t.Fatalf("register with a seed and a wrong code: %v", err)
+	}
+	// The seed is the one that was sent: a code from it re-enrolls nothing and
+	// proves nothing here, but the material must be what the caller enrolled.
+	code, err := engine.TOTPCode(seed, engine.TOTPStep(time.Now()))
+	if err != nil {
+		t.Fatalf("code from the seed: %v", err)
+	}
+	if _, _, err := svc.Login(ctx, substrate.LoginInput{
+		Username: "geoah", Password: testPassword, TOTPCode: code,
+	}); err != nil {
+		t.Fatalf("login carrying a code: %v", err)
+	}
+	// A garbage seed is still refused: the flag drops the VERIFICATION, not
+	// the shape of what gets sealed.
+	if _, err := svc.Register(ctx, substrate.RegisterInput{
+		Username: "other", Password: testPassword, TOTPSecret: "not base32!!",
+	}); err == nil {
+		t.Fatal("a malformed seed was accepted")
+	}
+}

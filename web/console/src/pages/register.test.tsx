@@ -18,6 +18,10 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }))
 
+/** What GET /api said about the door; discovery.test.ts covers the fetching. */
+const policy = vi.hoisted(() => ({ totpRequired: true }))
+vi.mock("@/lib/api/discovery", () => ({ useAuthPolicy: () => policy }))
+
 import { RegisterPage } from "./register"
 
 function jsonResponse(
@@ -65,6 +69,7 @@ describe("RegisterPage", () => {
     vi.stubGlobal("fetch", fetchMock)
     clearSession()
     navigate.mockClear()
+    policy.totpRequired = true
   })
 
   afterEach(() => {
@@ -137,6 +142,44 @@ describe("RegisterPage", () => {
       password: PASSWORD,
       totpSecret: "SEED",
       totpCode: "123456",
+      label: "console",
+    })
+  })
+
+  it("registers in ONE step where no second factor is verified", async () => {
+    policy.totpRequired = false
+    fetchMock.mockResolvedValue(jsonResponse(201, MINT))
+    render(<RegisterPage />)
+    // No enrollment step at all: no QR, no seed, no code field, ever.
+    fireEvent.change(screen.getByLabelText("Invite code"), {
+      target: { value: "INV-1" },
+    })
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "geoah" },
+    })
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: PASSWORD },
+    })
+    expect(screen.queryByLabelText("One-time code")).toBeNull()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create my repository" })
+    )
+
+    await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
+    expect(fetchMock.mock.calls.length).toBe(1)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe("/register")
+    // An empty seed asks the substrate to mint one; an empty code is what a
+    // door that verifies none expects.
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      inviteCode: "INV-1",
+      username: "geoah",
+      password: PASSWORD,
+      totpSecret: "",
+      totpCode: "",
       label: "console",
     })
   })

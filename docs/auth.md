@@ -183,6 +183,37 @@ unlocks nothing. What it decides is provenance — which property manager a writ
 records, which rows a function's trigger excludes as its own, and what the changelog
 says about who did this.
 
+## The second factor can be switched off locally
+
+`SUBSTRATE_INSECURE_DISABLE_TOTP` stops the substrate verifying codes at all:
+login, registration and both credential changes take a username and a password,
+and a code sent anyway is ignored. It exists for a substrate on your own
+machine that gets wiped daily — every `mise run dev*` task sets it, and nothing
+else in the tree does. On a reachable deployment it would make a leaked
+password the account, which is the whole reason the second factor is there.
+
+What does NOT change: the password is still required and still argon2id, the
+[password-factor rule](#the-credential-and-the-password-factor-rule) still
+refuses a bearer token as evidence for a credential change, the rate limits are
+untouched, and a seed is still minted and sealed with every credential — the
+factor is off, not absent.
+
+A deployment SAYS which door it runs, unauthenticated, at `GET /api`:
+
+```json
+{ "auth": { "totpRequired": false } }
+```
+
+The console and `substratectl` read it before they ask a person for anything,
+so neither prompts for a code nothing will check; a client that cannot reach
+discovery, or one talking to a substrate too old to answer, asks for a code as
+before.
+
+Putting the factor back is one restart — but a user who REGISTERED while it was
+off holds no authenticator, because the seed sealed with their credential was
+minted server-side and shown to nobody. Reset them (below), or wipe the
+database.
+
 ## Losing both factors
 
 There is no self-serve recovery. A user who has lost both factors is reset by

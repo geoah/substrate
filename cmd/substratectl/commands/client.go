@@ -37,6 +37,9 @@ const (
 // registration has no repository yet, and everything after it takes one from
 // the token.
 const (
+	// pathDiscovery is GET /api: unauthenticated, repository-free, and the one
+	// thing the door reads before it asks a person for anything.
+	pathDiscovery      = "/api"
 	pathRegisterEnroll = "/register/enroll"
 	pathRegister       = "/register"
 	pathLogin          = "/login"
@@ -385,6 +388,28 @@ type totpRequest struct {
 type tokenResult struct {
 	Token  substrate.TokenInfo `json:"token"`
 	Secret string              `json:"secret"`
+}
+
+// discoveryDoc is the slice of GET /api the door reads. The pointer is the
+// point: a substrate that predates the field, and one that cannot be reached
+// at all, must both read as "a code is required" rather than as "no".
+type discoveryDoc struct {
+	Auth struct {
+		TOTPRequired *bool `json:"totpRequired"`
+	} `json:"auth"`
+}
+
+// totpRequired reports whether this deployment verifies a second factor.
+// Anything short of an explicit NO is a yes: prompting for a code the door
+// wanted anyway costs a moment, while skipping one it wanted refuses the
+// login. A local substrate with SUBSTRATE_INSECURE_DISABLE_TOTP is the only
+// thing that answers no.
+func (c *client) totpRequired(ctx context.Context) bool {
+	var doc discoveryDoc
+	if err := c.do(ctx, http.MethodGet, pathDiscovery, nil, nil, &doc); err != nil {
+		return true
+	}
+	return doc.Auth.TOTPRequired == nil || *doc.Auth.TOTPRequired
 }
 
 func (c *client) registerEnroll(ctx context.Context, in registerBeginRequest) (*substrate.TOTPEnrollment, error) {

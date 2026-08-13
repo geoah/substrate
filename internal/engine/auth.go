@@ -326,22 +326,9 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 	if err := validPassword(in.Password); err != nil {
 		return zero, err
 	}
-	seed, err := normalizeTOTPSecret(in.TOTPSecret)
+	seed, step, err := s.registrationSeed(in)
 	if err != nil {
-		return zero, fmt.Errorf("%w: the totp secret is not base32: %w", substrate.ErrValidation, err)
-	}
-	key, err := decodeTOTPSecret(seed)
-	if err != nil || len(key) < totpMinSeedBytes {
-		return zero, fmt.Errorf("%w: the totp secret must decode to at least %d bytes",
-			substrate.ErrValidation, totpMinSeedBytes)
-	}
-	// The code proves the enrollment landed in an authenticator before the
-	// account exists — a user cannot register themselves out of their own
-	// account. Its step is stored as consumed, so the code that registered
-	// cannot also log in.
-	step, ok := totpVerify(key, in.TOTPCode, nowUTC(), 0)
-	if !ok {
-		return zero, fmt.Errorf("%w: that code does not match the enrollment", substrate.ErrAuth)
+		return zero, err
 	}
 	hash, err := hashPassword(in.Password)
 	if err != nil {
@@ -385,6 +372,40 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 		return zero, err
 	}
 	return out, nil
+}
+
+// registrationSeed resolves the second factor a registration commits with: the
+// caller's own enrollment, proved by one of its codes. The code proves the
+// enrollment landed in an authenticator before the account exists — a user
+// cannot register themselves out of their own account — and the step it matched
+// is stored as consumed, so the code that registered cannot also log in.
+//
+// With the factor disabled (WithInsecureDisableTOTP) no code is asked for, and
+// a registration that sends no seed at all gets a freshly minted one: the
+// credential still HAS a second factor, sealed and unused, for the day the flag
+// comes off.
+func (s *service) registrationSeed(in substrate.RegisterInput) (string, int64, error) {
+	if s.totpDisabled && in.TOTPSecret == "" {
+		seed, err := NewTOTPSecret()
+		return seed, 0, err
+	}
+	seed, err := normalizeTOTPSecret(in.TOTPSecret)
+	if err != nil {
+		return "", 0, fmt.Errorf("%w: the totp secret is not base32: %w", substrate.ErrValidation, err)
+	}
+	key, err := decodeTOTPSecret(seed)
+	if err != nil || len(key) < totpMinSeedBytes {
+		return "", 0, fmt.Errorf("%w: the totp secret must decode to at least %d bytes",
+			substrate.ErrValidation, totpMinSeedBytes)
+	}
+	if s.totpDisabled {
+		return seed, 0, nil
+	}
+	step, ok := totpVerify(key, in.TOTPCode, nowUTC(), 0)
+	if !ok {
+		return "", 0, fmt.Errorf("%w: that code does not match the enrollment", substrate.ErrAuth)
+	}
+	return seed, step, nil
 }
 
 // EnrollRecoveryKey wraps the repository's DEK to an age recipient and
@@ -495,6 +516,17 @@ func (s *service) verifyFactors(ctx context.Context, in substrate.LoginInput) (R
 	}
 	passwordOK := verifyPassword(material.passwordHash, in.Password)
 	step, codeOK := totpVerify(key, in.TOTPCode, nowUTC(), material.totp.Step)
+	// The dev escape hatch (WithInsecureDisableTOTP): the code is still
+	// evaluated above, so the work and the timing are unchanged, and only the
+	// VERDICT is dropped. Nothing is consumed either — a step spent here would
+	// invalidate codes the enrolled authenticator is still showing, which is
+	// what would make turning the factor back on a lockout.
+	if s.totpDisabled {
+		if rerr != nil || !passwordOK {
+			return Repository{}, authMaterial{}, authErr
+		}
+		return repo, material, nil
+	}
 	if rerr != nil || !passwordOK || !codeOK {
 		return Repository{}, authMaterial{}, authErr
 	}

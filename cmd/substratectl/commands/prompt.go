@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -117,6 +118,21 @@ func (a *app) askCode(code, label string) (string, error) {
 		code = got
 	}
 	return normalizeCode(code)
+}
+
+// askCodeIfRequired resolves the second factor the way the DEPLOYMENT asks for
+// it: a substrate that verifies no code (SUBSTRATE_INSECURE_DISABLE_TOTP,
+// which local development sets) is not prompted for one, because there is no
+// authenticator to read it from.
+//
+// A code already in hand is sent, and still validated, without asking the
+// substrate anything — a caller who typed one meant it, and the probe is only
+// worth a round trip when its answer changes what happens next.
+func (a *app) askCodeIfRequired(ctx context.Context, cl *client, code, label string) (string, error) {
+	if code == "" && !cl.totpRequired(ctx) {
+		return "", nil
+	}
+	return a.askCode(code, label)
 }
 
 // normalizeCode strips the spacing authenticators display codes with and

@@ -47,7 +47,11 @@ and takes back one code with the password — only that call writes anything.
 
 --totp-secret brings your own seed and skips the enrollment call, which is what
 makes an unattended registration possible; without it the seed comes from the
-substrate and the code is prompted for.`,
+substrate and the code is prompted for.
+
+A substrate that verifies no second factor (SUBSTRATE_INSECURE_DISABLE_TOTP, a
+local-development setting) is neither enrolled with nor asked for a code: a
+username and a password make the user.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := a.config()
@@ -83,7 +87,18 @@ substrate and the code is prompted for.`,
 				return err
 			}
 			cl := newClient(server, "", a.hc)
-			if secret == "" {
+			// A substrate that verifies no second factor is not asked for an
+			// enrollment either: buying a seed nobody will hold, to prove it
+			// with a code nothing checks, is ceremony. The commit sends no
+			// secret, and the substrate mints the one it seals.
+			//
+			// Asked only when the answer changes what happens next: a caller
+			// carrying both a seed and a code has already decided.
+			totpRequired := true
+			if secret == "" || code == "" {
+				totpRequired = cl.totpRequired(cmd.Context())
+			}
+			if secret == "" && totpRequired {
 				enrollment, err := cl.registerEnroll(cmd.Context(), registerBeginRequest{
 					InviteCode: invite, Username: username,
 				})
@@ -95,9 +110,10 @@ substrate and the code is prompted for.`,
 				fmt.Fprintln(a.out, "  nothing is stored until the code below is accepted")
 				fmt.Fprintln(a.out)
 			}
-			code, err = a.askCode(code, "TOTP code from the new enrollment: ")
-			if err != nil {
-				return err
+			if totpRequired || code != "" {
+				if code, err = a.askCode(code, "TOTP code from the new enrollment: "); err != nil {
+					return err
+				}
 			}
 			if label == "" {
 				label = defaultTokenLabel()

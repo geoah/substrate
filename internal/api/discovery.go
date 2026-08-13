@@ -37,6 +37,20 @@ type discoveryDoc struct {
 	// version prefix. There is no repository segment
 	// anywhere: the token implies the repository.
 	Endpoints endpointsInfo `json:"endpoints"`
+	// Auth is what those doors ASK FOR, which a client cannot infer from the
+	// paths: whether this deployment verifies a second factor at all.
+	Auth authInfo `json:"auth"`
+}
+
+// authInfo is the door's shape. It states a requirement, never a verdict: what
+// a caller must present, decided by configuration, with no repository opened
+// and nothing about any user in it.
+type authInfo struct {
+	// TOTPRequired is false only on a deployment that booted with
+	// SUBSTRATE_INSECURE_DISABLE_TOTP — a local one. A client reads it to
+	// stop asking for a code nothing checks; it is not permission to skip
+	// anything, because the service refuses on its own terms either way.
+	TOTPRequired bool `json:"totpRequired"`
 }
 
 // grammarInfo states the kind grammar in the form a client can check against.
@@ -114,6 +128,7 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 			Register: "/register", Login: "/login", Tokens: "/tokens",
 			Password: "/password", TOTP: "/totp",
 		},
+		Auth: authInfo{TOTPRequired: !h.totpDisabled},
 	}
 	writeJSON(w, http.StatusOK, doc)
 }

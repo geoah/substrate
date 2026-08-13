@@ -31,6 +31,14 @@ readonly LOGFILE="${STATE}/substrate.log"
 # The same code compose.yaml defaults to, so a walkthrough written against one
 # path works against the other.
 readonly INVITE="${SUBSTRATE_INVITE_CODE:-let-me-in}"
+# THE SECOND FACTOR IS OFF HERE BY DEFAULT. This substrate is thrown away by
+# `dev:wipe` and registration is one-shot per user, so every fresh start would
+# otherwise mean enrolling an authenticator entry to reach a repository that
+# will not outlive the afternoon. Nothing else in the tree turns it off, and
+# `dev:totp` runs the same substrate with the factor enforced — which is how a
+# change to the door gets tested.
+# Not readonly: `dev:totp` is this same substrate with the factor put back.
+DISABLE_TOTP="${SUBSTRATE_INSECURE_DISABLE_TOTP:-true}"
 # Built by `mise run console:build`. Absent means the server serves no console
 # at / — the API is still whole, and `mise run console:dev` proxies to it.
 readonly WEB_DIR="web/console/dist"
@@ -123,6 +131,16 @@ wait_healthy() {
 	return 1
 }
 
+# totp_note says which door this substrate is running, every time it starts:
+# a factor that is off must never be something you find out by accident.
+totp_note() {
+	if [ "$DISABLE_TOTP" = "true" ]; then
+		echo "  second factor: OFF (username + password; mise run dev:totp enforces it)"
+	else
+		echo "  second factor: enforced"
+	fi
+}
+
 urls() {
 	echo "  http://localhost:${PORT}"
 	# The tailnet address, when there is one: this is how the box is reached
@@ -162,6 +180,7 @@ server_start() {
 		"DATABASE_URL=${DSN}" \
 		"PORT=${PORT}" \
 		"SUBSTRATE_INVITE_CODE=${INVITE}" \
+		"SUBSTRATE_INSECURE_DISABLE_TOTP=${DISABLE_TOTP}" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
 		"${web[@]}" \
 		$(llm_env) \
@@ -177,6 +196,7 @@ server_start() {
 		return 1
 	fi
 	echo "dev: substrate up (pid $(cat "$PIDFILE")), invite code ${INVITE}"
+	totp_note
 	urls
 	[ -d "$WEB_DIR" ] || echo "  (no console: mise run console:build, then mise run dev:restart)"
 	echo "  logs: mise run dev:logs"
@@ -209,6 +229,7 @@ cmd_run() {
 	fi
 	db_up
 	echo "dev: substrate on :${PORT}, invite code ${INVITE} (ctrl-c to stop)"
+	totp_note
 	urls
 	local web=()
 	[ -d "$WEB_DIR" ] && web=("WEB_DIR=${WEB_DIR}")
@@ -216,6 +237,7 @@ cmd_run() {
 		"DATABASE_URL=${DSN}" \
 		"PORT=${PORT}" \
 		"SUBSTRATE_INVITE_CODE=${INVITE}" \
+		"SUBSTRATE_INSECURE_DISABLE_TOTP=${DISABLE_TOTP}" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
 		"${web[@]}" \
 		$(llm_env) \
@@ -225,6 +247,15 @@ cmd_run() {
 cmd_up() {
 	db_up
 	server_start
+}
+
+# cmd_totp is `run` with the second factor ENFORCED — the same database, the
+# same users, a door that asks for a code. It is how a change to the door is
+# exercised against the shape a deployment actually runs, and it is why the
+# default being off costs nothing.
+cmd_totp() {
+	DISABLE_TOTP=false
+	cmd_run
 }
 
 cmd_stop() {
@@ -258,6 +289,13 @@ cmd_status() {
 		local health="unhealthy"
 		curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1 && health="healthy"
 		echo "substrate: running (pid $(server_pid)), ${health}"
+		# The RUNNING server's own answer, not what this shell would start one
+		# with: `dev` and `dev:totp` differ, so status must report the door
+		# that is actually up.
+		case "$(curl -fsS "http://127.0.0.1:${PORT}/api" 2>/dev/null)" in
+		*'"totpRequired":false'*) echo "  second factor: OFF (username + password)" ;;
+		*'"totpRequired":true'*) echo "  second factor: enforced" ;;
+		esac
 		urls
 	else
 		echo "substrate: stopped"
@@ -282,13 +320,13 @@ cmd_dsn() { echo "$DSN"; }
 cmd_psql() { exec docker exec -it "$CONTAINER" psql -U postgres -d substrate "$@"; }
 
 case "${1:-}" in
-run | up | stop | restart | wipe | status | logs | dsn | psql)
+run | totp | up | stop | restart | wipe | status | logs | dsn | psql)
 	verb="$1"
 	shift
 	"cmd_${verb}" "$@"
 	;;
 *)
-	echo "usage: .mise/dev.sh {run|up|stop|restart|wipe|status|logs|dsn|psql}" >&2
+	echo "usage: .mise/dev.sh {run|totp|up|stop|restart|wipe|status|logs|dsn|psql}" >&2
 	exit 2
 	;;
 esac

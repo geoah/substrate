@@ -146,11 +146,11 @@ predate recovery keys.`,
 			if err != nil {
 				return err
 			}
-			code, err := a.askCode(code, "Current TOTP code: ")
+			cl, err := a.doorClient()
 			if err != nil {
 				return err
 			}
-			cl, err := a.doorClient()
+			code, err := a.askCodeIfRequired(cmd.Context(), cl, code, "Current TOTP code: ")
 			if err != nil {
 				return err
 			}

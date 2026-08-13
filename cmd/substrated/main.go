@@ -99,6 +99,11 @@ func run() error {
 	if embedder != nil {
 		opts = append(opts, engine.WithEmbedder(embedder))
 	}
+	if cfg.InsecureDisableTOTP {
+		// Loud, and at boot: from here on a password is the whole credential.
+		slog.Warn("SUBSTRATE_INSECURE_DISABLE_TOTP is set: the second factor is NOT verified — local development only")
+		opts = append(opts, engine.WithInsecureDisableTOTP())
+	}
 	svc, err := engine.Open(ctx, cfg.DatabaseURL, opts...)
 	if err != nil {
 		return err
@@ -145,12 +150,13 @@ func run() error {
 		slog.Info("no SUBSTRATE_INVITE_CODE: registration is closed")
 	}
 	handler := api.New(api.Config{
-		Service:    svc,
-		WebDir:     cfg.WebDir,
-		Catalog:    cat,
-		ConsoleURL: cfg.ConsoleURL,
-		InviteCode: cfg.InviteCode,
-		MaxDialect: engine.MaxSchemaDialect(),
+		Service:      svc,
+		WebDir:       cfg.WebDir,
+		Catalog:      cat,
+		ConsoleURL:   cfg.ConsoleURL,
+		InviteCode:   cfg.InviteCode,
+		TOTPDisabled: cfg.InsecureDisableTOTP,
+		MaxDialect:   engine.MaxSchemaDialect(),
 	})
 	httpSrv := &http.Server{
 		Addr:              ":" + cfg.Port,

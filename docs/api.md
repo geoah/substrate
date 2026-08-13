@@ -266,9 +266,10 @@ served API versions, the server build, the binary's maximum
 repository's own stored dialect is internal to its store and never on the wire;
 a binary too old for it refuses the open, which surfaces as `unavailable`), the
 [changelog horizon](changelog.md#frames-and-the-horizon), the reference **grammar**
-this deployment speaks, the door endpoints beside the versioned API, and a
-feature list. That feature list is what replaces probing for 501s: each entry
-names a feature and its stability, and the agent surface reports `alpha`:
+this deployment speaks, the door endpoints beside the versioned API, what those
+doors ask for, and a feature list. That feature list is what replaces probing
+for 501s: each entry names a feature and its stability, and the agent surface
+reports `alpha`:
 
 ```json
 {"versions": [{"name": "v1", "status": "served"}],
@@ -283,8 +284,15 @@ names a feature and its stability, and the agent surface reports `alpha`:
              "actors": ["api", "console", "substratectl", "connector:<name>",
                         "function:<name>", "bundle:<name>", "substrate"]},
  "endpoints": {"register": "/register", "login": "/login", "tokens": "/tokens",
-               "password": "/password", "totp": "/totp"}}
+               "password": "/password", "totp": "/totp"},
+ "auth": {"totpRequired": true}}
 ```
+
+`auth.totpRequired` is what a client reads before it asks a person for a code:
+it is `false` only where the second factor is
+[switched off](auth.md#the-second-factor-can-be-switched-off-locally), which is
+a local substrate. It states a requirement, never a verdict — the service
+refuses on its own terms either way.
 
 Address `/api/v1`. Today it is the only prefix served, and `versions` is where
 that is said: were a deployment ever to answer on a second one, it would be

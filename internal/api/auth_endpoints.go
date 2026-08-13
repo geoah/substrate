@@ -320,8 +320,14 @@ func (h *handler) postTOTP(w http.ResponseWriter, r *http.Request) {
 // authentication failure — it is a REFUSAL of the whole idea: this endpoint
 // does not accept tokens, and saying so with 403 is what tells a caller their
 // token will never be enough.
+//
+// The code is not demanded on a deployment whose second factor is disabled
+// (SUBSTRATE_INSECURE_DISABLE_TOTP): asking for something nothing verifies
+// would refuse honest callers over a formality. The PASSWORD is still
+// required — the rule is about what a bearer token buys, and that does not
+// change with the factor.
 func (h *handler) factorsPresented(w http.ResponseWriter, password, code string) bool {
-	if password != "" && code != "" {
+	if password != "" && (code != "" || h.totpDisabled) {
 		return true
 	}
 	writeError(w, http.StatusForbidden, codeForbidden,

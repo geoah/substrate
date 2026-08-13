@@ -307,6 +307,52 @@ func TestLoginRejectsNonSixDigitCodesWithoutARequest(t *testing.T) {
 	}
 }
 
+// A substrate that verifies no second factor is not asked for a code: the
+// prompt would have nothing to read it from, and the substrate ignores what it
+// is sent. The stdin below holds ONLY a password, so a prompt for a code would
+// hang or fail rather than pass quietly.
+func TestLoginAsksForNoCodeWhereNoneIsVerified(t *testing.T) {
+	h := newHarness(t)
+	h.fake.totpDisabled = true
+	h.stdin.WriteString("hunter2\n")
+	h.mustRun("login", "--server", h.server, "--username", "geoah")
+	var code string
+	if err := json.Unmarshal(h.fake.lastBody["totpCode"], &code); err != nil {
+		t.Fatalf("decode totpCode: %v", err)
+	}
+	if code != "" {
+		t.Fatalf("code sent = %q, want none", code)
+	}
+	if got := h.fake.doorRequests(); len(got) != 1 || got[0] != "POST /login" {
+		t.Fatalf("requests = %v, want the login alone", got)
+	}
+}
+
+// Registration against the same substrate: no enrollment round trip, no code,
+// and an EMPTY seed — which is what asks the substrate to mint the one it
+// seals, so the credential still has a factor for the day the flag comes off.
+func TestRegisterSkipsTheEnrollmentWhereNoCodeIsVerified(t *testing.T) {
+	h := newHarness(t)
+	h.fake.totpDisabled = true
+	h.stdin.WriteString("hunter2\nhunter2\n")
+	out, _ := h.mustRun("register", "--server", h.server, "--invite-code", "let-me-in", "--username", "geoah")
+	if strings.Contains(out, "TOTP enrollment") {
+		t.Errorf("an enrollment was shown for a substrate that verifies none:\n%s", out)
+	}
+	if got := h.fake.doorRequests(); len(got) != 1 || got[0] != "POST /register" {
+		t.Fatalf("requests = %v, want the commit alone", got)
+	}
+	for field, want := range map[string]string{"totpSecret": "", "totpCode": ""} {
+		var got string
+		if err := json.Unmarshal(h.fake.lastBody[field], &got); err != nil {
+			t.Fatalf("decode %s: %v", field, err)
+		}
+		if got != want {
+			t.Errorf("%s sent = %q, want %q", field, got, want)
+		}
+	}
+}
+
 func TestLoginAcceptsASpacedCode(t *testing.T) {
 	h := newHarness(t)
 	h.stdin.WriteString("hunter2\n")
@@ -385,7 +431,7 @@ func TestRegisterEnrollsThenCommitsAndEndsLoggedIn(t *testing.T) {
 			t.Errorf("register output missing %q:\n%s", want, out)
 		}
 	}
-	if got := h.fake.requests; len(got) != 2 || got[0] != "POST /register/enroll" || got[1] != "POST /register" {
+	if got := h.fake.doorRequests(); len(got) != 2 || got[0] != "POST /register/enroll" || got[1] != "POST /register" {
 		t.Fatalf("requests = %v, want the enrollment then the commit", got)
 	}
 	// The commit carries the seed the caller was issued, plus one code from it.

@@ -137,6 +137,15 @@ description = "The dev substrate in the foreground on :8080 (ctrl-c stops it)"
 depends = ["build"]
 run = ".mise/dev.sh run"
 
+[tasks."dev:totp"]
+description = "The dev substrate in the foreground WITH the second factor enforced"
+# `mise run dev` turns TOTP off (SUBSTRATE_INSECURE_DISABLE_TOTP): the database
+# is thrown away daily and enrolling an authenticator for it is friction with
+# nothing behind it. This is the same substrate with the factor put back, which
+# is how a change to the door is tested against the shape a deployment runs.
+depends = ["build"]
+run = ".mise/dev.sh totp"
+
 [tasks."dev:up"]
 description = "The dev substrate in the background; waits for /healthz"
 depends = ["build"]

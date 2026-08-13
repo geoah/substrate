@@ -56,15 +56,15 @@ the account it stole.
 			if err != nil {
 				return err
 			}
-			code, err := a.askCode(code, "Current TOTP code: ")
+			cl, err := a.doorClient()
+			if err != nil {
+				return err
+			}
+			code, err := a.askCodeIfRequired(cmd.Context(), cl, code, "Current TOTP code: ")
 			if err != nil {
 				return err
 			}
 			newPassword, err := a.newSecret(newPasswordStdin, "New password: ", "New password (again): ")
-			if err != nil {
-				return err
-			}
-			cl, err := a.doorClient()
 			if err != nil {
 				return err
 			}
@@ -117,11 +117,14 @@ working the moment the swap commits.
 			if err != nil {
 				return err
 			}
-			code, err := a.askCode(code, "Current TOTP code: ")
+			cl, err := a.doorClient()
 			if err != nil {
 				return err
 			}
-			cl, err := a.doorClient()
+			// The CURRENT code follows the deployment; the NEW one is asked for
+			// regardless, because it is what proves the seed being installed
+			// landed somewhere — the substrate verifies that either way.
+			code, err := a.askCodeIfRequired(cmd.Context(), cl, code, "Current TOTP code: ")
 			if err != nil {
 				return err
 			}

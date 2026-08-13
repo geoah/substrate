@@ -21,6 +21,16 @@ type Config struct {
 	// substrate that already has its user.
 	InviteCode string `envconfig:"SUBSTRATE_INVITE_CODE" default:""`
 
+	// InsecureDisableTOTP takes the SECOND FACTOR OFF the whole door: login,
+	// registration and the credential changes ask for a username and a
+	// password and nothing else. It exists for a local substrate you wipe
+	// every day, where enrolling an authenticator to reach a throwaway
+	// repository is friction with nothing behind it. NEVER set it on a
+	// deployment anybody can reach: a leaked password is then the account.
+	// The seed is still minted and still stored, so turning it back off
+	// restores the factor the user enrolled.
+	InsecureDisableTOTP bool `envconfig:"SUBSTRATE_INSECURE_DISABLE_TOTP" default:"false"`
+
 	// The host OAuth facility (bundles declare auth, the host runs it).
 	// StateKey signs flow state; CallbackURL is the one redirect URI every
 	// provider app registers. Both unset disables the facility.

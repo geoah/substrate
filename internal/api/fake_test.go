@@ -40,6 +40,9 @@ type fakeService struct {
 	// authErr, when non-nil and NOT substrate.ErrAuth, models a repository
 	// that could not be opened: the API maps it to 503.
 	authErr error
+	// totpDisabled models the engine's dev escape hatch: the second factor is
+	// not verified, so any code — including none — passes.
+	totpDisabled bool
 }
 
 type fakeToken struct {
@@ -211,7 +214,10 @@ func (s *fakeService) EnrollRecoveryKey(_ context.Context, in substrate.LoginInp
 // the engine does.
 func (s *fakeService) verify(in substrate.LoginInput) error {
 	password, known := s.passwords[in.Username]
-	if !known || password != in.Password || in.TOTPCode != fakeCode(in.Username) {
+	if !known || password != in.Password {
+		return fmt.Errorf("%w: bad username, password or code", substrate.ErrAuth)
+	}
+	if !s.totpDisabled && in.TOTPCode != fakeCode(in.Username) {
 		return fmt.Errorf("%w: bad username, password or code", substrate.ErrAuth)
 	}
 	return nil

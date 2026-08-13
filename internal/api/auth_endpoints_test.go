@@ -236,3 +236,57 @@ func TestRecoveryEnrollFactorsAndOneTime(t *testing.T) {
 	})
 	wantStatus(t, rec, http.StatusConflict)
 }
+
+// THE DOOR WITH THE SECOND FACTOR OFF (SUBSTRATE_INSECURE_DISABLE_TOTP): the
+// deployment says so in discovery so a client stops asking, the credential
+// changes take the password ALONE — and the password-factor rule itself is
+// untouched, because it was never about the code: a request with no password
+// is still refused outright.
+func TestTOTPDisabledDoorTakesThePasswordAlone(t *testing.T) {
+	svc := newFakeService()
+	svc.totpDisabled = true
+	clock := &testClock{t: time.Unix(1_700_000_000, 0).UTC()}
+	env := &testEnv{svc: svc, clock: clock, h: New(Config{
+		Service: svc, Now: clock.now, InviteCode: testInviteCode, TOTPDisabled: true,
+	})}
+
+	rec := env.do(t, http.MethodGet, "/api", "", nil)
+	wantStatus(t, rec, http.StatusOK)
+	doc := decodeJSON[map[string]any](t, rec)
+	auth, _ := doc["auth"].(map[string]any)
+	if auth == nil || auth["totpRequired"] != false {
+		t.Fatalf("discovery must report the door's shape: %+v", doc["auth"])
+	}
+
+	// A password and no code changes the password.
+	rec = env.do(t, http.MethodPost, "/password", "", map[string]any{
+		"username": "geoah", "password": "correct-horse-battery-staple",
+		"newPassword": "a-new-correct-horse",
+	})
+	wantStatus(t, rec, http.StatusOK)
+
+	// A bearer token and no password is still refused with 403 — a token is
+	// not evidence here and the missing factor is not why.
+	env.clock.advance(defaultAuthInterval + time.Millisecond)
+	rec = env.do(t, http.MethodPost, "/password", svc.token("geoah"), map[string]any{
+		"username": "geoah", "newPassword": "another-correct-horse",
+	})
+	wantStatus(t, rec, http.StatusForbidden)
+}
+
+// The default deployment is unchanged: discovery says a code is required, and
+// a credential change without one is refused before the service is reached.
+func TestDiscoveryRequiresTOTPByDefault(t *testing.T) {
+	env := newTestEnv(t)
+	rec := env.do(t, http.MethodGet, "/api", "", nil)
+	doc := decodeJSON[map[string]any](t, rec)
+	auth, _ := doc["auth"].(map[string]any)
+	if auth == nil || auth["totpRequired"] != true {
+		t.Fatalf("discovery must require the second factor by default: %+v", doc["auth"])
+	}
+	rec = env.do(t, http.MethodPost, "/password", "", map[string]any{
+		"username": "geoah", "password": "correct-horse-battery-staple",
+		"newPassword": "a-new-correct-horse",
+	})
+	wantStatus(t, rec, http.StatusForbidden)
+}
