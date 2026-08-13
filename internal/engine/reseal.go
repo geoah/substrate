@@ -345,47 +345,63 @@ func (t *txn) rekeySealedStore() (int, error) {
 		ref     string
 		payload []byte
 	}
-	var updates []pending
-	rows, err := t.query(`SELECT ref, payload FROM sealed FOR UPDATE`)
-	if err != nil {
-		return 0, err
-	}
-	for rows.Next() {
-		var ref string
-		var payload []byte
-		if err := rows.Scan(&ref, &payload); err != nil {
-			_ = rows.Close()
-			return 0, err
+	total := 0
+	after := ""
+	// One page of rows at a time, flushed before the next loads, so memory
+	// stays bounded by the batch; the FOR UPDATE locks accumulate for the
+	// transaction either way, which is what keeps a concurrent step consume
+	// or token refresh serialized behind the rewrite.
+	for {
+		var updates []pending
+		rows, err := t.query(`
+			SELECT ref, payload FROM sealed
+			WHERE ref > $1 ORDER BY ref LIMIT $2 FOR UPDATE`, after, rebuildBatch)
+		if err != nil {
+			return total, err
 		}
-		if len(payload) > 0 && payload[0] == credSealed && dekAEAD != nil {
-			if _, err := openWith(dekAEAD, payload); err == nil {
-				continue
+		n := 0
+		for rows.Next() {
+			var ref string
+			var payload []byte
+			if err := rows.Scan(&ref, &payload); err != nil {
+				_ = rows.Close()
+				return total, err
 			}
+			n++
+			after = ref
+			if len(payload) > 0 && payload[0] == credSealed && dekAEAD != nil {
+				if _, err := openWith(dekAEAD, payload); err == nil {
+					continue
+				}
+			}
+			raw, err := t.ds.openPayload(payload)
+			if err != nil {
+				_ = rows.Close()
+				return total, fmt.Errorf("substrate/engine: re-key sealed %s: %w", ref, err)
+			}
+			sealed, err := t.ds.sealPayload(raw)
+			if err != nil {
+				_ = rows.Close()
+				return total, err
+			}
+			updates = append(updates, pending{ref: ref, payload: sealed})
 		}
-		raw, err := t.ds.openPayload(payload)
-		if err != nil {
+		if err := rows.Err(); err != nil {
 			_ = rows.Close()
-			return 0, fmt.Errorf("substrate/engine: re-key sealed %s: %w", ref, err)
+			return total, err
 		}
-		sealed, err := t.ds.sealPayload(raw)
-		if err != nil {
-			_ = rows.Close()
-			return 0, err
-		}
-		updates = append(updates, pending{ref: ref, payload: sealed})
-	}
-	if err := rows.Err(); err != nil {
 		_ = rows.Close()
-		return 0, err
-	}
-	_ = rows.Close()
-	for _, u := range updates {
-		if _, err := t.exec(`UPDATE sealed SET payload = $1 WHERE ref = $2`,
-			u.payload, u.ref); err != nil {
-			return 0, err
+		for _, u := range updates {
+			if _, err := t.exec(`UPDATE sealed SET payload = $1 WHERE ref = $2`,
+				u.payload, u.ref); err != nil {
+				return total, err
+			}
+			total++
+		}
+		if n < rebuildBatch {
+			return total, nil
 		}
 	}
-	return len(updates), nil
 }
 
 // decodeNumberPreserving decodes stored JSONB without flattening numbers to

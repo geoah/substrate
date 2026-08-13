@@ -389,7 +389,7 @@ func (h *handler) postRecoveryEnroll(w http.ResponseWriter, r *http.Request) {
 	}
 	enroller, ok := h.svc.(recoveryEnroller)
 	if !ok {
-		writeError(w, http.StatusNotImplemented, codeBadRequest, "this build does not support recovery enrollment")
+		writeError(w, http.StatusNotImplemented, codeUnsupported, "this build does not support recovery enrollment")
 		return
 	}
 	identity, recipient, err := enroller.EnrollRecoveryKey(r.Context(), substrate.LoginInput{

@@ -35,8 +35,9 @@ const MIN_PASSWORD = 12
 function CopyBlock({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false)
   async function copy() {
+    if (!navigator.clipboard?.writeText) return
     try {
-      await navigator.clipboard?.writeText(value)
+      await navigator.clipboard.writeText(value)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
@@ -67,8 +68,9 @@ function CopyBlock({ value, label }: { value: string; label: string }) {
 function RecoveryKeyField({ value }: { value: string }) {
   const [copied, setCopied] = useState(false)
   async function copy() {
+    if (!navigator.clipboard?.writeText) return
     try {
-      await navigator.clipboard?.writeText(value)
+      await navigator.clipboard.writeText(value)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
