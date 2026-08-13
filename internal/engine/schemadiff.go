@@ -74,22 +74,39 @@ const countObjectFieldQuery = `SELECT count(*) FROM records
 	       ELSE props->$2 ? $3 END`
 
 // countRefOutsideQuery counts live rows whose reference property ($2) points at
-// a type OTHER than the newly required target ($3, a full identity), covering
-// both the scalar and repeated stored shape. The stored reference is
-// {authority, type, id} with the LOCAL name in `type` (references.go), so the
-// referent identity is reconstructed as `type.authority`.
+// a kind OTHER than the newly required target ($3, a full identity), covering
+// both the scalar and repeated stored shape.
+//
+// It reads `kind` and nothing else. The query used to reconstruct the referent
+// as `kind || '.' || authority`, which had matched a long-dead stored shape:
+// normalizeReference writes {kind: <full identity>, id} and has never written
+// an `authority` key (references.go), so every comparison was against
+// `<identity>.` and the guard counted every live row or none — it was dead
+// either way, and silently.
 const countRefOutsideQuery = `SELECT count(*) FROM records
 	WHERE kind = $1 AND deleted_at IS NULL AND props ? $2
 	  AND CASE WHEN jsonb_typeof(props->$2) = 'array'
 	       THEN EXISTS (SELECT 1 FROM jsonb_array_elements(props->$2) e
-	                    WHERE COALESCE(e->>'kind','') || '.' || COALESCE(e->>'authority','') <> $3)
-	       ELSE COALESCE(props->$2->>'kind','') || '.' || COALESCE(props->$2->>'authority','') <> $3 END`
+	                    WHERE COALESCE(e->>'kind','') <> $3)
+	       ELSE COALESCE(props->$2->>'kind','') <> $3 END`
 
 // classifyNarrowings walks every type present in BOTH the current and the
 // candidate registry (dropped types are refuse-with-instances' whole-type
 // count) across the touched authorities and returns the narrowing diffs. Pure
 // classification — the counts run later, inside the batch transaction.
 func classifyNarrowings(current, candidate *vocabulary.Registry, touched map[string]bool) []narrowing {
+	return classifyNarrowingsExcept(current, candidate, touched, nil)
+}
+
+// classifyNarrowingsExcept is classifyNarrowings with the kind identities the
+// caller is NOT rewriting. The boot upgrade needs it: it re-projects per
+// DECLARATION, leaving any whose stored version is the same or newer exactly as
+// it stands (seed.go), and a kind it will not touch must never refuse the boot.
+func classifyNarrowingsExcept(
+	current, candidate *vocabulary.Registry,
+	touched map[string]bool,
+	skip map[string]bool,
+) []narrowing {
 	var out []narrowing
 	for _, aname := range sortedKeys(touched) {
 		cur, _ := current.AuthorityByName(aname)
@@ -99,6 +116,9 @@ func classifyNarrowings(current, candidate *vocabulary.Registry, touched map[str
 		}
 		for _, tn := range cur.KindOrder {
 			if candT := cand.Kinds[tn]; candT != nil {
+				if skip[candT.Identity] {
+					continue
+				}
 				out = append(out, typeNarrowings(cur.Kinds[tn], candT)...)
 			}
 		}
@@ -195,6 +215,32 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 				})
 			}
 		}
+	}
+	// A property the candidate ADDS as required is the same stranding as one
+	// that becomes required, and was the one shape of it nothing classified: the
+	// loop above walks the CURRENT type's properties, so a name that did not
+	// exist before never reached it. Live rows cannot carry a property no
+	// declaration had, so every one of them is missing it the moment it is
+	// declared required.
+	//
+	// This is how a relationship that MOVES — an edge becoming a required
+	// reference — announces itself. Dropping the edge is unguarded (edges are
+	// not diffed at all) and the reference is a new name, so without this the
+	// declaration lands quietly and every existing row is left pointing the old
+	// way, invisible to every read written against the new one.
+	for _, pname := range candT.PropOrder {
+		candP := candT.Props[pname]
+		if !candP.Required || candP.IsState() {
+			continue
+		}
+		if _, existed := curT.Props[pname]; existed {
+			continue // the `becomes required` case above owns it
+		}
+		out = append(out, narrowing{
+			format: fmt.Sprintf("type %s: property %q is added as required while %%d live records lack it — backfill or delete them first",
+				ident, pname),
+			query: countMissingPropQuery, args: []any{ident, pname},
+		})
 	}
 	return out
 }

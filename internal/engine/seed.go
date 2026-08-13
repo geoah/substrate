@@ -123,6 +123,16 @@ func shippedAuthorities(reg *vocabulary.Registry) map[string]bool {
 //     the repositories that already hold it, and a user-authored kind is not
 //     the shipped tree's business in the first place.
 //
+// A re-projected declaration is held to the SAME refuse-breakage guards
+// `/vocabulary/apply` takes: a narrowing diff that would strand live rows is
+// refused, naming the repository, the kind, the property and the count. The two
+// doors agreeing is the whole point — a guard one of them skips is not a guard,
+// it is a shape the store can reach and the API cannot.
+//
+// A refusal SKIPS the upgrade; it does not fail the open. Failing would take
+// the repository down and leave no way back in, since the migration the guard
+// demands runs through the API that failure just closed.
+//
 // A authority whose stored rows are NOT shipped vocabulary (a user or a bundle
 // took the name) is skipped whole: the upgrade never seizes a name it does not
 // already own here.
@@ -138,6 +148,10 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	// alone. A authority with nothing to write is not touched at all.
 	upgrade := map[string]bool{}
 	keep := map[string]bool{}
+	// The kinds this upgrade will NOT rewrite, by identity: a declaration held
+	// at its stored version keeps whatever shape it has, so it is not the
+	// upgrade's business and must not be able to refuse the boot below.
+	keptKinds := map[string]bool{}
 	for _, aname := range sortedKeys(shippedAuthorities(reg)) {
 		g, ok := reg.AuthorityByName(aname)
 		if !ok {
@@ -160,6 +174,9 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 				write = true // the shipped declaration moved forward
 			default:
 				keep[d.key()] = true // same or older than stored: never a downgrade
+				if d.typ == kindKind {
+					keptKinds[d.id] = true
+				}
 			}
 		}
 		if write {
@@ -170,20 +187,55 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 		return nil
 	}
 
-	// ONE TRANSACTION for the whole repository, under the substrate's own
-	// actor, so the upgrade is a legible set of entries in the changelog and either
-	// all of it lands or none of it does.
+	// The SAME refuse-breakage guards `/vocabulary/apply` takes
+	// (vocabularywrite.go): a narrowing declaration diff — a property dropped,
+	// renamed or kind-changed, an enum value or state removed, required added —
+	// is refused while live rows still hold the old shape, with the count.
+	//
+	// The two doors used to disagree. An operator applying the same change by
+	// hand was refused; the boot upgrade projected it silently, leaving rows
+	// shaped one way under a declaration that said another, with nothing
+	// anywhere reporting it. A guard only one door honors is not a guard.
+	narrowings := classifyNarrowingsExcept(current, reg, upgrade, keptKinds)
+
+	// REFUSING THE UPGRADE IS NOT REFUSING THE REPOSITORY. A guard that failed
+	// the open would take the repository down with it — and leave no way back
+	// in, because the migration it demands has to be performed THROUGH the API
+	// this failure just closed. So a stranded diff skips the upgrade, loudly:
+	// the stored declarations stand, the repository opens on them, and the rows
+	// the guard named can be deleted or backfilled by ordinary writes. The
+	// binary's newer shape simply does not land until they are.
+	//
+	// This is the same answer /vocabulary/apply gives — the narrowing does not
+	// land — differing only in what it costs a caller who did not ask for it.
+	var refused []string
 	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		if err := t.lockKey(registryDepKey(ds)); err != nil {
 			return err
 		}
-		_, err := t.projectAuthorities(reg, upgrade, projectOpts{
+		guards, err := t.narrowingGuards(narrowings)
+		if err != nil {
+			return err
+		}
+		if len(guards) > 0 {
+			refused = guards
+			return nil
+		}
+		_, err = t.projectAuthorities(reg, upgrade, projectOpts{
 			skip: func(key string) bool { return keep[key] },
 		})
 		return err
 	})
 	if err != nil {
 		return fmt.Errorf("substrate/engine: upgrade shipped vocabulary of %s: %w", ds.info.Name, err)
+	}
+	if len(refused) > 0 {
+		// The message is the entire interface for the migration it is asking
+		// for, so it names the repository, the kind, the property and the count.
+		ds.svc.log.Error("substrate: REFUSED to upgrade a repository's shipped vocabulary — live rows hold the old shape; "+
+			"the stored declarations stand and this binary's newer ones will not land until the rows are migrated or deleted",
+			"repository", ds.info.Name, "refused", strings.Join(refused, "; "))
+		return nil
 	}
 	ds.svc.log.Info("substrate: upgraded a repository's shipped vocabulary from the embedded tree",
 		"repository", ds.info.Name, "authorities", sortedKeys(upgrade))
