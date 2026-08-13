@@ -27,8 +27,8 @@ const (
 	kindAgentID  = "core.substrate.reamde.dev/agent"
 )
 
-// lqDocs is a minimal bundle closure carrying an agent — the shape the
-// provider refactor broke.
+// lqDocs is a minimal bundle closure carrying one agent, so a test can age
+// its stored definition into a shape the loader refuses.
 func lqDocs() []map[string]any {
 	return []map[string]any{
 		vocabulary.AuthorityManifest(lqAuthority, ""),

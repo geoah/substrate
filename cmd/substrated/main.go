@@ -68,7 +68,7 @@ func run() error {
 	if embedClient != nil {
 		embedder = embedClient
 	} else {
-		slog.Warn("no SUBSTRATE_LLM_BASE_URL/SUBSTRATE_LLM_API_KEY: embed queue will not drain")
+		slog.Warn("SUBSTRATE_LLM_BASE_URL or SUBSTRATE_LLM_API_KEY unset: embed queue will not drain")
 	}
 
 	opts := []engine.Option{

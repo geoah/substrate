@@ -100,9 +100,16 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 	if len(resp.Data) != len(texts) {
 		return nil, fmt.Errorf("embed: the embeddings endpoint returned %d embeddings for %d inputs", len(resp.Data), len(texts))
 	}
+	// The response's index field names each vector's input position —
+	// arrival order carries no meaning on this wire.
 	out := make([][]float32, len(resp.Data))
-	for i, d := range resp.Data {
-		out[i] = d.Embedding
+	seen := make([]bool, len(resp.Data))
+	for _, d := range resp.Data {
+		if d.Index < 0 || d.Index >= len(out) || seen[d.Index] {
+			return nil, fmt.Errorf("embed: the embeddings endpoint returned an out-of-range or duplicate index %d", d.Index)
+		}
+		seen[d.Index] = true
+		out[d.Index] = d.Embedding
 	}
 	return out, nil
 }

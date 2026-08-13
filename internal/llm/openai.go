@@ -36,7 +36,8 @@ func newOpenAI(cfg Config, azure bool) *openaiClient {
 }
 
 // headerDoer injects the provider row's extra headers on every request. The
-// SDK owns the auth header; these ride beside it.
+// SDK's own headers — auth included — always win: a row's headers ride
+// beside them, never over them, so a colliding key cannot break the wire.
 type headerDoer struct {
 	inner   openai.HTTPDoer
 	headers map[string]string
@@ -44,9 +45,15 @@ type headerDoer struct {
 
 func (d *headerDoer) Do(req *http.Request) (*http.Response, error) {
 	for k, v := range d.headers {
-		req.Header.Set(k, v)
+		if req.Header.Get(k) == "" {
+			req.Header.Set(k, v)
+		}
 	}
-	return d.inner.Do(req)
+	inner := d.inner
+	if inner == nil {
+		inner = http.DefaultClient
+	}
+	return inner.Do(req)
 }
 
 func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(string)) (*Result, error) {
