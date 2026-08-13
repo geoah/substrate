@@ -42,7 +42,7 @@ data:
   # The harvester subscribes to conversation messages (triggers.yaml), so the
   # messaging vocabulary has to be imported first.
   requires:
-    - messaging.substrate.geoah.me
+    - messaging.substrate.reamde.dev
   installs:
     - web.bundles.substrate.reamde.dev/config
     - web.bundles.substrate.reamde.dev/page

@@ -16,7 +16,7 @@ func TestIntegerPropertiesRenderAsIntegers(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.fake.seed(&substrate.Record{
-		ID: "t9", Kind: "tasks.substrate.geoah.me/task",
+		ID: "t9", Kind: "tasks.substrate.reamde.dev/task",
 		Properties: map[string]any{
 			"title": "a task",
 			// The repository row's counter that exposed this, and a value past
@@ -52,7 +52,7 @@ func TestIntegerPropertiesRenderAsIntegersInJSON(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.fake.seed(&substrate.Record{
-		ID: "t9", Kind: "tasks.substrate.geoah.me/task",
+		ID: "t9", Kind: "tasks.substrate.reamde.dev/task",
 		// A value past float64's exact-integer range: the float round trip
 		// mangles it into 1.7860800001234568e+18, digits and all.
 		Properties: map[string]any{"totpStep": int64(59545831), "nanos": int64(1786080000123456789)},
@@ -91,7 +91,7 @@ func TestGuardHintsBranchOnWhatFailed(t *testing.T) {
 		unwantedWords: []string{"transition"},
 	}, {
 		name:         "record write keeps the transition advice",
-		err:          &apiError{Status: 403, Code: "guard", Path: apiPrefix + "/tasks.substrate.geoah.me/tasks/t9", Method: "PATCH"},
+		err:          &apiError{Status: 403, Code: "guard", Path: apiPrefix + "/tasks.substrate.reamde.dev/tasks/t9", Method: "PATCH"},
 		wantHeadline: "transition",
 		wantHint:     "state transition guards",
 	}, {

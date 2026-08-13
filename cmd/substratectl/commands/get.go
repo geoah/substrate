@@ -30,7 +30,7 @@ func (a *app) getCommand() *cobra.Command {
 		Short: "List or read records",
 		Long: `Read records from a collection.
 
-The plural may be qualified ("people.substrate.geoah.me/people") — which is resolved
+The plural may be qualified ("people.substrate.reamde.dev/people") — which is resolved
 without a round trip — or bare ("people"), which is resolved against the kind
 registry and errors when several authorities declare it. The shipped vocabulary is
 split across several authorities (people, messaging, calendar, tasks, media), so a

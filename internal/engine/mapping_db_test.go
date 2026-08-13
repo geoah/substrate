@@ -22,7 +22,7 @@ const (
 	typeGoogleContact = googleAuthority + "/contact"
 	typeSlackUser     = slackAuthority + "/slackuser"
 
-	typePerson = "people.substrate.geoah.me/person"
+	typePerson = "people.substrate.reamde.dev/person"
 )
 
 // googleManifest mirrors the People API: a structured name, and
@@ -1039,11 +1039,11 @@ func TestHotMapTargets(t *testing.T) {
 					"traits":     []any{"temporal(point)"},
 					"properties": map[string]any{"subtitle": map[string]any{"type": "string"}},
 					"edges": map[string]any{
-						"work": map[string]any{"to": "media.substrate.geoah.me/book", "required": true},
+						"work": map[string]any{"to": "media.substrate.reamde.dev/book", "required": true},
 					},
 				}),
 			vocabulary.MappingManifest(authority, "libraryrowbook", map[string]any{
-				"from": authority + "/libraryrow", "to": "media.substrate.geoah.me/book", "edge": "work",
+				"from": authority + "/libraryrow", "to": "media.substrate.reamde.dev/book", "edge": "work",
 				"map": map[string]any{
 					"title": "title", "body": "body", "subtitle": "subtitle",
 				},

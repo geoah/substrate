@@ -99,11 +99,11 @@ func openCursorDataset(t *testing.T) *dataset {
 			vocabulary.FunctionManifest(authority, "mirror", map[string]any{
 				"description":  "mirrors widgets into tasks",
 				"runtime":      vocabulary.RuntimePython,
-				"capabilities": map[string]any{"emit": []any{"tasks.substrate.geoah.me/task"}},
+				"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
 				"source": `
 def main(input, host):
     env = input["envelope"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
                          "id": "t-" + env["change"]["id"],
                          "properties": {"title": env["record"]["properties"]["name"]}}]}
 `,
@@ -163,7 +163,7 @@ func importVocabulary(t *testing.T, ds substrate.Dataset, names ...string) {
 
 func taskTitle(t *testing.T, d substrate.Dataset, id string) string {
 	t.Helper()
-	e, err := d.Get(context.Background(), "tasks.substrate.geoah.me/task", id)
+	e, err := d.Get(context.Background(), "tasks.substrate.reamde.dev/task", id)
 	if err != nil {
 		t.Fatalf("get %s: %v", id, err)
 	}

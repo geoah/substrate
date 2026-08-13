@@ -16,7 +16,7 @@ describe("listPath", () => {
     // The server's own keyset token — a JSON blob, base64url — resent as-is.
     const cursor = "eyJrIjpbIjIwMjYtMDgtMDYiXSwiaWQiOiJhYmMifQ"
     const path = listPath({
-      authority: "people.substrate.geoah.me",
+      authority: "people.substrate.reamde.dev",
       plural: "people",
       first: 50,
       after: cursor,
@@ -25,7 +25,7 @@ describe("listPath", () => {
       withEdges: true,
     })
     const url = new URL(path, "http://x")
-    expect(url.pathname).toBe("/api/v1/people.substrate.geoah.me/people")
+    expect(url.pathname).toBe("/api/v1/people.substrate.reamde.dev/people")
     expect(url.searchParams.get("first")).toBe("50")
     expect(url.searchParams.get("after")).toBe(cursor)
     expect(JSON.parse(url.searchParams.get("filter")!)).toEqual({
@@ -55,8 +55,8 @@ describe("recordIdSegment", () => {
   it("percent-encodes a `/` so a slash-bearing id is one segment (%2F)", () => {
     // A declaration record's id IS a kind reference; the API decodes once.
     expect(recordIdSegment("a/b")).toBe("a%2Fb")
-    expect(recordIdSegment("people.substrate.geoah.me/person")).toBe(
-      "people.substrate.geoah.me%2Fperson"
+    expect(recordIdSegment("people.substrate.reamde.dev/person")).toBe(
+      "people.substrate.reamde.dev%2Fperson"
     )
   })
 

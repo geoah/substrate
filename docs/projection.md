@@ -24,7 +24,7 @@ metadata:
 data:
   authority: github.bundles.substrate.reamde.dev
   from: github.bundles.substrate.reamde.dev/user
-  to: people.substrate.geoah.me/person
+  to: people.substrate.reamde.dev/person
   edge: person                     # the ordinary edge the mapping rides
   match:                           # first-link probes: how a new record
     - from: email                  #   finds an existing person
@@ -159,7 +159,7 @@ data:
       type: email
   edges:
     person:
-      to: people.substrate.geoah.me/person
+      to: people.substrate.reamde.dev/person
       required: true
 ---
 kind: core.substrate.reamde.dev/recordmapping
@@ -168,7 +168,7 @@ metadata:
 data:
   authority: enrich.example.com
   from: enrich.example.com/enrichment
-  to: people.substrate.geoah.me/person
+  to: people.substrate.reamde.dev/person
   edge: person
   match:
     - from: email
@@ -276,11 +276,11 @@ data:
   edges:
     - rel: winner                 # the record that survives the merge
       to:
-        kind: people.substrate.geoah.me/person
+        kind: people.substrate.reamde.dev/person
         id: 9f2k
     - rel: loser                  # the record merged away into the winner
       to:
-        kind: people.substrate.geoah.me/person
+        kind: people.substrate.reamde.dev/person
         id: x41c
 ```
 
@@ -319,7 +319,7 @@ and the two ids:
 
 ```http
 POST /api/v1/core.substrate.reamde.dev/recordmerges
-{"kind": "people.substrate.geoah.me/person", "winner": "9f2k", "loser": "x41c"}
+{"kind": "people.substrate.reamde.dev/person", "winner": "9f2k", "loser": "x41c"}
 ```
 
 ### The patch request sibling

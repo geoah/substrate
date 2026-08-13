@@ -103,9 +103,9 @@ callable, without moving the cursor.
 A record is addressed by (type, id) — an id alone names no record, since two
 types may share one — so the delivery takes BOTH. The type may be the plural or
 singular the registry knows ("tasks", "task") or the full identity
-("tasks.substrate.geoah.me/task").`,
+("tasks.substrate.reamde.dev/task").`,
 		Example: `  substratectl trigger run classify-page task t9
-  substratectl trigger run classify-page tasks.substrate.geoah.me/task t9`,
+  substratectl trigger run classify-page tasks.substrate.reamde.dev/task t9`,
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

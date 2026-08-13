@@ -23,7 +23,7 @@ func TestSDKBuilderEffectsAndIds(t *testing.T) {
 def main(input, host):
     a = input["args"]
     tid = host.ids.external("prov", a["account"], a["ext"])
-    host.effects.put("tasks.substrate.geoah.me/task", tid,
+    host.effects.put("tasks.substrate.reamde.dev/task", tid,
                      properties={"title": a["title"]}, if_absent=True)
     return {"output": {"id": tid}}
 `))
@@ -74,7 +74,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 	a, _ := in.Args.(map[string]any)
 	id := host.IDs.External("prov", a["account"].(string), a["ext"].(string))
 	host.Effects.Put(substratefn.PutEffect{
-		Kind: "tasks.substrate.geoah.me/task", ID: id,
+		Kind: "tasks.substrate.reamde.dev/task", ID: id,
 		Properties: map[string]any{"title": a["title"]},
 		IfAbsent:   true,
 	})
@@ -110,8 +110,8 @@ func TestSDKBuilderMixedModeRejected(t *testing.T) {
 	ds, ops := newFnDataset(t, nil, pyFn("bothways", map[string]any{}, []any{taskType}, `
 def main(input, host):
     k = input["args"]["k"]
-    host.effects.put("tasks.substrate.geoah.me/task", "staged-" + k, properties={"title": "staged"})
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
+    host.effects.put("tasks.substrate.reamde.dev/task", "staged-" + k, properties={"title": "staged"})
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
                          "id": "returned-" + k, "properties": {"title": "returned"}}]}
 `))
 	ctx := context.Background()
@@ -134,12 +134,12 @@ func TestSDKBuilderStagedHandleReturnDoesNotKillHost(t *testing.T) {
 	ds, ops := newFnDataset(t, nil,
 		pyFn("badreturn", map[string]any{}, []any{taskType}, `
 def main(input, host):
-    h = host.effects.put("tasks.substrate.geoah.me/task", "x", properties={"title": "t"})
+    h = host.effects.put("tasks.substrate.reamde.dev/task", "x", properties={"title": "t"})
     return {"effects": [h]}  # a StagedEffect handle is not serializable
 `),
 		pyFn("goodafter", map[string]any{}, []any{taskType}, `
 def main(input, host):
-    host.effects.put("tasks.substrate.geoah.me/task", "survivor", properties={"title": "ok"})
+    host.effects.put("tasks.substrate.reamde.dev/task", "survivor", properties={"title": "ok"})
     return {}
 `))
 	ctx := context.Background()
@@ -163,7 +163,7 @@ def main(input, host):
     props = {}
     for i in range(3):
         props["title"] = "t%d" % i
-        host.effects.put("tasks.substrate.geoah.me/task", "snap-%d" % i, properties=props)
+        host.effects.put("tasks.substrate.reamde.dev/task", "snap-%d" % i, properties=props)
     return {}
 `))
 	ctx := context.Background()
@@ -185,11 +185,11 @@ func TestSDKBuilderIfVersionSentinel(t *testing.T) {
 def main(input, host):
     mode = input["args"]["mode"]
     if mode == "omitted":
-        host.effects.put("tasks.substrate.geoah.me/task", "v-omitted", properties={"title": "t"})
+        host.effects.put("tasks.substrate.reamde.dev/task", "v-omitted", properties={"title": "t"})
     elif mode == "none":
-        host.effects.put("tasks.substrate.geoah.me/task", "v-none", properties={"title": "t"}, if_version=None)
+        host.effects.put("tasks.substrate.reamde.dev/task", "v-none", properties={"title": "t"}, if_version=None)
     elif mode == "zero":
-        host.effects.put("tasks.substrate.geoah.me/task", "v-zero", properties={"title": "t"}, if_version=0)
+        host.effects.put("tasks.substrate.reamde.dev/task", "v-zero", properties={"title": "t"}, if_version=0)
     return {}
 `))
 	ctx := context.Background()
@@ -226,13 +226,13 @@ func TestSDKBuilderLocalValidation(t *testing.T) {
 	_, ops := newFnDataset(t, nil,
 		pyFn("badid", map[string]any{}, []any{taskType}, `
 def main(input, host):
-    host.effects.put("tasks.substrate.geoah.me/task", "people 123", properties={"title": "t"})
+    host.effects.put("tasks.substrate.reamde.dev/task", "people 123", properties={"title": "t"})
     return {}
 `),
 		pyFn("selfmerge", map[string]any{"capabilities": map[string]any{"mutations": []any{"merge"}}},
 			[]any{taskType}, `
 def main(input, host):
-    host.effects.merge("tasks.substrate.geoah.me/task", "x", "x")
+    host.effects.merge("tasks.substrate.reamde.dev/task", "x", "x")
     return {}
 `),
 		pyFn("nilmore", map[string]any{}, []any{taskType}, `
@@ -265,7 +265,7 @@ import "substratefn.local/substratefn"
 func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error) {
 	a, _ := in.Args.(map[string]any)
 	id, _ := a["id"].(string)
-	e, err := host.Records.Get("tasks.substrate.geoah.me/task", id)
+	e, err := host.Records.Get("tasks.substrate.reamde.dev/task", id)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +273,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 		return &substratefn.Result{Output: map[string]any{"found": false}}, nil
 	}
 	host.Effects.Patch(substratefn.PatchEffect{
-		Kind: "tasks.substrate.geoah.me/task", ID: id,
+		Kind: "tasks.substrate.reamde.dev/task", ID: id,
 		Properties: map[string]any{"title": "guarded"},
 		IfVersion:  substratefn.Version(e.Version),
 	})
@@ -315,10 +315,10 @@ func TestEffectIfVersionPrecondition(t *testing.T) {
 def main(input, host):
     a = input["args"]
     if a["action"] == "put":
-        host.effects.put("tasks.substrate.geoah.me/task", a["id"],
+        host.effects.put("tasks.substrate.reamde.dev/task", a["id"],
                          properties=a.get("properties"), if_version=a.get("ifVersion"))
     else:
-        host.effects.patch("tasks.substrate.geoah.me/task", a["id"],
+        host.effects.patch("tasks.substrate.reamde.dev/task", a["id"],
                            properties=a.get("properties"), if_version=a.get("ifVersion"))
     return {}
 `))

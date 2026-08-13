@@ -129,30 +129,35 @@ func TestShippedCallableActorsAreDistinct(t *testing.T) {
 // A vocabulary bundle's closure is validated at INSTALL time: catalog.Load
 // only buckets decoded YAML, so a broken declaration would ship as nothing
 // more than a warning TestBothViewsLoad never reads. This installs every
-// vocabulary bundle onto the seed registry, requires first, through the same
-// BuildAuthorities+InstallAll pair admission runs.
+// vocabulary bundle into ONE seed registry, requires first, through the same
+// BuildAuthorities+InstallAll pair admission runs — so the whole shipped set
+// has to coexist (GraphQL names, cross-authority edges) without a database.
 func TestVocabularyBundlesInstallOnTheSeed(t *testing.T) {
 	cat, err := catalog.Load(kinds.Bundles())
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
 	}
+	// A malformed directory is dropped into Warnings, not an error, and a
+	// dropped bundle would silently vanish from the loop below.
+	if ws := cat.Warnings(); len(ws) != 0 {
+		t.Fatalf("the shipped catalog carries warnings: %v", ws)
+	}
 	byAuthority := map[string]*catalog.Bundle{}
 	for _, b := range cat.Bundles() {
 		byAuthority[b.Authority] = b
 	}
+	reg, err := vocabulary.LoadFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	done := map[string]bool{}
 	for _, b := range cat.Bundles() {
 		if !b.Vocabulary {
 			continue
 		}
-		t.Run(b.Name, func(t *testing.T) {
-			reg, err := vocabulary.LoadFS(kinds.Seed())
-			if err != nil {
-				t.Fatalf("load the seed: %v", err)
-			}
-			if err := installClosure(reg, byAuthority, b, map[string]bool{}); err != nil {
-				t.Fatal(err)
-			}
-		})
+		if err := installClosure(reg, byAuthority, b, done); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

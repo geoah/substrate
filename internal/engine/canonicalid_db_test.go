@@ -369,7 +369,7 @@ func TestRekeyFormerIDTrailIsPerType(t *testing.T) {
 	if tk.ID != loser.ID || tk.CanonicalID != "" {
 		t.Fatalf("the task should hold the id plainly: id=%s canonicalId=%q", tk.ID, tk.CanonicalID)
 	}
-	if got := mustGet(t, ds, "task", loser.ID); got.Kind != "tasks.substrate.geoah.me/task" || got.ID != loser.ID {
+	if got := mustGet(t, ds, "task", loser.ID); got.Kind != "tasks.substrate.reamde.dev/task" || got.ID != loser.ID {
 		t.Fatalf("get(task, %s) = %s %s", loser.ID, got.Kind, got.ID)
 	}
 	// And the person read still resolves through the trail, unshaken.

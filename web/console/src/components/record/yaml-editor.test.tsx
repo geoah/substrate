@@ -10,9 +10,9 @@ import type { KindInfo } from "@/lib/api/types"
 import { YamlEditor } from "./yaml-editor"
 
 const taskKind: KindInfo = {
-  identity: "tasks.substrate.geoah.me/task",
+  identity: "tasks.substrate.reamde.dev/task",
   name: "task",
-  authority: "tasks.substrate.geoah.me",
+  authority: "tasks.substrate.reamde.dev",
   version: "",
   plural: "tasks",
   source: "installed",
@@ -21,7 +21,7 @@ const taskKind: KindInfo = {
   },
 }
 
-const DOC = "kind: tasks.substrate.geoah.me/task\ndata:\n  properties:\n    title: hi\n"
+const DOC = "kind: tasks.substrate.reamde.dev/task\ndata:\n  properties:\n    title: hi\n"
 
 function editor() {
   const view = EditorView.findFromDOM(

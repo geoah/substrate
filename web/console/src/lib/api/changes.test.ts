@@ -19,35 +19,35 @@ function row(seq: number, tsMs = T0 + seq * 1000): ChangeRow {
     actor: "a",
     op: "put",
     recordId: `e-${seq}`,
-    kind: "tasks.substrate.geoah.me/task",
+    kind: "tasks.substrate.reamde.dev/task",
   }
 }
 
 describe("changesSearch", () => {
   it("carries every server-side facet, repeated params for lists", () => {
     const params = changesSearch({
-      kinds: ["people.substrate.geoah.me/person", "tasks.substrate.geoah.me/task"],
+      kinds: ["people.substrate.reamde.dev/person", "tasks.substrate.reamde.dev/task"],
       actors: ["owner"],
       ops: ["put", "merge"],
       recordId: "e1",
-      recordKind: "tasks.substrate.geoah.me/task",
+      recordKind: "tasks.substrate.reamde.dev/task",
       q: "needle",
     })
     expect(params.getAll("kinds")).toEqual([
-      "people.substrate.geoah.me/person",
-      "tasks.substrate.geoah.me/task",
+      "people.substrate.reamde.dev/person",
+      "tasks.substrate.reamde.dev/task",
     ])
     expect(params.getAll("actors")).toEqual(["owner"])
     expect(params.getAll("ops")).toEqual(["put", "merge"])
     expect(params.get("recordId")).toBe("e1")
-    expect(params.get("recordKind")).toBe("tasks.substrate.geoah.me/task")
+    expect(params.get("recordKind")).toBe("tasks.substrate.reamde.dev/task")
     expect(params.get("q")).toBe("needle")
   })
 
   it("refuses recordId without its recordKind companion (server rejects either alone)", () => {
     expect(changesSearch({ recordId: "e1" }).has("recordId")).toBe(false)
     expect(
-      changesSearch({ recordKind: "tasks.substrate.geoah.me/task" }).has("recordKind")
+      changesSearch({ recordKind: "tasks.substrate.reamde.dev/task" }).has("recordKind")
     ).toBe(false)
   })
 

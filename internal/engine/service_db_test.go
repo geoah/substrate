@@ -73,7 +73,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	if len(types.Records) < 20 {
 		t.Fatalf("type projections = %d", len(types.Records))
 	}
-	msgType, err := ds.Get(ctx, "core.substrate.reamde.dev/kind", "messaging.substrate.geoah.me/conversationmessage")
+	msgType, err := ds.Get(ctx, "core.substrate.reamde.dev/kind", "messaging.substrate.reamde.dev/conversationmessage")
 	if err != nil {
 		t.Fatalf("type record by identity: %v", err)
 	}
@@ -95,8 +95,8 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	if len(actors.Records) != 4 {
 		t.Fatalf("actor projections = %v", ids(actors.Records))
 	}
-	ti, err := ds.KindByPlural(ctx, "calendar.substrate.geoah.me", "calendarevents")
-	if err != nil || ti.Identity != "calendar.substrate.geoah.me/calendarevent" {
+	ti, err := ds.KindByPlural(ctx, "calendar.substrate.reamde.dev", "calendarevents")
+	if err != nil || ti.Identity != "calendar.substrate.reamde.dev/calendarevent" {
 		t.Fatalf("TypeByPlural = %+v %v", ti, err)
 	}
 
@@ -252,7 +252,7 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	authority, err := ds.Get(ctx, "core.substrate.reamde.dev/authority", "media.substrate.geoah.me")
+	authority, err := ds.Get(ctx, "core.substrate.reamde.dev/authority", "media.substrate.reamde.dev")
 	if err != nil {
 		t.Fatalf("authority projection: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 		t.Fatalf("capability definition = %v", capa.Properties["definition"])
 	}
 
-	dt, err := ds.Get(ctx, "core.substrate.reamde.dev/propertytype", "media.substrate.geoah.me/asin")
+	dt, err := ds.Get(ctx, "core.substrate.reamde.dev/propertytype", "media.substrate.reamde.dev/asin")
 	if err != nil {
 		t.Fatalf("datatype projection: %v", err)
 	}
@@ -312,13 +312,13 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	// Mappings mirror like the rest of the meta-model: one
 	// record per loaded mapping, reachable through the ordinary collection
 	// machinery.
-	mp, err := ds.Get(ctx, "core.substrate.reamde.dev/recordmapping", "media.substrate.geoah.me/bookeditionwork")
+	mp, err := ds.Get(ctx, "core.substrate.reamde.dev/recordmapping", "media.substrate.reamde.dev/bookeditionwork")
 	if err != nil {
 		t.Fatalf("mapping projection: %v", err)
 	}
 	if mp.Kind != "core.substrate.reamde.dev/recordmapping" ||
-		mp.Properties["from"] != "media.substrate.geoah.me/bookedition" ||
-		mp.Properties["to"] != "media.substrate.geoah.me/book" ||
+		mp.Properties["from"] != "media.substrate.reamde.dev/bookedition" ||
+		mp.Properties["to"] != "media.substrate.reamde.dev/book" ||
 		mp.Properties["edge"] != "work" {
 		t.Fatalf("mapping projection = %v", mp.Properties)
 	}
@@ -338,7 +338,7 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Records) != 1 || page.Records[0].ID != "media.substrate.geoah.me/bookeditionwork" {
+	if len(page.Records) != 1 || page.Records[0].ID != "media.substrate.reamde.dev/bookeditionwork" {
 		t.Fatalf("mapping mirrors = %v", ids(page.Records))
 	}
 

@@ -78,7 +78,7 @@ func TestDiscoveryDoesNotRequireAuth(t *testing.T) {
 func TestPrimaryPrefixServesResources(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodGet, "/api/v1/people.substrate.geoah.me/people", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/people.substrate.reamde.dev/people", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	if w := rec.Header().Get("Warning"); w != "" {
 		t.Fatalf("primary /api/v1 carried a Warning header: %q", w)
@@ -90,7 +90,7 @@ func TestPrimaryPrefixServesResources(t *testing.T) {
 func TestPreV1PrefixIsNotServed(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodGet, "/api/v1alpha1/people.substrate.geoah.me/people", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1alpha1/people.substrate.reamde.dev/people", tok, nil)
 	wantStatus(t, rec, http.StatusNotFound)
 }
 
@@ -109,7 +109,7 @@ func TestUnavailableIs503WithRetryAfter(t *testing.T) {
 	env := newTestEnv(t)
 	env.svc.authErr = errors.New("repository open failed")
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodGet, "/api/v1/people.substrate.geoah.me/people", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/people.substrate.reamde.dev/people", tok, nil)
 	wantErrorCode(t, rec, http.StatusServiceUnavailable, codeUnavailable)
 	if ra := rec.Header().Get("Retry-After"); ra == "" {
 		t.Fatalf("503 unavailable must carry Retry-After")

@@ -209,7 +209,7 @@ func (l *loader) parseMapping(d Document) *Mapping {
 		l.errf("%s: data.to is required", where)
 		return nil
 	case !Qualified(m.To):
-		l.errf("%s: data.to is a full type name (\"people.substrate.geoah.me/person\"), never a bare one (§6.1)", where)
+		l.errf("%s: data.to is a full type name (\"people.substrate.reamde.dev/person\"), never a bare one (§6.1)", where)
 		return nil
 	}
 	if m.Edge == "" {

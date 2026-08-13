@@ -455,7 +455,7 @@ func TestTriggerGlobHelpers(t *testing.T) {
 	}
 	if !vocabulary.MatchTypeGlob("*", "anything.at.all") ||
 		!vocabulary.MatchTypeGlob("fn.example.com/*", "fn.example.com/widget") ||
-		vocabulary.MatchTypeGlob("fn.example.com/*", "tasks.substrate.geoah.me/task") ||
+		vocabulary.MatchTypeGlob("fn.example.com/*", "tasks.substrate.reamde.dev/task") ||
 		!vocabulary.MatchTypeGlob("fn.example.com/widget", "fn.example.com/widget") {
 		t.Fatal("glob matching broke")
 	}

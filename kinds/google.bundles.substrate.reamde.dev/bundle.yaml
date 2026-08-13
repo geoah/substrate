@@ -16,7 +16,7 @@
 # The record shapes follow the beeper precedent: each provider record is
 # MIRRORED in Google's own shape inside this authority, and the sync ALSO emits the
 # core vocabulary row for the same logical object (emailthread, emailmessage,
-# calendar.substrate.geoah.me/calendar, calendarevent) under the SAME derived id, with
+# calendar.substrate.reamde.dev/calendar, calendarevent) under the SAME derived id, with
 # its required edges supplied explicitly. Recordmappings resolve PEOPLE and
 # nothing else: an `emailaddress` record per address seen, mapped onto
 # `person`, which the core rows then reference one hop away. A mapping cannot
@@ -68,9 +68,9 @@ data:
   # they are present — import them first or this install is refused naming
   # what is missing.
   requires:
-    - calendar.substrate.geoah.me
-    - messaging.substrate.geoah.me
-    - people.substrate.geoah.me
+    - calendar.substrate.reamde.dev
+    - messaging.substrate.reamde.dev
+    - people.substrate.reamde.dev
   # TRUSTED provider metadata (review-google #1): the host reads endpoints and
   # the feature→scope mapping ONLY from here — the immutable install artifact —
   # never from the mutable config record. https-only (a config edit cannot
@@ -448,7 +448,7 @@ data:
     # Required, single, not ownerRef, pointing at person — left empty on write
     # so the substrate resolves it.
     person:
-      to: people.substrate.geoah.me/person
+      to: people.substrate.reamde.dev/person
       required: true
       description: the human this contact record describes
 ---
@@ -929,7 +929,7 @@ data:
       - google.bundles.substrate.reamde.dev/contact
       # The absorbed-orphan fix emits a person MERGE (old person wins);
       # merge effects gate on BOTH the emit ceiling and the mutations grant.
-      - people.substrate.geoah.me/person
+      - people.substrate.reamde.dev/person
     mutations: [merge]
     reads:
       kinds:
@@ -980,7 +980,7 @@ data:
     but pausing the sync keeps the loop conflict-free.
     """
     CONTACT_TYPE = "google.bundles.substrate.reamde.dev/contact"
-    PERSON_TYPE = "people.substrate.geoah.me/person"
+    PERSON_TYPE = "people.substrate.reamde.dev/person"
     MAX_BATCH = 200
     LIST_PAGE = 200
 
@@ -1126,7 +1126,7 @@ metadata: {id: google.bundles.substrate.reamde.dev/contactperson}
 data:
   authority: google.bundles.substrate.reamde.dev
   from: google.bundles.substrate.reamde.dev/contact
-  to: people.substrate.geoah.me/person
+  to: people.substrate.reamde.dev/person
   edge: person
   match:
     # Block style, and the paths quoted: `[]` is a flow-sequence opener in
@@ -1187,7 +1187,7 @@ data:
     # The subject edge (§6.1): required, single, not ownerRef, left EMPTY on
     # write so the mapping resolves it.
     person:
-      to: people.substrate.geoah.me/person
+      to: people.substrate.reamde.dev/person
       required: true
       description: the human this address belongs to
 ---
@@ -1202,7 +1202,7 @@ metadata: {id: google.bundles.substrate.reamde.dev/emailaddressperson}
 data:
   authority: google.bundles.substrate.reamde.dev
   from: google.bundles.substrate.reamde.dev/emailaddress
-  to: people.substrate.geoah.me/person
+  to: people.substrate.reamde.dev/person
   edge: person
   match:
     - from: address
@@ -1421,8 +1421,8 @@ data:
       - google.bundles.substrate.reamde.dev/message
       - google.bundles.substrate.reamde.dev/emailaddress
       - google.bundles.substrate.reamde.dev/account
-      - messaging.substrate.geoah.me/emailthread
-      - messaging.substrate.geoah.me/emailmessage
+      - messaging.substrate.reamde.dev/emailthread
+      - messaging.substrate.reamde.dev/emailmessage
     # The mirrors drive the newest-wins thread merge and the sweep; the core
     # types are read ONLY to prove a row exists before retracting it (a
     # delete of something never written is ErrNotFound and would fail the
@@ -1431,8 +1431,8 @@ data:
       kinds:
         - google.bundles.substrate.reamde.dev/thread
         - google.bundles.substrate.reamde.dev/message
-        - messaging.substrate.geoah.me/emailthread
-        - messaging.substrate.geoah.me/emailmessage
+        - messaging.substrate.reamde.dev/emailthread
+        - messaging.substrate.reamde.dev/emailmessage
       budgets:
         calls: 256
         rows: 10000
@@ -1478,8 +1478,8 @@ data:
     ADDRESS_TYPE = AUTHORITY + "/emailaddress"
     THREAD_TYPE = AUTHORITY + "/thread"
     MESSAGE_TYPE = AUTHORITY + "/message"
-    CORE_THREAD = "messaging.substrate.geoah.me/emailthread"
-    CORE_MESSAGE = "messaging.substrate.geoah.me/emailmessage"
+    CORE_THREAD = "messaging.substrate.reamde.dev/emailthread"
+    CORE_MESSAGE = "messaging.substrate.reamde.dev/emailmessage"
 
     GMAIL_API = "https://gmail.googleapis.com"
     GMAIL_HOST = "gmail.googleapis.com"
@@ -2394,7 +2394,7 @@ data:
 # A calendarList entry, in Google's own shape. Named `calendar` and not
 # `calendarlist`: a bundle's names never repeat their authority (ticket 035),
 # and the substrate addresses by FULL identity everywhere — so this sits
-# beside core's `calendar.substrate.geoah.me/calendar` without ambiguity.
+# beside core's `calendar.substrate.reamde.dev/calendar` without ambiguity.
 #
 # The per-calendar SYNC TOKEN lives here rather than on the account: a
 # `{calendarId: token}` map on one account row would let one calendar's
@@ -2615,8 +2615,8 @@ data:
       - google.bundles.substrate.reamde.dev/event
       - google.bundles.substrate.reamde.dev/emailaddress
       - google.bundles.substrate.reamde.dev/account
-      - calendar.substrate.geoah.me/calendar
-      - calendar.substrate.geoah.me/calendarevent
+      - calendar.substrate.reamde.dev/calendar
+      - calendar.substrate.reamde.dev/calendarevent
     # The calendar mirror holds each calendar's own sync token; the event
     # mirror drives the sweep. The core types are read ONLY to prove a row
     # exists before retracting it — every delta carries `cancelled` entries
@@ -2626,8 +2626,8 @@ data:
       kinds:
         - google.bundles.substrate.reamde.dev/calendar
         - google.bundles.substrate.reamde.dev/event
-        - calendar.substrate.geoah.me/calendar
-        - calendar.substrate.geoah.me/calendarevent
+        - calendar.substrate.reamde.dev/calendar
+        - calendar.substrate.reamde.dev/calendarevent
       budgets:
         calls: 256
         rows: 10000
@@ -2671,8 +2671,8 @@ data:
     ADDRESS_TYPE = AUTHORITY + "/emailaddress"
     CALENDAR_TYPE = AUTHORITY + "/calendar"
     EVENT_TYPE = AUTHORITY + "/event"
-    CORE_CALENDAR = "calendar.substrate.geoah.me/calendar"
-    CORE_EVENT = "calendar.substrate.geoah.me/calendarevent"
+    CORE_CALENDAR = "calendar.substrate.reamde.dev/calendar"
+    CORE_EVENT = "calendar.substrate.reamde.dev/calendarevent"
 
     CAL_API = "https://www.googleapis.com"
     CAL_HOST = "www.googleapis.com"

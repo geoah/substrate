@@ -60,7 +60,7 @@ cannot, today, and saying so is part of the contract:
 - A mapping carries **properties only, never edges**, so even a successful
   mint would be structurally empty.
 
-`person.people.substrate.geoah.me` is mappable precisely because it declares no
+`person.people.substrate.reamde.dev` is mappable precisely because it declares no
 required edges, which is why every mapping in the fleet targets it. The
 general capability is filed as ticket 041, "structural recordmappings".
 

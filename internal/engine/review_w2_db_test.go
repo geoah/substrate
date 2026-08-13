@@ -81,11 +81,11 @@ func w2Manifest(withTrigger bool) enginetest.Manifest {
 			vocabulary.FunctionManifest(w2Group, "mirror", map[string]any{
 				"description":  "mirrors widgets into tasks",
 				"runtime":      vocabulary.RuntimePython,
-				"capabilities": map[string]any{"emit": []any{"tasks.substrate.geoah.me/task"}},
+				"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
 				"source": `
 def main(input, host):
     env = input["envelope"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
                          "id": "t-" + env["change"]["id"],
                          "properties": {"title": env["record"]["properties"]["name"]}}]}
 `,
@@ -192,10 +192,10 @@ func w2AssertExactResume(t *testing.T, ds *dataset, seq int64, pendingID, proces
 	if _, err := ds.ProcessTriggers(ctx); err != nil {
 		t.Fatalf("process: %v", err)
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", "t-"+pendingID); err != nil {
+	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-"+pendingID); err != nil {
 		t.Fatalf("the pending change was skipped: %v", err)
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", "t-"+processedID); err == nil {
+	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-"+processedID); err == nil {
 		t.Fatal("the already-processed change was redelivered")
 	}
 }

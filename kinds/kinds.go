@@ -26,7 +26,7 @@ const SeedAuthority = "core.substrate.reamde.dev"
 // vocabulary that silently stops existing in production while every other test
 // still passes. kinds_test.go holds it to the tree on disk.
 //
-//go:embed all:*.substrate.reamde.dev all:*.substrate.geoah.me
+//go:embed all:*.substrate.reamde.dev
 var files embed.FS
 
 // Seed is the seed authority alone, as a filesystem whose root holds that one

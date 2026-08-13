@@ -28,8 +28,8 @@ func mergeRequest(t *testing.T, ds substrate.Dataset, id, winner, loser string) 
 			"evidence":  map[string]any{"signals": []any{map[string]any{"signal": "email"}}},
 		},
 		Edges: []substrate.EdgeInput{
-			{Rel: "winner", To: substrate.EdgeRef{Kind: "people.substrate.geoah.me/person", ID: winner}},
-			{Rel: "loser", To: substrate.EdgeRef{Kind: "people.substrate.geoah.me/person", ID: loser}},
+			{Rel: "winner", To: substrate.EdgeRef{Kind: "people.substrate.reamde.dev/person", ID: winner}},
+			{Rel: "loser", To: substrate.EdgeRef{Kind: "people.substrate.reamde.dev/person", ID: loser}},
 		},
 	})
 }
@@ -45,10 +45,10 @@ func TestMergeRequestAcceptMerges(t *testing.T) {
 	ctx := context.Background()
 
 	winner := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "people.substrate.geoah.me/person", Properties: map[string]any{"name": "Alexandra Chen"},
+		Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "Alexandra Chen"},
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "people.substrate.geoah.me/person", Properties: map[string]any{"name": "Alex Chen"},
+		Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "Alex Chen"},
 	})
 	req := mergeRequest(t, ds, "dupe-"+winner.ID+"-"+loser.ID, winner.ID, loser.ID)
 
@@ -82,8 +82,8 @@ func TestMergeRequestAcceptMerges(t *testing.T) {
 func TestMergeRequestRejectStamps(t *testing.T) {
 	_, ds := newDataset(t)
 
-	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.geoah.me/person", Properties: map[string]any{"name": "A"}})
-	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.geoah.me/person", Properties: map[string]any{"name": "B"}})
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "A"}})
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "B"}})
 	req := mergeRequest(t, ds, "dupe-"+a.ID+"-"+b.ID, a.ID, b.ID)
 
 	rejected, err := decide(ds, req.ID, "rejected")
@@ -102,8 +102,8 @@ func TestMergeRequestRejectStamps(t *testing.T) {
 func TestMergeRequestStaleFailsWholeAndAnnotates(t *testing.T) {
 	_, ds := newDataset(t)
 
-	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.geoah.me/person", Properties: map[string]any{"name": "A"}})
-	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.geoah.me/person", Properties: map[string]any{"name": "B"}})
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "A"}})
+	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "B"}})
 	first := mergeRequest(t, ds, "req-first", winner.ID, loser.ID)
 	second := mergeRequest(t, ds, "req-second", winner.ID, loser.ID)
 
@@ -139,13 +139,13 @@ func TestMergeRequestStaleFailsWholeAndAnnotates(t *testing.T) {
 func TestMergeRequestRefusesDifferentTypes(t *testing.T) {
 	_, ds := newDataset(t)
 
-	person := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.geoah.me/person", Properties: map[string]any{"name": "A"}})
+	person := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "A"}})
 	task := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"title": "t"}})
 	req := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: requestType,
 		ID:   "req-cross",
 		Edges: []substrate.EdgeInput{
-			{Rel: "winner", To: substrate.EdgeRef{Kind: "people.substrate.geoah.me/person", ID: person.ID}},
+			{Rel: "winner", To: substrate.EdgeRef{Kind: "people.substrate.reamde.dev/person", ID: person.ID}},
 			{Rel: "loser", To: substrate.EdgeRef{Kind: taskType, ID: task.ID}},
 		},
 	})

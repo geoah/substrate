@@ -31,7 +31,7 @@ type edgeDoc struct {
 
 // document is one manifest in the pinned envelope
 // : kind, metadata, data,
-// status. `kind` is the kind REFERENCE — "tasks.substrate.geoah.me/task", or a bare
+// status. `kind` is the kind REFERENCE — "tasks.substrate.reamde.dev/task", or a bare
 // "task" for a repository-local kind. `status` holds server-set data on output
 // and is ignored on input, which keeps `get -o yaml` output directly
 // apply-able.
@@ -348,7 +348,7 @@ func renamedKeyError(where string, node *yaml.Node, p *envelopeProbe) error {
 	}
 	if hasKey(node, "group") || hasKey(node, "type") {
 		return fmt.Errorf("%s writes `group`/`type`, which are one key now: `kind`, the kind reference\n"+
-			"(`kind: tasks.substrate.geoah.me/task`, or a bare `kind: task` for a repository-local kind)", where)
+			"(`kind: tasks.substrate.reamde.dev/task`, or a bare `kind: task` for a repository-local kind)", where)
 	}
 	if hasKey(node, "spec") {
 		return fmt.Errorf("%s writes `spec`, which is `data` — and everything authored is a property,\n"+

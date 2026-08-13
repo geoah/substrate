@@ -167,16 +167,16 @@ describe("browse prefs persistence", () => {
   beforeEach(() => localStorage.clear())
 
   it("round-trips filters and sort per collection", () => {
-    saveBrowsePrefs("people.substrate.geoah.me", "people", {
+    saveBrowsePrefs("people.substrate.reamde.dev", "people", {
       filter: ["prominence~eq~known"],
       sort: "name:asc",
     })
-    expect(loadBrowsePrefs("people.substrate.geoah.me", "people")).toEqual({
+    expect(loadBrowsePrefs("people.substrate.reamde.dev", "people")).toEqual({
       filter: ["prominence~eq~known"],
       sort: "name:asc",
     })
     // another collection sees nothing
-    expect(loadBrowsePrefs("people.substrate.geoah.me", "organizations")).toBeNull()
+    expect(loadBrowsePrefs("people.substrate.reamde.dev", "organizations")).toBeNull()
   })
 
   it("an all-default save removes the stored entry (clear clears)", () => {

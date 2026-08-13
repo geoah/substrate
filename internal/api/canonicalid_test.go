@@ -14,11 +14,11 @@ func TestCanonicalIDOnBothReadSurfaces(t *testing.T) {
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
 	ds.records["winner"] = &substrate.Record{
-		ID: "winner", Kind: "people.substrate.geoah.me/person", Title: "Ada",
+		ID: "winner", Kind: "people.substrate.reamde.dev/person", Title: "Ada",
 		Properties: map[string]any{"name": "Ada"}, Labels: map[string]any{},
 	}
 	ds.records["loser"] = &substrate.Record{
-		ID: "loser", Kind: "people.substrate.geoah.me/person", Title: "A. Lovelace",
+		ID: "loser", Kind: "people.substrate.reamde.dev/person", Title: "A. Lovelace",
 		Properties: map[string]any{}, Labels: map[string]any{},
 	}
 	ds.formers["loser"] = "winner"
@@ -34,12 +34,12 @@ func TestCanonicalIDOnBothReadSurfaces(t *testing.T) {
 		t.Fatalf("canonicalId on a canonical read: %q", direct.CanonicalID)
 	}
 
-	res := env.gql(t, tok, `query { record(kind: "people.substrate.geoah.me/person", id: "loser") { id canonicalId title } }`, nil)
+	res := env.gql(t, tok, `query { record(kind: "people.substrate.reamde.dev/person", id: "loser") { id canonicalId title } }`, nil)
 	ent, _ := res.Data["record"].(map[string]any)
 	if ent["id"] != "winner" || ent["canonicalId"] != "winner" {
 		t.Fatalf("GraphQL read of a former id = %+v", ent)
 	}
-	res = env.gql(t, tok, `query { record(kind: "people.substrate.geoah.me/person", id: "winner") { id canonicalId } }`, nil)
+	res = env.gql(t, tok, `query { record(kind: "people.substrate.reamde.dev/person", id: "winner") { id canonicalId } }`, nil)
 	ent, _ = res.Data["record"].(map[string]any)
 	if v, present := ent["canonicalId"]; !present || v != nil {
 		t.Fatalf("canonicalId on a canonical read must be null, got %v", v)

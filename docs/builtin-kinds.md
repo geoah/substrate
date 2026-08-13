@@ -2,10 +2,10 @@
 
 Every repository is seeded at creation with **`core.substrate.reamde.dev` and nothing
 else** — the substrate's own machinery, including the delivery plumbing and the
-agent runtime's data. Everything else is a **vocabulary bundle you import**,
-shipped under the personal domain `*.substrate.geoah.me`: people, tasks,
-messaging, calendar and media, and the mneme-ported health, fitness, routines,
-journal, places, food, commerce and memory. Each ships in the binary and
+agent runtime's data. Everything else is a **vocabulary bundle you import**:
+people, tasks, messaging, calendar and media, and the mneme-ported health,
+fitness, routines, journal, places, food, commerce and memory. Each ships in
+the binary and
 installs on request, exactly the way a [bundle](bundles.md) does, under the
 same `bundle:<name>` actor. So a brand-new repository has no `person` kind
 until you ask for one.
@@ -23,7 +23,7 @@ heading gives the authority.
 The tables for core are [below](#coresubstratereamdedev); what follows first is the
 vocabulary you import.
 
-## people.substrate.geoah.me — imported
+## people.substrate.reamde.dev — imported
 
 | Kind           | What it is                                                                                                                              |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
@@ -38,7 +38,7 @@ once something promotes it (an address-book sync, or you). Search ranks
 an enum, and empty means unknown: a surface rendering a person without a
 value says so and falls back to they/them.
 
-## messaging.substrate.geoah.me — imported
+## messaging.substrate.reamde.dev — imported
 
 | Kind                  | What it is                                                             |
 | --------------------- | ---------------------------------------------------------------------- |
@@ -47,7 +47,7 @@ value says so and falls back to they/them.
 | `emailthread`         | One mail thread.                                                       |
 | `emailmessage`        | One mail message in a thread.                                          |
 
-## calendar.substrate.geoah.me — imported
+## calendar.substrate.reamde.dev — imported
 
 | Kind                  | What it is                                                              |
 | --------------------- | ----------------------------------------------------------------------- |
@@ -56,7 +56,7 @@ value says so and falls back to they/them.
 | `calendareventseries` | The recurring definition, RRULE and exceptions, never on the timeline.  |
 | `transcript`          | A meeting transcript, pointed at the occurrence that actually happened. |
 
-## tasks.substrate.geoah.me — imported
+## tasks.substrate.reamde.dev — imported
 
 | Kind      | What it is                                                                  |
 | --------- | ---------------------------------------------------------------------------- |
@@ -64,7 +64,7 @@ value says so and falls back to they/them.
 | `project` | What tasks group under: a name, a lifecycle, a summary.                       |
 | `tasklog` | The completed-or-skipped mark against one occurrence of a recurring task.     |
 
-## media.substrate.geoah.me — imported
+## media.substrate.reamde.dev — imported
 
 | Kind              | What it is                                                           |
 | ----------------- | -------------------------------------------------------------------- |
@@ -89,7 +89,7 @@ kinds share one stance: a schedule stores an RFC 5545 RRULE the substrate
 never expands, an occurrence exists only when a log records it, and "missed"
 is computed from absence, never stored.
 
-## health.substrate.geoah.me — imported
+## health.substrate.reamde.dev — imported
 
 | Kind                    | What it is                                                                    |
 | ----------------------- | ----------------------------------------------------------------------------- |
@@ -100,7 +100,7 @@ is computed from absence, never stored.
 | `medicationschedulelog` | One dose, taken or skipped; absence in the logs is what missed means.         |
 | `bloodtest`             | One blood draw; markers worth tracking are observationlogs pointing at it.    |
 
-## fitness.substrate.geoah.me — imported
+## fitness.substrate.reamde.dev — imported
 
 | Kind              | What it is                                                              |
 | ----------------- | ------------------------------------------------------------------------ |
@@ -110,34 +110,34 @@ is computed from absence, never stored.
 | `workouttemplate` | A reusable session plan built from the catalog.                          |
 | `workoutlog`      | The done-or-skipped mark against a recurring workout's occurrence.       |
 
-## routines.substrate.geoah.me — imported
+## routines.substrate.reamde.dev — imported
 
 | Kind         | What it is                                                                  |
 | ------------ | ---------------------------------------------------------------------------- |
 | `routine`    | The generic recurring obligation, with a window for how literally its time-of-day is meant. |
 | `routinelog` | One occurrence, done or skipped.                                             |
 
-## journal.substrate.geoah.me — imported
+## journal.substrate.reamde.dev — imported
 
 | Kind           | What it is                                                              |
 | -------------- | ------------------------------------------------------------------------ |
 | `journalentry` | One day's reflection; its timeline anchor is the day written about.      |
 | `note`         | Anything else written down; `kind` declares its audience, `status` its handled lifecycle. |
 
-## places.substrate.geoah.me — imported
+## places.substrate.reamde.dev — imported
 
 | Kind    | What it is                                                          |
 | ------- | -------------------------------------------------------------------- |
 | `place` | Somewhere worth remembering; what happened there points at it.       |
 
-## food.substrate.geoah.me — imported
+## food.substrate.reamde.dev — imported
 
 | Kind     | What it is                                                            |
 | -------- | ---------------------------------------------------------------------- |
 | `recipe` | Instructions for one dish; cooking it is a meal pointing here.         |
 | `meal`   | One sitting on the timeline; nutrition numbers are observationlogs whose subject is the meal. |
 
-## commerce.substrate.geoah.me — imported
+## commerce.substrate.reamde.dev — imported
 
 | Kind        | What it is                                                            |
 | ----------- | ---------------------------------------------------------------------- |
@@ -145,14 +145,14 @@ is computed from absence, never stored.
 | `orderitem` | One line inside an order; the order owns it.                           |
 | `currency`  | A property type: an ISO 4217 code, kept separate from the amount.      |
 
-## memory.substrate.geoah.me — imported
+## memory.substrate.reamde.dev — imported
 
 | Kind      | What it is                                                              |
 | --------- | ------------------------------------------------------------------------ |
 | `episode` | One remembered thing at one grain; moments roll up into daily, weekly and monthly summaries via `aggregates`. |
 
 Memory requires people: an episode's `people` edge lands on
-`people.substrate.geoah.me/person`, and everything else it touches goes
+`people.substrate.reamde.dev/person`, and everything else it touches goes
 through the untyped `subjects` edge.
 
 ## core.substrate.reamde.dev

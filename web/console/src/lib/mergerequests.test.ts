@@ -85,9 +85,9 @@ describe("sameValue", () => {
 // ── diff derivation ─────────────────────────────────────────────────────────
 
 const personType: KindInfo = {
-  identity: "people.substrate.geoah.me/person",
+  identity: "people.substrate.reamde.dev/person",
   name: "person",
-  authority: "people.substrate.geoah.me",
+  authority: "people.substrate.reamde.dev",
   version: "",
   plural: "people",
   source: "installed",
@@ -111,7 +111,7 @@ function person(
 ): SubstrateRecord {
   return {
     id,
-    kind: "people.substrate.geoah.me/person",
+    kind: "people.substrate.reamde.dev/person",
     properties,
     labels: {},
     version: 1,
@@ -179,12 +179,12 @@ describe("deriveDiff", () => {
 
   it("diffs edges by target id set and postures a difference as moves", () => {
     const winner = person("w", {}, undefined, {
-      memberOf: [{ id: "org1", kind: "people.substrate.geoah.me/organization" }],
+      memberOf: [{ id: "org1", kind: "people.substrate.reamde.dev/organization" }],
     })
     const loser = person("l", {}, undefined, {
       memberOf: [
-        { id: "org1", kind: "people.substrate.geoah.me/organization" },
-        { id: "org2", kind: "people.substrate.geoah.me/organization" },
+        { id: "org1", kind: "people.substrate.reamde.dev/organization" },
+        { id: "org2", kind: "people.substrate.reamde.dev/organization" },
       ],
     })
     const rows = deriveDiff(winner, loser, personType)
@@ -199,13 +199,13 @@ describe("deriveDiff", () => {
       "w",
       { name: "A", emails: ["a@x.gr"], prominence: "known" },
       { name: "owner" },
-      { memberOf: [{ id: "org1", kind: "people.substrate.geoah.me/organization" }] }
+      { memberOf: [{ id: "org1", kind: "people.substrate.reamde.dev/organization" }] }
     )
     const loser = person(
       "l",
       { name: "B", emails: ["b@x.gr"], prominence: "known" },
       undefined,
-      { memberOf: [{ id: "org2", kind: "people.substrate.geoah.me/organization" }] }
+      { memberOf: [{ id: "org2", kind: "people.substrate.reamde.dev/organization" }] }
     )
     const rows = deriveDiff(winner, loser, personType)
     expect(rows.map((r) => r.posture)).toEqual([

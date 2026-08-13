@@ -1,0 +1,34 @@
+# one line inside an order
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: commerce.substrate.reamde.dev/orderitem
+data:
+  authority: commerce.substrate.reamde.dev
+  description: >-
+    One line inside an order: the thing, how many, and what one cost. The
+    order owns it, so returning the order takes its lines with it.
+  names:
+    singular: orderitem
+    plural: orderitems
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the item as the vendor lists it
+    quantity:
+      type: int
+      min: 1
+      description: how many of it the line covers
+    unitPrice:
+      type: float
+      description: what one cost, in the order's currency
+    productURL:
+      type: url
+      description: the item's product page
+  edges:
+    order:
+      to: order
+      required: true
+      ownerRef: true
+      description: the order this line belongs to

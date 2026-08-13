@@ -45,7 +45,7 @@ reference, so it carries a `/`. A client percent-encodes it, and the API
 decodes it exactly once:
 
 ```http
-GET /api/v1/core.substrate.reamde.dev/kinds/tasks.substrate.geoah.me%2Ftask
+GET /api/v1/core.substrate.reamde.dev/kinds/tasks.substrate.reamde.dev%2Ftask
 ```
 
 Reverse edges are a derived view of their own, paged separately so a popular
@@ -69,10 +69,10 @@ A worked sequence over the to-do list. Add a task (the kind comes from the
 path):
 
 ```http
-POST /api/v1/tasks.substrate.geoah.me/tasks
+POST /api/v1/tasks.substrate.reamde.dev/tasks
 {"properties": {"title": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
-→ 201 {"id": "kq3v9x2m41pf", "kind": "tasks.substrate.geoah.me/task",
+→ 201 {"id": "kq3v9x2m41pf", "kind": "tasks.substrate.reamde.dev/task",
        "properties": {"title": "Buy milk", "status": "open",
                       "dueAt": "2026-08-13T09:00:00Z"},
        "version": 1, "createdAt": "2026-08-04T10:00:00Z",
@@ -83,7 +83,7 @@ List what is open, soonest first (the filter is URL-encoded JSON, the grammar
 is below):
 
 ```http
-GET /api/v1/tasks.substrate.geoah.me/tasks
+GET /api/v1/tasks.substrate.reamde.dev/tasks
       ?filter={"properties":{"status":{"eq":"open"}}}&orderBy=dueAt
 
 → {"records": [...], "cursor": "eyJv…", "head": 4207}
@@ -94,7 +94,7 @@ Complete one. A state change is just a patch, and the
 `completedAt`:
 
 ```http
-PATCH /api/v1/tasks.substrate.geoah.me/tasks/kq3v9x2m41pf
+PATCH /api/v1/tasks.substrate.reamde.dev/tasks/kq3v9x2m41pf
 {"properties": {"status": "done"}}
 ```
 
@@ -106,9 +106,9 @@ mechanism), and, if you asked by an id that was merged away, `canonicalId`
 tells you where it went ([merges](projection.md#merges)):
 
 ```http
-GET /api/v1/people.substrate.geoah.me/people/9f2k
+GET /api/v1/people.substrate.reamde.dev/people/9f2k
 
-→ {"id": "9f2k", "kind": "people.substrate.geoah.me/person",
+→ {"id": "9f2k", "kind": "people.substrate.reamde.dev/person",
    "properties": {"name": "Ada Lovelace", "emails": ["ada@example.com"]},
    "propertyMeta": {"name": {"manager": "console", "tier": "owner",
      "updatedAt": "2026-08-04T09:12:00Z",
@@ -169,7 +169,7 @@ A filter is one JSON document, the same shape URL-encoded in REST's `?filter=`
 and passed whole to GraphQL's `filter` argument:
 
 ```json
-{"kinds": ["tasks.substrate.geoah.me/task"],
+{"kinds": ["tasks.substrate.reamde.dev/task"],
  "properties": {"status": {"eq": "open"},
                 "dueAt": {"lt": "2026-08-11T00:00:00Z"}},
  "labels": {"owner/starred": {"eq": true}}}
@@ -223,10 +223,10 @@ pass `first` for the page size and, on the next request, the `cursor` a page
 returned as `after`:
 
 ```http
-GET /api/v1/tasks.substrate.geoah.me/tasks?first=50
+GET /api/v1/tasks.substrate.reamde.dev/tasks?first=50
 → {"records": [...], "cursor": "eyJv…", "head": 4211}
 
-GET /api/v1/tasks.substrate.geoah.me/tasks?first=50&after=eyJv…
+GET /api/v1/tasks.substrate.reamde.dev/tasks?first=50&after=eyJv…
 → {"records": [...], "cursor": "eyJv…", "head": 4211}
 ```
 

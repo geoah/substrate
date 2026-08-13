@@ -19,7 +19,7 @@ import (
 // TWO SHAPES, told apart by the owned authority's own name (SCHEME.md R1):
 // an EXTENSION owns a CATEGORIZED authority (`<name>.bundles.substrate.reamde.dev`) and
 // may carry inputs, callables and a provider flow; a
-// VOCABULARY bundle owns a BARE org-domain authority (`people.substrate.geoah.me`) and
+// VOCABULARY bundle owns a BARE org-domain authority (`people.substrate.reamde.dev`) and
 // ships kinds and nothing else. The second exists because repository creation
 // seeds core alone — the substrate's own vocabulary is delivered through the
 // registry rather than the seed, and stays SHIPPED (`source: builtin`) either
@@ -29,18 +29,10 @@ import (
 // authorities are bare, installed bundle authorities carry the installer's category.
 const BundleAuthoritySuffix = ".bundles.substrate.reamde.dev"
 
-// OrgDomainSuffix is the organization's domain. The shipped vocabulary moved
-// to the personal domain, so nothing ships bare under it today, but it stays
-// a legal org domain: an authority already published under it keeps
-// resolving, and the categorized extension suffix still builds on it.
+// OrgDomainSuffix is the organization's domain — the namespace a SHIPPED
+// authority is bare under ("people.substrate.reamde.dev"). It is never the name of the
+// system, only the namespace.
 const OrgDomainSuffix = ".substrate.reamde.dev"
-
-// OrgDomainSuffixes are the namespaces a shipped VOCABULARY authority may be
-// bare under: the owner's personal domain ("people.substrate.geoah.me"),
-// where the shipped vocabulary lives, and the organization's domain.
-// Extension bundles stay under the one categorized suffix; the bare org
-// domains ship kinds alone.
-var OrgDomainSuffixes = []string{OrgDomainSuffix, ".substrate.geoah.me"}
 
 // The host-recognized trait interfaces: traits
 // the loader and the engine key behavior on, shipped in core.
@@ -91,13 +83,13 @@ type Bundle struct {
 	// Requires names the AUTHORITIES this bundle's closure declares against —
 	// the vocabulary its mappings, edges and trigger subscriptions point at.
 	// Vocabulary is imported now rather than seeded, so a bundle that maps
-	// google contacts onto `people.substrate.geoah.me/person` cannot assume people is
+	// google contacts onto `people.substrate.reamde.dev/person` cannot assume people is
 	// there. resolveBundle refuses the install when one is absent, naming what
 	// to import first, instead of letting the closure fail on an unresolvable
 	// edge target.
 	Requires []string
 	// Vocabulary marks a VOCABULARY bundle: one that owns a BARE authority
-	// under the org domain ("people.substrate.geoah.me") and ships kinds and nothing
+	// under the org domain ("people.substrate.reamde.dev") and ships kinds and nothing
 	// else — no inputs, no functions, no agents, no OAuth. It is the
 	// substrate's own vocabulary, delivered through the registry instead of
 	// the creation seed, so its declarations stay SHIPPED (`source: builtin`)
@@ -239,40 +231,31 @@ func ValidBundleAuthority(authority string) bool {
 
 // ValidVocabularyAuthority reports whether an authority name is a legal owned
 // VOCABULARY authority: one bare lowercase label under the org domain —
-// "people.substrate.geoah.me", "media.substrate.geoah.me". The categorized form fails it
+// "people.substrate.reamde.dev", "media.substrate.reamde.dev". The categorized form fails it
 // ("google.bundles" is not one label), so the two owned-authority shapes are
 // disjoint and a bundle document is always exactly one of the two.
 func ValidVocabularyAuthority(authority string) bool {
-	for _, suffix := range OrgDomainSuffixes {
-		if label, ok := strings.CutSuffix(authority, suffix); ok {
-			return ValidName(label)
-		}
-	}
-	return false
+	label, ok := strings.CutSuffix(authority, OrgDomainSuffix)
+	return ok && ValidName(label)
 }
 
 // BundleName is the bundle name an owned authority implies — the label before
 // the category for a bundle ("google" of "google.bundles.substrate.reamde.dev"), the
-// bare label for a vocabulary bundle ("people" of "people.substrate.geoah.me"). It is
+// bare label for a vocabulary bundle ("people" of "people.substrate.reamde.dev"). It is
 // the bundle's `metadata.id` suffix and the actor an install writes under
 // (`bundle:<name>`).
 func BundleName(authority string) string {
 	if name, ok := strings.CutSuffix(authority, BundleAuthoritySuffix); ok {
 		return name
 	}
-	for _, suffix := range OrgDomainSuffixes {
-		if name, ok := strings.CutSuffix(authority, suffix); ok {
-			return name
-		}
-	}
-	return authority
+	return strings.TrimSuffix(authority, OrgDomainSuffix)
 }
 
 // VocabularyBundleAuthorities names the authorities in a document stream that
 // a VOCABULARY bundle owns — a bundle document on a bare org-domain authority.
 // The source an authority is BUILT with follows from it (load.go): shipped
 // vocabulary stays `builtin` however it was delivered, so importing
-// people.substrate.geoah.me rather than seeding it does not rename `Person` in GraphQL
+// people.substrate.reamde.dev rather than seeding it does not rename `Person` in GraphQL
 // or hand its declarations to a generic API write.
 func VocabularyBundleAuthorities(docs []Document) map[string]bool {
 	out := map[string]bool{}
@@ -317,7 +300,7 @@ func (l *loader) buildBundle(gd *authorityDocs) {
 	vocabulary := ValidVocabularyAuthority(g.Name)
 	if !ValidBundleAuthority(g.Name) && !vocabulary {
 		l.errf("%s: data.authority %q: a bundle's owned authority is categorized — \"<name>%s\" — or a bare label under %s for shipped vocabulary (SCHEME.md R1)",
-			where, g.Name, BundleAuthoritySuffix, strings.Join(OrgDomainSuffixes, " or "))
+			where, g.Name, BundleAuthoritySuffix, OrgDomainSuffix)
 		return
 	}
 	name := BundleName(g.Name)

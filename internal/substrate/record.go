@@ -11,7 +11,7 @@ import "time"
 // callers that hold an Record in-process, and are not serialized.
 type Record struct {
 	ID string `json:"id"`
-	// Kind is the record's kind REFERENCE: "calendar.substrate.geoah.me/calendarevent"
+	// Kind is the record's kind REFERENCE: "calendar.substrate.reamde.dev/calendarevent"
 	// for a published kind, bare "task" for a repository-local one.
 	Kind string `json:"kind"`
 	// CanonicalID is set only when the read was addressed by a FORMER id: a

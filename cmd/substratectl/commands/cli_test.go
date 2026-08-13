@@ -94,7 +94,7 @@ func (h *harness) mustRun(args ...string) (stdout, stderr string) {
 
 func seedTask(h *harness) {
 	h.fake.seed(&substrate.Record{
-		ID: "t9", Kind: "tasks.substrate.geoah.me/task",
+		ID: "t9", Kind: "tasks.substrate.reamde.dev/task",
 		// One properties map. `title` is a property with a column behind it,
 		// and `lifecycle` is the type's state property — the declaration is the
 		// only thing that says which is which.
@@ -128,7 +128,7 @@ func seedTask(h *harness) {
 			UpdatedAt: testNow.Add(-3 * time.Hour),
 		},
 		"lifecycle": {
-			Manager:   "function.closer.tasks.substrate.geoah.me",
+			Manager:   "function.closer.tasks.substrate.reamde.dev",
 			Tier:      substrate.TierBundle,
 			UpdatedAt: testNow.Add(-4 * time.Hour),
 		},
@@ -487,14 +487,14 @@ func TestErrorRenderingProblemsAndHints(t *testing.T) {
 			err: &apiError{
 				Status: 422, Code: "validation", Message: "3 problems",
 				Problems: []string{"properties.detail: required", "at: not a timestamp"},
-				Method:   "PUT", Path: "/api/v1/tasks.substrate.geoah.me/tasks/t9",
+				Method:   "PUT", Path: "/api/v1/tasks.substrate.reamde.dev/tasks/t9",
 			},
 			want: []string{
 				"error: the substrate rejected this write as invalid",
 				"  problems:",
 				"    - properties.detail: required",
 				"    - at: not a timestamp",
-				"request: PUT /api/v1/tasks.substrate.geoah.me/tasks/t9 (422)",
+				"request: PUT /api/v1/tasks.substrate.reamde.dev/tasks/t9 (422)",
 			},
 		},
 		{
@@ -528,23 +528,23 @@ func TestKindsTable(t *testing.T) {
 	h.writeConfig()
 	out, _ := h.mustRun("kinds")
 	want := "NAME                  AUTHORITY                                PLURAL                 VERSION    SOURCE\n" +
-		"calendarevent         calendar.substrate.geoah.me              calendarevents         v1alpha1   builtin\n" +
-		"calendareventseries   calendar.substrate.geoah.me              calendareventseries    v1alpha1   builtin\n" +
+		"calendarevent         calendar.substrate.reamde.dev            calendarevents         v1alpha1   builtin\n" +
+		"calendareventseries   calendar.substrate.reamde.dev            calendareventseries    v1alpha1   builtin\n" +
 		"kind                  core.substrate.reamde.dev                kinds                  v1alpha1   builtin\n" +
 		"recordmerge           core.substrate.reamde.dev                recordmerges           v1alpha1   builtin\n" +
 		"recordsplit           core.substrate.reamde.dev                recordsplits           v1alpha1   builtin\n" +
 		"token                 core.substrate.reamde.dev                tokens                 v1alpha1   builtin\n" +
 		"syncrun               google.connectors.substrate.reamde.dev   syncruns               v1alpha1   installed\n" +
-		"book                  media.substrate.geoah.me                 books                  v1alpha1   builtin\n" +
-		"bookseries            media.substrate.geoah.me                 bookseries             v1alpha1   builtin\n" +
-		"movie                 media.substrate.geoah.me                 movies                 v1alpha1   builtin\n" +
-		"podcast               media.substrate.geoah.me                 podcasts               v1alpha1   builtin\n" +
-		"tvseries              media.substrate.geoah.me                 tvseries               v1alpha1   builtin\n" +
-		"conversationmessage   messaging.substrate.geoah.me             conversationmessages   v1alpha1   builtin\n" +
-		"organization          people.substrate.geoah.me                organizations          v1alpha1   builtin\n" +
-		"person                people.substrate.geoah.me                people                 v1alpha1   builtin\n" +
+		"book                  media.substrate.reamde.dev               books                  v1alpha1   builtin\n" +
+		"bookseries            media.substrate.reamde.dev               bookseries             v1alpha1   builtin\n" +
+		"movie                 media.substrate.reamde.dev               movies                 v1alpha1   builtin\n" +
+		"podcast               media.substrate.reamde.dev               podcasts               v1alpha1   builtin\n" +
+		"tvseries              media.substrate.reamde.dev               tvseries               v1alpha1   builtin\n" +
+		"conversationmessage   messaging.substrate.reamde.dev           conversationmessages   v1alpha1   builtin\n" +
+		"organization          people.substrate.reamde.dev              organizations          v1alpha1   builtin\n" +
+		"person                people.substrate.reamde.dev              people                 v1alpha1   builtin\n" +
 		"syncrun               slack.connectors.substrate.reamde.dev    syncruns               v1alpha1   installed\n" +
-		"task                  tasks.substrate.geoah.me                 tasks                  v1alpha1   builtin\n"
+		"task                  tasks.substrate.reamde.dev               tasks                  v1alpha1   builtin\n"
 	if out != want {
 		t.Fatalf("kinds table:\ngot:\n%s\nwant:\n%s", out, want)
 	}
@@ -601,7 +601,7 @@ func TestGetWideTable(t *testing.T) {
 	if !strings.Contains(out, "ID") || !strings.Contains(out, "TYPE") || !strings.Contains(out, "VERSION") {
 		t.Fatalf("wide table missing columns:\n%s", out)
 	}
-	if !strings.Contains(out, "tasks.substrate.geoah.me/task") {
+	if !strings.Contains(out, "tasks.substrate.reamde.dev/task") {
 		t.Fatalf("wide table missing type:\n%s", out)
 	}
 }
@@ -613,7 +613,7 @@ func TestGetQualifiedPluralResolvesWithoutTheRegistry(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	h.mustRun("get", "tasks.substrate.geoah.me/tasks", "-o", "yaml")
+	h.mustRun("get", "tasks.substrate.reamde.dev/tasks", "-o", "yaml")
 	for _, req := range h.fake.requests {
 		if strings.Contains(req, "/core.substrate.reamde.dev/kinds") {
 			t.Fatalf("qualified plural should not hit the type registry: %v", h.fake.requests)
@@ -629,11 +629,11 @@ func TestGetTableAsksTheRegistryOnlyForTheStateColumn(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("get", "tasks.substrate.geoah.me/tasks")
+	out, _ := h.mustRun("get", "tasks.substrate.reamde.dev/tasks")
 	if !strings.Contains(out, "lifecycle=open") {
 		t.Fatalf("qualified plural lost the STATE column:\n%s", out)
 	}
-	if h.fake.requests[0] != "GET /api/v1/tasks.substrate.geoah.me/tasks" {
+	if h.fake.requests[0] != "GET /api/v1/tasks.substrate.reamde.dev/tasks" {
 		t.Fatalf("the collection read must come first: %v", h.fake.requests)
 	}
 }
@@ -668,16 +668,16 @@ func TestStateColumnComesFromTheDeclaration(t *testing.T) {
 // addressed, not what came back.
 func TestGetBarePluralResolvesWhenUniqueAcrossGroups(t *testing.T) {
 	cases := []struct{ arg, path string }{
-		{"people", "/api/v1/people.substrate.geoah.me/people"},
-		{"calendarevents", "/api/v1/calendar.substrate.geoah.me/calendarevents"},
-		{"conversationmessages", "/api/v1/messaging.substrate.geoah.me/conversationmessages"},
-		{"books", "/api/v1/media.substrate.geoah.me/books"},
-		{"movies", "/api/v1/media.substrate.geoah.me/movies"},
-		{"podcasts", "/api/v1/media.substrate.geoah.me/podcasts"},
-		{"bookseries", "/api/v1/media.substrate.geoah.me/bookseries"},
+		{"people", "/api/v1/people.substrate.reamde.dev/people"},
+		{"calendarevents", "/api/v1/calendar.substrate.reamde.dev/calendarevents"},
+		{"conversationmessages", "/api/v1/messaging.substrate.reamde.dev/conversationmessages"},
+		{"books", "/api/v1/media.substrate.reamde.dev/books"},
+		{"movies", "/api/v1/media.substrate.reamde.dev/movies"},
+		{"podcasts", "/api/v1/media.substrate.reamde.dev/podcasts"},
+		{"bookseries", "/api/v1/media.substrate.reamde.dev/bookseries"},
 		// The singular resolves too, so `get person` is not a usage error.
-		{"person", "/api/v1/people.substrate.geoah.me/people"},
-		{"book", "/api/v1/media.substrate.geoah.me/books"},
+		{"person", "/api/v1/people.substrate.reamde.dev/people"},
+		{"book", "/api/v1/media.substrate.reamde.dev/books"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.arg, func(t *testing.T) {
@@ -700,12 +700,12 @@ func TestGetBarePluralResolvesWhenUniqueAcrossGroups(t *testing.T) {
 // same string and must all address the same collection. A resolver that
 // appended an "s" or assumed plural != name would only be caught here.
 func TestGetPluralEqualToSingular(t *testing.T) {
-	for _, arg := range []string{"tvseries", "media.substrate.geoah.me/tvseries"} {
+	for _, arg := range []string{"tvseries", "media.substrate.reamde.dev/tvseries"} {
 		t.Run(arg, func(t *testing.T) {
 			h := newHarness(t)
 			h.writeConfig()
 			_, _, _ = h.run("get", arg)
-			want := "GET /api/v1/media.substrate.geoah.me/tvseries"
+			want := "GET /api/v1/media.substrate.reamde.dev/tvseries"
 			for _, req := range h.fake.requests {
 				if req == want {
 					return
@@ -784,7 +784,7 @@ func TestTypeRegistryIsReadWhole(t *testing.T) {
 	var sawBooks bool
 	pages := 0
 	for _, req := range h.fake.requests {
-		sawBooks = sawBooks || req == "GET /api/v1/media.substrate.geoah.me/books"
+		sawBooks = sawBooks || req == "GET /api/v1/media.substrate.reamde.dev/books"
 		if req == "GET "+typesPath {
 			pages++
 		}
@@ -837,7 +837,7 @@ func TestGetSingleYAMLRoundTripsThroughApply(t *testing.T) {
 	}
 	// The envelope: one `kind`, carrying the kind reference and no version;
 	// the id is metadata.id.
-	if d.Kind != "tasks.substrate.geoah.me/task" {
+	if d.Kind != "tasks.substrate.reamde.dev/task" {
 		t.Fatalf("envelope kind = %q", d.Kind)
 	}
 	if strings.Contains(out, "v1alpha1") {
@@ -898,7 +898,7 @@ func TestGetJSON(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &d); err != nil {
 		t.Fatalf("get -o json is not parseable: %v\n%s", err, out)
 	}
-	if d.Kind != "tasks.substrate.geoah.me/task" || d.Metadata.ID != "t9" {
+	if d.Kind != "tasks.substrate.reamde.dev/task" || d.Metadata.ID != "t9" {
 		t.Fatalf("json envelope = %+v", d)
 	}
 	if d.Status == nil || d.Status.Version != 3 {
@@ -917,7 +917,7 @@ func TestGetListJSONIsAnArrayOfManifests(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &docs); err != nil {
 		t.Fatalf("get list -o json is not an array: %v\n%s", err, out)
 	}
-	if len(docs) != 1 || docs[0].Kind != "tasks.substrate.geoah.me/task" || docs[0].Metadata.ID != "t9" {
+	if len(docs) != 1 || docs[0].Kind != "tasks.substrate.reamde.dev/task" || docs[0].Metadata.ID != "t9" {
 		t.Fatalf("json list = %+v", docs)
 	}
 }
@@ -1101,7 +1101,7 @@ func TestPatchStateWritesTheProperty(t *testing.T) {
 	if in.Properties["lifecycle"] != "done" {
 		t.Fatalf("patch body = %+v, want the state in properties", in.Properties)
 	}
-	if !strings.Contains(out, "tasks.substrate.geoah.me/task/t9 patched") {
+	if !strings.Contains(out, "tasks.substrate.reamde.dev/task/t9 patched") {
 		t.Fatalf("patch output:\n%s", out)
 	}
 	if !strings.Contains(out, "states: lifecycle=done") {
@@ -1128,7 +1128,7 @@ func TestApplyRefusesTheOldSpellings(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t)
 			h.writeConfig()
-			h.stdin.WriteString("kind: tasks.substrate.geoah.me/task\nmetadata:\n  id: t9\ndata:\n" + tc.data)
+			h.stdin.WriteString("kind: tasks.substrate.reamde.dev/task\nmetadata:\n  id: t9\ndata:\n" + tc.data)
 			_, _, err := h.run("apply", "-f", "-")
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want it to name %s", err, tc.want)
@@ -1145,7 +1145,7 @@ func TestApplyRefusesTheOldSpellings(t *testing.T) {
 // manifest is one task in the envelope, titled. The title is a property like
 // everything else authored.
 func manifest(title string) string {
-	return "kind: tasks.substrate.geoah.me/task\nmetadata:\n  id: t9\ndata:\n  properties:\n    title: " + title + "\n"
+	return "kind: tasks.substrate.reamde.dev/task\nmetadata:\n  id: t9\ndata:\n  properties:\n    title: " + title + "\n"
 }
 
 func TestApplyCreateUpdateUnchanged(t *testing.T) {
@@ -1158,13 +1158,13 @@ func TestApplyCreateUpdateUnchanged(t *testing.T) {
 	}
 
 	out, _ := h.mustRun("apply", "-f", first)
-	if want := "tasks.substrate.geoah.me/task/t9 created\n"; out != want {
+	if want := "tasks.substrate.reamde.dev/task/t9 created\n"; out != want {
 		t.Fatalf("apply create = %q, want %q", out, want)
 	}
 
 	// Same document again: the server suppresses the no-op, so does the CLI.
 	out, _ = h.mustRun("apply", "-f", first)
-	if want := "tasks.substrate.geoah.me/task/t9 unchanged\n"; out != want {
+	if want := "tasks.substrate.reamde.dev/task/t9 unchanged\n"; out != want {
 		t.Fatalf("apply no-op = %q, want %q", out, want)
 	}
 
@@ -1173,7 +1173,7 @@ func TestApplyCreateUpdateUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, _ = h.mustRun("apply", "-f", second)
-	if want := "tasks.substrate.geoah.me/task/t9 updated\n"; out != want {
+	if want := "tasks.substrate.reamde.dev/task/t9 updated\n"; out != want {
 		t.Fatalf("apply update = %q, want %q", out, want)
 	}
 	if got := h.fake.record("t9"); got == nil || got.Properties["title"] != "Send rack layout to Alex" || got.Version != 2 {
@@ -1184,13 +1184,13 @@ func TestApplyCreateUpdateUnchanged(t *testing.T) {
 func TestApplyMultiDocumentFromStdin(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	h.stdin.WriteString(`kind: tasks.substrate.geoah.me/task
+	h.stdin.WriteString(`kind: tasks.substrate.reamde.dev/task
 metadata: {}
 data:
   properties:
     title: no id, POSTed
 ---
-kind: tasks.substrate.geoah.me/task
+kind: tasks.substrate.reamde.dev/task
 metadata:
   id: t7
   labels: {owner/pinned: true}
@@ -1201,7 +1201,7 @@ data:
     detail: rack layout
   edges:
     - rel: source
-      to: {authority: calendar.substrate.geoah.me, type: transcript, id: f81k}
+      to: {authority: calendar.substrate.reamde.dev, type: transcript, id: f81k}
 ---
 # a trailing separator is an empty document, not an error
 `)
@@ -1215,8 +1215,8 @@ data:
 	}
 	var sawPost, sawPut bool
 	for _, req := range h.fake.requests {
-		sawPost = sawPost || req == "POST /api/v1/tasks.substrate.geoah.me/tasks"
-		sawPut = sawPut || req == "PUT /api/v1/tasks.substrate.geoah.me/tasks/t7"
+		sawPost = sawPost || req == "POST /api/v1/tasks.substrate.reamde.dev/tasks"
+		sawPut = sawPut || req == "PUT /api/v1/tasks.substrate.reamde.dev/tasks/t7"
 	}
 	if !sawPost || !sawPut {
 		t.Fatalf("expected a POST for the id-less doc and a PUT for t7: %v", h.fake.requests)
@@ -1277,12 +1277,12 @@ func TestApplyResolvesTheTypeThroughItsAuthority(t *testing.T) {
 	// A type that is real but not in the named authority says where it lives.
 	h2 := newHarness(t)
 	h2.writeConfig()
-	h2.stdin.WriteString("kind: tasks.substrate.geoah.me/syncrun\nmetadata: {}\ndata: {}\n")
+	h2.stdin.WriteString("kind: tasks.substrate.reamde.dev/syncrun\nmetadata: {}\ndata: {}\n")
 	_, _, err := h2.run("apply", "-f", "-")
 	if err == nil {
 		t.Fatal("expected a type/authority mismatch error")
 	}
-	for _, want := range []string{`no kind "syncrun" under authority "tasks.substrate.geoah.me"`, "google.connectors.substrate.reamde.dev"} {
+	for _, want := range []string{`no kind "syncrun" under authority "tasks.substrate.reamde.dev"`, "google.connectors.substrate.reamde.dev"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("mismatch error missing %q: %v", want, err)
 		}
@@ -1310,7 +1310,7 @@ data:
   properties:
     name: {type: string}
 ---
-kind: tasks.substrate.geoah.me/task
+kind: tasks.substrate.reamde.dev/task
 metadata:
   id: t9
 data:
@@ -1334,7 +1334,7 @@ data:
 		switch req {
 		case "POST /api/v1/core.substrate.reamde.dev/vocabulary/apply":
 			batches++
-		case "PUT /api/v1/tasks.substrate.geoah.me/tasks/t9":
+		case "PUT /api/v1/tasks.substrate.reamde.dev/tasks/t9":
 			puts++
 		}
 	}
@@ -1357,7 +1357,7 @@ func TestDelete(t *testing.T) {
 	h.writeConfig()
 	seedTask(h)
 	out, _ := h.mustRun("delete", "tasks", "t9")
-	if !strings.Contains(out, "tasks.substrate.geoah.me/task/t9 deleted") {
+	if !strings.Contains(out, "tasks.substrate.reamde.dev/task/t9 deleted") {
 		t.Fatalf("delete output:\n%s", out)
 	}
 	if !strings.Contains(out, "waiting on finalizers") {
@@ -1371,7 +1371,7 @@ func TestDelete(t *testing.T) {
 func TestDeleteNotFoundRendersNotFound(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	_, _, err := h.run("delete", "tasks.substrate.geoah.me/tasks", "nope")
+	_, _, err := h.run("delete", "tasks.substrate.reamde.dev/tasks", "nope")
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -1386,10 +1386,10 @@ func TestWatchPrintsOneLinePerChange(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.fake.changes = []substrate.Change{
-		{Seq: 42, TS: testNow, Actor: substrate.ActorAPI, Op: substrate.OpPut, RecordID: "t9", Kind: "tasks.substrate.geoah.me/task"},
-		{Seq: 43, TS: testNow, Actor: "connector:gmail", Op: substrate.OpPatch, RecordID: "m3", Kind: "messaging.substrate.geoah.me/conversationmessage"},
+		{Seq: 42, TS: testNow, Actor: substrate.ActorAPI, Op: substrate.OpPut, RecordID: "t9", Kind: "tasks.substrate.reamde.dev/task"},
+		{Seq: 43, TS: testNow, Actor: "connector:gmail", Op: substrate.OpPatch, RecordID: "m3", Kind: "messaging.substrate.reamde.dev/conversationmessage"},
 	}
-	out, _ := h.mustRun("watch", "--from", "41", "--kinds", "tasks.substrate.geoah.me/task,messaging.substrate.geoah.me/conversationmessage")
+	out, _ := h.mustRun("watch", "--from", "41", "--kinds", "tasks.substrate.reamde.dev/task,messaging.substrate.reamde.dev/conversationmessage")
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	if len(lines) != 4 {
 		t.Fatalf("expected bookmark + header + 2 change lines, got:\n%s", out)
@@ -1427,10 +1427,10 @@ func TestGetWatchStreamsCollectionChanges(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.fake.changes = []substrate.Change{
-		{Seq: 42, TS: testNow, Actor: substrate.ActorAPI, Op: substrate.OpPut, RecordID: "t9", Kind: "tasks.substrate.geoah.me/task"},
-		{Seq: 43, TS: testNow, Actor: substrate.ActorAPI, Op: substrate.OpPatch, RecordID: "t9", Kind: "tasks.substrate.geoah.me/task"},
+		{Seq: 42, TS: testNow, Actor: substrate.ActorAPI, Op: substrate.OpPut, RecordID: "t9", Kind: "tasks.substrate.reamde.dev/task"},
+		{Seq: 43, TS: testNow, Actor: substrate.ActorAPI, Op: substrate.OpPatch, RecordID: "t9", Kind: "tasks.substrate.reamde.dev/task"},
 	}
-	out, _ := h.mustRun("get", "tasks.substrate.geoah.me/tasks", "-w")
+	out, _ := h.mustRun("get", "tasks.substrate.reamde.dev/tasks", "-w")
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	if len(lines) != 4 {
 		t.Fatalf("get -w should stream bookmark + header + 2 changes, got:\n%s", out)
@@ -1444,7 +1444,7 @@ func TestStreamChangesSkipsHeartbeats(t *testing.T) {
 	// The collection watch shares the ndjson decoder; drive it directly.
 	body := strings.NewReader(`{"bookmark":10}
 {}
-{"seq":11,"ts":"2026-08-02T12:00:00Z","actor":"api","op":"put","recordId":"t9","type":"tasks.substrate.geoah.me/task"}
+{"seq":11,"ts":"2026-08-02T12:00:00Z","actor":"api","op":"put","recordId":"t9","type":"tasks.substrate.reamde.dev/task"}
 `)
 	var buf bytes.Buffer
 	if err := streamChanges(&buf, body); err != nil {
@@ -1676,7 +1676,7 @@ func TestEnvOverridesConfig(t *testing.T) {
 	seedTask(h)
 	t.Setenv("SUBSTRATE_SERVER", h.server)
 	t.Setenv("SUBSTRATE_TOKEN", "substrate_tok_geoah_fromenv")
-	h.mustRun("get", "tasks.substrate.geoah.me/tasks")
+	h.mustRun("get", "tasks.substrate.reamde.dev/tasks")
 	if h.fake.lastAuth != "Bearer substrate_tok_geoah_fromenv" {
 		t.Fatalf("SUBSTRATE_TOKEN did not override the config: %q", h.fake.lastAuth)
 	}
@@ -1706,7 +1706,7 @@ func TestCanonicalAndAliasEnvVars(t *testing.T) {
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}
-			h.mustRun("get", "tasks.substrate.geoah.me/tasks")
+			h.mustRun("get", "tasks.substrate.reamde.dev/tasks")
 			if h.fake.lastAuth != tc.want {
 				t.Fatalf("auth header = %q, want %q", h.fake.lastAuth, tc.want)
 			}
@@ -1716,7 +1716,7 @@ func TestCanonicalAndAliasEnvVars(t *testing.T) {
 
 func TestNoServerConfiguredIsAClearError(t *testing.T) {
 	h := newHarness(t)
-	_, _, err := h.run("get", "tasks.substrate.geoah.me/tasks")
+	_, _, err := h.run("get", "tasks.substrate.reamde.dev/tasks")
 	if err == nil || !strings.Contains(err.Error(), "no substrate server configured") {
 		t.Fatalf("err = %v", err)
 	}
@@ -1726,7 +1726,7 @@ func TestActorFlagIsSent(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	h.mustRun("--actor", "gmail.google.connectors.substrate.reamde.dev", "get", "tasks.substrate.geoah.me/tasks")
+	h.mustRun("--actor", "gmail.google.connectors.substrate.reamde.dev", "get", "tasks.substrate.reamde.dev/tasks")
 	// The fake records the auth header only; assert via a direct client too.
 	cl := newClient(h.server, "substrate_tok_geoah_test", nil)
 	cl.actor = "gmail.google.connectors.substrate.reamde.dev"
@@ -1777,7 +1777,7 @@ func TestEditDiffAndRoundTrip(t *testing.T) {
 		!strings.Contains(out, "+     title: Edited by hand") {
 		t.Fatalf("edit diff:\n%s", out)
 	}
-	if !strings.Contains(out, "tasks.substrate.geoah.me/task/t9 updated") {
+	if !strings.Contains(out, "tasks.substrate.reamde.dev/task/t9 updated") {
 		t.Fatalf("edit apply result:\n%s", out)
 	}
 	if got := h.fake.record("t9"); got.Properties["title"] != "Edited by hand" {

@@ -57,7 +57,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 	name, _ := in.Envelope.Record.Properties["name"].(string)
 	host.Logf("mirroring %s", c.ID)
 	return &substratefn.Result{Effects: []substratefn.Effect{{
-		Action: "put", Kind: "tasks.substrate.geoah.me/task", ID: "t-" + c.ID,
+		Action: "put", Kind: "tasks.substrate.reamde.dev/task", ID: "t-" + c.ID,
 		Properties: map[string]any{"title": name},
 	}}}, nil
 }
@@ -97,7 +97,7 @@ def main(input, host):
         hits = host.search(q=p["q"], mode="lexical", kinds=["widgets.test.dev/widget"], k=5)
         title = str(len(hits))
     elif mode == "forbidden":
-        host.list(filter={"kinds": ["tasks.substrate.geoah.me/task"]})
+        host.list(filter={"kinds": ["tasks.substrate.reamde.dev/task"]})
         title = "never"
     elif mode == "burn":
         for i in range(int(p["calls"])):
@@ -105,7 +105,7 @@ def main(input, host):
         title = "never"
     else:
         return {}
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
                          "id": "t-" + e["id"], "properties": {"title": title}}]}
 `
 
@@ -228,7 +228,7 @@ def main(input, host):
 const mintSource = `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "ifAbsent": True, "kind": "tasks.substrate.geoah.me/task",
+    return {"effects": [{"action": "put", "ifAbsent": True, "kind": "tasks.substrate.reamde.dev/task",
                          "id": "mint-" + c["id"], "properties": {"title": "pending"}}]}
 `
 
@@ -343,10 +343,10 @@ const fuserSource = `
 def main(input, host):
     p = input["envelope"]["record"]["properties"]
     if p.get("op") == "merge":
-        return {"effects": [{"action": "merge", "kind": "tasks.substrate.geoah.me/task",
+        return {"effects": [{"action": "merge", "kind": "tasks.substrate.reamde.dev/task",
                              "id": p["winner"], "loser": p["loser"]}]}
     if p.get("op") == "split":
-        return {"effects": [{"action": "split", "kind": "tasks.substrate.geoah.me/task",
+        return {"effects": [{"action": "split", "kind": "tasks.substrate.reamde.dev/task",
                              "merge": p["record"]}]}
     return {}
 `

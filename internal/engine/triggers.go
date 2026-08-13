@@ -94,7 +94,7 @@ func (t *trigger) resolveCallable(reg *vocabulary.Registry) {
 // resolveKinds canonicalizes an record source's kind patterns against the
 // repository's own vocabulary — the same resolve-at-the-gate the runner's
 // reads allowlist gets. A kind has two spellings, `task` and
-// `tasks.substrate.geoah.me/task`, and the changelog rows the matcher compares against
+// `tasks.substrate.reamde.dev/task`, and the changelog rows the matcher compares against
 // carry the IDENTITY, so a source declared in the bare spelling would validate
 // and then never fire. A glob is left alone (it is not a reference), and so is
 // a name the registry does not know: it matches nothing, which is exactly what

@@ -70,7 +70,7 @@ flat, as one JSON object, not wrapped in an envelope.
 Here is a task from the to-do list:
 
 ```yaml
-kind: tasks.substrate.geoah.me/task
+kind: tasks.substrate.reamde.dev/task
 metadata:
   id: t9                          # omit on create; the server assigns one
   labels:                         # short, queryable metadata
@@ -84,7 +84,7 @@ data:
   edges:
     - rel: project
       to:
-        kind: tasks.substrate.geoah.me/project
+        kind: tasks.substrate.reamde.dev/project
         id: infra7
 status:                           # server-set, ignored on input
   version: 4
@@ -141,7 +141,7 @@ Writers may only touch their own key namespace.
 A **kind** is what a record is, and it is named one of two ways:
 
 - **bare** — `task` — when the kind belongs to this repository alone;
-- **authority-qualified** — `tasks.substrate.geoah.me/task` — when an **authority**
+- **authority-qualified** — `tasks.substrate.reamde.dev/task` — when an **authority**
   publishes it.
 
 An authority is a DNS name. It says who publishes a kind and, more
@@ -152,14 +152,16 @@ because they are different shapes, and within one repository a bare name is
 unique.
 
 A **record reference** writes kind and id together:
-`tasks.substrate.geoah.me/task/t9` for a qualified kind, `task/t9` for a bare one. That
+`tasks.substrate.reamde.dev/task/t9` for a qualified kind, `task/t9` for a bare one. That
 is the string form; on REST the same reference is split into path segments
-(`/api/v1/tasks.substrate.geoah.me/tasks/t9`), and on GraphQL it travels as two
+(`/api/v1/tasks.substrate.reamde.dev/tasks/t9`), and on GraphQL it travels as two
 arguments.
 
 The shipped vocabulary is split by subsystem, Kubernetes-style, each subsystem
-its own authority: `people.substrate.geoah.me`, `messaging.substrate.geoah.me`,
-`calendar.substrate.geoah.me`, `tasks.substrate.geoah.me`, `media.substrate.geoah.me` — each a bundle you
+its own authority: `people.substrate.reamde.dev`, `messaging.substrate.reamde.dev`,
+`calendar.substrate.reamde.dev`, `tasks.substrate.reamde.dev`, `media.substrate.reamde.dev`, and the
+mneme-ported `health`, `fitness`, `routines`, `journal`, `places`, `food`,
+`commerce` and `memory` under the same domain — each a bundle you
 IMPORT — and `core.substrate.reamde.dev` for the substrate's own machinery, which is the
 only one a new repository is seeded with. Authorities namespace names; they
 never partition the data: an edge crosses authorities as easily as it stays
@@ -174,11 +176,11 @@ time. So "what
 does the vocabulary say" is a query, not a file read.
 [Vocabulary as records](vocabulary.md) is that whole story.
 
-The to-do list needs two kinds. **`people.substrate.geoah.me/person` ships built in**,
+The to-do list needs two kinds. **`people.substrate.reamde.dev/person` ships built in**,
 one record per human, the target of every "a person" edge in the system:
 
 ```yaml
-kind: people.substrate.geoah.me/person
+kind: people.substrate.reamde.dev/person
 metadata:
   id: 9f2k                        # server-assigned: nothing external names a human
 data:
@@ -197,9 +199,9 @@ and its `kind` is always a core kind — the meta-model lives in
 ```yaml
 kind: core.substrate.reamde.dev/kind   # kind declarations are core records
 metadata:
-  id: tasks.substrate.geoah.me/task        # = <data.authority>/<data.names.singular>
+  id: tasks.substrate.reamde.dev/task        # = <data.authority>/<data.names.singular>
 data:
-  authority: tasks.substrate.geoah.me      # the authority being declared into
+  authority: tasks.substrate.reamde.dev      # the authority being declared into
   names:
     singular: task
     plural: tasks
@@ -397,9 +399,9 @@ its authority. The media authority defines one for ISBNs:
 ```yaml
 kind: core.substrate.reamde.dev/propertytype
 metadata:
-  id: media.substrate.geoah.me/isbn
+  id: media.substrate.reamde.dev/isbn
 data:
-  authority: media.substrate.geoah.me
+  authority: media.substrate.reamde.dev
   description: "ISBN-10 or ISBN-13, normalized and hyphen-free"
   base: string
   pattern: "^(97[89])?[0-9]{9}[0-9X]$"

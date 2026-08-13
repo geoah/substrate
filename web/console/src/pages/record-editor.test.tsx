@@ -55,9 +55,9 @@ import { templateYAML } from "@/lib/record-yaml"
 import { RecordEditorForm } from "./record-editor"
 
 const taskKind: KindInfo = {
-  identity: "tasks.substrate.geoah.me/task",
+  identity: "tasks.substrate.reamde.dev/task",
   name: "task",
-  authority: "tasks.substrate.geoah.me",
+  authority: "tasks.substrate.reamde.dev",
   version: "",
   plural: "tasks",
   source: "installed",
@@ -77,7 +77,7 @@ const taskKind: KindInfo = {
 
 const openTask: SubstrateRecord = {
   id: "t1",
-  kind: "tasks.substrate.geoah.me/task",
+  kind: "tasks.substrate.reamde.dev/task",
   properties: { title: "write it", status: "open" },
   labels: {},
   version: 2,
@@ -96,7 +96,7 @@ function renderEditor(
     <QueryClientProvider client={client}>
       <Toaster>
         <RecordEditorForm
-          authority="tasks.substrate.geoah.me"
+          authority="tasks.substrate.reamde.dev"
           plural="tasks"
           mode={mode}
           kind={taskKind}
@@ -189,7 +189,7 @@ describe("the record editor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }))
     await waitFor(() => expect(createRecord).toHaveBeenCalled())
     const [authority, plural, input] = createRecord.mock.calls[0]
-    expect(authority).toBe("tasks.substrate.geoah.me")
+    expect(authority).toBe("tasks.substrate.reamde.dev")
     expect(plural).toBe("tasks")
     expect(input.properties).toEqual({
       title: "hi",
@@ -203,7 +203,7 @@ describe("the record editor", () => {
     renderEditor({
       mode: "edit",
       record: openTask,
-      seed: "kind: tasks.substrate.geoah.me/task\nmetadata:\n  id: t1\ndata:\n  properties:\n    title: write it\n    status: open\n",
+      seed: "kind: tasks.substrate.reamde.dev/task\nmetadata:\n  id: t1\ndata:\n  properties:\n    title: write it\n    status: open\n",
     })
     fireEvent.click(screen.getByRole("tab", { name: "YAML" }))
     const yaml = await yamlLens()
@@ -219,7 +219,7 @@ describe("the record editor", () => {
 
   it("formats the document on demand, in the lens that has one", async () => {
     renderEditor({
-      seed: "kind: tasks.substrate.geoah.me/task\ndata:\n      properties:\n            title: hi\n",
+      seed: "kind: tasks.substrate.reamde.dev/task\ndata:\n      properties:\n            title: hi\n",
     })
     expect(screen.queryByRole("button", { name: /Format/ })).toBeNull()
     fireEvent.click(screen.getByRole("tab", { name: "YAML" }))

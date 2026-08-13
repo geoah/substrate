@@ -1,0 +1,47 @@
+# one episode; `temporal(point)` is the air date
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: media.substrate.reamde.dev/tvepisode
+data:
+  authority: media.substrate.reamde.dev
+  description: >-
+    One episode, on the timeline at its air date. The season number is a
+    property as well as an edge on purpose: an unaired special can arrive
+    before its season row exists, so the episode always knows where it
+    belongs.
+  names:
+    singular: tvepisode
+    plural: tvepisodes
+  traits:
+    - temporal(point)
+  properties:
+    number:
+      type: int
+      description: the episode number within its season
+    # the season NUMBER is a property as well as an edge: Sonarr keys an
+    # episode by (series, seasonNumber, episodeNumber), and an unaired
+    # special can arrive before its season row exists.
+    seasonNumber:
+      type: int
+      description: the season number, carried even before the season row exists
+    duration:
+      type: duration
+      description: the playback length
+    description:
+      type: markdown
+      embed: true
+      description: the episode's synopsis
+    mediaRef:
+      type: url
+      description: where the file lives
+  edges:
+    # the series edge is required and the season one is not, for the reason
+    # above: the season row may not be there yet.
+    season:
+      to: tvseason
+      ownerRef: true
+      description: the season row, once it exists
+    series:
+      to: tvseries
+      required: true
+      description: the series the episode belongs to

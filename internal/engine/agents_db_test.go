@@ -209,11 +209,11 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 			"description":  "writes one annotated task under the id you pass",
 			"runtime":      vocabulary.RuntimePython,
 			"input":        map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}, "required": []any{"id"}},
-			"capabilities": map[string]any{"emit": []any{"tasks.substrate.geoah.me/task"}},
+			"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
 			"source": `
 def main(input, host):
     tid = input["args"]["id"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
                          "id": tid, "properties": {"title": "annotated"}}],
             "output": {"ok": True}}
 `,
@@ -221,11 +221,11 @@ def main(input, host):
 		vocabulary.FunctionManifest(crewAuthority, "keyecho", map[string]any{
 			"description":  "writes one task carrying the invocation's idempotency key",
 			"runtime":      vocabulary.RuntimePython,
-			"capabilities": map[string]any{"emit": []any{"tasks.substrate.geoah.me/task"}},
+			"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
 			"source": `
 def main(input, host):
     key = input["idempotencyKey"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
                          "id": "t-idem", "properties": {"title": key}}],
             "output": {"key": key}}
 `,
@@ -234,7 +234,7 @@ def main(input, host):
 			"provider": "rootllm", "model": "root",
 			"tools":  []any{crewAuthority + "/annotate", "propose"},
 			"agents": []any{crewAuthority + "/scribe"},
-			"emit":   []any{"tasks.substrate.geoah.me/task", vocabulary.KindRecordPatchRequest},
+			"emit":   []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
 		}),
 		agent("scribe", map[string]any{"provider": "subllm", "model": "sub"}),
 		agent("rogue", map[string]any{
@@ -244,7 +244,7 @@ def main(input, host):
 		}),
 		agent("budgeter", map[string]any{
 			"provider": "budgetllm", "model": "budget", "tools": []any{crewAuthority + "/annotate"},
-			"emit": []any{"tasks.substrate.geoah.me/task"}, "budgets": map[string]any{"maxTurns": 2},
+			"emit": []any{"tasks.substrate.reamde.dev/task"}, "budgets": map[string]any{"maxTurns": 2},
 		}),
 		agent("chatter", map[string]any{"provider": "chatllm", "model": "chat"}),
 		// warden writes NOTHING (empty emit) but delegates to minion, whose
@@ -255,13 +255,13 @@ def main(input, host):
 		agent("minion", map[string]any{
 			"provider": "minionllm", "model": "minion",
 			"tools": []any{crewAuthority + "/annotate", "propose"},
-			"emit":  []any{"tasks.substrate.geoah.me/task", vocabulary.KindRecordPatchRequest},
+			"emit":  []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
 		}),
 		// keeper's keyecho tool records its idempotency key — the stable-key
 		// retry test.
 		agent("keeper", map[string]any{
 			"provider": "keepllm", "model": "keep", "tools": []any{crewAuthority + "/keyecho"},
-			"emit": []any{"tasks.substrate.geoah.me/task"},
+			"emit": []any{"tasks.substrate.reamde.dev/task"},
 		}),
 		agent("e", map[string]any{"provider": "chainllm", "model": "chain"}),
 		agent("d", map[string]any{"provider": "chainllm", "model": "chain", "agents": []any{crewAuthority + "/e"}}),
@@ -394,7 +394,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	}
 
 	// The function tool's effect applied, under the AGENT's actor.
-	task, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", "t-classified")
+	task, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-classified")
 	if err != nil {
 		t.Fatalf("the annotate tool's task: %v", err)
 	}
@@ -538,7 +538,7 @@ func TestAgentEmitHoldsFunctionToolEffects(t *testing.T) {
 	if res.Status != threadOK || res.Effects != 0 {
 		t.Fatalf("rogue result: %+v", res)
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", "t-rogue"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-rogue"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the held-back task landed: %v", err)
 	}
 	msgs := threadMessages(t, ds, res.Thread)
@@ -631,7 +631,7 @@ func TestAgentBudgetExhaustionSettlesCleanly(t *testing.T) {
 		t.Fatalf("threads: %+v", threads)
 	}
 	for _, id := range []string{"t-b1", "t-b2"} {
-		if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", id); err != nil {
+		if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", id); err != nil {
 			t.Fatalf("task %s: %v", id, err)
 		}
 	}
@@ -778,7 +778,7 @@ func TestSubAgentEmitCeiling(t *testing.T) {
 	if res.Reply != "warden done" || res.Effects != 0 {
 		t.Fatalf("warden result: %+v", res)
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", "t-ceiling"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-ceiling"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the ceilinged function-tool effect landed: %v", err)
 	}
 	var proposals int
@@ -816,7 +816,7 @@ func TestSubAgentEmitCeiling(t *testing.T) {
 	if direct.Effects != 1 {
 		t.Fatalf("direct minion effects: %d", direct.Effects)
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", "t-direct"); err != nil {
+	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-direct"); err != nil {
 		t.Fatalf("the direct write is missing: %v", err)
 	}
 }

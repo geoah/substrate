@@ -1,0 +1,55 @@
+# one set inside a workout
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: fitness.substrate.reamde.dev/workoutset
+data:
+  authority: fitness.substrate.reamde.dev
+  description: >-
+    One set inside a workout: which exercise, how heavy, how many, how it
+    felt. The set carries the numbers so the exercise catalog and the
+    workout itself stay thin.
+  names:
+    singular: workoutset
+    plural: workoutsets
+  displayTemplate: "{number}"
+  # `at` is when the set was performed, for pacing between sets.
+  traits:
+    - temporal(point)
+  properties:
+    number:
+      type: int
+      description: the set's position within its workout
+    setType:
+      type: enum
+      description: what kind of set it was
+      values:
+        - normal
+        - warmup
+        - dropset
+        - value: amrap
+          label: AMRAP
+        - failure
+    weight:
+      type: float
+      description: the load moved, in the gym's unit
+    reps:
+      type: int
+      description: how many repetitions
+    duration:
+      type: duration
+      description: how long a timed set was held or performed
+    distanceMeters:
+      type: float
+      description: distance covered by a distance set, in meters
+    rpe:
+      type: float
+      description: rate of perceived exertion, out of 10
+  edges:
+    workout:
+      to: workout
+      required: true
+      ownerRef: true
+      description: the workout this set belongs to
+    exercise:
+      to: exercise
+      description: the movement performed

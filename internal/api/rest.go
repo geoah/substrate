@@ -17,7 +17,7 @@ import (
 // collection resolves a REST collection path to a declared kind. The path
 // carries the KIND REFERENCE, split into its segments:
 //
-//	/{authority}/{plural}    a published kind — /tasks.substrate.geoah.me/tasks
+//	/{authority}/{plural}    a published kind — /tasks.substrate.reamde.dev/tasks
 //	/{plural}                a repository-local kind — /tasks
 //
 // The two are told apart by inspection, not by a route: an authority is a DNS

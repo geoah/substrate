@@ -69,9 +69,9 @@ function catalog(over: Partial<CatalogItem> = {}): CatalogItem {
 
 function kindInfo(over: Partial<KindInfo> = {}): KindInfo {
   return {
-    identity: "people.substrate.geoah.me/person",
+    identity: "people.substrate.reamde.dev/person",
     name: "person",
-    authority: "people.substrate.geoah.me",
+    authority: "people.substrate.reamde.dev",
     version: "",
     plural: "persons",
     source: "builtin",
@@ -145,32 +145,32 @@ describe("mergeBundles — the closure facets", () => {
       [],
       [
         catalog({
-          id: "people.substrate.geoah.me/people",
+          id: "people.substrate.reamde.dev/people",
           name: "people",
-          authority: "people.substrate.geoah.me",
+          authority: "people.substrate.reamde.dev",
           integration: false,
           vocabulary: true,
         }),
-        catalog({ requires: ["people.substrate.geoah.me", "messaging.substrate.geoah.me"] }),
+        catalog({ requires: ["people.substrate.reamde.dev", "messaging.substrate.reamde.dev"] }),
       ]
     )
     const byId = Object.fromEntries(rows.map((r) => [r.id, r]))
-    expect(byId["people.substrate.geoah.me/people"].vocabulary).toBe(true)
-    expect(byId["people.substrate.geoah.me/people"].requires).toEqual([])
+    expect(byId["people.substrate.reamde.dev/people"].vocabulary).toBe(true)
+    expect(byId["people.substrate.reamde.dev/people"].requires).toEqual([])
     expect(byId["google.bundles.substrate.reamde.dev"].vocabulary).toBe(false)
     expect(byId["google.bundles.substrate.reamde.dev"].requires).toEqual([
-      "people.substrate.geoah.me",
-      "messaging.substrate.geoah.me",
+      "people.substrate.reamde.dev",
+      "messaging.substrate.reamde.dev",
     ])
   })
 
   it("keeps the catalog's facets when a status folds over the same id", () => {
     const rows = mergeBundles(
-      [status({ id: "people.substrate.geoah.me/people", authority: "people.substrate.geoah.me" })],
+      [status({ id: "people.substrate.reamde.dev/people", authority: "people.substrate.reamde.dev" })],
       [
         catalog({
-          id: "people.substrate.geoah.me/people",
-          authority: "people.substrate.geoah.me",
+          id: "people.substrate.reamde.dev/people",
+          authority: "people.substrate.reamde.dev",
           vocabulary: true,
           requires: ["core.substrate.reamde.dev"],
           installed: true,
@@ -199,9 +199,9 @@ describe("filterBundles", () => {
         integration: false,
       }),
       catalog({
-        id: "people.substrate.geoah.me/people",
+        id: "people.substrate.reamde.dev/people",
         name: "people",
-        authority: "people.substrate.geoah.me",
+        authority: "people.substrate.reamde.dev",
         integration: false,
         vocabulary: true,
       }),
@@ -219,18 +219,18 @@ describe("filterBundles", () => {
 
   it("vocabulary narrows to the pure-vocabulary bundles", () => {
     const only = filterBundles(rows, "vocabulary")
-    expect(only.map((r) => r.id)).toEqual(["people.substrate.geoah.me/people"])
+    expect(only.map((r) => r.id)).toEqual(["people.substrate.reamde.dev/people"])
   })
 })
 
 describe("presentAuthorities — what this repository already holds", () => {
   it("counts an imported bundle's authority and every reconciled kind's", () => {
     const rows = mergeBundles(
-      [status({ id: "people.substrate.geoah.me/people", authority: "people.substrate.geoah.me" })],
+      [status({ id: "people.substrate.reamde.dev/people", authority: "people.substrate.reamde.dev" })],
       [
         catalog({
-          id: "people.substrate.geoah.me/people",
-          authority: "people.substrate.geoah.me",
+          id: "people.substrate.reamde.dev/people",
+          authority: "people.substrate.reamde.dev",
           installed: true,
           vocabulary: true,
         }),
@@ -240,7 +240,7 @@ describe("presentAuthorities — what this repository already holds", () => {
     const present = presentAuthorities(rows, [
       kindInfo({ identity: "core.substrate.reamde.dev/bundle", authority: "core.substrate.reamde.dev" }),
     ])
-    expect(present.has("people.substrate.geoah.me")).toBe(true)
+    expect(present.has("people.substrate.reamde.dev")).toBe(true)
     expect(present.has("core.substrate.reamde.dev")).toBe(true)
     // Shipped in the catalog but never imported — the schema is not there.
     expect(present.has("google.bundles.substrate.reamde.dev")).toBe(false)
@@ -250,32 +250,32 @@ describe("presentAuthorities — what this repository already holds", () => {
     const rows = mergeBundles(
       [
         status({
-          id: "people.substrate.geoah.me/people",
-          authority: "people.substrate.geoah.me",
+          id: "people.substrate.reamde.dev/people",
+          authority: "people.substrate.reamde.dev",
           installed: false,
           enabled: false,
         }),
       ],
       []
     )
-    expect(presentAuthorities(rows).has("people.substrate.geoah.me")).toBe(false)
+    expect(presentAuthorities(rows).has("people.substrate.reamde.dev")).toBe(false)
   })
 })
 
 describe("requirementsOf / requiresHint — what to import first", () => {
-  const present = new Set(["people.substrate.geoah.me", "core.substrate.reamde.dev"])
+  const present = new Set(["people.substrate.reamde.dev", "core.substrate.reamde.dev"])
 
   it("marks each declared authority present or missing, in declaration order", () => {
     const reqs = requirementsOf(
-      { requires: ["people.substrate.geoah.me", "messaging.substrate.geoah.me"] },
+      { requires: ["people.substrate.reamde.dev", "messaging.substrate.reamde.dev"] },
       present
     )
     expect(reqs).toEqual([
-      { authority: "people.substrate.geoah.me", present: true },
-      { authority: "messaging.substrate.geoah.me", present: false },
+      { authority: "people.substrate.reamde.dev", present: true },
+      { authority: "messaging.substrate.reamde.dev", present: false },
     ])
     expect(missingRequirements(reqs).map((r) => r.authority)).toEqual([
-      "messaging.substrate.geoah.me",
+      "messaging.substrate.reamde.dev",
     ])
   })
 
@@ -286,17 +286,17 @@ describe("requirementsOf / requiresHint — what to import first", () => {
 
   it("names one missing authority, then several, the way the server names them", () => {
     expect(
-      requiresHint(missingRequirements(requirementsOf({ requires: ["tasks.substrate.geoah.me"] }, present)))
-    ).toBe("Import tasks.substrate.geoah.me first — this bundle declares against it.")
+      requiresHint(missingRequirements(requirementsOf({ requires: ["tasks.substrate.reamde.dev"] }, present)))
+    ).toBe("Import tasks.substrate.reamde.dev first — this bundle declares against it.")
     expect(
       requiresHint(
         missingRequirements(
           requirementsOf(
             {
               requires: [
-                "people.substrate.geoah.me",
-                "messaging.substrate.geoah.me",
-                "calendar.substrate.geoah.me",
+                "people.substrate.reamde.dev",
+                "messaging.substrate.reamde.dev",
+                "calendar.substrate.reamde.dev",
               ],
             },
             present
@@ -304,7 +304,7 @@ describe("requirementsOf / requiresHint — what to import first", () => {
         )
       )
     ).toBe(
-      "Import messaging.substrate.geoah.me and calendar.substrate.geoah.me first — this bundle declares against them."
+      "Import messaging.substrate.reamde.dev and calendar.substrate.reamde.dev first — this bundle declares against them."
     )
   })
 
@@ -317,11 +317,11 @@ describe("importFailureText — the server's refusal, verbatim", () => {
       "validation error: [bundle google.bundles.substrate.reamde.dev: …]",
       422,
       [
-        "bundle google.bundles.substrate.reamde.dev: data.requires names people.substrate.geoah.me, which this repository does not have — import that authority's bundle first",
+        "bundle google.bundles.substrate.reamde.dev: data.requires names people.substrate.reamde.dev, which this repository does not have — import that authority's bundle first",
       ]
     )
     expect(importFailureText(error)).toBe(
-      "bundle google.bundles.substrate.reamde.dev: data.requires names people.substrate.geoah.me, which this repository does not have — import that authority's bundle first"
+      "bundle google.bundles.substrate.reamde.dev: data.requires names people.substrate.reamde.dev, which this repository does not have — import that authority's bundle first"
     )
   })
 

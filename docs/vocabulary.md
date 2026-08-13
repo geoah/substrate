@@ -40,7 +40,7 @@ the smallest manifest, an authority, is five lines:
 ```yaml
 kind: core.substrate.reamde.dev/authority
 metadata:
-  id: tasks.substrate.geoah.me
+  id: tasks.substrate.reamde.dev
 data:
   version: v1alpha1
 ```
@@ -52,7 +52,7 @@ URI path segment only percent-encoded, so a REST path spells it `%2F` and the
 API decodes it once:
 
 ```http
-GET /api/v1/core.substrate.reamde.dev/kinds/tasks.substrate.geoah.me%2Ftask
+GET /api/v1/core.substrate.reamde.dev/kinds/tasks.substrate.reamde.dev%2Ftask
 ```
 
 ## How the vocabulary reaches a repository

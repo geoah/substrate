@@ -1,0 +1,62 @@
+# when and how much of a medication: an RRULE, a dose, a span
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: health.substrate.reamde.dev/medicationschedule
+data:
+  authority: health.substrate.reamde.dev
+  description: >-
+    When and how much of one medication: a dose, an RRULE, and the span the
+    schedule runs. The substrate stores the rule and never expands it; a
+    dose that was actually taken or skipped is a medicationschedulelog. A
+    schedule with no recurrence is as-needed.
+  names:
+    singular: medicationschedule
+    plural: medicationschedules
+  displayTemplate: "{name|recurrence}"
+  # `at` seeds the recurrence (its DTSTART, so also the time of day) and
+  # `endsAt` closes the course; an open-ended schedule omits it.
+  traits:
+    - temporal(range)
+  properties:
+    name:
+      type: string
+      description: an optional label, Morning dose or Taper week 2
+    doseAmount:
+      type: float
+      description: how many doseUnits one occurrence takes
+    doseUnit:
+      type: enum
+      description: the unit doseAmount counts
+      values:
+        - tablet
+        - capsule
+        - pill
+        - click
+        - pump
+        - drop
+        - spray
+        - ml
+        - injection
+        - puff
+        - application
+        - gummy
+        - piece
+    recurrence:
+      type: recurrence
+      description: the RRULE, stored and never expanded; absent means as-needed
+    exdates:
+      type: datetime
+      repeated: true
+      description: occurrence datetimes the rule skips
+    timezone:
+      type: timezone
+      description: the IANA zone a time-of-day rule resolves in
+    details:
+      type: markdown
+      description: prescriber notes, with food, taper plan, as prose
+  edges:
+    medication:
+      to: medication
+      required: true
+      ownerRef: true
+      description: the medication this schedule doses

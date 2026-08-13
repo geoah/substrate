@@ -23,7 +23,7 @@ type Dataset interface {
 
 	// --- kind registry (builtin + installed) ---
 	Kinds(ctx context.Context) ([]KindInfo, error)
-	// KindByRef resolves a kind REFERENCE ("tasks.substrate.geoah.me/task", or a bare
+	// KindByRef resolves a kind REFERENCE ("tasks.substrate.reamde.dev/task", or a bare
 	// "task"), or an unambiguous local name.
 	KindByRef(ctx context.Context, ref string) (KindInfo, error)
 	// KindByPlural resolves a REST collection segment within an authority; an

@@ -58,7 +58,7 @@ var Vocabulary = []string{"people", "tasks", "messaging", "calendar", "media"}
 // ImportVocabulary imports shipped vocabulary bundles by their bare label
 // ("people", "media") through the ONE install path — the schema-apply batch
 // verb, under the bundle's own actor, exactly as a catalog install does. A test
-// that reads or writes `people.substrate.geoah.me/person` calls this first, because the
+// that reads or writes `people.substrate.reamde.dev/person` calls this first, because the
 // creation seed no longer writes that vocabulary into the repository.
 func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string) error {
 	if len(names) == 0 {
@@ -78,13 +78,16 @@ func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string
 			return nil
 		}
 		done[name] = true
-		docs, err := readBundleDir(filepath.Join(CatalogDir, name+".substrate.geoah.me"))
+		docs, err := readBundleDir(filepath.Join(CatalogDir, name+".substrate.reamde.dev"))
 		if err != nil {
 			return err
 		}
 		for _, req := range bundleRequires(docs) {
-			label, ok := strings.CutSuffix(req, ".substrate.geoah.me")
-			if !ok {
+			label, ok := strings.CutSuffix(req, ".substrate.reamde.dev")
+			// only a BARE label is a vocabulary bundle this helper can
+			// import; a categorized requirement ("google.bundles") is not
+			// one, and importing it here would be the catalog's job.
+			if !ok || strings.Contains(label, ".") {
 				continue
 			}
 			if err := importOne(label); err != nil {
@@ -136,7 +139,7 @@ func SeededRegistry(kindsDir string, names ...string) (*vocabulary.Registry, err
 	}
 	var docs []vocabulary.Document
 	for _, name := range names {
-		raws, err := readBundleDir(filepath.Join(CatalogDir, name+".substrate.geoah.me"))
+		raws, err := readBundleDir(filepath.Join(CatalogDir, name+".substrate.reamde.dev"))
 		if err != nil {
 			return nil, err
 		}

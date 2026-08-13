@@ -20,7 +20,7 @@ func TestCanonicalEnvelopeRoundTripIsByteStable(t *testing.T) {
 	at := time.Unix(1_700_000_000, 0).UTC()
 	e := &substrate.Record{
 		ID:        "p1",
-		Kind:      "people.substrate.geoah.me/person",
+		Kind:      "people.substrate.reamde.dev/person",
 		Version:   7,
 		CreatedAt: at,
 		UpdatedAt: at,
@@ -30,10 +30,10 @@ func TestCanonicalEnvelopeRoundTripIsByteStable(t *testing.T) {
 		Labels:     map[string]any{"owner/pinned": true},
 		Edges: map[string][]substrate.EdgeTarget{
 			"memberOf": {
-				{ID: "org2", Kind: "people.substrate.geoah.me/organization", Properties: map[string]any{"role": "member"}},
-				{ID: "org1", Kind: "people.substrate.geoah.me/organization", Properties: map[string]any{"role": "admin"}},
+				{ID: "org2", Kind: "people.substrate.reamde.dev/organization", Properties: map[string]any{"role": "member"}},
+				{ID: "org1", Kind: "people.substrate.reamde.dev/organization", Properties: map[string]any{"role": "admin"}},
 			},
-			"knows": {{ID: "p2", Kind: "people.substrate.geoah.me/person"}},
+			"knows": {{ID: "p2", Kind: "people.substrate.reamde.dev/person"}},
 		},
 	}
 

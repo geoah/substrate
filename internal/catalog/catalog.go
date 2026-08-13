@@ -7,7 +7,7 @@
 // TWO KINDS OF ENTRY, one install path. A BUNDLE owns a categorized
 // authority (`google.bundles.substrate.reamde.dev`), configures through its declared
 // inputs and may ship callables. A VOCABULARY bundle owns a bare authority
-// (`people.substrate.geoah.me`, `media.substrate.geoah.me`) and ships kinds and nothing else —
+// (`people.substrate.reamde.dev`, `media.substrate.reamde.dev`) and ships kinds and nothing else —
 // it is the substrate's own vocabulary, which repository creation no longer
 // seeds: a fresh repository holds core alone and imports the rest from here.
 // A closure that declares ONTO another authority names it in `requires:`, and

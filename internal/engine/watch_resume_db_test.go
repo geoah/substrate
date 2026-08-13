@@ -44,7 +44,7 @@ func TestWatchResumesGaplesslyAcrossARestart(t *testing.T) {
 	}
 	importVocabulary(t, ds1, "tasks")
 	mustPut(t, ds1, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.geoah.me/task",
+		Kind:       "tasks.substrate.reamde.dev/task",
 		Properties: map[string]any{"title": "before the restart"},
 	})
 	// What a consumer remembers: the last seq it saw.
@@ -59,11 +59,11 @@ func TestWatchResumesGaplesslyAcrossARestart(t *testing.T) {
 	svc2, ds2 := open()
 	t.Cleanup(func() { _ = svc2.Close() })
 	mustPut(t, ds2, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.geoah.me/task",
+		Kind:       "tasks.substrate.reamde.dev/task",
 		Properties: map[string]any{"title": "after the restart"},
 	})
 	mustPut(t, ds2, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.geoah.me/task",
+		Kind:       "tasks.substrate.reamde.dev/task",
 		Properties: map[string]any{"title": "and one more"},
 	})
 

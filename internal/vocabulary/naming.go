@@ -22,7 +22,7 @@ var (
 	// plus the two extra pchars a path segment admits, ":" and "@", plus "/".
 	//
 	// The "/" is there for exactly one reason: a DECLARATION's id is a KIND
-	// REFERENCE ("tasks.substrate.geoah.me/task"), and the grammar has one
+	// REFERENCE ("tasks.substrate.reamde.dev/task"), and the grammar has one
 	// spelling. A "/" is legal in a URI path segment only when percent-
 	// encoded, so a client writes `%2F` and the API decodes it once
 	// (api/rest.go pathParam). No "%" in the alphabet, so nothing on the wire

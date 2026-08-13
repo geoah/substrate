@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS repositories (
 -- state. Identity is the pair (kind, id) WITHIN a repository — an id is unique
 -- per kind, never per repository, so every table that names a record carries
 -- its kind reference beside the id. The kind is the REFERENCE
--- ("tasks.substrate.geoah.me/task", or a bare "task" for a repository-local kind).
+-- ("tasks.substrate.reamde.dev/task", or a bare "task" for a repository-local kind).
 CREATE TABLE IF NOT EXISTS records (
     repository  text        NOT NULL DEFAULT current_setting('substrate.repository'),
     kind        text        NOT NULL,

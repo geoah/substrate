@@ -63,7 +63,7 @@ describe("isVocabularyChange", () => {
       isVocabularyChange(row({ seq: 1, kind: "core.substrate.reamde.dev/recordmergerequest" }))
     ).toBe(false)
     expect(
-      isVocabularyChange(row({ seq: 1, kind: "people.substrate.geoah.me/person" }))
+      isVocabularyChange(row({ seq: 1, kind: "people.substrate.reamde.dev/person" }))
     ).toBe(false)
   })
 
@@ -88,7 +88,7 @@ describe("the effects a write recorded", () => {
         withEffects([
           {
             kind: "record",
-            ref: "people.substrate.geoah.me/person",
+            ref: "people.substrate.reamde.dev/person",
             id: "p1",
             delta: {
               set: { name: "Ada", email: "ada@example.com" },
@@ -102,7 +102,7 @@ describe("the effects a write recorded", () => {
     ).toEqual([
       {
         verb: "updated",
-        target: "people.substrate.geoah.me/person/p1",
+        target: "people.substrate.reamde.dev/person/p1",
         detail: "set name, email; cleared nickname; moved title, states",
       },
     ])
@@ -158,8 +158,8 @@ describe("the effects a write recorded", () => {
           {
             kind: "resync",
             scope: [
-              { kind: "people.substrate.geoah.me/person", id: "winner" },
-              { kind: "people.substrate.geoah.me/person", id: "loser" },
+              { kind: "people.substrate.reamde.dev/person", id: "winner" },
+              { kind: "people.substrate.reamde.dev/person", id: "loser" },
             ],
             rows: {
               edges: [{}, {}],
@@ -174,7 +174,7 @@ describe("the effects a write recorded", () => {
         verb: "restated",
         target: "",
         detail:
-          "2 edges, 1 annotation, 1 former id — on people.substrate.geoah.me/person/winner, people.substrate.geoah.me/person/loser",
+          "2 edges, 1 annotation, 1 former id — on people.substrate.reamde.dev/person/winner, people.substrate.reamde.dev/person/loser",
       },
     ])
   })
@@ -356,9 +356,9 @@ const KINDS: KindInfo[] = [
     source: "installed",
   },
   {
-    identity: "people.substrate.geoah.me/person",
+    identity: "people.substrate.reamde.dev/person",
     name: "person",
-    authority: "people.substrate.geoah.me",
+    authority: "people.substrate.reamde.dev",
     version: "",
     plural: "people",
     source: "builtin",
@@ -369,13 +369,13 @@ describe("toChangelogQuery", () => {
   it("passes kinds, actors and ops straight to the wire", () => {
     const q = toChangelogQuery(
       [
-        { field: "kind", op: "eq", value: "people.substrate.geoah.me/person" },
+        { field: "kind", op: "eq", value: "people.substrate.reamde.dev/person" },
         { field: "actor", op: "eq", value: "owner,system" },
         { field: "op", op: "eq", value: "merge" },
       ],
       KINDS
     )
-    expect(q.filter.kinds).toEqual(["people.substrate.geoah.me/person"])
+    expect(q.filter.kinds).toEqual(["people.substrate.reamde.dev/person"])
     expect(q.filter.actors).toEqual(["owner", "system"])
     expect(q.filter.ops).toEqual(["merge"])
   })
@@ -391,7 +391,7 @@ describe("toChangelogQuery", () => {
   it("intersects explicit kinds with an authority — an empty AND matches nothing", () => {
     const q = toChangelogQuery(
       [
-        { field: "kind", op: "eq", value: "people.substrate.geoah.me/person" },
+        { field: "kind", op: "eq", value: "people.substrate.reamde.dev/person" },
         { field: "authority", op: "eq", value: "github.bundles.substrate.reamde.dev" },
       ],
       KINDS

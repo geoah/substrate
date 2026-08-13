@@ -17,7 +17,7 @@ func seedChanges(ds *fakeDataset, n int) {
 	for i := range n {
 		ds.commit(substrate.Change{
 			TS: time.Unix(int64(i+1), 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-			RecordID: "e" + string(rune('1'+i)), Kind: "people.substrate.geoah.me/person",
+			RecordID: "e" + string(rune('1'+i)), Kind: "people.substrate.reamde.dev/person",
 		})
 		<-ds.signals // keep the buffered signal channel drained
 	}
@@ -87,12 +87,12 @@ func TestChangesQFiltersHistory(t *testing.T) {
 	ds := env.svc.datasets["geoah"]
 	ds.commit(substrate.Change{
 		TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "alpha1", Kind: "people.substrate.geoah.me/person",
+		RecordID: "alpha1", Kind: "people.substrate.reamde.dev/person",
 		Payload: map[string]any{"properties": map[string]any{"name": "Ada"}},
 	})
 	ds.commit(substrate.Change{
 		TS: time.Unix(2, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "beta1", Kind: "tasks.substrate.geoah.me/task",
+		RecordID: "beta1", Kind: "tasks.substrate.reamde.dev/task",
 	})
 
 	// Case-insensitive, and payload text counts as haystack.
@@ -119,11 +119,11 @@ func TestChangesWatchAppliesQ(t *testing.T) {
 
 	ds.commit(substrate.Change{
 		TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "p1", Kind: "people.substrate.geoah.me/person",
+		RecordID: "p1", Kind: "people.substrate.reamde.dev/person",
 	})
 	ds.commit(substrate.Change{
 		TS: time.Unix(2, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "t1", Kind: "tasks.substrate.geoah.me/task",
+		RecordID: "t1", Kind: "tasks.substrate.reamde.dev/task",
 	})
 
 	if got := readLine(t, br); got["recordId"] != "t1" {
@@ -149,7 +149,7 @@ func TestChangesWatchRowsCarryTriggers(t *testing.T) {
 	}
 	ds.commit(substrate.Change{
 		TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "p1", Kind: "people.substrate.geoah.me/person",
+		RecordID: "p1", Kind: "people.substrate.reamde.dev/person",
 	})
 
 	line := readLine(t, br)

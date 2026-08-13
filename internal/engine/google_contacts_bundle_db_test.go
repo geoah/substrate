@@ -46,7 +46,7 @@ const (
 	googleSyncFn      = googleAuthority + "/contactssync"
 	googleMigrationFn = googleAuthority + "/contactsidmigration"
 	googleMapping     = googleAuthority + "/contactperson"
-	googlePersonType  = "people.substrate.geoah.me/person"
+	googlePersonType  = "people.substrate.reamde.dev/person"
 
 	// The gmail + calendar half of the same closure.
 	googleAddressType  = googleAuthority + "/emailaddress"
@@ -58,10 +58,10 @@ const (
 	googleCalendarFn   = googleAuthority + "/calendarsync"
 	googleAddressMap   = googleAuthority + "/emailaddressperson"
 
-	coreThreadType   = "messaging.substrate.geoah.me/emailthread"
-	coreMessageType  = "messaging.substrate.geoah.me/emailmessage"
-	coreCalendarType = "calendar.substrate.geoah.me/calendar"
-	coreEventType    = "calendar.substrate.geoah.me/calendarevent"
+	coreThreadType   = "messaging.substrate.reamde.dev/emailthread"
+	coreMessageType  = "messaging.substrate.reamde.dev/emailmessage"
+	coreCalendarType = "calendar.substrate.reamde.dev/calendar"
+	coreEventType    = "calendar.substrate.reamde.dev/calendarevent"
 )
 
 // TestGoogleContactsBundleAdmitsSchema loads the builtin schema, then installs
@@ -146,7 +146,7 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("contact declares no `person` edge")
 	}
-	if ed.To != "people.substrate.geoah.me/person" || !ed.Required || ed.Many {
+	if ed.To != "people.substrate.reamde.dev/person" || !ed.Required || ed.Many {
 		t.Fatalf("person edge shape wrong: to=%q required=%v many=%v", ed.To, ed.Required, ed.Many)
 	}
 
@@ -155,7 +155,7 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("no mapping registered from %s", googleContactType)
 	}
-	if m.To != "people.substrate.geoah.me/person" || m.Edge != "person" {
+	if m.To != "people.substrate.reamde.dev/person" || m.Edge != "person" {
 		t.Fatalf("mapping resolves wrong: to=%q edge=%q", m.To, m.Edge)
 	}
 	if len(m.Match) == 0 {

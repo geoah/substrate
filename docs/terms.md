@@ -16,7 +16,7 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 | **record** | One typed thing. Identity is `(kind, id)` within a repository. It is the only thing the substrate stores. |
 | **kind** | What a record is, written `<authority>/<name>` — or a bare `<name>` for a kind local to one repository. A kind declares the properties and edges its records may carry. |
 | **authority** | The DNS-style label that publishes a set of kinds and decides who may write their declarations. One path segment: `/api/v1/{authority}/{plural}`. |
-| **plural** | A kind's collection segment in a path — `people` for `people.substrate.geoah.me/person`. |
+| **plural** | A kind's collection segment in a path — `people` for `people.substrate.reamde.dev/person`. |
 | **property** | A named, typed value on a record, declared by its kind. |
 | **property type** | A named refinement of a base type plus its validations, declared by an authority and reusable across its kinds. |
 | **trait** | A contract a kind implements: a set of properties a kind promises to declare, so unrelated kinds can be treated alike. |

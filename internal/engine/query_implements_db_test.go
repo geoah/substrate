@@ -18,13 +18,13 @@ func TestListIntersectsTypesAndImplements(t *testing.T) {
 	_, ds := newDataset(t)
 
 	task := mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{
-		Kind: "tasks.substrate.geoah.me/task",
+		Kind: "tasks.substrate.reamde.dev/task",
 		Properties: map[string]any{
 			"title": "send the rack layout", "dueAt": "2026-08-04T09:00:00Z",
 		},
 	})
 	transcript := mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{
-		Kind: "calendar.substrate.geoah.me/transcript",
+		Kind: "calendar.substrate.reamde.dev/transcript",
 		Properties: map[string]any{
 			"title": "the standup", "text": "…",
 			"at": "2026-08-03T09:00:00Z", "endsAt": "2026-08-03T09:30:00Z",
@@ -34,7 +34,7 @@ func TestListIntersectsTypesAndImplements(t *testing.T) {
 	// The collection read: the path names the type, so nothing outside it may
 	// come back, however broad the trait is.
 	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-		Kinds: []string{"tasks.substrate.geoah.me/task"}, Implements: "temporal",
+		Kinds: []string{"tasks.substrate.reamde.dev/task"}, Implements: "temporal",
 	}})
 	if err != nil {
 		t.Fatalf("collection read with implements: %v", err)
@@ -43,7 +43,7 @@ func TestListIntersectsTypesAndImplements(t *testing.T) {
 		t.Fatalf("collection read returned %v, want only the task %s", ids(page.Records), task.ID)
 	}
 	for _, e := range page.Records {
-		if e.Kind != "tasks.substrate.geoah.me/task" {
+		if e.Kind != "tasks.substrate.reamde.dev/task" {
 			t.Fatalf("collection read returned a %s — a collection never answers outside itself", e.Kind)
 		}
 	}
@@ -70,11 +70,11 @@ func TestListRefusesATypeThatDoesNotImplement(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{
-		Kind: "people.substrate.geoah.me/person", Properties: map[string]any{"name": "Ada"},
+		Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "Ada"},
 	})
 
 	_, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{
-		Kinds: []string{"people.substrate.geoah.me/person"}, Implements: "temporal",
+		Kinds: []string{"people.substrate.reamde.dev/person"}, Implements: "temporal",
 	}})
 	if !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("error = %v, want a validation error naming the mismatch", err)

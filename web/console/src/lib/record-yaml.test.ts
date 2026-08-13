@@ -216,9 +216,9 @@ describe("toPutInput", () => {
 /** The kind whose datatypes the editor has to be honest about, and the state
  * machine a put may not move. */
 const taskKind: KindInfo = {
-  identity: "tasks.substrate.geoah.me/task",
+  identity: "tasks.substrate.reamde.dev/task",
   name: "task",
-  authority: "tasks.substrate.geoah.me",
+  authority: "tasks.substrate.reamde.dev",
   version: "",
   plural: "tasks",
   source: "installed",
@@ -235,14 +235,14 @@ const taskKind: KindInfo = {
       },
     },
     edges: {
-      assignee: { to: "people.substrate.geoah.me/person" },
+      assignee: { to: "people.substrate.reamde.dev/person" },
     },
   },
 }
 
 const openTask: SubstrateRecord = {
   id: "t1",
-  kind: "tasks.substrate.geoah.me/task",
+  kind: "tasks.substrate.reamde.dev/task",
   properties: { title: "write it", status: "open" },
   labels: {},
   version: 2,
@@ -350,7 +350,7 @@ describe("the document as both lenses' truth", () => {
   })
 
   it("formats a hand-mangled document back into shape, comments intact", () => {
-    const mangled = "kind: tasks.substrate.geoah.me/task\ndata:\n      properties:\n            title: hi # mine\n"
+    const mangled = "kind: tasks.substrate.reamde.dev/task\ndata:\n      properties:\n            title: hi # mine\n"
     const { text, error } = formatYAML(mangled)
     expect(error).toBeUndefined()
     expect(text).toContain("    title: hi # mine")

@@ -2054,7 +2054,7 @@ data:
 // carries (a DECLARATION's id IS a kind reference).
 func TestValidID(t *testing.T) {
 	for _, ok := range []string{
-		"9f2k", "calendar.substrate.geoah.me/calendarevent", "people-c123", "people/c123",
+		"9f2k", "calendar.substrate.reamde.dev/calendarevent", "people-c123", "people/c123",
 		"gcal-abc_work", "T01:C01", "ada@example.com", "A~b",
 	} {
 		if !vocabulary.ValidID(ok) {
@@ -2221,11 +2221,11 @@ func TestShippedSchemaUsesBlockStyle(t *testing.T) {
 // repository IMPORTS — the authorities the creation seed used to write and no
 // longer does.
 var shippedVocabularyDirs = []string{
-	"../../kinds/calendar.substrate.geoah.me",
-	"../../kinds/media.substrate.geoah.me",
-	"../../kinds/messaging.substrate.geoah.me",
-	"../../kinds/people.substrate.geoah.me",
-	"../../kinds/tasks.substrate.geoah.me",
+	"../../kinds/calendar.substrate.reamde.dev",
+	"../../kinds/media.substrate.reamde.dev",
+	"../../kinds/messaging.substrate.reamde.dev",
+	"../../kinds/people.substrate.reamde.dev",
+	"../../kinds/tasks.substrate.reamde.dev",
 }
 
 // The shipped vocabulary is no longer seeded, so its manifests are held to the
@@ -2274,11 +2274,11 @@ func TestShippedVocabularyBundles(t *testing.T) {
 		t.Fatalf("import the shipped vocabulary: %v", err)
 	}
 	want := map[string]string{
-		"calendar.substrate.geoah.me":  "calendar.substrate.geoah.me/calendar",
-		"media.substrate.geoah.me":     "media.substrate.geoah.me/media",
-		"messaging.substrate.geoah.me": "messaging.substrate.geoah.me/messaging",
-		"people.substrate.geoah.me":    "people.substrate.geoah.me/people",
-		"tasks.substrate.geoah.me":     "tasks.substrate.geoah.me/tasks",
+		"calendar.substrate.reamde.dev":  "calendar.substrate.reamde.dev/calendar",
+		"media.substrate.reamde.dev":     "media.substrate.reamde.dev/media",
+		"messaging.substrate.reamde.dev": "messaging.substrate.reamde.dev/messaging",
+		"people.substrate.reamde.dev":    "people.substrate.reamde.dev/people",
+		"tasks.substrate.reamde.dev":     "tasks.substrate.reamde.dev/tasks",
 	}
 	for _, g := range authorities {
 		id, ok := want[g.Name]
@@ -2305,15 +2305,15 @@ func TestShippedVocabularyBundles(t *testing.T) {
 	}
 	// Everything that maps onto people says so, so an import into a
 	// core-only repository is refused with a legible reason.
-	for _, name := range []string{"calendar.substrate.geoah.me", "media.substrate.geoah.me", "messaging.substrate.geoah.me"} {
+	for _, name := range []string{"calendar.substrate.reamde.dev", "media.substrate.reamde.dev", "messaging.substrate.reamde.dev"} {
 		g, ok := r.AuthorityByName(name)
-		if !ok || !contains(g.Bundle.Requires, "people.substrate.geoah.me") {
-			t.Errorf("%s does not require people.substrate.geoah.me", name)
+		if !ok || !contains(g.Bundle.Requires, "people.substrate.reamde.dev") {
+			t.Errorf("%s does not require people.substrate.reamde.dev", name)
 		}
 	}
 	// The one shipped mapping: bookedition→book, link-only.
-	if m, ok := r.MappingFor("media.substrate.geoah.me/bookedition"); !ok ||
-		m.To != "media.substrate.geoah.me/book" || m.Edge != "work" ||
+	if m, ok := r.MappingFor("media.substrate.reamde.dev/bookedition"); !ok ||
+		m.To != "media.substrate.reamde.dev/book" || m.Edge != "work" ||
 		len(m.Match) != 0 || len(m.Map) != 0 {
 		t.Errorf("bookedition mapping = %+v", m)
 	}
@@ -2321,9 +2321,9 @@ func TestShippedVocabularyBundles(t *testing.T) {
 	// and the friendly one, nothing else name-shaped. Pronouns exist by a
 	// later ruling (the mneme unification), free text with empty meaning
 	// unknown, and never an enum.
-	person, ok := r.ByIdentity("people.substrate.geoah.me/person")
+	person, ok := r.ByIdentity("people.substrate.reamde.dev/person")
 	if !ok {
-		t.Fatal("people.substrate.geoah.me/person missing")
+		t.Fatal("people.substrate.reamde.dev/person missing")
 	}
 	for _, p := range []string{"name", "displayName", "pronouns"} {
 		if prop, ok := person.Prop(p); !ok || prop.Datatype != vocabulary.DatatypeString {
@@ -2337,7 +2337,7 @@ func TestShippedVocabularyBundles(t *testing.T) {
 	}
 	// GraphQL names stay bare: shipped vocabulary is shipped whichever door it
 	// came through.
-	if got := vocabulary.GraphQLName("people.substrate.geoah.me/person", person.Source); got != "Person" {
+	if got := vocabulary.GraphQLName("people.substrate.reamde.dev/person", person.Source); got != "Person" {
 		t.Errorf("GraphQL name = %q, want Person", got)
 	}
 }

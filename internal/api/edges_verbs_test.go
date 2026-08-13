@@ -8,7 +8,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const peopleV1 = "/api/v1/people.substrate.geoah.me/people"
+const peopleV1 = "/api/v1/people.substrate.reamde.dev/people"
 
 // TestRESTEdgeLinkUnlinkRoundTrip is ruling A8's edge verbs: a REST client can
 // now REMOVE an edge, not only add one on a put. POST …/{id}/edges/{rel} links,
@@ -18,7 +18,7 @@ func TestRESTEdgeLinkUnlinkRoundTrip(t *testing.T) {
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
 	ds.records["p1"] = &substrate.Record{
-		ID: "p1", Kind: "people.substrate.geoah.me/person", Properties: map[string]any{"name": "Sam"},
+		ID: "p1", Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "Sam"},
 	}
 
 	rec := env.do(t, http.MethodPost, peopleV1+"/p1/edges/member_of", tok, map[string]any{"id": "org1"})
@@ -39,7 +39,7 @@ func TestRESTEdgeLinkUnlinkRoundTrip(t *testing.T) {
 func TestRESTEdgeLinkNeedsATarget(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	env.svc.datasets["geoah"].records["p1"] = &substrate.Record{ID: "p1", Kind: "people.substrate.geoah.me/person"}
+	env.svc.datasets["geoah"].records["p1"] = &substrate.Record{ID: "p1", Kind: "people.substrate.reamde.dev/person"}
 	rec := env.do(t, http.MethodPost, peopleV1+"/p1/edges/member_of", tok, map[string]any{})
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 }
@@ -85,7 +85,7 @@ func TestWatchRejectsListParams(t *testing.T) {
 func TestIncomingRejectsListParams(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	env.svc.datasets["geoah"].records["p1"] = &substrate.Record{ID: "p1", Kind: "people.substrate.geoah.me/person"}
+	env.svc.datasets["geoah"].records["p1"] = &substrate.Record{ID: "p1", Kind: "people.substrate.reamde.dev/person"}
 	rec := env.do(t, http.MethodGet, peopleV1+"/p1/incoming?filter=%7B%7D", tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 	if msg := decodeJSON[errorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "filter") {

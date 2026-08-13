@@ -46,7 +46,7 @@ The target is a bare id where the edge declaration pins a single target kind,
 or the qualified form kind.authority:id for a to:any edge. Edge properties are set
 with --prop key=value.`,
 		Example: `  substratectl link tasks t9 project pr3
-  substratectl link tasks t9 source messaging.substrate.geoah.me/conversationmessage:m7
+  substratectl link tasks t9 source messaging.substrate.reamde.dev/conversationmessage:m7
   substratectl link people 9f2k memberOf c3`,
 		Args: cobra.ExactArgs(4),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -96,7 +96,7 @@ func (a *app) unlinkCommand() *cobra.Command {
 
 The target syntax matches ` + "`link`" + `: a bare id, or type.authority:id.`,
 		Example: `  substratectl unlink tasks t9 project pr3
-  substratectl unlink tasks t9 source messaging.substrate.geoah.me/conversationmessage:m7`,
+  substratectl unlink tasks t9 source messaging.substrate.reamde.dev/conversationmessage:m7`,
 		Args: cobra.ExactArgs(4),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

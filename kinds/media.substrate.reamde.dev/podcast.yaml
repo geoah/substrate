@@ -1,0 +1,44 @@
+# one podcast feed, an Audiobookshelf library item exactly like a book
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: media.substrate.reamde.dev/podcast
+data:
+  authority: media.substrate.reamde.dev
+  description: >-
+    One podcast feed, held exactly like a book library item: the RSS URL,
+    the language, the explicit flag, whether it plays newest-first or from
+    episode one, and the people behind it. Its episodes point back at it.
+  names:
+    singular: podcast
+    plural: podcasts
+  properties:
+    feedURL:
+      type: url
+      description: the RSS feed
+    language:
+      type: string
+      description: the feed's language
+    explicit:
+      type: bool
+      description: the feed's explicit flag
+    # ABS's (and Apple's) `type`: an episodic feed is newest-first, a serial
+    # one is meant to be played from episode 1. `type` is the envelope's own
+    # word and never a property name (R4), so this is `kind`.
+    kind:
+      type: enum
+      values:
+        - episodic
+        - serial
+      description: episodic plays newest-first, serial from episode 1
+    description:
+      type: markdown
+      embed: true
+      description: the feed's own description
+    coverRef:
+      type: url
+      description: the cover art
+  edges:
+    author:
+      to: person
+      many: true
+      description: the people behind the feed

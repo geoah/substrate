@@ -7,8 +7,8 @@
 import { splitKind } from "@/lib/api/http"
 import { parseEnumValues, type EnumValue, type KindInfo } from "@/lib/api/types"
 
-/** A kind reference split into `{authority, name}`: `people.substrate.geoah.me/person`
- * → `{authority: "people.substrate.geoah.me", name: "person"}`; a bare `task` →
+/** A kind reference split into `{authority, name}`: `people.substrate.reamde.dev/person`
+ * → `{authority: "people.substrate.reamde.dev", name: "person"}`; a bare `task` →
  * `{authority: "", name: "task"}`. Re-exported from the addressing layer so a
  * page has one import for the grammar. */
 export { splitKind }
@@ -42,7 +42,7 @@ export interface DeclaredProperty {
 export interface DeclaredEdge {
   rel: string
   /** The declared target: a bare singular (`person`) or a full kind reference
-   * (`people.substrate.geoah.me/person`). */
+   * (`people.substrate.reamde.dev/person`). */
   to: string
   many: boolean
   description?: string
@@ -214,7 +214,7 @@ export function resolveEdgeTarget(
 
 /** The GraphQL type name a kind reference maps to. A bare kind is its name
  * PascalCased (`task` → `Task`); a shipped authority's kind is likewise just
- * its name (`people.substrate.geoah.me/person` → `Person`); an INSTALLED bundle kind is
+ * its name (`people.substrate.reamde.dev/person` → `Person`); an INSTALLED bundle kind is
  * prefixed with the bundle's name and an underscore
  * (`google.bundles.substrate.reamde.dev/person` → `Google_Person`), because installed
  * kinds share names across bundles and the prefix disambiguates. */

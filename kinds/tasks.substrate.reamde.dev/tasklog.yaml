@@ -1,0 +1,42 @@
+# one occurrence of a recurring task, completed or skipped
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: tasks.substrate.reamde.dev/tasklog
+data:
+  authority: tasks.substrate.reamde.dev
+  description: >-
+    The completed-or-skipped mark against one occurrence of a recurring
+    task. The task itself stays open while its rule repeats; only the
+    occurrences are marked, and absence in the logs is what missed means.
+  names:
+    singular: tasklog
+    plural: tasklogs
+  displayTemplate: "{status}"
+  # `at` is when the occurrence was completed or the skip was recorded.
+  traits:
+    - temporal(point)
+  properties:
+    status:
+      type: state
+      description: "completed or skipped; correcting a mis-tap flips it back"
+      states:
+        - completed
+        - skipped
+      initial: completed
+      transitions:
+        - from: completed
+          to: skipped
+        - from: skipped
+          to: completed
+    scheduledAt:
+      type: datetime
+      description: the occurrence this log answers, from expanding the RRULE
+    details:
+      type: markdown
+      description: anything worth saying about this occurrence, as prose
+  edges:
+    task:
+      to: task
+      required: true
+      ownerRef: true
+      description: the recurring task this log marks an occurrence of

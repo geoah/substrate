@@ -1,0 +1,36 @@
+# The shipped vocabulary, subsystem 4: what is owed. Shipped, but not SEEDED —
+# a VOCABULARY BUNDLE a repository imports (the bundle document is at the foot
+# of this file). Small on purpose — a task, the thing it groups under, and
+# the log that marks a recurring task's occurrences off.
+#
+# `source: {to: any}` is untyped for the usual reason: a task can come from
+# a message, a mail, an event or a transcript, and naming each would make
+# this authority depend on every other one.
+#
+# no new actors: the doors and the substrate ship with core; a connector's
+# writes arrive under the actor of whatever runs — a bundle function writes as
+# `function:<name>` — so nothing here declares an actor.
+kind: core.substrate.reamde.dev/authority
+metadata:
+  id: tasks.substrate.reamde.dev
+data:
+  version: v1alpha1
+---
+# ---- the bundle document: the import unit -------------------------------------
+# A VOCABULARY bundle (see people.substrate.reamde.dev): kinds only, imported from the
+# registry rather than seeded. The assignee edge lands on person, so it
+# requires that authority to be present first.
+kind: core.substrate.reamde.dev/bundle
+metadata: {id: tasks.substrate.reamde.dev/tasks}
+data:
+  authority: tasks.substrate.reamde.dev
+  description: >-
+    Tasks and the projects they sit under — what is owed, with priority, an
+    optional repeat rule marked off by tasklogs, and the untyped `source`
+    edge back to whatever asked for it.
+  requires:
+    - people.substrate.reamde.dev
+  installs:
+    - tasks.substrate.reamde.dev/project
+    - tasks.substrate.reamde.dev/task
+    - tasks.substrate.reamde.dev/tasklog

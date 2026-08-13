@@ -50,7 +50,7 @@ data:
       description: the GitHub OAuth app the host exchanges codes through
   # The vocabulary this bundle maps ONTO (see google): import it first.
   requires:
-    - people.substrate.geoah.me
+    - people.substrate.reamde.dev
   # TRUSTED provider metadata (review-google #1): the host reads endpoints and
   # the feature→scope mapping ONLY from here — the immutable install artifact —
   # never from the mutable config record, so a config edit can never redirect
@@ -321,7 +321,7 @@ data:
     # no other edge anywhere may point at it — issues and pull requests carry
     # authorLogin as a property and reach the human THROUGH this record.
     person:
-      to: people.substrate.geoah.me/person
+      to: people.substrate.reamde.dev/person
       required: true
       description: the human this GitHub profile describes
 ---
@@ -1120,7 +1120,7 @@ metadata: {id: github.bundles.substrate.reamde.dev/userperson}
 data:
   authority: github.bundles.substrate.reamde.dev
   from: github.bundles.substrate.reamde.dev/user
-  to: people.substrate.geoah.me/person
+  to: people.substrate.reamde.dev/person
   edge: person
   match:
     - from: email

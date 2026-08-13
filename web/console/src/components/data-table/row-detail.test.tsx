@@ -34,23 +34,23 @@ const ROW: ChangeRow = {
   actor: "github.bundles.substrate.reamde.dev",
   op: "put",
   recordId: "p1",
-  kind: "people.substrate.geoah.me/person",
+  kind: "people.substrate.reamde.dev/person",
   payload: {
     created: true,
     properties: ["name", "email"],
     fold: [
       {
         kind: "record",
-        ref: "people.substrate.geoah.me/person",
+        ref: "people.substrate.reamde.dev/person",
         id: "p1",
         delta: { created: true, set: { name: "Ada" }, del: ["nickname"] },
       },
       {
         kind: "edge",
-        ref: "people.substrate.geoah.me/person",
+        ref: "people.substrate.reamde.dev/person",
         id: "p1",
         rel: "member",
-        dstType: "people.substrate.geoah.me/organization",
+        dstType: "people.substrate.reamde.dev/organization",
         dst: "o1",
       },
     ],
@@ -76,7 +76,7 @@ describe("ChangeDetail", () => {
     expect(container.textContent).toContain("set name; cleared nickname")
     expect(container.textContent).toContain("linked")
     expect(container.textContent).toContain(
-      "member → people.substrate.geoah.me/organization/o1"
+      "member → people.substrate.reamde.dev/organization/o1"
     )
   })
 

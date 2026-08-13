@@ -52,7 +52,7 @@ func TestMeetingScenario(t *testing.T) {
 		Properties: map[string]any{"at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T13:30:00Z", "summary": "Standup", "location": "Meet"},
 		Edges: []substrate.EdgeInput{
 			{Rel: "calendar", To: substrate.EdgeRef{ID: cal.ID}},
-			{Rel: "series", To: substrate.EdgeRef{Kind: "calendar.substrate.geoah.me/calendareventseries", ID: series.ID}},
+			{Rel: "series", To: substrate.EdgeRef{Kind: "calendar.substrate.reamde.dev/calendareventseries", ID: series.ID}},
 			{Rel: "attendees", To: substrate.EdgeRef{ID: alex.ID}},
 			{Rel: "attendees", To: substrate.EdgeRef{ID: nina.ID}},
 			{Rel: "organizer", To: substrate.EdgeRef{ID: george.ID}},
@@ -86,7 +86,7 @@ func TestMeetingScenario(t *testing.T) {
 	// reference carries the type.
 	task := mustPut(t, ds, engram, substrate.PutInput{
 		Kind:  "task",
-		Edges: []substrate.EdgeInput{{Rel: "source", To: substrate.EdgeRef{Kind: "calendar.substrate.geoah.me/transcript", ID: transcript.ID}}},
+		Edges: []substrate.EdgeInput{{Rel: "source", To: substrate.EdgeRef{Kind: "calendar.substrate.reamde.dev/transcript", ID: transcript.ID}}},
 		Properties: map[string]any{
 			"title": "Send rack layout to Alex", "dueAt": "2026-08-08T00:00:00Z",
 			"status": "proposed",

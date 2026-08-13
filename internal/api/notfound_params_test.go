@@ -39,7 +39,7 @@ func TestUnmatchedAPIPathsAreJSONNotFound(t *testing.T) {
 		"/api/v1/nope",
 		"/api/v1/core.substrate.reamde.dev/nope",
 		"/api/v1/core.substrate.reamde.dev/changes/nope",
-		"/api/v1/people.substrate.geoah.me/people/9f2k/nope",
+		"/api/v1/people.substrate.reamde.dev/people/9f2k/nope",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Header.Set("Authorization", "Bearer "+tok)
@@ -63,7 +63,7 @@ func TestUnmatchedAPIPathsAreJSONNotFound(t *testing.T) {
 	// A console route is still the console's: the SPA fallback is why the
 	// deep links work at all.
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/types/people.people.substrate.geoah.me", nil))
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/types/people.people.substrate.reamde.dev", nil))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "console") {
 		t.Fatalf("console route: status = %d, body = %q", rec.Code, rec.Body.String())
 	}
@@ -174,10 +174,10 @@ func TestUnknownChangeParamsAreRefused(t *testing.T) {
 	seedChanges(env.svc.datasets["geoah"], 3)
 
 	for query, want := range map[string]string{
-		"?kind=people.substrate.geoah.me/person": "kinds",
-		"?op=put":                                "ops",
-		"?actor=owner":                           "actors",
-		"?bogus=1":                               "",
+		"?kind=people.substrate.reamde.dev/person": "kinds",
+		"?op=put":      "ops",
+		"?actor=owner": "actors",
+		"?bogus=1":     "",
 	} {
 		rec := env.do(t, http.MethodGet, changesPath+query, tok, nil)
 		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
@@ -199,15 +199,15 @@ func TestSupportedChangeParamsStillWork(t *testing.T) {
 		"?from=0",
 		"?first=2",
 		"?first=2&before=3",
-		"?kinds=people.substrate.geoah.me/person&ops=put&actors=owner",
-		"?excludeKinds=tasks.substrate.geoah.me/task&excludeOps=delete&excludeActors=machine",
-		"?recordId=e1&recordKind=people.substrate.geoah.me/person",
+		"?kinds=people.substrate.reamde.dev/person&ops=put&actors=owner",
+		"?excludeKinds=tasks.substrate.reamde.dev/task&excludeOps=delete&excludeActors=machine",
+		"?recordId=e1&recordKind=people.substrate.reamde.dev/person",
 		"?q=ada",
 	} {
 		rec := env.do(t, http.MethodGet, changesPath+query, tok, nil)
 		wantStatus(t, rec, http.StatusOK)
 	}
-	wantNotRefused(t, env, changesPath+"?watch=1&from=3&kinds=people.substrate.geoah.me/person", tok)
+	wantNotRefused(t, env, changesPath+"?watch=1&from=3&kinds=people.substrate.reamde.dev/person", tok)
 }
 
 // --- discovery's schema note ------------------------------------------------

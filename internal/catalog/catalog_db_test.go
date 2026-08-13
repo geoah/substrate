@@ -28,10 +28,10 @@ const webBundleID = "web.bundles.substrate.reamde.dev/web"
 
 // The VOCABULARY bundles the web closure declares against. Repository creation
 // seeds core alone now, so a closure that subscribes to
-// messaging.substrate.geoah.me/conversationmessage needs that authority imported first
+// messaging.substrate.reamde.dev/conversationmessage needs that authority imported first
 // — and messaging itself needs people. Importing them is the same verb an
 // bundle install is.
-var webRequires = []string{"people.substrate.geoah.me/people", "messaging.substrate.geoah.me/messaging"}
+var webRequires = []string{"people.substrate.reamde.dev/people", "messaging.substrate.reamde.dev/messaging"}
 
 func importVocabulary(t *testing.T, c *catalog.Catalog, ds substrate.Dataset, ids ...string) {
 	t.Helper()
@@ -143,7 +143,7 @@ func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 	if err == nil {
 		t.Fatal("installed a closure whose required vocabulary is absent")
 	}
-	if !strings.Contains(err.Error(), "messaging.substrate.geoah.me") {
+	if !strings.Contains(err.Error(), "messaging.substrate.reamde.dev") {
 		t.Errorf("refusal does not name the missing authority: %v", err)
 	}
 	importVocabulary(t, c, ds, webRequires...)
@@ -274,7 +274,7 @@ func TestInstallRollsBackOnBrokenDeliveryWiring(t *testing.T) {
 		"    enabled: true\n" +
 		"    source:\n" +
 		"      record:\n" +
-		"        types: [messaging.substrate.geoah.me/conversationmessage]\n" +
+		"        types: [messaging.substrate.reamde.dev/conversationmessage]\n" +
 		"        ops: [create]\n" +
 		"    callable: {kind: core.substrate.reamde.dev/function, id: web.bundles.substrate.reamde.dev/doesnotexist}\n"
 	if err := os.WriteFile(filepath.Join(bundleDir, "zz-broken.yaml"), []byte(broken), 0o644); err != nil {

@@ -10,9 +10,9 @@ import type { KindInfo } from "@/lib/api/types"
 import { completionsAt, pathAt, writtenProperties } from "./yaml-completion"
 
 const taskKind: KindInfo = {
-  identity: "tasks.substrate.geoah.me/task",
+  identity: "tasks.substrate.reamde.dev/task",
   name: "task",
-  authority: "tasks.substrate.geoah.me",
+  authority: "tasks.substrate.reamde.dev",
   version: "",
   plural: "tasks",
   source: "installed",
@@ -47,14 +47,14 @@ const taskKind: KindInfo = {
     },
     edges: {
       assignee: {
-        to: "people.substrate.geoah.me/person",
+        to: "people.substrate.reamde.dev/person",
         description: "who is on it",
       },
     },
   },
 }
 
-const DOC = `kind: tasks.substrate.geoah.me/task
+const DOC = `kind: tasks.substrate.reamde.dev/task
 metadata:
   id: t1
 data:
@@ -141,13 +141,13 @@ describe("completionsAt", () => {
   })
 
   it("offers this collection's kind after the envelope's `kind:`", () => {
-    expect(labels("kind: ")).toEqual(["tasks.substrate.geoah.me/task"])
+    expect(labels("kind: ")).toEqual(["tasks.substrate.reamde.dev/task"])
   })
 
   it("offers the declared edge rels after a `rel:`", () => {
     const found = at("data:\n  edges:\n    - rel: ")
     expect(found?.options.map((o) => o.label)).toEqual(["assignee"])
-    expect(found?.options[0].detail).toBe("→ people.substrate.geoah.me/person")
+    expect(found?.options[0].detail).toBe("→ people.substrate.reamde.dev/person")
   })
 
   it("offers an object's declared fields inside its block", () => {
