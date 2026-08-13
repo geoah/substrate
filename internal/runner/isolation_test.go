@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -26,6 +27,16 @@ func requireSandbox(t *testing.T, r *Runner) {
 	t.Helper()
 	if rep := r.sandbox.Report(); !rep.FS() || !rep.Seccomp {
 		t.Skipf("kernel does not offer the sandbox: %s", rep)
+	}
+}
+
+// requireSeccomp is requireSandbox for an assertion that needs only the SYSCALL
+// layer. A guard that skips more than it has to is a test that quietly stops
+// running.
+func requireSeccomp(t *testing.T, r *Runner) {
+	t.Helper()
+	if rep := r.sandbox.Report(); !rep.Seccomp {
+		t.Skipf("kernel has no syscall filter: %s", rep)
 	}
 }
 
@@ -168,7 +179,7 @@ def main(input, host):
 // sockets; one that declares egress keeps working exactly as it did.
 func TestNetworkCapabilityGatesABody(t *testing.T) {
 	r := New()
-	requireSandbox(t, r)
+	requireSeccomp(t, r)
 	const probe = `
 import socket
 def main(input, host):
@@ -355,7 +366,7 @@ func TestIdleProcessesAreReaped(t *testing.T) {
 // egress was granted, with its sockets still open.
 func TestWithdrawingNetworkRetiresTheProcess(t *testing.T) {
 	r := New()
-	requireSandbox(t, r)
+	requireSeccomp(t, r)
 	ctx := context.Background()
 	const probe = `
 import socket
@@ -389,4 +400,78 @@ def main(input, host):
 	if got.Output != "denied" {
 		t.Fatalf("a body kept its sockets after the capability was withdrawn: %v", got.Output)
 	}
+}
+
+// The certificate grant is narrow (the cert directories, never their parents),
+// so it has two things to prove at once: a body that declares egress can still
+// complete a real TLS handshake, and the private-key directories sitting beside
+// those certificates are still refused. Granting `/etc/ssl` would satisfy the
+// first and quietly fail the second.
+func TestTLSWorksWhileKeyMaterialStaysDenied(t *testing.T) {
+	r := New()
+	requireSandbox(t, r)
+	const keyProbe = `
+import os
+def main(input, host):
+    out = {}
+    for p in input["args"]["paths"]:
+        try:
+            if os.path.isdir(p):
+                os.listdir(p)
+            else:
+                open(p, "rb").read()
+            out[p] = "READABLE"
+        except Exception:
+            out[p] = "denied"
+    try:
+        import urllib.request
+        out["https"] = urllib.request.urlopen("https://example.com", timeout=15).status
+    except Exception as e:
+        out["https"] = "failed: %s" % type(e).__name__
+    return {"output": out}
+`
+	keyPaths := []any{"/etc/ssl/private", "/etc/pki/tls/private", "/etc/shadow"}
+	spec := Spec{
+		Repository: "t1", Function: "tls.g.test", Runtime: "python", TimeoutMs: 30000,
+		Source: keyProbe, Network: []string{"example.com"},
+	}
+	in := testInput()
+	in.Args = map[string]any{"paths": keyPaths}
+	res, err := r.Invoke(context.Background(), spec, in, nil)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, ok := res.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected output: %#v", res.Output)
+	}
+
+	// The key material half needs no network and is always asserted.
+	for _, p := range keyPaths {
+		if got, _ := out[p.(string)].(string); got == "READABLE" {
+			t.Errorf("a body read key material at %s", p)
+		}
+	}
+	// The TLS half only means something on a machine that has the internet, so
+	// a transport failure skips rather than reddening an offline box. A
+	// handshake that fails WITH connectivity would be a real regression in the
+	// certificate grant, which is why this is not simply ignored.
+	if got := out["https"]; got != float64(200) {
+		if !hasInternet(t) {
+			t.Skipf("no internet: cannot tell a certificate-grant regression from an offline box (%v)", got)
+		}
+		t.Errorf("a body declaring egress could not complete a TLS handshake: %v", got)
+	}
+}
+
+// hasInternet reports whether this machine can reach the host the TLS probe
+// uses, so a transport failure can be told apart from a policy failure.
+func hasInternet(t *testing.T) bool {
+	t.Helper()
+	conn, err := net.DialTimeout("tcp", "example.com:443", 5*time.Second)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
 }

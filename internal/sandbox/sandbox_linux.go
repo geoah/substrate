@@ -127,6 +127,8 @@ func (c *Confiner) wrap(cmd *exec.Cmd, p Policy) error {
 	if !c.report.FS() {
 		p.ReadExec, p.ReadOnly, p.ReadWrite = nil, nil, nil
 	}
+	// enforce means the CHILD refuses too, not just the boot probe.
+	p.Require = c.mode == ModeEnforce
 	raw, err := json.Marshal(p)
 	if err != nil {
 		return err

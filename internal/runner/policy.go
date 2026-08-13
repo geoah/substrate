@@ -48,8 +48,15 @@ var systemReadExec = []string{
 // that does not exist is skipped, so one list covers alpine, a Debian box and a
 // macOS-hosted container.
 var systemReadOnly = []string{
-	// The certificate store, under the name each distribution uses.
-	"/etc/ssl", "/etc/pki", "/etc/ca-certificates", "/etc/ca-certificates.conf",
+	// The certificate store, under the name each distribution uses. The CERT
+	// directories by name, never their parents: /etc/ssl also holds
+	// /etc/ssl/private and /etc/pki holds key material of its own, a Landlock
+	// grant covers everything beneath the path it names, and the substrate runs
+	// as root in the image, so granting the parent would hand a body exactly
+	// the operator-mounted TLS keys this list exists to keep away from it.
+	"/etc/ssl/certs", "/etc/ssl/cert.pem", "/etc/ssl/openssl.cnf",
+	"/etc/pki/tls/certs", "/etc/pki/tls/cert.pem", "/etc/pki/ca-trust/extracted",
+	"/etc/ca-certificates", "/etc/ca-certificates.conf",
 	// Name resolution: musl and glibc both read all of these.
 	"/etc/resolv.conf", "/etc/hosts", "/etc/host.conf", "/etc/nsswitch.conf",
 	"/etc/services", "/etc/gai.conf", "/etc/protocols",

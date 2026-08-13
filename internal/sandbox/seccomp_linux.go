@@ -116,6 +116,9 @@ func applySeccomp(p Policy) error {
 		// boot (seccompAvailable says so), so carrying on here is the
 		// best-effort contract rather than a silent gap, and refusing would
 		// take down every delivery on a platform the operator was told about.
+		if p.Require {
+			return fmt.Errorf("no syscall table for this architecture")
+		}
 		return nil
 	}
 	prog, err := buildFilter(p)
@@ -133,8 +136,13 @@ func applySeccomp(p Policy) error {
 		err = installFilter(&fprog, 0)
 	}
 	if errors.Is(err, unix.ENOSYS) || errors.Is(err, unix.EPERM) {
-		// Reported as a degradation at boot; a delivery is not the place to
-		// discover it.
+		// The boot probe cannot see this coming: an outer policy may allow
+		// SECCOMP_GET_ACTION_AVAIL and still refuse SECCOMP_SET_MODE_FILTER.
+		// Under enforce that has to stop the body; otherwise it is the
+		// degradation the operator was warned about at boot.
+		if p.Require {
+			return fmt.Errorf("set filter: %w (SUBSTRATE_SANDBOX=enforce)", err)
+		}
 		return nil
 	}
 	if err != nil {

@@ -117,17 +117,30 @@ func ref(name string) string { return name }
 // The headline: a function installed and invoked through the real substrate
 // cannot read the server's own environment, where the credential key that
 // unseals every stored provider token lives.
+//
+// The assertion is that the read is REFUSED, not that some planted canary is
+// absent from what came back. A canary could not work: procfs reports the
+// environment a process was EXEC'd with, so a t.Setenv in this test would never
+// appear there however broken the sandbox was. What the sandbox owes us is that
+// the file cannot be opened at all.
 func TestFunctionCannotReadTheServersEnvironment(t *testing.T) {
 	testenv.RequireSandbox(t)
-	t.Setenv("SUBSTRATE_CREDENTIAL_KEY", "LEAK-CREDENTIAL-KEY-END-TO-END")
 	env := testenv.Start(t)
+	// os.getppid(), NOT pid 1. In this harness the substrate is the TEST
+	// BINARY running an in-process server, so pid 1 is the container's init:
+	// a process this test has no relationship with, whose environ is
+	// unreadable for reasons that have nothing to do with the sandbox. Reading
+	// it would make the assertion below pass whether or not the confinement
+	// exists. The body's own parent IS the substrate, so that is the target.
 	env.ApplyVocabularyYAML(probeBundle(probeFn{name: "peek", source: `
+import os
 def main(input, host):
+    target = "/proc/%d/environ" % os.getppid()
     try:
-        with open("/proc/1/environ", "rb") as f:
-            return {"output": {"read": f.read().decode("utf-8", "replace")}}
+        with open(target, "rb") as f:
+            return {"output": {"read": f.read().decode("utf-8", "replace"), "target": target}}
     except Exception as e:
-        return {"output": {"denied": type(e).__name__}}
+        return {"output": {"denied": type(e).__name__, "target": target}}
 `})...)
 
 	out := env.MustCallFunction(ref("peek"), map[string]any{})
@@ -136,11 +149,13 @@ def main(input, host):
 		t.Fatalf("unexpected output: %#v", out)
 	}
 	if got, leaked := m["read"]; leaked {
+		// Report the SHAPE of the leak, never its contents. This assertion
+		// fires precisely when a body could read the server's environment, so
+		// printing what it found would copy every secret on that environment
+		// into a CI log: the credential key, the database URL, and whatever
+		// else the operator's shell happened to export.
 		s, _ := got.(string)
-		if strings.Contains(s, "LEAK-CREDENTIAL-KEY") {
-			t.Fatal("a function read the substrate's credential key")
-		}
-		t.Fatalf("a function read the substrate's environment: %q", s)
+		t.Fatalf("a function read the substrate's environment from %v (%d bytes)", m["target"], len(s))
 	}
 	if m["denied"] == nil {
 		t.Fatalf("expected a denial, got: %#v", out)
@@ -151,7 +166,8 @@ def main(input, host):
 // nothing about egress, so the body gets none, and the same body with a
 // declaration gets its socket.
 func TestNetworkCapabilityIsEnforcedEndToEnd(t *testing.T) {
-	testenv.RequireSandbox(t)
+	// Only the syscall layer: denying a socket needs no filesystem rules.
+	testenv.RequireSeccomp(t)
 	env := testenv.Start(t)
 	const probe = `
 import socket
@@ -185,8 +201,9 @@ func TestTwoFunctionsCannotSeeEachOther(t *testing.T) {
 		probeFn{name: "stash", source: `
 import sys
 def main(input, host):
-    sys.modules['__main__'].STOLEN = (input.get("args") or {}).get("secret")
-    return {"output": "stashed"}
+    secret = (input.get("args") or {}).get("secret")
+    sys.modules['__main__'].STOLEN = secret
+    return {"output": secret}
 `},
 		probeFn{name: "steal", source: `
 import sys
@@ -195,7 +212,12 @@ def main(input, host):
 `},
 	)...)
 
-	env.MustCallFunction(ref("stash"), map[string]any{"secret": "SUPER-SECRET"})
+	// Assert the stash actually HELD something first. If the input never
+	// reached the body, STOLEN would be None, steal would find nothing, and the
+	// test would pass while proving no isolation at all.
+	if got := env.MustCallFunction(ref("stash"), map[string]any{"secret": "SUPER-SECRET"}); got != "SUPER-SECRET" {
+		t.Fatalf("the stash body never received the secret, so this test would prove nothing: %v", got)
+	}
 	if got := env.MustCallFunction(ref("steal"), map[string]any{}); got != "nothing" {
 		t.Fatalf("one function read another's memory: %v", got)
 	}

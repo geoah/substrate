@@ -3,7 +3,7 @@
 package main
 
 import (
-	"log/slog"
+	"fmt"
 
 	"golang.org/x/sys/unix"
 )
@@ -27,13 +27,15 @@ import (
 // process and does not follow children, which is right: the children are the
 // untrusted half, and what confines them is internal/sandbox.
 //
-// A failure is logged, not fatal. Setting the flag to 0 is permitted for any
-// process, so a failure here means something very unusual, and the primary
-// boundary is the sandbox, which has its own SUBSTRATE_SANDBOX=enforce for
-// operators who want a refusal rather than a warning. Taking the substrate down
-// over a defense-in-depth prctl would trade a small exposure for a total one.
-func hideProcess() {
+// A failure is FATAL. Setting the flag to 0 is permitted for every process, so
+// a failure here is not a limitation to work around: it means the kernel is not
+// behaving as this program assumes, and the assumption in question is the one
+// keeping the credential key out of a same-uid reader. Booting anyway would
+// leave the environment exposed for the process's whole life with nothing but a
+// log line to show for it.
+func hideProcess() error {
 	if err := unix.Prctl(unix.PR_SET_DUMPABLE, 0, 0, 0, 0); err != nil {
-		slog.Error("could not clear the dumpable flag: this process's /proc entry stays readable to same-uid processes", "error", err)
+		return fmt.Errorf("clear the dumpable flag: %w (this process's /proc entry would stay readable to same-uid processes)", err)
 	}
+	return nil
 }

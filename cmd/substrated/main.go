@@ -41,7 +41,10 @@ func main() {
 	// read this one's environment, and the environment is where the credential
 	// key and the database URL are. The window cannot be closed entirely,
 	// there is always some: only made as small as a Go program can make it.
-	hideProcess()
+	if err := hideProcess(); err != nil {
+		slog.Error("fatal", "error", err)
+		os.Exit(1)
+	}
 
 	if err := run(); err != nil {
 		slog.Error("fatal", "error", err)

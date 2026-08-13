@@ -312,3 +312,15 @@ func RequireSandbox(t *testing.T) {
 		t.Skipf("this platform cannot enforce the sandbox: %s", rep)
 	}
 }
+
+// RequireSeccomp is RequireSandbox for a test whose assertion needs only the
+// SYSCALL layer, which the network gate does. Asking for the filesystem layer
+// too would skip the network tests on a host that can perfectly well run them,
+// and a guard that skips more than it has to is a test that quietly stops
+// running.
+func RequireSeccomp(t *testing.T) {
+	t.Helper()
+	if rep := sandbox.New(sandbox.ModeBestEffort).Report(); !rep.Seccomp {
+		t.Skipf("this platform has no syscall filter: %s", rep)
+	}
+}

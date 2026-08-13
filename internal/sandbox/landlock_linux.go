@@ -120,7 +120,10 @@ func applyLandlock(p Policy) error {
 	if err != nil {
 		// best-effort: the parent already reported the degradation at boot,
 		// and refusing here would take down every delivery on a kernel the
-		// operator was told about.
+		// operator was told about. Under enforce it stops the body instead.
+		if p.Require {
+			return err
+		}
 		return nil
 	}
 	handled := handledFor(abi)

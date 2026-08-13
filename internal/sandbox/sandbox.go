@@ -114,6 +114,14 @@ type Policy struct {
 	// rather than isolate the body.
 	NoFile   uint64 `json:"noFile,omitempty"`
 	FileSize uint64 `json:"fileSize,omitempty"`
+	// Require makes every layer mandatory IN THE CHILD. The boot probe cannot
+	// settle this on its own: it asks whether seccomp(2) is reachable, and an
+	// outer policy is free to answer that and still refuse
+	// SECCOMP_SET_MODE_FILTER when the filter is actually installed. Without
+	// this flag the stub would swallow that refusal and exec the body
+	// unconfined under SUBSTRATE_SANDBOX=enforce, which is the one mode that
+	// exists to make that impossible.
+	Require bool `json:"require,omitempty"`
 }
 
 // Report is what the platform actually offered, resolved once at boot.
