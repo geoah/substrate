@@ -1,0 +1,29 @@
+# The provider rows, as DATA — ordinary records the install PUTs after the
+# closure lands, editable and deletable like anything else.
+#
+# Both ship WITHOUT a key. `apiKey` is secret-typed: it reads back redacted
+# from every API and never appears in a changelog payload, so the only way one
+# arrives is you writing it. Until then an agent naming the row refuses at
+# dispatch, saying which row it wanted.
+kind: core.substrate.reamde.dev/llmprovider
+metadata: {id: anthropic}
+data:
+  properties:
+    name: anthropic
+    wire: anthropic
+    pricing:
+      claude-opus-5: {inputPer1M: 5, outputPer1M: 25}
+      claude-sonnet-5: {inputPer1M: 3, outputPer1M: 15}
+      claude-haiku-4-5: {inputPer1M: 1, outputPer1M: 5}
+---
+# An openai-wire row with an EMPTY baseURL means the host's configured gateway
+# — set `baseURL` to point it at anything else that speaks the OpenAI wire.
+kind: core.substrate.reamde.dev/llmprovider
+metadata: {id: openai}
+data:
+  properties:
+    name: openai
+    wire: openai
+    pricing:
+      gpt-5: {inputPer1M: 1.25, outputPer1M: 10}
+      gpt-5-mini: {inputPer1M: 0.25, outputPer1M: 2}

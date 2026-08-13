@@ -420,9 +420,6 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		ds.loadStoredVocabulary,
 		ds.upgradeShippedVocabulary,
 		ds.ensureTriggerCursors,
-		// The well-known `default` llmprovider row, create-only: an owner's
-		// re-pointing or deliberate delete stands.
-		ds.seedAgentDefaults,
 	} {
 		if err := step(ctx); err != nil {
 			_ = db.Close()

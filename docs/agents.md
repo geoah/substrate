@@ -164,10 +164,16 @@ is written as the loop runs under the agent's actor, carrying `agent`,
 `provider`, `model`, `mode`, `status` (`running` then
 `ok`/`overbudget`/`error`), `agentDepth`, the tallies (`turns`, `toolCalls`,
 the token counts, `costUSD`), and
-`startedAt`/`finishedAt`. A `message` carries role, content, turn, and the
-tool-call audit, plus the required `thread` edge. Self-actor exclusion covers
-the transcript, so an agent's own trigger never redelivers its thread and
-message writes.
+`startedAt`/`finishedAt`. A `message` carries role, content, turn, the
+tool-call audit, and the required `thread` it belongs to. Self-actor exclusion
+covers the transcript, so an agent's own trigger never redelivers its thread
+and message writes.
+
+`agent`, `parent` and `thread` are REFERENCES, not edges: a thread is the
+audit row of a run and has to keep naming the agent that ran it, and an edge
+would be deleted along with its target. Each declares its `inverse`, so the
+graph reads the same relationship from the other side — an agent's `threads`,
+a thread's `messages` and its `subAgentThreads`.
 
 **Cost rolls up onto the root thread**: every loop on a chain adds to one
 shared tally, so the root thread's numbers include every descendant while a
@@ -214,20 +220,27 @@ the host's own (`SUBSTRATE_LLM_API_KEY`). A row that names its own `baseURL`
 must carry its own `apiKey` or it refuses to resolve; on `anthropic` the row's
 key is required for the same reason, and on `azure` both are.
 
-One row seeds at repository open, create-only: `default`, `{name: default,
-wire: openai}` with no `baseURL` — the host's gateway — so a fresh
-substrate can run an agent without an owner writing a row first. There are no
-`cheap`/`mid`/`strong` rows any more: a tier was a model id hiding behind a
-name, and the model is the agent's own word now. `default` is an ordinary id
-of the `core.substrate.reamde.dev/llmprovider` kind and reserves nothing: a record of
-another kind wearing the same id is no collision.
+**Nothing seeds a provider.** A fresh repository holds no `llmprovider` row at
+all: a row is where the wire, the endpoint and the KEY live, and a substrate
+cannot invent a key — one shipped without it only postpones the failure to the
+first dispatch while looking configured. An agent naming a row that is not
+there refuses at dispatch and says which row it wanted.
+
+The shipped bundles' agents name `provider: default` by convention, so a
+repository that installs one wants a row at that id. The fastest way to get
+there is **Registry → Examples → the LLM example**, which installs two
+correctly-shaped keyless rows (`anthropic`, `openai`) plus an agent and a
+sub-agent to prove them; writing one by hand is the document below. There are
+no `cheap`/`mid`/`strong` rows: a tier was a model id hiding behind a name, and
+the model is the agent's own word now.
 
 ### Registering a provider
 
-A provider is a record, so adding one is a write — `apply -f`, or the console's
-Agents page, which lists the same rows and opens each on its record page. All
-three below are ordinary data documents: `data.properties`, never a
-declaration.
+A provider is a record, so adding one is a write — `apply -f`, or the console
+at **Data → `core.substrate.reamde.dev` → llmproviders → New**. (The Agents
+page does not list providers: an agent names one by id, and that pointer reads
+on the agent's own record.) All three below are ordinary data documents:
+`data.properties`, never a declaration.
 
 ```yaml
 # OpenRouter — the OpenAI wire at its own endpoint. So is LiteLLM, Together,
@@ -283,6 +296,35 @@ substratectl get llmproviders -o yaml
 is both a safe way to read the rows and directly `apply -f`-able — an edit of
 the baseURL beside an untouched key is one round trip, and the key never
 leaves the box.
+
+### Setting or rotating the key
+
+The key is a property, so it is a record write like any other: **Data →
+llmproviders → the row → Edit**, put it in `apiKey`, apply. Because
+`apiKey` is secret-typed it reads back REDACTED — the field shows nothing of
+what is stored, writing it again replaces it, and that is also how a rotation
+is done. There is no separate credentials screen, and no way to read a stored
+key back out of the substrate.
+
+From the CLI it is the same write. A here-document keeps the key out of your
+shell history:
+
+```sh
+cat <<'EOF' | substratectl apply -f -
+kind: core.substrate.reamde.dev/llmprovider
+metadata: {id: anthropic}
+data:
+  properties: {apiKey: sk-ant-…}
+EOF
+```
+
+`apply` merges and never prunes, so naming `apiKey` alone leaves the row's
+wire, endpoint and pricing exactly as they were.
+
+The editor is a YAML textarea today, which knows nothing about the kind it is
+editing — a number where a string belongs is refused by the substrate rather
+than by the field. Making it schema-aware is
+[issue 17](https://github.com/geoah/substrate/issues/17).
 
 ### Testing a provider
 

@@ -41,10 +41,14 @@ func TestAgentLoopKindsResolveInCore(t *testing.T) {
 			t.Fatalf("the retired type %s still resolves", id)
 		}
 	}
-	// The seeded well-known provider row lands in core, create-only.
-	seeded := mustGet(t, ds, "core.substrate.reamde.dev/llmprovider", "default")
-	if seeded.Kind != "core.substrate.reamde.dev/llmprovider" {
-		t.Fatalf("seeded llmprovider row kind = %q", seeded.Kind)
+	// A provider row is DATA of a core kind, written by its owner — the kind
+	// resolves on a fresh repository, and no row of it exists there.
+	row := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/llmprovider", ID: "openai",
+		Properties: map[string]any{"name": "openai", "wire": "openai"},
+	})
+	if row.Kind != "core.substrate.reamde.dev/llmprovider" {
+		t.Fatalf("llmprovider row kind = %q", row.Kind)
 	}
 }
 

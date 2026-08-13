@@ -65,6 +65,38 @@ into the binary, and so does
 the same admission. [`docs/getting-started.md`](docs/getting-started.md) walks
 the same path in full.
 
+### Running an agent
+
+A fresh repository holds no LLM provider: a provider row carries the wire, the
+endpoint and the KEY, and a substrate cannot invent a key. Registry →
+**Examples** → the LLM example installs two keyless rows (`anthropic`,
+`openai`) and an agent chain that uses them, or apply the same closure from the
+tree:
+
+```sh
+bin/substratectl apply \
+  -f kinds/llm.bundles.substrate.reamde.dev/bundle.yaml \
+  -f kinds/llm.bundles.substrate.reamde.dev/providers.yaml
+```
+
+Then put a key on the row — it is an ordinary record write, and `apiKey` is
+secret-typed, so it reads back redacted ever after:
+
+```sh
+cat <<'EOF' | bin/substratectl apply -f -
+kind: core.substrate.reamde.dev/llmprovider
+metadata: {id: anthropic}
+data:
+  properties: {apiKey: sk-ant-…}
+EOF
+```
+
+The console's **Agents** page then has something to chat with: a thread per
+run in the left rail, the transcript rebuilt from records, and every tool call
+expandable to its request and response.
+[`docs/agents.md`](docs/agents.md) has the rest — wires, pricing, sub-agents,
+budgets.
+
 ## Configuration
 
 | Env                            | Default                         | Notes                                                         |

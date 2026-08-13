@@ -1,0 +1,88 @@
+# The LLM example: the provider rows a substrate needs before any agent can
+# run, and the smallest agent chain that proves them.
+#
+# NOTHING SEEDS A PROVIDER. A repository holds no `llmprovider` row until its
+# owner writes one, because a row is where the wire, the endpoint and the KEY
+# live — and a substrate cannot invent a key. A row shipped without one would
+# only postpone the failure to the first dispatch while looking configured.
+#
+# So this bundle is the shortcut, and it asks one thing of you afterwards:
+#
+#   1. Install it (Registry → Examples, or `substratectl apply -f`).
+#   2. Data → llmproviders → `anthropic` → Edit, and put your key in `apiKey`.
+#      It is secret-typed: it reads back redacted ever after, and writing it
+#      again is how a rotation is done.
+#   3. Agents → `llm.bundles.substrate.reamde.dev/echo` → chat.
+#
+# The `openai` row is the same shape for the other wire. An openai-wire row
+# with an EMPTY baseURL means "the host's configured gateway", which is a real
+# deployment mode and the reason it ships keyless too.
+#
+# For functions as tools — a pure one and one that writes a record — install
+# the notes example beside this one. This bundle deliberately has none: it is
+# about where completions are bought.
+kind: core.substrate.reamde.dev/authority
+metadata: {id: llm.bundles.substrate.reamde.dev}
+data:
+  version: v1alpha1
+---
+kind: core.substrate.reamde.dev/bundle
+metadata: {id: llm.bundles.substrate.reamde.dev/llm}
+data:
+  authority: llm.bundles.substrate.reamde.dev
+  description: >-
+    The two provider rows an agent needs, keyless and ready to key, plus an
+    agent and the sub-agent it delegates to. Install it, set one key, chat.
+  configType: llm.bundles.substrate.reamde.dev/config
+  installs:
+    - llm.bundles.substrate.reamde.dev/config
+    - llm.bundles.substrate.reamde.dev/summarizer
+    - llm.bundles.substrate.reamde.dev/echo
+---
+# ---- the config: every bundle names one. This bundle's only knob is which
+# row its agents complete against, so re-pointing the example at your own
+# provider is one edit here rather than two agent patches.
+kind: core.substrate.reamde.dev/kind
+metadata: {id: llm.bundles.substrate.reamde.dev/config}
+data:
+  authority: llm.bundles.substrate.reamde.dev
+  description: >-
+    How the LLM example runs: which provider row its agents buy completions
+    from. Created by the owner; the agents read it through their prompts.
+  names: {singular: config, plural: configs}
+  traits: [bundleconfig]
+  properties:
+    provider:
+      type: string
+      description: the llmprovider row id the example's agents should name
+---
+# ---- a SUB-AGENT: its own loop, its own budget, its own thread. It declares
+# no emit at all, so nothing it is asked to do can write a record.
+kind: core.substrate.reamde.dev/agent
+metadata: {id: llm.bundles.substrate.reamde.dev/summarizer}
+data:
+  authority: llm.bundles.substrate.reamde.dev
+  description: Summarize a piece of text in one sentence.
+  prompt: |
+    Summarize what you are given in ONE short sentence. No preamble, no
+    bullet points, no closing remark — the sentence alone.
+  provider: anthropic
+  model: claude-haiku-4-5
+  budgets: {maxTurns: 2, maxToolCalls: 1}
+---
+# ---- the root agent: delegates to the sub-agent, which is a tool call like
+# any other and shows up as one in the console's transcript.
+kind: core.substrate.reamde.dev/agent
+metadata: {id: llm.bundles.substrate.reamde.dev/echo}
+data:
+  authority: llm.bundles.substrate.reamde.dev
+  description: Answers you, and summarizes what you said through a sub-agent.
+  prompt: |
+    You are a demonstration agent. Whatever you are given, hand it to the
+    summarizer sub-agent, then answer in one short line: the summary it
+    returned, and one sentence of your own. Always call the sub-agent rather
+    than summarizing yourself — the point is to show the call.
+  provider: anthropic
+  model: claude-haiku-4-5
+  agents: [llm.bundles.substrate.reamde.dev/summarizer]
+  budgets: {maxTurns: 4, maxToolCalls: 2, depth: 2}
