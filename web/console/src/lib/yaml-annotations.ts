@@ -10,6 +10,7 @@ import {
   propertyTypeLabel,
   edgeTypeLabel,
 } from "@/lib/definition"
+import type { PropSpec } from "@/lib/record-schema"
 
 /** What a hover says about one declared key: its DATATYPE and the record-56
  * one-liner. Either alone is worth a hover — a key whose kind declares only a
@@ -71,6 +72,22 @@ export function describableSpan(
   if (indent.length < 4) return null
   const doc = docs.properties[key]
   return doc ? { text: key, doc } : null
+}
+
+/** Which DECLARED PROPERTY a line of an apply document is writing, or nothing.
+ * The editor hovers a line with the whole declaration (datatype, one-liner,
+ * required, admitted values, a worked example), so it needs the spec itself and
+ * not just the two strings a manifest hover shows. Same depth rule as
+ * `describableSpan`: envelope keys sit shallower than a property. */
+export function specOnLine(
+  line: string,
+  specs: Map<string, PropSpec>
+): PropSpec | undefined {
+  const m = line.match(/^(\s*)(?:- )?([\w.]+):/)
+  if (!m) return undefined
+  const [, indent, key] = m
+  if (indent.length < 4) return undefined
+  return specs.get(key)
 }
 
 /** The known reference strings a manifest can carry, each mapped to its

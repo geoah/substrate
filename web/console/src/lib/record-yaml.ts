@@ -1,125 +1,90 @@
-/** The YAML editor's pure core (create + edit a record from its kind).
+/** The YAML lens's pure core (create + edit a record from its kind). The
+ * DECLARATION is read through `record-schema.ts`, which the form lens reads
+ * too, so both lenses agree on what a property is and what a value may be.
  *
  * Everything here is data-in/data-out so it can be unit-tested without a DOM:
  * - `templateYAML(kind)` builds the apply-able envelope a NEW record starts
- *   from, entirely from the kind's declared schema — every property seeded with
- *   its `default` (else a typed zero / placeholder), required properties first,
- *   a comment marking required vs optional, and an enum's admitted values in a
- *   comment. Schema-driven, never kind-special-cased.
- * - `applyManifestYAML(record)` is the EDIT seed — the same envelope
+ *   from, entirely from the declared schema: every property seeded with its
+ *   `default` (else a typed zero), required properties first, and a trailing
+ *   comment carrying required/optional, the datatype, the one-liner and a
+ *   worked example. Schema-driven, never kind-special-cased.
+ * - `applyManifestYAML(record)` is the EDIT seed: the same envelope
  *   (`kind`/`metadata`/`data`) the manifest view shows, MINUS the server-owned
  *   `status` block.
  * - `parseApplyDoc` / `validateApplyDoc` parse the editor's text and check it
- *   against the schema (YAML parses, required present, enum admitted, obvious
- *   kind mismatches), returning inline problems.
- * - `toPutInput` coerces a parsed doc into the create/patch write payload. */
+ *   against the declaration the way the substrate will (`checkValue`), plus the
+ *   two rules that are the WRITE's, not the value's: a put may not move a
+ *   state, and the route's id is the one the write lands on.
+ * - `setIn` / `propertiesOf` are the form lens's surgery on the same text: one
+ *   key changes, every other line (comments included) stays exactly as authored.
+ * - `toPutInput` coerces a parsed doc into the create/upsert write payload. */
 
-import { Document, isCollection, isScalar, parseDocument, YAMLMap } from "yaml"
+import {
+  Document,
+  isCollection,
+  isNode,
+  isScalar,
+  parseDocument,
+  YAMLMap,
+} from "yaml"
 
-import type { SubstrateRecord, EnumValue, KindInfo } from "@/lib/api/types"
-import { parseEnumValues } from "@/lib/api/types"
+import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
+import {
+  checkValue,
+  exampleFor,
+  propSpecs,
+  seedValue,
+  systemSpecs,
+  typeLabel,
+  type PropSpec,
+} from "@/lib/record-schema"
 
-// ── the declared-property spec the editor reads ─────────────────────────────
+export type { PropSpec }
 
-/** One declared property, projected with everything the template + validation
- * need — kind, required/enum/default/repeated — straight off the verbatim
- * manifest block the substrate serves (`definition.properties.<name>`). */
-export interface PropSpec {
-  name: string
-  kind: string
-  required: boolean
-  repeated: boolean
-  /** Enum: the admitted values (`{value, label}`), declaration order. */
-  values?: EnumValue[]
-  /** A declared `default:` — the value a create seeds the field with. */
-  default?: unknown
-  /** `state`-kind: the machine's states and the state it is born into. */
-  states?: string[]
-  initial?: string
-  description?: string
-}
-
-function rawProps(kind: KindInfo): Record<string, Record<string, unknown>> {
-  const def = (kind.definition ?? {}) as Record<string, unknown>
-  return (def.properties ?? {}) as Record<string, Record<string, unknown>>
-}
-
-function stringList(v: unknown): string[] | undefined {
-  if (!Array.isArray(v)) return undefined
-  const out = v.filter((x): x is string => typeof x === "string")
-  return out.length ? out : undefined
-}
-
-/** The declared properties, required first then optional, alphabetical within
- * each band (key order is lost to jsonb, so alphabetical is the honest order). */
-export function propSpecs(kind: KindInfo): PropSpec[] {
-  const raw = rawProps(kind)
-  const specs: PropSpec[] = Object.entries(raw).map(([name, def]) => ({
-    name,
-    kind: typeof def.type === "string" ? def.type : "string",
-    required: def.required === true,
-    repeated: def.repeated === true,
-    values: parseEnumValues(def.values),
-    default: def.default,
-    states: stringList(def.states),
-    initial: typeof def.initial === "string" ? def.initial : undefined,
-    description:
-      typeof def.description === "string" ? def.description : undefined,
-  }))
-  return specs.sort(
-    (a, b) =>
-      Number(b.required) - Number(a.required) || a.name.localeCompare(b.name)
-  )
-}
-
-// ── kind families ───────────────────────────────────────────────────────────
-
-const NUMERIC = new Set([
-  "int",
-  "integer",
-  "int32",
-  "int64",
-  "uint",
-  "number",
-  "float",
-  "float64",
-  "double",
-  "decimal",
-])
-const BOOLEAN = new Set(["bool", "boolean"])
-const OBJECT = new Set(["json", "object", "map"])
-
-function isNumeric(kind: string): boolean {
-  return NUMERIC.has(kind)
-}
-
-/** The seed a create template gives a property: its declared `default` when it
- * has one, else a typed zero / placeholder by kind. Repeated properties seed to
- * an empty list regardless of element kind. */
-export function seedValue(spec: PropSpec): unknown {
-  if (spec.default !== undefined && spec.default !== null) return spec.default
-  if (spec.repeated) return []
-  if (spec.kind === "state") return spec.initial ?? spec.states?.[0] ?? ""
-  if (BOOLEAN.has(spec.kind)) return false
-  if (isNumeric(spec.kind)) return 0
-  if (OBJECT.has(spec.kind)) return {}
-  // string / email / url / text / markdown / date / secret / enum …
-  return ""
-}
+/** One serialization, so a form edit and a hand edit produce the same shape. */
+const STRINGIFY = {
+  lineWidth: 0,
+  defaultStringType: "PLAIN",
+  defaultKeyType: "PLAIN",
+} as const
 
 // ── the template envelope ────────────────────────────────────────────────────
 
-/** A short trailing comment describing a property: required/optional, its kind,
- * and (for an enum) its admitted values. */
-function specComment(spec: PropSpec): string {
+/** How long a declaration's one-liner may run inside a trailing comment before
+ * it is cut: a comment is a hint, not the documentation. */
+const COMMENT_DESCRIPTION_MAX = 96
+
+function shorten(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim()
+  return flat.length > COMMENT_DESCRIPTION_MAX
+    ? `${flat.slice(0, COMMENT_DESCRIPTION_MAX - 1)}…`
+    : flat
+}
+
+/** The trailing comment a template's property carries: required or optional,
+ * its datatype (an enum lists what it admits), the declaration's one-liner, and
+ * a worked example of the datatype. Everything a person needs to fill the line
+ * in, read off the declaration alone. */
+export function specComment(spec: PropSpec): string {
   const parts = [spec.required ? "required" : "optional"]
   if (spec.values?.length) {
-    const admitted = spec.values
-      .map((v) => (v.label ? `${v.value} (${v.label})` : v.value))
-      .join(" | ")
-    parts.push(`enum: ${admitted}`)
-  } else parts.push(spec.repeated ? `${spec.kind}[]` : spec.kind)
-  return ` ${parts.join(", ")}`
+    parts.push(
+      `enum: ${spec.values
+        .map((v) => (v.label ? `${v.value} (${v.label})` : v.value))
+        .join(" | ")}`
+    )
+  } else if (spec.states?.length) {
+    parts.push(`state: ${spec.states.join(" | ")}`)
+  } else {
+    parts.push(typeLabel(spec))
+  }
+  let out = parts.join(", ")
+  if (spec.description) out += `: ${shorten(spec.description)}`
+  const example = exampleFor(spec)
+  if (example && !spec.values?.length && !spec.states?.length) {
+    out += `; e.g. ${example}`
+  }
+  return ` ${out}`
 }
 
 /** The apply-able envelope a NEW record of `kind` starts from, as a yaml
@@ -166,11 +131,7 @@ export function templateDoc(kind: KindInfo): Document {
 }
 
 export function templateYAML(kind: KindInfo): string {
-  return templateDoc(kind).toString({
-    lineWidth: 0,
-    defaultStringType: "PLAIN",
-    defaultKeyType: "PLAIN",
-  })
+  return templateDoc(kind).toString(STRINGIFY)
 }
 
 /** The EDIT seed: the record's apply-able envelope — the manifest view's shape
@@ -204,11 +165,7 @@ export function applyManifestOf(record: SubstrateRecord): Record<string, unknown
 }
 
 export function applyManifestYAML(record: SubstrateRecord): string {
-  return new Document(applyManifestOf(record)).toString({
-    lineWidth: 0,
-    defaultStringType: "PLAIN",
-    defaultKeyType: "PLAIN",
-  })
+  return new Document(applyManifestOf(record)).toString(STRINGIFY)
 }
 
 // ── parse + validate ─────────────────────────────────────────────────────────
@@ -285,42 +242,86 @@ function lineOfKey(text: string, key: string): number | undefined {
   return undefined
 }
 
-/** A human phrase for the kind a value should be, for a kind-mismatch message. */
-function kindNoun(spec: PropSpec): string {
-  if (spec.repeated) return "a list"
-  if (spec.values?.length) {
-    return `one of: ${spec.values.map((v) => v.value).join(", ")}`
+/** The same, for an envelope key at the document's own level (`kind:`). */
+function lineOfTopKey(text: string, key: string): number | undefined {
+  const lines = text.split("\n")
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].startsWith(`${key}:`)) return i + 1
   }
-  if (BOOLEAN.has(spec.kind)) return "a boolean"
-  if (isNumeric(spec.kind)) return "a number"
-  if (OBJECT.has(spec.kind)) return "an object"
-  return "a string"
+  return undefined
 }
 
-/** Whether a present value's JS type clashes with the declared kind. Lenient —
- * only flags an OBVIOUS mismatch (a list where a scalar is declared, a string
- * where a number is, an unknown enum value), never a coercible near-miss. */
-function typeMismatch(spec: PropSpec, value: unknown): boolean {
-  if (value === null) return false
-  if (spec.repeated) return !Array.isArray(value)
-  if (Array.isArray(value)) return true
-  if (spec.values?.length) {
-    return (
-      typeof value !== "string" ||
-      !spec.values.some((v) => v.value === value)
+/** What the editor knows about the write it is preparing, beyond the text: the
+ * record being edited (a put may not move a state, and the id in the document
+ * is not what the write lands on) — absent on a create. */
+export interface ApplyContext {
+  record?: SubstrateRecord
+}
+
+function edgeProblems(raw: unknown, kind: KindInfo, text: string): Problem[] {
+  if (raw === undefined) return []
+  if (!Array.isArray(raw)) {
+    return [
+      {
+        severity: "error",
+        message: "`data.edges` must be a list of `{rel, to: {kind, id}}`.",
+        line: lineOfKey(text, "edges"),
+      },
+    ]
+  }
+  const declared = new Set(
+    Object.keys(
+      ((kind.definition ?? {}) as Record<string, unknown>).edges ??
+        ({} as Record<string, unknown>)
     )
-  }
-  if (BOOLEAN.has(spec.kind)) return typeof value !== "boolean"
-  if (isNumeric(spec.kind)) return typeof value !== "number"
-  if (OBJECT.has(spec.kind)) return typeof value !== "object"
-  // string family — a scalar object/number/bool where prose is declared.
-  return typeof value === "object"
+  )
+  const problems: Problem[] = []
+  raw.forEach((item, i) => {
+    const at = `edges[${i}]`
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      problems.push({
+        severity: "error",
+        message: `\`${at}\` must be a \`{rel, to: {kind, id}}\` mapping.`,
+        path: at,
+      })
+      return
+    }
+    const e = item as Record<string, unknown>
+    const rel = typeof e.rel === "string" ? e.rel : ""
+    const to = (e.to ?? {}) as Record<string, unknown>
+    if (!rel) {
+      problems.push({
+        severity: "error",
+        message: `\`${at}\` needs a \`rel\`.`,
+        path: at,
+      })
+    } else if (declared.size && !declared.has(rel)) {
+      problems.push({
+        severity: "warning",
+        message: `\`${rel}\` is not a declared edge of this kind.`,
+        path: at,
+        line: lineOfKey(text, "rel"),
+      })
+    }
+    if (typeof to.id !== "string" || !to.id.trim()) {
+      problems.push({
+        severity: "error",
+        message: `\`${at}\` needs a \`to.id\`.`,
+        path: at,
+      })
+    }
+  })
+  return problems
 }
 
-/** Validate the editor text against the kind's schema. Returns every problem;
- * an empty list (or warnings only) means the client is willing to apply. A
- * single fatal syntax/shape error short-circuits the rest. */
-export function validateApplyDoc(text: string, kind: KindInfo): Problem[] {
+/** Validate the editor text against the kind's declaration. Returns every
+ * problem; an empty list (or warnings only) means the client is willing to
+ * apply. A single fatal syntax/shape error short-circuits the rest. */
+export function validateApplyDoc(
+  text: string,
+  kind: KindInfo,
+  ctx: ApplyContext = {}
+): Problem[] {
   const parsed = parseApplyDoc(text)
   if (parsed.error) {
     return [
@@ -333,6 +334,29 @@ export function validateApplyDoc(text: string, kind: KindInfo): Problem[] {
   }
   const doc = parsed.value ?? {}
   const problems: Problem[] = []
+
+  if (typeof doc.kind === "string" && doc.kind && doc.kind !== kind.identity) {
+    problems.push({
+      severity: "error",
+      message: `\`kind\` is ${doc.kind}, but this collection is ${kind.identity}.`,
+      path: "kind",
+      line: lineOfTopKey(text, "kind"),
+    })
+  }
+  const authored = doc.metadata?.id
+  if (
+    ctx.record &&
+    typeof authored === "string" &&
+    authored.trim() &&
+    authored.trim() !== ctx.record.id
+  ) {
+    problems.push({
+      severity: "warning",
+      message: `\`metadata.id\` does not rename a record — this write lands on ${ctx.record.id}.`,
+      path: "metadata.id",
+      line: lineOfKey(text, "id"),
+    })
+  }
 
   const data = doc.data
   if (data !== undefined && (typeof data !== "object" || Array.isArray(data))) {
@@ -349,10 +373,15 @@ export function validateApplyDoc(text: string, kind: KindInfo): Problem[] {
   }
   const values = (props ?? {}) as Record<string, unknown>
 
-  const specs = propSpecs(kind)
-  const byName = new Map(specs.map((s) => [s.name, s]))
+  // The system columns ride in `properties` on the wire and the write path
+  // splits them out, so they are checked like any other value and never
+  // reported as undeclared. A kind that declares one of them wins: its own
+  // declaration is the stricter truth.
+  const byName = new Map(
+    [...systemSpecs(kind), ...propSpecs(kind)].map((s) => [s.name, s])
+  )
 
-  for (const spec of specs) {
+  for (const spec of byName.values()) {
     const present = Object.prototype.hasOwnProperty.call(values, spec.name)
     const value = values[spec.name]
     if (spec.required && (!present || isEmptyValue(value))) {
@@ -364,10 +393,32 @@ export function validateApplyDoc(text: string, kind: KindInfo): Problem[] {
       })
       continue
     }
-    if (present && !isEmptyValue(value) && typeMismatch(spec, value)) {
+    if (!present || isEmptyValue(value)) continue
+
+    const problem = checkValue(spec, value)
+    if (problem) {
       problems.push({
         severity: "error",
-        message: `\`${spec.name}\` must be ${kindNoun(spec)}.`,
+        message: `\`${spec.name}\`: ${problem}.`,
+        path: spec.name,
+        line: lineOfKey(text, spec.name),
+      })
+      continue
+    }
+    // A put may not move a state (engine/write.go): the transition is a patch,
+    // and the console drives it from the record page. Catch it here rather than
+    // through a guard rejection after the round trip.
+    if (
+      spec.kind === "state" &&
+      ctx.record &&
+      typeof value === "string" &&
+      value !== ctx.record.properties?.[spec.name]
+    ) {
+      problems.push({
+        severity: "error",
+        message: `\`${spec.name}\` is a state: it moves by transition, not by editing. Leave it at \`${String(
+          ctx.record.properties?.[spec.name] ?? ""
+        )}\`.`,
         path: spec.name,
         line: lineOfKey(text, spec.name),
       })
@@ -387,7 +438,70 @@ export function validateApplyDoc(text: string, kind: KindInfo): Problem[] {
     }
   }
 
+  problems.push(...edgeProblems(data?.edges, kind, text))
+
   return problems
+}
+
+// ── surgery: the form lens editing the same document ────────────────────────
+
+/** The document's authored properties, or undefined when the text does not
+ * parse to an envelope. The form lens reads its values through this, so the
+ * YAML is the single source of truth for both lenses. */
+export function propertiesOf(text: string): Record<string, unknown> | undefined {
+  const parsed = parseApplyDoc(text)
+  if (parsed.error || !parsed.value) return undefined
+  const props = parsed.value.data?.properties
+  if (props === undefined) return {}
+  if (typeof props !== "object" || Array.isArray(props)) return undefined
+  return props as Record<string, unknown>
+}
+
+/** Set one path in the document and give back the text, leaving every other
+ * line exactly as authored: a form edit must not reflow a hand-written
+ * document, and the template's own comments must survive being filled in. A
+ * text that does not parse comes back untouched. */
+export function setIn(text: string, path: string[], value: unknown): string {
+  // An empty document has no mapping to set a path in, so start one.
+  const doc: Document = text.trim() ? parseDocument(text) : new Document({})
+  if (doc.errors.length) return text
+  const existing = doc.getIn(path, true)
+  const comment = isNode(existing) ? existing.comment : undefined
+  const commentBefore = isNode(existing) ? existing.commentBefore : undefined
+  doc.setIn(path, value)
+  const next = doc.getIn(path, true)
+  if (isNode(next)) {
+    if (comment) next.comment = comment
+    if (commentBefore) next.commentBefore = commentBefore
+    // Setting a key reuses the node that stood there, quoting style included:
+    // a value written over the template's `""` would inherit its quotes. Drop
+    // the inherited style so the one serialization decides, and a string that
+    // still needs quotes still gets them.
+    if (isScalar(next)) next.type = undefined
+    // An empty collection keeps its trailing comment on the same line only in
+    // flow style, exactly as the template writes it.
+    if (isCollection(next) && next.items.length === 0) next.flow = true
+  }
+  return doc.toString(STRINGIFY)
+}
+
+/** Remove one path from the document, leaving the rest as authored. */
+export function deleteIn(text: string, path: string[]): string {
+  const doc = parseDocument(text)
+  if (doc.errors.length) return text
+  doc.deleteIn(path)
+  return doc.toString(STRINGIFY)
+}
+
+/** Reformat the document: the parse re-emitted under the editor's one
+ * serialization, so a hand-edited file settles back into the shape the
+ * template and the read both produce. Comments survive; a document that does
+ * not parse comes back with the parser's complaint and no change. */
+export function formatYAML(text: string): { text: string; error?: string } {
+  const doc = parseDocument(text)
+  const fatal = doc.errors[0]
+  if (fatal) return { text, error: fatal.message }
+  return { text: doc.toString(STRINGIFY) }
 }
 
 // ── the write payload ────────────────────────────────────────────────────────
@@ -432,11 +546,36 @@ function edgeWrites(raw: unknown): EdgeWrite[] | undefined {
   return out.length ? out : undefined
 }
 
+/** Datatypes where an empty string is a value somebody could mean. Everywhere
+ * else a blank line is "not set", and sending it would be refused: `url: ""` is
+ * not an absolute URL, `datetime: ""` is not a timestamp, and `secret: ""`
+ * would seal an empty credential over a live one. */
+const EMPTY_IS_A_VALUE = new Set(["string", "text", "markdown"])
+
+/** Drop the properties a blank template line left behind, so a create that
+ * filled in three of eleven properties does not carry eight empty strings into
+ * a 422. An explicit `null` survives: that is the delete marker. */
+function pruneBlanks(
+  props: Record<string, unknown>,
+  kind?: KindInfo
+): Record<string, unknown> {
+  if (!kind) return props
+  const specs = new Map(propSpecs(kind).map((s) => [s.name, s]))
+  const out: Record<string, unknown> = {}
+  for (const [name, value] of Object.entries(props)) {
+    const spec = specs.get(name)
+    if (value === "" && spec && !EMPTY_IS_A_VALUE.has(spec.kind)) continue
+    out[name] = value
+  }
+  return out
+}
+
 /** Coerce a parsed apply doc into the create/upsert write body: the authored
  * `properties`/`edges` under `data`, `labels`/`annotations` under `metadata`,
  * and `metadata.id` as the write's own key (omitted when blank, so the
- * substrate mints one on create). */
-export function toPutInput(doc: ApplyDoc): PutInput {
+ * substrate mints one on create). Pass the kind and blank lines the author
+ * never filled in are left out of the write. */
+export function toPutInput(doc: ApplyDoc, kind?: KindInfo): PutInput {
   const out: PutInput = {}
   const id = doc.metadata?.id
   if (typeof id === "string" && id.trim()) out.id = id.trim()
@@ -447,7 +586,10 @@ export function toPutInput(doc: ApplyDoc): PutInput {
   }
   const data = doc.data ?? {}
   if (data.properties && typeof data.properties === "object") {
-    out.properties = data.properties
+    out.properties = pruneBlanks(
+      data.properties as Record<string, unknown>,
+      kind
+    )
   }
   const edges = edgeWrites(data.edges)
   if (edges) out.edges = edges

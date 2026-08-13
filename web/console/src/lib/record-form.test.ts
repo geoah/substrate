@@ -298,6 +298,11 @@ describe("humanizeName", () => {
     expect(humanizeName("syncFrequency")).toBe("Sync frequency")
     expect(humanizeName("email")).toBe("Email")
   })
+
+  it("keeps an ALL-CAPS run: an acronym is what the author wrote", () => {
+    expect(humanizeName("baseURL")).toBe("Base URL")
+    expect(humanizeName("clientID")).toBe("Client ID")
+  })
 })
 
 describe("default seeding", () => {

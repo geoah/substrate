@@ -4,9 +4,11 @@ import { describe, expect, it } from "vitest"
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import {
   applyManifestYAML,
+  deleteIn,
+  formatYAML,
   parseApplyDoc,
-  propSpecs,
-  seedValue,
+  propertiesOf,
+  setIn,
   templateYAML,
   toPutInput,
   validateApplyDoc,
@@ -40,45 +42,6 @@ const agentKind: KindInfo = {
     },
   },
 }
-
-describe("propSpecs", () => {
-  it("orders required first, then alphabetical within each band", () => {
-    const names = propSpecs(agentKind).map((s) => s.name)
-    expect(names).toEqual([
-      "enabled",
-      "prompt",
-      "functions",
-      "maxTurns",
-      "model",
-      "subagents",
-    ])
-  })
-
-  it("carries enum values, defaults and repeated off the raw manifest", () => {
-    const byName = Object.fromEntries(propSpecs(agentKind).map((s) => [s.name, s]))
-    expect(byName.model.values).toEqual([
-      { value: "opus", label: "Opus 4" },
-      { value: "sonnet", label: "Sonnet 4" },
-      { value: "haiku", label: "" },
-    ])
-    expect(byName.model.default).toBe("opus")
-    expect(byName.functions.repeated).toBe(true)
-    expect(byName.enabled.required).toBe(true)
-  })
-})
-
-describe("seedValue", () => {
-  it("prefers a declared default", () => {
-    const model = propSpecs(agentKind).find((s) => s.name === "model")!
-    expect(seedValue(model)).toBe("opus")
-  })
-  it("seeds typed zeros / placeholders by kind", () => {
-    const by = Object.fromEntries(propSpecs(agentKind).map((s) => [s.name, s]))
-    expect(seedValue(by.prompt)).toBe("") // text
-    expect(seedValue(by.enabled)).toBe(false) // bool
-    expect(seedValue(by.functions)).toEqual([]) // repeated
-  })
-})
 
 describe("templateYAML", () => {
   const yaml = templateYAML(agentKind)
@@ -247,5 +210,163 @@ describe("toPutInput", () => {
     const input = toPutInput({ metadata: { id: "" }, data: { properties: { a: 1 } } })
     expect(input.id).toBeUndefined()
     expect(input.properties).toEqual({ a: 1 })
+  })
+})
+
+/** The kind whose datatypes the editor has to be honest about, and the state
+ * machine a put may not move. */
+const taskKind: KindInfo = {
+  identity: "tasks.substrate.reamde.dev/task",
+  name: "task",
+  authority: "tasks.substrate.reamde.dev",
+  version: "",
+  plural: "tasks",
+  source: "installed",
+  definition: {
+    properties: {
+      title: { type: "string", required: true },
+      dueAt: { type: "datetime" },
+      endpoint: { type: "url" },
+      apiKey: { type: "secret" },
+      status: {
+        type: "state",
+        states: ["proposed", "open", "done"],
+        initial: "open",
+      },
+    },
+    edges: {
+      assignee: { to: "people.substrate.reamde.dev/person" },
+    },
+  },
+}
+
+const openTask: SubstrateRecord = {
+  id: "t1",
+  kind: "tasks.substrate.reamde.dev/task",
+  properties: { title: "write it", status: "open" },
+  labels: {},
+  version: 2,
+  createdAt: "x",
+  updatedAt: "x",
+}
+
+describe("validateApplyDoc: the datatypes and the write's own rules", () => {
+  it("names a value its datatype refuses, on the line it sits on", () => {
+    const yaml =
+      "data:\n  properties:\n    title: hi\n    dueAt: yesterday\n    endpoint: example.com\n"
+    const problems = validateApplyDoc(yaml, taskKind)
+    const due = problems.find((p) => p.path === "dueAt")
+    expect(due?.severity).toBe("error")
+    expect(due?.message).toMatch(/timestamp/)
+    expect(due?.line).toBe(4)
+    expect(problems.find((p) => p.path === "endpoint")?.message).toMatch(
+      /absolute URL/
+    )
+  })
+
+  it("passes the redaction sentinel a read handed back", () => {
+    const yaml = "data:\n  properties:\n    title: hi\n    apiKey: <redacted>\n"
+    expect(
+      validateApplyDoc(yaml, taskKind).filter((p) => p.severity === "error")
+    ).toHaveLength(0)
+  })
+
+  it("refuses a kind that is not this collection's", () => {
+    const yaml = "kind: core.substrate.reamde.dev/agent\ndata:\n  properties:\n    title: hi\n"
+    const problem = validateApplyDoc(yaml, taskKind).find((p) => p.path === "kind")
+    expect(problem?.severity).toBe("error")
+    expect(problem?.line).toBe(1)
+  })
+
+  it("bars a state MOVE on an edit, because a put may not move one", () => {
+    const yaml = "data:\n  properties:\n    title: hi\n    status: done\n"
+    const moved = validateApplyDoc(yaml, taskKind, { record: openTask }).find(
+      (p) => p.path === "status"
+    )
+    expect(moved?.severity).toBe("error")
+    expect(moved?.message).toMatch(/transition/)
+    // The same document on a CREATE is fine: a record may be born in any state.
+    expect(
+      validateApplyDoc(yaml, taskKind).filter((p) => p.severity === "error")
+    ).toHaveLength(0)
+    // And leaving the state where it stands is fine on an edit too.
+    const held = "data:\n  properties:\n    title: hi\n    status: open\n"
+    expect(
+      validateApplyDoc(held, taskKind, { record: openTask }).filter(
+        (p) => p.severity === "error"
+      )
+    ).toHaveLength(0)
+  })
+
+  it("warns that metadata.id does not rename the record being edited", () => {
+    const yaml = "metadata:\n  id: t2\ndata:\n  properties:\n    title: hi\n"
+    const problem = validateApplyDoc(yaml, taskKind, { record: openTask }).find(
+      (p) => p.path === "metadata.id"
+    )
+    expect(problem?.severity).toBe("warning")
+    expect(problem?.message).toContain("t1")
+  })
+
+  it("checks the edge list's shape and warns on an undeclared rel", () => {
+    const yaml =
+      "data:\n  properties:\n    title: hi\n  edges:\n    - rel: assignee\n      to: {id: p1}\n    - rel: bogus\n      to: {id: p2}\n    - rel: assignee\n      to: {}\n"
+    const problems = validateApplyDoc(yaml, taskKind)
+    expect(problems.find((p) => p.path === "edges[1]")?.severity).toBe("warning")
+    expect(problems.find((p) => p.path === "edges[2]")?.severity).toBe("error")
+  })
+})
+
+describe("the document as both lenses' truth", () => {
+  const template = templateYAML(taskKind)
+
+  it("setIn changes one key and leaves every other line as authored", () => {
+    const next = setIn(template, ["data", "properties", "title"], "write it")
+    expect(propertiesOf(next)?.title).toBe("write it")
+    // The template's annotation on that very line survives being filled in.
+    expect(next).toMatch(/title: write it\s*# required, string/)
+    // Every other line is untouched.
+    const before = template.split("\n").filter((l) => !l.includes("title:"))
+    const after = next.split("\n").filter((l) => !l.includes("title:"))
+    expect(after).toEqual(before)
+  })
+
+  it("setIn writes a value that needs quoting without breaking the document", () => {
+    const next = setIn(template, ["data", "properties", "title"], "a: b #c")
+    expect(propertiesOf(next)?.title).toBe("a: b #c")
+  })
+
+  it("deleteIn removes a key, and propertiesOf reads what is left", () => {
+    const next = deleteIn(template, ["data", "properties", "dueAt"])
+    expect(propertiesOf(next)).not.toHaveProperty("dueAt")
+    expect(propertiesOf(next)).toHaveProperty("title")
+  })
+
+  it("leaves a document it cannot parse exactly as it is", () => {
+    const broken = "data:\n  properties:\n    a: [1, 2"
+    expect(setIn(broken, ["data", "properties", "a"], 1)).toBe(broken)
+    expect(propertiesOf(broken)).toBeUndefined()
+    expect(formatYAML(broken).error).toBeTruthy()
+    expect(formatYAML(broken).text).toBe(broken)
+  })
+
+  it("formats a hand-mangled document back into shape, comments intact", () => {
+    const mangled = "kind: tasks.substrate.reamde.dev/task\ndata:\n      properties:\n            title: hi # mine\n"
+    const { text, error } = formatYAML(mangled)
+    expect(error).toBeUndefined()
+    expect(text).toContain("    title: hi # mine")
+  })
+})
+
+describe("toPutInput: blank template lines", () => {
+  it("leaves out the blanks a create never filled in", () => {
+    const parsed = parseApplyDoc(templateYAML(taskKind))
+    const props = toPutInput(parsed.value!, taskKind).properties ?? {}
+    // `url`, `secret` and `datetime` have no empty form the substrate accepts,
+    // so an untouched line is not written at all.
+    expect(props).not.toHaveProperty("dueAt")
+    expect(props).not.toHaveProperty("endpoint")
+    expect(props).not.toHaveProperty("apiKey")
+    // A plain string's empty IS a value somebody could mean.
+    expect(props).toHaveProperty("title", "")
   })
 })

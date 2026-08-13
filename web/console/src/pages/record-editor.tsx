@@ -1,21 +1,32 @@
-/** The YAML editor (create + edit a record from its kind). NOT the structured
- * config form (`RecordConfigForm`, GUIDE §8) — this is the generic, full-manifest
- * surface: a real text editor over the apply-able envelope with live,
- * schema-driven validation.
+/** The record editor (create + edit a record of any kind), in TWO LENSES over
+ * ONE document.
+ *
+ * - **Form** is the default: one typed control per declared property, composed
+ *   from the declaration (`PropertyForm`). An enum is a select, a state offers
+ *   its states, a reference picks a record, a secret is write-only, and every
+ *   control carries the property's one-liner and a worked example.
+ * - **YAML** is the expert lens: the whole apply-able envelope in a code editor
+ *   that knows the kind (`YamlEditor`, CodeMirror). Completion, diagnostics and
+ *   hovers all read the declaration.
+ *
+ * The YAML text is the truth for both: the form reads its values out of the
+ * document and writes them back one key at a time, so switching lenses is
+ * lossless and a hand-authored comment survives being edited on the form.
  *
  * - **New** (`/data/:authority/:plural/new`) seeds a schema-derived template
- *   (`templateYAML`) — every declared property, required first, seeded and
- *   commented, enums listing their values. **Edit** (`/data/:authority/:plural/
- *   :id/edit`) seeds the record's apply-able YAML (`applyManifestYAML`, the
- *   manifest view's shape minus server-owned `status`).
- * - Validation runs debounced as the owner types (`validateApplyDoc`): YAML
- *   parses, required present, enums admitted, obvious type mismatches — surfaced
- *   in a problems panel keyed to lines. Save is barred while any error stands.
+ *   (`templateYAML`); **Edit** (`/data/:authority/:plural/:id/edit`) seeds the
+ *   record's apply-able YAML (`applyManifestYAML`, the manifest view's shape
+ *   minus server-owned `status`).
+ * - Validation runs as the owner types (`validateApplyDoc`): the document
+ *   parses, required properties are present, every value satisfies its
+ *   DATATYPE, a state is not being moved by a put, and the id is the one the
+ *   write lands on. Problems key to lines, the gutter marks them, and Save is
+ *   barred while any error stands.
  * - Save applies through the record write API (POST for new, PUT upsert for
- *   edit). A server rejection (schema/admission) is parsed and shown inline; the
- *   flow never claims success unless the apply returns ok. */
+ *   edit). A server rejection is parsed and shown inline; the flow never claims
+ *   success unless the apply returns ok. */
 
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, lazy, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import {
@@ -23,8 +34,17 @@ import {
   AlertTriangleIcon,
   CheckCircle2Icon,
   FileQuestionIcon,
+  WandSparklesIcon,
 } from "lucide-react"
 
+import { PropertyForm } from "@/components/record/property-form"
+
+/** CodeMirror and its YAML grammar are the editor's alone: they load when the
+ * YAML lens is first opened, never with the rest of the console (the same
+ * discipline the shiki chunk keeps). */
+const YamlEditor = lazy(() =>
+  import("@/components/record/yaml-editor").then((m) => ({ default: m.YamlEditor }))
+)
 import { Button } from "@/components/ui/button"
 import {
   Empty,
@@ -36,16 +56,14 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "@/components/ui/toast"
-import {
-  createRecord,
-  recordQueryOptions,
-  putRecord,
-} from "@/lib/api/records"
+import { createRecord, recordQueryOptions, putRecord } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { ApiError, type SubstrateRecord, type KindInfo } from "@/lib/api/types"
 import {
   applyManifestYAML,
+  formatYAML,
   parseApplyDoc,
   templateYAML,
   toPutInput,
@@ -54,12 +72,10 @@ import {
 } from "@/lib/record-yaml"
 import { kindByCollection } from "@/lib/definition"
 import { cn } from "@/lib/utils"
-import {
-  recordEditRoute,
-  recordNewRoute,
-} from "@/router"
+import { recordEditRoute, recordNewRoute } from "@/router"
 
 type Mode = "create" | "edit"
+type Lens = "form" | "yaml"
 
 /** New-record route wrapper (`/data/:authority/:plural/new`). */
 export function RecordNewPage() {
@@ -95,8 +111,7 @@ function RecordEditor({
     enabled: mode === "edit" && Boolean(id),
   })
 
-  const ready =
-    !registry.isPending && (mode === "create" || !record.isPending)
+  const ready = !registry.isPending && (mode === "create" || !record.isPending)
 
   if (!ready) return <EditorSkeleton />
 
@@ -123,22 +138,25 @@ function RecordEditor({
       : templateYAML(kindInfo)
 
   return (
-    <EditorForm
+    <RecordEditorForm
       authority={authority}
       plural={plural}
       mode={mode}
       kind={kindInfo}
+      kinds={registry.data ?? []}
       record={mode === "edit" ? record.data : undefined}
       seed={seed}
     />
   )
 }
 
-function EditorForm({
+/** The editor proper, over plain props (no route, so it is directly testable). */
+export function RecordEditorForm({
   authority,
   plural,
   mode,
   kind,
+  kinds,
   record,
   seed,
 }: {
@@ -146,6 +164,7 @@ function EditorForm({
   plural: string
   mode: Mode
   kind: KindInfo
+  kinds: KindInfo[]
   record?: SubstrateRecord
   seed: string
 }) {
@@ -162,25 +181,33 @@ function EditorForm({
     setText(seed)
   }
 
+  // The lens is this editor's own state, not the URL's: the address already
+  // names the record, and a half-typed document is nobody's link.
+  const [lens, setLens] = useState<Lens>("form")
+
   // The API's own rejection (schema/admission), shown inline until the next edit.
   const [serverError, setServerError] = useState<ApiError | undefined>()
 
-  // Debounced text feeds validation so we don't re-tokenize on every keystroke.
+  // Debounced text feeds the problems panel so we don't re-validate the whole
+  // document on every keystroke.
   const [debounced, setDebounced] = useState(text)
   useEffect(() => {
     const t = setTimeout(() => setDebounced(text), 250)
     return () => clearTimeout(t)
   }, [text])
 
+  const ctx = useMemo(() => ({ record }), [record])
+
   const problems = useMemo(
-    () => validateApplyDoc(debounced, kind),
-    [debounced, kind]
+    () => validateApplyDoc(debounced, kind, ctx),
+    [debounced, kind, ctx]
   )
   // Save is gated on the LIVE text, not the debounced copy — a fast Save right
   // after a fix must see the fix.
   const liveErrors = useMemo(
-    () => validateApplyDoc(text, kind).filter((p) => p.severity === "error"),
-    [text, kind]
+    () =>
+      validateApplyDoc(text, kind, ctx).filter((p) => p.severity === "error"),
+    [text, kind, ctx]
   )
   const errorCount = liveErrors.length
   const warnCount = problems.filter((p) => p.severity === "warning").length
@@ -195,7 +222,7 @@ function EditorForm({
           0
         )
       }
-      const input = toPutInput(parsed.value)
+      const input = toPutInput(parsed.value, kind)
       return mode === "edit" && record
         ? putRecord(authority, plural, record.id, input)
         : createRecord(authority, plural, input)
@@ -233,6 +260,19 @@ function EditorForm({
     if (serverError) setServerError(undefined)
   }
 
+  function format() {
+    const { text: formatted, error } = formatYAML(text)
+    if (error) {
+      toast.add({
+        type: "error",
+        title: "Nothing to format",
+        description: error,
+      })
+      return
+    }
+    onChange(formatted)
+  }
+
   const canSave = errorCount === 0 && !mutation.isPending
 
   return (
@@ -249,6 +289,18 @@ function EditorForm({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
+          {lens === "yaml" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5"
+              disabled={mutation.isPending}
+              onClick={format}
+            >
+              <WandSparklesIcon className="size-3.5" />
+              Format
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -282,23 +334,47 @@ function EditorForm({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col border-t xl:flex-row">
-        <div className="min-h-0 flex-1">
-          <textarea
-            value={text}
-            onChange={(e) => onChange(e.target.value)}
-            spellCheck={false}
-            autoCapitalize="off"
-            autoCorrect="off"
-            aria-label="Record YAML"
-            className="data h-full min-h-[16rem] w-full resize-none bg-transparent p-4 text-xs leading-relaxed outline-none"
-          />
-        </div>
+        <Tabs
+          value={lens}
+          onValueChange={(next) => setLens(next as Lens)}
+          className="min-h-0 flex-1 gap-0"
+        >
+          <TabsList variant="line" className="mx-4 mt-2 shrink-0 justify-start">
+            <TabsTrigger value="form">Form</TabsTrigger>
+            <TabsTrigger value="yaml">YAML</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="form" className="min-h-0 border-t">
+            <ScrollArea className="h-full">
+              <PropertyForm
+                text={text}
+                kind={kind}
+                kinds={kinds}
+                record={record}
+                onChange={onChange}
+              />
+            </ScrollArea>
+          </TabsContent>
+          <TabsContent value="yaml" className="min-h-0 border-t">
+            <Suspense
+              fallback={
+                <div className="p-4">
+                  <Skeleton className="h-4 w-64" />
+                </div>
+              }
+            >
+              <YamlEditor value={text} onChange={onChange} kind={kind} ctx={ctx} />
+            </Suspense>
+          </TabsContent>
+        </Tabs>
+
         <div className="shrink-0 border-t xl:w-[24rem] xl:border-t-0 xl:border-l">
           <ProblemsPanel
             problems={problems}
             errorCount={errorCount}
             warnCount={warnCount}
             serverError={serverError}
+            onShowLine={() => setLens("yaml")}
           />
         </div>
       </div>
@@ -313,11 +389,13 @@ function ProblemsPanel({
   errorCount,
   warnCount,
   serverError,
+  onShowLine,
 }: {
   problems: Problem[]
   errorCount: number
   warnCount: number
   serverError?: ApiError
+  onShowLine: () => void
 }) {
   const clean = errorCount === 0 && warnCount === 0 && !serverError
   return (
@@ -374,7 +452,7 @@ function ProblemsPanel({
         ) : (
           <ul className="flex flex-col gap-2">
             {problems.map((p, i) => (
-              <ProblemRow key={i} problem={p} />
+              <ProblemRow key={i} problem={p} onShowLine={onShowLine} />
             ))}
           </ul>
         )}
@@ -383,7 +461,13 @@ function ProblemsPanel({
   )
 }
 
-function ProblemRow({ problem }: { problem: Problem }) {
+function ProblemRow({
+  problem,
+  onShowLine,
+}: {
+  problem: Problem
+  onShowLine: () => void
+}) {
   const isError = problem.severity === "error"
   return (
     <li className="flex items-start gap-2 text-xs">
@@ -397,9 +481,13 @@ function ProblemRow({ problem }: { problem: Problem }) {
           {problem.message}
         </span>
         {problem.line !== undefined && (
-          <span className="data ml-1.5 text-muted-foreground">
+          <button
+            type="button"
+            onClick={onShowLine}
+            className="data ml-1.5 text-muted-foreground underline-offset-4 hover:underline"
+          >
             line {problem.line}
-          </span>
+          </button>
         )}
       </div>
     </li>
