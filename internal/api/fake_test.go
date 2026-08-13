@@ -328,7 +328,7 @@ func newFakeDataset(name string) *fakeDataset {
 func testTypes() []substrate.KindInfo {
 	return []substrate.KindInfo{
 		{
-			Identity: "people.substrate.reamde.dev/person", Name: "person", Authority: "people.substrate.reamde.dev",
+			Identity: "people.substrate.geoah.me/person", Name: "person", Authority: "people.substrate.geoah.me",
 			Version: "v1alpha1", Plural: "people", Source: "builtin",
 			Definition: map[string]any{
 				"plural": "people",
@@ -344,7 +344,7 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
-			Identity: "tasks.substrate.reamde.dev/task", Name: "task", Authority: "tasks.substrate.reamde.dev",
+			Identity: "tasks.substrate.geoah.me/task", Name: "task", Authority: "tasks.substrate.geoah.me",
 			Version: "v1alpha1", Plural: "tasks", Source: "builtin",
 			Definition: map[string]any{
 				"plural": "tasks",
@@ -362,8 +362,8 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
-			Identity: "messaging.substrate.reamde.dev/conversationmessage", Name: "conversationmessage",
-			Authority: "messaging.substrate.reamde.dev",
+			Identity: "messaging.substrate.geoah.me/conversationmessage", Name: "conversationmessage",
+			Authority: "messaging.substrate.geoah.me",
 			Version:   "v1alpha1", Plural: "conversationmessages", Source: "builtin",
 			Definition: map[string]any{
 				"plural":     "conversationmessages",
@@ -372,8 +372,8 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
-			Identity: "media.substrate.reamde.dev/book", Name: "book",
-			Authority: "media.substrate.reamde.dev",
+			Identity: "media.substrate.geoah.me/book", Name: "book",
+			Authority: "media.substrate.geoah.me",
 			Version:   "v1alpha1", Plural: "books", Source: "builtin",
 			Definition: map[string]any{
 				"plural": "books",

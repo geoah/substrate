@@ -1,0 +1,27 @@
+# one season of a series; season 0 is where specials go
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: media.substrate.geoah.me/tvseason
+data:
+  authority: media.substrate.geoah.me
+  description: >-
+    One season of a series — its number and its synopsis, with season 0
+    the place specials go. Episodes point here once the row exists, and at
+    the series either way.
+  names:
+    singular: tvseason
+    plural: tvseasons
+  properties:
+    number:
+      type: int
+      description: the season number; season 0 is specials
+    description:
+      type: markdown
+      embed: true
+      description: the season's synopsis
+  edges:
+    series:
+      to: tvseries
+      required: true
+      ownerRef: true
+      description: the series this season belongs to

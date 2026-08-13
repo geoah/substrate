@@ -15,7 +15,7 @@ One entry, as the wire carries it, for the task created on the
  "ts": "2026-08-04T10:00:00.183742Z",
  "actor": "api",
  "op": "put",
- "kind": "tasks.substrate.reamde.dev/task",
+ "kind": "tasks.substrate.geoah.me/task",
  "recordId": "kq3v9x2m41pf",
  "payload": {"created": true, "properties": ["title", "dueAt"]}}
 ```
@@ -61,7 +61,7 @@ resume from, so a consumer that disconnects misses nothing:
 GET /api/v1/core.substrate.reamde.dev/changes?from=4189&watch=1
 
 {"bookmark": 4189}
-{"seq": 4190, "op": "put", "kind": "tasks.substrate.reamde.dev/task",
+{"seq": 4190, "op": "put", "kind": "tasks.substrate.geoah.me/task",
  "recordId": "kq3v9x2m41pf", "actor": "api"}
 ```
 

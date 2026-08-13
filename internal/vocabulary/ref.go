@@ -10,7 +10,7 @@ import (
 //
 // A kind is named by a reference:
 //
-//	<authority>/<name>   a published kind — "tasks.substrate.reamde.dev/task"
+//	<authority>/<name>   a published kind — "tasks.substrate.geoah.me/task"
 //	<name>               a repository-local kind — "task"
 //
 // The authority is a DNS name and therefore always carries a dot; a bare name
@@ -41,7 +41,7 @@ func SplitKindRef(ref string) (authority, name string) {
 }
 
 // KindName is the local name of a kind reference — "task" for both
-// "tasks.substrate.reamde.dev/task" and "task".
+// "tasks.substrate.geoah.me/task" and "task".
 func KindName(ref string) string {
 	_, name := SplitKindRef(ref)
 	return name
@@ -57,7 +57,7 @@ func KindAuthority(ref string) string {
 func Qualified(ref string) bool { return strings.Contains(ref, "/") }
 
 // ValidKindReference reports whether a string is a kind REFERENCE — bare
-// (`task`) or authority-qualified (`tasks.substrate.reamde.dev/task`) — and not a glob.
+// (`task`) or authority-qualified (`tasks.substrate.geoah.me/task`) — and not a glob.
 // It is ValidTypeGlob's non-glob half on purpose: a trigger source and a
 // capability allowlist admit exactly the same spellings, so a repository-local
 // kind can be watched and written by the same declaration. Both sides resolve
@@ -99,7 +99,7 @@ func CoreKind(name string) string { return KindRef(AuthorityCore, name) }
 // the rule lives. The common case stays a readable name:
 //
 //   - a repository-local kind capitalizes — "task" -> Task;
-//   - a SHIPPED kind keeps its bare singular — "people.substrate.reamde.dev/person" ->
+//   - a SHIPPED kind keeps its bare singular — "people.substrate.geoah.me/person" ->
 //     Person;
 //   - an INSTALLED (bundle) kind is authority-prefixed with the leading
 //     label of its authority — "google.bundles.substrate.reamde.dev/person" ->

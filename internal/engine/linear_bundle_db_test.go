@@ -70,8 +70,8 @@ const (
 	linearUserMapping  = linearAuthority + "/userperson"
 	linearIssueMapping = linearAuthority + "/issueperson"
 
-	linearPersonType = "people.substrate.reamde.dev/person"
-	linearTaskType   = "tasks.substrate.reamde.dev/task"
+	linearPersonType = "people.substrate.geoah.me/person"
+	linearTaskType   = "tasks.substrate.geoah.me/task"
 
 	// The sync body's live GraphQL endpoint — the exact string the fake-API
 	// fixture substitutes for its loopback stub.

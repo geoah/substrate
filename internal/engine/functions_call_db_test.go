@@ -37,7 +37,7 @@ func adderFn() map[string]any {
 def main(input, host):
     title = input["args"]["title"]
     tid = "call-" + title.replace(" ", "-")
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                          "id": tid, "properties": {"title": title}}],
             "output": {"id": tid}}
 `)
@@ -100,9 +100,9 @@ def main(input, host):
     return {"effects": [`+ownEffect+`], "output": out}
 `)
 	}
-	ownOK := `{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+	ownOK := `{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                "id": "own-" + e["id"], "properties": {"title": "own " + out["id"]}}`
-	ownBroken := `{"action": "patch", "kind": "tasks.substrate.reamde.dev/task",
+	ownBroken := `{"action": "patch", "kind": "tasks.substrate.geoah.me/task",
                    "id": "missing-" + e["id"], "properties": {"title": "x"}}`
 
 	ds, ops := newFnDataset(t,
@@ -167,7 +167,7 @@ def main(input, host):
 func TestFailedCalleeLeavesNoDescendantEffects(t *testing.T) {
 	leaf := pyFn("leaf", map[string]any{}, []any{taskType}, `
 def main(input, host):
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                          "id": "c-effect", "properties": {"title": "from c"}}]}
 `)
 	mid := func(name, after string) map[string]any {
@@ -198,13 +198,13 @@ def main(input, host):
         host.call("`+fnAuthority+`/" + mid, None)
     except Exception:
         pass
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                          "id": "a-" + mid, "properties": {"title": "a survived " + mid}}]}
 `)
 	ds, ops := newFnDataset(t, nil,
 		leaf,
 		mid("raiser", `raise Exception("b explodes")`),
-		mid("badeffect", `return {"effects": [{"action": "conjure", "kind": "tasks.substrate.reamde.dev/task", "id": "x"}], "output": {"ok": True}}`),
+		mid("badeffect", `return {"effects": [{"action": "conjure", "kind": "tasks.substrate.geoah.me/task", "id": "x"}], "output": {"ok": True}}`),
 		mid("badoutput", `return {"output": "not the declared object"}`),
 		caller,
 	)
@@ -232,7 +232,7 @@ func TestDeclaredOutputRefusesNil(t *testing.T) {
 	}
 	silent := pyFn("silent", map[string]any{"output": shaped}, []any{taskType}, `
 def main(input, host):
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                          "id": "silent-effect", "properties": {"title": "x"}}]}
 `)
 	nuller := pyFn("nuller", map[string]any{"output": shaped}, []any{taskType}, `

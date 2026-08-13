@@ -172,11 +172,11 @@ func writeError(w http.ResponseWriter, status int, code, msg string, problems []
 
 // The two paths the tests spell out: the registry is `kinds` (naming
 // scheme R4 — `type` is a column on every record), and the one data collection
-// lives in `tasks.substrate.reamde.dev`, since the shipped vocabulary is split by subject
+// lives in `tasks.substrate.geoah.me`, since the shipped vocabulary is split by subject
 // domain rather than gathered under a single `vocab` authority.
 const (
 	typesPath      = "/api/v1/core.substrate.reamde.dev/kinds"
-	tasksPath      = "/api/v1/tasks.substrate.reamde.dev/tasks"
+	tasksPath      = "/api/v1/tasks.substrate.geoah.me/tasks"
 	triggerColPath = "/api/v1/core.substrate.reamde.dev/triggers"
 )
 
@@ -236,21 +236,21 @@ var fakeRegistry = []map[string]any{
 	builtin("recordsplit", "core.substrate.reamde.dev", "recordsplits"),
 	builtin("kind", "core.substrate.reamde.dev", "kinds"),
 	builtin("token", "core.substrate.reamde.dev", "tokens"),
-	builtin("person", "people.substrate.reamde.dev", "people"),
-	builtin("organization", "people.substrate.reamde.dev", "organizations"),
-	builtin("conversationmessage", "messaging.substrate.reamde.dev", "conversationmessages"),
-	builtin("calendarevent", "calendar.substrate.reamde.dev", "calendarevents"),
-	builtin("calendareventseries", "calendar.substrate.reamde.dev", "calendareventseries"),
-	typeRecord("task", "tasks.substrate.reamde.dev", "tasks", "builtin", taskDefinition),
+	builtin("person", "people.substrate.geoah.me", "people"),
+	builtin("organization", "people.substrate.geoah.me", "organizations"),
+	builtin("conversationmessage", "messaging.substrate.geoah.me", "conversationmessages"),
+	builtin("calendarevent", "calendar.substrate.geoah.me", "calendarevents"),
+	builtin("calendareventseries", "calendar.substrate.geoah.me", "calendareventseries"),
+	typeRecord("task", "tasks.substrate.geoah.me", "tasks", "builtin", taskDefinition),
 	// `media` is the largest shipped authority (eleven types); five of them here is
 	// enough to cover both plural shapes — `books`/`movies`/`podcasts`, whose
 	// plural is a word of its own, and `bookseries`/`tvseries`, whose plural is
 	// its singular.
-	builtin("book", "media.substrate.reamde.dev", "books"),
-	builtin("bookseries", "media.substrate.reamde.dev", "bookseries"),
-	builtin("movie", "media.substrate.reamde.dev", "movies"),
-	builtin("podcast", "media.substrate.reamde.dev", "podcasts"),
-	builtin("tvseries", "media.substrate.reamde.dev", "tvseries"),
+	builtin("book", "media.substrate.geoah.me", "books"),
+	builtin("bookseries", "media.substrate.geoah.me", "bookseries"),
+	builtin("movie", "media.substrate.geoah.me", "movies"),
+	builtin("podcast", "media.substrate.geoah.me", "podcasts"),
+	builtin("tvseries", "media.substrate.geoah.me", "tvseries"),
 	installed("syncrun", "google.connectors.substrate.reamde.dev", "syncruns"),
 	installed("syncrun", "slack.connectors.substrate.reamde.dev", "syncruns"),
 }
@@ -625,7 +625,7 @@ func (f *fakeSubstrate) handlePut(w http.ResponseWriter, r *http.Request) {
 	e, ok := f.records[id]
 	if !ok {
 		e = &substrate.Record{
-			ID: id, Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{},
+			ID: id, Kind: "tasks.substrate.geoah.me/task", Properties: map[string]any{},
 			Labels: map[string]any{}, Version: 1,
 			CreatedAt: testNow.Add(-time.Hour), UpdatedAt: testNow.Add(-time.Hour),
 		}
@@ -681,7 +681,7 @@ func (f *fakeSubstrate) handlePost(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	id := fmt.Sprintf("gen%02d", len(f.records)+1)
 	e := &substrate.Record{
-		ID: id, Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{},
+		ID: id, Kind: "tasks.substrate.geoah.me/task", Properties: map[string]any{},
 		Labels: map[string]any{}, Version: 1, CreatedAt: testNow, UpdatedAt: testNow,
 	}
 	if title, ok := putTitle(in); ok {

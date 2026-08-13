@@ -160,7 +160,7 @@ func TestGraphQLInputStrictDecodeMiscasedIfVersion(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 	res := env.gqlRaw(t, tok,
-		`mutation ($in: JSON!) { patch(kind: "people.substrate.reamde.dev/person", id: "x", input: $in) { id } }`,
+		`mutation ($in: JSON!) { patch(kind: "people.substrate.geoah.me/person", id: "x", input: $in) { id } }`,
 		map[string]any{"in": map[string]any{"ifversion": 3}})
 	if len(res.Errors) == 0 {
 		t.Fatal("a miscased ifversion silently decoded — the strict decoder is not on the GraphQL path")
@@ -231,7 +231,7 @@ func TestGraphQLIntVariableIsUsable(t *testing.T) {
 func TestStrictDecodeRejectsTrailingCloser(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/people.substrate.reamde.dev/people", strings.NewReader("{}}"))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/people.substrate.geoah.me/people", strings.NewReader("{}}"))
 	req.RemoteAddr = "10.0.0.1:1234"
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec := httptest.NewRecorder()

@@ -23,7 +23,7 @@ const (
 
 	widgetType = fnAuthority + "/widget"
 	gadgetType = fnAuthority + "/gadget"
-	taskType   = "tasks.substrate.reamde.dev/task"
+	taskType   = "tasks.substrate.geoah.me/task"
 	runType    = "core.substrate.reamde.dev/run"
 )
 
@@ -219,7 +219,7 @@ func statusOf(t *testing.T, ops fnOps, triggerID string) substrate.TriggerStatus
 const mirrorSource = `
 def main(input, host):
     env = input["envelope"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                          "id": "t-" + env["change"]["id"],
                          "properties": {"title": env["record"]["properties"]["name"]}}]}
 `
@@ -235,13 +235,13 @@ func TestTriggerSourceMatchingAndGlob(t *testing.T) {
 		pyFn("exact", map[string]any{}, []any{taskType}, `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                          "id": "e-" + c["id"], "properties": {"title": c["kind"]}}]}
 `),
 		pyFn("glob", map[string]any{}, []any{taskType}, `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                          "id": "g-" + c["id"], "properties": {"title": c["kind"] + "/" + c["op"]}}]}
 `),
 	)
@@ -348,7 +348,7 @@ func TestTriggerSelfEchoExclusion(t *testing.T) {
 		pyFn("echo", map[string]any{}, []any{taskType}, `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "patch", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "patch", "kind": "tasks.substrate.geoah.me/task",
                          "id": c["id"], "properties": {"description": "seen-" + str(c["seq"])}}]}
 `))
 
@@ -382,7 +382,7 @@ func TestTriggerCoalescingAndSerialOrder(t *testing.T) {
 		return fmt.Sprintf(`
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                          "id": "%s-" + c["id"], "properties": {"title": "seen-" + str(c["seq"])}}]}
 `, prefix)
 	}
@@ -523,7 +523,7 @@ func TestTriggerTransitionViaPatch(t *testing.T) {
 		pyFn("closer", map[string]any{}, []any{taskType}, `
 def main(input, host):
     env = input["envelope"]
-    return {"effects": [{"action": "patch", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "patch", "kind": "tasks.substrate.geoah.me/task",
                          "id": "t-" + env["change"]["id"],
                          "properties": {"status": env["record"]["properties"]["want"]}}]}
 `))
@@ -560,21 +560,21 @@ def main(input, host):
 }
 
 func TestTriggerEmitViolationParks(t *testing.T) {
-	// tasks.substrate.reamde.dev/project exists but is not in the allowlist: the effect
+	// tasks.substrate.geoah.me/project exists but is not in the allowlist: the effect
 	// is rejected at apply time and the delivery parks.
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("wild", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("wild", map[string]any{}, []any{taskType}, `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/project", "id": "p-" + c["id"]}]}
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/project", "id": "p-" + c["id"]}]}
 `))
 	ctx := context.Background()
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType})
 	process(t, ops)
 
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/project", "p-"+w.ID); err == nil {
+	if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/project", "p-"+w.ID); err == nil {
 		t.Fatal("an effect outside emit was applied")
 	}
 	parked, err := ops.TriggerFailures(ctx, trigID("wild"))
@@ -600,8 +600,8 @@ func TestTriggerEffectsAndCursorAreOneTransaction(t *testing.T) {
 def main(input, host):
     c = input["envelope"]["change"]
     return {"effects": [
-        {"action": "put", "kind": "tasks.substrate.reamde.dev/task", "id": "ok-" + c["id"], "properties": {"title": "half"}},
-        {"action": "patch", "kind": "tasks.substrate.reamde.dev/task", "id": "missing-" + c["id"], "properties": {"title": "x"}},
+        {"action": "put", "kind": "tasks.substrate.geoah.me/task", "id": "ok-" + c["id"], "properties": {"title": "half"}},
+        {"action": "patch", "kind": "tasks.substrate.geoah.me/task", "id": "missing-" + c["id"], "properties": {"title": "x"}},
     ]}
 `))
 	ctx := context.Background()
@@ -727,7 +727,7 @@ func TestTriggerDeleteSource(t *testing.T) {
 		pyFn("sweeper", map[string]any{}, []any{taskType}, `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "delete", "kind": "tasks.substrate.reamde.dev/task", "id": "t-" + c["id"]}]}
+    return {"effects": [{"action": "delete", "kind": "tasks.substrate.geoah.me/task", "id": "t-" + c["id"]}]}
 `))
 	ctx := context.Background()
 
@@ -759,7 +759,7 @@ func TestTriggerSameStatePatchIsNoOp(t *testing.T) {
 		pyFn("closer", map[string]any{}, []any{taskType}, `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "patch", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "patch", "kind": "tasks.substrate.geoah.me/task",
                          "id": "t-" + c["id"], "properties": {"status": "done"}}]}
 `))
 	ctx := context.Background()
@@ -938,7 +938,7 @@ func TestTriggerDispatchIsPerRepository(t *testing.T) {
 			pyFn("mirror", map[string]any{}, []any{taskType}, `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                          "id": "m-" + c["id"], "properties": {"title": input["envelope"]["repository"]["owner"]}}]}
 `)))
 		if err != nil {

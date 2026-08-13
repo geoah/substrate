@@ -92,7 +92,7 @@ type Fire struct {
 type Change struct {
 	Seq int64  `json:"seq"`
 	Op  string `json:"op"` // create | update | delete
-	// Kind is the record's kind REFERENCE: "tasks.substrate.reamde.dev/task", or a bare
+	// Kind is the record's kind REFERENCE: "tasks.substrate.geoah.me/task", or a bare
 	// "task" for a repository-local kind.
 	Kind  string `json:"kind"`
 	ID    string `json:"id"`

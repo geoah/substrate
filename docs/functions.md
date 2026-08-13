@@ -68,10 +68,10 @@ declaration itself. `status:` is server-set, and no author writes it.
 ```yaml
 capabilities:
   emit:                            # required, non-empty: the write allowlist
-    - tasks.substrate.reamde.dev/task
+    - tasks.substrate.geoah.me/task
   reads:                           # the host-read allowlist and budget
     kinds:
-      - people.substrate.reamde.dev/person
+      - people.substrate.geoah.me/person
     budgets:
       calls: 16
       rows: 500
@@ -135,7 +135,7 @@ webhook delivery has no changelog entry underneath it, so its envelope carries
 `record`.
 
 **One `kind`, everywhere.** A kind is named by a reference: `<authority>/<name>`
-for a kind some authority publishes (`tasks.substrate.reamde.dev/task`,
+for a kind some authority publishes (`tasks.substrate.geoah.me/task`,
 `web.bundles.substrate.reamde.dev/page`), or a bare `<name>` for a kind local to this
 repository. The envelope, the SDK's reads, the SDK's writes and an explicit
 `effects` list all spell a kind exactly that one way, so an envelope's
@@ -163,7 +163,7 @@ The manifest's allowlists are the one place a bare name is refused: `emit`,
 `reads.kinds` and `call` all take full references, so a capability always
 names an authority. A body may ask for either spelling — every gate runs on
 what the reference resolves to, so `host.records.list(["task"])` against a
-capability declaring `tasks.substrate.reamde.dev/task` is the same read, and a name the
+capability declaring `tasks.substrate.geoah.me/task` is the same read, and a name the
 registry cannot place is refused exactly as an undeclared kind is.
 
 ## How the body runs

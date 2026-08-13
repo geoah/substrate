@@ -42,7 +42,7 @@ func openPagedDataset(t *testing.T, authority, source string) (*dataset, string)
 			vocabulary.FunctionManifest(authority, "page", map[string]any{
 				"description":  "a paged backfill body",
 				"runtime":      vocabulary.RuntimePython,
-				"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+				"capabilities": map[string]any{"emit": []any{"tasks.substrate.geoah.me/task"}},
 				"source":       source,
 			}),
 		},
@@ -69,7 +69,7 @@ func pagedBody(n int) string {
 def main(input, host):
     page = input.get("resume") or 0
     depth = input.get("causalDepth", 0)
-    effects = [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    effects = [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                 "id": "p-%%d" %% page, "properties": {"title": str(depth)}}]
     if page < %d - 1:
         return {"effects": effects, "more": {"cursor": page + 1}}
@@ -136,7 +136,7 @@ func TestPagedDrainMaxPagesCap(t *testing.T) {
 	source := `
 def main(input, host):
     page = input.get("resume") or 0
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                          "id": "p-%d" % page, "properties": {"title": "x"}}],
             "more": {"cursor": page + 1}}
 `
@@ -160,11 +160,11 @@ def main(input, host):
 
 	// Exactly the cap's worth of pages committed; the next never ran.
 	for page := range 2 {
-		if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", fmt.Sprintf("p-%d", page)); err != nil {
+		if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", fmt.Sprintf("p-%d", page)); err != nil {
 			t.Fatalf("page %d task missing under the cap: %v", page, err)
 		}
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "p-2"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", "p-2"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("page 2 ran past the cap")
 	}
 	// Parked, with the cap as the reason, and the resume cursor left at 2 so a
@@ -212,7 +212,7 @@ func TestPagedParkResumesFromCursor(t *testing.T) {
 	// Erase the already-committed pages: a resume must leave them erased, a
 	// restart-from-zero would recreate them.
 	for _, id := range []string{"p-0", "p-1"} {
-		if _, err := ds.Delete(ctx, substrate.ActorAPI, "tasks.substrate.reamde.dev/task", id); err != nil {
+		if _, err := ds.Delete(ctx, substrate.ActorAPI, "tasks.substrate.geoah.me/task", id); err != nil {
 			t.Fatalf("delete %s: %v", id, err)
 		}
 	}
@@ -252,7 +252,7 @@ func TestNonPagedDeliveryUntouched(t *testing.T) {
 	source := `
 def main(input, host):
     env = input["envelope"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                          "id": "t-" + env["change"]["id"],
                          "properties": {"title": env["record"]["properties"]["name"]}}]}
 `
@@ -296,10 +296,10 @@ func TestPagedDeliveryHonorsIfVersion(t *testing.T) {
 def main(input, host):
     page = input.get("resume") or 0
     if page == 0:
-        host.effects.put("tasks.substrate.reamde.dev/task", "pcas",
+        host.effects.put("tasks.substrate.geoah.me/task", "pcas",
                          properties={"title": "a"}, if_version=0)
         return {"more": host.page.more(1)}
-    host.effects.patch("tasks.substrate.reamde.dev/task", "pcas",
+    host.effects.patch("tasks.substrate.geoah.me/task", "pcas",
                        properties={"title": "b"}, if_version=0)
     return {}
 `
@@ -397,7 +397,7 @@ func pagedRowCount(t *testing.T, ds *dataset) int {
 // causedByOf reads the caused_by of a task's newest changelog row.
 func causedByOf(t *testing.T, ds *dataset, recordID string) int64 {
 	t.Helper()
-	ch, err := ds.latestChangeOf(context.Background(), "tasks.substrate.reamde.dev/task", recordID)
+	ch, err := ds.latestChangeOf(context.Background(), "tasks.substrate.geoah.me/task", recordID)
 	if err != nil {
 		t.Fatalf("change of %s: %v", recordID, err)
 	}
@@ -412,7 +412,7 @@ func causedByOf(t *testing.T, ds *dataset, recordID string) int64 {
 // depthOf is the causal depth of a task's newest changelog row.
 func depthOf(t *testing.T, ds *dataset, recordID string) int {
 	t.Helper()
-	ch, err := ds.latestChangeOf(context.Background(), "tasks.substrate.reamde.dev/task", recordID)
+	ch, err := ds.latestChangeOf(context.Background(), "tasks.substrate.geoah.me/task", recordID)
 	if err != nil {
 		t.Fatalf("change of %s: %v", recordID, err)
 	}

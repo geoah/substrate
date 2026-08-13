@@ -58,7 +58,7 @@ func plantOrphan(t *testing.T, dsn, id string) {
 	defer func() { _ = raw.Close() }()
 	if _, err := raw.Exec(
 		`INSERT INTO records (kind, id, title) VALUES ($1, $2, $3)`,
-		"tasks.substrate.reamde.dev/task", "orphan-rec", "nowhere"); err != nil {
+		"tasks.substrate.geoah.me/task", "orphan-rec", "nowhere"); err != nil {
 		t.Fatalf("plant orphan record: %v", err)
 	}
 	if _, err := raw.Exec(

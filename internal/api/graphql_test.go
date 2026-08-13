@@ -85,23 +85,23 @@ func TestGraphQLHistoryIsScopedByType(t *testing.T) {
 	// A person materialized at id "shared", plus changelog rows for the SAME id
 	// under two types — the collision A9 removes.
 	ds.records["shared"] = &substrate.Record{
-		ID: "shared", Kind: "people.substrate.reamde.dev/person",
+		ID: "shared", Kind: "people.substrate.geoah.me/person",
 		Properties: map[string]any{"title": "Ada"}, Version: 1,
 	}
 	ds.commit(substrate.Change{
 		TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "shared", Kind: "people.substrate.reamde.dev/person",
+		RecordID: "shared", Kind: "people.substrate.geoah.me/person",
 	})
 	ds.commit(substrate.Change{
 		TS: time.Unix(2, 0).UTC(), Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "shared", Kind: "tasks.substrate.reamde.dev/task",
+		RecordID: "shared", Kind: "tasks.substrate.geoah.me/task",
 	})
 
 	res := env.gql(t, tok,
 		`query ($kind: String!, $id: ID!) {
 			record(kind: $kind, id: $id) { id kind history { seq kind recordId } }
 		}`,
-		map[string]any{"kind": "people.substrate.reamde.dev/person", "id": "shared"})
+		map[string]any{"kind": "people.substrate.geoah.me/person", "id": "shared"})
 
 	record, _ := res.Data["record"].(map[string]any)
 	history, _ := record["history"].([]any)
@@ -109,7 +109,7 @@ func TestGraphQLHistoryIsScopedByType(t *testing.T) {
 		t.Fatalf("history has %d rows, want 1 — the task-typed row sharing id %q leaked into the person's history", len(history), "shared")
 	}
 	row, _ := history[0].(map[string]any)
-	if row["kind"] != "people.substrate.reamde.dev/person" {
+	if row["kind"] != "people.substrate.geoah.me/person" {
 		t.Fatalf("history row kind = %v, want the person kind only", row["kind"])
 	}
 }
@@ -120,7 +120,7 @@ func TestGraphQLPutPatchRecordRoundTrip(t *testing.T) {
 
 	put := env.gql(t, tok, `mutation ($in: JSON!) { put(input: $in) { id kind title ... on Person { name company } } }`,
 		map[string]any{"in": map[string]any{
-			"kind": "people.substrate.reamde.dev/person",
+			"kind": "people.substrate.geoah.me/person",
 			// Everything authored is a property: `title` sits in the map with
 			// the declared ones.
 			"properties": map[string]any{"title": "Ada", "name": "Ada"},
@@ -131,16 +131,16 @@ func TestGraphQLPutPatchRecordRoundTrip(t *testing.T) {
 	}
 	id, _ := created["id"].(string)
 
-	patched := env.gql(t, tok, `mutation ($id: ID!, $in: JSON!) { patch(kind: "people.substrate.reamde.dev/person", id: $id, input: $in) { id version ... on Person { company } } }`,
+	patched := env.gql(t, tok, `mutation ($id: ID!, $in: JSON!) { patch(kind: "people.substrate.geoah.me/person", id: $id, input: $in) { id version ... on Person { company } } }`,
 		map[string]any{"id": id, "in": map[string]any{"properties": map[string]any{"company": "Analytical"}}})
 	got, _ := patched.Data["patch"].(map[string]any)
 	if got["company"] != "Analytical" {
 		t.Fatalf("patch returned %v", got)
 	}
 
-	one := env.gql(t, tok, `query ($id: ID!) { record(kind: "people.substrate.reamde.dev/person", id: $id) { id kind title labels } }`, map[string]any{"id": id})
+	one := env.gql(t, tok, `query ($id: ID!) { record(kind: "people.substrate.geoah.me/person", id: $id) { id kind title labels } }`, map[string]any{"id": id})
 	ent, _ := one.Data["record"].(map[string]any)
-	if ent["id"] != id || ent["kind"] != "people.substrate.reamde.dev/person" {
+	if ent["id"] != id || ent["kind"] != "people.substrate.geoah.me/person" {
 		t.Fatalf("record returned %v", ent)
 	}
 }
@@ -155,10 +155,10 @@ func TestGraphQLReferenceRoundTrip(t *testing.T) {
 	put := env.gql(t, tok,
 		`mutation ($in: JSON!) { put(input: $in) { id ... on Person { manager { kind id } } } }`,
 		map[string]any{"in": map[string]any{
-			"kind": "people.substrate.reamde.dev/person",
+			"kind": "people.substrate.geoah.me/person",
 			"properties": map[string]any{
 				"title":   "Ada",
-				"manager": map[string]any{"kind": "people.substrate.reamde.dev/person", "id": "boss1"},
+				"manager": map[string]any{"kind": "people.substrate.geoah.me/person", "id": "boss1"},
 			},
 		}})
 	created, _ := put.Data["put"].(map[string]any)
@@ -166,7 +166,7 @@ func TestGraphQLReferenceRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatalf("manager did not render as a Reference: %v", created)
 	}
-	if mgr["kind"] != "people.substrate.reamde.dev/person" || mgr["id"] != "boss1" {
+	if mgr["kind"] != "people.substrate.geoah.me/person" || mgr["id"] != "boss1" {
 		t.Fatalf("manager reference = %v", mgr)
 	}
 }
@@ -180,10 +180,10 @@ func TestGraphQLRecordsUsesTheJSONFilter(t *testing.T) {
 	// GraphQL input decoder (codex regress #9) refuses it at the top level, so
 	// it rides inside properties like every authored value.
 	env.gql(t, tok, `mutation ($in: JSON!) { put(input: $in) { id } }`, map[string]any{
-		"in": map[string]any{"kind": "people.substrate.reamde.dev/person", "properties": map[string]any{"title": "Ada", "name": "Ada"}},
+		"in": map[string]any{"kind": "people.substrate.geoah.me/person", "properties": map[string]any{"title": "Ada", "name": "Ada"}},
 	})
 	env.gql(t, tok, `mutation ($in: JSON!) { put(input: $in) { id } }`, map[string]any{
-		"in": map[string]any{"kind": "tasks.substrate.reamde.dev/task", "properties": map[string]any{"title": "ship it", "status": "open"}},
+		"in": map[string]any{"kind": "tasks.substrate.geoah.me/task", "properties": map[string]any{"title": "ship it", "status": "open"}},
 	})
 
 	res := env.gql(t, tok, `query ($f: JSON, $o: JSON) {
@@ -192,7 +192,7 @@ func TestGraphQLRecordsUsesTheJSONFilter(t *testing.T) {
 			nodes { id kind title ... on Task { status } }
 		}
 	}`, map[string]any{
-		"f": map[string]any{"kinds": []string{"tasks.substrate.reamde.dev/task"}},
+		"f": map[string]any{"kinds": []string{"tasks.substrate.geoah.me/task"}},
 		"o": []map[string]any{{"property": "created_at", "desc": true}},
 	})
 	conn, _ := res.Data["records"].(map[string]any)
@@ -201,7 +201,7 @@ func TestGraphQLRecordsUsesTheJSONFilter(t *testing.T) {
 		t.Fatalf("nodes = %v", nodes)
 	}
 	node, _ := nodes[0].(map[string]any)
-	if node["kind"] != "tasks.substrate.reamde.dev/task" || node["status"] != "open" {
+	if node["kind"] != "tasks.substrate.geoah.me/task" || node["status"] != "open" {
 		t.Fatalf("node = %v", node)
 	}
 	if len(ds.lastQuery.OrderBy) != 1 || !ds.lastQuery.OrderBy[0].Desc {
@@ -246,23 +246,23 @@ func TestGraphQLEdgesHistoryAndCapabilityInterfaces(t *testing.T) {
 
 	at := time.Unix(1_700_000_500, 0).UTC()
 	ds.records["team1"] = &substrate.Record{
-		ID: "team1", Kind: "people.substrate.reamde.dev/person", Title: "Analytical",
+		ID: "team1", Kind: "people.substrate.geoah.me/person", Title: "Analytical",
 		Properties: map[string]any{"name": "Analytical"},
 	}
 	ds.records["msg1"] = &substrate.Record{
-		ID: "msg1", Kind: "messaging.substrate.reamde.dev/conversationmessage", Title: "hi", At: &at,
+		ID: "msg1", Kind: "messaging.substrate.geoah.me/conversationmessage", Title: "hi", At: &at,
 		Properties: map[string]any{"text": "hi"},
 		Edges: map[string][]substrate.EdgeTarget{
-			"author": {{ID: "team1", Kind: "people.substrate.reamde.dev/person", Title: "Analytical", Properties: map[string]any{"since": 2020}}},
+			"author": {{ID: "team1", Kind: "people.substrate.geoah.me/person", Title: "Analytical", Properties: map[string]any{"since": 2020}}},
 		},
 	}
 	ds.changes = append(ds.changes, substrate.Change{
 		Seq: 1, TS: at, Actor: substrate.ActorAPI, Op: substrate.OpPut,
-		RecordID: "msg1", Kind: "messaging.substrate.reamde.dev/conversationmessage",
+		RecordID: "msg1", Kind: "messaging.substrate.geoah.me/conversationmessage",
 	})
 
 	res := env.gql(t, tok, `{
-		record(kind: "messaging.substrate.reamde.dev/conversationmessage", id: "msg1") {
+		record(kind: "messaging.substrate.geoah.me/conversationmessage", id: "msg1") {
 			id
 			... on Temporal { at endsAt }
 			edges(rel: "author") { rel properties target { id ... on Person { name } } }
@@ -297,7 +297,7 @@ func TestGraphQLPropertyMeta(t *testing.T) {
 
 	at := time.Unix(1_700_000_000, 0).UTC()
 	ds.records["p1"] = &substrate.Record{
-		ID: "p1", Kind: "people.substrate.reamde.dev/person",
+		ID: "p1", Kind: "people.substrate.geoah.me/person",
 		Properties: map[string]any{"name": "Sam"},
 	}
 	ds.meta["p1"] = map[string]substrate.PropertyMeta{
@@ -306,7 +306,7 @@ func TestGraphQLPropertyMeta(t *testing.T) {
 		}},
 	}
 
-	res := env.gql(t, tok, `{ record(kind: "people.substrate.reamde.dev/person", id: "p1") { id propertyMeta } }`, nil)
+	res := env.gql(t, tok, `{ record(kind: "people.substrate.geoah.me/person", id: "p1") { id propertyMeta } }`, nil)
 	ent, _ := res.Data["record"].(map[string]any)
 	meta, _ := ent["propertyMeta"].(map[string]any)
 	name, _ := meta["name"].(map[string]any)
@@ -336,7 +336,7 @@ func TestGraphQLIncomingIsNotOnRecord(t *testing.T) {
 	ds := env.svc.datasets["geoah"]
 
 	ds.records["p1"] = &substrate.Record{
-		ID: "p1", Kind: "people.substrate.reamde.dev/person",
+		ID: "p1", Kind: "people.substrate.geoah.me/person",
 		Properties: map[string]any{"name": "Sam"},
 	}
 	ds.incoming["p1"] = []substrate.IncomingEdge{
@@ -350,7 +350,7 @@ func TestGraphQLIncomingIsNotOnRecord(t *testing.T) {
 	// null. Query it raw (the gql helper rejects any error) and assert the
 	// field cannot be selected.
 	rec := env.do(t, http.MethodPost, graphqlPath, tok, map[string]any{
-		"query": `{ record(kind: "people.substrate.reamde.dev/person", id: "p1") { id incoming } }`,
+		"query": `{ record(kind: "people.substrate.geoah.me/person", id: "p1") { id incoming } }`,
 	})
 	res := decodeJSON[gqlResponse](t, rec)
 	if len(res.Errors) == 0 {
@@ -358,7 +358,7 @@ func TestGraphQLIncomingIsNotOnRecord(t *testing.T) {
 	}
 
 	// The record still reads fine without it.
-	ok := env.gql(t, tok, `{ record(kind: "people.substrate.reamde.dev/person", id: "p1") { id } }`, nil)
+	ok := env.gql(t, tok, `{ record(kind: "people.substrate.geoah.me/person", id: "p1") { id } }`, nil)
 	ent, _ := ok.Data["record"].(map[string]any)
 	if ent["id"] != "p1" {
 		t.Fatalf("record = %#v", ent)
@@ -372,7 +372,7 @@ func TestGraphQLIncomingIsNotOnRecord(t *testing.T) {
 // type to "TasksTask" when the bundle sorted ahead of it.
 func TestGraphQLNamesAreAFunctionOfIdentityNotTheRegistry(t *testing.T) {
 	shipped := substrate.KindInfo{
-		Identity: "tasks.substrate.reamde.dev/task", Name: "task", Authority: "tasks.substrate.reamde.dev",
+		Identity: "tasks.substrate.geoah.me/task", Name: "task", Authority: "tasks.substrate.geoah.me",
 		Version: "v1alpha1", Plural: "tasks", Source: "builtin",
 		Definition: map[string]any{"properties": map[string]any{"note": map[string]any{"type": "string"}}},
 	}
@@ -391,7 +391,7 @@ func TestGraphQLNamesAreAFunctionOfIdentityNotTheRegistry(t *testing.T) {
 	if !ok {
 		t.Fatalf("shipped task lost its bare name; have %v", sortedTypeNames(tm))
 	}
-	if bare.Description() != "tasks.substrate.reamde.dev/task" {
+	if bare.Description() != "tasks.substrate.geoah.me/task" {
 		t.Fatalf("bare Task resolves to %q, not the shipped type", bare.Description())
 	}
 	prefixed, ok := tm["Alpha_Task"].(*graphql.Object)
@@ -438,15 +438,15 @@ func TestGraphQLLongScalarRoundTripsPast2e31(t *testing.T) {
 	const bigVersion = int64(3_000_000_000) // > 2^31-1 (2_147_483_647)
 	const bigSeq = int64(5_000_000_000)
 	ds.records["big1"] = &substrate.Record{
-		ID: "big1", Kind: "people.substrate.reamde.dev/person", Version: bigVersion,
+		ID: "big1", Kind: "people.substrate.geoah.me/person", Version: bigVersion,
 		Properties: map[string]any{"name": "Ada"},
 	}
 	ds.changes = append(ds.changes, substrate.Change{
 		Seq: bigSeq, TS: time.Unix(1, 0).UTC(), Actor: substrate.ActorAPI,
-		Op: substrate.OpPut, RecordID: "big1", Kind: "people.substrate.reamde.dev/person",
+		Op: substrate.OpPut, RecordID: "big1", Kind: "people.substrate.geoah.me/person",
 	})
 
-	res := env.gql(t, tok, `{ record(kind: "people.substrate.reamde.dev/person", id: "big1") { version history(first: 50) { seq } } }`, nil)
+	res := env.gql(t, tok, `{ record(kind: "people.substrate.geoah.me/person", id: "big1") { version history(first: 50) { seq } } }`, nil)
 	ent, _ := res.Data["record"].(map[string]any)
 	if got := int64(ent["version"].(float64)); got != bigVersion {
 		t.Fatalf("version overflowed: got %d, want %d", got, bigVersion)
@@ -516,9 +516,9 @@ func TestGraphQLSearch(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
-	ds.records["c1"] = &substrate.Record{ID: "c1", Kind: "people.substrate.reamde.dev/person", Title: "Ada Lovelace"}
+	ds.records["c1"] = &substrate.Record{ID: "c1", Kind: "people.substrate.geoah.me/person", Title: "Ada Lovelace"}
 
-	res := env.gql(t, tok, `{ search(q: "ada", mode: "hybrid", kinds: ["people.substrate.reamde.dev/person"], k: 5) { lexical record { id } } }`, nil)
+	res := env.gql(t, tok, `{ search(q: "ada", mode: "hybrid", kinds: ["people.substrate.geoah.me/person"], k: 5) { lexical record { id } } }`, nil)
 	hits, _ := res.Data["search"].([]any)
 	if len(hits) != 1 {
 		t.Fatalf("hits = %v", hits)

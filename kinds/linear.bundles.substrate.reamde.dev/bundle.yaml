@@ -9,7 +9,7 @@
 # OAUTH facility (Linear's OAuth 2 endpoints as TRUSTED manifest metadata)
 # and the connector runtime (a PEP 723 Python body importing requests through
 # uv). What it adds over Google is the JOINT-OWNERSHIP projection: mirrored
-# issues also mint tasks.substrate.reamde.dev/task rows, and once a task exists it is
+# issues also mint tasks.substrate.geoah.me/task rows, and once a task exists it is
 # jointly owned — Linear owns the issue's identity (title, url), the owner
 # owns how they are dealing with it (status, once they have moved it) — so
 # the projection READS the task, DIFFS only the keys Linear owns, and PATCHES
@@ -53,8 +53,8 @@ data:
       description: the Linear OAuth application the host exchanges codes through
   # The vocabulary this bundle maps ONTO (see google): import it first.
   requires:
-    - people.substrate.reamde.dev
-    - tasks.substrate.reamde.dev
+    - people.substrate.geoah.me
+    - tasks.substrate.geoah.me
   # TRUSTED provider metadata (review-google #1): the host reads endpoints and
   # the feature→scope mapping ONLY from here — the immutable install artifact —
   # never from the mutable config record. Linear has no OIDC userinfo GET (the
@@ -266,7 +266,7 @@ data:
     # The subject edge (§6.1): required, single, not ownerRef, pointing at
     # person — left empty on write so the substrate resolves it.
     person:
-      to: people.substrate.reamde.dev/person
+      to: people.substrate.geoah.me/person
       required: true
       description: the human this Linear login belongs to
 ---
@@ -383,7 +383,7 @@ data:
     # The subject edge (§6.1): required, single, not ownerRef, pointing at
     # person — left empty on write so the substrate resolves it.
     assignee:
-      to: people.substrate.reamde.dev/person
+      to: people.substrate.geoah.me/person
       required: true
       description: the human this issue is assigned to
     team:
@@ -876,13 +876,13 @@ data:
   runtime: python
   capabilities:
     emit:
-      - tasks.substrate.reamde.dev/task
+      - tasks.substrate.geoah.me/task
       - linear.bundles.substrate.reamde.dev/issue
     reads:
       kinds:
-        - tasks.substrate.reamde.dev/task
+        - tasks.substrate.geoah.me/task
   source: |
-    TASK_TYPE = "tasks.substrate.reamde.dev/task"
+    TASK_TYPE = "tasks.substrate.geoah.me/task"
     ISSUE_TYPE = "linear.bundles.substrate.reamde.dev/issue"
     DONE_TYPES = ("completed", "canceled")
 
@@ -976,7 +976,7 @@ metadata: {id: linear.bundles.substrate.reamde.dev/userperson}
 data:
   authority: linear.bundles.substrate.reamde.dev
   from: linear.bundles.substrate.reamde.dev/user
-  to: people.substrate.reamde.dev/person
+  to: people.substrate.geoah.me/person
   edge: person
   match:
     - from: email
@@ -998,7 +998,7 @@ metadata: {id: linear.bundles.substrate.reamde.dev/issueperson}
 data:
   authority: linear.bundles.substrate.reamde.dev
   from: linear.bundles.substrate.reamde.dev/issue
-  to: people.substrate.reamde.dev/person
+  to: people.substrate.geoah.me/person
   edge: assignee
   match:
     - from: assigneeEmail

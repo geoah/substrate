@@ -12,7 +12,7 @@ import {
 
 const record: SubstrateRecord = {
   id: "32llel6yd5bs",
-  kind: "people.substrate.reamde.dev/person",
+  kind: "people.substrate.geoah.me/person",
   properties: {
     name: "Tasos Aggelis",
     phones: ["+306973328908"],
@@ -25,7 +25,7 @@ const record: SubstrateRecord = {
   updatedAt: "2026-08-05T16:26:27.310967Z",
   edges: {
     memberOf: [
-      { id: "org1", kind: "people.substrate.reamde.dev/organization", title: "Acme" },
+      { id: "org1", kind: "people.substrate.geoah.me/organization", title: "Acme" },
     ],
   },
   propertyMeta: {
@@ -41,7 +41,7 @@ describe("manifestOf", () => {
   it("folds the wire record back into the v1 document envelope", () => {
     const m = manifestOf(record)
     expect(Object.keys(m)).toEqual(["kind", "metadata", "data", "status"])
-    expect(m.kind).toBe("people.substrate.reamde.dev/person")
+    expect(m.kind).toBe("people.substrate.geoah.me/person")
     expect(m.metadata).toEqual({ id: "32llel6yd5bs" })
   })
 
@@ -50,7 +50,7 @@ describe("manifestOf", () => {
     expect(data.edges).toEqual([
       {
         rel: "memberOf",
-        to: { kind: "people.substrate.reamde.dev/organization", id: "org1" },
+        to: { kind: "people.substrate.geoah.me/organization", id: "org1" },
       },
     ])
   })
@@ -75,7 +75,7 @@ describe("manifestYAML", () => {
   it("serializes the envelope in document order", () => {
     const yaml = manifestYAML(record)
     const lines = yaml.split("\n")
-    expect(lines[0]).toBe("kind: people.substrate.reamde.dev/person")
+    expect(lines[0]).toBe("kind: people.substrate.geoah.me/person")
     expect(yaml.indexOf("metadata:")).toBeLessThan(yaml.indexOf("data:"))
     expect(yaml.indexOf("data:")).toBeLessThan(yaml.indexOf("status:"))
     expect(yaml).toContain("prominence: known")
@@ -85,25 +85,25 @@ describe("manifestYAML", () => {
 
 const registry: KindInfo[] = [
   {
-    identity: "people.substrate.reamde.dev/person",
+    identity: "people.substrate.geoah.me/person",
     name: "person",
-    authority: "people.substrate.reamde.dev",
+    authority: "people.substrate.geoah.me",
     version: "",
     plural: "people",
     source: "builtin",
   },
   {
-    identity: "people.substrate.reamde.dev/organization",
+    identity: "people.substrate.geoah.me/organization",
     name: "organization",
-    authority: "people.substrate.reamde.dev",
+    authority: "people.substrate.geoah.me",
     version: "",
     plural: "organizations",
     source: "builtin",
   },
   {
-    identity: "calendar.substrate.reamde.dev/calendarevent",
+    identity: "calendar.substrate.geoah.me/calendarevent",
     name: "calendarevent",
-    authority: "calendar.substrate.reamde.dev",
+    authority: "calendar.substrate.geoah.me",
     version: "",
     plural: "calendarevents",
     source: "builtin",
@@ -113,12 +113,12 @@ const registry: KindInfo[] = [
 describe("linkTargetsOf", () => {
   it("maps edge target ids and the referenced kind refs", () => {
     const t = linkTargetsOf(record, registry)
-    expect(t.ids.org1).toBe("/data/people.substrate.reamde.dev/organizations/org1")
-    expect(t.kinds["people.substrate.reamde.dev/organization"]).toBe(
-      "/data/people.substrate.reamde.dev/organizations"
+    expect(t.ids.org1).toBe("/data/people.substrate.geoah.me/organizations/org1")
+    expect(t.kinds["people.substrate.geoah.me/organization"]).toBe(
+      "/data/people.substrate.geoah.me/organizations"
     )
-    expect(t.kinds["people.substrate.reamde.dev/person"]).toBe(
-      "/data/people.substrate.reamde.dev/people"
+    expect(t.kinds["people.substrate.geoah.me/person"]).toBe(
+      "/data/people.substrate.geoah.me/people"
     )
   })
 
@@ -127,14 +127,14 @@ describe("linkTargetsOf", () => {
       { ...record, canonicalId: "canon1", formerIds: ["old-a@x.io"] },
       registry
     )
-    expect(t.ids.canon1).toBe("/data/people.substrate.reamde.dev/people/canon1")
-    expect(t.ids["old-a@x.io"]).toBe("/data/people.substrate.reamde.dev/people/old-a@x.io")
+    expect(t.ids.canon1).toBe("/data/people.substrate.geoah.me/people/canon1")
+    expect(t.ids["old-a@x.io"]).toBe("/data/people.substrate.geoah.me/people/old-a@x.io")
   })
 
   it("knows every registry kind by its reference", () => {
     const t = linkTargetsOf(record, registry)
-    expect(t.kinds["calendar.substrate.reamde.dev/calendarevent"]).toBe(
-      "/data/calendar.substrate.reamde.dev/calendarevents"
+    expect(t.kinds["calendar.substrate.geoah.me/calendarevent"]).toBe(
+      "/data/calendar.substrate.geoah.me/calendarevents"
     )
   })
 
@@ -208,11 +208,11 @@ describe("kindManifestYAML", () => {
 describe("kindLinkTargets", () => {
   it("knows every registry kind and claims no record ids", () => {
     const t = kindLinkTargets(registry)
-    expect(t.kinds["people.substrate.reamde.dev/person"]).toBe(
-      "/data/people.substrate.reamde.dev/people"
+    expect(t.kinds["people.substrate.geoah.me/person"]).toBe(
+      "/data/people.substrate.geoah.me/people"
     )
-    expect(t.kinds["calendar.substrate.reamde.dev/calendarevent"]).toBe(
-      "/data/calendar.substrate.reamde.dev/calendarevents"
+    expect(t.kinds["calendar.substrate.geoah.me/calendarevent"]).toBe(
+      "/data/calendar.substrate.geoah.me/calendarevents"
     )
     expect(t.ids).toEqual({})
   })

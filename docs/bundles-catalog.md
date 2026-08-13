@@ -74,10 +74,10 @@ whichever stream finishes stamps them.
 - **Functions (4)**: `contactssync` pages `people/me/connections`, emits
   `contact` records, and stores the People sync token for incremental runs;
   `gmailsync` drains Gmail history (or a bounded backfill window) into thread
-  and message mirrors plus core `messaging.substrate.reamde.dev/emailthread` and
+  and message mirrors plus core `messaging.substrate.geoah.me/emailthread` and
   `emailmessage` rows; `calendarsync` drains each calendar's events on that
   calendar's own sync token into event mirrors plus core
-  `calendar.substrate.reamde.dev/calendar` and `calendarevent` rows; `contactsidmigration`
+  `calendar.substrate.geoah.me/calendar` and `calendarevent` rows; `contactsidmigration`
   is a bounded, trigger-less callable that re-keys older ad-hoc contact ids onto
   the deterministic external-id scheme.
 - **Triggers (6)**: `google-contacts-on-connect`, `google-gmail-on-connect`,
@@ -85,7 +85,7 @@ whichever stream finishes stamps them.
   connected account carries that toggle; `google-contacts-scheduled`,
   `google-gmail-scheduled`, and `google-calendar-scheduled` fire them hourly.
 - **Mappings (2)**: `contactperson` folds `contact` onto
-  `people.substrate.reamde.dev/person`, matching on email and mapping name plus the union
+  `people.substrate.geoah.me/person`, matching on email and mapping name plus the union
   of emails and phones; `emailaddressperson` folds `emailaddress` onto the same
   person, matching on the address and contributing the header name plus that
   address.
@@ -126,7 +126,7 @@ code work you are involved in.
   review-requested on, one REST page per invocation with per-stage watermarks.
 - **Triggers (2)**: `github-on-connect` fires `githubsync` once an account is
   connected and has a feature toggle on; `github-scheduled` fires it hourly.
-- **Mapping (1)**: `userperson` folds `user` onto `people.substrate.reamde.dev/person`,
+- **Mapping (1)**: `userperson` folds `user` onto `people.substrate.geoah.me/person`,
   matching on the public email and mapping name, login as the display name, and
   the union of emails.
 
@@ -145,18 +145,18 @@ issues assigned to you and projects them onto jointly-owned tasks.
 - **Kinds (5)**: `config`, `account`, and the mirrors `user`, `team`, `issue`.
 - **Functions (2)**: `issuessync` pages the viewer's assigned issues and
   mirrors the viewer, teams, and issues; `taskprojection` projects one `issue`
-  onto a `tasks.substrate.reamde.dev/task` row, minting open tasks and patching the
+  onto a `tasks.substrate.geoah.me/task` row, minting open tasks and patching the
   Linear-owned keys under a version check, moving status only on a real
   upstream transition.
 - **Triggers (3)**: `linear-issues-on-connect` and `linear-issues-scheduled`
   drive `issuessync` (on connect and hourly); `linear-task-projection` fires
   `taskprojection` on every `issue` change.
-- **Mappings (2)**: `userperson` folds `user` onto `people.substrate.reamde.dev/person`
+- **Mappings (2)**: `userperson` folds `user` onto `people.substrate.geoah.me/person`
   (match on email, map names and emails), and `issueperson` resolves an issue's
   `assignee` edge onto a person by the assignee's email.
 
 This is the one integration that both mirrors a provider and projects into the
-shipped `tasks.substrate.reamde.dev` vocabulary, so a Linear issue and a hand-written task
+shipped `tasks.substrate.geoah.me` vocabulary, so a Linear issue and a hand-written task
 live side by side.
 
 ## WHOOP

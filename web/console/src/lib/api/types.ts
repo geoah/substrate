@@ -49,7 +49,7 @@ export class ApiError extends Error {
 }
 
 /** An edge reference: `{kind, id}`. The kind is the whole reference
- * (`people.substrate.reamde.dev/person`, or a bare `task`); a typed property pointer and
+ * (`people.substrate.geoah.me/person`, or a bare `task`); a typed property pointer and
  * an edge target both name their referent this way. */
 export interface Reference {
   kind: string
@@ -61,7 +61,7 @@ export interface Reference {
  * target the edge points at, not the target's own). */
 export interface EdgeTarget {
   id: string
-  /** The target's kind reference (`people.substrate.reamde.dev/person`, or bare `task`). */
+  /** The target's kind reference (`people.substrate.geoah.me/person`, or bare `task`). */
   kind: string
   title?: string
   properties?: Record<string, unknown>
@@ -372,7 +372,7 @@ export interface CatalogBundle {
    * Curated by the catalog, never derived from the closure's shape. */
   example?: boolean
   /** A pure-VOCABULARY bundle (backend-owned): a bare org-domain authority
-   * (`people.substrate.reamde.dev`) shipping kinds and nothing else: no inputs, no
+   * (`people.substrate.geoah.me`) shipping kinds and nothing else: no inputs, no
    * functions, no OAuth. Repository creation seeds core alone, so the
    * substrate's own vocabulary arrives through this catalog like everything
    * else. Optional on the wire read only because an older server may omit it. */

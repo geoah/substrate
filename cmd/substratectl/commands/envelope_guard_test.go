@@ -14,12 +14,12 @@ func TestApplyNamesTheReplacementForEveryRenamedKey(t *testing.T) {
 	for _, tc := range []struct{ name, doc, want string }{
 		{
 			"apiVersion",
-			"apiVersion: tasks.substrate.reamde.dev/v1alpha1\nkind: task\nmetadata: {name: t1}\nspec: {}\n",
+			"apiVersion: tasks.substrate.geoah.me/v1alpha1\nkind: task\nmetadata: {name: t1}\nspec: {}\n",
 			"writes `apiVersion`, which is gone",
 		},
 		{
 			"group",
-			"group: core.substrate.reamde.dev\nkind: tasks.substrate.reamde.dev/task\nmetadata: {id: t1}\ndata: {}\n",
+			"group: core.substrate.reamde.dev\nkind: tasks.substrate.geoah.me/task\nmetadata: {id: t1}\ndata: {}\n",
 			"which are one key now: `kind`",
 		},
 		{
@@ -29,12 +29,12 @@ func TestApplyNamesTheReplacementForEveryRenamedKey(t *testing.T) {
 		},
 		{
 			"spec",
-			"kind: tasks.substrate.reamde.dev/task\nmetadata: {id: t1}\nspec: {}\n",
+			"kind: tasks.substrate.geoah.me/task\nmetadata: {id: t1}\nspec: {}\n",
 			"writes `spec`, which is `data`",
 		},
 		{
 			"metadata.name",
-			"kind: tasks.substrate.reamde.dev/task\nmetadata: {name: t1}\ndata: {}\n",
+			"kind: tasks.substrate.geoah.me/task\nmetadata: {name: t1}\ndata: {}\n",
 			"writes `metadata.name`, which is `metadata.id`",
 		},
 	} {
@@ -70,7 +70,7 @@ func TestApplyKeepsTheAuthorityInTheKind(t *testing.T) {
 func TestApplyRefusesAFlatIDUnderTheEnvelope(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	h.stdin.WriteString("kind: tasks.substrate.reamde.dev/task\nid: t1\nmetadata: {id: t2}\ndata: {}\n")
+	h.stdin.WriteString("kind: tasks.substrate.geoah.me/task\nid: t1\nmetadata: {id: t2}\ndata: {}\n")
 	_, _, err := h.run("apply", "-f", "-")
 	if err == nil || !strings.Contains(err.Error(), "mixes the envelope with the pre-envelope key `id`") {
 		t.Fatalf("err = %v", err)
@@ -85,7 +85,7 @@ func TestApplyRefusesAFlatIDUnderTheEnvelope(t *testing.T) {
 func TestApplyRefusesThePluralAsType(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	h.stdin.WriteString("kind: tasks.substrate.reamde.dev/tasks\nmetadata: {id: t1}\ndata: {}\n")
+	h.stdin.WriteString("kind: tasks.substrate.geoah.me/tasks\nmetadata: {id: t1}\ndata: {}\n")
 	_, _, err := h.run("apply", "-f", "-")
 	if err == nil || !strings.Contains(err.Error(), "singular") {
 		t.Fatalf("err = %v, want the singular-name error", err)

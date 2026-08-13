@@ -14,7 +14,7 @@ data:
     enabled: true
     source:
       record:
-        kinds: [messaging.substrate.reamde.dev/conversationmessage]
+        kinds: [messaging.substrate.geoah.me/conversationmessage]
         ops: [create, update]
     callable: {kind: core.substrate.reamde.dev/function, id: web.bundles.substrate.reamde.dev/findurls}
 ---

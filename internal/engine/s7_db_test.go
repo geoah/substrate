@@ -16,7 +16,7 @@ func TestPatchNullDeleteAndStateTransition_S7(t *testing.T) {
 	_, ds := newDataset(t)
 
 	created := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "tasks.substrate.reamde.dev/task",
+		Kind: "tasks.substrate.geoah.me/task",
 		Properties: map[string]any{
 			"title":       "ship it",
 			"description": "wire the last handler",
@@ -30,7 +30,7 @@ func TestPatchNullDeleteAndStateTransition_S7(t *testing.T) {
 	}
 
 	// null DELETES the property — it must not read back as a stored null.
-	patched, err := ds.Patch(ctx, owner, "tasks.substrate.reamde.dev/task", created.ID, substrate.PatchInput{
+	patched, err := ds.Patch(ctx, owner, "tasks.substrate.geoah.me/task", created.ID, substrate.PatchInput{
 		Properties: map[string]any{"description": nil},
 	})
 	if err != nil {
@@ -42,7 +42,7 @@ func TestPatchNullDeleteAndStateTransition_S7(t *testing.T) {
 
 	// A state value among the properties is a TRANSITION (open → done), and the
 	// declared stamp lands.
-	done, err := ds.Patch(ctx, owner, "tasks.substrate.reamde.dev/task", created.ID, substrate.PatchInput{
+	done, err := ds.Patch(ctx, owner, "tasks.substrate.geoah.me/task", created.ID, substrate.PatchInput{
 		Properties: map[string]any{"status": "done"},
 	})
 	if err != nil {

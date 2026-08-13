@@ -27,9 +27,9 @@ func TestSk1MergeSystemTypeProjections(t *testing.T) {
 	var contactTy, teamTy string
 	for _, e := range page.Records {
 		switch e.ID {
-		case "people.substrate.reamde.dev/person":
+		case "people.substrate.geoah.me/person":
 			contactTy = e.ID
-		case "people.substrate.reamde.dev/organization":
+		case "people.substrate.geoah.me/organization":
 			teamTy = e.ID
 		}
 	}
@@ -157,7 +157,7 @@ func TestSk1MergedTypeSurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	importVocabulary(t, ds, "people")
-	_, merr := ds.Merge(ctx, owner, "core.substrate.reamde.dev/kind", "people.substrate.reamde.dev/person", "people.substrate.reamde.dev/organization")
+	_, merr := ds.Merge(ctx, owner, "core.substrate.reamde.dev/kind", "people.substrate.geoah.me/person", "people.substrate.geoah.me/organization")
 	if !errors.Is(merr, substrate.ErrForbidden) {
 		t.Fatalf("merge of two type projections: %v", merr)
 	}
@@ -169,7 +169,7 @@ func TestSk1MergedTypeSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, err := ds2.Get(ctx, "core.substrate.reamde.dev/kind", "people.substrate.reamde.dev/organization")
+	e, err := ds2.Get(ctx, "core.substrate.reamde.dev/kind", "people.substrate.geoah.me/organization")
 	if err != nil {
 		t.Fatalf("get after restart: %v", err)
 	}

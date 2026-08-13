@@ -1,0 +1,23 @@
+# Personal-domain vocabulary, ported from mneme v4: places worth remembering.
+# One kind on purpose: a place is a name, a category, coordinates and the
+# practical strings, and everything that happens AT a place lives on the
+# records that point at it.
+#
+# no new actors: writes arrive under the actor of whatever runs.
+kind: core.substrate.reamde.dev/authority
+metadata:
+  id: places.substrate.geoah.me
+data:
+  version: v1alpha1
+---
+# ---- the bundle document: the import unit -----------------------------------
+# A VOCABULARY bundle: kinds only, imported from the registry.
+kind: core.substrate.reamde.dev/bundle
+metadata: {id: places.substrate.geoah.me/places}
+data:
+  authority: places.substrate.geoah.me
+  description: >-
+    Places worth remembering: a name, a category, coordinates bounded to the
+    globe, and the practical strings for actually going there.
+  installs:
+    - places.substrate.geoah.me/place

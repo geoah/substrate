@@ -129,9 +129,9 @@ func TestMergeRejectsSystemTypes(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	_, err := ds.Merge(ctx, owner, "core.substrate.reamde.dev/kind", "people.substrate.reamde.dev/person", "people.substrate.reamde.dev/organization")
+	_, err := ds.Merge(ctx, owner, "core.substrate.reamde.dev/kind", "people.substrate.geoah.me/person", "people.substrate.geoah.me/organization")
 	wantErr(t, err, substrate.ErrForbidden, "merging two type projections")
-	if ty := mustGet(t, ds, "core.substrate.reamde.dev/kind", "people.substrate.reamde.dev/organization"); ty.DeletedAt != nil {
+	if ty := mustGet(t, ds, "core.substrate.reamde.dev/kind", "people.substrate.geoah.me/organization"); ty.DeletedAt != nil {
 		t.Fatal("a type projection was tombstoned by merge")
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{Kind: "organization", Properties: map[string]any{"name": "still works"}}); err != nil {

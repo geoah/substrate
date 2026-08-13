@@ -121,7 +121,7 @@ func TestPagedDrainBudgetSpansRetries(t *testing.T) {
 	source := `
 def main(input, host):
     page = input.get("resume") or 0
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                          "id": "p-%d" % page, "properties": {"title": "x"}}],
             "more": {"cursor": page + 1}}
 `
@@ -146,11 +146,11 @@ def main(input, host):
 	chain := chainKey(ds, triggerID, wch.Seq)
 	// The budget allowed exactly three effects; the fourth page never committed.
 	for page := range 3 {
-		if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", fmt.Sprintf("p-%d", page)); err != nil {
+		if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", fmt.Sprintf("p-%d", page)); err != nil {
 			t.Fatalf("page %d missing under the budget: %v", page, err)
 		}
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "p-3"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", "p-3"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("page 3 committed past the effect budget")
 	}
 	failures, err := ds.TriggerFailures(ctx, triggerID)
@@ -167,7 +167,7 @@ def main(input, host):
 	if _, err := ds.RetryTriggerFailure(ctx, triggerID, failures[0].ID); err == nil {
 		t.Fatalf("retry of a budget-exhausted chain succeeded, want a re-park")
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "p-3"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", "p-3"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the retry reset the budget and committed page 3")
 	}
 	if cur, ok := pagedCursor(t, ds, chain); !ok || cur != 3 {

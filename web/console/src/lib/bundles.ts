@@ -156,7 +156,7 @@ export function missingRequirements(
   return requirements.filter((r) => !r.present)
 }
 
-/** "people.substrate.reamde.dev", "people.substrate.reamde.dev and tasks.substrate.reamde.dev", "a, b and c". */
+/** "people.substrate.geoah.me", "people.substrate.geoah.me and tasks.substrate.geoah.me", "a, b and c". */
 function andList(names: string[]): string {
   if (names.length <= 1) return names[0] ?? ""
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`

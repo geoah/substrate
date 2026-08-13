@@ -1,0 +1,63 @@
+# one film
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: media.substrate.geoah.me/movie
+data:
+  authority: media.substrate.geoah.me
+  description: >-
+    One film, as Radarr and TMDb describe it: the year it is filed under,
+    when it came out, runtime, certification, genres, synopsis and where
+    the file lives. One kind and no edition split — a film's public
+    identifiers name the work itself.
+  names:
+    singular: movie
+    plural: movies
+  properties:
+    # Radarr's movie, whose metadata is TMDb's: `year` is the release year it
+    # is filed under, `releasedAt` the date it actually came out.
+    year:
+      type: int
+      description: the release year the film is filed under
+    releasedAt:
+      type: date
+      description: the date it actually came out
+    # one concept, one spelling: the playback length is `duration` on every
+    # media family, even where a provider calls it runtime.
+    duration:
+      type: duration
+      description: the playback length
+    tagline:
+      type: string
+      description: the marketing one-liner
+    certification:
+      type: string
+      description: the age rating, as the source spells it
+    genres:
+      type: string
+      repeated: true
+      description: genre names, as the source lists them
+    description:
+      type: markdown
+      embed: true
+      description: the film's synopsis
+    mediaRef:
+      type: url
+      description: where the file lives
+    coverRef:
+      type: url
+      description: the poster image
+  edges:
+    director:
+      to: person
+      many: true
+      description: who directed it
+    cast:
+      to: person
+      many: true
+      description: the credited cast
+    studio:
+      to: organization
+      description: the studio that made it
+    collection:
+      to: moviecollection
+      description: the franchise the film belongs to

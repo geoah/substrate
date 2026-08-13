@@ -98,7 +98,7 @@ and the collection exists:
 
 ```
 curl -X POST -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/core.substrate.reamde.dev/catalog/tasks.substrate.reamde.dev/install
+  http://localhost:8080/api/v1/core.substrate.reamde.dev/catalog/tasks.substrate.geoah.me/install
 
 substratectl get tasks                     # empty, but the collection is there
 ```
@@ -111,11 +111,11 @@ Add a task. The collection path names the kind, so the body is only the
 properties:
 
 ```http
-POST /api/v1/tasks.substrate.reamde.dev/tasks
+POST /api/v1/tasks.substrate.geoah.me/tasks
 Authorization: Bearer substrate_tok_…
 {"properties": {"title": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
-→ 201 {"id": "kq3v9x2m41pf", "kind": "tasks.substrate.reamde.dev/task",
+→ 201 {"id": "kq3v9x2m41pf", "kind": "tasks.substrate.geoah.me/task",
        "properties": {"title": "Buy milk", "status": "open",
                       "dueAt": "2026-08-13T09:00:00Z"},
        "version": 1,
@@ -126,7 +126,7 @@ The server assigned the id and the `status` state started at its declared
 `initial` value. The same write as a file `substratectl apply` takes:
 
 ```yaml
-kind: tasks.substrate.reamde.dev/task
+kind: tasks.substrate.geoah.me/task
 data:
   properties:
     title: Buy milk
@@ -155,7 +155,7 @@ GET /api/v1/core.substrate.reamde.dev/changes?watch=1
 
 {"bookmark": 412}
 {"seq": 413, "ts": "2026-08-12T10:00:00.183742Z", "actor": "api", "op": "put",
- "kind": "tasks.substrate.reamde.dev/task", "recordId": "kq3v9x2m41pf",
+ "kind": "tasks.substrate.geoah.me/task", "recordId": "kq3v9x2m41pf",
  "payload": {"created": true, "properties": ["title", "dueAt"]}}
 ```
 

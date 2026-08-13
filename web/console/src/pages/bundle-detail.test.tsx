@@ -29,7 +29,7 @@ import type {
   SubstrateRecord,
 } from "@/lib/api/types"
 
-const params = { id: "people.substrate.reamde.dev/people" }
+const params = { id: "people.substrate.geoah.me/people" }
 
 vi.mock("@tanstack/react-router", () => ({
   Link: ({
@@ -76,13 +76,13 @@ function bundle(over: Partial<CatalogBundle>): CatalogBundle {
 }
 
 const PEOPLE = bundle({
-  id: "people.substrate.reamde.dev/people",
+  id: "people.substrate.geoah.me/people",
   name: "people",
-  authority: "people.substrate.reamde.dev",
+  authority: "people.substrate.geoah.me",
   description: "The shipped vocabulary for humans.",
   version: "v1alpha1",
   vocabulary: true,
-  resources: { kinds: ["people.substrate.reamde.dev/person"] },
+  resources: { kinds: ["people.substrate.geoah.me/person"] },
 })
 
 const GOOGLE = bundle({
@@ -97,7 +97,7 @@ const GOOGLE = bundle({
     },
   },
   integration: true,
-  requires: ["people.substrate.reamde.dev", "messaging.substrate.reamde.dev"],
+  requires: ["people.substrate.geoah.me", "messaging.substrate.geoah.me"],
   resources: {
     kinds: [
       "google.bundles.substrate.reamde.dev/config",
@@ -109,9 +109,9 @@ const GOOGLE = bundle({
 
 function kind(over: Partial<KindInfo>): KindInfo {
   return {
-    identity: "people.substrate.reamde.dev/person",
+    identity: "people.substrate.geoah.me/person",
     name: "person",
-    authority: "people.substrate.reamde.dev",
+    authority: "people.substrate.geoah.me",
     version: "v1alpha1",
     plural: "persons",
     source: "builtin",
@@ -140,7 +140,7 @@ function status(over: Partial<BundleStatus>): BundleStatus {
   return {
     id: PEOPLE.id,
     name: "people",
-    authority: "people.substrate.reamde.dev",
+    authority: "people.substrate.geoah.me",
     installed: true,
     enabled: true,
     kinds: 1,
@@ -232,7 +232,7 @@ describe("BundleDetailPage", () => {
       const link = person.closest("a")!
       expect(link.getAttribute("data-to")).toBe("/data/$authority/$plural")
       expect(JSON.parse(link.getAttribute("data-params")!)).toEqual({
-        authority: "people.substrate.reamde.dev",
+        authority: "people.substrate.geoah.me",
         plural: "persons",
       })
     })
@@ -282,13 +282,13 @@ describe("BundleDetailPage", () => {
       const note = screen.getByText("Requires").closest("div") as HTMLElement
       // people is reconciled in the kind registry; messaging is not.
       expect(
-        within(note).getByTitle("people.substrate.reamde.dev is imported")
+        within(note).getByTitle("people.substrate.geoah.me is imported")
       ).toBeTruthy()
       expect(
-        within(note).getByTitle("messaging.substrate.reamde.dev is not imported")
+        within(note).getByTitle("messaging.substrate.geoah.me is not imported")
       ).toBeTruthy()
       expect(
-        screen.getByText(/Not in this repository: messaging.substrate.reamde.dev/)
+        screen.getByText(/Not in this repository: messaging.substrate.geoah.me/)
       ).toBeTruthy()
     })
 

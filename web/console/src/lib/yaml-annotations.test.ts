@@ -39,7 +39,7 @@ describe("describableSpan", () => {
 
   it("never describes envelope keys — depth guards the collision", () => {
     // A top-level key is the envelope's, even when a property shares the name.
-    expect(describableSpan("authority: people.substrate.reamde.dev", docs)).toBeNull()
+    expect(describableSpan("authority: people.substrate.geoah.me", docs)).toBeNull()
     expect(describableSpan("    authority: x", docs)).toEqual({
       text: "authority",
       doc: {
@@ -75,9 +75,9 @@ describe("describableSpan", () => {
 
 describe("keyDocsOf", () => {
   const person: KindInfo = {
-    identity: "people.substrate.reamde.dev/person",
+    identity: "people.substrate.geoah.me/person",
     name: "person",
-    authority: "people.substrate.reamde.dev",
+    authority: "people.substrate.geoah.me",
     version: "",
     plural: "people",
     source: "builtin",
@@ -119,13 +119,13 @@ describe("keyDocsOf", () => {
 
 const targets: YamlLinkTargets = {
   ids: {
-    "o-abc123": "/data/people.substrate.reamde.dev/organizations/o-abc123",
+    "o-abc123": "/data/people.substrate.geoah.me/organizations/o-abc123",
     "gcal-a@x.io-b@y.io":
-      "/data/calendar.substrate.reamde.dev/calendars/gcal-a@x.io-b@y.io",
+      "/data/calendar.substrate.geoah.me/calendars/gcal-a@x.io-b@y.io",
   },
   kinds: {
-    "people.substrate.reamde.dev/person": "/data/people.substrate.reamde.dev/people",
-    "people.substrate.reamde.dev/organization": "/data/people.substrate.reamde.dev/organizations",
+    "people.substrate.geoah.me/person": "/data/people.substrate.geoah.me/people",
+    "people.substrate.geoah.me/organization": "/data/people.substrate.geoah.me/organizations",
   },
 }
 
@@ -133,36 +133,36 @@ describe("linkableSpan", () => {
   it("links a known id as the value of an id row", () => {
     expect(linkableSpan("      id: o-abc123", targets)).toEqual({
       text: "o-abc123",
-      href: "/data/people.substrate.reamde.dev/organizations/o-abc123",
+      href: "/data/people.substrate.geoah.me/organizations/o-abc123",
     })
     expect(linkableSpan("  canonicalId: o-abc123", targets)).toEqual({
       text: "o-abc123",
-      href: "/data/people.substrate.reamde.dev/organizations/o-abc123",
+      href: "/data/people.substrate.geoah.me/organizations/o-abc123",
     })
   })
 
   it("links @-bearing ids untouched", () => {
     expect(linkableSpan("      id: gcal-a@x.io-b@y.io", targets)).toEqual({
       text: "gcal-a@x.io-b@y.io",
-      href: "/data/calendar.substrate.reamde.dev/calendars/gcal-a@x.io-b@y.io",
+      href: "/data/calendar.substrate.geoah.me/calendars/gcal-a@x.io-b@y.io",
     })
   })
 
   it("links a kind reference value in its key position only", () => {
     // The top-level envelope `kind:` and an edge target's indented `to.kind:`.
-    expect(linkableSpan("kind: people.substrate.reamde.dev/person", targets)).toEqual({
-      text: "people.substrate.reamde.dev/person",
-      href: "/data/people.substrate.reamde.dev/people",
+    expect(linkableSpan("kind: people.substrate.geoah.me/person", targets)).toEqual({
+      text: "people.substrate.geoah.me/person",
+      href: "/data/people.substrate.geoah.me/people",
     })
     expect(
-      linkableSpan("        kind: people.substrate.reamde.dev/organization", targets)
+      linkableSpan("        kind: people.substrate.geoah.me/organization", targets)
     ).toEqual({
-      text: "people.substrate.reamde.dev/organization",
-      href: "/data/people.substrate.reamde.dev/organizations",
+      text: "people.substrate.geoah.me/organization",
+      href: "/data/people.substrate.geoah.me/organizations",
     })
     // The same string as a plain value is a word, not a link.
     expect(
-      linkableSpan("    title: people.substrate.reamde.dev/person", targets)
+      linkableSpan("    title: people.substrate.geoah.me/person", targets)
     ).toBeNull()
   })
 
@@ -184,7 +184,7 @@ describe("linkableSpan", () => {
   it("links a bare list item only when it is a known id (formerIds)", () => {
     expect(linkableSpan("    - o-abc123", targets)).toEqual({
       text: "o-abc123",
-      href: "/data/people.substrate.reamde.dev/organizations/o-abc123",
+      href: "/data/people.substrate.geoah.me/organizations/o-abc123",
     })
     expect(linkableSpan("    - not-a-known-id", targets)).toBeNull()
   })

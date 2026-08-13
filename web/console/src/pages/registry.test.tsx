@@ -73,14 +73,14 @@ function bundle(over: Partial<CatalogBundle>): CatalogBundle {
  * bundle that declares against nothing, and one integration that declares
  * against three authorities a fresh repository does not have. */
 const PEOPLE = bundle({
-  id: "people.substrate.reamde.dev/people",
+  id: "people.substrate.geoah.me/people",
   name: "people",
-  authority: "people.substrate.reamde.dev",
+  authority: "people.substrate.geoah.me",
   description: "The shipped vocabulary for humans.",
   version: "v1alpha1",
   vocabulary: true,
   resources: {
-    kinds: ["people.substrate.reamde.dev/person", "people.substrate.reamde.dev/personmerge"],
+    kinds: ["people.substrate.geoah.me/person", "people.substrate.geoah.me/personmerge"],
   },
 })
 
@@ -96,7 +96,7 @@ const GOOGLE = bundle({
     },
   },
   integration: true,
-  requires: ["people.substrate.reamde.dev", "messaging.substrate.reamde.dev", "calendar.substrate.reamde.dev"],
+  requires: ["people.substrate.geoah.me", "messaging.substrate.geoah.me", "calendar.substrate.geoah.me"],
   resources: {
     kinds: [
       "google.bundles.substrate.reamde.dev/config",
@@ -118,9 +118,9 @@ const CORE_KIND: KindInfo = {
 }
 
 const PERSON_KIND: KindInfo = {
-  identity: "people.substrate.reamde.dev/person",
+  identity: "people.substrate.geoah.me/person",
   name: "person",
-  authority: "people.substrate.reamde.dev",
+  authority: "people.substrate.geoah.me",
   version: "v1alpha1",
   plural: "persons",
   source: "builtin",
@@ -130,7 +130,7 @@ function peopleStatus(): BundleStatus {
   return {
     id: PEOPLE.id,
     name: "people",
-    authority: "people.substrate.reamde.dev",
+    authority: "people.substrate.geoah.me",
     installed: true,
     enabled: true,
     kinds: 2,
@@ -183,7 +183,7 @@ describe("RegistryPage", () => {
           jsonResponse(200, {
             id,
             name: "people",
-            authority: "people.substrate.reamde.dev",
+            authority: "people.substrate.geoah.me",
             installed: true,
             enabled: true,
           })
@@ -279,7 +279,7 @@ describe("RegistryPage", () => {
     expect(within(detail).getByText(/connects an external provider/i)).toBeTruthy()
     expect(
       within(detail).getByTitle(
-        "people.substrate.reamde.dev is not imported — the import is refused until it is"
+        "people.substrate.geoah.me is not imported — the import is refused until it is"
       )
     ).toBeTruthy()
   })
@@ -291,7 +291,7 @@ describe("RegistryPage", () => {
     // Not imported: the kind exists on paper only, so it does not pretend to
     // link anywhere.
     expect(person.tagName).toBe("SPAN")
-    expect(person.getAttribute("title")).toBe("people.substrate.reamde.dev/person")
+    expect(person.getAttribute("title")).toBe("people.substrate.geoah.me/person")
   })
 
   it("refuses the import while a required authority is missing, naming it", async () => {
@@ -301,11 +301,11 @@ describe("RegistryPage", () => {
     expect(button.hasAttribute("disabled")).toBe(true)
     expect(
       within(google).getByText(
-        "Import people.substrate.reamde.dev, messaging.substrate.reamde.dev and calendar.substrate.reamde.dev first — this bundle declares against them."
+        "Import people.substrate.geoah.me, messaging.substrate.geoah.me and calendar.substrate.geoah.me first — this bundle declares against them."
       )
     ).toBeTruthy()
     // …and the row itself says what is missing, without opening anything.
-    expect(within(google).getByText(/needs people.substrate.reamde.dev/)).toBeTruthy()
+    expect(within(google).getByText(/needs people.substrate.geoah.me/)).toBeTruthy()
   })
 
   it("imports a closure that declares against nothing", async () => {
@@ -319,7 +319,7 @@ describe("RegistryPage", () => {
         fetchMock.mock.calls.some(
           ([url, init]) =>
             String(url) ===
-              `${CATALOG_PATH}/people.substrate.reamde.dev%2Fpeople/install` &&
+              `${CATALOG_PATH}/people.substrate.geoah.me%2Fpeople/install` &&
             (init as RequestInit).method === "POST"
         )
       ).toBe(true)
@@ -328,7 +328,7 @@ describe("RegistryPage", () => {
 
   it("surfaces a server refusal in the server's own words", async () => {
     const problem =
-      "bundle people.substrate.reamde.dev: data.requires names core.substrate.reamde.dev, which this repository does not have — import that authority's bundle first"
+      "bundle people.substrate.geoah.me: data.requires names core.substrate.reamde.dev, which this repository does not have — import that authority's bundle first"
     serve({
       install: () =>
         jsonResponse(422, {
@@ -350,16 +350,16 @@ describe("RegistryPage", () => {
           { ...PEOPLE, installed: true },
           GOOGLE,
           bundle({
-            id: "messaging.substrate.reamde.dev/messaging",
+            id: "messaging.substrate.geoah.me/messaging",
             name: "messaging",
-            authority: "messaging.substrate.reamde.dev",
+            authority: "messaging.substrate.geoah.me",
             vocabulary: true,
             installed: true,
           }),
           bundle({
-            id: "calendar.substrate.reamde.dev/calendar",
+            id: "calendar.substrate.geoah.me/calendar",
             name: "calendar",
-            authority: "calendar.substrate.reamde.dev",
+            authority: "calendar.substrate.geoah.me",
             vocabulary: true,
             installed: true,
           }),
@@ -374,7 +374,7 @@ describe("RegistryPage", () => {
       expect(person.tagName).toBe("A")
       expect(person.getAttribute("data-to")).toBe("/data/$authority/$plural")
       expect(JSON.parse(person.getAttribute("data-params")!)).toEqual({
-        authority: "people.substrate.reamde.dev",
+        authority: "people.substrate.geoah.me",
         plural: "persons",
       })
     })
@@ -390,7 +390,7 @@ describe("RegistryPage", () => {
       expect(within(google).queryByText(/needs /)).toBeNull()
       const detail = expand(google)
       expect(
-        within(detail).getByTitle("people.substrate.reamde.dev is imported")
+        within(detail).getByTitle("people.substrate.geoah.me is imported")
       ).toBeTruthy()
     })
   })

@@ -252,7 +252,7 @@ func (b *callBackend) Search(ctx context.Context, in substrate.SearchInput) ([]s
 }
 
 // ResolveKind answers the runner's reads gate in the repository's own
-// vocabulary: bare `task` and `tasks.substrate.reamde.dev/task` are one kind, and the
+// vocabulary: bare `task` and `tasks.substrate.geoah.me/task` are one kind, and the
 // allowlist is written in identities. A name the registry does not know comes
 // back unchanged and is refused there.
 func (b *callBackend) ResolveKind(name string) string {

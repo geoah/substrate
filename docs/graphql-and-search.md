@@ -13,7 +13,7 @@ query ($f: JSON) {
   }
 }
 # variables:
-# {"f": {"kinds": ["tasks.substrate.reamde.dev/task"],
+# {"f": {"kinds": ["tasks.substrate.geoah.me/task"],
 #        "properties": {"status": {"eq": "open"}}}}
 ```
 
@@ -33,7 +33,7 @@ status, anywhere" is one query). Single-record lookups are ref-addressed:
 identity is the (kind, id) pair, so `record` takes both:
 
 ```graphql
-query { record(kind: "tasks.substrate.reamde.dev/task", id: "kq3v9x2m41pf") { id title } }
+query { record(kind: "tasks.substrate.geoah.me/task", id: "kq3v9x2m41pf") { id title } }
 ```
 
 Mutations are the seven — `put patch delete link unlink merge split`. `put`
@@ -44,7 +44,7 @@ the id, and the two ends of an edge each name their own:
 mutation ($k: String!, $id: ID!, $in: JSON!) {
   patch(kind: $k, id: $id, input: $in) { id version }
 }
-# {"k": "tasks.substrate.reamde.dev/task", "id": "kq3v9x2m41pf",
+# {"k": "tasks.substrate.geoah.me/task", "id": "kq3v9x2m41pf",
 #  "in": {"properties": {"status": "done"}}}
 ```
 
@@ -62,7 +62,7 @@ kind came from, never of which other kinds happen to be installed, so the
 schema is deterministic and installing one bundle can never rename another
 kind. The rule has three arms. A **repository-local kind capitalizes**:
 `task` is `Task`. A **shipped kind keeps its bare singular**:
-`people.substrate.reamde.dev/person` is `Person`, `calendar.substrate.reamde.dev/calendarevent` is
+`people.substrate.geoah.me/person` is `Person`, `calendar.substrate.geoah.me/calendarevent` is
 `Calendarevent`. An **installed kind is always authority-prefixed**: the
 leading label of its authority, TitleCased, an underscore, then the singular.
 Two bundles may declare the same singular and stay distinct, because the

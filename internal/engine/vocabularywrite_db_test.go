@@ -193,11 +193,11 @@ func TestSchemaApplySwapsFunctionsLive(t *testing.T) {
 			"authority":    swAuthority,
 			"description":  "mirrors widgets into tasks",
 			"runtime":      vocabulary.RuntimePython,
-			"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+			"capabilities": map[string]any{"emit": []any{"tasks.substrate.geoah.me/task"}},
 			"source": `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                          "id": "t-" + c["id"], "properties": {"title": "` + title + `"}}]}
 `,
 		}
@@ -401,13 +401,13 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 	wantErr(t, err, substrate.ErrValidation, "closure-breaking definition")
 
 	// The shipped vocabulary is the embedded tree's to change.
-	taskRow := mustGet(t, ds, "core.substrate.reamde.dev/kind", "tasks.substrate.reamde.dev/task")
+	taskRow := mustGet(t, ds, "core.substrate.reamde.dev/kind", "tasks.substrate.geoah.me/task")
 	_, err = ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "core.substrate.reamde.dev/kind", ID: "tasks.substrate.reamde.dev/task",
+		Kind: "core.substrate.reamde.dev/kind", ID: "tasks.substrate.geoah.me/task",
 		Properties: map[string]any{"definition": taskRow.Properties["definition"]},
 	})
 	wantErr(t, err, substrate.ErrForbidden, "builtin authority write")
-	_, err = ds.Delete(ctx, owner, "core.substrate.reamde.dev/kind", "tasks.substrate.reamde.dev/task")
+	_, err = ds.Delete(ctx, owner, "core.substrate.reamde.dev/kind", "tasks.substrate.geoah.me/task")
 	wantErr(t, err, substrate.ErrForbidden, "builtin authority delete")
 }
 
@@ -430,11 +430,11 @@ func TestTriggerOutlivesItsCallable(t *testing.T) {
 		"authority":    swAuthority,
 		"description":  "mirrors widgets into tasks",
 		"runtime":      vocabulary.RuntimePython,
-		"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+		"capabilities": map[string]any{"emit": []any{"tasks.substrate.geoah.me/task"}},
 		"source": `
 def main(input, host):
     c = input["envelope"]["change"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                          "id": "t-" + c["id"], "properties": {"title": "mirrored"}}]}
 `,
 	}

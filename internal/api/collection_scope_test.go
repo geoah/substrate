@@ -7,7 +7,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const tasksPath = "/api/v1/tasks.substrate.reamde.dev/tasks"
+const tasksPath = "/api/v1/tasks.substrate.geoah.me/tasks"
 
 // createPerson returns the id of a person record in the geoah dataset.
 func createPerson(t *testing.T, env *testEnv, tok string) string {

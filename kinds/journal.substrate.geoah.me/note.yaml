@@ -1,0 +1,76 @@
+# anything written down that is not a day's reflection
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: journal.substrate.geoah.me/note
+data:
+  authority: journal.substrate.geoah.me
+  description: >-
+    One note. Its kind is the writer's own declaration of audience, read
+    before anything acts on it: an instruction is an order to act on and
+    close, standing context is never done, and an idea asks for nothing.
+    Handling stamps its time, so nothing has to remember to.
+  names:
+    singular: note
+    plural: notes
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: the note's heading, one line
+    # the audience declaration: what a reader, human or agent, is meant to
+    # DO with the note. An instruction is acted on and closed; journal and
+    # self notes are context; agent notes are machine-written receipts.
+    kind:
+      type: enum
+      description: who the note is for and what acting on it means
+      values:
+        - value: self
+          label: Note to self
+        - value: instruction
+          label: Instruction to act on
+        - value: agent
+          label: Written by an agent
+        - value: journal
+          label: Standing journal context
+        - idea
+        - reference
+    # open until someone decides: standing context is never done, and a
+    # handled instruction is spent. Handling stamps handledAt by itself.
+    status:
+      type: state
+      description: "open until triaged; standing is never done; handled is spent"
+      states:
+        - open
+        - standing
+        - handled
+      initial: open
+      transitions:
+        - from: open
+          to: standing
+        - from: standing
+          to: open
+        - from: open
+          to: handled
+          stamps:
+            handledAt: now
+        - from: standing
+          to: handled
+          stamps:
+            handledAt: now
+        - from: handled
+          to: open
+    agentResponse:
+      type: string
+      description: the one-line receipt an agent leaves after acting on it
+    content:
+      type: markdown
+      embed: true
+      description: the note itself, as prose
+  edges:
+    # untyped on purpose: a note can be about anything, and naming each
+    # possible subject would couple this authority to every other one.
+    subjects:
+      to: any
+      many: true
+      description: what the note is about

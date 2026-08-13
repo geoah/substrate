@@ -25,7 +25,7 @@ func TestStrictDecodeNamesUnknownBodyKey(t *testing.T) {
 	// Seed p1 so a strict-decode failure is what returns 400, not a missing
 	// resource: the decode is refused before the Patch ever runs.
 	env.svc.datasets["geoah"].records["p1"] = &substrate.Record{
-		ID: "p1", Kind: "people.substrate.reamde.dev/person", Version: 1,
+		ID: "p1", Kind: "people.substrate.geoah.me/person", Version: 1,
 		Properties: map[string]any{"name": "Ada"},
 	}
 

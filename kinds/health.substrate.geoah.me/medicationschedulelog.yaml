@@ -1,0 +1,49 @@
+# one dose, taken or skipped; absence is what "missed" means
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: health.substrate.geoah.me/medicationschedulelog
+data:
+  authority: health.substrate.geoah.me
+  description: >-
+    One dose of a schedule, taken or skipped. There is deliberately no
+    missed state: absence in the logs is what missed means, so adherence is
+    expected minus logged, computed by a reader. As-needed doses log
+    against their schedule the same way, just without a scheduledAt.
+  names:
+    singular: medicationschedulelog
+    plural: medicationschedulelogs
+  displayTemplate: "{status}"
+  # `at` is when the dose was actually taken or the skip was recorded.
+  traits:
+    - temporal(point)
+  properties:
+    status:
+      type: state
+      description: "taken or skipped; correcting a mis-tap flips it back"
+      states:
+        - taken
+        - skipped
+      initial: taken
+      transitions:
+        - from: taken
+          to: skipped
+        - from: skipped
+          to: taken
+    scheduledAt:
+      type: datetime
+      description: the occurrence this log answers, from expanding the RRULE
+    doseAmount:
+      type: float
+      description: how much was actually taken, when it differs from the plan
+    doseUnit:
+      type: string
+      description: the unit doseAmount counts, when it differs from the plan
+    details:
+      type: markdown
+      description: anything worth saying about this one dose, as prose
+  edges:
+    schedule:
+      to: medicationschedule
+      required: true
+      ownerRef: true
+      description: the schedule this dose belongs to

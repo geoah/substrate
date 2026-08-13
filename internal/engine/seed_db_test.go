@@ -184,8 +184,8 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 	// user imports, so a fresh repository holds no authority but core and no
 	// kind outside it.
 	for _, id := range []string{
-		"people.substrate.reamde.dev/person", "tasks.substrate.reamde.dev/task", "media.substrate.reamde.dev/movie",
-		"messaging.substrate.reamde.dev/conversation", "calendar.substrate.reamde.dev/calendarevent",
+		"people.substrate.geoah.me/person", "tasks.substrate.geoah.me/task", "media.substrate.geoah.me/movie",
+		"messaging.substrate.geoah.me/conversation", "calendar.substrate.geoah.me/calendarevent",
 	} {
 		if _, err := ds.KindByRef(ctx, id); err == nil {
 			t.Fatalf("creation seeded %s — vocabulary is imported, not seeded", id)
@@ -287,7 +287,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 	}
 	// Untouched authorities stayed untouched: the diff is per authority, not a re-assert.
 	for _, ch := range upgrade {
-		if strings.HasSuffix(ch.RecordID, ".people.substrate.reamde.dev") || ch.RecordID == "people.substrate.reamde.dev" {
+		if strings.HasSuffix(ch.RecordID, ".people.substrate.geoah.me") || ch.RecordID == "people.substrate.geoah.me" {
 			t.Fatalf("the upgrade touched an unchanged authority: %s", ch.RecordID)
 		}
 	}
@@ -421,9 +421,9 @@ func TestDeclarationAuthority(t *testing.T) {
 	shipped := []map[string]any{
 		{
 			"kind":     "core.substrate.reamde.dev/kind",
-			"metadata": map[string]any{"id": "tasks.substrate.reamde.dev/task"},
+			"metadata": map[string]any{"id": "tasks.substrate.geoah.me/task"},
 			"data": map[string]any{
-				"authority": "tasks.substrate.reamde.dev",
+				"authority": "tasks.substrate.geoah.me",
 				"names":     map[string]any{"singular": "task", "plural": "tasks"},
 				"properties": map[string]any{
 					"title": map[string]any{"type": "string"},

@@ -34,6 +34,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -57,7 +58,7 @@ var Vocabulary = []string{"people", "tasks", "messaging", "calendar", "media"}
 // ImportVocabulary imports shipped vocabulary bundles by their bare label
 // ("people", "media") through the ONE install path — the schema-apply batch
 // verb, under the bundle's own actor, exactly as a catalog install does. A test
-// that reads or writes `people.substrate.reamde.dev/person` calls this first, because the
+// that reads or writes `people.substrate.geoah.me/person` calls this first, because the
 // creation seed no longer writes that vocabulary into the repository.
 func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string) error {
 	if len(names) == 0 {
@@ -67,14 +68,55 @@ func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string
 	if !ok {
 		return errors.New("enginetest: dataset does not support ApplyVocabularyDocuments")
 	}
-	for _, name := range names {
-		docs, err := readBundleDir(filepath.Join(CatalogDir, name+".substrate.reamde.dev"))
+	// A bundle's `requires:` is enforced on import, so a test naming only
+	// "tasks" still needs people first. Requires are read from the bundle
+	// document and imported ahead, the order the catalog install resolves.
+	done := map[string]bool{}
+	var importOne func(name string) error
+	importOne = func(name string) error {
+		if done[name] {
+			return nil
+		}
+		done[name] = true
+		docs, err := readBundleDir(filepath.Join(CatalogDir, name+".substrate.geoah.me"))
 		if err != nil {
 			return err
+		}
+		for _, req := range bundleRequires(docs) {
+			label, ok := strings.CutSuffix(req, ".substrate.geoah.me")
+			if !ok {
+				continue
+			}
+			if err := importOne(label); err != nil {
+				return err
+			}
 		}
 		if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(name), docs); err != nil {
 			return fmt.Errorf("enginetest: import %s: %w", name, err)
 		}
+		return nil
+	}
+	for _, name := range names {
+		if err := importOne(name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// bundleRequires reads the authorities a bundle document declares against.
+func bundleRequires(docs []map[string]any) []string {
+	for _, d := range docs {
+		if kind, _ := d["kind"].(string); kind != "core.substrate.reamde.dev/bundle" {
+			continue
+		}
+		data, _ := d["data"].(map[string]any)
+		rs, _ := data["requires"].([]any)
+		out := make([]string, 0, len(rs))
+		for _, r := range rs {
+			out = append(out, fmt.Sprint(r))
+		}
+		return out
 	}
 	return nil
 }
@@ -94,7 +136,7 @@ func SeededRegistry(kindsDir string, names ...string) (*vocabulary.Registry, err
 	}
 	var docs []vocabulary.Document
 	for _, name := range names {
-		raws, err := readBundleDir(filepath.Join(CatalogDir, name+".substrate.reamde.dev"))
+		raws, err := readBundleDir(filepath.Join(CatalogDir, name+".substrate.geoah.me"))
 		if err != nil {
 			return nil, err
 		}

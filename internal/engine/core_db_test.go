@@ -296,7 +296,7 @@ func TestMutationRequestApplyDiff(t *testing.T) {
 			},
 		},
 		// The target is an EDGE (MODEL §11.5).
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
+		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.geoah.me/task", ID: task.ID}}},
 	})
 	if req.Properties["decision"] != "proposed" {
 		t.Fatalf("req states = %v", req.Properties)
@@ -318,7 +318,7 @@ func TestMutationRequestApplyDiff(t *testing.T) {
 		Properties: map[string]any{
 			"diff": map[string]any{"properties": map[string]any{"description": "later"}, "ifVersion": task.Version + 1},
 		},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
+		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.geoah.me/task", ID: task.ID}}},
 	})
 	if _, err := ds.Patch(ctx, owner, needsVersion.Kind, needsVersion.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"},
@@ -346,7 +346,7 @@ func TestMutationRequestApplyDiff(t *testing.T) {
 				"ifVersion":  1,
 			},
 		},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
+		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.geoah.me/task", ID: task.ID}}},
 	})
 	if _, err := ds.Patch(ctx, owner, stale.Kind, stale.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(stale.Version),
@@ -387,7 +387,7 @@ func TestAcceptedNoOpDiffFailsTransition(t *testing.T) {
 		Properties: map[string]any{
 			"diff": map[string]any{"description": "wrapper-less"},
 		},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
+		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.geoah.me/task", ID: task.ID}}},
 	})
 	if _, err := ds.Patch(ctx, owner, bare.Kind, bare.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(bare.Version),
@@ -407,7 +407,7 @@ func TestAcceptedNoOpDiffFailsTransition(t *testing.T) {
 		Properties: map[string]any{
 			"diff": map[string]any{"properties": map[string]any{"description": "already here"}},
 		},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
+		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.geoah.me/task", ID: task.ID}}},
 	})
 	if _, err := ds.Patch(ctx, owner, noop.Kind, noop.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(noop.Version),
@@ -433,14 +433,14 @@ func TestChangeRequestCreateMints(t *testing.T) {
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"op":         "create",
-			"targetKind": "tasks.substrate.reamde.dev/task",
+			"targetKind": "tasks.substrate.geoah.me/task",
 			"targetId":   targetID,
 			"rationale":  "the transcript asks for a follow-up",
 			"diff":       map[string]any{"properties": map[string]any{"title": "Follow up with Dana", "description": "before Friday"}},
 		},
 	})
 	// The target does not exist yet.
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", targetID); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", targetID); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("target existed before accept: %v", err)
 	}
 	accepted := mustPatch(t, ds, owner, req.Kind, req.ID, substrate.PatchInput{
@@ -449,7 +449,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 	if accepted.Properties["decision"] != "accepted" || accepted.Properties["decidedAt"] == nil {
 		t.Fatalf("create request not accepted: %+v", accepted.Properties)
 	}
-	minted := mustGet(t, ds, "tasks.substrate.reamde.dev/task", targetID)
+	minted := mustGet(t, ds, "tasks.substrate.geoah.me/task", targetID)
 	if minted.Properties["title"] != "Follow up with Dana" || minted.Properties["description"] != "before Friday" {
 		t.Fatalf("minted record wrong: %+v", minted.Properties)
 	}
@@ -465,7 +465,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"op":         "create",
-			"targetKind": "tasks.substrate.reamde.dev/task",
+			"targetKind": "tasks.substrate.geoah.me/task",
 			"targetId":   targetID,
 			"diff":       map[string]any{"properties": map[string]any{"title": "Follow up with Dana", "description": "before Friday"}},
 		},
@@ -475,7 +475,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("same-shape replay accept errored instead of no-op: %v", err)
 	}
-	if again := mustGet(t, ds, "tasks.substrate.reamde.dev/task", targetID); again.Properties["title"] != "Follow up with Dana" {
+	if again := mustGet(t, ds, "tasks.substrate.geoah.me/task", targetID); again.Properties["title"] != "Follow up with Dana" {
 		t.Fatalf("same-shape replay changed the record: %+v", again.Properties)
 	}
 
@@ -487,7 +487,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"op":         "create",
-			"targetKind": "tasks.substrate.reamde.dev/task",
+			"targetKind": "tasks.substrate.geoah.me/task",
 			"targetId":   targetID,
 			"diff":       map[string]any{"properties": map[string]any{"title": "SHOULD NOT WIN"}},
 		},
@@ -499,7 +499,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 	} else {
 		wantErr(t, err, substrate.ErrConflict, "divergent create collision")
 	}
-	if again := mustGet(t, ds, "tasks.substrate.reamde.dev/task", targetID); again.Properties["title"] != "Follow up with Dana" {
+	if again := mustGet(t, ds, "tasks.substrate.geoah.me/task", targetID); again.Properties["title"] != "Follow up with Dana" {
 		t.Fatalf("divergent replay reset the record: %+v", again.Properties)
 	}
 	if after := mustGet(t, ds, diverge.Kind, diverge.ID); after.Properties["decision"] != "proposed" ||
@@ -522,7 +522,7 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 	otherType := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
-			"op": "create", "targetKind": "tasks.substrate.reamde.dev/task", "targetId": "occupied-1",
+			"op": "create", "targetKind": "tasks.substrate.geoah.me/task", "targetId": "occupied-1",
 			"diff": map[string]any{"properties": map[string]any{"title": "a task"}},
 		},
 	})
@@ -531,7 +531,7 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("a create beside another type's id should land: %v", err)
 	}
-	if got := mustGet(t, ds, "tasks.substrate.reamde.dev/task", "occupied-1"); got.Properties["title"] != "a task" {
+	if got := mustGet(t, ds, "tasks.substrate.geoah.me/task", "occupied-1"); got.Properties["title"] != "a task" {
 		t.Fatalf("per-type create did not mint: %+v", got.Properties)
 	}
 	if got := mustGet(t, ds, proj.Kind, proj.ID); got.Properties["name"] != "a project" {
@@ -546,7 +546,7 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 	tomb := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
-			"op": "create", "targetKind": "tasks.substrate.reamde.dev/task", "targetId": "gone-1",
+			"op": "create", "targetKind": "tasks.substrate.geoah.me/task", "targetId": "gone-1",
 			"diff": map[string]any{"properties": map[string]any{"title": "was here"}},
 		},
 	})
@@ -572,7 +572,7 @@ func TestChangeRequestDeleteTombstones(t *testing.T) {
 	req := mustPut(t, ds, engram, substrate.PutInput{
 		Kind:       "recordpatchrequest",
 		Properties: map[string]any{"op": "delete", "rationale": "duplicate"},
-		Edges:      []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
+		Edges:      []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.geoah.me/task", ID: task.ID}}},
 	})
 	if _, err := ds.Patch(ctx, owner, req.Kind, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(req.Version),
@@ -586,7 +586,7 @@ func TestChangeRequestDeleteTombstones(t *testing.T) {
 	replay := mustPut(t, ds, engram, substrate.PutInput{
 		Kind:       "recordpatchrequest",
 		Properties: map[string]any{"op": "delete"},
-		Edges:      []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
+		Edges:      []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.geoah.me/task", ID: task.ID}}},
 	})
 	if _, err := ds.Patch(ctx, owner, replay.Kind, replay.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(replay.Version),
@@ -910,7 +910,7 @@ def main(input, host):
     rid = "req-%s-" + c["id"]
     return {"effects": [
         {"action": "put", "kind": "core.substrate.reamde.dev/recordpatchrequest", "id": rid,
-         "properties": {"op": "create", "targetKind": "tasks.substrate.reamde.dev/task",
+         "properties": {"op": "create", "targetKind": "tasks.substrate.geoah.me/task",
                         "targetId": "%s-" + c["id"],
                         "diff": {"properties": {"title": "smuggled"}}}},
         {"action": "patch", "kind": "core.substrate.reamde.dev/recordpatchrequest", "id": rid,
@@ -983,7 +983,7 @@ func TestAcceptFailuresAnnotateConflict(t *testing.T) {
 	missingEdge := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
-			"op": "create", "targetKind": "tasks.substrate.reamde.dev/task", "targetId": "orphan-task",
+			"op": "create", "targetKind": "tasks.substrate.geoah.me/task", "targetId": "orphan-task",
 			"diff": map[string]any{
 				"properties": map[string]any{"title": "needs a project"},
 				"edges":      []any{map[string]any{"rel": "project", "to": map[string]any{"id": "ghost-project"}}},
@@ -1001,7 +1001,7 @@ func TestAcceptFailuresAnnotateConflict(t *testing.T) {
 		after.Annotations["substrate/conflict"] == nil {
 		t.Fatalf("missing-edge create should stay proposed + annotated: %+v", after.Properties)
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "orphan-task"); !errors.Is(err, substrate.ErrNotFound) {
+	if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", "orphan-task"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the orphan task should not exist: %v", err)
 	}
 }

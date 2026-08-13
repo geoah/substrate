@@ -51,7 +51,7 @@ func writeSomeHistory(t *testing.T, ds substrate.Dataset) {
 	due := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Second)
 
 	first := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "tasks.substrate.reamde.dev/task",
+		Kind: "tasks.substrate.geoah.me/task",
 		Properties: map[string]any{
 			"title":       "Ship the fold",
 			"body":        "the records table is a fold of the changelog",
@@ -62,11 +62,11 @@ func writeSomeHistory(t *testing.T, ds substrate.Dataset) {
 		Labels: map[string]any{"owner/pinned": true},
 	})
 	second := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.reamde.dev/task",
+		Kind:       "tasks.substrate.geoah.me/task",
 		Properties: map[string]any{"title": "Rebuild the repository", "description": "replay every entry"},
 	})
 	third := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.reamde.dev/task",
+		Kind:       "tasks.substrate.geoah.me/task",
 		Properties: map[string]any{"title": "Collect me", "description": "and then go"},
 	})
 
@@ -136,7 +136,7 @@ func TestRebuildReproducesTheFold(t *testing.T) {
 		t.Fatalf("the rebuild moved the changelog's head from %d to %d", head, got)
 	}
 	// And the reads that run off the fold still answer.
-	if e := mustGet(t, ds, "tasks.substrate.reamde.dev/task", firstTaskID(t, ds)); e == nil {
+	if e := mustGet(t, ds, "tasks.substrate.geoah.me/task", firstTaskID(t, ds)); e == nil {
 		t.Fatal("the rebuilt fold reads back empty")
 	}
 }
@@ -169,7 +169,7 @@ func TestLogEntryCarriesValues(t *testing.T) {
 	_, ds := newDataset(t)
 	before := maxSeq(t, ds)
 	e := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.reamde.dev/task",
+		Kind:       "tasks.substrate.geoah.me/task",
 		Properties: map[string]any{"title": "Carry the values", "description": "a delta, with values"},
 	})
 
@@ -225,10 +225,10 @@ func writeAMergeablePair(t *testing.T, ds substrate.Dataset) mergedPair {
 	ctx := context.Background()
 
 	author := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "Ada Lovelace"},
+		Kind: "people.substrate.geoah.me/person", Properties: map[string]any{"name": "Ada Lovelace"},
 	})
 	winner := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:        "media.substrate.reamde.dev/book",
+		Kind:        "media.substrate.geoah.me/book",
 		Properties:  map[string]any{"title": "Notes on the Engine", "subtitle": "a winner"},
 		Labels:      map[string]any{"owner/shelf": "analytical"},
 		Annotations: map[string]any{"owner/note": "the winner's own"},
@@ -237,7 +237,7 @@ func writeAMergeablePair(t *testing.T, ds substrate.Dataset) mergedPair {
 		},
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "media.substrate.reamde.dev/book",
+		Kind: "media.substrate.geoah.me/book",
 		// `description` is the winner's gap: its manager row migrates.
 		Properties:  map[string]any{"title": "Notes on the Engine", "description": "the loser's own"},
 		Labels:      map[string]any{"owner/format": "octavo"},
@@ -245,7 +245,7 @@ func writeAMergeablePair(t *testing.T, ds substrate.Dataset) mergedPair {
 	})
 	// An earlier merge, so the loser carries a trail the second one flattens.
 	older := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "media.substrate.reamde.dev/book", Properties: map[string]any{"title": "Notes on the Engine"},
+		Kind: "media.substrate.geoah.me/book", Properties: map[string]any{"title": "Notes on the Engine"},
 	})
 	if _, err := ds.Merge(ctx, owner, loser.Kind, loser.ID, older.ID); err != nil {
 		t.Fatalf("the first merge: %v", err)
@@ -253,7 +253,7 @@ func writeAMergeablePair(t *testing.T, ds substrate.Dataset) mergedPair {
 	// A source record whose SUBJECT edge names the loser: the merge re-points
 	// it at the winner, and it is why the resync's scope is more than the pair.
 	edition := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       "media.substrate.reamde.dev/bookedition",
+		Kind:       "media.substrate.geoah.me/bookedition",
 		Properties: map[string]any{"format": "print", "language": "en"},
 		Edges: []substrate.EdgeInput{
 			{Rel: "work", To: substrate.EdgeRef{Kind: loser.Kind, ID: loser.ID}},
@@ -355,10 +355,10 @@ func TestRebuildRefusesWhatItCannotReplay(t *testing.T) {
 	}
 	importVocabulary(t, ds)
 	a := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "Ada Lovelace"},
+		Kind: "people.substrate.geoah.me/person", Properties: map[string]any{"name": "Ada Lovelace"},
 	})
 	b := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "A. Lovelace"},
+		Kind: "people.substrate.geoah.me/person", Properties: map[string]any{"name": "A. Lovelace"},
 	})
 	if _, err := ds.Merge(ctx, owner, a.Kind, a.ID, b.ID); err != nil {
 		t.Fatalf("merge: %v", err)
@@ -475,7 +475,7 @@ func firstDifference(a, b []byte) string {
 func firstTaskID(t *testing.T, ds substrate.Dataset) string {
 	t.Helper()
 	page, err := ds.List(context.Background(), substrate.Query{
-		Filter: substrate.Filter{Kinds: []string{"tasks.substrate.reamde.dev/task"}}, First: 1,
+		Filter: substrate.Filter{Kinds: []string{"tasks.substrate.geoah.me/task"}}, First: 1,
 	})
 	if err != nil || page == nil || len(page.Records) == 0 {
 		t.Fatalf("list tasks: %v", err)

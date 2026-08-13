@@ -53,11 +53,11 @@ func TestScheduleFireIdempotentAndCoalesced(t *testing.T) {
 		vocabulary.FunctionManifest(authority, "hourly", map[string]any{
 			"description":  "mints one task per fire",
 			"runtime":      vocabulary.RuntimePython,
-			"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+			"capabilities": map[string]any{"emit": []any{"tasks.substrate.geoah.me/task"}},
 			"source": `
 def main(input, host):
     fire = input["envelope"]["fire"]
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                          "id": "fire-" + fire["id"],
                          "properties": {"title": input["mode"] + " " + fire["at"]}}]}
 `,
@@ -82,7 +82,7 @@ def main(input, host):
 	if _, err := ds.ProcessTriggers(ctx); err != nil {
 		t.Fatalf("process: %v", err)
 	}
-	if n := countLiveOf(t, ds, "tasks.substrate.reamde.dev/task"); n != 0 {
+	if n := countLiveOf(t, ds, "tasks.substrate.geoah.me/task"); n != 0 {
 		t.Fatalf("a fresh schedule backfilled: %d tasks", n)
 	}
 
@@ -96,7 +96,7 @@ def main(input, host):
 	if _, err := ds.ProcessTriggers(ctx); err != nil {
 		t.Fatalf("process: %v", err)
 	}
-	if n := countLiveOf(t, ds, "tasks.substrate.reamde.dev/task"); n != 1 {
+	if n := countLiveOf(t, ds, "tasks.substrate.geoah.me/task"); n != 1 {
 		t.Fatalf("missed ticks did not coalesce: %d tasks", n)
 	}
 	// The fire id is the occurrence instant — stable, not a random mint.
@@ -114,7 +114,7 @@ def main(input, host):
 	if since := time.Since(at); since < 0 || since > time.Hour {
 		t.Fatalf("the coalesced fire is not the newest occurrence: %s", fid)
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "fire-"+fid); err != nil {
+	if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", "fire-"+fid); err != nil {
 		t.Fatalf("the body did not see the stable fire id: %v", err)
 	}
 

@@ -1020,7 +1020,7 @@ func (s *readState) allowed(ident string) bool {
 // Each name is RESOLVED first, because a kind has two spellings and a body is
 // entitled to use either: `get` has always been held to the resolved kind of
 // the record it found, and a list naming `task` against a capability declaring
-// `tasks.substrate.reamde.dev/task` is the same read, so it cannot be a different answer.
+// `tasks.substrate.geoah.me/task` is the same read, so it cannot be a different answer.
 func (s *readState) requireTypes(types []string, what string) error {
 	if len(types) == 0 {
 		return s.trip(fmt.Errorf("%w: %s names no kinds", ErrReadForbidden, what))

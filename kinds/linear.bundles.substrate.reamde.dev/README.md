@@ -2,7 +2,7 @@
 
 Connects a Linear workspace over the host OAuth facility and syncs the issues
 assigned to the connected login into `issue` mirrors, mapped to persons and
-projected onto `task.tasks.substrate.reamde.dev` rows the owner actually works.
+projected onto `task.tasks.substrate.geoah.me` rows the owner actually works.
 
 **SYNC-ONLY.** Nothing in this bundle writes back to Linear: completing a task
 in the substrate does **not** move the Linear issue. Provider writeback is an

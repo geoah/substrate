@@ -1,0 +1,45 @@
+# one occurrence of a routine, done or skipped
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: routines.substrate.geoah.me/routinelog
+data:
+  authority: routines.substrate.geoah.me
+  description: >-
+    One occurrence of a routine, done or skipped. There is deliberately no
+    missed state: absence in the logs is what missed means, so a reader
+    computes it from the RRULE rather than trusting a stored flag.
+  names:
+    singular: routinelog
+    plural: routinelogs
+  displayTemplate: "{status}"
+  # `at` is when the occurrence was done or the skip was recorded.
+  traits:
+    - temporal(point)
+  properties:
+    status:
+      type: state
+      description: "done or skipped; correcting a mis-tap flips it back"
+      states:
+        - done
+        - skipped
+      initial: done
+      transitions:
+        - from: done
+          to: skipped
+        - from: skipped
+          to: done
+    scheduledAt:
+      type: datetime
+      description: the occurrence this log answers, from expanding the RRULE
+    value:
+      type: string
+      description: a small payload when doing it produced one, reps or pages
+    details:
+      type: markdown
+      description: anything worth saying about this occurrence, as prose
+  edges:
+    routine:
+      to: routine
+      required: true
+      ownerRef: true
+      description: the routine this log marks an occurrence of

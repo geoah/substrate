@@ -32,7 +32,7 @@ func TestTriggerRunSendsTypeAndID(t *testing.T) {
 	}
 	// The bare `task` resolves against the registry to the full identity, which
 	// is what the wire names.
-	if gotType != "tasks.substrate.reamde.dev/task" {
+	if gotType != "tasks.substrate.geoah.me/task" {
 		t.Errorf("body kind = %q, want the resolved identity", gotType)
 	}
 	if gotID != "t9" {
@@ -45,10 +45,10 @@ func TestTriggerRunSendsTypeAndID(t *testing.T) {
 func TestTriggerRunAcceptsAQualifiedType(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	h.mustRun("trigger", "run", "classify-page", "tasks.substrate.reamde.dev/task", "t9")
+	h.mustRun("trigger", "run", "classify-page", "tasks.substrate.geoah.me/task", "t9")
 	var gotType string
 	_ = json.Unmarshal(h.fake.lastBody["kind"], &gotType)
-	if gotType != "tasks.substrate.reamde.dev/task" {
+	if gotType != "tasks.substrate.geoah.me/task" {
 		t.Fatalf("body kind = %q, want it passed through", gotType)
 	}
 }
@@ -182,7 +182,7 @@ func shippedTypes(t *testing.T) map[string]shippedType {
 	base := filepath.Join("..", "..", "..")
 	roots := []string{filepath.Join(base, "kinds", "core.substrate.reamde.dev")}
 	for _, a := range []string{"calendar", "media", "messaging", "people", "tasks"} {
-		roots = append(roots, filepath.Join(base, "kinds", a+".substrate.reamde.dev"))
+		roots = append(roots, filepath.Join(base, "kinds", a+".substrate.geoah.me"))
 	}
 	out := map[string]shippedType{}
 	var dirs []string

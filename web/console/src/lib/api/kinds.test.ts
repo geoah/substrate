@@ -5,9 +5,9 @@ import type { KindInfo } from "./types"
 
 function kindInfo(overrides: Partial<KindInfo>): KindInfo {
   return {
-    identity: "people.substrate.reamde.dev/person",
+    identity: "people.substrate.geoah.me/person",
     name: "person",
-    authority: "people.substrate.reamde.dev",
+    authority: "people.substrate.geoah.me",
     version: "",
     plural: "persons",
     source: "builtin",
@@ -20,15 +20,15 @@ describe("normalizeKinds", () => {
     const payload = {
       records: [
         {
-          id: "people.substrate.reamde.dev/person",
+          id: "people.substrate.geoah.me/person",
           kind: "core.substrate.reamde.dev/kind",
           properties: {
             name: "person",
-            authority: "people.substrate.reamde.dev",
+            authority: "people.substrate.geoah.me",
             plural: "persons",
             source: "builtin",
             definition: {
-              authority: "people.substrate.reamde.dev",
+              authority: "people.substrate.geoah.me",
               description: "One human, one record.",
             },
           },
@@ -38,15 +38,15 @@ describe("normalizeKinds", () => {
     }
     expect(normalizeKinds(payload)).toEqual([
       {
-        identity: "people.substrate.reamde.dev/person",
+        identity: "people.substrate.geoah.me/person",
         name: "person",
-        authority: "people.substrate.reamde.dev",
+        authority: "people.substrate.geoah.me",
         version: "",
         plural: "persons",
         source: "builtin",
         description: "One human, one record.",
         definition: {
-          authority: "people.substrate.reamde.dev",
+          authority: "people.substrate.geoah.me",
           description: "One human, one record.",
         },
       },
@@ -59,7 +59,7 @@ describe("normalizeKinds", () => {
     const [k] = normalizeKinds({
       records: [
         {
-          id: "tasks.substrate.reamde.dev/task",
+          id: "tasks.substrate.geoah.me/task",
           properties: { definition: { description: "Something to do." } },
         },
       ],
@@ -74,12 +74,12 @@ describe("normalizeKinds", () => {
 
   it("derives name and authority from the id when properties are sparse", () => {
     const [k] = normalizeKinds({
-      records: [{ id: "tasks.substrate.reamde.dev/task", properties: {} }],
+      records: [{ id: "tasks.substrate.geoah.me/task", properties: {} }],
     })
     expect(k).toMatchObject({
-      identity: "tasks.substrate.reamde.dev/task",
+      identity: "tasks.substrate.geoah.me/task",
       name: "task",
-      authority: "tasks.substrate.reamde.dev",
+      authority: "tasks.substrate.geoah.me",
       plural: "task",
     })
   })
@@ -96,16 +96,16 @@ describe("normalizeKinds", () => {
 
 describe("buildKindNav", () => {
   const kinds: KindInfo[] = [
-    kindInfo({ identity: "people.substrate.reamde.dev/person" }),
+    kindInfo({ identity: "people.substrate.geoah.me/person" }),
     kindInfo({
-      identity: "people.substrate.reamde.dev/organization",
+      identity: "people.substrate.geoah.me/organization",
       name: "organization",
       plural: "organizations",
     }),
     kindInfo({
-      identity: "tasks.substrate.reamde.dev/task",
+      identity: "tasks.substrate.geoah.me/task",
       name: "task",
-      authority: "tasks.substrate.reamde.dev",
+      authority: "tasks.substrate.geoah.me",
       plural: "tasks",
     }),
     kindInfo({
@@ -134,8 +134,8 @@ describe("buildKindNav", () => {
   it("lists every authority flat at one level — repository authorities first, machinery last", () => {
     const nav = buildKindNav(kinds)
     expect(nav.authorities.map((a) => a.authority)).toEqual([
-      "people.substrate.reamde.dev",
-      "tasks.substrate.reamde.dev",
+      "people.substrate.geoah.me",
+      "tasks.substrate.geoah.me",
       "core.substrate.reamde.dev",
       "google.bundles.substrate.reamde.dev",
     ])
@@ -165,7 +165,7 @@ describe("buildKindNav", () => {
 
   it("sorts kinds inside an authority by name", () => {
     const nav = buildKindNav(kinds)
-    const people = nav.authorities.find((a) => a.authority === "people.substrate.reamde.dev")
+    const people = nav.authorities.find((a) => a.authority === "people.substrate.geoah.me")
     expect(people?.kinds.map((k) => k.name)).toEqual(["organization", "person"])
   })
 

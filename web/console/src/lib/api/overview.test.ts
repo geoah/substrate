@@ -81,7 +81,7 @@ function rowsBelow(belowSeq: number, n: number): ChangeRow[] {
       actor: `actor-${i % 5}`,
       op: "put",
       recordId: `e${seq}`,
-      kind: "tasks.substrate.reamde.dev/task",
+      kind: "tasks.substrate.geoah.me/task",
     }
   })
 }

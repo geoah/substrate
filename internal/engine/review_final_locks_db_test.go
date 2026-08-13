@@ -122,7 +122,7 @@ const (
 	csrcAuthority = "csrc.connectors.substrate.reamde.dev"
 	csrcContact   = csrcAuthority + "/contact"
 	csrcActor     = substrate.Actor(csrcAuthority)
-	subjPerson    = "people.substrate.reamde.dev/person"
+	subjPerson    = "people.substrate.geoah.me/person"
 )
 
 // installContactSource registers a minimal mapping-source connector: a contact

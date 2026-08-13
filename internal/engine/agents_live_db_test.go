@@ -94,7 +94,7 @@ func TestLiveAgentChainAcrossWires(t *testing.T) {
 			"runtime":     vocabulary.RuntimePython,
 			// The envelope is required even for a function that writes
 			// nothing; this one returns output and emits no effects at all.
-			"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+			"capabilities": map[string]any{"emit": []any{"tasks.substrate.geoah.me/task"}},
 			// "number", not "integer": the vocabulary's schema vocabulary has
 			// no integer, and this schema is BOTH the function's input contract
 			// and the model-facing tool card.

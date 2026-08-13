@@ -11,8 +11,8 @@ import (
 )
 
 // The console routes on real history-API paths now, several of which carry
-// dots inside a segment (`/types/people.people.substrate.reamde.dev`,
-// `/records/people.substrate.reamde.dev/person/<id>`). The SPA fallback must serve
+// dots inside a segment (`/types/people.people.substrate.geoah.me`,
+// `/records/people.substrate.geoah.me/person/<id>`). The SPA fallback must serve
 // index.html for every unmatched GET by *statting the file*, never by
 // sniffing an extension out of the path — a dotted segment is not a file.
 func TestSPAHandlerServesNestedPathsWithDots(t *testing.T) {
@@ -35,9 +35,9 @@ func TestSPAHandlerServesNestedPathsWithDots(t *testing.T) {
 
 	for _, path := range []string{
 		"/types",
-		"/types/people.people.substrate.reamde.dev",
-		"/schema/tasks.tasks.substrate.reamde.dev",
-		"/records/people.substrate.reamde.dev/person/9f2kq1x7m0zb",
+		"/types/people.people.substrate.geoah.me",
+		"/schema/tasks.tasks.substrate.geoah.me",
+		"/records/people.substrate.geoah.me/person/9f2kq1x7m0zb",
 		"/records/9f2kq1x7m0zb",
 		"/integrations",
 		"/login",

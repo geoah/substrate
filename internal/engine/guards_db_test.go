@@ -289,7 +289,7 @@ func TestApplyDiffChecksTargetVersion(t *testing.T) {
 		Properties: map[string]any{
 			"diff": map[string]any{"properties": map[string]any{"description": "due Friday"}},
 		},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
+		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.geoah.me/task", ID: task.ID}}},
 	})
 
 	// The owner moves on before deciding.
@@ -323,7 +323,7 @@ func TestApplyDiffChecksTargetVersion(t *testing.T) {
 		Properties: map[string]any{
 			"diff": map[string]any{"properties": map[string]any{"description": "due Friday"}},
 		},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
+		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.geoah.me/task", ID: task.ID}}},
 	})
 	if _, err := ds.Patch(ctx, owner, req.Kind, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(resynced.Version),
@@ -337,7 +337,7 @@ func TestApplyDiffChecksTargetVersion(t *testing.T) {
 		Properties: map[string]any{
 			"diff": map[string]any{"properties": map[string]any{"description": "due Tuesday"}},
 		},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
+		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.geoah.me/task", ID: task.ID}}},
 	})
 	mustPatch(t, ds, owner, fresh.Kind, fresh.ID, substrate.PatchInput{Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(fresh.Version)})
 	if got := mustGet(t, ds, task.Kind, task.ID); got.Properties["description"] != "due Tuesday" {

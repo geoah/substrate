@@ -1,0 +1,50 @@
+# what tasks authority under
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: tasks.substrate.geoah.me/project
+data:
+  authority: tasks.substrate.geoah.me
+  description: >-
+    What tasks group under: a name, a lifecycle and a summary, with the
+    tasks pointing at it. Still thin on purpose: everything else about the
+    work lives on the tasks themselves.
+  names:
+    singular: project
+    plural: projects
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      description: the project's name
+    # mneme's project lifecycle: a heading is active until it is not, and a
+    # finished or abandoned project can always come back.
+    status:
+      type: state
+      description: "active until done or abandoned; on hold pauses it"
+      states:
+        - active
+        - onhold
+        - done
+        - abandoned
+      initial: active
+      transitions:
+        - from: active
+          to: onhold
+        - from: onhold
+          to: active
+        - from: active
+          to: done
+        - from: active
+          to: abandoned
+        - from: onhold
+          to: done
+        - from: onhold
+          to: abandoned
+        - from: done
+          to: active
+        - from: abandoned
+          to: active
+    summary:
+      type: markdown
+      embed: true
+      description: what the project is and where it stands, as prose

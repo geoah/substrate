@@ -32,7 +32,7 @@ const (
 	webBundleRow  = webAuthority + "/web"
 	webConfigType = webAuthority + "/config"
 	webPageType   = webAuthority + "/page"
-	convMsgType   = "messaging.substrate.reamde.dev/conversationmessage"
+	convMsgType   = "messaging.substrate.geoah.me/conversationmessage"
 
 	// The models the shipped agents name on the `default` provider row:
 	// distinct, so one fake server drives the whole chain by model.
@@ -257,10 +257,10 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	)
 
 	// --- feed one message carrying two URLs, one deny-listed ---------------
-	person := mustPutInternal(t, ds, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", ID: "p-alice", Properties: map[string]any{"name": "Alice"}})
+	person := mustPutInternal(t, ds, substrate.PutInput{Kind: "people.substrate.geoah.me/person", ID: "p-alice", Properties: map[string]any{"name": "Alice"}})
 	acct := mustPutInternal(t, ds, substrate.PutInput{Kind: enginetest.AccountType, ID: "acct-test", Properties: map[string]any{"provider": "test", "label": "test inbox"}})
 	conv := mustPutInternal(t, ds, substrate.PutInput{
-		Kind: "messaging.substrate.reamde.dev/conversation", ID: "conv-1",
+		Kind: "messaging.substrate.geoah.me/conversation", ID: "conv-1",
 		Properties: map[string]any{"kind": "direct", "name": "reading chat"},
 		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acct.ID}}},
 	})

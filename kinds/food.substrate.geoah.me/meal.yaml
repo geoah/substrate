@@ -1,0 +1,37 @@
+# one sitting: what was eaten, when
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: food.substrate.geoah.me/meal
+data:
+  authority: food.substrate.geoah.me
+  description: >-
+    One sitting on the timeline: what was eaten and when. Nutrition numbers
+    worth tracking are health observationlogs whose subject edge points at
+    the meal, so this record stays a diary line.
+  names:
+    singular: meal
+    plural: meals
+  displayTemplate: "{name}"
+  # `at` is when it was eaten.
+  traits:
+    - temporal(point)
+  properties:
+    name:
+      type: string
+      required: true
+      description: what was eaten, one line
+    mealType:
+      type: enum
+      description: which meal of the day it was
+      values:
+        - breakfast
+        - lunch
+        - dinner
+        - snack
+    details:
+      type: markdown
+      description: anything worth saying about this sitting, as prose
+  edges:
+    recipe:
+      to: recipe
+      description: the recipe it was cooked from, when there is one

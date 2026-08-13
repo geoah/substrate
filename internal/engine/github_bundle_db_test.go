@@ -217,7 +217,7 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("%s declares no `person` edge", githubUserType)
 	}
-	if ed.To != "people.substrate.reamde.dev/person" || !ed.Required || ed.Many {
+	if ed.To != "people.substrate.geoah.me/person" || !ed.Required || ed.Many {
 		t.Fatalf("person edge shape wrong: to=%q required=%v many=%v", ed.To, ed.Required, ed.Many)
 	}
 
@@ -259,7 +259,7 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("no mapping registered from %s", githubUserType)
 	}
-	if m.To != "people.substrate.reamde.dev/person" || m.Edge != "person" {
+	if m.To != "people.substrate.geoah.me/person" || m.Edge != "person" {
 		t.Fatalf("mapping resolves wrong: to=%q edge=%q", m.To, m.Edge)
 	}
 	if len(m.Match) == 0 {

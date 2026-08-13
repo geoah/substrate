@@ -23,7 +23,7 @@ func (a *app) applyCommand() *cobra.Command {
 
 Every document wears the envelope — kind, metadata, data:
 
-  kind: tasks.substrate.reamde.dev/task             # the kind reference; bare for a
+  kind: tasks.substrate.geoah.me/task             # the kind reference; bare for a
                                          # repository-local kind (kind: task)
   metadata:
     id: t9                               # the record id; omit to create
@@ -37,7 +37,7 @@ Every document wears the envelope — kind, metadata, data:
     edges:
       - rel: source
         to:
-          kind: calendar.substrate.reamde.dev/transcript
+          kind: calendar.substrate.geoah.me/transcript
           id: f81k
 
 A qualified kind resolves outright; a bare one resolves against the kind

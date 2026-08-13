@@ -1,0 +1,60 @@
+# one training session, planned or done; recurring when it carries an RRULE
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: fitness.substrate.geoah.me/workout
+data:
+  authority: fitness.substrate.geoah.me
+  description: >-
+    One training session. With an RRULE it is the recurring plan, and each
+    planned occurrence is marked by a workoutlog; without one it is a
+    single session. What was lifted lives on its workoutsets, and tracker
+    numbers land here as the session's totals.
+  names:
+    singular: workout
+    plural: workouts
+  displayTemplate: "{name}"
+  # a single session spans `at` to `endsAt`; on a recurring plan `at` seeds
+  # the RRULE and `endsAt` closes the series.
+  traits:
+    - temporal(range)
+  properties:
+    name:
+      type: string
+      required: true
+      description: what the session is, one line
+    workoutType:
+      type: string
+      description: the session's discipline, running or lifting or yoga
+    strain:
+      type: float
+      description: the tracker's strain score for the session
+    averageHeartRate:
+      type: float
+      description: average heart rate over the session, in bpm
+    maxHeartRate:
+      type: float
+      description: peak heart rate over the session, in bpm
+    energyKcal:
+      type: float
+      description: energy burned over the session, in kcal
+    distanceMeters:
+      type: float
+      description: distance covered over the session, in meters
+    recurrence:
+      type: recurrence
+      description: the RRULE for a recurring plan, stored and never expanded
+    exdates:
+      type: datetime
+      repeated: true
+      description: occurrence datetimes the rule skips
+    timezone:
+      type: timezone
+      description: the IANA zone a time-of-day rule resolves in
+    details:
+      type: markdown
+      embed: true
+      description: how the session went, as prose
+  edges:
+    template:
+      to: workouttemplate
+      description: the template this session was started from

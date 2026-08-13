@@ -190,10 +190,10 @@ func installToolBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 	writer := vocabulary.FunctionManifest(tbAuthority, "writer", map[string]any{
 		"description":  "writes one task",
 		"runtime":      vocabulary.RuntimePython,
-		"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+		"capabilities": map[string]any{"emit": []any{"tasks.substrate.geoah.me/task"}},
 		"source": `
 def main(input, host):
-    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.geoah.me/task",
                          "id": "t-tool", "properties": {"title": "written"}}],
             "output": {"ok": True}}
 `,
@@ -219,7 +219,7 @@ def main(input, host):
 		"description": "uses the bundled writer tool", "prompt": "You write.",
 		"provider": "userllm", "model": "user",
 		"tools": []any{tbAuthority + "/writer"},
-		"emit":  []any{"tasks.substrate.reamde.dev/task"},
+		"emit":  []any{"tasks.substrate.geoah.me/task"},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.AuthorityManifest(uAuthority, ""), user,
@@ -260,7 +260,7 @@ func TestFinalCrossBundleAgentToolRefused(t *testing.T) {
 	if !refused {
 		t.Fatal("the agent's transcript carries no lifecycle refusal for the cross-bundle tool")
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-tool"); err == nil {
+	if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", "t-tool"); err == nil {
 		t.Fatal("the disabled bundle's function landed an effect through the agent tool")
 	}
 }
@@ -276,7 +276,7 @@ func installCallerBundle(t *testing.T, ds *dataset) {
 		"description": "host-calls the bundled writer",
 		"runtime":     vocabulary.RuntimePython,
 		"capabilities": map[string]any{
-			"emit": []any{"tasks.substrate.reamde.dev/task"},
+			"emit": []any{"tasks.substrate.geoah.me/task"},
 			"call": []any{"toolb.bundles.substrate.reamde.dev/writer"},
 		},
 		"source": `
@@ -324,7 +324,7 @@ func TestFinalCrossBundleHostCallRefused(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("cross-bundle call into a disabled bundle: %v", err)
 	}
-	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-tool"); err == nil {
+	if _, err := ds.Get(ctx, "tasks.substrate.geoah.me/task", "t-tool"); err == nil {
 		t.Fatal("the disabled callee committed an effect through a live host Call")
 	}
 }

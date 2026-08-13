@@ -1,0 +1,41 @@
+# a meeting transcript, pointed at the instance that actually happened
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: calendar.substrate.geoah.me/transcript
+data:
+  authority: calendar.substrate.geoah.me
+  description: >-
+    A meeting's transcript, pointed at the occurrence that actually
+    happened and the people who spoke. The text is embedded, so what was
+    said in a meeting is searchable alongside everything else rather than
+    only scrollable.
+  names:
+    singular: transcript
+    plural: transcripts
+  traits:
+    - temporal(range)
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      description: the transcript's own title, usually the meeting's
+    # a plain string rather than an enum: transcript tools appear faster
+    # than any fixed list would keep up with.
+    source:
+      type: string
+      description: the tool that produced it, as it names itself
+    language:
+      type: string
+      description: the transcript's language, as a BCP 47 tag
+    text:
+      type: text
+      embed: true
+      description: the transcript's full text
+  edges:
+    meeting:
+      to: calendarevent
+      description: the occurrence that actually happened
+    speakers:
+      to: person
+      many: true
+      description: the people who spoke

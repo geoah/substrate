@@ -1,0 +1,55 @@
+# a DM, an authority chat, or a channel
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: messaging.substrate.geoah.me/conversation
+data:
+  authority: messaging.substrate.geoah.me
+  description: >-
+    A DM, a group chat or a channel — one kind over all three, because
+    platforms disagree about the boundaries and messages do not. It hangs
+    off the account it synced through and names the people taking part.
+  names:
+    singular: conversation
+    plural: conversations
+  displayTemplate: "{name|participants}"
+  # `at` is the last activity, so an inbox orders conversations without
+  # opening their messages. Optional: a conversation nothing wrote it for
+  # simply has no place on the timeline.
+  traits:
+    - temporal(point)
+  properties:
+    # one type over the three real shapes: platforms disagree about the
+    # boundaries but messages don't. `type` is the envelope's own word and
+    # never a property name (R4), so this is `kind`.
+    kind:
+      type: enum
+      values:
+        - direct
+        - group
+        - channel
+      description: a DM, a group chat, or a channel
+    name:
+      type: string
+      description: the conversation's name, where the platform has one
+    topic:
+      type: string
+      description: the channel topic, where the platform has one
+    archived:
+      type: bool
+      description: the platform's archived flag, as synced
+    muted:
+      type: bool
+      description: the platform's muted flag, as synced
+    pinned:
+      type: bool
+      description: the platform's pinned flag, as synced
+  edges:
+    account:
+      to: any
+      required: true
+      ownerRef: true
+      description: the accountconfig record this conversation synced through
+    participants:
+      to: person
+      many: true
+      description: the people in the conversation

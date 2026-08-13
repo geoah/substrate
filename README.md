@@ -39,15 +39,15 @@ bin/substratectl register --server http://localhost:8080
 # `tasks` collection to get yet. Install the bundle that ships one. This is
 # the same closure the catalog serves, applied from the tree:
 bin/substratectl apply \
-  -f kinds/tasks.substrate.reamde.dev/bundle.yaml \
-  -f kinds/tasks.substrate.reamde.dev/project.yaml \
-  -f kinds/tasks.substrate.reamde.dev/task.yaml
+  -f kinds/tasks.substrate.geoah.me/bundle.yaml \
+  -f kinds/tasks.substrate.geoah.me/project.yaml \
+  -f kinds/tasks.substrate.geoah.me/task.yaml
 
 bin/substratectl kinds                   # what this repository knows now
 bin/substratectl get tasks               # empty, but the collection is there
 
 cat <<'EOF' | bin/substratectl apply -f -
-kind: tasks.substrate.reamde.dev/task
+kind: tasks.substrate.geoah.me/task
 data:
   properties:
     title: Buy milk

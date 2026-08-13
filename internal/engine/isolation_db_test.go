@@ -136,7 +136,7 @@ func TestRepositoryIsolationSurvivesADroppedPredicate(t *testing.T) {
 	// ...and an INSERT that forges the column is refused by the WITH CHECK,
 	// loudly, rather than landing in somebody else's repository.
 	_, err = raw.ExecContext(ctx,
-		`INSERT INTO records (repository, kind, id, title) VALUES ($1, 'tasks.substrate.reamde.dev/task', 'forged', 'planted')`, beta)
+		`INSERT INTO records (repository, kind, id, title) VALUES ($1, 'tasks.substrate.geoah.me/task', 'forged', 'planted')`, beta)
 	if err == nil {
 		t.Fatal("a forged repository column was accepted")
 	}

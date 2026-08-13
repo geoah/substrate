@@ -32,7 +32,7 @@ Two words, used precisely. **Substrate** is the protocol, the service, and
 the implementation: the records, the API, the primitives these pages
 describe. **substrate** is the parent, the organization level above it. That
 split shows up in one visible place: kinds are published under the org's
-domain, `tasks.substrate.reamde.dev`, `people.substrate.reamde.dev`, while the product and
+domain, `tasks.substrate.geoah.me`, `people.substrate.geoah.me`, while the product and
 protocol vocabulary, in the docs, the CLI (`substratectl`), and the service, is
 "substrate".
 
@@ -46,7 +46,7 @@ Like Kubernetes, the whole system is rules about a handful of primitives.
 | **Repository** | Everything a user has: one append-only changelog, the records folded out of it, and the blobs and sealed secrets beside them. Nothing crosses from one to another. |
 | **Changelog**        | The repository's append-only, strictly sequential list of every change. It is the truth; the records are its fold, and replaying it rebuilds them.           |
 | **Record**     | One instance of a kind, and the only thing there is. Tasks, people, tokens, and kind declarations are all records. Its identity is the pair `(kind, id)`.    |
-| **Kind**       | What a record is: `task` when it is yours alone, `tasks.substrate.reamde.dev/task` when an authority publishes it. A kind declares its properties and its edges.        |
+| **Kind**       | What a record is: `task` when it is yours alone, `tasks.substrate.geoah.me/task` when an authority publishes it. A kind declares its properties and its edges.        |
 | **Property**   | A named, typed value slot on a record: `title`, `dueAt`. Declared on the kind, validated on every write.                                                     |
 | **Edge**       | A named, directed relationship from one record to another, and the only way one record points at another. Declared on the kind it points from.               |
 

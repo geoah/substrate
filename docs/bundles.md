@@ -20,7 +20,7 @@ A `bundle` document wears the ordinary envelope — `kind:`, `metadata:`,
 `data:`, and the server-owned `status:` — and declares the one **authority it
 owns**. An integration or capability bundle owns a categorized authority,
 `<name>.bundles.substrate.reamde.dev`; a vocabulary bundle owns a plain
-organization-style label like `people.substrate.reamde.dev`. Either way the
+organization-style label like `people.substrate.geoah.me`. Either way the
 authority is what marks a vocabulary installed rather than
 [shipped](builtin-kinds.md). `installs:` lists the exact references of everything the closure
 ships: its [kinds](data-model.md#kinds-and-references),

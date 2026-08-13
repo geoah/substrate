@@ -1,0 +1,33 @@
+# one album or release: the pressing you have, not the release authority
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: media.substrate.geoah.me/musicalbum
+data:
+  authority: media.substrate.geoah.me
+  description: >-
+    One album or release: when it came out, its genres, its cover, the
+    artists credited and the label that put it out. Its tracks point back
+    at it and carry their own artist, because a compilation's tracks do
+    not share the album's.
+  names:
+    singular: musicalbum
+    plural: musicalbums
+  properties:
+    releasedAt:
+      type: date
+      description: when the album came out
+    genres:
+      type: string
+      repeated: true
+      description: genre names, as the source lists them
+    coverRef:
+      type: url
+      description: the cover art
+  edges:
+    artist:
+      to: person
+      many: true
+      description: the album artist
+    label:
+      to: organization
+      description: the label that released it

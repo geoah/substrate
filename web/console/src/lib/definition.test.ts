@@ -19,14 +19,14 @@ import {
 
 /** A faithful slice of the live person kind (record 56 shapes). */
 const person: KindInfo = {
-  identity: "people.substrate.reamde.dev/person",
+  identity: "people.substrate.geoah.me/person",
   name: "person",
-  authority: "people.substrate.reamde.dev",
+  authority: "people.substrate.geoah.me",
   version: "",
   plural: "people",
   source: "builtin",
   definition: {
-    authority: "people.substrate.reamde.dev",
+    authority: "people.substrate.geoah.me",
     names: { singular: "person", plural: "people" },
     displayTemplate: "{displayName|name}",
     properties: {
@@ -55,9 +55,9 @@ const person: KindInfo = {
 }
 
 const event: KindInfo = {
-  identity: "calendar.substrate.reamde.dev/calendarevent",
+  identity: "calendar.substrate.geoah.me/calendarevent",
   name: "calendarevent",
-  authority: "calendar.substrate.reamde.dev",
+  authority: "calendar.substrate.geoah.me",
   version: "",
   plural: "calendarevents",
   source: "builtin",
@@ -141,9 +141,9 @@ describe("state and descriptions", () => {
 
 describe("kind resolution", () => {
   const org: KindInfo = {
-    identity: "people.substrate.reamde.dev/organization",
+    identity: "people.substrate.geoah.me/organization",
     name: "organization",
-    authority: "people.substrate.reamde.dev",
+    authority: "people.substrate.geoah.me",
     version: "",
     plural: "organizations",
     source: "builtin",
@@ -151,22 +151,22 @@ describe("kind resolution", () => {
   const kinds = [person, org, event]
 
   it("splits a kind reference at the slash — authority first", () => {
-    expect(splitKind("people.substrate.reamde.dev/person")).toEqual({
-      authority: "people.substrate.reamde.dev",
+    expect(splitKind("people.substrate.geoah.me/person")).toEqual({
+      authority: "people.substrate.geoah.me",
       name: "person",
     })
     expect(splitKind("task")).toEqual({ authority: "", name: "task" })
   })
 
   it("routes authority+plural back to the kind", () => {
-    expect(kindByCollection(kinds, "people.substrate.reamde.dev", "people")).toBe(person)
-    expect(kindByCollection(kinds, "people.substrate.reamde.dev", "nope")).toBeUndefined()
+    expect(kindByCollection(kinds, "people.substrate.geoah.me", "people")).toBe(person)
+    expect(kindByCollection(kinds, "people.substrate.geoah.me", "nope")).toBeUndefined()
   })
 
   it("resolves a bare edge target inside the declaring authority first", () => {
     expect(resolveEdgeTarget(kinds, person, "organization")).toBe(org)
     expect(
-      resolveEdgeTarget(kinds, person, "people.substrate.reamde.dev/organization")
+      resolveEdgeTarget(kinds, person, "people.substrate.geoah.me/organization")
     ).toBe(org)
     expect(resolveEdgeTarget(kinds, person, "missing")).toBeUndefined()
   })
@@ -205,7 +205,7 @@ describe("declaration detail", () => {
             { value: "daily", label: "" },
           ],
         },
-        owner: { type: "reference", to: "people.substrate.reamde.dev/person" },
+        owner: { type: "reference", to: "people.substrate.geoah.me/person" },
         plain: { type: "string" },
       },
       edges: { subject: { to: "issue", required: true } },
@@ -222,7 +222,7 @@ describe("declaration detail", () => {
       { value: "daily", label: "" },
     ])
     expect(by("plain").values).toBeUndefined()
-    expect(by("owner").to).toBe("people.substrate.reamde.dev/person")
+    expect(by("owner").to).toBe("people.substrate.geoah.me/person")
     expect(declaredEdges(config)[0].required).toBe(true)
   })
 })
@@ -259,7 +259,7 @@ describe("graphqlTypeName", () => {
   })
 
   it("PascalCases a shipped authority's kind name, no prefix", () => {
-    expect(graphqlTypeName("people.substrate.reamde.dev/person")).toBe("Person")
+    expect(graphqlTypeName("people.substrate.geoah.me/person")).toBe("Person")
   })
 
   it("prefixes an installed bundle kind with the bundle name", () => {
