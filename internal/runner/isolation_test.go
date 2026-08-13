@@ -7,8 +7,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // nowPlus is the sweep clock: sweep takes the time so a test can retire an
@@ -474,4 +477,73 @@ func hasInternet(t *testing.T) bool {
 	}
 	_ = conn.Close()
 	return true
+}
+
+// A body must not be able to mint a device node inside its own work dir. The
+// directory is writable and readable by design, so a character device created
+// there would be a device the same ruleset then lets it OPEN: a hand-made
+// /dev/mem defeats the whole filesystem layer. The container's default
+// capability set carries CAP_MKNOD and the substrate runs as root in the image,
+// so nothing else is standing in the way.
+func TestBodyCannotCreateDeviceNodes(t *testing.T) {
+	r := New()
+	requireSandbox(t, r)
+	// Only meaningful where mknod would otherwise WORK. An unprivileged uid is
+	// refused a device node by the ordinary permission check, so on a developer
+	// box this would pass with the grant wide open and prove nothing. The image
+	// runs as root with CAP_MKNOD in the container's default set, which is
+	// exactly the case the mask exists for.
+	requireMknod(t)
+	spec := Spec{
+		Repository: "t1", Function: "mknod.g.test", Runtime: "python", TimeoutMs: 5000,
+		Source: `
+import os
+def main(input, host):
+    out = {}
+    scratch = os.environ["TMPDIR"]
+    # A regular file in the same directory, to prove the dir really is writable
+    # and the refusal below is about the DEVICE, not about the path.
+    try:
+        with open(os.path.join(scratch, "ordinary"), "w") as f:
+            f.write("x")
+        out["regularFile"] = "written"
+    except Exception as e:
+        out["regularFile"] = "denied: %s" % type(e).__name__
+    for name, mode, dev in [("chardev", 0o020600, os.makedev(1, 1)),
+                            ("blockdev", 0o060600, os.makedev(7, 0))]:
+        try:
+            os.mknod(os.path.join(scratch, name), mode, dev)
+            out[name] = "CREATED"
+        except Exception as e:
+            out[name] = "denied: %s" % type(e).__name__
+    return {"output": out}
+`,
+	}
+	res, err := r.Invoke(context.Background(), spec, testInput(), nil)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, ok := res.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected output: %#v", res.Output)
+	}
+	if got, _ := out["regularFile"].(string); got != "written" {
+		t.Fatalf("the work dir is not writable, so this test proves nothing: %v", got)
+	}
+	for _, node := range []string{"chardev", "blockdev"} {
+		if got, _ := out[node].(string); !strings.HasPrefix(got, "denied") {
+			t.Errorf("a body created a %s in its own work dir: %v", node, out[node])
+		}
+	}
+}
+
+// requireMknod skips unless THIS process could create a device node, which is
+// the precondition for the confined body's refusal to mean anything.
+func requireMknod(t *testing.T) {
+	t.Helper()
+	probe := filepath.Join(t.TempDir(), "probe")
+	if err := syscall.Mknod(probe, syscall.S_IFCHR|0o600, int(unix.Mkdev(1, 3))); err != nil {
+		t.Skipf("this uid cannot create a device node unconfined (%v), so a refusal would prove nothing", err)
+	}
+	_ = os.Remove(probe)
 }

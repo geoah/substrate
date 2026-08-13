@@ -137,7 +137,14 @@ func applyLandlock(p Policy) error {
 
 	ro := uint64(llReadFile|llReadDir) & handled
 	rx := ro | llExecute
-	rw := handled // everything handled, on the paths the body owns
+	// Everything handled EXCEPT the two device-node creations, on the paths the
+	// body owns. A function body has no use for mknod, and the container's
+	// default capability set carries CAP_MKNOD: without this a body could mint
+	// a character device inside its own work dir, which the same ruleset then
+	// lets it open, and a hand-made /dev/mem is not a sandbox escape so much as
+	// the absence of one. Fifos and unix sockets stay: they address nothing
+	// outside the directory they live in.
+	rw := handled &^ uint64(llMakeChar|llMakeBlock)
 
 	for _, grant := range []struct {
 		paths  []string
