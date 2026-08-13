@@ -145,7 +145,8 @@ func (ds *dataset) KindByPlural(ctx context.Context, authority, plural string) (
 func typeInfo(t *vocabulary.Kind) substrate.KindInfo {
 	return substrate.KindInfo{
 		Identity: t.Identity, Name: t.Name, Authority: t.Authority, Version: t.Version,
-		Plural: t.Plural, Source: t.Source, Definition: t.Definition,
+		Plural: t.Plural, Source: t.Source, Description: t.Description,
+		Definition: t.Definition,
 	}
 }
 

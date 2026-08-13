@@ -93,10 +93,15 @@ type Bundle struct {
 // Resources are the installable members of a bundle, by kind — the detail
 // preview the console shows before installing.
 type Resources struct {
-	Kinds     []string `json:"kinds"`
-	Functions []string `json:"functions"`
-	Agents    []string `json:"agents"`
-	Triggers  []string `json:"triggers"`
+	Kinds []string `json:"kinds"`
+	// KindDescriptions is each kind's declared description, keyed by identity
+	// — what the closure's kinds ARE, before an install has put them in the
+	// registry a reader could look them up in. Omitted where a kind declares
+	// none, so the map is only as big as the prose.
+	KindDescriptions map[string]string `json:"kindDescriptions,omitempty"`
+	Functions        []string          `json:"functions"`
+	Agents           []string          `json:"agents"`
+	Triggers         []string          `json:"triggers"`
 	// Mappings answers "what will this project onto the vocabulary I already
 	// have" — the question a reader asks before importing an integration.
 	Mappings []string `json:"mappings"`
@@ -265,6 +270,12 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 			}
 		case vocabulary.DocKind:
 			b.Resources.Kinds = append(b.Resources.Kinds, id)
+			if desc := mstr(data, "description"); desc != "" {
+				if b.Resources.KindDescriptions == nil {
+					b.Resources.KindDescriptions = map[string]string{}
+				}
+				b.Resources.KindDescriptions[id] = desc
+			}
 		case vocabulary.DocFunction:
 			b.Resources.Functions = append(b.Resources.Functions, id)
 		case vocabulary.DocAgent:

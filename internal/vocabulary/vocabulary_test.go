@@ -500,6 +500,63 @@ data:
 	}
 }
 
+// A KIND's description is the one that heads its page in the console, so it
+// gets two sentences where a property's tooltip gets one — 400 chars, still
+// on one line — and it is carried structurally, not left in the data map.
+func TestKindDescription(t *testing.T) {
+	mk := func(desc string) map[string]string {
+		return map[string]string{"d.example.com/authority.yaml": `kind: core.substrate.reamde.dev/authority
+metadata:
+  id: d.example.com
+data:
+  version: v1alpha1
+---
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: d.example.com/widget
+data:
+  authority: d.example.com
+  description: "` + desc + `"
+  names: {singular: widget, plural: widgets}
+  properties:
+    name: {type: string}
+`}
+	}
+
+	// Two sentences, longer than a property's 200-char tooltip bound.
+	two := "One widget, the thing on the shelf. " + strings.Repeat("x", 200)
+	r := loadFixture(t, mk(two))
+	w, _ := r.ByIdentity("d.example.com/widget")
+	if w.Description != two {
+		t.Errorf("kind description = %q", w.Description)
+	}
+	// The bound is CHARACTERS, not bytes: a description of em dashes is held
+	// to the same length as one of ASCII, and 400 of them is admitted.
+	dashes := strings.Repeat("—", 400)
+	if got, _ := loadFixture(t, mk(dashes)).ByIdentity("d.example.com/widget"); got.Description != dashes {
+		t.Errorf("400 non-ASCII chars refused; the bound counts bytes")
+	}
+	// The mirror shape: the definition IS the data map, so a console reading
+	// the stored declaration sees the same text.
+	if w.Definition["description"] != two {
+		t.Errorf("definition.description = %v", w.Definition["description"])
+	}
+
+	for what, desc := range map[string]string{
+		"newline":       "two\\nlines",
+		"long":          strings.Repeat("x", 401),
+		"over in chars": strings.Repeat("—", 401),
+	} {
+		fsys := fstest.MapFS{}
+		for fname, fbody := range mk(desc) {
+			fsys[fname] = &fstest.MapFile{Data: []byte(fbody)}
+		}
+		if _, err := vocabulary.LoadFS(fsys); err == nil {
+			t.Errorf("%s kind description loaded; it is two sentences on one line", what)
+		}
+	}
+}
+
 // --- source capture ------------------------------------------------------
 
 // The console shows a resource's schema by printing SourceYAML, so the loader

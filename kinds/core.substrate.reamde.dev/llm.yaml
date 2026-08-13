@@ -10,6 +10,11 @@ metadata:
   id: core.substrate.reamde.dev/llm
 data:
   authority: core.substrate.reamde.dev
+  description: >-
+    One model connection as pure data: endpoint, model id, request
+    defaults and pricing. An agent names a row by id (`llm: cheap`), so
+    re-tiering every agent that uses it is one patch here instead of a
+    redeploy.
   names:
     singular: llm
     plural: llms

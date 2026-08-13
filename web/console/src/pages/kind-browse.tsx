@@ -265,6 +265,14 @@ export function KindBrowsePage() {
             {totalText !== undefined ? `${totalText} records in ` : ""}
             <span className="data">{authority}</span>
           </p>
+          {/* What the kind IS, from its declaration — the reader arriving at a
+           * collection they did not install should not have to open the
+           * definition tab to find out what lives in it. */}
+          {kindInfo.description && (
+            <p className="mt-1.5 max-w-prose text-sm text-muted-foreground">
+              {kindInfo.description}
+            </p>
+          )}
         </div>
         <Button
           variant="outline"

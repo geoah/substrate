@@ -79,6 +79,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: notion.bundles.substrate.reamde.dev/config}
 data:
   authority: notion.bundles.substrate.reamde.dev
+  description: >-
+    The one Notion integration token this bundle spends, and the API
+    origin it may be sent to. A host-enforced singleton; the token is
+    sealed against read-back and the origin is pinned, so an owner edit
+    cannot become an exfiltration channel.
   names: {singular: config, plural: configs}
   traits: [bundleconfig]
   displayTemplate: "Notion integration"
@@ -119,6 +124,10 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: notion.bundles.substrate.reamde.dev/account}
 data:
   authority: notion.bundles.substrate.reamde.dev
+  description: >-
+    One connected Notion workspace. The account trait's OAuth hands are
+    declared but dormant — this bundle authenticates with a pasted token —
+    so connection health reads off the sync's own status instead.
   names: {singular: account, plural: accounts}
   traits: [accountconfig]
   displayTemplate: "{displayName}"
@@ -227,6 +236,10 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: notion.bundles.substrate.reamde.dev/page}
 data:
   authority: notion.bundles.substrate.reamde.dev
+  description: >-
+    What Notion holds about one page shared with the integration: its URL,
+    its block tree normalized to text, and the last-edited stamp the delta
+    sync compares to decide whether anything changed.
   names: {singular: page, plural: pages}
   properties:
     account:
@@ -287,6 +300,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: notion.bundles.substrate.reamde.dev/database}
 data:
   authority: notion.bundles.substrate.reamde.dev
+  description: >-
+    One Notion data source shared with the integration; a multi-source
+    database yields one mirror per source, all naming the same containing
+    database. The raw object is kept, and its last-edited stamp drives the
+    delta here too.
   names: {singular: database, plural: databases}
   properties:
     account:

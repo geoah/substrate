@@ -52,6 +52,10 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: web.bundles.substrate.reamde.dev/config}
 data:
   authority: web.bundles.substrate.reamde.dev
+  description: >-
+    This bundle's one configuration record: the URL substrings that are
+    never harvested, the page-fetch credential, and the newest weekly
+    digest a rollup produced.
   names: {singular: config, plural: configs}
   traits: [bundleconfig]
   properties:
@@ -75,6 +79,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: web.bundles.substrate.reamde.dev/page}
 data:
   authority: web.bundles.substrate.reamde.dev
+  description: >-
+    One harvested web page: where it came from, the fetched markdown, the
+    classifier's verdict and whether a reading-list proposal for it was
+    accepted. Its id is a hash of the URL, so re-harvesting updates one
+    row.
   names: {singular: page, plural: pages}
   properties:
     url:

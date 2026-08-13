@@ -27,6 +27,9 @@ function kindFromRecord(item: Record<string, unknown>): KindInfo | undefined {
   const identity = String(item?.id ?? "")
   if (!identity) return undefined
   const { authority, name } = splitKind(identity)
+  const definition = properties.definition as
+    | Record<string, unknown>
+    | undefined
   return {
     identity,
     name: String(properties.name ?? name),
@@ -34,7 +37,16 @@ function kindFromRecord(item: Record<string, unknown>): KindInfo | undefined {
     version: String(properties.version ?? ""),
     plural: String(properties.plural ?? properties.name ?? name),
     source: String(properties.source ?? "builtin"),
-    definition: properties.definition as Record<string, unknown> | undefined,
+    // From the DECLARATION, not from a projected column: core's `kind` cannot
+    // grow a property without every declaration row growing it at once, so the
+    // kind's own prose stays where it was authored. A STRING or nothing — this
+    // renders as prose, and `String()` would turn a malformed declaration's
+    // object into "[object Object]" on the page.
+    description:
+      typeof definition?.description === "string"
+        ? definition.description
+        : "",
+    definition,
   }
 }
 

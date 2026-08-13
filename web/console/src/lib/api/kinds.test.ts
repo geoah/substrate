@@ -27,7 +27,10 @@ describe("normalizeKinds", () => {
             authority: "people.substrate.reamde.dev",
             plural: "persons",
             source: "builtin",
-            definition: { authority: "people.substrate.reamde.dev" },
+            definition: {
+              authority: "people.substrate.reamde.dev",
+              description: "One human, one record.",
+            },
           },
         },
       ],
@@ -41,9 +44,27 @@ describe("normalizeKinds", () => {
         version: "",
         plural: "persons",
         source: "builtin",
-        definition: { authority: "people.substrate.reamde.dev" },
+        description: "One human, one record.",
+        definition: {
+          authority: "people.substrate.reamde.dev",
+          description: "One human, one record.",
+        },
       },
     ])
+  })
+
+  // The kind's description is the DECLARATION's — core's `kind` carries no
+  // description column for it to be projected onto.
+  it("reads the description off the stored declaration", () => {
+    const [k] = normalizeKinds({
+      records: [
+        {
+          id: "tasks.substrate.reamde.dev/task",
+          properties: { definition: { description: "Something to do." } },
+        },
+      ],
+    })
+    expect(k?.description).toBe("Something to do.")
   })
 
   it("accepts a bare KindInfo list as the same registry", () => {

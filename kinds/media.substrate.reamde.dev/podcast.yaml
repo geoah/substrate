@@ -4,6 +4,10 @@ metadata:
   id: media.substrate.reamde.dev/podcast
 data:
   authority: media.substrate.reamde.dev
+  description: >-
+    One podcast feed, held exactly like a book library item: the RSS URL,
+    the language, the explicit flag, whether it plays newest-first or from
+    episode one, and the people behind it. Its episodes point back at it.
   names:
     singular: podcast
     plural: podcasts

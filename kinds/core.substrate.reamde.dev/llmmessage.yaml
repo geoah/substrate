@@ -9,6 +9,11 @@ metadata:
   id: core.substrate.reamde.dev/llmmessage
 data:
   authority: core.substrate.reamde.dev
+  description: >-
+    One turn of an agent thread — the transcript and the tool-call audit,
+    written by the loop as it runs. A user turn is the envelope or the
+    human's message, an assistant turn its prose and tool calls, a tool
+    turn one dispatched call's result.
   names:
     singular: llmmessage
     plural: llmmessages

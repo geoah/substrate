@@ -4,6 +4,11 @@ metadata:
   id: core.substrate.reamde.dev/actor
 data:
   authority: core.substrate.reamde.dev
+  description: >-
+    One declared actor — the name a write is attributed to. Actors are
+    attribution and a manager tier, never authorization: `api`, `console`
+    and `substratectl` are the doors a human write comes through, and
+    machine hands like `function:<name>` are minted at dispatch.
   names:
     singular: actor
     plural: actors

@@ -76,6 +76,14 @@ func TestCatalogDetailEnumeratesResources(t *testing.T) {
 	if !contains(b.Resources.Kinds, "web.bundles.substrate.reamde.dev/config") {
 		t.Errorf("config kind not in resources: %v", b.Resources.Kinds)
 	}
+	// Each kind's own description rides along: before an install there is no
+	// registry entry to look one up in, and "what does this ship" is the
+	// question the preview exists to answer.
+	for _, ident := range b.Resources.Kinds {
+		if b.Resources.KindDescriptions[ident] == "" {
+			t.Errorf("%s ships no description in the closure preview", ident)
+		}
+	}
 }
 
 // The integration facet is curated catalog metadata keyed by bundle id, NOT

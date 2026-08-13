@@ -4,6 +4,10 @@ metadata:
   id: media.substrate.reamde.dev/musictrack
 data:
   authority: media.substrate.reamde.dev
+  description: >-
+    One track on an album — the recording itself, with its number, its
+    playback length and where the file lives. Its artist edge is separate
+    from the album's, which is what makes compilations come out right.
   names:
     singular: musictrack
     plural: musictracks

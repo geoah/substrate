@@ -391,6 +391,34 @@ describe("installedKindRows — the Kinds table", () => {
     )
   })
 
+  // The hover has to work BEFORE the import — which is the one moment the
+  // registry cannot answer, because nothing of the bundle is in it yet.
+  it("describes a catalog-only kind from the closure, the registry once imported", () => {
+    const rows = installedKindRows(
+      status(),
+      [],
+      catalog({
+        resources: {
+          kinds: [contactKind.identity],
+          kindDescriptions: { [contactKind.identity]: "What Google holds." },
+        },
+      })
+    )
+    expect(rows[0].description).toBe("What Google holds.")
+
+    const imported = installedKindRows(
+      status(),
+      [{ ...contactKind, description: "The reconciled one." }],
+      catalog({
+        resources: {
+          kinds: [contactKind.identity],
+          kindDescriptions: { [contactKind.identity]: "What Google holds." },
+        },
+      })
+    )
+    expect(imported[0].description).toBe("The reconciled one.")
+  })
+
   it("keeps a kind unresolved by the registry — identity only, no route", () => {
     const rows = installedKindRows(
       status(),

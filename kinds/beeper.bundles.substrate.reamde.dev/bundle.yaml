@@ -62,6 +62,11 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: beeper.bundles.substrate.reamde.dev/config}
 data:
   authority: beeper.bundles.substrate.reamde.dev
+  description: >-
+    The Beeper homeserver and the Matrix access token this bundle spends,
+    as a host-enforced singleton. The token is owner-written and
+    origin-pinned: it travels to a beeper.com host over https and nowhere
+    else.
   names: {singular: config, plural: configs}
   traits: [bundleconfig]
   displayTemplate: "Beeper at {homeserverUrl}"
@@ -95,6 +100,10 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: beeper.bundles.substrate.reamde.dev/account}
 data:
   authority: beeper.bundles.substrate.reamde.dev
+  description: >-
+    One connected Beeper account: the owner's sync toggles and the
+    connector's own progress. The account trait's OAuth hands are declared
+    but stay dormant, since no OAuth flow ever runs for this bundle.
   names: {singular: account, plural: accounts}
   traits: [accountconfig]
   displayTemplate: "{userId}"
@@ -211,6 +220,10 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: beeper.bundles.substrate.reamde.dev/room}
 data:
   authority: beeper.bundles.substrate.reamde.dev
+  description: >-
+    What Beeper holds about one bridged chat, in Matrix's own shape: the
+    room id, its name where it has one, and which network it bridges.
+    Written mint-then-patch, so a partial sync never erases a name.
   names: {singular: room, plural: rooms}
   displayTemplate: "{name|roomId}"
   properties:
@@ -247,6 +260,10 @@ kind: core.substrate.reamde.dev/kind
 metadata: {id: beeper.bundles.substrate.reamde.dev/message}
 data:
   authority: beeper.bundles.substrate.reamde.dev
+  description: >-
+    One bridged Matrix message, keyed by its globally unique event id, so
+    a write is put-if-absent and a re-read is a no-op. The sender is a
+    Matrix id, often a bridge ghost rather than a human's own.
   names: {singular: message, plural: messages}
   displayTemplate: "{sender}: {text}"
   properties:

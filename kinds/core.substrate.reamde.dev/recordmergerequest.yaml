@@ -4,6 +4,11 @@ metadata:
   id: core.substrate.reamde.dev/recordmergerequest
 data:
   authority: core.substrate.reamde.dev
+  description: >-
+    A proposed merge of two records, waiting for the owner. A duplicate
+    detector or an app writes one and accepting the decision is what
+    performs the merge; the row is also the rejection memory, since an
+    existing request suppresses re-suggesting the pair.
   names:
     singular: recordmergerequest
     plural: recordmergerequests

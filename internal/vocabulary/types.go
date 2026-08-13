@@ -347,6 +347,11 @@ type Kind struct {
 	Plural    string
 	Version   string
 	Source    string // "builtin" | "installed"
+	// Description is what this kind is for, in the author's own words: it
+	// heads the kind's page in the console, so it says what the thing is and
+	// what writes it. A property's description is a tooltip and holds to one
+	// sentence; a kind's gets two (maxKindDescription), still on one line.
+	Description string
 
 	DisplayTemplate string
 	Template        *Template

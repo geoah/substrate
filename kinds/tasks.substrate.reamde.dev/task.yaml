@@ -4,6 +4,11 @@ metadata:
   id: tasks.substrate.reamde.dev/task
 data:
   authority: tasks.substrate.reamde.dev
+  description: >-
+    Something to do, however it arrived: typed by hand, projected from a
+    Linear issue, or proposed by an agent. Status carries the whole
+    lifecycle — a proposal waits for the owner, an open task is due, and
+    completing it stamps the time by itself.
   names:
     singular: task
     plural: tasks

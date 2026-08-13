@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -46,22 +47,54 @@ func shippedTree(t *testing.T) string {
 	return dir
 }
 
-// bumpGroupVersion rewrites one shipped authority's declared version — the whole
-// of what "the binary shipped a newer vocabulary" means. Core's header sits in
-// core.yaml, because authority.yaml there declares the `authority` KIND.
-func bumpGroupVersion(t *testing.T, tree, authority, from, to string) {
-	t.Helper()
-	path := filepath.Join(tree, authority, "authority.yaml")
+// authorityHeader is where a shipped authority declares itself. Core's header
+// sits in core.yaml, because authority.yaml there declares the `authority` KIND.
+func authorityHeader(tree, authority string) string {
 	if authority == "core.substrate.reamde.dev" {
-		path = filepath.Join(tree, authority, "core.yaml")
+		return filepath.Join(tree, authority, "core.yaml")
 	}
+	return filepath.Join(tree, authority, "authority.yaml")
+}
+
+// declaredVersion is the version a shipped authority's header carries. Read from
+// the TREE rather than written into these tests as a literal: bumping a shipped
+// authority is an ordinary change, and it must not break the upgrade suite.
+//
+// The FIRST document only. core.yaml is a stream — the authority header, then
+// actors and traits — and a later document that grows a `version:` must not be
+// the one this answers with.
+var reAuthorityVersion = regexp.MustCompile(`(?m)^  version: (\S+)$`)
+
+func declaredVersion(t *testing.T, tree, authority string) string {
+	t.Helper()
+	path := authorityHeader(tree, authority)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
-	src := strings.Replace(string(raw), "version: "+from, "version: "+to, 1)
-	if src == string(raw) {
-		t.Fatalf("%s does not declare version %s", path, from)
+	header, _, _ := strings.Cut(string(raw), "\n---")
+	m := reAuthorityVersion.FindStringSubmatch(header)
+	if m == nil {
+		t.Fatalf("%s declares no version in its first document", path)
+	}
+	return m[1]
+}
+
+// bumpGroupVersion rewrites one shipped authority's declared version — the whole
+// of what "the binary shipped a newer vocabulary" means. The header document
+// alone, for declaredVersion's reason.
+func bumpGroupVersion(t *testing.T, tree, authority, to string) {
+	t.Helper()
+	path := authorityHeader(tree, authority)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	from := declaredVersion(t, tree, authority)
+	header, rest, split := strings.Cut(string(raw), "\n---")
+	src := strings.Replace(header, "version: "+from, "version: "+to, 1)
+	if split {
+		src += "\n---" + rest
 	}
 	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
@@ -216,7 +249,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 
 	// --- binary N+1: the core authority gains a kind and a version.
 	addShippedType(t, tree, "core.substrate.reamde.dev", "widget", "widgets")
-	bumpGroupVersion(t, tree, "core.substrate.reamde.dev", "v1alpha1", "v1beta1")
+	bumpGroupVersion(t, tree, "core.substrate.reamde.dev", "v1beta1")
 
 	svc2 := openTree(t, dsn, tree)
 	ds2, err := svc2.Dataset(ctx, "opened")
@@ -292,8 +325,8 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 		"core.substrate.reamde.dev/authority", "core.substrate.reamde.dev").Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != "v1alpha1" {
-		t.Fatalf("an unopened repository's vocabulary moved to %s", version)
+	if want := declaredVersion(t, shippedTree(t), "core.substrate.reamde.dev"); version != want {
+		t.Fatalf("an unopened repository's vocabulary moved to %s, not %s", version, want)
 	}
 
 	// …and it upgrades the moment it IS opened, from wherever it stood.
@@ -314,7 +347,7 @@ func TestBootUpgradeNeverDowngrades(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	tree := shippedTree(t)
 	addShippedType(t, tree, "core.substrate.reamde.dev", "widget", "widgets")
-	bumpGroupVersion(t, tree, "core.substrate.reamde.dev", "v1alpha1", "v2")
+	bumpGroupVersion(t, tree, "core.substrate.reamde.dev", "v2")
 
 	svc1 := openTree(t, dsn, tree)
 	if _, err := svc1.CreateRepository(ctx, "geoah"); err != nil {
@@ -327,8 +360,8 @@ func TestBootUpgradeNeverDowngrades(t *testing.T) {
 	head := maxSeq(t, ds1)
 	_ = svc1.Close()
 
-	// The older binary: the widget type is gone from its tree and the authority's
-	// version is back to v1alpha1.
+	// The older binary: the widget type is gone from its tree and the
+	// authority's version is back to the one the tree ships.
 	older := shippedTree(t)
 	svc2 := openTree(t, dsn, older)
 	t.Cleanup(func() { _ = svc2.Close() })

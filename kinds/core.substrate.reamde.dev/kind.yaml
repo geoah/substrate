@@ -4,6 +4,11 @@ metadata:
   id: core.substrate.reamde.dev/kind
 data:
   authority: core.substrate.reamde.dev
+  description: >-
+    One declared kind — what a record is, `{authority}/{name}`. The
+    vocabulary browses through the same API as data, so every kind this
+    repository holds is a row here, and its `definition` is what the
+    engine validates every write against.
   names:
     singular: kind
     plural: kinds
@@ -36,3 +41,12 @@ data:
         included
     # No sourceYAML (record 61): the parsed definition is the document, and
     # the source view re-renders it. Comments live in the authored files.
+    #
+    # NO `description` PROPERTY EITHER, for the same reason plus a harder one.
+    # A kind's own description is prose the definition already carries, and the
+    # projected columns are the ROUTING facts a reader needs without parsing it.
+    # The harder reason: this kind describes every projected declaration row,
+    # so a property added HERE is one every row would carry the moment the
+    # binary ships it — and an existing repository, whose stored declaration is
+    # still the old one, refuses those rows and cannot open. A property on this
+    # kind can only ever arrive with a projection that bootstraps it.

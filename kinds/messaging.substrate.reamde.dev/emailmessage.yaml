@@ -4,6 +4,11 @@ metadata:
   id: messaging.substrate.reamde.dev/emailmessage
 data:
   authority: messaging.substrate.reamde.dev
+  description: >-
+    One mail message in a thread: subject, preview, body, the provider's
+    label ids, and the people it came from and went to. To, cc and bcc are
+    not distinguished — an edge carries no properties, so every addressee
+    is a recipient.
   names:
     singular: emailmessage
     plural: emailmessages

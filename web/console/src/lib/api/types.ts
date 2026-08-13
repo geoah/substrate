@@ -282,6 +282,9 @@ export interface KindInfo {
   /** `builtin` for vocabulary the substrate ships, `installed` for kinds a
    * bundle declared, `schema` for repository-declared ones. */
   source: string
+  /** What the kind is for, as its declaration says it — a sentence or two,
+   * read above the collection. Empty when the declaration carries none. */
+  description?: string
   /** The reconciled declaration — the `data` of the `core.substrate.reamde.dev/kind`
    * manifest that declares it (`authority`, `names`, `properties`, `edges`, …),
    * key order lost to jsonb. */
@@ -317,6 +320,10 @@ export interface TOTPEnrollment {
 /** What a bundle installs, by kind — the detail preview before installing. */
 export interface BundleResources {
   kinds?: string[]
+  /** Each kind's declared description, keyed by identity — what the closure's
+   * kinds ARE before an install has put them in the registry. Absent for a
+   * kind that declares none, and from an older server whole. */
+  kindDescriptions?: Record<string, string>
   functions?: string[]
   agents?: string[]
   triggers?: string[]

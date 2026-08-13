@@ -4,6 +4,10 @@ metadata:
   id: media.substrate.reamde.dev/podcastepisode
 data:
   authority: media.substrate.reamde.dev
+  description: >-
+    One episode of a feed, sitting on the timeline at its publish date. It
+    carries the episode number, the season where a feed has them, the show
+    notes and where the audio lives.
   names:
     singular: podcastepisode
     plural: podcastepisodes
