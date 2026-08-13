@@ -1,0 +1,37 @@
+# How every YAML in this tree is shaped. `mise run fmt:yaml` writes it,
+# `mise run fmt:check` fails on it, and CI runs the same task.
+#
+# The vocabulary is the reason this exists: `kinds/` is the contract as files,
+# 100-odd documents written by hand and by agents, and they had drifted into
+# three styles at once — `metadata: {id: x}` on one line here, a block map
+# there. One formatter settles it, so a review reads the change and not the
+# punctuation.
+formatter:
+  type: basic
+  # Two spaces, sequences indented under their key — the shape `kinds/`
+  # already had.
+  indent: 2
+  indentless_arrays: false
+  # KEEP THE COMMENTS BREATHING. These files carry long prose comments
+  # separated by blank lines; the default drops every blank line and welds
+  # them into one wall. Single breaks survive, runs of them collapse to one.
+  retain_line_breaks_single: true
+  # Do not touch `on:` in a workflow, or `no`/`yes` anywhere. The YAML 1.1
+  # bool set would rewrite those keys and break GitHub Actions.
+  scan_folded_as_literal: false
+  # Folded scalars (`>-`) rewrap deterministically at 80 instead of being
+  # welded into one 300-column line. Comments and plain scalars are left
+  # alone, so the prose in these files keeps the shape its author gave it.
+  max_line_length: 80
+  eof_newline: true
+# Everything, then the exclusions. Lockfiles and vendored trees are not ours
+# to shape, and .dev/ is a running substrate's scratch.
+include:
+  - "**/*.yaml"
+  - "**/*.yml"
+exclude:
+  - "**/node_modules/**"
+  - "web/console/pnpm-lock.yaml"
+  - "web/console/dist/**"
+  - ".dev/**"
+  - "bin/**"

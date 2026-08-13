@@ -1,0 +1,32 @@
+# The one thing about a YAML in this tree that a formatter cannot decide.
+#
+# `metadata: {id: x}` and the same map written over two lines are the SAME
+# document, so yamlfmt leaves whichever it finds alone and both styles live
+# here at once — in `kinds/`, which is the contract as files, that reads as
+# two conventions rather than one. This forbids the flow form, and yamlfmt
+# does the rest.
+#
+# Note there is NO `extends: default` — every other rule yamllint has is
+# either yamlfmt's job (indentation, line length, trailing space, the newline
+# at EOF) or an opinion this tree does not hold (comment spacing, truthy).
+# A second opinion about shape would only contradict the formatter. Invalid
+# YAML still fails here: a parse error is not a rule.
+rules:
+  # `{}` stays — an empty flow map is a value, not a layout choice, and the
+  # block form of it does not exist. Anything with a key in it is layout.
+  braces:
+    forbid: non-empty
+  # Flow SEQUENCES are untouched on purpose: `ops: [create, update]` and
+  # `branches: [main]` are one value each and read better on one line.
+  #
+  # A repeated key is not a style question — the later one silently wins and
+  # the earlier is lost, which in a kind declaration means a property that
+  # was written and is not there.
+  key-duplicates: enable
+
+ignore: |
+  node_modules/
+  web/console/pnpm-lock.yaml
+  web/console/dist/
+  .dev/
+  bin/

@@ -31,8 +31,19 @@ mise run build:cli      # bin/substratectl
 mise run test           # the whole Go suite, in its two halves
 mise run test:short     # skips every suite that wants a database
 mise run lint           # golangci-lint; keep it at zero
+mise run fmt            # gofmt and yamlfmt, in place
+mise run lint:yaml      # yamllint; the YAML rules a formatter cannot hold
 mise run console:dev    # the console on :5173, proxying /api to :8080
 ```
+
+**The YAML is formatted too.** `kinds/` is the contract as files, so its shape
+is held the way Go's is: `mise run fmt` writes it (gofmt and yamlfmt both),
+`mise run fmt:check` fails on it, and the `lint` job runs both. Two rules are
+worth knowing before you write a document by hand. Block mappings only —
+`metadata: {id: x}` is refused by `lint:yaml`, `metadata:` with `id:` under it
+is the form; flow SEQUENCES (`ops: [create, update]`) are fine. And folded
+scalars (`>-`) rewrap at 80 columns, so do not hand-align them. Settings live
+in `.yamlfmt` and `.yamllint`, one comment per decision.
 
 **A substrate to work against** — a Postgres container of its own on `:5433`
 and the binary from the tree on `:8080`, invite code `let-me-in`, pid and log
@@ -213,4 +224,5 @@ Do not half-do it.
   decide the version and write `CHANGELOG.md`, so a title it cannot parse is a
   release that does not happen. A PR title is one too — the merge is a squash,
   so the PR title IS the commit release-please reads.
-- Keep `mise run lint` and `mise run fmt:check` at zero. CI runs both.
+- Keep `mise run lint`, `mise run lint:yaml` and `mise run fmt:check` at zero.
+  CI runs all three, in the `lint` job.

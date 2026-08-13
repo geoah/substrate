@@ -3,6 +3,16 @@ go = "1.26.5"
 node = "22.12.0"
 pnpm = "9.14.2"
 golangci-lint = "2.12.2"
+# The YAML formatter. The vocabulary IS YAML — `kinds/` is the contract as
+# files — so its shape is reviewed as often as Go is, and `fmt:check` fails on
+# it the same way. Config is .yamlfmt.
+yamlfmt = "0.21.0"
+# The YAML linter, for the one rule a formatter cannot hold: no flow mappings.
+# `metadata: {id: x}` and `metadata:\n  id: x` are the same document, so no
+# formatter rewrites one into the other — but only one of them is what this
+# tree writes. Config is .yamllint. It is a Python tool, installed through
+# uv/pipx against the python3 the machine already has (see the note below).
+yamllint = "1.37.1"
 # The release tool: builds the CLI for every platform, builds and pushes the
 # multi-arch image, and attaches everything to the GitHub release. The release
 # workflow runs `mise run release`, so a release is reproducible from a laptop.
@@ -94,6 +104,13 @@ description = "The LIVE suite: real completions from real providers, when the ke
 # but do not loop it.
 run = "go test -count=1 -run '^TestLive' -v ./internal/llm/... ./internal/engine/..."
 
+[tasks."lint:yaml"]
+description = "yamllint over every YAML in the tree — block style, and nothing else"
+# The rules are in .yamllint, and there is deliberately almost nothing in it:
+# shape is yamlfmt's job, and a second opinion about indentation would only
+# contradict it. What is here is what a formatter cannot say.
+run = "yamllint ."
+
 [tasks.lint]
 description = "golangci-lint over the module"
 # --max-same-issues 0 --max-issues-per-linter 0: the default caps the report at
@@ -106,17 +123,36 @@ description = "Refuse a kinds/ change that does not bump a declaration version"
 run = ".mise/kindscheck.sh"
 
 [tasks.fmt]
+description = "Format the tree in place: Go and YAML"
+depends = ["fmt:go", "fmt:yaml"]
+
+[tasks."fmt:go"]
 description = "gofmt the module in place"
 run = "gofmt -w ."
 
+[tasks."fmt:yaml"]
+description = "yamlfmt every YAML in the tree in place; config is .yamlfmt"
+run = "yamlfmt ."
+
 [tasks."fmt:check"]
 description = "Fail if anything is unformatted"
+depends = ["fmt:go:check", "fmt:yaml:check"]
+
+[tasks."fmt:go:check"]
+description = "Fail if any Go file is unformatted"
 run = '''
     unformatted=$(gofmt -l . | grep -v '^web/' || true)
     if [ -n "$unformatted" ]; then
       echo "unformatted:"; echo "$unformatted"; exit 1
     fi
     '''
+
+[tasks."fmt:yaml:check"]
+description = "Fail if any YAML is unformatted, printing the diff"
+# -lint prints what `fmt:yaml` would change and exits non-zero. The exclusions
+# (lockfiles, node_modules, .dev) live in .yamlfmt, so this and `fmt:yaml` can
+# never disagree about which files are ours.
+run = "yamlfmt -lint ."
 
 # =============================================================================
 # Development
@@ -281,8 +317,8 @@ run = "goreleaser release --clean"
 # here; the workflow needs no edit.
 
 [tasks."ci:lint"]
-description = "CI job `lint` — formatting, the linter, the release config, and the kinds/ version-bump guard"
-depends = ["fmt:check", "lint", "release:check", "kinds:check"]
+description = "CI job `lint` — formatting, the linters, the release config, and the kinds/ version-bump guard"
+depends = ["fmt:check", "lint", "lint:yaml", "release:check", "kinds:check"]
 
 [tasks."ci:go"]
 description = "CI job `go test`: the cross-compile check, then the suite in its two halves"
