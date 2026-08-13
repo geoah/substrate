@@ -248,17 +248,29 @@ export async function deleteRecord(
 
 // ── incoming edges (record 57) ──────────────────────────────────────────────
 
+/** The fan-in of one record. `rel`/`fromKind` narrow it to ONE group, which
+ * is how a drill-down expands a group without pulling every other pointer the
+ * record has — and the page's total is then that group's, not the record's. */
 export function incomingInfiniteOptions(
   authority: string,
   plural: string,
   id: string,
-  first = 50
+  first = 50,
+  narrow: { rel?: string; fromKind?: string } = {}
 ) {
   return infiniteQueryOptions({
-    queryKey: ["incoming", authority, plural, id],
+    queryKey: [
+      "incoming",
+      authority,
+      plural,
+      id,
+      { rel: narrow.rel ?? null, fromKind: narrow.fromKind ?? null, first },
+    ],
     queryFn: ({ pageParam, signal }) => {
       const q = new URLSearchParams({ first: String(first) })
       if (pageParam) q.set("after", pageParam)
+      if (narrow.rel) q.set("rel", narrow.rel)
+      if (narrow.fromKind) q.set("fromKind", narrow.fromKind)
       return request<IncomingPage>(
         "GET",
         `${collectionPath(authority, plural)}/${seg(id)}/incoming?${q}`,

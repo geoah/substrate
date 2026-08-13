@@ -49,11 +49,12 @@ const COLUMNS: ColumnDef<ProvenanceRow, unknown>[] = [
     ),
     meta: { label: "property" },
   },
+  // No fixed width, for the same reason the activity rail dropped its own: a
+  // manager is identity-length and 108px truncated every one of them.
   actorColumn<ProvenanceRow>({
     id: "manager",
     title: "manager",
     actor: (row) => row.meta.manager,
-    width: 108,
   }),
   timeColumn<ProvenanceRow>({
     id: "since",
@@ -88,26 +89,27 @@ const COLUMNS: ColumnDef<ProvenanceRow, unknown>[] = [
 ]
 
 /** The competing offers, opened beneath the grid line (rule 11) in the
- * shared detail band: who says what, since when. */
+ * shared detail band: who says what, since when. Same label/value shape as
+ * every other expanded row — the offering actor is the label, its value and
+ * age are the value (owner complaint, 2026-08-13). */
 function OffersDetail({ row }: { row: ProvenanceRow }) {
   const offers = row.meta.alternatives ?? []
   return (
     <RowDetail density="compact">
-      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2.5 gap-y-1">
+      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5">
         {offers.map((offer) => (
           <div key={offer.actor} className="contents">
             <ActorChip actor={offer.actor} />
-            <span
-              className="truncate text-right data"
-              title={cellValue(offer.value)}
-            >
-              {cellValue(offer.value)}
-            </span>
-            <span
-              className="text-right data text-muted-foreground"
-              title={offer.updatedAt}
-            >
-              {relativeTime(offer.updatedAt)}
+            <span className="flex min-w-0 items-baseline gap-2">
+              <span className="truncate data" title={cellValue(offer.value)}>
+                {cellValue(offer.value)}
+              </span>
+              <span
+                className="ml-auto shrink-0 data text-muted-foreground"
+                title={offer.updatedAt}
+              >
+                {relativeTime(offer.updatedAt)}
+              </span>
             </span>
           </div>
         ))}

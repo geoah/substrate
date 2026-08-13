@@ -69,6 +69,8 @@ export function agentThreadsQueryOptions(agent: string, first = 50) {
     authority: CORE_AUTHORITY,
     plural: "llmthreads",
     first,
+    // `agent` is a REFERENCE: the filter names the record it points at, and
+    // a bare id is admitted because the declaration pins the kind.
     filter: { properties: { agent: { eq: agent } } },
     orderBy: "startedAt:desc",
   })
@@ -82,13 +84,31 @@ export function threadMessagesQueryOptions(threadId: string) {
     ...recordsQueryOptions({
       authority: CORE_AUTHORITY,
       plural: "llmmessages",
-      first: 500,
-      filter: { edge: { rel: "thread", to: threadId } },
-      orderBy: "turn:asc,createdAt:asc",
+      first: TRANSCRIPT_WINDOW,
+      // `thread` is a REFERENCE on the message now, not an edge.
+      filter: { properties: { thread: { eq: threadId } } },
+      // DESCENDING, then reversed by the reader: the page cap is a cap, and a
+      // long conversation must lose its oldest turns rather than the reply
+      // that just streamed. `turn` is int-typed, so this is a numeric sort.
+      orderBy: "turn:desc,createdAt:desc",
     }),
     // A live chat re-reads the settled transcript once the stream ends.
     enabled: Boolean(threadId),
+    // NOT the list default: `placeholderData: (prev) => prev` would hold the
+    // PREVIOUS thread's transcript on screen under the next thread's id — and
+    // hold it forever on a new conversation, where the query never runs.
+    placeholderData: undefined,
   })
+}
+
+/** How many turns of one thread the surface reads. The wire caps a page at
+ * 500, and nothing here pages further: past this a conversation shows its most
+ * recent window. */
+export const TRANSCRIPT_WINDOW = 500
+
+/** The transcript in loop order, from the newest-first page the wire returns. */
+export function transcriptOrder(records: SubstrateRecord[]): SubstrateRecord[] {
+  return [...records].reverse()
 }
 
 // ── the chat stream ─────────────────────────────────────────────────────────
@@ -116,10 +136,16 @@ export interface AgentEvent {
   thread?: string
   /** A streamed content delta. */
   text?: string
-  /** Tool lifecycle. */
+  /** Tool lifecycle. `id` is the tool CALL's id and rides both sides: one turn
+   * may dispatch the same tool twice, so a client pairing by name settles the
+   * wrong card. It is the id the transcript's tool rows carry as
+   * `toolCallId`, so a live card and its replayed row are the same card.
+   * `output` rides the finished event: the dispatch's result payload. */
+  id?: string
   tool?: string
   args?: string
   ok?: boolean
+  output?: string
   /** Rides the done event. */
   result?: AgentResult
   /** Rides the error event: a post-200 loop failure. */

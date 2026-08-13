@@ -121,7 +121,8 @@ export function actorColumn<T>(opts: {
     meta: {
       label: title,
       // chips are identity-length (`github.connectors.substrate.reamde.dev`): a modest
-      // share with a cap, or the caller's fixed px (the rails pass one).
+      // share with a cap. A caller may pin px instead, though none does now —
+      // the rails dropped theirs, which truncated every chip they held.
       ...(opts.width
         ? { width: opts.width }
         : { size: { min: 140, max: 240, weight: 0.75 } }),

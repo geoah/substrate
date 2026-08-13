@@ -32,8 +32,14 @@ A record opens on four tabs:
   reference and every edge target rendered as a link you can follow.
 - **Activity**: this record's own slice of [the changelog](changelog.md), with the
   actor on every row and each trigger's delivery state beside it.
-- **Incoming**: the edges pointing *at* this record, paged separately as the
-  API pages them.
+- **Graph**: what this record points at and what points back, as a tree you
+  drill into. Outgoing pointers — edges and reference properties alike — read
+  straight off the record; inbound ones are grouped and paged as the API pages
+  them, each group headed by the name the DECLARATION gives that side
+  (`messages · llmmessage`, from `inverse:`) rather than the raw `rel`, which
+  is the relationship as the *other* record spells it. A member expands in
+  place into its own graph, so a thread → its messages → the record a tool
+  wrote is three clicks without leaving the page.
 - **Provenance**: which actor wrote each property, and at which
   [tier](terms.md#truth-and-derivation).
 
@@ -62,6 +68,12 @@ is what that transition does.
 The [catalog](bundles-catalog.md): every bundle the binary ships,
 available and installed together, with an Integration badge on the ones that
 connect a provider and a quarantine badge on one that needs re-installing.
+The **All / Vocabulary / Integrations / Examples** filter narrows the list:
+*Vocabulary* is kinds and nothing else, *Integrations* connect an external
+provider, and *Examples* are the worked ones — the LLM example that installs
+the provider rows an agent needs, the notes example that shows an agent
+calling functions and a sub-agent, and the URL harvester that shows triggers
+and a change request end to end.
 Installing shows what the closure added. An installed bundle carries its
 lifecycle verbs — disable, enable, uninstall, and the purge that a refused
 uninstall points you at — and its connections: one row per configured provider
@@ -71,11 +83,26 @@ starts and where a connection's token status is visible.
 ## Agents
 
 **Agents** lists the declared [agents](agents.md) with the provider and model
-each resolves and the [`llmprovider`](agents.md#providers) rows beneath them,
-and opens a chat against one. [Triggers](functions.md#triggers) have no
-section of their own: they are ordinary records, so
-`core.substrate.reamde.dev/triggers` in the data nav is the list, and one
-trigger's record page is the trigger.
+each resolves, and opens a chat against one.
+
+A chat is a thread, and a thread is a run. The left rail is this agent's
+threads, newest first, selected through `?thread=` so a conversation is
+linkable; **New** opens an empty one. The transcript is rebuilt from the
+`llmmessage` records the loop wrote, not from the browser's memory, so a
+reload shows the same conversation — and every tool call is a card that says
+whether it is running, settled or failed and expands to the request it sent
+and the response it got, both as formatted JSON. While a run streams, the same
+cards fill in live and are replaced by the stored rows when it settles.
+
+The [`llmprovider`](agents.md#providers) rows are NOT on this page: an agent
+names a provider by id, and that pointer reads on the agent's own record.
+They live under Data → `core.substrate.reamde.dev` → llmproviders, and
+[setting a key](agents.md#setting-or-rotating-the-key) is an ordinary record
+edit.
+
+[Triggers](functions.md#triggers) have no section of their own: they are
+ordinary records, so `core.substrate.reamde.dev/triggers` in the data nav is
+the list, and one trigger's record page is the trigger.
 
 ## Account
 

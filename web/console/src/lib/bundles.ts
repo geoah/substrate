@@ -31,6 +31,9 @@ export interface BundleRow {
   installed: boolean
   /** Catalog facet: this bundle connects an external provider. */
   integration: boolean
+  /** Catalog facet: a worked example — installable, readable, safe to run on
+   * a fresh repository. */
+  example: boolean
   /** Catalog facet: a pure-vocabulary bundle — kinds and nothing else. */
   vocabulary: boolean
   /** The authorities this closure declares against; the server refuses the
@@ -54,6 +57,7 @@ export function mergeBundles(
       catalog: item,
       installed: item.installed,
       integration: Boolean(item.integration),
+      example: Boolean(item.example),
       vocabulary: Boolean(item.vocabulary),
       requires: item.requires ?? [],
     })
@@ -68,6 +72,7 @@ export function mergeBundles(
       catalog: existing?.catalog,
       installed: status.installed,
       integration: existing?.integration ?? false,
+      example: existing?.example ?? false,
       // The closure facets are the CATALOG's to state; a bundle applied
       // outside the shipped registry carries neither, and guessing one from
       // its authority's shape would be the derivation the backend refuses to
@@ -85,8 +90,10 @@ export function mergeBundles(
 
 /** The catalog-list facet, orthogonal to whether a row is imported: `all` shows
  * every bundle, `vocabulary` narrows to the pure-vocabulary bundles (what a
- * fresh repository imports first), `integrations` to provider integrations. */
-export type BundleFacet = "all" | "vocabulary" | "integrations"
+ * fresh repository imports first), `integrations` to provider integrations,
+ * `examples` to the worked demonstrations — which is where a substrate with no
+ * llmprovider row of its own is pointed. */
+export type BundleFacet = "all" | "vocabulary" | "integrations" | "examples"
 
 export function filterBundles(
   rows: BundleRow[],
@@ -95,6 +102,8 @@ export function filterBundles(
   switch (facet) {
     case "integrations":
       return rows.filter((r) => r.integration)
+    case "examples":
+      return rows.filter((r) => r.example)
     case "vocabulary":
       return rows.filter((r) => r.vocabulary)
     default:
