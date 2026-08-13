@@ -227,6 +227,24 @@ named allowlist of variables, never the substrate's own environment, so the
 credential key, the database URL and the gateway keys are excluded by
 construction rather than by filtering.
 
+### Platforms
+
+The sandbox is **Linux only**, and both layers work on `linux/amd64` and
+`linux/arm64` — the two architectures the image ships. The seccomp filter
+carries a syscall table per architecture, because a filter written against the
+wrong numbering does not fail loudly, it denies and permits the wrong calls; an
+architecture with no table gets no filter rather than a guess, and says so.
+
+On **macOS** there is no confinement at all. Landlock and seccomp are Linux
+facilities and Seatbelt is a different design with its own policy language, so a
+laptop running `mise run dev` executes bodies exactly as it did before the
+sandbox existed. The boot log names the platform rather than reporting a
+degraded kernel, because there is no kernel setting to fix. Note that
+`SUBSTRATE_SANDBOX=enforce` there refuses to run any function at all, which is
+what enforcing means when nothing can be enforced. Running the substrate in
+Docker on a Mac is a different case: the body runs in the Linux VM and is
+confined by *its* kernel.
+
 `SUBSTRATE_SANDBOX` chooses how hard the substrate insists — `off`,
 `best-effort` (the default: apply every layer the kernel offers, and log
 loudly about any it does not) or `enforce` (refuse to run a body at all unless

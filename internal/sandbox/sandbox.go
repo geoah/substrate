@@ -116,8 +116,13 @@ type Policy struct {
 	FileSize uint64 `json:"fileSize,omitempty"`
 }
 
-// Report is what the kernel actually offered, resolved once at boot.
+// Report is what the platform actually offered, resolved once at boot.
 type Report struct {
+	// OS is the platform the probe ran on, so a caller can tell "this kernel
+	// is missing a layer" from "this operating system has none of them" —
+	// two different problems with two different answers, and only the first
+	// one an operator can fix.
+	OS string
 	// LandlockABI is the kernel's Landlock ABI version, 0 when unavailable.
 	LandlockABI int
 	// Seccomp reports whether an unprivileged filter installs.
@@ -129,8 +134,16 @@ type Report struct {
 // FS reports whether the filesystem layer is available.
 func (r Report) FS() bool { return r.LandlockABI > 0 }
 
+// Supported reports whether this package can confine anything at all here.
+// Landlock and seccomp are Linux facilities; macOS's Seatbelt is a different
+// design with its own policy language, and nothing stands in for them.
+func (r Report) Supported() bool { return r.OS == "linux" }
+
 // String is the one line an operator reads at boot.
 func (r Report) String() string {
+	if !r.Supported() {
+		return r.OS + " has no landlock and no seccomp: function bodies cannot be confined on this platform"
+	}
 	fs := "unavailable"
 	if r.LandlockABI > 0 {
 		fs = fmt.Sprintf("landlock ABI v%d", r.LandlockABI)
@@ -172,8 +185,8 @@ func (c *Confiner) Wrap(cmd *exec.Cmd, p Policy) error {
 		return nil
 	}
 	if c.mode == ModeEnforce && (!c.report.FS() || !c.report.Seccomp) {
-		return fmt.Errorf("sandbox: SUBSTRATE_SANDBOX=enforce but the kernel offers %s — "+
-			"set SUBSTRATE_SANDBOX=best-effort to run anyway", c.report)
+		return fmt.Errorf("sandbox: SUBSTRATE_SANDBOX=enforce, but %s — "+
+			"set SUBSTRATE_SANDBOX=best-effort to run bodies unconfined anyway", c.report)
 	}
 	return c.wrap(cmd, p)
 }

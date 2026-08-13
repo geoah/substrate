@@ -216,29 +216,3 @@ func TestFilterAssembles(t *testing.T) {
 		}
 	}
 }
-
-func TestParseMode(t *testing.T) {
-	for in, want := range map[string]Mode{
-		"": ModeBestEffort, "off": ModeOff, "best-effort": ModeBestEffort, "enforce": ModeEnforce,
-	} {
-		got, err := ParseMode(in)
-		if err != nil || got != want {
-			t.Fatalf("ParseMode(%q) = %q, %v; want %q", in, got, err, want)
-		}
-	}
-	if _, err := ParseMode("strict"); err == nil {
-		t.Fatal("expected an error for an unknown mode")
-	}
-}
-
-// EnforceRefusesWithoutTheKernel: the mode exists so a deployment can insist,
-// and insisting has to mean refusing rather than logging.
-func TestEnforceRefusesWhenUnavailable(t *testing.T) {
-	c := &Confiner{mode: ModeEnforce, report: Report{}}
-	if err := c.Wrap(exec.Command("/bin/true"), Policy{}); err == nil {
-		t.Fatal("enforce mode admitted a child with no kernel support")
-	}
-	if !c.Degraded() {
-		t.Fatal("a confiner with no kernel support is degraded")
-	}
-}

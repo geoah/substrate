@@ -105,7 +105,7 @@ func New(mode Mode) *Confiner {
 // substrate's own process. An outer profile that denies seccomp(2) — the case
 // that matters — answers EPERM to the probe just as it would to the install.
 func probe() Report {
-	var r Report
+	r := Report{OS: runtime.GOOS}
 	abi, err := landlockABI()
 	if err == nil {
 		r.LandlockABI = abi
