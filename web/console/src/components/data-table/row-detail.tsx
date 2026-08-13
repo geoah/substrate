@@ -18,6 +18,7 @@ import { useState } from "react"
 import { ChevronRightIcon } from "lucide-react"
 
 import { ActorChip } from "@/components/actor-chip"
+import { CodeBlock } from "@/components/code-block"
 import { Button } from "@/components/ui/button"
 import type { ChangeRow } from "@/lib/api/types"
 import { cellValue, shortDate, shortTime } from "@/lib/format"
@@ -27,6 +28,36 @@ import {
   NAMED_PAYLOAD_KEYS,
 } from "@/lib/changelog"
 import { cn } from "@/lib/utils"
+
+/** ONE shape for everything inside the band: a muted label in a fixed column,
+ * its value beside it. Every section of an expanded row is a `DetailRow`, so
+ * the band reads as one list rather than as five little layouts each with its
+ * own type size and tone (owner complaint, 2026-08-13). Identifiers wear the
+ * data voice inside the value; the label never does. */
+export function DetailRow({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="contents">
+      <span className="text-muted-foreground">{label}</span>
+      <div className="min-w-0">{children}</div>
+    </div>
+  )
+}
+
+/** The grid the rows sit in. `minmax(0,1fr)`: a track's implicit min-width is
+ * `auto`, so one long unbroken id would widen the value column past the band. */
+function DetailGrid({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1.5">
+      {children}
+    </div>
+  )
+}
 
 /** The band every expanded row opens into: same gutter as the table, same
  * muted surface everywhere. */
@@ -89,9 +120,7 @@ function RawPayload({ payload }: { payload: Record<string, unknown> }) {
         raw
       </Button>
       {open && (
-        <pre className="data overflow-x-auto rounded-sm bg-background/60 p-2">
-          {JSON.stringify(payload, null, 2)}
-        </pre>
+        <CodeBlock source={JSON.stringify(payload, null, 2)} lang="json" />
       )}
     </div>
   )
@@ -107,109 +136,124 @@ export function ChangeDetail({ row }: { row: ChangeRow }) {
   const rest = Object.fromEntries(
     Object.entries(payload).filter(([k]) => !NAMED_PAYLOAD_KEYS.has(k))
   )
+  const op = [
+    row.op,
+    payload.created === true ? "created" : "",
+    payload.restored === true ? "restored" : "",
+  ]
+    .filter(Boolean)
+    .join(", ")
   return (
-    <>
-      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 data text-muted-foreground">
-        <span>
-          seq {row.seq}, {shortDate(row.ts)} {shortTime(row.ts, true)}, {row.op}
-          {payload.created === true && ", created"}
-          {payload.restored === true && ", restored"}
+    <DetailGrid>
+      <DetailRow label="when">
+        <span className="data" title={row.ts}>
+          {shortDate(row.ts)} {shortTime(row.ts, true)}
         </span>
-        <span>by</span>
+      </DetailRow>
+      <DetailRow label="by">
         <ActorChip actor={row.actor} />
-      </div>
-      {properties.length > 0 &&
-        (states.length > 0 ? (
-          // values ride along (state transitions) — a name → value grid
-          <div>
-            <span className="text-muted-foreground">
-              {properties.length === 1 ? "property" : "properties"}
-            </span>
-            <div className="mt-0.5 grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-2.5 gap-y-0.5">
+      </DetailRow>
+      <DetailRow label="change">
+        <span className="data">
+          {op} <span className="text-muted-foreground">· seq {row.seq}</span>
+        </span>
+      </DetailRow>
+      {properties.length > 0 && (
+        <DetailRow
+          label={properties.length === 1 ? "property" : "properties"}
+        >
+          {states.length > 0 ? (
+            // A state property's new value rides the row; a plain one's does
+            // not, so only the states get an arrow.
+            <div className="flex flex-col gap-0.5">
               {properties.map((name) => (
-                <div key={name} className="contents">
-                  <span className="data">{name}</span>
-                  <span className="truncate data text-muted-foreground">
-                    {stateOf.has(name)
-                      ? `→ ${cellValue(stateOf.get(name))}`
-                      : ""}
-                  </span>
-                </div>
+                <span key={name} className="truncate data">
+                  {name}
+                  {stateOf.has(name) && (
+                    <span className="text-muted-foreground">
+                      {" → "}
+                      {cellValue(stateOf.get(name))}
+                    </span>
+                  )}
+                </span>
               ))}
             </div>
-          </div>
-        ) : (
-          // names only (the property list carries no values) — inline
-          <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-            <span className="text-muted-foreground">
-              {properties.length === 1 ? "property" : "properties"}
-            </span>
+          ) : (
             <span className="data">{properties.join(", ")}</span>
-          </div>
-        ))}
+          )}
+        </DetailRow>
+      )}
       {managers.length > 0 && (
-        <div className="flex flex-col gap-0.5">
-          {managers.map(([name, actor]) => (
-            <div key={name} className="flex items-baseline gap-1.5">
-              <span className="text-muted-foreground">manager</span>
-              <span className="data">{name}</span>
-              <span className="text-muted-foreground">→</span>
-              <ActorChip actor={String(actor)} />
-            </div>
-          ))}
-        </div>
+        <DetailRow label={managers.length === 1 ? "manager" : "managers"}>
+          <div className="flex flex-col gap-1">
+            {managers.map(([name, actor]) => (
+              <span key={name} className="flex items-center gap-1.5">
+                <span className="data">{name}</span>
+                <span className="text-muted-foreground">→</span>
+                <ActorChip actor={String(actor)} />
+              </span>
+            ))}
+          </div>
+        </DetailRow>
       )}
       {effects.length > 0 && (
-        <div>
-          <span className="text-muted-foreground">
-            {effects.length === 1 ? "1 change" : `${effects.length} changes`}
-          </span>
-          <ul className="mt-0.5 flex flex-col gap-0.5">
+        <DetailRow
+          label={
+            effects.length === 1 ? "1 change" : `${effects.length} changes`
+          }
+        >
+          <ul className="flex flex-col gap-0.5">
             {effects.map((effect, i) => (
-              <li
-                key={i}
-                className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5"
-              >
-                <span className="text-foreground">{effect.verb}</span>
+              <li key={i} className="min-w-0">
+                {effect.verb}
                 {effect.target && (
                   <span className="data break-all" title={effect.target}>
+                    {" "}
                     {effect.target}
                   </span>
                 )}
                 {effect.detail && (
-                  <span className="data text-muted-foreground">
-                    — {effect.detail}
-                  </span>
+                  <span className="text-muted-foreground"> — {effect.detail}</span>
                 )}
               </li>
             ))}
           </ul>
-        </div>
+        </DetailRow>
       )}
       {(row.triggers ?? []).map((tr) => (
-        <div key={tr.trigger} className="flex items-baseline gap-1.5">
-          <span className="text-muted-foreground">trigger</span>
-          <span className="data">{tr.trigger}</span>
-          <span className="text-muted-foreground">→ {tr.callable}</span>
-          <span
-            className={cn(
-              "data",
-              tr.state === "parked"
-                ? "text-destructive"
-                : "text-muted-foreground"
+        <DetailRow key={tr.trigger} label="trigger">
+          <span className="flex flex-wrap items-center gap-1.5">
+            <span className="data">{tr.trigger}</span>
+            <span className="text-muted-foreground">→</span>
+            <span className="data">{tr.callable}</span>
+            <span
+              className={cn(
+                "data",
+                tr.state === "parked"
+                  ? "text-destructive"
+                  : "text-muted-foreground"
+              )}
+            >
+              {tr.state}
+            </span>
+            {tr.error && (
+              <span className="data text-destructive">{tr.error}</span>
             )}
-          >
-            {tr.state}
           </span>
-          {tr.error && <span className="data text-destructive">{tr.error}</span>}
-        </div>
+        </DetailRow>
       ))}
       {Object.keys(rest).length > 0 && (
-        <pre className="data overflow-x-auto rounded-sm bg-background/60 p-2">
-          {JSON.stringify(rest, null, 2)}
-        </pre>
+        <DetailRow label="payload">
+          <CodeBlock source={JSON.stringify(rest, null, 2)} lang="json" />
+        </DetailRow>
       )}
-      {Object.keys(payload).length > 0 && <RawPayload payload={payload} />}
-    </>
+      {/* The disclosure names itself, so it spans both columns rather than
+          repeating "raw" as a label beside a button reading the same. */}
+      {Object.keys(payload).length > 0 && (
+        <div className="col-span-2 min-w-0">
+          <RawPayload payload={payload} />
+        </div>
+      )}
+    </DetailGrid>
   )
 }

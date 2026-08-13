@@ -81,12 +81,28 @@ export function timeRange(oldestISO: string, newestISO: string): string {
   return a === b ? b : `${a}–${b}`
 }
 
-/** One property value flattened into a cell: arrays join, objects summarize,
- * scalars pass through. The cell truncates; this only has to be honest. */
+/** A stored reference — `{kind, id}` — read back as the id it names, or ""
+ * when the value is not one. A reference is the one object shape the console
+ * knows how to say out loud, so it never reaches the key-list summary below:
+ * a cell reading the literal text `{kind, id}` names nothing at all. */
+export function referenceID(value: unknown): string {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return ""
+  }
+  const ref = value as Record<string, unknown>
+  const id = ref.id
+  return typeof id === "string" && typeof ref.kind === "string" ? id : ""
+}
+
+/** One property value flattened into a cell: arrays join, references name what
+ * they point at, other objects summarize, scalars pass through. The cell
+ * truncates; this only has to be honest. */
 export function cellValue(value: unknown): string {
   if (value === null || value === undefined) return ""
   if (Array.isArray(value)) return value.map(cellValue).join(", ")
   if (typeof value === "object") {
+    const ref = referenceID(value)
+    if (ref) return ref
     const keys = Object.keys(value as Record<string, unknown>)
     return keys.length ? `{${keys.join(", ")}}` : "{}"
   }

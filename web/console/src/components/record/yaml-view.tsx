@@ -11,17 +11,18 @@
  * shape silently dropped every hover along with the color. */
 
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
 import { CheckIcon, CopyIcon } from "lucide-react"
 
+import { TokenSpan } from "@/components/code-block"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import type { YamlToken } from "@/lib/shiki"
+import { useCodeTokens } from "@/lib/code"
+import type { CodeToken } from "@/lib/shiki"
 import { cn } from "@/lib/utils"
 import {
   describableSpan,
@@ -34,17 +35,6 @@ import {
 } from "@/lib/yaml-annotations"
 
 export type { KeyDoc, KeyDocs, YamlLinkTargets }
-
-function TokenSpan({ token }: { token: YamlToken }) {
-  return (
-    <span
-      style={{ color: token.color }}
-      className={cn(token.italic && "italic")}
-    >
-      {token.content}
-    </span>
-  )
-}
 
 /** What a described key says on hover: the one-liner, and under it the
  * declared datatype in the data voice. */
@@ -68,7 +58,7 @@ function LineView({
   targets,
 }: {
   /** shiki's tinting for this line; absent until (or unless) it arrives. */
-  tokens: YamlToken[] | undefined
+  tokens: CodeToken[] | undefined
   line: string
   docs: KeyDocs
   targets: YamlLinkTargets
@@ -77,7 +67,7 @@ function LineView({
   const link = linkableSpan(line, targets)
   // Untinted, the raw line is cut into the same runs the tokens would have
   // produced around the annotated spans — one renderer, two sources of runs.
-  const runs: YamlToken[] =
+  const runs: CodeToken[] =
     tokens ??
     splitAround(line, [hover?.text, link?.text]).map((content) => ({
       content,
@@ -153,15 +143,7 @@ export function YamlView({
 }) {
   const [copied, setCopied] = useState(false)
 
-  const tokens = useQuery({
-    queryKey: ["yaml-tokens", source],
-    queryFn: async () => {
-      const { tokenizeYAML } = await import("@/lib/shiki")
-      return tokenizeYAML(source)
-    },
-    staleTime: Infinity,
-    gcTime: 60_000,
-  })
+  const tokens = useCodeTokens(source, "yaml")
 
   // The lines are the layout — a line count that never depends on the
   // highlighter means the block does not reflow when the tint lands.
@@ -196,7 +178,7 @@ export function YamlView({
         {lines.map((line, i) => (
           <LineView
             key={i}
-            tokens={tokens.data?.[i]}
+            tokens={tokens?.[i]}
             line={line}
             docs={docs}
             targets={targets}

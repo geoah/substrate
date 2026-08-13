@@ -1,10 +1,10 @@
 /** Record detail (`/data/:authority/:plural/:id`): the manifest and its three
  * annotations are TOP TABS now (owner ruling, 2026-08-08) — no scrolling past
- * the YAML to reach Activity/Incoming/Provenance. **Manifest** is the default
+ * the YAML to reach Activity/Graph/Provenance. **Manifest** is the default
  * tab (the YAML view, tinted, annotated and linkified: every key the kind
  * declares hovers with its DATATYPE and its one-liner, and references navigate
  * — edge ids, kinds, actors);
- * Activity, Incoming and Provenance are its siblings, none stacked underneath.
+ * Activity, Graph and Provenance are its siblings, none stacked underneath.
  * The active tab lives in the URL (`?tab=`) so it is linkable and back-button
  * friendly. An **Edit** action opens the YAML editor for this record. The layout
  * is generic — functions, kinds, triggers, agents and data records all render
@@ -17,7 +17,7 @@ import { FileQuestionIcon, PencilIcon } from "lucide-react"
 import { parseAsStringLiteral, useQueryState } from "nuqs"
 
 import { ActivityRail } from "@/components/record/activity"
-import { IncomingRail } from "@/components/record/incoming"
+import { GraphRail } from "@/components/record/graph"
 import { ProvenanceRail } from "@/components/record/provenance"
 import { YamlView } from "@/components/record/yaml-view"
 import { StateBadge } from "@/components/state-badge"
@@ -43,7 +43,7 @@ import { keyDocsOf } from "@/lib/yaml-annotations"
 import { recordRoute } from "@/router"
 
 /** The tab keys, in bar order; the manifest leads and is the default. */
-const TABS = ["manifest", "activity", "incoming", "provenance"] as const
+const TABS = ["manifest", "activity", "graph", "provenance"] as const
 const tabParser = parseAsStringLiteral(TABS)
   .withDefault("manifest")
   .withOptions({ history: "push" })
@@ -164,7 +164,7 @@ export function RecordPage() {
         <TabsList variant="line" className="mx-4 shrink-0 justify-start">
           <TabsTrigger value="manifest">Manifest</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
-          <TabsTrigger value="incoming">Incoming</TabsTrigger>
+          <TabsTrigger value="graph">Graph</TabsTrigger>
           <TabsTrigger value="provenance">Provenance</TabsTrigger>
         </TabsList>
 
@@ -180,12 +180,12 @@ export function RecordPage() {
             <ActivityRail record={e} />
           </ScrollArea>
         </TabsContent>
-        <TabsContent value="incoming" className="min-h-0 border-t">
+        <TabsContent value="graph" className="min-h-0 border-t">
           <ScrollArea className="h-full">
-            <IncomingRail
+            <GraphRail
               authority={authority}
               plural={plural}
-              id={e.id}
+              record={e}
               kinds={registry.data ?? []}
             />
           </ScrollArea>

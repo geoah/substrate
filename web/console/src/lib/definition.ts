@@ -32,6 +32,11 @@ export interface DeclaredProperty {
   values?: EnumValue[]
   /** `reference`-datatype only: the referent kind this pointer is pinned to. */
   to?: string
+  /** What this pointer is called from the OTHER side, where the declaration
+   * named it — `thread` on a message is `messages` on the thread. A label the
+   * graph reads, never an identifier. */
+  inverse?: string
+  inverseDescription?: string
 }
 
 export interface DeclaredEdge {
@@ -42,6 +47,9 @@ export interface DeclaredEdge {
   many: boolean
   description?: string
   required?: boolean
+  /** What this edge is called from the OTHER side; see DeclaredProperty. */
+  inverse?: string
+  inverseDescription?: string
 }
 
 /** How a property's datatype reads wherever the schema is shown — a hover, the
@@ -83,6 +91,11 @@ export function declaredProperties(k: KindInfo): DeclaredProperty[] {
       required: def.required === true,
       values: parseEnumValues(def.values),
       to: typeof def.to === "string" ? def.to : undefined,
+      inverse: typeof def.inverse === "string" ? def.inverse : undefined,
+      inverseDescription:
+        typeof def.inverseDescription === "string"
+          ? def.inverseDescription
+          : undefined,
     }))
     .sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -100,6 +113,11 @@ export function declaredEdges(k: KindInfo): DeclaredEdge[] {
       description:
         typeof def.description === "string" ? def.description : undefined,
       required: def.required === true,
+      inverse: typeof def.inverse === "string" ? def.inverse : undefined,
+      inverseDescription:
+        typeof def.inverseDescription === "string"
+          ? def.inverseDescription
+          : undefined,
     }))
     .sort((a, b) => a.rel.localeCompare(b.rel))
 }
@@ -214,4 +232,65 @@ export function graphqlTypeName(ref: string): string {
 
 function pascal(word: string): string {
   return word ? word.charAt(0).toUpperCase() + word.slice(1) : word
+}
+
+/** One POINTER a kind declares, whichever way it is stored: an edge or a
+ * reference property. The graph reads both as the same thing — a named,
+ * directed link — because to a reader they are, and only the storage differs. */
+export interface DeclaredPointer {
+  name: string
+  to: string
+  many: boolean
+  description?: string
+  inverse?: string
+  inverseDescription?: string
+  via: "edge" | "reference"
+}
+
+export function declaredPointers(k: KindInfo): DeclaredPointer[] {
+  const out: DeclaredPointer[] = declaredEdges(k).map((e) => ({
+    name: e.rel,
+    to: e.to,
+    many: e.many,
+    description: e.description,
+    inverse: e.inverse,
+    inverseDescription: e.inverseDescription,
+    via: "edge" as const,
+  }))
+  for (const p of declaredProperties(k)) {
+    if (p.kind !== "reference") continue
+    out.push({
+      name: p.name,
+      to: p.to ?? "",
+      many: p.repeated,
+      description: p.description,
+      inverse: p.inverse,
+      inverseDescription: p.inverseDescription,
+      via: "reference",
+    })
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** What the far side of an incoming pointer is CALLED here. The name a
+ * fan-in row carries is written from the source's side (`thread`, on a
+ * message), which reads backwards standing on the target — so the label is
+ * the declaration's `inverse` where its author wrote one, and an honest
+ * fallback naming both sides where nobody did. */
+export function inverseLabel(
+  kinds: KindInfo[],
+  fromKind: string,
+  rel: string
+): { label: string; description?: string } {
+  const source = kindByIdentity(kinds, fromKind)
+  const pointer = source
+    ? declaredPointers(source).find((p) => p.name === rel)
+    : undefined
+  if (pointer?.inverse) {
+    return { label: pointer.inverse, description: pointer.inverseDescription }
+  }
+  return {
+    label: `${rel} of ${splitKind(fromKind).name}`,
+    description: pointer?.description,
+  }
 }

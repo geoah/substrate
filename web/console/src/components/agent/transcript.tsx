@@ -1,0 +1,61 @@
+/** The conversation itself: user turns as bubbles, assistant turns as their
+ * tool calls and their prose, and a caret on the turn still arriving.
+ * Everything here renders `TurnView`s, so the live run and the reloaded thread
+ * are one render path.
+ *
+ * Cards sit ABOVE the text of their own turn, though one completion produces
+ * both: what the model said before deciding to call something reads as the
+ * lead-in to the calls, and the reply that follows is the next turn's. */
+
+import { ToolCallCard } from "@/components/agent/tool-call"
+import type { TurnView } from "@/lib/api/transcript"
+import { cn } from "@/lib/utils"
+
+export function Turn({ turn, live }: { turn: TurnView; live?: boolean }) {
+  const isUser = turn.role === "user"
+  return (
+    <div className={cn("flex flex-col gap-1.5", isUser ? "items-end" : "items-start")}>
+      <span className="px-1 text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+        {turn.role}
+      </span>
+      {turn.tools.length > 0 && (
+        <div className="flex w-full max-w-[85%] flex-col gap-1">
+          {turn.tools.map((call, i) => (
+            <ToolCallCard key={call.id || `${turn.key}:${i}`} call={call} />
+          ))}
+        </div>
+      )}
+      {(turn.content || live) && (
+        <div
+          className={cn(
+            "max-w-[85%] rounded-md px-3 py-2 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]",
+            isUser ? "bg-primary text-primary-foreground" : "border bg-muted/40"
+          )}
+        >
+          {turn.content}
+          {live && (
+            <span className="ml-0.5 inline-block h-3.5 w-1 animate-pulse bg-current align-middle" />
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function Transcript({
+  turns,
+  liveKey,
+}: {
+  turns: TurnView[]
+  /** The turn still arriving, by key — never "the last one", which between a
+   * send and the first delta is the PREVIOUS run's settled answer. */
+  liveKey?: string
+}) {
+  return (
+    <>
+      {turns.map((turn) => (
+        <Turn key={turn.key} turn={turn} live={turn.key === liveKey} />
+      ))}
+    </>
+  )
+}

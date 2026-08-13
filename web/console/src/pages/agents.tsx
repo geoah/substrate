@@ -1,8 +1,12 @@
-/** Agents (`/agents`): the declared agents (a callable whose body is an LLM
- * loop) and the llmprovider rows they complete against. Both on THE table
- * system, off the record surface. An agent row opens the chat surface; a
- * provider row and an agent's manifest open their record page (where the
- * prompt/tools/budgets live and edit). */
+/** Agents (`/agents`): the declared agents — a callable whose body is an LLM
+ * loop — on THE table system, off the record surface. A row opens the chat
+ * surface; the manifest opens the record page, where the prompt, tools and
+ * budgets live and edit.
+ *
+ * The llmprovider rows are NOT here. They are ordinary records of a core kind,
+ * they are not agents, and a table of them on this page implied a relationship
+ * the page does not have — an agent names a provider by id, and that pointer
+ * reads on the agent's own record. Data → llmproviders is where they live. */
 
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -24,12 +28,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  agentsQueryOptions,
-  providerEndpoint,
-  providerHasKey,
-  providersQueryOptions,
-} from "@/lib/api/agents"
+import { agentsQueryOptions } from "@/lib/api/agents"
 import type { SubstrateRecord } from "@/lib/api/types"
 import { cellValue } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -135,83 +134,17 @@ function agentColumns(): ColumnDef<SubstrateRecord, unknown>[] {
   ]
 }
 
-function providerColumns(): ColumnDef<SubstrateRecord, unknown>[] {
-  return [
-    {
-      id: "row",
-      accessorFn: (e) => e.id,
-      enableSorting: false,
-      enableHiding: false,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="row" />,
-      cell: ({ row }) => (
-        <div className="min-w-0">
-          <div className="truncate font-medium">{row.original.id}</div>
-          <div className="truncate data text-xs text-muted-foreground">
-            {cellValue(row.original.properties.name)}
-          </div>
-        </div>
-      ),
-      meta: { label: "row", size: { min: 140, max: 240, weight: 1 } },
-    },
-    textColumn({
-      id: "wire",
-      title: "wire",
-      value: (p) => cellValue(p.properties.wire),
-      data: true,
-      tooltip: true,
-      meta: { label: "wire", width: 110 },
-    }),
-    {
-      id: "endpoint",
-      accessorFn: (p) => providerEndpoint(p),
-      enableSorting: false,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="endpoint" />,
-      // Only a row that declares its own baseURL speaks in the data voice: the
-      // rest read as prose about where the host sends them.
-      cell: ({ row, getValue }) => (
-        <span
-          className={cn(
-            "block truncate text-muted-foreground",
-            Boolean(row.original.properties.baseURL) && "data"
-          )}
-          title={getValue<string>()}
-        >
-          {getValue<string>()}
-        </span>
-      ),
-      meta: { label: "endpoint", size: { min: 160, weight: 1.5 } },
-    },
-    // A secret reads back redacted, so the row can only say whether one is
-    // there — never which.
-    textColumn({
-      id: "key",
-      title: "key",
-      value: (p) => (providerHasKey(p) ? "set" : "not set"),
-      meta: { label: "key", width: 90 },
-    }),
-  ]
-}
-
 export function AgentsPage() {
   const navigate = useNavigate()
   const agents = useQuery(agentsQueryOptions())
-  const providers = useQuery(providersQueryOptions())
 
   const agentRows = useMemo(() => agents.data?.records ?? [], [agents.data])
-  const providerRows = useMemo(() => providers.data?.records ?? [], [providers.data])
   const aCols = useMemo(() => agentColumns(), [])
-  const pCols = useMemo(() => providerColumns(), [])
   const aTable = useDataTable({
     columns: aCols,
     data: agentRows,
     getRowId: (r) => r.id,
     prefsKey: "agents",
-  })
-  const pTable = useDataTable({
-    columns: pCols,
-    data: providerRows,
-    getRowId: (r) => r.id,
-    prefsKey: "llmproviders",
   })
 
   if (agents.isPending) return <AgentsSkeleton />
@@ -268,65 +201,6 @@ export function AgentsPage() {
         />
       </section>
 
-      <section className="mt-6 flex flex-col">
-        <div className="flex items-end justify-between px-6 pb-1">
-          <div>
-            <h2 className="text-sm font-medium">Providers</h2>
-            <p className="text-xs text-muted-foreground">
-              The endpoints agents complete against, from{" "}
-              <span className="data">core.substrate.reamde.dev/llmproviders</span>
-            </p>
-          </div>
-          <DataTableViewOptions table={pTable} />
-        </div>
-        {providers.isError ? (
-          // A provider query failure is its own state — never an empty "No
-          // providers" table, which would read as "none declared" when the read
-          // simply failed.
-          <div className="px-6">
-            <Empty className="rounded-md border py-10">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <SearchXIcon />
-                </EmptyMedia>
-                <EmptyTitle>The providers didn't load</EmptyTitle>
-                <EmptyDescription>{providers.error.message}</EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button variant="outline" size="sm" onClick={() => void providers.refetch()}>
-                  Retry
-                </Button>
-              </EmptyContent>
-            </Empty>
-          </div>
-        ) : (
-          <DataTable
-            table={pTable}
-            density="compact"
-            loading={providers.isPending}
-            // A provider row is an ordinary record: editing its endpoint or
-            // re-keying it happens on the record page, not here.
-            onRowClick={(row) =>
-              void navigate({
-                to: "/data/$authority/$plural/$id",
-                params: {
-                  authority: "core.substrate.reamde.dev",
-                  plural: "llmproviders",
-                  id: row.id,
-                },
-              })
-            }
-            empty={
-              <Empty className="py-10">
-                <EmptyHeader>
-                  <EmptyTitle>No providers</EmptyTitle>
-                  <EmptyDescription>No llmprovider rows are declared yet.</EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            }
-          />
-        )}
-      </section>
     </div>
   )
 }

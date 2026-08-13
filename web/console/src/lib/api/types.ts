@@ -223,6 +223,12 @@ export interface RecordFilter {
 export interface IncomingEdge {
   rel: string
   from: { id: string; kind: string; title?: string }
+  /** HOW the source points here: a row in the edges table, or a reference
+   * property naming this record. One relationship to a reader, two mechanisms
+   * to the store — and a record can be reached both ways at once. */
+  via?: "edge" | "reference"
+  /** The SOURCE record's creation, so a group reads newest first. */
+  createdAt?: string
 }
 
 export interface IncomingPage {
@@ -350,6 +356,9 @@ export interface CatalogBundle {
   /** Catalog facet (backend-owned): this bundle connects an external
    * provider, so it earns the Integration badge/filter. */
   integration?: boolean
+  /** Catalog facet: a worked example — grouped under Examples in the console.
+   * Curated by the catalog, never derived from the closure's shape. */
+  example?: boolean
   /** A pure-VOCABULARY bundle (backend-owned): a bare org-domain authority
    * (`people.substrate.reamde.dev`) shipping kinds and nothing else — no config type, no
    * functions, no OAuth. Repository creation seeds core alone, so the

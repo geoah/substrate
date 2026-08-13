@@ -520,7 +520,7 @@ function BundleDisclosure({
   )
 }
 
-const FACETS = ["all", "vocabulary", "integrations"] as const
+const FACETS = ["all", "vocabulary", "integrations", "examples"] as const
 
 /** The catalog facet toggle: All / Vocabulary / Integrations, orthogonal to
  * whether a row is imported. Full-size h-8 outline controls (GUIDE rule 3 —
@@ -536,6 +536,7 @@ function FacetFilter({
     { value: "all", label: "All" },
     { value: "vocabulary", label: "Vocabulary" },
     { value: "integrations", label: "Integrations" },
+    { value: "examples", label: "Examples" },
   ]
   return (
     <div className="flex h-8 items-center rounded-md border p-0.5">
