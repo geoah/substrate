@@ -106,6 +106,10 @@ func (ds *dataset) runnerSpecIn(fn *vocabulary.Function, reg *vocabulary.Registr
 		Repository: ds.Repository().Name, Function: fn.Identity(),
 		Runtime: fn.Runtime, Source: fn.Source, TimeoutMs: fn.TimeoutMs,
 		CallTargets: fn.Caps.Call,
+		// The network declaration reaches the runner so the sandbox can
+		// enforce its EMPTINESS: a body that declared no egress gets no
+		// sockets. Before this it stopped at the manifest.
+		Network: fn.Caps.Network,
 	}
 	if fn.Caps.Reads != nil {
 		spec.ReadTypes = fn.Caps.Reads.Kinds

@@ -1,0 +1,205 @@
+# The note-taking example: the smallest bundle that shows an AGENT calling
+# FUNCTIONS as tools and delegating to a SUB-AGENT.
+#
+# It is deliberately self-contained. Nothing here needs the network, a
+# provider account, an OAuth consent or another bundle's vocabulary, so it can
+# be installed on a fresh substrate and driven by hand in one command:
+#
+#   substratectl apply -f bundle.yaml
+#   substratectl call notekeeper --input '{"text": "..."}'
+#
+# What it demonstrates, in the order the loop hits it:
+#
+#   1. A FUNCTION TOOL that computes. `stats` is pure Python, declares no
+#      network, and is therefore denied sockets by the sandbox.
+#   2. A SUB-AGENT. `titler` is a second LLM loop with its own budget and its
+#      own thread, called by the root agent as a tool.
+#   3. A FUNCTION TOOL that writes. `savenote` emits a `note`, and that effect
+#      is held to BOTH envelopes: the function's own `emit` and the agent's.
+#
+# The emit ceiling is worth watching here: `titler` declares no emit at all, so
+# no matter what it is asked to do, a sub-agent on this chain writes nothing.
+kind: core.substrate.reamde.dev/authority
+metadata: {id: notes.bundles.substrate.reamde.dev}
+data:
+  version: v1alpha1
+---
+kind: core.substrate.reamde.dev/bundle
+metadata: {id: notes.bundles.substrate.reamde.dev/notes}
+data:
+  authority: notes.bundles.substrate.reamde.dev
+  description: >-
+    A worked example of the agent loop: one agent that calls two functions as
+    tools and hands the hard part to a sub-agent, ending in a saved note. It
+    needs no network, no credentials and no other bundle.
+  configType: notes.bundles.substrate.reamde.dev/config
+  installs:
+    - notes.bundles.substrate.reamde.dev/config
+    - notes.bundles.substrate.reamde.dev/note
+    - notes.bundles.substrate.reamde.dev/stats
+    - notes.bundles.substrate.reamde.dev/savenote
+    - notes.bundles.substrate.reamde.dev/titler
+    - notes.bundles.substrate.reamde.dev/notekeeper
+---
+# ---- the config: every bundle names one, and this one carries the house style
+kind: core.substrate.reamde.dev/kind
+metadata: {id: notes.bundles.substrate.reamde.dev/config}
+data:
+  authority: notes.bundles.substrate.reamde.dev
+  description: >-
+    How the note-taking example behaves: the one knob is how long a title the
+    sub-agent is asked for. Created by the owner, read by nothing but the
+    agents' prompts.
+  names: {singular: config, plural: configs}
+  traits: [bundleconfig]
+  properties:
+    maxTitleWords:
+      type: int
+      description: the ceiling the titler is asked to keep its title under
+---
+# ---- the note: what the whole bundle exists to produce
+kind: core.substrate.reamde.dev/kind
+metadata: {id: notes.bundles.substrate.reamde.dev/note}
+data:
+  authority: notes.bundles.substrate.reamde.dev
+  description: >-
+    One saved note: the text the owner handed in, a title the sub-agent wrote,
+    and the word and character counts the stats function computed. Written by
+    the savenote function, never by hand.
+  names: {singular: note, plural: notes}
+  properties:
+    text:
+      type: string
+      description: the note's body, verbatim as it arrived
+    noteTitle:
+      type: string
+      description: a short title, written by the titler sub-agent
+    words:
+      type: int
+      description: how many words the stats function counted
+    characters:
+      type: int
+      description: how many characters the stats function counted
+---
+# ---- tool 1: a function that computes and writes nothing --------------------
+# Declares no `network:`, so the sandbox denies it sockets at the syscall. A
+# body doing arithmetic on a string has no business opening one, and now it
+# cannot.
+kind: core.substrate.reamde.dev/function
+metadata: {id: notes.bundles.substrate.reamde.dev/stats}
+data:
+  authority: notes.bundles.substrate.reamde.dev
+  description: Count the words and characters in a piece of text.
+  runtime: python
+  timeoutMs: 5000
+  input:
+    type: object
+    properties:
+      text: {type: string, description: the text to measure}
+    required: [text]
+  output:
+    type: object
+    properties:
+      words: {type: number, description: the word count}
+      characters: {type: number, description: the character count}
+  capabilities:
+    emit: [notes.bundles.substrate.reamde.dev/note]
+  source: |
+    def main(input, host):
+        text = (input.get("args") or {}).get("text") or ""
+        return {"output": {"words": len(text.split()), "characters": len(text)}}
+---
+# ---- tool 2: a function that writes ----------------------------------------
+# Its put lands only if the kind is in BOTH this function's emit and the
+# calling agent's. That is the whole shape of the capability envelope: the
+# function says what it may write, the agent says what it may cause.
+kind: core.substrate.reamde.dev/function
+metadata: {id: notes.bundles.substrate.reamde.dev/savenote}
+data:
+  authority: notes.bundles.substrate.reamde.dev
+  description: Save a note with its title and its counts.
+  runtime: python
+  timeoutMs: 5000
+  input:
+    type: object
+    properties:
+      id: {type: string, description: a stable id for the note}
+      text: {type: string, description: the note body}
+      noteTitle: {type: string, description: the title to store}
+      words: {type: number, description: the word count}
+      characters: {type: number, description: the character count}
+    required: [id, text, noteTitle]
+  output:
+    type: object
+    properties:
+      saved: {type: string, description: the id of the note that was written}
+  capabilities:
+    emit: [notes.bundles.substrate.reamde.dev/note]
+  source: |
+    def main(input, host):
+        args = (input.get("args") or {})
+        note_id = args["id"]
+        host.effects.put(
+            "notes.bundles.substrate.reamde.dev/note", note_id,
+            properties={
+                "text": args.get("text", ""),
+                "noteTitle": args.get("noteTitle", ""),
+                "words": args.get("words", 0),
+                "characters": args.get("characters", 0),
+            })
+        return {"output": {"saved": note_id}}
+---
+# ---- the sub-agent: a second loop, its own budget, its own thread -----------
+# It has NO tools and NO emit. A sub-agent that writes nothing is the honest
+# default: the emit ceiling means a child can never write a kind its caller
+# could not, and here the child does not ask to write at all.
+kind: core.substrate.reamde.dev/agent
+metadata: {id: notes.bundles.substrate.reamde.dev/titler}
+data:
+  authority: notes.bundles.substrate.reamde.dev
+  description: >-
+    Write a short, plain title for a piece of text. Call this when you have the
+    note's body and need a title for it.
+  prompt: |
+    You write titles. The user message is the body of a note.
+
+    Reply with the title and nothing else: no quotes, no trailing full stop, no
+    preamble, at most six words. Prefer the concrete nouns already in the text
+    over a summary of it.
+  provider: default
+  model: anthropic/claude-haiku-4-5
+  budgets: {maxTurns: 2, maxToolCalls: 1, depth: 3}
+  emit: []
+---
+# ---- the root agent: two function tools and one sub-agent -------------------
+kind: core.substrate.reamde.dev/agent
+metadata: {id: notes.bundles.substrate.reamde.dev/notekeeper}
+data:
+  authority: notes.bundles.substrate.reamde.dev
+  description: >-
+    Turn a piece of text into a saved note: title it, measure it, store it.
+  prompt: |
+    You keep the owner's notes. The user message is the text of a new note,
+    and it may begin with a line reading `id: <something>`, which is the id to
+    save under.
+
+    Do all three of these, in this order, then stop:
+
+      1. Call the titler sub-agent with the note's text to get its title.
+      2. Call stats with the same text to get its word and character counts.
+      3. Call savenote once, with that id, the text, the title from step 1 and
+         the counts from step 2.
+
+    If no id line was given, invent a short slug from the title: lowercase,
+    words joined by hyphens. Reply with the saved id and the title, one short
+    sentence, once savenote has returned.
+  provider: default
+  model: anthropic/claude-sonnet-5
+  tools:
+    - notes.bundles.substrate.reamde.dev/stats
+    - notes.bundles.substrate.reamde.dev/savenote
+  agents:
+    - notes.bundles.substrate.reamde.dev/titler
+  budgets: {maxTurns: 8, maxToolCalls: 8, depth: 3}
+  emit:
+    - notes.bundles.substrate.reamde.dev/note

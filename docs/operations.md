@@ -43,6 +43,7 @@ boot.
 | `SUBSTRATE_LLM_BASE_URL`       | — (unset: no embedder)                 | The host's OpenAI-compatible gateway: it backs embeddings, and it is what the seeded `default` provider resolves to. |
 | `SUBSTRATE_LLM_API_KEY`        | —                                      | The bearer for that gateway, and the fallback key for a provider row that names neither a `baseURL` nor an `apiKey`. Absent means no embedder: the embed queue simply does not drain. |
 | `SUBSTRATE_LLM_EMBED_MODEL`    | `text-embedding-3-small`               | Must be a 1536-dimension model.                                                                           |
+| `SUBSTRATE_SANDBOX`            | `best-effort`                          | How hard to confine function bodies: `off`, `best-effort`, or `enforce` (refuse to run a body unconfined). |
 
 `SUBSTRATE_CREDENTIAL_KEY` is the one that must be backed up beside the
 database: without it, sealed material is unreadable.
@@ -51,6 +52,26 @@ database: without it, sealed material is unreadable.
 an [`llmprovider`](agents.md#providers) row that names its own `baseURL` must
 carry its own `apiKey`, so a repository-chosen endpoint can never be handed the
 host's bearer.
+
+## The function sandbox
+
+Function bodies are third-party code, and the substrate confines them with
+Landlock, seccomp and rlimits: see [the sandbox](functions.md#the-sandbox) for
+what each layer closes. Two things an operator needs to know:
+
+**Check the boot log.** The substrate reports the sandbox once at startup,
+naming the kernel's actual Landlock ABI. If a layer is missing the line is an
+ERROR, not a warning, because a confinement that silently does less than it
+claims is worse than none. A real deployment should run `SUBSTRATE_SANDBOX=enforce`,
+which turns that into a refusal to run bodies at all.
+
+**Both layers work in a stock container**: Docker's and containerd's default
+seccomp profiles permit the `landlock_*` and `seccomp` syscalls, and neither
+needs a capability. What does NOT work in a stock container is anything built
+on user namespaces or cgroup delegation: `CLONE_NEWUSER` is denied by the
+default profile and `/sys/fs/cgroup` is mounted read-only, which is why the
+sandbox has no memory or process-count ceiling. Do not add `--privileged` to
+try to get one.
 
 ## The invite code
 
