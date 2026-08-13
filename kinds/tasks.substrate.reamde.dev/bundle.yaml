@@ -21,7 +21,8 @@ data:
 # registry rather than seeded. The assignee edge lands on person, so it
 # requires that authority to be present first.
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: tasks.substrate.reamde.dev/tasks}
+metadata:
+  id: tasks.substrate.reamde.dev/tasks
 data:
   authority: tasks.substrate.reamde.dev
   description: >-

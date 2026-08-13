@@ -75,8 +75,8 @@ jobs:
           POSTGRES_DB: substrate
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U postgres -d substrate"
-          --health-interval 5s --health-timeout 5s --health-retries 20
+          --health-cmd "pg_isready -U postgres -d substrate" --health-interval
+          5s --health-timeout 5s --health-retries 20
     env:
       SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
     steps:

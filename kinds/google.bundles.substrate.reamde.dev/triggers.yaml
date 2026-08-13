@@ -27,7 +27,8 @@
 # The first backfill: an account whose OAuth just landed (tokenStatus
 # connected), that wants contacts, and that has never synced contacts yet.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: google-contacts-on-connect}
+metadata:
+  id: google-contacts-on-connect
 data:
   properties:
     enabled: true
@@ -45,13 +46,16 @@ data:
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledContacts" in record.properties && record.properties.enabledContacts
           == true && !("contactsLastSyncedAt" in record.properties)
-    callable: {kind: core.substrate.reamde.dev/function, id: google.bundles.substrate.reamde.dev/contactssync}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: google.bundles.substrate.reamde.dev/contactssync
 ---
 # The steady-state re-sync: an hourly tick fires the same function with no
 # envelope record, so the body iterates every connected, contacts-enabled
 # account and syncs the ones due by their own syncFrequency.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: google-contacts-scheduled}
+metadata:
+  id: google-contacts-scheduled
 data:
   properties:
     enabled: true
@@ -62,13 +66,16 @@ data:
         # A fixed past anchor, so every occurrence since is well-defined
         # (occurrences compute forward from startsAt).
         startsAt: "2025-01-06T09:00:00Z"
-    callable: {kind: core.substrate.reamde.dev/function, id: google.bundles.substrate.reamde.dev/contactssync}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: google.bundles.substrate.reamde.dev/contactssync
 ---
 # Gmail's first backfill. Same guarded-`in` idiom, on gmail's own toggle and
 # gmail's own completion marker — a contacts sync stamping its state can never
 # satisfy or falsify this one.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: google-gmail-on-connect}
+metadata:
+  id: google-gmail-on-connect
 data:
   properties:
     enabled: true
@@ -80,12 +87,15 @@ data:
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledGmail" in record.properties && record.properties.enabledGmail
           == true && !("gmailLastSyncedAt" in record.properties)
-    callable: {kind: core.substrate.reamde.dev/function, id: google.bundles.substrate.reamde.dev/gmailsync}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: google.bundles.substrate.reamde.dev/gmailsync
 ---
 # Gmail's steady-state re-sync: hourly, honoring each account's syncFrequency.
 # Hourly is also what keeps a historyId inside Google's retention window.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: google-gmail-scheduled}
+metadata:
+  id: google-gmail-scheduled
 data:
   properties:
     enabled: true
@@ -94,11 +104,14 @@ data:
         recurrence: "FREQ=HOURLY"
         timezone: Europe/London
         startsAt: "2025-01-06T09:00:00Z"
-    callable: {kind: core.substrate.reamde.dev/function, id: google.bundles.substrate.reamde.dev/gmailsync}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: google.bundles.substrate.reamde.dev/gmailsync
 ---
 # Calendar's first backfill, on calendar's own toggle and completion marker.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: google-calendar-on-connect}
+metadata:
+  id: google-calendar-on-connect
 data:
   properties:
     enabled: true
@@ -110,11 +123,14 @@ data:
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledCalendar" in record.properties && record.properties.enabledCalendar
           == true && !("calendarLastSyncedAt" in record.properties)
-    callable: {kind: core.substrate.reamde.dev/function, id: google.bundles.substrate.reamde.dev/calendarsync}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: google.bundles.substrate.reamde.dev/calendarsync
 ---
 # Calendar's steady-state re-sync.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: google-calendar-scheduled}
+metadata:
+  id: google-calendar-scheduled
 data:
   properties:
     enabled: true
@@ -123,4 +139,6 @@ data:
         recurrence: "FREQ=HOURLY"
         timezone: Europe/London
         startsAt: "2025-01-06T09:00:00Z"
-    callable: {kind: core.substrate.reamde.dev/function, id: google.bundles.substrate.reamde.dev/calendarsync}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: google.bundles.substrate.reamde.dev/calendarsync

@@ -20,13 +20,14 @@ data:
 # A VOCABULARY bundle: kinds only, imported from the registry. Episodes
 # name people, so it requires that authority to be present first.
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: memory.substrate.reamde.dev/memory}
+metadata:
+  id: memory.substrate.reamde.dev/memory
 data:
   authority: memory.substrate.reamde.dev
   description: >-
     What is remembered: episodes at grains, moments rolling up into daily,
-    weekly and monthly summaries, with people pointing at people and an
-    untyped edge for everything else a memory touches.
+    weekly and monthly summaries, with people pointing at people and an untyped
+    edge for everything else a memory touches.
   requires:
     - people.substrate.reamde.dev
   installs:

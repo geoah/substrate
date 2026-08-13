@@ -24,18 +24,20 @@
 # ever read it (not a function body, not a prompt), and a knob no code reads
 # is a lie, so it is gone.
 kind: core.substrate.reamde.dev/authority
-metadata: {id: notes.bundles.substrate.reamde.dev}
+metadata:
+  id: notes.bundles.substrate.reamde.dev
 data:
   version: v1alpha1
 ---
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: notes.bundles.substrate.reamde.dev/notes}
+metadata:
+  id: notes.bundles.substrate.reamde.dev/notes
 data:
   authority: notes.bundles.substrate.reamde.dev
   description: >-
-    A worked example of the agent loop: one agent that calls two functions as
-    tools and hands the hard part to a sub-agent, ending in a saved note. It
-    needs no network, no credentials and no other bundle.
+    A worked example of the agent loop: one agent that calls two functions
+    as tools and hands the hard part to a sub-agent, ending in a saved note.
+    It needs no network, no credentials and no other bundle.
   installs:
     - notes.bundles.substrate.reamde.dev/note
     - notes.bundles.substrate.reamde.dev/stats
@@ -45,14 +47,17 @@ data:
 ---
 # ---- the note: what the whole bundle exists to produce
 kind: core.substrate.reamde.dev/kind
-metadata: {id: notes.bundles.substrate.reamde.dev/note}
+metadata:
+  id: notes.bundles.substrate.reamde.dev/note
 data:
   authority: notes.bundles.substrate.reamde.dev
   description: >-
     One saved note: the text the owner handed in, a title the sub-agent wrote,
-    and the word and character counts the stats function computed. Written by
-    the savenote function, never by hand.
-  names: {singular: note, plural: notes}
+    and the word and character counts the stats function computed. Written
+    by the savenote function, never by hand.
+  names:
+    singular: note
+    plural: notes
   properties:
     text:
       type: string
@@ -72,7 +77,8 @@ data:
 # body doing arithmetic on a string has no business opening one, and now it
 # cannot.
 kind: core.substrate.reamde.dev/function
-metadata: {id: notes.bundles.substrate.reamde.dev/stats}
+metadata:
+  id: notes.bundles.substrate.reamde.dev/stats
 data:
   authority: notes.bundles.substrate.reamde.dev
   description: Count the words and characters in a piece of text.
@@ -81,13 +87,19 @@ data:
   input:
     type: object
     properties:
-      text: {type: string, description: the text to measure}
+      text:
+        type: string
+        description: the text to measure
     required: [text]
   output:
     type: object
     properties:
-      words: {type: number, description: the word count}
-      characters: {type: number, description: the character count}
+      words:
+        type: number
+        description: the word count
+      characters:
+        type: number
+        description: the character count
   capabilities:
     emit: [notes.bundles.substrate.reamde.dev/note]
   source: |
@@ -100,7 +112,8 @@ data:
 # calling agent's. That is the whole shape of the capability envelope: the
 # function says what it may write, the agent says what it may cause.
 kind: core.substrate.reamde.dev/function
-metadata: {id: notes.bundles.substrate.reamde.dev/savenote}
+metadata:
+  id: notes.bundles.substrate.reamde.dev/savenote
 data:
   authority: notes.bundles.substrate.reamde.dev
   description: Save a note with its title and its counts.
@@ -109,16 +122,28 @@ data:
   input:
     type: object
     properties:
-      id: {type: string, description: a stable id for the note}
-      text: {type: string, description: the note body}
-      noteTitle: {type: string, description: the title to store}
-      words: {type: number, description: the word count}
-      characters: {type: number, description: the character count}
+      id:
+        type: string
+        description: a stable id for the note
+      text:
+        type: string
+        description: the note body
+      noteTitle:
+        type: string
+        description: the title to store
+      words:
+        type: number
+        description: the word count
+      characters:
+        type: number
+        description: the character count
     required: [id, text, noteTitle]
   output:
     type: object
     properties:
-      saved: {type: string, description: the id of the note that was written}
+      saved:
+        type: string
+        description: the id of the note that was written
   capabilities:
     emit: [notes.bundles.substrate.reamde.dev/note]
   source: |
@@ -140,12 +165,13 @@ data:
 # default: the emit ceiling means a child can never write a kind its caller
 # could not, and here the child does not ask to write at all.
 kind: core.substrate.reamde.dev/agent
-metadata: {id: notes.bundles.substrate.reamde.dev/titler}
+metadata:
+  id: notes.bundles.substrate.reamde.dev/titler
 data:
   authority: notes.bundles.substrate.reamde.dev
   description: >-
-    Write a short, plain title for a piece of text. Call this when you have the
-    note's body and need a title for it.
+    Write a short, plain title for a piece of text. Call this when you have
+    the note's body and need a title for it.
   prompt: |
     You write titles. The user message is the body of a note.
 
@@ -154,12 +180,16 @@ data:
     over a summary of it.
   provider: default
   model: anthropic/claude-haiku-4-5
-  budgets: {maxTurns: 2, maxToolCalls: 1, depth: 3}
+  budgets:
+    maxTurns: 2
+    maxToolCalls: 1
+    depth: 3
   emit: []
 ---
 # ---- the root agent: two function tools and one sub-agent -------------------
 kind: core.substrate.reamde.dev/agent
-metadata: {id: notes.bundles.substrate.reamde.dev/notekeeper}
+metadata:
+  id: notes.bundles.substrate.reamde.dev/notekeeper
 data:
   authority: notes.bundles.substrate.reamde.dev
   description: >-
@@ -186,6 +216,9 @@ data:
     - notes.bundles.substrate.reamde.dev/savenote
   agents:
     - notes.bundles.substrate.reamde.dev/titler
-  budgets: {maxTurns: 8, maxToolCalls: 8, depth: 3}
+  budgets:
+    maxTurns: 8
+    maxToolCalls: 8
+    depth: 3
   emit:
     - notes.bundles.substrate.reamde.dev/note

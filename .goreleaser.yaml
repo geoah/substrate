@@ -31,7 +31,8 @@ builds:
     goarch: [amd64, arm64]
     flags: [-trimpath]
     ldflags:
-      - -s -w -X main.version={{ .Version }} -X main.commit={{ .FullCommit }}
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .FullCommit
+        }}
 
   - id: substrated
     binary: substrated
@@ -41,7 +42,8 @@ builds:
     goarch: [amd64, arm64]
     flags: [-trimpath]
     ldflags:
-      - -s -w -X main.version={{ .Version }} -X main.commit={{ .FullCommit }}
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .FullCommit
+        }}
 
 archives:
   # Only the CLI is worth downloading on its own — the server ships as an image.

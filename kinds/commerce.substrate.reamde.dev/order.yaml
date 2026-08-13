@@ -28,7 +28,8 @@ data:
       description: who sold it
     status:
       type: state
-      description: "placed until it ships, shipped until it lands; stamps itself"
+      description: "placed until it ships, shipped until it lands; stamps
+        itself"
       states:
         - placed
         - shipped

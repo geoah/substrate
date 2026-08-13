@@ -6,8 +6,8 @@ data:
   authority: fitness.substrate.reamde.dev
   description: >-
     A reusable session plan: which exercises, with the defaults a session
-    starts from. Starting a workout from a template copies nothing; the
-    workout just points back here, and set order lives on the sets.
+    starts from. Starting a workout from a template copies nothing; the workout
+    just points back here, and set order lives on the sets.
   names:
     singular: workouttemplate
     plural: workouttemplates

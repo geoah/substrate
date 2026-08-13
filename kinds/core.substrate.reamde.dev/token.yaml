@@ -6,9 +6,9 @@ data:
   authority: core.substrate.reamde.dev
   description: >-
     One bearer credential: a label, the SHA-256 of a secret shown once at
-    mint, and an optional expiry. A token has full access to its
-    repository — sessions are these records, login mints one, and revoking
-    one is an ordinary record delete.
+    mint, and an optional expiry. A token has full access to its repository
+    — sessions are these records, login mints one, and revoking one is an
+    ordinary record delete.
   # v1alpha2 dropped `lastUsedAt`: authentication stamped it, so every token in
   # use wrote a changelog entry a minute and buried the user's own history
   # under the substrate's access log. Authentication is a READ now.

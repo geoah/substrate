@@ -5,9 +5,9 @@ metadata:
 data:
   authority: tasks.substrate.reamde.dev
   description: >-
-    The completed-or-skipped mark against one occurrence of a recurring
-    task. The task itself stays open while its rule repeats; only the
-    occurrences are marked, and absence in the logs is what missed means.
+    The completed-or-skipped mark against one occurrence of a recurring task.
+    The task itself stays open while its rule repeats; only the occurrences
+    are marked, and absence in the logs is what missed means.
   names:
     singular: tasklog
     plural: tasklogs

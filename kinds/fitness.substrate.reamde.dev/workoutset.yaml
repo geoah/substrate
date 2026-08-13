@@ -6,8 +6,8 @@ data:
   authority: fitness.substrate.reamde.dev
   description: >-
     One set inside a workout: which exercise, how heavy, how many, how it
-    felt. The set carries the numbers so the exercise catalog and the
-    workout itself stay thin.
+    felt. The set carries the numbers so the exercise catalog and the workout
+    itself stay thin.
   names:
     singular: workoutset
     plural: workoutsets

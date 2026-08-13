@@ -5,10 +5,10 @@ metadata:
 data:
   authority: calendar.substrate.reamde.dev
   description: >-
-    The recurring DEFINITION behind repeating events: its RRULE and the
-    dates that rule skips. It never sits on the timeline itself — the
-    substrate stores the rule and never expands it, and the occurrences
-    are calendarevents pointing back here.
+    The recurring DEFINITION behind repeating events: its RRULE and the dates
+    that rule skips. It never sits on the timeline itself — the substrate
+    stores the rule and never expands it, and the occurrences are calendarevents
+    pointing back here.
   names:
     singular: calendareventseries
     plural: calendareventseries

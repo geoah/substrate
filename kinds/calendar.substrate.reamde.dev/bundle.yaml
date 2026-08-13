@@ -26,7 +26,8 @@ data:
 # registry rather than seeded. Attendees, organizers and speakers are people,
 # so it requires that authority to be present first.
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: calendar.substrate.reamde.dev/calendar}
+metadata:
+  id: calendar.substrate.reamde.dev/calendar
 data:
   authority: calendar.substrate.reamde.dev
   description: >-

@@ -6,9 +6,9 @@ data:
   authority: core.substrate.reamde.dev
   description: >-
     One custom property type: a built-in datatype refined by a pattern, a
-    range or a value set (`isbn`, `asin`). Authority-local — only the
-    authority that declares it may use it — so a shape is stated once
-    instead of repeated on every property that wants it.
+    range or a value set (`isbn`, `asin`). Authority-local — only the authority
+    that declares it may use it — so a shape is stated once instead of repeated
+    on every property that wants it.
   # v1alpha2: the display template dropped the authority. A declaration's
   # identity is `<authority>/<name>` and the dotted composite it used to render
   # names nothing — the bump is what carries the new template into repositories

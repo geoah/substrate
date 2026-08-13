@@ -5,9 +5,9 @@ metadata:
 data:
   authority: messaging.substrate.reamde.dev
   description: >-
-    A DM, a group chat or a channel — one kind over all three, because
-    platforms disagree about the boundaries and messages do not. It hangs
-    off the account it synced through and names the people taking part.
+    A DM, a group chat or a channel — one kind over all three, because platforms
+    disagree about the boundaries and messages do not. It hangs off the account
+    it synced through and names the people taking part.
   names:
     singular: conversation
     plural: conversations

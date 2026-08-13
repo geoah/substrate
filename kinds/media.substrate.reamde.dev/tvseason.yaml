@@ -5,9 +5,9 @@ metadata:
 data:
   authority: media.substrate.reamde.dev
   description: >-
-    One season of a series — its number and its synopsis, with season 0
-    the place specials go. Episodes point here once the row exists, and at
-    the series either way.
+    One season of a series — its number and its synopsis, with season 0 the
+    place specials go. Episodes point here once the row exists, and at the
+    series either way.
   names:
     singular: tvseason
     plural: tvseasons

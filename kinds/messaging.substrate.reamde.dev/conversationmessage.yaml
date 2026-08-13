@@ -5,10 +5,10 @@ metadata:
 data:
   authority: messaging.substrate.reamde.dev
   description: >-
-    One message in a conversation, inbound or outbound. A synced message
-    is created `received` and never moves; anything you mean to send
-    starts as a `draft` and walks the send path, so composing and delivery
-    are one record rather than two systems.
+    One message in a conversation, inbound or outbound. A synced message is
+    created `received` and never moves; anything you mean to send starts as
+    a `draft` and walks the send path, so composing and delivery are one record
+    rather than two systems.
   names:
     singular: conversationmessage
     plural: conversationmessages

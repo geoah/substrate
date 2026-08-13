@@ -87,7 +87,8 @@ data:
 # Authors, narrators, publishers and labels are people and organizations, so
 # it requires that authority to be present first.
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: media.substrate.reamde.dev/media}
+metadata:
+  id: media.substrate.reamde.dev/media
 data:
   authority: media.substrate.reamde.dev
   description: >-

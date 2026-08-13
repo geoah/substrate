@@ -7,10 +7,10 @@ metadata:
 data:
   authority: media.substrate.reamde.dev
   description: >-
-    One edition of a book: the paperback on the shelf, the epub, the
-    Audible download. It carries what belongs to a copy rather than to the
-    work — ISBN, ASIN, language, pages, playback length — and you own it
-    whether or not anything ever syncs.
+    One edition of a book: the paperback on the shelf, the epub, the Audible
+    download. It carries what belongs to a copy rather than to the work —
+    ISBN, ASIN, language, pages, playback length — and you own it whether
+    or not anything ever syncs.
   names:
     singular: bookedition
     plural: bookeditions

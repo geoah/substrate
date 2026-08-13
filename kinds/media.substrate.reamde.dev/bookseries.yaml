@@ -5,10 +5,10 @@ metadata:
 data:
   authority: media.substrate.reamde.dev
   description: >-
-    An ordered collection a book belongs to, in any format. Prefixed
-    because a bare "series" could be a television one or a calendar event
-    series; where a work sits in it is a property of the work, since an
-    edge carries none.
+    An ordered collection a book belongs to, in any format. Prefixed because
+    a bare "series" could be a television one or a calendar event series;
+    where a work sits in it is a property of the work, since an edge carries
+    none.
   names:
     singular: bookseries
     # prefixed because bare `series` could be any family's — a TV series, a

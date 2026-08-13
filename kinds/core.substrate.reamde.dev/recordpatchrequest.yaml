@@ -7,10 +7,10 @@ metadata:
 data:
   authority: core.substrate.reamde.dev
   description: >-
-    A proposed change to the graph, waiting for the owner: patch an
-    existing record, create one, or delete one. A learner or an app writes
-    it, accepting the decision applies it, and the envelope is frozen once
-    proposed so nobody can swap what was reviewed.
+    A proposed change to the graph, waiting for the owner: patch an existing
+    record, create one, or delete one. A learner or an app writes it, accepting
+    the decision applies it, and the envelope is frozen once proposed so nobody
+    can swap what was reviewed.
   names:
     singular: recordpatchrequest
     plural: recordpatchrequests

@@ -16,7 +16,8 @@
 # connector input's config record, not on this trigger's record.
 # The first backfill: an account that wants messages and has never synced.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: beeper-messages-on-connect}
+metadata:
+  id: beeper-messages-on-connect
 data:
   properties:
     enabled: true
@@ -31,13 +32,16 @@ data:
         when: >-
           record != null && "enabledMessages" in record.properties && record.properties.enabledMessages
           == true && !("lastSyncedAt" in record.properties)
-    callable: {kind: core.substrate.reamde.dev/function, id: beeper.bundles.substrate.reamde.dev/messagessync}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: beeper.bundles.substrate.reamde.dev/messagessync
 ---
 # The steady-state re-sync: an hourly tick fires the same function with no
 # envelope record, so the body iterates every enabled account and syncs the
 # ones due by their own syncFrequency.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: beeper-messages-scheduled}
+metadata:
+  id: beeper-messages-scheduled
 data:
   properties:
     enabled: true
@@ -47,4 +51,6 @@ data:
         timezone: Europe/London
         # A fixed past anchor, so every occurrence since is well-defined.
         startsAt: "2025-01-06T09:00:00Z"
-    callable: {kind: core.substrate.reamde.dev/function, id: beeper.bundles.substrate.reamde.dev/messagessync}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: beeper.bundles.substrate.reamde.dev/messagessync

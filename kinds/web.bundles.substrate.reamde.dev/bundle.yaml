@@ -15,7 +15,8 @@
 # Every schema manifest declares INTO core; the authority it describes is
 # metadata.id.
 kind: core.substrate.reamde.dev/authority
-metadata: {id: web.bundles.substrate.reamde.dev}
+metadata:
+  id: web.bundles.substrate.reamde.dev
 data:
   version: v1alpha1
 ---
@@ -24,7 +25,8 @@ data:
 # authority header, the actors and the bundle itself) — the loader holds the two
 # equal both ways.
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: web.bundles.substrate.reamde.dev/web}
+metadata:
+  id: web.bundles.substrate.reamde.dev/web
 data:
   authority: web.bundles.substrate.reamde.dev
   description: >-
@@ -60,14 +62,17 @@ data:
 # this kind are ordinary (any number may exist); the bundle's `connector`
 # input picks the one the functions see.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: web.bundles.substrate.reamde.dev/config}
+metadata:
+  id: web.bundles.substrate.reamde.dev/config
 data:
   authority: web.bundles.substrate.reamde.dev
   description: >-
-    This bundle's configuration record: the URL substrings that are
-    never harvested, the page-fetch credential, and the newest weekly
-    digest a rollup produced.
-  names: {singular: config, plural: configs}
+    This bundle's configuration record: the URL substrings that are never
+    harvested, the page-fetch credential, and the newest weekly digest a rollup
+    produced.
+  names:
+    singular: config
+    plural: configs
   properties:
     denyDomains:
       type: string
@@ -86,15 +91,17 @@ data:
 # `title` is the reserved built-in (fetchpage writes it); `source` is a
 # `to: any` edge back at whatever message carried the URL.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: web.bundles.substrate.reamde.dev/page}
+metadata:
+  id: web.bundles.substrate.reamde.dev/page
 data:
   authority: web.bundles.substrate.reamde.dev
   description: >-
     One harvested web page: where it came from, the fetched markdown, the
-    classifier's verdict and whether a reading-list proposal for it was
-    accepted. Its id is a hash of the URL, so re-harvesting updates one
-    row.
-  names: {singular: page, plural: pages}
+    classifier's verdict and whether a reading-list proposal for it was accepted.
+    Its id is a hash of the URL, so re-harvesting updates one row.
+  names:
+    singular: page
+    plural: pages
   properties:
     url:
       type: string
@@ -124,7 +131,8 @@ data:
 # nothing. The input arrives injected (config.inputs.connector); an unresolved
 # input's key is simply absent and the deny list falls back empty.
 kind: core.substrate.reamde.dev/function
-metadata: {id: web.bundles.substrate.reamde.dev/findurls}
+metadata:
+  id: web.bundles.substrate.reamde.dev/findurls
 data:
   authority: web.bundles.substrate.reamde.dev
   description: Extract every URL from the triggering record and mint pending
@@ -181,7 +189,8 @@ data:
 # Reads a pending page's url, produces markdown (STUB — deterministic, no
 # network so tests never touch the wire), and marks the page fetched.
 kind: core.substrate.reamde.dev/function
-metadata: {id: web.bundles.substrate.reamde.dev/fetchpage}
+metadata:
+  id: web.bundles.substrate.reamde.dev/fetchpage
 data:
   authority: web.bundles.substrate.reamde.dev
   description: Fetch one pending page as markdown and mark it fetched.
@@ -206,7 +215,8 @@ data:
 # The classifier agent's write hand: a direct patch of page.class. An agent
 # has no generic patch built-in, so a direct write is a function tool.
 kind: core.substrate.reamde.dev/function
-metadata: {id: web.bundles.substrate.reamde.dev/setclass}
+metadata:
+  id: web.bundles.substrate.reamde.dev/setclass
 data:
   authority: web.bundles.substrate.reamde.dev
   description: Set a page's class. Call with {id, class}.
@@ -214,8 +224,12 @@ data:
   input:
     type: object
     properties:
-      id: {type: string, description: the page id}
-      class: {type: string, description: article | tool | video}
+      id:
+        type: string
+        description: the page id
+      class:
+        type: string
+        description: article | tool | video
     required: [id, class]
   capabilities:
     emit: [web.bundles.substrate.reamde.dev/page]
@@ -235,7 +249,8 @@ data:
 # classifier's (which names only page + recordpatchrequest), so config is
 # refused and nothing lands. Delegation can only narrow.
 kind: core.substrate.reamde.dev/function
-metadata: {id: web.bundles.substrate.reamde.dev/stampconfig}
+metadata:
+  id: web.bundles.substrate.reamde.dev/stampconfig
 data:
   authority: web.bundles.substrate.reamde.dev
   description: Stamp the bundle config directly. Call with {id}.
@@ -243,7 +258,9 @@ data:
   input:
     type: object
     properties:
-      id: {type: string, description: the config record id}
+      id:
+        type: string
+        description: the config record id
     required: [id]
   capabilities:
     emit: [web.bundles.substrate.reamde.dev/config]
@@ -266,7 +283,8 @@ data:
 # name recordpatchrequest so the sub-agent's propose survives the emit ceiling
 # (a child's effective emit is its own ∩ the caller's).
 kind: core.substrate.reamde.dev/agent
-metadata: {id: web.bundles.substrate.reamde.dev/pageclassifier}
+metadata:
+  id: web.bundles.substrate.reamde.dev/pageclassifier
 data:
   authority: web.bundles.substrate.reamde.dev
   description: Classify a fetched page and route it to the reading-list agent.
@@ -278,7 +296,10 @@ data:
   model: anthropic/claude-opus-5
   tools: [web.bundles.substrate.reamde.dev/setclass]
   agents: [web.bundles.substrate.reamde.dev/readinglistagent]
-  budgets: {maxTurns: 4, maxToolCalls: 8, depth: 3}
+  budgets:
+    maxTurns: 4
+    maxToolCalls: 8
+    depth: 3
   emit:
     - web.bundles.substrate.reamde.dev/page
     - core.substrate.reamde.dev/recordpatchrequest
@@ -287,7 +308,8 @@ data:
 # Proposes a recordpatchrequest that marks the page saved. The owner decides;
 # accepting is what applies the patch.
 kind: core.substrate.reamde.dev/agent
-metadata: {id: web.bundles.substrate.reamde.dev/readinglistagent}
+metadata:
+  id: web.bundles.substrate.reamde.dev/readinglistagent
 data:
   authority: web.bundles.substrate.reamde.dev
   description: Propose adding a classified page to the owner's reading list.
@@ -300,7 +322,10 @@ data:
   provider: default
   model: anthropic/claude-sonnet-5
   tools: [propose, web.bundles.substrate.reamde.dev/stampconfig]
-  budgets: {maxTurns: 4, maxToolCalls: 4, depth: 3}
+  budgets:
+    maxTurns: 4
+    maxToolCalls: 4
+    depth: 3
   emit:
     - core.substrate.reamde.dev/recordpatchrequest
     - web.bundles.substrate.reamde.dev/config
@@ -309,7 +334,8 @@ data:
 # Reads the week's pages and proposes a digest note (a patch of the config's
 # lastDigest). Fired by a schedule trigger, not by a changelog row.
 kind: core.substrate.reamde.dev/agent
-metadata: {id: web.bundles.substrate.reamde.dev/weeklyrollup}
+metadata:
+  id: web.bundles.substrate.reamde.dev/weeklyrollup
 data:
   authority: web.bundles.substrate.reamde.dev
   description: Summarize the pages harvested this week and propose a digest.
@@ -321,6 +347,10 @@ data:
   provider: default
   model: anthropic/claude-haiku-4-5
   tools: [query, propose]
-  reads: {kinds: [web.bundles.substrate.reamde.dev/page]}
-  budgets: {maxTurns: 6, maxToolCalls: 16, depth: 3}
+  reads:
+    kinds: [web.bundles.substrate.reamde.dev/page]
+  budgets:
+    maxTurns: 6
+    maxToolCalls: 16
+    depth: 3
   emit: [core.substrate.reamde.dev/recordpatchrequest]

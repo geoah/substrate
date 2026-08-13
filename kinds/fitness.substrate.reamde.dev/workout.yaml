@@ -6,9 +6,9 @@ data:
   authority: fitness.substrate.reamde.dev
   description: >-
     One training session. With an RRULE it is the recurring plan, and each
-    planned occurrence is marked by a workoutlog; without one it is a
-    single session. What was lifted lives on its workoutsets, and tracker
-    numbers land here as the session's totals.
+    planned occurrence is marked by a workoutlog; without one it is a single
+    session. What was lifted lives on its workoutsets, and tracker numbers
+    land here as the session's totals.
   names:
     singular: workout
     plural: workouts

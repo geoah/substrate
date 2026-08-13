@@ -17,7 +17,8 @@ data:
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: routines.substrate.reamde.dev/routines}
+metadata:
+  id: routines.substrate.reamde.dev/routines
 data:
   authority: routines.substrate.reamde.dev
   description: >-

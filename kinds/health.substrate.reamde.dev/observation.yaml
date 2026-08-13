@@ -7,8 +7,8 @@ data:
   description: >-
     The definition of one tracked measure: weight, mood, headaches, steps.
     It names what is tracked and how values are typed; the values themselves
-    are observationlog records pointing here. An observation with a
-    recurrence is a habit or check-in, and its timeline span is the series.
+    are observationlog records pointing here. An observation with a recurrence
+    is a habit or check-in, and its timeline span is the series.
   names:
     singular: observation
     plural: observations
