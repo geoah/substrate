@@ -283,8 +283,20 @@ func (r *Runner) Reconcile(_ context.Context, repository string, live []Spec) {
 	}
 	r.mu.Unlock()
 
+	// Each kill takes the process's OWN lock first, so a retirement never lands
+	// in the middle of a delivery: roundtrip holds that lock for the whole
+	// exchange, and waiting for it turns "killed mid-request" into "the last
+	// request finished, then the process closed". The wait is bounded by the
+	// invocation timeout the delivery is already under.
+	//
+	// Unlike the idle sweep this WAITS rather than skipping a busy process. A
+	// swept process is merely idle and will be swept again; a reconciled one
+	// belongs to an installation the registry no longer has, and leaving it
+	// alive because it happened to be busy would leave a retired body serving.
 	for _, p := range stop {
+		p.mu.Lock()
 		p.kill()
+		p.mu.Unlock()
 	}
 }
 
@@ -564,13 +576,18 @@ func (r *Runner) reap() {
 // exchange, so a failed TryLock means busy, and busy means recently used
 // anyway.
 //
-// The kill happens while proc.mu is still HELD, not after releasing it. A
-// caller can hold a pointer it took from the map before this sweep deleted the
-// entry; releasing the lock first would let that caller start a roundtrip into
-// a process about to be killed, and the delivery would fail with "child exited
-// mid-request" for no reason it could act on. Holding the lock across the kill
-// makes the retirement atomic with respect to roundtrip, which takes the same
-// lock and will then find the process dead and restart it.
+// The kill happens while proc.mu is still HELD, not after releasing it, so a
+// caller that is ALREADY inside roundtrip finishes first: that lock is held for
+// the whole exchange.
+//
+// It does not make lookup-and-use atomic, and the comment should not pretend
+// otherwise. A caller can take a pointer out of the map, lose the race to this
+// sweep, and then write to a process that is already dead; roundtrip does not
+// restart anything, it returns "child exited mid-request" and the dispatcher
+// retries the delivery, which starts a fresh process through the ordinary path.
+// The window is between a map lookup and the next line of the same function,
+// against a process that has been idle for the TTL, so a delivery losing it is
+// a rarity that costs one retry.
 func (r *Runner) sweep(now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

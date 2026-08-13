@@ -33,8 +33,11 @@ import (
 // systemReadExec are the prefixes an interpreter needs to run at all: the
 // binary, its shared libraries, its standard library. Read and execute, never
 // write: a body cannot rewrite the interpreter the next one will start.
+// /opt is deliberately absent: no runtime here lives there, and it is a
+// conventional home for application data and mounted configuration, which a
+// root body would then be able to read.
 var systemReadExec = []string{
-	"/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32", "/opt",
+	"/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/libx32",
 }
 
 // systemReadOnly is configuration a runtime reads and must never execute,
@@ -150,6 +153,37 @@ func runtimeRoot(bin string) []string {
 		return out
 	}
 	return append(out, parent)
+}
+
+// provisionPolicy confines a `uv sync`: the dependency resolve, which runs
+// arbitrary third-party code.
+//
+// A PEP 517 build backend is a python program that ships with the package and
+// runs during the install, so `uv sync` is not merely a download: it is
+// third-party execution, and leaving it unconfined would hand a malicious
+// dependency the whole container as root while the BODY it was resolved for
+// runs confined. Confining it is not optional just because it happens at
+// registration.
+//
+// It is LOOSER than a body's policy in exactly two ways, both of which the
+// resolve genuinely needs and a body does not: the network (that is what a
+// resolve is), and write access to uv's shared cache (that is where the
+// environment it is building lives). Everything else is the same shape.
+func provisionPolicy(work, uvCache string, bins ...string) sandbox.Policy {
+	readExec := append([]string{}, systemReadExec...)
+	for _, bin := range bins {
+		if bin != "" {
+			readExec = append(readExec, runtimeRoot(bin)...)
+		}
+	}
+	return sandbox.Policy{
+		ReadExec:  readExec,
+		ReadOnly:  systemReadOnly,
+		ReadWrite: append([]string{work, uvCache}, deviceReadWrite...),
+		Network:   true,
+		NoFile:    childNoFile,
+		FileSize:  childFileSize,
+	}
 }
 
 // scratch is the installation's private temp dir, created under its work dir

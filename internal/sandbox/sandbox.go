@@ -139,8 +139,20 @@ type Report struct {
 	Err error
 }
 
-// FS reports whether the filesystem layer is available.
-func (r Report) FS() bool { return r.LandlockABI > 0 }
+// MinLandlockABI is the ABI at which the filesystem layer is COMPLETE enough
+// to be called enforced.
+//
+// ABI 3 (Linux 6.2) is where LANDLOCK_ACCESS_FS_TRUNCATE arrives. Below it,
+// truncate(2) is mediated by nothing at all: a root body outside its granted
+// trees cannot read or write a file, but can still empty one. Reporting ABI 1
+// or 2 as "enforced" would let SUBSTRATE_SANDBOX=enforce pass its check on a
+// kernel where every file on the host is still destructible.
+const MinLandlockABI = 3
+
+// FS reports whether the filesystem layer is available AND complete. A kernel
+// below MinLandlockABI still gets a ruleset applied (some confinement beats
+// none), but it does not satisfy enforce and the boot line calls it degraded.
+func (r Report) FS() bool { return r.LandlockABI >= MinLandlockABI }
 
 // Supported reports whether this package can confine anything at all here.
 // Landlock and seccomp are Linux facilities; macOS's Seatbelt is a different
@@ -167,6 +179,9 @@ func (r Report) String() string {
 	fs := "unavailable"
 	if r.LandlockABI > 0 {
 		fs = fmt.Sprintf("landlock ABI v%d", r.LandlockABI)
+		if r.LandlockABI < MinLandlockABI {
+			fs += fmt.Sprintf(" (below v%d: truncate(2) is not mediated)", MinLandlockABI)
+		}
 	}
 	sec := "unavailable"
 	if r.Seccomp {

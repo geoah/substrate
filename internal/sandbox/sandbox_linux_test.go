@@ -204,15 +204,28 @@ func TestFilterAssembles(t *testing.T) {
 				}
 			}
 		}
-		// The last four are the terminals, in the order buildFilter documents.
-		terminals := prog[len(prog)-4:]
+		// The last three are the terminals, in the order buildFilter documents.
+		// The socket block carries its own refusal rather than jumping to a
+		// fourth, so an unlisted domain cannot fall through to ALLOW.
+		terminals := prog[len(prog)-3:]
 		for i, want := range []uint32{
-			seccompRetAllow,
-			retErrno(unix.EPERM), retErrno(unix.ENOSYS), retErrno(unix.EAFNOSUPPORT),
+			seccompRetAllow, retErrno(unix.EPERM), retErrno(unix.ENOSYS),
 		} {
 			if terminals[i].K != want {
 				t.Fatalf("terminal %d = %#x, want %#x", i, terminals[i].K, want)
 			}
+		}
+		// The socket domain check must be an ALLOWLIST: exactly one refusal
+		// instruction, and no compare against a domain that is not permitted.
+		// A deny-list here would leave AF_PACKET reachable.
+		refusals := 0
+		for _, insn := range prog {
+			if insn.Code == bpfRetK && insn.K == retErrno(unix.EAFNOSUPPORT) {
+				refusals++
+			}
+		}
+		if refusals != 1 {
+			t.Fatalf("network=%v: %d socket refusals, want exactly 1", network, refusals)
 		}
 	}
 }

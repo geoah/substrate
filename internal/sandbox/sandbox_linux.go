@@ -124,7 +124,12 @@ func (c *Confiner) wrap(cmd *exec.Cmd, p Policy) error {
 	}
 	// Only ask for what the kernel has. In best-effort a missing layer is a
 	// logged degradation; Wrap has already refused for enforce.
-	if !c.report.FS() {
+	//
+	// The test is whether Landlock exists AT ALL, not whether it reaches
+	// MinLandlockABI: an older ABI still confines reads and writes, and
+	// applying it is strictly better than applying nothing. What an incomplete
+	// ABI does not do is satisfy enforce, and that is Report.FS()'s job.
+	if c.report.LandlockABI == 0 {
 		p.ReadExec, p.ReadOnly, p.ReadWrite = nil, nil, nil
 	}
 	// enforce means the CHILD refuses too, not just the boot probe.

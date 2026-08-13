@@ -145,7 +145,7 @@ func (r *Runner) startPython(ctx context.Context, spec Spec) (*proc, error) {
 		// the network and writes uv's shared cache, and neither is something a
 		// body may do. What comes back is the interpreter of the script's
 		// environment, which is what actually runs the body.
-		interpreter, err = provisionUV(ctx, hostFile, work, uvCache, spec.timeout())
+		interpreter, err = r.provisionUV(ctx, hostFile, work, uvCache, spec.timeout())
 		if err != nil {
 			return nil, err
 		}
@@ -188,7 +188,7 @@ func (r *Runner) startPython(ctx context.Context, spec Spec) (*proc, error) {
 // --script`: `uv run` would be uv, in the invocation path, needing network and
 // write access to its cache on every start. Running the resolved interpreter
 // directly leaves uv entirely on the registration side of the boundary.
-func provisionUV(ctx context.Context, hostFile, work, uvCache string, timeout time.Duration) (string, error) {
+func (r *Runner) provisionUV(ctx context.Context, hostFile, work, uvCache string, timeout time.Duration) (string, error) {
 	if timeout < uvProvisionTimeout {
 		timeout = uvProvisionTimeout
 	}
@@ -196,24 +196,63 @@ func provisionUV(ctx context.Context, hostFile, work, uvCache string, timeout ti
 	defer cancel()
 
 	// A stable UV_CACHE_DIR keys uv's resolved environments so a restart
-	// reuses them rather than re-resolving.
-	env := childEnv("UV_CACHE_DIR=" + uvCache)
-	sync := exec.CommandContext(pctx, "uv", "sync", "--quiet", "--script", hostFile)
+	// reuses them rather than re-resolving. TMPDIR is the installation's own
+	// scratch for the same reason the body gets one: the resolve unpacks
+	// archives through a temp dir, and the shared /tmp is neither granted nor
+	// somewhere a resolve should be writing.
+	tmpDir, err := scratch(work)
+	if err != nil {
+		return "", err
+	}
+	env := childEnv("UV_CACHE_DIR="+uvCache, "TMPDIR="+tmpDir)
+	uvBin, err2 := exec.LookPath("uv")
+	if err = err2; err != nil {
+		return "", fmt.Errorf("runner: uv is not on PATH: %w", err)
+	}
+	// The cache dir is created HERE, by the parent, because the confined
+	// resolve cannot make it: a Landlock rule names an existing path, and
+	// creating a directory needs the right on its PARENT, which uv is not
+	// granted. Granting the parent instead would hand the resolve every other
+	// installation's work dir.
+	if err := os.MkdirAll(uvCache, 0o755); err != nil {
+		return "", err
+	}
+	// Pin the interpreter rather than letting uv search PATH. PATH may hold a
+	// version manager's SHIM, which the resolve is not granted and which uv
+	// reports as a hard failure rather than skipping. This is the same reason
+	// the body execs a resolved interpreter instead of `python3`.
+	interpreter, err2 := pythonInterpreter()
+	if err = err2; err != nil {
+		return "", err
+	}
+	policy := provisionPolicy(work, uvCache, uvBin, interpreter)
+
+	// The resolve runs third-party build backends, so it is confined like
+	// anything else that runs code we did not write.
+	sync := exec.CommandContext(pctx, uvBin, "sync", "--quiet", "--python", interpreter, "--script", hostFile)
 	sync.Dir, sync.Env = work, env
+	if err := r.sandbox.Wrap(sync, policy); err != nil {
+		return "", err
+	}
 	if out, err := sync.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("runner: uv sync: %w\n%s", err, out)
 	}
-	find := exec.CommandContext(pctx, "uv", "python", "find", "--script", hostFile)
+	// What comes back is the interpreter OF THE SCRIPT'S ENVIRONMENT, which is
+	// the venv uv just built, not the one pinned above.
+	find := exec.CommandContext(pctx, uvBin, "python", "find", "--script", hostFile)
 	find.Dir, find.Env = work, env
+	if err := r.sandbox.Wrap(find, policy); err != nil {
+		return "", err
+	}
 	out, err := find.Output()
 	if err != nil {
 		return "", fmt.Errorf("runner: uv python find: %w", err)
 	}
-	interpreter := strings.TrimSpace(string(out))
-	if interpreter == "" {
+	venv := strings.TrimSpace(string(out))
+	if venv == "" {
 		return "", fmt.Errorf("runner: uv python find returned no interpreter")
 	}
-	return interpreter, nil
+	return venv, nil
 }
 
 // writeFileRO materializes one file atomically as READ-ONLY: write a temp file

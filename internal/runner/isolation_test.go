@@ -547,3 +547,63 @@ func requireMknod(t *testing.T) {
 	}
 	_ = os.Remove(probe)
 }
+
+// The network gate is an ALLOWLIST of socket domains, not a refusal of the two
+// internet ones. Denying AF_INET and AF_INET6 while letting the rest through
+// would leave AF_PACKET, and the container's default capability set carries
+// CAP_NET_RAW, so a body could send and receive raw Ethernet frames and the
+// capability would bound nothing at all.
+func TestRawAndKernelSocketFamiliesAreRefused(t *testing.T) {
+	r := New()
+	requireSeccomp(t, r)
+	const probe = `
+import socket
+def main(input, host):
+    out = {}
+    for name, fam, typ in [("packet", 17, socket.SOCK_RAW),
+                           ("netlink", 16, socket.SOCK_RAW),
+                           ("inet_raw", socket.AF_INET, socket.SOCK_RAW),
+                           ("unix", socket.AF_UNIX, socket.SOCK_STREAM)]:
+        try:
+            s = socket.socket(fam, typ)
+            s.close()
+            out[name] = "opened"
+        except OSError as e:
+            out[name] = "denied"
+    return {"output": out}
+`
+	// A body with NO declared egress: everything but AF_UNIX must be refused.
+	quiet := Spec{
+		Repository: "t1", Function: "rawnonet.g.test", Runtime: "python",
+		Source: probe, TimeoutMs: 5000,
+	}
+	res, err := r.Invoke(context.Background(), quiet, testInput(), nil)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, ok := res.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected output: %#v", res.Output)
+	}
+	for _, fam := range []string{"packet", "netlink", "inet_raw"} {
+		if out[fam] != "denied" {
+			t.Errorf("a body declaring no network opened an %s socket: %v", fam, out[fam])
+		}
+	}
+	if out["unix"] != "opened" {
+		t.Errorf("AF_UNIX must stay available: %v", out["unix"])
+	}
+
+	// A body WITH declared egress still gets no raw link-layer access: the
+	// declaration buys ordinary sockets, not the wire.
+	loud := quiet
+	loud.Function, loud.Network = "rawnet.g.test", []string{"api.example.com"}
+	res, err = r.Invoke(context.Background(), loud, testInput(), nil)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, _ = res.Output.(map[string]any)
+	if out["packet"] != "denied" {
+		t.Errorf("a body declaring egress opened a raw packet socket: %v", out["packet"])
+	}
+}

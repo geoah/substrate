@@ -152,10 +152,20 @@ func applySeccomp(p Policy) error {
 }
 
 // installFilter attaches one assembled program.
+//
+// The RETURN VALUE matters as much as the errno. With TSYNC, a thread that
+// cannot be synchronized is reported as a POSITIVE return carrying that
+// thread's id, with errno zero: checking only the errno would read a partial
+// installation as a success and let the body run with a thread outside the
+// filter. Nothing but 0 is success.
 func installFilter(fprog *sockFprog, flags uintptr) error {
-	if _, _, errno := unix.Syscall(unix.SYS_SECCOMP, seccompSetModeFilter,
-		flags, uintptr(unsafe.Pointer(fprog))); errno != 0 {
+	ret, _, errno := unix.Syscall(unix.SYS_SECCOMP, seccompSetModeFilter,
+		flags, uintptr(unsafe.Pointer(fprog)))
+	if errno != 0 {
 		return errno
+	}
+	if ret != 0 {
+		return fmt.Errorf("thread %d could not be synchronized onto the filter", ret)
 	}
 	return nil
 }
@@ -176,16 +186,26 @@ func buildFilter(p Policy) ([]sockFilter, error) {
 	}
 	deny := deniedSyscalls()
 
-	socketBlock := 0
-	if !p.Network {
-		socketBlock = 4
+	// The socket domains a body may open AT ALL. An allowlist, not a deny-list:
+	// refusing AF_INET and AF_INET6 while letting everything else through would
+	// leave AF_PACKET, and the container's default capability set carries
+	// CAP_NET_RAW, so a body could send and receive raw Ethernet frames and the
+	// network capability would bound nothing. AF_UNIX is always allowed (it
+	// addresses nothing off the machine); the internet families only when the
+	// manifest declared egress, and AF_NETLINK with them because glibc's
+	// resolver enumerates interfaces through it.
+	allowedDomains := []uint32{unix.AF_UNIX}
+	if p.Network {
+		allowedDomains = append(allowedDomains, unix.AF_INET, unix.AF_INET6, unix.AF_NETLINK)
 	}
+	// jeq socket, ld arg0, one compare per allowed domain, then the refusal.
+	socketBlock := 3 + len(allowedDomains)
 	// Absolute indices of the terminals.
 	const prologue = 5
 	allowAt := prologue + len(deny) + socketBlock
 	epermAt := allowAt + 1
 	enosysAt := allowAt + 2
-	eafnosupportAt := allowAt + 3
+	lastAt := enosysAt
 
 	// jumpTo is the forward offset from the instruction at `from` to `to`.
 	jumpTo := func(from, to int) (uint8, error) {
@@ -196,7 +216,7 @@ func buildFilter(p Policy) ([]sockFilter, error) {
 		return uint8(d), nil
 	}
 
-	prog := make([]sockFilter, 0, eafnosupportAt+1)
+	prog := make([]sockFilter, 0, lastAt+1)
 	// 0: load the architecture.
 	prog = append(prog, sockFilter{Code: bpfLdAbsW, K: sdArch})
 	// 1: a foreign architecture skips to the ENOSYS terminal: this filter's
@@ -229,38 +249,36 @@ func buildFilter(p Policy) ([]sockFilter, error) {
 		prog = append(prog, sockFilter{Code: bpfJeqK, JT: jt, JF: 0, K: uint32(d.nr)})
 	}
 
-	if socketBlock > 0 {
-		// A still holds the syscall number: none of the compares above touch
-		// it. Not socket(2): allow, and let the terminals handle the rest.
-		base := prologue + len(deny)
-		jf, err := jumpTo(base, allowAt)
-		if err != nil {
+	// A still holds the syscall number: none of the compares above touch it.
+	base := prologue + len(deny)
+	jf, err := jumpTo(base, allowAt)
+	if err != nil {
+		return nil, err
+	}
+	// Not socket(2): allow, and let the terminals handle the rest.
+	prog = append(prog, sockFilter{Code: bpfJeqK, JT: 0, JF: jf, K: uint32(sysSocket)})
+	// The domain is arg0, an INTEGER copied into seccomp_data by the kernel,
+	// not a pointer, so there is nothing for user space to change behind the
+	// filter's back. Comparing the low half is exactly right: the kernel
+	// truncates the argument to int, so the low half IS the domain.
+	prog = append(prog, sockFilter{Code: bpfLdAbsW, K: sdArg0})
+	for i, af := range allowedDomains {
+		at := base + 2 + i
+		if jt, err = jumpTo(at, allowAt); err != nil {
 			return nil, err
 		}
-		prog = append(prog, sockFilter{Code: bpfJeqK, JT: 0, JF: jf, K: uint32(sysSocket)})
-		// The domain is arg0, an INTEGER copied into seccomp_data by the
-		// kernel, not a pointer, so there is nothing for user space to change
-		// behind the filter's back. Comparing the low half is exactly right:
-		// the kernel truncates the argument to int, so the low half IS the
-		// domain.
-		prog = append(prog, sockFilter{Code: bpfLdAbsW, K: sdArg0})
-		for i, af := range []uint32{unix.AF_INET, unix.AF_INET6} {
-			at := base + 2 + i
-			if jt, err = jumpTo(at, eafnosupportAt); err != nil {
-				return nil, err
-			}
-			prog = append(prog, sockFilter{Code: bpfJeqK, JT: jt, JF: 0, K: af})
-		}
+		prog = append(prog, sockFilter{Code: bpfJeqK, JT: jt, JF: 0, K: af})
 	}
+	// Every other domain lands here, AF_PACKET among them.
+	prog = append(prog, sockFilter{Code: bpfRetK, K: retErrno(unix.EAFNOSUPPORT)})
 
 	prog = append(prog,
 		sockFilter{Code: bpfRetK, K: seccompRetAllow},
 		sockFilter{Code: bpfRetK, K: retErrno(unix.EPERM)},
 		sockFilter{Code: bpfRetK, K: retErrno(unix.ENOSYS)},
-		sockFilter{Code: bpfRetK, K: retErrno(unix.EAFNOSUPPORT)},
 	)
-	if len(prog) != eafnosupportAt+1 {
-		return nil, fmt.Errorf("seccomp: assembled %d instructions, expected %d", len(prog), eafnosupportAt+1)
+	if len(prog) != lastAt+1 {
+		return nil, fmt.Errorf("seccomp: assembled %d instructions, expected %d", len(prog), lastAt+1)
 	}
 	return prog, nil
 }
