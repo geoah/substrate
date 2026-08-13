@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/geoah/substrate/internal/sandbox"
 )
 
 // The Go ingestion path: an inline `runtime: go` body compiles at
@@ -48,15 +50,35 @@ go 1.26
 // key, so changing a flag invalidates every cached artifact.
 var goBuildEnv = []string{"GOFLAGS=-mod=mod", "GOPROXY=off", "GOWORK=off", "CGO_ENABLED=0"}
 
-// goToolchain probes the `go` the builds actually use — version and target —
-// once per process. A probe failure surfaces at build time anyway, so the
-// error is carried, not swallowed.
-var goToolchain = sync.OnceValues(func() (string, error) {
-	out, err := exec.Command("go", "env", "GOVERSION", "GOOS", "GOARCH").Output()
+// toolchain is what one `go env` probe tells us: the identity that keys the
+// build cache, and the directories the build reads and writes — which the
+// sandbox needs by name, because a confined build cannot discover them.
+type toolchain struct {
+	// ID is version/os/arch, the part that participates in the cache key.
+	ID string
+	// Root, Cache and ModCache are GOROOT, GOCACHE and GOMODCACHE.
+	Root, Cache, ModCache string
+}
+
+// goToolchain probes the `go` the builds actually use, once per process. A
+// probe failure surfaces at build time anyway, so the error is carried, not
+// swallowed.
+var goToolchain = sync.OnceValues(func() (toolchain, error) {
+	out, err := exec.Command("go", "env",
+		"GOVERSION", "GOOS", "GOARCH", "GOROOT", "GOCACHE", "GOMODCACHE").Output()
 	if err != nil {
-		return "", fmt.Errorf("runner: probe go toolchain: %w", err)
+		return toolchain{}, fmt.Errorf("runner: probe go toolchain: %w", err)
 	}
-	return strings.Join(strings.Fields(string(out)), "/"), nil
+	f := strings.Fields(string(out))
+	if len(f) < 6 {
+		return toolchain{}, fmt.Errorf("runner: probe go toolchain: got %d values, want 6", len(f))
+	}
+	return toolchain{
+		ID:       strings.Join(f[:3], "/"),
+		Root:     f[3],
+		Cache:    f[4],
+		ModCache: f[5],
+	}, nil
 })
 
 // buildKey is the artifact's cache identity: body + SDK + wrapper + protocol
@@ -71,7 +93,7 @@ func buildKey(spec Spec) (string, error) {
 	h := sha256.New()
 	for _, part := range []string{
 		"protocol " + strconv.Itoa(ProtocolVersion),
-		tool,
+		tool.ID,
 		strings.Join(goBuildEnv, " "),
 		generatedGoMod,
 		generatedMain,
@@ -100,6 +122,10 @@ func (r *Runner) ensureBinary(ctx context.Context, spec Spec) (string, error) {
 		return "", err
 	}
 	key, err := buildKey(spec)
+	if err != nil {
+		return "", err
+	}
+	tool, err := goToolchain()
 	if err != nil {
 		return "", err
 	}
@@ -154,12 +180,35 @@ func (r *Runner) ensureBinary(ctx context.Context, spec Spec) (string, error) {
 	out := tmp.Name()
 	_ = tmp.Close()
 	defer func() { _ = os.Remove(out) }()
-	cmd := exec.CommandContext(ctx, "go", "build", "-o", out, ".")
+	// GOROOT's own `go`, not PATH's: PATH may hold a version manager's shim,
+	// and the confined build would then be granted the wrapper rather than the
+	// toolchain it re-execs. The probe already told us where the toolchain is.
+	goBin := "go"
+	if tool.Root != "" {
+		goBin = filepath.Join(tool.Root, "bin", "go")
+	}
+	cmd := exec.CommandContext(ctx, goBin, "build", "-o", out, ".")
 	cmd.Dir = work
 	// Hermetic: no network, no workspace interference, and no stale GOROOT
 	// leaking in from the parent environment — the found toolchain knows its
 	// own root.
-	cmd.Env = goBuildChildEnv()
+	// The toolchain writes its own scratch — a link step, a vet run — and it
+	// takes the path from TMPDIR. Pointing it inside the build's work dir
+	// keeps the shared /tmp out of the policy.
+	buildTmp, err := scratch(work)
+	if err != nil {
+		return "", err
+	}
+	cmd.Env = append(goBuildChildEnv(), "TMPDIR="+buildTmp)
+	// The build compiles UNTRUSTED source, so it is confined too — a looser
+	// policy than a body's, because a build legitimately writes the module and
+	// build caches, but the same shape: no network (the module is stdlib-only
+	// and GOPROXY is off, so a build that reaches for the network is a build
+	// doing something it was never meant to) and no filesystem beyond the
+	// toolchain, the caches and its own scratch.
+	if err := r.sandbox.Wrap(cmd, buildPolicy(tool, work, dir)); err != nil {
+		return "", err
+	}
 	if raw, err := cmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("runner: go build: %w\n%s", err, raw)
 	}
@@ -169,6 +218,22 @@ func (r *Runner) ensureBinary(ctx context.Context, spec Spec) (string, error) {
 		return "", err
 	}
 	return bin, nil
+}
+
+// goWorkDir is one installation's runtime directory for a Go body: where its
+// scratch lives and the only writable path its sandbox grants. Keyed by
+// workID() — the full installation key — like the python one, so two
+// repositories running byte-identical source never share a directory.
+func (r *Runner) goWorkDir(spec Spec) (string, error) {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		base = os.TempDir()
+	}
+	dir := filepath.Join(base, "substrate-runner", "go", spec.workID())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return dir, nil
 }
 
 // binDir is the build cache: stable across processes so a substrate restart
@@ -204,4 +269,30 @@ func goBuildChildEnv() []string {
 		"GOCACHE", "GOMODCACHE", "GOPATH", "GOTOOLCHAIN",
 	)
 	return append(childEnv(toolchain...), goBuildEnv...)
+}
+
+// buildPolicy confines one `go build`. The build cache and module cache are
+// writable — a build cannot work otherwise, and they are content-addressed —
+// and so is the artifact directory, because the build writes its output there
+// and renames it into place. Every one of those is shared across
+// installations, which is why the BODY that comes out gets a policy where they
+// are read-only: the compiler may write them, the compiled body may not.
+func buildPolicy(tool toolchain, work, binDir string) sandbox.Policy {
+	rw := append([]string{work, binDir}, deviceReadWrite...)
+	for _, dir := range []string{tool.Cache, tool.ModCache} {
+		if dir != "" {
+			rw = append(rw, dir)
+		}
+	}
+	readExec := append([]string{}, systemReadExec...)
+	if tool.Root != "" {
+		readExec = append(readExec, tool.Root)
+	}
+	return sandbox.Policy{
+		ReadExec:  readExec,
+		ReadOnly:  systemReadOnly,
+		ReadWrite: rw,
+		NoFile:    childNoFile,
+		FileSize:  childFileSize,
+	}
 }

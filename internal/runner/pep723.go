@@ -5,7 +5,7 @@ import "regexp"
 // PEP 723 inline script metadata (https://peps.python.org/pep-0723/): a
 // `# /// script` … `# ///` comment block a Python body may carry to declare
 // its own `dependencies` (and `requires-python`). When a function body carries
-// one, the runner executes it through `uv run` — which reads the block,
+// one, the runner provisions it with `uv sync --script` — which reads the block,
 // provisions an ephemeral (cached) venv with those deps, and runs the body —
 // instead of the shared dependency-free `python3` host. A body with no block
 // keeps the fast shared-host path unchanged.

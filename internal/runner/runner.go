@@ -1,24 +1,38 @@
-// Package runner is the shared function runner: a child process of the
-// substrate — same host, same container, NEVER in-process — hosting every
-// installed function body. Python bodies share one long-lived python3 host
-// process (source exec'd at registration, one module namespace per
-// installation); Go bodies compile at registration to a binary in a
-// content-addressed build cache and run as one supervised subprocess per
-// INSTALLATION. Live runner state — a python registration, a running Go
-// process — is keyed by repository + function identity + content hash, so no
-// module or process globals are ever shared across repositories or functions; the
-// build cache alone is shared, because its artifacts are immutable. Both
-// runtimes speak the same JSON-lines protocol (protocol.go documents the
-// frames), pinned so moving to Connect Describe/Invoke on a local socket —
-// or moving a bundle into its own container — is a placement change, not a
-// contract change.
+// Package runner is the function runner: a child process of the substrate —
+// same host, same container, NEVER in-process — for every installed function
+// body. ONE PROCESS PER INSTALLATION, always: python bodies get their own
+// interpreter with the source exec'd into it, go bodies compile at
+// registration to a binary in a content-addressed build cache and run
+// supervised. Live runner state is keyed by repository + function identity +
+// content hash, so nothing is ever shared across repositories or functions; the
+// build cache alone is shared, because its artifacts are immutable and it is
+// mounted read-only into every body. Both runtimes speak the same JSON-lines
+// protocol (protocol.go documents the frames), pinned so moving to Connect
+// Describe/Invoke on a local socket — or moving a bundle into its own
+// container — is a placement change, not a contract change.
+//
+// WHY ONE PROCESS PER INSTALLATION. Python bodies used to share one
+// interpreter per call level for the whole substrate, one module namespace
+// each. A module namespace is not a boundary: a body could read a neighbor's
+// globals straight off `sys.modules['__main__']`, monkeypatch `json` or
+// `urllib` to intercept what another function was handed — including the live
+// provider tokens the connector bundles receive on their config — and reach the
+// protocol's own file descriptors to forge frames at the parent. That was
+// cross-REPOSITORY, not merely cross-function. The shared host is gone; the
+// cost is one interpreter per live installation, which the idle reaper below
+// bounds.
+//
+// Every child is CONFINED (internal/sandbox): Landlock for the filesystem,
+// seccomp for the syscall surface and the network capability, rlimits for the
+// cheap ceilings. That is what makes the env allowlist below a boundary rather
+// than a gesture — without it a body reads the substrate's own environment out
+// of /proc and helps itself to the credential key.
 //
 // Supervision is lazy: a crashed or timed-out process is killed — the whole
 // process GROUP, so spawned descendants die with it — and the next
-// invocation restarts it (python re-registers its sources on the way). The
-// per-invocation timeout comes from the manifest and bounds the WHOLE
-// delivery as a context deadline threaded through every host call; the
-// dispatcher's ordinary retry-then-park absorbs the failure.
+// invocation restarts it. The per-invocation timeout comes from the manifest
+// and bounds the WHOLE delivery as a context deadline threaded through every
+// host call; the dispatcher's ordinary retry-then-park absorbs the failure.
 package runner
 
 import (
@@ -34,6 +48,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -41,6 +56,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/geoah/substrate/internal/sandbox"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -68,6 +84,13 @@ type Spec struct {
 	// identities the body's host Call may invoke. Empty means every
 	// sub-call trips.
 	CallTargets []string
+	// Network is the `capabilities.network` declaration. Its CONTENT — the
+	// host patterns — is still only documentation, but its EMPTINESS is
+	// enforced: a body that declares no egress is denied AF_INET and AF_INET6
+	// sockets by the sandbox's seccomp filter. Holding it to the declared
+	// hosts needs an egress proxy, because a syscall filter cannot read the
+	// address behind a pointer.
+	Network []string
 	// Modules are the SHARED bundle library modules this function's bundle
 	// ships, filename → source. `.py` files land on a bundle-scoped PYTHONPATH
 	// dir the isolated Python process imports; `.go` files land in the built
@@ -97,20 +120,20 @@ func (s Spec) contentHash() string {
 	return hex.EncodeToString(h.Sum(nil)[:16])
 }
 
-// workID is the ISOLATED python work-dir name: a hash of the full
-// installation Key (repository + function + content hash), so two byte-identical
+// workID is the installation's work-dir name: a hash of the full installation
+// Key (repository + function + content hash), so two byte-identical
 // bodies/modules in different repositories or bundles materialize to SEPARATE
-// on-disk files. Keying the dir on contentHash alone would share writable
-// files across installations — one could mutate a module another reloads
-// (finding #12). The physical separation is crash/collision isolation, not a
-// security boundary against a same-uid hostile body.
+// on-disk files. Keying the dir on contentHash alone would share writable files
+// across installations — one could mutate a module another reloads. The
+// separation is also what the sandbox grants against: a body may write ITS work
+// dir and no other.
 func (s Spec) workID() string {
 	h := sha256.Sum256([]byte(s.Key()))
 	return hex.EncodeToString(h[:16])
 }
 
 // pep723 returns the body's PEP 723 script block if it declares one — the
-// signal to run the body through `uv run` rather than the shared python host.
+// signal that uv has to provision an environment before the body can run.
 func (s Spec) pep723() (string, bool) {
 	if s.Runtime != vocabulary.RuntimePython {
 		return "", false
@@ -126,18 +149,6 @@ func (s Spec) pythonModules() map[string]string {
 // goModules is the shared modules vendored into the Go build's `lib` package.
 func (s Spec) goModules() map[string]string {
 	return modulesWithExt(s.Modules, ".go")
-}
-
-// pythonIsolated reports whether a Python body needs its OWN process rather
-// than the shared multi-repository host: either because it declares PEP 723 deps
-// (uv provisions them) or because its bundle ships shared `.py` modules (a
-// per-bundle PYTHONPATH can never be set on a process shared across bundles).
-// A dependency-free body with no shared modules keeps the fast shared path.
-func (s Spec) pythonIsolated() bool {
-	if _, ok := s.pep723(); ok {
-		return true
-	}
-	return len(s.pythonModules()) > 0
 }
 
 func modulesWithExt(mods map[string]string, ext string) map[string]string {
@@ -175,32 +186,43 @@ func (s Spec) timeout() time.Duration {
 // against one process serialize.
 type Runner struct {
 	mu sync.Mutex
-	// pythons holds one shared python host per CALL LEVEL: level 0 serves
-	// deliveries and top-level calls, level N serves bodies N host-Calls
-	// deep. The split exists because an invocation BLOCKS its process while
-	// it waits on a host call — a nested python invocation must never queue
-	// on the process its caller is holding, or the pair deadlocks.
-	pythons map[int]*proc
-	gos     map[string]*proc // live Go processes by Spec.Key()
-	// isoPys holds one ISOLATED python process per installation (by Spec.Key),
-	// like gos: a body that declares PEP 723 deps (run via `uv run`) or whose
-	// bundle ships shared `.py` modules (imported off a bundle-scoped
-	// PYTHONPATH) cannot share the multi-repository host, so it gets its own
-	// process serving that one body.
-	isoPys   map[string]*proc
-	hostFile string
+	// pys and gos hold the live processes, one per INSTALLATION (Spec.Key) in
+	// both cases. There is no per-call-level pool any more and none is needed:
+	// a body N host-Calls deep is by definition a DIFFERENT function — the
+	// engine refuses direct and mutual recursion before the call reaches here
+	// (engine/runner.go, the identity stack) — so a nested invocation never
+	// queues on the process its caller is blocking.
+	pys map[string]*proc
+	gos map[string]*proc
+	// sandbox confines every child. Built once, because it probes the kernel.
+	sandbox  *sandbox.Confiner
 	cacheDir string
+	// reaping is set once the idle sweeper is running. It starts with the
+	// first process rather than with the runner, so a substrate that never
+	// runs a function never has the goroutine.
+	reaping bool
 }
 
-// Shared is the process-wide runner every dataset dispatches through — one
-// python host per call level and one Go process per installation for the
-// whole substrate, per the V1 placement decree.
+// Shared is the process-wide runner every dataset dispatches through.
 var Shared = New()
 
-// New returns an empty runner; processes start on first use.
+// New returns an empty runner; processes start on first use. The sandbox mode
+// comes from SUBSTRATE_SANDBOX here rather than from a caller, so a test
+// binary and the server confine bodies identically — an isolation property
+// that only holds in production is not one worth having.
 func New() *Runner {
-	return &Runner{pythons: map[int]*proc{}, gos: map[string]*proc{}, isoPys: map[string]*proc{}}
+	mode, err := sandbox.ParseMode(os.Getenv("SUBSTRATE_SANDBOX"))
+	if err != nil {
+		// An unreadable setting must not silently mean "off".
+		mode = sandbox.ModeEnforce
+	}
+	return &Runner{pys: map[string]*proc{}, gos: map[string]*proc{}, sandbox: sandbox.New(mode)}
 }
+
+// Sandbox is the confiner every child goes through — for the boot log, which
+// is where an operator learns whether the deployment's kernel actually offers
+// what the mode claims.
+func (r *Runner) Sandbox() *sandbox.Confiner { return r.sandbox }
 
 // Warm prepares a body ahead of its first delivery — the registration-time
 // half of "bodies prepare at registration". Build and registration errors
@@ -212,29 +234,25 @@ func (r *Runner) Warm(ctx context.Context, spec Spec) error {
 		_, err := r.goProc(ctx, spec)
 		return err
 	case vocabulary.RuntimePython:
-		if spec.pythonIsolated() {
-			// Provision (uv resolves deps, or a fresh process loads the shared
-			// modules) at registration — where a slow cold resolve belongs, not
-			// on the first delivery's timeout.
-			_, err := r.isoPythonProc(ctx, spec)
-			return err
-		}
-		p, err := r.pythonProc(0)
-		if err != nil {
-			return err
-		}
-		return r.ensureRegistered(ctx, p, spec, 0)
+		// Provision at registration — where a slow cold uv resolve belongs,
+		// not on the first delivery's timeout — and register the body, so a
+		// syntax error or a missing declared dependency fails schema admission
+		// instead of parking the first delivery.
+		_, err := r.pythonProc(ctx, spec)
+		return err
 	default:
 		return fmt.Errorf("runner: unknown runtime %q", spec.Runtime)
 	}
 }
 
-// Reconcile retires live runner state the repository no longer references — the
-// registry-publish hook: python registrations with no live installation
-// deregister from the host, Go processes with none stop. The content-
-// addressed BUILD cache is deliberately untouched — its artifacts are
-// immutable and shared; eviction is a later, bounded policy.
-func (r *Runner) Reconcile(ctx context.Context, repository string, live []Spec) {
+// Reconcile retires live runner state the repository no longer references —
+// the registry-publish hook: the process serving a removed or superseded
+// installation stops. With one process per installation there is nothing to
+// deregister any more; retiring a body is closing its process, which takes its
+// module namespace, its open descriptors and its scratch with it. The
+// content-addressed BUILD cache is deliberately untouched — its artifacts are
+// immutable and read-only to every body; eviction is a later, bounded policy.
+func (r *Runner) Reconcile(_ context.Context, repository string, live []Spec) {
 	keep := map[string]bool{}
 	for _, s := range live {
 		keep[s.Key()] = true
@@ -242,48 +260,17 @@ func (r *Runner) Reconcile(ctx context.Context, repository string, live []Spec) 
 	prefix := repository + "|"
 
 	r.mu.Lock()
-	type pending struct {
-		p   *proc
-		key string
-	}
-	var dereg []pending
-	for _, py := range r.pythons {
-		if py == nil || !py.alive() {
-			continue
-		}
-		for key := range py.registered {
-			if strings.HasPrefix(key, prefix) && !keep[key] {
-				delete(py.registered, key)
-				dereg = append(dereg, pending{py, key})
-			}
-		}
-	}
 	var stop []*proc
-	for key, p := range r.gos {
-		if strings.HasPrefix(key, prefix) && !keep[key] {
-			delete(r.gos, key)
-			stop = append(stop, p)
-		}
-	}
-	// Isolated python processes (uv / shared-module bodies) retire like Go
-	// processes: one per installation, stopped when no live installation
-	// references its key.
-	for key, p := range r.isoPys {
-		if strings.HasPrefix(key, prefix) && !keep[key] {
-			delete(r.isoPys, key)
-			stop = append(stop, p)
+	for _, live := range []map[string]*proc{r.gos, r.pys} {
+		for key, p := range live {
+			if strings.HasPrefix(key, prefix) && !keep[key] {
+				delete(live, key)
+				stop = append(stop, p)
+			}
 		}
 	}
 	r.mu.Unlock()
 
-	sort.Slice(dereg, func(i, j int) bool { return dereg[i].key < dereg[j].key })
-	for _, d := range dereg {
-		dctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		// Best effort: a host that refuses dies at its next desync anyway,
-		// and the map entry is already gone.
-		_, _ = d.p.roundtrip(dctx, 5*time.Second, frame{Op: "deregister", ID: d.key}, nil)
-		cancel()
-	}
 	for _, p := range stop {
 		p.kill()
 	}
@@ -306,20 +293,10 @@ func (r *Runner) Invoke(ctx context.Context, spec Spec, in Input, backend Backen
 	var err error
 	switch spec.Runtime {
 	case vocabulary.RuntimePython:
-		if spec.pythonIsolated() {
-			// A per-installation process — deps provisioned by uv and/or shared
-			// modules on PYTHONPATH. It serves one body, so the shared host's
-			// per-call-level split (a caller blocking its own process) never
-			// applies: a nested Call lands on a DIFFERENT installation's process.
-			p, err = r.isoPythonProc(ictx, spec)
-		} else {
-			// The call level selects the python host: a body N Calls deep runs
-			// on host N, never on the process its caller is blocking.
-			p, err = r.pythonProc(in.CallDepth)
-			if err == nil {
-				err = r.ensureRegistered(ictx, p, spec, in.CallDepth)
-			}
-		}
+		// One process per installation, serving this body alone: a nested Call
+		// is a different function, so it lands on a different process and can
+		// never queue behind the caller that is blocking on it.
+		p, err = r.pythonProc(ictx, spec)
 	case vocabulary.RuntimeGo:
 		p, err = r.goProc(ictx, spec)
 	default:
@@ -343,72 +320,8 @@ func (r *Runner) Invoke(ctx context.Context, spec Spec, in Input, backend Backen
 	return &Result{Output: resp.Output, Effects: resp.Effects, Logs: resp.Logs, More: resp.More}, nil
 }
 
-// --- the python host ---------------------------------------------------------
-
-// pythonProc returns the live shared host for one call level, starting it if
-// needed.
-func (r *Runner) pythonProc(level int) (*proc, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if p := r.pythons[level]; p != nil && p.alive() {
-		return p, nil
-	}
-	if r.hostFile == "" {
-		f, err := os.CreateTemp("", "substrate-runner-*.py")
-		if err != nil {
-			return nil, err
-		}
-		if _, err := f.WriteString(hostPy); err != nil {
-			_ = f.Close()
-			return nil, err
-		}
-		if err := f.Close(); err != nil {
-			return nil, err
-		}
-		r.hostFile = f.Name()
-	}
-	p, err := start("python3", "-u", r.hostFile)
-	if err != nil {
-		return nil, fmt.Errorf("runner: start python host: %w", err)
-	}
-	r.pythons[level] = p
-	return p, nil
-}
-
 //go:embed host.py
 var hostPy string
-
-// ensureRegistered execs the body into the host once per process lifetime.
-// Registration state lives ON the process generation: a completion that
-// belongs to a dead generation records nothing anywhere the live one reads,
-// so a restart can never inherit a registration the new process never saw.
-func (r *Runner) ensureRegistered(ctx context.Context, p *proc, spec Spec, level int) error {
-	key := spec.Key()
-	r.mu.Lock()
-	done := p.registered[key]
-	r.mu.Unlock()
-	if done {
-		return nil
-	}
-	rctx, cancel := context.WithTimeout(ctx, spec.timeout())
-	defer cancel()
-	resp, err := p.roundtrip(rctx, spec.timeout(),
-		frame{Op: "register", ID: key, Source: spec.Source}, nil)
-	if err != nil {
-		return err
-	}
-	if !resp.OK {
-		return fmt.Errorf("runner: register: %s", resp.Error)
-	}
-	r.mu.Lock()
-	// Belt and braces: only the CURRENT live python generation of this level
-	// records, and only the process that actually received the source.
-	if r.pythons[level] == p && p.alive() {
-		p.registered[key] = true
-	}
-	r.mu.Unlock()
-	return nil
-}
 
 // --- the go binaries ---------------------------------------------------------
 
@@ -420,6 +333,7 @@ func (r *Runner) goProc(ctx context.Context, spec Spec) (*proc, error) {
 	key := spec.Key()
 	r.mu.Lock()
 	if p, ok := r.gos[key]; ok && p.alive() {
+		p.touch()
 		r.mu.Unlock()
 		return p, nil
 	}
@@ -453,7 +367,23 @@ func (r *Runner) goProc(ctx context.Context, spec Spec) (*proc, error) {
 // startVerified starts one compiled body and proves it speaks the protocol
 // with a describe roundtrip before anyone invokes through it.
 func (r *Runner) startVerified(ctx context.Context, spec Spec, bin string) (*proc, error) {
-	p, err := start(bin)
+	work, err := r.goWorkDir(spec)
+	if err != nil {
+		return nil, err
+	}
+	tmpDir, err := scratch(work)
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(bin)
+	cmd.Dir = work
+	// The compiled body's own scratch, not the shared /tmp — the sandbox
+	// grants this directory and no other writable path.
+	cmd.Env = childEnv("TMPDIR=" + tmpDir)
+	// The build cache is read-and-EXECUTE: the binary lives there and every
+	// other installation's does too, so a writable grant would let one body
+	// replace an artifact another is about to run.
+	p, err := r.startCmd(cmd, policyFor(spec, work, filepath.Dir(bin)))
 	if err != nil {
 		return nil, fmt.Errorf("runner: start %s: %w", bin, err)
 	}
@@ -553,6 +483,8 @@ type proc struct {
 	// registered marks the source keys THIS python process holds; guarded by
 	// Runner.mu. A dead generation's map dies with it.
 	registered map[string]bool
+	// lastUsed is the reaper's clock: unix nanos of the last roundtrip.
+	lastUsed atomic.Int64
 	// stderr retains the tail of the child's stderr — where redirected body
 	// prints land — for diagnostics.
 	stderr *capBuf
@@ -581,8 +513,77 @@ func (c *capBuf) tail() string {
 	return strings.TrimSpace(string(c.buf))
 }
 
-func start(name string, args ...string) (*proc, error) {
-	return startCmd(exec.Command(name, args...))
+// touch records that this process was just used, for the idle reaper.
+func (p *proc) touch() { p.lastUsed.Store(time.Now().UnixNano()) }
+
+// idleFor reports how long the process has gone unused.
+func (p *proc) idleFor(now time.Time) time.Duration {
+	return now.Sub(time.Unix(0, p.lastUsed.Load()))
+}
+
+// The reaper's dials. One process per installation is the right isolation
+// boundary but the wrong steady state for a substrate with many bundles
+// installed: an interpreter is tens of megabytes of RSS whether or not its
+// trigger ever fires again. So an idle body is closed and restarted on demand
+// — the cost of a restart is one register roundtrip, and for a uv body the
+// environment is already provisioned.
+const (
+	idleTTL      = 10 * time.Minute
+	reapInterval = time.Minute
+)
+
+// reap starts the idle sweeper once. Callers hold r.mu.
+func (r *Runner) reap() {
+	if r.reaping {
+		return
+	}
+	r.reaping = true
+	go func() {
+		for {
+			time.Sleep(reapInterval)
+			r.sweep(time.Now())
+		}
+	}()
+}
+
+// sweep closes every process idle past the TTL. A process mid-invocation is
+// skipped rather than waited on: roundtrip holds proc.mu for the whole
+// exchange, so a failed TryLock means busy, and busy means recently used
+// anyway.
+func (r *Runner) sweep(now time.Time) {
+	r.mu.Lock()
+	var stop []*proc
+	for _, live := range []map[string]*proc{r.gos, r.pys} {
+		for key, p := range live {
+			if !p.alive() {
+				delete(live, key)
+				continue
+			}
+			if p.idleFor(now) < idleTTL {
+				continue
+			}
+			if !p.mu.TryLock() {
+				continue
+			}
+			p.mu.Unlock()
+			delete(live, key)
+			stop = append(stop, p)
+		}
+	}
+	r.mu.Unlock()
+	for _, p := range stop {
+		p.kill()
+	}
+}
+
+// startCmd wires stdio, supervision and the SANDBOX onto a command. Every
+// runner child goes through here, which is the point: one place decides what a
+// body may touch, so a new exec path cannot forget to be confined.
+func (r *Runner) startCmd(cmd *exec.Cmd, policy sandbox.Policy) (*proc, error) {
+	if err := r.sandbox.Wrap(cmd, policy); err != nil {
+		return nil, err
+	}
+	return startCmd(cmd)
 }
 
 // childEnv is the MINIMAL environment every runner child is started with, built
@@ -655,6 +656,7 @@ func startCmd(cmd *exec.Cmd) (*proc, error) {
 		dead: make(chan struct{}), waited: make(chan struct{}),
 		gone: make(chan struct{}), registered: map[string]bool{}, stderr: stderr,
 	}
+	p.touch()
 	go func() {
 		sc := bufio.NewScanner(stdout)
 		sc.Buffer(make([]byte, 0, 64*1024), maxScanBytes)
@@ -726,6 +728,7 @@ func (p *proc) stderrTail() string {
 func (p *proc) roundtrip(ctx context.Context, timeout time.Duration, f frame, state *readState) (*response, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.touch()
 	f.ReqID = p.reqID.Add(1)
 
 	raw, err := json.Marshal(f)

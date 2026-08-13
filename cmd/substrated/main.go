@@ -48,6 +48,8 @@ func run() error {
 		return err
 	}
 	setupLogger(cfg.LogLevel)
+	hideProcess()
+	reportSandbox()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

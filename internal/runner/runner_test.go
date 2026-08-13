@@ -345,19 +345,28 @@ def main(input, host):
 func TestTimeoutReapsProcessTree(t *testing.T) {
 	// Review W1 #6: killing the child kills its process GROUP, so a
 	// grandchild a body spawned dies with the timeout instead of leaking.
+	//
+	// The spawn and the hang must be the SAME installation. One process per
+	// installation means one process group per installation, so a timeout on
+	// a NEIGHBOUR's body no longer reaps this body's descendants — which is
+	// the isolation working, not a leak. TimeoutMs is not part of Spec.Key, so
+	// the two specs below are one installation with two deadlines.
 	r := New()
+	body := `
+import subprocess, time
+def main(input, host):
+    if (input.get("args") or {}).get("op") == "spawn":
+        p = subprocess.Popen(["sleep", "60"])
+        return {"output": p.pid}
+    time.sleep(30)
+`
 	spawn := Spec{
 		Repository: "t1", Function: "spawner.g.test",
-		Runtime: "python",
-		Source: `
-import subprocess
-def main(input, host):
-    p = subprocess.Popen(["sleep", "60"])
-    return {"output": p.pid}
-`,
-		TimeoutMs: 5000,
+		Runtime: "python", Source: body, TimeoutMs: 5000,
 	}
-	res, err := r.Invoke(context.Background(), spawn, testInput(), nil)
+	in := testInput()
+	in.Args = map[string]any{"op": "spawn"}
+	res, err := r.Invoke(context.Background(), spawn, in, nil)
 	if err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
@@ -365,12 +374,8 @@ def main(input, host):
 	if err := syscall.Kill(pid, 0); err != nil {
 		t.Fatalf("grandchild %d not alive after spawn: %v", pid, err)
 	}
-	stuck := Spec{
-		Repository: "t1", Function: "stuck.g.test",
-		Runtime:   "python",
-		Source:    "import time\ndef main(input, host):\n    time.sleep(30)\n",
-		TimeoutMs: 200,
-	}
+	stuck := spawn
+	stuck.TimeoutMs = 200
 	if _, err := r.Invoke(context.Background(), stuck, testInput(), nil); err == nil {
 		t.Fatal("the stuck body returned")
 	}
@@ -388,9 +393,11 @@ def main(input, host):
 }
 
 func TestRegistrationTiedToProcessGeneration(t *testing.T) {
-	// Review W1 #7: registration state lives on the process GENERATION. A
-	// completion that raced a restart marks only the dead process; the new
-	// one starts empty and re-registers lazily.
+	// Review W1 #7: registration state lives on the process GENERATION. With
+	// one process per installation the generation IS the process, so a killed
+	// body's registration cannot outlive it — the map entry is replaced
+	// wholesale by the restart.
+	ctx := context.Background()
 	r := New()
 	spec := Spec{
 		Repository: "t1", Function: "gen.g.test",
@@ -398,31 +405,25 @@ func TestRegistrationTiedToProcessGeneration(t *testing.T) {
 		Source:    "def main(input, host):\n    return {\"output\": \"ok\"}\n",
 		TimeoutMs: 5000,
 	}
-	p1, err := r.pythonProc(0)
+	p1, err := r.pythonProc(ctx, spec)
 	if err != nil {
 		t.Fatalf("python proc: %v", err)
-	}
-	if err := r.ensureRegistered(context.Background(), p1, spec, 0); err != nil {
-		t.Fatalf("register: %v", err)
 	}
 	// The forced interleaving: P1 dies AFTER its registration completed;
 	// a fresh generation starts.
 	p1.kill()
-	p2, err := r.pythonProc(0)
+	p2, err := r.pythonProc(ctx, spec)
 	if err != nil {
 		t.Fatalf("restart: %v", err)
 	}
 	if p1 == p2 {
 		t.Fatal("kill did not force a new generation")
 	}
-	// A late completion for the dead generation must not mark the live one:
-	// re-run the completion path against P1 and prove P2 stays empty.
 	r.mu.Lock()
-	p1.registered[spec.Key()] = true // what a stale goroutine would write
-	leaked := p2.registered[spec.Key()]
+	live := r.pys[spec.Key()]
 	r.mu.Unlock()
-	if leaked {
-		t.Fatal("a dead generation's registration leaked into the live one")
+	if live != p2 {
+		t.Fatal("the dead generation is still the live process")
 	}
 	// The live generation re-registers on its own first invocation.
 	res, err := r.Invoke(context.Background(), spec, testInput(), nil)
@@ -523,9 +524,9 @@ def main(input, host):
 }
 
 func TestReconcileRetiresStaleRegistrations(t *testing.T) {
-	// Review W1 #15: after a registry publish, registrations with no live
-	// installation reference deregister — scoped to the repository, so a
-	// neighbor's identical key survives.
+	// Review W1 #15: after a registry publish, the process serving an
+	// installation the registry no longer references stops — scoped to the
+	// repository, so a neighbor's identical key survives.
 	r := New()
 	src := "def main(input, host):\n    return {\"output\": \"ok\"}\n"
 	keep := Spec{Repository: "t1", Function: "keep.g.test", Runtime: "python", Source: src, TimeoutMs: 5000}
@@ -538,13 +539,14 @@ func TestReconcileRetiresStaleRegistrations(t *testing.T) {
 	}
 	r.Reconcile(context.Background(), "t1", []Spec{keep})
 	r.mu.Lock()
-	p := r.pythons[0]
-	kept, dropped, others := p.registered[keep.Key()], p.registered[drop.Key()], p.registered[other.Key()]
+	_, kept := r.pys[keep.Key()]
+	_, dropped := r.pys[drop.Key()]
+	_, others := r.pys[other.Key()]
 	r.mu.Unlock()
 	if !kept || dropped || !others {
 		t.Fatalf("reconcile: keep=%v drop=%v other-repository=%v", kept, dropped, others)
 	}
-	// The dropped body re-registers lazily if reinstalled — nothing is
+	// The dropped body starts a fresh process if reinstalled — nothing is
 	// wedged, just retired.
 	if _, err := r.Invoke(context.Background(), drop, testInput(), nil); err != nil {
 		t.Fatalf("reinstalled body: %v", err)
@@ -596,6 +598,9 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 	p := r.gos[key]
 	r.mu.Unlock()
 	p.kill()
+	// Wait for the reap, not just the signal: while the kernel still has the
+	// artifact open for execution, rewriting it is ETXTBSY.
+	<-p.waited
 	dir, err := r.binDir()
 	if err != nil {
 		t.Fatalf("bin dir: %v", err)

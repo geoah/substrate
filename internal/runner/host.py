@@ -297,7 +297,7 @@ def _json_copy(action, field, value):
     """Deep-copy a caller value through JSON so staging captures a SNAPSHOT (a
     body reusing one dict across a loop stages each call's value, not the last),
     and reject anything not JSON-compatible AT the offending builder call rather
-    than at the far serialization boundary on the shared host."""
+    than at the far serialization boundary."""
     try:
         return json.loads(json.dumps(value))
     except (TypeError, ValueError) as e:

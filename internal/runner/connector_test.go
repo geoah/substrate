@@ -44,34 +44,29 @@ def main(input, host):
 }
 
 func TestPathClassification(t *testing.T) {
-	// The dispatch decision, no process started: a plain body stays on the
-	// shared host; a PEP 723 body or a shared-`.py`-module body goes isolated;
-	// PEP 723 additionally needs uv.
+	// The dispatch decision, no process started. Every python body now gets
+	// its own process, so the only question left is whether uv has to
+	// provision one first — which is exactly the PEP 723 declaration and
+	// nothing else.
 	plain := Spec{Runtime: "python", Source: "def main(input, host):\n    return {}\n"}
-	if plain.pythonIsolated() {
-		t.Fatal("a dependency-free body must take the fast shared path")
-	}
 	if _, uv := plain.pep723(); uv {
 		t.Fatal("a plain body needs no uv")
 	}
 
 	deps := Spec{Runtime: "python", Source: "# /// script\n# dependencies = [\"six\"]\n# ///\ndef main(input, host):\n    return {}\n"}
-	if !deps.pythonIsolated() {
-		t.Fatal("a PEP 723 body must take the isolated path")
-	}
 	if _, uv := deps.pep723(); !uv {
-		t.Fatal("a PEP 723 body must dispatch through uv")
+		t.Fatal("a PEP 723 body must be provisioned by uv")
 	}
 
 	mods := Spec{
 		Runtime: "python", Source: "def main(input, host):\n    return {}\n",
 		Modules: map[string]string{"helper.py": "x = 1\n"},
 	}
-	if !mods.pythonIsolated() {
-		t.Fatal("a shared-module body must take the isolated path")
-	}
 	if _, uv := mods.pep723(); uv {
 		t.Fatal("a shared-module body with no deps needs no uv")
+	}
+	if len(mods.pythonModules()) != 1 {
+		t.Fatal("a `.py` module must land on the import path")
 	}
 }
 
@@ -110,33 +105,33 @@ func TestWorkDirIsolatedPerInstallation(t *testing.T) {
 	}
 }
 
-func TestDependencyFreeBodyTakesSharedHost(t *testing.T) {
-	// Byte-identical behavior for dependency-free bodies: the fast shared host
-	// serves it, and no isolated process is ever started.
+func TestEveryBodyGetsItsOwnProcess(t *testing.T) {
+	// The placement rule, asserted directly: two bodies, two processes, keyed
+	// by installation. There is no shared host to fall back to and no fast
+	// path that skips the boundary.
 	r := New()
-	spec := Spec{
-		Repository: "t1", Function: "plain.g.test", Runtime: "python",
-		Source: "def main(input, host):\n    return {\"output\": \"ok\"}\n", TimeoutMs: 5000,
-	}
-	res, err := r.Invoke(context.Background(), spec, testInput(), nil)
-	if err != nil || res.Output != "ok" {
-		t.Fatalf("shared-host invoke: %+v %v", res, err)
+	src := "def main(input, host):\n    return {\"output\": \"ok\"}\n"
+	a := Spec{Repository: "t1", Function: "a.g.test", Runtime: "python", Source: src, TimeoutMs: 5000}
+	b := Spec{Repository: "t1", Function: "b.g.test", Runtime: "python", Source: src, TimeoutMs: 5000}
+	for _, spec := range []Spec{a, b} {
+		if res, err := r.Invoke(context.Background(), spec, testInput(), nil); err != nil || res.Output != "ok" {
+			t.Fatalf("invoke %s: %+v %v", spec.Function, res, err)
+		}
 	}
 	r.mu.Lock()
-	shared := r.pythons[0] != nil
-	iso := len(r.isoPys)
+	pa, pb, n := r.pys[a.Key()], r.pys[b.Key()], len(r.pys)
 	r.mu.Unlock()
-	if !shared {
-		t.Fatal("the shared host was not used")
+	if n != 2 || pa == nil || pb == nil {
+		t.Fatalf("expected one process per installation, got %d", n)
 	}
-	if iso != 0 {
-		t.Fatalf("a dependency-free body started an isolated process: %d", iso)
+	if pa == pb {
+		t.Fatal("two functions shared an interpreter")
 	}
 }
 
 func TestSharedModuleImportable(t *testing.T) {
-	// A bundle's shared `.py` module is importable from a function — the
-	// isolated path with a bundle-scoped PYTHONPATH, no uv needed.
+	// A bundle's shared `.py` module is importable from a function, off the
+	// installation's own module dir, no uv needed.
 	r := New()
 	spec := Spec{
 		Repository: "t1", Function: "user.g.test", Runtime: "python",
@@ -156,10 +151,10 @@ def main(input, host):
 		t.Fatalf("shared module not imported: %v", res.Output)
 	}
 	r.mu.Lock()
-	iso := len(r.isoPys)
+	live := len(r.pys)
 	r.mu.Unlock()
-	if iso != 1 {
-		t.Fatalf("the isolated path was not taken: %d isolated procs", iso)
+	if live != 1 {
+		t.Fatalf("expected one process for the one installation, got %d", live)
 	}
 }
 
@@ -229,10 +224,10 @@ def main(input, host):
 		t.Fatalf("effects across the uv path: %v", res.Effects)
 	}
 	r.mu.Lock()
-	iso := len(r.isoPys)
+	live := len(r.pys)
 	r.mu.Unlock()
-	if iso != 1 {
-		t.Fatalf("the uv body did not run isolated: %d", iso)
+	if live != 1 {
+		t.Fatalf("expected one process for the uv body, got %d", live)
 	}
 }
 

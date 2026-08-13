@@ -65,7 +65,7 @@ description = "The suites that want a database: a pgvector container, or SUBSTRA
 # -skip '^TestLive': the live set BUYS COMPLETIONS. It skips itself without
 # keys, but a dev box has keys in its environment — so the default suite
 # excludes it by name and `test:llm` selects it by the same name.
-run = "go test -p 1 -skip '^TestLive' ./internal/engine/... ./internal/catalog/..."
+run = "go test -p 1 -skip '^TestLive' ./internal/engine/... ./internal/catalog/... ./internal/testenv/..."
 
 [tasks."test:llm"]
 description = "The LIVE suite: real completions from real providers, when the keys are there"
