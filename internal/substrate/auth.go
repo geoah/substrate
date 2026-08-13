@@ -36,6 +36,25 @@ type RegisterInput struct {
 	TOTPCode   string
 	// Label names the token registration mints, exactly as login's does.
 	Label string
+	// RecoveryPublicKey is the age recipient the repository's data-encryption
+	// key wraps to, generated CLIENT-SIDE so the matching identity never
+	// touches the server. Empty asks the server to generate the pair and
+	// return the identity once in RegisterResult.RecoveryKey.
+	RecoveryPublicKey string
+}
+
+// RegisterResult is what a registration hands back: the first token, its
+// secret shown once, and the recovery material.
+type RegisterResult struct {
+	Token  TokenInfo
+	Secret string
+	// RecoveryKey is the age identity that opens the repository's recovery
+	// wrap, present ONLY when the server generated the pair (the input named
+	// no recipient). Shown once, never stored.
+	RecoveryKey string
+	// RecoveryPublicKey is the enrolled age recipient, whichever side
+	// generated it.
+	RecoveryPublicKey string
 }
 
 // LoginInput is BOTH factors presented directly: it authenticates /login and

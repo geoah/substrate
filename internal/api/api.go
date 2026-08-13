@@ -133,6 +133,9 @@ func New(cfg Config) http.Handler {
 		r.Post("/tokens", h.postMintToken)
 		r.Get("/tokens", h.getTokens)
 		r.Delete("/tokens/{id}", h.deleteToken)
+		// One-time recovery-key enrollment, for repositories that predate it:
+		// registration is the ordinary door.
+		r.Post("/recovery/enroll", h.postRecoveryEnroll)
 	})
 
 	r.Route("/api/"+APIVersion, h.mountResources)

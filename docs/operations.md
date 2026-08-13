@@ -136,8 +136,13 @@ later open under a binary that relaxed the contract again.
 
 **A backup is the changelog plus blobs plus sealed, as one unit.** All three live in
 the one Postgres database, so an ordinary consistent dump of that database is a
-complete backup — plus `SUBSTRATE_CREDENTIAL_KEY`, without which the sealed
-rows are inert.
+complete backup. The sealed rows encrypt under each repository's own
+data-encryption key, which exists in two wraps: the control-plane
+`repositories.dek` column holds it wrapped under `SUBSTRATE_CREDENTIAL_KEY`
+(the host's half), and the repository's `recoverykey` record holds it
+wrapped to the user's age recipient (the user's half). Either the host key
+or the user's recovery identity opens a backup; losing both makes the
+sealed rows inert.
 
 What you do **not** have to back up separately is the fold. The records table
 and its indexes are derived; the changelog is the truth.

@@ -18,6 +18,7 @@ package api
 //     so a leaked token's blast radius is the data, never the account.
 
 import (
+	"context"
 	"crypto/subtle"
 	"errors"
 	"net/http"
@@ -41,6 +42,18 @@ type registerRequest struct {
 	TOTPSecret string `json:"totpSecret"`
 	TOTPCode   string `json:"totpCode"`
 	Label      string `json:"label,omitempty"`
+	// RecoveryPublicKey is the client-generated age recipient; absent asks
+	// the server to mint the pair and return the identity once.
+	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
+}
+
+// registerResponse is the one response that may carry a server-minted
+// recovery identity, shown exactly once like the token secret beside it.
+type registerResponse struct {
+	Token             substrate.TokenInfo `json:"token"`
+	Secret            string              `json:"secret"`
+	RecoveryKey       string              `json:"recoveryKey,omitempty"`
+	RecoveryPublicKey string              `json:"recoveryPublicKey,omitempty"`
 }
 
 type loginRequest struct {
@@ -182,18 +195,22 @@ func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
 	if !h.inviteOK(w, req.InviteCode) {
 		return
 	}
-	info, secret, err := h.svc.Register(r.Context(), substrate.RegisterInput{
-		Username:   req.Username,
-		Password:   req.Password,
-		TOTPSecret: req.TOTPSecret,
-		TOTPCode:   req.TOTPCode,
-		Label:      req.Label,
+	res, err := h.svc.Register(r.Context(), substrate.RegisterInput{
+		Username:          req.Username,
+		Password:          req.Password,
+		TOTPSecret:        req.TOTPSecret,
+		TOTPCode:          req.TOTPCode,
+		Label:             req.Label,
+		RecoveryPublicKey: req.RecoveryPublicKey,
 	})
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, tokenResponse{Token: info, Secret: secret})
+	writeJSON(w, http.StatusCreated, registerResponse{
+		Token: res.Token, Secret: res.Secret,
+		RecoveryKey: res.RecoveryKey, RecoveryPublicKey: res.RecoveryPublicKey,
+	})
 }
 
 // --- login ---
@@ -333,6 +350,44 @@ func (h *handler) postMintToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, tokenResponse{Token: info, Secret: secret})
+}
+
+// recoveryEnroller is the engine seam behind one-time recovery enrollment,
+// deliberately off the frozen substrate.Dataset: it exists for repositories
+// that predate recovery keys, and registration is the ordinary door.
+type recoveryEnroller interface {
+	EnrollRecoveryKey(ctx context.Context, publicKey string) (identity, recipient string, err error)
+}
+
+type recoveryEnrollRequest struct {
+	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
+}
+
+type recoveryEnrollResponse struct {
+	RecoveryKey       string `json:"recoveryKey,omitempty"`
+	RecoveryPublicKey string `json:"recoveryPublicKey"`
+}
+
+func (h *handler) postRecoveryEnroll(w http.ResponseWriter, r *http.Request) {
+	var req recoveryEnrollRequest
+	if err := decodeBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
+	ctx := r.Context()
+	enroller, ok := DatasetFrom(ctx).(recoveryEnroller)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, codeBadRequest, "this build does not support recovery enrollment")
+		return
+	}
+	identity, recipient, err := enroller.EnrollRecoveryKey(ctx, req.RecoveryPublicKey)
+	if err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, recoveryEnrollResponse{
+		RecoveryKey: identity, RecoveryPublicKey: recipient,
+	})
 }
 
 func (h *handler) getTokens(w http.ResponseWriter, r *http.Request) {

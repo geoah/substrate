@@ -321,16 +321,20 @@ func (t *txn) resealChangelog(report *ResealReport, secretProps map[string][]str
 	}
 }
 
-// resealSealedStore upgrades keyless plain-framed sealed payloads, filtered
-// in SQL so an already-sealed store transfers nothing.
+// resealSealedStore re-keys every payload not already under the repository's
+// DEK: keyless plain framings and host-key-sealed legacies alike. A payload
+// the DEK already opens passes byte-identical, which is the idempotency.
 func (t *txn) resealSealedStore(report *ResealReport) error {
+	dekAEAD, err := aeadOf(t.ds.dek)
+	if err != nil {
+		return err
+	}
 	type pending struct {
 		ref     string
 		payload []byte
 	}
 	var updates []pending
-	rows, err := t.query(`SELECT ref, payload FROM sealed WHERE get_byte(payload, 0) = $1`,
-		int(credPlain))
+	rows, err := t.query(`SELECT ref, payload FROM sealed`)
 	if err != nil {
 		return err
 	}
@@ -341,12 +345,17 @@ func (t *txn) resealSealedStore(report *ResealReport) error {
 			_ = rows.Close()
 			return err
 		}
-		raw, err := t.ds.svc.openCredential(payload)
+		if len(payload) > 0 && payload[0] == credSealed && dekAEAD != nil {
+			if _, err := openWith(dekAEAD, payload); err == nil {
+				continue
+			}
+		}
+		raw, err := t.ds.openPayload(payload)
 		if err != nil {
 			_ = rows.Close()
 			return fmt.Errorf("substrate/engine: reseal sealed %s: %w", ref, err)
 		}
-		sealed, err := t.ds.svc.sealCredential(raw)
+		sealed, err := t.ds.sealPayload(raw)
 		if err != nil {
 			_ = rows.Close()
 			return err

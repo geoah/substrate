@@ -383,9 +383,23 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		return nil, fmt.Errorf("substrate/engine: open repository %s: %w", repo.Username, err)
 	}
 	db.SetMaxOpenConns(8)
+	// The repository's DEK, unwrapped for the dataset's lifetime; a pre-DEK
+	// repository adopts one here, compare-and-swap against a concurrent open.
+	dek, err := s.repoDEK(ctx, repo.ID)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("substrate/engine: open repository %s: unwrap DEK: %w", repo.Username, err)
+	}
+	if dek == nil {
+		if dek, err = s.adoptDEK(ctx, repo.ID); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("substrate/engine: open repository %s: adopt DEK: %w", repo.Username, err)
+		}
+	}
 	ds := &dataset{
 		svc:   s,
 		db:    db,
+		dek:   dek,
 		scope: sc,
 		// A dataset's registry starts EMPTY and is built from the repository's
 		// OWN rows: the embedded tree seeded them once, at
@@ -492,6 +506,17 @@ func (s *service) createSeededRepository(ctx context.Context, name string, extra
 		return zero, err
 	}
 	repo := Repository{ID: id, Username: name}
+	// The DEK is born with the repository: the seed transaction below already
+	// writes sealed material (the credential, at registration), and it seals
+	// under this key from the first byte. The control-plane row wraps it
+	// under the host key at the commit point.
+	dek, err := newDEK()
+	if err != nil {
+		return zero, err
+	}
+	if repo.DEK, err = s.wrapDEK(dek); err != nil {
+		return zero, err
+	}
 
 	db, err := openScoped(s.dsn, repo.scope(), s.appRole)
 	if err != nil {
@@ -507,7 +532,7 @@ func (s *service) createSeededRepository(ctx context.Context, name string, extra
 	// After the seed commits, the dataset is thrown away and the repository is
 	// opened the ordinary way: from its own rows.
 	seedDS := &dataset{
-		svc: s, db: db, scope: repo.scope(),
+		svc: s, db: db, dek: dek, scope: repo.scope(),
 		reg: s.base.Clone(), watch: newBroadcaster(), info: repo.info(),
 	}
 	fail := func(err error) (Repository, error) {

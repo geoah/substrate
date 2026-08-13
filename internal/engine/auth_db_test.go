@@ -84,7 +84,7 @@ func TestRegistrationCreatesTheUserAndNothingBefore(t *testing.T) {
 		t.Fatalf("begin registration: %v", err)
 	}
 	dup := &authUser{username: "geoah", seed: enrollment.Secret}
-	if _, _, err := svc.Register(ctx, substrate.RegisterInput{
+	if _, err := svc.Register(ctx, substrate.RegisterInput{
 		Username: "geoah", Password: testPassword,
 		TOTPSecret: enrollment.Secret, TOTPCode: dup.code(t),
 	}); err == nil {
@@ -124,7 +124,7 @@ func TestRegistrationRefusals(t *testing.T) {
 			TOTPSecret: "not base32!", TOTPCode: "123456",
 		},
 	} {
-		if _, _, err := svc.Register(ctx, in); err == nil {
+		if _, err := svc.Register(ctx, in); err == nil {
 			t.Fatalf("%s: registration was accepted", name)
 		}
 		if repos, err := svc.Repositories(ctx); err != nil || len(repos) != 0 {
