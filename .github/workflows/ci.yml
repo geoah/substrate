@@ -13,6 +13,11 @@
 # toolchain itself — go, node, pnpm, golangci-lint — is cached by
 # jdx/mise-action, which does that by default.)
 #
+# Only the Go jobs carry one, and only because it was measured: lint 69s -> 18s,
+# go test 369s -> 292s. The console job's pnpm store is NOT cached — see the
+# note there. A cache that does not pay for its restore is a slower CI with
+# extra moving parts, so measure cold against warm before adding another.
+#
 # Keys are per-job on purpose. A cache entry is immutable once written, so two
 # jobs sharing one key means whichever finishes first wins and the other
 # uploads nothing; the lint job's golangci-lint build cache and the test job's
@@ -100,17 +105,13 @@ jobs:
       - uses: jdx/mise-action@v2
         with:
           experimental: true
-      # pnpm's content-addressed store, NOT node_modules: `console:install` runs
-      # `pnpm install --frozen-lockfile`, and with the store warm that is a link
-      # step against packages already on disk instead of a download. The store
-      # lives at $XDG_DATA_HOME/pnpm/store, which on a runner (XDG_DATA_HOME
-      # unset) is the path below; the version segment sits inside it, so a pnpm
-      # major bump invalidates itself rather than the key.
-      - uses: actions/cache@v4
-        with:
-          path: ~/.local/share/pnpm/store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('web/console/pnpm-lock.yaml') }}
-          restore-keys: ${{ runner.os }}-pnpm-
+      # NO pnpm store cache here, deliberately — it was measured and it does not
+      # pay. `pnpm install --frozen-lockfile` on a cold store is 4.5s (593
+      # packages, a runner's network is very fast); restoring the 84 MB store
+      # costs 2.9s and cuts the install to 1.8s. That is 4.7s against 4.5s, so
+      # the cache is a wash at best, and it would spend 84 MB of the repo's
+      # shared 10 GB cache budget competing for eviction against the Go caches
+      # above, which save 51s and 77s. Re-measure before adding one back.
       - run: mise run ci:console
 
   image:
