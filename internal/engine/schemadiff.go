@@ -58,32 +58,6 @@ const countStateQuery = `SELECT count(*) FROM records WHERE kind = $1 AND delete
 const countStateValuesQuery = `SELECT count(*) FROM records
 	WHERE kind = $1 AND deleted_at IS NULL AND states ? $2 AND $3::jsonb @> (states->$2)`
 
-// countPropValuesQuery counts live rows whose property holds one of the given
-// values ($3 is a JSON array), covering both the scalar and the repeated
-// stored shape.
-const countPropValuesQuery = `SELECT count(*) FROM records
-	WHERE kind = $1 AND deleted_at IS NULL AND props ? $2
-	  AND CASE WHEN jsonb_typeof(props->$2) = 'array'
-	       THEN EXISTS (SELECT 1 FROM jsonb_array_elements(props->$2) e WHERE $3::jsonb @> e.value)
-	       ELSE $3::jsonb @> (props->$2) END`
-
-// countRefOutsideQuery counts live rows whose reference property ($2) points at
-// a kind OTHER than the newly required target ($3, a full identity), covering
-// both the scalar and repeated stored shape.
-//
-// It reads `kind` and nothing else. The query used to reconstruct the referent
-// as `kind || '.' || authority`, which had matched a long-dead stored shape:
-// normalizeReference writes {kind: <full identity>, id} and has never written
-// an `authority` key (references.go), so every comparison was against
-// `<identity>.` and the guard counted every live row or none — it was dead
-// either way, and silently.
-const countRefOutsideQuery = `SELECT count(*) FROM records
-	WHERE kind = $1 AND deleted_at IS NULL AND props ? $2
-	  AND CASE WHEN jsonb_typeof(props->$2) = 'array'
-	       THEN EXISTS (SELECT 1 FROM jsonb_array_elements(props->$2) e
-	                    WHERE COALESCE(e->>'kind','') <> $3)
-	       ELSE COALESCE(props->$2->>'kind','') <> $3 END`
-
 // classifyNarrowings walks every type present in BOTH the current and the
 // candidate registry (dropped types are refuse-with-instances' whole-type
 // count) across the touched authorities and returns the narrowing diffs. Pure
@@ -182,28 +156,35 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 				})
 				continue
 			}
+			// Every value count below walks the property's own container, so a
+			// keyed enum and a repeated one are counted in their own shape rather
+			// than compared as whole containers against a value list.
 			if removed := removedStrings(curP.ValueStrings(), candP.ValueStrings()); len(removed) > 0 {
+				q, args := valuesAtPath(ident, containerPath(nil, curP, pname), removed)
 				out = append(out, narrowing{
 					format: fmt.Sprintf("type %s: property %q removes value(s) %s while %%d live records hold one — rewrite them first",
 						ident, pname, quotedList(removed)),
-					query: countPropValuesQuery, args: []any{ident, pname, jsonArray(removed)},
+					query: q, args: args,
 				})
 			}
 			// A reference that narrows its `to:` target (unconstrained → a type,
 			// or one type → another) strands stored references pointing elsewhere
 			//.
 			if curP.Datatype == vocabulary.DatatypeReference && refTargetNarrows(curP.To, candP.To) {
+				q, args := refOutsidePath(ident, containerPath(nil, curP, pname), candP.To)
 				out = append(out, narrowing{
 					format: fmt.Sprintf("type %s: reference %q narrows its target to %s while %%d live records point elsewhere — repoint them first",
 						ident, pname, candP.To),
-					query: countRefOutsideQuery, args: []any{ident, pname, candP.To},
+					query: q, args: args,
 				})
 			}
 			if keyPatternTightens(curP, candP) {
+				q, args := keysOutsidePattern(ident, mapPath(nil, pname),
+					vocabulary.KeyPatternRegexp(candP.KeyPattern))
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: property %q tightens its keys to %s while %%d live records hold the map — rekey them first",
+					format: fmt.Sprintf("type %s: property %q tightens its keys to %s while %%d live records hold a key it refuses — rekey them first",
 						ident, pname, candP.KeyPattern),
-					query: countPropQuery, args: []any{ident, pname},
+					query: q, args: args,
 				})
 			}
 			// An object property that drops or kind-changes a declared field
@@ -353,7 +334,7 @@ func countAtPath(ident string, path []fieldStep, final func(expr string, a *sqlA
 	a := &sqlArgs{}
 	kind := a.add(ident)
 	head := a.add(path[0].key)
-	pred := descendPath("props->"+head, path, 0, a, final)
+	pred := descendPath("(props->"+head+")", path, 0, a, final)
 	return fmt.Sprintf(
 		"SELECT count(*) FROM records WHERE kind = %s AND deleted_at IS NULL AND props ? %s AND %s",
 		kind, head, pred), a.args
@@ -362,6 +343,11 @@ func countAtPath(ident string, path []fieldStep, final func(expr string, a *sqlA
 // descendPath renders the predicate over the value at path[i], addressed by
 // expr: the container is expanded to its members, then either the next key is
 // taken from a member or `final` closes over it.
+//
+// Every value expression it hands out is PARENTHESIZED. Postgres gives `->` and
+// `@>` the same precedence and left-associates them, so `$3::jsonb @> props->$2`
+// parses as `($3::jsonb @> props) -> $2` — a boolean indexed by a key, which is
+// the error the enum count failed with the first time.
 func descendPath(expr string, path []fieldStep, i int, a *sqlArgs, final func(string, *sqlArgs) string) string {
 	step := path[i]
 	member, wrap := expr, func(inner string) string { return inner }
@@ -386,7 +372,7 @@ func descendPath(expr string, path []fieldStep, i int, a *sqlArgs, final func(st
 	if i == len(path)-1 {
 		return wrap(final(member, a))
 	}
-	return wrap(descendPath(fmt.Sprintf("%s->%s", member, a.add(path[i+1].key)), path, i+1, a, final))
+	return wrap(descendPath(fmt.Sprintf("(%s->%s)", member, a.add(path[i+1].key)), path, i+1, a, final))
 }
 
 // fieldPresence counts the live rows carrying `key` inside the container the
@@ -398,13 +384,67 @@ func fieldPresence(ident string, path []fieldStep, key string) (string, []any) {
 }
 
 // refOutsidePath counts the live rows whose reference at the end of the path
-// points at a kind OTHER than the newly required target, the nested twin of
-// countRefOutsideQuery. The reference's own container is the path's last step,
-// so a repeated or keyed reference field is walked element by element.
+// points at a kind OTHER than the newly required target. The reference's own
+// container is the path's last step, so a repeated or keyed reference is walked
+// element by element — a top-level keyed reference read as one value would
+// compare the whole MAP's absent `kind` and count every populated row.
+//
+// The value must BE a canonical reference before its kind is compared. An
+// absent optional reference inside a present object is not a row pointing
+// elsewhere, and counting it as one refused the legal `to: any` → concrete
+// evolution for every row that simply left the field out.
+//
+// It reads `kind` and nothing else. The query used to reconstruct the referent
+// as `kind || '.' || authority`, which had matched a long-dead stored shape:
+// normalizeReference writes {kind: <full identity>, id} and has never written
+// an `authority` key (references.go), so every comparison was against
+// `<identity>.` and the guard counted every live row or none — it was dead
+// either way, and silently.
 func refOutsidePath(ident string, path []fieldStep, target string) (string, []any) {
 	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
-		return fmt.Sprintf("COALESCE(%s->>'kind','') <> %s", expr, a.add(target))
+		return fmt.Sprintf("jsonb_typeof(%s) = 'object' AND %s ? 'kind' AND COALESCE(%s->>'kind','') <> %s",
+			expr, expr, expr, a.add(target))
 	})
+}
+
+// valuesAtPath counts the live rows holding one of the given values at the path
+// — the rows a removed enum value strands, wherever the enum is declared.
+//
+// The path's last step carries the enum's own container, so a list is compared
+// element by element and a keyed map value by value. The query this replaces
+// dispatched on the STORED type instead, because it had no declared shape to
+// walk, and it knew only two shapes: a keyed map of enums compared as one object
+// against the removed-values array, matched nothing, and the removal was
+// admitted with every stranded row invisible.
+func valuesAtPath(ident string, path []fieldStep, values []string) (string, []any) {
+	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
+		return fmt.Sprintf("%s::jsonb @> %s", a.add(jsonArray(values)), expr)
+	})
+}
+
+// keysOutsidePattern counts the live rows whose keyed map at the path holds a
+// key the CANDIDATE contract refuses — not every row that holds a map. The
+// pattern is the loader's own grammar, handed over by vocabulary.KeyPatternRegexp
+// so the count and CheckKey cannot disagree about what a legal key is.
+func keysOutsidePattern(ident string, path []fieldStep, re string) (string, []any) {
+	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
+		return fmt.Sprintf(
+			"jsonb_typeof(%s) = 'object' AND EXISTS (SELECT 1 FROM jsonb_object_keys(%s) k WHERE k !~ %s)",
+			expr, expr, a.add(re))
+	})
+}
+
+// containerPath appends the leaf step a VALUE count needs: the key, plus the
+// declared container to expand, so the count reaches each element of a list and
+// each value of a map.
+func containerPath(path []fieldStep, p *vocabulary.Property, key string) []fieldStep {
+	return append(append([]fieldStep(nil), path...), fieldStep{key: key, repeated: p.Repeated, keyed: p.Keyed})
+}
+
+// mapPath appends the leaf step a KEY count needs: the map itself, unexpanded,
+// because the keys are what is being examined.
+func mapPath(path []fieldStep, key string) []fieldStep {
+	return append(append([]fieldStep(nil), path...), fieldStep{key: key})
 }
 
 // objectFieldNarrowings classifies one object level's field diff, recursing to
@@ -436,14 +476,26 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 			continue
 		}
 		if keyPatternTightens(curF, candF) {
-			q, args := fieldPresence(ident, path, fname)
+			q, args := keysOutsidePattern(ident, mapPath(path, fname),
+				vocabulary.KeyPatternRegexp(candF.KeyPattern))
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: object %q field %q tightens its keys to %s while %%d live records hold the map — rekey them first",
+				format: fmt.Sprintf("type %s: object %q field %q tightens its keys to %s while %%d live records hold a key it refuses — rekey them first",
 					ident, label, fname, candF.KeyPattern),
 				query: q, args: args,
 			})
 		}
-		next := append(append([]fieldStep(nil), path...), fieldStep{key: fname, repeated: curF.Repeated, keyed: curF.Keyed})
+		// A field's enum set narrows exactly as a property's does, and nothing
+		// classified it: a value removed from a field at any depth used to land
+		// with every row still holding it, in any container.
+		if removed := removedStrings(curF.ValueStrings(), candF.ValueStrings()); len(removed) > 0 {
+			q, args := valuesAtPath(ident, containerPath(path, curF, fname), removed)
+			out = append(out, narrowing{
+				format: fmt.Sprintf("type %s: object %q field %q removes value(s) %s while %%d live records hold one — rewrite them first",
+					ident, label, fname, quotedList(removed)),
+				query: q, args: args,
+			})
+		}
+		next := containerPath(path, curF, fname)
 		if curF.Datatype == vocabulary.DatatypeReference && refTargetNarrows(curF.To, candF.To) {
 			q, args := refOutsidePath(ident, next, candF.To)
 			out = append(out, narrowing{
@@ -460,10 +512,14 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 }
 
 // keyPatternTightens reports whether a keyed map's declared key contract moved
-// to a STRICTER one: none → a pattern, or one pattern replaced by another. Live
-// keys that satisfied the old contract may fail the new one, and a key is not
-// rewritable in place — the whole map has to be rewritten — so it narrows.
-// Dropping the contract admits everything the old one did and does not.
+// to a STRICTER one: none → a pattern, or one pattern replaced by another. A key
+// is not rewritable in place (the whole map has to be rewritten), so a stored key
+// the new contract refuses strands its row. Dropping the contract admits
+// everything the old one did and cannot narrow.
+//
+// Tightening is only a narrowing for the rows that actually hold a refused KEY,
+// which is what the count asks: a map whose every key already conforms is not
+// stranded by the declaration catching up with it.
 func keyPatternTightens(curP, candP *vocabulary.Property) bool {
 	if !candP.Keyed || candP.KeyPattern == "" {
 		return false

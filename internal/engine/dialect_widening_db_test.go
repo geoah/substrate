@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -56,9 +57,11 @@ func dwProps() map[string]any {
 			"subject": map[string]any{"type": "string"},
 		}},
 		"spec": map[string]any{"type": "object", "fields": map[string]any{
+			"mode": dwEnum(),
 			"limits": map[string]any{"type": "object", "fields": map[string]any{
 				"depth": map[string]any{"type": "int"},
 				"ref":   map[string]any{"type": "reference", "to": "target"},
+				"grade": dwEnum(),
 			}},
 		}},
 		"effects": map[string]any{"type": "int", "keyed": true, "keyPattern": "camel"},
@@ -69,13 +72,39 @@ func dwProps() map[string]any {
 			"fields": map[string]any{
 				"version": map[string]any{"type": "string"},
 				"source":  map[string]any{"type": "reference", "to": "target"},
+				"channel": dwEnum(),
 			},
 		},
 		"tools": map[string]any{"type": "object", "repeated": true, "fields": map[string]any{
 			"callable": map[string]any{"type": "reference", "to": "target"},
 			"label":    map[string]any{"type": "string"},
+			"role":     dwEnum(),
 		}},
+		// An enum in every container an enum can sit in: a removed value has to be
+		// counted in each of them, and a keyed one was counted in none.
+		"level":  dwEnum(),
+		"levels": map[string]any{"type": "enum", "values": []any{"low", "high"}, "repeated": true},
+		"slots":  map[string]any{"type": "enum", "values": []any{"low", "high"}, "keyed": true},
+		// UNCONSTRAINED references, one inside an object and one keyed: narrowing
+		// `to: any` to a concrete kind is legal exactly where no stored value
+		// points elsewhere, and an absent optional reference points nowhere.
+		"loose": map[string]any{"type": "object", "fields": map[string]any{
+			"note": map[string]any{"type": "string"},
+			"ref":  map[string]any{"type": "reference", "to": "any"},
+		}},
+		"keyedRefs": map[string]any{"type": "reference", "to": "any", "keyed": true},
 	}
+}
+
+// dwEnum is the enum every position shares, and dwEnumNarrowed is the same set
+// with "high" removed — the one diff that has to be refused wherever a live row
+// still holds it.
+func dwEnum() map[string]any {
+	return map[string]any{"type": "enum", "values": []any{"low", "high"}}
+}
+
+func dwEnumNarrowed() map[string]any {
+	return map[string]any{"type": "enum", "values": []any{"low"}}
 }
 
 func TestDialectWideningsRoundTrip(t *testing.T) {
@@ -332,6 +361,16 @@ func TestDerivedTitleTokens(t *testing.T) {
 	if both.Title != "person (people.example.com/person)" {
 		t.Fatalf("{localName} ({id}) = %q", both.Title)
 	}
+	// A trailing slash is legal in the id alphabet. The last NON-EMPTY segment is
+	// the local name, because rendering nothing for a row that has an id would be
+	// a title lost to punctuation.
+	trailing := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: dtAuthority + "/leaf", ID: "people.example.com/person/",
+	})
+	if trailing.Title != "person" {
+		t.Fatalf("{localName} of a trailing-slash id = %q, want the last non-empty segment", trailing.Title)
+	}
+
 	declared := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: dtAuthority + "/claimer", ID: "people.example.com/person",
 		Properties: map[string]any{"localName": "the declared one"},
@@ -339,13 +378,85 @@ func TestDerivedTitleTokens(t *testing.T) {
 	if declared.Title != "the declared one" {
 		t.Fatalf("a declared property must win over the derived token, got %q", declared.Title)
 	}
-	// With the property absent the derived value is still there to fall back to.
-	fallback := mustPut(t, ds, owner, substrate.PutInput{
+	// Precedence is by DECLARATION, not by value: the kind declares `localName`,
+	// so a row that leaves it empty renders empty. Falling back to the id here
+	// would make an unfilled property look filled, and the two rows above would
+	// be indistinguishable in a list.
+	empty := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: dtAuthority + "/claimer", ID: "people.example.com/other",
 	})
-	if fallback.Title != "other" {
-		t.Fatalf("the token must answer when the property is absent, got %q", fallback.Title)
+	if empty.Title != "" {
+		t.Fatalf("a declared-but-empty property must not fall back to the derived value, got %q", empty.Title)
 	}
 }
 
 const dtAuthority = "dtemplate.example.substrate.reamde.dev"
+
+// A declaration that loaded before this dialect must load after it. The
+// nested-reference widening arrives on stored rows, not just fresh applies: the
+// repository rebuilds its whole registry from its own records at every open, so
+// any rule this change tightened would come due there — fatal for core, a
+// quarantine for a bundle. A nested `inverse` is the case: earlier binaries
+// admitted and stored one, so it is admitted still (checkAuthorityInverses).
+func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, dsn := newService(t)
+	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("open dataset: %v", err)
+	}
+	const authority = "stored.example.substrate.reamde.dev"
+	docs := []map[string]any{
+		vocabulary.AuthorityManifest(authority, ""),
+		vocabulary.KindManifest(authority,
+			map[string]any{"singular": "target", "plural": "targets"}, map[string]any{}),
+		vocabulary.KindManifest(authority,
+			map[string]any{"singular": "holder", "plural": "holders"},
+			map[string]any{"properties": map[string]any{
+				"pinned": map[string]any{"type": "reference", "to": "target", "inverse": "holders"},
+				// The same inverse word, nested — a stored shape no earlier
+				// binary refused and this one must not either.
+				"tools": map[string]any{
+					"type": "object", "repeated": true,
+					"fields": map[string]any{
+						"callable": map[string]any{"type": "reference", "to": "target", "inverse": "holders"},
+					},
+				},
+			}}),
+	}
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+		t.Fatalf("admit the declaration: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: authority + "/target", ID: "a"})
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: authority + "/holder", ID: "h1",
+		Properties: map[string]any{"pinned": "a", "tools": []any{map[string]any{"callable": "a"}}},
+	})
+	_ = svc.Close()
+
+	// A second binary opening the same store rebuilds the registry from those
+	// rows. The kind has to come back LIVE, not quarantined, which a write to it
+	// proves: a quarantined authority's kinds are not in the registry at all.
+	svc2, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+	if err != nil {
+		t.Fatalf("reopen the service: %v", err)
+	}
+	t.Cleanup(func() { _ = svc2.Close() })
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("a stored declaration with a nested reference must still open: %v", err)
+	}
+	mustPut(t, ds2, owner, substrate.PutInput{
+		Kind: authority + "/holder", ID: "h2",
+		Properties: map[string]any{"tools": []any{map[string]any{"callable": "a"}}},
+	})
+	// And the stored value is still canonical after the rebuild.
+	read := mustGet(t, ds2, authority+"/holder", "h1")
+	tools := read.Properties["tools"].([]any)
+	assertRef(t, "tools[].callable", tools[0].(map[string]any)["callable"],
+		map[string]any{"kind": authority + "/target", "id": "a"})
+}

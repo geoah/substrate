@@ -430,6 +430,15 @@ func (r *titleResolver) Prop(name string) string {
 	return ""
 }
 
+// Declares reports whether the kind declares the property, which is what a
+// derived token yields to. A sensitive property counts as declared: Prop renders
+// it empty on purpose, and answering with the id-derived value instead would put
+// something in a title the declaration meant to keep out of one.
+func (r *titleResolver) Declares(name string) bool {
+	_, ok := r.ty.Prop(name)
+	return ok
+}
+
 // reference renders a reference property: the referent's title, or the named
 // property of it. Repeated references render each, comma-joined, the way a
 // many-edge does.
@@ -530,15 +539,21 @@ func (r *titleResolver) Derived(token string) string {
 	return ""
 }
 
-// localNameOf is an id's last segment, and the whole id when it has none. The
-// LAST slash, not the kind reference's one: an id may legally carry several
-// (the alphabet admits "/" so a declaration's id can BE a kind reference), and
-// the last segment is the one a reader would call the thing.
+// localNameOf is an id's last non-empty segment, and the whole id when it has
+// none. The LAST slash, not the kind reference's one: an id may legally carry
+// several (the alphabet admits "/" so a declaration's id can BE a kind
+// reference), and the last segment is the one a reader would call the thing.
+//
+// A TRAILING slash is legal in the id alphabet, and splitting on it plainly
+// would render an empty title for a row whose id is anything but empty — so it
+// is trimmed first. The alphabet's first character is alphanumeric, so trimming
+// can never empty the whole id.
 func localNameOf(id string) string {
-	if i := strings.LastIndexByte(id, '/'); i >= 0 {
-		return id[i+1:]
+	trimmed := strings.TrimRight(id, "/")
+	if i := strings.LastIndexByte(trimmed, '/'); i >= 0 {
+		return trimmed[i+1:]
 	}
-	return id
+	return trimmed
 }
 
 func (r *titleResolver) Edge(rel, prop string) string {

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -1704,9 +1705,20 @@ type testResolver struct {
 	edges   map[string]string
 	snippet string
 	derived map[string]string
+	// declares is the kind's declared property set where it differs from the
+	// props map — a property declared but EMPTY on the row.
+	declares []string
 }
 
 func (r testResolver) Prop(n string) string { return r.props[n] }
+
+func (r testResolver) Declares(n string) bool {
+	if _, ok := r.props[n]; ok {
+		return true
+	}
+	return slices.Contains(r.declares, n)
+}
+
 func (r testResolver) Derived(token string) string {
 	if token == vocabulary.DerivedSnippet {
 		return r.snippet

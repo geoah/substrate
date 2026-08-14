@@ -20,6 +20,11 @@ func dnBaseProps() map[string]any {
 	props := dwProps()
 	spec := props["spec"].(map[string]any)
 	spec["fields"].(map[string]any)["tags"] = map[string]any{"type": "string", "keyed": true}
+	// A keyed enum FIELD: the last position an enum can occupy, and the one where
+	// both the container walk and the value comparison have to be right at once.
+	spec["fields"].(map[string]any)["slots"] = map[string]any{
+		"type": "enum", "values": []any{"low", "high"}, "keyed": true,
+	}
 	props["plain"] = map[string]any{"type": "string"}
 	return props
 }
@@ -36,14 +41,24 @@ func dnRow(t *testing.T, ds substrate.Dataset) {
 		Properties: map[string]any{
 			"grant": map[string]any{"scopes": []any{"read"}, "subject": "ada"},
 			"spec": map[string]any{
-				"limits": map[string]any{"depth": 3, "ref": "a"},
-				"tags":   map[string]any{"color": "green"},
+				"mode":   "high",
+				"limits": map[string]any{"depth": 3, "ref": "a", "grade": "high"},
+				// Keys no camelCase contract would admit: a tightening is a
+				// narrowing for the rows holding a key it REFUSES, so the row that
+				// drives those arms has to hold one.
+				"tags":  map[string]any{"Not Camel": "green"},
+				"slots": map[string]any{"primary": "high"},
 			},
-			"effects":  map[string]any{"createdRecords": 1},
-			"notes":    map[string]any{"greeting": "hei"},
-			"plain":    "text",
-			"installs": map[string]any{"task": map[string]any{"version": "v1", "source": "a"}},
-			"tools":    []any{map[string]any{"callable": "a", "label": "first"}},
+			"effects": map[string]any{"createdRecords": 1},
+			"notes":   map[string]any{"not a camel key": "hei"},
+			"plain":   "text",
+			"installs": map[string]any{
+				"task": map[string]any{"version": "v1", "source": "a", "channel": "high"},
+			},
+			"tools":  []any{map[string]any{"callable": "a", "label": "first", "role": "high"}},
+			"level":  "high",
+			"levels": []any{"high"},
+			"slots":  map[string]any{"primary": "high"},
 		},
 	})
 }
@@ -129,6 +144,52 @@ func dnCases() map[string]struct {
 			},
 			says: `object "spec.limits" reference "ref" narrows its target to ` + dwAuthority + `/other`,
 		},
+		// An enum value removed, once per container an enum can sit in. The keyed
+		// one is the case a containment test on the whole map could never see.
+		"scalar enum value removed": {
+			mutate: func(props map[string]any) { props["level"] = dwEnumNarrowed() },
+			says:   `property "level" removes value(s) "high"`,
+		},
+		"repeated enum value removed": {
+			mutate: func(props map[string]any) {
+				props["levels"] = map[string]any{"type": "enum", "values": []any{"low"}, "repeated": true}
+			},
+			says: `property "levels" removes value(s) "high"`,
+		},
+		"keyed enum value removed": {
+			mutate: func(props map[string]any) {
+				props["slots"] = map[string]any{"type": "enum", "values": []any{"low"}, "keyed": true}
+			},
+			says: `property "slots" removes value(s) "high"`,
+		},
+		"field enum value removed": {
+			mutate: func(props map[string]any) { specFields(props)["mode"] = dwEnumNarrowed() },
+			says:   `object "spec" field "mode" removes value(s) "high"`,
+		},
+		"field enum value removed at level 3": {
+			mutate: func(props map[string]any) { limitFields(props)["grade"] = dwEnumNarrowed() },
+			says:   `object "spec.limits" field "grade" removes value(s) "high"`,
+		},
+		"field enum value removed inside a repeated object": {
+			mutate: func(props map[string]any) {
+				props["tools"].(map[string]any)["fields"].(map[string]any)["role"] = dwEnumNarrowed()
+			},
+			says: `object "tools" field "role" removes value(s) "high"`,
+		},
+		"field enum value removed inside a keyed map": {
+			mutate: func(props map[string]any) {
+				props["installs"].(map[string]any)["fields"].(map[string]any)["channel"] = dwEnumNarrowed()
+			},
+			says: `object "installs" field "channel" removes value(s) "high"`,
+		},
+		"keyed field enum value removed": {
+			mutate: func(props map[string]any) {
+				specFields(props)["slots"] = map[string]any{
+					"type": "enum", "values": []any{"low"}, "keyed": true,
+				}
+			},
+			says: `object "spec" field "slots" removes value(s) "high"`,
+		},
 	}
 }
 
@@ -171,6 +232,114 @@ func TestNestedNarrowingsAdmittedWithoutRows(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A guard must refuse a narrowing that strands data and ADMIT one the data
+// already satisfies. This is the direction that fails silently in the other
+// sense: a guard which refuses everything reads as "safe" until it blocks a
+// legitimate evolution nobody can then perform.
+//
+// The three cases here each counted every populated row before: an absent
+// optional reference inside a present object, a keyed reference read as one
+// value (its `kind` is the MAP's, which no map has), and a tightened key
+// contract every stored key already satisfies.
+func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+	if err := dwApply(t, ds, dnBaseProps()); err != nil {
+		t.Fatalf("install the base authority: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: dwAuthority + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
+	})
+	target := map[string]any{"kind": dwAuthority + "/target", "id": "a"}
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: dwAuthority + "/holder", ID: "conforms",
+		Properties: map[string]any{
+			// The object is present and its optional reference is not.
+			"loose":     map[string]any{"note": "no pointer here"},
+			"keyedRefs": map[string]any{"primary": target},
+			"notes":     map[string]any{"greeting": "hei"},
+		},
+	})
+	// An EMPTY keyed map is still a stored value, and it points nowhere.
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: dwAuthority + "/holder", ID: "empties",
+		Properties: map[string]any{"keyedRefs": map[string]any{}, "notes": map[string]any{}},
+	})
+
+	narrow := func(t *testing.T, mutate func(props map[string]any)) error {
+		t.Helper()
+		props := dnBaseProps()
+		mutate(props)
+		return dwApply(t, ds, props)
+	}
+	restore := func(t *testing.T) {
+		t.Helper()
+		if err := dwApply(t, ds, dnBaseProps()); err != nil {
+			t.Fatalf("restore the base declaration: %v", err)
+		}
+	}
+	toTarget := map[string]any{"type": "reference", "to": "target"}
+
+	t.Run("absent optional nested reference does not block", func(t *testing.T) {
+		if err := narrow(t, func(props map[string]any) {
+			props["loose"].(map[string]any)["fields"].(map[string]any)["ref"] = toTarget
+		}); err != nil {
+			t.Fatalf("a row whose optional reference is absent points nowhere: %v", err)
+		}
+		restore(t)
+	})
+
+	t.Run("conforming keyed references do not block", func(t *testing.T) {
+		if err := narrow(t, func(props map[string]any) { props["keyedRefs"] = keyedRefTo("target") }); err != nil {
+			t.Fatalf("every stored keyed reference points at the new target: %v", err)
+		}
+		restore(t)
+	})
+
+	t.Run("conforming keys do not block a tightened contract", func(t *testing.T) {
+		if err := narrow(t, func(props map[string]any) {
+			props["notes"] = map[string]any{"type": "string", "keyed": true, "keyPattern": "camel"}
+		}); err != nil {
+			t.Fatalf("every stored key is already camelCase: %v", err)
+		}
+		restore(t)
+	})
+
+	// The same three diffs, one row later. Nothing about the declarations
+	// changed: the answers move with the DATA, which is the whole contract.
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: dwAuthority + "/holder", ID: "strays",
+		Properties: map[string]any{
+			"loose":     map[string]any{"ref": map[string]any{"kind": dwAuthority + "/other", "id": "o1"}},
+			"keyedRefs": map[string]any{"primary": map[string]any{"kind": dwAuthority + "/other", "id": "o1"}},
+			"notes":     map[string]any{"not a camel key": "x"},
+		},
+	})
+
+	t.Run("a present nested reference elsewhere blocks", func(t *testing.T) {
+		wantNarrowingGuard(t, narrow(t, func(props map[string]any) {
+			props["loose"].(map[string]any)["fields"].(map[string]any)["ref"] = toTarget
+		}), `object "loose" reference "ref" narrows its target`, "1 live records")
+	})
+
+	t.Run("a keyed reference elsewhere blocks", func(t *testing.T) {
+		wantNarrowingGuard(t, narrow(t, func(props map[string]any) {
+			props["keyedRefs"] = keyedRefTo("target")
+		}), `reference "keyedRefs" narrows its target`, "1 live records")
+	})
+
+	t.Run("a refused key blocks a tightened contract", func(t *testing.T) {
+		wantNarrowingGuard(t, narrow(t, func(props map[string]any) {
+			props["notes"] = map[string]any{"type": "string", "keyed": true, "keyPattern": "camel"}
+		}), `property "notes" tightens its keys to camel`, "1 live records")
+	})
+}
+
+// keyedRefTo is the keyed reference declaration pinned to one kind.
+func keyedRefTo(kind string) map[string]any {
+	return map[string]any{"type": "reference", "to": kind, "keyed": true}
 }
 
 // The guard counts the rows that actually hold the value at the path, not every

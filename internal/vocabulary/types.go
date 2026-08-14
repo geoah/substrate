@@ -269,6 +269,21 @@ const (
 // jsonb path walker in exactly the code a regression must not hide in.
 const MaxFieldDepth = 4
 
+// KeyPatternRegexp is the anchored regular expression a keyed map's keys match
+// under the given contract, and "" when the contract admits every non-empty key.
+// It exists so a SQL guard can count the keys a TIGHTENED contract would refuse
+// instead of refusing every populated map: the pattern travels, the grammar
+// stays here (naming.go).
+func KeyPatternRegexp(pattern string) string {
+	switch pattern {
+	case KeyPatternCamel:
+		return "^" + camelRE + "$"
+	case KeyPatternKindRef:
+		return "^" + kindRefRE + "$"
+	}
+	return ""
+}
+
 // CheckKey holds one key of a keyed map to the declared contract. The keys are
 // DATA: an undeclared key is admitted (that is what a map is for), and this is
 // the whole check that stands between the writer and the stored value.

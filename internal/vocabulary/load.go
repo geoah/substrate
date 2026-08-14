@@ -1782,14 +1782,26 @@ func (r *Registry) checkAuthorityInverses(g *Authority) []string {
 			e := t.Edges[en]
 			take(where+": data.edges."+en, e.To, e.Inverse, claim{t.Name, en})
 		}
-		// Every reference the kind declares, at every admitted depth: an inverse
-		// is a label on the TARGET's side, and a nested pointer names its target
-		// exactly as a top-level one does, so the collision it can cause is the
-		// same collision. Skipping the nested ones would admit two pointers of one
-		// authority claiming one word on one target as long as one of them was
-		// spelled inside an object.
-		for _, site := range referenceSites(t) {
-			take(where+": data.properties."+site.Path, site.Prop.To, site.Prop.Inverse, claim{t.Name, site.Path})
+		// A KIND'S OWN reference properties, and deliberately not the reference
+		// FIELDS inside its objects.
+		//
+		// A nested `inverse` was admitted and STORED by every earlier binary (the
+		// key set allowed it; resolution and this check simply walked past it), so
+		// claiming one here would make a declaration that finalized yesterday
+		// inadmissible today — a core parse of it is fatal at repository open and
+		// an installed closure quarantines, both for a label nothing resolves,
+		// routes or looks anything up by. This check runs on the STORED-row
+		// rebuild and on a fresh admission through the same Install, so there is
+		// no seam that could hold new declarations to a stricter rule without
+		// holding old rows to it too. The claim moves to depth the day something
+		// CONSUMES a nested inverse: then the rebuild needs a tolerant path
+		// first, and this comment is the record of why.
+		for _, pn := range t.PropOrder {
+			p := t.Props[pn]
+			if p.Datatype != DatatypeReference {
+				continue
+			}
+			take(where+": data.properties."+pn, p.To, p.Inverse, claim{t.Name, pn})
 		}
 	}
 	return problems
@@ -1805,9 +1817,11 @@ type referenceSite struct {
 
 // referenceSites lists every reference a kind declares — its own properties and
 // the reference FIELDS inside object properties, keyed maps and repeated objects
-// alike, to MaxFieldDepth. Resolution and the inverse-claim check both walk it,
-// so a nested pointer cannot be half-admitted: before this, a reference field
-// parsed and then never had its `to:` resolved at all.
+// alike, to MaxFieldDepth. `to:` resolution walks it, so a nested pointer cannot
+// be half-admitted: before this, a reference field parsed and then never had its
+// `to:` resolved at all, leaving the write path to compare a bare name against a
+// full identity. The inverse-claim check deliberately does NOT
+// (checkAuthorityInverses says why).
 func referenceSites(t *Kind) []referenceSite {
 	var out []referenceSite
 	for _, pn := range t.PropOrder {

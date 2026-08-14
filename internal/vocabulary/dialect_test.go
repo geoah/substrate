@@ -11,6 +11,7 @@ package vocabulary_test
 // parsed shape has to say afterwards.
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -232,16 +233,26 @@ func TestNestedReferenceTargetMustExist(t *testing.T) {
 	}
 }
 
-// An inverse is a label on the TARGET's side, so two pointers of one authority
-// claiming one word on one target collide wherever they are declared — a nested
-// one included.
-func TestNestedReferenceInverseCollides(t *testing.T) {
-	_, err := dialectLoad(t, `  properties:
+// A NESTED inverse is not claimed, and that is a migration constraint, not an
+// oversight: every earlier binary admitted and stored one, so claiming it here
+// would make a stored declaration inadmissible — fatal at open for core, a
+// quarantine for a bundle — over a label nothing resolves by. The kind's OWN
+// pointers still collide.
+func TestNestedReferenceInverseIsNotClaimed(t *testing.T) {
+	if _, err := dialectLoad(t, `  properties:
     target: {type: reference, to: target, inverse: widgets}
     tools:
       type: object
       fields:
         callable: {type: reference, to: target, inverse: widgets}
+`); err != nil {
+		t.Fatalf("a nested inverse must keep loading beside a top-level claim: %v", err)
+	}
+	// Two of the kind's own pointers claiming one word on one target still
+	// refuse: that check predates this dialect and nothing about it moved.
+	_, err := dialectLoad(t, `  properties:
+    target: {type: reference, to: target, inverse: widgets}
+    alsoTarget: {type: reference, to: target, inverse: widgets}
 `)
 	if err == nil {
 		t.Fatal("expected a load error")
@@ -305,8 +316,10 @@ func TestDerivedTemplateTokensNeedNoDeclaration(t *testing.T) {
 	}
 }
 
-// A REAL property wins over the derived token of the same name: a kind that
-// declares `localName` means its own value.
+// A REAL property wins over the derived token of the same name, and it wins by
+// being DECLARED rather than by holding a value: a kind that declares
+// `localName` means its own value every time, so an empty one renders empty
+// instead of quietly showing the id.
 func TestDerivedTokenYieldsToADeclaredProperty(t *testing.T) {
 	tmpl, err := vocabulary.ParseTemplate("{localName}/{id}")
 	if err != nil {
@@ -325,5 +338,57 @@ func TestDerivedTokenYieldsToADeclaredProperty(t *testing.T) {
 	})
 	if got != "declared/people.example.com/person" {
 		t.Fatalf("a declared property must win, got %q", got)
+	}
+	// Declared and EMPTY: the token still yields, so the segment renders
+	// nothing. The alternative is a title that looks filled and is not.
+	got = tmpl.Render(testResolver{
+		declares: []string{vocabulary.DerivedLocalName},
+		derived:  derived,
+	})
+	if got != "/people.example.com/person" {
+		t.Fatalf("a declared-but-empty property must not fall back, got %q", got)
+	}
+	// An alternative list still moves on, which is how a template asks for the
+	// property first and the derived value second.
+	either, err := vocabulary.ParseTemplate("{localName|id}")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := either.Render(testResolver{
+		declares: []string{vocabulary.DerivedLocalName},
+		derived:  derived,
+	}); got != "people.example.com/person" {
+		t.Fatalf("an empty alternative must yield to the next, got %q", got)
+	}
+}
+
+// The key contract has ONE grammar: CheckKey asks it in Go and the narrowing
+// guard hands the same pattern to Postgres, so the two answers cannot drift.
+func TestKeyPatternRegexpAgreesWithCheckKey(t *testing.T) {
+	keys := []string{
+		"backfillDepth", "a", "task", "tasks.example.com/task", "x9",
+		"back_fill", "Backfill", "tasks.*", "a b", "9lives", "a/b/c",
+		"tasks.example.com/Task", "-nope", "tasks.example.com/",
+	}
+	for _, contract := range []string{vocabulary.KeyPatternCamel, vocabulary.KeyPatternKindRef} {
+		src := vocabulary.KeyPatternRegexp(contract)
+		if src == "" {
+			t.Fatalf("%s has no pattern", contract)
+		}
+		re, err := regexp.Compile(src)
+		if err != nil {
+			t.Fatalf("%s pattern %q does not compile: %v", contract, src, err)
+		}
+		p := &vocabulary.Property{Keyed: true, KeyPattern: contract}
+		for _, key := range keys {
+			if got, want := re.MatchString(key), p.CheckKey(key) == nil; got != want {
+				t.Errorf("%s key %q: regexp says %v, CheckKey says %v", contract, key, got, want)
+			}
+		}
+	}
+	// No contract carries no pattern: every non-empty key is admitted, and the
+	// guard has nothing to count.
+	if src := vocabulary.KeyPatternRegexp(""); src != "" {
+		t.Errorf("an uncontracted keyed map must have no pattern, got %q", src)
 	}
 }
