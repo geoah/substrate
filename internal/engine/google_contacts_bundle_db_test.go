@@ -180,7 +180,7 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 			mig.Input != nil, mig.Output != nil)
 	}
 	if !mig.Caps.AllowsMutation(vocabulary.MutationMerge) {
-		t.Fatalf("the migration lacks the capabilities.mutations merge grant — the absorbed-orphan fold would be refused")
+		t.Fatalf("the migration lacks the permissions.mutations merge grant, so the absorbed-orphan fold would be refused")
 	}
 	var emitsPerson bool
 	for _, ty := range mig.Caps.Emit {

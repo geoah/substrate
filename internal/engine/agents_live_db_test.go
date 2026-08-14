@@ -95,7 +95,7 @@ func TestLiveAgentChainAcrossWires(t *testing.T) {
 			"runtime":     vocabulary.RuntimePython,
 			// The envelope is required even for a function that writes
 			// nothing; this one returns output and emits no effects at all.
-			"emit": []any{"tasks.substrate.reamde.dev/task"},
+			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 			// The argument list is BOTH the function's input contract and the
 			// model-facing tool card, which is what the flat spelling buys.
 			"arguments": []any{
@@ -126,7 +126,7 @@ def main(input, host):
 				"Step 3: reply with DONE followed by the speller tool's answer, and nothing else.",
 				"Never do the arithmetic or the spelling yourself.",
 			}, "\n"),
-			"tools":   []any{map[string]any{"callable": crewAuthority + "/add"}},
+			"tools":   []any{map[string]any{"function": crewAuthority + "/add"}},
 			"agents":  []any{crewAuthority + "/speller"},
 			"budgets": map[string]any{"maxTurns": 6, "maxToolCalls": 4, "depth": 3, "deadlineSeconds": 120},
 		}),
@@ -191,7 +191,7 @@ def main(input, host):
 	}
 	var parent string
 	if err := ds.db.QueryRowContext(ctx, `
-		SELECT props->'parent'->>'id' FROM records WHERE kind = $2 AND id = $1`,
+		SELECT props->>'parent' FROM records WHERE kind = $2 AND id = $1`,
 		child["__id"], typeThread).Scan(&parent); err != nil {
 		t.Fatalf("the child's parent: %v", err)
 	}

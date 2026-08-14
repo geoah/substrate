@@ -134,9 +134,9 @@ func compareProps(t *testing.T, where string, declared map[string]*vocabulary.Pr
 			t.Errorf("%s: containers differ: reader repeated=%v keyed=%v keyPattern=%q, loader repeated=%v keyed=%v keyPattern=%q",
 				at, r.Repeated, r.Keyed, r.KeyPattern, d.Repeated, d.Keyed, d.KeyPattern)
 		}
-		if r.Required != d.Required || r.Managed != d.Managed || r.RefersTo != d.RefersTo || r.Writer != d.Writer {
-			t.Errorf("%s: markers differ: reader %+v, loader required=%v managed=%v refersTo=%q writer=%q",
-				at, r, d.Required, d.Managed, d.RefersTo, d.Writer)
+		if r.Required != d.Required || r.Managed != d.Managed || r.Writer != d.Writer {
+			t.Errorf("%s: markers differ: reader %+v, loader required=%v managed=%v writer=%q",
+				at, r, d.Required, d.Managed, d.Writer)
 		}
 		// The prose the generated types carry into their doc comments. A reader
 		// that dropped a description would generate a type nobody can read
@@ -478,6 +478,35 @@ func TestKeyContractsAgree(t *testing.T) {
 	} {
 		if want := vocabulary.KeyPatternRegexp(pattern); generated != want {
 			t.Errorf("keyPattern %s: generated %q, loader %q", pattern, generated, want)
+		}
+	}
+}
+
+// TestSplitReferencePathAgreesWithVocabulary holds the SECOND grammar this
+// package has to spell for itself. A reference value is one flat "<kind>/<id>"
+// path, and telling the kind from the id rests on the rule that an authority
+// always carries a dot and a kind name never does — a rule the loader spells in
+// vocabulary.SplitRecordPath and the leaf rule forbids this package from
+// importing. Two spellings of one grammar drift silently, because both keep
+// answering; this is the seam that makes them fail loudly instead.
+func TestSplitReferencePathAgreesWithVocabulary(t *testing.T) {
+	for _, path := range []string{
+		"core.substrate.reamde.dev/llmprovider/claude",
+		"task/abc123",
+		"core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev/task",
+		"task/a/b/c",
+		"tasks.substrate.reamde.dev/task",
+		"claude",
+		"",
+		"/claude",
+		"task/",
+		"core.substrate.reamde.dev/",
+	} {
+		wantKind, wantID, wantOK := vocabulary.SplitRecordPath(path)
+		kind, id, ok := corekinds.SplitReferencePath(corekinds.ReferencePath(path))
+		if kind != wantKind || id != wantID || ok != wantOK {
+			t.Errorf("SplitReferencePath(%q) = (%q, %q, %v), loader says (%q, %q, %v)",
+				path, kind, id, ok, wantKind, wantID, wantOK)
 		}
 	}
 }

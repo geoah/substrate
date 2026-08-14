@@ -29,7 +29,9 @@ data:
   # the referent. core/agent stopped declaring `name`, so `{agent.name}` read
   # nothing and every thread titled ": running"; a bare token on a reference
   # renders the referent's own title, which is agent's `{localName}`.
-  version: v1alpha6
+  # v1alpha7: the agent and parent pointers pin with `kind:`, the reference
+  # property's own word; `to:` stays the edge's.
+  version: v1alpha7
   names:
     singular: llmthread
     plural: llmthreads
@@ -42,11 +44,16 @@ data:
   properties:
     agent:
       type: reference
-      to: core.substrate.reamde.dev/agent
+      kind: core.substrate.reamde.dev/agent
       required: true
       inverse: threads
       inverseDescription: the runs this agent has had
       description: the agent this thread ran
+    # NOT a reference, unlike the agent's own `provider:`. This one is what the
+    # ENGINE resolved for this run — provenance on a finished thread, not a
+    # pointer an author picks — and retyping a live string property to a
+    # reference is a narrowing the boot upgrade refuses while rows hold the old
+    # shape.
     provider:
       type: string
       description: the llmprovider row id the run resolved
@@ -98,7 +105,7 @@ data:
         expired lease is taken over
     parent:
       type: reference
-      to: core.substrate.reamde.dev/llmthread
+      kind: core.substrate.reamde.dev/llmthread
       inverse: subAgentThreads
       inverseDescription: the sub-agent runs this thread called
       description: the calling agent's thread, on sub-agent threads

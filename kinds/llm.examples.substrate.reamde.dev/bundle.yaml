@@ -39,7 +39,12 @@ data:
   # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
-  version: v1alpha3
+  # v1alpha4: the built-ins are function records, so `substrate`'s tool entries
+  # name them under `function:` like any other function.
+  # v1alpha5: the grants group under one `permissions:` object, and the permission
+  # to write is `writes:` inside it. This closure's functions and agents
+  # follow core's declaration.
+  version: v1alpha5
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata:
@@ -101,9 +106,10 @@ data:
   provider: anthropic
   model: claude-sonnet-5
   tools:
-    - builtin: graphql
-    - builtin: propose
-  emit: [core.substrate.reamde.dev/recordpatchrequest]
+    - function: core.substrate.reamde.dev/graphql
+    - function: core.substrate.reamde.dev/propose
+  permissions:
+    writes: [core.substrate.reamde.dev/recordpatchrequest]
   budgets:
     maxTurns: 16
     maxToolCalls: 12

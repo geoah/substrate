@@ -316,18 +316,17 @@ func droppedBundleCallables(current, candidate *vocabulary.Registry, touched map
 
 // droppedCallableGuards names, per dropped bundle callable, every live
 // trigger still referencing it — an upgrade that would strand delivery fails
-// admission with the full list. The kind matches on the callable reference's
-// `type`: a reference always carries an explicit type, so the
-// former no-kind-means-function default is gone.
+// admission with the full list. A stored callable is ONE record path, kind and
+// id together, so the match is a single equality and the former
+// no-kind-means-function default has nowhere left to hide.
 func droppedCallableGuards(q sqlReader, dropped []droppedCallable) ([]string, error) {
 	var out []string
 	for _, d := range dropped {
 		rows, err := q.query(`
 			SELECT id FROM records
 			WHERE kind = $1 AND deleted_at IS NULL
-			  AND props->'callable'->>'id' = $2
-			  AND props->'callable'->>'kind' = $3
-			ORDER BY id`, typeTrigger, d.identity, vocabulary.CoreKind(d.kind))
+			  AND props->>'callable' = $2
+			ORDER BY id`, typeTrigger, vocabulary.RecordPath(vocabulary.CoreKind(d.kind), d.identity))
 		if err != nil {
 			return nil, err
 		}
@@ -554,20 +553,22 @@ func (t *txn) tearDownCallableTriggers(callables map[string]bool) error {
 		return nil
 	}
 	rows, err := t.query(`
-		SELECT id, props->'callable'->>'id' FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props->'callable'->>'id' IS NOT NULL
+		SELECT id, props->>'callable' FROM records
+		WHERE kind = $1 AND deleted_at IS NULL AND props->>'callable' IS NOT NULL
 		ORDER BY id`, typeTrigger)
 	if err != nil {
 		return err
 	}
 	var ids []string
 	for rows.Next() {
-		var id, callableID string
-		if err := rows.Scan(&id, &callableID); err != nil {
+		var id, callable string
+		if err := rows.Scan(&id, &callable); err != nil {
 			_ = rows.Close()
 			return err
 		}
-		if callables[callableID] {
+		// `callables` is keyed by callable IDENTITY, and the stored reference is
+		// the whole path, so the kind half is dropped before the lookup.
+		if _, callableID, ok := vocabulary.SplitRecordPath(callable); ok && callables[callableID] {
 			ids = append(ids, id)
 		}
 	}

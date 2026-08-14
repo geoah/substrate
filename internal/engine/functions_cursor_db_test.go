@@ -100,7 +100,7 @@ func openCursorDataset(t *testing.T) *dataset {
 			vocabulary.FunctionManifest(authority, "mirror", map[string]any{
 				"description": "mirrors widgets into tasks",
 				"runtime":     vocabulary.RuntimePython,
-				"emit":        []any{"tasks.substrate.reamde.dev/task"},
+				"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 				"source": `
 def main(input, host):
     env = input["envelope"]
@@ -115,7 +115,7 @@ def main(input, host):
 			Properties: map[string]any{
 				"enabled":  true,
 				"source":   map[string]any{"record": map[string]any{"kinds": []any{widgetType}}},
-				"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": authority + "/mirror"},
+				"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", authority+"/mirror"),
 			},
 		}},
 	}); err != nil {
@@ -126,12 +126,12 @@ def main(input, host):
 
 // openInternalDataset opens a throwaway repository and returns the INTERNAL
 // dataset, so tests can drive txn-level paths directly.
-func openInternalDataset(t *testing.T) *dataset {
+func openInternalDataset(t *testing.T, opts ...Option) *dataset {
 	t.Helper()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	svc, err := Open(ctx, dsn,
-		WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		append([]Option{WithKindsDir("../../kinds/core.substrate.reamde.dev")}, opts...)...)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}

@@ -57,16 +57,38 @@ import (
 	"time"
 )
 
-// Reference is a typed POINTER stored as a property value: the referent's kind
-// reference and its id, the same {kind, id} pair an edge target wears.
-type Reference struct {
-	Kind string
-	ID   string
-}
+// ReferencePath is a typed POINTER stored as a property value: the referent's
+// record PATH, "<kind>/<id>" — ONE string, the whole stored value, so a pointer
+// compares and indexes as the single value it is.
+//
+//	core.substrate.reamde.dev/llmprovider/claude   a published kind's record
+//	task/abc123                                    a repository-local kind's
+type ReferencePath string
 
-// Properties is the reference as the properties map holds it.
-func (r Reference) Encode() map[string]any {
-	return map[string]any{"kind": r.Kind, "id": r.ID}
+// SplitReferencePath splits a reference into the referent's kind and id.
+//
+// It rests on the KIND GRAMMAR and nothing else, so it needs no registry: an
+// authority always carries a dot and a kind NAME never does. The first segment
+// therefore decides which form this is, and the id is everything after the kind
+// — slashes included, because a DECLARATION record's id is itself a kind
+// reference.
+//
+// This is a SECOND spelling of vocabulary.SplitRecordPath, which the leaf rule
+// forces: package corekinds imports nothing from the module. The two are held
+// together by TestSplitReferencePathAgreesWithVocabulary, not by hope.
+func SplitReferencePath(path ReferencePath) (kind, id string, ok bool) {
+	first, rest, split := strings.Cut(string(path), "/")
+	if !split || first == "" || rest == "" {
+		return "", "", false
+	}
+	if !strings.Contains(first, ".") {
+		return first, rest, true
+	}
+	name, remainder, split := strings.Cut(rest, "/")
+	if !split || name == "" || remainder == "" {
+		return "", "", false
+	}
+	return first + "/" + name, remainder, true
 }
 
 // SecretRef is what a secret property STORES: an opaque ref into the engine's
@@ -495,33 +517,44 @@ func (d *decoder) blob(path string, v any) (BlobDigest, bool) {
 	return BlobDigest(s), true
 }
 
-// reference decodes a {kind, id} pair, taking the kind from the declaration's
-// to: where a bare id was written and the declaration pins a concrete referent
-// — the shorthand a single-target edge has always admitted.
-func (d *decoder) reference(path string, v any, to string) (Reference, bool) {
-	var r Reference
+// reference decodes a record PATH, taking the kind from the declaration's pin
+// where a bare id was written and the declaration pins a concrete referent —
+// the shorthand a single-target edge has always admitted.
+//
+// The {kind, id} arm reads the RELEASED dialect-1 shape, which stored rows
+// written before the flat form still hold. Nothing authors it.
+func (d *decoder) reference(path string, v any, to string) (ReferencePath, bool) {
+	var id string
 	switch t := v.(type) {
-	case map[string]any:
-		r.Kind, _ = t["kind"].(string)
-		r.ID, _ = t["id"].(string)
 	case string:
-		r.ID = t
+		if t == "" {
+			d.problemf(path, "a reference needs an id")
+			return "", false
+		}
+		if _, _, ok := SplitReferencePath(ReferencePath(t)); ok {
+			return ReferencePath(t), true
+		}
+		id = t
+	case map[string]any:
+		kind, _ := t["kind"].(string)
+		rid, _ := t["id"].(string)
+		if rid == "" {
+			d.problemf(path, "a reference needs an id")
+			return "", false
+		}
+		if kind != "" {
+			return ReferencePath(kind + "/" + rid), true
+		}
+		id = rid
 	default:
-		d.problemf(path, "expected a {kind, id} object")
-		return Reference{}, false
+		d.problemf(path, "expected a \"<kind>/<id>\" reference path")
+		return "", false
 	}
-	if r.ID == "" {
-		d.problemf(path, "a reference needs an id")
-		return Reference{}, false
+	if to == "" || to == "any" {
+		d.problemf(path, "a reference to any kind needs a full \"<kind>/<id>\" path")
+		return "", false
 	}
-	if r.Kind == "" && to != "" && to != "any" {
-		r.Kind = to
-	}
-	if r.Kind == "" {
-		d.problemf(path, "a reference to any kind needs an explicit kind")
-		return Reference{}, false
-	}
-	return r, true
+	return ReferencePath(to + "/" + id), true
 }
 
 // dynamic decodes a json property, which is every shape: core does not own it,

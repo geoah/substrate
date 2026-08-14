@@ -24,9 +24,9 @@ type Agent struct {
 	// Prompt is the system prompt; the row is the prompt store.
 	Prompt *string
 
-	// Provider is the llmprovider record id this agent's loop completes
-	// against. Names a provider in the registry.
-	Provider *string
+	// Provider is the llmprovider this agent's loop completes against. Points
+	// at core.substrate.reamde.dev/llmprovider.
+	Provider *ReferencePath
 
 	// Model is the model id sent on every completion.
 	Model *string
@@ -38,19 +38,16 @@ type Agent struct {
 	// Tools is what the model may call, in declaration order.
 	Tools []AgentTools
 
-	// Agents is the sub-agent identities the loop exposes as tools. Names a
-	// agent in the registry.
-	Agents []string
+	// Agents is the sub-agents the loop exposes as tools. Points at
+	// core.substrate.reamde.dev/agent.
+	Agents []ReferencePath
 
 	// Budgets is what bounds one invocation.
 	Budgets *AgentBudgets
 
-	// Emit is the kinds this agent's tool-call effects may address. Names a
-	// kind in the registry.
-	Emit []string
-
-	// Reads is what the `query` built-in may touch; absent withholds it.
-	Reads *AgentReads
+	// Permissions is what this agent is allowed to do while it runs; leave a
+	// grant out and what it covers is refused.
+	Permissions *AgentPermissions
 
 	// SubagentOnly is only callable by other agents; withheld from the chat
 	// surface.
@@ -61,7 +58,7 @@ type Agent struct {
 // core.substrate.reamde.dev/agent declares, sorted. A key outside it is
 // refused by Decode, which is what replaces a hand-kept list of admitted keys
 // in Go.
-var AgentKeys = []string{"agents", "authority", "budgets", "description", "emit", "model", "params", "prompt", "provider", "reads", "subagentOnly", "tools", "version"}
+var AgentKeys = []string{"agents", "authority", "budgets", "description", "model", "params", "permissions", "prompt", "provider", "subagentOnly", "tools", "version"}
 
 // DecodeAgent decodes a properties map into Agent, refusing what the
 // declaration cannot hold: an undeclared key, a value of the wrong type, an
@@ -149,7 +146,7 @@ func decodeAgent(d *decoder, path string, v any) (Agent, bool) {
 			}
 		case "provider":
 			p := at(path, "provider")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := d.reference(p, props[key], "core.substrate.reamde.dev/llmprovider"); ok {
 				out.Provider = &e
 			}
 		case "model":
@@ -176,9 +173,9 @@ func decodeAgent(d *decoder, path string, v any) (Agent, bool) {
 		case "agents":
 			p := at(path, "agents")
 			if items, listed := d.list(p, props[key]); listed {
-				list := make([]string, 0, len(items))
+				list := make([]ReferencePath, 0, len(items))
 				for i, item := range items {
-					if e, ok := d.text(index(p, i), item, nil, nil); ok {
+					if e, ok := d.reference(index(p, i), item, "core.substrate.reamde.dev/agent"); ok {
 						list = append(list, e)
 					}
 				}
@@ -189,21 +186,10 @@ func decodeAgent(d *decoder, path string, v any) (Agent, bool) {
 			if e, ok := decodeAgentBudgets(d, p, props[key]); ok {
 				out.Budgets = &e
 			}
-		case "emit":
-			p := at(path, "emit")
-			if items, listed := d.list(p, props[key]); listed {
-				list := make([]string, 0, len(items))
-				for i, item := range items {
-					if e, ok := d.text(index(p, i), item, nil, nil); ok {
-						list = append(list, e)
-					}
-				}
-				out.Emit = list
-			}
-		case "reads":
-			p := at(path, "reads")
-			if e, ok := decodeAgentReads(d, p, props[key]); ok {
-				out.Reads = &e
+		case "permissions":
+			p := at(path, "permissions")
+			if e, ok := decodeAgentPermissions(d, p, props[key]); ok {
+				out.Permissions = &e
 			}
 		case "subagentOnly":
 			p := at(path, "subagentOnly")
@@ -239,7 +225,7 @@ func (v *Agent) Encode() map[string]any {
 		out["prompt"] = *v.Prompt
 	}
 	if v.Provider != nil {
-		out["provider"] = *v.Provider
+		out["provider"] = string(*v.Provider)
 	}
 	if v.Model != nil {
 		out["model"] = *v.Model
@@ -257,22 +243,15 @@ func (v *Agent) Encode() map[string]any {
 	if v.Agents != nil {
 		items := make([]any, 0, len(v.Agents))
 		for i := range v.Agents {
-			items = append(items, v.Agents[i])
+			items = append(items, string(v.Agents[i]))
 		}
 		out["agents"] = items
 	}
 	if v.Budgets != nil {
 		out["budgets"] = v.Budgets.Encode()
 	}
-	if v.Emit != nil {
-		items := make([]any, 0, len(v.Emit))
-		for i := range v.Emit {
-			items = append(items, v.Emit[i])
-		}
-		out["emit"] = items
-	}
-	if v.Reads != nil {
-		out["reads"] = v.Reads.Encode()
+	if v.Permissions != nil {
+		out["permissions"] = v.Permissions.Encode()
 	}
 	if v.SubagentOnly != nil {
 		out["subagentOnly"] = *v.SubagentOnly
@@ -346,47 +325,33 @@ func (v *AgentParams) Encode() map[string]any {
 //
 // what the model may call, in declaration order
 type AgentTools struct {
-	// Builtin is the built-in tool this entry names.
-	Builtin *AgentToolsBuiltin
+	// Function is the function this entry names. Points at
+	// core.substrate.reamde.dev/function.
+	Function *ReferencePath
 
-	// Callable is the function identity this entry names. Names a function in
-	// the registry.
-	Callable *string
-
-	// Name is the model-facing tool name, aliasing a callable.
+	// Name is the model-facing tool name, aliasing the function.
 	Name *string
 
-	// Description is the model-facing card, overriding the callable's own.
+	// Description is the model-facing card, overriding the function's own.
 	Description *string
 }
 
-// AgentToolsBuiltin is a declared enum: the admissible set, in declaration
-// order.
-//
-// the built-in tool this entry names
-type AgentToolsBuiltin string
+// AgentToolsRequired names the properties the declaration marks `required:`,
+// sorted. It is a FORM-LEVEL contract: the write path does not enforce it, so
+// Decode admits a value that leaves one absent and this is what a client
+// checks before it submits one.
+var AgentToolsRequired = []string{"function"}
 
-const (
-	AgentToolsBuiltinQuery   AgentToolsBuiltin = "query"
-	AgentToolsBuiltinPropose AgentToolsBuiltin = "propose"
-	AgentToolsBuiltinGraphql AgentToolsBuiltin = "graphql"
-	AgentToolsBuiltinMutate  AgentToolsBuiltin = "mutate"
-)
-
-// AgentToolsBuiltinValues are the declared values in declaration order, which
-// is render order.
-var AgentToolsBuiltinValues = []string{"query", "propose", "graphql", "mutate"}
-
-// Valid reports whether v is one of the declared values.
-func (v AgentToolsBuiltin) Valid() bool { return Declared(AgentToolsBuiltinValues, string(v)) }
-
-// decodeAgentToolsBuiltin decodes a declared AgentToolsBuiltin value.
-func decodeAgentToolsBuiltin(d *decoder, path string, v any) (AgentToolsBuiltin, bool) {
-	s, ok := d.text(path, v, AgentToolsBuiltinValues, nil)
-	if !ok {
-		return "", false
+// Missing names the required properties this value leaves absent, in
+// declaration order. Empty means every declared requirement is answered —
+// not that the value is admissible, which is the substrate's answer and not a
+// type's.
+func (v *AgentTools) Missing() []string {
+	var out []string
+	if v.Function == nil {
+		out = append(out, "function")
 	}
-	return AgentToolsBuiltin(s), true
+	return out
 }
 
 // decodeAgentTools decodes one AgentTools value at path.
@@ -403,15 +368,10 @@ func decodeAgentTools(d *decoder, path string, v any) (AgentTools, bool) {
 			continue
 		}
 		switch key {
-		case "builtin":
-			p := at(path, "builtin")
-			if e, ok := decodeAgentToolsBuiltin(d, p, props[key]); ok {
-				out.Builtin = &e
-			}
-		case "callable":
-			p := at(path, "callable")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
-				out.Callable = &e
+		case "function":
+			p := at(path, "function")
+			if e, ok := d.reference(p, props[key], "core.substrate.reamde.dev/function"); ok {
+				out.Function = &e
 			}
 		case "name":
 			p := at(path, "name")
@@ -439,11 +399,8 @@ func decodeAgentTools(d *decoder, path string, v any) (AgentTools, bool) {
 // Decode/Encode is the pair the rest of the generator already names.
 func (v *AgentTools) Encode() map[string]any {
 	out := map[string]any{}
-	if v.Builtin != nil {
-		out["builtin"] = string(*v.Builtin)
-	}
-	if v.Callable != nil {
-		out["callable"] = *v.Callable
+	if v.Function != nil {
+		out["function"] = string(*v.Function)
 	}
 	if v.Name != nil {
 		out["name"] = *v.Name
@@ -537,25 +494,102 @@ func (v *AgentBudgets) Encode() map[string]any {
 	return out
 }
 
-// AgentReads is one value of the `reads` object declared on
+// AgentPermissions is one value of the `permissions` object declared on
 // core.substrate.reamde.dev/agent.
 //
-// what the `query` built-in may touch; absent withholds it
-type AgentReads struct {
-	// Kinds is the kinds every read is held to. Names a kind in the registry.
-	Kinds []string
+// what this agent is allowed to do while it runs; leave a grant out and what
+// it covers is refused
+type AgentPermissions struct {
+	// Reads is which record kinds this agent may read, and how much; leave it
+	// out and the query tool is withheld.
+	Reads *AgentPermissionsReads
 
-	// Budgets is what one invocation's reads may spend.
-	Budgets *AgentReadsBudgets
+	// Writes is which record kinds it may create or change, the change
+	// requests it proposes among them. Points at
+	// core.substrate.reamde.dev/kind.
+	Writes []ReferencePath
 }
 
-// decodeAgentReads decodes one AgentReads value at path.
-func decodeAgentReads(d *decoder, path string, v any) (AgentReads, bool) {
+// decodeAgentPermissions decodes one AgentPermissions value at path.
+func decodeAgentPermissions(d *decoder, path string, v any) (AgentPermissions, bool) {
 	props, mapped := d.mapping(path, v)
 	if !mapped {
-		return AgentReads{}, false
+		return AgentPermissions{}, false
 	}
-	var out AgentReads
+	var out AgentPermissions
+	for _, key := range sortedKeys(props) {
+		// A null is this dialect's delete marker, never a value: it decodes as
+		// absence, and Properties never writes one.
+		if props[key] == nil {
+			continue
+		}
+		switch key {
+		case "reads":
+			p := at(path, "reads")
+			if e, ok := decodeAgentPermissionsReads(d, p, props[key]); ok {
+				out.Reads = &e
+			}
+		case "writes":
+			p := at(path, "writes")
+			if items, listed := d.list(p, props[key]); listed {
+				list := make([]ReferencePath, 0, len(items))
+				for i, item := range items {
+					if e, ok := d.reference(index(p, i), item, "core.substrate.reamde.dev/kind"); ok {
+						list = append(list, e)
+					}
+				}
+				out.Writes = list
+			}
+		default:
+			d.unknown(at(path, key), "core.substrate.reamde.dev/agent")
+		}
+	}
+	return out, true
+}
+
+// Encode is AgentPermissions as the properties map holds it, and
+// decodeAgentPermissions's exact inverse: a nil pointer, a nil slice and a nil
+// map each omit their key, so absence survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *AgentPermissions) Encode() map[string]any {
+	out := map[string]any{}
+	if v.Reads != nil {
+		out["reads"] = v.Reads.Encode()
+	}
+	if v.Writes != nil {
+		items := make([]any, 0, len(v.Writes))
+		for i := range v.Writes {
+			items = append(items, string(v.Writes[i]))
+		}
+		out["writes"] = items
+	}
+	return out
+}
+
+// AgentPermissionsReads is one value of the `permissions.reads` object
+// declared on core.substrate.reamde.dev/agent.
+//
+// which record kinds this agent may read, and how much; leave it out and the
+// query tool is withheld
+type AgentPermissionsReads struct {
+	// Kinds is the record kinds every read is held to. Points at
+	// core.substrate.reamde.dev/kind.
+	Kinds []ReferencePath
+
+	// Budgets is how much one run may read.
+	Budgets *AgentPermissionsReadsBudgets
+}
+
+// decodeAgentPermissionsReads decodes one AgentPermissionsReads value at path.
+func decodeAgentPermissionsReads(d *decoder, path string, v any) (AgentPermissionsReads, bool) {
+	props, mapped := d.mapping(path, v)
+	if !mapped {
+		return AgentPermissionsReads{}, false
+	}
+	var out AgentPermissionsReads
 	for _, key := range sortedKeys(props) {
 		// A null is this dialect's delete marker, never a value: it decodes as
 		// absence, and Properties never writes one.
@@ -566,9 +600,9 @@ func decodeAgentReads(d *decoder, path string, v any) (AgentReads, bool) {
 		case "kinds":
 			p := at(path, "kinds")
 			if items, listed := d.list(p, props[key]); listed {
-				list := make([]string, 0, len(items))
+				list := make([]ReferencePath, 0, len(items))
 				for i, item := range items {
-					if e, ok := d.text(index(p, i), item, nil, nil); ok {
+					if e, ok := d.reference(index(p, i), item, "core.substrate.reamde.dev/kind"); ok {
 						list = append(list, e)
 					}
 				}
@@ -576,7 +610,7 @@ func decodeAgentReads(d *decoder, path string, v any) (AgentReads, bool) {
 			}
 		case "budgets":
 			p := at(path, "budgets")
-			if e, ok := decodeAgentReadsBudgets(d, p, props[key]); ok {
+			if e, ok := decodeAgentPermissionsReadsBudgets(d, p, props[key]); ok {
 				out.Budgets = &e
 			}
 		default:
@@ -586,19 +620,19 @@ func decodeAgentReads(d *decoder, path string, v any) (AgentReads, bool) {
 	return out, true
 }
 
-// Encode is AgentReads as the properties map holds it, and decodeAgentReads's
-// exact inverse: a nil pointer, a nil slice and a nil map each omit their key,
-// so absence survives the round trip.
+// Encode is AgentPermissionsReads as the properties map holds it, and
+// decodeAgentPermissionsReads's exact inverse: a nil pointer, a nil slice and
+// a nil map each omit their key, so absence survives the round trip.
 //
 // It is NOT called Properties: a declaration may declare a property of that
 // name (core's `kind` does), and a field and a method cannot share one.
 // Decode/Encode is the pair the rest of the generator already names.
-func (v *AgentReads) Encode() map[string]any {
+func (v *AgentPermissionsReads) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Kinds != nil {
 		items := make([]any, 0, len(v.Kinds))
 		for i := range v.Kinds {
-			items = append(items, v.Kinds[i])
+			items = append(items, string(v.Kinds[i]))
 		}
 		out["kinds"] = items
 	}
@@ -608,25 +642,25 @@ func (v *AgentReads) Encode() map[string]any {
 	return out
 }
 
-// AgentReadsBudgets is one value of the `reads.budgets` object declared on
-// core.substrate.reamde.dev/agent.
+// AgentPermissionsReadsBudgets is one value of the `permissions.reads.budgets`
+// object declared on core.substrate.reamde.dev/agent.
 //
-// what one invocation's reads may spend
-type AgentReadsBudgets struct {
-	// Calls is host read calls per invocation.
+// how much one run may read
+type AgentPermissionsReadsBudgets struct {
+	// Calls is how many reads one run may make.
 	Calls *int64
 
-	// Rows is rows read per invocation.
+	// Rows is how many records one run may read.
 	Rows *int64
 }
 
-// decodeAgentReadsBudgets decodes one AgentReadsBudgets value at path.
-func decodeAgentReadsBudgets(d *decoder, path string, v any) (AgentReadsBudgets, bool) {
+// decodeAgentPermissionsReadsBudgets decodes one AgentPermissionsReadsBudgets value at path.
+func decodeAgentPermissionsReadsBudgets(d *decoder, path string, v any) (AgentPermissionsReadsBudgets, bool) {
 	props, mapped := d.mapping(path, v)
 	if !mapped {
-		return AgentReadsBudgets{}, false
+		return AgentPermissionsReadsBudgets{}, false
 	}
-	var out AgentReadsBudgets
+	var out AgentPermissionsReadsBudgets
 	for _, key := range sortedKeys(props) {
 		// A null is this dialect's delete marker, never a value: it decodes as
 		// absence, and Properties never writes one.
@@ -651,14 +685,14 @@ func decodeAgentReadsBudgets(d *decoder, path string, v any) (AgentReadsBudgets,
 	return out, true
 }
 
-// Encode is AgentReadsBudgets as the properties map holds it, and
-// decodeAgentReadsBudgets's exact inverse: a nil pointer, a nil slice and a
-// nil map each omit their key, so absence survives the round trip.
+// Encode is AgentPermissionsReadsBudgets as the properties map holds it, and
+// decodeAgentPermissionsReadsBudgets's exact inverse: a nil pointer, a nil
+// slice and a nil map each omit their key, so absence survives the round trip.
 //
 // It is NOT called Properties: a declaration may declare a property of that
 // name (core's `kind` does), and a field and a method cannot share one.
 // Decode/Encode is the pair the rest of the generator already names.
-func (v *AgentReadsBudgets) Encode() map[string]any {
+func (v *AgentPermissionsReadsBudgets) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Calls != nil {
 		out["calls"] = *v.Calls

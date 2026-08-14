@@ -20,7 +20,9 @@ data:
   # is what carries the change into repositories that already hold the row.
   # v1alpha4: `toolCalls` is typed — a repeated {id, name, arguments} object
   # instead of a json blob; the arguments stay the verbatim wire string.
-  version: v1alpha4
+  # v1alpha5: the thread pointer pins with `kind:`, the reference property's
+  # own word; `to:` stays the edge's.
+  version: v1alpha5
   names:
     singular: llmmessage
     plural: llmmessages
@@ -64,7 +66,7 @@ data:
       description: whether the dispatch a tool row answers for succeeded
     thread:
       type: reference
-      to: core.substrate.reamde.dev/llmthread
+      kind: core.substrate.reamde.dev/llmthread
       required: true
       inverse: messages
       inverseDescription: the turns of this thread, in loop order

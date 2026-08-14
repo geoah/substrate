@@ -60,23 +60,23 @@ func dwProps() map[string]any {
 			"mode": dwEnum(),
 			"limits": map[string]any{"type": "object", "fields": map[string]any{
 				"depth": map[string]any{"type": "int"},
-				"ref":   map[string]any{"type": "reference", "to": "target"},
+				"ref":   map[string]any{"type": "reference", "kind": "target"},
 				"grade": dwEnum(),
 			}},
 		}},
 		"effects": map[string]any{"type": "int", "keyed": true, "keyPattern": "camel"},
 		"notes":   map[string]any{"type": "string", "keyed": true},
-		"pinned":  map[string]any{"type": "reference", "to": "target"},
+		"pinned":  map[string]any{"type": "reference", "kind": "target"},
 		"installs": map[string]any{
 			"type": "object", "keyed": true, "keyPattern": "kindRef",
 			"fields": map[string]any{
 				"version": map[string]any{"type": "string"},
-				"source":  map[string]any{"type": "reference", "to": "target"},
+				"source":  map[string]any{"type": "reference", "kind": "target"},
 				"channel": dwEnum(),
 			},
 		},
 		"tools": map[string]any{"type": "object", "repeated": true, "fields": map[string]any{
-			"callable": map[string]any{"type": "reference", "to": "target"},
+			"callable": map[string]any{"type": "reference", "kind": "target"},
 			"label":    map[string]any{"type": "string"},
 			"role":     dwEnum(),
 		}},
@@ -90,9 +90,9 @@ func dwProps() map[string]any {
 		// points elsewhere, and an absent optional reference points nowhere.
 		"loose": map[string]any{"type": "object", "fields": map[string]any{
 			"note": map[string]any{"type": "string"},
-			"ref":  map[string]any{"type": "reference", "to": "any"},
+			"ref":  map[string]any{"type": "reference", "kind": "any"},
 		}},
-		"keyedRefs": map[string]any{"type": "reference", "to": "any", "keyed": true},
+		"keyedRefs": map[string]any{"type": "reference", "kind": "any", "keyed": true},
 	}
 }
 
@@ -132,7 +132,7 @@ func TestDialectWideningsRoundTrip(t *testing.T) {
 				"task": map[string]any{"version": "v1", "source": "a"},
 				"tasks.example.com/task": map[string]any{
 					"version": "v2",
-					"source":  map[string]any{"kind": dwAuthority + "/target", "id": "a"},
+					"source":  vocabulary.RecordPath(dwAuthority+"/target", "a"),
 				},
 			},
 			"tools": []any{
@@ -161,7 +161,7 @@ func TestDialectWideningsRoundTrip(t *testing.T) {
 	if d, ok := limits["depth"].(float64); !ok || d != 3 {
 		t.Fatalf("spec.limits.depth = %#v, want float64(3)", limits["depth"])
 	}
-	wantRef := map[string]any{"kind": dwAuthority + "/target", "id": "a"}
+	wantRef := vocabulary.RecordPath(dwAuthority+"/target", "a")
 	assertRef(t, "spec.limits.ref", limits["ref"], wantRef)
 	assertRef(t, "pinned", props["pinned"], wantRef)
 
@@ -199,16 +199,12 @@ func TestDialectWideningsRoundTrip(t *testing.T) {
 	}
 }
 
-// assertRef pins a stored reference to the canonical {kind, id} pair: the whole
-// point of reaching nested positions is that a bare id does not survive as one.
-func assertRef(t *testing.T, where string, got any, want map[string]any) {
+// assertRef pins a stored reference to the canonical PATH: the whole point of
+// reaching nested positions is that a bare id does not survive as one.
+func assertRef(t *testing.T, where string, got any, want string) {
 	t.Helper()
-	m, ok := got.(map[string]any)
-	if !ok {
-		t.Fatalf("%s = %#v, want a {kind, id} pair", where, got)
-	}
-	if m["kind"] != want["kind"] || m["id"] != want["id"] {
-		t.Fatalf("%s = %v, want %v", where, m, want)
+	if got != want {
+		t.Fatalf("%s = %#v, want the path %q", where, got, want)
 	}
 }
 
@@ -258,17 +254,19 @@ func TestDialectWideningsRefuseBadValues(t *testing.T) {
 			props: map[string]any{"effects": []any{1, 2}},
 			says:  "expected a keyed map",
 		},
+		// The refusal names BOTH ends: what the value points at, and what the
+		// declaration pins, so the writer can tell which of the two to change.
 		"nested reference points at the wrong kind": {
 			props: map[string]any{"tools": []any{map[string]any{
-				"callable": map[string]any{"kind": dwAuthority + "/holder", "id": "h1"},
+				"callable": vocabulary.RecordPath(dwAuthority+"/holder", "h1"),
 			}}},
-			says: "not " + dwAuthority + "/target",
+			says: "the declaration pins " + dwAuthority + "/target",
 		},
-		"nested reference names an unknown kind": {
-			props: map[string]any{"installs": map[string]any{"task": map[string]any{
-				"source": map[string]any{"kind": "nosuchkind", "id": "x"},
-			}}},
-			says: "is unknown",
+		// Unknown-kind is reachable only where nothing is pinned: under a pin, a
+		// path naming another kind is refused as ambiguous first.
+		"an unconstrained reference names an unknown kind": {
+			props: map[string]any{"keyedRefs": map[string]any{"primary": "nosuch.example.com/thing/x"}},
+			says:  "is unknown",
 		},
 	}
 	for name, c := range cases {
@@ -473,10 +471,7 @@ func TestLLMThreadTitleFollowsItsAgent(t *testing.T) {
 	thread := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/llmthread", ID: "t1",
 		Properties: map[string]any{
-			"agent": map[string]any{
-				"kind": "core.substrate.reamde.dev/agent",
-				"id":   authority + "/scribe",
-			},
+			"agent":  vocabulary.RecordPath("core.substrate.reamde.dev/agent", authority+"/scribe"),
 			"status": "running",
 		},
 	})
@@ -510,13 +505,13 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 		vocabulary.KindManifest(authority,
 			map[string]any{"singular": "holder", "plural": "holders"},
 			map[string]any{"properties": map[string]any{
-				"pinned": map[string]any{"type": "reference", "to": "target", "inverse": "holders"},
+				"pinned": map[string]any{"type": "reference", "kind": "target", "inverse": "holders"},
 				// The same inverse word, nested — a stored shape no earlier
 				// binary refused and this one must not either.
 				"tools": map[string]any{
 					"type": "object", "repeated": true,
 					"fields": map[string]any{
-						"callable": map[string]any{"type": "reference", "to": "target", "inverse": "holders"},
+						"callable": map[string]any{"type": "reference", "kind": "target", "inverse": "holders"},
 					},
 				},
 			}}),
@@ -551,5 +546,5 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 	read := mustGet(t, ds2, authority+"/holder", "h1")
 	tools := read.Properties["tools"].([]any)
 	assertRef(t, "tools[].callable", tools[0].(map[string]any)["callable"],
-		map[string]any{"kind": authority + "/target", "id": "a"})
+		vocabulary.RecordPath(authority+"/target", "a"))
 }

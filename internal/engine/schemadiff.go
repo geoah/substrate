@@ -167,7 +167,7 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 					query: q, args: args,
 				})
 			}
-			// A reference that narrows its `to:` target (unconstrained → a type,
+			// A reference that narrows its `kind:` pin (unconstrained → a kind,
 			// or one type → another) strands stored references pointing elsewhere
 			//.
 			if curP.Datatype == vocabulary.DatatypeReference && refTargetNarrows(curP.To, candP.To) {
@@ -272,7 +272,7 @@ func droppedTypeGuards(q sqlReader, droppedTypes []string) ([]string, error) {
 	return guards, nil
 }
 
-// refTargetNarrows reports whether a reference's `to:` target moved to a
+// refTargetNarrows reports whether a reference's `kind:` pin moved to a
 // STRICTER constraint: an unconstrained target (empty or "any") pinned to a
 // type, or one type replaced by a different one. Widening (→ any) or an
 // unchanged target does not narrow.
@@ -391,19 +391,20 @@ func fieldPresence(ident string, path []fieldStep, key string) (string, []any) {
 //
 // The value must BE a canonical reference before its kind is compared. An
 // absent optional reference inside a present object is not a row pointing
-// elsewhere, and counting it as one refused the legal `to: any` → concrete
-// evolution for every row that simply left the field out.
+// elsewhere, and counting it as one refused the legal `kind: any` → concrete
+// evolution for every row that simply left the field out. That is what the
+// string test buys: a missing value is jsonb NULL, whose jsonb_typeof is not
+// 'string', so it is not counted.
 //
-// It reads `kind` and nothing else. The query used to reconstruct the referent
-// as `kind || '.' || authority`, which had matched a long-dead stored shape:
-// normalizeReference writes {kind: <full identity>, id} and has never written
-// an `authority` key (references.go), so every comparison was against
-// `<identity>.` and the guard counted every live row or none — it was dead
-// either way, and silently.
+// A stored reference is ONE flat path ("<kind>/<id>", references.go), so
+// "points at the target" is a PREFIX: the value begins with the target kind and
+// a slash. Compared with `left(…)` rather than LIKE because a kind reference is
+// data here — no pattern of the target's can leak into the operator.
 func refOutsidePath(ident string, path []fieldStep, target string) (string, []any) {
 	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
-		return fmt.Sprintf("jsonb_typeof(%s) = 'object' AND %s ? 'kind' AND COALESCE(%s->>'kind','') <> %s",
-			expr, expr, expr, a.add(target))
+		arg := a.add(target)
+		return fmt.Sprintf("jsonb_typeof(%s) = 'string' AND left(%s #>> '{}', length(%s) + 1) <> %s || '/'",
+			expr, expr, arg, arg)
 	})
 }
 

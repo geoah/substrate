@@ -20,8 +20,8 @@ func generateTS(p *plan, source string) []byte {
 	tsComment(b, "The core vocabulary as TypeScript: one interface per kind declared under "+source+".\n\nEVERY PROPERTY IS OPTIONAL, a `required:` one included. These interfaces describe what a STORED record can hold, and the server does not enforce `required:` — it is a form-level hint — so a non-optional field would promise a value nothing guarantees. The requirement is data instead: `<kind>Required` names it, and a form is what refuses to submit without it.\n\nA `json` property is Dynamic (unknown), because its shape is one core does not own — narrow it where you read it.\n\nA state is NOT a stored property value: it lives in the record's own state column and moves by transition. It appears on the interface because every read surface shows it in the properties map, and its declared states, initial state and legal moves are the consts beside the interface.", "")
 	b.WriteString("\n")
 
-	tsComment(b, "A typed pointer: the referent's kind reference and its id, the same {kind, id} pair an edge target wears.", "")
-	b.WriteString("export interface Reference {\n  kind: string\n  id: string\n}\n\n")
+	tsComment(b, "A typed pointer, as the referent's record PATH: `<kind>/<id>` — one string, the whole stored value. `core.substrate.reamde.dev/llmprovider/claude` names the llmprovider `claude`; a repository-local kind drops the authority, `task/abc`.", "")
+	b.WriteString("export type ReferencePath = string\n\n")
 
 	tsComment(b, "What a secret property STORES: an opaque ref into the server's sealed store, never the material. Reads redact even the ref.", "")
 	b.WriteString("export type SecretRef = string\n\n")
@@ -115,9 +115,6 @@ func tsFieldDoc(f *fieldPlan) string {
 	}
 	if f.Decl.Writer != "" {
 		parts = append(parts, "Only the "+f.Decl.Writer+" actor may write it.")
-	}
-	if f.Decl.RefersTo != "" {
-		parts = append(parts, "Names a "+f.Decl.RefersTo+": offer a picker, not a text box.")
 	}
 	if f.Class == classReference && f.Decl.To != "" {
 		parts = append(parts, "Points at "+f.Decl.To+".")

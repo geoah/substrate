@@ -81,7 +81,6 @@ type Property struct {
 	// generated types have to be able to hold that row.
 	Required bool
 	Managed  bool
-	RefersTo string
 	Writer   string
 	// RenamedFrom, Inverse and InverseDescription are admitted, carried and
 	// generated INTO NOTHING: a rename nothing performs yet and a label nothing
@@ -507,18 +506,17 @@ func (r *reader) addStampProperties(where string, k *Kind) {
 var (
 	scalarKeys = keys("type", "repeated", "embed", "fts", "values", "pattern",
 		"min", "max", "description", "base", "fields", "writer", "displayName",
-		"keyed", "keyPattern", "refersTo", "managed", "required", "default",
+		"keyed", "keyPattern", "managed", "required", "default",
 		"renamedFrom")
 	objectKeys = keys("type", "fields", "repeated", "description", "displayName",
 		"keyed", "keyPattern", "managed")
-	referenceKeys = keys("type", "to", "repeated", "description", "displayName",
+	referenceKeys = keys("type", "kind", "repeated", "description", "displayName",
 		"required", "renamedFrom", "inverse", "inverseDescription", "keyed",
 		"keyPattern", "managed")
-	machineKeys     = keys("type", "states", "initial", "transitions", "description", "displayName")
-	transitionKeys  = keys("from", "to", "stamps", "onEnter")
-	keyPatterns     = keys("camel", "kindRef")
-	refersToTargets = keys("kind", "function", "agent", "authority", "provider")
-	writerRoles     = keys("oauth", "connector", "owner")
+	machineKeys    = keys("type", "states", "initial", "transitions", "description", "displayName")
+	transitionKeys = keys("from", "to", "stamps", "onEnter")
+	keyPatterns    = keys("camel", "kindRef")
+	writerRoles    = keys("oauth", "connector", "owner")
 )
 
 // Datatype spellings, mirroring vocabulary's Datatype constants. They are
@@ -640,7 +638,10 @@ func (r *reader) readProperty(where, name string, n *yaml.Node, depth int) *Prop
 		return p
 	case TypeReference:
 		r.checkKeys(where, d, referenceKeys)
-		p.To = d.str("to")
+		// `kind:` is the PIN, and `to:` is the edge's word: a reference still
+		// spelling it is refused by the key set above, which is this reader's
+		// whole answer to a spelling it does not understand.
+		p.To = d.str("kind")
 		p.Required = r.flag(where, d, "required")
 		p.RenamedFrom = d.str("renamedFrom")
 		p.Inverse, p.InverseDescription = d.str("inverse"), d.str("inverseDescription")
@@ -667,16 +668,6 @@ func (r *reader) readProperty(where, name string, n *yaml.Node, depth int) *Prop
 	if p.Datatype == TypeEnum && len(p.Values) == 0 {
 		r.errf("%s: an enum declares its values", where)
 		return nil
-	}
-	if rt := d.str("refersTo"); rt != "" {
-		switch {
-		case p.Datatype != TypeString:
-			r.errf("%s: refersTo marks what a STRING value names, and this is %s", where, p.Datatype)
-		case !refersToTargets[rt]:
-			r.errf("%s: refersTo %q is not a declared target", where, rt)
-		default:
-			p.RefersTo = rt
-		}
 	}
 	if w := d.str("writer"); w != "" {
 		if !writerRoles[w] {

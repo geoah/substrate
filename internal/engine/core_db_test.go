@@ -375,9 +375,11 @@ func TestMutationRequestApplyDiff(t *testing.T) {
 }
 
 // Issue 004: an accepted request whose diff would change NOTHING must fail the
-// transition visibly, never stamp decidedAt and apply nothing. Two shapes: a
-// wrapper-less diff (which DisallowUnknownFields refuses on decode) and a diff
-// the target already satisfies (the no-op check).
+// transition visibly, never stamp decidedAt and apply nothing. The wrapper-less
+// diff that used to fail here fails at ADMISSION's mercy instead: it is wrapped
+// on the way in (requestadmit_db_test.go), so what is left to fail at accept is
+// the diff the target already satisfies — and a diff that was already STORED
+// wrapper-less, which the strict decode still refuses.
 func TestAcceptedNoOpDiffFailsTransition(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -387,9 +389,9 @@ func TestAcceptedNoOpDiffFailsTransition(t *testing.T) {
 		Kind: "task", Properties: map[string]any{"title": "Draft", "description": "already here"},
 	})
 
-	// A wrapper-less diff names `description` at the top level — not a
-	// PatchInput field. The strict decode refuses it and the transition fails;
-	// the request stays proposed and is annotated.
+	// A wrapper-less diff names `description` at the top level. Admission wraps
+	// it under `properties` against the target's kind, so the accept has the
+	// shape it decodes and the change applies.
 	bare := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
@@ -399,23 +401,24 @@ func TestAcceptedNoOpDiffFailsTransition(t *testing.T) {
 	})
 	if _, err := ds.Patch(ctx, owner, bare.Kind, bare.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(bare.Version),
-	}); err == nil {
-		t.Fatal("a wrapper-less diff accepted green")
-	} else {
-		wantErr(t, err, substrate.ErrConflict, "wrapper-less diff")
+	}); err != nil {
+		t.Fatalf("an admitted bare diff did not apply: %v", err)
 	}
-	if after := mustGet(t, ds, bare.Kind, bare.ID); after.Properties["decision"] != "proposed" ||
-		after.Annotations["substrate/conflict"] == nil {
-		t.Fatalf("wrapper-less request should stay proposed + annotated: %+v", after.Properties)
+	if got := mustGet(t, ds, task.Kind, task.ID); got.Properties["description"] != "wrapper-less" {
+		t.Fatalf("the wrapped diff did not land: %+v", got.Properties)
 	}
 
-	// A well-formed diff that re-asserts the stored value applies no change.
+	// A well-formed diff that re-asserts the stored value applies no change. Its
+	// own target, because the accept above moved the first one.
+	settled := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "task", Properties: map[string]any{"title": "Settled", "description": "already here"},
+	})
 	noop := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"diff": map[string]any{"properties": map[string]any{"description": "already here"}},
 		},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
+		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: settled.ID}}},
 	})
 	if _, err := ds.Patch(ctx, owner, noop.Kind, noop.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(noop.Version),

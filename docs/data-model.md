@@ -278,7 +278,7 @@ written identically.
 | `digest`           | a server-minted SHA-256 comparator, redacted like a secret  |
 | `blobref`          | names stored bytes by digest                                |
 | `object`           | inline `fields:` of scalar types, one level                 |
-| `reference`        | a typed pointer at another record: `{kind, id}`             |
+| `reference`        | a typed pointer at another record: `<kind>/<id>`            |
 | `json`             | escape hatch: a schemaless blob                             |
 
 Our to-do list already uses four: the task's `description` is `markdown`,
@@ -370,33 +370,48 @@ repeated, never both, and a map whose values are themselves a map is not
 declarable — flatten it, or make the inner level a repeated list of variants.
 Like objects, keyed maps stay out of search and the filter grammar.
 
-**Naming something without pointing at it.** A string property may carry
-`refersTo: kind | function | agent | authority | provider`, which says what its
-value NAMES so a client can offer a picker instead of a text box. It is a
-marker and nothing else: no stored value changes and no validation is added
-(a declaration's own closure checks are what refuse an unknown name). Where a
-single record is meant, a `reference` with `to:` is the stronger declaration;
-`refersTo` is for the selectors that stay plain strings, like `emit: [person]`.
-
 **References.** A `reference` is a typed pointer stored as a property value:
-the same `{kind, id}` pair an edge target wears, but data, not a graph edge.
-Reach for it where a manifest field needs to **name** another record, like a
+one record **path**, `<kind>/<id>`, which is data rather than a graph edge.
+Reach for it where a declaration field needs to **name** another record, like a
 trigger's `callable`:
 
 ```yaml
 callable:
   type: reference
-  to: any
+  kind: any
 ```
 
-An optional `to:` pins the referent kind, exactly like an edge's `to:`;
-`to: any` (and an absent `to:`) leaves it unconstrained, and then the value
-must carry an explicit kind. A value is `{kind, id}`, and a bare id string is
-accepted only when `to:` pins a concrete kind. Validation checks the shape and
-that the referent **kind** exists; the referent **record** need not exist at write
-time, because a reference is a pointer, not an edge. `repeated: true` holds a
-list of references. The [console](console.md) renders a reference as a link
-to the referent's detail page.
+The **pin** is `kind:`, and it says which kind's records this property names —
+`kind: any` (and an absent pin) leaves it unconstrained, and then the value must
+carry an explicit kind. The word is `kind:` and not `to:` on purpose: `to:`
+belongs to the edge, where it names the far end of a traversable link, while a
+reference is data naming a record, and which kind's records it names is exactly
+what a client needs to offer a picker. A reference still spelling `to:` is
+refused naming the pin.
+
+A value is ONE FLAT STRING, the referent's path:
+`core.substrate.reamde.dev/llmprovider/claude`, or `task/abc123` for a
+repository-local kind. Against a concrete pin a bare record id is accepted as
+the authored short form and canonicalized to the full path on write, so
+`provider: default` stores as
+`core.substrate.reamde.dev/llmprovider/default`; unpinned, a bare id names no
+kind and is refused. A path that contradicts its pin is refused naming both
+ends.
+
+Splitting a path back into its two halves needs no registry, because an
+authority always carries a dot and a kind name never does: if the first segment
+has a dot the kind is the first two segments, otherwise it is the first alone,
+and the id is **everything after the kind** — slashes included, since a
+declaration record's id is itself a kind reference
+(`core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev/task` names one
+record).
+
+Validation checks the shape and that the referent
+**kind** exists; the referent **record** need not exist at write time, because a
+reference is a pointer, not an edge. `repeated: true` holds a list of
+references, and a reference is admitted inside an object or a keyed map at any
+declared depth. The [console](console.md) renders a reference as a link to the
+referent's detail page.
 
 A reference is not an edge. An edge is a traversable link with its own
 [incoming views](api.md#rest-resources) and its part in

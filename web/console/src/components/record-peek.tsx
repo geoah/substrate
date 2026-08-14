@@ -15,7 +15,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { recordQueryOptions } from "@/lib/api/records"
 import type { EdgeTarget, KindInfo } from "@/lib/api/types"
-import { cellValue, recordTitle } from "@/lib/format"
+import { cellValue, recordTitle, referenceCell } from "@/lib/format"
 import {
   columnProperties,
   propertyTypeLabel,
@@ -115,7 +115,10 @@ function PeekBody({
     for (const prop of columnProperties(targetKind)) {
       const value = record.data.properties[prop.name]
       if (value === undefined || value === null) continue
-      const text = cellValue(value)
+      // A reference names its referent, not the referent's kind: the path's id
+      // is the fact worth two lines of a peek.
+      const text =
+        prop.kind === "reference" ? referenceCell(value) : cellValue(value)
       if (!text) continue
       // The property name carries its declaration on hover (type, and the
       // record-56 one-liner where the kind wrote one) — a native title, not a

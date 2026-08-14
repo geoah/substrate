@@ -840,7 +840,7 @@ data:
 		r := loadFixture(t, map[string]string{
 			"a.yaml": alpha,
 			"b.yaml": authority("b.example.com") +
-				typ("b.example.com", "beta", "  properties:\n    ptr: {type: reference, to: alpha}\n"),
+				typ("b.example.com", "beta", "  properties:\n    ptr: {type: reference, kind: alpha}\n"),
 		})
 		beta, _ := r.ByIdentity("b.example.com/beta")
 		p := beta.Props["ptr"]
@@ -855,7 +855,7 @@ data:
 	t.Run("to any is unconstrained", func(t *testing.T) {
 		r := loadFixture(t, map[string]string{
 			"b.yaml": authority("b.example.com") +
-				typ("b.example.com", "beta", "  properties:\n    ptr: {type: reference, to: any}\n"),
+				typ("b.example.com", "beta", "  properties:\n    ptr: {type: reference, kind: any}\n"),
 		})
 		beta, _ := r.ByIdentity("b.example.com/beta")
 		if got := beta.Props["ptr"].To; got != vocabulary.ToAny {
@@ -878,7 +878,7 @@ data:
 		r := loadFixture(t, map[string]string{
 			"a.yaml": alpha,
 			"b.yaml": authority("b.example.com") +
-				typ("b.example.com", "beta", "  properties:\n    ptrs: {type: reference, to: alpha, repeated: true}\n"),
+				typ("b.example.com", "beta", "  properties:\n    ptrs: {type: reference, kind: alpha, repeated: true}\n"),
 		})
 		beta, _ := r.ByIdentity("b.example.com/beta")
 		if !beta.Props["ptrs"].Repeated {
@@ -889,7 +889,7 @@ data:
 	t.Run("unknown to is an error", func(t *testing.T) {
 		_, err := vocabulary.LoadFS(fstest.MapFS{
 			"b.yaml": {Data: []byte(authority("b.example.com") +
-				typ("b.example.com", "beta", "  properties:\n    ptr: {type: reference, to: nosuch}\n"))},
+				typ("b.example.com", "beta", "  properties:\n    ptr: {type: reference, kind: nosuch}\n"))},
 		})
 		if err == nil || !strings.Contains(err.Error(), "unknown type") {
 			t.Fatalf("error = %v", err)
@@ -2056,7 +2056,7 @@ data:
   properties: {count: {type: int, refersTo: kind}}
 `),
 		"refersTo on a reference": typ(`  names: {singular: contact, plural: contacts}
-  properties: {target: {type: reference, to: any, refersTo: kind}}
+  properties: {target: {type: reference, kind: any, refersTo: kind}}
 `),
 		"unknown refersTo": typ(`  names: {singular: contact, plural: contacts}
   properties: {emit: {type: string, repeated: true, refersTo: widget}}

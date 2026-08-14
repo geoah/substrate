@@ -32,9 +32,7 @@ data:
         when: >-
           record != null && "enabledMessages" in record.properties && record.properties.enabledMessages
           == true && !("lastSyncedAt" in record.properties)
-    callable:
-      kind: core.substrate.reamde.dev/function
-      id: beeper.bundles.substrate.reamde.dev/messagessync
+    callable: core.substrate.reamde.dev/function/beeper.bundles.substrate.reamde.dev/messagessync
 ---
 # The steady-state re-sync: an hourly tick fires the same function with no
 # envelope record, so the body iterates every enabled account and syncs the
@@ -51,6 +49,4 @@ data:
         timezone: Europe/London
         # A fixed past anchor, so every occurrence since is well-defined.
         startsAt: "2025-01-06T09:00:00Z"
-    callable:
-      kind: core.substrate.reamde.dev/function
-      id: beeper.bundles.substrate.reamde.dev/messagessync
+    callable: core.substrate.reamde.dev/function/beeper.bundles.substrate.reamde.dev/messagessync

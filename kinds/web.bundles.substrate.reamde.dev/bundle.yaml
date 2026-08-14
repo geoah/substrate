@@ -23,7 +23,12 @@ data:
   # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
-  version: v1alpha2
+  # v1alpha3: the built-ins are function records, so the two agents' tool
+  # entries name them under `function:` like any other function.
+  # v1alpha4: the grants group under one `permissions:` object, and the permission
+  # to write is `writes:` inside it. This closure's functions and agents
+  # follow core's declaration.
+  version: v1alpha5
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -143,7 +148,8 @@ data:
   description: Extract every URL from the triggering record and mint pending
     pages.
   runtime: python
-  emit: [web.bundles.substrate.reamde.dev/page]
+  permissions:
+    writes: [web.bundles.substrate.reamde.dev/page]
   source: |
     import re
 
@@ -199,7 +205,8 @@ data:
   authority: web.bundles.substrate.reamde.dev
   description: Fetch one pending page as markdown and mark it fetched.
   runtime: python
-  emit: [web.bundles.substrate.reamde.dev/page]
+  permissions:
+    writes: [web.bundles.substrate.reamde.dev/page]
   source: |
     def main(input, host):
         env = input.get("envelope") or {}
@@ -233,7 +240,8 @@ data:
       type: string
       required: true
       description: article | tool | video
-  emit: [web.bundles.substrate.reamde.dev/page]
+  permissions:
+    writes: [web.bundles.substrate.reamde.dev/page]
   source: |
     def main(input, host):
         args = input.get("args") or {}
@@ -261,7 +269,8 @@ data:
       type: string
       required: true
       description: the config record id
-  emit: [web.bundles.substrate.reamde.dev/config]
+  permissions:
+    writes: [web.bundles.substrate.reamde.dev/config]
   source: |
     def main(input, host):
         args = input.get("args") or {}
@@ -293,15 +302,16 @@ data:
   provider: default
   model: anthropic/claude-opus-5
   tools:
-    - callable: web.bundles.substrate.reamde.dev/setclass
+    - function: web.bundles.substrate.reamde.dev/setclass
   agents: [web.bundles.substrate.reamde.dev/readinglistagent]
   budgets:
     maxTurns: 4
     maxToolCalls: 8
     depth: 3
-  emit:
-    - web.bundles.substrate.reamde.dev/page
-    - core.substrate.reamde.dev/recordpatchrequest
+  permissions:
+    writes:
+      - web.bundles.substrate.reamde.dev/page
+      - core.substrate.reamde.dev/recordpatchrequest
 ---
 # ---- agent: readinglistagent (sub-agent) ----------------------------------
 # Proposes a recordpatchrequest that marks the page saved. The owner decides;
@@ -321,15 +331,16 @@ data:
   provider: default
   model: anthropic/claude-sonnet-5
   tools:
-    - builtin: propose
-    - callable: web.bundles.substrate.reamde.dev/stampconfig
+    - function: core.substrate.reamde.dev/propose
+    - function: web.bundles.substrate.reamde.dev/stampconfig
   budgets:
     maxTurns: 4
     maxToolCalls: 4
     depth: 3
-  emit:
-    - core.substrate.reamde.dev/recordpatchrequest
-    - web.bundles.substrate.reamde.dev/config
+  permissions:
+    writes:
+      - core.substrate.reamde.dev/recordpatchrequest
+      - web.bundles.substrate.reamde.dev/config
 ---
 # ---- agent: weeklyrollup (schedule-fired) ---------------------------------
 # Reads the week's pages and proposes a digest note (a patch of the config's
@@ -348,12 +359,13 @@ data:
   provider: default
   model: anthropic/claude-haiku-4-5
   tools:
-    - builtin: query
-    - builtin: propose
-  reads:
-    kinds: [web.bundles.substrate.reamde.dev/page]
+    - function: core.substrate.reamde.dev/query
+    - function: core.substrate.reamde.dev/propose
+  permissions:
+    reads:
+      kinds: [web.bundles.substrate.reamde.dev/page]
+    writes: [core.substrate.reamde.dev/recordpatchrequest]
   budgets:
     maxTurns: 6
     maxToolCalls: 16
     depth: 3
-  emit: [core.substrate.reamde.dev/recordpatchrequest]

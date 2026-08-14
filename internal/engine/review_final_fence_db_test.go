@@ -117,7 +117,7 @@ func TestFinalFenceDrainsBundledAgentTrigger(t *testing.T) {
 		Properties: map[string]any{
 			"enabled":  true,
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{abAuthority + "/abconfig"}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/agent", "id": abAuthority + "/greeter"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", abAuthority+"/greeter"),
 		},
 	}); err != nil {
 		t.Fatalf("put trigger: %v", err)
@@ -192,7 +192,7 @@ func installToolBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 	writer := vocabulary.FunctionManifest(tbAuthority, "writer", map[string]any{
 		"description": "writes one task",
 		"runtime":     vocabulary.RuntimePython,
-		"emit":        []any{"tasks.substrate.reamde.dev/task"},
+		"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 		"source": `
 def main(input, host):
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
@@ -220,8 +220,8 @@ def main(input, host):
 	user := vocabulary.AgentManifest(uAuthority, "user", map[string]any{
 		"description": "uses the bundled writer tool", "prompt": "You write.",
 		"provider": "userllm", "model": "user",
-		"tools": []any{map[string]any{"callable": tbAuthority + "/writer"}},
-		"emit":  []any{"tasks.substrate.reamde.dev/task"},
+		"tools":       []any{map[string]any{"function": tbAuthority + "/writer"}},
+		"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.AuthorityManifest(uAuthority, ""), user,
@@ -278,8 +278,10 @@ func installCallerBundle(t *testing.T, ds *dataset) {
 	caller := vocabulary.FunctionManifest(cbAuthority, "caller", map[string]any{
 		"description": "host-calls the bundled writer",
 		"runtime":     vocabulary.RuntimePython,
-		"emit":        []any{"tasks.substrate.reamde.dev/task"},
-		"call":        []any{"toolb.bundles.substrate.reamde.dev/writer"},
+		"permissions": map[string]any{
+			"writes": []any{"tasks.substrate.reamde.dev/task"},
+			"call":   []any{"toolb.bundles.substrate.reamde.dev/writer"},
+		},
 		"source": `
 def main(input, host):
     out = host.call("toolb.bundles.substrate.reamde.dev/writer", {})

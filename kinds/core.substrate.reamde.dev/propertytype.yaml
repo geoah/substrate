@@ -18,7 +18,7 @@ data:
   # v1alpha4: TYPED. `definition` and `name` are gone; the refinement — the
   # base, the pattern, the range and the value set — is properties, and the base
   # is the closed set of built-in datatypes rather than free text.
-  version: v1alpha4
+  version: v1alpha5
   names:
     singular: propertytype
     plural: propertytypes
@@ -37,6 +37,11 @@ data:
         - installed
       managed: true
       description: builtin for seeded refinements, installed for bundle ones
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
     authority:
       type: string
       required: true

@@ -48,14 +48,6 @@ export class ApiError extends Error {
   }
 }
 
-/** An edge reference: `{kind, id}`. The kind is the whole reference
- * (`people.substrate.reamde.dev/person`, or a bare `task`); a typed property pointer and
- * an edge target both name their referent this way. */
-export interface Reference {
-  kind: string
-  id: string
-}
-
 /** An outgoing edge target on the wire: id, the target's kind REFERENCE,
  * display sugar, and the EDGE's own properties (the wire hangs them off the
  * target the edge points at, not the target's own). */

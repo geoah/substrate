@@ -19,13 +19,12 @@
  * initial state and legal moves are the consts beside the interface.
  */
 
-/** A typed pointer: the referent's kind reference and its id, the same {kind,
- * id} pair an edge target wears.
+/** A typed pointer, as the referent's record PATH: `<kind>/<id>` — one
+ * string, the whole stored value.
+ * `core.substrate.reamde.dev/llmprovider/claude` names the llmprovider
+ * `claude`; a repository-local kind drops the authority, `task/abc`.
  */
-export interface Reference {
-  kind: string
-  id: string
-}
+export type ReferencePath = string
 
 /** What a secret property STORES: an opaque ref into the server's sealed store,
  * never the material. Reads redact even the ref.
@@ -115,28 +114,26 @@ export interface Agent {
   description?: string
   /** The system prompt; the row is the prompt store. */
   prompt?: string
-  /** The llmprovider record id this agent's loop completes against. Names a
-   * provider: offer a picker, not a text box.
+  /** The llmprovider this agent's loop completes against. Points at
+   * core.substrate.reamde.dev/llmprovider.
    */
-  provider?: string
+  provider?: ReferencePath
   /** The model id sent on every completion. */
   model?: string
   /** This agent's request knobs; the provider row's defaults sit under them. */
   params?: AgentParams
   /** What the model may call, in declaration order. */
   tools?: AgentTools[]
-  /** The sub-agent identities the loop exposes as tools. Names a agent: offer a
-   * picker, not a text box.
+  /** The sub-agents the loop exposes as tools. Points at
+   * core.substrate.reamde.dev/agent.
    */
-  agents?: string[]
+  agents?: ReferencePath[]
   /** What bounds one invocation. */
   budgets?: AgentBudgets
-  /** The kinds this agent's tool-call effects may address. Names a kind: offer
-   * a picker, not a text box.
+  /** What this agent is allowed to do while it runs; leave a grant out and what
+   * it covers is refused.
    */
-  emit?: string[]
-  /** What the `query` built-in may touch; absent withholds it. */
-  reads?: AgentReads
+  permissions?: AgentPermissions
   /** Only callable by other agents; withheld from the chat surface. */
   subagentOnly?: boolean
 }
@@ -171,31 +168,21 @@ export interface AgentParams {
  * what the model may call, in declaration order
  */
 export interface AgentTools {
-  /** The built-in tool this entry names. */
-  builtin?: AgentToolsBuiltin
-  /** The function identity this entry names. Names a function: offer a picker,
-   * not a text box.
+  /** The function this entry names. Points at
+   * core.substrate.reamde.dev/function.
    */
-  callable?: string
-  /** The model-facing tool name, aliasing a callable. */
+  function?: ReferencePath
+  /** The model-facing tool name, aliasing the function. */
   name?: string
-  /** The model-facing card, overriding the callable's own. */
+  /** The model-facing card, overriding the function's own. */
   description?: string
 }
 
-/** AgentToolsBuiltin is a declared enum: the admissible set, in declaration
- * order.
- *
- * the built-in tool this entry names
+/** The properties AgentTools's declaration marks required. A form refuses to
+ * submit without them; the server does not, so nothing here is a guarantee
+ * about a record that arrives.
  */
-export type AgentToolsBuiltin = "query" | "propose" | "graphql" | "mutate"
-
-export const agentToolsBuiltinValues: AgentToolsBuiltin[] = [
-  "query",
-  "propose",
-  "graphql",
-  "mutate",
-]
+export const agentToolsRequired: string[] = ["function"]
 
 /** AgentBudgets is one value of the `budgets` object declared on
  * core.substrate.reamde.dev/agent.
@@ -213,29 +200,47 @@ export interface AgentBudgets {
   depth?: number
 }
 
-/** AgentReads is one value of the `reads` object declared on
+/** AgentPermissions is one value of the `permissions` object declared on
  * core.substrate.reamde.dev/agent.
  *
- * what the `query` built-in may touch; absent withholds it
+ * what this agent is allowed to do while it runs; leave a grant out and what
+ * it covers is refused
  */
-export interface AgentReads {
-  /** The kinds every read is held to. Names a kind: offer a picker, not a text
-   * box.
+export interface AgentPermissions {
+  /** Which record kinds this agent may read, and how much; leave it out and the
+   * query tool is withheld.
    */
-  kinds?: string[]
-  /** What one invocation's reads may spend. */
-  budgets?: AgentReadsBudgets
+  reads?: AgentPermissionsReads
+  /** Which record kinds it may create or change, the change requests it
+   * proposes among them. Points at core.substrate.reamde.dev/kind.
+   */
+  writes?: ReferencePath[]
 }
 
-/** AgentReadsBudgets is one value of the `reads.budgets` object declared on
- * core.substrate.reamde.dev/agent.
+/** AgentPermissionsReads is one value of the `permissions.reads` object
+ * declared on core.substrate.reamde.dev/agent.
  *
- * what one invocation's reads may spend
+ * which record kinds this agent may read, and how much; leave it out and the
+ * query tool is withheld
  */
-export interface AgentReadsBudgets {
-  /** Host read calls per invocation. */
+export interface AgentPermissionsReads {
+  /** The record kinds every read is held to. Points at
+   * core.substrate.reamde.dev/kind.
+   */
+  kinds?: ReferencePath[]
+  /** How much one run may read. */
+  budgets?: AgentPermissionsReadsBudgets
+}
+
+/** AgentPermissionsReadsBudgets is one value of the `permissions.reads.budgets`
+ * object declared on core.substrate.reamde.dev/agent.
+ *
+ * how much one run may read
+ */
+export interface AgentPermissionsReadsBudgets {
+  /** How many reads one run may make. */
   calls?: number
-  /** Rows read per invocation. */
+  /** How many records one run may read. */
   rows?: number
 }
 
@@ -348,7 +353,7 @@ export interface Bundle {
   /** The exact identities the bundle ships into its authority. */
   installs?: string[]
   /** The authorities this closure declares against; an install refuses while
-   * one is absent. Names a authority: offer a picker, not a text box.
+   * one is absent.
    */
   requires?: string[]
   /** The shared library modules the bundle's functions import. */
@@ -383,10 +388,10 @@ export const bundleRequired: string[] = ["authority"]
  * the bundle's named configuration needs, each naming a kind
  */
 export interface BundleInputs {
-  /** The kind whose records satisfy this input. Names a kind: offer a picker,
-   * not a text box.
+  /** The kind whose records satisfy this input. Points at
+   * core.substrate.reamde.dev/kind.
    */
-  kind?: string
+  kind?: ReferencePath
   /** The consumer the resolved record is handed to; absent means a host
    * facility reads it.
    */
@@ -471,9 +476,9 @@ export interface Function {
   authority?: string
   /** The model-facing tool card — what this function does. */
   description?: string
-  /** The language the inline body is written in. */
+  /** The language the inline body is written in, or host for a built-in. */
   runtime?: FunctionRuntime
-  /** The inline body. */
+  /** The inline body, on an inline runtime. */
   source?: string
   /** What bounds one invocation's wall clock. */
   timeoutMs?: number
@@ -481,20 +486,10 @@ export interface Function {
   arguments?: FunctionArguments[]
   /** The named values the body returns. */
   returns?: FunctionReturns[]
-  /** The kinds this function's effects may address. Names a kind: offer a
-   * picker, not a text box.
+  /** What this function is allowed to do while it runs; leave a grant out and
+   * what it covers is refused.
    */
-  emit?: string[]
-  /** What the body's host reads may touch; absent trips every read. */
-  reads?: FunctionReads
-  /** The function identities the body's host Call may invoke. Names a function:
-   * offer a picker, not a text box.
-   */
-  call?: string[]
-  /** The declared egress allowlist. */
-  network?: string[]
-  /** The gated identity mutations this function is granted. */
-  mutations?: FunctionMutations[]
+  permissions?: FunctionPermissions
 }
 
 /** The properties Function's declaration marks required. A form refuses to
@@ -505,26 +500,16 @@ export const functionRequired: string[] = [
   "authority",
   "description",
   "runtime",
-  "source",
 ]
 
 /** FunctionRuntime is a declared enum: the admissible set, in declaration
  * order.
  *
- * the language the inline body is written in
+ * the language the inline body is written in, or host for a built-in
  */
-export type FunctionRuntime = "python" | "go"
+export type FunctionRuntime = "python" | "go" | "host"
 
-export const functionRuntimeValues: FunctionRuntime[] = ["python", "go"]
-
-/** FunctionMutations is a declared enum: the admissible set, in declaration
- * order.
- *
- * the gated identity mutations this function is granted
- */
-export type FunctionMutations = "merge" | "split"
-
-export const functionMutationsValues: FunctionMutations[] = ["merge", "split"]
+export const functionRuntimeValues: FunctionRuntime[] = ["python", "go", "host"]
 
 /** FunctionArguments is one value of the `arguments` object declared on
  * core.substrate.reamde.dev/function.
@@ -612,29 +597,68 @@ export const functionReturnsTypeValues: FunctionReturnsType[] = [
   "json",
 ]
 
-/** FunctionReads is one value of the `reads` object declared on
+/** FunctionPermissions is one value of the `permissions` object declared on
  * core.substrate.reamde.dev/function.
  *
- * what the body's host reads may touch; absent trips every read
+ * what this function is allowed to do while it runs; leave a grant out and
+ * what it covers is refused
  */
-export interface FunctionReads {
-  /** The kinds every read is held to. Names a kind: offer a picker, not a text
-   * box.
+export interface FunctionPermissions {
+  /** Which record kinds this function may read while it runs, and how much;
+   * leave it out and any read it attempts fails.
    */
-  kinds?: string[]
-  /** What one invocation's reads may spend. */
-  budgets?: FunctionReadsBudgets
+  reads?: FunctionPermissionsReads
+  /** Which record kinds it may create or change. Points at
+   * core.substrate.reamde.dev/kind.
+   */
+  writes?: ReferencePath[]
+  /** Which other functions its code may invoke. Points at
+   * core.substrate.reamde.dev/function.
+   */
+  call?: ReferencePath[]
+  /** The hosts it may reach; any entry grants network access, and enforcement
+   * is all-or-nothing today.
+   */
+  network?: string[]
+  /** The identity-changing operations it may perform: merge, split. */
+  mutations?: FunctionPermissionsMutations[]
 }
 
-/** FunctionReadsBudgets is one value of the `reads.budgets` object declared on
+/** FunctionPermissionsMutations is a declared enum: the admissible set, in
+ * declaration order.
+ *
+ * the identity-changing operations it may perform: merge, split
+ */
+export type FunctionPermissionsMutations = "merge" | "split"
+
+export const functionPermissionsMutationsValues: FunctionPermissionsMutations[] =
+  ["merge", "split"]
+
+/** FunctionPermissionsReads is one value of the `permissions.reads` object
+ * declared on core.substrate.reamde.dev/function.
+ *
+ * which record kinds this function may read while it runs, and how much; leave
+ * it out and any read it attempts fails
+ */
+export interface FunctionPermissionsReads {
+  /** The record kinds every read is held to. Points at
+   * core.substrate.reamde.dev/kind.
+   */
+  kinds?: ReferencePath[]
+  /** How much one run may read. */
+  budgets?: FunctionPermissionsReadsBudgets
+}
+
+/** FunctionPermissionsReadsBudgets is one value of the
+ * `permissions.reads.budgets` object declared on
  * core.substrate.reamde.dev/function.
  *
- * what one invocation's reads may spend
+ * how much one run may read
  */
-export interface FunctionReadsBudgets {
-  /** Host read calls per invocation. */
+export interface FunctionPermissionsReadsBudgets {
+  /** How many reads one run may make. */
   calls?: number
-  /** Rows read per invocation. */
+  /** How many records one run may read. */
   rows?: number
 }
 
@@ -723,7 +747,7 @@ export interface KindIndices {
  * the named, directed links a record of this kind may hold
  */
 export interface KindEdges {
-  /** The target kind, or `any`. Names a kind: offer a picker, not a text box. */
+  /** The target kind, or `any`. */
   to?: string
   /** Several targets instead of one. */
   many?: boolean
@@ -764,7 +788,7 @@ export interface LLMMessage {
   /** The thread this turn belongs to. Points at
    * core.substrate.reamde.dev/llmthread.
    */
-  thread?: Reference
+  thread?: ReferencePath
 }
 
 /** The properties LLMMessage's declaration marks required. A form refuses to
@@ -887,7 +911,7 @@ export interface LLMProviderPricing {
  */
 export interface LLMThread {
   /** The agent this thread ran. Points at core.substrate.reamde.dev/agent. */
-  agent?: Reference
+  agent?: ReferencePath
   /** The llmprovider row id the run resolved. */
   provider?: string
   /** The model id the run sent. */
@@ -926,7 +950,7 @@ export interface LLMThread {
   /** The calling agent's thread, on sub-agent threads. Points at
    * core.substrate.reamde.dev/llmthread.
    */
-  parent?: Reference
+  parent?: ReferencePath
 }
 
 /** The properties LLMThread's declaration marks required. A form refuses to
@@ -1072,14 +1096,14 @@ export interface RecordMapping {
   authority?: string
   /** What the mapping keeps up to date. */
   description?: string
-  /** The source kind whose records project. Names a kind: offer a picker, not a
-   * text box.
+  /** The source kind whose records project. Points at
+   * core.substrate.reamde.dev/kind.
    */
-  from?: string
-  /** The subject kind, always a full kind reference. Names a kind: offer a
-   * picker, not a text box.
+  from?: ReferencePath
+  /** The subject kind, always a full kind reference. Points at
+   * core.substrate.reamde.dev/kind.
    */
-  to?: string
+  to?: ReferencePath
   /** The declared edge on the source kind that records the link. */
   edge?: string
   /** The probes that find an existing subject, in order. */
@@ -1501,10 +1525,10 @@ export interface Trigger {
   enabled?: boolean
   /** The one source this trigger delivers from. */
   source?: TriggerSource
-  /** The function or agent a matched delivery invokes ({kind, id}). Points at
-   * any.
+  /** The function or agent a matched delivery invokes, as its `<kind>/<id>`
+   * path. Points at any.
    */
-  callable?: Reference
+  callable?: ReferencePath
 }
 
 /** TriggerSource is one value of the `source` object declared on

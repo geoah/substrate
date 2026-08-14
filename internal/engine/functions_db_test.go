@@ -49,14 +49,25 @@ func fnDoc(name string, data map[string]any) map[string]any {
 	return vocabulary.FunctionManifest(fnAuthority, name, data)
 }
 
-// pyFn renders a python function manifest: the inline body as source, the emit
-// allowlist beside it, `data` carrying any further keys (timeoutMs, arguments,
-// the rest of the capability envelope — every one of them on data itself).
-func pyFn(name string, data map[string]any, emit []any, source string) map[string]any {
+// pyFn renders a python function manifest: the inline body as source, the write
+// permission beside it, `data` carrying any further keys (timeoutMs, arguments,
+// and a `permissions:` object for the grants beyond writes).
+func pyFn(name string, data map[string]any, writes []any, source string) map[string]any {
 	data["runtime"] = vocabulary.RuntimePython
 	data["source"] = source
-	data["emit"] = emit
+	fnPermissions(data)["writes"] = writes
 	return fnDoc(name, data)
+}
+
+// fnPermissions is a fixture's `permissions:` grant, minted on first use: the
+// one object a declaration's grants live in.
+func fnPermissions(data map[string]any) map[string]any {
+	perms, ok := data["permissions"].(map[string]any)
+	if !ok {
+		perms = map[string]any{}
+		data["permissions"] = perms
+	}
+	return perms
 }
 
 // trigID is the default trigger id a test function's subscription wears.
@@ -70,7 +81,7 @@ func trigOn(fn string, record map[string]any) enginetest.Trigger {
 		Properties: map[string]any{
 			"enabled":  true,
 			"source":   map[string]any{"record": record},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": fnAuthority + "/" + fn},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", fnAuthority+"/"+fn),
 		},
 	}
 }
@@ -849,7 +860,7 @@ func TestTriggerWriteAdmission(t *testing.T) {
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
 	ctx := context.Background()
 
-	callable := map[string]any{"kind": "core.substrate.reamde.dev/function", "id": fnAuthority + "/mirror"}
+	callable := vocabulary.RecordPath("core.substrate.reamde.dev/function", fnAuthority+"/mirror")
 	cases := map[string]map[string]any{
 		"no source": {
 			"callable": callable,
@@ -881,11 +892,11 @@ func TestTriggerWriteAdmission(t *testing.T) {
 		},
 		"unknown callable": {
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{widgetType}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": fnAuthority + "/nothing"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", fnAuthority+"/nothing"),
 		},
 		"undispatchable kind": {
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{widgetType}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/agent", "id": fnAuthority + "/mirror"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", fnAuthority+"/mirror"),
 		},
 		"bad recurrence": {
 			"source":   map[string]any{"schedule": map[string]any{"recurrence": "EVERY=DAY"}},
@@ -920,7 +931,7 @@ func TestTriggerWriteAdmission(t *testing.T) {
 		t.Fatalf("valid trigger refused: %v", err)
 	}
 	if _, err := ds.Patch(ctx, owner, tr.Kind, tr.ID, substrate.PatchInput{
-		Properties: map[string]any{"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": fnAuthority + "/nothing"}},
+		Properties: map[string]any{"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", fnAuthority+"/nothing")},
 	}); err == nil {
 		t.Fatal("a breaking patch landed")
 	}

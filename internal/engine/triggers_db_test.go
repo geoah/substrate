@@ -42,7 +42,7 @@ func TestScheduleFireIdempotentAndCoalesced(t *testing.T) {
 			"source": map[string]any{"schedule": map[string]any{
 				"recurrence": "FREQ=HOURLY", "timezone": "UTC",
 			}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": authority + "/hourly"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", authority+"/hourly"),
 		},
 	})
 	if err == nil {
@@ -54,7 +54,7 @@ func TestScheduleFireIdempotentAndCoalesced(t *testing.T) {
 		vocabulary.FunctionManifest(authority, "hourly", map[string]any{
 			"description": "mints one task per fire",
 			"runtime":     vocabulary.RuntimePython,
-			"emit":        []any{"tasks.substrate.reamde.dev/task"},
+			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 			"source": `
 def main(input, host):
     fire = input["envelope"]["fire"]
@@ -72,7 +72,7 @@ def main(input, host):
 			"source": map[string]any{"schedule": map[string]any{
 				"recurrence": "FREQ=HOURLY", "timezone": "UTC",
 			}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": authority + "/hourly"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", authority+"/hourly"),
 		},
 	})
 	if err != nil {

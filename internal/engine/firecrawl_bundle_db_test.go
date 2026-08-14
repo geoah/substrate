@@ -151,8 +151,7 @@ func TestFirecrawlBundleAdmitsSchema(t *testing.T) {
 	}
 
 	// Both callables registered, each its own tool card: a model-facing
-	// description, a declared input shape, and the document type in emit
-	// (scrapepage's write; websearch's required-non-empty ceiling).
+	// description and a declared input shape.
 	for _, name := range []string{firecrawlSearchFn, firecrawlScrapeFn} {
 		fn, err := reg.ResolveFunction(name)
 		if err != nil {
@@ -162,9 +161,24 @@ func TestFirecrawlBundleAdmitsSchema(t *testing.T) {
 			t.Fatalf("%s is not a full tool card: description=%q input=%v output=%v",
 				name, fn.Description, fn.Input != nil, fn.Output != nil)
 		}
-		if len(fn.Caps.Emit) != 1 || fn.Caps.Emit[0] != firecrawlDocType {
-			t.Fatalf("%s emit = %v, want [%s]", name, fn.Caps.Emit, firecrawlDocType)
-		}
+	}
+	// Emit is where the two DIFFER, and the closure ships un-faked: scrapepage
+	// writes the document, websearch writes nothing and declares nothing. The
+	// fake `emit` it used to carry — with a comment apologizing for it — existed
+	// only because the loader demanded a non-empty allowlist.
+	scrape, err := reg.ResolveFunction(firecrawlScrapeFn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scrape.Caps.Emit) != 1 || scrape.Caps.Emit[0] != firecrawlDocType {
+		t.Fatalf("%s emit = %v, want [%s]", firecrawlScrapeFn, scrape.Caps.Emit, firecrawlDocType)
+	}
+	search, err := reg.ResolveFunction(firecrawlSearchFn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(search.Caps.Emit) != 0 {
+		t.Fatalf("%s emit = %v — a pure function declares none", firecrawlSearchFn, search.Caps.Emit)
 	}
 }
 

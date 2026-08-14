@@ -36,7 +36,7 @@ func installVaultBundle(t *testing.T) substrate.Dataset {
 			"description": "test function " + name,
 			"runtime":     vocabulary.RuntimePython,
 			"source":      source,
-			"emit":        []any{vConfigType},
+			"permissions": map[string]any{"writes": []any{vConfigType}},
 		})
 	}
 	// noteFn emits the plain vaultnote type (and may host-call a target): the
@@ -44,10 +44,10 @@ func installVaultBundle(t *testing.T) substrate.Dataset {
 	noteFn := func(name string, call []any, source string) map[string]any {
 		data := map[string]any{
 			"description": "test function " + name, "runtime": vocabulary.RuntimePython,
-			"source": source, "emit": []any{vNoteType},
+			"source": source, "permissions": map[string]any{"writes": []any{vNoteType}},
 		}
 		if call != nil {
-			data["call"] = call
+			data["permissions"].(map[string]any)["call"] = call
 		}
 		return vocabulary.FunctionManifest(vAuthority, name, data)
 	}
@@ -162,7 +162,7 @@ func TestScrubberHoldsErrorsAndParkedFailures(t *testing.T) {
 		Properties: map[string]any{
 			"enabled":  true,
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{vConfigType}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": vAuthority + "/crash"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", vAuthority+"/crash"),
 		},
 	})
 	mustPatch(t, ds, owner, vConfigType, mustConfigID(t, ds), substrate.PatchInput{Properties: map[string]any{"note": "poke"}})
@@ -260,7 +260,7 @@ func TestScrubberRejectsSecretThroughParkedTrigger(t *testing.T) {
 		Properties: map[string]any{
 			"enabled":  true,
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{vConfigType}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": vAuthority + "/leakval"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", vAuthority+"/leakval"),
 		},
 	})
 	mustPatch(t, ds, owner, vConfigType, mustConfigID(t, ds), substrate.PatchInput{Properties: map[string]any{"note": "poke"}})

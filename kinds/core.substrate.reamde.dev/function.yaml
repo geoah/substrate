@@ -4,8 +4,8 @@
 # the registry this row rebuilds into.
 #
 # THE PROPERTIES ARE THE DECLARATION: no `definition` blob, one property per
-# manifest key. The capability envelope rides `data` itself — one grant,
-# declared once — and the IO is FLAT: named arguments, not a recursive schema,
+# manifest key. The grant is one `permissions` object, declared once and named
+# for what it is, and the IO is FLAT: named arguments, not a recursive schema,
 # so the model-facing tool card is valid by construction.
 kind: core.substrate.reamde.dev/kind
 metadata:
@@ -25,7 +25,16 @@ data:
   # carries it into repositories that already stored the v1alpha2 one.
   # v1alpha4: TYPED. `definition` and `name` are gone; the runtime, the body,
   # the flat argument lists and the five capability keys are properties.
-  version: v1alpha4
+  # v1alpha5: `runtime: host` joined the enum and `source` stopped being
+  # required — a host function's body IS the engine, so its declaration is a
+  # card and nothing else. The bump is what admits the four host function rows
+  # core now ships into a repository that stored the v1alpha4 enum.
+  # v1alpha6: the five grant keys became one `permissions` object, and `emit`
+  # is `writes` inside it. Dropping five properties is a narrowing, and this
+  # one is safe because dialect 2 has never shipped in a release: no store
+  # outside our own development instances holds a row with them, and the
+  # dialect rung rewrites the ones that do.
+  version: v1alpha7
   names:
     singular: function
     plural: functions
@@ -39,6 +48,11 @@ data:
       type: string
       managed: true
       description: this declaration's version
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
     authority:
       type: string
       required: true
@@ -47,23 +61,34 @@ data:
       type: string
       required: true
       description: the model-facing tool card — what this function does
+    # `host` is the runtime with NO body: the engine is the implementation, and
+    # only a SHIPPED declaration may name it (the loader refuses one from any
+    # installed authority, since nothing can hand the engine a body). The four
+    # host functions core ships are the agent built-ins — query, propose,
+    # graphql, mutate — and their declarations are their whole cards.
     runtime:
       type: enum
       values:
         - python
         - go
+        - host
       required: true
-      description: the language the inline body is written in
+      description: the language the inline body is written in, or host for
+        a built-in
     # NEVER FTS-indexed: a body is up to 256 KiB of code, and indexing it would
     # make every function the top hit for every identifier it mentions. The
     # property name is the BODY's, so a function row carries no `source` origin
     # marker — that word belongs to the kinds whose origin is a fact about the
     # declaration rather than its content.
+    #
+    # Not `required:` — the requirement follows the RUNTIME, which one property's
+    # marker cannot say: an inline runtime must carry a body and the loader
+    # refuses one without it, while `host` must not, and the loader refuses one
+    # that tries.
     source:
       type: text
       fts: false
-      required: true
-      description: the inline body
+      description: the inline body, on an inline runtime
     timeoutMs:
       type: int
       min: 1
@@ -137,49 +162,61 @@ data:
           type: string
           repeated: true
           description: the admitted values, on an enum
-    emit:
-      type: string
-      repeated: true
-      refersTo: kind
-      description: the kinds this function's effects may address
-    reads:
+    # THE GRANT, in one object. Five bare keys beside `returns:` said nothing
+    # about being permissions, and `emit` beside `returns` read as the output
+    # shape rather than the permission to write, so they group here, and the
+    # permission to write is named for writing.
+    permissions:
       type: object
-      description: what the body's host reads may touch; absent trips every
-        read
+      description: what this function is allowed to do while it runs; leave
+        a grant out and what it covers is refused
       fields:
-        kinds:
+        reads:
+          type: object
+          description: which record kinds this function may read while it
+            runs, and how much; leave it out and any read it attempts fails
+          fields:
+            kinds:
+              type: reference
+              kind: core.substrate.reamde.dev/kind
+              repeated: true
+              description: the record kinds every read is held to
+            budgets:
+              type: object
+              description: how much one run may read
+              fields:
+                calls:
+                  type: int
+                  min: 1
+                  max: 1000
+                  description: how many reads one run may make
+                rows:
+                  type: int
+                  min: 1
+                  max: 10000
+                  description: how many records one run may read
+        writes:
+          type: reference
+          kind: core.substrate.reamde.dev/kind
+          repeated: true
+          description: which record kinds it may create or change
+        call:
+          type: reference
+          kind: core.substrate.reamde.dev/function
+          repeated: true
+          description: which other functions its code may invoke
+        # Host patterns, never references: an egress allowlist names the
+        # internet.
+        network:
           type: string
           repeated: true
-          refersTo: kind
-          description: the kinds every read is held to
-        budgets:
-          type: object
-          description: what one invocation's reads may spend
-          fields:
-            calls:
-              type: int
-              min: 1
-              max: 1000
-              description: host read calls per invocation
-            rows:
-              type: int
-              min: 1
-              max: 10000
-              description: rows read per invocation
-    call:
-      type: string
-      repeated: true
-      refersTo: function
-      description: the function identities the body's host Call may invoke
-    # URL patterns, never references: an egress allowlist names the internet.
-    network:
-      type: string
-      repeated: true
-      description: the declared egress allowlist
-    mutations:
-      type: enum
-      repeated: true
-      values:
-        - merge
-        - split
-      description: the gated identity mutations this function is granted
+          description: the hosts it may reach; any entry grants network access,
+            and enforcement is all-or-nothing today
+        mutations:
+          type: enum
+          repeated: true
+          values:
+            - merge
+            - split
+          description: "the identity-changing operations it may perform: merge,
+            split"

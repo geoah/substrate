@@ -18,6 +18,7 @@ import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import {
   cellValue,
   recordTitle,
+  referenceCell,
   relativeTime,
   tableDateTime,
 } from "@/lib/format"
@@ -87,7 +88,10 @@ function propertyCell(prop: DeclaredProperty, value: unknown) {
       </span>
     )
   }
-  const text = cellValue(value)
+  // A reference's stored value is the referent's whole path; the column already
+  // says which kind it points at, so the cell names the record.
+  const text =
+    prop.kind === "reference" ? referenceCell(value) : cellValue(value)
   if (!text) return <Muted>—</Muted>
   // The cell uses its column's whole width; truncation happens only at the
   // column boundary, full value on hover (owner ruling, 2026-08-06 — no

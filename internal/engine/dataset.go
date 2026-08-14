@@ -274,7 +274,7 @@ type txn struct {
 	// row so the causal-depth walk can follow the chain.
 	causedBy int64
 	// effEmit is the EFFECTIVE emit set of the bundle actor whose effects
-	// this transaction applies — a function's `capabilities.emit`, or an
+	// this transaction applies: a function's `permissions.writes`, or an
 	// agent's declared emit intersected with its inherited ceiling (wave-3
 	// #12). effEmitSet distinguishes an EMPTY set (the actor may emit nothing)
 	// from an absent one (the generic write API, where no effect ceiling

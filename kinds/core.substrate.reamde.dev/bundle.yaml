@@ -31,6 +31,11 @@ data:
       type: string
       managed: true
       description: this declaration's version
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
     authority:
       type: string
       required: true
@@ -48,8 +53,8 @@ data:
       description: the bundle's named configuration needs, each naming a kind
       fields:
         kind:
-          type: string
-          refersTo: kind
+          type: reference
+          kind: core.substrate.reamde.dev/kind
           description: the kind whose records satisfy this input
         inject:
           type: enum
@@ -60,16 +65,19 @@ data:
         description:
           type: string
           description: what the input is for
-    # A member is a kind, a trait, a property type, a mapping, a function or an
-    # agent, so no single `refersTo` marker names what these identities point at.
+    # NOT a reference, and the one honest exception: a member is a kind, a
+    # trait, a property type, a mapping, a function or an agent, so there is no
+    # single kind to pin these at.
     installs:
       type: string
       repeated: true
       description: the exact identities the bundle ships into its authority
+    # NOT a reference either: these are authority NAMES, read while the closure
+    # is still being bucketed — before any registry exists to resolve a pin
+    # against.
     requires:
       type: string
       repeated: true
-      refersTo: authority
       description: the authorities this closure declares against; an install
         refuses while one is absent
     # Filename → inline source. The key contract is unrestricted on purpose: a

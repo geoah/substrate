@@ -406,7 +406,7 @@ func (v *KindIndices) Encode() map[string]any {
 //
 // the named, directed links a record of this kind may hold
 type KindEdges struct {
-	// To is the target kind, or `any`. Names a kind in the registry.
+	// To is the target kind, or `any`.
 	To *string
 
 	// Many is several targets instead of one.

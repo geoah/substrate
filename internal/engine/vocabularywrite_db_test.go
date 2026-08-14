@@ -199,7 +199,7 @@ func TestSchemaApplySwapsFunctionsLive(t *testing.T) {
 			"authority":   swAuthority,
 			"description": "mirrors widgets into tasks",
 			"runtime":     vocabulary.RuntimePython,
-			"emit":        []any{"tasks.substrate.reamde.dev/task"},
+			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 			"source": `
 def main(input, host):
     c = input["envelope"]["change"]
@@ -223,7 +223,7 @@ def main(input, host):
 			"source": map[string]any{"record": map[string]any{
 				"kinds": []any{swAuthority + "/widget"}, "ops": []any{"create", "update"},
 			}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": swAuthority + "/mirror"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", swAuthority+"/mirror"),
 		},
 	}); err != nil {
 		t.Fatalf("put trigger: %v", err)
@@ -747,6 +747,128 @@ func TestDeclarationWritesRefuseWhatTheEngineOwns(t *testing.T) {
 	}
 }
 
+// A DELETED SPELLING IS NAMED AT BOTH DOORS. A declaration arrives here as
+// PROPERTIES and at the YAML door as a document, and a writer sending the
+// retired `emit` deserves the same sentence either way: "not declared on
+// core.substrate.reamde.dev/function" tells them nothing about where the grant
+// went. Every retired grant key is checked on PUT and on PATCH, since a patch
+// carrying one is the same mistake with a smaller payload.
+func TestDeclarationWritesNameTheDeletedSpellings(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	sa := applier(t, ds)
+	const fnKind = "core.substrate.reamde.dev/function"
+	const agentKind = "core.substrate.reamde.dev/agent"
+	fnID, agentID := swAuthority+"/mirror", swAuthority+"/thinker"
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(swAuthority, ""),
+		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+		vocabulary.FunctionManifest(swAuthority, "mirror", map[string]any{
+			"authority": swAuthority, "description": "mirrors widgets", "runtime": vocabulary.RuntimePython,
+			"permissions": map[string]any{"writes": []any{swAuthority + "/widget"}},
+			"source":      "def main(input, host): return {}",
+		}),
+		vocabulary.AgentManifest(swAuthority, "thinker", map[string]any{
+			"description": "thinks", "prompt": "be useful",
+			"provider": "default", "model": "gpt-5",
+			"permissions": map[string]any{"writes": []any{swAuthority + "/widget"}},
+		}),
+	}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	fnRow := mustGet(t, ds, fnKind, fnID)
+	agentRow := mustGet(t, ds, agentKind, agentID)
+
+	for name, tc := range map[string]struct {
+		kind, id string
+		base     *substrate.Record
+		prop     string
+		value    any
+		want     string
+	}{
+		"a function's emit": {
+			fnKind, fnID, fnRow, "emit",
+			[]any{swAuthority + "/widget"},
+			"props.emit: the deleted key, replaced by permissions.writes",
+		},
+		"a function's reads": {
+			fnKind, fnID, fnRow, "reads",
+			map[string]any{"kinds": []any{swAuthority + "/widget"}},
+			"props.reads: the deleted key, replaced by permissions.reads",
+		},
+		"a function's call": {
+			fnKind, fnID, fnRow, "call",
+			[]any{swAuthority + "/other"},
+			"props.call: the deleted key, replaced by permissions.call",
+		},
+		"a function's network": {
+			fnKind, fnID, fnRow, "network",
+			[]any{"api.example.com"},
+			"props.network: the deleted key, replaced by permissions.network",
+		},
+		"a function's mutations": {
+			fnKind, fnID, fnRow, "mutations",
+			[]any{"merge"},
+			"props.mutations: the deleted key, replaced by permissions.mutations",
+		},
+		"a function's capability wrapper": {
+			fnKind, fnID, fnRow, "capabilities",
+			map[string]any{"emit": []any{swAuthority + "/widget"}},
+			"props.capabilities: the deleted key, replaced by permissions",
+		},
+		"an agent's emit": {
+			agentKind, agentID, agentRow, "emit",
+			[]any{swAuthority + "/widget"},
+			"props.emit: the deleted key, replaced by permissions.writes",
+		},
+		"an agent's reads": {
+			agentKind, agentID, agentRow, "reads",
+			map[string]any{"kinds": []any{swAuthority + "/widget"}},
+			"props.reads: the deleted key, replaced by permissions.reads",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			// PUT: the whole declaration, plus the retired key beside it.
+			props := map[string]any{}
+			for k, v := range tc.base.Properties {
+				props[k] = v
+			}
+			props[tc.prop] = tc.value
+			_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: tc.kind, ID: tc.id, Properties: props})
+			wantErr(t, err, substrate.ErrValidation, "a put carrying "+tc.prop)
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("the put refusal must name the replacement, got: %v", err)
+			}
+			// PATCH: the retired key alone.
+			_, err = ds.Patch(ctx, owner, tc.kind, tc.id,
+				substrate.PatchInput{Properties: map[string]any{tc.prop: tc.value}})
+			wantErr(t, err, substrate.ErrValidation, "a patch carrying "+tc.prop)
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("the patch refusal must name the replacement, got: %v", err)
+			}
+			// A NULL is refused too, by presence: no row carries one of these keys,
+			// so there is nothing a delete marker could be clearing.
+			_, err = ds.Patch(ctx, owner, tc.kind, tc.id,
+				substrate.PatchInput{Properties: map[string]any{tc.prop: nil}})
+			wantErr(t, err, substrate.ErrValidation, "a patch nulling "+tc.prop)
+		})
+	}
+
+	// The tool entry's own retired key is the loader's, since `tools` is a
+	// declared property and the entry inside it is what moved.
+	tools := map[string]any{}
+	for k, v := range agentRow.Properties {
+		tools[k] = v
+	}
+	tools["tools"] = []any{map[string]any{"callable": vocabulary.HostFunctionGraphQL}}
+	_, err := ds.Put(ctx, owner, substrate.PutInput{Kind: agentKind, ID: agentID, Properties: tools})
+	wantErr(t, err, substrate.ErrValidation, "a tool entry naming its callable")
+	if !strings.Contains(err.Error(), `key "callable" is deleted — function`) {
+		t.Fatalf("the refusal must name the entry's replacement, got: %v", err)
+	}
+}
+
 // A function's uninstall does NOT touch delivery state any more: the cursor
 // belongs to the TRIGGER record, which outlives the callable. While the
 // callable is gone the dispatcher skips the trigger loudly and its cursor
@@ -767,7 +889,7 @@ func TestTriggerOutlivesItsCallable(t *testing.T) {
 		"authority":   swAuthority,
 		"description": "mirrors widgets into tasks",
 		"runtime":     vocabulary.RuntimePython,
-		"emit":        []any{"tasks.substrate.reamde.dev/task"},
+		"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 		"source": `
 def main(input, host):
     c = input["envelope"]["change"]
@@ -787,7 +909,7 @@ def main(input, host):
 		Kind: "core.substrate.reamde.dev/trigger", ID: triggerID,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{swAuthority + "/widget"}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": swAuthority + "/mirror"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", swAuthority+"/mirror"),
 		},
 	}); err != nil {
 		t.Fatalf("put trigger: %v", err)

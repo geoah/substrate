@@ -14,7 +14,7 @@ import (
 // A function is the seventh manifest kind: a pure reusable CALLABLE — a named
 // piece of real code, inline Python or Go source on the manifest (`runtime:`
 // + `source:`) — with a model-facing `description`, optional `arguments:` and
-// `returns:` shapes, and a capability envelope (emit, reads, call, network,
+// `returns:` shapes, and a `permissions:` grant (reads, writes, call, network,
 // mutations). A function has NO subscription:
 // what fires it is a `trigger` data record (core.substrate.reamde.dev), which
 // owns the cursor, retries, parking and replay. The body executes in the
@@ -28,13 +28,36 @@ import (
 const (
 	RuntimePython = "python"
 	RuntimeGo     = "go"
+	// RuntimeHost is the third runtime, and the one with no body: the ENGINE is
+	// the implementation. A host function's declaration is its whole
+	// card — the description, `arguments:` and `returns:` — and it never reaches
+	// the child-process runner. It is admissible ONLY in a builtin build
+	// (BuildAuthorities' SourceBuiltin), because the engine can only implement
+	// what the engine ships: a bundle or an owner declaring one would name a
+	// body nothing has.
+	RuntimeHost = "host"
 )
 
-var functionRuntimes = map[string]bool{RuntimePython: true, RuntimeGo: true}
+// FunctionRuntimes lists the runtimes in the order the errors name them.
+var FunctionRuntimes = []string{RuntimePython, RuntimeGo, RuntimeHost}
 
-// The capability-gated identity mutations (`mutations:`). The
+var functionRuntimes = map[string]bool{
+	RuntimePython: true, RuntimeGo: true, RuntimeHost: true,
+}
+
+// The four host functions the engine implements, by identity. They are ordinary
+// function records — seeded, browsable, pickable as agent tools by reference —
+// and these constants are what the dispatch switch and the grant checks key on.
+const (
+	HostFunctionQuery   = AuthorityCore + "/query"
+	HostFunctionPropose = AuthorityCore + "/propose"
+	HostFunctionGraphQL = AuthorityCore + "/graphql"
+	HostFunctionMutate  = AuthorityCore + "/mutate"
+)
+
+// The capability-gated identity mutations (`permissions.mutations`). The
 // five ordinary effects — put, patch, delete, link, unlink — are granted by
-// `emit:` alone; merge and split need this explicit grant.
+// `permissions.writes` alone; merge and split need this explicit grant.
 const (
 	MutationMerge = "merge"
 	MutationSplit = "split"
@@ -69,6 +92,8 @@ type Function struct {
 	// Runtime names the body's language; Source is the inline body itself.
 	// Python's entrypoint is `main(input, host)`; Go's is
 	// `Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error)`.
+	// On RuntimeHost there is no body at all: Source is empty and the engine is
+	// the implementation.
 	Runtime string
 	Source  string
 	// TimeoutMs bounds one invocation's wall clock; a timeout rides the
@@ -153,6 +178,11 @@ const (
 
 // Identity is "<authority>/<name>".
 func (f *Function) Identity() string { return KindRef(f.Authority, f.Name) }
+
+// IsHost reports whether the engine is this function's body. Every runner path
+// asks before it reaches for a spec: there is nothing to compile, register,
+// warm or reconcile, and the caller's own grants are what scope the call.
+func (f *Function) IsHost() bool { return f.Runtime == RuntimeHost }
 
 // Actor is the function's own writing hand: `function:<name>`, the actor its
 // effects are attributed to and the one trigger self-exclusion keys on.
@@ -277,13 +307,19 @@ var ArgumentTypes = []string{
 // argumentSchemaTypes maps each argument type onto the shape dialect's own
 // type — the compiled schema is what CheckValue and the model-facing tool card
 // read, so a flat declaration cannot produce a schema either of them refuses.
+//
+// `json` maps to the EMPTY string, which compiles to a schema with no `type` key
+// at all: that is JSON Schema's own spelling of "any value", and the compiled
+// schema is handed to a provider verbatim as the tool card. A literal
+// `{type: any}` was neither — no validator admits it — so the escape hatch used
+// to compile to a card a strict provider refuses.
 var argumentSchemaTypes = map[string]string{
 	ArgumentString: "string",
 	ArgumentInt:    "number",
 	ArgumentFloat:  "number",
 	ArgumentBool:   "boolean",
 	ArgumentEnum:   "string",
-	ArgumentJSON:   "any",
+	ArgumentJSON:   "",
 }
 
 // functionArgKeys is one argument's closed key set.
@@ -327,7 +363,10 @@ func (l *loader) parseArguments(where string, v any) map[string]any {
 			l.errf("%s.type: %q — one of %s", awhere, ty, strings.Join(ArgumentTypes, ", "))
 			return nil
 		}
-		leaf := map[string]any{"type": schemaType}
+		leaf := map[string]any{}
+		if schemaType != "" {
+			leaf["type"] = schemaType
+		}
 		values, hasValues := ad["values"]
 		switch {
 		case ty == ArgumentEnum && !hasValues:
@@ -414,7 +453,11 @@ func checkValue(path string, schema map[string]any, v any) error {
 		return path
 	}
 	ty, _ := schema["type"].(string)
-	if ty == "any" {
+	// No type is no constraint — the flat dialect's `json` argument, whose value
+	// shape the function does not own. It is spelled as the ABSENCE of a type
+	// because the same map is the model-facing card, and JSON Schema says "any
+	// value" by saying nothing.
+	if ty == "" {
 		return nil
 	}
 	switch ty {
@@ -488,10 +531,9 @@ func checkValue(path string, schema map[string]any, v any) error {
 var functionDataKeys = map[string]bool{
 	"authority": true, "description": true, "runtime": true, "source": true,
 	"timeoutMs": true,
-	// The IO shapes and the capability envelope ride `data` itself: the flat
-	// argument lists, and the five keys of functionCapsKeys.
-	"arguments": true, "returns": true,
-	"emit": true, "reads": true, "call": true, "network": true, "mutations": true,
+	// The IO shapes are `data`'s own; the grant is ONE key beside them, holding
+	// the five of functionPermissionKeys.
+	"arguments": true, "returns": true, "permissions": true,
 }
 
 // deletedFunctionKeys are the removed keys, each naming what replaced it: the
@@ -505,16 +547,21 @@ var deletedFunctionKeys = map[string]string{
 	"on":           "a trigger record (core.substrate.reamde.dev) — the subscription lives on the trigger, the function is a pure callable",
 	"when":         "trigger source.record.when — the guard lives on the trigger record",
 	"coalesce":     "trigger source.record.coalesce — coalescing lives on the trigger record",
-	"capabilities": "emit, reads, call, network and mutations on `data` itself — one grant, declared once, at the level the declaration declares it",
+	"capabilities": "permissions: the grant is one object, and its keys are reads, writes, call, network and mutations",
 	"input":        "arguments — a flat LIST of named arguments ({name, type}), so the tool card is valid by construction",
 	"output":       "returns — the same flat list on the result side",
+	"emit":         "permissions.writes: the grants group under `permissions:`, and the permission to write is named for writing",
+	"reads":        "permissions.reads: the grants group under `permissions:`",
+	"call":         "permissions.call: the grants group under `permissions:`",
+	"network":      "permissions.network: the grants group under `permissions:`",
+	"mutations":    "permissions.mutations: the grants group under `permissions:`",
 }
 
-// functionCapsKeys is the capability envelope's five keys, each declared on
-// `data` itself. The sorted order of the set is the order the loader reads them
-// in, so a document with two problems reports the same one on every run.
-var functionCapsKeys = map[string]bool{
-	"emit": true, "reads": true, "call": true, "network": true, "mutations": true,
+// functionPermissionKeys is the grant object's five keys. The sorted order of
+// the set is the order the loader reads them in, so a document with two
+// problems reports the same one on every run.
+var functionPermissionKeys = map[string]bool{
+	"reads": true, "writes": true, "call": true, "network": true, "mutations": true,
 }
 
 var functionReadsKeys = map[string]bool{"kinds": true, "budgets": true}
@@ -543,7 +590,7 @@ func (l *loader) parseFunction(d Document) *Function {
 	}
 	fn := &Function{
 		Name: local, Authority: g.Name,
-		Description: l.parseDescription(where+": data", d.Data),
+		Description: l.parseDescriptionMax(where+": data", d.Data, maxCallableDescription),
 		Definition:  d.Data,
 	}
 	if fn.Description == "" {
@@ -553,20 +600,10 @@ func (l *loader) parseFunction(d Document) *Function {
 
 	fn.Runtime = mstr(d.Data, "runtime")
 	if !functionRuntimes[fn.Runtime] {
-		l.errf("%s: data.runtime: %q — python or go", where, fn.Runtime)
+		l.errf("%s: data.runtime: %q — one of %s", where, fn.Runtime, strings.Join(FunctionRuntimes, ", "))
 		return nil
 	}
-	fn.Source = mstr(d.Data, "source")
-	if strings.TrimSpace(fn.Source) == "" {
-		l.errf("%s: data.source is required — the inline %s body", where, fn.Runtime)
-		return nil
-	}
-	if len(fn.Source) > SourceMaxBytes {
-		l.errf("%s: data.source is %d bytes — the inline cap is %d", where, len(fn.Source), SourceMaxBytes)
-		return nil
-	}
-	if fn.TimeoutMs, ok = l.boundedInt(where+": data.timeoutMs", d.Data, "timeoutMs",
-		DefaultRunTimeoutMs, MaxRunTimeoutMs); !ok {
+	if !l.parseFunctionBody(where, d.Data, fn) {
 		return nil
 	}
 	if fn.Input, ok = l.parseFunctionIO(where, d.Data, "arguments"); !ok {
@@ -581,79 +618,138 @@ func (l *loader) parseFunction(d Document) *Function {
 	return fn
 }
 
-// parseFunctionCaps reads the capability envelope. `emit` is required and
-// non-empty: a function that writes nothing is not a function yet.
+// parseFunctionBody reads what the runtime implies about the body: an inline
+// runtime carries one, bounded and timed, and `host` carries none at all.
 //
-// The five keys ride `data` itself — the `capabilities:` wrapper is a deleted key
-// (deletedFunctionKeys) — so one grant is declared once, in one place, and the
-// path a refusal names is `data.<key>` with nothing to remember.
-func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Function) *Function {
-	caps := map[string]any{}
-	for k := range functionCapsKeys {
-		if v, declared := data[k]; declared {
-			caps[k] = v
+// The host arm refuses three things rather than ignoring them, because each one
+// would look obeyed: a `source` (the engine is the body, so nothing would ever
+// run what was written), a `timeoutMs` (nothing supervises an in-process
+// built-in on the loop's own clock), and the whole declaration when the build is
+// not the shipped one — a bundle or an owner cannot hand the engine an
+// implementation, so a `host` runtime from any other source names a body that
+// does not exist.
+func (l *loader) parseFunctionBody(where string, data map[string]any, fn *Function) bool {
+	if fn.IsHost() {
+		if l.source != SourceBuiltin {
+			l.errf("%s: data.runtime: host is the ENGINE's own implementation and only a shipped declaration may name one — an installed function declares its body (%s or %s)",
+				where, RuntimePython, RuntimeGo)
+			return false
 		}
+		if _, declared := data["source"]; declared {
+			l.errf("%s: data.source: a host function has no inline body — the engine is the implementation, and the declaration is its card", where)
+			return false
+		}
+		if _, declared := data["timeoutMs"]; declared {
+			l.errf("%s: data.timeoutMs: a host function runs in process under its caller's budgets — there is no child invocation to bound", where)
+			return false
+		}
+		return true
 	}
-	if _, isList := caps["emit"].(map[string]any); isList {
-		l.errf("%s: data.emit: a LIST of full type identities", where)
+	fn.Source = mstr(data, "source")
+	if strings.TrimSpace(fn.Source) == "" {
+		l.errf("%s: data.source is required — the inline %s body", where, fn.Runtime)
+		return false
+	}
+	if len(fn.Source) > SourceMaxBytes {
+		l.errf("%s: data.source is %d bytes — the inline cap is %d", where, len(fn.Source), SourceMaxBytes)
+		return false
+	}
+	var ok bool
+	if fn.TimeoutMs, ok = l.boundedInt(where+": data.timeoutMs", data, "timeoutMs",
+		DefaultRunTimeoutMs, MaxRunTimeoutMs); !ok {
+		return false
+	}
+	return true
+}
+
+// parseFunctionCaps reads the capability envelope out of `permissions:`.
+// `writes` is OPTIONAL, and an absent one is a function that writes nothing: a
+// pure function returns its output and stages no effect, which the emit gate
+// then refuses every effect against. It used to be required and non-empty, which
+// taught authors to declare a kind they never wrote to (firecrawl's websearch
+// declared `webdocument` and apologized for it in a comment).
+//
+// ONE object holds all five, because a bare `emit:` beside `returns:` said
+// nothing about being a permission and read as the output shape. The
+// `capabilities:` wrapper and the five hoisted spellings are deleted keys
+// (deletedFunctionKeys), so a refusal names `data.permissions.<key>` and there
+// is one place to look.
+func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Function) *Function {
+	perms, ok := l.permissionsObject(where, data, functionPermissionKeys)
+	if !ok {
 		return nil
 	}
-	for i, ev := range mslice(caps, "emit") {
-		t := fmt.Sprint(ev)
+	if _, isMap := perms["writes"].(map[string]any); isMap {
+		l.errf("%s: data.permissions.writes: a LIST of full type identities", where)
+		return nil
+	}
+	for i, t := range ReferentIDs(mslice(perms, "writes"), KindRef(AuthorityCore, DocKind)) {
 		if !ValidKindReference(t) {
-			l.errf("%s: data.emit[%d]: %q — emit names kinds, bare or authority-qualified, no globs", where, i, t)
+			l.errf("%s: data.permissions.writes[%d]: %q is not a kind; writes names them, bare or authority-qualified, no globs", where, i, t)
 			continue
 		}
 		fn.Caps.Emit = append(fn.Caps.Emit, t)
 	}
-	if len(fn.Caps.Emit) == 0 {
-		l.errf("%s: data.emit is required and non-empty — the allowlist of types the effects may address", where)
-		return nil
-	}
-	for i, cv := range mslice(caps, "call") {
-		ident := fmt.Sprint(cv)
+	for i, ident := range ReferentIDs(mslice(perms, "call"), KindRef(AuthorityCore, DocFunction)) {
 		if !Qualified(ident) || strings.Contains(ident, "*") {
-			l.errf("%s: data.call[%d]: %q — call names full function identities, no globs", where, i, ident)
+			l.errf("%s: data.permissions.call[%d]: %q is not a full function identity; call names them, no globs", where, i, ident)
 			continue
 		}
 		fn.Caps.Call = append(fn.Caps.Call, ident)
 	}
-	for i, nv := range mslice(caps, "network") {
+	for i, nv := range mslice(perms, "network") {
 		pat := fmt.Sprint(nv)
 		if pat == "" {
-			l.errf("%s: data.network[%d]: empty pattern", where, i)
+			l.errf("%s: data.permissions.network[%d]: empty pattern", where, i)
 			continue
 		}
 		fn.Caps.Network = append(fn.Caps.Network, pat)
 	}
-	for i, mv := range mslice(caps, "mutations") {
+	for i, mv := range mslice(perms, "mutations") {
 		m := fmt.Sprint(mv)
 		if !functionMutations[m] {
-			l.errf("%s: data.mutations[%d]: %q — merge and split are the gated mutations; put/patch/delete/link/unlink ride emit alone", where, i, m)
+			l.errf("%s: data.permissions.mutations[%d]: %q is not one of merge, split, the gated mutations; put/patch/delete/link/unlink ride permissions.writes alone", where, i, m)
 			continue
 		}
 		fn.Caps.Mutations = append(fn.Caps.Mutations, m)
 	}
-	if !l.parseReads(where, caps, fn) {
+	if !l.parseReads(where, perms, fn) {
 		return nil
 	}
 	return fn
 }
 
-// parseReads reads the optional read capability off an envelope. Both callers
-// carry it at `data.reads` (a function's capability key, and an agent's beside
-// its tools), so the path a refusal names is that one, spelled here.
-func (l *loader) parseReads(where string, caps map[string]any, fn *Function) bool {
-	const path = "data.reads"
-	rv, has := caps["reads"]
+// permissionsObject reads the `permissions:` grant off a declaration's data,
+// held to the key set its kind admits. An absent one is the empty grant, which
+// is what a declaration that asks for nothing means; a value that is not an
+// object refuses, since a list of words would name grants nothing enforces.
+func (l *loader) permissionsObject(where string, data map[string]any, keys map[string]bool) (map[string]any, bool) {
+	raw, declared := data["permissions"]
+	if !declared {
+		return map[string]any{}, true
+	}
+	perms := asMapOrNil(raw)
+	if perms == nil {
+		l.errf("%s: data.permissions: an OBJECT of grants (%s), got %T", where, strings.Join(sortedKeys(mapOfAny(keys)), ", "), raw)
+		return nil, false
+	}
+	l.checkKeys(where+": data.permissions", perms, keys)
+	return perms, true
+}
+
+// parseReads reads the optional read capability off a grant. Both callers carry
+// it at `data.permissions.reads` (a function's and an agent's are the same
+// shape), so the path a refusal names is that one, spelled here.
+func (l *loader) parseReads(where string, perms map[string]any, fn *Function) bool {
+	const path = "data.permissions.reads"
+	rv, has := perms["reads"]
 	if !has {
 		return true
 	}
 	r := asMap(rv)
 	l.checkKeys(where+": "+path, r, functionReadsKeys)
 	reads := &FunctionReads{}
-	for i, tv := range mslice(r, "kinds") {
-		t := fmt.Sprint(tv)
+	for i, t := range ReferentIDs(mslice(r, "kinds"), KindRef(AuthorityCore, DocKind)) {
 		if !ValidKindReference(t) {
 			l.errf("%s: %s.kinds[%d]: %q — reads names kinds, bare or authority-qualified, no globs", where, path, i, t)
 			continue
@@ -694,7 +790,7 @@ func (l *loader) boundedInt(where string, m map[string]any, key string, def, lim
 }
 
 // resolveFunction validates a function against the loaded registry: every
-// emit kind and read kind must exist, and every call target must be a
+// written kind and read kind must exist, and every call target must be a
 // registered function (same-batch installs count — resolution runs over the
 // whole candidate).
 //
@@ -710,7 +806,7 @@ func (r *Registry) resolveFunction(f *Function) []string {
 	for i, t := range f.Caps.Emit {
 		ty, err := r.Resolve(t)
 		if err != nil || ty == nil {
-			problems = append(problems, fmt.Sprintf("%s: data.emit: unknown type %q", where, t))
+			problems = append(problems, fmt.Sprintf("%s: data.permissions.writes: unknown type %q", where, t))
 			continue
 		}
 		f.Caps.Emit[i] = ty.Identity
@@ -719,15 +815,26 @@ func (r *Registry) resolveFunction(f *Function) []string {
 		for i, t := range f.Caps.Reads.Kinds {
 			ty, err := r.Resolve(t)
 			if err != nil || ty == nil {
-				problems = append(problems, fmt.Sprintf("%s: data.reads.kinds: unknown type %q", where, t))
+				problems = append(problems, fmt.Sprintf("%s: data.permissions.reads.kinds: unknown type %q", where, t))
 				continue
 			}
 			f.Caps.Reads.Kinds[i] = ty.Identity
 		}
 	}
 	for _, ident := range f.Caps.Call {
-		if _, err := r.ResolveFunction(ident); err != nil {
-			problems = append(problems, fmt.Sprintf("%s: data.call: unknown function %q", where, ident))
+		target, err := r.ResolveFunction(ident)
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("%s: data.permissions.call: unknown function %q", where, ident))
+			continue
+		}
+		// A host function runs under the GRANTS OF ITS CALLER, and a function body
+		// has none to lend: its own envelope is what bounds its effects, and the
+		// built-ins are bounded by an agent's reads and emit instead. So a body
+		// cannot sub-call one, and the refusal names where the tool does work.
+		if target.IsHost() {
+			problems = append(problems, fmt.Sprintf(
+				"%s: data.permissions.call: %q is a host function: the engine runs it under a CALLER's grants and a function body has none to lend, so carry it as an agent tool instead",
+				where, ident))
 		}
 	}
 	return problems
@@ -747,19 +854,34 @@ func (r *Registry) Functions() []*Function {
 	return out
 }
 
-// ResolveFunction accepts a full identity or a bare name unique across authorities.
+// ResolveFunction accepts a full identity or a bare name unique across
+// authorities — except for a HOST function, which answers its identity alone.
+// The four of them are named for what they do (`query`, `graphql`, `mutate`,
+// `propose`), which is exactly what a repository's own function is likeliest to
+// be called, so a bare name that resolved to the user's function before they
+// shipped has to keep resolving to it.
 func (r *Registry) ResolveFunction(nameOrIdentity string) (*Function, error) {
 	var cands []*Function
+	var host *Function
 	for _, f := range r.Functions() {
 		if f.Identity() == nameOrIdentity {
 			return f, nil
 		}
-		if f.Name == nameOrIdentity {
-			cands = append(cands, f)
+		if f.Name != nameOrIdentity {
+			continue
 		}
+		if f.IsHost() {
+			host = f
+			continue
+		}
+		cands = append(cands, f)
 	}
 	switch len(cands) {
 	case 0:
+		if host != nil {
+			return nil, fmt.Errorf("unknown function %q — the built-in of that name is %s, and a host function answers its full identity",
+				nameOrIdentity, host.Identity())
+		}
 		return nil, fmt.Errorf("unknown function %q", nameOrIdentity)
 	case 1:
 		return cands[0], nil

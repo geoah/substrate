@@ -373,9 +373,9 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	// the model saw, and NOTHING may have landed on the config.
 	var childThread string
 	if err := ds.db.QueryRowContext(ctx, `
-		SELECT id FROM records WHERE kind = $1 AND deleted_at IS NULL AND props->'agent'->>'id' = $2
+		SELECT id FROM records WHERE kind = $1 AND deleted_at IS NULL AND props->>'agent' = $2
 		ORDER BY created_at DESC, id DESC LIMIT 1`,
-		typeThread, webAuthority+"/readinglistagent").Scan(&childThread); err != nil {
+		typeThread, vocabulary.RecordPath(kindAgent, webAuthority+"/readinglistagent")).Scan(&childThread); err != nil {
 		t.Fatalf("the reading-list child thread: %v", err)
 	}
 	var refused bool

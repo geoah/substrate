@@ -14,20 +14,23 @@ import (
 // (primitives §5). The row IS the prompt store — the changelog is its version
 // history — and everything else on it is references: one `provider`
 // data-record id plus the `model` it asks that provider for,
-// `tools:` (the built-ins query, propose, graphql and mutate, plus callable
-// functions, each optionally aliased for the agent's own prompt context), `agents:`
-// (sub-agents), `budgets:` and `emit:`. Agents dispatch exactly like
+// `tools:` (callable functions, the four host built-ins among them, each
+// optionally aliased for the agent's own prompt context), `agents:`
+// (sub-agents), `budgets:` and `permissions:`. Agents dispatch exactly like
 // functions — triggers, the call API, sub-agent calls — under the actor
 // `function:<name>`; the loop itself is host-side (engine/agentloop.go).
 
-// The built-in agent tools. `query` is the capability-scoped read (gated by
-// the agent's `reads:`); `propose` emits `recordpatchrequest` records (gated
-// by `emit:` naming the request type); `graphql` is the WHOLE-repository
-// read-only GraphQL surface (declaring it is the grant: there is no
-// narrower scope to declare, which is why the scoped `query` survives beside
-// it); `mutate` executes GraphQL mutations, each written kind held to the
-// agent's effective emit (so it needs a non-empty `emit:`). Everything else
-// in `tools:` is a callable function.
+// The built-in agent tools, by the LOCAL NAME of the host function record that
+// declares each one. `query` is the capability-scoped read (gated by the agent's
+// `permissions.reads`); `propose` emits `recordpatchrequest` records (gated by
+// `permissions.writes` naming the request type); `graphql` is the
+// WHOLE-repository read-only GraphQL surface (declaring it is the grant: there
+// is no narrower scope to declare, which is why the scoped `query` survives
+// beside it); `mutate` executes GraphQL mutations, each written kind held to the
+// agent's effective emit (so it needs a non-empty `permissions.writes`).
+//
+// A `tools:` entry names ONE of them the way it names any other function: by
+// identity, under `function:`. There is no second arm — see agentBuiltinByIdentity.
 const (
 	AgentToolQuery   = "query"
 	AgentToolPropose = "propose"
@@ -35,12 +38,17 @@ const (
 	AgentToolMutate  = "mutate"
 )
 
-// agentBuiltins is the closed set `tools:` accepts as bare built-in names.
-var agentBuiltins = map[string]bool{
-	AgentToolQuery:   true,
-	AgentToolPropose: true,
-	AgentToolGraphQL: true,
-	AgentToolMutate:  true,
+// agentBuiltinByIdentity maps a host function's IDENTITY onto the built-in the
+// loop dispatches. It is what makes `{function: core.substrate.reamde.dev/query}`
+// carry the same grant check and the same dispatch as the retired `{builtin:
+// query}` arm: the four are ordinary function records the registry ships, so
+// they resolve like any callable, and this is the only place that knows which of
+// them the engine implements in the loop rather than the runner.
+var agentBuiltinByIdentity = map[string]string{
+	HostFunctionQuery:   AgentToolQuery,
+	HostFunctionPropose: AgentToolPropose,
+	HostFunctionGraphQL: AgentToolGraphQL,
+	HostFunctionMutate:  AgentToolMutate,
 }
 
 // The request params an agent may name in `params:`. The set is closed on
@@ -99,12 +107,12 @@ type Agent struct {
 	Agents []string
 	// Budgets bounds one invocation.
 	Budgets AgentBudgets
-	// Emit is the allowlist for the agent's writes: every tool-call effect is
-	// held to it, and it names which request types `propose` may emit. Empty
-	// means the agent writes nothing.
+	// Emit is `permissions.writes` parsed: every tool-call effect is held to it,
+	// and it names which request types `propose` may emit. Empty means the agent
+	// writes nothing.
 	Emit []string
-	// Reads scopes the `query` built-in exactly like a function's
-	// capability-scoped reads; nil means `query` is not granted.
+	// Reads is `permissions.reads` parsed, scoping the `query` built-in exactly
+	// like a function's; nil means `query` is not granted.
 	Reads *FunctionReads
 	// SubagentOnly withholds the agent from the interactive chat surface: the
 	// console keeps it off the chat list and ChatAgent refuses it. Everything
@@ -117,16 +125,22 @@ type Agent struct {
 	Definition map[string]any
 }
 
-// AgentTool is one `tools:` entry: a built-in by name, or a callable
-// function with an optional per-agent alias (name/description override the
-// prompt-facing card; the function manifest stays the canonical source).
+// AgentTool is one `tools:` entry: the FUNCTION it names, with an optional
+// per-agent alias (name/description override the prompt-facing card; the
+// function declaration stays the canonical source).
 type AgentTool struct {
-	// Builtin is one of the agentBuiltins names; empty for callables.
+	// Builtin is DERIVED, never authored: the built-in word when Callable names
+	// one of the four host functions, empty otherwise. The grant checks and the
+	// loop's dispatch switch read it, so what used to be a second arm of the
+	// `tools:` union is now one lookup on the identity the entry already carries.
 	Builtin string
-	// Callable is the function identity, for callable entries.
+	// Callable is the identity `function:` names — always set, built-ins
+	// included. The authored key is `function` because an entry admits nothing
+	// else: a sub-agent is named on `agents:`, and `callable` is the TRIGGER's
+	// word, where a target really may be either.
 	Callable string
 	// Name is the model-facing tool name: the alias when declared, else the
-	// builtin's name or the function's local name.
+	// function's local name.
 	Name string
 	// Description is the alias when declared; empty means the canonical
 	// description (the function manifest's) is the card.
@@ -152,7 +166,7 @@ func (a *Agent) Identity() string { return KindRef(a.Authority, a.Name) }
 // sharing a name share an actor.
 func (a *Agent) Actor() string { return substrate.FunctionActorPrefix + a.Name }
 
-// EmitAllows reports whether the agent's emit allowlist names a type.
+// EmitAllows reports whether the agent's write allowlist names a type.
 func (a *Agent) EmitAllows(ident string) bool {
 	for _, t := range a.Emit {
 		if t == ident {
@@ -171,23 +185,46 @@ var reToolName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`)
 var agentDataKeys = map[string]bool{
 	"authority": true, "description": true, "prompt": true,
 	"provider": true, "model": true, "params": true,
-	"tools": true, "agents": true, "budgets": true, "emit": true, "reads": true,
+	"tools": true, "agents": true, "budgets": true, "permissions": true,
 	"subagentOnly": true,
 }
+
+// deletedAgentKeys are the removed keys, each naming what replaced it. An
+// agent's two grants group under `permissions:` with a function's five, and the
+// permission to write is named for writing: a bare `emit:` said nothing about
+// being a grant at all. No compatibility shim: the rows written that way are
+// translated by the dialect rung (engine/dialectonegrammar.go).
+var deletedAgentKeys = map[string]string{
+	"emit":  "permissions.writes: the grants group under `permissions:`, and the permission to write is named for writing",
+	"reads": "permissions.reads: the grants group under `permissions:`",
+}
+
+// agentPermissionKeys is the agent's grant object: a function's five minus the
+// three an LLM loop has no body to spend (call, network, mutations).
+var agentPermissionKeys = map[string]bool{"reads": true, "writes": true}
 
 var agentBudgetKeys = map[string]bool{
 	"maxTurns": true, "maxToolCalls": true, "deadlineSeconds": true, "depth": true,
 }
 
-// agentToolKeys is a tool entry's key set. `builtin` and `callable` are the two
-// arms an entry may take, and exactly one of them names the tool.
+// agentToolKeys is a tool entry's key set: `function` names the tool, `name` and
+// `description` alias its card for this agent.
 var agentToolKeys = map[string]bool{
-	"builtin": true, "callable": true, "name": true, "description": true,
+	"function": true, "name": true, "description": true,
 }
 
-// agentBuiltinNames lists the built-ins in the order the errors name them.
-var agentBuiltinNames = []string{
-	AgentToolQuery, AgentToolPropose, AgentToolGraphQL, AgentToolMutate,
+// deletedAgentToolKeys are the retired keys of a tool ENTRY, each naming its
+// replacement. `callable` said the entry might name something other than a
+// function, and it never could: a sub-agent is named on `agents:`, and the word
+// belongs to a trigger, whose target really is a function OR an agent.
+var deletedAgentToolKeys = map[string]string{
+	"callable": "function — a tool entry names a function, and only a function",
+}
+
+// agentBuiltinIdentities lists the four host functions in the order the errors
+// name them.
+var agentBuiltinIdentities = []string{
+	HostFunctionQuery, HostFunctionPropose, HostFunctionGraphQL, HostFunctionMutate,
 }
 
 // buildAuthorityAgents parses one authority's agent documents — load.go's one-line
@@ -209,13 +246,19 @@ func (l *loader) buildAuthorityAgents(gd *authorityDocs, g *Authority) {
 	sort.Strings(g.AgentOrder)
 }
 
-// parseAgent parses one agent document. Emit, reads, tool callables and
+// parseAgent parses one agent document. The permissions, tool functions and
 // sub-agents resolve against the registry in Finalize/Install, like a
-// function's capability envelope; the provider reference is a DATA row and
-// resolves at dispatch instead.
+// function's grant; the provider reference is a DATA row and resolves at
+// dispatch instead.
 func (l *loader) parseAgent(d Document) *Agent {
 	g := l.authority
 	where := DocAgent + " " + d.ID
+	for k := range d.Data {
+		if replacement, gone := deletedAgentKeys[k]; gone {
+			l.errf("%s: key %q is deleted — %s", where, k, replacement)
+			return nil
+		}
+	}
 	l.checkKeys(where, d.Data, agentDataKeys)
 	local, ok := l.localName(where, d.ID, g.Name)
 	if !ok {
@@ -239,7 +282,9 @@ func (l *loader) parseAgent(d Document) *Agent {
 		l.errf("%s: data.prompt is %d bytes — the cap is %d", where, len(a.Prompt), AgentPromptMaxBytes)
 		return nil
 	}
-	a.Provider = mstr(d.Data, "provider")
+	// `provider` is a REFERENCE at llmprovider: a manifest authors the bare
+	// record id and the row stores the full path, and the loop resolves the id.
+	a.Provider = ReferentID(d.Data["provider"], KindRef(AuthorityCore, "llmprovider"))
 	if a.Provider == "" {
 		l.errf("%s: data.provider is required — an llmprovider record id (default, or a custom row)", where)
 		return nil
@@ -268,8 +313,7 @@ func (l *loader) parseAgent(d Document) *Agent {
 	for _, t := range a.Tools {
 		toolNames[t.Name] = true
 	}
-	for i, sv := range mslice(d.Data, "agents") {
-		ident := fmt.Sprint(sv)
+	for i, ident := range ReferentIDs(mslice(d.Data, "agents"), KindRef(AuthorityCore, DocAgent)) {
 		if !Qualified(ident) || strings.Contains(ident, "*") {
 			l.errf("%s: data.agents[%d]: %q — sub-agents are full agent identities, no globs", where, i, ident)
 			continue
@@ -286,10 +330,13 @@ func (l *loader) parseAgent(d Document) *Agent {
 		toolNames[local] = true
 		a.Agents = append(a.Agents, ident)
 	}
-	for i, ev := range mslice(d.Data, "emit") {
-		t := fmt.Sprint(ev)
+	perms, ok := l.permissionsObject(where, d.Data, agentPermissionKeys)
+	if !ok {
+		return nil
+	}
+	for i, t := range ReferentIDs(mslice(perms, "writes"), KindRef(AuthorityCore, DocKind)) {
 		if !Qualified(t) || strings.Contains(t, "*") {
-			l.errf("%s: data.emit[%d]: %q — emit names full type identities, no globs", where, i, t)
+			l.errf("%s: data.permissions.writes[%d]: %q is not a full type identity; writes names them, no globs", where, i, t)
 			continue
 		}
 		a.Emit = append(a.Emit, t)
@@ -297,9 +344,9 @@ func (l *loader) parseAgent(d Document) *Agent {
 	if !l.parseAgentBudgets(where, d.Data, a) {
 		return nil
 	}
-	// `reads:` reuses the function envelope's shape verbatim.
+	// `permissions.reads` reuses the function grant's shape verbatim.
 	fn := &Function{}
-	if !l.parseReads(where, d.Data, fn) {
+	if !l.parseReads(where, perms, fn) {
 		return nil
 	}
 	a.Reads = fn.Caps.Reads
@@ -311,17 +358,17 @@ func (l *loader) parseAgent(d Document) *Agent {
 		switch t.Builtin {
 		case AgentToolQuery:
 			if a.Reads == nil {
-				l.errf("%s: data.tools: query needs data.reads — the built-in is capability-scoped like a function's reads", where)
+				l.errf("%s: data.tools: query needs data.permissions.reads, since the built-in is capability-scoped like a function's reads", where)
 				return nil
 			}
 		case AgentToolPropose:
 			if !a.EmitAllows(KindRecordPatchRequest) {
-				l.errf("%s: data.tools: propose needs %s in data.emit — emit names which request types the agent may propose", where, KindRecordPatchRequest)
+				l.errf("%s: data.tools: propose needs %s in data.permissions.writes, which names the request kinds the agent may create", where, KindRecordPatchRequest)
 				return nil
 			}
 		case AgentToolMutate:
 			if len(a.Emit) == 0 {
-				l.errf("%s: data.tools: mutate needs data.emit — emit names which kinds the agent may write", where)
+				l.errf("%s: data.tools: mutate needs data.permissions.writes, which names the kinds the agent may create or change", where)
 				return nil
 			}
 		}
@@ -386,16 +433,23 @@ func (l *loader) parseAgentParams(where string, data map[string]any, a *Agent) b
 	return true
 }
 
-// parseAgentTools reads the `tools:` list. An entry names ONE tool, by one of
-// two arms: `builtin:` (query, propose, graphql, mutate) or `callable:` (a
-// function identity, optionally aliased for this agent's prompt context with
-// `name`/`description`).
+// parseAgentTools reads the `tools:` list. An entry names ONE tool, ONE way:
+// `function:` plus a function identity, optionally aliased for this agent's
+// prompt context with `name`/`description`. The four built-ins are function
+// records like any other (`core.substrate.reamde.dev/query`, …), so they are
+// named here exactly like a bundle's function is.
 //
-// A bare STRING is refused. It named the arm by its value — a built-in if the
-// word happened to be one, a callable otherwise — so one shape held two kinds of
-// thing and a typo in a built-in's name silently became a callable nothing
-// declares. The stored rows written that way are translated by the dialect rung
-// (engine/dialectonegrammar.go), which is the only reader of that spelling left.
+// THREE OLDER SPELLINGS ARE REFUSED, each naming what replaced it. A bare STRING
+// named the arm by its value — a built-in if the word happened to be one, a
+// function otherwise — so one shape held two kinds of thing and a typo in a
+// built-in's name silently became a function nothing declares. `{builtin: x}`
+// was the interim arm that split the union explicitly: it was a design miss,
+// because it made the built-ins the ONE thing an agent could name that no record
+// declared, and it is gone now that they are records. And `{callable: x}` said
+// the entry might name something other than a function; it never could, since a
+// sub-agent is named on `agents:`. The stored rows written any of those ways are
+// translated by the dialect rung (engine/dialectonegrammar.go), which is the
+// only reader of those spellings left.
 func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bool {
 	seen := map[string]bool{}
 	add := func(i int, t AgentTool) bool {
@@ -414,62 +468,67 @@ func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bo
 	for i, tv := range mslice(data, "tools") {
 		switch entry := tv.(type) {
 		case string:
-			arm := fmt.Sprintf("{callable: %s}", entry)
-			if agentBuiltins[entry] {
-				arm = fmt.Sprintf("{builtin: %s}", entry)
-			}
-			l.errf("%s: data.tools[%d]: %q is a bare string — an entry names its arm: %s (a built-in is one of %s; a callable is a full function identity)",
-				where, i, entry, arm, strings.Join(agentBuiltinNames, ", "))
+			l.errf("%s: data.tools[%d]: %q is a bare string — an entry names its function: {function: %s}",
+				where, i, entry, toolFunctionHint(entry))
 			return false
 		case map[string]any:
 			twhere := fmt.Sprintf("%s: data.tools[%d]", where, i)
-			l.checkKeys(twhere, entry, agentToolKeys)
-			builtin, callable := mstr(entry, "builtin"), mstr(entry, "callable")
-			switch {
-			case builtin != "" && callable != "":
-				l.errf("%s: builtin %q and callable %q — an entry names exactly one of builtin and callable", twhere, builtin, callable)
+			if builtin := mstr(entry, "builtin"); builtin != "" {
+				// THE TOMBSTONE. The built-ins are records, so the union has one arm.
+				l.errf("%s: builtin %q is deleted — the built-ins are function records: {function: %s}",
+					twhere, builtin, toolFunctionHint(builtin))
 				return false
-			case builtin == "" && callable == "":
-				l.errf("%s: neither builtin nor callable — an entry names exactly one of them", twhere)
-				return false
-			case builtin != "":
-				if !agentBuiltins[builtin] {
-					l.errf("%s: builtin %q — one of %s", twhere, builtin, strings.Join(agentBuiltinNames, ", "))
-					return false
-				}
-				// A built-in's card is the loop's own (engine/agentloop.go writes
-				// the name and the description it renders), so there is nothing
-				// here to override: an alias would name a tool the model never
-				// sees.
-				if mstr(entry, "name") != "" || mstr(entry, "description") != "" {
-					l.errf("%s: builtin %q takes no name or description — the loop owns a built-in's card", twhere, builtin)
-					return false
-				}
-				if !add(i, AgentTool{Builtin: builtin, Name: builtin}) {
-					return false
-				}
-			default:
-				if !Qualified(callable) || strings.Contains(callable, "*") {
-					l.errf("%s: callable %q — a full function identity, no globs", twhere, callable)
-					return false
-				}
-				name := mstr(entry, "name")
-				if name == "" {
-					name = KindName(callable)
-				}
-				if !add(i, AgentTool{
-					Callable: callable, Name: name,
-					Description: l.parseDescription(twhere, entry),
-				}) {
+			}
+			for k := range entry {
+				if replacement, gone := deletedAgentToolKeys[k]; gone {
+					l.errf("%s: key %q is deleted — %s", twhere, k, replacement)
 					return false
 				}
 			}
+			l.checkKeys(twhere, entry, agentToolKeys)
+			fnIdent := ReferentID(entry["function"], KindRef(AuthorityCore, DocFunction))
+			if fnIdent == "" {
+				l.errf("%s: no function — an entry names one function identity (a built-in is one of %s)",
+					twhere, strings.Join(agentBuiltinIdentities, ", "))
+				return false
+			}
+			if !Qualified(fnIdent) || strings.Contains(fnIdent, "*") {
+				l.errf("%s: function %q — a full function identity, no globs", twhere, fnIdent)
+				return false
+			}
+			name := mstr(entry, "name")
+			if name == "" {
+				name = KindName(fnIdent)
+			}
+			// A built-in is aliasable exactly like any other function: the loop
+			// reads the tool's name and description off the entry when it carries
+			// them and off the resolved function record otherwise, which is the
+			// same rule for all four arms of the old union and for every bundle
+			// function.
+			if !add(i, AgentTool{
+				Callable: fnIdent, Name: name, Builtin: agentBuiltinByIdentity[fnIdent],
+				Description: l.parseDescription(twhere, entry),
+			}) {
+				return false
+			}
 		default:
-			l.errf("%s: data.tools[%d]: a tool is a string, a {builtin} map or a {callable, name, description} map, got %T", where, i, tv)
+			l.errf("%s: data.tools[%d]: a tool is a {function, name, description} map, got %T", where, i, tv)
 			return false
 		}
 	}
 	return true
+}
+
+// toolFunctionHint spells the identity a retired entry meant, so a refusal names
+// the exact replacement: a built-in's bare word becomes its core identity, and
+// anything else was already an identity.
+func toolFunctionHint(named string) string {
+	for ident, word := range agentBuiltinByIdentity {
+		if word == named {
+			return ident
+		}
+	}
+	return named
 }
 
 func (l *loader) parseAgentBudgets(where string, data map[string]any, a *Agent) bool {
@@ -496,7 +555,7 @@ func (l *loader) parseAgentBudgets(where string, data map[string]any, a *Agent) 
 }
 
 // resolveAuthorityAgents validates an authority's agents against the loaded registry:
-// every emit and read type must exist, every tool callable must be a
+// every written and read type must exist, every tool must name a
 // registered function, and every sub-agent must be a registered agent —
 // same-batch installs count, like a function's call targets.
 func (r *Registry) resolveAuthorityAgents(g *Authority) []string {
@@ -506,22 +565,22 @@ func (r *Registry) resolveAuthorityAgents(g *Authority) []string {
 		where := DocAgent + " " + a.Identity()
 		for _, t := range a.Emit {
 			if _, ok := r.ByIdentity(t); !ok {
-				problems = append(problems, fmt.Sprintf("%s: data.emit: unknown type %q", where, t))
+				problems = append(problems, fmt.Sprintf("%s: data.permissions.writes: unknown type %q", where, t))
 			}
 		}
 		if a.Reads != nil {
 			for _, t := range a.Reads.Kinds {
 				if _, ok := r.ByIdentity(t); !ok {
-					problems = append(problems, fmt.Sprintf("%s: data.reads.kinds: unknown type %q", where, t))
+					problems = append(problems, fmt.Sprintf("%s: data.permissions.reads.kinds: unknown type %q", where, t))
 				}
 			}
 		}
+		// EVERY tool resolves the same way, built-ins included: they are function
+		// records the registry ships, so there is no arm here that skips the
+		// existence check.
 		for _, t := range a.Tools {
-			if t.Callable == "" {
-				continue
-			}
 			if _, err := r.ResolveFunction(t.Callable); err != nil {
-				problems = append(problems, fmt.Sprintf("%s: data.tools: unknown function %q", where, t.Callable))
+				problems = append(problems, fmt.Sprintf("%s: data.tools.function: unknown function %q", where, t.Callable))
 			}
 		}
 		for _, ident := range a.Agents {

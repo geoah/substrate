@@ -70,24 +70,28 @@ const (
 	// is never a refinement base, never a capability property, and its parse
 	// branch owns its own key set.
 	DatatypeObject Datatype = "object"
-	// DatatypeReference is a typed POINTER stored as a property value: the same
-	// {authority, type, id} triple S1/A9 made canonical for an edge target
-	//, but a stored value, not a graph edge. An EDGE is a
-	// traversable relationship (incoming views, subject resolution); a
-	// `reference` is data — a manifest field that names another type+record
-	// (a trigger's `callable`). Its optional `to:` pins the referent type
-	// like an edge's `to:` (`to: any`, or absent, leaves it unconstrained).
-	// Validation checks shape + that the referent TYPE exists; the referent
-	// RECORD is NOT required to exist at write time — a reference is a
-	// pointer, like an edge target may be a bare id the target's own
-	// admission resolves. Its own parse branch owns its key set. Not in
-	// builtinKinds: never a refinement base and never an object field.
+	// DatatypeReference is a typed POINTER stored as a property value: ONE flat
+	// string, the referent's record PATH ("<kind>/<id>"), a stored value rather
+	// than a graph edge. An EDGE is a traversable relationship (incoming views,
+	// subject resolution); a `reference` is data — a declaration field that names
+	// another record (a trigger's `callable`). Its optional `kind:` PIN says
+	// which kind's records it names (`kind: any`, or absent, leaves it
+	// unconstrained), which is what lets a client offer a picker and what
+	// supplies the kind an authored bare id omits — an id with no slash in it,
+	// because a slash-bearing one is written in full path form or refused
+	// (SplitRecordPath says why). Validation checks shape + that
+	// the referent KIND exists; the referent RECORD is NOT required to exist at
+	// write time — a reference is a pointer, like an edge target may be a bare id
+	// the target's own admission resolves. Its own parse branch owns its key set.
+	// Not in builtinKinds: never a refinement base and never an object field.
 	DatatypeReference Datatype = "reference"
 )
 
-// ToAny is the `to:` value that leaves a reference (or, by the same word, an
-// edge) unconstrained: any type is an admissible referent, and the value must
-// then carry an explicit type. An absent `to:` on a reference reads the same.
+// ToAny is the unconstrained pin: any kind is an admissible referent, and the
+// value must then be a FULL path, since there is no pin to supply the kind a
+// bare id leaves out. It is spelled `kind: any` on a reference property and
+// `to: any` on an edge — one word each, for the two things they are — and an
+// absent pin on a reference reads the same.
 const ToAny = "any"
 
 var builtinKinds = map[Datatype]bool{
@@ -215,15 +219,6 @@ type Property struct {
 	// (checkDeclarationWrite, in internal/engine). This is the only statement of
 	// the stamped set; the engine keeps no hand-written list beside it.
 	Managed bool
-	// RefersTo marks a STRING property whose value names something in the
-	// registry rather than being free text: a kind (`emit: [person]`), a
-	// function, an agent, an authority or an llmprovider. It changes no stored
-	// value and validates nothing — existence is settled at registry
-	// finalization, which knows the whole closure — and exists so a client can
-	// offer a picker from the declaration alone instead of a hand-kept map of
-	// property name to picker. Refused on any other datatype: a reference-typed
-	// pointer already carries its referent in `to:`.
-	RefersTo string
 	// Writer restricts WHICH actor role may write this property, enforced
 	// server-side after the merged row is known. Empty is
 	// unrestricted — the ordinary "nothing ranks writers" rule. The declared
@@ -252,17 +247,6 @@ const (
 const (
 	KeyPatternCamel   = "camel"
 	KeyPatternKindRef = "kindRef"
-)
-
-// The admitted `refersTo:` markers: what a string property's value NAMES.
-// `provider` is an llmprovider record, which is data rather than vocabulary and
-// is why it is not spelled with the others' registry sense.
-const (
-	RefersToKind      = "kind"
-	RefersToFunction  = "function"
-	RefersToAgent     = "agent"
-	RefersToAuthority = "authority"
-	RefersToProvider  = "provider"
 )
 
 // MaxFieldDepth is how deep declared fields nest: a kind's own property is

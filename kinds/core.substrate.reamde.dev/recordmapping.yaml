@@ -18,7 +18,7 @@ data:
   # v1alpha4: TYPED. `definition` and `name` are gone; the match probes and the
   # map rules are properties, and a rule is always `{path}` — the bare path
   # string went with the blob.
-  version: v1alpha4
+  version: v1alpha5
   names:
     singular: recordmapping
     plural: recordmappings
@@ -38,6 +38,11 @@ data:
         - installed
       managed: true
       description: builtin for seeded mappings, installed for bundle ones
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
     authority:
       type: string
       required: true
@@ -46,13 +51,13 @@ data:
       type: string
       description: what the mapping keeps up to date
     from:
-      type: string
-      refersTo: kind
+      type: reference
+      kind: core.substrate.reamde.dev/kind
       required: true
       description: the source kind whose records project
     to:
-      type: string
-      refersTo: kind
+      type: reference
+      kind: core.substrate.reamde.dev/kind
       required: true
       description: the subject kind, always a full kind reference
     # the declared edge on `from` that records the link — ordinary in its own

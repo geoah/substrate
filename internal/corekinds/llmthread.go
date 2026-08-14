@@ -17,7 +17,7 @@ import (
 type LLMThread struct {
 	// Agent is the agent this thread ran. Points at
 	// core.substrate.reamde.dev/agent.
-	Agent *Reference
+	Agent *ReferencePath
 
 	// Provider is the llmprovider row id the run resolved.
 	Provider *string
@@ -70,7 +70,7 @@ type LLMThread struct {
 
 	// Parent is the calling agent's thread, on sub-agent threads. Points at
 	// core.substrate.reamde.dev/llmthread.
-	Parent *Reference
+	Parent *ReferencePath
 }
 
 // LLMThreadKeys is the admitted key set: every property
@@ -233,7 +233,7 @@ func decodeLLMThread(d *decoder, path string, v any) (LLMThread, bool) {
 func (v *LLMThread) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Agent != nil {
-		out["agent"] = v.Agent.Encode()
+		out["agent"] = string(*v.Agent)
 	}
 	if v.Provider != nil {
 		out["provider"] = *v.Provider
@@ -281,7 +281,7 @@ func (v *LLMThread) Encode() map[string]any {
 		out["leaseUntil"] = *v.LeaseUntil
 	}
 	if v.Parent != nil {
-		out["parent"] = v.Parent.Encode()
+		out["parent"] = string(*v.Parent)
 	}
 	return out
 }

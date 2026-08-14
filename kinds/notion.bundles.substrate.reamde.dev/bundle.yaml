@@ -55,7 +55,10 @@ data:
   # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
-  version: v1alpha2
+  # v1alpha3: the grants group under one `permissions:` object, and the permission
+  # to write is `writes:` inside it. This closure's functions and agents
+  # follow core's declaration.
+  version: v1alpha4
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members. NO `oauth2:` manifest
@@ -272,6 +275,10 @@ data:
     singular: page
     plural: pages
   properties:
+    # NOT a reference, and every `account:` in this closure reads the same way:
+    # the connector writes it as provenance on synced rows, and retyping a live
+    # string property to a reference is a NARROWING the boot upgrade refuses
+    # while rows hold the old shape — it would strand every released store.
     account:
       type: string
       displayName: Account
@@ -403,22 +410,23 @@ data:
       type: string
       description: "an account record id to sync immediately, cadence ignored
         — the whole drain runs inside this one invocation"
-  emit:
-    - notion.bundles.substrate.reamde.dev/page
-    - notion.bundles.substrate.reamde.dev/database
-    - notion.bundles.substrate.reamde.dev/account
-  # The delta short-circuit reads the mirrors back; the search and links
-  # phases probe parent targets. Budget: one search page reads at most
-  # SEARCH_PAGE mirrors plus a parent probe each.
-  reads:
-    kinds:
+  permissions:
+    writes:
       - notion.bundles.substrate.reamde.dev/page
       - notion.bundles.substrate.reamde.dev/database
-    budgets:
-      calls: 300
-      rows: 3000
-  network:
-    - "api.notion.com"
+      - notion.bundles.substrate.reamde.dev/account
+    # The delta short-circuit reads the mirrors back; the search and links
+    # phases probe parent targets. Budget: one search page reads at most
+    # SEARCH_PAGE mirrors plus a parent probe each.
+    reads:
+      kinds:
+        - notion.bundles.substrate.reamde.dev/page
+        - notion.bundles.substrate.reamde.dev/database
+      budgets:
+        calls: 300
+        rows: 3000
+    network:
+      - "api.notion.com"
   source: |
     # /// script
     # requires-python = ">=3.11"

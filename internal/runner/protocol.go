@@ -47,7 +47,7 @@ import (
 //	parent → child   {"kind": "reply", "reqId": N, "ok": true, "result": {...}} / {"kind": "reply", "reqId": N, "ok": false, "error": "..."}
 //
 // A `call` runs the target function to completion INSIDE the caller's
-// invocation: the parent gates it on `capabilities.call`, charges the
+// invocation: the parent gates it on `permissions.call`, charges the
 // caller's call budget, runs the target body (its effects accumulate into
 // the CALLER's delivery transaction) and replies with the target's output.
 //

@@ -2,9 +2,9 @@ package vocabulary_test
 
 // The property dialect's widenings: a repeated field, an object field nested to
 // the declared depth, a keyed map with its key contract, and a reference field
-// that resolves its `to:` wherever it sits. Plus the two markers that carry
-// declared INTENT and change no stored value — `refersTo` and `managed` — and
-// the derived template tokens.
+// that resolves its `kind:` pin wherever it sits. Plus the marker that carries
+// declared INTENT and changes no stored value, `managed`, and the derived
+// template tokens.
 //
 // The refusals live in TestManifestValidationRejected's matrix
 // (vocabulary_test.go); this file is what the loader must ACCEPT and what the
@@ -186,21 +186,21 @@ func TestNestedReferenceFieldsResolveTheirTarget(t *testing.T) {
       type: object
       repeated: true
       fields:
-        callable: {type: reference, to: target}
+        callable: {type: reference, kind: target}
         note: {type: string}
     inputs:
       type: object
       keyed: true
       keyPattern: camel
       fields:
-        kind: {type: reference, to: target}
+        kind: {type: reference, kind: target}
     deep:
       type: object
       fields:
         l2:
           type: object
           fields:
-            l3: {type: object, fields: {ref: {type: reference, to: target}}}
+            l3: {type: object, fields: {ref: {type: reference, kind: target}}}
 `)
 	for _, path := range []struct {
 		label string
@@ -223,7 +223,7 @@ func TestNestedReferenceFieldsResolveTheirTarget(t *testing.T) {
 // the same refusal a top-level reference gets.
 func TestNestedReferenceTargetMustExist(t *testing.T) {
 	_, err := dialectLoad(t, `  properties:
-    tools: {type: object, fields: {callable: {type: reference, to: nosuchkind}}}
+    tools: {type: object, fields: {callable: {type: reference, kind: nosuchkind}}}
 `)
 	if err == nil {
 		t.Fatal("expected a load error")
@@ -240,19 +240,19 @@ func TestNestedReferenceTargetMustExist(t *testing.T) {
 // pointers still collide.
 func TestNestedReferenceInverseIsNotClaimed(t *testing.T) {
 	if _, err := dialectLoad(t, `  properties:
-    target: {type: reference, to: target, inverse: widgets}
+    target: {type: reference, kind: target, inverse: widgets}
     tools:
       type: object
       fields:
-        callable: {type: reference, to: target, inverse: widgets}
+        callable: {type: reference, kind: target, inverse: widgets}
 `); err != nil {
 		t.Fatalf("a nested inverse must keep loading beside a top-level claim: %v", err)
 	}
 	// Two of the kind's own pointers claiming one word on one target still
 	// refuse: that check predates this dialect and nothing about it moved.
 	_, err := dialectLoad(t, `  properties:
-    target: {type: reference, to: target, inverse: widgets}
-    alsoTarget: {type: reference, to: target, inverse: widgets}
+    target: {type: reference, kind: target, inverse: widgets}
+    alsoTarget: {type: reference, kind: target, inverse: widgets}
 `)
 	if err == nil {
 		t.Fatal("expected a load error")
@@ -262,44 +262,42 @@ func TestNestedReferenceInverseIsNotClaimed(t *testing.T) {
 	}
 }
 
-// refersTo says what a string value NAMES, so a client can offer a picker from
-// the declaration. It changes no stored value, and it rides into the Definition
-// map the read surfaces render.
-func TestRefersToAndManagedAreParsedAndRendered(t *testing.T) {
+// managed says the engine stamps the property. It changes no stored value, and
+// it rides into the Definition map the read surfaces render.
+func TestManagedIsParsedAndRendered(t *testing.T) {
 	w := dialectWidget(t, `  properties:
-    emit: {type: string, repeated: true, refersTo: kind}
-    call: {type: string, refersTo: function}
     version: {type: string, managed: true}
-    source: {type: string, managed: true, refersTo: authority}
-    spec: {type: object, fields: {picks: {type: string, refersTo: agent}}}
+    source: {type: string, managed: true}
 `)
-	if p, _ := w.Prop("emit"); p.RefersTo != vocabulary.RefersToKind || !p.Repeated {
-		t.Fatalf("emit = %+v", p)
-	}
-	if p, _ := w.Prop("call"); p.RefersTo != vocabulary.RefersToFunction {
-		t.Fatalf("call = %+v", p)
-	}
-	if p, _ := w.Prop("version"); !p.Managed || p.RefersTo != "" {
+	if p, _ := w.Prop("version"); !p.Managed {
 		t.Fatalf("version = %+v", p)
 	}
-	if p, _ := w.Prop("source"); !p.Managed || p.RefersTo != vocabulary.RefersToAuthority {
+	if p, _ := w.Prop("source"); !p.Managed {
 		t.Fatalf("source = %+v", p)
 	}
-	// A string FIELD carries the marker too: a picker inside an object is the
-	// same picker.
-	spec, _ := w.Prop("spec")
-	if f := spec.Fields["picks"]; f == nil || f.RefersTo != vocabulary.RefersToAgent {
-		t.Fatalf("spec.picks = %+v", f)
-	}
-	// The declaration the console reads is the authored data map, so both keys
-	// reach the API by riding it — the same route displayName travels.
+	// The declaration the console reads is the authored data map, so the key
+	// reaches the API by riding it — the same route displayName travels.
 	props := w.Definition["properties"].(map[string]any)
-	emit := props["emit"].(map[string]any)
-	if emit["refersTo"] != vocabulary.RefersToKind {
-		t.Fatalf("definition.emit = %v", emit)
-	}
 	if props["version"].(map[string]any)["managed"] != true {
 		t.Fatalf("definition.version = %v", props["version"])
+	}
+}
+
+// refersTo is DEAD: it was a picker hint beside a string, enforced nowhere. The
+// property it marked is a `reference` with a `kind:` pin, which every write is
+// held to, so the retired key is refused by name rather than ignored — a
+// declaration still carrying one would otherwise look obeyed.
+func TestRefersToIsRefusedByName(t *testing.T) {
+	_, err := dialectLoad(t, `  properties:
+    emit: {type: string, repeated: true, refersTo: kind}
+`)
+	if err == nil {
+		t.Fatal("refersTo must be refused")
+	}
+	for _, want := range []string{"refersTo", "type: reference", "kind:"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must name %q, got: %v", want, err)
+		}
 	}
 }
 

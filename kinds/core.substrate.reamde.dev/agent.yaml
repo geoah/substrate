@@ -31,10 +31,20 @@ data:
   # withholding (an llm-as-judge exists to be called by other agents); the
   # bump carries the column into repositories that stored the v1alpha4 shape.
   # v1alpha6: TYPED. `definition` and the `functions`/`subagents` mirrors are
-  # gone; the manifest's own keys — params, tools, budgets, emit, reads — are
+  # gone; the manifest's own keys (params, tools, budgets and the grants) are
   # properties, and `name` left with them (a declaration's local name is its
   # id's last segment, which is what `{localName}` renders).
-  version: v1alpha6
+  # v1alpha7: the `builtin` field left `tools`. The four built-ins are function
+  # records now (`runtime: host`), so an entry names one under `function:` like
+  # any other function and the union has ONE arm. Dropping a field is a
+  # narrowing, and this one is safe because dialect 2 has never shipped in a
+  # release: no store outside our own development instances holds a row with the
+  # field, and the dialect rung rewrites the ones that do.
+  # v1alpha8: `emit` and `reads` became one `permissions` object, and `emit` is
+  # `writes` inside it: the same grouping a function's five grants took, and
+  # safe for the same reason v1alpha7 was. A tool entry's `callable` field
+  # became `function` in the same bump, since an entry admits nothing else.
+  version: v1alpha9
   names:
     singular: agent
     plural: agents
@@ -48,6 +58,11 @@ data:
       type: string
       managed: true
       description: this declaration's version
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
     authority:
       type: string
       required: true
@@ -64,14 +79,15 @@ data:
       fts: false
       required: true
       description: the system prompt; the row is the prompt store
-    # The llmprovider data-record id (`default` or a custom row); the loop reads
-    # wire/baseURL/apiKey off that row at dispatch. A record id, not a
-    # reference: an llmprovider row is runtime state and resolves at dispatch.
+    # The llmprovider the loop reads wire/baseURL/apiKey off at dispatch. The
+    # pin is what lets a client offer a picker, and it supplies the kind an
+    # authored bare id omits: `default` stores as
+    # `core.substrate.reamde.dev/llmprovider/default`.
     provider:
-      type: string
-      refersTo: provider
+      type: reference
+      kind: core.substrate.reamde.dev/llmprovider
       required: true
-      description: the llmprovider record id this agent's loop completes against
+      description: the llmprovider this agent's loop completes against
     model:
       type: string
       required: true
@@ -88,36 +104,35 @@ data:
           type: int
           min: 1
           description: the completion cap sent on every request
-    # Exactly one of builtin/callable names the tool. A built-in takes no alias:
-    # the loop owns its card.
+    # `function` names the tool, and it is the ONE arm: the four built-ins are
+    # `runtime: host` function records core ships, so
+    # `{function: core.substrate.reamde.dev/graphql}` names one exactly as a
+    # bundle's function is named. An entry can name nothing else — a sub-agent
+    # is named on `agents:` — which is why the field is not `callable`, the
+    # trigger's word for a target that really may be either. `name` and
+    # `description` alias the card for this agent's prompt context, built-ins
+    # included.
     tools:
       type: object
       repeated: true
       description: what the model may call, in declaration order
       fields:
-        builtin:
-          type: enum
-          values:
-            - query
-            - propose
-            - graphql
-            - mutate
-          description: the built-in tool this entry names
-        callable:
-          type: string
-          refersTo: function
-          description: the function identity this entry names
+        function:
+          type: reference
+          kind: core.substrate.reamde.dev/function
+          required: true
+          description: the function this entry names
         name:
           type: string
-          description: the model-facing tool name, aliasing a callable
+          description: the model-facing tool name, aliasing the function
         description:
           type: string
-          description: the model-facing card, overriding the callable's own
+          description: the model-facing card, overriding the function's own
     agents:
-      type: string
+      type: reference
+      kind: core.substrate.reamde.dev/agent
       repeated: true
-      refersTo: agent
-      description: the sub-agent identities the loop exposes as tools
+      description: the sub-agents the loop exposes as tools
     budgets:
       type: object
       description: what bounds one invocation
@@ -142,34 +157,44 @@ data:
           min: 1
           max: 3
           description: how deep the sub-agent chain below may go
-    emit:
-      type: string
-      repeated: true
-      refersTo: kind
-      description: the kinds this agent's tool-call effects may address
-    reads:
+    # THE GRANT, in one object, spelled the way a function's is: an agent has
+    # no body of its own to spend, so it carries two of the five, what it may
+    # read and what it may write.
+    permissions:
       type: object
-      description: what the `query` built-in may touch; absent withholds it
+      description: what this agent is allowed to do while it runs; leave a
+        grant out and what it covers is refused
       fields:
-        kinds:
-          type: string
-          repeated: true
-          refersTo: kind
-          description: the kinds every read is held to
-        budgets:
+        reads:
           type: object
-          description: what one invocation's reads may spend
+          description: which record kinds this agent may read, and how much;
+            leave it out and the query tool is withheld
           fields:
-            calls:
-              type: int
-              min: 1
-              max: 1000
-              description: host read calls per invocation
-            rows:
-              type: int
-              min: 1
-              max: 10000
-              description: rows read per invocation
+            kinds:
+              type: reference
+              kind: core.substrate.reamde.dev/kind
+              repeated: true
+              description: the record kinds every read is held to
+            budgets:
+              type: object
+              description: how much one run may read
+              fields:
+                calls:
+                  type: int
+                  min: 1
+                  max: 1000
+                  description: how many reads one run may make
+                rows:
+                  type: int
+                  min: 1
+                  max: 10000
+                  description: how many records one run may read
+        writes:
+          type: reference
+          kind: core.substrate.reamde.dev/kind
+          repeated: true
+          description: which record kinds it may create or change, the change
+            requests it proposes among them
     # Withholds the agent from the interactive chat surface only: the console
     # keeps it off the chat list and the chat API refuses it, while sub-agent
     # calls, the call API and triggers still dispatch it. Any agent, marked or

@@ -68,7 +68,7 @@ func (ds *dataset) Get(ctx context.Context, typ, id string) (*substrate.Record, 
 // mechanisms answer as one relationship —
 //
 //   - an EDGE row whose dst is this record, and
-//   - a REFERENCE property on some other kind whose `to:` pins this kind and
+//   - a REFERENCE property on some other kind whose `kind:` pins this kind and
 //     whose stored value names this id,
 //
 // — because which of the two a declaration uses is a storage choice, and a
@@ -77,7 +77,7 @@ func (ds *dataset) Get(ctx context.Context, typ, id string) (*substrate.Record, 
 // at once while a kind is mid-migration.
 //
 // NOT everything, and the gap is deliberate: an UNCONSTRAINED reference
-// (`to: any`, or none) names no target kind, so the registry cannot say it
+// (`kind: any`, or none) names no target kind, so the registry cannot say it
 // points here without reading every row of every kind that declares one. Those
 // are left out — of the page and of the total alike, so the two agree — rather
 // than turning a graph expansion into a table scan.
@@ -298,7 +298,7 @@ func (ds *dataset) incomingArms(
 	}
 
 	// One arm per reference property pinned at this kind. An unconstrained
-	// pointer (`to: any`, or none) names no target kind, so the registry cannot
+	// pointer (`kind: any`, or none) names no target kind, so the registry cannot
 	// say it points HERE without reading every row of every kind — those are
 	// left out rather than answered with a scan.
 	for _, k := range ds.registry().Kinds() {
@@ -315,9 +315,7 @@ func (ds *dataset) incomingArms(
 			}
 			probes := make([]string, 0, len(ids))
 			for _, one := range ids {
-				raw, err := referenceValue(pname, p, map[string]any{
-					"id": one, "kind": canonical.Kind,
-				})
+				raw, err := referenceValue(pname, p, vocabulary.RecordPath(canonical.Kind, one))
 				if err != nil {
 					continue
 				}
@@ -861,7 +859,7 @@ func (ds *dataset) condProp(b *builder, types []*vocabulary.Kind, name string, c
 // here, because a pointer compared as text matches nothing at all.
 //
 // Distinct SHAPES and not the first declaration: two kinds may declare one
-// name with different `to:` targets, or one scalar and one repeated, and a
+// name with different `kind:` pins, or one scalar and one repeated, and a
 // probe built from whichever came first would answer for the other kind in the
 // wrong shape — completing a bare id with the wrong kind, or asking for a
 // scalar where a list is stored. One probe per shape, OR-ed, is what a filter
@@ -888,39 +886,35 @@ func (ds *dataset) referenceShapes(types []*vocabulary.Kind, name string) []*voc
 }
 
 // referenceValue renders one filter value as the containment probe for a
-// reference property: `{"agent": {"id": "x", "kind": "…"}}`, wrapped in an
-// array when the property is repeated (containment reaches inside an array, so
-// one shape answers "holds this reference" for both).
+// reference property: `{"agent": "core.substrate.reamde.dev/agent/x"}`, wrapped
+// in an array when the property is repeated (containment reaches inside an
+// array, so one shape answers "holds this reference" for both).
 //
-// A bare id is admitted exactly where a WRITE admits one — when `to:` pins a
-// concrete kind, which then supplies what the value omits (validate.go
-// coerceReference). Unpinned, a bare id probes the id alone and matches
-// whatever kind holds it, which is the honest reading of an unconstrained
-// pointer.
+// A stored reference is ONE flat path, so a probe is an exact value and the
+// filter admits exactly what a WRITE admits: a full path, or the authored bare
+// id when `kind:` pins a concrete kind to complete it (validate.go
+// coerceReference). Unpinned, a bare id names no kind and therefore no record —
+// it is refused rather than answered by a scan of every kind that might hold
+// the id, which containment on a flat string cannot express anyway.
 func referenceValue(name string, p *vocabulary.Property, v any) (any, error) {
-	probe := map[string]any{}
-	switch t := v.(type) {
-	case map[string]any:
-		if id, _ := t["id"].(string); id != "" {
-			probe["id"] = id
-		}
-		if kind, _ := t["kind"].(string); kind != "" {
-			probe["kind"] = kind
-		}
-	case string:
-		probe["id"] = t
-	default:
-		return nil, fmt.Errorf("%w: %s is a reference — filter it by id or by {kind, id}", substrate.ErrValidation, name)
+	s, ok := v.(string)
+	if !ok {
+		return nil, fmt.Errorf(`%w: %s is a reference — filter it by its "<kind>/<id>" path`, substrate.ErrValidation, name)
 	}
-	if probe["id"] == nil {
+	if s == "" {
 		return nil, fmt.Errorf("%w: %s: a reference filter needs an id", substrate.ErrValidation, name)
 	}
-	if probe["kind"] == nil && p.To != "" && p.To != vocabulary.ToAny {
-		probe["kind"] = p.To
+	path := s
+	if _, _, isPath := vocabulary.SplitRecordPath(s); !isPath {
+		if p.To == "" || p.To == vocabulary.ToAny {
+			return nil, fmt.Errorf(`%w: %s points at any kind — filter it by a full "<kind>/<id>" path, not the bare id %q`,
+				substrate.ErrValidation, name, s)
+		}
+		path = vocabulary.RecordPath(p.To, s)
 	}
-	var inner any = probe
+	var inner any = path
 	if p.Repeated {
-		inner = []any{probe}
+		inner = []any{path}
 	}
 	raw, err := json.Marshal(map[string]any{name: inner})
 	if err != nil {
@@ -932,7 +926,7 @@ func referenceValue(name string, p *vocabulary.Property, v any) (any, error) {
 // condReference filters a reference property. Only the predicates a POINTER
 // answers are admitted: it names a record or it does not, so equality,
 // membership and presence are the whole grammar — an ordering or a prefix over
-// a {kind, id} pair would be comparing its spelling, not the thing.
+// a record path would be comparing its spelling, not the thing.
 func condReference(b *builder, name string, shapes []*vocabulary.Property, c substrate.Cond) error {
 	// A SLICE, not a map: two violated predicates in one filter must name the
 	// same one every time, or the error depends on map iteration order.

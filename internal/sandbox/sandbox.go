@@ -101,7 +101,7 @@ type Policy struct {
 	// reason this package exists.
 	ReadWrite []string `json:"readWrite,omitempty"`
 	// Network grants AF_INET/AF_INET6 sockets. False denies them at the
-	// syscall, which is how `capabilities.network` stops being decorative.
+	// syscall, which is how `permissions.network` stops being decorative.
 	// It is a binary gate: per-host allowlisting needs an egress proxy, not a
 	// syscall filter, because a filter cannot read the sockaddr behind a
 	// pointer.

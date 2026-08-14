@@ -35,7 +35,10 @@ data:
   # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
-  version: v1alpha2
+  # v1alpha3: the grants group under one `permissions:` object, and the permission
+  # to write is `writes:` inside it. This closure's functions and agents
+  # follow core's declaration.
+  version: v1alpha3
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata:
@@ -104,7 +107,8 @@ data:
     - name: characters
       type: float
       description: the character count
-  emit: [notes.bundles.substrate.reamde.dev/note]
+  permissions:
+    writes: [notes.bundles.substrate.reamde.dev/note]
   source: |
     def main(input, host):
         text = (input.get("args") or {}).get("text") or ""
@@ -145,7 +149,8 @@ data:
     - name: saved
       type: string
       description: the id of the note that was written
-  emit: [notes.bundles.substrate.reamde.dev/note]
+  permissions:
+    writes: [notes.bundles.substrate.reamde.dev/note]
   source: |
     def main(input, host):
         args = (input.get("args") or {})
@@ -184,7 +189,8 @@ data:
     maxTurns: 2
     maxToolCalls: 1
     depth: 3
-  emit: []
+  permissions:
+    writes: []
 ---
 # ---- the root agent: two function tools and one sub-agent -------------------
 kind: core.substrate.reamde.dev/agent
@@ -212,13 +218,14 @@ data:
   provider: default
   model: anthropic/claude-sonnet-5
   tools:
-    - callable: notes.bundles.substrate.reamde.dev/stats
-    - callable: notes.bundles.substrate.reamde.dev/savenote
+    - function: notes.bundles.substrate.reamde.dev/stats
+    - function: notes.bundles.substrate.reamde.dev/savenote
   agents:
     - notes.bundles.substrate.reamde.dev/titler
   budgets:
     maxTurns: 8
     maxToolCalls: 8
     depth: 3
-  emit:
-    - notes.bundles.substrate.reamde.dev/note
+  permissions:
+    writes:
+      - notes.bundles.substrate.reamde.dev/note

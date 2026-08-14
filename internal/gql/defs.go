@@ -97,8 +97,8 @@ func typeMachines(def map[string]any) map[string][]string {
 // propertyType maps a declared property type onto its GraphQL type.
 // Refined string types (email, url, asin, …) render as String; secrets are
 // String too — the engine redacts the value, the shape stays stable. A
-// `reference` renders as the Reference object ({authority, type, id});
-// the stored value is that map, so the default resolver reads its fields. An
+// `reference` renders as the Reference scalar — the referent's "<kind>/<id>"
+// path, one string, which is exactly the stored value. An
 // `object` property carries inline structured data: it renders as
 // the JSON scalar, lossless, rather than flattening to String.
 //
@@ -133,7 +133,7 @@ func (b *schemaBuilder) propertyType(def map[string]any, prop string) graphql.Ou
 	case "json", "object":
 		elem = jsonScalar
 	case "reference":
-		elem = b.referenceType
+		elem = referenceScalar
 	default:
 		elem = graphql.String
 	}

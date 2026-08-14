@@ -45,12 +45,12 @@ func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 				"properties": map[string]any{
 					"note": map[string]any{"type": "string"},
 					"target": map[string]any{
-						"type": "reference", "to": firstClassAuthority + "/target",
+						"type": "reference", "kind": firstClassAuthority + "/target",
 						"inverse":            "pointers",
 						"inverseDescription": "the rows that name this target",
 					},
 					"alsoSeen": map[string]any{
-						"type": "reference", "to": firstClassAuthority + "/target",
+						"type": "reference", "kind": firstClassAuthority + "/target",
 						"repeated": true, "inverse": "seenBy",
 					},
 				},
@@ -63,7 +63,7 @@ func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 				"displayTemplate": "{target}",
 				"properties": map[string]any{
 					"target": map[string]any{
-						"type": "reference", "to": firstClassAuthority + "/target",
+						"type": "reference", "kind": firstClassAuthority + "/target",
 					},
 				},
 			}),
@@ -72,7 +72,7 @@ func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 			map[string]any{
 				"properties": map[string]any{
 					"targets": map[string]any{
-						"type": "reference", "to": firstClassAuthority + "/target",
+						"type": "reference", "kind": firstClassAuthority + "/target",
 						"repeated": true, "required": true,
 					},
 				},
@@ -82,7 +82,7 @@ func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 			map[string]any{
 				"properties": map[string]any{
 					"target": map[string]any{
-						"type": "reference", "to": firstClassAuthority + "/target",
+						"type": "reference", "kind": firstClassAuthority + "/target",
 						"required": true,
 					},
 				},
@@ -136,9 +136,9 @@ func TestReferenceFilterFindsWhatPointsAtARecord(t *testing.T) {
 	if got := list("a"); len(got) != 1 || got[0] != at.ID {
 		t.Fatalf("a bare id must find the rows pointing at it, got %v", got)
 	}
-	// The canonical {kind, id} form answers identically.
-	if got := list(map[string]any{"kind": firstClassAuthority + "/target", "id": "a"}); len(got) != 1 {
-		t.Fatalf("the {kind, id} form must find the same row, got %v", got)
+	// The canonical PATH answers identically to the bare id the pin completes.
+	if got := list(vocabulary.RecordPath(firstClassAuthority+"/target", "a")); len(got) != 1 {
+		t.Fatalf("the full path must find the same row, got %v", got)
 	}
 	if got := list("b"); len(got) != 1 || got[0] != "p2" {
 		t.Fatalf("the filter must not leak across referents, got %v", got)
@@ -276,7 +276,7 @@ func TestReferenceRendersInADisplayTemplate(t *testing.T) {
 	// difference from an edge. A bare token then falls back to the id it
 	// holds: a dangling pointer still NAMES something, and rendering nothing
 	// would throw away the only identifier the row had.
-	ghost := map[string]any{"kind": firstClassAuthority + "/target", "id": "ghost"}
+	ghost := vocabulary.RecordPath(firstClassAuthority+"/target", "ghost")
 	dangling := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: firstClassAuthority + "/tag", ID: "t2",
 		Properties: map[string]any{"target": ghost},

@@ -21,7 +21,8 @@ data:
   authority: web.bundles.substrate.reamde.dev
   description: Fetch one pending page as markdown and mark it fetched.
   runtime: python
-  emit: [web.bundles.substrate.reamde.dev/page]
+  permissions:
+    writes: [web.bundles.substrate.reamde.dev/page]
   source: |
     def main(input, host):
         env = input.get("envelope") or {}
@@ -50,47 +51,55 @@ host call and the call API all address it with.
   half of `metadata.id`.
 - **`description`** is model-facing and required: the function is its own tool
   card wherever it appears as a callable.
-- **`runtime`** is `python` or `go`.
-- **`source`** is the inline body (bounded, at most 256 KiB).
+- **`runtime`** is `python`, `go`, or [`host`](#host-functions).
+- **`source`** is the inline body (bounded, at most 256 KiB), on an inline
+  runtime. A `host` function has none: the engine is its body.
 - **`timeoutMs`** bounds one invocation's wall clock, host calls included
   (default 5000, max 60000).
 - Optional **`arguments:`** and **`returns:`** are the flat named IO: a caller's
   arguments are checked before the body runs, the returned value after.
   [Arguments and returns](#arguments-and-returns) is the whole grammar.
-- The **grant** is five keys on `data` itself, `emit`, `reads`, `call`,
-  `network` and `mutations`, and it is the whole security boundary:
+- **`permissions:`** is what the function is allowed to do while it runs, and
+  it is the whole security boundary. Leave a grant out and what it covers is
+  refused:
 
 ```yaml
-emit:                              # required, non-empty: the write allowlist
-  - tasks.substrate.reamde.dev/task
-reads:                             # the host-read allowlist and budget
-  kinds:
-    - people.substrate.reamde.dev/person
-  budgets:
-    calls: 16
-    rows: 500
-call:                              # host-call allowlist (registered functions)
-  - web.bundles.substrate.reamde.dev/setclass
-network:                           # any entry grants egress; none denies it
-  - api.example.com
-mutations:                         # gates the merge / split effects
-  - merge
+permissions:
+  reads:                           # which kinds it may read, and how much
+    kinds:
+      - people.substrate.reamde.dev/person
+    budgets:
+      calls: 16
+      rows: 500
+  writes:                          # which kinds it may create or change
+    - tasks.substrate.reamde.dev/task
+  call:                            # which other functions its code may invoke
+    - web.bundles.substrate.reamde.dev/setclass
+  network:                         # the hosts it may reach; any entry grants egress
+    - api.example.com
+  mutations:                       # the identity-changing operations: merge, split
+    - merge
 ```
 
-There is no `capabilities:` wrapper: one grant is declared once, at the level
-the declaration declares it, and a document that still nests these five under
-`capabilities:` is refused naming them.
+One object holds all five, because a bare `emit:` beside `returns:` said
+nothing about being a permission. A document that still writes any of them at
+the top level (or nests them under the older `capabilities:` wrapper) is
+refused naming its place inside `permissions:`.
 
-`emit` is required and lists the kinds the effects may address: this function
-may write those kinds and nothing else. `reads.kinds` is the host-read
-allowlist and `reads.budgets` its budget (defaults 16 calls / 500 rows, raised
-to at most 1000 calls / 10000 rows); a `reads:` block that declares no `kinds`
-is a load error. `call` is the host-call allowlist; every target must be a
-registered function. `network` is enforced as a **binary** gate: a function
-declaring none is denied IPv4 and IPv6 sockets by the sandbox, while the host
-patterns themselves are still only documentation (see [the sandbox](#the-sandbox)). `mutations` gates the `merge` and `split` effects, which are
-refused without it. Every entry in `emit`, `reads.kinds` and `call` is a full
-reference, `<authority>/<name>`, and none of them admit globs.
+`permissions.writes` lists the kinds the effects may address: this function may
+write those kinds and nothing else. It is **optional**, and declaring none is
+how a pure function says so: it returns an output and writes nothing, and every
+effect it staged would be refused. `permissions.reads.kinds` is the host-read
+allowlist and `permissions.reads.budgets` its budget (defaults 16 calls / 500
+rows, raised to at most 1000 calls / 10000 rows); a `reads:` block that declares
+no `kinds` is a load error. `permissions.call` is the host-call allowlist; every
+target must be a registered function. `permissions.network` is enforced as a
+**binary** gate: a function declaring none is denied IPv4 and IPv6 sockets by the
+sandbox, while the host patterns themselves are still only documentation (see
+[the sandbox](#the-sandbox)). `permissions.mutations` gates the `merge` and
+`split` effects, which are refused without it. Every entry in `writes`,
+`reads.kinds` and `call` is a full reference, `<authority>/<name>`, and none of
+them admit globs.
 
 The body's entrypoint is `main(input, host)` in Python
 (`Main(in, host)` in Go), and it returns `{effects, output}`. `input` names
@@ -165,6 +174,59 @@ Both sides are checked on every path that carries arguments: the
 tool. A trigger delivery checks neither, because its payload is the envelope
 below rather than `args`.
 
+## Host functions
+
+`runtime: host` is the function with no body, because the **engine** is its
+body. Core ships four of them, and they are the agent
+[built-in tools](agents.md#tools):
+
+| Reference | What it does |
+| --- | --- |
+| `core.substrate.reamde.dev/query` | the capability-scoped read |
+| `core.substrate.reamde.dev/graphql` | the whole-repository read-only GraphQL surface |
+| `core.substrate.reamde.dev/mutate` | GraphQL mutations, bounded by the calling agent's emit |
+| `core.substrate.reamde.dev/propose` | lands one reviewed `recordpatchrequest` |
+
+They are **ordinary function records**: seeded into every new repository,
+delivered to an existing one by the [boot upgrade](vocabulary.md), listed in the
+`functions` collection, and named by an agent under `function:` like any other
+function. They used to be engine constants and a `tools: [{builtin: query}]` arm
+— the one thing an agent could name that no record declared.
+
+**The declaration is the card.** The `description` and the `arguments:` on each
+of the four are what the model is shown, rendered from the declaration by the
+same code that renders a bundle function's, so changing what an LLM reads about
+`graphql` is a record write and not a release.
+
+**The grant is the caller's**, which is what the empty write permission and the absent
+`permissions.reads` on three of them mean: `query` is held to the calling agent's reads,
+`mutate` to its effective emit, and `graphql` needs no grant at all because
+declaring it *is* the grant (there is no narrower scope to state over a whole
+repository). `propose` is the one with a `permissions.writes` of its own, because it writes
+one kind and always the same one.
+
+That is also what decides **where each is callable**:
+
+- **As an agent tool**, all four.
+- **Through the [call API](#host-call)**, `graphql` and `query` only: the caller
+  is a token that owns the repository, so a read needs no narrower grant.
+  `propose` and `mutate` refuse there by name — there is no calling agent whose
+  grants would bound them — and the refusal points at declaring an agent that
+  carries the tool.
+- **As a [trigger](#triggers)'s callable**, none. A delivery has no caller to
+  borrow grants from, so the row is refused at admission rather than parked
+  forever, and the refusal names the same shape: an agent carrying the tool,
+  with the trigger targeting the agent.
+- **As another function's `permissions.call` target**, none: a function body has no grants
+  to lend, so naming one is a load error.
+
+Two smaller rules follow. A host function is admissible **only from the shipped
+build** — the engine implements what the engine ships, so a bundle or an owner
+declaring one would name a body nothing has — and a **bare name never resolves
+to one**. The four are named for what they do, which is exactly what a
+repository's own function is likeliest to be called, so `query` keeps meaning
+the user's `query` and the built-in answers its full reference.
+
 ## The delivery envelope
 
 A record-triggered delivery arrives as `input["envelope"]`, three keys:
@@ -222,7 +284,7 @@ def main(input, host):
     return {"output": {"fetch": (page or {}).get("properties", {}).get("fetch")}}
 ```
 
-The manifest's allowlists are the one place a bare name is refused: `emit`,
+The manifest's allowlists are the one place a bare name is refused: `writes`,
 `reads.kinds` and `call` all take full references, so a capability always
 names an authority. A body may ask for either spelling — every gate runs on
 what the reference resolves to, so `host.records.list(["task"])` against a
@@ -277,7 +339,7 @@ unprivileged, none requiring a container runtime:
 - **seccomp** removes the syscall classes a body has no use for: `ptrace` and
   the other reach-into-another-process calls, the mount APIs, `io_uring`,
   `bpf`, the kernel keyring, module loading, and enforces
-  the `network:` grant: **a function that declares no `network:` is denied
+  the network permission: **a function that declares no `permissions.network` is denied
   `AF_INET` and `AF_INET6` sockets outright.** The enforcement is binary. A
   syscall filter cannot read the address behind a `connect(2)` pointer, so
   holding a body to the *specific hosts* it declared needs an egress proxy and
@@ -340,7 +402,7 @@ body.
 
 Effects are the ordinary [seven mutations](api.md#the-seven-mutations),
 applied through the write path in the same transaction as the delivery's
-cursor advance, every one held to the `emit:` allowlist by the kind it names.
+cursor advance, every one held to the write allowlist by the kind it names.
 Every effect names its target the same way, a `kind` carrying a kind
 reference:
 
@@ -361,7 +423,7 @@ reference:
   the edge's own `properties`. Emit gates by the source kind.
 - **`merge`** `{action: merge, kind, id, loser}` (`id` is the winner) and
   **`split`** `{action: split, kind, merge}`, both refused unless
-  the `mutations:` grant names them; the `*request` records stay the polite
+  the `permissions.mutations` grant names them; the `*request` records stay the polite
   default for agent chains.
 
 A put or patch addressed to a former id resolves onto the canonical winner
@@ -392,8 +454,8 @@ full reference, the (kind, id) pair; a bare id names nothing and the frame is
 refused. Reads see committed state, never this delivery's own staged effects,
 so a local overlay can never lie. A forbidden kind answers exactly like an
 absent id (same nil shape, same budget charge), so a disallowed `get` is never
-an existence or kind oracle. Reads are held to the `reads:` grant: with no
-`reads:` block the allowlist is empty, so every `list` and `search` is refused
+an existence or kind oracle. Reads are held to the `permissions.reads` grant:
+with no `reads:` block the allowlist is empty, so every `list` and `search` is refused
 and every `get` answers absent. Calls are charged before they run, `first` and
 `k` clamp to the remaining row budget, and returned rows charge on top. In Go
 the typed read returns a `*ReadRecord` whose `Version` is an `int64`, so the
@@ -413,6 +475,24 @@ non-negative integer `if_version`, no self-merge) and snapshot-copies caller
 maps through JSON, so a mistake is a clear body error rather than an engine
 park. The action needs no checking: it is the method you called. The engine
 stays authoritative for the emit ceiling and kind admission.
+
+**Proposing instead of writing.** `host.effects.propose(id, target_kind,
+target_id, diff?, op?, rationale?)` (`host.Effects.Propose(substratefn.ProposeEffect{…})`
+in Go) stages a change the **owner** decides on rather than one that lands: the
+effect is an ordinary put of a
+`core.substrate.reamde.dev/recordpatchrequest`, and accepting it is what applies
+the change. `id` is the request's own id, so a replayed delivery re-proposes the
+same request instead of a second one; `op` is `patch` (the default), `create` or
+`delete`; `target_kind`/`target_id` name the record the change is about — the
+existing target of a patch or delete, the record a create would mint; and `diff`
+carries the proposed values, wrapped under `properties` or as a plain property
+map the engine wraps. A `delete` carries no diff at all, and passing one is
+refused rather than dropped. A proposing function names the **request** kind in
+its `permissions.writes` and nothing else: it is not writing the target, it is asking. The diff
+is validated against the target kind at admission, so a malformed proposal is a
+refused write the delivery parks on, never a request the owner cannot accept —
+and because the request id is the body's own, a replayed delivery re-proposes the
+same request as a verified no-op.
 
 **One mode per invocation.** A body **either** returns an explicit `effects`
 list **or** stages on the builder, never both. The two apply orders are
@@ -469,7 +549,7 @@ at once.
 
 `host.functions.call(function, input)` runs another function to completion
 inside the caller's invocation. The runner refuses a target outside the
-caller's `call:` grant and charges the call budget before executing; the
+caller's `permissions.call` grant and charges the call budget before executing; the
 engine refuses a target already on the call stack (direct and mutual recursion
 both) and one that would exceed the causal-depth cap. The callee gets its own
 fresh read budgets and its own timeout (bounded by the caller's remaining

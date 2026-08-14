@@ -4,7 +4,13 @@
 
 import { describe, expect, it } from "vitest"
 
-import { shortDate, tableDateTime } from "./format"
+import {
+  cellValue,
+  referenceCell,
+  referenceID,
+  shortDate,
+  tableDateTime,
+} from "./format"
 
 const pad = (n: number) => String(n).padStart(2, "0")
 const MONTHS = [
@@ -53,5 +59,26 @@ describe("shortDate", () => {
     expect(shortDate(iso)).toBe(
       `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
     )
+  })
+})
+
+describe("referenceID / referenceCell", () => {
+  it("names the record, not the kind the column already says", () => {
+    expect(referenceID("core.substrate.reamde.dev/llmprovider/claude")).toBe(
+      "claude"
+    )
+    expect(referenceID("task/abc123")).toBe("abc123")
+    expect(referenceCell(["task/a", "task/b"])).toBe("a, b")
+  })
+
+  it("answers nothing for a value that is not a path", () => {
+    expect(referenceID("claude")).toBe("")
+    expect(referenceID({ kind: "task", id: "a" })).toBe("")
+  })
+
+  it("is the datatype's job, never cellValue's guess at a slash", () => {
+    // cellValue is datatype-blind, so it must leave a URL (and any other
+    // slashed string) whole rather than reading it as a path.
+    expect(cellValue("https://example.com/x")).toBe("https://example.com/x")
   })
 })

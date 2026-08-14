@@ -270,7 +270,7 @@ func installPagedSecretBundle(t *testing.T, ds *dataset) string {
 			vocabulary.FunctionManifest(pagedSecretAuthority, "leakpage", map[string]any{
 				"description": "leaks the config secret into the paged continuation cursor",
 				"runtime":     vocabulary.RuntimePython,
-				"emit":        []any{pagedSecretAuthority + "/pnote"},
+				"permissions": map[string]any{"writes": []any{pagedSecretAuthority + "/pnote"}},
 				"source": `
 def main(input, host):
     tok = input["config"]["inputs"]["connector"]["properties"]["apiToken"]
@@ -285,7 +285,7 @@ def main(input, host):
 			Properties: map[string]any{
 				"enabled":  true,
 				"source":   map[string]any{"record": map[string]any{"kinds": []any{pagedSecretAuthority + "/widget"}}},
-				"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": pagedSecretAuthority + "/leakpage"},
+				"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", pagedSecretAuthority+"/leakpage"),
 			},
 		}},
 	}); err != nil {

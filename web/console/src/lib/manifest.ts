@@ -14,6 +14,7 @@ import { stringify } from "yaml"
 import { CORE_AUTHORITY, joinKind } from "@/lib/api/http"
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import { declaredProperties, kindByIdentity } from "@/lib/definition"
+import { splitRecordPath } from "@/lib/record-path"
 import type { YamlLinkTargets } from "@/lib/yaml-annotations"
 
 /** The meta-kind every declaration is a record of. */
@@ -136,20 +137,29 @@ export function linkTargetsOf(
   const ids: Record<string, string> = {}
   const kindLinks: Record<string, string> = {}
 
-  function addFor(ref: string, id?: string) {
+  /** The collection href of a known kind, registering the kind's own link on
+   * the way; `undefined` for a kind this repository has not installed. */
+  function hrefFor(ref: string): string | undefined {
     const info = kindByIdentity(kinds, ref)
-    if (!info) return
+    if (!info) return undefined
     const href = collectionHref(info)
     kindLinks[ref] = href
-    if (id) ids[id] = `${href}/${id}`
+    return href
+  }
+
+  function addFor(ref: string, id?: string) {
+    const href = hrefFor(ref)
+    if (href && id) ids[id] = `${href}/${id}`
   }
 
   for (const targets of Object.values(record.edges ?? {})) {
     for (const t of targets ?? []) addFor(t.kind, t.id)
   }
 
-  // Reference-typed property values are typed POINTERS: each stored {kind, id}
-  // deep-links to the referent's detail page, exactly like an edge target id.
+  // Reference-typed property values are typed POINTERS: each stored record
+  // PATH deep-links to the referent's detail page, exactly like an edge target
+  // id. It is keyed by the whole path because that is the text the document
+  // carries — the id alone never appears in it.
   const own = kindByIdentity(kinds, record.kind)
   if (own) {
     for (const prop of declaredProperties(own)) {
@@ -157,10 +167,11 @@ export function linkTargetsOf(
       const raw = record.properties?.[prop.name]
       const refs = Array.isArray(raw) ? raw : raw == null ? [] : [raw]
       for (const ref of refs) {
-        if (!ref || typeof ref !== "object") continue
-        const { kind, id } = ref as { kind?: string; id?: string }
-        if (typeof id !== "string" || typeof kind !== "string") continue
-        addFor(kind, id)
+        if (typeof ref !== "string") continue
+        const target = splitRecordPath(ref)
+        if (!target) continue
+        const href = hrefFor(target.kind)
+        if (href) ids[ref] = `${href}/${target.id}`
       }
     }
   }

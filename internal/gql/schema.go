@@ -34,6 +34,37 @@ var jsonScalar = graphql.NewScalar(graphql.ScalarConfig{
 	ParseLiteral: parseJSONLiteral,
 })
 
+// referenceScalar carries a `reference` property's value: the referent's record
+// PATH, "<kind>/<id>" — one string, not a pair, so a pointer compares and
+// indexes as the single value it is. It stays a NAMED scalar rather than plain
+// String so the schema still distinguishes a pointer from prose: the console
+// deep-links a Reference field to the referent's detail page, and it can only
+// know to do that from the type.
+var referenceScalar = graphql.NewScalar(graphql.ScalarConfig{
+	Name:         "Reference",
+	Description:  `A pointer at another record, as its path: "<kind>/<id>".`,
+	Serialize:    coerceReferencePath,
+	ParseValue:   coerceReferencePath,
+	ParseLiteral: parseReferenceLiteral,
+})
+
+// coerceReferencePath passes a path through and answers nil for anything else,
+// which is how a scalar says "not this type" in graphql-go.
+func coerceReferencePath(value any) any {
+	s, ok := value.(string)
+	if !ok {
+		return nil
+	}
+	return s
+}
+
+func parseReferenceLiteral(valueAST ast.Value) any {
+	if v, ok := valueAST.(*ast.StringValue); ok {
+		return v.Value
+	}
+	return nil
+}
+
 // longScalar carries int64 values (Record.version, Change.seq, changelog
 // resume seqs) that GraphQL's built-in 32-bit Int would overflow past 2^31. It
 // serializes as a plain JSON number, which round-trips a full int64 safely
@@ -178,10 +209,9 @@ var traitFields = map[string]graphql.Fields{
 type schemaBuilder struct {
 	types []substrate.KindInfo
 
-	changeType    *graphql.Object
-	edgeType      *graphql.Object
-	referenceType *graphql.Object
-	recordIF      *graphql.Interface
+	changeType *graphql.Object
+	edgeType   *graphql.Object
+	recordIF   *graphql.Interface
 
 	traitIF   map[string]*graphql.Interface
 	machineIF map[string]*graphql.Interface
@@ -233,18 +263,6 @@ func (b *schemaBuilder) build() (graphql.Schema, error) {
 		Fields: graphql.Fields{
 			"rel":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 			"properties": &graphql.Field{Type: jsonScalar},
-		},
-	})
-	// Reference is a `reference` property's wire shape: the stored
-	// {kind, id} record reference, a typed POINTER at another record — the same
-	// shape an edge target wears, but a property value, not a graph edge. The
-	// stored value is the map, so the default resolver reads each field; the
-	// console deep-links it to the referent's detail page.
-	b.referenceType = graphql.NewObject(graphql.ObjectConfig{
-		Name: "Reference",
-		Fields: graphql.Fields{
-			"kind": &graphql.Field{Type: graphql.String},
-			"id":   &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
 		},
 	})
 	b.recordIF = graphql.NewInterface(graphql.InterfaceConfig{

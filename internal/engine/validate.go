@@ -157,38 +157,105 @@ func coerceObject(p *vocabulary.Property, v any) (any, error) {
 }
 
 // coerceReference validates a reference value's SHAPE and normalizes it toward
-// the canonical {kind, id} pair — the same record reference an
-// edge target wears. Like a blob-ref, this is the PURE half: the existence
-// gate — the referent KIND must be known, and a `to:` constraint must match —
-// is taken inside the transaction (validateReferences). Here we only ensure
-// there is an id and a knowable kind:
+// the canonical RECORD PATH — "<kind>/<id>", ONE flat string, the whole stored
+// value. Like a blob-ref, this is the PURE half: the existence gate — the
+// referent KIND must be known, and the `kind:` pin must match — is taken inside
+// the transaction (validateReferences). Here we only reach a path:
 //
-//   - a {kind, id} object,
-//   - a bare id string, ONLY when `to:` pins a concrete kind (the kind comes
-//     from the declaration, mirroring a single-target edge's shorthand).
+//   - a full path ("core.substrate.reamde.dev/llmprovider/claude"), left alone;
+//   - the AUTHORED SHORT FORM, a bare record id, ONLY when `kind:` pins a
+//     concrete kind, which then supplies what the value omits, mirroring a
+//     single-target edge's shorthand.
+//
+// Which of the two a string is, is decided by the value's own SHAPE against the
+// pin and never by the registry, so an authored value means the same thing on
+// every path that reads it.
+//
+// AN AMBIGUOUS VALUE IS REFUSED, NEVER GUESSED. Under a pin, a value that
+// parses as a full path whose kind is NOT the pin has two live readings — that
+// pointer, or a bare id the pin would complete — and they name different
+// records. "foo.bar/baz/qux" under a pin at `p/target` is the case: a pointer at
+// `foo.bar/baz`, or an id `foo.bar/baz/qux`. Both are refused together, naming
+// both readings, because picking one silently is how a pointer ends up at the
+// wrong row.
+//
+// A value that does NOT parse as a path is unambiguous even carrying slashes,
+// and that is deliberate: a kind or function IDENTITY is the ordinary short form
+// for the properties that name one ("writes: [web.…/page]" under a pin at
+// core's `kind`), and it cannot be read as a path because nothing is left for an
+// id. Only empty-segment shapes are refused there, since "target/" is an id of
+// nothing.
 func coerceReference(p *vocabulary.Property, v any) (any, error) {
-	var kind, id string
-	switch t := v.(type) {
-	case map[string]any:
-		kind, _ = t["kind"].(string)
-		id, _ = t["id"].(string)
-	case string:
-		id = t
-	default:
-		return nil, fmt.Errorf("a reference is a {kind, id} object")
+	pin := p.To
+	if pin == vocabulary.ToAny {
+		pin = ""
 	}
-	if id == "" {
+	switch t := v.(type) {
+	case string:
+		return coerceReferencePath(pin, t)
+	case map[string]any:
+		// The retired dialect-1 shape, refused BY NAME rather than folded. The
+		// boot rung canonicalizes the stored rows that hold one
+		// (canonicalizeTriggerCallables), so this door never has to: a pair
+		// arriving here is either an author writing the dead shape or a store
+		// that skipped the rung, and quietly accepting it would keep the old
+		// spelling alive in a dialect that says it is gone.
+		kind, _ := t["kind"].(string)
+		id, _ := t["id"].(string)
+		return nil, fmt.Errorf(
+			"a reference is a %q path string; the {kind: %q, id: %q} pair is the retired shape, and the boot rung is what migrates a stored one",
+			"<kind>/<id>", kind, id)
+	default:
+		return nil, fmt.Errorf(`a reference is a "<kind>/<id>" path string`)
+	}
+}
+
+// coerceReferencePath holds one authored string to the value model: the whole
+// decision, in one place, so the write path and the rung cannot answer it
+// differently.
+func coerceReferencePath(pin, s string) (any, error) {
+	if s == "" {
 		return nil, fmt.Errorf("a reference needs an id")
 	}
-	// A pinned concrete `to:` supplies the kind a bare value omits, exactly as
-	// a single-target edge's declaration supplies it.
-	if kind == "" && p.To != "" && p.To != vocabulary.ToAny {
-		kind = p.To
+	kind, id, isPath := vocabulary.SplitRecordPath(s)
+	if pin == "" {
+		// Unpinned there is no kind to borrow, so only a full path says what
+		// this names. A dotted first segment is an AUTHORITY, so "foo.bar/baz"
+		// names the kind `foo.bar/baz` and leaves nothing for the id; "note/abc"
+		// is the local kind `note` and the id `abc`.
+		if !isPath {
+			return nil, fmt.Errorf(
+				`a reference to any kind needs a full "<kind>/<id>" path, and %q is not one`, s)
+		}
+		if hasEmptySegment(id) {
+			return nil, fmt.Errorf("reference %q has an empty id segment", s)
+		}
+		return s, nil
 	}
-	if kind == "" {
-		return nil, fmt.Errorf("a reference to any kind needs an explicit kind")
+	if isPath {
+		if kind == pin {
+			if hasEmptySegment(id) {
+				return nil, fmt.Errorf("reference %q has an empty id segment", s)
+			}
+			return s, nil
+		}
+		// Both readings, named, because either end may be the one to change.
+		return nil, fmt.Errorf(
+			"reference %q is ambiguous: it reads as a pointer at %s, or as a bare id the pin would complete to %q — and the declaration pins %s, so write that path in full",
+			s, kind, vocabulary.RecordPath(pin, s), pin)
 	}
-	return map[string]any{"kind": kind, "id": id}, nil
+	if hasEmptySegment(s) {
+		return nil, fmt.Errorf("reference %q has an empty segment, so it names no record", s)
+	}
+	return vocabulary.RecordPath(pin, s), nil
+}
+
+// hasEmptySegment reports whether a record id has a slash with nothing on one
+// side of it. "target/" and "/x" and "a//b" all name no record, and completing
+// one from a pin would store a path that can never be split back.
+func hasEmptySegment(id string) bool {
+	return id == "" || strings.HasPrefix(id, "/") || strings.HasSuffix(id, "/") ||
+		strings.Contains(id, "//")
 }
 
 func coerceScalar(p *vocabulary.Property, v any) (any, error) {
@@ -414,9 +481,10 @@ func (r *titleResolver) Prop(name string) string {
 		return ""
 	}
 	if v, ok := r.row.Props[name]; ok {
-		// A reference is a {kind, id} OBJECT, which scalarString renders as ""
-		// — a template naming one would silently lose its whole token. It
-		// follows the pointer instead, exactly as a bare edge token does, and
+		// A reference is a record PATH, which scalarString would render
+		// verbatim — a title reading "core.substrate.reamde.dev/agent/x"
+		// names the pointer, not the thing. It follows the pointer instead,
+		// exactly as a bare edge token does, and
 		// falls back to the id when the referent is not there to read: a
 		// reference may name a row that does not exist (references.go).
 		if p, ok := r.ty.Prop(name); ok && p.Datatype == vocabulary.DatatypeReference {
@@ -492,7 +560,7 @@ func (r *titleResolver) referenceProp(ref eref, prop string) string {
 }
 
 // referenceID reads the id a stored reference names, "" when the value is not
-// one. A reference is a {kind, id} pair, so nothing reads it as a string.
+// one.
 func referenceID(v any) string {
 	refs := referenceTargets(v)
 	if len(refs) == 0 {
@@ -502,26 +570,27 @@ func referenceID(v any) string {
 }
 
 // referenceTargets reads the stored shape of a reference property — one
-// canonical {kind, id} pair, or a list of them when repeated.
+// canonical record PATH, or a list of them when repeated. A stored value is
+// always a full path (normalizeReference wrote it), so a string that does not
+// split is not a reference and yields nothing rather than a kindless target.
 func referenceTargets(v any) []eref {
-	one := func(m map[string]any) (eref, bool) {
-		kind, _ := m["kind"].(string)
-		id, _ := m["id"].(string)
-		if id == "" {
+	one := func(s string) (eref, bool) {
+		kind, id, ok := vocabulary.SplitRecordPath(s)
+		if !ok {
 			return eref{}, false
 		}
 		return eref{Kind: kind, ID: id}, true
 	}
 	switch t := v.(type) {
-	case map[string]any:
+	case string:
 		if ref, ok := one(t); ok {
 			return []eref{ref}
 		}
 	case []any:
 		var out []eref
 		for _, item := range t {
-			if m, ok := item.(map[string]any); ok {
-				if ref, ok := one(m); ok {
+			if s, ok := item.(string); ok {
+				if ref, ok := one(s); ok {
 					out = append(out, ref)
 				}
 			}

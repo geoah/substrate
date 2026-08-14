@@ -236,7 +236,7 @@ func planFields(k *kindPlan, s *structPlan, props []*kinddialect.Property) error
 		case kinddialect.TypeJSON:
 			f.Class, f.GoElem, f.TSElem = classJSON, "Dynamic", "Dynamic"
 		case kinddialect.TypeReference:
-			f.Class, f.GoElem, f.TSElem = classReference, "Reference", "Reference"
+			f.Class, f.GoElem, f.TSElem = classReference, "ReferencePath", "ReferencePath"
 		case kinddialect.TypeEnum:
 			f.Class = classEnum
 			f.Enum = &enumPlan{

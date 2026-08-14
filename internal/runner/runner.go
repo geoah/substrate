@@ -86,11 +86,11 @@ type Spec struct {
 	ReadTypes []string
 	ReadCalls int
 	ReadRows  int
-	// CallTargets is the `capabilities.call` allowlist: the function
+	// CallTargets is the `permissions.call` allowlist: the function
 	// identities the body's host Call may invoke. Empty means every
 	// sub-call trips.
 	CallTargets []string
-	// Network is the `capabilities.network` declaration. Its CONTENT (the
+	// Network is the `permissions.network` declaration. Its CONTENT (the
 	// host patterns) is still only documentation, but its EMPTINESS is
 	// enforced: a body that declares no egress is denied AF_INET and AF_INET6
 	// sockets by the sandbox's seccomp filter. Holding it to the declared
@@ -119,7 +119,7 @@ func (s Spec) Key() string {
 // re-registered or (Go) rebuilt against the new inputs.
 //
 // The network state has to be in here. The sandbox policy is applied ONCE, when
-// the process starts, so a manifest that drops `capabilities.network` without
+// the process starts, so a manifest that drops `permissions.network` without
 // touching a line of source would otherwise leave the running process,
 // started when egress was granted, serving deliveries with its sockets
 // intact. A

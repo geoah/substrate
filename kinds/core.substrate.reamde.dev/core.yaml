@@ -50,7 +50,10 @@ data:
   # — and `name` left with them, since a declaration's local name is its id's
   # last segment. The declarations that pin their own version bumped it too;
   # this carries the rest.
-  version: v1alpha3
+  # v1alpha4: the grants group under one `permissions:` object, and `emit`
+  # is `writes` inside it. The function and agent kinds pin their own bump;
+  # this one carries the `propose` host function's rewritten grant.
+  version: v1alpha5
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands

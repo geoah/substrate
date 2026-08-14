@@ -33,9 +33,7 @@ data:
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledIssues" in record.properties && record.properties.enabledIssues
           == true && !("lastSyncedAt" in record.properties)
-    callable:
-      kind: core.substrate.reamde.dev/function
-      id: linear.bundles.substrate.reamde.dev/issuessync
+    callable: core.substrate.reamde.dev/function/linear.bundles.substrate.reamde.dev/issuessync
 ---
 # The steady-state re-sync: an hourly tick fires the same function with no
 # envelope record, so the body iterates every connected, issues-enabled
@@ -53,9 +51,7 @@ data:
         # A fixed past anchor, so every occurrence since is well-defined
         # (occurrences compute forward from startsAt).
         startsAt: "2025-01-06T09:00:00Z"
-    callable:
-      kind: core.substrate.reamde.dev/function
-      id: linear.bundles.substrate.reamde.dev/issuessync
+    callable: core.substrate.reamde.dev/function/linear.bundles.substrate.reamde.dev/issuessync
 ---
 # The projection: every mirror write flows into the jointly-owned task. The
 # sync's patches are no-op-suppressed, so an idle re-sync produces NO mirror
@@ -73,6 +69,4 @@ data:
         kinds: [linear.bundles.substrate.reamde.dev/issue]
         ops: [create, update]
         when: "record != null"
-    callable:
-      kind: core.substrate.reamde.dev/function
-      id: linear.bundles.substrate.reamde.dev/taskprojection
+    callable: core.substrate.reamde.dev/function/linear.bundles.substrate.reamde.dev/taskprojection

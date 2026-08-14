@@ -71,24 +71,51 @@ type diffConflict struct {
 func (e *diffConflict) Error() string { return fmt.Sprintf("%s on %s: %v", e.action, e.edit.ID, e.err) }
 func (e *diffConflict) Unwrap() error { return e.err }
 
+// effectCeiling carries a bundle actor's EFFECTIVE emit set into a public
+// write. Every effect-application site stamps the ceiling on the transaction it
+// opens itself (setEffectEmit); the agent mutate built-in cannot, because it
+// delegates to the public Put/Patch/Delete to keep schema admission, the kind
+// guards and the conflict annotation, and those open their transactions
+// internally — so it hands the ceiling down instead. A nil *effectCeiling is
+// the generic API, where no ceiling applies; a non-nil one is bundle dispatch,
+// and an EMPTY set inside it means the actor may emit nothing (the distinction
+// effEmitSet keeps).
+type effectCeiling struct{ emit []string }
+
+// stamp marks the transaction as bundle dispatch under this ceiling.
+func (c *effectCeiling) stamp(t *txn) {
+	if c == nil {
+		return
+	}
+	t.setEffectEmit(c.emit)
+}
+
 func (ds *dataset) Put(ctx context.Context, actor substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
+	return ds.putBounded(ctx, actor, in, nil)
+}
+
+// putBounded is Put with an optional effect ceiling: the SAME door, so the
+// bounded caller keeps schema admission and every guard behind it.
+func (ds *dataset) putBounded(ctx context.Context, actor substrate.Actor, in substrate.PutInput, ceiling *effectCeiling) (*substrate.Record, error) {
 	// Schema is records: a put of a schema kind is a batch of one, through
-	// the loader as admission (schemawrite.go).
+	// the loader as admission (schemawrite.go). A declaration is not a change
+	// request, so no ceiling travels into it.
 	if ty, err := ds.resolveType(in.Kind); err == nil {
 		if _, isVocabulary := vocabularyRecordKinds[ty.Identity]; isVocabulary {
 			return ds.putSchemaRecord(ctx, actor, ty, in)
 		}
 	}
-	return ds.putWith(ctx, actor, in, false)
+	return ds.putWith(ctx, actor, in, false, ceiling)
 }
 
 func (ds *dataset) putInternal(ctx context.Context, actor substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
-	return ds.putWith(ctx, actor, in, true)
+	return ds.putWith(ctx, actor, in, true, nil)
 }
 
-func (ds *dataset) putWith(ctx context.Context, actor substrate.Actor, in substrate.PutInput, internal bool) (*substrate.Record, error) {
+func (ds *dataset) putWith(ctx context.Context, actor substrate.Actor, in substrate.PutInput, internal bool, ceiling *effectCeiling) (*substrate.Record, error) {
 	var out *substrate.Record
 	err := ds.inTx(ctx, actor, internal, func(t *txn) error {
+		ceiling.stamp(t)
 		e, err := t.put(in)
 		out = e
 		return err
@@ -346,6 +373,13 @@ func hotTime(name string, v any) (*time.Time, error) {
 }
 
 func (ds *dataset) Patch(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput) (*substrate.Record, error) {
+	return ds.patchBounded(ctx, actor, typ, id, in, nil)
+}
+
+// patchBounded is Patch with an optional effect ceiling. It is the door an
+// agent's `mutate` accept goes through: the ceiling reaches applyEditDiff's
+// authorizeRequestOp, which fails closed without one.
+func (ds *dataset) patchBounded(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput, ceiling *effectCeiling) (*substrate.Record, error) {
 	// A patch addressed at a schema record routes through admission: the
 	// merged declaration must still close (schemawrite.go). The addressed
 	// type says which rows are schema rows; no peek by bare id exists.
@@ -358,16 +392,17 @@ func (ds *dataset) Patch(ctx context.Context, actor substrate.Actor, typ, id str
 			return ds.patchSchemaRecord(ctx, actor, existing, in)
 		}
 	}
-	return ds.patchWith(ctx, actor, typ, id, in, false)
+	return ds.patchWith(ctx, actor, typ, id, in, false, ceiling)
 }
 
 func (ds *dataset) patchInternal(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput) (*substrate.Record, error) {
-	return ds.patchWith(ctx, actor, typ, id, in, true)
+	return ds.patchWith(ctx, actor, typ, id, in, true, nil)
 }
 
-func (ds *dataset) patchWith(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput, internal bool) (*substrate.Record, error) {
+func (ds *dataset) patchWith(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput, internal bool, ceiling *effectCeiling) (*substrate.Record, error) {
 	var out *substrate.Record
 	err := ds.inTx(ctx, actor, internal, func(t *txn) error {
+		ceiling.stamp(t)
 		ty, err := t.ds.resolveType(typ)
 		if err != nil {
 			return err
@@ -510,13 +545,24 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// (fold.go), values and all, which is what makes the changelog replayable.
 	before := sp.existing.clone()
 
-	// The reviewed envelope is IMMUTABLE once a change request exists:
-	// op/targetKind/targetId/diff and the target edge are the values a
-	// reviewer read, so a later write must not swap them under an undecided
-	// request and turn a harmless patch into an arbitrary delete.
-	if sp.ty.Identity == vocabulary.KindRecordPatchRequest && !create {
-		if err := guardImmutableEnvelope(sp); err != nil {
-			return nil, err
+	// A change request is admitted at PROPOSE time and frozen afterwards: the
+	// creating write has its diff validated against the kind the accept would
+	// write, and every later write must leave the reviewed
+	// envelope — op/targetKind/targetId/diff and the target edge — exactly as
+	// the reviewer read it, so nothing swaps a harmless patch for an arbitrary
+	// delete under an undecided request.
+	if sp.ty.Identity == vocabulary.KindRecordPatchRequest {
+		if create {
+			if err := t.admitRequestDiff(sp); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := t.canonicalizeResubmittedDiff(sp); err != nil {
+				return nil, err
+			}
+			if err := guardImmutableEnvelope(sp); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if create {
@@ -542,7 +588,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		return nil, err
 	}
 	// A reference must name a known TYPE: coercion checked the
-	// shape, this resolves the referent type, refuses a `to:` mismatch, and
+	// shape, this resolves the referent type, refuses a pin mismatch, and
 	// rewrites the value canonical — before the row's property map is built,
 	// so the trigger-callable and every other stored reference lands as
 	// {authority, type, id}. The referent RECORD need not exist: it is a pointer.
@@ -1304,14 +1350,72 @@ const (
 // accepted/rejected is the reviewed decision (§7).
 const propDecision = "decision"
 
+// canonicalizeResubmittedDiff makes an IDENTICAL re-proposal a no-op. A replayed
+// delivery stages the same effect again — the same request id, the same bare
+// diff — while the stored diff is the wrapper form admission normalised it into;
+// compared raw the two differ, and the envelope guard would refuse the replay as
+// an attempted swap and park the delivery. So the incoming diff is normalised
+// against the request's FROZEN op and target first, and adopted only where it
+// turns out to BE the stored value. A diff that normalises to something else, or
+// does not normalise at all, is left exactly as the writer sent it, for the guard
+// to refuse — including the identical re-put of a row that predates admission,
+// which stays the no-op it always was.
+func (t *txn) canonicalizeResubmittedDiff(sp *applySpec) error {
+	next, named := sp.props["diff"]
+	if !named {
+		return nil
+	}
+	stored := sp.existing.Props["diff"]
+	if jsonEqual(stored, next) {
+		return nil
+	}
+	diff, ok := next.(map[string]any)
+	if !ok {
+		return nil
+	}
+	op := requestOp(sp.existing.Props)
+	if op == opDelete {
+		return nil
+	}
+	ident := ""
+	if op == opCreate {
+		ident, _ = sp.existing.Props["targetKind"].(string)
+	} else {
+		target, err := t.edgeTargetOf(sp.ref(), propTarget)
+		if err != nil {
+			return err
+		}
+		ident = target.Kind
+	}
+	var ty *vocabulary.Kind
+	if ident != "" {
+		// An unresolvable kind cannot canonicalize anything: leave the write to
+		// the guard rather than refusing a re-put that used to pass.
+		resolved, err := t.ds.resolveType(ident)
+		if err != nil {
+			return nil
+		}
+		ty = resolved
+	}
+	norm, err := normalizeDiffFor(ty, diff, op)
+	if err != nil {
+		return nil
+	}
+	if jsonEqual(stored, norm) {
+		sp.props["diff"] = norm
+	}
+	return nil
+}
+
 // guardImmutableEnvelope refuses a write that would alter the reviewed
 // envelope of an already-existing change request: the operation
 // verb, its target fields and the diff are frozen at propose time. `decision`
 // (the state) and `rationale` stay mutable — deciding is the whole point, and a
 // note is harmless. The stored value may be re-asserted identically (an
-// idempotent re-put), but never changed. The target EDGE is guarded in the
-// edge loop, where the write's resolved target can be compared to the current
-// one (a re-sync of the same target is fine; a swap is not).
+// idempotent re-put, in whichever input shape the writer spells it —
+// canonicalizeResubmittedDiff runs first), but never changed. The target EDGE is
+// guarded in the edge loop, where the write's resolved target can be compared to
+// the current one (a re-sync of the same target is fine; a swap is not).
 func guardImmutableEnvelope(sp *applySpec) error {
 	for _, name := range []string{"op", "targetKind", "targetId", "diff"} {
 		next, named := sp.props[name]
@@ -1351,14 +1455,230 @@ func sensitiveProp(ty *vocabulary.Kind, name string) bool {
 	return ok && p.Sensitive()
 }
 
+// admitRequestDiff is the change request's ADMISSION: on the creating write it
+// normalises and validates the proposed diff against the kind the accept would
+// write, so a malformed proposal is a refused write at EVERY door — a
+// function's put effect, the HTTP API, an agent mutation — instead of a
+// diffConflict discovered when somebody accepts it. The agent propose built-in
+// runs the same normalizeDiff earlier, where it can hand the model a tool error
+// instead of an engine refusal; both doors share this one check.
+//
+// Only the creating write is admitted: the envelope is immutable afterwards
+// (guardImmutableEnvelope), so a stored diff is the one admission saw, and a
+// request that landed BEFORE this check keeps failing at accept — nothing here
+// re-judges stored rows.
+func (t *txn) admitRequestDiff(sp *applySpec) error {
+	op := requestOp(sp.props)
+	targets := requestTargetEdges(sp)
+	// ONE request, ONE target, whatever the op. A create names the record it
+	// would mint by targetKind/targetId — that record does not exist yet, so a
+	// target EDGE on one points at something else entirely — and a patch or a
+	// delete names exactly one, because the write loop below keeps the LAST entry
+	// it is handed for a single-valued edge: a second target would have the diff
+	// admitted against a record the request does not end up pointing at.
+	if op == opCreate {
+		if len(targets) > 0 {
+			return fmt.Errorf("%w: a create request names its target by targetKind/targetId, never by a target edge — the record does not exist yet",
+				substrate.ErrValidation)
+		}
+	} else if len(targets) > 1 {
+		return fmt.Errorf("%w: a change request names ONE target — this write names several",
+			substrate.ErrValidation)
+	}
+	if op == opDelete {
+		// A delete proposes no VALUES, so a diff on one is a lie to the reviewer:
+		// the accept ignores it, and what a reviewer read would not be what the
+		// accept did. PRESENCE, not content — an empty diff is still a diff the
+		// reviewer would read as meaningful.
+		if v, named := sp.props["diff"]; named && v != nil {
+			return fmt.Errorf("%w: op delete proposes no values — a delete request carries no diff",
+				substrate.ErrValidation)
+		}
+		return nil
+	}
+	diff, err := requestDiffMap(sp.props)
+	if err != nil {
+		return err
+	}
+	if op == opCreate {
+		ident, _ := sp.props["targetKind"].(string)
+		id, _ := sp.props["targetId"].(string)
+		if ident == "" || id == "" {
+			return fmt.Errorf("%w: a create request needs targetKind and targetId — the kind and the id the accept would mint",
+				substrate.ErrValidation)
+		}
+		ty, err := t.ds.resolveType(ident)
+		if err != nil {
+			return err
+		}
+		return t.storeNormalizedDiff(sp, ty, diff, opCreate)
+	}
+	// A patch's diff is checked against the kind of the target its edge names. A
+	// TARGETLESS patch request is legal storage (the edge is not required) whose
+	// accept annotates "no target"; its diff is admitted by SHAPE alone, since
+	// only the property-level checks need a kind.
+	var ty *vocabulary.Kind
+	if len(targets) == 1 {
+		if ty, err = t.requestTargetKind(sp, targets[0]); err != nil {
+			return err
+		}
+	}
+	return t.storeNormalizedDiff(sp, ty, diff, opPatch)
+}
+
+// requestOp reads a change request's verb off a property map: absent means
+// patch, because an existing request stores no `op`.
+func requestOp(props map[string]any) string {
+	op, _ := props["op"].(string)
+	if op == "" {
+		return opPatch
+	}
+	return op
+}
+
+// requestDiffMap reads the write's proposed diff as an object. A diff that is
+// present but not an object is refused here rather than silently ignored, and an
+// absent one is the empty map, which normalisation refuses for the ops that need
+// values.
+func requestDiffMap(props map[string]any) (map[string]any, error) {
+	v, named := props["diff"]
+	if !named || v == nil {
+		return nil, nil
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%w: the diff must be an object", substrate.ErrValidation)
+	}
+	return m, nil
+}
+
+// requestTargetEdges are the `target` entries a write carries.
+func requestTargetEdges(sp *applySpec) []substrate.EdgeInput {
+	var out []substrate.EdgeInput
+	for _, e := range sp.edges {
+		if e.Rel == propTarget {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// requestTargetKind resolves the kind of the target a creating change request
+// points at, or (nil, nil) where the request kind declares no such edge.
+func (t *txn) requestTargetKind(sp *applySpec, target substrate.EdgeInput) (*vocabulary.Kind, error) {
+	ed, declared := sp.ty.Edge(propTarget)
+	if !declared {
+		return nil, nil
+	}
+	ident, err := t.edgeTargetType(ed, target.To)
+	if err != nil {
+		return nil, err
+	}
+	return t.ds.resolveType(ident)
+}
+
+// storeNormalizedDiff replaces the write's diff with its normalised WRAPPER
+// form, so every door stores the shape the accept transition decodes — a bare
+// property map lands wrapped rather than failing at accept.
+func (t *txn) storeNormalizedDiff(sp *applySpec, ty *vocabulary.Kind, diff map[string]any, op string) error {
+	norm, err := normalizeDiffFor(ty, diff, op)
+	if err != nil {
+		return err
+	}
+	sp.props["diff"] = norm
+	return nil
+}
+
+// normalizeDiffFor is admission's one normalisation: against the target's kind
+// when it resolves, and by SHAPE alone when it does not (the targetless patch
+// request, whose property-level checks have no kind to run against and wait for
+// the accept to say "no target").
+func normalizeDiffFor(ty *vocabulary.Kind, diff map[string]any, op string) (map[string]any, error) {
+	if ty != nil {
+		return normalizeDiff(ty, diff, op)
+	}
+	out, propsRaw, err := splitDiff(diff, op)
+	if err != nil {
+		return nil, err
+	}
+	out["properties"] = propsRaw
+	// The kind-free half of the value validation still runs: a diff whose
+	// `ifVersion` is not a number or whose `labels` is not an object is not a
+	// diff, whatever it would have been checked against.
+	if err := validateDiffShape(nil, out, op); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// diffTopKeys are the top-level keys a stored diff may carry for an op:
+// `properties` (the change itself) beside the envelope fields the accept path's
+// own input shape declares — a create's `edges`, a patch's `ifVersion` and
+// finalizer lists. `kind` and `id` are NOT among them although PutInput declares
+// both: a create request names what it mints in targetKind/targetId, and a
+// second spelling inside the diff would be silently overridden at accept.
+// `ifVersion` is a PATCH key for the same reason: a create is
+// create-if-absent (existingSatisfiesCreate decides a collision by shape, not by
+// version), so a precondition inside a create diff would be admitted and then
+// never enforced.
+func diffTopKeys(op string) map[string]bool {
+	top := map[string]bool{"properties": true, "labels": true, "annotations": true}
+	if op == opCreate {
+		top["edges"] = true
+		return top
+	}
+	top["ifVersion"] = true
+	top["addFinalizers"] = true
+	top["removeFinalizers"] = true
+	return top
+}
+
+// splitDiff is normalizeDiff's KIND-FREE half: it takes the two accepted input
+// shapes apart into the envelope keys the op admits and the property map
+// underneath. Run on its own where no target kind resolves.
+func splitDiff(diff map[string]any, op string) (map[string]any, map[string]any, error) {
+	if len(diff) == 0 {
+		return nil, nil, fmt.Errorf("%w: the diff is empty — name at least one property to change", substrate.ErrValidation)
+	}
+	out := map[string]any{}
+	propsRaw := diff
+	if pv, wrapped := diff["properties"]; wrapped {
+		pm, ok := pv.(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("%w: diff.properties must be an object", substrate.ErrValidation)
+		}
+		propsRaw = pm
+		allowedTop := diffTopKeys(op)
+		for _, k := range sortedKeys(diff) {
+			if !allowedTop[k] {
+				return nil, nil, fmt.Errorf("%w: diff has an unknown top-level key %q — a change wraps its properties under \"properties\"",
+					substrate.ErrValidation, k)
+			}
+			if k != "properties" {
+				out[k] = diff[k]
+			}
+		}
+	}
+	// A proposal NAMES PROPERTY VALUES: that is what a reviewer reads and what
+	// the accept applies. The accept path's own emptiness check is looser (a
+	// stored labels-only or finalizer-only diff executes), and it stays that way
+	// for rows that predate admission — but no door admits a new proposal that
+	// changes no property, because "accept this" then means something a reviewer
+	// cannot see in the diff.
+	if len(propsRaw) == 0 {
+		return nil, nil, fmt.Errorf("%w: the diff names no property to change", substrate.ErrValidation)
+	}
+	return out, propsRaw, nil
+}
+
 // normalizeDiff validates and normalises a proposed change against the target
 // type's schema and returns the stored WRAPPER form `{"properties":{…}}` (plus
-// any labels/annotations, and edges when allowEdges) — the shape the accept
-// transition decodes. Two input shapes are accepted, consistently:
+// whatever envelope keys diffTopKeys admits for the op) — the shape the accept
+// transition decodes. splitDiff takes the two accepted input shapes apart:
 //
-//   - the WRAPPER form — an object carrying a `properties` key (optionally
-//     `labels`/`annotations`, and `edges` when allowEdges); any OTHER top-level
-//     key is rejected as unknown; and
+//   - the WRAPPER form — an object carrying a `properties` key beside the
+//     envelope keys diffTopKeys admits; any OTHER top-level key is rejected as
+//     unknown; and
 //   - the BARE form — a plain property map (a real model's `{saved:true}`),
 //     coerced into `{"properties":{…}}`.
 //
@@ -1369,33 +1689,9 @@ func sensitiveProp(ty *vocabulary.Kind, name string) bool {
 // property are rejected; and a diff that would change nothing is rejected — so
 // a malformed proposal never reaches the inbox.
 func normalizeDiff(ty *vocabulary.Kind, diff map[string]any, op string) (map[string]any, error) {
-	allowEdges := op == opCreate
-	if len(diff) == 0 {
-		return nil, fmt.Errorf("%w: the diff is empty — name at least one property to change", substrate.ErrValidation)
-	}
-	out := map[string]any{}
-	var propsRaw map[string]any
-	if pv, wrapped := diff["properties"]; wrapped {
-		pm, ok := pv.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("%w: diff.properties must be an object", substrate.ErrValidation)
-		}
-		propsRaw = pm
-		allowedTop := map[string]bool{"properties": true, "labels": true, "annotations": true}
-		if allowEdges {
-			allowedTop["edges"] = true
-		}
-		for _, k := range sortedKeys(diff) {
-			if !allowedTop[k] {
-				return nil, fmt.Errorf("%w: diff has an unknown top-level key %q — a change wraps its properties under \"properties\"",
-					substrate.ErrValidation, k)
-			}
-			if k != "properties" {
-				out[k] = diff[k]
-			}
-		}
-	} else {
-		propsRaw = diff
+	out, propsRaw, err := splitDiff(diff, op)
+	if err != nil {
+		return nil, err
 	}
 	var problems []string
 	for _, name := range sortedKeys(propsRaw) {
@@ -1422,9 +1718,6 @@ func normalizeDiff(ty *vocabulary.Kind, diff map[string]any, op string) (map[str
 	if len(problems) > 0 {
 		return nil, fmt.Errorf("%w: %s", substrate.ErrValidation, strings.Join(problems, "; "))
 	}
-	if len(propsRaw) == 0 {
-		return nil, fmt.Errorf("%w: the diff names no property to change", substrate.ErrValidation)
-	}
 	out["properties"] = propsRaw
 	// Full value/edge validation against the schema, in a NON-writing pass:
 	// strictly decode the operation-specific shape, then run the ordinary
@@ -1439,7 +1732,9 @@ func normalizeDiff(ty *vocabulary.Kind, diff map[string]any, op string) (map[str
 
 // validateDiffShape strictly decodes a normalised diff into its
 // operation-specific input shape and validates every value and edge WITHOUT
-// writing anything.
+// writing anything. A nil ty runs the DECODE alone — the half that needs no
+// schema, for the targetless request whose properties nothing can be checked
+// against.
 func validateDiffShape(ty *vocabulary.Kind, norm map[string]any, op string) error {
 	raw, err := json.Marshal(norm)
 	if err != nil {
@@ -1452,11 +1747,17 @@ func validateDiffShape(ty *vocabulary.Kind, norm map[string]any, op string) erro
 		if err := dec.Decode(&in); err != nil {
 			return fmt.Errorf("%w: the create shape is invalid (%w)", substrate.ErrValidation, err)
 		}
+		if ty == nil {
+			return nil
+		}
 		return validateCreateShape(ty, in)
 	}
 	var in substrate.PatchInput
 	if err := dec.Decode(&in); err != nil {
 		return fmt.Errorf("%w: the patch shape is invalid (%w)", substrate.ErrValidation, err)
+	}
+	if ty == nil {
+		return nil
 	}
 	return validatePatchShape(ty, in)
 }
@@ -1909,6 +2210,11 @@ func (t *txn) applyMergeRequest(req *erow) error {
 }
 
 func (ds *dataset) Delete(ctx context.Context, actor substrate.Actor, typ, id string) (*substrate.Record, error) {
+	return ds.deleteBounded(ctx, actor, typ, id, nil)
+}
+
+// deleteBounded is Delete with an optional effect ceiling.
+func (ds *dataset) deleteBounded(ctx context.Context, actor substrate.Actor, typ, id string, ceiling *effectCeiling) (*substrate.Record, error) {
 	ty, err := ds.resolveType(typ)
 	if err != nil {
 		return nil, err
@@ -1923,12 +2229,13 @@ func (ds *dataset) Delete(ctx context.Context, actor substrate.Actor, typ, id st
 		}
 		return ds.deleteVocabularyRecord(ctx, actor, existing)
 	}
-	return ds.deleteWith(ctx, actor, eref{Kind: ty.Identity, ID: id}, false)
+	return ds.deleteWith(ctx, actor, eref{Kind: ty.Identity, ID: id}, false, ceiling)
 }
 
-func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref eref, internal bool) (*substrate.Record, error) {
+func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref eref, internal bool, ceiling *effectCeiling) (*substrate.Record, error) {
 	var out *substrate.Record
 	err := ds.inTx(ctx, actor, internal, func(t *txn) error {
+		ceiling.stamp(t)
 		e, err := t.softDelete(ref)
 		out = e
 		return err

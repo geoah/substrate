@@ -90,7 +90,8 @@ data:
   source: "def main(input, host): return {}"
   arguments:
     - {name: url, type: string, required: true}
-  emit: [a.example.com/widget]
+  permissions:
+    writes: [a.example.com/widget]
 `
 
 // TestTheParseNeverMutatesTheDocument is the invariant itself: build the

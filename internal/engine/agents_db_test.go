@@ -180,7 +180,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	fake := newFakeLLM(t)
-	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm"} {
+	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm"} {
 		model := strings.TrimSuffix(id, "llm")
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: typeProvider, ID: id,
@@ -209,7 +209,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 			"description": "writes one annotated task under the id you pass",
 			"runtime":     vocabulary.RuntimePython,
 			"arguments":   []any{map[string]any{"name": "id", "type": "string", "required": true}},
-			"emit":        []any{"tasks.substrate.reamde.dev/task"},
+			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 			"source": `
 def main(input, host):
     tid = input["args"]["id"]
@@ -218,10 +218,22 @@ def main(input, host):
             "output": {"ok": True}}
 `,
 		}),
+		// A PURE FUNCTION: it declares no emit at all, returns an output and
+		// stages nothing. Legal since `emit:` stopped being required.
+		vocabulary.FunctionManifest(crewAuthority, "measure", map[string]any{
+			"description": "measures a widget name and returns its length, writing nothing",
+			"runtime":     vocabulary.RuntimePython,
+			"arguments":   []any{map[string]any{"name": "name", "type": "string", "required": true}},
+			"returns":     []any{map[string]any{"name": "length", "type": "int"}},
+			"source": `
+def main(input, host):
+    return {"output": {"length": len(input["args"]["name"])}}
+`,
+		}),
 		vocabulary.FunctionManifest(crewAuthority, "keyecho", map[string]any{
 			"description": "writes one task carrying the invocation's idempotency key",
 			"runtime":     vocabulary.RuntimePython,
-			"emit":        []any{"tasks.substrate.reamde.dev/task"},
+			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 			"source": `
 def main(input, host):
     key = input["idempotencyKey"]
@@ -233,22 +245,25 @@ def main(input, host):
 		agent("classifier", map[string]any{
 			"provider": "rootllm", "model": "root",
 			"tools": []any{
-				map[string]any{"callable": crewAuthority + "/annotate"},
-				map[string]any{"builtin": "propose"},
+				map[string]any{"function": crewAuthority + "/annotate"},
+				map[string]any{"function": vocabulary.HostFunctionPropose},
 			},
 			"agents": []any{crewAuthority + "/scribe"},
-			"emit":   []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
+			"permissions": map[string]any{
+				"writes": []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
+			},
 		}),
 		agent("scribe", map[string]any{"provider": "subllm", "model": "sub"}),
 		agent("rogue", map[string]any{
 			"provider": "roguellm", "model": "rogue",
-			"tools": []any{map[string]any{"callable": crewAuthority + "/annotate"}},
+			"tools": []any{map[string]any{"function": crewAuthority + "/annotate"}},
 			// annotate emits tasks, but THIS agent's emit does not allow them.
 		}),
 		agent("budgeter", map[string]any{
 			"provider": "budgetllm", "model": "budget",
-			"tools": []any{map[string]any{"callable": crewAuthority + "/annotate"}},
-			"emit":  []any{"tasks.substrate.reamde.dev/task"}, "budgets": map[string]any{"maxTurns": 2},
+			"tools":       []any{map[string]any{"function": crewAuthority + "/annotate"}},
+			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+			"budgets":     map[string]any{"maxTurns": 2},
 		}),
 		agent("chatter", map[string]any{"provider": "chatllm", "model": "chat"}),
 		// warden writes NOTHING (empty emit) but delegates to minion, whose
@@ -259,32 +274,60 @@ def main(input, host):
 		agent("minion", map[string]any{
 			"provider": "minionllm", "model": "minion",
 			"tools": []any{
-				map[string]any{"callable": crewAuthority + "/annotate"},
-				map[string]any{"builtin": "propose"},
+				map[string]any{"function": crewAuthority + "/annotate"},
+				map[string]any{"function": vocabulary.HostFunctionPropose},
 			},
-			"emit": []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
+			"permissions": map[string]any{
+				"writes": []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
+			},
 		}),
 		// keeper's keyecho tool records its idempotency key — the stable-key
 		// retry test.
 		agent("keeper", map[string]any{
 			"provider": "keepllm", "model": "keep",
-			"tools": []any{map[string]any{"callable": crewAuthority + "/keyecho"}},
-			"emit":  []any{"tasks.substrate.reamde.dev/task"},
+			"tools":       []any{map[string]any{"function": crewAuthority + "/keyecho"}},
+			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 		}),
 		// archivist reads the whole graph through the graphql built-in and
 		// writes nothing; editor holds both graphql tools, its mutate gated to
 		// widgets alone.
 		agent("archivist", map[string]any{
 			"provider": "gqlllm", "model": "gql",
-			"tools": []any{map[string]any{"builtin": "graphql"}},
+			"tools": []any{map[string]any{"function": vocabulary.HostFunctionGraphQL}},
 		}),
 		agent("editor", map[string]any{
 			"provider": "mutllm", "model": "mut",
 			"tools": []any{
-				map[string]any{"builtin": "graphql"},
-				map[string]any{"builtin": "mutate"},
+				map[string]any{"function": vocabulary.HostFunctionGraphQL},
+				map[string]any{"function": vocabulary.HostFunctionMutate},
 			},
-			"emit": []any{crewAuthority + "/widget"},
+			"permissions": map[string]any{"writes": []any{crewAuthority + "/widget"}},
+		}),
+		// arbiter DECIDES change requests through the mutate tool: its emit
+		// names the request kind (so it may write the decision) and widgets (so
+		// the accept's transitive write is within its ceiling), and NOT tasks —
+		// the confused-deputy half of the pair.
+		agent("arbiter", map[string]any{
+			"provider": "arbiterllm", "model": "arbiter",
+			"tools": []any{map[string]any{"function": vocabulary.HostFunctionMutate}},
+			"permissions": map[string]any{
+				"writes": []any{vocabulary.KindRecordPatchRequest, crewAuthority + "/widget"},
+			},
+		}),
+		// librarian holds the capability-scoped read: the query built-in named by
+		// identity, with the `reads:` that grants it.
+		agent("librarian", map[string]any{
+			"provider": "libllm", "model": "lib",
+			"tools": []any{map[string]any{"function": vocabulary.HostFunctionQuery}},
+			"permissions": map[string]any{
+				"reads": map[string]any{"kinds": []any{crewAuthority + "/widget"}},
+			},
+		}),
+		// purist carries the PURE function as a tool: no emit anywhere, an output
+		// the model reads.
+		agent("purist", map[string]any{
+			"provider": "purellm", "model": "pure",
+			"tools": []any{map[string]any{"function": crewAuthority + "/measure"}},
 		}),
 		// judge is subagentOnly: off the chat surface, still a callable and
 		// still justice's sub-agent.
@@ -311,8 +354,8 @@ func agentThreadsOf(t *testing.T, ds *dataset, agent string) []map[string]any {
 	t.Helper()
 	rows, err := ds.db.QueryContext(context.Background(), `
 		SELECT id, props FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props->'agent'->>'id' = $2
-		ORDER BY created_at, id`, typeThread, crewAuthority+"/"+agent)
+		WHERE kind = $1 AND deleted_at IS NULL AND props->>'agent' = $2
+		ORDER BY created_at, id`, typeThread, vocabulary.RecordPath(kindAgent, crewAuthority+"/"+agent))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,8 +379,8 @@ func threadMessages(t *testing.T, ds *dataset, threadID string) []map[string]any
 	t.Helper()
 	rows, err := ds.db.QueryContext(context.Background(), `
 		SELECT e.props FROM records e
-		WHERE e.kind = $2 AND e.deleted_at IS NULL AND e.props->'thread'->>'id' = $1
-		ORDER BY e.created_at, e.id`, threadID, typeMessage)
+		WHERE e.kind = $2 AND e.deleted_at IS NULL AND e.props->>'thread' = $1
+		ORDER BY e.created_at, e.id`, vocabulary.RecordPath(typeThread, threadID), typeMessage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,8 +405,8 @@ func threadCountOf(t *testing.T, ds *dataset, identity string) int {
 	var n int
 	if err := ds.db.QueryRowContext(context.Background(), `
 		SELECT count(*) FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props->'agent'->>'id' = $2`,
-		typeThread, identity).Scan(&n); err != nil {
+		WHERE kind = $1 AND deleted_at IS NULL AND props->>'agent' = $2`,
+		typeThread, vocabulary.RecordPath(kindAgent, identity)).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -392,7 +435,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewAuthority + "/widget"}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/agent", "id": crewAuthority + "/ghost"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", crewAuthority+"/ghost"),
 		},
 	}); err == nil {
 		t.Fatal("a trigger naming an unknown agent landed")
@@ -401,7 +444,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewAuthority + "/widget"}, "ops": []any{"create"}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/agent", "id": crewAuthority + "/classifier"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", crewAuthority+"/classifier"),
 		},
 	})
 	if err != nil {
@@ -479,11 +522,11 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	}
 	var parent string
 	if err := ds.db.QueryRowContext(ctx, `
-		SELECT props->'parent'->>'id' FROM records WHERE kind = $2 AND id = $1`,
+		SELECT props->>'parent' FROM records WHERE kind = $2 AND id = $1`,
 		child["__id"], typeThread).Scan(&parent); err != nil {
 		t.Fatal(err)
 	}
-	if parent != root["__id"] {
+	if parent != vocabulary.RecordPath(typeThread, root["__id"].(string)) {
 		t.Fatalf("child parent edge points at %q, root is %q", parent, root["__id"])
 	}
 
@@ -872,7 +915,7 @@ func TestAgentRetryKeepsIdempotencyKeys(t *testing.T) {
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewAuthority + "/widget"}, "ops": []any{"create"}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/agent", "id": crewAuthority + "/keeper"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", crewAuthority+"/keeper"),
 		},
 	})
 	if err != nil {
@@ -1207,6 +1250,54 @@ func TestProposeRejectsMalformedDiffAtProposeTime(t *testing.T) {
 	}
 	if !toolResultsContain(t, ds, res.Thread, "immutable") && !toolResultsContain(t, ds, res.Thread, "not a property") {
 		t.Fatalf("no tool result names the shape refusal: %+v", threadMessages(t, ds, res.Thread))
+	}
+}
+
+func TestProposeDeleteRefusesADiff(t *testing.T) {
+	t.Parallel()
+	// A delete proposes no VALUES. The tool used to drop a supplied diff
+	// silently, leaving the model believing a change it wrote was under review;
+	// now it says so, and nothing lands — the same rule the engine's admission
+	// and the function SDK hold.
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: crewAuthority + "/widget", ID: "w-doomed", Properties: map[string]any{"name": "raw"},
+	}); err != nil {
+		t.Fatalf("put widget: %v", err)
+	}
+	fake.script("root",
+		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/widget","target":"w-doomed","diff":{"name":"why"},"rationale":"tidy"}`}}},
+		// An EMPTY diff is a claim about the proposal too: presence, not content.
+		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/widget","target":"w-doomed","diff":{},"rationale":"tidy"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/widget","target":"w-doomed","rationale":"tidy"}`}}},
+		fakeTurn{content: "proposed the delete alone"},
+	)
+	res, err := ds.CallAgent(ctx, crewAuthority+"/classifier", "go")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var refusals, ok int
+	for _, m := range threadMessages(t, ds, res.Thread) {
+		if m["role"] != "tool" {
+			continue
+		}
+		if m["ok"] == true {
+			ok++
+			continue
+		}
+		if !strings.Contains(fmt.Sprint(m["content"]), "proposes no values") {
+			t.Fatalf("a propose failed for another reason: %v", m["content"])
+		}
+		refusals++
+	}
+	if refusals != 2 || ok != 1 {
+		t.Fatalf("propose results: %d refused, %d ok — want 2 refused (a diff and an empty diff), 1 ok",
+			refusals, ok)
+	}
+	// Only the diffless delete landed.
+	if n := patchRequestCount(t, ds); n != 1 {
+		t.Fatalf("landed %d requests, want 1 (the diffless delete)", n)
 	}
 }
 

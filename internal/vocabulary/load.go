@@ -153,7 +153,7 @@ func ParseManifest(m Manifest) (*Authority, error) {
 // BuildAuthorities turns a document stream into authorities, one per declared
 // `data.authority`. Every problem in every document is reported at once.
 func BuildAuthorities(docs []Document, source string) ([]*Authority, error) {
-	l := &loader{}
+	l := &loader{source: source}
 	buckets := map[string]*authorityDocs{}
 	var order []string
 	bucket := func(authority string) *authorityDocs {
@@ -166,10 +166,7 @@ func BuildAuthorities(docs []Document, source string) ([]*Authority, error) {
 		return b
 	}
 	for _, d := range docs {
-		authority := mstr(d.Data, "authority")
-		if d.Kind == DocAuthority {
-			authority = d.ID
-		}
+		authority := d.DeclaredAuthority()
 		if authority == "" {
 			l.errf("%s %s: data.authority is required", d.Kind, d.ID)
 			continue
@@ -254,6 +251,14 @@ type authorityDocs struct {
 type loader struct {
 	authority *Authority
 	problems  []string
+	// source is the origin BuildAuthorities was called with, before the
+	// vocabulary-bundle override below promotes an individual authority to
+	// `builtin`. One rule reads it — `runtime: host`, which only the shipped
+	// build may declare (function.go) — and it reads the CALL's source on
+	// purpose: a vocabulary bundle is shipped VOCABULARY however it arrived, but
+	// it is still installed, and the engine implements only what the engine
+	// ships.
+	source string
 }
 
 func (l *loader) errf(format string, args ...any) {
@@ -616,6 +621,34 @@ func DeclarationDataKeys(short string) map[string]bool {
 	return out
 }
 
+// deletedDeclarationKeys is every schema kind's own deleted `data` keys, keyed
+// by the manifest short name. The kinds absent from it retired no key of their
+// own; the keys every kind retired live in deletedDataKeys.
+var deletedDeclarationKeys = map[string]map[string]string{
+	DocFunction: deletedFunctionKeys,
+	DocAgent:    deletedAgentKeys,
+}
+
+// DeletedDeclarationKeys is one schema kind's deleted `data` keys, each naming
+// what replaced it.
+//
+// The YAML door refuses a document by this set (parseFunction, parseAgent). It
+// is exported because a declaration also arrives as PROPERTIES, through the
+// generic record verbs, and that door has to say the same sentence: a PUT
+// carrying `emit` is the same mistake as a manifest carrying it, and being told
+// "not declared" there while the loader names `permissions.writes` here would
+// make the fix depend on which door the writer knocked at.
+//
+// The map is a copy: the sets themselves are this package's own.
+func DeletedDeclarationKeys(short string) map[string]string {
+	keys := deletedDeclarationKeys[short]
+	out := make(map[string]string, len(keys))
+	for k, v := range keys {
+		out[k] = v
+	}
+	return out
+}
+
 func (l *loader) checkKeys(where string, data map[string]any, allowed map[string]bool) {
 	for k := range data {
 		if allowed[k] {
@@ -661,6 +694,11 @@ var deletedDataKeys = map[string]string{
 	"functions":  "the retired mirror: an agent names its callables under `tools`",
 	"subagents":  "the retired mirror: an agent names its sub-agents under `agents`",
 	"sourceYAML": "the retired mirror: nothing stores a document's text, and the parsed declaration is the row",
+
+	// A pointer is a POINTER now. `refersTo` was a hint beside a string, read by
+	// nothing server-side and enforced nowhere; the property it marked is
+	// `type: reference` with a `kind:` pin, which is checked on every write.
+	"refersTo": "`type: reference` with a `kind:` pin — a pointer is a reference, and the pin is enforced rather than suggested",
 }
 
 // sortDocs orders a type's manifests by identity, so the registry a stream
@@ -1022,6 +1060,14 @@ const camelRule = "camelCase ([a-z][a-zA-Z0-9]*)"
 // the long-form home.
 const maxDescription = 200
 
+// maxCallableDescription bounds a FUNCTION's description, and a function's is
+// not a tooltip either: it is the model-facing tool CARD, the whole text an LLM
+// reads before deciding to call. The four host functions' cards teach an entire
+// surface — the `graphql` one names every root, the batching advice and the two
+// refusals — and they used to be Go string literals with no bound at all. Still
+// one line: a folded scalar (`>-`) is how a declaration wraps one.
+const maxCallableDescription = 1000
+
 // maxKindDescription bounds a KIND's description. A kind's is not a tooltip:
 // the console heads the kind's page with it, and a reader arriving at
 // `core.substrate.reamde.dev/run` needs what the thing is AND what writes it,
@@ -1370,10 +1416,10 @@ var propKeys = map[string]bool{
 	"description": true, "base": true,
 	"fields": true, "writer": true, "displayName": true,
 	// `keyed` is `repeated`'s twin (a map instead of a list) and `keyPattern` is
-	// the contract its keys hold to; `refersTo` says what a string value NAMES;
-	// `managed` says the engine stamps the property. All three are declared
-	// shape, so they ride into the Definition map like every other key.
-	"keyed": true, "keyPattern": true, "refersTo": true, "managed": true,
+	// the contract its keys hold to; `managed` says the engine stamps the
+	// property. Both are declared shape, so they ride into the Definition map
+	// like every other key.
+	"keyed": true, "keyPattern": true, "managed": true,
 	// Presentational hints the read surfaces (the console's config/account form)
 	// consume verbatim from the Definition map: `required` marks a field the
 	// form refuses to submit empty, `default` seeds a create (an enum's default
@@ -1389,13 +1435,6 @@ var propKeys = map[string]bool{
 	// reserved-name checks live in parseType, where the whole property set is
 	// known.
 	"renamedFrom": true,
-}
-
-// refersToTargets is the closed set of `refersTo:` markers: what a string
-// value NAMES, for a client that wants to offer a picker instead of a text box.
-var refersToTargets = map[string]bool{
-	RefersToKind: true, RefersToFunction: true, RefersToAgent: true,
-	RefersToAuthority: true, RefersToProvider: true,
 }
 
 // writerRoles is the closed set of a property's `writer:` restriction: who
@@ -1414,16 +1453,30 @@ var objectPropKeys = map[string]bool{
 	"displayName": true, "keyed": true, "keyPattern": true, "managed": true,
 }
 
-// referencePropKeys is a reference property's own key set: `to:`
-// pins the referent type (a full identity, a bare name, or `any`), and the
-// value is a {authority, type, id} triple — the string-family refinements
-// (pattern/min/max/values/fts/embed) never apply. `repeated: true` gives a
-// list of references.
+// referencePropKeys is a reference property's own key set: `kind:` pins WHICH
+// KIND's records the pointer names (a full identity, a bare name, or `any`),
+// and the string-family refinements (pattern/min/max/values/fts/embed) never
+// apply to a pointer. `repeated: true` gives a list of references, and a
+// reference is admitted inside an object or a keyed map like any other field.
+//
+// The pin is `kind:`, not `to:`, because the two words say different things.
+// `to:` is the EDGE's: the far end of a traversable relationship. A reference
+// property is data that NAMES A RECORD, and what a reader needs from the
+// declaration is which kind's records those are — that is the word a picker
+// keys on. A reference still spelling `to:` is refused by name
+// (deletedReferencePropKeys).
 var referencePropKeys = map[string]bool{
-	"type": true, "to": true, "repeated": true, "description": true,
+	"type": true, "kind": true, "repeated": true, "description": true,
 	"displayName": true, "required": true, "renamedFrom": true,
 	"inverse": true, "inverseDescription": true,
 	"keyed": true, "keyPattern": true, "managed": true,
+}
+
+// deletedReferencePropKeys are the reference declaration's retired keys, each
+// naming its replacement. There is one, and it is a rename rather than a
+// removal: the pin outlived the word.
+var deletedReferencePropKeys = map[string]string{
+	"to": "kind — `to:` is the EDGE's word; a reference property pins the kind whose records it names",
 }
 
 // fieldForbiddenKinds are the kinds an object field may not be, at any level:
@@ -1543,20 +1596,26 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 		sort.Strings(p.FieldOrder)
 		return p
 	}
-	// A reference property is a typed pointer: its own key set —
-	// it takes `to:` (the referent-type constraint) and never the string-family
-	// refinements (pattern/min/max/values/fts/embed have no meaning on a
-	// {authority, type, id} value). `to:` resolves from a bare name to a full
-	// identity in Finalize, like an edge's `to:`.
+	// A reference property is a typed pointer: its own key set — it takes
+	// `kind:` (which kind's records it names) and never the string-family
+	// refinements (pattern/min/max/values/fts/embed have no meaning on a record
+	// reference). The pin resolves from a bare name to a full identity in
+	// Finalize, exactly as an edge's `to:` does.
 	if kind == DatatypeReference {
+		for k := range d {
+			if replacement, gone := deletedReferencePropKeys[k]; gone {
+				l.errf("%s: key %q is deleted — %s", where, k, replacement)
+				return nil
+			}
+		}
 		l.checkKeys(where, d, referencePropKeys)
 		if !allowRefinement {
 			l.errf("%s: reference is a property type, not a base type to refine", where)
 			return nil
 		}
 		p.Datatype = DatatypeReference
-		if to := mstr(d, "to"); to != "" {
-			p.To = to
+		if pin := mstr(d, "kind"); pin != "" {
+			p.To = pin
 		}
 		p.Required = mbool(d, "required")
 		p.Inverse, p.InverseDescription = l.parseInverse(where, d)
@@ -1656,18 +1715,6 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 			l.errf("%s: a keyed map stays out of fts and embed, exactly as an object does", where)
 		}
 		p.FTS, p.Embed = false, false
-	}
-	if rt := mstr(d, "refersTo"); rt != "" {
-		switch {
-		case p.Datatype != DatatypeString:
-			l.errf("%s: refersTo marks what a STRING value names, and this is %s — a typed pointer is `type: reference` with `to:`",
-				where, p.Datatype)
-		case !refersToTargets[rt]:
-			l.errf("%s: refersTo %q is not one of %s, %s, %s, %s, %s", where, rt,
-				RefersToKind, RefersToFunction, RefersToAgent, RefersToAuthority, RefersToProvider)
-		default:
-			p.RefersTo = rt
-		}
 	}
 	if w := mstr(d, "writer"); w != "" {
 		if !writerRoles[w] {

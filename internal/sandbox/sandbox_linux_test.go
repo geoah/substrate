@@ -116,7 +116,7 @@ func TestConfinedChildrenCannotReachEachOther(t *testing.T) {
 	}
 }
 
-// capabilities.network stops being decorative: no declaration, no sockets.
+// permissions.network stops being decorative: no declaration, no sockets.
 func TestNetworkCapabilityGatesSockets(t *testing.T) {
 	c := newTestConfiner(t)
 	probe, err := buildSocketProbe(t)

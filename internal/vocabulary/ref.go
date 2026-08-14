@@ -19,8 +19,9 @@ import (
 // kinds cannot collide and why a REST path can tell an
 // authority segment from a plural one.
 //
-// A RECORD reference is the kind reference plus the id: "<authority>/<kind>/<id>"
-// for a qualified kind, "<kind>/<id>" for a bare one.
+// A RECORD PATH is the kind reference plus the id: "<authority>/<kind>/<id>"
+// for a qualified kind, "<kind>/<id>" for a bare one. It is the whole stored
+// value of a `reference` property — one flat string, not a pair.
 
 // KindRef renders a kind reference from its parts. An empty authority renders
 // the bare form — there is no `local/` prefix.
@@ -67,28 +68,69 @@ func ValidKindReference(ref string) bool {
 	return !strings.Contains(ref, "*") && ValidTypeGlob(ref)
 }
 
-// RecordRef renders a record reference: the kind reference, then the id.
-func RecordRef(kind, id string) string { return kind + "/" + id }
+// RecordPath renders a record path: the kind reference, then the id.
+func RecordPath(kind, id string) string { return kind + "/" + id }
 
-// SplitRecordRef splits a record reference into its kind reference and id. A
-// qualified record reference has three parts, a bare one has two; anything
-// else is not a record reference and answers ok=false.
-func SplitRecordRef(ref string) (kind, id string, ok bool) {
-	parts := strings.Split(ref, "/")
-	switch len(parts) {
-	case 2:
-		if parts[0] == "" || parts[1] == "" {
-			return "", "", false
-		}
-		return parts[0], parts[1], true
-	case 3:
-		if parts[0] == "" || parts[1] == "" || parts[2] == "" {
-			return "", "", false
-		}
-		return parts[0] + "/" + parts[1], parts[2], true
-	default:
+// SplitRecordPath splits a record path into its kind reference and its id.
+//
+// The split rests on the KIND GRAMMAR above and on nothing else, so it is
+// deterministic WITHOUT a registry: an authority always carries a dot
+// (naming.go's authorityRE requires at least one dotted label) and a kind NAME
+// never does (wordRE admits letters and digits only). So the FIRST segment
+// decides — with a dot it is an authority and the kind is segments one and two,
+// without one it is a repository-local kind and the kind is segment one.
+//
+// The id is EVERYTHING after the kind, slashes included: a DECLARATION record's
+// id is itself a kind reference, so
+// "core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev/task" is one
+// four-segment path naming one record, not a malformed three-segment one.
+//
+// A string that is not a path answers ok=false, which is how an AUTHORED bare
+// id is told from a full path: a declaration id like
+// "tasks.substrate.reamde.dev/task" has a dotted first segment and nothing left
+// after its kind, so it fails here and the reader completes it from the pin.
+func SplitRecordPath(path string) (kind, id string, ok bool) {
+	first, rest, split := strings.Cut(path, "/")
+	if !split || first == "" || rest == "" {
 		return "", "", false
 	}
+	if !strings.Contains(first, ".") {
+		return first, rest, true
+	}
+	name, remainder, split := strings.Cut(rest, "/")
+	if !split || name == "" || remainder == "" {
+		return "", "", false
+	}
+	return first + "/" + name, remainder, true
+}
+
+// ReferentID reads a reference property's value as the referent's own id.
+//
+// A reference is stored as the full "<kind>/<id>" path, but a manifest AUTHORS
+// the bare id against a pinned declaration, and the loader sees both: the
+// authored value when a closure is installed from files, the canonical path
+// when the same declaration is read back off its row. They have to mean the
+// same thing, or a declaration would parse one way in a manifest and another
+// way in the row it becomes.
+//
+// A value that does not carry the pin's prefix is handed back UNTOUCHED, so the
+// caller's own validator is what refuses it and names it. This never guesses:
+// stripping the pin is the whole operation.
+func ReferentID(v any, pin string) string {
+	s, _ := v.(string)
+	if id, cut := strings.CutPrefix(s, pin+"/"); cut {
+		return id
+	}
+	return s
+}
+
+// ReferentIDs is ReferentID over a repeated reference's stored list.
+func ReferentIDs(values []any, pin string) []string {
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		out = append(out, ReferentID(v, pin))
+	}
+	return out
 }
 
 // CoreKind renders a core-authority kind reference: the manifest envelope's

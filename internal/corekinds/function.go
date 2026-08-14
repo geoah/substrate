@@ -20,10 +20,11 @@ type Function struct {
 	// Description is the model-facing tool card — what this function does.
 	Description *string
 
-	// Runtime is the language the inline body is written in.
+	// Runtime is the language the inline body is written in, or host for a
+	// built-in.
 	Runtime *FunctionRuntime
 
-	// Source is the inline body.
+	// Source is the inline body, on an inline runtime.
 	Source *string
 
 	// TimeoutMs is what bounds one invocation's wall clock.
@@ -35,65 +36,35 @@ type Function struct {
 	// Returns is the named values the body returns.
 	Returns []FunctionReturns
 
-	// Emit is the kinds this function's effects may address. Names a kind in
-	// the registry.
-	Emit []string
-
-	// Reads is what the body's host reads may touch; absent trips every read.
-	Reads *FunctionReads
-
-	// Call is the function identities the body's host Call may invoke. Names a
-	// function in the registry.
-	Call []string
-
-	// Network is the declared egress allowlist.
-	Network []string
-
-	// Mutations is the gated identity mutations this function is granted.
-	Mutations []FunctionMutations
+	// Permissions is what this function is allowed to do while it runs; leave
+	// a grant out and what it covers is refused.
+	Permissions *FunctionPermissions
 }
 
 // FunctionRuntime is a declared enum: the admissible set, in declaration
 // order.
 //
-// the language the inline body is written in
+// the language the inline body is written in, or host for a built-in
 type FunctionRuntime string
 
 const (
 	FunctionRuntimePython FunctionRuntime = "python"
 	FunctionRuntimeGo     FunctionRuntime = "go"
+	FunctionRuntimeHost   FunctionRuntime = "host"
 )
 
 // FunctionRuntimeValues are the declared values in declaration order, which is
 // render order.
-var FunctionRuntimeValues = []string{"python", "go"}
+var FunctionRuntimeValues = []string{"python", "go", "host"}
 
 // Valid reports whether v is one of the declared values.
 func (v FunctionRuntime) Valid() bool { return Declared(FunctionRuntimeValues, string(v)) }
-
-// FunctionMutations is a declared enum: the admissible set, in declaration
-// order.
-//
-// the gated identity mutations this function is granted
-type FunctionMutations string
-
-const (
-	FunctionMutationsMerge FunctionMutations = "merge"
-	FunctionMutationsSplit FunctionMutations = "split"
-)
-
-// FunctionMutationsValues are the declared values in declaration order, which
-// is render order.
-var FunctionMutationsValues = []string{"merge", "split"}
-
-// Valid reports whether v is one of the declared values.
-func (v FunctionMutations) Valid() bool { return Declared(FunctionMutationsValues, string(v)) }
 
 // FunctionKeys is the admitted key set: every property
 // core.substrate.reamde.dev/function declares, sorted. A key outside it is
 // refused by Decode, which is what replaces a hand-kept list of admitted keys
 // in Go.
-var FunctionKeys = []string{"arguments", "authority", "call", "description", "emit", "mutations", "network", "reads", "returns", "runtime", "source", "timeoutMs", "version"}
+var FunctionKeys = []string{"arguments", "authority", "description", "permissions", "returns", "runtime", "source", "timeoutMs", "version"}
 
 // DecodeFunction decodes a properties map into Function, refusing what the
 // declaration cannot hold: an undeclared key, a value of the wrong type, an
@@ -119,7 +90,7 @@ func DecodeFunction(props map[string]any) (*Function, []Problem) {
 // sorted. It is a FORM-LEVEL contract: the write path does not enforce it, so
 // Decode admits a value that leaves one absent and this is what a client
 // checks before it submits one.
-var FunctionRequired = []string{"authority", "description", "runtime", "source"}
+var FunctionRequired = []string{"authority", "description", "runtime"}
 
 // Missing names the required properties this value leaves absent, in
 // declaration order. Empty means every declared requirement is answered —
@@ -136,9 +107,6 @@ func (v *Function) Missing() []string {
 	if v.Runtime == nil {
 		out = append(out, "runtime")
 	}
-	if v.Source == nil {
-		out = append(out, "source")
-	}
 	return out
 }
 
@@ -149,15 +117,6 @@ func decodeFunctionRuntime(d *decoder, path string, v any) (FunctionRuntime, boo
 		return "", false
 	}
 	return FunctionRuntime(s), true
-}
-
-// decodeFunctionMutations decodes a declared FunctionMutations value.
-func decodeFunctionMutations(d *decoder, path string, v any) (FunctionMutations, bool) {
-	s, ok := d.text(path, v, FunctionMutationsValues, nil)
-	if !ok {
-		return "", false
-	}
-	return FunctionMutations(s), true
 }
 
 // decodeFunction decodes one Function value at path.
@@ -226,54 +185,10 @@ func decodeFunction(d *decoder, path string, v any) (Function, bool) {
 				}
 				out.Returns = list
 			}
-		case "emit":
-			p := at(path, "emit")
-			if items, listed := d.list(p, props[key]); listed {
-				list := make([]string, 0, len(items))
-				for i, item := range items {
-					if e, ok := d.text(index(p, i), item, nil, nil); ok {
-						list = append(list, e)
-					}
-				}
-				out.Emit = list
-			}
-		case "reads":
-			p := at(path, "reads")
-			if e, ok := decodeFunctionReads(d, p, props[key]); ok {
-				out.Reads = &e
-			}
-		case "call":
-			p := at(path, "call")
-			if items, listed := d.list(p, props[key]); listed {
-				list := make([]string, 0, len(items))
-				for i, item := range items {
-					if e, ok := d.text(index(p, i), item, nil, nil); ok {
-						list = append(list, e)
-					}
-				}
-				out.Call = list
-			}
-		case "network":
-			p := at(path, "network")
-			if items, listed := d.list(p, props[key]); listed {
-				list := make([]string, 0, len(items))
-				for i, item := range items {
-					if e, ok := d.text(index(p, i), item, nil, nil); ok {
-						list = append(list, e)
-					}
-				}
-				out.Network = list
-			}
-		case "mutations":
-			p := at(path, "mutations")
-			if items, listed := d.list(p, props[key]); listed {
-				list := make([]FunctionMutations, 0, len(items))
-				for i, item := range items {
-					if e, ok := decodeFunctionMutations(d, index(p, i), item); ok {
-						list = append(list, e)
-					}
-				}
-				out.Mutations = list
+		case "permissions":
+			p := at(path, "permissions")
+			if e, ok := decodeFunctionPermissions(d, p, props[key]); ok {
+				out.Permissions = &e
 			}
 		default:
 			d.unknown(at(path, key), "core.substrate.reamde.dev/function")
@@ -323,36 +238,8 @@ func (v *Function) Encode() map[string]any {
 		}
 		out["returns"] = items
 	}
-	if v.Emit != nil {
-		items := make([]any, 0, len(v.Emit))
-		for i := range v.Emit {
-			items = append(items, v.Emit[i])
-		}
-		out["emit"] = items
-	}
-	if v.Reads != nil {
-		out["reads"] = v.Reads.Encode()
-	}
-	if v.Call != nil {
-		items := make([]any, 0, len(v.Call))
-		for i := range v.Call {
-			items = append(items, v.Call[i])
-		}
-		out["call"] = items
-	}
-	if v.Network != nil {
-		items := make([]any, 0, len(v.Network))
-		for i := range v.Network {
-			items = append(items, v.Network[i])
-		}
-		out["network"] = items
-	}
-	if v.Mutations != nil {
-		items := make([]any, 0, len(v.Mutations))
-		for i := range v.Mutations {
-			items = append(items, string(v.Mutations[i]))
-		}
-		out["mutations"] = items
+	if v.Permissions != nil {
+		out["permissions"] = v.Permissions.Encode()
 	}
 	return out
 }
@@ -685,25 +572,196 @@ func (v *FunctionReturns) Encode() map[string]any {
 	return out
 }
 
-// FunctionReads is one value of the `reads` object declared on
+// FunctionPermissions is one value of the `permissions` object declared on
 // core.substrate.reamde.dev/function.
 //
-// what the body's host reads may touch; absent trips every read
-type FunctionReads struct {
-	// Kinds is the kinds every read is held to. Names a kind in the registry.
-	Kinds []string
+// what this function is allowed to do while it runs; leave a grant out and
+// what it covers is refused
+type FunctionPermissions struct {
+	// Reads is which record kinds this function may read while it runs, and
+	// how much; leave it out and any read it attempts fails.
+	Reads *FunctionPermissionsReads
 
-	// Budgets is what one invocation's reads may spend.
-	Budgets *FunctionReadsBudgets
+	// Writes is which record kinds it may create or change. Points at
+	// core.substrate.reamde.dev/kind.
+	Writes []ReferencePath
+
+	// Call is which other functions its code may invoke. Points at
+	// core.substrate.reamde.dev/function.
+	Call []ReferencePath
+
+	// Network is the hosts it may reach; any entry grants network access, and
+	// enforcement is all-or-nothing today.
+	Network []string
+
+	// Mutations is the identity-changing operations it may perform: merge,
+	// split.
+	Mutations []FunctionPermissionsMutations
 }
 
-// decodeFunctionReads decodes one FunctionReads value at path.
-func decodeFunctionReads(d *decoder, path string, v any) (FunctionReads, bool) {
+// FunctionPermissionsMutations is a declared enum: the admissible set, in
+// declaration order.
+//
+// the identity-changing operations it may perform: merge, split
+type FunctionPermissionsMutations string
+
+const (
+	FunctionPermissionsMutationsMerge FunctionPermissionsMutations = "merge"
+	FunctionPermissionsMutationsSplit FunctionPermissionsMutations = "split"
+)
+
+// FunctionPermissionsMutationsValues are the declared values in declaration
+// order, which is render order.
+var FunctionPermissionsMutationsValues = []string{"merge", "split"}
+
+// Valid reports whether v is one of the declared values.
+func (v FunctionPermissionsMutations) Valid() bool {
+	return Declared(FunctionPermissionsMutationsValues, string(v))
+}
+
+// decodeFunctionPermissionsMutations decodes a declared FunctionPermissionsMutations value.
+func decodeFunctionPermissionsMutations(d *decoder, path string, v any) (FunctionPermissionsMutations, bool) {
+	s, ok := d.text(path, v, FunctionPermissionsMutationsValues, nil)
+	if !ok {
+		return "", false
+	}
+	return FunctionPermissionsMutations(s), true
+}
+
+// decodeFunctionPermissions decodes one FunctionPermissions value at path.
+func decodeFunctionPermissions(d *decoder, path string, v any) (FunctionPermissions, bool) {
 	props, mapped := d.mapping(path, v)
 	if !mapped {
-		return FunctionReads{}, false
+		return FunctionPermissions{}, false
 	}
-	var out FunctionReads
+	var out FunctionPermissions
+	for _, key := range sortedKeys(props) {
+		// A null is this dialect's delete marker, never a value: it decodes as
+		// absence, and Properties never writes one.
+		if props[key] == nil {
+			continue
+		}
+		switch key {
+		case "reads":
+			p := at(path, "reads")
+			if e, ok := decodeFunctionPermissionsReads(d, p, props[key]); ok {
+				out.Reads = &e
+			}
+		case "writes":
+			p := at(path, "writes")
+			if items, listed := d.list(p, props[key]); listed {
+				list := make([]ReferencePath, 0, len(items))
+				for i, item := range items {
+					if e, ok := d.reference(index(p, i), item, "core.substrate.reamde.dev/kind"); ok {
+						list = append(list, e)
+					}
+				}
+				out.Writes = list
+			}
+		case "call":
+			p := at(path, "call")
+			if items, listed := d.list(p, props[key]); listed {
+				list := make([]ReferencePath, 0, len(items))
+				for i, item := range items {
+					if e, ok := d.reference(index(p, i), item, "core.substrate.reamde.dev/function"); ok {
+						list = append(list, e)
+					}
+				}
+				out.Call = list
+			}
+		case "network":
+			p := at(path, "network")
+			if items, listed := d.list(p, props[key]); listed {
+				list := make([]string, 0, len(items))
+				for i, item := range items {
+					if e, ok := d.text(index(p, i), item, nil, nil); ok {
+						list = append(list, e)
+					}
+				}
+				out.Network = list
+			}
+		case "mutations":
+			p := at(path, "mutations")
+			if items, listed := d.list(p, props[key]); listed {
+				list := make([]FunctionPermissionsMutations, 0, len(items))
+				for i, item := range items {
+					if e, ok := decodeFunctionPermissionsMutations(d, index(p, i), item); ok {
+						list = append(list, e)
+					}
+				}
+				out.Mutations = list
+			}
+		default:
+			d.unknown(at(path, key), "core.substrate.reamde.dev/function")
+		}
+	}
+	return out, true
+}
+
+// Encode is FunctionPermissions as the properties map holds it, and
+// decodeFunctionPermissions's exact inverse: a nil pointer, a nil slice and a
+// nil map each omit their key, so absence survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *FunctionPermissions) Encode() map[string]any {
+	out := map[string]any{}
+	if v.Reads != nil {
+		out["reads"] = v.Reads.Encode()
+	}
+	if v.Writes != nil {
+		items := make([]any, 0, len(v.Writes))
+		for i := range v.Writes {
+			items = append(items, string(v.Writes[i]))
+		}
+		out["writes"] = items
+	}
+	if v.Call != nil {
+		items := make([]any, 0, len(v.Call))
+		for i := range v.Call {
+			items = append(items, string(v.Call[i]))
+		}
+		out["call"] = items
+	}
+	if v.Network != nil {
+		items := make([]any, 0, len(v.Network))
+		for i := range v.Network {
+			items = append(items, v.Network[i])
+		}
+		out["network"] = items
+	}
+	if v.Mutations != nil {
+		items := make([]any, 0, len(v.Mutations))
+		for i := range v.Mutations {
+			items = append(items, string(v.Mutations[i]))
+		}
+		out["mutations"] = items
+	}
+	return out
+}
+
+// FunctionPermissionsReads is one value of the `permissions.reads` object
+// declared on core.substrate.reamde.dev/function.
+//
+// which record kinds this function may read while it runs, and how much; leave
+// it out and any read it attempts fails
+type FunctionPermissionsReads struct {
+	// Kinds is the record kinds every read is held to. Points at
+	// core.substrate.reamde.dev/kind.
+	Kinds []ReferencePath
+
+	// Budgets is how much one run may read.
+	Budgets *FunctionPermissionsReadsBudgets
+}
+
+// decodeFunctionPermissionsReads decodes one FunctionPermissionsReads value at path.
+func decodeFunctionPermissionsReads(d *decoder, path string, v any) (FunctionPermissionsReads, bool) {
+	props, mapped := d.mapping(path, v)
+	if !mapped {
+		return FunctionPermissionsReads{}, false
+	}
+	var out FunctionPermissionsReads
 	for _, key := range sortedKeys(props) {
 		// A null is this dialect's delete marker, never a value: it decodes as
 		// absence, and Properties never writes one.
@@ -714,9 +772,9 @@ func decodeFunctionReads(d *decoder, path string, v any) (FunctionReads, bool) {
 		case "kinds":
 			p := at(path, "kinds")
 			if items, listed := d.list(p, props[key]); listed {
-				list := make([]string, 0, len(items))
+				list := make([]ReferencePath, 0, len(items))
 				for i, item := range items {
-					if e, ok := d.text(index(p, i), item, nil, nil); ok {
+					if e, ok := d.reference(index(p, i), item, "core.substrate.reamde.dev/kind"); ok {
 						list = append(list, e)
 					}
 				}
@@ -724,7 +782,7 @@ func decodeFunctionReads(d *decoder, path string, v any) (FunctionReads, bool) {
 			}
 		case "budgets":
 			p := at(path, "budgets")
-			if e, ok := decodeFunctionReadsBudgets(d, p, props[key]); ok {
+			if e, ok := decodeFunctionPermissionsReadsBudgets(d, p, props[key]); ok {
 				out.Budgets = &e
 			}
 		default:
@@ -734,19 +792,19 @@ func decodeFunctionReads(d *decoder, path string, v any) (FunctionReads, bool) {
 	return out, true
 }
 
-// Encode is FunctionReads as the properties map holds it, and
-// decodeFunctionReads's exact inverse: a nil pointer, a nil slice and a nil
-// map each omit their key, so absence survives the round trip.
+// Encode is FunctionPermissionsReads as the properties map holds it, and
+// decodeFunctionPermissionsReads's exact inverse: a nil pointer, a nil slice
+// and a nil map each omit their key, so absence survives the round trip.
 //
 // It is NOT called Properties: a declaration may declare a property of that
 // name (core's `kind` does), and a field and a method cannot share one.
 // Decode/Encode is the pair the rest of the generator already names.
-func (v *FunctionReads) Encode() map[string]any {
+func (v *FunctionPermissionsReads) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Kinds != nil {
 		items := make([]any, 0, len(v.Kinds))
 		for i := range v.Kinds {
-			items = append(items, v.Kinds[i])
+			items = append(items, string(v.Kinds[i]))
 		}
 		out["kinds"] = items
 	}
@@ -756,25 +814,26 @@ func (v *FunctionReads) Encode() map[string]any {
 	return out
 }
 
-// FunctionReadsBudgets is one value of the `reads.budgets` object declared on
+// FunctionPermissionsReadsBudgets is one value of the
+// `permissions.reads.budgets` object declared on
 // core.substrate.reamde.dev/function.
 //
-// what one invocation's reads may spend
-type FunctionReadsBudgets struct {
-	// Calls is host read calls per invocation.
+// how much one run may read
+type FunctionPermissionsReadsBudgets struct {
+	// Calls is how many reads one run may make.
 	Calls *int64
 
-	// Rows is rows read per invocation.
+	// Rows is how many records one run may read.
 	Rows *int64
 }
 
-// decodeFunctionReadsBudgets decodes one FunctionReadsBudgets value at path.
-func decodeFunctionReadsBudgets(d *decoder, path string, v any) (FunctionReadsBudgets, bool) {
+// decodeFunctionPermissionsReadsBudgets decodes one FunctionPermissionsReadsBudgets value at path.
+func decodeFunctionPermissionsReadsBudgets(d *decoder, path string, v any) (FunctionPermissionsReadsBudgets, bool) {
 	props, mapped := d.mapping(path, v)
 	if !mapped {
-		return FunctionReadsBudgets{}, false
+		return FunctionPermissionsReadsBudgets{}, false
 	}
-	var out FunctionReadsBudgets
+	var out FunctionPermissionsReadsBudgets
 	for _, key := range sortedKeys(props) {
 		// A null is this dialect's delete marker, never a value: it decodes as
 		// absence, and Properties never writes one.
@@ -799,14 +858,15 @@ func decodeFunctionReadsBudgets(d *decoder, path string, v any) (FunctionReadsBu
 	return out, true
 }
 
-// Encode is FunctionReadsBudgets as the properties map holds it, and
-// decodeFunctionReadsBudgets's exact inverse: a nil pointer, a nil slice and a
-// nil map each omit their key, so absence survives the round trip.
+// Encode is FunctionPermissionsReadsBudgets as the properties map holds it,
+// and decodeFunctionPermissionsReadsBudgets's exact inverse: a nil pointer, a
+// nil slice and a nil map each omit their key, so absence survives the round
+// trip.
 //
 // It is NOT called Properties: a declaration may declare a property of that
 // name (core's `kind` does), and a field and a method cannot share one.
 // Decode/Encode is the pair the rest of the generator already names.
-func (v *FunctionReadsBudgets) Encode() map[string]any {
+func (v *FunctionPermissionsReadsBudgets) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Calls != nil {
 		out["calls"] = *v.Calls

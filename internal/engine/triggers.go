@@ -228,19 +228,20 @@ func parseTrigger(id string, props map[string]any) (*trigger, error) {
 		t.Enabled = b
 	}
 
-	// callable is a reference: a {kind, id} record reference whose
-	// kind is core.substrate.reamde.dev/function or core.substrate.reamde.dev/agent. Dispatch keys on
-	// the LOCAL name of that kind — `function` or `agent` — beside the id.
-	callable, ok := props["callable"].(map[string]any)
-	if !ok || len(callable) == 0 {
-		return nil, fmt.Errorf("callable is required: a {kind, id} reference to a function or agent")
+	// callable is a reference: ONE record path naming a
+	// core.substrate.reamde.dev/function or core.substrate.reamde.dev/agent.
+	// Dispatch keys on the LOCAL name of that kind — `function` or `agent` —
+	// beside the id.
+	callable := storedReferencePath(props["callable"])
+	if callable == "" {
+		return nil, fmt.Errorf(`callable is required: a "<kind>/<id>" reference to a function or agent`)
 	}
-	callableRef, _ := callable["kind"].(string)
+	callableRef, callableID, ok := vocabulary.SplitRecordPath(callable)
+	if !ok {
+		return nil, fmt.Errorf(`callable %q is not a "<kind>/<id>" record path`, callable)
+	}
 	t.CallableKind = vocabulary.KindName(callableRef)
-	t.CallableID, _ = callable["id"].(string)
-	if t.CallableKind == "" || t.CallableID == "" {
-		return nil, fmt.Errorf("callable needs a kind and an id")
-	}
+	t.CallableID = callableID
 	if t.CallableKind != callableKindFunction && t.CallableKind != callableKindAgent {
 		return nil, fmt.Errorf("callable kind %q is not dispatchable — core.substrate.reamde.dev/function or core.substrate.reamde.dev/agent", callableRef)
 	}
@@ -397,18 +398,62 @@ func (ds *dataset) validateTriggerRow(reg *vocabulary.Registry, id string, props
 		}
 	}
 	if checkCallable {
-		var rerr error
 		switch t.CallableKind {
 		case callableKindAgent:
-			_, rerr = reg.ResolveAgent(t.CallableID)
+			if _, err := reg.ResolveAgent(t.CallableID); err != nil {
+				return fmt.Errorf("%w: trigger callable: %w", substrate.ErrValidation, err)
+			}
 		default:
-			_, rerr = reg.ResolveFunction(t.CallableID)
-		}
-		if rerr != nil {
-			return fmt.Errorf("%w: trigger callable: %w", substrate.ErrValidation, rerr)
+			fn, err := reg.ResolveFunction(t.CallableID)
+			if err != nil {
+				return fmt.Errorf("%w: trigger callable: %w", substrate.ErrValidation, err)
+			}
+			// A HOST FUNCTION IS NOT A DELIVERY TARGET. The engine runs one under
+			// the grants of whoever called it, and a delivery has no caller to
+			// borrow from: nothing would scope `query`'s reads or `mutate`'s
+			// writes. The shape that works is an agent carrying the tool, so the
+			// refusal names it rather than leaving the row to park forever.
+			if fn.IsHost() {
+				return fmt.Errorf("%w: trigger callable: %s is a built-in — the engine runs it under a CALLER's grants, and a delivery has none: declare an agent carrying it as a tool and target the agent",
+					substrate.ErrValidation, fn.Identity())
+			}
+			ds.warnDiscardedOutput(t, fn)
 		}
 	}
 	return nil
+}
+
+// warnDiscardedOutput says so when a trigger names a callable whose work cannot
+// leave it. A delivery DISCARDS the output — only the effects are applied — so a
+// body that declares no `emit:`, no `call:` and no `network:` can change nothing
+// anywhere: the row admits (a pure function is legal, and `emit:` is optional
+// now), but firing it forever is almost certainly not what was meant.
+//
+// A warning, never a refusal: the declaration may be mid-edit, and a trigger the
+// engine refused would have to be re-created rather than fixed.
+func (ds *dataset) warnDiscardedOutput(t *trigger, fn *vocabulary.Function) {
+	if len(fn.Caps.Emit) > 0 || len(fn.Caps.Call) > 0 || len(fn.Caps.Network) > 0 {
+		return
+	}
+	// The ids are user-authored strings from record rows: logged only after
+	// the id grammar re-admits them (no control characters can pass it), so
+	// a crafted id cannot forge log lines and no secret-shaped value — the
+	// scanner taints every props-map read alike — reaches the log.
+	ds.svc.log.Warn("substrate: trigger fires a function whose output is discarded — it declares no emit, no call and no network, so a delivery can change nothing; call it instead, or give it the grant it needs",
+		"repository", logSafeID(ds.Repository().Name), "trigger", logSafeID(t.ID), "function", logSafeID(fn.Identity()))
+}
+
+// logSafeID admits a value into a log line only when the id grammar does: a
+// record id, a kind reference and a repository name are all built from the
+// same charset, which admits no control character. Anything else logs as a
+// fixed placeholder rather than as itself.
+func logSafeID(s string) string {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			return "(unloggable id)"
+		}
+	}
+	return s
 }
 
 // --- loading ---------------------------------------------------------------------

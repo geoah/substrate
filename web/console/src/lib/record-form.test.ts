@@ -407,3 +407,82 @@ describe("toProperties explicit clear", () => {
     expect(props).not.toHaveProperty("backfillDepth")
   })
 })
+
+/** A reference is edited as two halves and STORED as one: the record path
+ * `<kind>/<id>`. These hold the join, both directions. */
+describe("reference fields", () => {
+  const pointerKind = typeWith({
+    owner: { type: "reference", to: "people.substrate.reamde.dev/person" },
+    callable: { type: "reference", to: "any" },
+  })
+  const fieldsOf = () => buildFormFields(pointerKind)
+
+  it("seeds a stored path back into the kind and the id it joins", () => {
+    const record = {
+      properties: { owner: "people.substrate.reamde.dev/person/alice" },
+    } as unknown as SubstrateRecord
+    expect(initialValues(fieldsOf(), record).owner).toEqual({
+      kind: "people.substrate.reamde.dev/person",
+      id: "alice",
+    })
+  })
+
+  it("completes a value short of a path from the declaration's pin", () => {
+    const record = {
+      properties: { owner: "alice" },
+    } as unknown as SubstrateRecord
+    expect(initialValues(fieldsOf(), record).owner).toEqual({
+      kind: "people.substrate.reamde.dev/person",
+      id: "alice",
+    })
+  })
+
+  it("submits the two halves as ONE path, and a pasted path unchanged", () => {
+    const fields = fieldsOf()
+    const values = initialValues(fields)
+    values.owner = { kind: "people.substrate.reamde.dev/person", id: "alice" }
+    values.callable = {
+      kind: "",
+      id: "core.substrate.reamde.dev/function/f",
+    }
+    expect(toProperties(fields, values)).toEqual({
+      owner: "people.substrate.reamde.dev/person/alice",
+      // A whole path typed into the record box is already the value; the kind
+      // box has nothing left to add to it.
+      callable: "core.substrate.reamde.dev/function/f",
+    })
+  })
+
+  it("keeps a declaration id whole: the kind joins in front of its slash", () => {
+    const fields = buildFormFields(
+      typeWith({
+        of: { type: "reference", to: "core.substrate.reamde.dev/kind" },
+      })
+    )
+    const values = initialValues(fields)
+    values.of = {
+      kind: "core.substrate.reamde.dev/kind",
+      id: "tasks.substrate.reamde.dev/task",
+    }
+    expect(toProperties(fields, values).of).toBe(
+      "core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev/task"
+    )
+  })
+
+  it("refuses a bare id with no kind to complete it, in the engine's words", () => {
+    const fields = fieldsOf()
+    const values = initialValues(fields)
+    values.callable = { kind: "", id: "f" }
+    const errors = validate(fields, values, "create")
+    expect(errors.map((e) => e.name)).toEqual(["callable"])
+    expect(errors[0].message).toMatch(/full "<kind>\/<id>" path/)
+    expect(toProperties(fields, values)).not.toHaveProperty("callable")
+  })
+
+  it("says nothing when no record is named", () => {
+    const fields = fieldsOf()
+    const values = initialValues(fields)
+    expect(toProperties(fields, values)).toEqual({})
+    expect(validate(fields, values, "create")).toEqual([])
+  })
+})

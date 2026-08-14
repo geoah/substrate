@@ -98,7 +98,7 @@ func policyFor(spec Spec, work string, readExec ...string) sandbox.Policy {
 		ReadExec:  append(append([]string{}, systemReadExec...), readExec...),
 		ReadOnly:  systemReadOnly,
 		ReadWrite: append([]string{work}, deviceReadWrite...),
-		// The whole enforcement of `capabilities.network`: a manifest that
+		// The whole enforcement of `permissions.network`: a manifest that
 		// declares no egress gets none, at the syscall. It is binary on
 		// purpose: a syscall filter cannot read the sockaddr behind a
 		// pointer, so per-host allowlisting needs an egress proxy, and

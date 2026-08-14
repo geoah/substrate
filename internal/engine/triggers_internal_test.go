@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // A trigger source may name a kind in either spelling — `task` and
@@ -20,7 +22,7 @@ func TestTriggerSourceResolvesBareKinds(t *testing.T) {
 		t.Fatalf("build the repository registry: %v", err)
 	}
 	tr, err := parseTrigger("t1", map[string]any{
-		"callable": map[string]any{"kind": kindFunction, "id": "x.substrate.reamde.dev/f"},
+		"callable": vocabulary.RecordPath(kindFunction, "x.substrate.reamde.dev/f"),
 		"source": map[string]any{
 			"record": map[string]any{"kinds": []any{"task"}, "ops": []any{"create"}},
 		},
@@ -37,7 +39,7 @@ func TestTriggerSourceResolvesBareKinds(t *testing.T) {
 	}
 	// A kind the registry does not know is left alone and matches nothing.
 	tr2, err := parseTrigger("t2", map[string]any{
-		"callable": map[string]any{"kind": kindFunction, "id": "x.substrate.reamde.dev/f"},
+		"callable": vocabulary.RecordPath(kindFunction, "x.substrate.reamde.dev/f"),
 		"source": map[string]any{
 			"record": map[string]any{"kinds": []any{"nosuchkind"}, "ops": []any{"create"}},
 		},
@@ -48,5 +50,45 @@ func TestTriggerSourceResolvesBareKinds(t *testing.T) {
 	tr2.resolveKinds(reg)
 	if tr2.Record.matches("tasks.substrate.reamde.dev/task", "create") {
 		t.Fatal("an unknown kind matched something")
+	}
+}
+
+// THE ONE RELEASED REFERENCE VALUE. `trigger.callable` shipped as a
+// `{kind, id}` pair before a reference became one flat path, and a trigger is a
+// DATA row: the rung walks declaration rows alone, so nothing re-projects a
+// stored trigger. Two things therefore have to hold at once — a stored pair
+// still dispatches, and any rewrite of that row canonicalizes it — and this
+// pins both, so neither can be dropped as "the old shape".
+func TestTriggerCallableReadsTheReleasedPairAndTheFlatPath(t *testing.T) {
+	const id = "x.substrate.reamde.dev/f"
+	source := map[string]any{
+		"record": map[string]any{"kinds": []any{"task"}, "ops": []any{"create"}},
+	}
+	for name, callable := range map[string]any{
+		"the flat path":           vocabulary.RecordPath(kindFunction, id),
+		"the released {kind, id}": map[string]any{"kind": kindFunction, "id": id},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tr, err := parseTrigger("t1", map[string]any{"callable": callable, "source": source})
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if tr.CallableKind != callableKindFunction || tr.CallableID != id {
+				t.Fatalf("callable = %s/%s, want function/%s", tr.CallableKind, tr.CallableID, id)
+			}
+		})
+	}
+
+	// The WRITE half: the pair is the retired shape, refused by name, because the
+	// rung is what migrates a stored one and nothing may author a new one.
+	pin := &vocabulary.Property{Datatype: vocabulary.DatatypeReference, To: kindFunction}
+	_, err := coerceReference(pin, map[string]any{"kind": kindFunction, "id": id})
+	if err == nil {
+		t.Fatal("the retired {kind, id} pair must be refused at the write door")
+	}
+	for _, want := range []string{"retired", "rung"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must name %q, got: %v", want, err)
+		}
 	}
 }

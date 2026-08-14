@@ -465,7 +465,19 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	}
 	var rebuilt []*vocabulary.Authority
 	for _, aname := range sortedKeys(byAuthority) {
-		gs, err := vocabulary.BuildAuthorities(byAuthority[aname], vocabulary.SourceInstalled)
+		// An authority is rebuilt with the ORIGIN ITS STORED ROWS CLAIM, exactly as
+		// storedAuthorities builds it at open. Two things read the origin — the row
+		// the projection writes back, and the one loader rule keyed on it
+		// (`runtime: host`, which only a shipped declaration may name) — so
+		// rebuilding shipped vocabulary as `installed` would both re-stamp its
+		// authority row and refuse core's own host functions the moment any batch
+		// touched core. An authority nobody has yet is the writer's, hence
+		// installed.
+		source := vocabulary.SourceInstalled
+		if cur, ok := current.AuthorityByName(aname); ok && cur.Source == vocabulary.SourceBuiltin {
+			source = vocabulary.SourceBuiltin
+		}
+		gs, err := vocabulary.BuildAuthorities(byAuthority[aname], source)
 		if err != nil {
 			var ve *substrate.ValidationError
 			if errors.As(err, &ve) {
@@ -1163,6 +1175,22 @@ func rowDocument(id, typeIdent string, props map[string]any, dialectOne bool) (v
 			d.Data["tier"] = tier
 		}
 	default:
+		// A DELETED KEY IS NAMED, NEVER DROPPED. The read below is a whitelist, so
+		// a row carrying a spelling the loader retired would otherwise lose it in
+		// silence — a function whose `emit` vanished keeps running and writes
+		// nothing, which is the worst answer available. Only an UNRELEASED binary
+		// wrote such a row (dialectonegrammar.go's header says why no rung
+		// migrates one), so the refusal is the whole handling: it names the
+		// replacement, and the store it comes from is a development one to wipe.
+		for _, name := range sortedKeys(props) {
+			replacement, gone := vocabulary.DeletedDeclarationKeys(short)[name]
+			if !gone {
+				continue
+			}
+			return vocabulary.Document{}, false, fmt.Errorf(
+				"%w: schema row %s %s carries the deleted `%s` property, replaced by %s",
+				ErrDeclarationUntranslated, typeIdent, id, name, replacement)
+		}
 		// THE TYPED ROW: its properties ARE the declaration, so the document's
 		// data is the property map with the engine's own keys dropped
 		// (serverDeclarationProps). Nothing is derived and nothing is renamed —
@@ -1654,12 +1682,20 @@ func documentFromProps(short, id string, props map[string]any) (vocabulary.Docum
 //     instead, the dead mirrors naming the rule — since a writer still sending
 //     one is working from a document this substrate stopped storing.
 //
+// A DELETED declaration key is the fourth answer, and it is the loader's own
+// (vocabulary.DeletedDeclarationKeys): a declaration arrives here as properties
+// and at the YAML door as a document, and the two doors say the same sentence,
+// so `emit` names `permissions.writes` whichever one the writer knocked at.
+// Like the blob, it is decided by PRESENCE: no row carries one of these keys, so
+// there is nothing a null could be clearing.
+//
 // `title` and `body` are the exception that proves the rule: every record
 // carries them in a column, a read hands them back in `properties`, and a
 // declaration's title is derived from its template — so an echoed one is
 // ignored, not refused.
 func checkDeclarationWrite(ty *vocabulary.Kind, short string, existing *substrate.Record, props map[string]any) error {
 	dataKeys := vocabulary.DeclarationDataKeys(short)
+	deleted := vocabulary.DeletedDeclarationKeys(short)
 	var problems []string
 	for _, name := range sortedKeys(props) {
 		switch {
@@ -1671,6 +1707,10 @@ func checkDeclarationWrite(ty *vocabulary.Kind, short string, existing *substrat
 			problems = append(problems, fmt.Sprintf(
 				"props.%s: the retired blob — a %s carries its declaration in its own properties: %s",
 				name, short, strings.Join(sortedKeys(dataKeys), ", ")))
+			continue
+		case deleted[name] != "":
+			problems = append(problems, fmt.Sprintf(
+				"props.%s: the deleted key, replaced by %s", name, deleted[name]))
 			continue
 		case dataKeys[name], columnBackedProp[name], props[name] == nil:
 			continue

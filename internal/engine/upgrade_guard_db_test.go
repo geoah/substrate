@@ -27,6 +27,7 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 const coreAuthority = "core.substrate.reamde.dev"
@@ -248,11 +249,8 @@ func TestBootUpgradeRefusesAnEdgeBecomingARequiredReference(t *testing.T) {
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/llmthread", ID: "t1",
 		Properties: map[string]any{
-			"agent": map[string]any{
-				"kind": "core.substrate.reamde.dev/agent",
-				"id":   "core.substrate.reamde.dev/chat",
-			},
-			"mode": "chat",
+			"agent": vocabulary.RecordPath("core.substrate.reamde.dev/agent", "core.substrate.reamde.dev/chat"),
+			"mode":  "chat",
 		},
 	}); err != nil {
 		t.Fatalf("put a thread: %v", err)

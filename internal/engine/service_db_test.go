@@ -322,8 +322,8 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 		t.Fatalf("mapping projection: %v", err)
 	}
 	if mp.Kind != "core.substrate.reamde.dev/recordmapping" ||
-		mp.Properties["from"] != "media.substrate.reamde.dev/bookedition" ||
-		mp.Properties["to"] != "media.substrate.reamde.dev/book" ||
+		mp.Properties["from"] != vocabulary.RecordPath("core.substrate.reamde.dev/kind", "media.substrate.reamde.dev/bookedition") ||
+		mp.Properties["to"] != vocabulary.RecordPath("core.substrate.reamde.dev/kind", "media.substrate.reamde.dev/book") ||
 		mp.Properties["edge"] != "work" {
 		t.Fatalf("mapping projection = %v", mp.Properties)
 	}

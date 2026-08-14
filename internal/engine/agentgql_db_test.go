@@ -8,11 +8,17 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The graphql/mutate built-ins and the subagentOnly withholding, against the
 // crew fixture (agents_db_test.go): archivist reads through graphql alone,
-// editor mutates within its widget-only emit, judge exists to be called.
+// editor mutates within its widget-only emit, arbiter decides change requests
+// within its own, judge exists to be called.
+
+// taskKind is a kind OUTSIDE the crew authority's own vocabulary: the arbiter's
+// emit does not name it, so it is the confused-deputy target.
+const taskKind = "tasks.substrate.reamde.dev/task"
 
 func gqlToolArgs(t *testing.T, m map[string]any) string {
 	t.Helper()
@@ -185,6 +191,189 @@ func TestAgentMutateHoldsEmitAndRefusesMerge(t *testing.T) {
 	}
 	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "t-sneak"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the refused put landed: %v", err)
+	}
+}
+
+// --- deciding a change request through the mutate tool -----------------------
+
+// putRequest lands one proposed patch request against a target, the way an app
+// or the API would.
+func putRequest(t *testing.T, ds *dataset, id, targetKind, targetID string, diff map[string]any) *substrate.Record {
+	t.Helper()
+	e, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
+		Kind: vocabulary.KindRecordPatchRequest, ID: id,
+		Properties: map[string]any{"diff": map[string]any{"properties": diff}},
+		Edges: []substrate.EdgeInput{
+			{Rel: "target", To: substrate.EdgeRef{Kind: targetKind, ID: targetID}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("put request %s: %v", id, err)
+	}
+	return e
+}
+
+// decideArgs is the mutate document that decides one request — the accept an
+// agent reviewer writes.
+func decideArgs(t *testing.T, id, decision string) string {
+	t.Helper()
+	return gqlToolArgs(t, map[string]any{
+		"query": `mutation Decide($id: ID!, $decision: JSON!) {
+			patch(kind: "core.substrate.reamde.dev/recordpatchrequest", id: $id, input: $decision) { id }
+		}`,
+		"variables": map[string]any{
+			"id": id, "decision": map[string]any{"properties": map[string]any{"decision": decision}},
+		},
+	})
+}
+
+func TestAgentMutateDecidesRequestsWithinEmit(t *testing.T) {
+	t.Parallel()
+	// Accept and reject are SYMMETRIC through the mutate tool: the wrapper
+	// carries the agent's effective emit into the transaction, so an accept is
+	// bounded by that ceiling exactly like a function-tool effect — it applies
+	// when the target kind is in the emit, and refuses as a confused deputy when
+	// it is not. Rejecting runs no transition and always worked.
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+
+	widget, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: crewAuthority + "/widget", ID: "w-decided", Properties: map[string]any{"name": "raw"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: taskKind, ID: "t-guarded", Properties: map[string]any{"title": "not the agent's"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	putRequest(t, ds, "req-accept", widget.Kind, widget.ID, map[string]any{"name": "better"})
+	putRequest(t, ds, "req-deputy", task.Kind, task.ID, map[string]any{"description": "smuggled"})
+	putRequest(t, ds, "req-reject", widget.Kind, widget.ID, map[string]any{"name": "worse"})
+
+	fake.script("arbiter",
+		fakeTurn{calls: []fakeCall{{"mutate", decideArgs(t, "req-accept", "accepted")}}},
+		fakeTurn{calls: []fakeCall{{"mutate", decideArgs(t, "req-deputy", "accepted")}}},
+		fakeTurn{calls: []fakeCall{{"mutate", decideArgs(t, "req-reject", "rejected")}}},
+		fakeTurn{content: "decided"},
+	)
+	res, err := ds.CallAgent(ctx, crewAuthority+"/arbiter", "work the inbox")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	if res.Status != threadOK {
+		t.Fatalf("result: %+v", res)
+	}
+	var tools []map[string]any
+	for _, m := range threadMessages(t, ds, res.Thread) {
+		if m["role"] == "tool" {
+			tools = append(tools, m)
+		}
+	}
+	if len(tools) != 3 {
+		t.Fatalf("tool rows: %d", len(tools))
+	}
+
+	// The accept within the emit ran the transition: the diff applied and the
+	// decision is stamped.
+	if tools[0]["ok"] != true {
+		t.Fatalf("the in-emit accept failed: %v", tools[0]["content"])
+	}
+	accepted, err := ds.Get(ctx, vocabulary.KindRecordPatchRequest, "req-accept")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accepted.Properties["decision"] != "accepted" || accepted.Properties["decidedAt"] == nil {
+		t.Fatalf("accepted request: %+v", accepted.Properties)
+	}
+	if got, err := ds.Get(ctx, widget.Kind, widget.ID); err != nil || got.Properties["name"] != "better" {
+		t.Fatalf("the accepted diff did not land: %+v %v", got, err)
+	}
+
+	// The accept OUTSIDE the emit is refused: the request stays proposed,
+	// annotated, and the task is untouched.
+	if tools[1]["ok"] != false {
+		t.Fatalf("a confused-deputy accept reported ok: %v", tools[1]["content"])
+	}
+	if content, _ := tools[1]["content"].(string); !strings.Contains(content, "emit allowlist") {
+		t.Fatalf("the refusal does not name the ceiling: %s", content)
+	}
+	deputy, err := ds.Get(ctx, vocabulary.KindRecordPatchRequest, "req-deputy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deputy.Properties["decision"] != "proposed" || deputy.Annotations["substrate/conflict"] == nil {
+		t.Fatalf("refused request: %+v %+v", deputy.Properties, deputy.Annotations)
+	}
+	if got, err := ds.Get(ctx, task.Kind, task.ID); err != nil || got.Properties["description"] != nil {
+		t.Fatalf("the agent smuggled a task patch past its ceiling: %+v %v", got, err)
+	}
+
+	// Reject still works, and applies nothing.
+	if tools[2]["ok"] != true {
+		t.Fatalf("the reject failed: %v", tools[2]["content"])
+	}
+	rejected, err := ds.Get(ctx, vocabulary.KindRecordPatchRequest, "req-reject")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rejected.Properties["decision"] != "rejected" || rejected.Properties["decidedAt"] == nil {
+		t.Fatalf("rejected request: %+v", rejected.Properties)
+	}
+	if got, err := ds.Get(ctx, widget.Kind, widget.ID); err != nil || got.Properties["name"] != "better" {
+		t.Fatalf("the rejected diff applied: %+v %v", got, err)
+	}
+}
+
+func TestTriggerFiresAgentThatAcceptsRequest(t *testing.T) {
+	t.Parallel()
+	// The whole loop, end to end: a proposed request fires a trigger, the agent
+	// it names decides it through the mutate tool, and the accepted diff lands
+	// on the target.
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: typeTrigger, ID: "on-proposal",
+		Properties: map[string]any{
+			"source": map[string]any{"record": map[string]any{
+				"kinds": []any{vocabulary.KindRecordPatchRequest}, "ops": []any{"create"},
+			}},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", crewAuthority+"/arbiter"),
+		},
+	}); err != nil {
+		t.Fatalf("put the proposal trigger: %v", err)
+	}
+	widget, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: crewAuthority + "/widget", ID: "w-reviewed", Properties: map[string]any{"name": "raw"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fake.script("arbiter",
+		fakeTurn{calls: []fakeCall{{"mutate", decideArgs(t, "req-fired", "accepted")}}},
+		fakeTurn{content: "reviewed"},
+	)
+	putRequest(t, ds, "req-fired", widget.Kind, widget.ID, map[string]any{"name": "reviewed"})
+	if _, err := ds.ProcessTriggers(ctx); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+
+	req, err := ds.Get(ctx, vocabulary.KindRecordPatchRequest, "req-fired")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.Properties["decision"] != "accepted" {
+		t.Fatalf("the fired agent did not accept: %+v %+v", req.Properties, req.Annotations)
+	}
+	if got, err := ds.Get(ctx, widget.Kind, widget.ID); err != nil || got.Properties["name"] != "reviewed" {
+		t.Fatalf("the accepted diff did not land: %+v %v", got, err)
+	}
+	if threads := agentThreadsOf(t, ds, "arbiter"); len(threads) != 1 || threads[0]["mode"] != "trigger" {
+		t.Fatalf("arbiter threads: %+v", threads)
 	}
 }
 

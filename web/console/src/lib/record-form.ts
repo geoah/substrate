@@ -25,6 +25,7 @@
  *   sends `null` to delete the key; a merely-blank field is left untouched. */
 
 import type { SubstrateRecord, EnumValue, KindInfo } from "@/lib/api/types"
+import { recordPath, splitRecordPath } from "@/lib/record-path"
 import {
   TO_ANY,
   controlFor,
@@ -44,8 +45,10 @@ export { humanizeName } from "@/lib/record-schema"
  * two modes differ on secret handling and on what "blank" means. */
 export type FormMode = "create" | "patch"
 
-/** A reference value as the form holds it: the referent's kind and id, which
- * is exactly the `{kind, id}` pair the write carries. */
+/** A reference as the FORM holds it: the referent's kind beside its id,
+ * because the control is a kind picker beside a record picker. The WRITE
+ * carries neither half on its own — the two join into the record path
+ * `<kind>/<id>`, which is the whole stored value (`toFieldValue`). */
 export interface RefValue {
   kind: string
   id: string
@@ -119,8 +122,8 @@ export function requiredFirst(fields: FormField[]): FormField[] {
 
 /** The form's value bag. Text-ish controls carry a string (a list joins on
  * newlines, a json control carries its JSON text), a bool carries a boolean, a
- * reference carries `{kind, id}`, and `null` marks a field the person
- * EXPLICITLY cleared (distinct from a merely-blank, untouched one). */
+ * reference carries its two halves (`RefValue`), and `null` marks a field the
+ * person EXPLICITLY cleared (distinct from a merely-blank, untouched one). */
 export type FormValue =
   string | boolean | null | RefValue | FieldBag | FieldBag[]
 export type FormValues = Record<string, FormValue>
@@ -167,15 +170,10 @@ export function seedField(
     case "reference": {
       const pinned =
         field.spec.to && field.spec.to !== TO_ANY ? field.spec.to : ""
-      if (stored && typeof stored === "object" && !Array.isArray(stored)) {
-        const ref = stored as Record<string, unknown>
-        return {
-          kind: typeof ref.kind === "string" ? ref.kind : pinned,
-          id: typeof ref.id === "string" ? ref.id : "",
-        }
-      }
-      if (typeof stored === "string") return { kind: pinned, id: stored }
-      return { kind: pinned, id: "" }
+      if (typeof stored !== "string" || !stored) return { kind: pinned, id: "" }
+      // A stored value is a full path; anything short of one is the authored
+      // short form, which only the pin can complete.
+      return splitRecordPath(stored) ?? { kind: pinned, id: stored }
     }
     case "object":
       return seedBag(field, stored)
@@ -267,10 +265,17 @@ export function toFieldValue(field: FormField, value: FormValue): FieldValue {
     const ref = asRef(value)
     const id = ref.id.trim()
     if (!id) return {}
+    // A whole path pasted into the record box is already the value: joining the
+    // kind onto it would name a record nobody meant. The substrate reads the
+    // two spellings the same way, and by the same grammar.
+    if (splitRecordPath(id)) return { value: id }
     const kind = ref.kind.trim()
-    if (!kind)
-      return { error: "a reference to any kind needs an explicit kind" }
-    return { value: { kind, id } }
+    if (!kind) {
+      return {
+        error: `a reference to any kind needs a full "<kind>/<id>" path, not the bare id ${JSON.stringify(id)}`,
+      }
+    }
+    return { value: recordPath(kind, id) }
   }
   if (field.control === "list") {
     const items = parseList(typeof value === "string" ? value : "")
@@ -343,10 +348,10 @@ export function validate(
  * - `secret`: sent ONLY when non-empty; a blank keeps the sealed value.
  * - `bool`: always sent (a toggle is an explicit choice).
  * - everything else: a value is sent in its DECLARED type (an int as a number,
- *   a json property as parsed JSON, a reference as `{kind, id}`); a field the
- *   person EXPLICITLY cleared (`null`) sends `null` on PATCH to delete the key
- *   (a create has nothing to clear); a merely-blank field is omitted so it is
- *   left as it stands.
+ *   a json property as parsed JSON, a reference as its `<kind>/<id>` record
+ *   path); a field the person EXPLICITLY cleared (`null`) sends `null` on
+ *   PATCH to delete the key (a create has nothing to clear); a merely-blank
+ *   field is omitted so it is left as it stands.
  *
  * Patch merges key-wise, so an omitted field is untouched and a `null` deletes
  * it. Values that fail their datatype are dropped here; `validate` is what bars

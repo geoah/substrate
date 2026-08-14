@@ -10,6 +10,7 @@ import {
   propertyTypeLabel,
   edgeTypeLabel,
 } from "@/lib/definition"
+import { splitRecordPath } from "@/lib/record-path"
 import type { PropSpec } from "@/lib/record-schema"
 
 /** What a hover says about one declared key: its DATATYPE and the record-56
@@ -95,9 +96,11 @@ export function specOnLine(
  * over arbitrary text (LinkedYaml's discipline): only exact values in the
  * right key positions become links. */
 export interface YamlLinkTargets {
-  /** Exact reference ids (edge targets, canonicalId, formerIds) → href.
-   * Matched as the value of `id:`/`canonicalId:` rows and bare `- id` list
-   * items — an id inside a title is a word, not a link. */
+  /** Exact reference ids (edge targets, canonicalId, formerIds) and reference
+   * property values (the referent's whole `<kind>/<id>` path) → href. An id is
+   * matched as the value of `id:`/`canonicalId:` rows and bare `- id` list
+   * items — an id inside a title is a word, not a link; a PATH is matched
+   * under whatever key the declaration gave the property. */
   ids: Record<string, string>
   /** Kind reference (`<authority>/<name>`) → that kind's browse page. Matched
    * only as the value of a `kind:` key — the top-level envelope `kind:` and an
@@ -109,9 +112,10 @@ export const NO_TARGETS: YamlLinkTargets = { ids: {}, kinds: {} }
 
 /** What in this line is a reference the console can follow: the value of a
  * `kind:` / `id:` / `canonicalId:` row when the targets know it, a bare list
- * item that is a known id (formerIds), or the value of a `manager:` / `actor:`
- * row — actor names always link (the actor view renders a stub over a real
- * changelog even for unregistered names). */
+ * item that is a known id (formerIds), the value of a `manager:` / `actor:`
+ * row (actor names always link — the actor view renders a stub over a real
+ * changelog even for unregistered names), or a reference property's value,
+ * which is a record PATH and therefore links under the property's own key. */
 export function linkableSpan(
   line: string,
   targets: YamlLinkTargets
@@ -130,7 +134,12 @@ export function linkableSpan(
             // the guard keeps a data property named `actor` from linking.
             (key === "manager" || key === "actor") && indent.length >= 6
             ? `/actors/${value}`
-            : undefined
+            : // A reference property is keyed by its declared name, so the key
+              // cannot say what the value is: the record PATH does, and only a
+              // path the targets already know links.
+              splitRecordPath(value)
+              ? targets.ids[value]
+              : undefined
     return href ? { text: value, href } : null
   }
   // A bare list item (`- <id>`): the formerIds rows.

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // `trigger status` reports the dispatcher's own verdict, and the dispatcher
@@ -21,7 +22,7 @@ func TestTriggerStatusResolvesAgentCallables(t *testing.T) {
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewAuthority + "/widget"}, "ops": []any{"create"}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/agent", "id": crewAuthority + "/classifier"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", crewAuthority+"/classifier"),
 		},
 	})
 	if err != nil {
@@ -31,7 +32,7 @@ func TestTriggerStatusResolvesAgentCallables(t *testing.T) {
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewAuthority + "/widget"}, "ops": []any{"create"}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": crewAuthority + "/annotate"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", crewAuthority+"/annotate"),
 		},
 	})
 	if err != nil {
@@ -61,8 +62,9 @@ func TestTriggerStatusResolvesAgentCallables(t *testing.T) {
 	// admission (which refuses an unknown callable) the way an uninstall
 	// leaves one behind.
 	if _, err := ds.db.ExecContext(ctx,
-		`UPDATE records SET props = jsonb_set(props, '{callable,id}', '"crew.test.dev/ghost"')
-		 WHERE kind = $1 AND id = $2`, typeTrigger, agentTrigger.ID); err != nil {
+		`UPDATE records SET props = jsonb_set(props, '{callable}', to_jsonb($3::text))
+		 WHERE kind = $1 AND id = $2`, typeTrigger, agentTrigger.ID,
+		vocabulary.RecordPath(kindAgent, "crew.test.dev/ghost")); err != nil {
 		t.Fatalf("strand the callable: %v", err)
 	}
 	statuses, err = ds.TriggerStatuses(ctx)
