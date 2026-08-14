@@ -4,10 +4,14 @@
 /** The core vocabulary as TypeScript: one interface per kind declared under
  * kinds/core.substrate.reamde.dev.
  *
- * An OPTIONAL property is optional here too, and a required one is not:
- * absence stored is absence authored, and a field materialized to an empty
- * string is a value nobody wrote. A `json` property is Dynamic (unknown),
- * because its shape is one core does not own — narrow it where you read it.
+ * EVERY PROPERTY IS OPTIONAL, a `required:` one included. These interfaces
+ * describe what a STORED record can hold, and the server does not enforce
+ * `required:` — it is a form-level hint — so a non-optional field would
+ * promise a value nothing guarantees. The requirement is data instead:
+ * `<kind>Required` names it, and a form is what refuses to submit without it.
+ *
+ * A `json` property is Dynamic (unknown), because its shape is one core does
+ * not own — narrow it where you read it.
  *
  * A state is NOT a stored property value: it lives in the record's own state
  * column and moves by transition. It appears on the interface because every

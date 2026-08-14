@@ -51,6 +51,7 @@ func goImports(body string) string {
 		{"encoding/json", "json."},
 		{"fmt", "fmt."},
 		{"math", "math."},
+		{"math/big", "big."},
 		{"regexp", "regexp."},
 		{"sort", "sort."},
 		{"strconv", "strconv."},

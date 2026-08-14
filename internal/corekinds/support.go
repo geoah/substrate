@@ -49,6 +49,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
 	"regexp"
 	"sort"
 	"strconv"
@@ -325,9 +326,8 @@ func (d *decoder) integer(path string, v any, b Bounds) (int64, bool) {
 	case int64:
 		n = t
 	case json.Number:
-		parsed, err := t.Int64()
-		if err != nil {
-			d.problemf(path, "expected an integer")
+		parsed, ok := d.numberInteger(path, t)
+		if !ok {
 			return 0, false
 		}
 		n = parsed
@@ -348,10 +348,82 @@ func (d *decoder) integer(path string, v any, b Bounds) (int64, bool) {
 		d.problemf(path, "expected an integer")
 		return 0, false
 	}
-	if !d.inBounds(path, float64(n), b) {
+	if !d.inIntBounds(path, n, b) {
 		return 0, false
 	}
 	return n, true
+}
+
+// numberInteger reads an integer out of a json.Number's OWN SPELLING, exactly.
+// ParseInt is the fast path and covers every plain-digit form; an exponent form
+// (1e3, 10e-1) is one the write path accepts and normalizes, so it is parsed as
+// an exact rational rather than through a float64, which would round the large
+// ones into a value nobody wrote.
+func (d *decoder) numberInteger(path string, n json.Number) (int64, bool) {
+	if v, err := strconv.ParseInt(string(n), 10, 64); err == nil {
+		return v, true
+	}
+	r, ok := new(big.Rat).SetString(string(n))
+	if !ok || !r.IsInt() {
+		d.problemf(path, "expected an integer")
+		return 0, false
+	}
+	whole := r.Num()
+	if !whole.IsInt64() {
+		d.problemf(path, "expected an integer an int64 can hold")
+		return 0, false
+	}
+	return whole.Int64(), true
+}
+
+// inIntBounds holds an integer to a declared range WITHOUT a float in the
+// comparison. Converting the value would undo the work above: under a max of
+// 9007199254740992, the value 9007199254740993 rounds down to the bound itself
+// and is admitted.
+func (d *decoder) inIntBounds(path string, n int64, b Bounds) bool {
+	if b.Min != nil && !atLeast(n, *b.Min) {
+		d.problemf(path, "must be >= %v", *b.Min)
+		return false
+	}
+	if b.Max != nil && !atMost(n, *b.Max) {
+		d.problemf(path, "must be <= %v", *b.Max)
+		return false
+	}
+	return true
+}
+
+// The int64 range as float64. Both are exactly representable (2^63), so a bound
+// compared against them is compared exactly.
+const (
+	minInt64Float = -9223372036854775808.0
+	maxInt64Float = 9223372036854775808.0
+)
+
+// atLeast compares an integer with a declared lower bound AS INTEGERS. The bound
+// rounds up, because the value is an integer and nothing integral sits between
+// 0.5 and 1. A bound outside the int64 range is not a comparison but an answer
+// about the whole range.
+func atLeast(n int64, min float64) bool {
+	threshold := math.Ceil(min)
+	switch {
+	case threshold >= maxInt64Float:
+		return false
+	case threshold < minInt64Float:
+		return true
+	}
+	return n >= int64(threshold)
+}
+
+// atMost is atLeast's twin: the bound rounds DOWN, for the same reason.
+func atMost(n int64, max float64) bool {
+	threshold := math.Floor(max)
+	switch {
+	case threshold >= maxInt64Float:
+		return true
+	case threshold < minInt64Float:
+		return false
+	}
+	return n <= int64(threshold)
 }
 
 func (d *decoder) number(path string, v any, b Bounds) (float64, bool) {
@@ -362,6 +434,8 @@ func (d *decoder) number(path string, v any, b Bounds) (float64, bool) {
 	return f, true
 }
 
+// inBounds holds a FLOAT to a declared range. An int goes through inIntBounds
+// instead: there the comparison itself has to be exact.
 func (d *decoder) inBounds(path string, f float64, b Bounds) bool {
 	if b.Min != nil && f < *b.Min {
 		d.problemf(path, "must be >= %v", *b.Min)

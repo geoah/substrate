@@ -329,22 +329,16 @@ func TestGeneratedKeysMatchDeclarations(t *testing.T) {
 // is listed here with what makes it discardable, so removing a discard is an
 // edit to this test and not a silence.
 //
-// This test asserts on the loader side only, because that is where the discarded
-// thing exists. What it pins is that each discard is still true of the shipped
-// tree — a declaration that started depending on one would land here.
+// EVERY discard is READ here, not merely mentioned: a comment naming a field is
+// a comment that stays true after the field changes meaning, and then the pin is
+// decoration. Each assertion below is the reason the field is discardable, so
+// the day it stops being true the test says which decision expired.
 func TestDiscardsAreDeliberate(t *testing.T) {
 	_, loaded := declarations(t)
 	for _, name := range loaded.KindOrder {
 		declared := loaded.Kinds[name]
 		at := declared.Identity
 
-		// INDEX PLACEMENT, not shape. `fts` and `embed` decide which search band
-		// and which embedding a value joins. Neither changes a Go or a TypeScript
-		// type, and FTS's default is computed from the datatype by a rule
-		// (IsShortString/IsLongText, off for sensitive and keyed) that a second
-		// reader could only re-derive — a second derivation of a default is the
-		// drift this arrangement exists to avoid.
-		//
 		// SOURCE is "builtin" for every shipped kind and "installed" for an
 		// imported one: a fact about where a declaration came from, not about what
 		// a record holds.
@@ -354,34 +348,55 @@ func TestDiscardsAreDeliberate(t *testing.T) {
 
 		// EDGES are not properties. They are a traversable relationship with its
 		// own storage and its own read surface; a generated properties struct has
-		// no field for one, and `<Kind>Keys` is the PROPERTY set by definition.
-		// The count is asserted so a kind that grows an edge does not look like a
-		// kind that grew a property.
+		// no field for one, and <Kind>Keys is the PROPERTY set by definition.
 		for _, edge := range declared.EdgeOrder {
 			if _, isProp := declared.Props[edge]; isProp {
 				t.Errorf("%s: %q is both an edge and a property", at, edge)
 			}
+			if declared.Edges[edge] == nil {
+				t.Errorf("%s: edge %q is ordered and not declared", at, edge)
+			}
 		}
 
-		// TRAITS, INDICES and HOTCOLUMNS are how a kind binds shared semantics
-		// and what it asks the database to index. Both are the engine's business:
-		// a bound trait adds no property to the declaration (its properties
-		// arrive as declared ones, which the comparison above already covers).
+		// TRAITS bind shared semantics, and a binding adds no property of its own:
+		// a trait's properties arrive as DECLARED ones, which the comparison above
+		// already covers. What a binding contributes is the hot COLUMN it claims.
 		for _, binding := range declared.Traits {
 			if binding.Identity == "" {
 				t.Errorf("%s: a trait binding resolved to nothing", at)
 			}
 		}
 
-		// MACHINES is an INDEX of the state properties, and TEMPLATE is the parsed
-		// displayTemplate. Both are second views of something already compared:
-		// every machine is the Machine on its state property, and the template is
-		// the string. A generator that read the index would be reading the same
-		// declaration twice.
+		// HOTCOLUMNS are the three properties with a storage column of their own,
+		// claimed through a trait rather than declared — which is why they are not
+		// in the property set the generator reads.
+		for column := range declared.HotColumns {
+			if column != "at" && column != "endsAt" && column != "dueAt" {
+				t.Errorf("%s: %q is a hot column outside the three the traits bind", at, column)
+			}
+		}
+
+		// INDICES ask the database for a composite index over declared properties.
+		// A generated type has no place to put one, and this is what makes that
+		// safe: an index names properties the comparison already covers.
+		for _, index := range declared.Indices {
+			for _, prop := range index {
+				if _, ok := declared.Props[prop]; !ok {
+					t.Errorf("%s: index names %q, which is not a declared property", at, prop)
+				}
+			}
+		}
+
+		// MACHINES is an INDEX of the state properties and TEMPLATE is the parsed
+		// displayTemplate: both are second views of something already compared, so
+		// reading them would be reading one declaration twice.
 		for machine := range declared.Machines {
 			if p, ok := declared.Props[machine]; !ok || p.Machine == nil {
 				t.Errorf("%s: machine %q indexes no state property", at, machine)
 			}
+		}
+		if (declared.Template != nil) != (declared.DisplayTemplate != "") {
+			t.Errorf("%s: the parsed template and the declared string disagree about existing", at)
 		}
 
 		// DEFINITION and SOURCEYAML are the authored document, kept whole for the
@@ -391,12 +406,57 @@ func TestDiscardsAreDeliberate(t *testing.T) {
 		if len(declared.Definition) == 0 {
 			t.Errorf("%s: the loader stopped carrying the authored data map", at)
 		}
+		if declared.SourceYAML == "" {
+			t.Errorf("%s: the loader stopped carrying the authored text", at)
+		}
+
+		// PROPORDER is the loader's own order and it is SORTED. The generator emits
+		// in AUTHORED order instead — a struct that reads like the document it came
+		// from — so the two are compared as sets and this is the pin that the
+		// loader's order carries no information the generator is dropping.
+		if got := sortedKeys(declared.Props); !reflect.DeepEqual(declared.PropOrder, got) {
+			t.Errorf("%s: PropOrder is %v, no longer the sorted property set %v", at, declared.PropOrder, got)
+		}
 
 		// `default:` is a form's seed value. The loader admits the key and puts it
 		// nowhere on Property — it rides the Definition map to the console — so
-		// there is nothing on either side to compare, and the generated types
-		// carry no defaults. A default that ever becomes shape would need this
-		// comment deleted first.
+		// there is nothing on either side to compare, and the generated types carry
+		// no defaults. A default that ever becomes shape needs this paragraph
+		// deleted first.
+		for _, prop := range declared.PropOrder {
+			pinPropertyDiscards(t, at+"."+prop, declared.Props[prop])
+		}
+	}
+}
+
+// pinPropertyDiscards reads the property-level discards at every depth.
+func pinPropertyDiscards(t *testing.T, at string, p *vocabulary.Property) {
+	t.Helper()
+	// FTS and EMBED are INDEX PLACEMENT: which search band a value joins, and
+	// whether it is embedded. Neither changes a Go or a TypeScript type — and FTS
+	// is not even authored here, it is DERIVED from the datatype. That derivation
+	// is the reason it is discardable rather than mirrored: a second reader
+	// re-deriving a default is exactly the drift this arrangement exists to
+	// prevent. So the derivation is asserted instead. A declaration that starts
+	// setting `fts:` by hand lands here, and then someone decides.
+	wantFTS := (vocabulary.IsShortString(p.Datatype) || vocabulary.IsLongText(p.Datatype)) &&
+		!p.Sensitive() && !p.Keyed
+	if p.FTS != wantFTS {
+		t.Errorf("%s: fts is %v where the datatype alone says %v — it is authored now, and the generator discards it",
+			at, p.FTS, wantFTS)
+	}
+	if p.Embed {
+		t.Errorf("%s: embed is set, and the generator discards it — decide whether an embedding belongs in a generated type", at)
+	}
+	// FIELDORDER is PropOrder's twin one level down, sorted the same way, and
+	// discarded for the same reason: the generator emits fields in authored order.
+	if p.Fields != nil {
+		if got := sortedKeys(p.Fields); !reflect.DeepEqual(p.FieldOrder, got) {
+			t.Errorf("%s: FieldOrder is %v, no longer the sorted field set %v", at, p.FieldOrder, got)
+		}
+		for _, field := range p.FieldOrder {
+			pinPropertyDiscards(t, at+".fields."+field, p.Fields[field])
+		}
 	}
 }
 
