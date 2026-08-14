@@ -6,9 +6,11 @@
  * Two things live here and nowhere else:
  *
  * - `propSpecs(kind)` — the declared properties with everything an editor
- *   needs: datatype, required, repeated, an enum's admitted values, a
- *   reference's `to:` target, a state machine's states, `min`/`max`/`pattern`,
- *   a declared `default`, the `writer:` role and the one-liner.
+ *   needs: datatype, the container (`repeated` or `keyed`, with the keys'
+ *   `keyPattern`), an enum's admitted values, a reference's `to:` target, what
+ *   whether the engine `managed:` it, a state machine's
+ *   states, `min`/`max`/`pattern`, a declared `default`, the `writer:` role,
+ *   an object's declared `fields` (which nest), and the one-liner.
  * - `checkValue(spec, value)` — the client's copy of the substrate's own
  *   coercion rules (`internal/engine/validate.go`), so a bad datetime, a
  *   string where an int is declared or an unadmitted enum value is named ON
@@ -18,10 +20,26 @@
 
 import { parseEnumValues, type EnumValue, type KindInfo } from "@/lib/api/types"
 import { temporalProperties } from "@/lib/definition"
-import { splitRecordPath } from "@/lib/record-path"
+import { coerceReferencePath, recordPath } from "@/lib/record-path"
 
-/** The `to:` value a reference uses when it is pinned to no kind at all. */
+/** The `kind:` pin a reference wears when it is pinned to no kind at all. */
 export const TO_ANY = "any"
+
+/** The contracts a keyed map's KEYS hold to, as the substrate spells them
+ * (`internal/corekinds/support.go`, KeyPattern*Regexp). A pattern this map does
+ * not know leaves the key unchecked here; the server is still the authority. */
+const KEY_PATTERNS: Record<string, RegExp> = {
+  camel: /^[a-z][a-zA-Z0-9]*$/,
+  kindRef:
+    /^([a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\/)?[a-z][a-z0-9]*$/,
+}
+
+/** What each contract says when it refuses, in the author's terms rather than
+ * the regexp's (`vocabulary.keyPatternRule`). */
+const KEY_RULES: Record<string, string> = {
+  camel: "camelCase ([a-z][a-zA-Z0-9]*)",
+  kindRef: "a kind reference (`task` or `tasks.example.com/task`)",
+}
 
 /** What a secret-typed property reads back as, everywhere (engine.Redacted).
  * Writing it back is a round trip, not an assignment, so an edit that leaves
@@ -40,6 +58,15 @@ export interface PropSpec {
   kind: string
   required: boolean
   repeated: boolean
+  /** `keyed: true`: the value is a MAP from author-chosen keys to this
+   * property's datatype. Keyed and repeated are the two containers, and a
+   * declaration is one or the other, never both. */
+  keyed: boolean
+  /** The contract a KEYED map's keys hold to (`camel`, `kindRef`). */
+  keyPattern?: string
+  /** The ENGINE stamps this property, and refuses a write that disagrees with
+   * what it stamped, so no editing surface offers an input for it. */
+  managed: boolean
   /** Enum (and any property that narrows a string): the admitted values. */
   values?: EnumValue[]
   /** A declared `default:` — what a create seeds the property with. */
@@ -50,8 +77,9 @@ export interface PropSpec {
   /** `reference`: the kind this pointer is pinned to, or `any`. */
   to?: string
   /** `object`: the declared fields, each a property in its own right (a field
-   * may narrow, range or enumerate exactly as a property does). One level
-   * deep: a field is never itself an object, and never repeated. */
+   * may narrow, range or enumerate exactly as a property does). Fields NEST:
+   * a field may itself be an object with fields, and may be repeated or keyed,
+   * to the dialect's four levels, a kind's own property being level one. */
   fields?: PropSpec[]
   min?: number
   max?: number
@@ -64,7 +92,11 @@ export interface PropSpec {
 
 /** The control a property earns. `select` covers an enum and any property that
  * narrows its values; `state` is a select the server will only accept on a
- * create; `json` covers `json` and `object`; `prose` is a textarea. */
+ * create; `json` covers `json` and an object nobody declared fields for;
+ * `prose` is a textarea. `reference`/`referenceList` are the POINTER controls:
+ * a dropdown over the records the declaration pins to. `keyedMap` is the
+ * add-remove list of key/value rows a `keyed:` map earns, whatever its element
+ * datatype. */
 export type Control =
   | "text"
   | "prose"
@@ -79,6 +111,8 @@ export type Control =
   | "objectList"
   | "list"
   | "reference"
+  | "referenceList"
+  | "keyedMap"
 
 const NUMERIC = new Set([
   "int",
@@ -175,11 +209,17 @@ function specOf(name: string, def: Record<string, unknown>): PropSpec {
     kind: typeof def.type === "string" ? def.type : "string",
     required: def.required === true,
     repeated: def.repeated === true,
+    keyed: def.keyed === true,
+    keyPattern: typeof def.keyPattern === "string" ? def.keyPattern : undefined,
+    managed: def.managed === true,
     values: parseEnumValues(def.values),
     default: def.default,
     states: stringList(def.states),
     initial: typeof def.initial === "string" ? def.initial : undefined,
-    to: typeof def.to === "string" ? def.to : undefined,
+    // THE PIN. A reference property names the kind its value points at under
+    // `kind:`; `to:` is the EDGE's word for the far end of a traversable
+    // link, and a reference still spelling it is refused at the door.
+    to: typeof def.kind === "string" ? def.kind : undefined,
     fields: fieldSpecs(def.fields),
     min: numberOr(def.min),
     max: numberOr(def.max),
@@ -238,10 +278,38 @@ export function propSpecsByName(kind: KindInfo): PropSpec[] {
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
+/** One ITEM of a container, as a declaration in its own right: the same spec
+ * with its container marker dropped, so a row of a keyed map and an element of
+ * a repeated property check and render exactly like the scalar they are. */
+export function elementSpec(spec: PropSpec): PropSpec {
+  return { ...spec, repeated: false, keyed: false }
+}
+
+/** What a CONTAINER holds when it holds nothing: `{}` for a keyed map or a
+ * declared object, `[]` for a repeated property. Not a container: undefined.
+ *
+ * An empty container is a claim and an absent one is not, so a surface that
+ * rebuilds a value has to be able to write "empty" rather than dropping the
+ * key. `json` is deliberately absent: its emptiness is whatever its text
+ * says, and nobody but the author owns that shape. */
+export function emptyContainer(spec: PropSpec): unknown | undefined {
+  if (spec.keyed) return {}
+  if (spec.repeated) return []
+  if (spec.kind === "object" && spec.fields?.length) return {}
+  return undefined
+}
+
 export function controlFor(spec: PropSpec): Control {
   if (spec.kind === "secret") return "secret"
   if (spec.kind === "state") return "state"
-  if (spec.kind === "reference") return "reference"
+  // A CONTAINER is decided before its element datatype: a repeated reference
+  // is a list of pickers, not one picker, and the write carries an array.
+  if (spec.keyed) return "keyedMap"
+  // A POINTER is picked, never remembered. A repeated one is a LIST of them,
+  // which is what the write carries and what the single control never was.
+  if (spec.kind === "reference") {
+    return spec.repeated ? "referenceList" : "reference"
+  }
   // A DECLARED object is a set of fields and is edited as one; `json` is the
   // shape nobody owns, and stays a text box.
   if (spec.kind === "object" && spec.fields?.length) {
@@ -269,6 +337,7 @@ export function inputTypeFor(spec: PropSpec): "text" | "email" | "url" {
  * spelling, `[]`-suffixed when repeated, a pointer naming what it points at. */
 export function typeLabel(spec: PropSpec): string {
   const base = spec.to ? `${spec.kind} → ${spec.to}` : spec.kind
+  if (spec.keyed) return `{string: ${base}}`
   return spec.repeated ? `${base}[]` : base
 }
 
@@ -279,6 +348,7 @@ export function typeLabel(spec: PropSpec): string {
  * as an `e.g.` in the template's trailing comment. Derived from the
  * declaration alone, never from a kind's name. */
 export function exampleFor(spec: PropSpec): string | undefined {
+  if (spec.keyed) return "{}"
   if (spec.values?.length) return spec.values[0].value
   if (spec.states?.length) return spec.initial ?? spec.states[0]
   switch (spec.kind) {
@@ -306,7 +376,7 @@ export function exampleFor(spec: PropSpec): string | undefined {
       return "the value to seal"
     case "reference":
       return spec.to && spec.to !== TO_ANY
-        ? `${spec.to}/some-id`
+        ? recordPath(spec.to, "some-id")
         : "<kind>/<id>"
     case "json":
     case "object":
@@ -328,6 +398,7 @@ export function exampleFor(spec: PropSpec): string | undefined {
  * whatever their element datatype. */
 export function seedValue(spec: PropSpec): unknown {
   if (spec.default !== undefined && spec.default !== null) return spec.default
+  if (spec.keyed) return {}
   if (spec.repeated) return []
   if (spec.kind === "state") return spec.initial ?? spec.states?.[0] ?? ""
   if (isBooleanKind(spec.kind)) return false
@@ -352,6 +423,30 @@ function admitted(spec: PropSpec): string {
   return (spec.values ?? []).map((v) => v.value).join(", ")
 }
 
+/** Whether a value says nothing: absent, blank or an empty container. `false`
+ * and `0` are values somebody meant, so they are not blank. */
+function isBlank(value: unknown): boolean {
+  if (value === undefined || value === null) return true
+  if (typeof value === "string") return value.trim() === ""
+  if (Array.isArray(value)) return value.length === 0
+  return false
+}
+
+/** Prefix a nested problem with the field it came from, so a failure four
+ * levels down reads as one dotted trail (`reads.budgets.calls is required`)
+ * rather than one name per level. A message that does not open with a path
+ * is a plain reason, and gets the field named in front of it.
+ *
+ * Exported because the PROPERTY is the outermost level of the same trail: a
+ * caller naming the property joins it the same way, or the path would break
+ * at the top. */
+export function underField(name: string, problem: string): string {
+  const pathed = /^`([^`]+)`(.*)$/.exec(problem)
+  return pathed
+    ? `\`${name}.${pathed[1]}\`${pathed[2]}`
+    : `\`${name}\`: ${problem}`
+}
+
 function validTimezone(name: string): boolean {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: name })
@@ -373,31 +468,36 @@ export function checkItem(spec: PropSpec, value: unknown): string | undefined {
       return "expected an object"
     }
     if (spec.fields) {
-      const entries = Object.entries(value as Record<string, unknown>)
-      for (const [name, field] of entries) {
+      const held = value as Record<string, unknown>
+      for (const [name, field] of Object.entries(held)) {
         const declared = spec.fields.find((f) => f.name === name)
         if (!declared) return `\`${name}\` is not a declared field`
         const problem = checkValue(declared, field)
-        if (problem) return `\`${name}\`: ${problem}`
+        if (problem) return underField(name, problem)
+      }
+      // A field the declaration marks REQUIRED has to be there. Checking only
+      // the fields a value happens to carry lets `{}` through an object whose
+      // every field is required, which the loader then refuses.
+      for (const declared of spec.fields) {
+        if (!declared.required) continue
+        if (isBlank(held[declared.name]))
+          return `\`${declared.name}\` is required`
       }
     }
     return undefined
   }
 
-  // The substrate's own three refusals, verbatim (engine's coerceReference): a
-  // reference is the referent's record PATH, and a bare id is the authored
-  // short form only where the declaration pins the kind that completes it.
+  // The substrate's own refusals, through the one mirror of its coercion
+  // (`record-path.coerceReferencePath`): a reference is the referent's record
+  // PATH, a bare id is the authored short form only where the declaration pins
+  // the kind that completes it, and a value that reads two ways is refused
+  // naming both rather than resolved by precedence.
   if (spec.kind === "reference") {
     if (typeof value !== "string") {
       return 'a reference is a "<kind>/<id>" path string'
     }
-    const path = value.trim()
-    if (!path) return "a reference needs an id"
-    if (splitRecordPath(path)) return undefined
-    if (!spec.to || spec.to === TO_ANY) {
-      return `a reference to any kind needs a full "<kind>/<id>" path, not the bare id ${JSON.stringify(path)}`
-    }
-    return undefined
+    const pin = spec.to && spec.to !== TO_ANY ? spec.to : ""
+    return coerceReferencePath(pin, value.trim()).error
   }
 
   if (isBooleanKind(spec.kind)) {
@@ -500,8 +600,41 @@ export function checkItem(spec: PropSpec, value: unknown): string | undefined {
  * message is the reason alone (`expected a number`), so a caller can prefix it
  * with wherever the value sits. `undefined` means the value is admissible;
  * `null` is a delete marker and always is. */
+/** Check ONE key of a keyed map, the way the substrate checks it
+ * (`vocabulary.Property.CheckKey`): an empty key is refused, a declared
+ * `keyPattern` is held to, and absent one ANY non-empty string is a key,
+ * because that is what a map is for.
+ *
+ * The key is checked EXACTLY as it was typed. Nothing here trims: ` helper `
+ * and `helper` are two different keys, and quietly storing the second when
+ * somebody named the first is a rename nobody asked for. A key with spaces
+ * that no pattern refuses is a key. */
+export function checkKey(spec: PropSpec, key: string): string | undefined {
+  if (key === "") return "a keyed map's key is never empty"
+  const grammar = spec.keyPattern ? KEY_PATTERNS[spec.keyPattern] : undefined
+  if (grammar && !grammar.test(key)) {
+    return `key "${key}" must be ${KEY_RULES[spec.keyPattern ?? ""] ?? spec.keyPattern}`
+  }
+  return undefined
+}
+
 export function checkValue(spec: PropSpec, value: unknown): string | undefined {
   if (value === null || value === undefined) return undefined
+  if (spec.keyed) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return `expected a map of ${spec.kind}`
+    }
+    const item = elementSpec(spec)
+    for (const [key, entry] of Object.entries(
+      value as Record<string, unknown>
+    )) {
+      const badKey = checkKey(spec, key)
+      if (badKey) return badKey
+      const problem = checkItem(item, entry)
+      if (problem) return underField(key, problem)
+    }
+    return undefined
+  }
   if (spec.repeated) {
     if (!Array.isArray(value)) return `expected a list of ${spec.kind}`
     for (let i = 0; i < value.length; i++) {

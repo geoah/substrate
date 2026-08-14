@@ -22,13 +22,16 @@
 import {
   Document,
   isCollection,
+  isMap,
   isNode,
   isScalar,
+  isSeq,
   parseDocument,
   YAMLMap,
 } from "yaml"
 
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
+import { isDeclarationKind } from "@/lib/declarations"
 import {
   checkValue,
   exampleFor,
@@ -36,6 +39,7 @@ import {
   seedValue,
   systemSpecs,
   typeLabel,
+  underField,
   type PropSpec,
 } from "@/lib/record-schema"
 
@@ -92,7 +96,10 @@ export function specComment(spec: PropSpec): string {
  * is blank (omit to let the substrate mint one); `data.properties` carries
  * every declared property, required first, each seeded and commented. */
 export function templateDoc(kind: KindInfo): Document {
-  const specs = propSpecs(kind)
+  // A MANAGED property is the engine's stamp, and it refuses a write that
+  // disagrees with what it stamped, so a template that seeded one with a
+  // typed zero would hand every create a value the substrate then refuses.
+  const specs = propSpecs(kind).filter((spec) => !spec.managed)
 
   const properties: Record<string, unknown> = {}
   for (const spec of specs) properties[spec.name] = seedValue(spec)
@@ -348,6 +355,22 @@ export function validateApplyDoc(
     })
   }
   const authored = doc.metadata?.id
+  // A DECLARATION is addressed by its declared identity, and the substrate
+  // mints none: `putSchemaRecord` refuses a write that carries no id, because
+  // the id is the name the registry resolves. Only on a create: an edit's id
+  // is the route's.
+  if (
+    !ctx.record &&
+    isDeclarationKind(kind.identity) &&
+    !(typeof authored === "string" && authored.trim())
+  ) {
+    problems.push({
+      severity: "error",
+      message: `\`metadata.id\` is required: a ${kind.name} is addressed by the identity it declares, and the substrate never mints one.`,
+      path: "metadata.id",
+      line: lineOfKey(text, "id"),
+    })
+  }
   if (
     ctx.record &&
     typeof authored === "string" &&
@@ -403,7 +426,9 @@ export function validateApplyDoc(
     if (problem) {
       problems.push({
         severity: "error",
-        message: `\`${spec.name}\`: ${problem}.`,
+        // The property is the outermost level of the same dotted trail, so a
+        // failure four fields down still reads as one path.
+        message: `${underField(spec.name, problem)}.`,
         path: spec.name,
         line: lineOfKey(text, spec.name),
       })
@@ -449,6 +474,11 @@ export function validateApplyDoc(
 
 // ── surgery: the form lens editing the same document ────────────────────────
 
+/** A path INTO the document: mapping keys as strings, sequence positions as
+ * numbers. The form lens builds one down to the value that changed
+ * (`record-form.narrowEdit`) so a write touches exactly that value. */
+export type EditPath = (string | number)[]
+
 /** The document's authored properties, or undefined when the text does not
  * parse to an envelope. The form lens reads its values through this, so the
  * YAML is the single source of truth for both lenses. */
@@ -463,18 +493,78 @@ export function propertiesOf(
   return props as Record<string, unknown>
 }
 
+/** Whether the document holds anything at this path. What separates a
+ * container somebody EMPTIED from one that was never there. */
+export function hasIn(text: string, path: EditPath): boolean {
+  const doc = parseDocument(text)
+  if (doc.errors.length) return false
+  return doc.hasIn(path)
+}
+
+/** Whether the document can take a write at this path without inventing what
+ * lies between. Every step must be a collection of the right shape (or absent,
+ * which `setIn` creates), and a numeric step must be an index the sequence
+ * already holds or the one just past its end, because writing past that would
+ * leave a hole in the list.
+ *
+ * A path that fails this is one the document has DRIFTED from: the form's rows
+ * and the document's have stopped lining up. The caller falls back to writing
+ * the whole property, which is always safe and only costs the comments inside
+ * it. */
+export function canSetIn(text: string, path: EditPath): boolean {
+  const doc = parseDocument(text)
+  if (doc.errors.length) return false
+  let node: unknown = doc.contents
+  for (let i = 0; i < path.length; i++) {
+    const key = path[i]
+    // Nothing here yet: `setIn` builds the rest of the path itself.
+    if (node === null || node === undefined) return true
+    if (!isCollection(node)) return false
+    if (typeof key === "number") {
+      if (!isSeq(node) || key > node.items.length) return false
+    } else if (!isMap(node)) {
+      return false
+    }
+    if (i === path.length - 1) return true
+    node = node.get(key as never, true)
+  }
+  return true
+}
+
 /** Set one path in the document and give back the text, leaving every other
  * line exactly as authored: a form edit must not reflow a hand-written
- * document, and the template's own comments must survive being filled in. A
- * text that does not parse comes back untouched. */
-export function setIn(text: string, path: string[], value: unknown): string {
+ * document, and the template's own comments must survive being filled in.
+ *
+ * The path reaches as DEEP as the value that changed, which is what makes a
+ * nested edit lossless: writing `reads.budgets.calls` touches that one scalar,
+ * where writing the whole `reads` would re-serialize the subtree and take
+ * every comment and every empty sibling with it.
+ *
+ * A text that does not parse, or a path the document cannot take, comes back
+ * untouched. */
+export function setIn(text: string, path: EditPath, value: unknown): string {
   // An empty document has no mapping to set a path in, so start one.
   const doc: Document = text.trim() ? parseDocument(text) : new Document({})
   if (doc.errors.length) return text
+  // Collections standing EMPTY before the write render flow (`{}` inline with
+  // their trailing comment, as the template writes them). One that gains
+  // content has to go back to block, or a deep write would fold a whole
+  // subtree onto one line.
+  const wereEmpty = []
+  for (let i = 1; i < path.length; i++) {
+    const node = doc.getIn(path.slice(0, i), true)
+    if (isCollection(node) && node.items.length === 0) wereEmpty.push(node)
+  }
   const existing = doc.getIn(path, true)
   const comment = isNode(existing) ? existing.comment : undefined
   const commentBefore = isNode(existing) ? existing.commentBefore : undefined
-  doc.setIn(path, value)
+  try {
+    doc.setIn(path, value)
+  } catch {
+    // The path runs through something that is not a collection: the document
+    // and the form disagree about the shape, and the form does not win.
+    return text
+  }
   const next = doc.getIn(path, true)
   if (isNode(next)) {
     if (comment) next.comment = comment
@@ -488,14 +578,23 @@ export function setIn(text: string, path: string[], value: unknown): string {
     // flow style, exactly as the template writes it.
     if (isCollection(next) && next.items.length === 0) next.flow = true
   }
+  for (const node of wereEmpty) {
+    if (node.items.length > 0) node.flow = false
+  }
   return doc.toString(STRINGIFY)
 }
 
-/** Remove one path from the document, leaving the rest as authored. */
-export function deleteIn(text: string, path: string[]): string {
+/** Remove one path from the document, leaving the rest as authored. The path
+ * reaches as deep as `setIn`'s: clearing one field of an object takes that key
+ * out and leaves its siblings, comments and all, where they were. */
+export function deleteIn(text: string, path: EditPath): string {
   const doc = parseDocument(text)
   if (doc.errors.length) return text
-  doc.deleteIn(path)
+  try {
+    doc.deleteIn(path)
+  } catch {
+    return text
+  }
   return doc.toString(STRINGIFY)
 }
 

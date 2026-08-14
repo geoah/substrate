@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest"
 
-import { toolOK, transcriptOf } from "./transcript"
+import { proposedRequestId, toolOK, transcriptOf } from "./transcript"
 import type { SubstrateRecord } from "./types"
 
 let seq = 0
@@ -154,5 +154,42 @@ describe("toolOK", () => {
 
   it("treats a non-JSON payload as a success", () => {
     expect(toolOK(row({ role: "tool", content: "plain text" }))).toBe(true)
+  })
+})
+
+/** A settled propose names the row it landed, and only then: the card links to
+ * a change request that exists, never to a call that failed or is still out. */
+describe("proposedRequestId", () => {
+  const settled = (over: Record<string, unknown> = {}) => ({
+    id: "c1",
+    name: "propose",
+    arguments: "{}",
+    output: '{"id":"cr7abc4def6k"}',
+    ok: true,
+    ...over,
+  })
+
+  it("names the request a successful propose landed", () => {
+    expect(proposedRequestId(settled())).toBe("cr7abc4def6k")
+  })
+
+  it("says nothing about a call still running, or one that failed", () => {
+    expect(proposedRequestId(settled({ ok: undefined }))).toBeUndefined()
+    expect(
+      proposedRequestId(settled({ ok: false, output: '{"error":"nope"}' }))
+    ).toBeUndefined()
+  })
+
+  it("says nothing about another tool that happens to answer with an id", () => {
+    expect(proposedRequestId(settled({ name: "query" }))).toBeUndefined()
+  })
+
+  it("says nothing when the payload carries no id", () => {
+    expect(proposedRequestId(settled({ output: "{}" }))).toBeUndefined()
+    expect(
+      proposedRequestId(settled({ output: '{"id":"  "}' }))
+    ).toBeUndefined()
+    expect(proposedRequestId(settled({ output: "landed" }))).toBeUndefined()
+    expect(proposedRequestId(settled({ output: "{oops" }))).toBeUndefined()
   })
 })

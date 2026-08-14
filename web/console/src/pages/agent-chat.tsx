@@ -288,6 +288,11 @@ function ChatSurface({ id }: { id: string }) {
       // Marking stale is all this has to do: re-enabling the query is what
       // fetches, and `handedOver` above watches for the result.
       void client.invalidateQueries({ queryKey: ["records"] })
+      // A turn's effects land as ROWS (a propose writes a change request, a
+      // mutate writes whatever the agent may write), so the glance surfaces
+      // counting them are stale too, and their key is its own. Coarse on
+      // purpose: the run reports a tally, not which collections moved.
+      void client.invalidateQueries({ queryKey: ["records-count"] })
     }
 
     handleRef.current = streamChat({

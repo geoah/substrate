@@ -6,7 +6,8 @@
  * stream while the run is in flight and from the `llmmessage` rows afterwards,
  * so nothing disappears when the stream ends. */
 
-import { ChevronRightIcon, WrenchIcon } from "lucide-react"
+import { Link } from "@tanstack/react-router"
+import { ChevronRightIcon, FilePenLineIcon, WrenchIcon } from "lucide-react"
 
 import { CodeBlock } from "@/components/code-block"
 import {
@@ -15,7 +16,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { Spinner } from "@/components/ui/spinner"
-import type { ToolCallView } from "@/lib/api/transcript"
+import { proposedRequestId, type ToolCallView } from "@/lib/api/transcript"
 import { prettyJSON } from "@/lib/code"
 import { cn } from "@/lib/utils"
 
@@ -52,6 +53,9 @@ function Payload({ label, raw }: { label: string; raw: string }) {
 export function ToolCallCard({ call }: { call: ToolCallView }) {
   const isRunning = running(call)
   const failed = call.ok === false
+  // A propose lands a row in the review queue and nothing else: the change is
+  // NOT applied until somebody decides it, so the card carries the way there.
+  const proposed = proposedRequestId(call)
   return (
     <Collapsible className="group/tool rounded-md border bg-muted/40">
       <CollapsibleTrigger
@@ -76,6 +80,18 @@ export function ToolCallCard({ call }: { call: ToolCallView }) {
         )}
         <ChevronRightIcon className="ml-auto size-3 shrink-0 text-muted-foreground transition-transform group-data-open/tool:rotate-90" />
       </CollapsibleTrigger>
+      {proposed && (
+        <div className="border-t px-2 py-1.5">
+          <Link
+            to="/change-requests/$id"
+            params={{ id: proposed }}
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-4 hover:underline"
+          >
+            <FilePenLineIcon className="size-3 shrink-0" />
+            Review the proposed change
+          </Link>
+        </div>
+      )}
       <CollapsibleContent>
         <div className="flex flex-col gap-2 border-t px-2 py-2">
           <Payload label="request" raw={call.arguments} />

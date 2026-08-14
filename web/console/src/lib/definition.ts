@@ -90,7 +90,10 @@ export function declaredProperties(k: KindInfo): DeclaredProperty[] {
       initial: typeof def.initial === "string" ? def.initial : undefined,
       required: def.required === true,
       values: parseEnumValues(def.values),
-      to: typeof def.to === "string" ? def.to : undefined,
+      // A reference property pins its target under `kind:`; `to:` is the
+      // EDGE's word for the far end of a traversable link, and reading it
+      // here left every pointer looking unpinned on the read surfaces.
+      to: typeof def.kind === "string" ? def.kind : undefined,
       inverse: typeof def.inverse === "string" ? def.inverse : undefined,
       inverseDescription:
         typeof def.inverseDescription === "string"

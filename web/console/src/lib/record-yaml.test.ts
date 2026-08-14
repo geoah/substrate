@@ -15,11 +15,13 @@ import {
 } from "./record-yaml"
 
 /** An agent-like kind: the schema-driven template must cover it with no
- * kind-special-casing (it is a brand-new core kind). */
+ * kind-special-casing. Published by somebody else's authority on purpose, so
+ * these cases exercise the ORDINARY rules; the nine declaration kinds carry an
+ * id rule of their own, which has its own block below. */
 const agentKind: KindInfo = {
-  identity: "core.substrate.reamde.dev/agent",
+  identity: "crew.test.dev/agent",
   name: "agent",
-  authority: "core.substrate.reamde.dev",
+  authority: "crew.test.dev",
   version: "",
   plural: "agents",
   source: "builtin",
@@ -52,7 +54,7 @@ describe("templateYAML", () => {
 
   it("builds the full apply-able envelope fixed to the kind reference", () => {
     const doc = parse(yaml)
-    expect(doc.kind).toBe("core.substrate.reamde.dev/agent")
+    expect(doc.kind).toBe("crew.test.dev/agent")
     expect(doc.metadata).toHaveProperty("id")
     expect(doc.data.properties).toMatchObject({
       prompt: "",
@@ -83,12 +85,69 @@ describe("templateYAML", () => {
       .map((p) => p.path)
     expect(errorPaths).toEqual(["prompt"]) // enabled=false is a valid value
   })
+
+  it("asks for a REQUIRED field inside an object, naming the deep path", () => {
+    const kindKind: KindInfo = {
+      identity: "core.substrate.reamde.dev/kind",
+      name: "kind",
+      authority: "core.substrate.reamde.dev",
+      version: "",
+      plural: "kinds",
+      source: "builtin",
+      definition: {
+        properties: {
+          authority: { type: "string", required: true },
+          names: {
+            type: "object",
+            fields: {
+              singular: { type: "string", required: true },
+              plural: { type: "string", required: true },
+            },
+          },
+        },
+      },
+    }
+    const doc = `kind: core.substrate.reamde.dev/kind
+metadata:
+  id: tasks.example.com/task
+data:
+  properties:
+    authority: tasks.example.com
+    names:
+      singular: task
+`
+    const messages = validateApplyDoc(doc, kindKind)
+      .filter((p) => p.severity === "error")
+      .map((p) => p.message)
+    // `{}` used to sail through: only the fields a value CARRIES were checked.
+    expect(messages).toContain("`names.plural` is required.")
+    expect(
+      validateApplyDoc(
+        doc.replace("singular: task", "singular: task\n      plural: tasks"),
+        kindKind
+      ).filter((p) => p.severity === "error")
+    ).toEqual([])
+  })
+
+  it("never seeds a MANAGED property: the engine stamps it, and refuses a disagreement", () => {
+    const stamped = templateYAML({
+      ...agentKind,
+      definition: {
+        properties: {
+          version: { type: "string", managed: true },
+          model: { type: "string" },
+        },
+      },
+    })
+    const doc = parse(stamped)
+    expect(doc.data.properties).not.toHaveProperty("version")
+    expect(doc.data.properties).toHaveProperty("model")
+  })
 })
 
 describe("validateApplyDoc", () => {
   it("reports a YAML syntax error with its line", () => {
-    const bad =
-      "kind: core.substrate.reamde.dev/agent\ndata:\n  properties:\n    a: [1, 2"
+    const bad = "kind: crew.test.dev/agent\ndata:\n  properties:\n    a: [1, 2"
     const problems = validateApplyDoc(bad, agentKind)
     expect(problems).toHaveLength(1)
     expect(problems[0].severity).toBe("error")
@@ -144,10 +203,70 @@ describe("validateApplyDoc", () => {
   })
 })
 
+/** A DECLARATION is addressed by the identity it declares. There is no id to
+ * mint, so a create without one is refused by the substrate, and said here
+ * while the field is still on the screen. */
+describe("validateApplyDoc: the declaration id", () => {
+  const declaration: KindInfo = {
+    identity: "core.substrate.reamde.dev/agent",
+    name: "agent",
+    authority: "core.substrate.reamde.dev",
+    version: "",
+    plural: "agents",
+    source: "builtin",
+    definition: { properties: { model: { type: "string" } } },
+  }
+  const withId = `kind: core.substrate.reamde.dev/agent
+metadata:
+  id: crew.test.dev/scout
+data:
+  properties:
+    model: opus
+`
+  const blank = withId.replace("id: crew.test.dev/scout", 'id: ""')
+
+  function errors(text: string, ctx = {}) {
+    return validateApplyDoc(text, declaration, ctx)
+      .filter((p) => p.severity === "error")
+      .map((p) => p.path)
+  }
+
+  it("bars a create that leaves it blank", () => {
+    expect(errors(blank)).toEqual(["metadata.id"])
+    expect(errors(withId)).toEqual([])
+  })
+
+  it("says nothing on an EDIT: the id is the route's, not the document's", () => {
+    const record: SubstrateRecord = {
+      id: "crew.test.dev/scout",
+      kind: declaration.identity,
+      properties: {},
+      labels: {},
+      version: 1,
+      createdAt: "x",
+      updatedAt: "x",
+    }
+    expect(errors(blank, { record })).toEqual([])
+  })
+
+  it("leaves an ORDINARY kind's create alone: the substrate mints that one", () => {
+    const ordinary = { ...declaration, identity: "crew.test.dev/agent" }
+    expect(
+      validateApplyDoc(
+        blank.replace(
+          "kind: core.substrate.reamde.dev/agent",
+          "kind: crew.test.dev/agent"
+        ),
+        ordinary
+      ).filter((p) => p.severity === "error")
+    ).toEqual([])
+  })
+})
+
 describe("applyManifestYAML (edit seed)", () => {
   const record: SubstrateRecord = {
     id: "contactssync.google",
-    kind: "core.substrate.reamde.dev/agent",
+    kind: "crew.test.dev/agent",
     properties: { prompt: "sync my contacts", enabled: true, model: "opus" },
     labels: { tier: "core" },
     version: 4,
@@ -170,7 +289,7 @@ describe("applyManifestYAML (edit seed)", () => {
   it("emits the apply envelope WITHOUT the server-owned status block", () => {
     const yaml = applyManifestYAML(record)
     const doc = parse(yaml)
-    expect(doc.kind).toBe("core.substrate.reamde.dev/agent")
+    expect(doc.kind).toBe("crew.test.dev/agent")
     expect(doc.metadata.id).toBe("contactssync.google")
     expect(doc.data.properties.prompt).toBe("sync my contacts")
     // Labels ride in metadata now (the v1 envelope).
@@ -197,7 +316,7 @@ describe("toPutInput", () => {
   it("extracts id, properties, labels and edges from a parsed doc", () => {
     const yaml = applyManifestYAML({
       id: "e1",
-      kind: "core.substrate.reamde.dev/agent",
+      kind: "crew.test.dev/agent",
       properties: { prompt: "hi", enabled: true },
       labels: { a: "b" },
       version: 1,
@@ -290,7 +409,7 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
 
   it("refuses a kind that is not this collection's", () => {
     const yaml =
-      "kind: core.substrate.reamde.dev/agent\ndata:\n  properties:\n    title: hi\n"
+      "kind: crew.test.dev/agent\ndata:\n  properties:\n    title: hi\n"
     const problem = validateApplyDoc(yaml, taskKind).find(
       (p) => p.path === "kind"
     )

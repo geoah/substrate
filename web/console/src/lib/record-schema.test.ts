@@ -70,8 +70,8 @@ const wideKind: KindInfo = {
       calls: { type: "int", min: 1, max: 10 },
       ratio: { type: "float" },
       headers: { type: "json" },
-      callable: { type: "reference", to: "any" },
-      owner: { type: "reference", to: "core.substrate.reamde.dev/actor" },
+      callable: { type: "reference", kind: "any" },
+      owner: { type: "reference", kind: "core.substrate.reamde.dev/actor" },
       status: {
         type: "state",
         states: ["proposed", "open", "done"],

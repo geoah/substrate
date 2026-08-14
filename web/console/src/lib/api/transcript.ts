@@ -65,6 +65,46 @@ export function toolOK(record: SubstrateRecord): boolean {
   }
 }
 
+/** The model-facing name of the `propose` host function: the name a `tools:`
+ * entry takes when it aliases nothing (`vocabulary.AgentToolPropose`, the local
+ * segment of `core.substrate.reamde.dev/propose`). */
+const PROPOSE_TOOL = "propose"
+
+/** A minted record id: twelve lowercase base32 characters (`engine.newID`).
+ * Checked because the NAME alone cannot settle what a call was. */
+const MINTED_ID = /^[a-z2-7]{12}$/
+
+/** The change request a settled `propose` call landed, or undefined.
+ *
+ * THE NAME IS NOT PROVENANCE, and that is the limit of this. A transcript row
+ * records the model-facing tool NAME, never the `function` behind it, so an
+ * agent that aliases `{function: …/propose, name: file}` gets no link, and one
+ * that aliases some other function TO `propose` would get one on any payload
+ * that looked right. Carrying the tool entry's function identity on the
+ * llmmessage row is what would settle it, and it is not carried yet (noted
+ * follow-up).
+ *
+ * Everything that CAN be checked is: the call settled ok, the name is exactly
+ * the built-in's, and the payload is `{"id": <minted id>}` and nothing else,
+ * which is precisely what `dispatchPropose` answers on success. A payload with
+ * a second key, or an id no mint could have produced, is some other tool. */
+export function proposedRequestId(call: ToolCallView): string | undefined {
+  if (call.ok !== true || call.name !== PROPOSE_TOOL) return undefined
+  const payload = (call.output ?? "").trim()
+  if (!payload.startsWith("{")) return undefined
+  try {
+    const parsed: unknown = JSON.parse(payload)
+    if (typeof parsed !== "object" || parsed === null) return undefined
+    const keys = Object.keys(parsed as Record<string, unknown>)
+    if (keys.length !== 1 || keys[0] !== "id") return undefined
+    const id = (parsed as Record<string, unknown>).id
+    if (typeof id !== "string" || !MINTED_ID.test(id)) return undefined
+    return id
+  } catch {
+    return undefined
+  }
+}
+
 /** The declared calls on an assistant row: `toolCalls` is a json property, so
  * it arrives as whatever was stored. An entry with neither an id nor a name is
  * dropped — there is nothing to render and nothing to pair. One with a name and
