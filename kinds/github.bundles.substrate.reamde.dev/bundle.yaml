@@ -28,7 +28,11 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: github.bundles.substrate.reamde.dev
 data:
-  version: v1alpha1
+  # v1alpha2: THE TYPED CORE SWEEP. This closure moved to the declared
+  # spellings — a tool entry names its arm, a function's IO is a flat argument
+  # list and its grants ride `data` itself, a mapping rule is `{path}`, an index
+  # names its properties — so every declaration in it changed shape.
+  version: v1alpha2
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -82,16 +86,20 @@ data:
     emailProperty: email
     featureScopes:
       enabledUser:
-        - read:user
+        scopes:
+          - read:user
       enabledRepos:
-        - read:user
-        - repo
+        scopes:
+          - read:user
+          - repo
       enabledIssues:
-        - read:user
-        - repo
+        scopes:
+          - read:user
+          - repo
       enabledPullRequests:
-        - read:user
-        - repo
+        scopes:
+          - read:user
+          - repo
   installs:
     - github.bundles.substrate.reamde.dev/config
     - github.bundles.substrate.reamde.dev/account
@@ -575,16 +583,15 @@ data:
     page per invocation, never writing back to GitHub.
   runtime: python
   timeoutMs: 30000
-  capabilities:
-    emit:
-      - github.bundles.substrate.reamde.dev/user
-      - github.bundles.substrate.reamde.dev/repository
-      - github.bundles.substrate.reamde.dev/issue
-      - github.bundles.substrate.reamde.dev/pullrequest
-      - github.bundles.substrate.reamde.dev/account
-    network:
-      - "api.github.com"
-      - "github.com"
+  emit:
+    - github.bundles.substrate.reamde.dev/user
+    - github.bundles.substrate.reamde.dev/repository
+    - github.bundles.substrate.reamde.dev/issue
+    - github.bundles.substrate.reamde.dev/pullrequest
+    - github.bundles.substrate.reamde.dev/account
+  network:
+    - "api.github.com"
+    - "github.com"
   source: |
     # /// script
     # requires-python = ">=3.11"
@@ -1154,8 +1161,10 @@ data:
     - from: email
       to: emails
   map:
-    name: name
-    displayName: login
+    name:
+      path: name
+    displayName:
+      path: login
     emails:
       path: email
       merge: union

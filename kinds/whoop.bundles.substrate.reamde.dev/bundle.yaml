@@ -23,7 +23,11 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: whoop.bundles.substrate.reamde.dev
 data:
-  version: v1alpha1
+  # v1alpha2: THE TYPED CORE SWEEP. This closure moved to the declared
+  # spellings — a tool entry names its arm, a function's IO is a flat argument
+  # list and its grants ride `data` itself, a mapping rule is `{path}`, an index
+  # names its properties — so every declaration in it changed shape.
+  version: v1alpha2
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members: the two config types,
@@ -70,17 +74,20 @@ data:
     emailProperty: email
     featureScopes:
       enabledRecovery:
-        - read:recovery
-        - read:profile
-        - offline
+        scopes:
+          - read:recovery
+          - read:profile
+          - offline
       enabledSleep:
-        - read:sleep
-        - read:profile
-        - offline
+        scopes:
+          - read:sleep
+          - read:profile
+          - offline
       enabledWorkouts:
-        - read:workout
-        - read:profile
-        - offline
+        scopes:
+          - read:workout
+          - read:profile
+          - offline
   installs:
     - whoop.bundles.substrate.reamde.dev/config
     - whoop.bundles.substrate.reamde.dev/account
@@ -431,14 +438,13 @@ data:
     records, and stamp the account's lastSyncedAt/syncStatus.
   runtime: python
   timeoutMs: 30000
-  capabilities:
-    emit:
-      - whoop.bundles.substrate.reamde.dev/recovery
-      - whoop.bundles.substrate.reamde.dev/sleep
-      - whoop.bundles.substrate.reamde.dev/workout
-      - whoop.bundles.substrate.reamde.dev/account
-    network:
-      - "api.prod.whoop.com"
+  emit:
+    - whoop.bundles.substrate.reamde.dev/recovery
+    - whoop.bundles.substrate.reamde.dev/sleep
+    - whoop.bundles.substrate.reamde.dev/workout
+    - whoop.bundles.substrate.reamde.dev/account
+  network:
+    - "api.prod.whoop.com"
   source: |
     # /// script
     # requires-python = ">=3.11"

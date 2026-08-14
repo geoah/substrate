@@ -88,10 +88,14 @@ func decodeToken(d *decoder, path string, v any) (Token, bool) {
 	return out, true
 }
 
-// Properties is Token as the properties map holds it, and DecodeToken's exact
+// Encode is Token as the properties map holds it, and DecodeToken's exact
 // inverse: a nil pointer, a nil slice and a nil map each omit their key, so
 // absence survives the round trip.
-func (v *Token) Properties() map[string]any {
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *Token) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Label != nil {
 		out["label"] = *v.Label

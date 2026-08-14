@@ -10,17 +10,16 @@ package corekinds
 // `substratectl` are the doors a human write comes through, and machine hands
 // like `function:<name>` are minted at dispatch.
 type Actor struct {
-	// Version is this declaration's version.
+	// Version is this declaration's version. Managed: the engine stamps it, so
+	// a supplied value does not decide it.
 	Version *string
-
-	// Name is the declared actor name writes are attributed to.
-	Name *string
 
 	// Authority is the authority that declares this actor.
 	Authority *string
 
 	// Source is builtin for shipped authorities, installed for connector
-	// authorities.
+	// authorities. Managed: the engine stamps it, so a supplied value does not
+	// decide it.
 	Source *ActorSource
 
 	// Tier is the manager tier this actor's direct writes hold at.
@@ -66,7 +65,7 @@ func (v ActorTier) Valid() bool { return Declared(ActorTierValues, string(v)) }
 // core.substrate.reamde.dev/actor declares, sorted. A key outside it is
 // refused by Decode, which is what replaces a hand-kept list of admitted keys
 // in Go.
-var ActorKeys = []string{"authority", "name", "source", "tier", "version"}
+var ActorKeys = []string{"authority", "source", "tier", "version"}
 
 // DecodeActor decodes a properties map into Actor, refusing what the
 // declaration cannot hold: an undeclared key, a value of the wrong type, an
@@ -86,6 +85,24 @@ func DecodeActor(props map[string]any) (*Actor, []Problem) {
 		return nil, d.problems
 	}
 	return &out, nil
+}
+
+// ActorRequired names the properties the declaration marks `required:`,
+// sorted. It is a FORM-LEVEL contract: the write path does not enforce it, so
+// Decode admits a value that leaves one absent and this is what a client
+// checks before it submits one.
+var ActorRequired = []string{"authority"}
+
+// Missing names the required properties this value leaves absent, in
+// declaration order. Empty means every declared requirement is answered —
+// not that the value is admissible, which is the substrate's answer and not a
+// type's.
+func (v *Actor) Missing() []string {
+	var out []string
+	if v.Authority == nil {
+		out = append(out, "authority")
+	}
+	return out
 }
 
 // decodeActorSource decodes a declared ActorSource value.
@@ -125,11 +142,6 @@ func decodeActor(d *decoder, path string, v any) (Actor, bool) {
 			if e, ok := d.text(p, props[key], nil, nil); ok {
 				out.Version = &e
 			}
-		case "name":
-			p := at(path, "name")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
-				out.Name = &e
-			}
 		case "authority":
 			p := at(path, "authority")
 			if e, ok := d.text(p, props[key], nil, nil); ok {
@@ -152,16 +164,17 @@ func decodeActor(d *decoder, path string, v any) (Actor, bool) {
 	return out, true
 }
 
-// Properties is Actor as the properties map holds it, and DecodeActor's exact
+// Encode is Actor as the properties map holds it, and DecodeActor's exact
 // inverse: a nil pointer, a nil slice and a nil map each omit their key, so
 // absence survives the round trip.
-func (v *Actor) Properties() map[string]any {
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *Actor) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Version != nil {
 		out["version"] = *v.Version
-	}
-	if v.Name != nil {
-		out["name"] = *v.Name
 	}
 	if v.Authority != nil {
 		out["authority"] = *v.Authority

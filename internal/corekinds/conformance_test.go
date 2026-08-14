@@ -437,13 +437,17 @@ func pinPropertyDiscards(t *testing.T, at string, p *vocabulary.Property) {
 	// is not even authored here, it is DERIVED from the datatype. That derivation
 	// is the reason it is discardable rather than mirrored: a second reader
 	// re-deriving a default is exactly the drift this arrangement exists to
-	// prevent. So the derivation is asserted instead. A declaration that starts
-	// setting `fts:` by hand lands here, and then someone decides.
-	wantFTS := (vocabulary.IsShortString(p.Datatype) || vocabulary.IsLongText(p.Datatype)) &&
+	// prevent. So the derivation is asserted as a CEILING instead: a property is
+	// indexed only where its datatype gives it a band, and a declaration may
+	// WITHHOLD the band it would get (`fts: false`) but never claim one it would
+	// not. Three core declarations withhold — an agent's `prompt`, a function's
+	// `source` and a tool call's `arguments`, each a page of prose or code that
+	// would otherwise make its declaration the top hit for every word in it — and
+	// the generated types carry none of it either way.
+	ceiling := (vocabulary.IsShortString(p.Datatype) || vocabulary.IsLongText(p.Datatype)) &&
 		!p.Sensitive() && !p.Keyed
-	if p.FTS != wantFTS {
-		t.Errorf("%s: fts is %v where the datatype alone says %v — it is authored now, and the generator discards it",
-			at, p.FTS, wantFTS)
+	if p.FTS && !ceiling {
+		t.Errorf("%s: fts is set where the datatype gives no band — the generator discards it, so nothing would honor the claim", at)
 	}
 	if p.Embed {
 		t.Errorf("%s: embed is set, and the generator discards it — decide whether an embedding belongs in a generated type", at)

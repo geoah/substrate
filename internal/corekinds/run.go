@@ -51,7 +51,7 @@ type Run struct {
 	Error *string
 
 	// Effects is the applied-effects summary: action → count.
-	Effects Dynamic
+	Effects map[string]int64
 
 	// Pages is committed pages for a paged (backfill) delivery; absent for a
 	// single-shot body, the durable per-chain progress lives in paged_cursors.
@@ -153,8 +153,17 @@ func decodeRun(d *decoder, path string, v any) (Run, bool) {
 			}
 		case "effects":
 			p := at(path, "effects")
-			if e, ok := d.dynamic(p, props[key]); ok {
-				out.Effects = e
+			if entries, isMap := d.mapping(p, props[key]); isMap {
+				values := make(map[string]int64, len(entries))
+				for _, mk := range sortedKeys(entries) {
+					if entries[mk] == nil || !d.key(p, mk, "") {
+						continue
+					}
+					if e, ok := d.integer(at(p, mk), entries[mk], Bounds{}); ok {
+						values[mk] = e
+					}
+				}
+				out.Effects = values
 			}
 		case "pages":
 			p := at(path, "pages")
@@ -168,10 +177,14 @@ func decodeRun(d *decoder, path string, v any) (Run, bool) {
 	return out, true
 }
 
-// Properties is Run as the properties map holds it, and DecodeRun's exact
-// inverse: a nil pointer, a nil slice and a nil map each omit their key, so
-// absence survives the round trip.
-func (v *Run) Properties() map[string]any {
+// Encode is Run as the properties map holds it, and DecodeRun's exact inverse:
+// a nil pointer, a nil slice and a nil map each omit their key, so absence
+// survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *Run) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Trigger != nil {
 		out["trigger"] = *v.Trigger
@@ -207,7 +220,11 @@ func (v *Run) Properties() map[string]any {
 		out["error"] = *v.Error
 	}
 	if v.Effects != nil {
-		out["effects"] = v.Effects
+		values := make(map[string]any, len(v.Effects))
+		for key, item := range v.Effects {
+			values[key] = item
+		}
+		out["effects"] = values
 	}
 	if v.Pages != nil {
 		out["pages"] = *v.Pages

@@ -169,10 +169,14 @@ func decodeLLMProvider(d *decoder, path string, v any) (LLMProvider, bool) {
 	return out, true
 }
 
-// Properties is LLMProvider as the properties map holds it, and
+// Encode is LLMProvider as the properties map holds it, and
 // DecodeLLMProvider's exact inverse: a nil pointer, a nil slice and a nil map
 // each omit their key, so absence survives the round trip.
-func (v *LLMProvider) Properties() map[string]any {
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *LLMProvider) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Name != nil {
 		out["name"] = *v.Name
@@ -189,17 +193,17 @@ func (v *LLMProvider) Properties() map[string]any {
 	if v.Headers != nil {
 		items := make([]any, 0, len(v.Headers))
 		for i := range v.Headers {
-			items = append(items, v.Headers[i].Properties())
+			items = append(items, v.Headers[i].Encode())
 		}
 		out["headers"] = items
 	}
 	if v.Defaults != nil {
-		out["defaults"] = v.Defaults.Properties()
+		out["defaults"] = v.Defaults.Encode()
 	}
 	if v.Pricing != nil {
 		items := make([]any, 0, len(v.Pricing))
 		for i := range v.Pricing {
-			items = append(items, v.Pricing[i].Properties())
+			items = append(items, v.Pricing[i].Encode())
 		}
 		out["pricing"] = items
 	}
@@ -249,10 +253,14 @@ func decodeLLMProviderHeaders(d *decoder, path string, v any) (LLMProviderHeader
 	return out, true
 }
 
-// Properties is LLMProviderHeaders as the properties map holds it, and
+// Encode is LLMProviderHeaders as the properties map holds it, and
 // decodeLLMProviderHeaders's exact inverse: a nil pointer, a nil slice and a
 // nil map each omit their key, so absence survives the round trip.
-func (v *LLMProviderHeaders) Properties() map[string]any {
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *LLMProviderHeaders) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Name != nil {
 		out["name"] = *v.Name
@@ -306,10 +314,14 @@ func decodeLLMProviderDefaults(d *decoder, path string, v any) (LLMProviderDefau
 	return out, true
 }
 
-// Properties is LLMProviderDefaults as the properties map holds it, and
+// Encode is LLMProviderDefaults as the properties map holds it, and
 // decodeLLMProviderDefaults's exact inverse: a nil pointer, a nil slice and a
 // nil map each omit their key, so absence survives the round trip.
-func (v *LLMProviderDefaults) Properties() map[string]any {
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *LLMProviderDefaults) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Temperature != nil {
 		out["temperature"] = *v.Temperature
@@ -371,10 +383,14 @@ func decodeLLMProviderPricing(d *decoder, path string, v any) (LLMProviderPricin
 	return out, true
 }
 
-// Properties is LLMProviderPricing as the properties map holds it, and
+// Encode is LLMProviderPricing as the properties map holds it, and
 // decodeLLMProviderPricing's exact inverse: a nil pointer, a nil slice and a
 // nil map each omit their key, so absence survives the round trip.
-func (v *LLMProviderPricing) Properties() map[string]any {
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *LLMProviderPricing) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Model != nil {
 		out["model"] = *v.Model

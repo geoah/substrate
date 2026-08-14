@@ -24,7 +24,8 @@ data:
   # do — a purge deletes edges by either endpoint, so deleting an agent would
   # erase every thread's record of what ran. A reference survives as a dangling
   # pointer, and the graph reads it in reverse either way.
-  version: v1alpha4
+  # v1alpha5: the index names its properties, the declared spelling.
+  version: v1alpha5
   names:
     singular: llmthread
     plural: llmthreads
@@ -32,7 +33,8 @@ data:
   # No index on `agent`: a reference filters by containment, which rides the
   # repository-wide GIN index on props.
   indices:
-    - - status
+    - properties:
+        - status
   properties:
     agent:
       type: reference

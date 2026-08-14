@@ -85,10 +85,14 @@ func decodeTrigger(d *decoder, path string, v any) (Trigger, bool) {
 	return out, true
 }
 
-// Properties is Trigger as the properties map holds it, and DecodeTrigger's
-// exact inverse: a nil pointer, a nil slice and a nil map each omit their key,
-// so absence survives the round trip.
-func (v *Trigger) Properties() map[string]any {
+// Encode is Trigger as the properties map holds it, and DecodeTrigger's exact
+// inverse: a nil pointer, a nil slice and a nil map each omit their key, so
+// absence survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *Trigger) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Enabled != nil {
 		out["enabled"] = *v.Enabled
@@ -97,7 +101,7 @@ func (v *Trigger) Properties() map[string]any {
 		out["source"] = v.Source
 	}
 	if v.Callable != nil {
-		out["callable"] = v.Callable.Properties()
+		out["callable"] = v.Callable.Encode()
 	}
 	return out
 }

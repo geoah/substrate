@@ -20,7 +20,7 @@ import (
 // properties is what every generated struct offers: its properties map.
 type properties[T any] interface {
 	*T
-	Properties() map[string]any
+	Encode() map[string]any
 }
 
 // roundTrip is the whole assertion: encode, decode, compare. A fixture that
@@ -29,7 +29,7 @@ type properties[T any] interface {
 func roundTrip[T any, PT properties[T]](t *testing.T, name string, fixture PT, decode func(map[string]any) (*T, []corekinds.Problem)) {
 	t.Helper()
 	t.Run(name, func(t *testing.T) {
-		props := fixture.Properties()
+		props := fixture.Encode()
 		got, problems := decode(props)
 		if len(problems) > 0 {
 			t.Fatalf("decoding %v: %v", props, problems)
@@ -94,29 +94,34 @@ func TestRoundTripEmpty(t *testing.T) {
 func TestRoundTripPopulated(t *testing.T) {
 	roundTrip(t, "actor", &corekinds.Actor{
 		Version:   str("v1alpha1"),
-		Name:      str("console"),
 		Authority: str("core.substrate.reamde.dev"),
 		Source:    ptr(corekinds.ActorSourceBuiltin),
 		Tier:      ptr(corekinds.ActorTierOwner),
 	}, corekinds.DecodeActor)
 
 	roundTrip(t, "agent", &corekinds.Agent{
-		Version:   str("v1alpha5"),
-		Name:      str("assistant"),
+		Version:   str("v1alpha6"),
 		Authority: str("core.substrate.reamde.dev"),
 		Prompt:    str("be useful"),
 		Provider:  str("default"),
 		Model:     str("gpt-5"),
-		// Absent and empty are different answers: `functions` names two
-		// callables, `subagents` names none, and `description` was never written.
-		Functions:    []string{"core.substrate.reamde.dev/query", "core.substrate.reamde.dev/graphql"},
-		Subagents:    []string{},
+		Params:    &corekinds.AgentParams{Temperature: f64(0.2), MaxTokens: i64(2048)},
+		// The two tool arms, one entry each: a built-in takes no alias, a
+		// callable may carry one.
+		Tools: []corekinds.AgentTools{
+			{Builtin: ptr(corekinds.AgentToolsBuiltinQuery)},
+			{Callable: str("web.bundles.substrate.reamde.dev/setclass"), Name: str("classify")},
+		},
+		// Absent and empty are different answers: `agents` names one sub-agent,
+		// `emit` names none.
+		Agents:       []string{"core.substrate.reamde.dev/titler"},
+		Emit:         []string{},
+		Budgets:      &corekinds.AgentBudgets{MaxTurns: i64(8), Depth: i64(3)},
+		Reads:        &corekinds.AgentReads{Kinds: []string{"tasks.substrate.reamde.dev/task"}},
 		SubagentOnly: boolean(true),
-		Definition:   map[string]any{"prompt": "be useful", "budgets": map[string]any{"turns": int64(8)}},
 	}, corekinds.DecodeAgent)
 
 	roundTrip(t, "authority", &corekinds.Authority{
-		Name:             str("tasks.substrate.reamde.dev"),
 		Version:          str("v1alpha2"),
 		Actors:           []string{"function:tasks"},
 		Source:           ptr(corekinds.AuthoritySourceInstalled),
@@ -134,10 +139,18 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodeBlob)
 
 	roundTrip(t, "bundle", &corekinds.Bundle{
-		Version:     str("v1alpha1"),
-		Name:        str("tasks"),
-		Authority:   str("tasks.bundles.substrate.reamde.dev"),
-		Definition:  map[string]any{"installs": []any{"tasks.substrate.reamde.dev"}},
+		Version:   str("v1alpha1"),
+		Authority: str("tasks.bundles.substrate.reamde.dev"),
+		Inputs: map[string]corekinds.BundleInputs{
+			"connector": {
+				Kind:   str("tasks.bundles.substrate.reamde.dev/config"),
+				Inject: ptr(corekinds.BundleInputsInjectFunctions),
+			},
+		},
+		Installs:    []string{"tasks.bundles.substrate.reamde.dev/config"},
+		Requires:    []string{"tasks.substrate.reamde.dev"},
+		Modules:     map[string]string{"shared.py": "def helper():\n    return 1\n"},
+		Oauth2:      &corekinds.BundleOauth2{ClientInput: str("client"), TokenEndpoint: str("https://example.com/token")},
 		Disabled:    boolean(false),
 		Uninstalled: boolean(false),
 		Purging:     boolean(false),
@@ -152,26 +165,48 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodeCredential)
 
 	roundTrip(t, "function", &corekinds.Function{
-		Version:    str("v1alpha1"),
-		Name:       str("websearch"),
-		Authority:  str("firecrawl.substrate.reamde.dev"),
-		Definition: map[string]any{"runtime": "python"},
+		Version:   str("v1alpha1"),
+		Authority: str("firecrawl.substrate.reamde.dev"),
+		Runtime:   ptr(corekinds.FunctionRuntimePython),
+		Source:    str("def main(input, host):\n    return {}\n"),
+		TimeoutMs: i64(5000),
+		Arguments: []corekinds.FunctionArguments{
+			{Name: str("query"), Type: ptr(corekinds.FunctionArgumentsTypeString), Required: boolean(true)},
+			{Name: str("mode"), Type: ptr(corekinds.FunctionArgumentsTypeEnum), Values: []string{"fast", "thorough"}},
+		},
+		Returns:   []corekinds.FunctionReturns{{Name: str("results"), Type: ptr(corekinds.FunctionReturnsTypeJson)}},
+		Emit:      []string{"firecrawl.substrate.reamde.dev/webdocument"},
+		Network:   []string{"api.example.com"},
+		Mutations: []corekinds.FunctionMutations{corekinds.FunctionMutationsMerge},
 	}, corekinds.DecodeFunction)
 
 	roundTrip(t, "kind", &corekinds.Kind{
-		Name:       str("task"),
-		Authority:  str("tasks.substrate.reamde.dev"),
-		Version:    str("v1alpha1"),
-		Plural:     str("tasks"),
-		Source:     ptr(corekinds.KindSourceInstalled),
-		Definition: map[string]any{"names": map[string]any{"singular": "task"}},
+		Authority: str("tasks.substrate.reamde.dev"),
+		Version:   str("v1alpha1"),
+		Source:    ptr(corekinds.KindSourceInstalled),
+		Names:     &corekinds.KindNames{Singular: str("task"), Plural: str("tasks")},
+		// The declaration OF a declaration: every container the property dialect
+		// has, at the depth the meta-kind describes.
+		DisplayTemplate: str("{title}"),
+		Traits:          []string{"temporal(point: dueAt)"},
+		Indices:         []corekinds.KindIndices{{Properties: []string{"status", "dueAt"}}},
+		Edges: map[string]corekinds.KindEdges{
+			"project": {To: str("tasks.substrate.reamde.dev/project"), Many: boolean(false), Inverse: str("tasks")},
+		},
+		// The property declarations are the meta-kind's one json leaf (kind.yaml
+		// says why), so they travel as the loader admits them.
+		Properties: map[string]any{
+			"note":   map[string]any{"type": "text", "fts": false},
+			"status": map[string]any{"type": "state", "states": []any{"open", "done"}, "initial": "open"},
+			"origin": map[string]any{"type": "object", "fields": map[string]any{"url": map[string]any{"type": "url"}}},
+		},
 	}, corekinds.DecodeKind)
 
 	roundTrip(t, "llmmessage", &corekinds.LLMMessage{
 		Role:       str("assistant"),
 		Content:    str("done"),
 		Turn:       i64(3),
-		ToolCalls:  []any{map[string]any{"id": "c1", "name": "query", "arguments": "{}"}},
+		ToolCalls:  []corekinds.LLMMessageToolCalls{{Id: str("c1"), Name: str("query"), Arguments: str("{}")}},
 		ToolCallId: str("c1"),
 		Tool:       str("query"),
 		Ok:         boolean(true),
@@ -213,21 +248,24 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodeLLMThread)
 
 	roundTrip(t, "propertytype", &corekinds.PropertyType{
-		Version:    str("v1alpha1"),
-		Name:       str("asin"),
-		Authority:  str("shopping.substrate.reamde.dev"),
-		Base:       str("string"),
-		Definition: map[string]any{"base": "string", "pattern": "^[A-Z0-9]{10}$"},
+		Version:   str("v1alpha1"),
+		Authority: str("shopping.substrate.reamde.dev"),
+		Base:      str("string"),
+		Pattern:   str("^[A-Z0-9]{10}$"),
+		Values:    []corekinds.PropertyTypeValues{{Value: str("chore"), Label: str("Chore")}},
 	}, corekinds.DecodePropertyType)
 
 	roundTrip(t, "recordmapping", &corekinds.RecordMapping{
-		Version:    str("v1alpha1"),
-		Name:       str("messagethread"),
-		Authority:  str("mail.substrate.reamde.dev"),
-		From:       str("mail.substrate.reamde.dev/message"),
-		To:         str("mail.substrate.reamde.dev/thread"),
-		Edge:       str("thread"),
-		Definition: map[string]any{"edge": "thread"},
+		Version:   str("v1alpha1"),
+		Authority: str("mail.substrate.reamde.dev"),
+		From:      str("mail.substrate.reamde.dev/message"),
+		To:        str("mail.substrate.reamde.dev/thread"),
+		Edge:      str("thread"),
+		Match:     []corekinds.RecordMappingMatch{{From: str("subject"), To: str("title")}},
+		Map: map[string]corekinds.RecordMappingMap{
+			"title":  {Path: str("subject")},
+			"emails": {Path: str("from.address"), Merge: ptr(corekinds.RecordMappingMapMergeUnion)},
+		},
 	}, corekinds.DecodeRecordMapping)
 
 	roundTrip(t, "recordmerge", &corekinds.RecordMerge{
@@ -277,7 +315,7 @@ func TestRoundTripPopulated(t *testing.T) {
 		Attempt:    i64(1),
 		StartedAt:  str(testInstant),
 		FinishedAt: str("2026-08-14T09:41:03Z"),
-		Effects:    map[string]any{"put": int64(2)},
+		Effects:    map[string]int64{"put": 2, "patch": 1},
 		Pages:      i64(1),
 	}, corekinds.DecodeRun)
 
@@ -289,9 +327,12 @@ func TestRoundTripPopulated(t *testing.T) {
 
 	roundTrip(t, "trait", &corekinds.Trait{
 		Version:    str("v1alpha1"),
-		Name:       str("temporal"),
 		Authority:  str("core.substrate.reamde.dev"),
-		Definition: map[string]any{"oneOf": map[string]any{"point": map[string]any{"at": "datetime"}}},
+		Properties: map[string]string{"tokenRef": "secret"},
+		OneOf: []corekinds.TraitOneOf{
+			{Name: str("point"), Properties: map[string]string{"at": "datetime"}},
+			{Name: str("range"), Properties: map[string]string{"at": "datetime", "endsAt": "datetime"}},
+		},
 	}, corekinds.DecodeTrait)
 
 	roundTrip(t, "trigger", &corekinds.Trigger{
@@ -383,7 +424,7 @@ func TestDecodeReadsBackWhatStorageWrote(t *testing.T) {
 func TestIntegersKeepEveryBit(t *testing.T) {
 	for _, n := range []int64{1 << 53, 1<<53 + 1, 9007199254740993, 1<<62 + 1, -(1<<53 + 1)} {
 		fixture := &corekinds.Blob{Size: &n}
-		props := fixture.Properties()
+		props := fixture.Encode()
 		got, problems := corekinds.DecodeBlob(props)
 		if len(problems) > 0 {
 			t.Fatalf("%d: %v", n, problems)

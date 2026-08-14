@@ -11,27 +11,59 @@ package corekinds
 // declares it may use it — so a shape is stated once instead of repeated on
 // every property that wants it.
 type PropertyType struct {
-	// Version is this declaration's version.
+	// Version is this declaration's version. Managed: the engine stamps it, so
+	// a supplied value does not decide it.
 	Version *string
 
-	// Name is the refinement's local name.
-	Name *string
+	// Source is builtin for seeded refinements, installed for bundle ones.
+	// Managed: the engine stamps it, so a supplied value does not decide it.
+	Source *PropertyTypeSource
 
 	// Authority is the one authority it is usable in.
 	Authority *string
 
-	// Base is the built-in kind it refines.
+	// Description is what the refinement is for.
+	Description *string
+
+	// Base is the built-in datatype it refines.
 	Base *string
 
-	// Definition is the parsed manifest data.
-	Definition Dynamic
+	// Pattern is the regular expression a value matches.
+	Pattern *string
+
+	// Min is the lowest admitted number.
+	Min *float64
+
+	// Max is the highest admitted number.
+	Max *float64
+
+	// Values is the admitted values, in render order.
+	Values []PropertyTypeValues
 }
+
+// PropertyTypeSource is a declared enum: the admissible set, in declaration
+// order.
+//
+// builtin for seeded refinements, installed for bundle ones
+type PropertyTypeSource string
+
+const (
+	PropertyTypeSourceBuiltin   PropertyTypeSource = "builtin"
+	PropertyTypeSourceInstalled PropertyTypeSource = "installed"
+)
+
+// PropertyTypeSourceValues are the declared values in declaration order, which
+// is render order.
+var PropertyTypeSourceValues = []string{"builtin", "installed"}
+
+// Valid reports whether v is one of the declared values.
+func (v PropertyTypeSource) Valid() bool { return Declared(PropertyTypeSourceValues, string(v)) }
 
 // PropertyTypeKeys is the admitted key set: every property
 // core.substrate.reamde.dev/propertytype declares, sorted. A key outside it is
 // refused by Decode, which is what replaces a hand-kept list of admitted keys
 // in Go.
-var PropertyTypeKeys = []string{"authority", "base", "definition", "name", "version"}
+var PropertyTypeKeys = []string{"authority", "base", "description", "max", "min", "pattern", "source", "values", "version"}
 
 // DecodePropertyType decodes a properties map into PropertyType, refusing what
 // the declaration cannot hold: an undeclared key, a value of the wrong type,
@@ -53,6 +85,36 @@ func DecodePropertyType(props map[string]any) (*PropertyType, []Problem) {
 	return &out, nil
 }
 
+// PropertyTypeRequired names the properties the declaration marks `required:`,
+// sorted. It is a FORM-LEVEL contract: the write path does not enforce it, so
+// Decode admits a value that leaves one absent and this is what a client
+// checks before it submits one.
+var PropertyTypeRequired = []string{"authority", "base"}
+
+// Missing names the required properties this value leaves absent, in
+// declaration order. Empty means every declared requirement is answered —
+// not that the value is admissible, which is the substrate's answer and not a
+// type's.
+func (v *PropertyType) Missing() []string {
+	var out []string
+	if v.Authority == nil {
+		out = append(out, "authority")
+	}
+	if v.Base == nil {
+		out = append(out, "base")
+	}
+	return out
+}
+
+// decodePropertyTypeSource decodes a declared PropertyTypeSource value.
+func decodePropertyTypeSource(d *decoder, path string, v any) (PropertyTypeSource, bool) {
+	s, ok := d.text(path, v, PropertyTypeSourceValues, nil)
+	if !ok {
+		return "", false
+	}
+	return PropertyTypeSource(s), true
+}
+
 // decodePropertyType decodes one PropertyType value at path.
 func decodePropertyType(d *decoder, path string, v any) (PropertyType, bool) {
 	props, mapped := d.mapping(path, v)
@@ -72,25 +134,51 @@ func decodePropertyType(d *decoder, path string, v any) (PropertyType, bool) {
 			if e, ok := d.text(p, props[key], nil, nil); ok {
 				out.Version = &e
 			}
-		case "name":
-			p := at(path, "name")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
-				out.Name = &e
+		case "source":
+			p := at(path, "source")
+			if e, ok := decodePropertyTypeSource(d, p, props[key]); ok {
+				out.Source = &e
 			}
 		case "authority":
 			p := at(path, "authority")
 			if e, ok := d.text(p, props[key], nil, nil); ok {
 				out.Authority = &e
 			}
+		case "description":
+			p := at(path, "description")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Description = &e
+			}
 		case "base":
 			p := at(path, "base")
 			if e, ok := d.text(p, props[key], nil, nil); ok {
 				out.Base = &e
 			}
-		case "definition":
-			p := at(path, "definition")
-			if e, ok := d.dynamic(p, props[key]); ok {
-				out.Definition = e
+		case "pattern":
+			p := at(path, "pattern")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Pattern = &e
+			}
+		case "min":
+			p := at(path, "min")
+			if e, ok := d.number(p, props[key], Bounds{}); ok {
+				out.Min = &e
+			}
+		case "max":
+			p := at(path, "max")
+			if e, ok := d.number(p, props[key], Bounds{}); ok {
+				out.Max = &e
+			}
+		case "values":
+			p := at(path, "values")
+			if items, listed := d.list(p, props[key]); listed {
+				list := make([]PropertyTypeValues, 0, len(items))
+				for i, item := range items {
+					if e, ok := decodePropertyTypeValues(d, index(p, i), item); ok {
+						list = append(list, e)
+					}
+				}
+				out.Values = list
 			}
 		default:
 			d.unknown(at(path, key), "core.substrate.reamde.dev/propertytype")
@@ -99,25 +187,124 @@ func decodePropertyType(d *decoder, path string, v any) (PropertyType, bool) {
 	return out, true
 }
 
-// Properties is PropertyType as the properties map holds it, and
+// Encode is PropertyType as the properties map holds it, and
 // DecodePropertyType's exact inverse: a nil pointer, a nil slice and a nil map
 // each omit their key, so absence survives the round trip.
-func (v *PropertyType) Properties() map[string]any {
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *PropertyType) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Version != nil {
 		out["version"] = *v.Version
 	}
-	if v.Name != nil {
-		out["name"] = *v.Name
+	if v.Source != nil {
+		out["source"] = string(*v.Source)
 	}
 	if v.Authority != nil {
 		out["authority"] = *v.Authority
 	}
+	if v.Description != nil {
+		out["description"] = *v.Description
+	}
 	if v.Base != nil {
 		out["base"] = *v.Base
 	}
-	if v.Definition != nil {
-		out["definition"] = v.Definition
+	if v.Pattern != nil {
+		out["pattern"] = *v.Pattern
+	}
+	if v.Min != nil {
+		out["min"] = *v.Min
+	}
+	if v.Max != nil {
+		out["max"] = *v.Max
+	}
+	if v.Values != nil {
+		items := make([]any, 0, len(v.Values))
+		for i := range v.Values {
+			items = append(items, v.Values[i].Encode())
+		}
+		out["values"] = items
+	}
+	return out
+}
+
+// PropertyTypeValues is one value of the `values` object declared on
+// core.substrate.reamde.dev/propertytype.
+//
+// the admitted values, in render order
+type PropertyTypeValues struct {
+	// Value is the stored value.
+	Value *string
+
+	// Label is the human label a client renders beside it.
+	Label *string
+}
+
+// PropertyTypeValuesRequired names the properties the declaration marks
+// `required:`, sorted. It is a FORM-LEVEL contract: the write path does not
+// enforce it, so Decode admits a value that leaves one absent and this is what
+// a client checks before it submits one.
+var PropertyTypeValuesRequired = []string{"value"}
+
+// Missing names the required properties this value leaves absent, in
+// declaration order. Empty means every declared requirement is answered —
+// not that the value is admissible, which is the substrate's answer and not a
+// type's.
+func (v *PropertyTypeValues) Missing() []string {
+	var out []string
+	if v.Value == nil {
+		out = append(out, "value")
+	}
+	return out
+}
+
+// decodePropertyTypeValues decodes one PropertyTypeValues value at path.
+func decodePropertyTypeValues(d *decoder, path string, v any) (PropertyTypeValues, bool) {
+	props, mapped := d.mapping(path, v)
+	if !mapped {
+		return PropertyTypeValues{}, false
+	}
+	var out PropertyTypeValues
+	for _, key := range sortedKeys(props) {
+		// A null is this dialect's delete marker, never a value: it decodes as
+		// absence, and Properties never writes one.
+		if props[key] == nil {
+			continue
+		}
+		switch key {
+		case "value":
+			p := at(path, "value")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Value = &e
+			}
+		case "label":
+			p := at(path, "label")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Label = &e
+			}
+		default:
+			d.unknown(at(path, key), "core.substrate.reamde.dev/propertytype")
+		}
+	}
+	return out, true
+}
+
+// Encode is PropertyTypeValues as the properties map holds it, and
+// decodePropertyTypeValues's exact inverse: a nil pointer, a nil slice and a
+// nil map each omit their key, so absence survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *PropertyTypeValues) Encode() map[string]any {
+	out := map[string]any{}
+	if v.Value != nil {
+		out["value"] = *v.Value
+	}
+	if v.Label != nil {
+		out["label"] = *v.Label
 	}
 	return out
 }

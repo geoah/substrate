@@ -61,17 +61,27 @@ export interface StateTransition<S extends string = string> {
  * like `function:<name>` are minted at dispatch.
  */
 export interface Actor {
-  /** This declaration's version. */
+  /** This declaration's version. Managed: the server stamps it, so render it
+   * read-only.
+   */
   version?: string
-  /** The declared actor name writes are attributed to. */
-  name?: string
   /** The authority that declares this actor. */
   authority?: string
-  /** Builtin for shipped authorities, installed for connector authorities. */
+  /** Builtin for shipped authorities, installed for connector authorities.
+   * Managed: the server stamps it, so render it read-only.
+   */
   source?: ActorSource
   /** The manager tier this actor's direct writes hold at. */
   tier?: ActorTier
 }
+
+/** The properties Actor's declaration marks required. A form refuses to submit
+ * without them; the server does not, so nothing here is a guarantee about a
+ * record that arrives.
+ */
+export const actorRequired: string[] = [
+  "authority",
+]
 
 /** ActorSource is a declared enum: the admissible set, in declaration order.
  *
@@ -109,30 +119,142 @@ export const actorTierValues: ActorTier[] = [
  * its version history.
  */
 export interface Agent {
-  /** This declaration's version. */
+  /** This declaration's version. Managed: the server stamps it, so render it
+   * read-only.
+   */
   version?: string
-  /** The agent's local name. */
-  name?: string
   /** The authority that declares it. */
   authority?: string
   /** The model-facing tool card — what this agent is for as a sub-agent. */
   description?: string
   /** The system prompt; the row is the prompt store. */
   prompt?: string
-  /** The llmprovider record id this agent's loop completes against. */
+  /** The llmprovider record id this agent's loop completes against. Names a
+   * provider: offer a picker, not a text box.
+   */
   provider?: string
   /** The model id sent on every completion. */
   model?: string
-  /** The function records this agent may call as tools. */
-  functions?: string[]
-  /** The sub-agent records this agent may delegate to. */
-  subagents?: string[]
+  /** This agent's request knobs; the provider row's defaults sit under them. */
+  params?: AgentParams
+  /** What the model may call, in declaration order. */
+  tools?: AgentTools[]
+  /** The sub-agent identities the loop exposes as tools. Names a agent: offer a
+   * picker, not a text box.
+   */
+  agents?: string[]
+  /** What bounds one invocation. */
+  budgets?: AgentBudgets
+  /** The kinds this agent's tool-call effects may address. Names a kind: offer
+   * a picker, not a text box.
+   */
+  emit?: string[]
+  /** What the `query` built-in may touch; absent withholds it. */
+  reads?: AgentReads
   /** Only callable by other agents; withheld from the chat surface. */
   subagentOnly?: boolean
-  /** The parsed manifest data the registry rebuilds from. Its shape is not
-   * core's to declare: narrow it where you read it.
+}
+
+/** The properties Agent's declaration marks required. A form refuses to submit
+ * without them; the server does not, so nothing here is a guarantee about a
+ * record that arrives.
+ */
+export const agentRequired: string[] = [
+  "authority",
+  "description",
+  "model",
+  "prompt",
+  "provider",
+]
+
+/** AgentParams is one value of the `params` object declared on
+ * core.substrate.reamde.dev/agent.
+ *
+ * this agent's request knobs; the provider row's defaults sit under them
+ */
+export interface AgentParams {
+  /** The sampling temperature, when the model accepts one. */
+  temperature?: number
+  /** The completion cap sent on every request. */
+  maxTokens?: number
+}
+
+/** AgentTools is one value of the `tools` object declared on
+ * core.substrate.reamde.dev/agent.
+ *
+ * what the model may call, in declaration order
+ */
+export interface AgentTools {
+  /** The built-in tool this entry names. */
+  builtin?: AgentToolsBuiltin
+  /** The function identity this entry names. Names a function: offer a picker,
+   * not a text box.
    */
-  definition?: Dynamic
+  callable?: string
+  /** The model-facing tool name, aliasing a callable. */
+  name?: string
+  /** The model-facing card, overriding the callable's own. */
+  description?: string
+}
+
+/** AgentToolsBuiltin is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * the built-in tool this entry names
+ */
+export type AgentToolsBuiltin =
+  | "query"
+  | "propose"
+  | "graphql"
+  | "mutate"
+
+export const agentToolsBuiltinValues: AgentToolsBuiltin[] = [
+  "query",
+  "propose",
+  "graphql",
+  "mutate",
+]
+
+/** AgentBudgets is one value of the `budgets` object declared on
+ * core.substrate.reamde.dev/agent.
+ *
+ * what bounds one invocation
+ */
+export interface AgentBudgets {
+  /** Completions the loop may spend. */
+  maxTurns?: number
+  /** Tool calls the loop may spend. */
+  maxToolCalls?: number
+  /** Wall clock for the whole invocation. */
+  deadlineSeconds?: number
+  /** How deep the sub-agent chain below may go. */
+  depth?: number
+}
+
+/** AgentReads is one value of the `reads` object declared on
+ * core.substrate.reamde.dev/agent.
+ *
+ * what the `query` built-in may touch; absent withholds it
+ */
+export interface AgentReads {
+  /** The kinds every read is held to. Names a kind: offer a picker, not a text
+   * box.
+   */
+  kinds?: string[]
+  /** What one invocation's reads may spend. */
+  budgets?: AgentReadsBudgets
+}
+
+/** AgentReadsBudgets is one value of the `reads.budgets` object declared on
+ * core.substrate.reamde.dev/agent.
+ *
+ * what one invocation's reads may spend
+ */
+export interface AgentReadsBudgets {
+  /** Host read calls per invocation. */
+  calls?: number
+  /** Rows read per invocation. */
+  rows?: number
 }
 
 /** Authority is core.substrate.reamde.dev/authority.
@@ -143,20 +265,27 @@ export interface Agent {
  * admits.
  */
 export interface Authority {
-  /** The authority's DNS name. */
-  name?: string
-  /** The declared maturity statement, v1alpha1 unless said otherwise. */
+  /** The declared maturity statement, v1alpha1 unless said otherwise. Managed:
+   * the server stamps it, so render it read-only.
+   */
   version?: string
-  /** The actors declared under this authority. */
+  /** The actors declared under this authority. Managed: the server stamps it,
+   * so render it read-only.
+   */
   actors?: string[]
-  /** Builtin for seeded authorities, installed for bundle ones. */
+  /** Builtin for seeded authorities, installed for bundle ones. Managed: the
+   * server stamps it, so render it read-only.
+   */
   source?: AuthoritySource
   /** Set at repository-open when the authority's stored closure fails
    * admission; cleared by re-applying a valid closure, or by an open that
-   * admits the stored one.
+   * admits the stored one. Managed: the server stamps it, so render it
+   * read-only.
    */
   quarantined?: boolean
-  /** The admission error that quarantined the authority. */
+  /** The admission error that quarantined the authority. Managed: the server
+   * stamps it, so render it read-only.
+   */
   quarantineReason?: string
 }
 
@@ -236,26 +365,113 @@ export const blobStatusTransitions: StateTransition<BlobStatus>[] = [
  * own: disabled, uninstalled, purging.
  */
 export interface Bundle {
-  /** This declaration's version. */
-  version?: string
-  /** The bundle's name, the owned authority's first label. */
-  name?: string
-  /** The authority the bundle owns ("<name>.bundles.substrate.reamde.dev"). */
-  authority?: string
-  /** The parsed manifest data, installs closure included. Its shape is not
-   * core's to declare: narrow it where you read it.
+  /** This declaration's version. Managed: the server stamps it, so render it
+   * read-only.
    */
-  definition?: Dynamic
-  /** Set by the disable verb — execution stopped, reversible. */
+  version?: string
+  /** The authority the bundle owns; its first label is the bundle's name. */
+  authority?: string
+  /** What the bundle is for, read above its card. */
+  description?: string
+  /** The bundle's named configuration needs, each naming a kind. */
+  inputs?: Record<string, BundleInputs>
+  /** The exact identities the bundle ships into its authority. */
+  installs?: string[]
+  /** The authorities this closure declares against; an install refuses while
+   * one is absent. Names a authority: offer a picker, not a text box.
+   */
+  requires?: string[]
+  /** The shared library modules the bundle's functions import. */
+  modules?: Record<string, string>
+  /** The bundle's trusted OAuth provider metadata, immutable at runtime. */
+  oauth2?: BundleOauth2
+  /** Set by the disable verb — execution stopped, reversible. Managed: the
+   * server stamps it, so render it read-only.
+   */
   disabled?: boolean
   /** Set by the uninstall verb — runtime registration removed, data stays;
-   * cleared by re-applying the closure.
+   * cleared by re-applying the closure. Managed: the server stamps it, so
+   * render it read-only.
    */
   uninstalled?: boolean
   /** Set while a purge runs — enable refuses it; an interrupted purge leaves
-   * it standing until a purge completes.
+   * it standing until a purge completes. Managed: the server stamps it, so
+   * render it read-only.
    */
   purging?: boolean
+}
+
+/** The properties Bundle's declaration marks required. A form refuses to submit
+ * without them; the server does not, so nothing here is a guarantee about a
+ * record that arrives.
+ */
+export const bundleRequired: string[] = [
+  "authority",
+]
+
+/** BundleInputs is one value of the `inputs` object declared on
+ * core.substrate.reamde.dev/bundle.
+ *
+ * the bundle's named configuration needs, each naming a kind
+ */
+export interface BundleInputs {
+  /** The kind whose records satisfy this input. Names a kind: offer a picker,
+   * not a text box.
+   */
+  kind?: string
+  /** The consumer the resolved record is handed to; absent means a host
+   * facility reads it.
+   */
+  inject?: BundleInputsInject
+  /** What the input is for. */
+  description?: string
+}
+
+/** BundleInputsInject is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * the consumer the resolved record is handed to; absent means a host facility
+ * reads it
+ */
+export type BundleInputsInject =
+  | "functions"
+
+export const bundleInputsInjectValues: BundleInputsInject[] = [
+  "functions",
+]
+
+/** BundleOauth2 is one value of the `oauth2` object declared on
+ * core.substrate.reamde.dev/bundle.
+ *
+ * the bundle's trusted OAuth provider metadata, immutable at runtime
+ */
+export interface BundleOauth2 {
+  /** The input whose resolved record carries the OAuth client credentials. */
+  clientInput?: string
+  /** Where the user is sent to consent. */
+  authorizationEndpoint?: string
+  /** Where a code and a refresh are exchanged. */
+  tokenEndpoint?: string
+  /** Where a credential is revoked on teardown, best effort. */
+  revocationEndpoint?: string
+  /** Where the connected account's own address is read, right after the
+   * exchange.
+   */
+  emailEndpoint?: string
+  /** The account property the derived address lands in. */
+  emailProperty?: string
+  /** Which OAuth scopes each account toggle asks for. */
+  featureScopes?: Record<string, BundleOauth2FeatureScopes>
+}
+
+/** BundleOauth2FeatureScopes is one value of the `oauth2.featureScopes` object
+ * declared on core.substrate.reamde.dev/bundle.
+ *
+ * which OAuth scopes each account toggle asks for
+ */
+export interface BundleOauth2FeatureScopes {
+  /** The scopes the toggle requests. */
+  scopes?: string[]
 }
 
 /** Credential is core.substrate.reamde.dev/credential.
@@ -282,41 +498,249 @@ export interface Credential {
  * registry this row rebuilds into.
  */
 export interface Function {
-  /** This declaration's version. */
+  /** This declaration's version. Managed: the server stamps it, so render it
+   * read-only.
+   */
   version?: string
-  /** The function's local name. */
-  name?: string
   /** The authority that declares it. */
   authority?: string
-  /** The parsed manifest data, run arm included. Its shape is not core's to
-   * declare: narrow it where you read it.
+  /** The model-facing tool card — what this function does. */
+  description?: string
+  /** The language the inline body is written in. */
+  runtime?: FunctionRuntime
+  /** The inline body. */
+  source?: string
+  /** What bounds one invocation's wall clock. */
+  timeoutMs?: number
+  /** The named arguments a call carries, in declaration order. */
+  arguments?: FunctionArguments[]
+  /** The named values the body returns. */
+  returns?: FunctionReturns[]
+  /** The kinds this function's effects may address. Names a kind: offer a
+   * picker, not a text box.
    */
-  definition?: Dynamic
+  emit?: string[]
+  /** What the body's host reads may touch; absent trips every read. */
+  reads?: FunctionReads
+  /** The function identities the body's host Call may invoke. Names a function:
+   * offer a picker, not a text box.
+   */
+  call?: string[]
+  /** The declared egress allowlist. */
+  network?: string[]
+  /** The gated identity mutations this function is granted. */
+  mutations?: FunctionMutations[]
+}
+
+/** The properties Function's declaration marks required. A form refuses to
+ * submit without them; the server does not, so nothing here is a guarantee
+ * about a record that arrives.
+ */
+export const functionRequired: string[] = [
+  "authority",
+  "description",
+  "runtime",
+  "source",
+]
+
+/** FunctionRuntime is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * the language the inline body is written in
+ */
+export type FunctionRuntime =
+  | "python"
+  | "go"
+
+export const functionRuntimeValues: FunctionRuntime[] = [
+  "python",
+  "go",
+]
+
+/** FunctionMutations is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * the gated identity mutations this function is granted
+ */
+export type FunctionMutations =
+  | "merge"
+  | "split"
+
+export const functionMutationsValues: FunctionMutations[] = [
+  "merge",
+  "split",
+]
+
+/** FunctionArguments is one value of the `arguments` object declared on
+ * core.substrate.reamde.dev/function.
+ *
+ * the named arguments a call carries, in declaration order
+ */
+export interface FunctionArguments {
+  /** The argument's name. */
+  name?: string
+  /** What the value is. */
+  type?: FunctionArgumentsType
+  /** A list of the declared type. */
+  repeated?: boolean
+  /** A call without it is refused. */
+  required?: boolean
+  /** What the argument is for, as the model reads it. */
+  description?: string
+  /** The admitted values, on an enum. */
+  values?: string[]
+}
+
+/** The properties FunctionArguments's declaration marks required. A form
+ * refuses to submit without them; the server does not, so nothing here is a
+ * guarantee about a record that arrives.
+ */
+export const functionArgumentsRequired: string[] = [
+  "name",
+]
+
+/** FunctionArgumentsType is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * what the value is
+ */
+export type FunctionArgumentsType =
+  | "string"
+  | "int"
+  | "float"
+  | "bool"
+  | "enum"
+  | "json"
+
+export const functionArgumentsTypeValues: FunctionArgumentsType[] = [
+  "string",
+  "int",
+  "float",
+  "bool",
+  "enum",
+  "json",
+]
+
+/** FunctionReturns is one value of the `returns` object declared on
+ * core.substrate.reamde.dev/function.
+ *
+ * the named values the body returns
+ */
+export interface FunctionReturns {
+  /** The value's name. */
+  name?: string
+  /** What the value is. */
+  type?: FunctionReturnsType
+  /** A list of the declared type. */
+  repeated?: boolean
+  /** The body always returns it. */
+  required?: boolean
+  /** What the value carries, as the model reads it. */
+  description?: string
+  /** The admitted values, on an enum. */
+  values?: string[]
+}
+
+/** The properties FunctionReturns's declaration marks required. A form refuses
+ * to submit without them; the server does not, so nothing here is a guarantee
+ * about a record that arrives.
+ */
+export const functionReturnsRequired: string[] = [
+  "name",
+]
+
+/** FunctionReturnsType is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * what the value is
+ */
+export type FunctionReturnsType =
+  | "string"
+  | "int"
+  | "float"
+  | "bool"
+  | "enum"
+  | "json"
+
+export const functionReturnsTypeValues: FunctionReturnsType[] = [
+  "string",
+  "int",
+  "float",
+  "bool",
+  "enum",
+  "json",
+]
+
+/** FunctionReads is one value of the `reads` object declared on
+ * core.substrate.reamde.dev/function.
+ *
+ * what the body's host reads may touch; absent trips every read
+ */
+export interface FunctionReads {
+  /** The kinds every read is held to. Names a kind: offer a picker, not a text
+   * box.
+   */
+  kinds?: string[]
+  /** What one invocation's reads may spend. */
+  budgets?: FunctionReadsBudgets
+}
+
+/** FunctionReadsBudgets is one value of the `reads.budgets` object declared on
+ * core.substrate.reamde.dev/function.
+ *
+ * what one invocation's reads may spend
+ */
+export interface FunctionReadsBudgets {
+  /** Host read calls per invocation. */
+  calls?: number
+  /** Rows read per invocation. */
+  rows?: number
 }
 
 /** Kind is core.substrate.reamde.dev/kind.
  *
  * One declared kind — what a record is, `{authority}/{name}`. The vocabulary
  * browses through the same API as data, so every kind this repository holds is
- * a row here, and its `definition` is what the engine validates every write
+ * a row here, and these properties are what the engine validates every write
  * against.
  */
 export interface Kind {
-  /** The kind's singular name. */
-  name?: string
+  /** This declaration's version. Managed: the server stamps it, so render it
+   * read-only.
+   */
+  version?: string
+  /** Builtin for seeded kinds, installed for bundle ones. Managed: the server
+   * stamps it, so render it read-only.
+   */
+  source?: KindSource
   /** Who publishes it; absent on a repository-local kind. */
   authority?: string
-  /** This declaration's version. */
-  version?: string
-  /** The collection segment. */
-  plural?: string
-  /** Builtin for seeded kinds, installed for bundle ones. */
-  source?: KindSource
-  /** The parsed data map, exactly as authored — descriptions included. Its
-   * shape is not core's to declare: narrow it where you read it.
+  /** What one record is called, and what the collection is. */
+  names?: KindNames
+  /** What this kind is for, read above its collection. */
+  description?: string
+  /** How a record of this kind renders its title. */
+  displayTemplate?: string
+  /** The traits this kind binds. */
+  traits?: string[]
+  /** The composite indexes this kind asks for. */
+  indices?: KindIndices[]
+  /** The named, directed links a record of this kind may hold. */
+  edges?: Record<string, KindEdges>
+  /** The declared value slots a record of this kind carries, as the loader
+   * admits them. Its shape is not core's to declare: narrow it where you read
+   * it.
    */
-  definition?: Dynamic
+  properties?: Dynamic
 }
+
+/** The properties Kind's declaration marks required. A form refuses to submit
+ * without them; the server does not, so nothing here is a guarantee about a
+ * record that arrives.
+ */
+export const kindRequired: string[] = [
+  "authority",
+]
 
 /** KindSource is a declared enum: the admissible set, in declaration order.
  *
@@ -330,6 +754,59 @@ export const kindSourceValues: KindSource[] = [
   "builtin",
   "installed",
 ]
+
+/** KindNames is one value of the `names` object declared on
+ * core.substrate.reamde.dev/kind.
+ *
+ * what one record is called, and what the collection is
+ */
+export interface KindNames {
+  /** The kind's singular name, its identity's last segment. */
+  singular?: string
+  /** The collection segment in a path, never auto-derived. */
+  plural?: string
+}
+
+/** The properties KindNames's declaration marks required. A form refuses to
+ * submit without them; the server does not, so nothing here is a guarantee
+ * about a record that arrives.
+ */
+export const kindNamesRequired: string[] = [
+  "plural",
+  "singular",
+]
+
+/** KindIndices is one value of the `indices` object declared on
+ * core.substrate.reamde.dev/kind.
+ *
+ * the composite indexes this kind asks for
+ */
+export interface KindIndices {
+  /** The properties the index covers, in order. */
+  properties?: string[]
+}
+
+/** KindEdges is one value of the `edges` object declared on
+ * core.substrate.reamde.dev/kind.
+ *
+ * the named, directed links a record of this kind may hold
+ */
+export interface KindEdges {
+  /** The target kind, or `any`. Names a kind: offer a picker, not a text box. */
+  to?: string
+  /** Several targets instead of one. */
+  many?: boolean
+  /** A creation without it is refused. */
+  required?: boolean
+  /** The target owns this record, so a cascade collects it. */
+  ownerRef?: boolean
+  /** What the link means. */
+  description?: string
+  /** What the TARGET calls this relationship. */
+  inverse?: string
+  /** What the inverse means, from the target's side. */
+  inverseDescription?: string
+}
 
 /** LLMMessage is core.substrate.reamde.dev/llmmessage.
  *
@@ -345,10 +822,8 @@ export interface LLMMessage {
   content?: string
   /** The loop iteration this row belongs to, for ordering. */
   turn?: number
-  /** An assistant turn's dispatched calls, [{id, name, arguments}]. Its shape
-   * is not core's to declare: narrow it where you read it.
-   */
-  toolCalls?: Dynamic
+  /** An assistant turn's dispatched calls. */
+  toolCalls?: LLMMessageToolCalls[]
   /** The assistant tool call a tool row answers. */
   toolCallId?: string
   /** The tool name a tool row answers for. */
@@ -368,6 +843,20 @@ export interface LLMMessage {
 export const llmMessageRequired: string[] = [
   "thread",
 ]
+
+/** LLMMessageToolCalls is one value of the `toolCalls` object declared on
+ * core.substrate.reamde.dev/llmmessage.
+ *
+ * an assistant turn's dispatched calls
+ */
+export interface LLMMessageToolCalls {
+  /** The provider's call id, which a tool row answers by. */
+  id?: string
+  /** The tool the model called. */
+  name?: string
+  /** The call's arguments, as the provider wrote them. */
+  arguments?: string
+}
 
 /** LLMProvider is core.substrate.reamde.dev/llmprovider.
  *
@@ -530,19 +1019,72 @@ export const llmThreadRequired: string[] = [
  * every property that wants it.
  */
 export interface PropertyType {
-  /** This declaration's version. */
+  /** This declaration's version. Managed: the server stamps it, so render it
+   * read-only.
+   */
   version?: string
-  /** The refinement's local name. */
-  name?: string
+  /** Builtin for seeded refinements, installed for bundle ones. Managed: the
+   * server stamps it, so render it read-only.
+   */
+  source?: PropertyTypeSource
   /** The one authority it is usable in. */
   authority?: string
-  /** The built-in kind it refines. */
+  /** What the refinement is for. */
+  description?: string
+  /** The built-in datatype it refines. */
   base?: string
-  /** The parsed manifest data. Its shape is not core's to declare: narrow it
-   * where you read it.
-   */
-  definition?: Dynamic
+  /** The regular expression a value matches. */
+  pattern?: string
+  /** The lowest admitted number. */
+  min?: number
+  /** The highest admitted number. */
+  max?: number
+  /** The admitted values, in render order. */
+  values?: PropertyTypeValues[]
 }
+
+/** The properties PropertyType's declaration marks required. A form refuses to
+ * submit without them; the server does not, so nothing here is a guarantee
+ * about a record that arrives.
+ */
+export const propertyTypeRequired: string[] = [
+  "authority",
+  "base",
+]
+
+/** PropertyTypeSource is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * builtin for seeded refinements, installed for bundle ones
+ */
+export type PropertyTypeSource =
+  | "builtin"
+  | "installed"
+
+export const propertyTypeSourceValues: PropertyTypeSource[] = [
+  "builtin",
+  "installed",
+]
+
+/** PropertyTypeValues is one value of the `values` object declared on
+ * core.substrate.reamde.dev/propertytype.
+ *
+ * the admitted values, in render order
+ */
+export interface PropertyTypeValues {
+  /** The stored value. */
+  value?: string
+  /** The human label a client renders beside it. */
+  label?: string
+}
+
+/** The properties PropertyTypeValues's declaration marks required. A form
+ * refuses to submit without them; the server does not, so nothing here is a
+ * guarantee about a record that arrives.
+ */
+export const propertyTypeValuesRequired: string[] = [
+  "value",
+]
 
 /** RecordMapping is core.substrate.reamde.dev/recordmapping.
  *
@@ -551,23 +1093,113 @@ export interface PropertyType {
  * per source kind, declared by the authority that owns that kind.
  */
 export interface RecordMapping {
-  /** This declaration's version. */
+  /** This declaration's version. Managed: the server stamps it, so render it
+   * read-only.
+   */
   version?: string
-  /** The mapping's local name. */
-  name?: string
+  /** Builtin for seeded mappings, installed for bundle ones. Managed: the
+   * server stamps it, so render it read-only.
+   */
+  source?: RecordMappingSource
   /** The authority that declares it, the source type's own. */
   authority?: string
-  /** The source type whose records project. */
-  from?: string
-  /** The subject type, always a full type name. */
-  to?: string
-  /** The declared edge on the source type that records the link. */
-  edge?: string
-  /** The parsed manifest data. Its shape is not core's to declare: narrow it
-   * where you read it.
+  /** What the mapping keeps up to date. */
+  description?: string
+  /** The source kind whose records project. Names a kind: offer a picker, not a
+   * text box.
    */
-  definition?: Dynamic
+  from?: string
+  /** The subject kind, always a full kind reference. Names a kind: offer a
+   * picker, not a text box.
+   */
+  to?: string
+  /** The declared edge on the source kind that records the link. */
+  edge?: string
+  /** The probes that find an existing subject, in order. */
+  match?: RecordMappingMatch[]
+  /** Which source path reaches which subject property. */
+  map?: Record<string, RecordMappingMap>
 }
+
+/** The properties RecordMapping's declaration marks required. A form refuses to
+ * submit without them; the server does not, so nothing here is a guarantee
+ * about a record that arrives.
+ */
+export const recordMappingRequired: string[] = [
+  "authority",
+  "edge",
+  "from",
+  "to",
+]
+
+/** RecordMappingSource is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * builtin for seeded mappings, installed for bundle ones
+ */
+export type RecordMappingSource =
+  | "builtin"
+  | "installed"
+
+export const recordMappingSourceValues: RecordMappingSource[] = [
+  "builtin",
+  "installed",
+]
+
+/** RecordMappingMatch is one value of the `match` object declared on
+ * core.substrate.reamde.dev/recordmapping.
+ *
+ * the probes that find an existing subject, in order
+ */
+export interface RecordMappingMatch {
+  /** The source path the probe reads. */
+  from?: string
+  /** The subject property the probe matches on. */
+  to?: string
+}
+
+/** The properties RecordMappingMatch's declaration marks required. A form
+ * refuses to submit without them; the server does not, so nothing here is a
+ * guarantee about a record that arrives.
+ */
+export const recordMappingMatchRequired: string[] = [
+  "from",
+  "to",
+]
+
+/** RecordMappingMap is one value of the `map` object declared on
+ * core.substrate.reamde.dev/recordmapping.
+ *
+ * which source path reaches which subject property
+ */
+export interface RecordMappingMap {
+  /** The source path the value is read from. */
+  path?: string
+  /** Whether a value replaces or joins what other sources offer. */
+  merge?: RecordMappingMapMerge
+}
+
+/** The properties RecordMappingMap's declaration marks required. A form refuses
+ * to submit without them; the server does not, so nothing here is a guarantee
+ * about a record that arrives.
+ */
+export const recordMappingMapRequired: string[] = [
+  "path",
+]
+
+/** RecordMappingMapMerge is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * whether a value replaces or joins what other sources offer
+ */
+export type RecordMappingMapMerge =
+  | "atomic"
+  | "union"
+
+export const recordMappingMapMergeValues: RecordMappingMapMerge[] = [
+  "atomic",
+  "union",
+]
 
 /** RecordMerge is core.substrate.reamde.dev/recordmerge.
  *
@@ -812,10 +1444,8 @@ export interface Run {
   finishedAt?: string
   /** The last error, on parked runs. */
   error?: string
-  /** The applied-effects summary: action → count. Its shape is not core's to
-   * declare: narrow it where you read it.
-   */
-  effects?: Dynamic
+  /** The applied-effects summary: action → count. */
+  effects?: Record<string, number>
   /** Committed pages for a paged (backfill) delivery; absent for a single-shot
    * body, the durable per-chain progress lives in paged_cursors.
    */
@@ -846,17 +1476,64 @@ export interface Token {
  * what the kind is called.
  */
 export interface Trait {
-  /** This declaration's version. */
+  /** This declaration's version. Managed: the server stamps it, so render it
+   * read-only.
+   */
   version?: string
-  /** The trait's local name. */
-  name?: string
+  /** Builtin for seeded traits, installed for bundle ones. Managed: the server
+   * stamps it, so render it read-only.
+   */
+  source?: TraitSource
   /** The authority that declares it. */
   authority?: string
-  /** The parsed manifest data. Its shape is not core's to declare: narrow it
-   * where you read it.
-   */
-  definition?: Dynamic
+  /** What binding this trait means. */
+  description?: string
+  /** The properties a binding kind must declare, name → datatype. */
+  properties?: Record<string, string>
+  /** The variants a binding picks one of. */
+  oneOf?: TraitOneOf[]
 }
+
+/** The properties Trait's declaration marks required. A form refuses to submit
+ * without them; the server does not, so nothing here is a guarantee about a
+ * record that arrives.
+ */
+export const traitRequired: string[] = [
+  "authority",
+]
+
+/** TraitSource is a declared enum: the admissible set, in declaration order.
+ *
+ * builtin for seeded traits, installed for bundle ones
+ */
+export type TraitSource =
+  | "builtin"
+  | "installed"
+
+export const traitSourceValues: TraitSource[] = [
+  "builtin",
+  "installed",
+]
+
+/** TraitOneOf is one value of the `oneOf` object declared on
+ * core.substrate.reamde.dev/trait.
+ *
+ * the variants a binding picks one of
+ */
+export interface TraitOneOf {
+  /** The variant's name, as a binding names it. */
+  name?: string
+  /** The variant's properties, name → datatype. */
+  properties?: Record<string, string>
+}
+
+/** The properties TraitOneOf's declaration marks required. A form refuses to
+ * submit without them; the server does not, so nothing here is a guarantee
+ * about a record that arrives.
+ */
+export const traitOneOfRequired: string[] = [
+  "name",
+]
 
 /** Trigger is core.substrate.reamde.dev/trigger.
  *

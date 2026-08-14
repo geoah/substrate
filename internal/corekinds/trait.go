@@ -10,24 +10,50 @@ package corekinds
 // authorities, and host behavior keys on the trait a kind binds rather than on
 // what the kind is called.
 type Trait struct {
-	// Version is this declaration's version.
+	// Version is this declaration's version. Managed: the engine stamps it, so
+	// a supplied value does not decide it.
 	Version *string
 
-	// Name is the trait's local name.
-	Name *string
+	// Source is builtin for seeded traits, installed for bundle ones. Managed:
+	// the engine stamps it, so a supplied value does not decide it.
+	Source *TraitSource
 
 	// Authority is the authority that declares it.
 	Authority *string
 
-	// Definition is the parsed manifest data.
-	Definition Dynamic
+	// Description is what binding this trait means.
+	Description *string
+
+	// Properties is the properties a binding kind must declare, name →
+	// datatype. Its keys hold to the camel contract.
+	Properties map[string]string
+
+	// OneOf is the variants a binding picks one of.
+	OneOf []TraitOneOf
 }
+
+// TraitSource is a declared enum: the admissible set, in declaration order.
+//
+// builtin for seeded traits, installed for bundle ones
+type TraitSource string
+
+const (
+	TraitSourceBuiltin   TraitSource = "builtin"
+	TraitSourceInstalled TraitSource = "installed"
+)
+
+// TraitSourceValues are the declared values in declaration order, which is
+// render order.
+var TraitSourceValues = []string{"builtin", "installed"}
+
+// Valid reports whether v is one of the declared values.
+func (v TraitSource) Valid() bool { return Declared(TraitSourceValues, string(v)) }
 
 // TraitKeys is the admitted key set: every property
 // core.substrate.reamde.dev/trait declares, sorted. A key outside it is
 // refused by Decode, which is what replaces a hand-kept list of admitted keys
 // in Go.
-var TraitKeys = []string{"authority", "definition", "name", "version"}
+var TraitKeys = []string{"authority", "description", "oneOf", "properties", "source", "version"}
 
 // DecodeTrait decodes a properties map into Trait, refusing what the
 // declaration cannot hold: an undeclared key, a value of the wrong type, an
@@ -49,6 +75,33 @@ func DecodeTrait(props map[string]any) (*Trait, []Problem) {
 	return &out, nil
 }
 
+// TraitRequired names the properties the declaration marks `required:`,
+// sorted. It is a FORM-LEVEL contract: the write path does not enforce it, so
+// Decode admits a value that leaves one absent and this is what a client
+// checks before it submits one.
+var TraitRequired = []string{"authority"}
+
+// Missing names the required properties this value leaves absent, in
+// declaration order. Empty means every declared requirement is answered —
+// not that the value is admissible, which is the substrate's answer and not a
+// type's.
+func (v *Trait) Missing() []string {
+	var out []string
+	if v.Authority == nil {
+		out = append(out, "authority")
+	}
+	return out
+}
+
+// decodeTraitSource decodes a declared TraitSource value.
+func decodeTraitSource(d *decoder, path string, v any) (TraitSource, bool) {
+	s, ok := d.text(path, v, TraitSourceValues, nil)
+	if !ok {
+		return "", false
+	}
+	return TraitSource(s), true
+}
+
 // decodeTrait decodes one Trait value at path.
 func decodeTrait(d *decoder, path string, v any) (Trait, bool) {
 	props, mapped := d.mapping(path, v)
@@ -68,20 +121,45 @@ func decodeTrait(d *decoder, path string, v any) (Trait, bool) {
 			if e, ok := d.text(p, props[key], nil, nil); ok {
 				out.Version = &e
 			}
-		case "name":
-			p := at(path, "name")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
-				out.Name = &e
+		case "source":
+			p := at(path, "source")
+			if e, ok := decodeTraitSource(d, p, props[key]); ok {
+				out.Source = &e
 			}
 		case "authority":
 			p := at(path, "authority")
 			if e, ok := d.text(p, props[key], nil, nil); ok {
 				out.Authority = &e
 			}
-		case "definition":
-			p := at(path, "definition")
-			if e, ok := d.dynamic(p, props[key]); ok {
-				out.Definition = e
+		case "description":
+			p := at(path, "description")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Description = &e
+			}
+		case "properties":
+			p := at(path, "properties")
+			if entries, isMap := d.mapping(p, props[key]); isMap {
+				values := make(map[string]string, len(entries))
+				for _, mk := range sortedKeys(entries) {
+					if entries[mk] == nil || !d.key(p, mk, "camel") {
+						continue
+					}
+					if e, ok := d.text(at(p, mk), entries[mk], nil, nil); ok {
+						values[mk] = e
+					}
+				}
+				out.Properties = values
+			}
+		case "oneOf":
+			p := at(path, "oneOf")
+			if items, listed := d.list(p, props[key]); listed {
+				list := make([]TraitOneOf, 0, len(items))
+				for i, item := range items {
+					if e, ok := decodeTraitOneOf(d, index(p, i), item); ok {
+						list = append(list, e)
+					}
+				}
+				out.OneOf = list
 			}
 		default:
 			d.unknown(at(path, key), "core.substrate.reamde.dev/trait")
@@ -90,22 +168,133 @@ func decodeTrait(d *decoder, path string, v any) (Trait, bool) {
 	return out, true
 }
 
-// Properties is Trait as the properties map holds it, and DecodeTrait's exact
+// Encode is Trait as the properties map holds it, and DecodeTrait's exact
 // inverse: a nil pointer, a nil slice and a nil map each omit their key, so
 // absence survives the round trip.
-func (v *Trait) Properties() map[string]any {
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *Trait) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Version != nil {
 		out["version"] = *v.Version
 	}
-	if v.Name != nil {
-		out["name"] = *v.Name
+	if v.Source != nil {
+		out["source"] = string(*v.Source)
 	}
 	if v.Authority != nil {
 		out["authority"] = *v.Authority
 	}
-	if v.Definition != nil {
-		out["definition"] = v.Definition
+	if v.Description != nil {
+		out["description"] = *v.Description
+	}
+	if v.Properties != nil {
+		values := make(map[string]any, len(v.Properties))
+		for key, item := range v.Properties {
+			values[key] = item
+		}
+		out["properties"] = values
+	}
+	if v.OneOf != nil {
+		items := make([]any, 0, len(v.OneOf))
+		for i := range v.OneOf {
+			items = append(items, v.OneOf[i].Encode())
+		}
+		out["oneOf"] = items
+	}
+	return out
+}
+
+// TraitOneOf is one value of the `oneOf` object declared on
+// core.substrate.reamde.dev/trait.
+//
+// the variants a binding picks one of
+type TraitOneOf struct {
+	// Name is the variant's name, as a binding names it.
+	Name *string
+
+	// Properties is the variant's properties, name → datatype. Its keys hold
+	// to the camel contract.
+	Properties map[string]string
+}
+
+// TraitOneOfRequired names the properties the declaration marks `required:`,
+// sorted. It is a FORM-LEVEL contract: the write path does not enforce it, so
+// Decode admits a value that leaves one absent and this is what a client
+// checks before it submits one.
+var TraitOneOfRequired = []string{"name"}
+
+// Missing names the required properties this value leaves absent, in
+// declaration order. Empty means every declared requirement is answered —
+// not that the value is admissible, which is the substrate's answer and not a
+// type's.
+func (v *TraitOneOf) Missing() []string {
+	var out []string
+	if v.Name == nil {
+		out = append(out, "name")
+	}
+	return out
+}
+
+// decodeTraitOneOf decodes one TraitOneOf value at path.
+func decodeTraitOneOf(d *decoder, path string, v any) (TraitOneOf, bool) {
+	props, mapped := d.mapping(path, v)
+	if !mapped {
+		return TraitOneOf{}, false
+	}
+	var out TraitOneOf
+	for _, key := range sortedKeys(props) {
+		// A null is this dialect's delete marker, never a value: it decodes as
+		// absence, and Properties never writes one.
+		if props[key] == nil {
+			continue
+		}
+		switch key {
+		case "name":
+			p := at(path, "name")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Name = &e
+			}
+		case "properties":
+			p := at(path, "properties")
+			if entries, isMap := d.mapping(p, props[key]); isMap {
+				values := make(map[string]string, len(entries))
+				for _, mk := range sortedKeys(entries) {
+					if entries[mk] == nil || !d.key(p, mk, "camel") {
+						continue
+					}
+					if e, ok := d.text(at(p, mk), entries[mk], nil, nil); ok {
+						values[mk] = e
+					}
+				}
+				out.Properties = values
+			}
+		default:
+			d.unknown(at(path, key), "core.substrate.reamde.dev/trait")
+		}
+	}
+	return out, true
+}
+
+// Encode is TraitOneOf as the properties map holds it, and decodeTraitOneOf's
+// exact inverse: a nil pointer, a nil slice and a nil map each omit their key,
+// so absence survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *TraitOneOf) Encode() map[string]any {
+	out := map[string]any{}
+	if v.Name != nil {
+		out["name"] = *v.Name
+	}
+	if v.Properties != nil {
+		values := make(map[string]any, len(v.Properties))
+		for key, item := range v.Properties {
+			values[key] = item
+		}
+		out["properties"] = values
 	}
 	return out
 }

@@ -15,7 +15,7 @@ data:
   # projections of declared actors — the shipped ones at boot, connector ones
   # at installation. `source` is the declaring authority's origin, the same closed
   # set kind carries.
-  displayTemplate: "{name}"
+  displayTemplate: "{localName}"
   properties:
     # Every declaration carries its own version: the
     # declaring authority's, unless the declaration overrides it. It is what the
@@ -23,20 +23,20 @@ data:
     # it is written on every projected declaration row.
     version:
       type: string
+      managed: true
       description: this declaration's version
-    name:
-      type: string
-      description: the declared actor name writes are attributed to
     # the authority whose manifests declared this actor — what the registry
     # rebuild reads to put the actor back under its authority.
     authority:
       type: string
+      required: true
       description: the authority that declares this actor
     source:
       type: enum
       values:
         - builtin
         - installed
+      managed: true
       description: builtin for shipped authorities, installed for connector
         authorities
     # the actor's manager tier — an explicit attribute of the declaration

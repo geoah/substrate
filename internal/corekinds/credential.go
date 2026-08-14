@@ -84,10 +84,14 @@ func decodeCredential(d *decoder, path string, v any) (Credential, bool) {
 	return out, true
 }
 
-// Properties is Credential as the properties map holds it, and
-// DecodeCredential's exact inverse: a nil pointer, a nil slice and a nil map
-// each omit their key, so absence survives the round trip.
-func (v *Credential) Properties() map[string]any {
+// Encode is Credential as the properties map holds it, and DecodeCredential's
+// exact inverse: a nil pointer, a nil slice and a nil map each omit their key,
+// so absence survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *Credential) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Username != nil {
 		out["username"] = *v.Username

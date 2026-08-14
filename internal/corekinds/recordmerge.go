@@ -68,10 +68,14 @@ func decodeRecordMerge(d *decoder, path string, v any) (RecordMerge, bool) {
 	return out, true
 }
 
-// Properties is RecordMerge as the properties map holds it, and
+// Encode is RecordMerge as the properties map holds it, and
 // DecodeRecordMerge's exact inverse: a nil pointer, a nil slice and a nil map
 // each omit their key, so absence survives the round trip.
-func (v *RecordMerge) Properties() map[string]any {
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *RecordMerge) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Moved != nil {
 		out["moved"] = v.Moved

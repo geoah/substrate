@@ -7,7 +7,7 @@ data:
   description: >-
     One declared kind — what a record is, `{authority}/{name}`. The vocabulary
     browses through the same API as data, so every kind this repository holds
-    is a row here, and its `definition` is what the engine validates every
+    is a row here, and these properties are what the engine validates every
     write against.
   names:
     singular: kind
@@ -15,38 +15,114 @@ data:
   # the declarations this repository holds; id is the kind REFERENCE
   # ("calendar.substrate.reamde.dev/calendarevent", or a bare "task" for a
   # repository-local kind) — the one id form that carries a slash.
-  displayTemplate: "{name}"
+  displayTemplate: "{localName}"
+  # THE PROPERTIES ARE THE DECLARATION. A kind declaration's row holds the
+  # manifest's own keys — names, properties, edges, traits, indices — and there
+  # is no `definition` blob beside them.
+  #
+  # A new property here is an ordinary versioned change: every row that carries
+  # it is a row a projection writes, and each such row is validated against the
+  # declaration the projection is installing (engine/vocabularywrite.go
+  # projectionKind), so a repository still holding the older declaration takes
+  # the rows and the boot upgrade lands.
   properties:
-    name:
-      type: string
-      description: the kind's singular name
-    authority:
-      type: string
-      description: who publishes it; absent on a repository-local kind
     version:
       type: string
+      managed: true
       description: this declaration's version
-    plural:
-      type: string
-      description: the collection segment
     source:
       type: enum
       values:
         - builtin
         - installed
+      managed: true
       description: builtin for seeded kinds, installed for bundle ones
-    definition:
-      type: json
-      description: the parsed data map, exactly as authored — descriptions
-        included
-    # No sourceYAML (record 61): the parsed definition is the document, and
-    # the source view re-renders it. Comments live in the authored files.
+    authority:
+      type: string
+      required: true
+      description: who publishes it; absent on a repository-local kind
+    names:
+      type: object
+      description: what one record is called, and what the collection is
+      fields:
+        singular:
+          type: string
+          required: true
+          description: the kind's singular name, its identity's last segment
+        plural:
+          type: string
+          required: true
+          description: the collection segment in a path, never auto-derived
+    description:
+      type: string
+      description: what this kind is for, read above its collection
+    displayTemplate:
+      type: string
+      description: how a record of this kind renders its title
+    # The micro-syntax stays a string: `temporal(point: dueAt)` names a trait,
+    # a variant and the hot column it occupies in one word an author writes.
+    traits:
+      type: string
+      repeated: true
+      description: the traits this kind binds
+    indices:
+      type: object
+      repeated: true
+      description: the composite indexes this kind asks for
+      fields:
+        properties:
+          type: string
+          repeated: true
+          description: the properties the index covers, in order
+    # A MAP in the authored form: the key is the rel, and the value follows
+    # these fields.
+    edges:
+      type: object
+      keyed: true
+      keyPattern: camel
+      description: the named, directed links a record of this kind may hold
+      fields:
+        to:
+          type: string
+          refersTo: kind
+          description: the target kind, or `any`
+        many:
+          type: bool
+          description: several targets instead of one
+        required:
+          type: bool
+          description: a creation without it is refused
+        ownerRef:
+          type: bool
+          description: the target owns this record, so a cascade collects
+            it
+        description:
+          type: string
+          description: what the link means
+        inverse:
+          type: string
+          description: what the TARGET calls this relationship
+        inverseDescription:
+          type: string
+          description: what the inverse means, from the target's side
+    # THE ONE json LEAF IN THE META-KIND, and the reason is a self-reference no
+    # bounded schema escapes. A property declaration describes OBJECT FIELDS, and
+    # a field declaration is a property declaration again — so describing
+    # `properties` needs a `fields` level, which puts a `fields` level into THIS
+    # declaration's own row, which needs one more level to describe, and so on
+    # without end. The dialect terminates by construction (vocabulary/types.go,
+    # MaxFieldDepth) and therefore cannot state its own grammar.
     #
-    # NO `description` PROPERTY EITHER, for the same reason plus a harder one.
-    # A kind's own description is prose the definition already carries, and the
-    # projected columns are the ROUTING facts a reader needs without parsing it.
-    # The harder reason: this kind describes every projected declaration row,
-    # so a property added HERE is one every row would carry the moment the
-    # binary ships it — and an existing repository, whose stored declaration is
-    # still the old one, refuses those rows and cannot open. A property on this
-    # kind can only ever arrive with a projection that bootstraps it.
+    # What validates it is the LOADER, which is stronger here than any structural
+    # schema: every write of a kind declaration is parsed by it — datatypes, the
+    # key set each datatype admits, the camel rule, enum values, machine states
+    # and transitions, the depth cap — and a document it refuses never reaches a
+    # row. Same posture `recordpatchrequest.diff` keeps, for the same kind of
+    # reason: the validator that knows the shape is not a schema.
+    #
+    # Everything else on this kind IS typed — the names, the display template,
+    # the traits, the indices, the edges — none of which recurse.
+    properties:
+      type: json
+      description: the declared value slots a record of this kind carries,
+        as the loader admits them

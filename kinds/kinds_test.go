@@ -107,6 +107,91 @@ func TestBothViewsLoad(t *testing.T) {
 // The actor grammar has no room for the authority, so the shipped catalog has
 // to keep its own names apart; installing two third-party bundles that collide
 // is a known issue, shipping two that do is a bug.
+// THE SHIPPED TREE IS AUTHORED IN THE DECLARED SPELLING. A declaration row
+// stores the parsed data map, and the loader still admits the spellings that came
+// before the typed core, translating each one (vocabulary/canonical.go) — so a
+// document left in an old spelling would store as something other than what it
+// says, and a reader diffing the tree against a repository would see a change
+// nobody wrote. Every spelling the translation touches is named here.
+func TestTheTreeIsAuthoredInTheDeclaredSpelling(t *testing.T) {
+	for _, d := range readTreeDocuments(t) {
+		at := d.Kind + " " + d.ID
+		if _, wrapped := d.Data["capabilities"]; wrapped {
+			t.Errorf("%s: the capability envelope rides `data` itself now", at)
+		}
+		for _, side := range []string{"input", "output"} {
+			if _, nested := d.Data[side]; nested {
+				t.Errorf("%s: `%s` is a flat argument list now (`arguments`/`returns`)", at, side)
+			}
+		}
+		for i, tv := range asList(d.Data["tools"]) {
+			if _, bare := tv.(string); bare {
+				t.Errorf("%s: tools[%d] is a bare string — an entry names its arm ({builtin} or {callable})", at, i)
+			}
+		}
+		if one, has := d.Data["oneOf"]; has {
+			if _, isList := one.([]any); !isList {
+				t.Errorf("%s: `oneOf` is the variant LIST now", at)
+			}
+		}
+		for name, rv := range asMapping(d.Data["map"]) {
+			if _, bare := rv.(string); bare {
+				t.Errorf("%s: map rule %q is a bare path — a rule is `{path}`", at, name)
+			}
+		}
+		for i, iv := range asList(d.Data["indices"]) {
+			if _, bare := iv.([]any); bare {
+				t.Errorf("%s: indices[%d] is a bare list — an index names its properties", at, i)
+			}
+		}
+		for toggle, sv := range asMapping(asMapping(d.Data["oauth2"])["featureScopes"]) {
+			if _, bare := sv.([]any); bare {
+				t.Errorf("%s: featureScopes[%q] is a bare list — the scopes take a field", at, toggle)
+			}
+		}
+	}
+}
+
+// readTreeDocuments parses every DECLARATION document in the tree.
+func readTreeDocuments(t *testing.T) []vocabulary.Document {
+	t.Helper()
+	var docs []vocabulary.Document
+	err := fs.WalkDir(kinds.All(), ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(path) != ".yaml" {
+			return err
+		}
+		raw, err := fs.ReadFile(kinds.All(), path)
+		if err != nil {
+			return err
+		}
+		parsed, err := vocabulary.ParseStream(raw)
+		if err != nil {
+			// A bundle's delivery wiring (trigger records) sits in the same tree
+			// and is not a declaration: those files parse nowhere near here.
+			return nil
+		}
+		docs = append(docs, parsed...)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("read the tree: %v", err)
+	}
+	if len(docs) == 0 {
+		t.Fatal("the tree holds no documents")
+	}
+	return docs
+}
+
+func asList(v any) []any {
+	out, _ := v.([]any)
+	return out
+}
+
+func asMapping(v any) map[string]any {
+	out, _ := v.(map[string]any)
+	return out
+}
+
 func TestShippedCallableActorsAreDistinct(t *testing.T) {
 	cat, err := catalog.Load(kinds.Bundles())
 	if err != nil {

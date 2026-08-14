@@ -59,7 +59,7 @@ type Reference struct {
 }
 
 // Properties is the reference as the properties map holds it.
-func (r Reference) Properties() map[string]any {
+func (r Reference) Encode() map[string]any {
 	return map[string]any{"kind": r.Kind, "id": r.ID}
 }
 

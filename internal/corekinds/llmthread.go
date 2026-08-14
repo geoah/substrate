@@ -223,13 +223,17 @@ func decodeLLMThread(d *decoder, path string, v any) (LLMThread, bool) {
 	return out, true
 }
 
-// Properties is LLMThread as the properties map holds it, and
-// DecodeLLMThread's exact inverse: a nil pointer, a nil slice and a nil map
-// each omit their key, so absence survives the round trip.
-func (v *LLMThread) Properties() map[string]any {
+// Encode is LLMThread as the properties map holds it, and DecodeLLMThread's
+// exact inverse: a nil pointer, a nil slice and a nil map each omit their key,
+// so absence survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *LLMThread) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Agent != nil {
-		out["agent"] = v.Agent.Properties()
+		out["agent"] = v.Agent.Encode()
 	}
 	if v.Provider != nil {
 		out["provider"] = *v.Provider
@@ -277,7 +281,7 @@ func (v *LLMThread) Properties() map[string]any {
 		out["leaseUntil"] = *v.LeaseUntil
 	}
 	if v.Parent != nil {
-		out["parent"] = v.Parent.Properties()
+		out["parent"] = v.Parent.Encode()
 	}
 	return out
 }

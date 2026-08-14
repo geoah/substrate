@@ -11,25 +11,27 @@ package corekinds
 // from, and carries the quarantine mark set when a stored closure no longer
 // admits.
 type Authority struct {
-	// Name is the authority's DNS name.
-	Name *string
-
 	// Version is the declared maturity statement, v1alpha1 unless said
-	// otherwise.
+	// otherwise. Managed: the engine stamps it, so a supplied value does not
+	// decide it.
 	Version *string
 
-	// Actors is the actors declared under this authority.
+	// Actors is the actors declared under this authority. Managed: the engine
+	// stamps it, so a supplied value does not decide it.
 	Actors []string
 
 	// Source is builtin for seeded authorities, installed for bundle ones.
+	// Managed: the engine stamps it, so a supplied value does not decide it.
 	Source *AuthoritySource
 
 	// Quarantined is set at repository-open when the authority's stored
 	// closure fails admission; cleared by re-applying a valid closure, or by
-	// an open that admits the stored one.
+	// an open that admits the stored one. Managed: the engine stamps it, so a
+	// supplied value does not decide it.
 	Quarantined *bool
 
 	// QuarantineReason is the admission error that quarantined the authority.
+	// Managed: the engine stamps it, so a supplied value does not decide it.
 	QuarantineReason *string
 }
 
@@ -55,7 +57,7 @@ func (v AuthoritySource) Valid() bool { return Declared(AuthoritySourceValues, s
 // core.substrate.reamde.dev/authority declares, sorted. A key outside it is
 // refused by Decode, which is what replaces a hand-kept list of admitted keys
 // in Go.
-var AuthorityKeys = []string{"actors", "name", "quarantineReason", "quarantined", "source", "version"}
+var AuthorityKeys = []string{"actors", "quarantineReason", "quarantined", "source", "version"}
 
 // DecodeAuthority decodes a properties map into Authority, refusing what the
 // declaration cannot hold: an undeclared key, a value of the wrong type, an
@@ -100,11 +102,6 @@ func decodeAuthority(d *decoder, path string, v any) (Authority, bool) {
 			continue
 		}
 		switch key {
-		case "name":
-			p := at(path, "name")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
-				out.Name = &e
-			}
 		case "version":
 			p := at(path, "version")
 			if e, ok := d.text(p, props[key], nil, nil); ok {
@@ -143,14 +140,15 @@ func decodeAuthority(d *decoder, path string, v any) (Authority, bool) {
 	return out, true
 }
 
-// Properties is Authority as the properties map holds it, and
-// DecodeAuthority's exact inverse: a nil pointer, a nil slice and a nil map
-// each omit their key, so absence survives the round trip.
-func (v *Authority) Properties() map[string]any {
+// Encode is Authority as the properties map holds it, and DecodeAuthority's
+// exact inverse: a nil pointer, a nil slice and a nil map each omit their key,
+// so absence survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *Authority) Encode() map[string]any {
 	out := map[string]any{}
-	if v.Name != nil {
-		out["name"] = *v.Name
-	}
 	if v.Version != nil {
 		out["version"] = *v.Version
 	}

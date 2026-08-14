@@ -18,8 +18,9 @@ data:
   # first. `status` sits in `properties` like every other value, so it
   # indexes like any other one.
   indices:
-    - - status
-      - dueAt
+    - properties:
+        - status
+        - dueAt
   properties:
     # the same prose slot every other authority calls `description`.
     description:

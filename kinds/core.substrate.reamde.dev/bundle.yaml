@@ -2,8 +2,12 @@
 # IS the owned authority ("web.bundles.substrate.reamde.dev"); the declaration names its
 # inputs and the exact closure it ships, and a batch carrying a bundle
 # document REPLACES the owned authority whole — install and upgrade are one
-# atomic apply, breakage refused. `disabled`/`uninstalled` are runtime state
-# the lifecycle verbs own, never part of the declaration.
+# atomic apply, breakage refused. `disabled`/`uninstalled`/`purging` are runtime
+# state the lifecycle verbs own, never part of the declaration, which is what
+# `managed` says about them.
+#
+# THE PROPERTIES ARE THE DECLARATION: no `definition` blob. `inputs`, `modules`
+# and the OAuth feature scopes stay MAPS in the authored form, declared `keyed`.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: core.substrate.reamde.dev/bundle
@@ -17,32 +21,113 @@ data:
   names:
     singular: bundle
     plural: bundles
-  displayTemplate: "{name}"
+  displayTemplate: "{localName}"
   properties:
-    # Every declaration carries its own version: the
-    # declaring authority's, unless the declaration overrides it. It is what the
-    # boot-time upgrade diffs a repository's shipped vocabulary against, so
-    # it is written on every projected declaration row.
+    # Every declaration carries its own version: the declaring authority's,
+    # unless the declaration overrides it. It is what the boot-time upgrade
+    # diffs a repository's shipped vocabulary against, so the engine writes it
+    # on every declaration row, which is what `managed` says.
     version:
       type: string
+      managed: true
       description: this declaration's version
-    name:
-      type: string
-      description: the bundle's name, the owned authority's first label
     authority:
       type: string
-      description: the authority the bundle owns ("<name>.bundles.substrate.reamde.dev")
-    definition:
-      type: json
-      description: the parsed manifest data, installs closure included
+      required: true
+      description: the authority the bundle owns; its first label is the bundle's
+        name
+    description:
+      type: string
+      description: what the bundle is for, read above its card
+    # A MAP in the authored form: the key is the input's name, and the value
+    # follows these fields.
+    inputs:
+      type: object
+      keyed: true
+      keyPattern: camel
+      description: the bundle's named configuration needs, each naming a kind
+      fields:
+        kind:
+          type: string
+          refersTo: kind
+          description: the kind whose records satisfy this input
+        inject:
+          type: enum
+          values:
+            - functions
+          description: the consumer the resolved record is handed to; absent
+            means a host facility reads it
+        description:
+          type: string
+          description: what the input is for
+    # A member is a kind, a trait, a property type, a mapping, a function or an
+    # agent, so no single `refersTo` marker names what these identities point at.
+    installs:
+      type: string
+      repeated: true
+      description: the exact identities the bundle ships into its authority
+    requires:
+      type: string
+      repeated: true
+      refersTo: authority
+      description: the authorities this closure declares against; an install
+        refuses while one is absent
+    # Filename → inline source. The key contract is unrestricted on purpose: a
+    # filename is not a declared name, and the loader holds it to the bare
+    # `.py`/`.go` base-name rule instead.
+    modules:
+      type: text
+      keyed: true
+      description: the shared library modules the bundle's functions import
+    oauth2:
+      type: object
+      description: the bundle's trusted OAuth provider metadata, immutable
+        at runtime
+      fields:
+        clientInput:
+          type: string
+          description: the input whose resolved record carries the OAuth client
+            credentials
+        authorizationEndpoint:
+          type: url
+          description: where the user is sent to consent
+        tokenEndpoint:
+          type: url
+          description: where a code and a refresh are exchanged
+        revocationEndpoint:
+          type: url
+          description: where a credential is revoked on teardown, best effort
+        emailEndpoint:
+          type: url
+          description: where the connected account's own address is read,
+            right after the exchange
+        emailProperty:
+          type: string
+          description: the account property the derived address lands in
+        # A MAP of feature toggle → the scopes enabling it requests. The scopes
+        # take a field because `keyed` and `repeated` are the two containers and
+        # a declaration is one or the other.
+        featureScopes:
+          type: object
+          keyed: true
+          keyPattern: camel
+          description: which OAuth scopes each account toggle asks for
+          fields:
+            scopes:
+              type: string
+              repeated: true
+              description: the scopes the toggle requests
     disabled:
       type: bool
+      managed: true
       description: set by the disable verb — execution stopped, reversible
     uninstalled:
       type: bool
+      managed: true
       description: set by the uninstall verb — runtime registration removed,
         data stays; cleared by re-applying the closure
     purging:
       type: bool
+      managed: true
       description: set while a purge runs — enable refuses it; an interrupted
         purge leaves it standing until a purge completes

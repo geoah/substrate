@@ -14,7 +14,11 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: tasks.substrate.reamde.dev
 data:
-  version: v1alpha1
+  # v1alpha2: THE TYPED CORE SWEEP. This closure moved to the declared
+  # spellings — a tool entry names its arm, a function's IO is a flat argument
+  # list and its grants ride `data` itself, a mapping rule is `{path}`, an index
+  # names its properties — so every declaration in it changed shape.
+  version: v1alpha2
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A VOCABULARY bundle (see people.substrate.reamde.dev): kinds only, imported from the

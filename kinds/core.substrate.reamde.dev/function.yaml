@@ -2,6 +2,11 @@
 # id = "<authority>/<name>". The declaration IS the record (schema is records):
 # the loader admits a write, commit activates it, and the dispatcher reads
 # the registry this row rebuilds into.
+#
+# THE PROPERTIES ARE THE DECLARATION: no `definition` blob, one property per
+# manifest key. The capability envelope rides `data` itself — one grant,
+# declared once — and the IO is FLAT: named arguments, not a recursive schema,
+# so the model-facing tool card is valid by construction.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: core.substrate.reamde.dev/function
@@ -18,30 +23,163 @@ data:
   # that already stored the old one.
   # v1alpha3: the declaration gained a `description` — the bump is what
   # carries it into repositories that already stored the v1alpha2 one.
-  version: v1alpha3
+  # v1alpha4: TYPED. `definition` and `name` are gone; the runtime, the body,
+  # the flat argument lists and the five capability keys are properties.
+  version: v1alpha4
   names:
     singular: function
     plural: functions
-  displayTemplate: "{name}"
+  displayTemplate: "{localName}"
   properties:
-    # Every declaration carries its own version: the
-    # declaring authority's, unless the declaration overrides it. It is what the
-    # boot-time upgrade diffs a repository's shipped vocabulary against, so
-    # it is written on every projected declaration row.
+    # Every declaration carries its own version: the declaring authority's,
+    # unless the declaration overrides it. It is what the boot-time upgrade
+    # diffs a repository's shipped vocabulary against, so the engine writes it
+    # on every declaration row, which is what `managed` says.
     version:
       type: string
+      managed: true
       description: this declaration's version
-    name:
-      type: string
-      description: the function's local name
     authority:
       type: string
+      required: true
       description: the authority that declares it
-    # on/when/coalesce/emit/run/reads, exactly as authored — the wasm arm's
-    # module rides inline as base64 (the loader's 8 MiB decoded cap applies).
-    definition:
-      type: json
-      description: the parsed manifest data, run arm included
-    # No sourceYAML (record 61): schema rows store parsed facts only — for a
-    # wasm-armed function the derived text would have been the module's
-    # base64, megabytes of it, which is what first broke the old posture.
+    description:
+      type: string
+      required: true
+      description: the model-facing tool card — what this function does
+    runtime:
+      type: enum
+      values:
+        - python
+        - go
+      required: true
+      description: the language the inline body is written in
+    # NEVER FTS-indexed: a body is up to 256 KiB of code, and indexing it would
+    # make every function the top hit for every identifier it mentions. The
+    # property name is the BODY's, so a function row carries no `source` origin
+    # marker — that word belongs to the kinds whose origin is a fact about the
+    # declaration rather than its content.
+    source:
+      type: text
+      fts: false
+      required: true
+      description: the inline body
+    timeoutMs:
+      type: int
+      min: 1
+      max: 60000
+      description: what bounds one invocation's wall clock
+    # The FLAT argument dialect: one level of named arguments, which is what
+    # makes a card valid JSON Schema by construction and keeps the value check
+    # off a recursion. `json` is the named escape hatch for a value whose shape
+    # the function does not own.
+    arguments:
+      type: object
+      repeated: true
+      description: the named arguments a call carries, in declaration order
+      fields:
+        name:
+          type: string
+          required: true
+          description: the argument's name
+        type:
+          type: enum
+          values:
+            - string
+            - int
+            - float
+            - bool
+            - enum
+            - json
+          description: what the value is
+        repeated:
+          type: bool
+          description: a list of the declared type
+        required:
+          type: bool
+          description: a call without it is refused
+        description:
+          type: string
+          description: what the argument is for, as the model reads it
+        values:
+          type: string
+          repeated: true
+          description: the admitted values, on an enum
+    returns:
+      type: object
+      repeated: true
+      description: the named values the body returns
+      fields:
+        name:
+          type: string
+          required: true
+          description: the value's name
+        type:
+          type: enum
+          values:
+            - string
+            - int
+            - float
+            - bool
+            - enum
+            - json
+          description: what the value is
+        repeated:
+          type: bool
+          description: a list of the declared type
+        required:
+          type: bool
+          description: the body always returns it
+        description:
+          type: string
+          description: what the value carries, as the model reads it
+        values:
+          type: string
+          repeated: true
+          description: the admitted values, on an enum
+    emit:
+      type: string
+      repeated: true
+      refersTo: kind
+      description: the kinds this function's effects may address
+    reads:
+      type: object
+      description: what the body's host reads may touch; absent trips every
+        read
+      fields:
+        kinds:
+          type: string
+          repeated: true
+          refersTo: kind
+          description: the kinds every read is held to
+        budgets:
+          type: object
+          description: what one invocation's reads may spend
+          fields:
+            calls:
+              type: int
+              min: 1
+              max: 1000
+              description: host read calls per invocation
+            rows:
+              type: int
+              min: 1
+              max: 10000
+              description: rows read per invocation
+    call:
+      type: string
+      repeated: true
+      refersTo: function
+      description: the function identities the body's host Call may invoke
+    # URL patterns, never references: an egress allowlist names the internet.
+    network:
+      type: string
+      repeated: true
+      description: the declared egress allowlist
+    mutations:
+      type: enum
+      repeated: true
+      values:
+        - merge
+        - split
+      description: the gated identity mutations this function is granted

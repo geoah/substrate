@@ -66,10 +66,14 @@ func decodeRecordSplit(d *decoder, path string, v any) (RecordSplit, bool) {
 	return out, true
 }
 
-// Properties is RecordSplit as the properties map holds it, and
+// Encode is RecordSplit as the properties map holds it, and
 // DecodeRecordSplit's exact inverse: a nil pointer, a nil slice and a nil map
 // each omit their key, so absence survives the round trip.
-func (v *RecordSplit) Properties() map[string]any {
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *RecordSplit) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Result != nil {
 		out["result"] = v.Result

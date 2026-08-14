@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"go/format"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,6 +47,10 @@ func generateGo(p *plan, source string) (map[string][]byte, error) {
 // actually says. A generated file that imported `time` for a kind with no
 // datetime would not compile, and listing imports per emitter would drift from
 // what the emitters emit.
+//
+// The match is on a WORD BOUNDARY, because a body carries prose as well as code:
+// a doc comment saying "immutable at runtime." holds the letters of `time.` and
+// would otherwise import a package nothing calls.
 func goImports(body string) string {
 	candidates := []struct{ path, token string }{
 		{"encoding/json", "json."},
@@ -60,7 +65,7 @@ func goImports(body string) string {
 	}
 	var used []string
 	for _, c := range candidates {
-		if strings.Contains(body, c.token) {
+		if regexp.MustCompile(`\b` + regexp.QuoteMeta(c.token)).MatchString(body) {
 			used = append(used, c.path)
 		}
 	}
@@ -140,7 +145,7 @@ func fieldDoc(f *fieldPlan) string {
 		parts = append(parts, "declared by a transition's stamp rather than by the properties block: the engine writes it when the move it stamps is performed.")
 	}
 	if f.Decl.Managed {
-		parts = append(parts, "Managed: the engine stamps it, so a write that supplies one is refused.")
+		parts = append(parts, "Managed: the engine stamps it, so a supplied value does not decide it.")
 	}
 	if f.Decl.Writer != "" {
 		parts = append(parts, "Writer: only the "+f.Decl.Writer+" actor may write it.")
@@ -429,8 +434,8 @@ func emitProperties(b *bytes.Buffer, s *structPlan) {
 	if s.Root {
 		decoder = "Decode" + s.Name
 	}
-	comment(b, "Properties is "+s.Name+" as the properties map holds it, and "+decoder+"'s exact inverse: a nil pointer, a nil slice and a nil map each omit their key, so absence survives the round trip.")
-	fmt.Fprintf(b, "func (v *%s) Properties() map[string]any {\n", s.Name)
+	comment(b, "Encode is "+s.Name+" as the properties map holds it, and "+decoder+"'s exact inverse: a nil pointer, a nil slice and a nil map each omit their key, so absence survives the round trip.\n\nIt is NOT called Properties: a declaration may declare a property of that name (core's `kind` does), and a field and a method cannot share one. Decode/Encode is the pair the rest of the generator already names.")
+	fmt.Fprintf(b, "func (v *%s) Encode() map[string]any {\n", s.Name)
 	b.WriteString("\tout := map[string]any{}\n")
 	for _, f := range s.Fields {
 		emitFieldEncode(b, f)
@@ -475,9 +480,9 @@ func encodeExpr(f *fieldPlan, access string) string {
 		return "string(" + access + ")"
 	case classReference, classObject:
 		if strings.HasPrefix(access, "*") {
-			return strings.TrimPrefix(access, "*") + ".Properties()"
+			return strings.TrimPrefix(access, "*") + ".Encode()"
 		}
-		return access + ".Properties()"
+		return access + ".Encode()"
 	}
 	return access
 }

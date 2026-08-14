@@ -30,7 +30,11 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: notes.bundles.substrate.reamde.dev
 data:
-  version: v1alpha1
+  # v1alpha2: THE TYPED CORE SWEEP. This closure moved to the declared
+  # spellings — a tool entry names its arm, a function's IO is a flat argument
+  # list and its grants ride `data` itself, a mapping rule is `{path}`, an index
+  # names its properties — so every declaration in it changed shape.
+  version: v1alpha2
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata:
@@ -87,24 +91,19 @@ data:
   description: Count the words and characters in a piece of text.
   runtime: python
   timeoutMs: 5000
-  input:
-    type: object
-    properties:
-      text:
-        type: string
-        description: the text to measure
-    required: [text]
-  output:
-    type: object
-    properties:
-      words:
-        type: number
-        description: the word count
-      characters:
-        type: number
-        description: the character count
-  capabilities:
-    emit: [notes.bundles.substrate.reamde.dev/note]
+  arguments:
+    - name: text
+      type: string
+      required: true
+      description: the text to measure
+  returns:
+    - name: words
+      type: float
+      description: the word count
+    - name: characters
+      type: float
+      description: the character count
+  emit: [notes.bundles.substrate.reamde.dev/note]
   source: |
     def main(input, host):
         text = (input.get("args") or {}).get("text") or ""
@@ -122,33 +121,30 @@ data:
   description: Save a note with its title and its counts.
   runtime: python
   timeoutMs: 5000
-  input:
-    type: object
-    properties:
-      id:
-        type: string
-        description: a stable id for the note
-      text:
-        type: string
-        description: the note body
-      noteTitle:
-        type: string
-        description: the title to store
-      words:
-        type: number
-        description: the word count
-      characters:
-        type: number
-        description: the character count
-    required: [id, text, noteTitle]
-  output:
-    type: object
-    properties:
-      saved:
-        type: string
-        description: the id of the note that was written
-  capabilities:
-    emit: [notes.bundles.substrate.reamde.dev/note]
+  arguments:
+    - name: id
+      type: string
+      required: true
+      description: a stable id for the note
+    - name: text
+      type: string
+      required: true
+      description: the note body
+    - name: noteTitle
+      type: string
+      required: true
+      description: the title to store
+    - name: words
+      type: float
+      description: the word count
+    - name: characters
+      type: float
+      description: the character count
+  returns:
+    - name: saved
+      type: string
+      description: the id of the note that was written
+  emit: [notes.bundles.substrate.reamde.dev/note]
   source: |
     def main(input, host):
         args = (input.get("args") or {})
@@ -215,8 +211,8 @@ data:
   provider: default
   model: anthropic/claude-sonnet-5
   tools:
-    - notes.bundles.substrate.reamde.dev/stats
-    - notes.bundles.substrate.reamde.dev/savenote
+    - callable: notes.bundles.substrate.reamde.dev/stats
+    - callable: notes.bundles.substrate.reamde.dev/savenote
   agents:
     - notes.bundles.substrate.reamde.dev/titler
   budgets:

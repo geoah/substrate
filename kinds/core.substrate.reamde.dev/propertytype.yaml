@@ -15,31 +15,56 @@ data:
   # that already stored the old one.
   # v1alpha3: the declaration gained a `description` — the bump is what
   # carries it into repositories that already stored the v1alpha2 one.
-  version: v1alpha3
+  # v1alpha4: TYPED. `definition` and `name` are gone; the refinement — the
+  # pattern, the range and the value set — is properties.
+  version: v1alpha4
   names:
     singular: propertytype
     plural: propertytypes
   # id = "<authority>/<name>". A refinement is authority-local — a property type is
   # only usable inside the authority that declares it.
-  displayTemplate: "{name}"
+  displayTemplate: "{localName}"
   properties:
-    # Every declaration carries its own version: the
-    # declaring authority's, unless the declaration overrides it. It is what the
-    # boot-time upgrade diffs a repository's shipped vocabulary against, so
-    # it is written on every projected declaration row.
     version:
       type: string
+      managed: true
       description: this declaration's version
-    name:
-      type: string
-      description: the refinement's local name
+    source:
+      type: enum
+      values:
+        - builtin
+        - installed
+      managed: true
+      description: builtin for seeded refinements, installed for bundle ones
     authority:
       type: string
+      required: true
       description: the one authority it is usable in
+    description:
+      type: string
+      description: what the refinement is for
     base:
       type: string
-      description: the built-in kind it refines
-    definition:
-      type: json
-      description: the parsed manifest data
-    # No sourceYAML (record 61): schema rows store parsed facts only.
+      required: true
+      description: the built-in datatype it refines
+    pattern:
+      type: string
+      description: the regular expression a value matches
+    min:
+      type: float
+      description: the lowest admitted number
+    max:
+      type: float
+      description: the highest admitted number
+    values:
+      type: object
+      repeated: true
+      description: the admitted values, in render order
+      fields:
+        value:
+          type: string
+          required: true
+          description: the stored value
+        label:
+          type: string
+          description: the human label a client renders beside it

@@ -10,33 +10,62 @@ package corekinds
 // edge points at, so a Google contact keeps a person up to date. One mapping
 // per source kind, declared by the authority that owns that kind.
 type RecordMapping struct {
-	// Version is this declaration's version.
+	// Version is this declaration's version. Managed: the engine stamps it, so
+	// a supplied value does not decide it.
 	Version *string
 
-	// Name is the mapping's local name.
-	Name *string
+	// Source is builtin for seeded mappings, installed for bundle ones.
+	// Managed: the engine stamps it, so a supplied value does not decide it.
+	Source *RecordMappingSource
 
 	// Authority is the authority that declares it, the source type's own.
 	Authority *string
 
-	// From is the source type whose records project.
+	// Description is what the mapping keeps up to date.
+	Description *string
+
+	// From is the source kind whose records project. Names a kind in the
+	// registry.
 	From *string
 
-	// To is the subject type, always a full type name.
+	// To is the subject kind, always a full kind reference. Names a kind in
+	// the registry.
 	To *string
 
-	// Edge is the declared edge on the source type that records the link.
+	// Edge is the declared edge on the source kind that records the link.
 	Edge *string
 
-	// Definition is the parsed manifest data.
-	Definition Dynamic
+	// Match is the probes that find an existing subject, in order.
+	Match []RecordMappingMatch
+
+	// Map is which source path reaches which subject property. Its keys hold
+	// to the camel contract.
+	Map map[string]RecordMappingMap
 }
+
+// RecordMappingSource is a declared enum: the admissible set, in declaration
+// order.
+//
+// builtin for seeded mappings, installed for bundle ones
+type RecordMappingSource string
+
+const (
+	RecordMappingSourceBuiltin   RecordMappingSource = "builtin"
+	RecordMappingSourceInstalled RecordMappingSource = "installed"
+)
+
+// RecordMappingSourceValues are the declared values in declaration order,
+// which is render order.
+var RecordMappingSourceValues = []string{"builtin", "installed"}
+
+// Valid reports whether v is one of the declared values.
+func (v RecordMappingSource) Valid() bool { return Declared(RecordMappingSourceValues, string(v)) }
 
 // RecordMappingKeys is the admitted key set: every property
 // core.substrate.reamde.dev/recordmapping declares, sorted. A key outside it
 // is refused by Decode, which is what replaces a hand-kept list of admitted
 // keys in Go.
-var RecordMappingKeys = []string{"authority", "definition", "edge", "from", "name", "to", "version"}
+var RecordMappingKeys = []string{"authority", "description", "edge", "from", "map", "match", "source", "to", "version"}
 
 // DecodeRecordMapping decodes a properties map into RecordMapping, refusing
 // what the declaration cannot hold: an undeclared key, a value of the wrong
@@ -58,6 +87,42 @@ func DecodeRecordMapping(props map[string]any) (*RecordMapping, []Problem) {
 	return &out, nil
 }
 
+// RecordMappingRequired names the properties the declaration marks
+// `required:`, sorted. It is a FORM-LEVEL contract: the write path does not
+// enforce it, so Decode admits a value that leaves one absent and this is what
+// a client checks before it submits one.
+var RecordMappingRequired = []string{"authority", "edge", "from", "to"}
+
+// Missing names the required properties this value leaves absent, in
+// declaration order. Empty means every declared requirement is answered —
+// not that the value is admissible, which is the substrate's answer and not a
+// type's.
+func (v *RecordMapping) Missing() []string {
+	var out []string
+	if v.Authority == nil {
+		out = append(out, "authority")
+	}
+	if v.From == nil {
+		out = append(out, "from")
+	}
+	if v.To == nil {
+		out = append(out, "to")
+	}
+	if v.Edge == nil {
+		out = append(out, "edge")
+	}
+	return out
+}
+
+// decodeRecordMappingSource decodes a declared RecordMappingSource value.
+func decodeRecordMappingSource(d *decoder, path string, v any) (RecordMappingSource, bool) {
+	s, ok := d.text(path, v, RecordMappingSourceValues, nil)
+	if !ok {
+		return "", false
+	}
+	return RecordMappingSource(s), true
+}
+
 // decodeRecordMapping decodes one RecordMapping value at path.
 func decodeRecordMapping(d *decoder, path string, v any) (RecordMapping, bool) {
 	props, mapped := d.mapping(path, v)
@@ -77,15 +142,20 @@ func decodeRecordMapping(d *decoder, path string, v any) (RecordMapping, bool) {
 			if e, ok := d.text(p, props[key], nil, nil); ok {
 				out.Version = &e
 			}
-		case "name":
-			p := at(path, "name")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
-				out.Name = &e
+		case "source":
+			p := at(path, "source")
+			if e, ok := decodeRecordMappingSource(d, p, props[key]); ok {
+				out.Source = &e
 			}
 		case "authority":
 			p := at(path, "authority")
 			if e, ok := d.text(p, props[key], nil, nil); ok {
 				out.Authority = &e
+			}
+		case "description":
+			p := at(path, "description")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Description = &e
 			}
 		case "from":
 			p := at(path, "from")
@@ -102,10 +172,30 @@ func decodeRecordMapping(d *decoder, path string, v any) (RecordMapping, bool) {
 			if e, ok := d.text(p, props[key], nil, nil); ok {
 				out.Edge = &e
 			}
-		case "definition":
-			p := at(path, "definition")
-			if e, ok := d.dynamic(p, props[key]); ok {
-				out.Definition = e
+		case "match":
+			p := at(path, "match")
+			if items, listed := d.list(p, props[key]); listed {
+				list := make([]RecordMappingMatch, 0, len(items))
+				for i, item := range items {
+					if e, ok := decodeRecordMappingMatch(d, index(p, i), item); ok {
+						list = append(list, e)
+					}
+				}
+				out.Match = list
+			}
+		case "map":
+			p := at(path, "map")
+			if entries, isMap := d.mapping(p, props[key]); isMap {
+				values := make(map[string]RecordMappingMap, len(entries))
+				for _, mk := range sortedKeys(entries) {
+					if entries[mk] == nil || !d.key(p, mk, "camel") {
+						continue
+					}
+					if e, ok := decodeRecordMappingMap(d, at(p, mk), entries[mk]); ok {
+						values[mk] = e
+					}
+				}
+				out.Map = values
 			}
 		default:
 			d.unknown(at(path, key), "core.substrate.reamde.dev/recordmapping")
@@ -114,19 +204,26 @@ func decodeRecordMapping(d *decoder, path string, v any) (RecordMapping, bool) {
 	return out, true
 }
 
-// Properties is RecordMapping as the properties map holds it, and
+// Encode is RecordMapping as the properties map holds it, and
 // DecodeRecordMapping's exact inverse: a nil pointer, a nil slice and a nil
 // map each omit their key, so absence survives the round trip.
-func (v *RecordMapping) Properties() map[string]any {
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *RecordMapping) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Version != nil {
 		out["version"] = *v.Version
 	}
-	if v.Name != nil {
-		out["name"] = *v.Name
+	if v.Source != nil {
+		out["source"] = string(*v.Source)
 	}
 	if v.Authority != nil {
 		out["authority"] = *v.Authority
+	}
+	if v.Description != nil {
+		out["description"] = *v.Description
 	}
 	if v.From != nil {
 		out["from"] = *v.From
@@ -137,8 +234,207 @@ func (v *RecordMapping) Properties() map[string]any {
 	if v.Edge != nil {
 		out["edge"] = *v.Edge
 	}
-	if v.Definition != nil {
-		out["definition"] = v.Definition
+	if v.Match != nil {
+		items := make([]any, 0, len(v.Match))
+		for i := range v.Match {
+			items = append(items, v.Match[i].Encode())
+		}
+		out["match"] = items
+	}
+	if v.Map != nil {
+		values := make(map[string]any, len(v.Map))
+		for key, item := range v.Map {
+			values[key] = item.Encode()
+		}
+		out["map"] = values
+	}
+	return out
+}
+
+// RecordMappingMatch is one value of the `match` object declared on
+// core.substrate.reamde.dev/recordmapping.
+//
+// the probes that find an existing subject, in order
+type RecordMappingMatch struct {
+	// From is the source path the probe reads.
+	From *string
+
+	// To is the subject property the probe matches on.
+	To *string
+}
+
+// RecordMappingMatchRequired names the properties the declaration marks
+// `required:`, sorted. It is a FORM-LEVEL contract: the write path does not
+// enforce it, so Decode admits a value that leaves one absent and this is what
+// a client checks before it submits one.
+var RecordMappingMatchRequired = []string{"from", "to"}
+
+// Missing names the required properties this value leaves absent, in
+// declaration order. Empty means every declared requirement is answered —
+// not that the value is admissible, which is the substrate's answer and not a
+// type's.
+func (v *RecordMappingMatch) Missing() []string {
+	var out []string
+	if v.From == nil {
+		out = append(out, "from")
+	}
+	if v.To == nil {
+		out = append(out, "to")
+	}
+	return out
+}
+
+// decodeRecordMappingMatch decodes one RecordMappingMatch value at path.
+func decodeRecordMappingMatch(d *decoder, path string, v any) (RecordMappingMatch, bool) {
+	props, mapped := d.mapping(path, v)
+	if !mapped {
+		return RecordMappingMatch{}, false
+	}
+	var out RecordMappingMatch
+	for _, key := range sortedKeys(props) {
+		// A null is this dialect's delete marker, never a value: it decodes as
+		// absence, and Properties never writes one.
+		if props[key] == nil {
+			continue
+		}
+		switch key {
+		case "from":
+			p := at(path, "from")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.From = &e
+			}
+		case "to":
+			p := at(path, "to")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.To = &e
+			}
+		default:
+			d.unknown(at(path, key), "core.substrate.reamde.dev/recordmapping")
+		}
+	}
+	return out, true
+}
+
+// Encode is RecordMappingMatch as the properties map holds it, and
+// decodeRecordMappingMatch's exact inverse: a nil pointer, a nil slice and a
+// nil map each omit their key, so absence survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *RecordMappingMatch) Encode() map[string]any {
+	out := map[string]any{}
+	if v.From != nil {
+		out["from"] = *v.From
+	}
+	if v.To != nil {
+		out["to"] = *v.To
+	}
+	return out
+}
+
+// RecordMappingMap is one value of the `map` object declared on
+// core.substrate.reamde.dev/recordmapping.
+//
+// which source path reaches which subject property
+type RecordMappingMap struct {
+	// Path is the source path the value is read from.
+	Path *string
+
+	// Merge is whether a value replaces or joins what other sources offer.
+	Merge *RecordMappingMapMerge
+}
+
+// RecordMappingMapMerge is a declared enum: the admissible set, in declaration
+// order.
+//
+// whether a value replaces or joins what other sources offer
+type RecordMappingMapMerge string
+
+const (
+	RecordMappingMapMergeAtomic RecordMappingMapMerge = "atomic"
+	RecordMappingMapMergeUnion  RecordMappingMapMerge = "union"
+)
+
+// RecordMappingMapMergeValues are the declared values in declaration order,
+// which is render order.
+var RecordMappingMapMergeValues = []string{"atomic", "union"}
+
+// Valid reports whether v is one of the declared values.
+func (v RecordMappingMapMerge) Valid() bool { return Declared(RecordMappingMapMergeValues, string(v)) }
+
+// RecordMappingMapRequired names the properties the declaration marks
+// `required:`, sorted. It is a FORM-LEVEL contract: the write path does not
+// enforce it, so Decode admits a value that leaves one absent and this is what
+// a client checks before it submits one.
+var RecordMappingMapRequired = []string{"path"}
+
+// Missing names the required properties this value leaves absent, in
+// declaration order. Empty means every declared requirement is answered —
+// not that the value is admissible, which is the substrate's answer and not a
+// type's.
+func (v *RecordMappingMap) Missing() []string {
+	var out []string
+	if v.Path == nil {
+		out = append(out, "path")
+	}
+	return out
+}
+
+// decodeRecordMappingMapMerge decodes a declared RecordMappingMapMerge value.
+func decodeRecordMappingMapMerge(d *decoder, path string, v any) (RecordMappingMapMerge, bool) {
+	s, ok := d.text(path, v, RecordMappingMapMergeValues, nil)
+	if !ok {
+		return "", false
+	}
+	return RecordMappingMapMerge(s), true
+}
+
+// decodeRecordMappingMap decodes one RecordMappingMap value at path.
+func decodeRecordMappingMap(d *decoder, path string, v any) (RecordMappingMap, bool) {
+	props, mapped := d.mapping(path, v)
+	if !mapped {
+		return RecordMappingMap{}, false
+	}
+	var out RecordMappingMap
+	for _, key := range sortedKeys(props) {
+		// A null is this dialect's delete marker, never a value: it decodes as
+		// absence, and Properties never writes one.
+		if props[key] == nil {
+			continue
+		}
+		switch key {
+		case "path":
+			p := at(path, "path")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Path = &e
+			}
+		case "merge":
+			p := at(path, "merge")
+			if e, ok := decodeRecordMappingMapMerge(d, p, props[key]); ok {
+				out.Merge = &e
+			}
+		default:
+			d.unknown(at(path, key), "core.substrate.reamde.dev/recordmapping")
+		}
+	}
+	return out, true
+}
+
+// Encode is RecordMappingMap as the properties map holds it, and
+// decodeRecordMappingMap's exact inverse: a nil pointer, a nil slice and a nil
+// map each omit their key, so absence survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *RecordMappingMap) Encode() map[string]any {
+	out := map[string]any{}
+	if v.Path != nil {
+		out["path"] = *v.Path
+	}
+	if v.Merge != nil {
+		out["merge"] = string(*v.Merge)
 	}
 	return out
 }

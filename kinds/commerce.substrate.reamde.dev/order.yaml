@@ -17,7 +17,8 @@ data:
   traits:
     - temporal(point)
   indices:
-    - - status
+    - properties:
+        - status
   properties:
     name:
       type: string

@@ -50,7 +50,11 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: notion.bundles.substrate.reamde.dev
 data:
-  version: v1alpha1
+  # v1alpha2: THE TYPED CORE SWEEP. This closure moved to the declared
+  # spellings — a tool entry names its arm, a function's IO is a flat argument
+  # list and its grants ride `data` itself, a mapping rule is `{path}`, an index
+  # names its properties — so every declaration in it changed shape.
+  version: v1alpha2
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members. NO `oauth2:` manifest
@@ -393,31 +397,27 @@ data:
     the account when the walk completes.
   runtime: python
   timeoutMs: 60000
-  input:
-    type: object
-    properties:
-      account:
-        type: string
-        description: >-
-          an account record id to sync immediately, cadence ignored — the
-          whole drain runs inside this one invocation
-  capabilities:
-    emit:
+  arguments:
+    - name: account
+      type: string
+      description: "an account record id to sync immediately, cadence ignored
+        — the whole drain runs inside this one invocation"
+  emit:
+    - notion.bundles.substrate.reamde.dev/page
+    - notion.bundles.substrate.reamde.dev/database
+    - notion.bundles.substrate.reamde.dev/account
+  # The delta short-circuit reads the mirrors back; the search and links
+  # phases probe parent targets. Budget: one search page reads at most
+  # SEARCH_PAGE mirrors plus a parent probe each.
+  reads:
+    kinds:
       - notion.bundles.substrate.reamde.dev/page
       - notion.bundles.substrate.reamde.dev/database
-      - notion.bundles.substrate.reamde.dev/account
-    # The delta short-circuit reads the mirrors back; the search and links
-    # phases probe parent targets. Budget: one search page reads at most
-    # SEARCH_PAGE mirrors plus a parent probe each.
-    reads:
-      kinds:
-        - notion.bundles.substrate.reamde.dev/page
-        - notion.bundles.substrate.reamde.dev/database
-      budgets:
-        calls: 300
-        rows: 3000
-    network:
-      - "api.notion.com"
+    budgets:
+      calls: 300
+      rows: 3000
+  network:
+    - "api.notion.com"
   source: |
     # /// script
     # requires-python = ">=3.11"

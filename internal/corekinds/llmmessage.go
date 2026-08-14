@@ -20,9 +20,8 @@ type LLMMessage struct {
 	// Turn is the loop iteration this row belongs to, for ordering.
 	Turn *int64
 
-	// ToolCalls is an assistant turn's dispatched calls, [{id, name,
-	// arguments}].
-	ToolCalls Dynamic
+	// ToolCalls is an assistant turn's dispatched calls.
+	ToolCalls []LLMMessageToolCalls
 
 	// ToolCallId is the assistant tool call a tool row answers.
 	ToolCallId *string
@@ -113,8 +112,14 @@ func decodeLLMMessage(d *decoder, path string, v any) (LLMMessage, bool) {
 			}
 		case "toolCalls":
 			p := at(path, "toolCalls")
-			if e, ok := d.dynamic(p, props[key]); ok {
-				out.ToolCalls = e
+			if items, listed := d.list(p, props[key]); listed {
+				list := make([]LLMMessageToolCalls, 0, len(items))
+				for i, item := range items {
+					if e, ok := decodeLLMMessageToolCalls(d, index(p, i), item); ok {
+						list = append(list, e)
+					}
+				}
+				out.ToolCalls = list
 			}
 		case "toolCallId":
 			p := at(path, "toolCallId")
@@ -143,10 +148,14 @@ func decodeLLMMessage(d *decoder, path string, v any) (LLMMessage, bool) {
 	return out, true
 }
 
-// Properties is LLMMessage as the properties map holds it, and
-// DecodeLLMMessage's exact inverse: a nil pointer, a nil slice and a nil map
-// each omit their key, so absence survives the round trip.
-func (v *LLMMessage) Properties() map[string]any {
+// Encode is LLMMessage as the properties map holds it, and DecodeLLMMessage's
+// exact inverse: a nil pointer, a nil slice and a nil map each omit their key,
+// so absence survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *LLMMessage) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Role != nil {
 		out["role"] = *v.Role
@@ -158,7 +167,11 @@ func (v *LLMMessage) Properties() map[string]any {
 		out["turn"] = *v.Turn
 	}
 	if v.ToolCalls != nil {
-		out["toolCalls"] = v.ToolCalls
+		items := make([]any, 0, len(v.ToolCalls))
+		for i := range v.ToolCalls {
+			items = append(items, v.ToolCalls[i].Encode())
+		}
+		out["toolCalls"] = items
 	}
 	if v.ToolCallId != nil {
 		out["toolCallId"] = *v.ToolCallId
@@ -170,7 +183,79 @@ func (v *LLMMessage) Properties() map[string]any {
 		out["ok"] = *v.Ok
 	}
 	if v.Thread != nil {
-		out["thread"] = v.Thread.Properties()
+		out["thread"] = v.Thread.Encode()
+	}
+	return out
+}
+
+// LLMMessageToolCalls is one value of the `toolCalls` object declared on
+// core.substrate.reamde.dev/llmmessage.
+//
+// an assistant turn's dispatched calls
+type LLMMessageToolCalls struct {
+	// Id is the provider's call id, which a tool row answers by.
+	Id *string
+
+	// Name is the tool the model called.
+	Name *string
+
+	// Arguments is the call's arguments, as the provider wrote them.
+	Arguments *string
+}
+
+// decodeLLMMessageToolCalls decodes one LLMMessageToolCalls value at path.
+func decodeLLMMessageToolCalls(d *decoder, path string, v any) (LLMMessageToolCalls, bool) {
+	props, mapped := d.mapping(path, v)
+	if !mapped {
+		return LLMMessageToolCalls{}, false
+	}
+	var out LLMMessageToolCalls
+	for _, key := range sortedKeys(props) {
+		// A null is this dialect's delete marker, never a value: it decodes as
+		// absence, and Properties never writes one.
+		if props[key] == nil {
+			continue
+		}
+		switch key {
+		case "id":
+			p := at(path, "id")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Id = &e
+			}
+		case "name":
+			p := at(path, "name")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Name = &e
+			}
+		case "arguments":
+			p := at(path, "arguments")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Arguments = &e
+			}
+		default:
+			d.unknown(at(path, key), "core.substrate.reamde.dev/llmmessage")
+		}
+	}
+	return out, true
+}
+
+// Encode is LLMMessageToolCalls as the properties map holds it, and
+// decodeLLMMessageToolCalls's exact inverse: a nil pointer, a nil slice and a
+// nil map each omit their key, so absence survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *LLMMessageToolCalls) Encode() map[string]any {
+	out := map[string]any{}
+	if v.Id != nil {
+		out["id"] = *v.Id
+	}
+	if v.Name != nil {
+		out["name"] = *v.Name
+	}
+	if v.Arguments != nil {
+		out["arguments"] = *v.Arguments
 	}
 	return out
 }
