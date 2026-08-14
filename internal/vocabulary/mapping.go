@@ -271,6 +271,7 @@ func (l *loader) parseMapping(d Document) *Mapping {
 		m.MapOrder = append(m.MapOrder, n)
 	}
 	sort.Strings(m.MapOrder)
+	canonicalMapRules(d.Data)
 	return m
 }
 

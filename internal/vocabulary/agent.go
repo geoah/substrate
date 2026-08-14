@@ -260,6 +260,7 @@ func (l *loader) parseAgent(d Document) *Agent {
 	if !l.parseAgentTools(where, d.Data, a) {
 		return nil
 	}
+	canonicalAgentTools(d.Data)
 	// Sub-agents surface as tools under their LOCAL name, so the name space
 	// is one: a collision with a tool (or another sub-agent) is a load
 	// error, not a silent shadow at dispatch.

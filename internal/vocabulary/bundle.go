@@ -199,6 +199,10 @@ var bundleDataKeys = map[string]bool{
 	"modules": true, "oauth2": true, "requires": true,
 }
 
+// featureScopeKeys is one feature toggle's entry: the scopes enabling it
+// requests, in the object form.
+var featureScopeKeys = map[string]bool{"scopes": true}
+
 var oauth2MetaKeys = map[string]bool{
 	"authorizationEndpoint": true, "tokenEndpoint": true,
 	"revocationEndpoint": true, "featureScopes": true,
@@ -357,6 +361,7 @@ func (l *loader) buildBundle(gd *authorityDocs) {
 	}
 	b.Modules = l.parseBundleModules(where, d.Data)
 	b.OAuth2 = l.parseBundleOAuth2(where, d.Data)
+	canonicalFeatureScopes(d.Data)
 	if vocabulary {
 		// Pure vocabulary: kinds, property types, traits and mappings. A
 		// callable or a provider flow here would run behind the `builtin`
@@ -599,7 +604,15 @@ func (l *loader) parseBundleOAuth2(where string, data map[string]any) *BundleOAu
 			toggles = append(toggles, k)
 		}
 		for _, toggle := range sortedStrings(toggles) {
+			// TWO SPELLINGS, one meaning: the toggle's scopes as a bare list, or
+			// as `{scopes: [...]}`. The object is the declared form — a keyed map
+			// of lists is the one shape the property dialect cannot state — and the
+			// list is what every bundle written before it says.
 			scopes := mslice(fs, toggle)
+			if inner := asMapOrNil(fs[toggle]); inner != nil {
+				l.checkKeys(fmt.Sprintf("%s.featureScopes[%q]", w, toggle), inner, featureScopeKeys)
+				scopes = mslice(inner, "scopes")
+			}
 			if len(scopes) == 0 {
 				l.errf("%s.featureScopes[%q]: at least one scope is required", w, toggle)
 				continue

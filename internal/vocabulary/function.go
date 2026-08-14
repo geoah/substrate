@@ -675,8 +675,12 @@ func (l *loader) parseFunction(d Document) *Function {
 	if fn.Output, ok = l.parseFunctionIO(where, d.Data, "returns", "output"); !ok {
 		return nil
 	}
-
-	return l.parseFunctionCaps(where, d.Data, fn)
+	if fn = l.parseFunctionCaps(where, d.Data, fn); fn == nil {
+		return nil
+	}
+	canonicalFunctionIO(d.Data)
+	canonicalFunctionCaps(d.Data)
+	return fn
 }
 
 // parseFunctionCaps reads the capability envelope. `emit` is required and

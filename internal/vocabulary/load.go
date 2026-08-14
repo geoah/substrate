@@ -365,6 +365,13 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 			continue
 		}
 		p.Refined = local
+		// The refinement's own `values` canonicalize like a property's: the parse
+		// above read them out of a SYNTHESIZED map, so the labeled wire form has to
+		// be written back onto the document's data itself, which is what the row
+		// stores.
+		if _, declared := d.Data["values"]; declared && len(p.Values) > 0 {
+			d.Data["values"] = enumValuesToAny(p.Values)
+		}
 		if _, dup := g.PropertyTypes[local]; dup {
 			l.errf("%s: declared twice", where)
 			continue
@@ -410,6 +417,7 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 				c.Properties[pname] = k
 			}
 		}
+		canonicalTraitVariants(d.Data)
 		if _, dup := g.Traits[local]; dup {
 			l.errf("%s: declared twice", where)
 			continue
@@ -607,6 +615,9 @@ var typeDataKeys = map[string]bool{
 
 var namesKeys = map[string]bool{"singular": true, "plural": true}
 
+// indexKeys is one declared index's key set: the properties it covers, in order.
+var indexKeys = map[string]bool{"properties": true}
+
 func (l *loader) parseType(doc Document) *Kind {
 	g := l.authority
 	d := doc.Data
@@ -789,12 +800,22 @@ func (l *loader) parseType(doc Document) *Kind {
 		t.applyCapability(*b)
 	}
 
-	// indices
+	// indices. TWO SPELLINGS, one meaning: an index is `{properties: [...]}`,
+	// which is the declared form, or the bare list of property names every kind
+	// written before it says.
 	for _, iv := range mslice(d, "indices") {
 		cols, ok := iv.([]any)
 		if !ok {
-			l.errf("%s: data.indices: each index is a list of columns", where)
-			continue
+			im := asMapOrNil(iv)
+			if im == nil {
+				l.errf("%s: data.indices: each index names its properties ({properties: [...]})", where)
+				continue
+			}
+			l.checkKeys(where+": data.indices[]", im, indexKeys)
+			if cols, ok = im["properties"].([]any); !ok {
+				l.errf("%s: data.indices: properties is a list of property names", where)
+				continue
+			}
 		}
 		var idx []string
 		for _, c := range cols {
@@ -804,6 +825,7 @@ func (l *loader) parseType(doc Document) *Kind {
 			t.Indices = append(t.Indices, idx)
 		}
 	}
+	canonicalIndices(d)
 
 	if t.DisplayTemplate != "" {
 		tmpl, err := ParseTemplate(t.DisplayTemplate)
