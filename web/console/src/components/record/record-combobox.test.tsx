@@ -4,7 +4,13 @@
  * with what distinguishes them, that choosing one inserts it, and that a value
  * the list does not hold is still reachable. */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { RecordOption } from "@/lib/identities"
@@ -100,14 +106,17 @@ describe("the record dropdown", () => {
     expect(screen.getByText("shorten a note")).toBeTruthy()
   })
 
-  it("inserts the record chosen", () => {
+  it("inserts the record chosen", async () => {
     const { onSelect } = open()
     fireEvent.click(screen.getByText("core.substrate.reamde.dev/propose"))
     // The RECORD is what a selection inserts; the pin supplies the kind the
     // write joins onto it.
     expect(onSelect).toHaveBeenCalledWith("core.substrate.reamde.dev/propose")
-    // Choosing closes it: the list has done its job.
-    expect(screen.queryByPlaceholderText(/Search records/)).toBeNull()
+    // Choosing closes it: the list has done its job. The close settles after
+    // base-ui's animation check, so the unmount is awaited, not asserted flat.
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText(/Search records/)).toBeNull()
+    )
   })
 
   it("narrows on what a reader can SEE, descriptions included", () => {
@@ -133,7 +142,7 @@ describe("the record dropdown", () => {
     expect(screen.queryByText(/^Use/)).toBeNull()
   })
 
-  it("selects with the keyboard and closes on escape", () => {
+  it("selects with the keyboard and closes on escape", async () => {
     const { onSelect } = open()
     fireEvent.keyDown(search(), { key: "ArrowDown" })
     fireEvent.keyDown(search(), { key: "Enter" })
@@ -142,7 +151,9 @@ describe("the record dropdown", () => {
 
     open()
     fireEvent.keyDown(search(), { key: "Escape" })
-    expect(screen.queryByPlaceholderText(/Search records/)).toBeNull()
+    await waitFor(() =>
+      expect(screen.queryByPlaceholderText(/Search records/)).toBeNull()
+    )
   })
 
   it("says it is reading rather than showing an empty list", () => {

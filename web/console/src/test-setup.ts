@@ -19,3 +19,29 @@ if (!("ResizeObserver" in globalThis)) {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function scrollIntoView() {}
 }
+
+/** base-ui's popover positioning measures text ranges through the DOM Range
+ * API. jsdom implements Range but not its geometry, so both readers return
+ * empty boxes; positioning needs them only to exist. */
+if (!Range.prototype.getClientRects) {
+  Range.prototype.getClientRects = function getClientRects() {
+    return {
+      length: 0,
+      item: () => null,
+      [Symbol.iterator]: [][Symbol.iterator],
+    } as unknown as DOMRectList
+  }
+}
+if (!Range.prototype.getBoundingClientRect) {
+  Range.prototype.getBoundingClientRect = function getBoundingClientRect() {
+    return new DOMRect(0, 0, 0, 0)
+  }
+}
+
+/** base-ui's scroll area asks the viewport for its running animations before
+ * hiding a scrollbar. jsdom animates nothing, so the honest answer is none. */
+if (!Element.prototype.getAnimations) {
+  Element.prototype.getAnimations = function getAnimations() {
+    return []
+  }
+}
