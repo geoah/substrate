@@ -17,6 +17,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -28,8 +29,10 @@ type dialectOnePair struct {
 	want string
 }
 
-func TestDialectOneSpellingsTranslateToTheTypedDeclaration(t *testing.T) {
-	const header = `
+// dialectOneHeader is the closure every fixture declares against — one authority
+// and one kind, in the spelling the live loader admits — so the document under
+// test is the only dialect-1 thing in the stream.
+const dialectOneHeader = `
 kind: core.substrate.reamde.dev/authority
 metadata:
   id: x.example.com
@@ -47,6 +50,9 @@ data:
     label:
       type: string
 `
+
+func TestDialectOneSpellingsTranslateToTheTypedDeclaration(t *testing.T) {
+	const header = dialectOneHeader
 	for _, tc := range []dialectOnePair{
 		{
 			name: "a function's capability wrapper hoists and its schema flattens",
@@ -446,6 +452,164 @@ func TestDialectOneIOThatKeepsTheWireShapeTranslates(t *testing.T) {
 		if _, held := data[gone]; held {
 			t.Fatalf("the translation left %q behind: %#v", gone, data)
 		}
+	}
+}
+
+// TestDialectOneStoredProseWeakensToTheLiveBound is the one weakening the
+// grammar performs. Dialect 1 passed an `input:` schema through without parsing
+// the prose inside it, so a stored description may be multi-line and far past the
+// live bound; the live parse REFUSES both, and refusing here would fail the whole
+// repository's open over a comment. The prose is collapsed and truncated instead
+// — and the argument a caller sends is untouched.
+func TestDialectOneStoredProseWeakensToTheLiveBound(t *testing.T) {
+	// 309 runes over ten lines: both refusals of the live parse at once.
+	prose := strings.TrimSuffix(strings.Repeat("what the caller is looking for\n", 10), "\n")
+	data, err := dialectOneData(vocabulary.DocFunction, storedFunction(t, `  input:
+    type: object
+    properties:
+      query:
+        type: string
+        description: |
+`+indented(prose)+`
+    required: [query]
+`))
+	if err != nil {
+		t.Fatalf("a stored description refused a translation: %v", err)
+	}
+	args, _ := data["arguments"].([]any)
+	if len(args) != 1 {
+		t.Fatalf("arguments translated to %#v", data["arguments"])
+	}
+	arg, _ := args[0].(map[string]any)
+	desc, _ := arg["description"].(string)
+	switch {
+	case strings.ContainsAny(desc, "\n\r"):
+		t.Fatalf("the weakened description is still multi-line: %q", desc)
+	case utf8.RuneCountInString(desc) != dialectOneMaxDescription:
+		t.Fatalf("the weakened description is %d runes, want the bound %d: %q",
+			utf8.RuneCountInString(desc), dialectOneMaxDescription, desc)
+	case !strings.HasPrefix(desc, "what the caller is looking for what the caller"):
+		t.Fatalf("the weakening lost the prose it keeps: %q", desc)
+	}
+	if arg["name"] != "query" || arg["type"] != vocabulary.ArgumentString || arg["required"] != true {
+		t.Fatalf("the weakening moved the argument: %#v", arg)
+	}
+	// THE LIVE LOADER IS WHAT THE BOUND BELONGS TO: the weakened value has to
+	// pass its parse, which is what pins the frozen bound to the live one — a live
+	// bound that narrows fails here rather than at somebody's open.
+	if _, err := vocabulary.BuildAuthorities(append(documents(t, dialectOneHeader),
+		vocabulary.Document{Kind: vocabulary.DocFunction, ID: "x.example.com/fn", Data: data}),
+		vocabulary.SourceInstalled); err != nil {
+		t.Fatalf("the live loader refuses the weakened description: %v", err)
+	}
+}
+
+// indented indents a block for a YAML literal scalar, four spaces past the key's
+// own six, so the fixture above can hold real newlines.
+func indented(s string) string {
+	return "          " + strings.ReplaceAll(s, "\n", "\n          ")
+}
+
+// TestDialectOneTraitVariantNameThatMovesABindingRefuses is the trait's own
+// safety rule. Dialect 1 validated a variant's PROPERTY names and never the
+// variant's own, so a store may hold `oneOf: {point_in_time: …}`, which the typed
+// variant list cannot hold. It has no translation: a kind binds a variant BY NAME
+// (`traits: [temporal(point)]`) and its records store the binding, so re-spelling
+// it would re-point every one of them. The rung refuses by name, with the fix in
+// the message, instead of handing the loader an entry it rejects.
+func TestDialectOneTraitVariantNameThatMovesABindingRefuses(t *testing.T) {
+	docs := documents(t, `
+kind: core.substrate.reamde.dev/trait
+metadata:
+  id: x.example.com/spanned
+data:
+  authority: x.example.com
+  oneOf:
+    point:
+      at: datetime
+    point_in_time:
+      at: datetime
+`)
+	data, err := dialectOneData(vocabulary.DocTrait, docs[0].Data)
+	if err == nil {
+		t.Fatalf("the grammar fabricated a variant name the loader refuses: %#v", data)
+	}
+	for _, want := range []string{`"point_in_time"`, "re-declare the trait"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the refusal must name the variant and the fix (%q missing): %v", want, err)
+		}
+	}
+	// The refusal is WHOLE: a translation that kept the variants it could would
+	// unbind the records naming the one it dropped, so `oneOf` is left as stored.
+	if _, isList := docs[0].Data["oneOf"].([]any); isList {
+		t.Fatalf("the refusal half-translated the variants: %#v", docs[0].Data["oneOf"])
+	}
+	// The names the list CAN hold still translate: the point/range case in the
+	// fixture table above is that same trait's real variants.
+	if _, err := dialectOneData(vocabulary.DocTrait, documents(t, `
+kind: core.substrate.reamde.dev/trait
+metadata:
+  id: x.example.com/spanned
+data:
+  authority: x.example.com
+  oneOf:
+    point:
+      at: datetime
+`)[0].Data); err != nil {
+		t.Fatalf("a translatable variant name refused: %v", err)
+	}
+}
+
+// TestDialectOnePropertyTypeValuesTakeTheirLabels is the refinement's fixture,
+// and the only one whose stored spelling the live loader still ADMITS — an author
+// may write `values: [warm, cool]` today too. That is exactly why the translation
+// is frozen HERE: core's `propertytype` declares `values` as a repeated OBJECT, so
+// the row a dialect-1 blob migrates into cannot hold a bare scalar, and the shape
+// it takes may not depend on a normalization the live declaration owns and could
+// move with.
+func TestDialectOnePropertyTypeValuesTakeTheirLabels(t *testing.T) {
+	const refinement = `---
+kind: core.substrate.reamde.dev/propertytype
+metadata:
+  id: x.example.com/shade
+data:
+  authority: x.example.com
+  base: enum
+  values: [warm, cool]
+---
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: x.example.com/swatch
+data:
+  authority: x.example.com
+  names:
+    singular: swatch
+    plural: swatches
+  properties:
+    shade:
+      type: shade
+`
+	docs := documents(t, dialectOneHeader+refinement)
+	data, err := dialectOneData(vocabulary.DocPropertyType, docs[2].Data)
+	if err != nil {
+		t.Fatalf("translating a refinement refused: %v", err)
+	}
+	// What enumValuesToAny renders for a bare scalar: both keys, no label, in the
+	// order the author declared them.
+	want := []any{
+		map[string]any{"value": "warm", "label": ""},
+		map[string]any{"value": "cool", "label": ""},
+	}
+	if !reflect.DeepEqual(data["values"], want) {
+		t.Fatalf("values translated to\n %#v\nwant\n %#v", data["values"], want)
+	}
+	twice, err := dialectOneData(vocabulary.DocPropertyType, data)
+	if err != nil || !reflect.DeepEqual(twice["values"], want) {
+		t.Fatalf("translating twice moved the values: %#v (%v)", twice["values"], err)
+	}
+	// And the live loader takes what came out, with the value set intact.
+	if got := translatedDeclarations(t, dialectOneHeader+refinement)["x.example.com/shade"]; !reflect.DeepEqual(got["values"], want) {
+		t.Fatalf("the loaded refinement holds\n %#v\nwant\n %#v", got["values"], want)
 	}
 }
 

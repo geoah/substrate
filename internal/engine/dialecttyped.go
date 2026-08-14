@@ -26,12 +26,15 @@ package engine
 //     dialect stamp and the rewrite commit or roll back together, and the gate's
 //     refusal (dialect.go) is what an older binary meets.
 //
-// The translation is the LOADER's: the stored blob is parsed by the current
-// loader (which still admits every dialect-1 spelling and leaves the parsed data
-// in the one canonical form, vocabulary/canonical.go), and the typed properties
-// are then rendered by authorityDeclarations — the same derivation the projection
-// writes. The rung and the projection cannot disagree about what a typed row is,
-// because there is one function that says.
+// The translation is TWO STEPS, and only the second one validates. The live
+// loader admits NONE of dialect 1's seven spellings: each is refused there by
+// name, pointing at what replaced it, so a stored blob cannot be handed to it as
+// it stands. dialectonegrammar.go, the frozen dialect-1 grammar, rewrites the
+// blob into the spellings the loader does admit, and the loader is what then
+// parses and refuses. The typed properties are rendered from what it parsed by
+// authorityDeclarations, the same derivation the projection writes, so the rung
+// and the projection cannot disagree about what a typed row is, because there is
+// one function that says.
 
 import (
 	"context"

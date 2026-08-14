@@ -126,9 +126,34 @@ func windBackDialect(t *testing.T, db *sql.DB) {
 func w2SeedLegacy(t *testing.T, ds *dataset, defKeys map[string]any, seq int64) {
 	t.Helper()
 	ctx := context.Background()
+	w2SeedLegacyBlob(t, ds, w2Mirror, defKeys)
+	if _, err := ds.db.ExecContext(ctx, `
+		INSERT INTO trigger_cursors (trigger_id, seq, updated_at) VALUES ($1, $2, $3)
+		ON CONFLICT (repository, trigger_id) DO UPDATE SET seq = EXCLUDED.seq`,
+		w2Mirror, seq, time.Now().UTC()); err != nil {
+		t.Fatalf("seed cursor: %v", err)
+	}
+	if _, err := ds.db.ExecContext(ctx, `
+		INSERT INTO trigger_failures (trigger_id, seq, fire_id, record_id, attempts, last_error, parked_at)
+		VALUES ($1, 1, '', 'somerecord', 3, 'old park', $2)`,
+		w2Mirror, time.Now().UTC()); err != nil {
+		t.Fatalf("seed failure: %v", err)
+	}
+}
+
+// w2SeedLegacyBlob merges legacy keys into one declaration row's `definition`
+// blob, in place. It is the LEGACY-CONTENT half of the recipe above, apart from
+// it because a dialect-1 grammar fixture needs exactly this and none of the
+// trigger bookkeeping: a row planted in the dialect-1 shape
+// (PlantDeclarationRow) holds the declaration as this binary would write it,
+// and what a fixture wants is the spelling an OLDER binary stored, which no
+// write path in this tree produces.
+func w2SeedLegacyBlob(t *testing.T, ds *dataset, id string, defKeys map[string]any) {
+	t.Helper()
+	ctx := context.Background()
 	var raw []byte
 	if err := ds.db.QueryRowContext(ctx,
-		`SELECT props->'definition' FROM records WHERE id = $1`, w2Mirror).Scan(&raw); err != nil {
+		`SELECT props->'definition' FROM records WHERE id = $1`, id).Scan(&raw); err != nil {
 		t.Fatalf("read definition: %v", err)
 	}
 	var def map[string]any
@@ -144,20 +169,8 @@ func w2SeedLegacy(t *testing.T, ds *dataset, defKeys map[string]any, seq int64) 
 	}
 	if _, err := ds.db.ExecContext(ctx, `
 		UPDATE records SET props = jsonb_set(props, '{definition}', $2::jsonb) WHERE id = $1`,
-		w2Mirror, string(newRaw)); err != nil {
+		id, string(newRaw)); err != nil {
 		t.Fatalf("seed old definition: %v", err)
-	}
-	if _, err := ds.db.ExecContext(ctx, `
-		INSERT INTO trigger_cursors (trigger_id, seq, updated_at) VALUES ($1, $2, $3)
-		ON CONFLICT (repository, trigger_id) DO UPDATE SET seq = EXCLUDED.seq`,
-		w2Mirror, seq, time.Now().UTC()); err != nil {
-		t.Fatalf("seed cursor: %v", err)
-	}
-	if _, err := ds.db.ExecContext(ctx, `
-		INSERT INTO trigger_failures (trigger_id, seq, fire_id, record_id, attempts, last_error, parked_at)
-		VALUES ($1, 1, '', 'somerecord', 3, 'old park', $2)`,
-		w2Mirror, time.Now().UTC()); err != nil {
-		t.Fatalf("seed failure: %v", err)
 	}
 }
 

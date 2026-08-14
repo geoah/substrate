@@ -12,36 +12,63 @@ package engine
 // rows an older binary left — because the rows cannot be re-authored and a store
 // written years ago is not going to change.
 //
+// Two stored spellings the loader still ADMITS are translated here as well, for
+// the same reason the refused ones are: a refinement's bare-scalar `values:`,
+// because the ROW it migrates into cannot hold one, and the prose inside an IO
+// schema, because dialect 1 never parsed it and the live parse refuses what it
+// may hold. Neither may depend on a live normalization to come out right.
+//
 // It changes ONLY if a bug is found in the translation itself. A new spelling is
 // never added here: dialect 1 is closed, and a spelling dialect 2 retires is
 // dialect 2's business, not this file's.
 //
-// Every function is a TOTAL rewrite of one dialect-1 spelling into the dialect-2
-// one, in place, and NEVER a validation: what comes out goes straight to the live
-// loader, which is what refuses a document dialect 1 would have refused too — one
-// validator, not two. Two further rules hold for all of them, and the rung leans
-// on both. They are IDEMPOTENT: a dialect-2 value is its own translation, which is
-// what lets a half-migrated store migrate exactly the rest. And they never
-// INVENT: a spelling is translated, never defaulted, so absence stored stays
-// absence authored.
+// Every TRANSLATION here is a total rewrite of one dialect-1 spelling into the
+// dialect-2 one, in place, and never a validation: what comes out goes straight
+// to the live loader, which is what refuses a document dialect 1 would have
+// refused too — one validator, not two. Three further rules hold for all of them,
+// and the rung leans on all three:
+//
+//   - IDEMPOTENT. A dialect-2 value is its own translation, which is what lets a
+//     half-migrated store migrate exactly the rest.
+//   - NEVER INVENT. A spelling is translated, never defaulted, so absence stored
+//     stays absence authored.
+//   - A WIRE SHAPE NEVER MOVES. Where no dialect-2 spelling keeps the shape a
+//     caller sends or a record binds, the translation REFUSES by name through the
+//     rung's guided error (dialectOneArguments, dialectOneTraitVariants) instead
+//     of fabricating one. PROSE is the single exception: a description dialect 1
+//     never held to a shape is WEAKENED to fit the live bound
+//     (dialectOneDescription), because failing a repository's open over a comment
+//     is the worse answer.
+//
+// ONE THING HERE IS NOT A TRANSLATION, and it is not rung-only either.
+// retiredDeclarationProps is read by three LIVE paths that outlive every
+// dialect-1 store: the projection's explicit nulls and `engineOwned`
+// (vocabularywrite.go), and the write refusal that names a retired property. The
+// set is not prunable with the rung — its own comment says why it lives here.
 
 import (
 	"fmt"
 	"sort"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // dialectOneData translates one stored `definition` blob into the data map the
 // live loader parses, by the kind that stored it. A kind not listed stored no
-// dialect-1 spelling of its own (an authority header, an actor, a property type),
-// so its blob is already the document.
+// dialect-1 spelling of its own (an authority header, an actor), so its blob is
+// already the document.
 func dialectOneData(short string, data map[string]any) (map[string]any, error) {
 	switch short {
 	case vocabulary.DocKind:
 		dialectOneIndices(data)
 	case vocabulary.DocTrait:
-		dialectOneTraitVariants(data)
+		if err := dialectOneTraitVariants(data); err != nil {
+			return nil, err
+		}
+	case vocabulary.DocPropertyType:
+		dialectOnePropertyTypeValues(data)
 	case vocabulary.DocRecordMapping:
 		dialectOneMapRules(data)
 	case vocabulary.DocFunction:
@@ -109,20 +136,63 @@ func dialectOneIndices(d map[string]any) {
 // name to properties into the variant LIST. The map form is the one that could
 // not survive the typed dialect: a keyed map of keyed maps leaves every reader
 // guessing which level a path addresses.
-func dialectOneTraitVariants(d map[string]any) {
+//
+// A VARIANT NAME IS PART OF THE TRAIT'S SHAPE, so a name the list cannot hold
+// REFUSES rather than being rewritten: a kind binds one by name
+// (`traits: [temporal(point)]`) and its records store which one they bound, so
+// spelling it differently here would re-point every one of those bindings at a
+// variant that never existed. Dialect 1 validated only the variant's PROPERTY
+// names, so a store may hold a name the live list arm refuses, and this is the
+// one path that can say so with the fix in it. The refusal names the variant; the
+// ROW is named by the caller (rowDocument), as it is for every refusal here.
+func dialectOneTraitVariants(d map[string]any) error {
 	raw, has := d["oneOf"]
 	if !has {
-		return
+		return nil
 	}
 	if _, isList := raw.([]any); isList {
-		return
+		return nil
 	}
 	variants := dialectOneMap(raw)
 	out := make([]any, 0, len(variants))
 	for _, name := range sortedKeys(variants) {
+		if !vocabulary.ValidCamel(name) {
+			return fmt.Errorf("data.oneOf declares a variant named %q, which the variant list cannot hold: a kind binds a variant BY NAME and its records store the binding, so no translation keeps them pointing at the same variant — re-declare the trait with `oneOf: [{name: <camelCase>, properties: {…}}, …]` before migrating",
+				name)
+		}
 		out = append(out, map[string]any{"name": name, "properties": variants[name]})
 	}
 	d["oneOf"] = out
+	return nil
+}
+
+// dialectOnePropertyTypeValues rewrites a refinement's `values:` from the bare
+// scalars an author could write into the {value, label} objects the DECLARATION
+// holds: core's `propertytype` declares `values` as a repeated object, so the row
+// this blob projects into cannot hold a bare scalar.
+//
+// It is frozen here because the row's content depends on it. The live loader
+// normalizes the same value on its way out (parseAuthority's one normalized copy,
+// internal/vocabulary/load.go), but that normalization belongs to the live
+// declaration and may move with it; the shape a dialect-1 blob's values migrate
+// INTO may not, so the rung states it itself. Idempotent: an entry already
+// labeled is its own translation.
+func dialectOnePropertyTypeValues(d map[string]any) {
+	list, has := d["values"].([]any)
+	if !has {
+		return
+	}
+	out := make([]any, 0, len(list))
+	for _, v := range list {
+		if entry := dialectOneMapOrNil(v); entry != nil {
+			out = append(out, entry)
+			continue
+		}
+		// A bare scalar declared no label, and an absent label is the empty one:
+		// what enumValuesToAny renders for exactly this value.
+		out = append(out, map[string]any{"value": fmt.Sprint(v), "label": ""})
+	}
+	d["values"] = out
 }
 
 // dialectOneMapRules wraps a mapping rule authored as a bare path string in the
@@ -282,8 +352,10 @@ func dialectOneArguments(schema map[string]any, side string) ([]any, error) {
 	for _, name := range names {
 		arg := map[string]any{"name": name}
 		leaf := dialectOneMap(props[name])
-		if desc, ok := leaf["description"].(string); ok && desc != "" {
-			arg["description"] = desc
+		if desc, ok := leaf["description"].(string); ok {
+			if weakened := dialectOneDescription(desc); weakened != "" {
+				arg["description"] = weakened
+			}
 		}
 		if required[name] {
 			arg["required"] = true
@@ -292,11 +364,12 @@ func dialectOneArguments(schema map[string]any, side string) ([]any, error) {
 			arg["repeated"] = true
 			leaf = dialectOneMap(leaf["items"])
 		}
+		// The type word is the LAST thing decided, and nothing narrows it further:
+		// `enum` was never an admitted key of an IO leaf in any dialect (the flat
+		// spelling's own values live under `values`, on the argument), so a leaf
+		// carrying one is not a shape any binary stored — and reading it as an enum
+		// argument would move the wire type of every value the caller sends.
 		arg["type"] = dialectOneArgumentType(leaf)
-		if values := dialectOneSlice(leaf, "enum"); len(values) > 0 {
-			arg["type"] = vocabulary.ArgumentEnum
-			arg["values"] = values
-		}
 		out = append(out, arg)
 	}
 	return out, nil
@@ -309,6 +382,37 @@ func dialectOneFlatKey(side string) string {
 		return "returns"
 	}
 	return "arguments"
+}
+
+// dialectOneMaxDescription is the bound the live loader holds a declared
+// description to (parseDescription, internal/vocabulary/load.go). The frozen file
+// keeps its OWN copy for two reasons: the live constant is unexported, and a
+// frozen translation has to weaken the same way forever — a live bound that
+// widens later must not change what an unmigrated store's descriptions become.
+// The fixtures pin the two together by loading what the weakening produces, so a
+// live bound that NARROWS fails there instead of at somebody's open.
+const dialectOneMaxDescription = 200
+
+// dialectOneDescription weakens one dialect-1 description into a value the live
+// loader admits: a single line, at most dialectOneMaxDescription runes.
+//
+// THE MIGRATION MAY LOSE PROSE, NEVER A WIRE SHAPE. A description is a tooltip,
+// not part of the contract a caller answers, so where the live parse REFUSES one
+// (a newline, an overlong one) the rung weakens instead — refusing would fail the
+// whole repository's open over a comment. It is the only weakening here, and only
+// the IO leaf needs it: dialect 1 passed an `input:`/`output:` schema through
+// verbatim without ever parsing the prose inside it, while every other stored
+// description went through this same parse when the older binary wrote the row.
+func dialectOneDescription(desc string) string {
+	// Fields collapses every run of whitespace, newlines included, which is what
+	// makes the result single-line; a description already one line is unchanged.
+	desc = strings.Join(strings.Fields(desc), " ")
+	if utf8.RuneCountInString(desc) > dialectOneMaxDescription {
+		// The cut is on a RUNE boundary: the bound counts runes, and slicing bytes
+		// could leave half of one behind.
+		desc = string([]rune(desc)[:dialectOneMaxDescription])
+	}
+	return desc
 }
 
 // dialectOneArgumentType maps one dialect-1 leaf schema onto the argument type
@@ -377,10 +481,16 @@ func dialectOneMap(v any) map[string]any {
 }
 
 // dialectOneMapOrNil reads a nested map, nil when the value is not one — the
-// difference from dialectOneMap is the one the IO translation reads.
+// difference from dialectOneMap is the one the IO translation reads. Both map
+// shapes count, for the reason dialectOneMap keeps both: a reader that answered a
+// YAML-decoded map last release answers it forever.
 func dialectOneMapOrNil(v any) map[string]any {
-	m, _ := v.(map[string]any)
-	return m
+	switch v.(type) {
+	case map[string]any, map[any]any:
+		return dialectOneMap(v)
+	default:
+		return nil
+	}
 }
 
 // dialectOneSlice reads a list-valued key, nil when it is absent or not a list.
