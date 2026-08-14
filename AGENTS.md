@@ -32,8 +32,8 @@ mise run test           # the whole Go suite, in its two halves
 mise run test:short     # skips every suite that wants a database
 mise run test:race      # the short suite under the race detector
 mise run test:coverage  # both halves, with a profile -> coverage.out
-mise run lint           # every linter: Go, YAML, shell, Python, the docs
-mise run lint:go        # one of them; lint:yaml/:shell/:python/:docs are the rest
+mise run lint           # every linter: Go, YAML, shell, Python, the docs, the pins
+mise run lint:go        # one of them; :yaml/:shell/:python/:docs/:toolchain are the rest
 mise run audit          # the vulnerability scans: govulncheck and pnpm audit
 mise run fmt            # every formatter, in place: gofumpt/goimports and yamlfmt
 mise run fmt:check      # the same, as a check — what CI runs
@@ -42,7 +42,7 @@ mise run ci             # every CI job, locally. The whole pipeline.
 ```
 
 **A bare task name is every check of its kind**, and a suffix narrows it to
-one language: `lint` is all five linters, `lint:go` is one of them; `fmt`
+one language: `lint` is all six linters, `lint:go` is one of them; `fmt`
 writes Go and YAML, `fmt:yaml` writes one; `fmt:check` is the pair as a check.
 Nothing is reachable only through the aggregate. The console is not one of
 those suffixes — it is a second toolchain with its own family (`console:lint`,
@@ -260,8 +260,8 @@ Do not half-do it.
   release that does not happen. A PR title is one too — the merge is a squash,
   so the PR title IS the commit release-please reads.
 - Keep `mise run lint` and `mise run fmt:check` at zero. Both are aggregates,
-  and the `lint` job runs both: `lint` is Go, YAML, shell, Python and the
-  docs, `fmt:check` is Go and YAML. The console has its own pair
+  and the `lint` job runs both: `lint` is Go, YAML, shell, Python, the docs
+  and the toolchain pins, `fmt:check` is Go and YAML. The console has its own pair
   (`console:lint`, `console:fmt:check`) inside `ci:console`.
 - **`lint:docs` is the one docs linter**, and it holds two halves. What the
   pages point at: every Markdown link and `#anchor` resolves against the tree,

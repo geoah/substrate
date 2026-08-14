@@ -10,13 +10,13 @@
 # The console is web/console (React + Vite + shadcn/ui + Tailwind), a
 # self-contained app with only an `@`→src alias — no workspace package to
 # stage. dist/ is arch-independent; build it once on the native arch, never qemu.
-FROM --platform=$BUILDPLATFORM node:26-alpine AS web
+# The major here is held to .mise.toml's node pin by `lint:toolchain`, because
+# this stage must build the console on the node the console is TESTED on. It
+# briefly ran on 26, which builds a dist fine but is a node the test suite has
+# never passed under (node's own global localStorage shadows jsdom's).
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /web/console
-# Node 25 dropped corepack from the distribution, so node:26-alpine does not
-# ship one. It is installed from npm rather than replaced by a `pnpm@x` install
-# so that web/console/package.json's `packageManager` stays the one place the
-# pnpm version is pinned.
-RUN npm install --global corepack@latest && corepack enable
+RUN corepack enable
 COPY web/console/package.json web/console/pnpm-lock.yaml* web/console/pnpm-workspace.yaml* ./
 RUN corepack prepare --activate && pnpm install --frozen-lockfile
 COPY web/console/ ./
