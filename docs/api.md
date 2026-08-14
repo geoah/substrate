@@ -259,9 +259,13 @@ handoff has no gap and no double-see.
 
 ## Discovery
 
-`GET /api` is discovery. It is unversioned and unauthenticated, and opens no
-repository, so a client can call it before it holds a token. It reports the
-served API versions, the server build, the binary's maximum
+`GET /.well-known/substrate/server.json` is discovery. It is unversioned and
+unauthenticated, and opens no repository, so a client can call it before it
+holds a token — and its well-known path is what lets an outside system ask
+"is this domain a substrate at all" before it speaks the rest of the
+contract, the same way `/.well-known/openid-configuration` works for an OIDC
+issuer. It reports the served API versions, the server build, the binary's
+maximum
 [vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract) (a
 repository's own stored dialect is internal to its store and never on the wire;
 a binary too old for it refuses the open, which surfaces as `unavailable`), the
@@ -285,14 +289,18 @@ reports `alpha`:
                         "function:<name>", "bundle:<name>", "substrate"]},
  "endpoints": {"register": "/register", "login": "/login", "tokens": "/tokens",
                "password": "/password", "totp": "/totp"},
- "auth": {"totpRequired": true}}
+ "registration": {"open": true, "totpRequired": true}}
 ```
 
-`auth.totpRequired` is what a client reads before it asks a person for a code:
-it is `false` only where the second factor is
+`registration` is what the register door asks for, and whether it is even
+open. `registration.open` is `false` only on a deployment with no invite code
+configured — the register endpoints answer `unsupported` either way, this
+just lets a client say so before trying. `registration.totpRequired` is what
+a client reads before it asks a person for a code: it is `false` only where
+the second factor is
 [switched off](auth.md#the-second-factor-can-be-switched-off-locally), which is
-a local substrate. It states a requirement, never a verdict — the service
-refuses on its own terms either way.
+a local substrate. Neither field is a verdict — the service refuses on its
+own terms either way.
 
 Address `/api/v1`. Today it is the only prefix served, and `versions` is where
 that is said: were a deployment ever to answer on a second one, it would be
@@ -416,8 +424,9 @@ The code set is closed. The client-error codes:
 
 The server-error family is split so a client can tell "try again" from "never
 going to work": `internal` (500, an unexpected fault), `unsupported` (501, a
-feature this deployment does not offer, the thing `GET /api`
-detection replaces), and `unavailable` (503, always with a `Retry-After`). One
+feature this deployment does not offer, the thing `GET
+/.well-known/substrate/server.json` detection replaces), and `unavailable`
+(503, always with a `Retry-After`). One
 case is worth calling out: a well-formed token whose repository cannot be
 opened answers `unavailable`, never a masked `401`, so a store the binary
 cannot serve is diagnosable instead of looking like a bad credential.

@@ -37,9 +37,10 @@ const (
 // registration has no repository yet, and everything after it takes one from
 // the token.
 const (
-	// pathDiscovery is GET /api: unauthenticated, repository-free, and the one
-	// thing the door reads before it asks a person for anything.
-	pathDiscovery      = "/api"
+	// pathDiscovery is GET /.well-known/substrate/server.json: unauthenticated,
+	// repository-free, and the one thing the door reads before it asks a
+	// person for anything.
+	pathDiscovery      = "/.well-known/substrate/server.json"
 	pathRegisterEnroll = "/register/enroll"
 	pathRegister       = "/register"
 	pathLogin          = "/login"
@@ -390,13 +391,14 @@ type tokenResult struct {
 	Secret string              `json:"secret"`
 }
 
-// discoveryDoc is the slice of GET /api the door reads. The pointer is the
-// point: a substrate that predates the field, and one that cannot be reached
-// at all, must both read as "a code is required" rather than as "no".
+// discoveryDoc is the slice of GET /.well-known/substrate/server.json the
+// door reads. The pointer is the point: a substrate that predates the field,
+// and one that cannot be reached at all, must both read as "a code is
+// required" rather than as "no".
 type discoveryDoc struct {
-	Auth struct {
+	Registration struct {
 		TOTPRequired *bool `json:"totpRequired"`
-	} `json:"auth"`
+	} `json:"registration"`
 }
 
 // totpRequired reports whether this deployment verifies a second factor.
@@ -409,7 +411,7 @@ func (c *client) totpRequired(ctx context.Context) bool {
 	if err := c.do(ctx, http.MethodGet, pathDiscovery, nil, nil, &doc); err != nil {
 		return true
 	}
-	return doc.Auth.TOTPRequired == nil || *doc.Auth.TOTPRequired
+	return doc.Registration.TOTPRequired == nil || *doc.Registration.TOTPRequired
 }
 
 func (c *client) registerEnroll(ctx context.Context, in registerBeginRequest) (*substrate.TOTPEnrollment, error) {

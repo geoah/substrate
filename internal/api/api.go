@@ -44,22 +44,24 @@ type Config struct {
 	// fallback redirect target. Empty (local dev) posts to "*" and renders no
 	// redirect.
 	ConsoleURL string
-	// MaxDialect is the binary's maximum schema dialect, reported
-	// by GET /api discovery. GET /api touches no repository, so it surfaces the
-	// binary max only: a repository's STORED dialect lives in that repository's own
-	// `vocabulary_dialect` table and is served nowhere. Zero when unset.
+	// MaxDialect is the binary's maximum schema dialect, reported by
+	// GET /.well-known/substrate/server.json discovery. That endpoint touches no
+	// repository, so it surfaces the binary max only: a repository's STORED
+	// dialect lives in that repository's own `vocabulary_dialect` table and is
+	// served nowhere. Zero when unset.
 	MaxDialect int
 	// InviteCode is the ONE door into a fresh substrate: registering with it
 	// creates a user and their one repository. EMPTY TURNS REGISTRATION OFF —
 	// the endpoints answer `unsupported`, exactly like any capability this
-	// deployment lacks.
+	// deployment lacks, and discovery reports `registration.open: false`.
 	InviteCode string
 	// TOTPDisabled mirrors the service's own dev escape hatch
 	// (SUBSTRATE_INSECURE_DISABLE_TOTP): the second factor is not verified, so
 	// the door stops DEMANDING a code — the credential changes take the
-	// password alone, and GET /api reports `auth.totpRequired: false` so a
-	// client hides the field instead of asking for something nothing checks.
-	// It changes no verification: refusing is the service's job either way.
+	// password alone, and discovery reports `registration.totpRequired: false`
+	// so a client hides the field instead of asking for something nothing
+	// checks. It changes no verification: refusing is the service's job either
+	// way.
 	TOTPDisabled bool
 	// Now is an optional clock seam for the auth rate limiter.
 	Now func() time.Time
@@ -117,9 +119,11 @@ func New(cfg Config) http.Handler {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	// GET /api is discovery: unversioned, unauthenticated, and DB-free like
-	// /healthz. It replaces 501-style feature detection.
-	r.Get("/api", h.getDiscovery)
+	// GET /.well-known/substrate/server.json is discovery: unversioned,
+	// unauthenticated, and DB-free like /healthz. It replaces 501-style
+	// feature detection, and its well-known path is what lets a caller ask
+	// "is this domain a substrate at all" before it knows anything else.
+	r.Get("/.well-known/substrate/server.json", h.getDiscovery)
 
 	// The door, BESIDE the API and outside every version prefix. No repository
 	// segment: registration has none yet, and everything after it takes one
@@ -186,11 +190,13 @@ func New(cfg Config) http.Handler {
 }
 
 // isAPIPath reports whether a path addresses the API surface rather than the
-// console: the discovery endpoint itself and everything under a versioned
-// prefix. It matches on the segment boundary, so a console route that merely
-// STARTS with the letters (/apiary) is still the SPA's.
+// console: everything under a versioned prefix. It matches on the segment
+// boundary, so a console route that merely STARTS with the letters (/apiary)
+// is still the SPA's. Discovery sits at /.well-known/substrate/server.json,
+// outside this surface entirely — a typo there falls through to the SPA
+// fallback exactly as a typo'd /healthz would.
 func isAPIPath(path string) bool {
-	return path == "/api" || strings.HasPrefix(path, "/api/")
+	return strings.HasPrefix(path, "/api/")
 }
 
 // mountResources builds the versioned resource tree under /api/v1.

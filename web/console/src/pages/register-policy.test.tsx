@@ -1,5 +1,6 @@
 /** Registration against the REAL discovery hook: the reader (or a password
- * manager) can complete and submit the first step before `GET /api` answers,
+ * manager) can complete and submit the first step before
+ * `GET /.well-known/substrate/server.json` answers,
  * and the answer decides whether there is a second step at all. */
 
 import {
@@ -77,9 +78,9 @@ describe("RegisterPage and the door's own answer", () => {
     })
     fetchMock.mockImplementation(async (input) => {
       const url = String(input)
-      if (url === "/api") {
+      if (url === "/.well-known/substrate/server.json") {
         await discovered
-        return jsonResponse(200, { auth: { totpRequired: false } })
+        return jsonResponse(200, { registration: { totpRequired: false } })
       }
       if (url === "/register/enroll") return jsonResponse(200, ENROLLMENT)
       return jsonResponse(201, MINT)
@@ -119,7 +120,8 @@ describe("RegisterPage and the door's own answer", () => {
   it("keeps the enrollment step where discovery never answers", async () => {
     fetchMock.mockImplementation(async (input) => {
       const url = String(input)
-      if (url === "/api") throw new TypeError("offline")
+      if (url === "/.well-known/substrate/server.json")
+        throw new TypeError("offline")
       if (url === "/register/enroll") return jsonResponse(200, ENROLLMENT)
       return jsonResponse(201, MINT)
     })

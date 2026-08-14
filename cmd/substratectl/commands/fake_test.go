@@ -56,8 +56,9 @@ type fakeSubstrate struct {
 	paceRegisterOnce bool
 	// revokeStatus, when non-zero, makes DELETE /tokens/{id} fail with it.
 	revokeStatus int
-	// totpDisabled makes GET /api answer `auth.totpRequired: false` — the
-	// local substrate that verifies no second factor.
+	// totpDisabled makes GET /.well-known/substrate/server.json answer
+	// `registration.totpRequired: false` — the local substrate that verifies
+	// no second factor.
 	totpDisabled bool
 	// changes is the ndjson watch payload (one substrate.Change per row).
 	changes []substrate.Change
@@ -121,15 +122,15 @@ func (f *fakeSubstrate) noteRequest(r *http.Request) {
 }
 
 // doorRequests is the recorded traffic MINUS the discovery probe: the door
-// reads GET /api before it asks a person for a code, and a test about the
-// registration gesture is not about that read. The probe itself is asserted
-// where it decides something.
+// reads GET /.well-known/substrate/server.json before it asks a person for a
+// code, and a test about the registration gesture is not about that read.
+// The probe itself is asserted where it decides something.
 func (f *fakeSubstrate) doorRequests() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make([]string, 0, len(f.requests))
 	for _, r := range f.requests {
-		if r != "GET /api" {
+		if r != "GET /.well-known/substrate/server.json" {
 			out = append(out, r)
 		}
 	}
@@ -138,7 +139,7 @@ func (f *fakeSubstrate) doorRequests() []string {
 
 func (f *fakeSubstrate) handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api", f.handleDiscovery)
+	mux.HandleFunc("GET /.well-known/substrate/server.json", f.handleDiscovery)
 	mux.HandleFunc("GET "+typesPath, f.handleTypes)
 	mux.HandleFunc("POST /api/v1/core.substrate.reamde.dev/vocabulary/apply", f.handleVocabularyApply)
 	mux.HandleFunc("GET /api/v1/core.substrate.reamde.dev/changes", f.handleChanges)
@@ -373,12 +374,12 @@ func (f *fakeSubstrate) paced(w http.ResponseWriter) {
 
 // handleRegisterEnroll issues a TOTP enrollment and writes NOTHING, exactly as
 // the substrate does: the caller holds the seed and hands it back with a code.
-// handleDiscovery serves the slice of GET /api the door reads: whether this
-// deployment verifies a second factor at all.
+// handleDiscovery serves the slice of GET /.well-known/substrate/server.json
+// the door reads: whether this deployment verifies a second factor at all.
 func (f *fakeSubstrate) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"auth": map[string]any{"totpRequired": !f.totpDisabled},
+		"registration": map[string]any{"totpRequired": !f.totpDisabled},
 	})
 }
 

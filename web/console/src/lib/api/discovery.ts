@@ -1,7 +1,7 @@
-/** Discovery (`GET /api`): what this deployment serves, answered without a
- * token and without opening a repository — which is what lets the DOOR read
- * it. The login and register pages ask it one thing: does this substrate
- * verify a second factor at all?
+/** Discovery (`GET /.well-known/substrate/server.json`): what this deployment
+ * serves, answered without a token and without opening a repository — which
+ * is what lets the DOOR read it. The login and register pages ask it one
+ * thing: does this substrate verify a second factor at all?
  *
  * A local substrate booted with `SUBSTRATE_INSECURE_DISABLE_TOTP` verifies no
  * code, so a console that kept demanding six digits would be asking for
@@ -18,7 +18,7 @@ export interface AuthPolicy {
 }
 
 interface DiscoveryDoc {
-  auth?: Partial<AuthPolicy>
+  registration?: Partial<AuthPolicy>
 }
 
 /** The STRICT shape, and what an unanswered or unreadable discovery falls back
@@ -38,10 +38,15 @@ export const STRICT_AUTH_POLICY: AuthPolicy = { totpRequired: true }
 let pending: Promise<AuthPolicy> | null = null
 
 export function fetchAuthPolicy(): Promise<AuthPolicy> {
-  pending ??= request<DiscoveryDoc>("GET", "/api", undefined, {
-    anonymous: true,
-  })
-    .then((doc) => ({ totpRequired: doc?.auth?.totpRequired !== false }))
+  pending ??= request<DiscoveryDoc>(
+    "GET",
+    "/.well-known/substrate/server.json",
+    undefined,
+    { anonymous: true }
+  )
+    .then((doc) => ({
+      totpRequired: doc?.registration?.totpRequired !== false,
+    }))
     // Unreachable discovery must not leave the door unrenderable: assume the
     // strict shape, which is the only safe reading of an answer nobody gave.
     .catch(() => STRICT_AUTH_POLICY)

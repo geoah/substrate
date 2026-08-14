@@ -21,13 +21,13 @@ describe("fetchAuthPolicy", () => {
     fetchMock.mockReset()
   })
 
-  it("reads the policy off GET /api, anonymously", async () => {
+  it("reads the policy off GET /.well-known/substrate/server.json, anonymously", async () => {
     fetchMock.mockResolvedValue(
-      jsonResponse(200, { auth: { totpRequired: false } })
+      jsonResponse(200, { registration: { totpRequired: false } })
     )
     expect(await fetchAuthPolicy()).toEqual({ totpRequired: false })
     const [url, init] = fetchMock.mock.calls[0]
-    expect(url).toBe("/api")
+    expect(url).toBe("/.well-known/substrate/server.json")
     expect(
       ((init as RequestInit).headers as Record<string, string>).Authorization
     ).toBeUndefined()
@@ -35,7 +35,7 @@ describe("fetchAuthPolicy", () => {
 
   it("shares one in-flight request, and asks again once it has settled", async () => {
     fetchMock.mockResolvedValue(
-      jsonResponse(200, { auth: { totpRequired: false } })
+      jsonResponse(200, { registration: { totpRequired: false } })
     )
     // Doors mounting together ask once between them.
     await Promise.all([fetchAuthPolicy(), fetchAuthPolicy()])
@@ -44,15 +44,15 @@ describe("fetchAuthPolicy", () => {
     // one door to the other, and a tab holding the old answer would send no
     // code to a substrate that wants one.
     fetchMock.mockResolvedValue(
-      jsonResponse(200, { auth: { totpRequired: true } })
+      jsonResponse(200, { registration: { totpRequired: true } })
     )
     expect(await fetchAuthPolicy()).toEqual({ totpRequired: true })
     expect(fetchMock.mock.calls.length).toBe(2)
   })
 
   it("requires a code when discovery says nothing about it", async () => {
-    // An older substrate serves no `auth` block; the strict shape is the only
-    // safe reading of silence.
+    // An older substrate serves no `registration` block; the strict shape is
+    // the only safe reading of silence.
     fetchMock.mockResolvedValue(jsonResponse(200, { versions: [] }))
     expect(await fetchAuthPolicy()).toEqual({ totpRequired: true })
   })
@@ -61,7 +61,7 @@ describe("fetchAuthPolicy", () => {
     fetchMock.mockRejectedValueOnce(new TypeError("offline"))
     expect(await fetchAuthPolicy()).toEqual({ totpRequired: true })
     fetchMock.mockResolvedValue(
-      jsonResponse(200, { auth: { totpRequired: false } })
+      jsonResponse(200, { registration: { totpRequired: false } })
     )
     expect(await fetchAuthPolicy()).toEqual({ totpRequired: false })
   })

@@ -20,7 +20,7 @@ before:
 
 builds:
   # The CLI is the artifact people download; the server is the artifact the
-  # image wraps. Both carry the version so `--version` and GET /api agree.
+  # image wraps. Both carry the version so `--version` and discovery agree.
   - id: substratectl
     binary: substratectl
     main: ./cmd/substratectl

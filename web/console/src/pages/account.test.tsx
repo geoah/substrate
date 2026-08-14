@@ -16,7 +16,7 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }))
 
-/** What GET /api said about the door; discovery.test.ts covers the fetching. */
+/** What GET /.well-known/substrate/server.json said about the door; discovery.test.ts covers the fetching. */
 const policy = vi.hoisted(() => ({ totpRequired: true }))
 vi.mock("@/lib/api/discovery", () => ({ useAuthPolicy: () => policy }))
 

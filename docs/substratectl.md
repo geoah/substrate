@@ -44,8 +44,8 @@ registration possible.
 Against a substrate that verifies no second factor
 ([the dev door](auth.md#the-second-factor-can-be-switched-off-locally)),
 `register` and `login` ask for no code and `register` skips the enrollment
-entirely: `substratectl` reads `GET /api` first and stops asking for something
-nothing checks.
+entirely: `substratectl` reads `GET /.well-known/substrate/server.json` first
+and stops asking for something nothing checks.
 
 `substratectl login` presents both factors and mints a token record, which it stores
 as the current context. `substratectl logout` revokes that token record and then

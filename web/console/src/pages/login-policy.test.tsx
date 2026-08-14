@@ -61,9 +61,9 @@ describe("LoginPage and the door's own answer", () => {
       releaseDiscovery = resolve
     })
     fetchMock.mockImplementation(async (input) => {
-      if (String(input) === "/api") {
+      if (String(input) === "/.well-known/substrate/server.json") {
         await discovered
-        return jsonResponse(200, { auth: { totpRequired: false } })
+        return jsonResponse(200, { registration: { totpRequired: false } })
       }
       return jsonResponse(201, MINT)
     })
@@ -105,7 +105,8 @@ describe("LoginPage and the door's own answer", () => {
 
   it("still refuses to sign in without a code where discovery never answers", async () => {
     fetchMock.mockImplementation(async (input) => {
-      if (String(input) === "/api") throw new TypeError("offline")
+      if (String(input) === "/.well-known/substrate/server.json")
+        throw new TypeError("offline")
       return jsonResponse(201, MINT)
     })
     render(<LoginPage />)
@@ -117,8 +118,8 @@ describe("LoginPage and the door's own answer", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
     await screen.findByText("Enter the current 6-digit code.")
-    expect(
-      fetchMock.mock.calls.some(([url]) => String(url) === "/login")
-    ).toBe(false)
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === "/login")).toBe(
+      false
+    )
   })
 })

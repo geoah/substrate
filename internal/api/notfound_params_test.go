@@ -218,7 +218,7 @@ func TestSupportedChangeParamsStillWork(t *testing.T) {
 // note went looking for a field that does not exist.
 func TestDiscoverySchemaNoteDoesNotPointAtTheRepository(t *testing.T) {
 	env := newTestEnv(t)
-	rec := env.do(t, http.MethodGet, "/api", "", nil)
+	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
 	wantStatus(t, rec, http.StatusOK)
 	doc := decodeJSON[discoveryDoc](t, rec)
 	if strings.Contains(doc.Vocabulary.Note, "on the repository") {

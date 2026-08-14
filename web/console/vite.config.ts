@@ -10,8 +10,7 @@ import { defineConfig } from "vite"
 // /connectors route reads the entity surface (core.substrate.reamde.dev/connectors +
 // syncruns) and never calls the legacy control plane — proxying it would
 // shadow the page with the API's 404 (slice 4).
-const SUBSTRATE =
-  process.env.VITE_PROXY_SUBSTRATE ?? "http://localhost:8080"
+const SUBSTRATE = process.env.VITE_PROXY_SUBSTRATE ?? "http://localhost:8080"
 
 const proxyTarget = { target: SUBSTRATE, changeOrigin: true }
 
@@ -26,6 +25,7 @@ export default defineConfig({
     proxy: {
       "/api": proxyTarget,
       "/healthz": proxyTarget,
+      "/.well-known": proxyTarget,
     },
   },
   test: {

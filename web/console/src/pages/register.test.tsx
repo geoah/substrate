@@ -7,7 +7,12 @@ import {
 } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { clearSession, getToken, getTokenId, getUsername } from "@/lib/api/session"
+import {
+  clearSession,
+  getToken,
+  getTokenId,
+  getUsername,
+} from "@/lib/api/session"
 
 const navigate = vi.fn().mockResolvedValue(undefined)
 
@@ -18,7 +23,7 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }))
 
-/** What GET /api said about the door; discovery.test.ts covers the fetching. */
+/** What GET /.well-known/substrate/server.json said about the door; discovery.test.ts covers the fetching. */
 const policy = vi.hoisted(() => ({ totpRequired: true }))
 vi.mock("@/lib/api/discovery", () => ({ useAuthPolicy: () => policy }))
 
@@ -35,7 +40,10 @@ function jsonResponse(
   })
 }
 
-const ENROLLMENT = { totpSecret: "SEED", otpauthUri: "otpauth://totp/geoah?secret=SEED" }
+const ENROLLMENT = {
+  totpSecret: "SEED",
+  otpauthUri: "otpauth://totp/geoah?secret=SEED",
+}
 const MINT = {
   token: { id: "tok-1", label: "console", createdAt: "2026-08-12T00:00:00Z" },
   secret: "substrate_tok_minted",

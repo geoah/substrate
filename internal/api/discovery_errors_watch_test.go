@@ -18,13 +18,13 @@ func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 	svc := newFakeService()
 	h := New(Config{Service: svc, MaxDialect: 6})
 
-	req := httptest.NewRequest(http.MethodGet, "/api", nil)
+	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
 	req.RemoteAddr = "10.0.0.1:1234"
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /api status = %d, body %s", rec.Code, rec.Body.String())
+		t.Fatalf("GET /.well-known/substrate/server.json status = %d, body %s", rec.Code, rec.Body.String())
 	}
 	doc := decodeJSON[discoveryDoc](t, rec)
 
@@ -71,7 +71,7 @@ func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 
 func TestDiscoveryDoesNotRequireAuth(t *testing.T) {
 	env := newTestEnv(t)
-	rec := env.do(t, http.MethodGet, "/api", "", nil)
+	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
 	wantStatus(t, rec, http.StatusOK)
 }
 

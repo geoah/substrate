@@ -189,8 +189,15 @@ func TestConsoleRoutesFallThroughToTheSPA(t *testing.T) {
 		}
 	}
 	// Under an API prefix the method really is wrong, and says so.
-	rec := env.do(t, http.MethodDelete, "/api", "", nil)
+	rec := env.do(t, http.MethodDelete, "/api/v1/graphql", svc.token("geoah"), nil)
 	wantStatus(t, rec, http.StatusMethodNotAllowed)
+	// Discovery sits outside the API surface, the same class as /healthz: a
+	// wrong method there falls to the SPA too, never a JSON 405.
+	rec = env.do(t, http.MethodDelete, "/.well-known/substrate/server.json", "", nil)
+	wantStatus(t, rec, http.StatusOK)
+	if got := rec.Body.String(); got == "" || got[0] != '<' {
+		t.Fatalf("DELETE /.well-known/substrate/server.json served %q, want the console", got)
+	}
 }
 
 // The recovery enrollment carries the password-factor rule: both current
@@ -250,12 +257,12 @@ func TestTOTPDisabledDoorTakesThePasswordAlone(t *testing.T) {
 		Service: svc, Now: clock.now, InviteCode: testInviteCode, TOTPDisabled: true,
 	})}
 
-	rec := env.do(t, http.MethodGet, "/api", "", nil)
+	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
 	wantStatus(t, rec, http.StatusOK)
 	doc := decodeJSON[map[string]any](t, rec)
-	auth, _ := doc["auth"].(map[string]any)
-	if auth == nil || auth["totpRequired"] != false {
-		t.Fatalf("discovery must report the door's shape: %+v", doc["auth"])
+	registration, _ := doc["registration"].(map[string]any)
+	if registration == nil || registration["totpRequired"] != false {
+		t.Fatalf("discovery must report the door's shape: %+v", doc["registration"])
 	}
 
 	// A password and no code changes the password.
@@ -278,15 +285,43 @@ func TestTOTPDisabledDoorTakesThePasswordAlone(t *testing.T) {
 // a credential change without one is refused before the service is reached.
 func TestDiscoveryRequiresTOTPByDefault(t *testing.T) {
 	env := newTestEnv(t)
-	rec := env.do(t, http.MethodGet, "/api", "", nil)
+	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
 	doc := decodeJSON[map[string]any](t, rec)
-	auth, _ := doc["auth"].(map[string]any)
-	if auth == nil || auth["totpRequired"] != true {
-		t.Fatalf("discovery must require the second factor by default: %+v", doc["auth"])
+	registration, _ := doc["registration"].(map[string]any)
+	if registration == nil || registration["totpRequired"] != true {
+		t.Fatalf("discovery must require the second factor by default: %+v", doc["registration"])
 	}
 	rec = env.do(t, http.MethodPost, "/password", "", map[string]any{
 		"username": "geoah", "password": "correct-horse-battery-staple",
 		"newPassword": "a-new-correct-horse",
 	})
 	wantStatus(t, rec, http.StatusForbidden)
+}
+
+// A deployment with no invite code configured says so in discovery, before a
+// caller wastes a round trip finding out registration answers `unsupported`.
+func TestDiscoveryReportsRegistrationClosedWithNoInviteCode(t *testing.T) {
+	svc := newFakeService()
+	clock := &testClock{t: time.Unix(1_700_000_000, 0).UTC()}
+	env := &testEnv{svc: svc, clock: clock, h: New(Config{Service: svc, Now: clock.now})}
+
+	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
+	wantStatus(t, rec, http.StatusOK)
+	doc := decodeJSON[map[string]any](t, rec)
+	registration, _ := doc["registration"].(map[string]any)
+	if registration == nil || registration["open"] != false {
+		t.Fatalf("discovery must report registration as closed: %+v", doc["registration"])
+	}
+}
+
+// The ordinary test deployment carries an invite code, so discovery says
+// registration is open.
+func TestDiscoveryReportsRegistrationOpenWithInviteCode(t *testing.T) {
+	env := newTestEnv(t)
+	rec := env.do(t, http.MethodGet, "/.well-known/substrate/server.json", "", nil)
+	doc := decodeJSON[map[string]any](t, rec)
+	registration, _ := doc["registration"].(map[string]any)
+	if registration == nil || registration["open"] != true {
+		t.Fatalf("discovery must report registration as open: %+v", doc["registration"])
+	}
 }
