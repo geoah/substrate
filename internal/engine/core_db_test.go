@@ -22,6 +22,7 @@ const (
 )
 
 func TestPutCreatesAndSuppressesNoops(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)
@@ -78,6 +79,7 @@ func TestPutCreatesAndSuppressesNoops(t *testing.T) {
 }
 
 func TestNoopSuppressionAcrossRecords(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
@@ -130,6 +132,7 @@ func TestNoopSuppressionAcrossRecords(t *testing.T) {
 }
 
 func TestVersionCAS(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"title": "Ship it"}})
@@ -153,6 +156,7 @@ func TestVersionCAS(t *testing.T) {
 // last had a change accepted, for attribution; it does not decide who may
 // write. Anyone overwrites anything.
 func TestNoWriterOutranksAnother(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 
 	c := mustPut(t, ds, owner, substrate.PutInput{
@@ -195,6 +199,7 @@ func TestNoWriterOutranksAnother(t *testing.T) {
 }
 
 func TestMetadataNamespaces(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"title": "t"}})
@@ -232,6 +237,7 @@ func TestMetadataNamespaces(t *testing.T) {
 }
 
 func TestMachineInitialAndTransitions(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -282,6 +288,7 @@ func TestMachineInitialAndTransitions(t *testing.T) {
 }
 
 func TestMutationRequestApplyDiff(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -372,6 +379,7 @@ func TestMutationRequestApplyDiff(t *testing.T) {
 // wrapper-less diff (which DisallowUnknownFields refuses on decode) and a diff
 // the target already satisfies (the no-op check).
 func TestAcceptedNoOpDiffFailsTransition(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -425,6 +433,7 @@ func TestAcceptedNoOpDiffFailsTransition(t *testing.T) {
 // write path — create-if-absent, idempotent on replay (a second create request
 // naming the same id is a verified no-op, never a reset).
 func TestChangeRequestCreateMints(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -513,6 +522,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 // , so an id held by another type does not collide at all; a
 // tombstoned row of the same type still conflicts — a create never resurrects.
 func TestChangeRequestCreateDivergence(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -565,6 +575,7 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 // Issue 005: an accepted delete request tombstones its target, idempotent on
 // replay (an already-gone target is a verified no-op).
 func TestChangeRequestDeleteTombstones(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -596,6 +607,7 @@ func TestChangeRequestDeleteTombstones(t *testing.T) {
 }
 
 func TestSecretsRedacted(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	info, secret, err := ds.MintToken(context.Background(), "cli", nil)
 	if err != nil {
@@ -622,6 +634,7 @@ func TestSecretsRedacted(t *testing.T) {
 }
 
 func TestSystemTypesRejectGenericWrites(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	// A schema kind is a REAL row now (schema is records), but it only
@@ -680,6 +693,7 @@ func TestSystemTypesRejectGenericWrites(t *testing.T) {
 // onto the id it always had — and without this the row stays invisible
 // forever while every later sync reports success.
 func TestPutResurrectsATombstone(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
@@ -754,6 +768,7 @@ func TestPutResurrectsATombstone(t *testing.T) {
 // Restoring one record restores THAT record. Anything else the owner deleted
 // stays deleted until its own put arrives.
 func TestResurrectDoesNotCascade(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
@@ -800,6 +815,7 @@ func TestResurrectDoesNotCascade(t *testing.T) {
 // already exists is not naming it, so the console's Save and `substrate apply`
 // work on every type.
 func TestClientIDIsACreateRule(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -833,6 +849,7 @@ func TestClientIDIsACreateRule(t *testing.T) {
 // verbs: rewriting a recordmerge's edges would make a split tombstone the
 // wrong record and lose the real loser.
 func TestLinkUnlinkRefuseSystemTypes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -863,6 +880,7 @@ func TestLinkUnlinkRefuseSystemTypes(t *testing.T) {
 
 // A null DELETES, on the column-backed properties exactly as on the rest.
 func TestNullClearsEveryProperty(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 
 	task := mustPut(t, ds, owner, substrate.PutInput{
@@ -904,6 +922,7 @@ func TestNullClearsEveryProperty(t *testing.T) {
 // deputy — proposing a create/delete and self-accepting it — while a function
 // that may emit the target type can.
 func TestChangeRequestAcceptHeldToEmitCeiling(t *testing.T) {
+	t.Parallel()
 	const selfAccept = `
 def main(input, host):
     c = input["envelope"]["change"]
@@ -954,6 +973,7 @@ def main(input, host):
 // targetless patch and a create whose edge target does not exist — must still
 // annotate the still-proposed request, so the inbox shows why.
 func TestAcceptFailuresAnnotateConflict(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 

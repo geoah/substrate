@@ -41,6 +41,7 @@ func decide(ds substrate.Dataset, id, decision string) (*substrate.Record, error
 }
 
 func TestMergeRequestAcceptMerges(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	ctx := context.Background()
 
@@ -80,6 +81,7 @@ func TestMergeRequestAcceptMerges(t *testing.T) {
 }
 
 func TestMergeRequestRejectStamps(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 
 	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "A"}})
@@ -100,6 +102,7 @@ func TestMergeRequestRejectStamps(t *testing.T) {
 }
 
 func TestMergeRequestStaleFailsWholeAndAnnotates(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 
 	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "A"}})
@@ -137,6 +140,7 @@ func TestMergeRequestStaleFailsWholeAndAnnotates(t *testing.T) {
 }
 
 func TestMergeRequestRefusesDifferentTypes(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 
 	person := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "A"}})

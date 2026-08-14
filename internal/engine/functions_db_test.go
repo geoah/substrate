@@ -140,6 +140,7 @@ func newFnDataset(t *testing.T, triggers []enginetest.Trigger, fns ...map[string
 // the count cap (maxPrepareBatch = 64) refuses the batch outright, BEFORE any
 // body is warmed, so the deterministic-count path needs no uv to exercise.
 func TestPrepareBatchCountCap(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	sa := applier(t, ds)
@@ -225,6 +226,7 @@ def main(input, host):
 `
 
 func TestTriggerSourceMatchingAndGlob(t *testing.T) {
+	t.Parallel()
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{
 			// Exact source, create only.
@@ -285,6 +287,7 @@ def main(input, host):
 }
 
 func TestTriggerWhenGuard(t *testing.T) {
+	t.Parallel()
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("guarded", map[string]any{
 			"kinds": []any{widgetType},
@@ -340,6 +343,7 @@ func runRowsOf(t *testing.T, ds substrate.Dataset, triggerID, status string) []*
 }
 
 func TestTriggerSelfEchoExclusion(t *testing.T) {
+	t.Parallel()
 	// The trigger watches the very type its callable writes: without
 	// exclusion by the CALLABLE's actor this loops forever, with it the
 	// marker settles after one run.
@@ -376,6 +380,7 @@ def main(input, host):
 }
 
 func TestTriggerCoalescingAndSerialOrder(t *testing.T) {
+	t.Parallel()
 	// Both triggers stamp the seq they ran against; the coalesced one runs
 	// once per batch, the serial one once per change, in changelog order.
 	body := func(prefix string) string {
@@ -428,6 +433,7 @@ def main(input, host):
 }
 
 func TestTriggerReplayFromZeroIsIdempotent(t *testing.T) {
+	t.Parallel()
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("mirror", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
@@ -459,6 +465,7 @@ func TestTriggerReplayFromZeroIsIdempotent(t *testing.T) {
 }
 
 func TestTriggerParkAndAdvanceThenRetry(t *testing.T) {
+	t.Parallel()
 	// The body raises on the widget that carries no name: a body error at
 	// fire time is a parked failure, never a crash — and the cursor moves on
 	// so the healthy neighbor still processes.
@@ -512,6 +519,7 @@ func TestTriggerParkAndAdvanceThenRetry(t *testing.T) {
 }
 
 func TestTriggerTransitionViaPatch(t *testing.T) {
+	t.Parallel()
 	// A patch effect naming a state value is a transition and obeys the
 	// machine: open → done is declared (and stamps completedAt), done →
 	// dropped is not and parks.
@@ -560,6 +568,7 @@ def main(input, host):
 }
 
 func TestTriggerEmitViolationParks(t *testing.T) {
+	t.Parallel()
 	// tasks.substrate.reamde.dev/project exists but is not in the allowlist: the effect
 	// is rejected at apply time and the delivery parks.
 	ds, ops := newFnDataset(t,
@@ -590,6 +599,7 @@ def main(input, host):
 }
 
 func TestTriggerEffectsAndCursorAreOneTransaction(t *testing.T) {
+	t.Parallel()
 	// The second effect fails inside the transaction (its target does not
 	// exist), so the first effect must roll back with it: effects and cursor
 	// move together or not at all — a parked delivery leaves no half-applied
@@ -629,6 +639,7 @@ def main(input, host):
 }
 
 func TestTriggerCausalDepthCap(t *testing.T) {
+	t.Parallel()
 	// A→B→A: each write records the seq that caused it, and a chain deeper
 	// than the cap parks with a distinct error instead of ping-ponging
 	// forever.
@@ -679,6 +690,7 @@ def main(input, host):
 }
 
 func TestTriggerManualRunLeavesCursorAlone(t *testing.T) {
+	t.Parallel()
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("mirror", map[string]any{"kinds": []any{widgetType}})},
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
@@ -718,6 +730,7 @@ func TestTriggerManualRunLeavesCursorAlone(t *testing.T) {
 }
 
 func TestTriggerDeleteSource(t *testing.T) {
+	t.Parallel()
 	// record is null after delete; the effect removes the mirrored task.
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("sweeper", map[string]any{
@@ -746,6 +759,7 @@ def main(input, host):
 }
 
 func TestTriggerSameStatePatchIsNoOp(t *testing.T) {
+	t.Parallel()
 	// The wrinkle the github loop rests on: a function without a read
 	// capability cannot ask the task's state, so it re-asserts `status: done`
 	// on every delivery of a closed item. A patch naming the CURRENT state
@@ -796,6 +810,7 @@ def main(input, host):
 }
 
 func TestTriggerDisabledStandsStill(t *testing.T) {
+	t.Parallel()
 	// enabled: false stops delivery without losing the cursor; re-enabling
 	// resumes from where it stood — the interim change delivers late, never
 	// lost.
@@ -830,6 +845,7 @@ func TestTriggerDisabledStandsStill(t *testing.T) {
 }
 
 func TestTriggerWriteAdmission(t *testing.T) {
+	t.Parallel()
 	// A trigger row that cannot dispatch never lands: bad guards, unknown
 	// callables, zero or two source arms, bad recurrences all refuse at
 	// write time.
@@ -921,6 +937,7 @@ func TestTriggerWriteAdmission(t *testing.T) {
 // and its records stay empty. Without this, the loop in main.go is a shared
 // dispatcher wearing a per-repository name.
 func TestTriggerDispatchIsPerRepository(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
 	install := func(username string) (substrate.Dataset, fnOps) {

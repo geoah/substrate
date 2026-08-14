@@ -25,6 +25,7 @@ import (
 // superuser app role, a maint role that is a superuser or lacks bypass — is
 // refused. This is where checking rolname alone (the old hole) is closed.
 func TestValidateRoleAttrs(t *testing.T) {
+	t.Parallel()
 	safeApp := roleAttr{exists: true}
 	safeMaint := roleAttr{exists: true, bypass: true}
 	if err := validateRoleAttrs(safeApp, safeMaint); err != nil {
@@ -52,6 +53,7 @@ func TestValidateRoleAttrs(t *testing.T) {
 // must reject it — that raw superuser pool is exactly the fail-open the scoped
 // pools would have been. The bound pools pass.
 func TestAssertPoolPrincipalRejectsSuperuser(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	svcIface, err := Open(ctx, dsn, WithKindsDir("../../kinds/core.substrate.reamde.dev"))
@@ -94,6 +96,7 @@ func TestAssertPoolPrincipalRejectsSuperuser(t *testing.T) {
 // superuser-ish DSN where role creation is denied) must make Open REFUSE by
 // default, and proceed only under the explicit dev escape hatch.
 func TestOpenFailsClosedWithoutSafeRoles(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("integration test in -short mode")
 	}

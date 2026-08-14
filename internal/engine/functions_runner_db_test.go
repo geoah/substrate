@@ -44,6 +44,7 @@ func goFn(name string, data map[string]any, emit []any, source string) map[strin
 }
 
 func TestTriggerGoRuntime(t *testing.T) {
+	t.Parallel()
 	// One inline Go body: compiled at registration against the embedded
 	// substratefn SDK, run as a supervised subprocess on the same protocol —
 	// effects, logs and errors ride exactly the python path.
@@ -126,6 +127,7 @@ func readerTrigger(name string) enginetest.Trigger {
 }
 
 func TestTriggerHostReads(t *testing.T) {
+	t.Parallel()
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{readerTrigger("reader")},
 		readerFn("reader", nil))
@@ -154,6 +156,7 @@ func TestTriggerHostReads(t *testing.T) {
 }
 
 func TestTriggerReadAllowlistViolationParksImmediately(t *testing.T) {
+	t.Parallel()
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{readerTrigger("fenced")},
 		readerFn("fenced", nil))
@@ -180,6 +183,7 @@ func TestTriggerReadAllowlistViolationParksImmediately(t *testing.T) {
 }
 
 func TestTriggerReadBudgetTripParksImmediately(t *testing.T) {
+	t.Parallel()
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{readerTrigger("thrifty")},
 		readerFn("thrifty", func(data map[string]any) {
@@ -197,6 +201,7 @@ func TestTriggerReadBudgetTripParksImmediately(t *testing.T) {
 }
 
 func TestTriggerTimeoutRetriesThenParks(t *testing.T) {
+	t.Parallel()
 	// A stuck body blows the manifest timeout; the runner kills and restarts
 	// the child, and the delivery rides the full attempts before parking —
 	// a wall timeout is not deterministic (load could clear it).
@@ -233,6 +238,7 @@ def main(input, host):
 `
 
 func TestTriggerEffectPutIfAbsent(t *testing.T) {
+	t.Parallel()
 	// The prototype's clobber finding: a minting function must never reset
 	// state owned by later stages — with ifAbsent, re-mention and replay are
 	// no-ops.
@@ -273,6 +279,7 @@ func TestTriggerEffectPutIfAbsent(t *testing.T) {
 }
 
 func TestTriggerEffectResolvesFormerID(t *testing.T) {
+	t.Parallel()
 	// The deterministic-id parking trap: after the owner merges the task a
 	// function addresses by composed id, the function's next put must land on
 	// the canonical winner — not park on "ids are never reused".
@@ -302,6 +309,7 @@ func TestTriggerEffectResolvesFormerID(t *testing.T) {
 }
 
 func TestTriggerEffectLinkUnlink(t *testing.T) {
+	t.Parallel()
 	// The gadget declares a `widget` edge; the function wires and unwires it
 	// by effect, driven by the gadget's own properties.
 	ds, ops := newFnDataset(t,
@@ -352,6 +360,7 @@ def main(input, host):
 `
 
 func TestTriggerEffectMergeSplitNeedGrant(t *testing.T) {
+	t.Parallel()
 	// Same body, no mutations grant: the merge effect is refused at decode
 	// and the delivery parks — the polite default stays the *request path.
 	ds, ops := newFnDataset(t,
@@ -378,6 +387,7 @@ func TestTriggerEffectMergeSplitNeedGrant(t *testing.T) {
 }
 
 func TestTriggerEffectMergeAndSplit(t *testing.T) {
+	t.Parallel()
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("fuser", map[string]any{
 			"kinds": []any{widgetType}, "ops": []any{"update"},

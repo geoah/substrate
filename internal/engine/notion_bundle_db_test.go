@@ -103,6 +103,7 @@ func notionDashed(id string) string {
 // bundle closure on top of it through the ordinary loader/resolver — the same
 // admission the batch apply runs, minus the function-body warm.
 func TestNotionBundleAdmitsSchema(t *testing.T) {
+	t.Parallel()
 	// The registry an install actually admits into: the seeded tree (core
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
@@ -384,6 +385,7 @@ func notionPageObj(id, edited, title string, parent map[string]any) map[string]a
 // described in the file header against the fake API. It warms the PEP 723
 // sync body through uv, so it skips when uv is absent or cannot provision.
 func TestNotionBundleInstallsAndSyncs(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -789,6 +791,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 // pre-destutter builds hold the legacy singular "notionpage", which resolves
 // to nothing at all after the rename. The read normalizes them.
 func TestNotionSyncResolvesParentsBesideASecondPageType(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}

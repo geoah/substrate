@@ -11,6 +11,7 @@ import (
 )
 
 func TestLexicalSearch(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
@@ -77,6 +78,7 @@ func TestLexicalSearch(t *testing.T) {
 }
 
 func TestEmbedQueueAndHybridSearch(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	emb := &fakeEmbedder{}
 	_, ds := newDataset(t, engine.WithEmbedder(emb))

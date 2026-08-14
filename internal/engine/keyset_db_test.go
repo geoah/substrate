@@ -14,6 +14,7 @@ import (
 // a row when one behind the cursor is deleted, or repeat one when a newer row
 // is inserted; keyset seeks a position in the order, so neither happens.
 func TestListKeysetWalkSeesEachRowOnce(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -89,6 +90,7 @@ func TestListKeysetWalkSeesEachRowOnce(t *testing.T) {
 // made AFTER the list resumes at seq > head — so `watch?from=head` replays
 // exactly the writes the list did not see, with no gap and no double-see.
 func TestListCarriesHeadForGaplessWatch(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 

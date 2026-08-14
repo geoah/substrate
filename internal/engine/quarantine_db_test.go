@@ -24,6 +24,7 @@ import (
 // the world) with the mail bundle quarantined and everything else working;
 // re-installing the valid closure clears the quarantine.
 func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {

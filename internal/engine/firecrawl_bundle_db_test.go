@@ -58,6 +58,7 @@ const (
 // admission the batch apply runs, minus the body warm. Every assertion is a
 // rule the loader enforces at admission time.
 func TestFirecrawlBundleAdmitsSchema(t *testing.T) {
+	t.Parallel()
 	// The registry an install actually admits into: the seeded tree (core
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
@@ -172,6 +173,7 @@ func TestFirecrawlBundleAdmitsSchema(t *testing.T) {
 // The bodies are dependency-free python (no PEP 723), so the shared python3
 // host is the only runtime requirement.
 func TestFirecrawlBundleCallsTools(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}

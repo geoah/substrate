@@ -65,6 +65,7 @@ func incoming(t *testing.T, ds substrate.Dataset, id string, opts substrate.Inco
 }
 
 func TestIncomingReadsReferencesAndEdgesAsOne(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
@@ -116,6 +117,7 @@ func TestIncomingReadsReferencesAndEdgesAsOne(t *testing.T) {
 }
 
 func TestIncomingNarrowsToOneGroup(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
 
@@ -147,6 +149,7 @@ func TestIncomingNarrowsToOneGroup(t *testing.T) {
 }
 
 func TestIncomingFindsAPointerWrittenUnderAFormerID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
@@ -188,6 +191,7 @@ func TestIncomingFindsAPointerWrittenUnderAFormerID(t *testing.T) {
 }
 
 func TestIncomingPagesCleanlyAcrossTiedTimestamps(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
 
@@ -239,6 +243,7 @@ func TestIncomingPagesCleanlyAcrossTiedTimestamps(t *testing.T) {
 }
 
 func TestIncomingOrdersAGroupNewestFirst(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
 
@@ -263,6 +268,7 @@ func TestIncomingOrdersAGroupNewestFirst(t *testing.T) {
 }
 
 func TestIncomingRefusesACursorFromTheOldOrder(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
 	mustPut(t, ds, owner, substrate.PutInput{Kind: graphAuthority + "/hub", ID: "h1"})

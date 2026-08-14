@@ -15,6 +15,7 @@ import (
 
 // §4.1 — any read by a former id returns the canonical record AND says so.
 func TestCanonicalIDReadByFormerID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -51,6 +52,7 @@ func TestCanonicalIDReadByFormerID(t *testing.T) {
 // §4.1 — edge resolution by a former id lands on the canonical record, so a
 // connector holding a stale id cannot re-attach the graph to a tombstone.
 func TestCanonicalIDEdgeResolution(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -81,6 +83,7 @@ func TestCanonicalIDEdgeResolution(t *testing.T) {
 
 // §4.2 — merge rewrites EVERY stored edge to the winner, in both directions.
 func TestCanonicalIDMergeRewritesEveryEdge(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -136,6 +139,7 @@ func TestCanonicalIDMergeRewritesEveryEdge(t *testing.T) {
 // §4.2 — former-id trails are FLATTENED: A→B then B→C leaves A and B both
 // aliasing C directly, so no consumer ever walks a chain.
 func TestCanonicalIDTrailsFlatten(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -176,6 +180,7 @@ func TestCanonicalIDTrailsFlatten(t *testing.T) {
 // id lands on the winner, and a writer-supplied id colliding with a former id
 // is a conflict: nothing is ever re-minted at a dead id.
 func TestCanonicalIDsAreNeverReused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
@@ -232,6 +237,7 @@ func TestCanonicalIDsAreNeverReused(t *testing.T) {
 // A former id denotes its canonical record for DELETE too — a merged-away id
 // must not 404 on the one mutation the console's record page offers.
 func TestCanonicalIDDeleteByFormerID(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	ctx := context.Background()
 
@@ -256,6 +262,7 @@ func TestCanonicalIDDeleteByFormerID(t *testing.T) {
 // id belongs to the record that id now denotes; writing it onto the tombstone
 // puts it somewhere no read will ever look.
 func TestCanonicalIDLinkUnlinkBothEnds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -292,6 +299,7 @@ func TestCanonicalIDLinkUnlinkBothEnds(t *testing.T) {
 // the SAME id without collision, and every read, write and delete stays
 // scoped to its own type.
 func TestRekeySameIDAcrossTypes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -339,6 +347,7 @@ func TestRekeySameIDAcrossTypes(t *testing.T) {
 // live record of its own, and a writer-supplied id only conflicts with a
 // former id OF ITS OWN TYPE.
 func TestRekeyFormerIDTrailIsPerType(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 

@@ -33,6 +33,7 @@ func (h *hookEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, 
 // newer job pending and writes nothing. A second drain then embeds the current
 // text and publishes it.
 func TestEmbedQueueDoesNotPublishStaleVectors(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	emb := &hookEmbedder{}
 	svc, dsn := newService(t, engine.WithEmbedder(emb))

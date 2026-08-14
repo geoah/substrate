@@ -113,6 +113,7 @@ func openMoved(t *testing.T, dsn, tree string) error {
 }
 
 func TestBootUpgradeRefusesANarrowingWithLiveRows(t *testing.T) {
+	t.Parallel()
 	dsn := seededRepository(t)
 	tree := shippedTree(t)
 	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
@@ -155,6 +156,7 @@ func stillSpeaksTheOldShape(t *testing.T, dsn string) {
 }
 
 func TestBootUpgradeAdmitsAnAdditiveChange(t *testing.T) {
+	t.Parallel()
 	dsn := seededRepository(t)
 	tree := shippedTree(t)
 	// The version moves and the declaration only GAINS a property. The guard
@@ -169,6 +171,7 @@ func TestBootUpgradeAdmitsAnAdditiveChange(t *testing.T) {
 }
 
 func TestBootUpgradeIgnoresAKindItDoesNotRewrite(t *testing.T) {
+	t.Parallel()
 	dsn := seededRepository(t)
 	tree := shippedTree(t)
 	// llmprovider narrows AND pins its own version, which the authority bump
@@ -222,6 +225,7 @@ data:
 // old way, invisible to every read written against the new one. That is not a
 // hypothetical — it is exactly what llmmessage does on this branch.
 func TestBootUpgradeRefusesAnEdgeBecomingARequiredReference(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 

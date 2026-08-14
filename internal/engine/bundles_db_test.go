@@ -245,6 +245,7 @@ func mbTrigger(t *testing.T, ds substrate.Dataset) *substrate.Record {
 // One atomic apply installs the whole closure: the bundle row lands beside
 // its members, active immediately, and the status verbs see it.
 func TestBundleInstallAtomic(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, ops := installMailBundle(t)
 
@@ -291,6 +292,7 @@ func TestBundleInstallAtomic(t *testing.T) {
 // authority is uncategorized, or whose oauth2 clientInput names a
 // non-oauth2 kind.
 func TestBundleInstallClosureRefusals(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	sa := applier(t, ds)
@@ -357,6 +359,7 @@ func mbConfigProps() map[string]any {
 // bind chooses explicitly, unbind returns to the default rules, and the
 // record named "default" wins where nothing is bound.
 func TestBundleInputResolution(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, ops := installMailBundle(t)
 
@@ -430,6 +433,7 @@ func TestBundleInputResolution(t *testing.T) {
 // the bound resolution must come back — the bind verb's edge and version bump
 // ride its entry's fold ops.
 func TestBundleInputBindSurvivesRebuild(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, ds := newDataset(t)
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
@@ -464,6 +468,7 @@ func TestBundleInputBindSurvivesRebuild(t *testing.T) {
 // Bind refuses while the bundle is disabled: bind IS configuration, and a
 // disabled bundle's configuration is frozen.
 func TestBundleInputBindFrozenWhileDisabled(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, ops := installMailBundle(t)
 	row := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
@@ -479,6 +484,7 @@ func TestBundleInputBindFrozenWhileDisabled(t *testing.T) {
 // Disable stops delivery with the cursor standing still; enable resumes the
 // backlog. Functions refuse invocation; accounts and config freeze.
 func TestBundleDisableStopsDelivery(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, ops := installMailBundle(t)
 	fops := ds.(fnOps)
@@ -523,6 +529,7 @@ func TestBundleDisableStopsDelivery(t *testing.T) {
 // live rows, or a function live triggers reference, fails admission whole;
 // dropping an unreferenced function prunes cleanly.
 func TestBundleUpgradeRefusesBreakage(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, _ := installMailBundle(t)
 	sa := applier(t, ds)
@@ -580,6 +587,7 @@ func hasType(t *testing.T, ds substrate.Dataset, identity string) bool {
 // leave the registry, its wiring goes, its callables stop, and a read of a
 // type — schema row or type resolution — 404s. (Ticket 034.)
 func TestBundleUninstallTearsDownAuthority(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, ops := installMailBundle(t)
 	fops := ds.(fnOps)
@@ -659,6 +667,7 @@ func TestBundleUninstallTearsDownAuthority(t *testing.T) {
 // guard carrying the count — until a purge clears them; then it succeeds.
 // (Ticket 034: disable, purge, uninstall is the destructive order.)
 func TestBundleUninstallGuardsLiveData(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, ops := installMailBundle(t)
 	mbTrigger(t, ds)
@@ -699,6 +708,7 @@ func TestBundleUninstallGuardsLiveData(t *testing.T) {
 // Purge is the explicit second verb: refused while live, and a soft delete
 // of the whole owned authority's data — GC collects what nothing holds.
 func TestBundlePurgeDeletesData(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, ops := installMailBundle(t)
 	mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})

@@ -51,6 +51,7 @@ func tryLockFree(t *testing.T, ds *dataset, key string) bool {
 // `aaa` and `zzz`): a list addressing the former id must now park at `mmm`
 // before it ever reaches `zzz`.
 func TestEffectFormerIDFoldsCanonicalIntoLockOrder(t *testing.T) {
+	t.Parallel()
 	ds := newRaceDataset(t)
 	ctx := context.Background()
 
@@ -179,6 +180,7 @@ func personOfContact(t *testing.T, ds *dataset, contactID string) string {
 // The barrier holds subject|person: an effect list touching a source must park
 // there before it locks any record.
 func TestEffectSubjectLockPrecedesRecordLocks(t *testing.T) {
+	t.Parallel()
 	ds := newRaceDataset(t)
 	installContactSource(t, ds)
 	ctx := context.Background()
@@ -255,6 +257,7 @@ func TestEffectSubjectLockPrecedesRecordLocks(t *testing.T) {
 // write resolving to x. Both now take subject|person before any record lock,
 // so neither Postgres-aborts the other.
 func TestEffectAndSourceWriteComposeWithoutDeadlock(t *testing.T) {
+	t.Parallel()
 	ds := newRaceDataset(t)
 	installContactSource(t, ds)
 	ctx := context.Background()
@@ -317,6 +320,7 @@ func TestEffectAndSourceWriteComposeWithoutDeadlock(t *testing.T) {
 // The barrier holds the registry-dep lock exclusive (the registration side):
 // an owner trigger write must park there before it locks the trigger record.
 func TestOwnerTriggerTakesRegistryDepBeforeRecord(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	open, _ := w2Opener(t)
 	ds := open()

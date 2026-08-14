@@ -67,6 +67,7 @@ func installSecretCRD(t *testing.T, ds substrate.Dataset) string {
 // A deletion is an ordinary write: nothing ranks writers, so any actor may
 // clear any property.
 func TestAnyActorMayDeleteAProperty(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -100,6 +101,7 @@ func TestAnyActorMayDeleteAProperty(t *testing.T) {
 // Re-submitting identical data any number of times produces zero changelog
 // rows.
 func TestResyncIsSilentUnderAnyActor(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 
 	c := mustPut(t, ds, owner, substrate.PutInput{
@@ -124,6 +126,7 @@ func TestResyncIsSilentUnderAnyActor(t *testing.T) {
 
 // Reading redacts a secret; writing the redaction back must not store it.
 func TestSecretRoundTripLeavesStoredValue(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, raw, dsn := newDatasetWithDB(t)
 	ty := installSecretCRD(t, ds)
@@ -213,6 +216,7 @@ func storedSecretPlain(t *testing.T, raw *sql.DB, dsn, id string) string {
 
 // The filter grammar must not become a decryption oracle.
 func TestSecretPropertiesAreNotFilterable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if _, _, err := ds.MintToken(ctx, "cli", nil); err != nil {
@@ -258,6 +262,7 @@ func TestSecretPropertiesAreNotFilterable(t *testing.T) {
 // Two people holding one email address is LEGAL AND INERT:
 // nothing matches by value, so nothing fuses and nothing collides.
 func TestSharedEmailDoesNotFuse(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 
 	a := mustPut(t, ds, people, substrate.PutInput{
@@ -280,6 +285,7 @@ func TestSharedEmailDoesNotFuse(t *testing.T) {
 // An accepted mutation request CAS's against the target version its diff was computed
 // against, even when the diff itself carries no ifVersion.
 func TestApplyDiffChecksTargetVersion(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -347,6 +353,7 @@ func TestApplyDiffChecksTargetVersion(t *testing.T) {
 
 // required:true on an edge is enforced when the record is created.
 func TestRequiredEdgesEnforcedOnCreate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {

@@ -196,6 +196,7 @@ func livePersons(t *testing.T, ds substrate.Dataset) []*substrate.Record {
 // A writer names what it owns: `metadata.id` is the upsert key, it survives a
 // round trip, and a second put at the same id is the same record.
 func TestWriterControlledIDRoundTrip(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
@@ -229,6 +230,7 @@ func TestWriterControlledIDRoundTrip(t *testing.T) {
 // A type some mapping points at is always server-assigned: nothing external
 // names a person.
 func TestSubjectTypeRejectsAClientID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
@@ -260,6 +262,7 @@ func TestSubjectTypeRejectsAClientID(t *testing.T) {
 // owner's person already carries attaches to that person instead of minting
 // a duplicate — and fills only what nobody holds.
 func TestMatchLinksSingleCandidate(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
@@ -290,6 +293,7 @@ func TestMatchLinksSingleCandidate(t *testing.T) {
 // A LATER probe decides when the earlier ones extract nothing: a contact with
 // no email still matches by phone.
 func TestMatchFallsThroughToTheNextProbe(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
@@ -309,6 +313,7 @@ func TestMatchFallsThroughToTheNextProbe(t *testing.T) {
 // address matching two people creates a third rather than guessing —
 // ambiguity resolves in the console, by a human, with merge.
 func TestAmbiguousMatchCreates(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
@@ -335,6 +340,7 @@ func TestAmbiguousMatchCreates(t *testing.T) {
 // server-assigned id, and takes its properties from the record it was born
 // for.
 func TestNoMatchCreatesShell(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
@@ -368,6 +374,7 @@ func TestNoMatchCreatesShell(t *testing.T) {
 // the wire, release by null-patch, a second person for slack's sam, and a
 // merge whose recompute still respects the owner — reversed exactly by split.
 func TestSamScenario(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
@@ -499,6 +506,7 @@ func TestSamScenario(t *testing.T) {
 // Union properties recompute from live sources: a value removed at the
 // provider disappears here, and what another source still asserts stays.
 func TestUnionRecompute(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
@@ -529,6 +537,7 @@ func TestUnionRecompute(t *testing.T) {
 // Within the machine tier the LATEST-UPDATED live source wins, per property —
 // and an identical re-sync moves nothing, so "latest" means changed.
 func TestLatestWriteWinsWithinMachineTier(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
@@ -557,6 +566,7 @@ func TestLatestWriteWinsWithinMachineTier(t *testing.T) {
 // A hand edit SURVIVES the sync now: the manager ledger is
 // load-bearing, and recompute yields to anyone outside the machine tier.
 func TestHandEditSurvivesTheSync(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
@@ -579,6 +589,7 @@ func TestHandEditSurvivesTheSync(t *testing.T) {
 // nothing at all: recompute flows through the ordinary no-op-suppressed write
 // path, and unchanged offers stay put too.
 func TestRecomputeIsSilentOnResync(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
@@ -599,6 +610,7 @@ func TestRecomputeIsSilentOnResync(t *testing.T) {
 // STATES ARE NEVER RECOMPUTED: the loader refuses a mapping that targets one,
 // at registration, so no amount of syncing can promote a person.
 func TestStatesAreNeverRecomputed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	const authority = "promoter.connectors.substrate.reamde.dev"
@@ -654,6 +666,7 @@ func TestStatesAreNeverRecomputed(t *testing.T) {
 // The subject edge is set when the record is created and moved only by merge
 // and split.
 func TestSubjectEdgeIsCreateTimeOnly(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
@@ -693,6 +706,7 @@ func TestSubjectEdgeIsCreateTimeOnly(t *testing.T) {
 // ONE HOP (§6.2): an edge declared `to: person` accepts the slackuser the
 // connector actually has, and the stored edge lands on the person.
 func TestOneHopResolution(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
@@ -717,6 +731,7 @@ func TestOneHopResolution(t *testing.T) {
 // since the loader makes the edge required — gets its subject the moment
 // anything resolves through it.
 func TestUnlinkedSourceGetsAShell(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, raw, _ := newDatasetWithDB(t)
 	installPeopleSources(t, ds)
@@ -764,6 +779,7 @@ func TestUnlinkedSourceGetsAShell(t *testing.T) {
 // they keep their own ids, the next sync succeeds, and it links a fresh
 // subject through the ordinary match-or-create path.
 func TestDeletedTargetDoesNotStripItsSources(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
@@ -791,6 +807,7 @@ func TestDeletedTargetDoesNotStripItsSources(t *testing.T) {
 // the way down: with ZERO live sources the person keeps only what was
 // written to it directly.
 func TestDeletingASourceRecomputes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
@@ -833,6 +850,7 @@ func TestDeletingASourceRecomputes(t *testing.T) {
 // A source record restored from a tombstone recomputes again, onto the SAME
 // record it always described.
 func TestResurrectedSourceRecomputes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
@@ -865,6 +883,7 @@ func TestResurrectedSourceRecomputes(t *testing.T) {
 // A nested merge followed by an out-of-order split must never leave a record
 // wearing two subject edges.
 func TestNestedMergeSplitKeepsOneSubjectEdge(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
@@ -909,6 +928,7 @@ func TestNestedMergeSplitKeepsOneSubjectEdge(t *testing.T) {
 // per writer: the record's lock serializes them and the partial unique index
 // is what makes it a guarantee.
 func TestConcurrentShellBirthMintsOneShell(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, raw, _ := newDatasetWithDB(t)
 	installPeopleSources(t, ds)
@@ -952,6 +972,7 @@ func TestConcurrentShellBirthMintsOneShell(t *testing.T) {
 // fields are rejected, a null field is dropped from the stored object, and
 // each field coerces with the scalar rules.
 func TestObjectPropertyValidation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
@@ -1024,6 +1045,7 @@ func TestObjectPropertyValidation(t *testing.T) {
 // column, not a category of their own — so a source's text
 // reaches the work it describes.
 func TestHotMapTargets(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -1082,6 +1104,7 @@ func TestHotMapTargets(t *testing.T) {
 // already loaded, so nothing swaps in until the next repository-open — which is
 // exactly why a payload that would not load then must not be stored now.
 func TestReRegistrationValidatesTheChangedManifest(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
@@ -1119,6 +1142,7 @@ func TestReRegistrationValidatesTheChangedManifest(t *testing.T) {
 // Prominence demotes in search and nowhere else: a `utility` person ranks
 // below every `known` match, however well it scores.
 func TestSearchDemotesUtilityPersons(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -1172,6 +1196,7 @@ func recordsOf(hits []substrate.Hit) []*substrate.Record {
 // stored property — a schema that stops declaring one must still be able to
 // remove its values — while an undeclared VALUE stays refused.
 func TestUndeclaredNullDeletes(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	ctx := context.Background()
 	task := mustPut(t, ds, owner, substrate.PutInput{

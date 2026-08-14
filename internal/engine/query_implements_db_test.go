@@ -14,6 +14,7 @@ import (
 // temporal row in the repository: transcripts, calendar events, rows of types the
 // caller never addressed.
 func TestListIntersectsTypesAndImplements(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -67,6 +68,7 @@ func TestListIntersectsTypesAndImplements(t *testing.T) {
 // implement the trait is a caller mistake, and an empty page would read as
 // "nothing matched" rather than "nothing could".
 func TestListRefusesATypeThatDoesNotImplement(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	mustPut(t, ds, substrate.ActorAPI, substrate.PutInput{

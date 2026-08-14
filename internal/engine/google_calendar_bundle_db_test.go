@@ -36,6 +36,7 @@ import (
 )
 
 func TestGoogleCalendarBundleAdmitsSchema(t *testing.T) {
+	t.Parallel()
 	reg := googleRegistry(t)
 
 	b, ok := reg.BundleOf(googleAuthority)
@@ -293,6 +294,7 @@ func newCalendarFixture(t *testing.T) (*fakeGCal, *dataset) {
 // people one hop away, the freeBusyReader share skipped, and the sync token
 // committed exactly once, from the FINAL page.
 func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	fake, ds := newCalendarFixture(t)
 
@@ -419,6 +421,7 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 // drops it for a WINDOWED full re-read, a retraction entry takes both
 // halves, and the sweep that follows deletes only inside the window.
 func TestGoogleCalendarTokenGoneFullReread(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	fake, ds := newCalendarFixture(t)
 	cfg := googleStepConfig(calStepProps(nil))
@@ -544,6 +547,7 @@ func TestGoogleCalendarTokenGoneFullReread(t *testing.T) {
 // TestGoogleCalendarOriginPinRefusal: pointed at a non-loopback, non-Google
 // origin the body refuses to send the token, stamps erroring, and completes.
 func TestGoogleCalendarOriginPinRefusal(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -583,6 +587,7 @@ func TestGoogleCalendarOriginPinRefusal(t *testing.T) {
 // row and every one of its events would stay live and stale forever. The
 // calendarList walk therefore asks for deleted entries and retracts the tree.
 func TestGoogleCalendarDeletedCalendarRetracted(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	fake, ds := newCalendarFixture(t)
 
@@ -642,6 +647,7 @@ func TestGoogleCalendarDeletedCalendarRetracted(t *testing.T) {
 // recorded nowhere at all. Each stream now records its OWN outcome and only
 // RAISES the shared rollup.
 func TestGoogleCalendarErrorRecordedBesideGmailError(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}

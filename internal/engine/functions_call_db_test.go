@@ -44,6 +44,7 @@ def main(input, host):
 }
 
 func TestCallModeValidatesAndApplies(t *testing.T) {
+	t.Parallel()
 	ds, ops := newFnDataset(t, nil, adderFn())
 	ctx := context.Background()
 
@@ -84,6 +85,7 @@ func TestCallModeValidatesAndApplies(t *testing.T) {
 }
 
 func TestHostCallGatingAndCallerTransaction(t *testing.T) {
+	t.Parallel()
 	// outer Calls adder during a trigger delivery: the grant is
 	// capabilities.call, the callee's effects ride the CALLER's delivery
 	// transaction (they land and roll back with it), and an ungranted
@@ -165,6 +167,7 @@ def main(input, host):
 // error. A CATCHES the failure and returns success. C's effects must have
 // been truncated with B's failure: only A's own effect applies.
 func TestFailedCalleeLeavesNoDescendantEffects(t *testing.T) {
+	t.Parallel()
 	leaf := pyFn("leaf", map[string]any{}, []any{taskType}, `
 def main(input, host):
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
@@ -226,6 +229,7 @@ def main(input, host):
 // Review W2 #8: a declared `output:` validates even an omitted or null
 // answer, on BOTH call paths; `any` alone stays open to nil.
 func TestDeclaredOutputRefusesNil(t *testing.T) {
+	t.Parallel()
 	shaped := map[string]any{
 		"type":       "object",
 		"properties": map[string]any{"id": map[string]any{"type": "string"}},
@@ -283,6 +287,7 @@ def main(input, host):
 // two distinct idempotency keys — the caller's stack path plus a
 // per-invocation call ordinal — so an external deduper never folds them.
 func TestRepeatedSubCallsGetDistinctIdempotencyKeys(t *testing.T) {
+	t.Parallel()
 	echo := pyFn("echo", map[string]any{}, []any{taskType}, `
 def main(input, host):
     return {"output": input["idempotencyKey"]}
@@ -315,6 +320,7 @@ def main(input, host):
 }
 
 func TestRunRetentionKeepsFailuresPrunesSuccesses(t *testing.T) {
+	t.Parallel()
 	// The ledger's cleanup policy: parked runs are kept, ok/skipped runs
 	// prune to the newest runRetention (20) per trigger.
 	ds, ops := newFnDataset(t,

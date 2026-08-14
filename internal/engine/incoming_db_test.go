@@ -18,6 +18,7 @@ func readIncoming(t *testing.T, ds substrate.Dataset, typ, id string, first int,
 }
 
 func TestIncomingIsSeparateAndPaged(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 
@@ -48,6 +49,7 @@ func TestIncomingIsSeparateAndPaged(t *testing.T) {
 }
 
 func TestIncomingExcludesTombstonedSources(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
@@ -67,6 +69,7 @@ func TestIncomingExcludesTombstonedSources(t *testing.T) {
 }
 
 func TestIncomingResolvesFormerIDToCanonicalRecord(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)

@@ -11,6 +11,7 @@ import (
 // Ada payload (object name + two emails + phones + organizations + etag)
 // while match probes run.
 func TestReproAdaCreate(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installPeopleSources(t, ds)
 	_, err := ds.Put(context.Background(), "google.connectors.substrate.reamde.dev/people", substrate.PutInput{

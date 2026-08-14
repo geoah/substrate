@@ -11,6 +11,7 @@ import (
 // Skeptic probe A: collision on (rel, src, dst) during merge — does the
 // loser's edge props survive the round trip?
 func TestSkepticMergeSplitEdgePropsCollision(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -61,6 +62,7 @@ func TestSkepticMergeSplitEdgePropsCollision(t *testing.T) {
 // Skeptic probe B: an edge between the winner and the loser (self-referential
 // rel) — recorded? restored?
 func TestSkepticMergeSplitWinnerLoserEdge(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {

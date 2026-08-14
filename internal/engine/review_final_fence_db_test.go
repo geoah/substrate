@@ -25,6 +25,7 @@ import (
 // invocation is provably in flight (past admission, holding the fence) while
 // the disable races it.
 func TestFinalFenceDrainsBundledAgent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	installGreeterBundle(t, ds, fake)
@@ -104,6 +105,7 @@ func TestFinalFenceDrainsBundledAgent(t *testing.T) {
 // a disable racing the delivery drains it (the agent's message lands, the
 // cursor moves) before returning, and afterwards the trigger skips loudly.
 func TestFinalFenceDrainsBundledAgentTrigger(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	installGreeterBundle(t, ds, fake)
@@ -232,6 +234,7 @@ def main(input, host):
 // function is refused under the root's held fence — the tool result carries
 // the lifecycle refusal and no effect lands.
 func TestFinalCrossBundleAgentToolRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	installToolBundle(t, ds, fake)
@@ -307,6 +310,7 @@ def main(input, host):
 // refused: the nested Call re-checks the callee's lifecycle under the root's
 // held fence, so the callee never runs and its effects never commit.
 func TestFinalCrossBundleHostCallRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	installToolBundle(t, ds, fake)

@@ -11,6 +11,7 @@ import (
 // Skeptic #2 claim A: on a (rel, src, dst) collision the loser's edge props
 // are dropped, and split rebuilds the loser's edge from the WINNER's props.
 func TestSk2MergeDropsLoserEdgeProps(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -61,6 +62,7 @@ func TestSk2MergeDropsLoserEdgeProps(t *testing.T) {
 // not fusion), so the claim now lands on the guard; the round trip itself is
 // covered by TestMergeSplitRestoresPairInternalEdge.
 func TestSk2MergeDestroysWinnerLoserEdge(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {

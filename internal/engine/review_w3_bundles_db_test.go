@@ -215,6 +215,7 @@ func w3Connect(t *testing.T, svc substrate.Service, ops bundleOps, accountID str
 // atomically, so replaying the same state — the callback's sole
 // authentication — is refused and never reaches the provider again.
 func TestW3OAuthStateReplayRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _, ops, p, account := installW3OAuthBundle(t)
 
@@ -256,6 +257,7 @@ func TestW3OAuthStateReplayRefused(t *testing.T) {
 // makes every state forgeable, and the state is the unauthenticated
 // callback's whole authentication.
 func TestW3OAuthEmptyStateKeyRefused(t *testing.T) {
+	t.Parallel()
 	dsn := testdb.NewSchema(t)
 	_, err := engine.Open(context.Background(), dsn,
 		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
@@ -269,6 +271,7 @@ func TestW3OAuthEmptyStateKeyRefused(t *testing.T) {
 // --- #15: the callback never reflects provider detail -------------------------------
 
 func TestW3OAuthExchangeErrorSanitized(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, _, ops, _, account := installW3OAuthBundle(t)
 
@@ -291,6 +294,7 @@ func TestW3OAuthExchangeErrorSanitized(t *testing.T) {
 // wins: the callback's one transaction re-checks the account live and
 // refuses, so no unreferenced credential is ever stored.
 func TestW3OAuthCallbackVsDeleteBarrier(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, ds, db, ops, p, account := installW3OAuthBundle(t)
 
@@ -333,6 +337,7 @@ func TestW3OAuthCallbackVsDeleteBarrier(t *testing.T) {
 // down must not recreate the deleted credential: persistence is update-only
 // with a live-account compare-and-swap, never an upsert.
 func TestW3OAuthRefreshVsFinalizerBarrier(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, ds, db, ops, p, account := installW3OAuthBundle(t)
 	p.mu.Lock()
@@ -391,6 +396,7 @@ func TestW3OAuthRefreshVsFinalizerBarrier(t *testing.T) {
 // accounts tombstone FIRST and their finalizers run while the configuration
 // record — the revocation endpoint's home — is still live.
 func TestW3BundlePurgeRevokesAccounts(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _, db, ops, p, account := installW3OAuthBundle(t)
 	w3Connect(t, svc, ops, account.ID)
@@ -419,6 +425,7 @@ func TestW3BundlePurgeRevokesAccounts(t *testing.T) {
 // --- #16: a failed revoke is observable, and never strands the deletion -------------
 
 func TestW3OAuthRevoke500StillReleases(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, ds, db, ops, p, account := installW3OAuthBundle(t)
 	w3Connect(t, svc, ops, account.ID)
@@ -469,6 +476,7 @@ func w3TraitDoc(name string, props map[string]any) map[string]any {
 // declares no client at all: the host key is the resolved identity
 // core.substrate.reamde.dev/oauth2, and a same-named local trait does not count.
 func TestW3ShadowOAuth2Refused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	docs := mbDocs(nil,
@@ -492,6 +500,7 @@ func TestW3ShadowOAuth2Refused(t *testing.T) {
 // connected accounts: no OAuth, no status counts, no runner injection, no
 // core-trait query hits.
 func TestW3ShadowAccountConfigIsNotAnAccount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds, _ := newW3Env(t,
 		engine.WithOAuth("w3-state-key", "https://substrate.example/cb", nil))
@@ -558,6 +567,7 @@ func TestW3ShadowAccountConfigIsNotAnAccount(t *testing.T) {
 // --- #8: merge and split pass bundle admission --------------------------------------
 
 func TestW3MergeSplitBundleLifecycleGuards(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, ops := installMailBundle(t)
 
@@ -620,6 +630,7 @@ func TestW3MergeSplitBundleLifecycleGuards(t *testing.T) {
 // bundle's frozen accounts either — the effect path and the direct verb are
 // one code path, and both refuse.
 func TestW3MergeEffectBundleGuard(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, ops := installMailBundle(t)
 	const toolAuthority = "wtool.test.dev"
@@ -672,6 +683,7 @@ def main(input, host):
 // simply reads AMBIGUOUS until one record is bound or named "default". The
 // merge record is fabricated the way legacy/imported data would carry it.
 func TestW3SplitInputTurnsAmbiguous(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds, db := newW3Env(t)
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
@@ -747,6 +759,7 @@ func w3WaiterDoc() map[string]any {
 // already past admission commits its effects BEFORE the disable returns, and
 // the next invocation refuses.
 func TestW3LifecycleFenceDrainsInvocation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	docs := mbDocs(nil,
@@ -813,6 +826,7 @@ func TestW3LifecycleFenceDrainsInvocation(t *testing.T) {
 // Enable refuses the purging transition: an interrupted purge leaves the
 // marker standing, and only a purge run to completion clears it.
 func TestW3EnableRefusesInterruptedPurge(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds, db := newW3Env(t)
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, mbStandardDocs()); err != nil {
@@ -845,6 +859,7 @@ func TestW3EnableRefusesInterruptedPurge(t *testing.T) {
 // --- #10: upgrades guard bundled agents too ------------------------------------------
 
 func TestW3BundledAgentUpgradeGuard(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	const wagAuthority = "wagent.bundles.substrate.reamde.dev"
@@ -909,6 +924,7 @@ func TestW3BundledAgentUpgradeGuard(t *testing.T) {
 // drops a callable and a trigger create referencing that callable can never
 // BOTH succeed.
 func TestW3TriggerVsUpgradeBarrier(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds, db := newW3Env(t)
 	sa := applier(t, ds)

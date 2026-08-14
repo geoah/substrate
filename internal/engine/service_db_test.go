@@ -14,6 +14,7 @@ import (
 )
 
 func TestRepositoryProvisioningAndProjections(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
@@ -149,6 +150,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 }
 
 func TestRepositoryDatasetIsolation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
 	for _, name := range []string{"alpha", "beta"} {
@@ -179,6 +181,7 @@ func TestRepositoryDatasetIsolation(t *testing.T) {
 // definition. Rows written before the record converge through a one-time
 // gated boot pass, and every boot after it writes nothing.
 func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
@@ -249,6 +252,7 @@ func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
 // look up — and after the vocabulary split, the capability a type binds almost
 // never lives in the type's own authority.
 func TestSchemaMetaModelProjections(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -358,6 +362,7 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 }
 
 func TestWatchSignal(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, ds := newDataset(t)
@@ -394,6 +399,7 @@ func TestWatchSignal(t *testing.T) {
 }
 
 func TestChangesFilters(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	task := mustPut(t, ds, engram, substrate.PutInput{

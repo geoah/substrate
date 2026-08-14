@@ -58,6 +58,7 @@ func asRef(t *testing.T, v any) map[string]any {
 // back the canonical {authority, type, id}, then re-applies that canonical value —
 // the get -o yaml → apply round trip. The referent record need not exist.
 func TestReferenceRoundTrip(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installRefAuthority(t, ds)
 
@@ -87,6 +88,7 @@ func TestReferenceRoundTrip(t *testing.T) {
 // TestReferenceUnknownTypeRefused refuses a reference whose referent type is
 // not a known type.
 func TestReferenceUnknownTypeRefused(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installRefAuthority(t, ds)
 
@@ -100,6 +102,7 @@ func TestReferenceUnknownTypeRefused(t *testing.T) {
 // TestReferenceToMismatchRefused refuses a value whose type is not the pinned
 // `to:` type.
 func TestReferenceToMismatchRefused(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installRefAuthority(t, ds)
 
@@ -113,6 +116,7 @@ func TestReferenceToMismatchRefused(t *testing.T) {
 // TestReferenceAnyNeedsType refuses a bare id on a `to: any` reference — there
 // is no declaration to supply the type.
 func TestReferenceAnyNeedsType(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installRefAuthority(t, ds)
 
@@ -125,6 +129,7 @@ func TestReferenceAnyNeedsType(t *testing.T) {
 
 // TestRepeatedReferences writes and reads a list of references.
 func TestRepeatedReferences(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	installRefAuthority(t, ds)
 

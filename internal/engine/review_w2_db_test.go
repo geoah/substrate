@@ -204,6 +204,7 @@ func w2AssertExactResume(t *testing.T, ds *dataset, seq int64, pendingID, proces
 // owner's edit stands — a re-registration never resurrects a deliberately
 // deleted default trigger and never rewires an edited one.
 func TestDefaultTriggerCreateOnlyHonorsOwnerState(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	open, _ := w2Opener(t)
 	ds := open()
@@ -251,6 +252,7 @@ func TestDefaultTriggerCreateOnlyHonorsOwnerState(t *testing.T) {
 // larger one — pre-fix, the list-order patch would already hold it, and the
 // two merges would deadlock across the transactions.
 func TestEffectListLocksInGlobalOrder(t *testing.T) {
+	t.Parallel()
 	ds := newRaceDataset(t)
 	ctx := context.Background()
 	a, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{

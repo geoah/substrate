@@ -29,6 +29,19 @@ func windBackDialect(t *testing.T, db *sql.DB) {
 	}
 }
 
+// Almost every test in this package calls t.Parallel(), and that is what makes
+// the suite finish in a third of the time it used to: the work is mostly spent
+// waiting on Postgres, so running one test at a time left the machine idle.
+// What makes it SAFE is that a test shares nothing it can observe — its own
+// schema (testdb.NewSchema), and its own function processes, which the runner
+// keys on the repository's ID rather than the name every test happens to reuse.
+//
+// The exceptions are the tests that write a PACKAGE-LEVEL var: BlobUploadGrace
+// (the blob GC tests) and maxPagesPerDrain / maxDrainEffects / pagedSweepGrace
+// (the paged-drain tests). A global is not covered by any of the above, so
+// those tests stay serial. t.Setenv is the same hazard by another name — it
+// panics under t.Parallel, so nothing here reaches for it.
+
 func newService(t *testing.T, opts ...engine.Option) (substrate.Service, string) {
 	t.Helper()
 	dsn := testdb.NewSchema(t)

@@ -94,6 +94,7 @@ func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 }
 
 func TestReferenceFilterFindsWhatPointsAtARecord(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	firstClassVocabulary(t, ds)
@@ -148,6 +149,7 @@ func TestReferenceFilterFindsWhatPointsAtARecord(t *testing.T) {
 }
 
 func TestReferenceFilterReachesIntoARepeatedPointer(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	firstClassVocabulary(t, ds)
@@ -180,6 +182,7 @@ func TestReferenceFilterReachesIntoARepeatedPointer(t *testing.T) {
 }
 
 func TestReferenceFilterMembershipAndPresence(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	firstClassVocabulary(t, ds)
@@ -225,6 +228,7 @@ func TestReferenceFilterMembershipAndPresence(t *testing.T) {
 }
 
 func TestReferenceFilterRefusesAnOrdering(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	firstClassVocabulary(t, ds)
@@ -243,6 +247,7 @@ func TestReferenceFilterRefusesAnOrdering(t *testing.T) {
 }
 
 func TestReferenceRendersInADisplayTemplate(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	firstClassVocabulary(t, ds)
 
@@ -293,6 +298,7 @@ func TestReferenceRendersInADisplayTemplate(t *testing.T) {
 }
 
 func TestRequiredReferenceIsEnforcedAtBirth(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	firstClassVocabulary(t, ds)
@@ -314,6 +320,7 @@ func TestRequiredReferenceIsEnforcedAtBirth(t *testing.T) {
 }
 
 func TestReferenceFilterAsksEachKindInItsOwnShape(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	firstClassVocabulary(t, ds)
@@ -350,6 +357,7 @@ func TestReferenceFilterAsksEachKindInItsOwnShape(t *testing.T) {
 }
 
 func TestRequiredRepeatedReferenceRefusesAnEmptyList(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	firstClassVocabulary(t, ds)

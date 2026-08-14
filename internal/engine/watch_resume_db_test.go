@@ -15,6 +15,7 @@ import (
 // it survives the only thing that could break it — a process that goes away
 // between the write and the resume.
 func TestWatchResumesGaplesslyAcrossARestart(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() (substrate.Service, substrate.Dataset) {

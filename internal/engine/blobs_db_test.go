@@ -48,6 +48,7 @@ func blobDocDocs(prop string, repeated bool) []map[string]any {
 }
 
 func TestBlobPutStoresMintsAndStreams(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	bs := blobStoreOf(t, ds)
@@ -93,6 +94,7 @@ func TestBlobPutStoresMintsAndStreams(t *testing.T) {
 }
 
 func TestBlobDedupOnSameBytes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	bs := blobStoreOf(t, ds)
@@ -117,6 +119,7 @@ func TestBlobDedupOnSameBytes(t *testing.T) {
 }
 
 func TestBlobDigestMismatchRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	bs := blobStoreOf(t, ds)
@@ -126,6 +129,7 @@ func TestBlobDigestMismatchRefused(t *testing.T) {
 }
 
 func TestBlobRefRendersManifestNotBytes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	bs := blobStoreOf(t, ds)
@@ -163,6 +167,7 @@ func TestBlobRefRendersManifestNotBytes(t *testing.T) {
 }
 
 func TestBlobRefUnknownDigestRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, blobDocDocs("attachment", false)); err != nil {
@@ -178,6 +183,7 @@ func TestBlobRefUnknownDigestRefused(t *testing.T) {
 }
 
 func TestBlobGetIsRepositoryScoped(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, ds := newDataset(t)
 	bs := blobStoreOf(t, ds)
@@ -262,6 +268,7 @@ func TestBlobGCCollectsUnreferenced(t *testing.T) {
 // still the identity, so a second upload of the same bytes under a different
 // name gets the FIRST name back rather than renaming the blob.
 func TestBlobNameIsDescriptiveAndFirstWins(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	bs := blobStoreOf(t, ds)
@@ -321,6 +328,7 @@ func TestBlobNameIsDescriptiveAndFirstWins(t *testing.T) {
 // Both descriptors are OPTIONAL: bytes with neither still store, and the
 // manifest says nothing rather than claiming an empty name or type.
 func TestBlobNameAndMimeTypeAreOptional(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	bs := blobStoreOf(t, ds)
@@ -345,6 +353,7 @@ func TestBlobNameAndMimeTypeAreOptional(t *testing.T) {
 // control character is refused rather than quietly rewritten, so nothing that
 // renders the name can be talked into reading it as a location.
 func TestBlobNameRefusesAPath(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	bs := blobStoreOf(t, ds)

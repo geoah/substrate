@@ -20,6 +20,7 @@ import (
 // page boundary neither skips nor duplicates. With an id-only tiebreak the
 // second page's seek (id > "dup") admitted nothing and one row was lost.
 func TestListKeysetTotalOrderAcrossTypes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -61,6 +62,7 @@ func TestListKeysetTotalOrderAcrossTypes(t *testing.T) {
 // bumps the changelog head, but the later page must still report the original
 // head — the watch replays that write, it is not lost.
 func TestListHeadIsFirstPageHeadAcrossWalk(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -125,6 +127,7 @@ func evoRefApply(t *testing.T, ds substrate.Dataset, holderProps map[string]any)
 // fields, each refused with the stranded live-row count — not silently
 // admitted as the outer-kind-only classifier did.
 func TestSchemaEvolutionRefusesReferenceAndObjectNarrowing(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	if err := evoRefApply(t, ds, evoRefBaseProps()); err != nil {
 		t.Fatalf("install base authority: %v", err)

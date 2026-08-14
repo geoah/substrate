@@ -86,6 +86,7 @@ def main(input, host):
 }
 
 func TestFinalAgentToolSecretRejected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	installSecretToolBundle(t, ds, fake)

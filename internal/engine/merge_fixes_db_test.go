@@ -10,6 +10,7 @@ import (
 )
 
 func TestMergeRejectsTombstonedAndAlreadyMerged(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -63,6 +64,7 @@ func TestMergeRejectsTombstonedAndAlreadyMerged(t *testing.T) {
 
 // Split reverts the merge, not the months of curation after it.
 func TestSplitKeepsPostMergeOwnerWrites(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -126,6 +128,7 @@ func TestSplitKeepsPostMergeOwnerWrites(t *testing.T) {
 
 // The substrate's own state never merges through the generic surface.
 func TestMergeRejectsSystemTypes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -159,6 +162,7 @@ func TestMergeRejectsSystemTypes(t *testing.T) {
 // A collision on (rel, src, dst) keeps the winner's props; the loser's own
 // travel in the merge record so split gives them back.
 func TestMergeSplitRestoresLoserEdgeProps(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -204,6 +208,7 @@ func TestMergeSplitRestoresLoserEdgeProps(t *testing.T) {
 // An edge between the winner and the loser has nowhere to move to; it is
 // recorded with its props so split can put it back.
 func TestMergeSplitRestoresPairInternalEdge(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -284,6 +289,7 @@ func stringSet(v any) map[string]bool {
 // them would leave the graph pointing at a resurrected loser's winner, which
 // is corruption rather than a clean failure.
 func TestSplitReadsTheLegacyMovedSet(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, raw, _ := newDatasetWithDB(t)
 	installPeopleSources(t, ds)

@@ -365,6 +365,7 @@ func intProp(m map[string]any, key string) int {
 // --- the tests ---------------------------------------------------------------------
 
 func TestAgentTriggerDispatch(t *testing.T) {
+	t.Parallel()
 	// The end-to-end chain: a widget creation fires an agent-callable
 	// trigger; the loop patches through a function tool (held to the agent's
 	// emit), runs a sub-agent (child thread, parent edge, own budgets),
@@ -542,6 +543,7 @@ func intPropAny(v any) int {
 }
 
 func TestAgentEmitHoldsFunctionToolEffects(t *testing.T) {
+	t.Parallel()
 	// A function tool's effects are held to the AGENT's emit: annotate may
 	// emit tasks, but the rogue agent may not — the tool call fails as a
 	// result the model sees, and nothing lands.
@@ -574,6 +576,7 @@ func TestAgentEmitHoldsFunctionToolEffects(t *testing.T) {
 }
 
 func TestAgentDepthCapRefusesAtFour(t *testing.T) {
+	t.Parallel()
 	// The chain a → b → c → d runs at agentDepths 0/1/2/3 — the deepest the
 	// default cap (3) admits; d's call to e would sit at depth 4 and is
 	// refused as a tool result d sees, no fifth loop ever opening. The
@@ -627,6 +630,7 @@ func TestAgentDepthCapRefusesAtFour(t *testing.T) {
 }
 
 func TestAgentBudgetExhaustionSettlesCleanly(t *testing.T) {
+	t.Parallel()
 	// budgeter caps maxTurns at 2; the script calls a tool on both turns, so
 	// the loop ends over budget — cleanly: no error, the thread says
 	// overbudget and why, and both applied effects stand.
@@ -704,6 +708,7 @@ func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 }
 
 func TestBundledAgentLifecycleGate(t *testing.T) {
+	t.Parallel()
 	// A disabled or uninstalled bundle's agents refuse EVERY direct entry:
 	// the call API, chat, and sub-agent dispatch — not just trigger loading.
 	ctx := context.Background()
@@ -770,6 +775,7 @@ func TestBundledAgentLifecycleGate(t *testing.T) {
 }
 
 func TestSubAgentEmitCeiling(t *testing.T) {
+	t.Parallel()
 	// A parent with EMPTY emit delegates to a write-capable child: the
 	// child's effective emit is the intersection — empty — so neither its
 	// function tool's effects nor its propose may land. The same child
@@ -842,6 +848,7 @@ func TestSubAgentEmitCeiling(t *testing.T) {
 }
 
 func TestAgentRetryKeepsIdempotencyKeys(t *testing.T) {
+	t.Parallel()
 	// A tool effect commits, then the delivery fails at the NEXT model turn
 	// and retries on a fresh thread: the retried tool call must present the
 	// SAME idempotency key — keys derive from the delivery identity
@@ -933,6 +940,7 @@ func TestAgentRetryKeepsIdempotencyKeys(t *testing.T) {
 }
 
 func TestChatThreadSingleActiveTurn(t *testing.T) {
+	t.Parallel()
 	// One chat thread admits ONE active continuation: a second concurrent
 	// turn is rejected as a conflict while the first holds the lease, and
 	// the thread's tally never loses an increment.
@@ -986,6 +994,7 @@ func TestChatThreadSingleActiveTurn(t *testing.T) {
 }
 
 func TestCustomLLMEndpointNeverReceivesHostKey(t *testing.T) {
+	t.Parallel()
 	// The P0 boundary: the host's SUBSTRATE_LLM_API_KEY may travel ONLY to the
 	// host's own gateway URL. A row that selects its own baseURL must carry
 	// its own apiKey — resolving the two independently would hand the
@@ -1062,6 +1071,7 @@ func TestCustomLLMEndpointNeverReceivesHostKey(t *testing.T) {
 }
 
 func TestAgentChatRoundTrip(t *testing.T) {
+	t.Parallel()
 	// Chat is the same loop with a live client attached: the first message
 	// opens a thread and streams deltas, the second CONTINUES it — the model
 	// sees the prior turns, and the thread row keeps one running tally.
@@ -1160,6 +1170,7 @@ func toolResultsContain(t *testing.T, ds *dataset, thread, want string) bool {
 }
 
 func TestProposeRejectsMalformedDiffAtProposeTime(t *testing.T) {
+	t.Parallel()
 	// Issue 004: the propose tool validates/normalises the diff at PROPOSE
 	// time. A wrapper-less diff naming an immutable key (`type`) and an unknown
 	// key is a tool error the model sees, and NO recordpatchrequest reaches the
@@ -1188,6 +1199,7 @@ func TestProposeRejectsMalformedDiffAtProposeTime(t *testing.T) {
 }
 
 func TestProposeCoercesBareDiffAndCreates(t *testing.T) {
+	t.Parallel()
 	// Issue 004 + 005: a BARE property map (a real model's shape) is coerced to
 	// the wrapper and lands a patch request; a create proposal names type + id
 	// and lands an op=create request with NO target edge (the record does not
@@ -1258,6 +1270,7 @@ func TestProposeCoercesBareDiffAndCreates(t *testing.T) {
 // json diff), and value coercion, nested-field and edge declaration checks run
 // in a non-writing pass so a malformed proposal never reaches the inbox.
 func TestProposeDiffValidation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	// A gauge kind carries what the checks need in one place: a secret, an
@@ -1333,6 +1346,7 @@ func TestProposeDiffValidation(t *testing.T) {
 // nothing — it only postpones the failure to the first dispatch, wearing the
 // name `default` as if it were configured.
 func TestFreshRepositoryHoldsNoProvider(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 

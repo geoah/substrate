@@ -20,6 +20,8 @@ import (
 // continuation secret scrub, and the paged-row lifecycle owner + sweep.
 
 // withMaxDrainEffects lowers the cumulative effect budget for one test.
+//
+// Package-level, like withMaxPages: a caller MUST NOT call t.Parallel.
 func withMaxDrainEffects(n int64) func() {
 	prev := maxDrainEffects
 	maxDrainEffects = n
@@ -54,6 +56,7 @@ func pagedVersion(t *testing.T, ds *dataset, chain string) (int64, bool) {
 // under a stale version all miss and return errCursorMoved, so the loser's page
 // transaction rolls back whole.
 func TestPagedCursorOwnershipCAS(t *testing.T) {
+	t.Parallel()
 	ds := openInternalDataset(t)
 	ctx := context.Background()
 	chain := "owner.test.dev/on-cas/1"
@@ -180,6 +183,7 @@ def main(input, host):
 // trigger cursor never advanced) loads the committed resume cursor and continues
 // from the last committed page instead of replaying page zero.
 func TestPagedRedispatchResumesFromCursor(t *testing.T) {
+	t.Parallel()
 	ds, triggerID := openPagedDataset(t, "pagedredispatch.test.dev", pagedBody(5))
 	ctx := context.Background()
 	actor := substrate.Actor("connector:pagedredispatch")
@@ -301,6 +305,7 @@ def main(input, host):
 // the invocation fails, nothing commits (no page effect, no resume row), and the
 // raw secret never reaches the durable failure ledger.
 func TestPagedContinuationSecretRejected(t *testing.T) {
+	t.Parallel()
 	ds := openInternalDataset(t)
 	ctx := context.Background()
 	triggerID := installPagedSecretBundle(t, ds)

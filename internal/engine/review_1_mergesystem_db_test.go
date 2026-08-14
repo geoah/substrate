@@ -14,6 +14,7 @@ import (
 // TestSk1MergeSystemTypeProjections probes whether merge enforces the same
 // system-type guard put/patch/delete do.
 func TestSk1MergeSystemTypeProjections(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -93,6 +94,7 @@ func TestSk1MergeSystemTypeProjections(t *testing.T) {
 
 // TestSk1MergeNonFusingTypes probes merge on a type the spec says never fuses.
 func TestSk1MergeNonFusingTypes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
@@ -138,6 +140,7 @@ func TestSk1MergeNonFusingTypes(t *testing.T) {
 // TestSk1MergedTypeSurvivesRestart checks that a type projection cannot be
 // merged away in the first place, restart or no restart.
 func TestSk1MergedTypeSurvivesRestart(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
@@ -187,6 +190,7 @@ func TestSk1MergedTypeSurvivesRestart(t *testing.T) {
 // maintenance pool, substrate_app has no grant on it, and a repository's own
 // `repository` record describes only itself.
 func TestSk1RepositoryRowsAreNotRecords(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
 	alpha, err := svc.CreateRepository(ctx, "alpha")

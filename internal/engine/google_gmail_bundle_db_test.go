@@ -118,6 +118,7 @@ func mustProps(t *testing.T, ty *vocabulary.Kind, names ...string) {
 }
 
 func TestGoogleGmailBundleAdmitsSchema(t *testing.T) {
+	t.Parallel()
 	reg := googleRegistry(t)
 
 	// The gmail toggle maps to a REAL scope now: review-google #1's gate was
@@ -658,6 +659,7 @@ func gmailStepProps(extra map[string]any) map[string]any {
 // people the addresses resolved to through the mapping's one hop, and the
 // stamp carrying the RUN-START historyId.
 func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -774,6 +776,7 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 // sweep that follows deletes only inside the re-read WINDOW. A message whose
 // sentAt predates the window survives with its old generation intact.
 func TestGoogleGmailHistoryExpiryAndSweepScope(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -853,6 +856,7 @@ func TestGoogleGmailHistoryExpiryAndSweepScope(t *testing.T) {
 // rule: a 400 is a request bug, not an expired watermark, and it must surface
 // as an erroring stamp rather than silently full-re-reading the mailbox.
 func TestGoogleGmailHistoryBadStatusPropagates(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -895,6 +899,7 @@ func TestGoogleGmailHistoryBadStatusPropagates(t *testing.T) {
 // non-loopback, non-Gmail origin: the token is never sent, the account stamps
 // erroring with the refusal, and the chain completes instead of parking.
 func TestGoogleGmailOriginPinRefusal(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -932,6 +937,7 @@ func TestGoogleGmailOriginPinRefusal(t *testing.T) {
 // TestGoogleGmailPerAccountIsolation proves F2: the first account's dead
 // grant stamps only itself, and the account behind it still syncs.
 func TestGoogleGmailPerAccountIsolation(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -994,6 +1000,7 @@ func TestGoogleGmailPerAccountIsolation(t *testing.T) {
 // an address an address-book contact already minted a person for links onto
 // that person rather than minting a shell beside it.
 func TestGoogleGmailAddressConverges(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -1059,6 +1066,7 @@ func TestGoogleGmailAddressConverges(t *testing.T) {
 // sweep across the run boundary, and the run that finally DRAINS the walk
 // must sweep — otherwise the reconciliation is silently lost instead.
 func TestGoogleGmailCappedRereadDefersSweep(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -1166,6 +1174,7 @@ func TestGoogleGmailCappedRereadDefersSweep(t *testing.T) {
 // token forever — the run stamps erroring, persists the same token, and the
 // next run repeats it. The window restarts from page one instead.
 func TestGoogleGmailStaleResumeTokenRestarts(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -1222,6 +1231,7 @@ func TestGoogleGmailStaleResumeTokenRestarts(t *testing.T) {
 // exercised: messagesAdded hydrates, a message that vanished between the
 // delta and the fetch is retracted and COUNTED, and the stamp says so.
 func TestGoogleGmailHistoryDeltaAddsAndSkips(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -1289,6 +1299,7 @@ func TestGoogleGmailHistoryDeltaAddsAndSkips(t *testing.T) {
 // ever revisits one whose messages are all gone — so a thread left standing
 // here is stale in both halves forever.
 func TestGoogleGmailHistoryDeleteRetractsEmptyThread(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -1353,6 +1364,7 @@ func TestGoogleGmailHistoryDeleteRetractsEmptyThread(t *testing.T) {
 // fail one header: it rolls the whole page's transaction back, and the drain
 // parks there deterministically on every retry.
 func TestGoogleGmailMalformedAddressSkipped(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -1405,6 +1417,7 @@ func TestGoogleGmailMalformedAddressSkipped(t *testing.T) {
 // page's one transaction. The core edge is capped; the mirror keeps the whole
 // header, so nothing is actually lost.
 func TestGoogleGmailRecipientCap(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -1463,6 +1476,7 @@ func TestGoogleGmailRecipientCap(t *testing.T) {
 // enough to COMMIT its resume, and every run resumes further along than the
 // last, so the walk actually finishes across runs.
 func TestGoogleGmailBackfillBoundedByInvocations(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}

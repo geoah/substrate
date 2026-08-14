@@ -61,6 +61,7 @@ func goodModules() map[string]any {
 }
 
 func TestBundleSharedModuleImportable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	sa := applier(t, ds)

@@ -18,6 +18,7 @@ import (
 // silently drops the guard. Decode refuses it; a lone ifVersion or a lone
 // ifAbsent still decodes.
 func TestPutIfAbsentIfVersionRejectedAtDecode(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -54,6 +55,7 @@ func TestPutIfAbsentIfVersionRejectedAtDecode(t *testing.T) {
 // when carried as json.Number (the runner's UseNumber decode), where the old
 // float64 path would round it to a neighboring integer.
 func TestIfVersionInt64Fidelity(t *testing.T) {
+	t.Parallel()
 	const big = int64(9007199254740993) // 2^53 + 1, unrepresentable in float64
 
 	if got, ok := asInt64(json.Number("9007199254740993")); !ok || got != big {

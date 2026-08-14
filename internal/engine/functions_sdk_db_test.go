@@ -17,6 +17,7 @@ import (
 // builder is the byte-identical mirror.
 
 func TestSDKBuilderEffectsAndIds(t *testing.T) {
+	t.Parallel()
 	// A body that stages its write through host.effects.put (no returned list)
 	// and derives its id through host.ids.external — the reference shape.
 	ds, ops := newFnDataset(t, nil, pyFn("sdkbuild", map[string]any{}, []any{taskType}, `
@@ -64,6 +65,7 @@ def main(input, host):
 }
 
 func TestSDKBuilderGoRuntime(t *testing.T) {
+	t.Parallel()
 	// The Go substratefn builder mirror, compiled and run for real: host.IDs and
 	// host.Effects stage a put, and the id it mints is byte-identical to the
 	// Python ids.external for the same inputs (cross-runtime consistency).
@@ -103,6 +105,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 }
 
 func TestSDKBuilderMixedModeRejected(t *testing.T) {
+	t.Parallel()
 	// One mode per invocation: a body that BOTH returns an explicit effect list
 	// AND stages on the builder is refused (the two apply orders are unrelated
 	// and can self-conflict under CAS). It parks once with a clear error, and
@@ -127,6 +130,7 @@ def main(input, host):
 }
 
 func TestSDKBuilderStagedHandleReturnDoesNotKillHost(t *testing.T) {
+	t.Parallel()
 	// Returning a staged handle (not a plain effect map) is a user error that
 	// json.dumps cannot serialize. It must be answered as an ok:false frame —
 	// never crash the SHARED python host — and a LATER ordinary delivery on the
@@ -156,6 +160,7 @@ def main(input, host):
 }
 
 func TestSDKBuilderStagesSnapshot(t *testing.T) {
+	t.Parallel()
 	// Staging captures a JSON snapshot: a body reusing one properties dict across
 	// a loop stages EACH iteration's value, not the last (the map is not aliased).
 	ds, ops := newFnDataset(t, nil, pyFn("snap", map[string]any{}, []any{taskType}, `
@@ -178,6 +183,7 @@ def main(input, host):
 }
 
 func TestSDKBuilderIfVersionSentinel(t *testing.T) {
+	t.Parallel()
 	// Python if_version handling: OMITTED is an unguarded write; an explicit None
 	// is a builder error (a typo'd version must not silently drop the guard); 0
 	// is a distinct precondition (an absent record is version 0).
@@ -220,6 +226,7 @@ def main(input, host):
 }
 
 func TestSDKBuilderLocalValidation(t *testing.T) {
+	t.Parallel()
 	// The builder rejects deterministic body mistakes locally (a clear error that
 	// parks once), rather than staging them for the engine to park on: an illegal
 	// id, a self-merge, and a None page continuation.
@@ -254,6 +261,7 @@ def main(input, host):
 }
 
 func TestSDKBuilderGoGuardedPatch(t *testing.T) {
+	t.Parallel()
 	// The Go typed read → guarded write idiom end to end: Records.Get returns a
 	// *ReadRecord whose int64 Version feeds substratefn.Version(e.Version) on a patch.
 	// A matching version applies; the same stale version then conflicts.
@@ -307,6 +315,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 }
 
 func TestEffectIfVersionPrecondition(t *testing.T) {
+	t.Parallel()
 	// A body that stages one put or patch with an ifVersion precondition drawn
 	// from its args — proving the effect decode threads ifVersion into the
 	// write path: a matching version applies, a stale one conflicts, and a

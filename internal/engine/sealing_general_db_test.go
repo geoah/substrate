@@ -97,6 +97,7 @@ func mustHaveNoPlaintext(t *testing.T, db *sql.DB, value string) {
 }
 
 func TestSecretMovesIntoTheStore(t *testing.T) {
+	t.Parallel()
 	_, ds, db := newSealingDataset(t)
 	rec := sgPutProvider(t, ds, sgPlainKey)
 
@@ -124,6 +125,7 @@ func TestSecretMovesIntoTheStore(t *testing.T) {
 }
 
 func TestChangeFeedRedactsSensitiveValues(t *testing.T) {
+	t.Parallel()
 	_, ds, _ := newSealingDataset(t)
 	sgPutProvider(t, ds, sgPlainKey)
 
@@ -155,6 +157,7 @@ func TestChangeFeedRedactsSensitiveValues(t *testing.T) {
 }
 
 func TestSecretRepasteIsANoOp(t *testing.T) {
+	t.Parallel()
 	_, ds, db := newSealingDataset(t)
 	first := sgPutProvider(t, ds, sgPlainKey)
 	refOnce := storedAPIKeyRef(t, db)
@@ -183,6 +186,7 @@ func TestSecretRepasteIsANoOp(t *testing.T) {
 }
 
 func TestPastedRefShapedStringIsMaterial(t *testing.T) {
+	t.Parallel()
 	_, ds, db := newSealingDataset(t)
 	// A writer pastes something shaped like a ref. It names no sealed row of
 	// this record, so it is material like any other paste: stored under a
@@ -201,6 +205,7 @@ func TestPastedRefShapedStringIsMaterial(t *testing.T) {
 }
 
 func TestDigestRedactsWithoutIndirection(t *testing.T) {
+	t.Parallel()
 	_, ds, db := newSealingDataset(t)
 	const auth = "digests.example.substrate.reamde.dev"
 	docs := []map[string]any{
@@ -243,6 +248,7 @@ func TestDigestRedactsWithoutIndirection(t *testing.T) {
 }
 
 func TestDisplayTemplateRefusesSensitiveProps(t *testing.T) {
+	t.Parallel()
 	_, ds, _ := newSealingDataset(t)
 	const auth = "leaky.example.substrate.reamde.dev"
 	docs := []map[string]any{
@@ -265,6 +271,7 @@ type resealer interface {
 }
 
 func TestResealMovesLegacyValuesIntoTheStore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, ds, db := newSealingDataset(t)
 	sgPutProvider(t, ds, sgPlainKey)

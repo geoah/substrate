@@ -150,6 +150,7 @@ func stateFrom(t *testing.T, consentURL string) string {
 // declared fields, the callback exchanges the code and stores the grant as a
 // ref — redacted on every read — and the finalizer lands on the account.
 func TestOAuthRoundTrip(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, ds, ops, p, account := installOAuthBundle(t)
 
@@ -210,6 +211,7 @@ func TestOAuthRoundTrip(t *testing.T) {
 // config record (secret resolved) and the accounts with live tokens; the
 // refresh loop trades an expiring token before its expiry.
 func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, ds, ops, p, account := installOAuthBundle(t)
 	p.expiresIn = 120 // inside the 10m refresh window, outside the 1m inline one
@@ -288,6 +290,7 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 // revokes the grant, drops the stored credential, releases its hold, and GC
 // collects the tombstone.
 func TestOAuthAccountDeletionRevokes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, ds, ops, p, account := installOAuthBundle(t)
 

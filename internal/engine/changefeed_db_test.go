@@ -28,6 +28,7 @@ func feedOf(t *testing.T, ds substrate.Dataset) feedOps {
 }
 
 func TestChangesBeforePagesNewestFirst(t *testing.T) {
+	t.Parallel()
 	ds, _ := newFnDataset(t, nil)
 	feed := feedOf(t, ds)
 	ctx := context.Background()
@@ -71,6 +72,7 @@ func seqsOf(changes []substrate.Change) []int64 {
 }
 
 func TestChangesQSubstringFilter(t *testing.T) {
+	t.Parallel()
 	ds, _ := newFnDataset(t, nil)
 	feed := feedOf(t, ds)
 	ctx := context.Background()
@@ -108,6 +110,7 @@ func TestChangesQSubstringFilter(t *testing.T) {
 }
 
 func TestChangeTriggersStates(t *testing.T) {
+	t.Parallel()
 	// The mirror errors on a widget without a name (record.properties.name),
 	// which is what parks a delivery; taskType is in the source so the
 	// function's own task writes exercise self-actor exclusion.

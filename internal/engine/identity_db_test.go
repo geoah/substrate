@@ -11,6 +11,7 @@ import (
 // by value, so there is nothing else in this file.
 
 func TestManualMergeMovesLabelsAndAnnotations(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -69,6 +70,7 @@ func TestManualMergeMovesLabelsAndAnnotations(t *testing.T) {
 }
 
 func TestMergeLoserSurvivesGC(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "organization", Properties: map[string]any{"name": "A"}})

@@ -17,6 +17,7 @@ import (
 // cursor algorithm). Any owner "delivery: queued" patch whose seq the poller
 // never observes is a message that is never delivered.
 func TestZZSK1DeliveryGap(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)

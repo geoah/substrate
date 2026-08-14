@@ -9,6 +9,7 @@ import (
 
 // Skeptic #1: does split destroy owner writes made AFTER the merge?
 func TestSk1SplitRevertsPostMergeOwnerWrites(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -57,6 +58,7 @@ func TestSk1SplitRevertsPostMergeOwnerWrites(t *testing.T) {
 // Same class, "overwritten" path: the winner had the key before the merge,
 // the loser's newer value won, and the owner edits it after the merge.
 func TestSk1SplitClobbersOverwrittenKey(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 

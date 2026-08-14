@@ -85,6 +85,7 @@ const (
 // admission the batch apply runs, minus the function-body warm. Every
 // assertion is a rule the loader enforces at admission time.
 func TestLinearBundleAdmitsSchema(t *testing.T) {
+	t.Parallel()
 	// The registry an install actually admits into: the seeded tree (core
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
@@ -212,6 +213,7 @@ func TestLinearBundleAdmitsSchema(t *testing.T) {
 // asserts every member installs. It warms the PEP 723 sync body through uv,
 // so it skips when uv is absent or cannot provision.
 func TestLinearBundleInstalls(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -557,6 +559,7 @@ func linearResync(t *testing.T, ds *dataset, accountID string) {
 // on-connect backfill (two pages, off the causal chain) → mirrors + person +
 // tasks — then the joint-ownership regressions the projection exists for.
 func TestLinearBundleFakeSyncJointOwnership(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
