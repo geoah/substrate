@@ -13,6 +13,7 @@ package engine
 // the spelling.
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -339,6 +340,115 @@ data:
 	}
 }
 
+// storedFunction is one stored function's blob, as an older binary wrote it.
+func storedFunction(t *testing.T, body string) map[string]any {
+	t.Helper()
+	return documents(t, `
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: x.example.com/fn
+data:
+  authority: x.example.com
+  description: does a thing
+  runtime: python
+  source: |
+    def main(input, host):
+        return {}
+  emit: [x.example.com/widget]
+`+body)[0].Data
+}
+
+// TestDialectOneIOThatWouldMoveTheWireShapeRefuses is the migration's own safety
+// rule: a dialect-1 IO schema translates only when the flat list keeps the shape
+// a CALLER sends. Where it cannot, the rung fails loudly instead of stamping a
+// store whose callables answer a contract nobody agreed to — a wrapper the
+// grammar invented, or an argument it dropped.
+func TestDialectOneIOThatWouldMoveTheWireShapeRefuses(t *testing.T) {
+	for name, tc := range map[string]struct{ body, want string }{
+		"a bare-value input": {
+			`  input:
+    type: string
+`,
+			`data.input declares type "string", not an object of named arguments`,
+		},
+		"a bare-value output": {
+			`  output:
+    type: array
+    items: {type: string}
+`,
+			`data.output declares type "array", not an object of named arguments`,
+		},
+		"an object open to any argument": {
+			`  input:
+    type: object
+`,
+			"data.input declares an object with no properties, which admitted ANY argument",
+		},
+		"an argument name the flat list cannot hold": {
+			`  input:
+    type: object
+    properties:
+      page_url: {type: string}
+`,
+			`data.input.properties has an argument named "page_url"`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := dialectOneData(vocabulary.DocFunction, storedFunction(t, tc.body))
+			if err == nil {
+				t.Fatal("the grammar fabricated a translation for a shape that has none")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want %q, got: %v", tc.want, err)
+			}
+			// The fix the operator has to make is in the message.
+			if !strings.Contains(err.Error(), "re-declare it with") {
+				t.Fatalf("the refusal must name the flat spelling: %v", err)
+			}
+		})
+	}
+}
+
+// TestDialectOneIOThatKeepsTheWireShapeTranslates is the other side of that rule.
+// A NESTED object degrades to `json`: the container and the argument name survive,
+// only the validation of what is inside weakens, and a caller sends exactly what
+// it sent before. `{type: any}` constrained nothing, and neither does an absent
+// side, so the exact translation is to say nothing at all.
+func TestDialectOneIOThatKeepsTheWireShapeTranslates(t *testing.T) {
+	data, err := dialectOneData(vocabulary.DocFunction, storedFunction(t, `  input:
+    type: object
+    properties:
+      opts:
+        type: object
+        properties:
+          depth: {type: number}
+      pages:
+        type: array
+        items:
+          type: object
+          properties:
+            url: {type: string}
+    required: [opts]
+  output:
+    type: any
+`))
+	if err != nil {
+		t.Fatalf("a translatable shape refused: %v", err)
+	}
+	want := []any{
+		map[string]any{"name": "opts", "type": "json", "required": true},
+		map[string]any{"name": "pages", "type": "json", "repeated": true},
+	}
+	if !reflect.DeepEqual(data["arguments"], want) {
+		t.Fatalf("arguments translated to\n %#v\nwant\n %#v", data["arguments"], want)
+	}
+	for _, gone := range []string{"input", "output", "returns"} {
+		if _, held := data[gone]; held {
+			t.Fatalf("the translation left %q behind: %#v", gone, data)
+		}
+	}
+}
+
 // TestDialectOneTranslationIsIdempotent pins what the rung leans on for a
 // half-migrated store: a declaration already in the typed spelling is its own
 // translation, so the grammar may run over any row.
@@ -354,9 +464,14 @@ data:
     - callable: x.example.com/fn
   indices: []
 `)
-	before := docs[0].Data
-	once := dialectOneData(vocabulary.DocAgent, before)
-	twice := dialectOneData(vocabulary.DocAgent, once)
+	once, err := dialectOneData(vocabulary.DocAgent, docs[0].Data)
+	if err != nil {
+		t.Fatalf("translating a typed declaration refused: %v", err)
+	}
+	twice, err := dialectOneData(vocabulary.DocAgent, once)
+	if err != nil {
+		t.Fatalf("translating twice refused: %v", err)
+	}
 	if !reflect.DeepEqual(once, twice) {
 		t.Fatalf("translating twice moved the data:\n once %#v\n twice %#v", once, twice)
 	}
@@ -394,6 +509,61 @@ func TestDeclarationBlobRowIsRefusedOutsideTheRung(t *testing.T) {
 	}
 }
 
+// TestDeclarationBlobIsRefusedByPresence closes the guard's bypasses: it asks
+// whether the KEY is there, not whether its value is the map dialect 1 stored, and
+// it asks for every schema kind rather than only the ones with a blob-bearing arm.
+// A null, a string or a list under that key is not a declaration either, and
+// reading the row's typed properties around one would rebuild an authority from
+// half a declaration.
+func TestDeclarationBlobIsRefusedByPresence(t *testing.T) {
+	for name, tc := range map[string]struct {
+		kind  string
+		props map[string]any
+		want  string
+	}{
+		"a null blob on a function": {
+			kindFunction,
+			map[string]any{"authority": "x.example.com", "description": "d", propDeclarationBlob: nil},
+			"carries a `definition` property",
+		},
+		"a string blob on a kind": {
+			kindKind,
+			map[string]any{"authority": "x.example.com", propDeclarationBlob: "{}"},
+			"carries a `definition` property",
+		},
+		"a list blob on an agent": {
+			kindAgent,
+			map[string]any{"authority": "x.example.com", propDeclarationBlob: []any{"a"}},
+			"carries a `definition` property",
+		},
+		"a blob on an authority row": {
+			kindAuthority,
+			map[string]any{"version": "v1alpha1", propDeclarationBlob: map[string]any{"version": "v1alpha1"}},
+			"carries a `definition` property",
+		},
+		"a blob on an actor row": {
+			kindActor,
+			map[string]any{"authority": "x.example.com", propDeclarationBlob: map[string]any{}},
+			"carries a `definition` property",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := rowDocument("x.example.com/thing", tc.kind, tc.props, typedRows)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("a live read admitted it: %v", err)
+			}
+			if !errors.Is(err, ErrDeclarationUntranslated) {
+				t.Fatalf("the refusal must be by name: %v", err)
+			}
+			// The RUNG refuses these too: none of them is a translation it can do,
+			// and stamping the dialect over one would call the store typed.
+			if _, _, err := rowDocument("x.example.com/thing", tc.kind, tc.props, dialectOneRows); err == nil {
+				t.Fatal("the rung translated a blob that is not a declaration map")
+			}
+		})
+	}
+}
+
 // documents parses a manifest stream into documents, envelope-validated.
 func documents(t *testing.T, src string) []vocabulary.Document {
 	t.Helper()
@@ -422,7 +592,11 @@ func translatedDeclarations(t *testing.T, src string) map[string]map[string]any 
 	t.Helper()
 	docs := documents(t, src)
 	for i, d := range docs {
-		docs[i].Data = dialectOneData(d.Kind, d.Data)
+		data, err := dialectOneData(d.Kind, d.Data)
+		if err != nil {
+			t.Fatalf("%s %s: the grammar refused a translation: %v", d.Kind, d.ID, err)
+		}
+		docs[i].Data = data
 	}
 	authorities, err := vocabulary.BuildAuthorities(docs, vocabulary.SourceInstalled)
 	if err != nil {

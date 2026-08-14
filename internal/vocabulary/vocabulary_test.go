@@ -374,17 +374,21 @@ data:
 	if got := p.ValueStrings(); len(got) != 3 || got[0] != "none" || got[2] != "all" {
 		t.Fatalf("ValueStrings = %v", got)
 	}
-	// The read surfaces (the console) get one canonical shape off the Definition
-	// map: [{value, label}], both keys present, even for the bare-scalar entry.
+	// THE DECLARATION IS UNTOUCHED. The Definition map is what a row stores, so
+	// the values stay spelled the way they were authored — two mappings and one
+	// bare scalar — and every reader of the stored form takes both spellings
+	// (EnumValue.UnmarshalYAML here, parseEnumValues in the console).
 	props := acct.Definition["properties"].(map[string]any)
 	def := props["backfillDepth"].(map[string]any)
 	vals, ok := def["values"].([]any)
 	if !ok || len(vals) != 3 {
-		t.Fatalf("definition values = %v (want a [{value,label}] list)", def["values"])
+		t.Fatalf("definition values = %v", def["values"])
 	}
-	bare := vals[2].(map[string]any)
-	if bare["value"] != "all" || bare["label"] != "" {
-		t.Fatalf("bare entry canonicalized to %v, want {value: all, label: \"\"}", bare)
+	if first, isMap := vals[0].(map[string]any); !isMap || first["label"] != "Don't backfill" {
+		t.Fatalf("the labeled entry was rewritten: %#v", vals[0])
+	}
+	if vals[2] != "all" {
+		t.Fatalf("the bare entry was rewritten to %#v — the declaration is what the author wrote", vals[2])
 	}
 }
 

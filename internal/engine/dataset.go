@@ -152,15 +152,40 @@ func (ds *dataset) KindByPlural(ctx context.Context, authority, plural string) (
 // `Definition` is RENDERED FROM THE PARSED DECLARATION — the data map the loader
 // left behind, which is the same map the projection writes as the row's
 // properties (vocabularywrite.go authorityDeclarations) — and no longer read out
-// of a `definition` property, because no row carries one. The value is identical
-// either way, which is what lets the console keep reading it unchanged while the
-// store moves under it.
+// of a `definition` property, because no row carries one.
+//
+// It is the AUTHORED half of that map: the engine's own `version` is dropped,
+// because a declaration that pinned none has one stamped onto its row, and after
+// a reload the map would otherwise hand back a value nobody wrote — the same
+// declaration reading differently before and after a restart, which is exactly
+// what a client diffing it (or fingerprinting it, gql.RegistryKey) would trip
+// over. The stamped value is `Version` beside it, which is where a reader that
+// wants it already looks. Nothing else on a kind is engine-owned: `source` is
+// not a document key at all.
 func typeInfo(t *vocabulary.Kind) substrate.KindInfo {
 	return substrate.KindInfo{
 		Identity: t.Identity, Name: t.Name, Authority: t.Authority, Version: t.Version,
 		Plural: t.Plural, Source: t.Source, Description: t.Description,
-		Definition: t.Definition,
+		Definition: authoredKindData(t.Definition),
 	}
+}
+
+// authoredKindData is a kind's declaration without the engine-stamped `version`.
+// It copies rather than deletes: the map it is given is the REGISTRY's, and a
+// registry-resident declaration is a read-only view (M5) — a delete here would
+// reach the row the projection writes from it.
+func authoredKindData(data map[string]any) map[string]any {
+	if _, stamped := data[propDeclarationVersion]; !stamped {
+		return data
+	}
+	out := make(map[string]any, len(data))
+	for k, v := range data {
+		if k == propDeclarationVersion {
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 func (ds *dataset) resolveType(name string) (*vocabulary.Kind, error) {

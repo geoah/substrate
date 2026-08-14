@@ -365,12 +365,15 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 			continue
 		}
 		p.Refined = local
-		// The refinement's own `values` canonicalize like a property's: the parse
-		// above read them out of a SYNTHESIZED map, so the labeled wire form has to
-		// be written back onto the document's data itself, which is what the row
-		// stores.
-		if _, declared := d.Data["values"]; declared && len(p.Values) > 0 {
-			d.Data["values"] = enumValuesToAny(p.Values)
+		// THE ONE VALUE THE PARSE NORMALIZES, and it normalizes a COPY. Core's
+		// `propertytype` declares `values` as a repeated OBJECT, so the row this
+		// declaration projects into must hold {value, label} entries whichever form
+		// the author wrote — a bare scalar would be refused by the meta-kind's own
+		// declaration. The caller's document is left untouched: nothing this parse
+		// does may reach a map somebody else holds.
+		data := d.Data
+		if _, declared := data["values"]; declared && len(p.Values) > 0 {
+			data = mapWith(data, "values", enumValuesToAny(p.Values))
 		}
 		if _, dup := g.PropertyTypes[local]; dup {
 			l.errf("%s: declared twice", where)
@@ -378,7 +381,7 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 		}
 		g.PropertyTypes[local] = &PropertyType{
 			Name: local, Authority: name, Base: p.Datatype, Prop: p,
-			Definition: d.Data, SourceYAML: d.Source,
+			Definition: data, SourceYAML: d.Source,
 		}
 		g.DatatypeOrder = append(g.DatatypeOrder, local)
 	}
@@ -1599,14 +1602,13 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 	if p.Datatype == DatatypeEnum && len(p.Values) == 0 {
 		l.errf("%s: enum needs values", where)
 	}
-	// Canonicalize the Definition map's `values` to the labeled wire form so
-	// the read surfaces see one shape regardless of how the manifest authored
-	// them. Only when this property declared `values` inline: a datatype
-	// refinement inherits its set from the base and carries no `values` key
-	// here.
-	if _, declared := d["values"]; declared && len(p.Values) > 0 {
-		d["values"] = enumValuesToAny(p.Values)
-	}
+	// NOTHING IS WRITTEN BACK. A property's `values` stay exactly as the author
+	// spelled them — bare scalars or {value, label} mappings — because the map this
+	// parse walks IS the declaration a row stores (engine/vocabularywrite.go
+	// authorityDeclarations), and rewriting it here would store a document nobody
+	// wrote. Both spellings parse to the same Values, and every reader of the
+	// stored form takes both (the console's parseEnumValues, EnumValue's own
+	// UnmarshalYAML).
 	p.Embed = mbool(d, "embed")
 	p.FTS = IsShortString(p.Datatype) || IsLongText(p.Datatype)
 	if p.Sensitive() {
@@ -2094,6 +2096,18 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 }
 
 // --- small YAML map helpers ---
+
+// mapWith is m with one key replaced, on a COPY: the declaration a parse hands
+// on may differ from the document only where the meta-kind's own shape demands
+// it, and never by mutating what the caller holds.
+func mapWith(m map[string]any, key string, value any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	out[key] = value
+	return out
+}
 
 func asMap(v any) map[string]any {
 	switch m := v.(type) {

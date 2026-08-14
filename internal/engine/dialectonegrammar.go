@@ -36,7 +36,7 @@ import (
 // live loader parses, by the kind that stored it. A kind not listed stored no
 // dialect-1 spelling of its own (an authority header, an actor, a property type),
 // so its blob is already the document.
-func dialectOneData(short string, data map[string]any) map[string]any {
+func dialectOneData(short string, data map[string]any) (map[string]any, error) {
 	switch short {
 	case vocabulary.DocKind:
 		dialectOneIndices(data)
@@ -46,13 +46,15 @@ func dialectOneData(short string, data map[string]any) map[string]any {
 		dialectOneMapRules(data)
 	case vocabulary.DocFunction:
 		dialectOneFunctionCaps(data)
-		dialectOneFunctionIO(data)
+		if err := dialectOneFunctionIO(data); err != nil {
+			return nil, err
+		}
 	case vocabulary.DocAgent:
 		dialectOneAgentTools(data)
 	case vocabulary.DocBundle:
 		dialectOneFeatureScopes(data)
 	}
-	return data
+	return data, nil
 }
 
 // retiredDeclarationProps are dialect 1's own row properties: the `definition`
@@ -195,38 +197,73 @@ func dialectOneFunctionCaps(d map[string]any) {
 // `arguments:`/`returns:` list.
 //
 // The ORDER is the sorted argument name, which is all a schema map has to give.
-func dialectOneFunctionIO(d map[string]any) {
-	dialectOneIOSide(d, "arguments", "input")
-	dialectOneIOSide(d, "returns", "output")
+func dialectOneFunctionIO(d map[string]any) error {
+	if err := dialectOneIOSide(d, "arguments", "input"); err != nil {
+		return err
+	}
+	return dialectOneIOSide(d, "returns", "output")
 }
 
-func dialectOneIOSide(d map[string]any, flat, nested string) {
+func dialectOneIOSide(d map[string]any, flat, nested string) error {
 	raw, has := d[nested]
 	if !has {
-		return
+		return nil
 	}
 	delete(d, nested)
 	if _, already := d[flat]; already {
-		return // dialect 1 refused both spellings on one function
+		return nil // dialect 1 refused both spellings on one function
 	}
 	schema := dialectOneMapOrNil(raw)
 	if schema == nil {
-		return
+		// Not a schema at all: dialect 1 refused this document too, so there is
+		// nothing to preserve and nothing to invent — the side is simply undeclared.
+		return nil
 	}
-	d[flat] = dialectOneArguments(schema, nested)
+	// `{type: any}` declared NO constraint, and neither does an absent side: the
+	// exact flat equivalent is to say nothing. Dropping the key is a translation,
+	// not a weakening — CheckValue was never called for either shape.
+	if ty, _ := schema["type"].(string); ty == "any" {
+		return nil
+	}
+	args, err := dialectOneArguments(schema, nested)
+	if err != nil {
+		return err
+	}
+	d[flat] = args
+	return nil
 }
 
 // dialectOneArguments translates one dialect-1 shape schema into the flat argument
 // list. An argument whose own shape is not flat — an object, a list of objects —
 // becomes a `json` argument, the named escape hatch for a value whose shape the
-// function does not own; a schema that is not an object of properties at all
-// becomes ONE json argument named for the side it came from, since there are no
-// names to carry.
-func dialectOneArguments(schema map[string]any, side string) []any {
+// function does not own: the container survives, only the validation of what is
+// inside it weakens, and the WIRE SHAPE a caller sends is untouched.
+//
+// THE WIRE SHAPE IS WHAT MAY NOT MOVE, and two dialect-1 shapes have no flat
+// spelling that keeps it, so both REFUSE and the rung fails loudly rather than
+// stamping a store whose callables answer a different contract than they did
+// yesterday:
+//
+//   - a top-level schema that is not an object of named properties. `input:
+//     {type: string}` took a bare string; wrapping it as `{name: input}` would
+//     make every existing caller wrong. So would `{type: object}` with no
+//     properties, which admitted ANY argument where a flat list closes the object.
+//   - a property name the flat list cannot hold (snake_case, empty, unicode).
+//     Dropping the argument would silently unadmit a value the body reads, and
+//     collapsing the side into one json argument moves the shape.
+//
+// A repository holding one is repaired by re-installing the bundle with a flat
+// declaration, under the binary that still wrote the old one.
+func dialectOneArguments(schema map[string]any, side string) ([]any, error) {
 	ty, _ := schema["type"].(string)
 	props := dialectOneMapOrNil(schema["properties"])
-	if ty != "object" || props == nil {
-		return []any{map[string]any{"name": side, "type": vocabulary.ArgumentJSON}}
+	switch {
+	case ty != "object":
+		return nil, fmt.Errorf("data.%s declares type %q, not an object of named arguments: the flat spelling is a LIST of named arguments, so no translation keeps the wire shape a caller sends — re-declare it with `%s:` before migrating",
+			side, ty, dialectOneFlatKey(side))
+	case props == nil:
+		return nil, fmt.Errorf("data.%s declares an object with no properties, which admitted ANY argument: a flat list closes the object, so no translation keeps the contract — re-declare it with `%s:` before migrating",
+			side, dialectOneFlatKey(side))
 	}
 	required := map[string]bool{}
 	for _, rv := range dialectOneSlice(schema, "required") {
@@ -235,9 +272,8 @@ func dialectOneArguments(schema map[string]any, side string) []any {
 	names := make([]string, 0, len(props))
 	for name := range props {
 		if !vocabulary.ValidCamel(name) {
-			// A name the flat list cannot hold takes the whole side with it: half a
-			// translation would silently drop an argument the body reads.
-			return []any{map[string]any{"name": side, "type": vocabulary.ArgumentJSON}}
+			return nil, fmt.Errorf("data.%s.properties has an argument named %q, which the flat spelling cannot hold: dropping it would unadmit a value the body reads — re-declare it with `%s:` before migrating",
+				side, name, dialectOneFlatKey(side))
 		}
 		names = append(names, name)
 	}
@@ -263,7 +299,16 @@ func dialectOneArguments(schema map[string]any, side string) []any {
 		}
 		out = append(out, arg)
 	}
-	return out
+	return out, nil
+}
+
+// dialectOneFlatKey is the flat key that replaced one dialect-1 IO side, for the
+// refusals above: the fix an operator has to make is spelled in the message.
+func dialectOneFlatKey(side string) string {
+	if side == "output" {
+		return "returns"
+	}
+	return "arguments"
 }
 
 // dialectOneArgumentType maps one dialect-1 leaf schema onto the argument type

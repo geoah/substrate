@@ -773,10 +773,10 @@ func authorityDeclarations(g *vocabulary.Authority) ([]declaration, error) {
 				props[k] = nil
 			}
 		}
-		if v, ok := props["version"].(string); !ok || v == "" {
-			props["version"] = g.Version
+		if v, ok := props[propDeclarationVersion].(string); !ok || v == "" {
+			props[propDeclarationVersion] = g.Version
 		}
-		if v, _ := props["version"].(string); v == "" {
+		if v, _ := props[propDeclarationVersion].(string); v == "" {
 			// The version is MANDATORY: it is what a boot-time upgrade diffs
 			// against, so a declaration without one could never converge.
 			missing = append(missing, short+" "+id)
@@ -899,6 +899,12 @@ func authorityDeclarations(g *vocabulary.Authority) ([]declaration, error) {
 // The RETIRED half does need a list, because it is a list of DEAD spellings and
 // nothing derives it. It is dialect 1's own set and lives with dialect 1's
 // grammar: retiredDeclarationProps, in dialectonegrammar.go.
+
+// propDeclarationVersion is the version EVERY declaration row carries: the
+// property a boot-time upgrade diffs on, stamped by the projection when the
+// declaration pinned none (authorityDeclarations) and therefore not part of the
+// authored declaration a read surface renders (dataset.go authoredKindData).
+const propDeclarationVersion = "version"
 
 // engineOwned reports whether a stored property is the ENGINE's rather than the
 // declaration's: not a document key, and not one of the retired spellings. It is
@@ -1098,6 +1104,40 @@ func rowDocument(id, typeIdent string, props map[string]any, dialectOne bool) (v
 			ErrVocabularyDialectNewer, typeIdent, id)
 	}
 	d := vocabulary.Document{Kind: short, ID: id}
+	// THE BLOB IS DECIDED FIRST, BY PRESENCE, for every schema kind and whatever
+	// the value is. A null, a string or a list under that key is not a declaration
+	// this binary can read either, and reading the row's typed properties around it
+	// would rebuild an authority from half a declaration — so presence alone is the
+	// question, and only the rung may answer it with a translation.
+	if blob, held := props[propDeclarationBlob]; held {
+		if !dialectOne {
+			return vocabulary.Document{}, false, fmt.Errorf(
+				"%w: schema row %s %s carries a `%s` property — dialect 2 stores a declaration's own properties, so this row is either corruption or a store the rung never migrated",
+				ErrDeclarationUntranslated, typeIdent, id, propDeclarationBlob)
+		}
+		def, isMap := blob.(map[string]any)
+		switch {
+		case short == vocabulary.DocAuthority || short == kindActorLocal:
+			// Neither ever carried one: an authority row's whole content is its
+			// version, an actor's its authority and tier (DialectOneProps).
+			return vocabulary.Document{}, false, fmt.Errorf(
+				"%w: schema row %s %s carries a `%s` property, which no dialect ever stored on a %s",
+				ErrDeclarationUntranslated, typeIdent, id, propDeclarationBlob, short)
+		case !isMap:
+			return vocabulary.Document{}, false, fmt.Errorf(
+				"%w: schema row %s %s carries a `%s` that is %T, not the declaration map dialect 1 stored",
+				ErrDeclarationUntranslated, typeIdent, id, propDeclarationBlob, blob)
+		}
+		// The rung's read: a row an older binary wrote, whose authored content is
+		// the blob alone, in the grammar of the dialect that wrote it.
+		data, err := dialectOneData(short, def)
+		if err != nil {
+			return vocabulary.Document{}, false, fmt.Errorf("%w: schema row %s %s: %w",
+				ErrDeclarationUntranslated, typeIdent, id, err)
+		}
+		d.Data = data
+		return d, true, nil
+	}
 	switch short {
 	case vocabulary.DocAuthority:
 		data := map[string]any{}
@@ -1122,17 +1162,6 @@ func rowDocument(id, typeIdent string, props map[string]any, dialectOne bool) (v
 		// data is the property map with the engine's own keys dropped
 		// (serverDeclarationProps). Nothing is derived and nothing is renamed —
 		// what the author wrote is what comes back.
-		if def, blob := props[propDeclarationBlob].(map[string]any); blob {
-			if !dialectOne {
-				return vocabulary.Document{}, false, fmt.Errorf(
-					"%w: schema row %s %s still carries a `%s` blob — dialect 2 stores a declaration's own properties, so this row is either corruption or a store the rung never migrated",
-					ErrDeclarationUntranslated, typeIdent, id, propDeclarationBlob)
-			}
-			// The rung's read: a row an older binary wrote, whose authored content is
-			// the blob alone, in the grammar of the dialect that wrote it.
-			d.Data = dialectOneData(short, def)
-			break
-		}
 		d.Data = declarationData(short, props)
 	}
 	// No sourceYAML read-back: rows store the parsed declaration only (record
@@ -1629,14 +1658,16 @@ func checkDeclarationWrite(ty *vocabulary.Kind, short string, existing *substrat
 	var problems []string
 	for _, name := range sortedKeys(props) {
 		switch {
-		case dataKeys[name], columnBackedProp[name], props[name] == nil:
-			continue
+		// THE BLOB FIRST, and by PRESENCE: a null is this dialect's delete marker
+		// everywhere else, but there is nothing left to delete under this key — no
+		// row carries one — so a write naming it is a client working from a
+		// document this substrate stopped storing, whatever value it sends.
 		case name == propDeclarationBlob:
-			// The blob is not a spelling to choose between any more: nothing reads
-			// one, so obeying it would store a declaration no reader would find.
 			problems = append(problems, fmt.Sprintf(
 				"props.%s: the retired blob — a %s carries its declaration in its own properties: %s",
 				name, short, strings.Join(sortedKeys(dataKeys), ", ")))
+			continue
+		case dataKeys[name], columnBackedProp[name], props[name] == nil:
 			continue
 		case retiredDeclarationProps(short)[name]:
 			problems = append(problems, fmt.Sprintf("props.%s: the retired spelling — the declaration is the properties now", name))

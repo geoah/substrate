@@ -708,6 +708,59 @@ func TestTypedDeclarationRungRefusesAnUntranslatableRow(t *testing.T) {
 	}
 }
 
+// TestTypedDialectRefusesANullBlobProperty is the guard's narrowest case, and the
+// one a value-typed check used to miss: a row of an already-migrated store whose
+// `definition` is a JSON NULL. The key's PRESENCE is what says the row is not a
+// dialect-2 declaration, so the open refuses by name rather than rebuilding the
+// authority from the typed properties beside it.
+func TestTypedDialectRefusesANullBlobProperty(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := testdb.NewSchema(t)
+	open := func() substrate.Service {
+		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		t.Cleanup(func() { _ = svc.Close() })
+		return svc
+	}
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	importVocabulary(t, ds)
+	installShippedBundle(t, ds, "web")
+	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "geoah"), engine.RoleApp)
+	if err != nil {
+		t.Fatalf("open repository schema: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	// The store is stamped dialect 2 (a fresh repository is typed from birth), so
+	// the rung does not run and this row meets the live reader.
+	if _, err := db.ExecContext(ctx, `
+		UPDATE records SET props = jsonb_set(props, '{definition}', 'null')
+		WHERE kind = $1 AND id = $2`,
+		"core.substrate.reamde.dev/function", "web.bundles.substrate.reamde.dev/findurls"); err != nil {
+		t.Fatalf("plant a null definition: %v", err)
+	}
+	_ = svc.Close()
+
+	svc2 := open()
+	_, err = svc2.Dataset(ctx, "geoah")
+	if !errors.Is(err, engine.ErrDeclarationUntranslated) {
+		t.Fatalf("a null definition must refuse by name, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "definition") ||
+		!strings.Contains(err.Error(), "web.bundles.substrate.reamde.dev/findurls") {
+		t.Fatalf("the refusal must name the blob and the row: %v", err)
+	}
+}
+
 // TestTypedDeclarationRungHoldsRowsToTheRepositorysOwnDeclarations is the
 // validation half: a repository whose stored meta-kind declaration is AHEAD of
 // the binary's keeps it (the boot upgrade never downgrades), so its rows are

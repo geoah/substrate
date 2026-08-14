@@ -7,6 +7,7 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -367,6 +368,162 @@ func TestSchemaDeleteRefusesWithInstances(t *testing.T) {
 	}
 }
 
+// M5: WHAT PROJECTION STORES IS WHAT THE AUTHOR WROTE. The declaration a
+// registry object carries is a read-only view of the document, and the projection
+// serializes it into the row — so a value the loader normalized on the way past
+// would be stored as though it had been authored, and every reader downstream
+// (the console's editors, a client's `get -o yaml | apply -f`) would be looking at
+// the substrate's opinion instead of the author's.
+//
+// An enum's values are the case that used to move: authored as bare scalars, they
+// were rewritten into {value, label} objects in place. The kind's own
+// `properties` is the meta-kind's one json leaf, so nothing about the row needs
+// them rewritten — and the stored row now says exactly what the manifest said.
+//
+// A PROPERTY TYPE's values are the one exception, and the meta-kind's declaration
+// is the reason: core's `propertytype` types them as a repeated {value, label}
+// object, so a bare scalar could not be stored at all. The loader normalizes a
+// COPY (internal/vocabulary, TestTheParseNeverMutatesTheDocument), and that is the
+// whole of the exception.
+func TestProjectionStoresTheAuthoredDeclaration(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(swAuthority, ""),
+		{
+			"kind":     vocabulary.CoreKind(vocabulary.DocPropertyType),
+			"metadata": map[string]any{"id": swAuthority + "/grade"},
+			"data": map[string]any{
+				"authority": swAuthority,
+				"base":      "enum",
+				"values":    []any{"good", "bad"},
+			},
+		},
+		swTypeDoc("widget", "widgets", map[string]any{
+			"status": map[string]any{
+				"type":   "enum",
+				"values": []any{"draft", "live"},
+			},
+		}),
+	}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	props, _ := row.Properties["properties"].(map[string]any)
+	status, _ := props["status"].(map[string]any)
+	values, _ := status["values"].([]any)
+	if len(values) != 2 {
+		t.Fatalf("the stored enum values = %#v", status["values"])
+	}
+	for i, v := range values {
+		if _, rewritten := v.(map[string]any); rewritten {
+			t.Fatalf("the stored declaration rewrote value %d into %#v — the row must carry what the author wrote", i, v)
+		}
+	}
+	if values[0] != "draft" || values[1] != "live" {
+		t.Fatalf("the stored enum values = %#v", values)
+	}
+
+	// The property type's row carries the objects its own declaration types.
+	pt := mustGet(t, ds, "core.substrate.reamde.dev/propertytype", swAuthority+"/grade")
+	ptValues, _ := pt.Properties["values"].([]any)
+	if len(ptValues) != 2 {
+		t.Fatalf("the stored property type values = %#v", pt.Properties["values"])
+	}
+	first, isObject := ptValues[0].(map[string]any)
+	if !isObject || first["value"] != "good" {
+		t.Fatalf("a property type's stored values must be {value, label} objects: %#v", ptValues[0])
+	}
+}
+
+// KindInfo.Definition IS THE AUTHORED DECLARATION, and it reads the same before
+// and after a restart. A kind that pins no version of its own has the authority's
+// stamped onto its row; the row is what a reopen rebuilds the registry from, so a
+// definition that carried the stored properties verbatim would gain a `version`
+// nobody authored the moment the process restarted — one declaration, two answers,
+// and any client diffing or fingerprinting it (gql.RegistryKey) would see a change
+// that never happened.
+func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := testdb.NewSchema(t)
+	open := func() substrate.Service {
+		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		t.Cleanup(func() { _ = svc.Close() })
+		return svc
+	}
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No `version:` on the declaration — the authority's is what the row gets.
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(swAuthority, "v1alpha3"),
+		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+	}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	before, err := ds.KindByRef(ctx, swAuthority+"/widget")
+	if err != nil {
+		t.Fatalf("read the kind: %v", err)
+	}
+	if _, stamped := before.Definition["version"]; stamped {
+		t.Fatalf("the rendered declaration carries the engine's version: %v", before.Definition)
+	}
+	if before.Version != "v1alpha3" {
+		t.Fatalf("the stamped version is not on the KindInfo: %+v", before)
+	}
+	// The ROW carries it, because a boot upgrade diffs on it.
+	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	if row.Properties["version"] != "v1alpha3" {
+		t.Fatalf("the row carries no stamped version: %v", row.Properties)
+	}
+	_ = svc.Close()
+
+	// The reopen rebuilds the registry from that row.
+	svc2 := open()
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	after, err := ds2.KindByRef(ctx, swAuthority+"/widget")
+	if err != nil {
+		t.Fatalf("read the kind again: %v", err)
+	}
+	if !reflect.DeepEqual(before.Definition, after.Definition) {
+		t.Fatalf("the declaration moved across a restart:\n before %#v\n after  %#v",
+			before.Definition, after.Definition)
+	}
+	if after.Version != "v1alpha3" {
+		t.Fatalf("the version did not survive the reload: %+v", after)
+	}
+	// A declaration that PINS its own version keeps reading it off KindInfo.
+	if _, err := applier(t, ds2).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.KindManifest(swAuthority,
+			map[string]any{"singular": "gadget", "plural": "gadgets"},
+			map[string]any{"version": "v2alpha1", "properties": map[string]any{"name": map[string]any{"type": "string"}}}),
+	}); err != nil {
+		t.Fatalf("apply the pinned declaration: %v", err)
+	}
+	pinned, err := ds2.KindByRef(ctx, swAuthority+"/gadget")
+	if err != nil {
+		t.Fatalf("read the pinned kind: %v", err)
+	}
+	if pinned.Version != "v2alpha1" {
+		t.Fatalf("the pinned version is not on the KindInfo: %+v", pinned)
+	}
+}
+
 // The generic verbs write schema records THROUGH admission: put/patch with a
 // definition work and activate; a write into shipped vocabulary refuses; a
 // definition that breaks the closure refuses with the problem list.
@@ -429,6 +586,21 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 		Kind: swAuthority + "/widget", Properties: map[string]any{"name": "n2"},
 	}); e.Properties["note"] != nil {
 		t.Fatalf("the refused blob still landed: %v", e.Properties)
+	}
+	// A NULL under that key is refused too. A null deletes a property everywhere
+	// else in this dialect, but there is nothing left to delete here — no row
+	// carries a blob — so a client naming the key at all is working from a
+	// document this substrate stopped storing.
+	_, nullErr := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget",
+		Properties: map[string]any{
+			"authority": swAuthority, "names": row.Properties["names"],
+			"properties": declared, "definition": nil,
+		},
+	})
+	wantErr(t, nullErr, substrate.ErrValidation, "a write carrying a null definition")
+	if !strings.Contains(fmt.Sprint(nullErr), "props.definition") {
+		t.Fatalf("the refusal must name the blob: %v", nullErr)
 	}
 
 	// A declaration that breaks the closure refuses whole.

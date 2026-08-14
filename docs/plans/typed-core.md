@@ -253,10 +253,33 @@ code is the contract for all of it:
   not name: an index as a bare list, an OAuth feature's scopes as a bare
   list). The `definition` machinery is gone with them: the blob arms of
   `documentFromProps` and `rowDocument`, and a definition-bearing row is now a
-  loud refusal on every path but the rung's. The rung carries a FROZEN copy of
-  the dialect-1 grammar it needs (`engine/dialectonegrammar.go`), exercised
-  only by the rung and pinned by old-shape fixtures per kind, so retiring a
-  spelling from the loader can never move what a stored row translates to.
+  loud refusal on every path but the rung's — decided by the KEY's presence, for
+  every schema kind, so a null or a string under it is corruption too. The rung
+  carries a FROZEN copy of the dialect-1 grammar it needs
+  (`engine/dialectonegrammar.go`), exercised only by the rung and pinned by
+  old-shape fixtures per kind, so retiring a spelling from the loader can never
+  move what a stored row translates to.
+
+  **The migration may weaken validation; it may NOT move a wire shape.** A
+  nested object inside a dialect-1 IO schema degrades to `json` (the argument
+  name and its container survive, and a caller sends what it always sent), but
+  a top-level schema that was not an object of named arguments, and a property
+  name the flat list cannot hold, have no flat spelling that keeps the shape —
+  so the rung REFUSES them by name instead of fabricating an `{input: …}`
+  wrapper, and the repository is repaired by re-declaring the function flat
+  under the binary that still writes the old form. `{type: any}` translates
+  exactly: it constrained nothing, and neither does an absent side.
+
+  **M5 landed with it.** A parsed declaration is a read-only view of the
+  document, so the parse no longer writes into the map it walks (a property's
+  enum values used to be rewritten in place, and the projection stored the
+  rewrite as though it were authored). The one value the loader normalizes is a
+  property type's `values`, because core's `propertytype` types them as
+  `{value, label}` objects and a row must hold what its own declaration
+  admits — and it normalizes a COPY. `KindInfo.Definition` renders the AUTHORED
+  half of the map: the engine-stamped `version` is dropped, since a declaration
+  that pinned none gains one on its row and would otherwise read differently
+  after a restart.
 
 Two things the plan expected of 1c did not happen, and both are honest
 deferrals rather than oversights:
