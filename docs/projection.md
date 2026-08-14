@@ -29,9 +29,11 @@ data:
   match:                           # first-link probes: how a new record
     - from: email                  #   finds an existing person
       to: emails
-  map:                             # assignment paths, nothing else
-    name: name
-    displayName: login
+  map:                             # assignment rules, nothing else
+    name:
+      path: name
+    displayName:
+      path: login
     emails:
       path: email
       merge: union
@@ -39,8 +41,12 @@ data:
 
 `from:` and `to:` are kind references, so a mapping says exactly which two
 kinds it joins and an installed manifest can name a shipped kind without
-guessing. `map` is assignment-only: paths like `name`, `name.displayName`, or
-`emails[].value`, no expressions and no conditionals. Computation is the
+guessing. `map` is assignment-only, keyed by the subject property written: each
+rule is an object naming the source `path` it reads (`name`, `name.displayName`
+or `emails[].value`) beside an optional `merge`, and there are no expressions and
+no conditionals. A bare path (`name: name`) is refused naming the object
+that replaced it: one property has one shape, which is what lets the
+`recordmapping` kind declare a rule's own fields. Computation is the
 bundle's job before the write, and the loader type-checks every path
 against both declared kinds, so a disagreement fails on the manifest that
 caused it, never on the first sync that hits it. Both `match` and `map` may
@@ -175,7 +181,8 @@ data:
     - from: email
       to: emails
   map:
-    name: name
+    name:
+      path: name
 ```
 
 A function that puts an `enrichment` record now contributes `name` to the

@@ -280,7 +280,7 @@ and its stability, and the agent surface reports `alpha`:
 ```json
 {"versions": [{"name": "v1", "status": "served"}],
  "server": {"version": "…", "build": "…"},
- "vocabulary": {"maxDialect": 1, "note": "…"},
+ "vocabulary": {"maxDialect": 2, "note": "…"},
  "changelog": {"horizon": 0},
  "features": [{"name": "triggers", "stability": "stable"},
               {"name": "agents", "stability": "alpha"}],

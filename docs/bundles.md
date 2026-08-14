@@ -233,8 +233,14 @@ oauth2:
   revocationEndpoint: https://oauth2.googleapis.com/revoke
   featureScopes:
     enabledContacts:
-      - https://www.googleapis.com/auth/contacts.readonly
+      scopes:
+        - https://www.googleapis.com/auth/contacts.readonly
 ```
+
+A toggle's entry is an object carrying `scopes:`, never a bare list: a keyed map
+of lists is the one shape the property dialect cannot state, since `keyed` and
+`repeated` are its two containers and a declaration is one or the other. So the
+value takes a field, and a bare list is refused naming it.
 
 **The requested scope set is derived per consent from the account's enabled
 toggles**, unioned through `featureScopes`. A toggle that maps to no scope

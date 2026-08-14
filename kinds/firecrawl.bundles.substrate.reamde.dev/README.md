@@ -80,9 +80,9 @@ https://www.firecrawl.dev (they look like `fc-…`).
 
 ## Binding the tools to an agent
 
-A function with an `input:` schema is its own tool card — an agent names it
-in `tools:`, exactly the way the web harvester's classifier carries
-`setclass`. A research agent that searches, reads and remembers:
+A function with an `arguments:` list is its own tool card: the engine renders the
+card from the list, and an agent names the function in `tools:`, exactly the way
+the web harvester's classifier carries `setclass`. A research agent that searches, reads and remembers:
 
 ```yaml
 kind: core.substrate.reamde.dev/agent
@@ -96,8 +96,8 @@ data:
   provider: default
   model: anthropic/claude-opus-5
   tools:
-    - firecrawl.bundles.substrate.reamde.dev/websearch
-    - firecrawl.bundles.substrate.reamde.dev/scrapepage
+    - callable: firecrawl.bundles.substrate.reamde.dev/websearch
+    - callable: firecrawl.bundles.substrate.reamde.dev/scrapepage
   budgets: {maxTurns: 8, maxToolCalls: 16, depth: 3}
   emit:
     # scrapepage writes webdocuments, and a child's effective emit is its
@@ -107,7 +107,7 @@ data:
 ```
 
 Both functions are equally callable without an agent — the HTTP call API or
-another function's `host.call` (gated by that caller's `capabilities.call`).
+another function's `host.call` (gated by that caller's `call:` grant).
 
 ## Files
 

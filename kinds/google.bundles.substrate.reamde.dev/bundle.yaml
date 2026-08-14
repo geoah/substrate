@@ -1440,7 +1440,7 @@ data:
 # Dependency-free: stdlib urllib + json + email.utils, NO PEP 723 block, so it
 # runs on the shared python3 fast path (no uv provisioning at registration)
 # and the request origin is ours to pin by hand — a discovery client picks its
-# own hosts, and `capabilities.network` is declared-but-unenforced.
+# own hosts, and the `network:` grant is declared-but-unenforced.
 #
 # emit names the two mirrors, the shared emailaddress source, the account (the
 # stream's own stamp) AND the two core messaging types: the emit ceiling is
@@ -2775,7 +2775,7 @@ data:
 
 
     def _get(token, path, params=None):
-        # F1 origin pinning: `capabilities.network` is declared but NOT
+        # F1 origin pinning: the `network:` grant is declared but NOT
         # enforced, so this refusal is the defense. It raises inside the
         # per-account try/except, so a tampered base stamps THAT account
         # erroring rather than parking the whole delivery.

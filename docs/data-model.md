@@ -351,7 +351,7 @@ milestone:
 A field is a scalar, a reference or another object, and it carries its own
 `repeated:`/`keyed:` container. Nesting is bounded: a kind's own property is
 level 1 and a field may sit at level 4 at most, so the guards that refuse a
-narrowing definition change can walk the whole shape. `json` is still the only
+narrowing declaration change can walk the whole shape. `json` is still the only
 escape hatch, and it stays reserved for payloads whose shape we do not own —
 a `secret`, a `digest`, a `blobref` and a state machine are each a whole
 property and never a field.
@@ -460,14 +460,20 @@ metadata:
 data:
   authority: core.substrate.reamde.dev
   oneOf:
-    point:
-      at: datetime
-    range:
-      at: datetime
-      endsAt: datetime
+    - name: point
+      properties:
+        at: datetime
+    - name: range
+      properties:
+        at: datetime
+        endsAt: datetime
 ```
 
-`oneOf` declares two variants: a `point` in time, or a `range` with an end.
+`oneOf` is an ordered **list**, and each variant names itself: a `point` in
+time, or a `range` with an end. A variant's `properties` is a map from name to
+datatype, exactly as a plain trait's is; the variants themselves are a list
+because two data-keyed levels in a row are not declarable: a path into them
+would not say which level it addressed.
 A calendar event spans time, so its kind binds the range variant under
 `traits:`:
 
