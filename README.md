@@ -157,7 +157,8 @@ one.
 sets `SUBSTRATE_INSECURE_DISABLE_TOTP=true`, so registering takes a username
 and a password, signing in takes the same two, and no authenticator entry is
 enrolled for a repository `dev:wipe` will delete tomorrow. The console and
-`substratectl` both read `GET /api` and stop asking for a code when the
+`substratectl` both read `GET /.well-known/substrate/server.json` and stop
+asking for a code when the
 substrate says it verifies none; `dev:status` prints which door is up, and
 every start says so on its first line. `mise run dev:totp` runs the same
 substrate with the factor enforced — test a change to the door there. A user

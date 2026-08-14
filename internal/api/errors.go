@@ -56,7 +56,8 @@ func writeError(w http.ResponseWriter, status int, code, msg string, problems ..
 
 // writeUnsupported is the 501 emit: a capability this deployment does not
 // carry (no bundles, no change feed, no agents, …). It is NOT a server fault
-// and NOT the way to feature-detect — GET /api discovery is.
+// and NOT the way to feature-detect — GET /.well-known/substrate/server.json
+// discovery is.
 func writeUnsupported(w http.ResponseWriter, msg string) {
 	writeError(w, http.StatusNotImplemented, codeUnsupported, msg)
 }

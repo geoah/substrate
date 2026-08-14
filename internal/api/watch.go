@@ -25,7 +25,8 @@ const (
 // `compacted` error. Retention is full today, so the horizon is 0
 // and nothing has been compacted away — but it is POLICY, not a wire
 // guarantee, and clients MUST handle the compacted signal for when a future
-// deployment prunes. It is surfaced in GET /api discovery.
+// deployment prunes. It is surfaced in GET /.well-known/substrate/server.json
+// discovery.
 func retentionHorizon() int64 { return 0 }
 
 // ndjson control-frame rule: a line WITHOUT `seq` is a control

@@ -7,7 +7,12 @@ import {
 } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { clearSession, getToken, getTokenId, getUsername } from "@/lib/api/session"
+import {
+  clearSession,
+  getToken,
+  getTokenId,
+  getUsername,
+} from "@/lib/api/session"
 
 const navigate = vi.fn().mockResolvedValue(undefined)
 
@@ -22,7 +27,7 @@ vi.mock("@/router", () => ({
   loginRoute: { useSearch: () => ({ redirect: undefined }) },
 }))
 
-/** What GET /api said about the door. Mocked at the module so the fetch
+/** What GET /.well-known/substrate/server.json said about the door. Mocked at the module so the fetch
  * assertions below stay about the login call itself; discovery.test.ts covers
  * the fetching. */
 const policy = vi.hoisted(() => ({ totpRequired: true }))

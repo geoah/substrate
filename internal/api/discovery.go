@@ -8,12 +8,14 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// Discovery: GET /api answers what this deployment serves so a
-// client adapts to capability presence WITHOUT probing for 501s. It is
-// unversioned, unauthenticated, and touches no repository — the same class of
-// endpoint as /healthz.
+// Discovery: GET /.well-known/substrate/server.json answers what this
+// deployment serves so a client adapts to capability presence WITHOUT
+// probing for 501s. It is unversioned, unauthenticated, and touches no
+// repository — the same class of endpoint as /healthz — and its well-known
+// path is what lets an outside system tell whether a domain is a substrate
+// at all before it speaks the rest of the contract.
 
-// discoveryDoc is the GET /api body.
+// discoveryDoc is the GET /.well-known/substrate/server.json body.
 type discoveryDoc struct {
 	// Versions are the served API prefixes: the primary v1 plus the sunset
 	// alias marked deprecated with its replacement.
@@ -37,15 +39,19 @@ type discoveryDoc struct {
 	// version prefix. There is no repository segment
 	// anywhere: the token implies the repository.
 	Endpoints endpointsInfo `json:"endpoints"`
-	// Auth is what those doors ASK FOR, which a client cannot infer from the
-	// paths: whether this deployment verifies a second factor at all.
-	Auth authInfo `json:"auth"`
+	// Registration is what the register door ASKS FOR and WHETHER it is even
+	// open, which a client cannot infer from the paths alone.
+	Registration registrationInfo `json:"registration"`
 }
 
-// authInfo is the door's shape. It states a requirement, never a verdict: what
-// a caller must present, decided by configuration, with no repository opened
-// and nothing about any user in it.
-type authInfo struct {
+// registrationInfo is the register door's shape. It states a requirement,
+// never a verdict: what a caller must present, decided by configuration,
+// with no repository opened and nothing about any user in it.
+type registrationInfo struct {
+	// Open is false only on a deployment with no invite code configured — the
+	// register endpoints answer `unsupported` either way, this just lets a
+	// client say so before trying.
+	Open bool `json:"open"`
 	// TOTPRequired is false only on a deployment that booted with
 	// SUBSTRATE_INSECURE_DISABLE_TOTP — a local one. A client reads it to
 	// stop asking for a code nothing checks; it is not permission to skip
@@ -102,7 +108,7 @@ type featureInfo struct {
 	Stability string `json:"stability"`
 }
 
-// getDiscovery serves GET /api. No auth, no DB.
+// getDiscovery serves GET /.well-known/substrate/server.json. No auth, no DB.
 func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 	version, build := serverBuild()
 	doc := discoveryDoc{
@@ -128,7 +134,10 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 			Register: "/register", Login: "/login", Tokens: "/tokens",
 			Password: "/password", TOTP: "/totp",
 		},
-		Auth: authInfo{TOTPRequired: !h.totpDisabled},
+		Registration: registrationInfo{
+			Open:         h.inviteCode != "",
+			TOTPRequired: !h.totpDisabled,
+		},
 	}
 	writeJSON(w, http.StatusOK, doc)
 }

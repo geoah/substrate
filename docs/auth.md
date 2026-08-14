@@ -198,10 +198,11 @@ refuses a bearer token as evidence for a credential change, the rate limits are
 untouched, and a seed is still minted and sealed with every credential — the
 factor is off, not absent.
 
-A deployment SAYS which door it runs, unauthenticated, at `GET /api`:
+A deployment SAYS which door it runs, unauthenticated, at
+`GET /.well-known/substrate/server.json`:
 
 ```json
-{ "auth": { "totpRequired": false } }
+{ "registration": { "open": true, "totpRequired": false } }
 ```
 
 The console and `substratectl` read it before they ask a person for anything,

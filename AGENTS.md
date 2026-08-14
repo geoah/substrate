@@ -77,9 +77,10 @@ hat against it, and `mise run console:build` puts the console at `/`.
 `SUBSTRATE_INSECURE_DISABLE_TOTP=true`, so registering and signing in are a
 username and a password: enrolling an authenticator for a database that gets
 wiped is friction with nothing behind it. The engine still mints and seals a
-seed, and the deployment says which door it runs at `GET /api`
-(`auth.totpRequired`), which is what the console and `substratectl` read before
-they ask anybody for a code. A change to the door is tested under
+seed, and the deployment says which door it runs at
+`GET /.well-known/substrate/server.json` (`registration.totpRequired`), which
+is what the console and `substratectl` read before they ask anybody for a
+code. A change to the door is tested under
 `mise run dev:totp`, where the factor is enforced, and NEVER by setting the
 variable outside this tree.
 
