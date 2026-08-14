@@ -367,10 +367,16 @@ func spaHandler(dir string) http.HandlerFunc {
 		// and disagreeing decisions is how a handler answers about one file
 		// while serving another.
 		rel := path.Clean("/" + strings.TrimPrefix(r.URL.Path, "/"))
-		file := filepath.Join(root, filepath.FromSlash(rel))
 		// Confinement is checked BEFORE the stat, not left to ServeFile: an
 		// answer that differs for a file outside the directory is an existence
 		// oracle over the whole filesystem even when no byte of it is served.
+		// filepath.IsLocal is the guard the scanner also credits: the cleaned
+		// relative path may not escape, be absolute, or be empty.
+		if rel != "/" && !filepath.IsLocal(strings.TrimPrefix(rel, "/")) {
+			http.NotFound(w, r)
+			return
+		}
+		file := filepath.Join(root, filepath.FromSlash(rel))
 		if file != root && !strings.HasPrefix(file, root+string(filepath.Separator)) {
 			http.NotFound(w, r)
 			return
