@@ -208,9 +208,12 @@ type Property struct {
 	// Managed marks a property the ENGINE stamps: `version`, `source`, the
 	// quarantine fields, the bundle lifecycle bools. It is the declaration of
 	// that fact, so a client can render the property read-only instead of
-	// offering an input the write path will not honor. Nothing in this change
-	// enforces it — the write-path refusal arrives with the typed core, which is
-	// the release where the stamped set stops being a hand-kept list in Go.
+	// offering an input the write path will not honor. The write path READS this
+	// flag: a declaration write carrying a managed property is refused unless the
+	// value equals the one the row already holds, so an edit can never look
+	// obeyed, and `get -o yaml | apply -f` still round-trips
+	// (checkDeclarationWrite, in internal/engine). This is the only statement of
+	// the stamped set; the engine keeps no hand-written list beside it.
 	Managed bool
 	// RefersTo marks a STRING property whose value names something in the
 	// registry rather than being free text: a kind (`emit: [person]`), a

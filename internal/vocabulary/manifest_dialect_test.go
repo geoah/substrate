@@ -695,3 +695,84 @@ data:
 		})
 	}
 }
+
+// --- dialect 1's row spellings, at the YAML door ---------------------------------
+
+// A legacy EXPORT is a document too: `apply -f` of one arrives at this loader
+// carrying the `definition` blob, or a mirror a pre-typed projection wrote beside
+// it. The write path names each of them by what took its place (the engine's
+// checkDeclarationWrite), so this door says the same rather than "unknown key": a
+// writer working from an old export is owed the sentence that fixes the document,
+// whichever way it sent it.
+func TestRetiredRowSpellingsAreNamed(t *testing.T) {
+	const kindDoc = `kind: core.substrate.reamde.dev/authority
+metadata: {id: p.example.com}
+data: {version: v1alpha1}
+---
+kind: core.substrate.reamde.dev/kind
+metadata: {id: p.example.com/widget}
+data:
+  authority: p.example.com
+  names: {singular: widget, plural: widgets}
+  plural: widgets
+  properties:
+    label: {type: string}
+`
+	agentMirror := func(mirror string) string {
+		return agAuthority(`  description: classifies widgets
+  prompt: You classify widgets.
+  provider: default
+  model: claude-opus-5
+` + mirror)
+	}
+	for name, tc := range map[string]struct{ doc, want string }{
+		"the blob names the properties that carry the declaration": {
+			fnAuthority(`  description: d
+  runtime: python
+  emit: [fn.example.com/gadget]
+  definition: {description: d}
+  source: "def main(input, host): return {}"
+`),
+			`key "definition" is deleted — the retired blob`,
+		},
+		"the name mirror names metadata.id": {
+			fnAuthority(`  description: d
+  runtime: python
+  emit: [fn.example.com/gadget]
+  name: mirror
+  source: "def main(input, host): return {}"
+`),
+			`key "name" is deleted — the retired mirror: a declaration's local name is metadata.id`,
+		},
+		"the sourceYAML mirror names the row": {
+			fnAuthority(`  description: d
+  runtime: python
+  emit: [fn.example.com/gadget]
+  sourceYAML: "kind: core.substrate.reamde.dev/function"
+  source: "def main(input, host): return {}"
+`),
+			`key "sourceYAML" is deleted — the retired mirror: nothing stores a document's text`,
+		},
+		"the plural mirror names names.plural": {
+			kindDoc,
+			"key \"plural\" is deleted — the retired mirror: a kind's collection segment is `names.plural`",
+		},
+		"the functions mirror names tools": {
+			agentMirror("  functions: [ag.example.com/annotate]\n"),
+			"key \"functions\" is deleted — the retired mirror: an agent names its callables under `tools`",
+		},
+		"the subagents mirror names agents": {
+			agentMirror("  subagents: [ag.example.com/sorter]\n"),
+			"key \"subagents\" is deleted — the retired mirror: an agent names its sub-agents under `agents`",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := vocabulary.LoadFS(fstest.MapFS{
+				"all.yaml": &fstest.MapFile{Data: []byte(tc.doc)},
+			})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want %q, got: %v", tc.want, err)
+			}
+		})
+	}
+}

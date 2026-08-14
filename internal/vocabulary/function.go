@@ -89,20 +89,6 @@ type Function struct {
 	// authorityDeclarations). The retired `definition` blob is a different thing
 	// and has no spelling left: this is the document, not a wrapper around it.
 	Definition map[string]any
-
-	// capsPath remembers where each capability key was authored. Resolution
-	// against the registry happens long after the parse (a call target may be
-	// installed in the same batch), and its refusals have to name the line the
-	// author wrote, not the one this loader would have preferred.
-	capsPath map[string]string
-}
-
-// capPath is the authored location of one capability key, for an error message.
-func (f *Function) capPath(key string) string {
-	if p, ok := f.capsPath[key]; ok {
-		return p
-	}
-	return "data." + key
 }
 
 // FunctionCaps is the capability envelope: what the body's effects may address,
@@ -599,38 +585,35 @@ func (l *loader) parseFunction(d Document) *Function {
 // non-empty: a function that writes nothing is not a function yet.
 //
 // The five keys ride `data` itself — the `capabilities:` wrapper is a deleted key
-// (deletedFunctionKeys) — so one grant is declared once, in one place. capsPath
-// survives the wrapper it was written for: an agent's `reads:` shares this
-// envelope's parser and names its own path (parseReads).
+// (deletedFunctionKeys) — so one grant is declared once, in one place, and the
+// path a refusal names is `data.<key>` with nothing to remember.
 func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Function) *Function {
 	caps := map[string]any{}
-	fn.capsPath = map[string]string{}
-	for _, k := range sortedKeys(mapOfAny(functionCapsKeys)) {
-		fn.capsPath[k] = "data." + k
+	for k := range functionCapsKeys {
 		if v, declared := data[k]; declared {
 			caps[k] = v
 		}
 	}
 	if _, isList := caps["emit"].(map[string]any); isList {
-		l.errf("%s: %s: a LIST of full type identities", where, fn.capPath("emit"))
+		l.errf("%s: data.emit: a LIST of full type identities", where)
 		return nil
 	}
 	for i, ev := range mslice(caps, "emit") {
 		t := fmt.Sprint(ev)
 		if !ValidKindReference(t) {
-			l.errf("%s: %s[%d]: %q — emit names kinds, bare or authority-qualified, no globs", where, fn.capPath("emit"), i, t)
+			l.errf("%s: data.emit[%d]: %q — emit names kinds, bare or authority-qualified, no globs", where, i, t)
 			continue
 		}
 		fn.Caps.Emit = append(fn.Caps.Emit, t)
 	}
 	if len(fn.Caps.Emit) == 0 {
-		l.errf("%s: %s is required and non-empty — the allowlist of types the effects may address", where, fn.capPath("emit"))
+		l.errf("%s: data.emit is required and non-empty — the allowlist of types the effects may address", where)
 		return nil
 	}
 	for i, cv := range mslice(caps, "call") {
 		ident := fmt.Sprint(cv)
 		if !Qualified(ident) || strings.Contains(ident, "*") {
-			l.errf("%s: %s[%d]: %q — call names full function identities, no globs", where, fn.capPath("call"), i, ident)
+			l.errf("%s: data.call[%d]: %q — call names full function identities, no globs", where, i, ident)
 			continue
 		}
 		fn.Caps.Call = append(fn.Caps.Call, ident)
@@ -638,7 +621,7 @@ func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Functi
 	for i, nv := range mslice(caps, "network") {
 		pat := fmt.Sprint(nv)
 		if pat == "" {
-			l.errf("%s: %s[%d]: empty pattern", where, fn.capPath("network"), i)
+			l.errf("%s: data.network[%d]: empty pattern", where, i)
 			continue
 		}
 		fn.Caps.Network = append(fn.Caps.Network, pat)
@@ -646,21 +629,22 @@ func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Functi
 	for i, mv := range mslice(caps, "mutations") {
 		m := fmt.Sprint(mv)
 		if !functionMutations[m] {
-			l.errf("%s: %s[%d]: %q — merge and split are the gated mutations; put/patch/delete/link/unlink ride emit alone", where, fn.capPath("mutations"), i, m)
+			l.errf("%s: data.mutations[%d]: %q — merge and split are the gated mutations; put/patch/delete/link/unlink ride emit alone", where, i, m)
 			continue
 		}
 		fn.Caps.Mutations = append(fn.Caps.Mutations, m)
 	}
-	if !l.parseReads(where, fn.capPath("reads"), caps, fn) {
+	if !l.parseReads(where, caps, fn) {
 		return nil
 	}
 	return fn
 }
 
-// parseReads reads the optional read capability off an envelope, at the path the
-// envelope carries it: `data.reads` for both callers — a function's capability
-// key, and an agent's beside its tools — which is why the path travels.
-func (l *loader) parseReads(where, path string, caps map[string]any, fn *Function) bool {
+// parseReads reads the optional read capability off an envelope. Both callers
+// carry it at `data.reads` (a function's capability key, and an agent's beside
+// its tools), so the path a refusal names is that one, spelled here.
+func (l *loader) parseReads(where string, caps map[string]any, fn *Function) bool {
+	const path = "data.reads"
 	rv, has := caps["reads"]
 	if !has {
 		return true
@@ -726,7 +710,7 @@ func (r *Registry) resolveFunction(f *Function) []string {
 	for i, t := range f.Caps.Emit {
 		ty, err := r.Resolve(t)
 		if err != nil || ty == nil {
-			problems = append(problems, fmt.Sprintf("%s: %s: unknown type %q", where, f.capPath("emit"), t))
+			problems = append(problems, fmt.Sprintf("%s: data.emit: unknown type %q", where, t))
 			continue
 		}
 		f.Caps.Emit[i] = ty.Identity
@@ -735,7 +719,7 @@ func (r *Registry) resolveFunction(f *Function) []string {
 		for i, t := range f.Caps.Reads.Kinds {
 			ty, err := r.Resolve(t)
 			if err != nil || ty == nil {
-				problems = append(problems, fmt.Sprintf("%s: %s.kinds: unknown type %q", where, f.capPath("reads"), t))
+				problems = append(problems, fmt.Sprintf("%s: data.reads.kinds: unknown type %q", where, t))
 				continue
 			}
 			f.Caps.Reads.Kinds[i] = ty.Identity
@@ -743,7 +727,7 @@ func (r *Registry) resolveFunction(f *Function) []string {
 	}
 	for _, ident := range f.Caps.Call {
 		if _, err := r.ResolveFunction(ident); err != nil {
-			problems = append(problems, fmt.Sprintf("%s: %s: unknown function %q", where, f.capPath("call"), ident))
+			problems = append(problems, fmt.Sprintf("%s: data.call: unknown function %q", where, ident))
 		}
 	}
 	return problems

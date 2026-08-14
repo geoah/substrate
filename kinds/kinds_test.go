@@ -107,12 +107,17 @@ func TestBothViewsLoad(t *testing.T) {
 // The actor grammar has no room for the authority, so the shipped catalog has
 // to keep its own names apart; installing two third-party bundles that collide
 // is a known issue, shipping two that do is a bug.
-// THE SHIPPED TREE IS AUTHORED IN THE DECLARED SPELLING. A declaration row
-// stores the parsed data map, and the loader still admits the spellings that came
-// before the typed core, translating each one (vocabulary/canonical.go) — so a
-// document left in an old spelling would store as something other than what it
-// says, and a reader diffing the tree against a repository would see a change
-// nobody wrote. Every spelling the translation touches is named here.
+// THE SHIPPED TREE IS AUTHORED IN THE DECLARED SPELLING. The loader admits one
+// spelling per key and refuses each pre-typed one by name, so a tree document
+// left in an old spelling does not store as something other than what it says: it
+// does not load at all. The only reader that still understands those spellings is
+// the frozen dialect-1 grammar (internal/engine/dialectonegrammar.go), and it
+// translates the ROWS an older binary stored, never a document.
+//
+// The test still earns its keep for what it says when that happens. A load
+// failure names one key inside one closure; this names the document (its kind and
+// its id) and what took the spelling's place, and it is the one list of every
+// retired spelling a rebase could put back into the tree.
 func TestTheTreeIsAuthoredInTheDeclaredSpelling(t *testing.T) {
 	for _, d := range readTreeDocuments(t) {
 		at := d.Kind + " " + d.ID

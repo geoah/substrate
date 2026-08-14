@@ -632,6 +632,13 @@ func (l *loader) checkKeys(where string, data map[string]any, allowed map[string
 // deletedDataKeys are the keys the pinned design removed, each naming what
 // replaced it. No compatibility shim for any of them: a manifest still
 // carrying one would otherwise look obeyed.
+//
+// The last block is dialect 1's own row spellings: the `definition` blob and the
+// mirrors a pre-typed projection wrote beside it. They are not manifest keys
+// anybody authored, but a legacy EXPORT is a document too, and `apply -f` of one
+// arrives here. The write path already names them (engine's
+// checkDeclarationWrite), so this door says the same thing rather than "unknown
+// key".
 var deletedDataKeys = map[string]string{
 	"capabilities":       "traits (records 62 and 63: the binding key follows the kind)",
 	"bundles":            "traits (record 63 — `bundle` now names the install unit)",
@@ -647,6 +654,13 @@ var deletedDataKeys = map[string]string{
 	"projects":           "an ordinary edge plus a recordmapping document (record 50)",
 	"actor":              "transitions carry no guard — anyone may perform any of them",
 	"configType":         "inputs — named configuration needs, each naming a kind; resolution is bound edge, the id \"default\", then the sole live record",
+
+	"definition": "the retired blob: a declaration carries its own properties now, one key per authored field",
+	"name":       "the retired mirror: a declaration's local name is metadata.id",
+	"plural":     "the retired mirror: a kind's collection segment is `names.plural`",
+	"functions":  "the retired mirror: an agent names its callables under `tools`",
+	"subagents":  "the retired mirror: an agent names its sub-agents under `agents`",
+	"sourceYAML": "the retired mirror: nothing stores a document's text, and the parsed declaration is the row",
 }
 
 // sortDocs orders a type's manifests by identity, so the registry a stream

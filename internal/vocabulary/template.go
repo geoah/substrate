@@ -36,7 +36,7 @@ type TemplateRef struct {
 
 // The derived template tokens. {snippet} is the precedent the other two follow;
 // {localName} and {id} exist because a record's identity is its id and nothing
-// else, so the eight core kinds that titled themselves `{name}` have somewhere
+// else, so the nine core kinds that titled themselves `{name}` have somewhere
 // to point once `name` stops being a stored property. Not spelled {name}:
 // llmprovider declares a real `name`.
 const (

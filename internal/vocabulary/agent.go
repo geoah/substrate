@@ -299,7 +299,7 @@ func (l *loader) parseAgent(d Document) *Agent {
 	}
 	// `reads:` reuses the function envelope's shape verbatim.
 	fn := &Function{}
-	if !l.parseReads(where, "data.reads", d.Data, fn) {
+	if !l.parseReads(where, d.Data, fn) {
 		return nil
 	}
 	a.Reads = fn.Caps.Reads
@@ -512,7 +512,7 @@ func (r *Registry) resolveAuthorityAgents(g *Authority) []string {
 		if a.Reads != nil {
 			for _, t := range a.Reads.Kinds {
 				if _, ok := r.ByIdentity(t); !ok {
-					problems = append(problems, fmt.Sprintf("%s: data.reads.types: unknown type %q", where, t))
+					problems = append(problems, fmt.Sprintf("%s: data.reads.kinds: unknown type %q", where, t))
 				}
 			}
 		}

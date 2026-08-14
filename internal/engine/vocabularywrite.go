@@ -739,12 +739,14 @@ func (t *txn) projectionKind(reg *vocabulary.Registry, projecting map[string]boo
 // authority holds.
 //
 // A ROW IS THE DECLARATION'S OWN DATA MAP plus what the engine stamps. There is
-// no `definition` blob and no projected mirror: the loader left the parsed data
-// in the one canonical form (vocabulary/canonical.go), so the properties a row
-// carries are the keys the author wrote, and the read-back
-// (rowDocument) is that same map with the stamped keys dropped. What the engine
-// stamps is declared `managed: true` on the core kinds, which is the same list
-// spelled where a client can read it.
+// no `definition` blob and no projected mirror: the loader admits ONE spelling
+// per key and refuses every retired one by name (vocabulary/load.go's
+// tombstones), so the properties a row carries are the keys the author wrote, and
+// the read-back (rowDocument) is that same map with the stamped keys dropped.
+// Translating what an older binary stored is the frozen dialect-1 grammar's job,
+// off to the side (dialectonegrammar.go), and it hands the loader the admitted
+// spelling like anybody else. What the engine stamps is declared `managed: true`
+// on the core kinds, which is the same list spelled where a client can read it.
 //
 // EVERY DECLARATION CARRIES A VERSION. A record type's own
 // `version:` wins where it declares one; every other kind takes the declaring

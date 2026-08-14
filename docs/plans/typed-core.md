@@ -281,6 +281,46 @@ code is the contract for all of it:
   that pinned none gains one on its row and would otherwise read differently
   after a restart.
 
+Seven places where the code that landed is not the code these pages describe.
+The code is the contract, so each is recorded here rather than fixed to match a
+sketch:
+
+- **`kind.properties` is a `json` leaf, not the keyed object of the sketch.** A
+  property declaration recurses (a field is a property declaration), and the
+  dialect nests four levels, so the meta-kind cannot spell its own grammar in
+  its own grammar. `kind.edges` and `kind.indices` are typed as sketched.
+- **References and selector strings came out inverted in three places.**
+  `agent.provider`, `bundle.inputs.kind` and `recordmapping.from`/`to` are
+  sketched as `reference` and landed as `{type: string, refersTo: ...}`.
+  `inputs.kind` and a mapping's `from`/`to` name a KIND, which is a
+  declaration and not a row, and `agent.provider` names an llmprovider row the
+  loop resolves at DISPATCH, so binding it at parse would make an agent
+  unloadable until its provider row existed. `llmthread.agent`/`parent` are
+  references and stay so: a thread is the audit row of a run and must keep
+  naming what ran it, which is exactly what surviving as a dangling pointer
+  buys.
+- **`bundle.oauth2.featureScopes` stayed nested inside `oauth2`.** The sketch
+  hoisted it because two keyed levels in a row are refused, but `oauth2` is a
+  plain object, so a keyed map under it is level 2 and legal. Hoisting would
+  have split one facility across two properties for a constraint that does not
+  bind.
+- **`kind` gained a nested `names` object** (`{singular, plural}`) where the
+  sketch had two flat properties. One object is what the loader validates as a
+  unit, and the plural is a path segment, so the pair is never half-authored.
+- **The depth-4 witnesses died.** No shipped declaration nests past level 3
+  (`trigger.source.schedule.timezone`, `bundle.oauth2.featureScopes.scopes`),
+  so `MaxFieldDepth = 4` has no witness in the tree: the bound is held by
+  `cmd/kindsgen`'s synthetic declaration and the dialect-widening suite alone.
+  A future core kind that reaches level 4 is exercising an untried path in the
+  shipped vocabulary, not a well-trodden one.
+- **The generated inverse is `Encode()`, not `Properties()`.** `Properties` is
+  the field name every read surface already uses for the map itself, and a
+  method of that name on the struct that IS the properties read as a getter.
+- **Nine core kinds title themselves `{localName}`, not eight** (authority,
+  actor, kind, trait, propertytype, recordmapping, function, agent, bundle).
+  The count is stated in `vocabulary/template.go`, where the derived token
+  explains why it exists.
+
 Two things the plan expected of 1c did not happen, and both are honest
 deferrals rather than oversights:
 
