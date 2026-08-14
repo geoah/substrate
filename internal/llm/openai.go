@@ -70,7 +70,10 @@ func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(s
 		}
 	}
 	if req.Params.MaxTokens > 0 {
-		oreq.MaxTokens = req.Params.MaxTokens
+		// max_completion_tokens, not max_tokens: the reasoning models refuse
+		// the older key outright, and a gateway that predates it ignores an
+		// unknown field rather than failing the call.
+		oreq.MaxCompletionTokens = req.Params.MaxTokens
 	}
 	for _, t := range req.Tools {
 		oreq.Tools = append(oreq.Tools, openai.Tool{

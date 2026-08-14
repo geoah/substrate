@@ -126,8 +126,8 @@ func TestOpenAIOneShotCarriesSystemToolsAndUsage(t *testing.T) {
 	if first["role"] != "system" || first["content"] != "you are a test" {
 		t.Fatalf("first message = %v", first)
 	}
-	if srv.last["temperature"] != 0.25 || srv.last["max_tokens"] != float64(64) {
-		t.Fatalf("params = %v / %v", srv.last["temperature"], srv.last["max_tokens"])
+	if srv.last["temperature"] != 0.25 || srv.last["max_completion_tokens"] != float64(64) {
+		t.Fatalf("params = %v / %v", srv.last["temperature"], srv.last["max_completion_tokens"])
 	}
 	tools, _ := srv.last["tools"].([]any)
 	if len(tools) != 1 {
