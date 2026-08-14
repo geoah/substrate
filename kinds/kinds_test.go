@@ -114,7 +114,7 @@ func TestShippedCallableActorsAreDistinct(t *testing.T) {
 	}
 	seen := map[string]string{}
 	for _, b := range cat.Bundles() {
-		callables := append(append([]string{}, b.Resources.Functions...), b.Resources.Agents...)
+		callables := append(append([]string{}, b.Closure.Functions...), b.Closure.Agents...)
 		for _, id := range callables {
 			actor := "function:" + vocabulary.KindName(id)
 			if prev, clash := seen[actor]; clash {
@@ -126,13 +126,17 @@ func TestShippedCallableActorsAreDistinct(t *testing.T) {
 	}
 }
 
-// A vocabulary bundle's closure is validated at INSTALL time: catalog.Load
-// only buckets decoded YAML, so a broken declaration would ship as nothing
-// more than a warning TestBothViewsLoad never reads. This installs every
-// vocabulary bundle into ONE seed registry, requires first, through the same
-// BuildAuthorities+InstallAll pair admission runs — so the whole shipped set
-// has to coexist (GraphQL names, cross-authority edges) without a database.
-func TestVocabularyBundlesInstallOnTheSeed(t *testing.T) {
+// A bundle's closure is validated at INSTALL time: catalog.Load only buckets
+// decoded YAML, so a broken declaration would ship as nothing more than a
+// warning TestBothViewsLoad never reads. EVERY shipped bundle installs here,
+// extensions included — an extension's declarations are refused by the same
+// loader as a vocabulary bundle's (a hyphen in a callable's name, an authority
+// its first label cannot name), and skipping them is how a shipped example
+// reached a release refusing to install. Requires go first, into ONE seed
+// registry, through the same BuildAuthorities+InstallAll pair admission runs,
+// so the whole shipped set also has to coexist (GraphQL names, bundle names,
+// cross-authority edges) without a database.
+func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 	cat, err := catalog.Load(kinds.Bundles())
 	if err != nil {
 		t.Fatalf("load the shipped catalog: %v", err)
@@ -152,9 +156,6 @@ func TestVocabularyBundlesInstallOnTheSeed(t *testing.T) {
 	}
 	done := map[string]bool{}
 	for _, b := range cat.Bundles() {
-		if !b.Vocabulary {
-			continue
-		}
 		if err := installClosure(reg, byAuthority, b, done); err != nil {
 			t.Fatal(err)
 		}

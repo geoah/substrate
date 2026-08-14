@@ -18,11 +18,16 @@ Two narrower words appear beside it, and neither is a synonym:
 
 A `bundle` document wears the ordinary envelope — `kind:`, `metadata:`,
 `data:`, and the server-owned `status:` — and declares the one **authority it
-owns**. An integration or capability bundle owns a categorized authority,
-`<name>.bundles.substrate.reamde.dev`; a vocabulary bundle owns a plain
-organization-style label like `people.substrate.reamde.dev`. Either way the
-authority is what marks a vocabulary installed rather than
-[shipped](builtin-kinds.md). `installs:` lists the exact references of everything the closure
+owns**. An integration or capability bundle owns any legal authority — the
+shipped tree spells them `<name>.bundles.substrate.reamde.dev` by convention,
+but the loader does not require it; a vocabulary bundle owns a plain
+organization-style label like `people.substrate.reamde.dev`, and that ONE shape
+is checked, because it is what marks a vocabulary
+[shipped](builtin-kinds.md) rather than installed. The authority's **first
+label** is the bundle's name — its `metadata.id` suffix, the actor an install
+writes under (`bundle:<name>`), and the prefix an installed kind's GraphQL name
+carries — so it must be one lowercase word, and no two bundles may claim the
+same one. `installs:` lists the exact references of everything the closure
 ships: its [kinds](data-model.md#kinds-and-references),
 [traits](data-model.md#traits),
 [property types](data-model.md#property-types),
@@ -57,9 +62,10 @@ the same shape, never a bare name. The bundle document never travels alone: the
 [`authority`](vocabulary.md) document that brings the authority into being, and
 every member `installs:` names, belong to the same apply. A closure applied
 without that document is refused — `authority web.bundles.substrate.reamde.dev: no
-authority manifest declares it` — and the rule cuts both ways, because a
-`*.bundles.substrate.reamde.dev` authority declaring no bundle document is a closure with
-no owner and is refused too.
+authority manifest declares it` — and an authority wearing the shipped tree's
+`*.bundles.substrate.reamde.dev` convention while declaring no bundle document is
+refused too: a closure with no owner there is a forgotten document far more
+often than a deliberate name.
 
 Two more fields matter, both covered below. `inputs:` declares the bundle's
 configuration needs by name, each naming a kind whose records satisfy it. No
@@ -320,9 +326,12 @@ inputs, no functions, no OAuth. Its entry carries `vocabulary: true`.
 The catalog is a read model over the bundle closures baked in, parsed once at
 boot: each entry carries `id`, `name`, `authority`, `description`, `version`,
 `inputs`, `requires`, `vocabulary`, the `integration` facet above, and
-`resources`, which previews the `kinds`, `functions`, `agents`, and `triggers`
-the closure installs, so the console can show what an install will add before
-it runs. A shipped directory carrying no bundle document is not an entry, and a
+`closure`, which previews the `kinds`, `functions`, `agents` and `mappings` it
+declares plus the `records` the install writes beside them (an extension's
+triggers, the llm example's provider rows), so the console can show what an
+install will add before it runs. Every one of those is a record: the
+declarations are records of the core meta-kinds, and `records` are ordinary
+rows the moment they land. A shipped directory carrying no bundle document is not an entry, and a
 malformed one is dropped with a logged warning rather than failing the whole
 catalog.
 
@@ -334,7 +343,7 @@ first. Nothing resolves the dependency for you — the order is yours.
 
 `GET …/core.substrate.reamde.dev/catalog` lists every shipped bundle under a `catalog`
 key, each flagged `installed` for this repository;
-`GET …/core.substrate.reamde.dev/catalog/{id}` is one entry with its resources, and an
+`GET …/core.substrate.reamde.dev/catalog/{id}` is one entry with its closure, and an
 unknown id is a 404 `not_found`.
 
 Installing from the catalog is a thin wrapper over the ordinary apply, never a

@@ -271,14 +271,14 @@ func TestCatalogListCarriesIntegrationFacet(t *testing.T) {
 	}
 }
 
-func TestCatalogDetailPreviewsResources(t *testing.T) {
+func TestCatalogDetailPreviewsTheClosure(t *testing.T) {
 	env := newCatalogEnv(t)
 	tok := env.svc.token("geoah")
 	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/catalog/"+url.PathEscape(webBundleID), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	item := decodeJSON[catalogItem](t, rec)
-	if len(item.Resources.Functions) != 4 || len(item.Resources.Triggers) != 4 {
-		t.Errorf("resources = %+v", item.Resources)
+	if len(item.Closure.Functions) != 4 || len(item.Closure.Records) != 4 {
+		t.Errorf("closure = %+v", item.Closure)
 	}
 }
 

@@ -31,6 +31,7 @@ import {
   ArrowUpRightIcon,
   BotIcon,
   BoxesIcon,
+  BoxIcon,
   CheckIcon,
   CopyIcon,
   FunctionSquareIcon,
@@ -101,7 +102,7 @@ import { CORE_AUTHORITY } from "@/lib/api/http"
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import {
   accountKindOf,
-  bundleResourceRows,
+  bundleRecordRows,
   declaresProviderInterfaces,
   installedKindRows,
   isInputSetupCode,
@@ -109,7 +110,7 @@ import {
   presentAuthorities,
   requirementsOf,
   type Requirement,
-  type ResourceRow,
+  type ShippedRecordRow,
   type KindRow,
 } from "@/lib/bundles"
 import { cellValue, recordTitle } from "@/lib/format"
@@ -1054,7 +1055,7 @@ function AccountsSection({ bundle, types }: { bundle: BundleStatus; types: KindI
   )
 }
 
-// ── closure inventory: the Types + Resources tables ─────────────────────────
+// ── closure inventory: the Kinds + Records tables ───────────────────────────
 
 /** The live row count for one installed kind, walked on demand (the API serves
  * no count — a bounded keyset walk over the list cursor, capped as N+). A kind
@@ -1136,85 +1137,101 @@ function kindColumns(): ColumnDef<KindRow, unknown>[] {
   ]
 }
 
-/** The route each resource kind opens, where the console has one. Functions
- * have no detail route; agents open their chat surface, a trigger its own
- * record under the core kind, mappings have none. */
-function ResourceName({ row }: { row: ResourceRow }) {
+/** Where a shipped record opens. An agent has its chat surface; every other
+ * record opens in Data at its own kind, which needs that kind's plural from the
+ * registry — a record of a kind this repository has not installed has nowhere to
+ * go, and renders as text. Functions and mappings have no detail route yet. */
+function ShippedRecordName({
+  row,
+  types,
+}: {
+  row: ShippedRecordRow
+  types: KindInfo[]
+}) {
   const name = (
     <div className="min-w-0">
       <div className="truncate font-medium">{row.name}</div>
-      <div
-        className="truncate data text-xs text-muted-foreground"
-        title={row.identity}
-      >
-        {row.identity}
+      <div className="truncate data text-xs text-muted-foreground" title={row.id}>
+        {row.id}
       </div>
     </div>
   )
-  if (row.kind === "agent") {
+  if (row.kind === `${CORE_AUTHORITY}/agent`) {
     return (
       <Link
         to="/agents/$id"
-        params={{ id: row.identity }}
+        params={{ id: row.id }}
         className="block min-w-0 underline-offset-4 hover:underline"
       >
         {name}
       </Link>
     )
   }
-  if (row.kind === "trigger") {
-    return (
-      <Link
-        to="/data/$authority/$plural/$id"
-        params={{
-          authority: CORE_AUTHORITY,
-          plural: "triggers",
-          id: row.identity,
-        }}
-        className="block min-w-0 underline-offset-4 hover:underline"
-      >
-        {name}
-      </Link>
-    )
+  const k = kindByIdentity(types, row.kind)
+  if (!k?.authority || !k.plural || NO_DETAIL_ROUTE.has(row.kind)) {
+    return name
   }
-  return name
+  return (
+    <Link
+      to="/data/$authority/$plural/$id"
+      params={{ authority: k.authority, plural: k.plural, id: row.id }}
+      className="block min-w-0 underline-offset-4 hover:underline"
+    >
+      {name}
+    </Link>
+  )
 }
 
-const RESOURCE_ICON: Record<ResourceRow["kind"], typeof BotIcon> = {
-  function: FunctionSquareIcon,
-  agent: BotIcon,
-  trigger: ZapIcon,
-  mapping: BoxesIcon,
+/** Declarations the console has no record page for: they are records, but the
+ * Data surface does not serve the core meta-kinds that hold them. */
+const NO_DETAIL_ROUTE = new Set([
+  `${CORE_AUTHORITY}/function`,
+  `${CORE_AUTHORITY}/recordmapping`,
+])
+
+/** One icon per shipped-record kind; anything a bundle ships that is not one of
+ * these is an ordinary record and gets the record icon. */
+const RECORD_ICON: Record<string, typeof BotIcon> = {
+  [`${CORE_AUTHORITY}/function`]: FunctionSquareIcon,
+  [`${CORE_AUTHORITY}/agent`]: BotIcon,
+  [`${CORE_AUTHORITY}/trigger`]: ZapIcon,
+  [`${CORE_AUTHORITY}/recordmapping`]: BoxesIcon,
 }
 
-function resourceColumns(): ColumnDef<ResourceRow, unknown>[] {
+/** Kind FIRST, then the record: the kind is what the reader scans this table
+ * by, and it is the same order the Data surface reads in. */
+function shippedRecordColumns(types: KindInfo[]): ColumnDef<ShippedRecordRow, unknown>[] {
   return [
-    {
-      id: "resource",
-      accessorFn: (r) => r.name,
-      enableSorting: false,
-      enableHiding: false,
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="resource" />
-      ),
-      cell: ({ row }) => <ResourceName row={row.original} />,
-      meta: { label: "resource", size: { min: 220, weight: 2 } },
-    },
     {
       id: "kind",
       accessorFn: (r) => r.kind,
       enableSorting: false,
+      enableHiding: false,
       header: ({ column }) => <DataTableColumnHeader column={column} title="kind" />,
       cell: ({ row }) => {
-        const Icon = RESOURCE_ICON[row.original.kind]
+        const Icon = RECORD_ICON[row.original.kind] ?? BoxIcon
         return (
-          <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+          <span
+            className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground"
+            title={row.original.kind}
+          >
             <Icon className="size-3.5 shrink-0" />
-            <span className="data">{row.original.kind}</span>
+            <span className="truncate data">{splitKind(row.original.kind).name}</span>
           </span>
         )
       },
-      meta: { label: "kind", width: 140 },
+      meta: { label: "kind", width: 160 },
+    },
+    {
+      id: "record",
+      accessorFn: (r) => r.name,
+      enableSorting: false,
+      enableHiding: false,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="record" />
+      ),
+      cell: ({ row }) => <ShippedRecordName row={row.original} types={types} />,
+      meta: { label: "record", size: { min: 220, weight: 2 } },
     },
   ]
 }
@@ -1262,20 +1279,23 @@ function KindsSection({
   )
 }
 
-/** The bundle's non-type closure members — functions, agents, triggers. Read
+/** The records the bundle ships beside its kinds — its functions, agents and
+ * mappings, and the data rows the install wrote (triggers, provider rows). Read
  * from the shipped catalog; a bundle with no catalog entry shows the empty
  * state rather than a guess. */
-function ResourcesSection({
+function RecordsSection({
   catalog,
+  types,
 }: {
   catalog?: CatalogItem
+  types: KindInfo[]
 }) {
-  const rows = useMemo(() => bundleResourceRows(catalog), [catalog])
-  const columns = useMemo(() => resourceColumns(), [])
+  const rows = useMemo(() => bundleRecordRows(catalog), [catalog])
+  const columns = useMemo(() => shippedRecordColumns(types), [types])
   const table = useDataTable({
     columns,
     data: rows,
-    getRowId: (r) => `${r.kind}:${r.identity}`,
+    getRowId: (r) => `${r.kind}:${r.id}`,
   })
   return (
     <DataTable
@@ -1287,9 +1307,9 @@ function ResourcesSection({
             <EmptyMedia variant="icon">
               <FunctionSquareIcon />
             </EmptyMedia>
-            <EmptyTitle>No other resources</EmptyTitle>
+            <EmptyTitle>No other records</EmptyTitle>
             <EmptyDescription>
-              This bundle declares no functions, agents or triggers.
+              This bundle ships no functions, agents, mappings or data records.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -1411,8 +1431,8 @@ export function BundleDetailPage() {
                   </>
                 ) : (
                   <>
-                    What stands between this bundle and the runtime paths it
-                    ships, in the server's own words.
+                    What this bundle still needs before the paths it ships will
+                    run, in the server's own words.
                   </>
                 )}
               </p>
@@ -1458,15 +1478,16 @@ export function BundleDetailPage() {
             )}
           </section>
           <section>
-            <h2 className="pb-1 text-sm font-medium">Resources</h2>
+            <h2 className="pb-1 text-sm font-medium">Records</h2>
             <p className="pb-2 text-xs text-muted-foreground">
-              The rest of the closure — functions, agents and triggers it added.
+              The rest of the closure — its functions, agents and mappings, and
+              the records the install wrote beside them.
             </p>
-            {catalog.isPending ? (
+            {catalog.isPending || registry.isPending ? (
               <Skeleton className="h-24 w-full rounded-md" />
             ) : (
               <div className="rounded-md border">
-                <ResourcesSection catalog={catalog.data} />
+                <RecordsSection catalog={catalog.data} types={types} />
               </div>
             )}
           </section>

@@ -7,14 +7,14 @@
 import { queryOptions } from "@tanstack/react-query"
 
 import { API_BASE, CORE_AUTHORITY, corePath, request, seg } from "./http"
-import type { BundleResources, BundleStatus, CatalogBundle } from "./types"
+import type { BundleClosure, BundleStatus, CatalogBundle } from "./types"
 
 /** One shipped bundle closure plus whether this repository already installed it
  * (substrate catalog.Bundle + the installed flag). The console's page vocabulary
  * kept the name `CatalogItem`; the wire type is `CatalogBundle`. */
 export type CatalogItem = CatalogBundle
-/** What a closure installs, by kind — the detail preview before installing. */
-export type CatalogResources = BundleResources
+/** What installing lands, by kind — the detail preview before installing. */
+export type CatalogClosure = BundleClosure
 
 const CATALOG = corePath("catalog")
 

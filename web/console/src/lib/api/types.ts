@@ -323,8 +323,11 @@ export interface TOTPEnrollment {
   otpauthUri: string
 }
 
-/** What a bundle installs, by kind — the detail preview before installing. */
-export interface BundleResources {
+/** What installing a bundle lands, by kind — the detail preview before
+ * installing. Every member is a RECORD: kinds, functions and agents are records
+ * of the core meta-kinds, and `records` are the data rows the same install
+ * writes beside them. */
+export interface BundleClosure {
   kinds?: string[]
   /** Each kind's declared description, keyed by identity — what the closure's
    * kinds ARE before an install has put them in the registry. Absent for a
@@ -332,10 +335,20 @@ export interface BundleResources {
   kindDescriptions?: Record<string, string>
   functions?: string[]
   agents?: string[]
-  triggers?: string[]
   /** Record mappings (source-kind → subject-kind projections). Optional so the
    * detail surface renders them when a catalog grows the list. */
   mappings?: string[]
+  /** The DATA records the install writes after the declarations land — an
+   * extension's triggers, the llm example's keyless provider rows. Ordinary
+   * records afterward, and often the ones the reader has to go and edit. */
+  records?: ShippedRecord[]
+}
+
+/** One data record a bundle ships. A data record is addressed by its KIND and
+ * its id together, so both travel. */
+export interface ShippedRecord {
+  kind: string
+  id: string
 }
 
 /** One declared input as the catalog previews it, verbatim from the bundle
@@ -392,7 +405,7 @@ export interface CatalogBundle {
   version: string
   /** The declared inputs, input name keyed. A bundle with no needs omits it. */
   inputs?: Record<string, CatalogInput>
-  resources: BundleResources
+  closure: BundleClosure
   installed: boolean
   /** Catalog facet (backend-owned): this bundle connects an external
    * provider, so it earns the Integration badge/filter. */

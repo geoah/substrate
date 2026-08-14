@@ -31,6 +31,7 @@ import type { ColumnDef } from "@tanstack/react-table"
 import {
   BotIcon,
   BoxesIcon,
+  BoxIcon,
   CheckIcon,
   CircleArrowUpIcon,
   DownloadIcon,
@@ -69,11 +70,12 @@ import {
   setupCount,
 } from "@/lib/api/bundles"
 import { catalogQueryOptions, importBundle } from "@/lib/api/catalog"
+import { CORE_AUTHORITY } from "@/lib/api/http"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { KindInfo } from "@/lib/api/types"
 import { splitKind } from "@/lib/definition"
 import {
-  bundleResourceRows,
+  bundleRecordRows,
   filterBundles,
   importFailureText,
   installedKindRows,
@@ -88,11 +90,10 @@ import {
   type BundleFacet,
   type BundleRow,
   type Requirement,
-  type ResourceKind,
 } from "@/lib/bundles"
 
 /** A row's counts: the live status when imported, else the catalog closure's
- * declared resource counts (nothing is live yet, so accounts/rows read 0). The
+ * declared closure counts (nothing is live yet, so accounts/rows read 0). The
  * live status counts are optional on the v1 wire — guard each with `?? 0`. */
 function counts(row: BundleRow): {
   accounts: number
@@ -109,7 +110,7 @@ function counts(row: BundleRow): {
       liveRecords: s.liveRecords ?? 0,
     }
   }
-  const r = row.catalog?.resources
+  const r = row.catalog?.closure
   return {
     accounts: 0,
     functions: r?.functions?.length ?? 0,
@@ -455,21 +456,16 @@ function Line({
   )
 }
 
-const RESOURCE_ICON: Record<ResourceKind, typeof BotIcon> = {
-  function: FunctionSquareIcon,
-  agent: BotIcon,
-  trigger: ZapIcon,
-  mapping: BoxesIcon,
-}
-
-const RESOURCE_LABEL: Record<ResourceKind, string> = {
-  function: "functions",
-  agent: "agents",
-  trigger: "triggers",
-  mapping: "mappings",
-}
-
-const RESOURCE_ORDER: ResourceKind[] = ["function", "agent", "trigger", "mapping"]
+/** The shipped-record kinds this preview groups by, in reading order: the
+ * declarations first, then the data rows an install writes. A record of any
+ * other kind falls into the trailing `records` line, so a bundle shipping
+ * something new is previewed rather than dropped. */
+const RECORD_KINDS = [
+  { kind: `${CORE_AUTHORITY}/function`, label: "functions", icon: FunctionSquareIcon },
+  { kind: `${CORE_AUTHORITY}/agent`, label: "agents", icon: BotIcon },
+  { kind: `${CORE_AUTHORITY}/recordmapping`, label: "mappings", icon: BoxesIcon },
+  { kind: `${CORE_AUTHORITY}/trigger`, label: "triggers", icon: ZapIcon },
+] as const
 
 /** The row's closure, opened in place: what it adds, what it needs, and what it
  * IS (vocabulary or integration) — everything the reader needs to decide before
@@ -490,7 +486,7 @@ function BundleDisclosure({
       installedKindRows({ authority: row.authority, inputs }, kinds, catalog),
     [row.authority, inputs, kinds, catalog]
   )
-  const resources = useMemo(() => bundleResourceRows(catalog), [catalog])
+  const records = useMemo(() => bundleRecordRows(catalog), [catalog])
   const missing = missingRequirements(requirements)
 
   return (
@@ -510,7 +506,7 @@ function BundleDisclosure({
             <span className="data">{upgradeMotion(row.upgrade)}</span>
             {(row.upgrade.changes ?? []).map((ch) => (
               <span
-                key={`${ch.kind} ${ch.id}`}
+                key={`${ch.kind}:${ch.id}`}
                 className="inline-flex items-center gap-1 rounded border bg-background px-1.5 py-0.5 data text-muted-foreground"
                 title={
                   ch.to
@@ -626,17 +622,16 @@ function BundleDisclosure({
             <span className="text-muted-foreground">none</span>
           )}
         </Line>
-        {RESOURCE_ORDER.map((kind) => {
-          const members = resources.filter((r) => r.kind === kind)
+        {RECORD_KINDS.map(({ kind, label, icon: Icon }) => {
+          const members = records.filter((r) => r.kind === kind)
           if (!members.length) return null
-          const Icon = RESOURCE_ICON[kind]
           return (
-            <Line key={kind} label={RESOURCE_LABEL[kind]}>
+            <Line key={kind} label={label}>
               {members.map((m) => (
                 <span
-                  key={m.identity}
+                  key={m.id}
                   className="inline-flex items-center gap-1 rounded border bg-background px-1.5 py-0.5 data text-muted-foreground"
-                  title={m.identity}
+                  title={m.id}
                 >
                   <Icon className="size-3 shrink-0" />
                   {m.name}
@@ -645,6 +640,28 @@ function BundleDisclosure({
             </Line>
           )
         })}
+        {(() => {
+          // Everything the bundle ships that is not one of the four above —
+          // the llm example's provider rows, say. Grouped under one line
+          // because the set is open: a bundle may ship a record of any kind.
+          const grouped = new Set<string>(RECORD_KINDS.map((r) => r.kind))
+          const rest = records.filter((r) => !grouped.has(r.kind))
+          if (!rest.length) return null
+          return (
+            <Line label="records">
+              {rest.map((m) => (
+                <span
+                  key={`${m.kind}:${m.id}`}
+                  className="inline-flex items-center gap-1 rounded border bg-background px-1.5 py-0.5 data text-muted-foreground"
+                  title={`${m.kind}/${m.id}`}
+                >
+                  <BoxIcon className="size-3 shrink-0" />
+                  {m.name}
+                </span>
+              ))}
+            </Line>
+          )
+        })()}
       </dl>
       {missing.length > 0 && (
         <p className="text-warning">{requiresHint(missing)}</p>

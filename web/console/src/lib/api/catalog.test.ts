@@ -26,7 +26,7 @@ function item(over: Partial<CatalogItem> = {}): CatalogItem {
         description: "The OAuth client record.",
       },
     },
-    resources: { kinds: ["a", "b"], functions: ["c"] },
+    closure: { kinds: ["a", "b"], functions: ["c"] },
     installed: false,
     ...over,
   }

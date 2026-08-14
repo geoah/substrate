@@ -16,6 +16,7 @@
 
 import type { BundleStatus, InputStatus, SetupItem } from "@/lib/api/bundles"
 import type { CatalogItem } from "@/lib/api/catalog"
+import { CORE_AUTHORITY } from "@/lib/api/http"
 import type { BundleUpgrade, KindInfo } from "@/lib/api/types"
 import { kindByIdentity, splitKind } from "@/lib/definition"
 
@@ -294,15 +295,15 @@ export function inputKindsOf(
 }
 
 /** The kinds an bundle installed, one row each, resolved for the Kinds
- * table. Identities come from the shipped closure's catalog resources when the
- * bundle is a catalog entry; otherwise from the registry itself — every
- * reconciled kind in the bundle's owned authority. Sorted by display name. */
+ * table. Identities come from the shipped closure when the bundle is a catalog
+ * entry; otherwise from the registry itself — every reconciled kind in the
+ * bundle's owned authority. Sorted by display name. */
 export function installedKindRows(
   bundle: Pick<BundleStatus, "authority" | "inputs">,
   kinds: KindInfo[],
   catalog?: CatalogItem
 ): KindRow[] {
-  const fromCatalog = catalog?.resources.kinds ?? []
+  const fromCatalog = catalog?.closure.kinds ?? []
   const identities =
     fromCatalog.length > 0
       ? fromCatalog
@@ -313,7 +314,7 @@ export function installedKindRows(
   const inputKinds = inputKindsOf(bundle.inputs, catalog)
   // A bundle the repository has NOT imported has no registry entry for any of
   // its kinds, so the closure's own descriptions are the only ones there are.
-  const described = catalog?.resources.kindDescriptions ?? {}
+  const described = catalog?.closure.kindDescriptions ?? {}
   const rows = identities.map((identity): KindRow => {
     const k = kindByIdentity(kinds, identity)
     const role: KindRow["role"] = inputKinds.has(identity)
@@ -333,30 +334,45 @@ export function installedKindRows(
   return rows.sort((a, b) => a.name.localeCompare(b.name))
 }
 
-/** The non-kind members of an bundle's closure — functions, agents,
- * triggers — for the Resources table. Read from the shipped catalog closure, so
- * a bundle with no catalog entry yields an empty list rather than a guess. */
-export type ResourceKind = "function" | "agent" | "trigger" | "mapping"
-
-export interface ResourceRow {
-  kind: ResourceKind
-  identity: string
+/** The records a bundle ships beside its kinds, one row each, for the Records
+ * table: its functions, agents and mappings — declarations, which are records of
+ * the core meta-kinds — and the data rows the install writes after them (an
+ * extension's triggers, the llm example's provider rows). Read from the shipped
+ * catalog closure, so a bundle with no catalog entry yields an empty list rather
+ * than a guess.
+ *
+ * `kind` is the record's own kind, always a FULL identity, which is what the
+ * table shows and what addresses the record. A declaration's id is its kind
+ * reference; a data record's is a plain id, unique only within its kind. */
+export interface ShippedRecordRow {
+  kind: string
+  id: string
   name: string
 }
 
-export function bundleResourceRows(catalog?: CatalogItem): ResourceRow[] {
+const CORE_DECLARATION_KINDS = {
+  function: `${CORE_AUTHORITY}/function`,
+  agent: `${CORE_AUTHORITY}/agent`,
+  mapping: `${CORE_AUTHORITY}/recordmapping`,
+} as const
+
+export function bundleRecordRows(catalog?: CatalogItem): ShippedRecordRow[] {
   if (!catalog) return []
-  const r = catalog.resources
-  const rows: ResourceRow[] = []
-  const push = (kind: ResourceKind, ids?: string[]) => {
-    for (const identity of ids ?? []) {
-      rows.push({ kind, identity, name: splitKind(identity).name })
+  const c = catalog.closure
+  const rows: ShippedRecordRow[] = []
+  const push = (kind: string, ids?: string[]) => {
+    for (const id of ids ?? []) {
+      rows.push({ kind, id, name: splitKind(id).name })
     }
   }
-  push("function", r.functions)
-  push("agent", r.agents)
-  push("trigger", r.triggers)
-  push("mapping", r.mappings)
+  push(CORE_DECLARATION_KINDS.function, c.functions)
+  push(CORE_DECLARATION_KINDS.agent, c.agents)
+  push(CORE_DECLARATION_KINDS.mapping, c.mappings)
+  // The data rows carry their kind on the wire: a bundle may ship a record of
+  // ANY kind, so nothing here enumerates them.
+  for (const r of c.records ?? []) {
+    rows.push({ kind: r.kind, id: r.id, name: r.id })
+  }
   return rows
 }
 

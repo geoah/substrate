@@ -126,7 +126,7 @@ func TestVocabularyBundlesInstall(t *testing.T) {
 		if !st.Installed {
 			t.Errorf("%s not marked installed", b.ID)
 		}
-		if want := len(b.Resources.Kinds); st.Kinds != want {
+		if want := len(b.Closure.Kinds); st.Kinds != want {
 			t.Errorf("%s kinds = %d, want %d", b.ID, st.Kinds, want)
 		}
 	}

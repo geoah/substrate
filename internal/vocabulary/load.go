@@ -1541,6 +1541,7 @@ func (r *Registry) Finalize() error {
 	}
 	problems = append(problems, r.mappingInvariantProblems()...)
 	problems = append(problems, r.graphqlNameProblems()...)
+	problems = append(problems, r.bundleNameProblems()...)
 	if len(problems) > 0 {
 		return validationError(problems)
 	}
@@ -1886,6 +1887,41 @@ func (r *Registry) graphqlNameProblems() []string {
 		problems = append(problems, fmt.Sprintf(
 			"graphql name %s is claimed by %s — one kind per GraphQL name; rename one of them",
 			name, strings.Join(idents, " and ")))
+	}
+	sort.Strings(problems)
+	return problems
+}
+
+// bundleNameProblems is the DECLARATION-TIME uniqueness check on bundle names.
+// A bundle's name is its authority's first label (bundle.go), and three things
+// key on it alone: the actor an install writes under (`bundle:<name>`), the
+// prefix every installed kind's GraphQL name carries, and the bundle's own
+// `metadata.id` suffix. While an extension authority had to be spelled
+// "<name>.bundles.substrate.reamde.dev", one label meant one authority and the
+// uniqueness came free; the authority is free now, so two of them can reach for
+// one label and it is checked here instead. The actor is the reason this cannot
+// be left to the GraphQL check: two bundles sharing `bundle:llm` write as each
+// other, and the trigger loop guard keys on exactly that name — it would drop
+// one bundle's writes as though they were the other's echo, silently.
+func (r *Registry) bundleNameProblems() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	byName := map[string][]string{}
+	for name, g := range r.authorities {
+		if g.Bundle == nil {
+			continue
+		}
+		byName[g.Bundle.Name] = append(byName[g.Bundle.Name], name)
+	}
+	var problems []string
+	for name, authorities := range byName {
+		if len(authorities) < 2 {
+			continue
+		}
+		sort.Strings(authorities)
+		problems = append(problems, fmt.Sprintf(
+			"bundle name %s is claimed by %s — a bundle's name is its authority's first label, and it is the actor an install writes under; rename one of them",
+			name, strings.Join(authorities, " and ")))
 	}
 	sort.Strings(problems)
 	return problems
