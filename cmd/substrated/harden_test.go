@@ -44,7 +44,7 @@ func TestBootLineOnMacOSEnumeratesWhatIsNotEnforced(t *testing.T) {
 		t.Fatal("the macOS line points at enforce, which refuses to run any function on this platform")
 	}
 	// Each limitation a reader is exposed to has to be named.
-	for _, want := range []string{"capabilities.network", "filesystem", "resource limits"} {
+	for _, want := range []string{"`network:`", "filesystem", "resource limits"} {
 		if !strings.Contains(attr(attrs, "not_enforced"), want) {
 			t.Fatalf("the line does not mention %q: %q", want, attr(attrs, "not_enforced"))
 		}
