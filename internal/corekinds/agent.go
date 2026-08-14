@@ -346,9 +346,6 @@ func (v *AgentParams) Encode() map[string]any {
 //
 // what the model may call, in declaration order
 type AgentTools struct {
-	// Builtin is the built-in tool this entry names.
-	Builtin *AgentToolsBuiltin
-
 	// Callable is the function identity this entry names. Names a function in
 	// the registry.
 	Callable *string
@@ -360,33 +357,22 @@ type AgentTools struct {
 	Description *string
 }
 
-// AgentToolsBuiltin is a declared enum: the admissible set, in declaration
-// order.
-//
-// the built-in tool this entry names
-type AgentToolsBuiltin string
+// AgentToolsRequired names the properties the declaration marks `required:`,
+// sorted. It is a FORM-LEVEL contract: the write path does not enforce it, so
+// Decode admits a value that leaves one absent and this is what a client
+// checks before it submits one.
+var AgentToolsRequired = []string{"callable"}
 
-const (
-	AgentToolsBuiltinQuery   AgentToolsBuiltin = "query"
-	AgentToolsBuiltinPropose AgentToolsBuiltin = "propose"
-	AgentToolsBuiltinGraphql AgentToolsBuiltin = "graphql"
-	AgentToolsBuiltinMutate  AgentToolsBuiltin = "mutate"
-)
-
-// AgentToolsBuiltinValues are the declared values in declaration order, which
-// is render order.
-var AgentToolsBuiltinValues = []string{"query", "propose", "graphql", "mutate"}
-
-// Valid reports whether v is one of the declared values.
-func (v AgentToolsBuiltin) Valid() bool { return Declared(AgentToolsBuiltinValues, string(v)) }
-
-// decodeAgentToolsBuiltin decodes a declared AgentToolsBuiltin value.
-func decodeAgentToolsBuiltin(d *decoder, path string, v any) (AgentToolsBuiltin, bool) {
-	s, ok := d.text(path, v, AgentToolsBuiltinValues, nil)
-	if !ok {
-		return "", false
+// Missing names the required properties this value leaves absent, in
+// declaration order. Empty means every declared requirement is answered —
+// not that the value is admissible, which is the substrate's answer and not a
+// type's.
+func (v *AgentTools) Missing() []string {
+	var out []string
+	if v.Callable == nil {
+		out = append(out, "callable")
 	}
-	return AgentToolsBuiltin(s), true
+	return out
 }
 
 // decodeAgentTools decodes one AgentTools value at path.
@@ -403,11 +389,6 @@ func decodeAgentTools(d *decoder, path string, v any) (AgentTools, bool) {
 			continue
 		}
 		switch key {
-		case "builtin":
-			p := at(path, "builtin")
-			if e, ok := decodeAgentToolsBuiltin(d, p, props[key]); ok {
-				out.Builtin = &e
-			}
 		case "callable":
 			p := at(path, "callable")
 			if e, ok := d.text(p, props[key], nil, nil); ok {
@@ -439,9 +420,6 @@ func decodeAgentTools(d *decoder, path string, v any) (AgentTools, bool) {
 // Decode/Encode is the pair the rest of the generator already names.
 func (v *AgentTools) Encode() map[string]any {
 	out := map[string]any{}
-	if v.Builtin != nil {
-		out["builtin"] = string(*v.Builtin)
-	}
 	if v.Callable != nil {
 		out["callable"] = *v.Callable
 	}

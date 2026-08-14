@@ -126,12 +126,12 @@ def main(input, host):
 
 // openInternalDataset opens a throwaway repository and returns the INTERNAL
 // dataset, so tests can drive txn-level paths directly.
-func openInternalDataset(t *testing.T) *dataset {
+func openInternalDataset(t *testing.T, opts ...Option) *dataset {
 	t.Helper()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	svc, err := Open(ctx, dsn,
-		WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		append([]Option{WithKindsDir("../../kinds/core.substrate.reamde.dev")}, opts...)...)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}

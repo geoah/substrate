@@ -100,16 +100,16 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodeActor)
 
 	roundTrip(t, "agent", &corekinds.Agent{
-		Version:   str("v1alpha6"),
+		Version:   str("v1alpha7"),
 		Authority: str("core.substrate.reamde.dev"),
 		Prompt:    str("be useful"),
 		Provider:  str("default"),
 		Model:     str("gpt-5"),
 		Params:    &corekinds.AgentParams{Temperature: f64(0.2), MaxTokens: i64(2048)},
-		// The two tool arms, one entry each: a built-in takes no alias, a
-		// callable may carry one.
+		// One arm, two entries: a host built-in named by identity, and a bundle's
+		// function carrying an alias.
 		Tools: []corekinds.AgentTools{
-			{Builtin: ptr(corekinds.AgentToolsBuiltinQuery)},
+			{Callable: str("core.substrate.reamde.dev/query")},
 			{Callable: str("web.bundles.substrate.reamde.dev/setclass"), Name: str("classify")},
 		},
 		// Absent and empty are different answers: `agents` names one sub-agent,

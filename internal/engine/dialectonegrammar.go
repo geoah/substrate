@@ -211,11 +211,26 @@ func dialectOneMapRules(d map[string]any) {
 	d["map"] = rules
 }
 
-// dialectOneAgentTools names each `tools:` entry's ARM. A bare string named the
-// arm by its value — a built-in by name, anything else a callable identity — and
-// the four built-in names are dialect 1's own closed set, frozen here.
+// dialectOneAgentTools rewrites each `tools:` entry as the ONE arm the live
+// loader admits: `{callable: <function identity>}`.
+//
+// A bare string named the arm by its value — a built-in by name, anything else a
+// callable identity — and the four built-in names are dialect 1's own closed set,
+// frozen here. Each one now IS a function record core ships
+// (`core.substrate.reamde.dev/query`, …), so the built-in's bare word translates
+// to that identity and stops being a shape of its own.
+//
+// `{builtin: x}` translates too. It is not a dialect-1 spelling: it was the
+// interim arm stage B introduced and this stage retired, so the only rows wearing
+// it were written by an unreleased binary. It is here because the rung's ONE job
+// is to hand the live loader a document it admits, and a row the loader refuses
+// is a repository that cannot open — the cost of translating a shape nobody
+// shipped is three lines.
 func dialectOneAgentTools(d map[string]any) {
 	builtins := map[string]bool{"query": true, "propose": true, "graphql": true, "mutate": true}
+	callableOf := func(name string) map[string]any {
+		return map[string]any{"callable": vocabulary.KindRef(vocabulary.AuthorityCore, name)}
+	}
 	raw, has := d["tools"]
 	if !has {
 		return
@@ -226,15 +241,27 @@ func dialectOneAgentTools(d map[string]any) {
 	}
 	out := make([]any, 0, len(list))
 	for _, tv := range list {
-		s, isString := tv.(string)
-		switch {
-		case !isString:
-			out = append(out, tv)
-		case builtins[s]:
-			out = append(out, map[string]any{"builtin": s})
-		default:
-			out = append(out, map[string]any{"callable": s})
+		if s, isString := tv.(string); isString {
+			if builtins[s] {
+				out = append(out, callableOf(s))
+			} else {
+				out = append(out, map[string]any{"callable": s})
+			}
+			continue
 		}
+		entry, isMap := tv.(map[string]any)
+		if !isMap {
+			out = append(out, tv)
+			continue
+		}
+		builtin, _ := entry["builtin"].(string)
+		if !builtins[builtin] {
+			out = append(out, tv)
+			continue
+		}
+		// The interim arm carried no alias (the loop owned a built-in's card), so
+		// there is nothing else on the entry to preserve.
+		out = append(out, callableOf(builtin))
 	}
 	d["tools"] = out
 }

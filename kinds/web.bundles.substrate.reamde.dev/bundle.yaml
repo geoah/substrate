@@ -23,7 +23,9 @@ data:
   # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
-  version: v1alpha2
+  # v1alpha3: the built-ins are function records, so the two agents' tool
+  # entries name them under `callable:` like any other function.
+  version: v1alpha3
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -321,7 +323,7 @@ data:
   provider: default
   model: anthropic/claude-sonnet-5
   tools:
-    - builtin: propose
+    - callable: core.substrate.reamde.dev/propose
     - callable: web.bundles.substrate.reamde.dev/stampconfig
   budgets:
     maxTurns: 4
@@ -348,8 +350,8 @@ data:
   provider: default
   model: anthropic/claude-haiku-4-5
   tools:
-    - builtin: query
-    - builtin: propose
+    - callable: core.substrate.reamde.dev/query
+    - callable: core.substrate.reamde.dev/propose
   reads:
     kinds: [web.bundles.substrate.reamde.dev/page]
   budgets:

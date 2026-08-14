@@ -180,7 +180,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	fake := newFakeLLM(t)
-	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm", "arbiterllm"} {
+	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm"} {
 		model := strings.TrimSuffix(id, "llm")
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: typeProvider, ID: id,
@@ -218,6 +218,18 @@ def main(input, host):
             "output": {"ok": True}}
 `,
 		}),
+		// A PURE FUNCTION: it declares no emit at all, returns an output and
+		// stages nothing. Legal since `emit:` stopped being required.
+		vocabulary.FunctionManifest(crewAuthority, "measure", map[string]any{
+			"description": "measures a widget name and returns its length, writing nothing",
+			"runtime":     vocabulary.RuntimePython,
+			"arguments":   []any{map[string]any{"name": "name", "type": "string", "required": true}},
+			"returns":     []any{map[string]any{"name": "length", "type": "int"}},
+			"source": `
+def main(input, host):
+    return {"output": {"length": len(input["args"]["name"])}}
+`,
+		}),
 		vocabulary.FunctionManifest(crewAuthority, "keyecho", map[string]any{
 			"description": "writes one task carrying the invocation's idempotency key",
 			"runtime":     vocabulary.RuntimePython,
@@ -234,7 +246,7 @@ def main(input, host):
 			"provider": "rootllm", "model": "root",
 			"tools": []any{
 				map[string]any{"callable": crewAuthority + "/annotate"},
-				map[string]any{"builtin": "propose"},
+				map[string]any{"callable": vocabulary.HostFunctionPropose},
 			},
 			"agents": []any{crewAuthority + "/scribe"},
 			"emit":   []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
@@ -260,7 +272,7 @@ def main(input, host):
 			"provider": "minionllm", "model": "minion",
 			"tools": []any{
 				map[string]any{"callable": crewAuthority + "/annotate"},
-				map[string]any{"builtin": "propose"},
+				map[string]any{"callable": vocabulary.HostFunctionPropose},
 			},
 			"emit": []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
 		}),
@@ -276,13 +288,13 @@ def main(input, host):
 		// widgets alone.
 		agent("archivist", map[string]any{
 			"provider": "gqlllm", "model": "gql",
-			"tools": []any{map[string]any{"builtin": "graphql"}},
+			"tools": []any{map[string]any{"callable": vocabulary.HostFunctionGraphQL}},
 		}),
 		agent("editor", map[string]any{
 			"provider": "mutllm", "model": "mut",
 			"tools": []any{
-				map[string]any{"builtin": "graphql"},
-				map[string]any{"builtin": "mutate"},
+				map[string]any{"callable": vocabulary.HostFunctionGraphQL},
+				map[string]any{"callable": vocabulary.HostFunctionMutate},
 			},
 			"emit": []any{crewAuthority + "/widget"},
 		}),
@@ -292,8 +304,21 @@ def main(input, host):
 		// the confused-deputy half of the pair.
 		agent("arbiter", map[string]any{
 			"provider": "arbiterllm", "model": "arbiter",
-			"tools": []any{map[string]any{"builtin": "mutate"}},
+			"tools": []any{map[string]any{"callable": vocabulary.HostFunctionMutate}},
 			"emit":  []any{vocabulary.KindRecordPatchRequest, crewAuthority + "/widget"},
+		}),
+		// librarian holds the capability-scoped read: the query built-in named by
+		// identity, with the `reads:` that grants it.
+		agent("librarian", map[string]any{
+			"provider": "libllm", "model": "lib",
+			"tools": []any{map[string]any{"callable": vocabulary.HostFunctionQuery}},
+			"reads": map[string]any{"kinds": []any{crewAuthority + "/widget"}},
+		}),
+		// purist carries the PURE function as a tool: no emit anywhere, an output
+		// the model reads.
+		agent("purist", map[string]any{
+			"provider": "purellm", "model": "pure",
+			"tools": []any{map[string]any{"callable": crewAuthority + "/measure"}},
 		}),
 		// judge is subagentOnly: off the chat surface, still a callable and
 		// still justice's sub-agent.

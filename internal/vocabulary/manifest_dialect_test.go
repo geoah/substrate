@@ -1,8 +1,8 @@
 package vocabulary_test
 
 // The manifest dialect's typed spellings, and they are the ONLY ones: a tool
-// entry names its arm, a function declares flat arguments and its capability keys
-// on `data` itself, a mapping rule is an object, a trait's variants are a list.
+// entry names its callable, a function declares flat arguments and its capability
+// keys on `data` itself, a mapping rule is an object, a trait's variants are a list.
 // Each spelling that came before is refused here, naming what replaced it — the
 // stored rows written that way are translated by the dialect rung, whose frozen
 // grammar and fixtures live in internal/engine — and each refusal the dialect
@@ -17,14 +17,16 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// --- agent tools: the explicit builtin arm -------------------------------------
+// --- agent tools: the one arm --------------------------------------------------
 
-// An entry names its arm: `{builtin: query}` for a built-in, `{callable: …}` for
-// a function, and the parsed tool carries the model-facing name either way.
-func TestAgentToolEntriesNameTheirArm(t *testing.T) {
+// An entry names its CALLABLE, and a built-in is named by identity like any
+// other function: the four are `runtime: host` function records. The parsed tool
+// carries the model-facing name either way, and the derived `Builtin` word is
+// what tells the loop which of them the engine implements in process.
+func TestAgentToolEntriesNameTheirCallable(t *testing.T) {
 	tools := func(entries string) []vocabulary.AgentTool {
 		t.Helper()
-		r, err := loadAgAuthority(t, agAuthority(`  description: classifies widgets
+		r, err := loadAgAuthorityWithCore(t, agAuthority(`  description: classifies widgets
   prompt: You classify widgets.
   provider: default
   model: claude-opus-5
@@ -42,29 +44,59 @@ func TestAgentToolEntriesNameTheirArm(t *testing.T) {
 		}
 		return ag.Tools
 	}
-	entries := tools(`[{builtin: query}, {builtin: graphql}, {builtin: mutate}, {callable: ag.example.com/annotate}]`)
+	entries := tools(`[{callable: core.substrate.reamde.dev/query},
+    {callable: core.substrate.reamde.dev/graphql},
+    {callable: core.substrate.reamde.dev/mutate},
+    {callable: ag.example.com/annotate}]`)
 	if len(entries) != 4 || entries[0].Builtin != vocabulary.AgentToolQuery || entries[0].Name != vocabulary.AgentToolQuery {
 		t.Fatalf("tools %+v", entries)
 	}
-	if entries[3].Callable != "ag.example.com/annotate" || entries[3].Name != "annotate" {
+	if entries[0].Callable != vocabulary.HostFunctionQuery {
+		t.Fatalf("the built-in entry does not carry its identity: %+v", entries[0])
+	}
+	if entries[3].Callable != "ag.example.com/annotate" || entries[3].Name != "annotate" || entries[3].Builtin != "" {
 		t.Fatalf("the callable entry %+v", entries[3])
 	}
 }
 
-// The grants a built-in needs fire on the object arm exactly as on the bare
-// name: the entry is the declaration, not its spelling.
+// A BUILT-IN ALIASES LIKE ANY OTHER CALLABLE. It used to refuse `name` and
+// `description` because the loop owned its card; the card is the declaration
+// now, so an agent recolors it exactly as it recolors a bundle function's.
+func TestAgentBuiltinToolAliases(t *testing.T) {
+	r, err := loadAgAuthorityWithCore(t, agAuthority(`  description: d
+  prompt: p
+  provider: default
+  model: claude-opus-5
+  tools:
+    - {callable: core.substrate.reamde.dev/graphql, name: ask, description: asks the graph}
+`))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	ag, err := r.ResolveAgent("ag.example.com/classifier")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ag.Tools) != 1 || ag.Tools[0].Name != "ask" || ag.Tools[0].Description != "asks the graph" ||
+		ag.Tools[0].Builtin != vocabulary.AgentToolGraphQL {
+		t.Fatalf("tools %+v", ag.Tools)
+	}
+}
+
+// The grants a built-in needs fire on the callable spelling: the entry is the
+// declaration, not its spelling, and the grant is keyed on the identity.
 func TestAgentBuiltinToolEntryGrants(t *testing.T) {
 	cases := map[string]struct{ tools, want string }{
-		"query needs reads": {`[{builtin: query}]`, "query needs data.reads"},
+		"query needs reads": {`[{callable: core.substrate.reamde.dev/query}]`, "query needs data.reads"},
 		"propose needs the request type in emit": {
-			`[{builtin: propose}]`,
+			`[{callable: core.substrate.reamde.dev/propose}]`,
 			"propose needs core.substrate.reamde.dev/recordpatchrequest in data.emit",
 		},
-		"mutate needs emit": {`[{builtin: mutate}]`, "mutate needs data.emit"},
+		"mutate needs emit": {`[{callable: core.substrate.reamde.dev/mutate}]`, "mutate needs data.emit"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			_, err := loadAgAuthority(t, agAuthority(`  description: d
+			_, err := loadAgAuthorityWithCore(t, agAuthority(`  description: d
   prompt: p
   provider: default
   model: claude-opus-5
@@ -79,19 +111,25 @@ func TestAgentBuiltinToolEntryGrants(t *testing.T) {
 
 func TestAgentToolEntryRefusals(t *testing.T) {
 	cases := map[string]struct{ tools, want string }{
-		"both arms":                 {`[{builtin: query, callable: ag.example.com/annotate}]`, "an entry names exactly one of builtin and callable"},
-		"neither arm":               {`[{name: markWidget}]`, "neither builtin nor callable"},
-		"unknown builtin":           {`[{builtin: frobnicate}]`, "builtin \"frobnicate\" — one of query, propose, graphql, mutate"},
-		"aliased builtin":           {`[{builtin: graphql, name: ask}]`, "builtin \"graphql\" takes no name or description"},
-		"described builtin":         {`[{builtin: graphql, description: asks the graph}]`, "builtin \"graphql\" takes no name or description"},
-		"unknown entry key":         {`[{builtin: graphql, alias: ask}]`, "unknown key \"alias\""},
+		"no callable":               {`[{name: markWidget}]`, "no callable — an entry names one function identity"},
 		"a callable is an identity": {`[{callable: annotate}]`, "callable \"annotate\" — a full function identity"},
-		// The retired spelling: a bare string named the arm by its value, so a typo
-		// in a built-in's name became a callable nothing declares.
-		"a bare built-in name": {`[query]`, `"query" is a bare string — an entry names its arm: {builtin: query}`},
+		"unknown entry key":         {`[{callable: ag.example.com/annotate, alias: ask}]`, "unknown key \"alias\""},
+		// THE TOMBSTONE. `{builtin: x}` was the interim arm, and it made the
+		// built-ins the one thing an agent could name that no record declared.
+		"the builtin arm": {
+			`[{builtin: query}]`,
+			`builtin "query" is deleted — the built-ins are function records: {callable: core.substrate.reamde.dev/query}`,
+		},
+		"the builtin arm, whatever it named": {
+			`[{builtin: frobnicate}]`,
+			`builtin "frobnicate" is deleted — the built-ins are function records`,
+		},
+		// The older retired spelling: a bare string named the arm by its value, so a
+		// typo in a built-in's name became a callable nothing declares.
+		"a bare built-in name": {`[query]`, `"query" is a bare string — an entry names its callable: {callable: core.substrate.reamde.dev/query}`},
 		"a bare callable identity": {
 			`[ag.example.com/annotate]`,
-			`"ag.example.com/annotate" is a bare string — an entry names its arm: {callable: ag.example.com/annotate}`,
+			`"ag.example.com/annotate" is a bare string — an entry names its callable: {callable: ag.example.com/annotate}`,
 		},
 	}
 	for name, tc := range cases {
@@ -192,10 +230,21 @@ func TestFunctionArgumentsCompileToTheSchema(t *testing.T) {
 			}},
 		},
 		{
+			// `json` compiles to a schema with NO type: that is JSON Schema's own
+			// "any value", and the compiled map is also the card a provider is
+			// handed, so a literal `{type: any}` would be a tool card no validator
+			// admits.
 			name: "json is the escape hatch",
 			args: `    - {name: payload, type: json, description: whatever the endpoint returns}`,
 			want: map[string]any{"type": "object", "properties": map[string]any{
-				"payload": map[string]any{"type": "any", "description": "whatever the endpoint returns"},
+				"payload": map[string]any{"description": "whatever the endpoint returns"},
+			}},
+		},
+		{
+			name: "a repeated json is an array of anything",
+			args: `    - {name: rows, type: json, repeated: true}`,
+			want: map[string]any{"type": "object", "properties": map[string]any{
+				"rows": map[string]any{"type": "array", "items": map[string]any{}},
 			}},
 		},
 		{

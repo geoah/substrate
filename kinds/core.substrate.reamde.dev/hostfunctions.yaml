@@ -1,0 +1,167 @@
+# THE HOST FUNCTIONS: the four callables whose body is the ENGINE.
+#
+# `runtime: host` names no source. What runs is engine code — the agent loop's
+# query executor, the GraphQL executor the /graphql endpoint shares, the propose
+# writer — and this file is what makes each of them a RECORD like every other
+# function: seeded into a new repository, delivered to an existing one by the
+# boot upgrade, listed in the functions collection, and named by an agent under
+# `tools: [{callable: core.substrate.reamde.dev/…}]` exactly as a bundle's
+# function is. They used to be four engine constants and a `{builtin: x}` arm on
+# `tools:` — the one thing an agent could name that no record declared.
+#
+# THE DECLARATION IS THE CARD. The `description` and the `arguments:` here are
+# what the model is shown, rendered by the loader like any other function's, so
+# tuning what an LLM reads about `graphql` is editing this file. Only `host` is
+# admissible from a SHIPPED build: the engine can implement only what the engine
+# ships, so the loader refuses the runtime from any installed authority.
+#
+# THE GRANT IS THE CALLER'S. A host function declares no `reads:` and (except
+# propose) no `emit:`, because the grant that scopes it belongs to whoever
+# called it: `query` is held to the calling agent's `reads:`, `mutate` to its
+# effective `emit:`. That is also why two of the four are NOT callable through
+# the direct call API and never a trigger's target — there is no calling agent
+# whose grants would bound them.
+# ---- query: the capability-scoped read -------------------------------------
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: core.substrate.reamde.dev/query
+data:
+  authority: core.substrate.reamde.dev
+  description: >-
+    Read records: pass kind + id for one record, kind (+ optional filter,
+    first) to list, or q (+ optional types, k) to search. Read-only. Records
+    are always addressed by their full reference (kind + id), never a bare
+    id.
+  runtime: host
+  arguments:
+    - name: id
+      type: string
+      description: read one record by id (requires kind — identity is the
+        (kind, id) pair)
+    - name: kind
+      type: string
+      description: "a kind reference: with id reads one record, alone lists"
+    - name: filter
+      type: json
+      description: substrate filter for the list
+    - name: first
+      type: float
+      description: max rows to return
+    - name: q
+      type: string
+      description: search query
+    # The executor has always read a `kinds` list on the search arm; the Go card
+    # literal never declared it, so no caller could legally pass one. The
+    # declaration is the contract now, and it says what the code does.
+    - name: kinds
+      type: string
+      repeated: true
+      description: narrow the search to these kinds, each within the reads
+        allowlist
+    - name: k
+      type: float
+      description: max search hits
+---
+# ---- graphql: the whole-repository read ------------------------------------
+# No `reads:` — DECLARING THE TOOL IS THE GRANT. There is no narrower scope to
+# declare over a whole-repository read surface, which is why the scoped `query`
+# survives beside it.
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: core.substrate.reamde.dev/graphql
+data:
+  authority: core.substrate.reamde.dev
+  description: >-
+    Run a read-only GraphQL query against the repository. The schema is introspectable
+    (__schema / __type): every kind is a GraphQL type with its declared properties.
+    Roots: record(kind, id) for one record; records(filter, orderBy, first,
+    after) to list (a connection, so descend through nodes { ... }); search(q,
+    kinds, k) for hybrid lexical+semantic lookup that tolerates near-matches;
+    changelog(from, filter, first) for history. Do not guess field names:
+    introspect when unsure, and batch related lookups into one query. Mutations
+    and subscriptions are rejected. Responses over 64KB are refused; narrow
+    the query.
+  runtime: host
+  arguments:
+    - name: query
+      type: string
+      required: true
+      description: the GraphQL document to execute
+    - name: variables
+      type: json
+      description: values for the variables the document declares
+---
+# ---- mutate: the agent-scoped write ----------------------------------------
+# No `emit:` of its own, and that is the point: the ceiling is the CALLING
+# AGENT's effective emit, so an emit here would be a second, looser answer to
+# the question of what this tool may write.
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: core.substrate.reamde.dev/mutate
+data:
+  authority: core.substrate.reamde.dev
+  description: >-
+    Run a GraphQL mutation against the repository. Roots: put(input: {kind,
+    id, properties, edges}) merges and never prunes; patch(kind, id, input,
+    ifVersion); delete(kind, id); link/unlink(rel, srcKind, src, dstKind,
+    dst). Every record written must be of a kind in the agent's emit allowlist;
+    merge and split are refused. Ids must come from query results, never invented.
+  runtime: host
+  arguments:
+    - name: query
+      type: string
+      required: true
+      description: the GraphQL document to execute
+    - name: variables
+      type: json
+      description: values for the variables the document declares
+---
+# ---- propose: the reviewed write -------------------------------------------
+# The one host function with an `emit:`, because it writes one kind and always
+# the same one. The calling agent's emit must name it too — the grant is checked
+# at load on the agent and again at dispatch against the effective set.
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: core.substrate.reamde.dev/propose
+data:
+  authority: core.substrate.reamde.dev
+  description: >-
+    Propose a reviewed change to the graph instead of writing it: lands a
+    recordpatchrequest the owner decides on. op patch (default) changes an
+    existing record (needs target + diff); op create mints a new record on
+    accept (needs kind + id + diff); op delete tombstones an existing record
+    (needs target). A diff wraps property changes under "properties".
+  runtime: host
+  arguments:
+    # The three values are the dispatcher's own op vocabulary
+    # (engine/write.go opPatch/opCreate/opDelete), pinned by a test: an enum the
+    # model may answer with and the dispatcher would not recognize is a tool call
+    # that fails after the model believed it.
+    - name: op
+      type: enum
+      values:
+        - patch
+        - create
+        - delete
+      description: patch (default), create, or delete
+    - name: target
+      type: string
+      description: the existing record id to patch or delete (requires kind
+        — identity is the (kind, id) pair)
+    - name: kind
+      type: string
+      description: the kind reference of the target (patch/delete) or of the
+        record to mint (create)
+    - name: id
+      type: string
+      description: "for op create: a stable id for the new record (create-if-absent
+        on accept)"
+    - name: diff
+      type: json
+      description: 'the proposed change: property values under "properties"
+        (and, for create, edges under "edges")'
+    - name: rationale
+      type: string
+      description: why you propose this
+  emit:
+    - core.substrate.reamde.dev/recordpatchrequest

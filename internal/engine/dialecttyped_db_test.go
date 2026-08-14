@@ -17,6 +17,7 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // declarationPlanter is the internal-write seam a dialect-1 store is stood up
@@ -252,6 +253,105 @@ func TestTypedDeclarationRungTranslatesEveryStoredDeclaration(t *testing.T) {
 	}
 	if after := maxSeq(t, ds3); after != before {
 		t.Fatalf("re-running the rung appended %d entries — it is not content-gated", after-before)
+	}
+}
+
+// THE RUNG TRANSLATES BOTH RETIRED TOOL SPELLINGS ONTO REAL ROWS. A `tools:`
+// entry names its callable now, and the built-ins are function records — so a
+// stored bare string (dialect 1) and a stored `{builtin: x}` (stage B's interim
+// arm, which no release ever shipped) both have to come out as
+// `{callable: core.substrate.reamde.dev/x}`. A row the live loader refuses is a
+// repository that cannot open, which is why the second one is translated too.
+func TestTypedDeclarationRungTranslatesRetiredToolSpellings(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := testdb.NewSchema(t)
+	open := func() substrate.Service {
+		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		t.Cleanup(func() { _ = svc.Close() })
+		return svc
+	}
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const authority = "tools.test.dev"
+	agent := func(name string, data map[string]any) map[string]any {
+		data["description"] = name + " under test"
+		data["prompt"] = "You are " + name + "."
+		data["provider"], data["model"] = "default", "gpt-5"
+		return vocabulary.AgentManifest(authority, name, data)
+	}
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
+		vocabulary.AuthorityManifest(authority, ""),
+		vocabulary.KindManifest(authority, map[string]any{"singular": "gizmo", "plural": "gizmos"},
+			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
+		agent("bare", map[string]any{
+			"tools": []any{map[string]any{"callable": vocabulary.HostFunctionGraphQL}},
+		}),
+		agent("armed", map[string]any{
+			"tools": []any{map[string]any{"callable": vocabulary.HostFunctionMutate}},
+			"emit":  []any{authority + "/gizmo"},
+		}),
+	}); err != nil {
+		t.Fatalf("install the tools authority: %v", err)
+	}
+
+	// Each row's dialect-1 blob, with its `tools:` written back in a spelling the
+	// live loader refuses: a bare string on one, the interim object on the other.
+	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "geoah"), engine.RoleApp)
+	if err != nil {
+		t.Fatalf("open repository schema: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	p := planter(t, ds)
+	const agentKind = "core.substrate.reamde.dev/agent"
+	for id, tools := range map[string]any{
+		authority + "/bare":  []any{"graphql"},
+		authority + "/armed": []any{map[string]any{"builtin": "mutate"}},
+	} {
+		row := mustGet(t, ds, agentKind, id)
+		props := map[string]any{}
+		for k, v := range row.Properties {
+			props[k] = v
+		}
+		props["tools"] = tools
+		if err := p.PlantDeclarationRow(ctx, agentKind, id,
+			p.DialectOneProps(agentKind, id, props)); err != nil {
+			t.Fatalf("plant %s: %v", id, err)
+		}
+	}
+	windBackDialect(t, db)
+	_ = svc.Close()
+
+	svc2 := open()
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("reopen a store holding the retired tool spellings: %v", err)
+	}
+	for id, want := range map[string]string{
+		authority + "/bare":  vocabulary.HostFunctionGraphQL,
+		authority + "/armed": vocabulary.HostFunctionMutate,
+	} {
+		row := mustGet(t, ds2, agentKind, id)
+		entries, _ := row.Properties["tools"].([]any)
+		if len(entries) != 1 {
+			t.Fatalf("%s tools = %v", id, row.Properties["tools"])
+		}
+		entry, _ := entries[0].(map[string]any)
+		if entry["callable"] != want {
+			t.Fatalf("%s translated to %v, want {callable: %s}", id, entry, want)
+		}
+		if _, held := entry["builtin"]; held {
+			t.Fatalf("%s kept the retired arm: %v", id, entry)
+		}
 	}
 }
 

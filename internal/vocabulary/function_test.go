@@ -126,7 +126,7 @@ func TestFunctionLoads(t *testing.T) {
 // Review W2 #11: key PRESENCE closes an object — `properties: {}` declares
 // "no properties" and refuses every key; only a schema with no `properties`
 // key at all is the bare open object. And review W2 #8's dialect half: a
-// declared schema refuses nil unless it is `any`.
+// declared schema refuses nil unless it declares no type at all.
 func TestCheckValueEmptyPropertiesClosesTheObject(t *testing.T) {
 	closed := map[string]any{"type": "object", "properties": map[string]any{}}
 	if err := vocabulary.CheckValue(closed, map[string]any{"anything": true}); err == nil {
@@ -146,8 +146,10 @@ func TestCheckValueEmptyPropertiesClosesTheObject(t *testing.T) {
 	if err := vocabulary.CheckValue(map[string]any{"type": "string"}, nil); err == nil {
 		t.Fatal("nil passed a declared string schema")
 	}
-	if err := vocabulary.CheckValue(map[string]any{"type": "any"}, nil); err != nil {
-		t.Fatalf("nil refused by any: %v", err)
+	// A schema with NO type constrains nothing — the flat dialect's `json`
+	// argument, and JSON Schema's own spelling of "any value".
+	if err := vocabulary.CheckValue(map[string]any{}, nil); err != nil {
+		t.Fatalf("nil refused by an untyped schema: %v", err)
 	}
 }
 
@@ -178,13 +180,13 @@ func TestFunctionLoadErrors(t *testing.T) {
 `,
 			want: "data.runtime",
 		},
-		"runtime is python or go": {
+		"runtime is python, go or host": {
 			data: `  description: d
   runtime: cel
   emit: [fn.example.com/gadget]
   source: "def main(input, host): return {}"
 `,
-			want: "python or go",
+			want: "python, go, host",
 		},
 		"source is required": {
 			data: `  description: d
@@ -289,13 +291,6 @@ func TestFunctionLoadErrors(t *testing.T) {
   source: "def main(input, host): return {}"
 `,
 			want: "data.after is reserved",
-		},
-		"emit is required": {
-			data: `  description: d
-  runtime: python
-  source: "def main(input, host): return {}"
-`,
-			want: "data.emit is required and non-empty",
 		},
 		"emit types must exist": {
 			data: `  description: d

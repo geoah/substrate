@@ -25,7 +25,11 @@ data:
   # carries it into repositories that already stored the v1alpha2 one.
   # v1alpha4: TYPED. `definition` and `name` are gone; the runtime, the body,
   # the flat argument lists and the five capability keys are properties.
-  version: v1alpha4
+  # v1alpha5: `runtime: host` joined the enum and `source` stopped being
+  # required — a host function's body IS the engine, so its declaration is a
+  # card and nothing else. The bump is what admits the four host function rows
+  # core now ships into a repository that stored the v1alpha4 enum.
+  version: v1alpha5
   names:
     singular: function
     plural: functions
@@ -47,23 +51,34 @@ data:
       type: string
       required: true
       description: the model-facing tool card — what this function does
+    # `host` is the runtime with NO body: the engine is the implementation, and
+    # only a SHIPPED declaration may name it (the loader refuses one from any
+    # installed authority, since nothing can hand the engine a body). The four
+    # host functions core ships are the agent built-ins — query, propose,
+    # graphql, mutate — and their declarations are their whole cards.
     runtime:
       type: enum
       values:
         - python
         - go
+        - host
       required: true
-      description: the language the inline body is written in
+      description: the language the inline body is written in, or host for
+        a built-in
     # NEVER FTS-indexed: a body is up to 256 KiB of code, and indexing it would
     # make every function the top hit for every identifier it mentions. The
     # property name is the BODY's, so a function row carries no `source` origin
     # marker — that word belongs to the kinds whose origin is a fact about the
     # declaration rather than its content.
+    #
+    # Not `required:` — the requirement follows the RUNTIME, which one property's
+    # marker cannot say: an inline runtime must carry a body and the loader
+    # refuses one without it, while `host` must not, and the loader refuses one
+    # that tries.
     source:
       type: text
       fts: false
-      required: true
-      description: the inline body
+      description: the inline body, on an inline runtime
     timeoutMs:
       type: int
       min: 1

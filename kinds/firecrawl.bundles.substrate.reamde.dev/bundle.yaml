@@ -23,7 +23,8 @@ data:
   # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
-  version: v1alpha2
+  # v1alpha3: websearch's fake `emit` is gone — a pure function declares none.
+  version: v1alpha3
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -132,9 +133,10 @@ data:
       description: the Firecrawl scrape metadata as fetched, for provenance
 ---
 # ---- function: websearch ---------------------------------------------------
-# A READ tool: calls Firecrawl search and returns the hits — no effects ever.
-# `emit` is declared because the manifest requires a non-empty allowlist; it
-# is a ceiling, not a promise, and this body stages nothing under it.
+# A READ tool: calls Firecrawl search and returns the hits — no effects ever, so
+# it declares NO `emit`. It used to name `webdocument` with a comment
+# apologizing for it, because the loader demanded a non-empty allowlist; a pure
+# function is legal now, and the empty allowlist refuses every effect.
 kind: core.substrate.reamde.dev/function
 metadata:
   id: firecrawl.bundles.substrate.reamde.dev/websearch
@@ -159,7 +161,6 @@ data:
       type: json
       repeated: true
       required: true
-  emit: [firecrawl.bundles.substrate.reamde.dev/webdocument]
   network:
     - "api.firecrawl.dev"
   source: |

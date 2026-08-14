@@ -29,14 +29,10 @@ import (
 // tool refuses with the narrowing hint instead.
 const agentGQLMaxBytes = 64 << 10
 
-// graphqlToolParams is the shared card shape of the graphql and mutate
-// built-ins: v4's two-field contract, a document plus its variables.
-func graphqlToolParams() map[string]any {
-	return map[string]any{"type": "object", "properties": map[string]any{
-		"query":     map[string]any{"type": "string", "description": "the GraphQL document to execute"},
-		"variables": map[string]any{"type": "object", "description": "values for the variables the document declares"},
-	}, "required": []any{"query"}}
-}
+// The card shape of the graphql and mutate built-ins — v4's two-field contract,
+// a document plus its variables — is no longer a literal here: it is the
+// `arguments:` of the `core.substrate.reamde.dev/graphql` and `…/mutate`
+// declarations, compiled by the loader like any other function's.
 
 // dispatchGraphQL runs the read-only built-in.
 func (l *agentLoop) dispatchGraphQL(ctx context.Context, args map[string]any) (string, bool) {
@@ -50,6 +46,25 @@ func (l *agentLoop) dispatchMutate(ctx context.Context, args map[string]any) (st
 }
 
 func (l *agentLoop) execGraphQL(ctx context.Context, args map[string]any, mutate bool) (string, bool) {
+	// The mutate wrapper is what holds every write to the effective emit set; the
+	// read-only tool passes the dataset bare, since its document is refused if it
+	// names a mutation at all.
+	var target substrate.Dataset = l.ds
+	if mutate {
+		target = &agentMutateDataset{Dataset: l.ds, loop: l}
+	}
+	return l.ds.runGraphQLTool(ctx, l.actor, target, args, mutate)
+}
+
+// runGraphQLTool executes one GraphQL document against a repository and shapes
+// the answer as a tool result. `target` is the Dataset the resolvers see — the
+// bare dataset for a read, the emit-gating wrapper for an agent's mutate — and
+// `actor` is the hand a write would be attributed to.
+//
+// It is a dataset method rather than a loop one because
+// `core.substrate.reamde.dev/graphql` is callable directly too, where the caller
+// is a token that owns the repository and there is no loop.
+func (ds *dataset) runGraphQLTool(ctx context.Context, actor substrate.Actor, target substrate.Dataset, args map[string]any, mutate bool) (string, bool) {
 	query, _ := args["query"].(string)
 	if strings.TrimSpace(query) == "" {
 		return toolError("query is required"), false
@@ -58,27 +73,19 @@ func (l *agentLoop) execGraphQL(ctx context.Context, args map[string]any, mutate
 	if err := checkGraphQLOperations(query, mutate); err != nil {
 		return toolError(err.Error()), false
 	}
-	types, err := l.ds.Kinds(ctx)
+	types, err := ds.Kinds(ctx)
 	if err != nil {
 		return toolError(err.Error()), false
 	}
-	schema, err := l.ds.svc.gqlSchemas.SchemaFor(l.ds.Repository().Name, types)
+	schema, err := ds.svc.gqlSchemas.SchemaFor(ds.Repository().Name, types)
 	if err != nil {
 		return toolError(err.Error()), false
-	}
-	// The resolvers read gql's own context: this loop's dataset, under the
-	// agent's actor. The mutate wrapper is what holds every write to the
-	// effective emit set; the read-only tool passes the dataset bare, since
-	// its document was refused above if it named a mutation at all.
-	var target substrate.Dataset = l.ds
-	if mutate {
-		target = &agentMutateDataset{Dataset: l.ds, loop: l}
 	}
 	res := graphql.Do(graphql.Params{
 		Schema:         *schema,
 		RequestString:  query,
 		VariableValues: variables,
-		Context:        gql.WithRequest(ctx, target, l.actor),
+		Context:        gql.WithRequest(ctx, target, actor),
 	})
 	out, err := json.Marshal(res)
 	if err != nil {

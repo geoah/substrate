@@ -115,38 +115,51 @@ half-obeyed.
 
 ## Tools
 
-A `tools:` entry names its arm: **`{builtin: …}`** for one of the four
-built-ins, or **`{callable: …}`** for a function identity, optionally aliased
-with `name` and `description` to recolor this agent's prompt context without
-changing the function's canonical card. Exactly one arm per entry, a built-in
-takes no alias (the loop owns its card), and tool names are unique per agent.
+A `tools:` entry names its **callable**: `{callable: <function reference>}`,
+optionally with `name` and `description` to recolor this agent's prompt context
+without changing the function's canonical card. Tool names are unique per agent.
 
-A bare string is refused, naming the arm it meant. It named the arm by its
-value (a built-in if the word happened to be one, a callable otherwise), so one
-shape held two kinds of thing and a typo in a built-in's name silently became a
-callable nothing declares.
+That is the only arm, because the four built-ins are
+[**host functions**](functions.md#host-functions) — `runtime: host` records core
+ships — so an agent names one exactly as it names a bundle's function:
 
-- **`query`** is the capability-scoped read, and requires `reads:` — a load
-  error otherwise. A get outside the allowlist answers like an absent id; list
-  and search clamp to the remaining row budget; a blown budget is a tool error
-  the model sees.
-- **`graphql`** is the whole-repository read: the **same** schema and resolvers
-  the `/graphql` endpoint executes (`internal/gql`), run in-process against
-  the loop's dataset under the agent's actor. Declaring it is the grant, and
-  it grants reads only: the document is parsed first, and a mutation or
-  subscription in it is a tool error naming where those verbs live. A result
-  over 64KB is refused with a narrowing hint rather than truncated. Use
-  `query` instead when an agent should read a few named kinds under a row
-  budget; use `graphql` when the agent's job is the graph itself.
-- **`mutate`** executes GraphQL mutations (`put`, `patch`, `delete`, `link`,
-  `unlink`) through the same resolvers, and requires a non-empty `emit:` (a
-  load error otherwise). Every written kind is resolved and held to the
-  agent's **effective** emit before the write applies, so a sub-agent's ceiling
-  narrows it like any other effect; `merge` and `split` refuse outright, as
-  fusing identities is the owner's reviewed decision. Writes ride the full
-  public path (kind guards, schema-record admission) under the agent's
-  actor.
-- **`propose`** is the reviewed write, and requires `emit:` to name
+```yaml
+  tools:
+    - callable: core.substrate.reamde.dev/graphql
+    - callable: core.substrate.reamde.dev/propose
+    - callable: web.bundles.substrate.reamde.dev/setclass
+```
+
+Two older spellings are refused, each naming its replacement. A bare string
+(`tools: [query]`) named the arm by its value, so a typo in a built-in's name
+silently became a callable nothing declares. And `{builtin: query}` was the
+interim arm that split the union explicitly: it made the built-ins the one thing
+an agent could name that no record declared, and it is gone now that they are
+records.
+
+- **`core.substrate.reamde.dev/query`** is the capability-scoped read, and
+  requires `reads:` — a load error otherwise. A get outside the allowlist
+  answers like an absent id; list and search clamp to the remaining row budget;
+  a blown budget is a tool error the model sees.
+- **`core.substrate.reamde.dev/graphql`** is the whole-repository read: the
+  **same** schema and resolvers the `/graphql` endpoint executes
+  (`internal/gql`), run in-process against the loop's dataset under the agent's
+  actor. Declaring it is the grant, and it grants reads only: the document is
+  parsed first, and a mutation or subscription in it is a tool error naming
+  where those verbs live. A result over 64KB is refused with a narrowing hint
+  rather than truncated. Use `query` instead when an agent should read a few
+  named kinds under a row budget; use `graphql` when the agent's job is the
+  graph itself.
+- **`core.substrate.reamde.dev/mutate`** executes GraphQL mutations (`put`,
+  `patch`, `delete`, `link`, `unlink`) through the same resolvers, and requires
+  a non-empty `emit:` (a load error otherwise). Every written kind is resolved
+  and held to the agent's **effective** emit before the write applies, so a
+  sub-agent's ceiling narrows it like any other effect; `merge` and `split`
+  refuse outright, as fusing identities is the owner's reviewed decision. Writes
+  ride the full public path (kind guards, schema-record admission) under the
+  agent's actor.
+- **`core.substrate.reamde.dev/propose`** is the reviewed write, and requires
+  `emit:` to name
   `core.substrate.reamde.dev/recordpatchrequest`. It lands one
   [`recordpatchrequest`](projection.md#the-patch-request-sibling), never a
   direct mutation. It carries a `rationale` and an `op`: `patch`, the default,

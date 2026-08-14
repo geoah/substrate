@@ -28,9 +28,32 @@ import (
 const (
 	RuntimePython = "python"
 	RuntimeGo     = "go"
+	// RuntimeHost is the third runtime, and the one with no body: the ENGINE is
+	// the implementation. A host function's declaration is its whole
+	// card — the description, `arguments:` and `returns:` — and it never reaches
+	// the child-process runner. It is admissible ONLY in a builtin build
+	// (BuildAuthorities' SourceBuiltin), because the engine can only implement
+	// what the engine ships: a bundle or an owner declaring one would name a
+	// body nothing has.
+	RuntimeHost = "host"
 )
 
-var functionRuntimes = map[string]bool{RuntimePython: true, RuntimeGo: true}
+// FunctionRuntimes lists the runtimes in the order the errors name them.
+var FunctionRuntimes = []string{RuntimePython, RuntimeGo, RuntimeHost}
+
+var functionRuntimes = map[string]bool{
+	RuntimePython: true, RuntimeGo: true, RuntimeHost: true,
+}
+
+// The four host functions the engine implements, by identity. They are ordinary
+// function records — seeded, browsable, pickable as agent tools by reference —
+// and these constants are what the dispatch switch and the grant checks key on.
+const (
+	HostFunctionQuery   = AuthorityCore + "/query"
+	HostFunctionPropose = AuthorityCore + "/propose"
+	HostFunctionGraphQL = AuthorityCore + "/graphql"
+	HostFunctionMutate  = AuthorityCore + "/mutate"
+)
 
 // The capability-gated identity mutations (`mutations:`). The
 // five ordinary effects — put, patch, delete, link, unlink — are granted by
@@ -69,6 +92,8 @@ type Function struct {
 	// Runtime names the body's language; Source is the inline body itself.
 	// Python's entrypoint is `main(input, host)`; Go's is
 	// `Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error)`.
+	// On RuntimeHost there is no body at all: Source is empty and the engine is
+	// the implementation.
 	Runtime string
 	Source  string
 	// TimeoutMs bounds one invocation's wall clock; a timeout rides the
@@ -153,6 +178,11 @@ const (
 
 // Identity is "<authority>/<name>".
 func (f *Function) Identity() string { return KindRef(f.Authority, f.Name) }
+
+// IsHost reports whether the engine is this function's body. Every runner path
+// asks before it reaches for a spec: there is nothing to compile, register,
+// warm or reconcile, and the caller's own grants are what scope the call.
+func (f *Function) IsHost() bool { return f.Runtime == RuntimeHost }
 
 // Actor is the function's own writing hand: `function:<name>`, the actor its
 // effects are attributed to and the one trigger self-exclusion keys on.
@@ -277,13 +307,19 @@ var ArgumentTypes = []string{
 // argumentSchemaTypes maps each argument type onto the shape dialect's own
 // type — the compiled schema is what CheckValue and the model-facing tool card
 // read, so a flat declaration cannot produce a schema either of them refuses.
+//
+// `json` maps to the EMPTY string, which compiles to a schema with no `type` key
+// at all: that is JSON Schema's own spelling of "any value", and the compiled
+// schema is handed to a provider verbatim as the tool card. A literal
+// `{type: any}` was neither — no validator admits it — so the escape hatch used
+// to compile to a card a strict provider refuses.
 var argumentSchemaTypes = map[string]string{
 	ArgumentString: "string",
 	ArgumentInt:    "number",
 	ArgumentFloat:  "number",
 	ArgumentBool:   "boolean",
 	ArgumentEnum:   "string",
-	ArgumentJSON:   "any",
+	ArgumentJSON:   "",
 }
 
 // functionArgKeys is one argument's closed key set.
@@ -327,7 +363,10 @@ func (l *loader) parseArguments(where string, v any) map[string]any {
 			l.errf("%s.type: %q — one of %s", awhere, ty, strings.Join(ArgumentTypes, ", "))
 			return nil
 		}
-		leaf := map[string]any{"type": schemaType}
+		leaf := map[string]any{}
+		if schemaType != "" {
+			leaf["type"] = schemaType
+		}
 		values, hasValues := ad["values"]
 		switch {
 		case ty == ArgumentEnum && !hasValues:
@@ -414,7 +453,11 @@ func checkValue(path string, schema map[string]any, v any) error {
 		return path
 	}
 	ty, _ := schema["type"].(string)
-	if ty == "any" {
+	// No type is no constraint — the flat dialect's `json` argument, whose value
+	// shape the function does not own. It is spelled as the ABSENCE of a type
+	// because the same map is the model-facing card, and JSON Schema says "any
+	// value" by saying nothing.
+	if ty == "" {
 		return nil
 	}
 	switch ty {
@@ -543,7 +586,7 @@ func (l *loader) parseFunction(d Document) *Function {
 	}
 	fn := &Function{
 		Name: local, Authority: g.Name,
-		Description: l.parseDescription(where+": data", d.Data),
+		Description: l.parseDescriptionMax(where+": data", d.Data, maxCallableDescription),
 		Definition:  d.Data,
 	}
 	if fn.Description == "" {
@@ -553,20 +596,10 @@ func (l *loader) parseFunction(d Document) *Function {
 
 	fn.Runtime = mstr(d.Data, "runtime")
 	if !functionRuntimes[fn.Runtime] {
-		l.errf("%s: data.runtime: %q — python or go", where, fn.Runtime)
+		l.errf("%s: data.runtime: %q — one of %s", where, fn.Runtime, strings.Join(FunctionRuntimes, ", "))
 		return nil
 	}
-	fn.Source = mstr(d.Data, "source")
-	if strings.TrimSpace(fn.Source) == "" {
-		l.errf("%s: data.source is required — the inline %s body", where, fn.Runtime)
-		return nil
-	}
-	if len(fn.Source) > SourceMaxBytes {
-		l.errf("%s: data.source is %d bytes — the inline cap is %d", where, len(fn.Source), SourceMaxBytes)
-		return nil
-	}
-	if fn.TimeoutMs, ok = l.boundedInt(where+": data.timeoutMs", d.Data, "timeoutMs",
-		DefaultRunTimeoutMs, MaxRunTimeoutMs); !ok {
+	if !l.parseFunctionBody(where, d.Data, fn) {
 		return nil
 	}
 	if fn.Input, ok = l.parseFunctionIO(where, d.Data, "arguments"); !ok {
@@ -581,8 +614,56 @@ func (l *loader) parseFunction(d Document) *Function {
 	return fn
 }
 
-// parseFunctionCaps reads the capability envelope. `emit` is required and
-// non-empty: a function that writes nothing is not a function yet.
+// parseFunctionBody reads what the runtime implies about the body: an inline
+// runtime carries one, bounded and timed, and `host` carries none at all.
+//
+// The host arm refuses three things rather than ignoring them, because each one
+// would look obeyed: a `source` (the engine is the body, so nothing would ever
+// run what was written), a `timeoutMs` (nothing supervises an in-process
+// built-in on the loop's own clock), and the whole declaration when the build is
+// not the shipped one — a bundle or an owner cannot hand the engine an
+// implementation, so a `host` runtime from any other source names a body that
+// does not exist.
+func (l *loader) parseFunctionBody(where string, data map[string]any, fn *Function) bool {
+	if fn.IsHost() {
+		if l.source != SourceBuiltin {
+			l.errf("%s: data.runtime: host is the ENGINE's own implementation and only a shipped declaration may name one — an installed function declares its body (%s or %s)",
+				where, RuntimePython, RuntimeGo)
+			return false
+		}
+		if _, declared := data["source"]; declared {
+			l.errf("%s: data.source: a host function has no inline body — the engine is the implementation, and the declaration is its card", where)
+			return false
+		}
+		if _, declared := data["timeoutMs"]; declared {
+			l.errf("%s: data.timeoutMs: a host function runs in process under its caller's budgets — there is no child invocation to bound", where)
+			return false
+		}
+		return true
+	}
+	fn.Source = mstr(data, "source")
+	if strings.TrimSpace(fn.Source) == "" {
+		l.errf("%s: data.source is required — the inline %s body", where, fn.Runtime)
+		return false
+	}
+	if len(fn.Source) > SourceMaxBytes {
+		l.errf("%s: data.source is %d bytes — the inline cap is %d", where, len(fn.Source), SourceMaxBytes)
+		return false
+	}
+	var ok bool
+	if fn.TimeoutMs, ok = l.boundedInt(where+": data.timeoutMs", data, "timeoutMs",
+		DefaultRunTimeoutMs, MaxRunTimeoutMs); !ok {
+		return false
+	}
+	return true
+}
+
+// parseFunctionCaps reads the capability envelope. `emit` is OPTIONAL, and an
+// absent one is a function that writes nothing: a pure function returns its
+// output and stages no effect, which the emit gate then refuses every effect
+// against. It used to be required and non-empty, which taught authors to declare
+// a kind they never wrote to (firecrawl's websearch declared `webdocument` and
+// apologized for it in a comment).
 //
 // The five keys ride `data` itself — the `capabilities:` wrapper is a deleted key
 // (deletedFunctionKeys) — so one grant is declared once, in one place, and the
@@ -605,10 +686,6 @@ func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Functi
 			continue
 		}
 		fn.Caps.Emit = append(fn.Caps.Emit, t)
-	}
-	if len(fn.Caps.Emit) == 0 {
-		l.errf("%s: data.emit is required and non-empty — the allowlist of types the effects may address", where)
-		return nil
 	}
 	for i, cv := range mslice(caps, "call") {
 		ident := fmt.Sprint(cv)
@@ -726,8 +803,19 @@ func (r *Registry) resolveFunction(f *Function) []string {
 		}
 	}
 	for _, ident := range f.Caps.Call {
-		if _, err := r.ResolveFunction(ident); err != nil {
+		target, err := r.ResolveFunction(ident)
+		if err != nil {
 			problems = append(problems, fmt.Sprintf("%s: data.call: unknown function %q", where, ident))
+			continue
+		}
+		// A host function runs under the GRANTS OF ITS CALLER, and a function body
+		// has none to lend: its own envelope is what bounds its effects, and the
+		// built-ins are bounded by an agent's reads and emit instead. So a body
+		// cannot sub-call one, and the refusal names where the tool does work.
+		if target.IsHost() {
+			problems = append(problems, fmt.Sprintf(
+				"%s: data.call: %q is a host function — the engine runs it under a CALLER's grants and a function body has none to lend; carry it as an agent tool instead",
+				where, ident))
 		}
 	}
 	return problems
@@ -747,19 +835,34 @@ func (r *Registry) Functions() []*Function {
 	return out
 }
 
-// ResolveFunction accepts a full identity or a bare name unique across authorities.
+// ResolveFunction accepts a full identity or a bare name unique across
+// authorities — except for a HOST function, which answers its identity alone.
+// The four of them are named for what they do (`query`, `graphql`, `mutate`,
+// `propose`), which is exactly what a repository's own function is likeliest to
+// be called, so a bare name that resolved to the user's function before they
+// shipped has to keep resolving to it.
 func (r *Registry) ResolveFunction(nameOrIdentity string) (*Function, error) {
 	var cands []*Function
+	var host *Function
 	for _, f := range r.Functions() {
 		if f.Identity() == nameOrIdentity {
 			return f, nil
 		}
-		if f.Name == nameOrIdentity {
-			cands = append(cands, f)
+		if f.Name != nameOrIdentity {
+			continue
 		}
+		if f.IsHost() {
+			host = f
+			continue
+		}
+		cands = append(cands, f)
 	}
 	switch len(cands) {
 	case 0:
+		if host != nil {
+			return nil, fmt.Errorf("unknown function %q — the built-in of that name is %s, and a host function answers its full identity",
+				nameOrIdentity, host.Identity())
+		}
 		return nil, fmt.Errorf("unknown function %q", nameOrIdentity)
 	case 1:
 		return cands[0], nil

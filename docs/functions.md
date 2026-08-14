@@ -50,8 +50,9 @@ host call and the call API all address it with.
   half of `metadata.id`.
 - **`description`** is model-facing and required: the function is its own tool
   card wherever it appears as a callable.
-- **`runtime`** is `python` or `go`.
-- **`source`** is the inline body (bounded, at most 256 KiB).
+- **`runtime`** is `python`, `go`, or [`host`](#host-functions).
+- **`source`** is the inline body (bounded, at most 256 KiB), on an inline
+  runtime. A `host` function has none: the engine is its body.
 - **`timeoutMs`** bounds one invocation's wall clock, host calls included
   (default 5000, max 60000).
 - Optional **`arguments:`** and **`returns:`** are the flat named IO: a caller's
@@ -61,7 +62,7 @@ host call and the call API all address it with.
   `network` and `mutations`, and it is the whole security boundary:
 
 ```yaml
-emit:                              # required, non-empty: the write allowlist
+emit:                              # optional: the write allowlist
   - tasks.substrate.reamde.dev/task
 reads:                             # the host-read allowlist and budget
   kinds:
@@ -81,8 +82,10 @@ There is no `capabilities:` wrapper: one grant is declared once, at the level
 the declaration declares it, and a document that still nests these five under
 `capabilities:` is refused naming them.
 
-`emit` is required and lists the kinds the effects may address: this function
-may write those kinds and nothing else. `reads.kinds` is the host-read
+`emit` lists the kinds the effects may address: this function may write those
+kinds and nothing else. It is **optional**, and declaring none is how a pure
+function says so — it returns an output and writes nothing, and every effect it
+staged would be refused. `reads.kinds` is the host-read
 allowlist and `reads.budgets` its budget (defaults 16 calls / 500 rows, raised
 to at most 1000 calls / 10000 rows); a `reads:` block that declares no `kinds`
 is a load error. `call` is the host-call allowlist; every target must be a
@@ -164,6 +167,59 @@ Both sides are checked on every path that carries arguments: the
 [call API](#driving-triggers), a [host call](#host-call), and an agent's function
 tool. A trigger delivery checks neither, because its payload is the envelope
 below rather than `args`.
+
+## Host functions
+
+`runtime: host` is the function with no body, because the **engine** is its
+body. Core ships four of them, and they are the agent
+[built-in tools](agents.md#tools):
+
+| Reference | What it does |
+| --- | --- |
+| `core.substrate.reamde.dev/query` | the capability-scoped read |
+| `core.substrate.reamde.dev/graphql` | the whole-repository read-only GraphQL surface |
+| `core.substrate.reamde.dev/mutate` | GraphQL mutations, bounded by the calling agent's emit |
+| `core.substrate.reamde.dev/propose` | lands one reviewed `recordpatchrequest` |
+
+They are **ordinary function records**: seeded into every new repository,
+delivered to an existing one by the [boot upgrade](vocabulary.md), listed in the
+`functions` collection, and named by an agent under `callable:` like any other
+function. They used to be engine constants and a `tools: [{builtin: query}]` arm
+— the one thing an agent could name that no record declared.
+
+**The declaration is the card.** The `description` and the `arguments:` on each
+of the four are what the model is shown, rendered from the declaration by the
+same code that renders a bundle function's, so changing what an LLM reads about
+`graphql` is a record write and not a release.
+
+**The grant is the caller's**, which is what the empty `emit:` and the absent
+`reads:` on three of them mean: `query` is held to the calling agent's `reads:`,
+`mutate` to its effective `emit:`, and `graphql` needs no grant at all because
+declaring it *is* the grant (there is no narrower scope to state over a whole
+repository). `propose` is the one with an `emit:` of its own, because it writes
+one kind and always the same one.
+
+That is also what decides **where each is callable**:
+
+- **As an agent tool**, all four.
+- **Through the [call API](#host-call)**, `graphql` and `query` only: the caller
+  is a token that owns the repository, so a read needs no narrower grant.
+  `propose` and `mutate` refuse there by name — there is no calling agent whose
+  grants would bound them — and the refusal points at declaring an agent that
+  carries the tool.
+- **As a [trigger](#triggers)'s callable**, none. A delivery has no caller to
+  borrow grants from, so the row is refused at admission rather than parked
+  forever, and the refusal names the same shape: an agent carrying the tool,
+  with the trigger targeting the agent.
+- **As another function's `call:` target**, none: a function body has no grants
+  to lend, so naming one is a load error.
+
+Two smaller rules follow. A host function is admissible **only from the shipped
+build** — the engine implements what the engine ships, so a bundle or an owner
+declaring one would name a body nothing has — and a **bare name never resolves
+to one**. The four are named for what they do, which is exactly what a
+repository's own function is likeliest to be called, so `query` keeps meaning
+the user's `query` and the built-in answers its full reference.
 
 ## The delivery envelope
 

@@ -171,8 +171,6 @@ export interface AgentParams {
  * what the model may call, in declaration order
  */
 export interface AgentTools {
-  /** The built-in tool this entry names. */
-  builtin?: AgentToolsBuiltin
   /** The function identity this entry names. Names a function: offer a picker,
    * not a text box.
    */
@@ -183,19 +181,11 @@ export interface AgentTools {
   description?: string
 }
 
-/** AgentToolsBuiltin is a declared enum: the admissible set, in declaration
- * order.
- *
- * the built-in tool this entry names
+/** The properties AgentTools's declaration marks required. A form refuses to
+ * submit without them; the server does not, so nothing here is a guarantee
+ * about a record that arrives.
  */
-export type AgentToolsBuiltin = "query" | "propose" | "graphql" | "mutate"
-
-export const agentToolsBuiltinValues: AgentToolsBuiltin[] = [
-  "query",
-  "propose",
-  "graphql",
-  "mutate",
-]
+export const agentToolsRequired: string[] = ["callable"]
 
 /** AgentBudgets is one value of the `budgets` object declared on
  * core.substrate.reamde.dev/agent.
@@ -471,9 +461,9 @@ export interface Function {
   authority?: string
   /** The model-facing tool card — what this function does. */
   description?: string
-  /** The language the inline body is written in. */
+  /** The language the inline body is written in, or host for a built-in. */
   runtime?: FunctionRuntime
-  /** The inline body. */
+  /** The inline body, on an inline runtime. */
   source?: string
   /** What bounds one invocation's wall clock. */
   timeoutMs?: number
@@ -505,17 +495,16 @@ export const functionRequired: string[] = [
   "authority",
   "description",
   "runtime",
-  "source",
 ]
 
 /** FunctionRuntime is a declared enum: the admissible set, in declaration
  * order.
  *
- * the language the inline body is written in
+ * the language the inline body is written in, or host for a built-in
  */
-export type FunctionRuntime = "python" | "go"
+export type FunctionRuntime = "python" | "go" | "host"
 
-export const functionRuntimeValues: FunctionRuntime[] = ["python", "go"]
+export const functionRuntimeValues: FunctionRuntime[] = ["python", "go", "host"]
 
 /** FunctionMutations is a declared enum: the admissible set, in declaration
  * order.

@@ -397,18 +397,45 @@ func (ds *dataset) validateTriggerRow(reg *vocabulary.Registry, id string, props
 		}
 	}
 	if checkCallable {
-		var rerr error
 		switch t.CallableKind {
 		case callableKindAgent:
-			_, rerr = reg.ResolveAgent(t.CallableID)
+			if _, err := reg.ResolveAgent(t.CallableID); err != nil {
+				return fmt.Errorf("%w: trigger callable: %w", substrate.ErrValidation, err)
+			}
 		default:
-			_, rerr = reg.ResolveFunction(t.CallableID)
-		}
-		if rerr != nil {
-			return fmt.Errorf("%w: trigger callable: %w", substrate.ErrValidation, rerr)
+			fn, err := reg.ResolveFunction(t.CallableID)
+			if err != nil {
+				return fmt.Errorf("%w: trigger callable: %w", substrate.ErrValidation, err)
+			}
+			// A HOST FUNCTION IS NOT A DELIVERY TARGET. The engine runs one under
+			// the grants of whoever called it, and a delivery has no caller to
+			// borrow from: nothing would scope `query`'s reads or `mutate`'s
+			// writes. The shape that works is an agent carrying the tool, so the
+			// refusal names it rather than leaving the row to park forever.
+			if fn.IsHost() {
+				return fmt.Errorf("%w: trigger callable: %s is a built-in — the engine runs it under a CALLER's grants, and a delivery has none: declare an agent carrying it as a tool and target the agent",
+					substrate.ErrValidation, fn.Identity())
+			}
+			ds.warnDiscardedOutput(t, fn)
 		}
 	}
 	return nil
+}
+
+// warnDiscardedOutput says so when a trigger names a callable whose work cannot
+// leave it. A delivery DISCARDS the output — only the effects are applied — so a
+// body that declares no `emit:`, no `call:` and no `network:` can change nothing
+// anywhere: the row admits (a pure function is legal, and `emit:` is optional
+// now), but firing it forever is almost certainly not what was meant.
+//
+// A warning, never a refusal: the declaration may be mid-edit, and a trigger the
+// engine refused would have to be re-created rather than fixed.
+func (ds *dataset) warnDiscardedOutput(t *trigger, fn *vocabulary.Function) {
+	if len(fn.Caps.Emit) > 0 || len(fn.Caps.Call) > 0 || len(fn.Caps.Network) > 0 {
+		return
+	}
+	ds.svc.log.Warn("substrate: trigger fires a function whose output is discarded — it declares no emit, no call and no network, so a delivery can change nothing; call it instead, or give it the grant it needs",
+		"repository", ds.Repository().Name, "trigger", t.ID, "function", fn.Identity())
 }
 
 // --- loading ---------------------------------------------------------------------

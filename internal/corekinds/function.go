@@ -20,10 +20,11 @@ type Function struct {
 	// Description is the model-facing tool card — what this function does.
 	Description *string
 
-	// Runtime is the language the inline body is written in.
+	// Runtime is the language the inline body is written in, or host for a
+	// built-in.
 	Runtime *FunctionRuntime
 
-	// Source is the inline body.
+	// Source is the inline body, on an inline runtime.
 	Source *string
 
 	// TimeoutMs is what bounds one invocation's wall clock.
@@ -56,17 +57,18 @@ type Function struct {
 // FunctionRuntime is a declared enum: the admissible set, in declaration
 // order.
 //
-// the language the inline body is written in
+// the language the inline body is written in, or host for a built-in
 type FunctionRuntime string
 
 const (
 	FunctionRuntimePython FunctionRuntime = "python"
 	FunctionRuntimeGo     FunctionRuntime = "go"
+	FunctionRuntimeHost   FunctionRuntime = "host"
 )
 
 // FunctionRuntimeValues are the declared values in declaration order, which is
 // render order.
-var FunctionRuntimeValues = []string{"python", "go"}
+var FunctionRuntimeValues = []string{"python", "go", "host"}
 
 // Valid reports whether v is one of the declared values.
 func (v FunctionRuntime) Valid() bool { return Declared(FunctionRuntimeValues, string(v)) }
@@ -119,7 +121,7 @@ func DecodeFunction(props map[string]any) (*Function, []Problem) {
 // sorted. It is a FORM-LEVEL contract: the write path does not enforce it, so
 // Decode admits a value that leaves one absent and this is what a client
 // checks before it submits one.
-var FunctionRequired = []string{"authority", "description", "runtime", "source"}
+var FunctionRequired = []string{"authority", "description", "runtime"}
 
 // Missing names the required properties this value leaves absent, in
 // declaration order. Empty means every declared requirement is answered —
@@ -135,9 +137,6 @@ func (v *Function) Missing() []string {
 	}
 	if v.Runtime == nil {
 		out = append(out, "runtime")
-	}
-	if v.Source == nil {
-		out = append(out, "source")
 	}
 	return out
 }

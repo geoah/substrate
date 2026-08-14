@@ -279,7 +279,9 @@ func anyFloat(v any) (float64, bool) {
 	}
 }
 
-// agentTool is one dispatchable tool: exactly one of builtin, fn or sub.
+// agentTool is one dispatchable tool: a sub-agent, or a function — and on a
+// function, `builtin` names which host implementation runs it. A host function's
+// fn is the DECLARATION (the card the model was shown); its body is this loop.
 type agentTool struct {
 	builtin string
 	fn      *vocabulary.Function
@@ -749,10 +751,17 @@ func (l *agentLoop) putRow(ctx context.Context, actor substrate.Actor, in substr
 
 // --- tools ---------------------------------------------------------------------
 
-// buildTools compiles the model-facing tool cards: the built-ins, each
-// callable function (description from the manifest, alias from the agent's
-// entry), and one tool per sub-agent. Definition order is declaration order,
-// so the on-wire schema stays stable across turns.
+// buildTools compiles the model-facing tool cards: one per `tools:` entry
+// (description from the resolved function's declaration, alias from the agent's
+// entry) plus one per sub-agent. Definition order is declaration order, so the
+// on-wire schema stays stable across turns.
+//
+// THE BUILT-INS TAKE THE SAME PATH AS EVERY OTHER CALLABLE, because they are
+// function records: their cards used to be Go literals here, and they are the
+// `description` and the `arguments:` of the four `runtime: host` declarations
+// core ships. What still differs is only WHERE the body lives — a host function
+// dispatches in this loop, anything else goes to the runner — which is what
+// agentTool.builtin carries.
 func (l *agentLoop) buildTools() error {
 	l.byName = map[string]agentTool{}
 	add := func(name, description string, params any, t agentTool) {
@@ -761,48 +770,28 @@ func (l *agentLoop) buildTools() error {
 	}
 	openObject := map[string]any{"type": "object"}
 	for _, t := range l.ag.Tools {
-		switch t.Builtin {
-		case vocabulary.AgentToolQuery:
-			add(t.Name, "Read records: pass kind + id for one record, kind (+ optional filter, first) to list, or q (+ optional types, k) to search. Read-only. Records are always addressed by their full reference (kind + id), never a bare id.",
-				map[string]any{"type": "object", "properties": map[string]any{
-					"id":     map[string]any{"type": "string", "description": "read one record by id (requires kind — identity is the (kind, id) pair)"},
-					"kind":   map[string]any{"type": "string", "description": "a kind reference: with id reads one record, alone lists"},
-					"filter": map[string]any{"type": "object", "description": "substrate filter for the list"},
-					"first":  map[string]any{"type": "number", "description": "max rows to return"},
-					"q":      map[string]any{"type": "string", "description": "search query"},
-					"k":      map[string]any{"type": "number", "description": "max search hits"},
-				}}, agentTool{builtin: vocabulary.AgentToolQuery})
-		case vocabulary.AgentToolGraphQL:
-			add(t.Name, "Run a read-only GraphQL query against the repository. The schema is introspectable (__schema / __type): every kind is a GraphQL type with its declared properties. Roots: record(kind, id) for one record; records(filter, orderBy, first, after) to list (a connection, so descend through nodes { ... }); search(q, kinds, k) for hybrid lexical+semantic lookup that tolerates near-matches; changelog(from, filter, first) for history. Do not guess field names: introspect when unsure, and batch related lookups into one query. Mutations and subscriptions are rejected. Responses over 64KB are refused; narrow the query.",
-				graphqlToolParams(), agentTool{builtin: vocabulary.AgentToolGraphQL})
-		case vocabulary.AgentToolMutate:
-			add(t.Name, "Run a GraphQL mutation against the repository. Roots: put(input: {kind, id, properties, edges}) merges and never prunes; patch(kind, id, input, ifVersion); delete(kind, id); link/unlink(rel, srcKind, src, dstKind, dst). Every record written must be of a kind in the agent's emit allowlist; merge and split are refused. Ids must come from query results, never invented.",
-				graphqlToolParams(), agentTool{builtin: vocabulary.AgentToolMutate})
-		case vocabulary.AgentToolPropose:
-			add(t.Name, "Propose a reviewed change to the graph instead of writing it: lands a recordpatchrequest the owner decides on. op patch (default) changes an existing record (needs target + diff); op create mints a new record on accept (needs kind + id + diff); op delete tombstones an existing record (needs target). A diff wraps property changes under \"properties\".",
-				map[string]any{"type": "object", "properties": map[string]any{
-					"op":        map[string]any{"type": "string", "enum": []any{opPatch, opCreate, opDelete}, "description": "patch (default), create, or delete"},
-					"target":    map[string]any{"type": "string", "description": "the existing record id to patch or delete (requires kind — identity is the (kind, id) pair)"},
-					"kind":      map[string]any{"type": "string", "description": "the kind reference of the target (patch/delete) or of the record to mint (create)"},
-					"id":        map[string]any{"type": "string", "description": "for op create: a stable id for the new record (create-if-absent on accept)"},
-					"diff":      map[string]any{"type": "object", "description": "the proposed change: property values under \"properties\" (and, for create, edges under \"edges\")"},
-					"rationale": map[string]any{"type": "string", "description": "why you propose this"},
-				}}, agentTool{builtin: vocabulary.AgentToolPropose})
-		default:
-			fn, err := l.ds.registry().ResolveFunction(t.Callable)
-			if err != nil {
-				return fmt.Errorf("%w: agent %s: tool %s: %w", substrate.ErrValidation, l.ag.Identity(), t.Name, err)
-			}
-			description := t.Description
-			if description == "" {
-				description = fn.Description
-			}
-			var params any = openObject
-			if fn.Input != nil {
-				params = fn.Input
-			}
-			add(t.Name, description, params, agentTool{fn: fn})
+		fn, err := l.ds.registry().ResolveFunction(t.Callable)
+		if err != nil {
+			return fmt.Errorf("%w: agent %s: tool %s: %w", substrate.ErrValidation, l.ag.Identity(), t.Name, err)
 		}
+		// A host function this build has no arm for would reach the runner and trip
+		// the backstop mid-conversation. It can only happen by shipping a fifth
+		// `runtime: host` declaration without wiring the loop, so it refuses here
+		// instead — at the build, where the message can say which.
+		if fn.IsHost() && t.Builtin == "" {
+			return fmt.Errorf("%w: agent %s: tool %s: %s is a host function this build does not implement",
+				substrate.ErrValidation, l.ag.Identity(), t.Name, fn.Identity())
+		}
+		description := t.Description
+		if description == "" {
+			description = fn.Description
+		}
+		var params any = openObject
+		if fn.Input != nil {
+			params = fn.Input
+		}
+		tool := agentTool{fn: fn, builtin: t.Builtin}
+		add(t.Name, description, params, tool)
 	}
 	for _, ident := range l.ag.Agents {
 		sub, err := l.ds.registry().ResolveAgent(ident)
@@ -868,6 +857,11 @@ func (l *agentLoop) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool
 // allowlist and the budget, enforced exactly like a function's — a get
 // outside the allowlist answers like an absent id, list/search clamp to the
 // remaining row budget, and a blown budget is a tool error the model sees.
+//
+// The loop owns the BUDGET; runQueryTool owns the reading. The split exists
+// because `core.substrate.reamde.dev/query` is also callable directly, where the
+// caller is a token that owns the whole repository and there is no loop to
+// account against.
 func (l *agentLoop) dispatchQuery(ctx context.Context, args map[string]any) (string, bool) {
 	reads := l.ag.Reads
 	if reads == nil {
@@ -877,45 +871,65 @@ func (l *agentLoop) dispatchQuery(ctx context.Context, args map[string]any) (str
 		return toolError(fmt.Sprintf("read budget exhausted (%d calls)", reads.Calls)), false
 	}
 	l.readCalls++
-	allowed := func(ident string) bool {
-		for _, t := range reads.Kinds {
-			if t == ident {
-				return true
-			}
-		}
-		return false
-	}
 	remaining := reads.Rows - l.readRows
 	if remaining <= 0 {
 		return toolError(fmt.Sprintf("read budget exhausted (%d rows)", reads.Rows)), false
 	}
+	out, ok, rows := l.ds.runQueryTool(ctx, queryScope{kinds: reads.Kinds, rows: remaining}, args)
+	l.readRows += rows
+	return out, ok
+}
+
+// queryScope bounds one `query` call: the kind allowlist every read is held to,
+// and the rows it may still spend. A NIL allowlist is the whole repository — what
+// a token holds, and never what an agent's `reads:` grants, which the loader
+// refuses empty.
+type queryScope struct {
+	kinds []string
+	rows  int
+}
+
+func (s queryScope) allows(ident string) bool {
+	if s.kinds == nil {
+		return true
+	}
+	for _, t := range s.kinds {
+		if t == ident {
+			return true
+		}
+	}
+	return false
+}
+
+// runQueryTool executes one `query` call and reports the rows it read, so the
+// caller's budget (the loop's, when there is one) stays the caller's business.
+func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[string]any) (string, bool, int) {
 	if id, _ := args["id"].(string); id != "" {
 		// A get names the FULL identity: type + id. The type is
 		// checked against the allowlist BEFORE the read, and a disallowed or
 		// unknown type answers exactly like an absent id — never an oracle.
 		typ, _ := args["kind"].(string)
 		if typ == "" {
-			return toolError("get needs a kind — records are addressed by (kind, id)"), false
+			return toolError("get needs a kind — records are addressed by (kind, id)"), false, 0
 		}
-		l.readRows++
-		if !allowed(typ) {
-			if ty, err := l.ds.resolveType(typ); err != nil || !allowed(ty.Identity) {
-				return toolJSON(map[string]any{"record": nil}), true
+		if !scope.allows(typ) {
+			if ty, err := ds.resolveType(typ); err != nil || !scope.allows(ty.Identity) {
+				return toolJSON(map[string]any{"record": nil}), true, 1
 			}
 		}
-		e, err := l.ds.Get(ctx, typ, id)
+		e, err := ds.Get(ctx, typ, id)
 		if errors.Is(err, substrate.ErrNotFound) || errors.Is(err, substrate.ErrValidation) {
-			return toolJSON(map[string]any{"record": nil}), true
+			return toolJSON(map[string]any{"record": nil}), true, 1
 		}
 		if err != nil {
-			return toolError(err.Error()), false
+			return toolError(err.Error()), false, 1
 		}
-		if !allowed(e.Kind) {
+		if !scope.allows(e.Kind) {
 			// The uniform absence answer: a disallowed get is never an
 			// existence oracle.
-			return toolJSON(map[string]any{"record": nil}), true
+			return toolJSON(map[string]any{"record": nil}), true, 1
 		}
-		return toolJSON(map[string]any{"record": e}), true
+		return toolJSON(map[string]any{"record": e}), true, 1
 	}
 	if q, _ := args["q"].(string); q != "" {
 		in := substrate.SearchInput{Q: q}
@@ -924,42 +938,41 @@ func (l *agentLoop) dispatchQuery(ctx context.Context, args map[string]any) (str
 		} else {
 			in.K = listDefaultFirst
 		}
-		in.K = min(in.K, remaining)
+		in.K = min(in.K, scope.rows)
 		if types, _ := args["kinds"].([]any); len(types) > 0 {
 			for _, tv := range types {
 				ident := fmt.Sprint(tv)
-				if !allowed(ident) {
-					return toolError(ident + " is not in the reads allowlist"), false
+				if !scope.allows(ident) {
+					return toolError(ident + " is not in the reads allowlist"), false, 0
 				}
 				in.Kinds = append(in.Kinds, ident)
 			}
 		} else {
-			in.Kinds = reads.Kinds
+			in.Kinds = scope.kinds
 		}
-		hits, err := l.ds.Search(ctx, in)
+		hits, err := ds.Search(ctx, in)
 		if err != nil {
-			return toolError(err.Error()), false
+			return toolError(err.Error()), false, 0
 		}
-		l.readRows += len(hits)
-		return toolJSON(map[string]any{"hits": hits}), true
+		return toolJSON(map[string]any{"hits": hits}), true, len(hits)
 	}
 	ident, _ := args["kind"].(string)
 	if ident == "" {
-		return toolError("pass id, kind, or q"), false
+		return toolError("pass id, kind, or q"), false, 0
 	}
-	ty, err := l.ds.resolveType(ident)
+	ty, err := ds.resolveType(ident)
 	if err != nil {
-		return toolError(err.Error()), false
+		return toolError(err.Error()), false, 0
 	}
-	if !allowed(ty.Identity) {
-		return toolError(ident + " is not in the reads allowlist"), false
+	if !scope.allows(ty.Identity) {
+		return toolError(ident + " is not in the reads allowlist"), false, 0
 	}
 	q := substrate.Query{Filter: substrate.Filter{Kinds: []string{ty.Identity}}, First: listDefaultFirst}
 	if raw, ok := args["filter"].(map[string]any); ok {
 		buf, _ := json.Marshal(raw)
 		var f substrate.Filter
 		if err := json.Unmarshal(buf, &f); err != nil {
-			return toolError("filter: " + err.Error()), false
+			return toolError("filter: " + err.Error()), false, 0
 		}
 		f.Kinds = []string{ty.Identity}
 		q.Filter = f
@@ -967,13 +980,12 @@ func (l *agentLoop) dispatchQuery(ctx context.Context, args map[string]any) (str
 	if first, ok := anyFloat(args["first"]); ok && int(first) > 0 {
 		q.First = int(first)
 	}
-	q.First = min(q.First, remaining)
-	page, err := l.ds.List(ctx, q)
+	q.First = min(q.First, scope.rows)
+	page, err := ds.List(ctx, q)
 	if err != nil {
-		return toolError(err.Error()), false
+		return toolError(err.Error()), false, 0
 	}
-	l.readRows += len(page.Records)
-	return toolJSON(map[string]any{"records": page.Records}), true
+	return toolJSON(map[string]any{"records": page.Records}), true, len(page.Records)
 }
 
 // --- the propose built-in ---------------------------------------------------------

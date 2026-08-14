@@ -39,7 +39,9 @@ data:
   # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
-  version: v1alpha3
+  # v1alpha4: the built-ins are function records, so `substrate`'s tool entries
+  # name them under `callable:` like any other function.
+  version: v1alpha4
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata:
@@ -101,8 +103,8 @@ data:
   provider: anthropic
   model: claude-sonnet-5
   tools:
-    - builtin: graphql
-    - builtin: propose
+    - callable: core.substrate.reamde.dev/graphql
+    - callable: core.substrate.reamde.dev/propose
   emit: [core.substrate.reamde.dev/recordpatchrequest]
   budgets:
     maxTurns: 16

@@ -157,11 +157,48 @@ data:
   provider: default
   model: gpt-5
   tools:
-    - builtin: query
+    - callable: core.substrate.reamde.dev/query
     - callable: x.example.com/fn
   emit: [x.example.com/widget]
   reads:
     kinds: [x.example.com/widget]
+`,
+		},
+		{
+			// STAGE B'S INTERIM ARM, translated too. It is not a dialect-1 spelling
+			// — no released binary ever wrote it — but the rung's one job is to hand
+			// the live loader a document it admits, and a row it refuses is a
+			// repository that cannot open.
+			name: "an agent's interim builtin arm becomes a callable",
+			old: `
+kind: core.substrate.reamde.dev/agent
+metadata:
+  id: x.example.com/ag
+data:
+  authority: x.example.com
+  description: an agent
+  prompt: be useful
+  provider: default
+  model: gpt-5
+  tools:
+    - builtin: graphql
+    - callable: x.example.com/fn
+  emit: [x.example.com/widget]
+`,
+			want: `
+kind: core.substrate.reamde.dev/agent
+metadata:
+  id: x.example.com/ag
+data:
+  authority: x.example.com
+  description: an agent
+  prompt: be useful
+  provider: default
+  model: gpt-5
+  tools:
+    - callable: core.substrate.reamde.dev/graphql
+    - callable: x.example.com/fn
+  emit: [x.example.com/widget]
 `,
 		},
 		{
@@ -624,7 +661,7 @@ metadata:
 data:
   authority: x.example.com
   tools:
-    - builtin: query
+    - callable: core.substrate.reamde.dev/query
     - callable: x.example.com/fn
   indices: []
 `)

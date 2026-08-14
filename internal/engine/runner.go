@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -143,6 +144,15 @@ func (ds *dataset) runCallable(ctx context.Context, fn *vocabulary.Function, in 
 // wants re-invoking (the drain loop in functions.go). The delivery paths use
 // this; everyone else takes runCallable and ignores paging.
 func (ds *dataset) runCallableRaw(ctx context.Context, fn *vocabulary.Function, in runner.Input) ([]effect, any, *runner.Continuation, error) {
+	// THE BACKSTOP. A host function has no body to invoke: the engine implements
+	// it, under the grants of whoever called it. Every door that can reach one
+	// branches before here (CallFunction, the agent loop, trigger admission), so
+	// arriving is a bug in this file's callers and not a user's mistake — an
+	// internal error rather than a validation refusal.
+	if fn.IsHost() {
+		return nil, nil, nil, fmt.Errorf("substrate/engine: host function %s reached the runner — the engine is its body, and every caller branches before this",
+			fn.Identity())
+	}
 	inv := &invocation{ds: ds, stack: []string{fn.Identity()}, scrub: newScrubber()}
 	// The runner's `config` field, resolved per invocation (invocationconfig.go):
 	// a bundle function receives its bundle's `inject: functions` inputs,
@@ -276,6 +286,14 @@ func (b *callBackend) Call(ctx context.Context, ident string, args any) (any, er
 	if err != nil {
 		return nil, fmt.Errorf("call: %w", err)
 	}
+	// A HOST FUNCTION IS NOT SUB-CALLABLE: the engine runs one under a CALLER's
+	// grants and a body has none to lend. The `call:` allowlist cannot name one
+	// (resolveFunction refuses that at load), so this is the door held shut for a
+	// body that reached the identity another way — and it answers the BODY, which
+	// the load-time refusal cannot.
+	if target.IsHost() {
+		return nil, fmt.Errorf("call: %s is a built-in — the engine runs it under a caller's grants, and a function body has none to lend", target.Identity())
+	}
 	// Nested admission re-checks the callee's bundle lifecycle under the
 	// root's already-held fence: a live bundle cannot invoke a
 	// disabled bundle's function, and — because the fence is held for the
@@ -392,6 +410,9 @@ func (ds *dataset) CallFunction(ctx context.Context, name string, args any) (any
 			return nil, 0, fmt.Errorf("%w: input: %w", substrate.ErrValidation, err)
 		}
 	}
+	if fn.IsHost() {
+		return ds.callHostFunction(ctx, fn, args)
+	}
 	callID, err := newID()
 	if err != nil {
 		return nil, 0, err
@@ -434,6 +455,47 @@ func (ds *dataset) CallFunction(ctx context.Context, name string, args any) (any
 	return output, len(effects), nil
 }
 
+// callHostFunction answers a direct call to one of the four host functions. Two
+// of them are callable here and two are not, and the line is the GRANT each one
+// is scoped by:
+//
+//   - `graphql` and `query` are reads, and the caller is a token that owns the
+//     whole repository. There is nothing narrower to hold them to, so they run
+//     in process against this dataset: the same executors the loop uses, with the
+//     agent's kind allowlist and row budget replaced by the token's full reach.
+//   - `propose` and `mutate` are writes bounded by the CALLING AGENT's effective
+//     emit. A direct call has no calling agent, so there is no ceiling to apply —
+//     and inventing one (the token's full reach) would turn the reviewed write
+//     into an unreviewed one. Refused, naming where the tool works.
+//
+// The output is the tool's own JSON, decoded, so a caller reads a real object
+// rather than a string holding one. No effect ever applies: the two callable arms
+// are reads.
+func (ds *dataset) callHostFunction(ctx context.Context, fn *vocabulary.Function, args any) (any, int, error) {
+	m, _ := args.(map[string]any)
+	var out string
+	var ok bool
+	switch fn.Identity() {
+	case vocabulary.HostFunctionGraphQL:
+		out, ok = ds.runGraphQLTool(ctx, substrate.Actor(fn.Actor()), ds, m, false)
+	case vocabulary.HostFunctionQuery:
+		// One call, the default row budget: a token needs no kind allowlist, but a
+		// list still answers a page rather than the repository.
+		out, ok, _ = ds.runQueryTool(ctx, queryScope{rows: vocabulary.DefaultReadRows}, m)
+	default:
+		return nil, 0, fmt.Errorf("%w: %s is scoped by the CALLING AGENT's grants — its writes are held to that agent's effective emit, and a direct call has none: declare an agent carrying %s as a tool and call the agent",
+			substrate.ErrForbidden, fn.Identity(), fn.Identity())
+	}
+	var v any
+	if err := json.Unmarshal([]byte(out), &v); err != nil {
+		return nil, 0, fmt.Errorf("%w: %s: %w", substrate.ErrValidation, fn.Identity(), err)
+	}
+	if !ok {
+		return nil, 0, fmt.Errorf("%w: %s: %s", substrate.ErrValidation, fn.Identity(), out)
+	}
+	return v, 0, nil
+}
+
 const (
 	// maxPrepareBatch caps how many function bodies ONE admission batch warms.
 	// The 32 MiB schema request can carry hundreds of small dependency-declaring
@@ -461,13 +523,17 @@ const (
 // provision (network + resolve) is ever in flight per batch — the concurrent-
 // uv-process cap the smallest fix asks for is satisfied by construction.
 func (ds *dataset) prepareFunctions(ctx context.Context, reg *vocabulary.Registry, fns []*vocabulary.Function) error {
-	if len(fns) > maxPrepareBatch {
+	// A host function has nothing to compile or register — the engine is its
+	// body — so it drops out BEFORE the count cap: the bound exists to stop
+	// serialized uv resolves, and a declaration that starts none is not one.
+	bodies := hostFunctionsRemoved(fns)
+	if len(bodies) > maxPrepareBatch {
 		return fmt.Errorf("%w: an admission batch prepares at most %d function bodies, got %d — split the apply into smaller batches",
-			substrate.ErrValidation, maxPrepareBatch, len(fns))
+			substrate.ErrValidation, maxPrepareBatch, len(bodies))
 	}
 	ctx, cancel := context.WithTimeout(ctx, prepareBatchBudget)
 	defer cancel()
-	for _, fn := range fns {
+	for _, fn := range bodies {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("%w: function preparation exceeded the %s admission budget before %s",
 				substrate.ErrValidation, prepareBatchBudget, fn.Identity())
@@ -486,7 +552,7 @@ func (ds *dataset) prepareFunctions(ctx context.Context, reg *vocabulary.Registr
 // toolchain change, a corrupted cache) is a real outage in the making, so a
 // failure surfaces as an ERROR naming what will park, not a shrug.
 func (ds *dataset) warmFunctions() {
-	fns := ds.registry().Functions()
+	fns := hostFunctionsRemoved(ds.registry().Functions())
 	if len(fns) == 0 {
 		return
 	}
@@ -507,11 +573,28 @@ func (ds *dataset) warmFunctions() {
 // drop out here with everything else the last apply removed. A DISABLED
 // bundle's functions stay registered — disable only refuses invocation.
 // Build-cache artifacts stay (immutable, shared; eviction is a later policy).
+// A host function is absent from the live set for the same reason it is absent
+// from warm and prepare: it never registered anything, so there is no state of
+// its own to retire — and including it would name a spec with no body, which
+// Reconcile would then have to keep alive.
 func (ds *dataset) reconcileRunner(ctx context.Context) {
-	fns := ds.registry().Functions()
+	fns := hostFunctionsRemoved(ds.registry().Functions())
 	live := make([]runner.Spec, 0, len(fns))
 	for _, fn := range fns {
 		live = append(live, ds.runnerSpec(fn))
 	}
 	runner.Shared.Reconcile(ctx, ds.Repository().ID, live)
+}
+
+// hostFunctionsRemoved keeps the functions that HAVE a body: the three runner
+// surfaces (prepare, warm, reconcile) all speak in runner specs, and a host
+// function has nothing to put in one.
+func hostFunctionsRemoved(fns []*vocabulary.Function) []*vocabulary.Function {
+	out := make([]*vocabulary.Function, 0, len(fns))
+	for _, fn := range fns {
+		if !fn.IsHost() {
+			out = append(out, fn)
+		}
+	}
+	return out
 }

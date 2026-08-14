@@ -465,7 +465,19 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	}
 	var rebuilt []*vocabulary.Authority
 	for _, aname := range sortedKeys(byAuthority) {
-		gs, err := vocabulary.BuildAuthorities(byAuthority[aname], vocabulary.SourceInstalled)
+		// An authority is rebuilt with the ORIGIN ITS STORED ROWS CLAIM, exactly as
+		// storedAuthorities builds it at open. Two things read the origin — the row
+		// the projection writes back, and the one loader rule keyed on it
+		// (`runtime: host`, which only a shipped declaration may name) — so
+		// rebuilding shipped vocabulary as `installed` would both re-stamp its
+		// authority row and refuse core's own host functions the moment any batch
+		// touched core. An authority nobody has yet is the writer's, hence
+		// installed.
+		source := vocabulary.SourceInstalled
+		if cur, ok := current.AuthorityByName(aname); ok && cur.Source == vocabulary.SourceBuiltin {
+			source = vocabulary.SourceBuiltin
+		}
+		gs, err := vocabulary.BuildAuthorities(byAuthority[aname], source)
 		if err != nil {
 			var ve *substrate.ValidationError
 			if errors.As(err, &ve) {

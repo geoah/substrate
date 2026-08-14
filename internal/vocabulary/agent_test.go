@@ -60,13 +60,78 @@ func loadAgAuthority(t *testing.T, agData string) (*vocabulary.Registry, error) 
 	return vocabulary.LoadFS(fsys)
 }
 
+// coreHostStub is the minimum of core an agent fixture needs to NAME a built-in.
+// The four built-ins are `runtime: host` function records, so
+// `{callable: core.substrate.reamde.dev/graphql}` resolves against the registry
+// like any other callable — a fixture declaring no core cannot name one, which is
+// exactly the refusal a real repository gets for a function nobody installed.
+// (`host` is admissible here because LoadFS builds `builtin`.)
+const coreHostStub = `kind: core.substrate.reamde.dev/authority
+metadata:
+  id: core.substrate.reamde.dev
+data:
+  version: v1alpha1
+---
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/recordpatchrequest
+data:
+  authority: core.substrate.reamde.dev
+  names: {singular: recordpatchrequest, plural: recordpatchrequests}
+  properties:
+    op: {type: string}
+---
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: core.substrate.reamde.dev/query
+data:
+  authority: core.substrate.reamde.dev
+  description: reads records under the caller's allowlist
+  runtime: host
+---
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: core.substrate.reamde.dev/graphql
+data:
+  authority: core.substrate.reamde.dev
+  description: reads the whole repository through GraphQL
+  runtime: host
+---
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: core.substrate.reamde.dev/mutate
+data:
+  authority: core.substrate.reamde.dev
+  description: writes through GraphQL under the calling agent's emit
+  runtime: host
+---
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: core.substrate.reamde.dev/propose
+data:
+  authority: core.substrate.reamde.dev
+  description: lands a reviewed change request
+  runtime: host
+  emit: [core.substrate.reamde.dev/recordpatchrequest]
+`
+
+// loadAgAuthorityWithCore is loadAgAuthority with the core stub beside it, for
+// the fixtures that name a built-in.
+func loadAgAuthorityWithCore(t *testing.T, agData string) (*vocabulary.Registry, error) {
+	t.Helper()
+	fsys := fstest.MapFS{
+		"ag.example.com/all.yaml":             &fstest.MapFile{Data: []byte(agData)},
+		"core.substrate.reamde.dev/core.yaml": &fstest.MapFile{Data: []byte(coreHostStub)},
+	}
+	return vocabulary.LoadFS(fsys)
+}
+
 func TestAgentLoads(t *testing.T) {
 	r, err := loadAgAuthority(t, agAuthority(`  description: classifies widgets
   prompt: You classify widgets.
   provider: default
   model: claude-opus-5
   tools:
-    - {builtin: propose}
     - {callable: ag.example.com/annotate, name: markWidget, description: marks one widget}
   agents: [ag.example.com/sorter]
   budgets: {maxTurns: 4, depth: 2}
@@ -120,14 +185,18 @@ func TestAgentLoadsWithoutCoreEmit(t *testing.T) {
 
 // The graphql built-in needs no grant beyond its declaration (it is read-only
 // and repository-wide by design), mutate rides the emit allowlist, and
-// subagentOnly is an ordinary parsed flag: one manifest proves all three.
+// subagentOnly is an ordinary parsed flag: one manifest proves all three. The
+// built-ins are named BY IDENTITY, and the derived Builtin word is what the
+// grant checks and the loop's dispatch read off the resolved entry.
 func TestAgentGraphQLBuiltinsAndSubagentOnly(t *testing.T) {
-	r, err := loadAgAuthority(t, agAuthority(`  description: reads and writes the graph
+	r, err := loadAgAuthorityWithCore(t, agAuthority(`  description: reads and writes the graph
   prompt: You tend widgets.
   provider: default
   model: claude-opus-5
   subagentOnly: true
-  tools: [{builtin: graphql}, {builtin: mutate}]
+  tools:
+    - {callable: core.substrate.reamde.dev/graphql}
+    - {callable: core.substrate.reamde.dev/mutate}
   emit: [ag.example.com/widget]
 `))
 	if err != nil {
@@ -194,19 +263,19 @@ func TestAgentRefusals(t *testing.T) {
   prompt: p
   provider: default
   model: claude-opus-5
-  tools: [{builtin: query}]
+  tools: [{callable: core.substrate.reamde.dev/query}]
 `, "query needs data.reads"},
 		{"propose without emit", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
-  tools: [{builtin: propose}]
+  tools: [{callable: core.substrate.reamde.dev/propose}]
 `, "propose needs core.substrate.reamde.dev/recordpatchrequest in data.emit"},
 		{"mutate without emit", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
-  tools: [{builtin: mutate}]
+  tools: [{callable: core.substrate.reamde.dev/mutate}]
 `, "mutate needs data.emit"},
 		{"self sub-agent", `  description: d
   prompt: p
@@ -239,13 +308,14 @@ func TestAgentRefusals(t *testing.T) {
   provider: default
   model: claude-opus-5
   tools: [frobnicate]
-`, `"frobnicate" is a bare string — an entry names its arm`},
-		{"unknown builtin", `  description: d
+`, `"frobnicate" is a bare string — an entry names its callable`},
+		// THE TOMBSTONE: the `builtin:` arm is deleted, whatever it named.
+		{"the builtin arm", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
-  tools: [{builtin: frobnicate}]
-`, "builtin \"frobnicate\" — one of query, propose, graphql, mutate"},
+  tools: [{builtin: query}]
+`, `builtin "query" is deleted — the built-ins are function records: {callable: core.substrate.reamde.dev/query}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

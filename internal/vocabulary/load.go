@@ -153,7 +153,7 @@ func ParseManifest(m Manifest) (*Authority, error) {
 // BuildAuthorities turns a document stream into authorities, one per declared
 // `data.authority`. Every problem in every document is reported at once.
 func BuildAuthorities(docs []Document, source string) ([]*Authority, error) {
-	l := &loader{}
+	l := &loader{source: source}
 	buckets := map[string]*authorityDocs{}
 	var order []string
 	bucket := func(authority string) *authorityDocs {
@@ -254,6 +254,14 @@ type authorityDocs struct {
 type loader struct {
 	authority *Authority
 	problems  []string
+	// source is the origin BuildAuthorities was called with, before the
+	// vocabulary-bundle override below promotes an individual authority to
+	// `builtin`. One rule reads it — `runtime: host`, which only the shipped
+	// build may declare (function.go) — and it reads the CALL's source on
+	// purpose: a vocabulary bundle is shipped VOCABULARY however it arrived, but
+	// it is still installed, and the engine implements only what the engine
+	// ships.
+	source string
 }
 
 func (l *loader) errf(format string, args ...any) {
@@ -1021,6 +1029,14 @@ const camelRule = "camelCase ([a-z][a-zA-Z0-9]*)"
 // documentation, so it is one short sentence — the manifest's comments stay
 // the long-form home.
 const maxDescription = 200
+
+// maxCallableDescription bounds a FUNCTION's description, and a function's is
+// not a tooltip either: it is the model-facing tool CARD, the whole text an LLM
+// reads before deciding to call. The four host functions' cards teach an entire
+// surface — the `graphql` one names every root, the batching advice and the two
+// refusals — and they used to be Go string literals with no bound at all. Still
+// one line: a folded scalar (`>-`) is how a declaration wraps one.
+const maxCallableDescription = 1000
 
 // maxKindDescription bounds a KIND's description. A kind's is not a tooltip:
 // the console heads the kind's page with it, and a reader arriving at
