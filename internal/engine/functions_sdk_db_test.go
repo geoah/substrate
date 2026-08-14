@@ -385,3 +385,127 @@ def main(input, host):
 		t.Fatalf("stale-version put: want ErrConflict, got %v", err)
 	}
 }
+
+func TestSDKProposeStagesChangeRequest(t *testing.T) {
+	t.Parallel()
+	// propose is sugar over the ordinary put effect: the body names a target, a
+	// diff and its reason, and what lands is a change request the OWNER decides
+	// on — nothing on the target until then. All three ops travel the same
+	// helper, and the function's emit names the request kind alone: a proposing
+	// body needs no write grant on what it proposes about.
+	ds, ops := newFnDataset(t, nil, pyFn("proposer", map[string]any{}, []any{requestKind}, `
+def main(input, host):
+    a = input["args"]
+    host.effects.propose(a["id"], "tasks.substrate.reamde.dev/task", a["target"],
+                         diff=a.get("diff"), op=a.get("op", "patch"),
+                         rationale=a.get("rationale"))
+    return {}
+`))
+	ctx := context.Background()
+	fn := fnAuthority + "/proposer"
+
+	task := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: taskType, ID: "t-proposed", Properties: map[string]any{"title": "draft"},
+	})
+
+	// A patch proposal: the request carries the target edge, the diff and the
+	// rationale, and the task is untouched until the owner accepts.
+	if _, _, err := ops.CallFunction(ctx, fn, map[string]any{
+		"id": "req-sdk-patch", "target": task.ID, "rationale": "the transcript says Friday",
+		"diff": map[string]any{"description": "due Friday"},
+	}); err != nil {
+		t.Fatalf("propose patch: %v", err)
+	}
+	req := mustGet(t, ds, requestKind, "req-sdk-patch")
+	if req.Properties["op"] != "patch" || req.Properties["rationale"] != "the transcript says Friday" {
+		t.Fatalf("proposed request: %+v", req.Properties)
+	}
+	if req.Properties["decision"] != "proposed" {
+		t.Fatalf("request is not proposed: %+v", req.Properties)
+	}
+	if got := mustGet(t, ds, taskType, task.ID); got.Properties["description"] != nil {
+		t.Fatalf("a proposal wrote the target: %+v", got.Properties)
+	}
+	if err := accept(t, ds, "req-sdk-patch"); err != nil {
+		t.Fatalf("accept the proposed patch: %v", err)
+	}
+	if got := mustGet(t, ds, taskType, task.ID); got.Properties["description"] != "due Friday" {
+		t.Fatalf("the accepted proposal did not apply: %+v", got.Properties)
+	}
+
+	// A create proposal names the kind and id the accept would mint, so the
+	// record is born only once somebody agrees.
+	if _, _, err := ops.CallFunction(ctx, fn, map[string]any{
+		"id": "req-sdk-create", "op": "create", "target": "t-minted",
+		"diff": map[string]any{"title": "Follow up"},
+	}); err != nil {
+		t.Fatalf("propose create: %v", err)
+	}
+	if _, err := ds.Get(ctx, taskType, "t-minted"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("a create proposal minted the record early: %v", err)
+	}
+	if err := accept(t, ds, "req-sdk-create"); err != nil {
+		t.Fatalf("accept the proposed create: %v", err)
+	}
+	if got := mustGet(t, ds, taskType, "t-minted"); got.Properties["title"] != "Follow up" {
+		t.Fatalf("the accepted create did not mint: %+v", got.Properties)
+	}
+
+	// A delete proposal carries no diff, and tombstones on accept.
+	if _, _, err := ops.CallFunction(ctx, fn, map[string]any{
+		"id": "req-sdk-delete", "op": "delete", "target": "t-minted",
+	}); err != nil {
+		t.Fatalf("propose delete: %v", err)
+	}
+	if err := accept(t, ds, "req-sdk-delete"); err != nil {
+		t.Fatalf("accept the proposed delete: %v", err)
+	}
+	if got := mustGet(t, ds, taskType, "t-minted"); got.DeletedAt == nil {
+		t.Fatalf("the accepted delete did not tombstone: %+v", got)
+	}
+
+	// The builder validates locally: a patch proposal with no diff is a body
+	// error, not an engine park.
+	if _, _, err := ops.CallFunction(ctx, fn, map[string]any{
+		"id": "req-sdk-empty", "target": task.ID,
+	}); err == nil || !strings.Contains(err.Error(), "needs a diff") {
+		t.Fatalf("a diffless patch proposal: %v", err)
+	}
+}
+
+func TestSDKProposeGoRuntime(t *testing.T) {
+	t.Parallel()
+	// The Go mirror, compiled and run for real: the same helper, the same
+	// request, the same accept.
+	ds, ops := newFnDataset(t, nil, goFn("goproposer", map[string]any{}, []any{requestKind}, `
+import "substratefn.local/substratefn"
+
+func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error) {
+	a, _ := in.Args.(map[string]any)
+	host.Effects.Propose(substratefn.ProposeEffect{
+		ID: "req-go", TargetKind: "tasks.substrate.reamde.dev/task",
+		TargetID:  a["target"].(string),
+		Diff:      map[string]any{"description": "from Go"},
+		Rationale: "the mirror",
+	})
+	return &substratefn.Result{}, nil
+}
+`))
+	ctx := context.Background()
+	task := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: taskType, ID: "t-go-proposed", Properties: map[string]any{"title": "draft"},
+	})
+	if _, _, err := ops.CallFunction(ctx, fnAuthority+"/goproposer", map[string]any{"target": task.ID}); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	req := mustGet(t, ds, requestKind, "req-go")
+	if req.Properties["rationale"] != "the mirror" {
+		t.Fatalf("go proposal: %+v", req.Properties)
+	}
+	if err := accept(t, ds, "req-go"); err != nil {
+		t.Fatalf("accept the go proposal: %v", err)
+	}
+	if got := mustGet(t, ds, taskType, task.ID); got.Properties["description"] != "from Go" {
+		t.Fatalf("the accepted go proposal did not apply: %+v", got.Properties)
+	}
+}

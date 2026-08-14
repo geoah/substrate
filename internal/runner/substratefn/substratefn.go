@@ -737,6 +737,85 @@ func (e *Effects) Split(kind, mergeID string) *Staged {
 	return e.add(Effect{Action: "split", Kind: kind, Merge: mergeID})
 }
 
+// KindRecordPatchRequest is the kind a proposal lands as. Spelled out here
+// because this file is embedded into a stdlib-only module and cannot import the
+// vocabulary package that declares it.
+const KindRecordPatchRequest = "core.substrate.reamde.dev/recordpatchrequest"
+
+// ProposeEffect stages a REVIEWED change instead of writing one: Op is patch
+// (the default when empty), create or delete; TargetKind/TargetID name the
+// record the change is about — the existing target of a patch or delete, the
+// record a create would mint; Diff carries the proposed values, wrapped under
+// `properties` or bare (a plain property map, which the engine wraps); and
+// Rationale is why. ID is the REQUEST's own id, required like every other
+// effect id, so a replayed delivery re-proposes the same request instead of a
+// second one.
+type ProposeEffect struct {
+	ID         string
+	Op         string
+	TargetKind string
+	TargetID   string
+	Diff       map[string]any
+	Rationale  string
+}
+
+// Propose stages the put of a change request the owner decides on: no write
+// lands until somebody accepts it. It is ordinary sugar — the effect is a put
+// of KindRecordPatchRequest, held to `capabilities.emit` by that kind like any
+// other, so a proposing function names the request kind in its emit and needs
+// nothing else. A patch or delete points at its target through the request's
+// `target` edge; a create names targetKind/targetId, because the record it
+// would mint does not exist yet.
+func (e *Effects) Propose(p ProposeEffect) *Staged {
+	op := p.Op
+	if op == "" {
+		op = "patch"
+	}
+	if op != "patch" && op != "create" && op != "delete" {
+		return e.fail(fmt.Errorf("effects.propose: op %q is not patch, create or delete", p.Op))
+	}
+	if err := validID("propose", "id", p.ID); err != nil {
+		return e.fail(err)
+	}
+	if p.TargetKind == "" {
+		return e.fail(fmt.Errorf("effects.propose: targetKind is required — a proposal names the kind it is about"))
+	}
+	if err := validKind("propose", p.TargetKind); err != nil {
+		return e.fail(err)
+	}
+	if err := validID("propose", "targetId", p.TargetID); err != nil {
+		return e.fail(err)
+	}
+	if op == "delete" {
+		if len(p.Diff) > 0 {
+			return e.fail(fmt.Errorf("effects.propose: op delete proposes no values — drop the diff or propose a patch"))
+		}
+	} else if len(p.Diff) == 0 {
+		return e.fail(fmt.Errorf("effects.propose: op %s needs a diff — name at least one property to change", op))
+	}
+	diff, err := cloneMap("propose", "diff", p.Diff)
+	if err != nil {
+		return e.fail(err)
+	}
+	props := map[string]any{"op": op}
+	if p.Rationale != "" {
+		props["rationale"] = p.Rationale
+	}
+	if diff != nil {
+		props["diff"] = diff
+	}
+	var edges map[string]any
+	if op == "create" {
+		props["targetKind"], props["targetId"] = p.TargetKind, p.TargetID
+	} else {
+		edges = map[string]any{"target": map[string]any{"kind": p.TargetKind, "id": p.TargetID}}
+	}
+	return e.add(Effect{
+		Action: "put", Kind: KindRecordPatchRequest, ID: p.ID,
+		Properties: props, Edges: edges,
+	})
+}
+
 // --- shared builder validation + JSON snapshotting --------------------------
 
 func validKind(action, s string) error {

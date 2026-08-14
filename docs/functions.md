@@ -414,6 +414,21 @@ maps through JSON, so a mistake is a clear body error rather than an engine
 park. The action needs no checking: it is the method you called. The engine
 stays authoritative for the emit ceiling and kind admission.
 
+**Proposing instead of writing.** `host.effects.propose(id, target_kind,
+target_id, diff?, op?, rationale?)` (`host.Effects.Propose(substratefn.ProposeEffect{…})`
+in Go) stages a change the **owner** decides on rather than one that lands: the
+effect is an ordinary put of a
+`core.substrate.reamde.dev/recordpatchrequest`, and accepting it is what applies
+the change. `id` is the request's own id, so a replayed delivery re-proposes the
+same request instead of a second one; `op` is `patch` (the default), `create` or
+`delete`; `target_kind`/`target_id` name the record the change is about — the
+existing target of a patch or delete, the record a create would mint; and `diff`
+carries the proposed values, wrapped under `properties` or as a plain property
+map the engine wraps. A proposing function names the **request** kind in its
+`emit` and nothing else: it is not writing the target, it is asking. The diff is
+validated against the target kind at admission, so a malformed proposal is a
+refused write the delivery parks on, never a request the owner cannot accept.
+
 **One mode per invocation.** A body **either** returns an explicit `effects`
 list **or** stages on the builder, never both. The two apply orders are
 unrelated (returned first, then staged) and could reverse writes or

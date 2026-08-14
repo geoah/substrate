@@ -176,6 +176,9 @@ _RE_KIND = re.compile(r"^(?:[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[
 # A relation / declared name: camelCase — schema.ValidCamel.
 _RE_IDENT = re.compile(r"^[a-z][a-zA-Z0-9]*$")
 
+# The kind a proposal lands as: effects.propose stages an ordinary put of one.
+_KIND_RECORDPATCHREQUEST = "core.substrate.reamde.dev/recordpatchrequest"
+
 
 def _slugify(s):
     """Lowercase, then keep ONLY ASCII [a-z0-9] and collapse every other run to
@@ -487,6 +490,49 @@ class Effects:
     def split(self, kind, merge):
         return self._add({"action": "split", "kind": _need_kind("split", kind),
                           "merge": _need_id("split", "merge", merge)})
+
+    def propose(self, id, target_kind, target_id, diff=None, op="patch", rationale=None):
+        """Stage a REVIEWED change instead of writing one: the put of a change
+        request the owner decides on, so nothing lands until somebody accepts
+        it. `id` is the request's own id (a replayed delivery re-proposes the
+        same request, never a second one); op is patch (the default), create or
+        delete; target_kind/target_id name the record the change is about — the
+        existing target of a patch or delete, the record a create would mint;
+        `diff` carries the proposed values, wrapped under "properties" or as a
+        plain property map the engine wraps. Ordinary sugar: the effect is a put
+        of the request kind, so a proposing function names that kind in its
+        emit and needs nothing else."""
+        if op not in ("patch", "create", "delete"):
+            raise ValueError("effects.propose: op %r is not patch, create or delete" % op)
+        rid = _need_id("propose", "id", id)
+        if not isinstance(target_kind, str) or target_kind == "":
+            raise ValueError(
+                "effects.propose: target_kind is required — a proposal names the kind it is about")
+        _need_kind("propose", target_kind)
+        _need_id("propose", "targetId", target_id)
+        if op == "delete":
+            if diff:
+                raise ValueError(
+                    "effects.propose: op delete proposes no values — drop the diff or propose a patch")
+        elif not diff:
+            raise ValueError(
+                "effects.propose: op %s needs a diff — name at least one property to change" % op)
+        props = {"op": op}
+        if rationale is not None:
+            if not isinstance(rationale, str):
+                raise ValueError("effects.propose: rationale is a string, got %s"
+                                 % type(rationale).__name__)
+            props["rationale"] = rationale
+        d = _opt_map("propose", "diff", diff)
+        if d is not None:
+            props["diff"] = d
+        ef = {"action": "put", "kind": _KIND_RECORDPATCHREQUEST, "id": rid,
+              "properties": props}
+        if op == "create":
+            props["targetKind"], props["targetId"] = target_kind, target_id
+        else:
+            ef["edges"] = {"target": {"kind": target_kind, "id": target_id}}
+        return self._add(ef)
 
 
 def _as_kinds(kinds):
