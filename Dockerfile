@@ -10,9 +10,13 @@
 # The console is web/console (React + Vite + shadcn/ui + Tailwind), a
 # self-contained app with only an `@`→src alias — no workspace package to
 # stage. dist/ is arch-independent; build it once on the native arch, never qemu.
-FROM --platform=$BUILDPLATFORM node:22-alpine AS web
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web
 WORKDIR /web/console
-RUN corepack enable
+# Node 25 dropped corepack from the distribution, so node:26-alpine does not
+# ship one. It is installed from npm rather than replaced by a `pnpm@x` install
+# so that web/console/package.json's `packageManager` stays the one place the
+# pnpm version is pinned.
+RUN npm install --global corepack@latest && corepack enable
 COPY web/console/package.json web/console/pnpm-lock.yaml* web/console/pnpm-workspace.yaml* ./
 RUN corepack prepare --activate && pnpm install --frozen-lockfile
 COPY web/console/ ./
@@ -55,7 +59,7 @@ FROM golang:1.26-alpine AS gotoolchain
 # optionally pre-populate uv's cache with the common provider SDKs
 # (google-api-python-client, requests, …) via `uv cache` — a documented cache
 # warm, NOT a hard dependency: nothing in the base image imports them.
-FROM alpine:3.21
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata python3 uv
 
 # The runner spawns bundle code as child processes, and NONE of it needs root.
