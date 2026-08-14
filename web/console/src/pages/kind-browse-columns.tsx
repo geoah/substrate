@@ -8,7 +8,7 @@
  * descriptions on the headers, declared edges as HoverCard peeks, `updated`
  * on the right. Rule 6: the first and last columns carry the page gutter. */
 
-import type { ColumnDef } from "@tanstack/react-table"
+import type { DataTableColumn } from "@/components/data-table/data-table"
 
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
 import { RecordPeek } from "@/components/record-peek"
@@ -114,7 +114,7 @@ function propertyCell(prop: DeclaredProperty, value: unknown) {
  *                      today — LONG_KINDS — but the vocabulary is complete)
  */
 type PropertySizing = Pick<
-  NonNullable<ColumnDef<SubstrateRecord, unknown>["meta"]>,
+  NonNullable<DataTableColumn<SubstrateRecord>["meta"]>,
   "width" | "size"
 >
 
@@ -138,8 +138,8 @@ function propertySizing(prop: DeclaredProperty): PropertySizing {
 export function buildColumns(
   kind: KindInfo,
   kinds: KindInfo[]
-): ColumnDef<SubstrateRecord, unknown>[] {
-  const columns: ColumnDef<SubstrateRecord, unknown>[] = []
+): DataTableColumn<SubstrateRecord>[] {
+  const columns: DataTableColumn<SubstrateRecord>[] = []
 
   // title — always first, always sortable, never hidden (the row's identity).
   columns.push({

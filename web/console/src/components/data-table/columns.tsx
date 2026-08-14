@@ -8,10 +8,11 @@
  * compose the ChangeRow factories; anything with a stamp or an actor uses
  * the generic ones. */
 
-import type { ColumnDef } from "@tanstack/react-table"
+import type { RowData } from "@tanstack/react-table"
 import { Link } from "@tanstack/react-router"
 
 import { ActorChip } from "@/components/actor-chip"
+import type { DataTableColumn } from "@/components/data-table/data-table"
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
 import type { ChangeRow, KindInfo } from "@/lib/api/types"
 import { relativeTime, shortDate, shortTime, tableDateTime } from "@/lib/format"
@@ -42,7 +43,7 @@ export function timeText(
     : `${day} ${stamp}`
 }
 
-export function timeColumn<T>(opts: {
+export function timeColumn<T extends RowData>(opts: {
   id: string
   title?: string
   iso: (row: T) => string | undefined
@@ -51,7 +52,7 @@ export function timeColumn<T>(opts: {
   align?: "left" | "right"
   sortable?: boolean
   description?: string
-}): ColumnDef<T, unknown> {
+}): DataTableColumn<T> {
   const voice = opts.voice ?? "relative"
   const title = opts.title ?? opts.id
   return {
@@ -94,12 +95,12 @@ export function timeColumn<T>(opts: {
 
 // ── actor ───────────────────────────────────────────────────────────────────
 
-export function actorColumn<T>(opts: {
+export function actorColumn<T extends RowData>(opts: {
   id?: string
   title?: string
   actor: (row: T) => string | undefined
   width?: number
-}): ColumnDef<T, unknown> {
+}): DataTableColumn<T> {
   const id = opts.id ?? "actor"
   const title = opts.title ?? "actor"
   return {
@@ -183,7 +184,7 @@ export function ChangeRecordLink({
 export function changeTimeColumn(opts?: {
   voice?: TimeVoice
   width?: number
-}): ColumnDef<ChangeRow, unknown> {
+}): DataTableColumn<ChangeRow> {
   return timeColumn<ChangeRow>({
     id: "time",
     iso: (row) => row.ts,
@@ -194,7 +195,7 @@ export function changeTimeColumn(opts?: {
 
 export function changeActorColumn(opts?: {
   width?: number
-}): ColumnDef<ChangeRow, unknown> {
+}): DataTableColumn<ChangeRow> {
   return actorColumn<ChangeRow>({
     actor: (row) => row.actor,
     width: opts?.width,
@@ -204,7 +205,7 @@ export function changeActorColumn(opts?: {
 /** The op said as its plain verb — created/updated/linked/merged/… */
 export function changeOpColumn(opts?: {
   width?: number
-}): ColumnDef<ChangeRow, unknown> {
+}): DataTableColumn<ChangeRow> {
   return {
     id: "action",
     accessorFn: (row) => verbOf(row),
@@ -224,7 +225,7 @@ export function changeOpColumn(opts?: {
 export function changeRecordColumn(
   kinds: KindInfo[],
   opts?: { width?: number }
-): ColumnDef<ChangeRow, unknown> {
+): DataTableColumn<ChangeRow> {
   return {
     id: "record",
     accessorFn: (row) => row.recordId,
@@ -246,7 +247,7 @@ export function changeRecordColumn(
 
 export function changeKindColumn(opts?: {
   width?: number
-}): ColumnDef<ChangeRow, unknown> {
+}): DataTableColumn<ChangeRow> {
   return {
     id: "kind",
     accessorFn: (row) => splitKind(row.kind).name,
@@ -277,7 +278,7 @@ export function changeKindColumn(opts?: {
 
 export function changeAuthorityColumn(opts?: {
   width?: number
-}): ColumnDef<ChangeRow, unknown> {
+}): DataTableColumn<ChangeRow> {
   return {
     id: "authority",
     accessorFn: (row) => splitKind(row.kind).authority,
@@ -308,7 +309,7 @@ export function changeAuthorityColumn(opts?: {
 /** What the row did, in the summary voice (`changeSummary`) — the feed's
  * designated absorber (weight 2, no cap): leftover width lands here, and the
  * text truncates only at the column boundary with the full value on hover. */
-export function changeSummaryColumn(): ColumnDef<ChangeRow, unknown> {
+export function changeSummaryColumn(): DataTableColumn<ChangeRow> {
   return {
     id: "summary",
     accessorFn: (row) => changeSummary(row),

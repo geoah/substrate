@@ -15,7 +15,7 @@
 
 import { useMemo, useState } from "react"
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
-import type { ColumnDef } from "@tanstack/react-table"
+import type { DataTableColumn } from "@/components/data-table/data-table"
 import { HistoryIcon, PlusIcon } from "lucide-react"
 
 import { changeActorColumn, timeColumn } from "@/components/data-table/columns"
@@ -45,7 +45,7 @@ const RAIL_PAGE = 25
 /** time, actor, action — the rail's compact vocabulary. The action cell
  * reads like the rest of the console: a plain verb, the touched-property
  * count, and the former id when the row predates a merge. */
-function activityColumns(recordId: string): ColumnDef<ChangeRow, unknown>[] {
+function activityColumns(recordId: string): DataTableColumn<ChangeRow>[] {
   return [
     timeColumn<ChangeRow>({
       id: "time",

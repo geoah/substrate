@@ -5,8 +5,9 @@
  * machinery); Reset returns the surface's own defaults and clears the store. */
 
 import { ChevronDownIcon, ChevronUpIcon, Settings2Icon } from "lucide-react"
-import type { Table as TanstackTable } from "@tanstack/react-table"
+import type { RowData } from "@tanstack/react-table"
 
+import type { DataTableInstance } from "@/components/data-table/data-table"
 import { Button } from "@/components/ui/button"
 import {
   Popover,
@@ -16,17 +17,17 @@ import {
 import { columnVisibilityOf } from "@/lib/table-prefs"
 import { cn } from "@/lib/utils"
 
-interface DataTableViewOptionsProps<TData> {
-  table: TanstackTable<TData>
+interface DataTableViewOptionsProps<TData extends RowData> {
+  table: DataTableInstance<TData>
   /** Icon-only trigger for tight toolbars (the record rails). */
   compact?: boolean
 }
 
-export function DataTableViewOptions<TData>({
+export function DataTableViewOptions<TData extends RowData>({
   table,
   compact,
 }: DataTableViewOptionsProps<TData>) {
-  const order = table.getState().columnOrder
+  const order = table.state.columnOrder
   const columns = order
     .map((id) => table.getColumn(id))
     .filter((c): c is NonNullable<typeof c> => Boolean(c))
@@ -37,7 +38,7 @@ export function DataTableViewOptions<TData>({
     order.some((id, i) => id !== naturalIds[i]) ||
     columns.some((c) => c.getIsVisible() === defaultHidden.includes(c.id)) ||
     // a drag-resized column counts too — Reset clears sizing overrides.
-    Object.keys(table.getState().columnSizing).length > 0
+    Object.keys(table.state.columnSizing).length > 0
 
   function move(id: string, delta: -1 | 1) {
     const at = order.indexOf(id)
