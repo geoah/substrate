@@ -7,8 +7,9 @@ so nothing it does needs an endpoint no other client has.
 
 Signing in is the same exchange [substratectl](substratectl.md) makes: username, password,
 and the current 6-digit code ([users and tokens](auth.md)). The console then
-holds a token exactly like a script does — a session _is_ that token record,
-which is why logging out revokes it. A substrate that is open for registration
+holds a token exactly like a script does: a session is its
+[token record](auth.md#tokens), which is why logging out revokes it. A
+substrate that is open for registration
 also serves a registration page at `/register`, with the invite code as its
 first field.
 
@@ -65,9 +66,9 @@ A record opens on four tabs:
 - **Graph**: what this record points at and what points back, as a tree you
   drill into. Outgoing pointers — edges and reference properties alike — read
   straight off the record; inbound ones are grouped and paged as the API pages
-  them, each group headed by the name the DECLARATION gives that side
+  them, each group headed by the name the **declaration** gives that side
   (`messages · llmmessage`, from `inverse:`) rather than the raw `rel`, which
-  is the relationship as the *other* record spells it. A member expands in
+  is the same link as the *other* record spells it. A member expands in
   place into its own graph, so a thread → its messages → the record a tool
   wrote is three clicks without leaving the page.
 - **Provenance**: which actor wrote each property, and at which
@@ -93,7 +94,7 @@ matcher's evidence, a field-by-field comparison of the two records, and accept
 or reject. Accepting is an ordinary state transition, and performing the merge
 is what that transition does.
 
-## Bundles
+## Registry
 
 The [catalog](bundles-catalog.md): every bundle the binary ships,
 available and installed together, with an Integration badge on the ones that
@@ -124,7 +125,7 @@ whether it is running, settled or failed and expands to the request it sent
 and the response it got, both as formatted JSON. While a run streams, the same
 cards fill in live and are replaced by the stored rows when it settles.
 
-The [`llmprovider`](agents.md#providers) rows are NOT on this page: an agent
+The [`llmprovider`](agents.md#providers) rows are **not** on this page: an agent
 names a provider by id, and that pointer reads on the agent's own record.
 They live under Data → `core.substrate.reamde.dev` → llmproviders, and
 [setting a key](agents.md#setting-or-rotating-the-key) is an ordinary record

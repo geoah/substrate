@@ -11,7 +11,8 @@ API call that completes a task. Start at the
 
 ## Start here
 
-- [Introduction](introduction.md) — scope, vocabulary, and the running example
+- [Understanding the substrate](introduction.md) — scope, vocabulary, and the
+  running example
 - [Terms](terms.md) — one word per thing, and the dead words they replaced
 - [Getting started](getting-started.md) — register, log in, write a record
 
@@ -26,7 +27,7 @@ API call that completes a task. Start at the
 ## The API
 
 - [The API](api.md) — REST, filters, mutations, errors
-- [Users and tokens](auth.md)
+- [Users, tokens, and actors](auth.md)
 - [GraphQL and search](graphql-and-search.md)
 - [The changelog and watch](changelog.md)
 
@@ -34,7 +35,7 @@ API call that completes a task. Start at the
 
 - [Bundles](bundles.md) — installable closures of functions, agents,
   vocabulary, or a provider integration, applied and removed as one unit
-- [Functions and the SDK](functions.md)
+- [Functions and the host SDK](functions.md)
 - [Agents](agents.md) — assistants that read your records and write back
   through the same API; this part is alpha
 - [The bundles catalog](bundles-catalog.md)

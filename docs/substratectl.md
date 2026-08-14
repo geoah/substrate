@@ -1,6 +1,6 @@
 # substratectl
 
-`substratectl` is the command-line client: a kubectl-shaped door onto the
+`substratectl` is the command-line client: kubectl-shaped, speaking the
 [REST surface](api.md). Everything in a repository is a record of a declared
 kind, addressed as `{authority}/{plural}/{id}`, and the CLI mirrors that:
 kinds, get, apply, patch, delete, edit, link, unlink, watch. It lives in the
@@ -33,7 +33,7 @@ at all: `user reset`, `repository list`, `repository inspect`,
 every operator command refuses before touching anything.
 [Running a substrate](operations.md) is where that hat lives.
 
-## The door
+## Registering
 
 `substratectl register` creates a user on a substrate that is open for registration:
 it asks for a TOTP enrollment, prints it once for an authenticator, and hands
@@ -42,15 +42,14 @@ seed and skips the enrollment call, which is what makes an unattended
 registration possible.
 
 Against a substrate that verifies no second factor
-([the dev door](auth.md#the-second-factor-can-be-switched-off-locally)),
+([the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally)),
 `register` and `login` ask for no code and `register` skips the enrollment
 entirely: `substratectl` reads `GET /.well-known/substrate/server.json` first
 and stops asking for something nothing checks.
 
 `substratectl login` presents both factors and mints a token record, which it stores
 as the current context. `substratectl logout` revokes that token record and then
-forgets it — a session _is_ the record, so leaving it alive would leave the
-session alive.
+forgets it, because a session is its [token record](auth.md#tokens).
 
 `substratectl token create --label backup` mints a token for a script or a device and
 prints the secret exactly once; `--expires` takes a duration (`720h`) or an
@@ -131,7 +130,7 @@ and `wake` scans a trigger immediately. Trigger rows are ordinary records, so
 actor, and prints the output. There is no build step: a function is inline
 source on its manifest, so it installs with the ordinary `apply`.
 
-`substratectl bundle list` / `status` report an [bundle](bundles.md)'s computed
+`substratectl bundle list` / `status` report a [bundle](bundles.md)'s computed
 state, and `disable` / `enable` / `uninstall` / `purge` move it through its
 lifecycle; install and upgrade are `substratectl apply` of the closure, and `connect`
 starts the host [OAuth flow](bundles.md#the-oauth-facility) for an account

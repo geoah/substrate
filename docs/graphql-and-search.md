@@ -120,7 +120,7 @@ can threshold rather than trust a rank. On a deployment with no embedder
 configured, hybrid degrades to lexical and `semantic` reports an error rather
 than pretending.
 
-Two honest boundaries. There is no REST search endpoint: filtering is REST's
+There are two honest boundaries. There is no REST search endpoint: filtering is REST's
 job (`?filter=`), searching is the GraphQL query's. And the substrate does
 retrieval only: it returns typed records with scores, and anything generative
 built on top (a RAG loop, an assistant) is a client reading this API like every

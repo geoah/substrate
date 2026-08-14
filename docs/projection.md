@@ -75,9 +75,10 @@ recompute. There are three:
   to replace.
 - **bundle**: installed code. Every write a [function](functions.md) or
   [agent](agents.md) makes through its dispatch holds here.
-- **owner**: you. The three human doors (`api`, `console`, `substratectl`) are
-  declared at this tier, and so is any actor no declaration knows. The moment
-  you type a name into the console, you are the manager of `name`.
+- **owner**: you. The three interactive clients (`api`, `console`,
+  `substratectl`) are declared at this tier, and so is any actor no
+  declaration knows. The moment you type a name into the console, you are the
+  manager of `name`.
 
 **The tier is an explicit attribute of the write context, never an inference
 from the actor's spelling.** A declared actor may carry
@@ -95,7 +96,7 @@ property it follows three rules:
 
 - **Yield.** If the manager's tier is above machine, the recompute leaves the
   value alone and records what it would have written as an **alternative**
-  beside it. Your edit survives the sync, and so does a function's: an
+  beside it. Your edit survives the sync, and so does a function's: a
   bundle write is a visible pin, never a silent freeze.
 - **Select.** Otherwise the latest-updated live source wins (`atomic`) or the
   union of every live source's items lands (`union`), and the manager becomes
@@ -106,7 +107,7 @@ property it follows three rules:
   is deleted. When the provider stops asserting a phone number, it goes; what
   another source still asserts, stays.
 
-### The ledger on the wire
+### Reading provenance: propertyMeta
 
 Single-record reads surface the whole ledger as `propertyMeta`: per property,
 its manager, its tier, when it changed, and the **alternatives**, every live
@@ -220,7 +221,7 @@ Every merge writes a `recordmerge` record: an ordinary record carrying
 `winner` and `loser` edges and a `moved` property recording everything the
 merge moved. That record is what makes the undo possible.
 
-### Ids that never lie
+### Former ids resolve to the winner
 
 Merging means ids move, and a client that cached one must not silently read
 stale data. Three guarantees:
@@ -257,9 +258,9 @@ its own `recordsplit` record, pointing at the merge it undid.
 
 A `recordmergerequest` is the envelope a suggested merge travels in before
 anyone has agreed to it. A function or an app writes one, the owner decides,
-and **accepting it is what performs the merge**. Here is one as the shipped
-duplicate detector writes it, proposing that a second record of Ada is the
-same person:
+and **accepting it is what performs the merge**. Here is one as a
+duplicate detector would write it, proposing that a second record of Ada is
+the same person:
 
 ```yaml
 kind: core.substrate.reamde.dev/recordmergerequest
@@ -307,13 +308,12 @@ The deterministic id does double duty. It dedupes suggestions, and it is the
 re-suggesting it, so a rejected pair stays rejected instead of coming back
 after every sync.
 
-The suggestions come from a shipped [function](functions.md): on every person
-created, it probes for likely duplicates (an exactly shared email address is
-near-certain; strongly overlapping names score by similarity) and emits one
-request per strong candidate, preferring the established record as the winner.
-The owner reviews the queue in the [console](console.md) and accepts or
-rejects, with the matcher's evidence beside a field-by-field comparison of the
-two records. Merging without a request is the same mutation driven directly:
+Nothing ships a duplicate detector today: suggestions come from whatever
+[function](functions.md) or app you install to write them (probing for a
+shared email address, scoring overlapping names, whatever the matcher
+decides), one request per strong candidate. The owner reviews the queue in
+the [console](console.md) and accepts or rejects, with the request's
+rationale beside a field-by-field comparison of the two records. Merging without a request is the same mutation driven directly:
 `merge` over [GraphQL](graphql-and-search.md), or a REST post naming the kind
 and the two ids:
 

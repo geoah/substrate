@@ -22,11 +22,10 @@ Nine kinds declare everything:
 | `core.substrate.reamde.dev/bundle`        | one bundle: the closure it installs as a unit      | [Bundles](bundles.md)                      |
 | `core.substrate.reamde.dev/actor`         | one name writes are attributed to                     | [The API](api.md#actors)                         |
 
-A manifest has exactly four keys. `kind:` is one of the nine above, always a
-core kind whatever authority the document declares into. `metadata:` carries
-the declaration's `id`. `data:` carries the declaration. `status:` is
-server-set and ignored on input, so a document read back out applies straight
-back in. Any other envelope key is a load error.
+A manifest wears the same four-key [envelope](data-model.md#the-envelope) as
+any record. Its `kind:` is one of the nine above, always a core kind whatever
+authority the document declares into, and any other envelope key is a load
+error.
 
 A declaration's id is its declared name. For a `kind` that name is the
 kind reference, and it must equal `<data.authority>/<data.names.singular>`: a
@@ -106,8 +105,8 @@ nothing resolves.
 
 ## Admission
 
-An apply, a generic vocabulary write, and an install all pass the same door:
-**the loader is the validator.** Not a separate validation package, not a
+An apply, a generic vocabulary write, and an install all pass the same
+admission: **the loader is the validator.** Not a separate validation package, not a
 webhook: the rules live where the manifest is parsed. A batch is **one
 transaction, every document admitted or none** (a refusal carries the full
 problem list), and a committed batch is active immediately, no restart
