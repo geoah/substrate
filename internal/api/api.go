@@ -327,6 +327,18 @@ var assetExts = map[string]bool{
 	".map": true, ".wasm": true,
 }
 
+const (
+	// cacheImmutable is for the content-hashed files alone: the URL names that
+	// exact body, so a new build is a new URL rather than a changed one.
+	cacheImmutable = "public, max-age=31536000, immutable"
+	// cacheNever is for index.html and every fallback of it. `no-cache` alone is
+	// not enough: it still permits a CONDITIONAL reuse, and ServeFile's
+	// Last-Modified has one-second resolution, so an index.html replaced within
+	// the same second answers 304 and the tab keeps the dead chunk names this
+	// handler exists to stop serving.
+	cacheNever = "no-store, no-cache"
+)
+
 // spaHandler serves the built web app: a real file as itself, and any other
 // path as index.html so client-side routes deep-link.
 //
@@ -336,32 +348,48 @@ var assetExts = map[string]bool{
 // plain 404 into a MIME-type parse error the app cannot report on, which is
 // exactly how the console's lazy YAML lens used to fail after a deploy.
 func spaHandler(dir string) http.HandlerFunc {
-	index := filepath.Join(dir, "index.html")
+	root := filepath.Clean(dir)
+	if abs, err := filepath.Abs(root); err == nil {
+		root = abs
+	}
+	index := filepath.Join(root, "index.html")
 	return func(w http.ResponseWriter, r *http.Request) {
+		// A URL path never legitimately carries a backslash, and path.Clean does
+		// not read one as a separator: left in, it reaches filepath as one on the
+		// platforms where it IS one, and `/..\..\x.js` walks out of the directory
+		// before the cleaning below has seen a thing.
+		if strings.Contains(r.URL.Path, `\`) {
+			http.NotFound(w, r)
+			return
+		}
 		// ONE canonical path for both the stat and the serve. The two used to
 		// disagree (a cleaned filesystem path decided, the raw URL was served),
 		// and disagreeing decisions is how a handler answers about one file
 		// while serving another.
 		rel := path.Clean("/" + strings.TrimPrefix(r.URL.Path, "/"))
-		file := filepath.Join(dir, filepath.FromSlash(rel))
+		file := filepath.Join(root, filepath.FromSlash(rel))
+		// Confinement is checked BEFORE the stat, not left to ServeFile: an
+		// answer that differs for a file outside the directory is an existence
+		// oracle over the whole filesystem even when no byte of it is served.
+		if file != root && !strings.HasPrefix(file, root+string(filepath.Separator)) {
+			http.NotFound(w, r)
+			return
+		}
 		info, err := os.Stat(file)
 		switch {
 		case err == nil && !info.IsDir():
 			if strings.HasPrefix(rel, assetPrefix) {
-				// Content-hashed by the build, so this URL names this exact body
-				// for as long as it exists: a new build is a new URL, never a
-				// changed one.
-				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+				w.Header().Set("Cache-Control", cacheImmutable)
 			} else {
-				w.Header().Set("Cache-Control", "no-cache")
+				w.Header().Set("Cache-Control", cacheNever)
 			}
 			http.ServeFile(w, r, file)
 		case strings.HasPrefix(rel, assetPrefix) || assetExts[strings.ToLower(path.Ext(rel))]:
 			http.NotFound(w, r)
 		default:
-			// index.html names the current chunk hashes, so a cached copy is a
-			// tab that cannot learn about a deploy: it is revalidated every time.
-			w.Header().Set("Cache-Control", "no-cache")
+			// index.html names the current chunk hashes, so a stored copy is a tab
+			// that cannot learn about a deploy.
+			w.Header().Set("Cache-Control", cacheNever)
 			http.ServeFile(w, r, index)
 		}
 	}
