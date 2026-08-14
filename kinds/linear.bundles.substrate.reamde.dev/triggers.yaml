@@ -14,7 +14,8 @@
 # The first backfill: an account whose OAuth just landed (tokenStatus
 # connected), that wants issues, and that has never synced yet.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: linear-issues-on-connect}
+metadata:
+  id: linear-issues-on-connect
 data:
   properties:
     enabled: true
@@ -32,13 +33,16 @@ data:
           record != null && "tokenStatus" in record.properties && record.properties.tokenStatus
           == "connected" && "enabledIssues" in record.properties && record.properties.enabledIssues
           == true && !("lastSyncedAt" in record.properties)
-    callable: {kind: core.substrate.reamde.dev/function, id: linear.bundles.substrate.reamde.dev/issuessync}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: linear.bundles.substrate.reamde.dev/issuessync
 ---
 # The steady-state re-sync: an hourly tick fires the same function with no
 # envelope record, so the body iterates every connected, issues-enabled
 # account and syncs the ones due by their own syncFrequency.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: linear-issues-scheduled}
+metadata:
+  id: linear-issues-scheduled
 data:
   properties:
     enabled: true
@@ -49,7 +53,9 @@ data:
         # A fixed past anchor, so every occurrence since is well-defined
         # (occurrences compute forward from startsAt).
         startsAt: "2025-01-06T09:00:00Z"
-    callable: {kind: core.substrate.reamde.dev/function, id: linear.bundles.substrate.reamde.dev/issuessync}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: linear.bundles.substrate.reamde.dev/issuessync
 ---
 # The projection: every mirror write flows into the jointly-owned task. The
 # sync's patches are no-op-suppressed, so an idle re-sync produces NO mirror
@@ -57,7 +63,8 @@ data:
 # Linear-owned keys and moves status only on a real upstream transition
 # (bundle.yaml, taskprojection). Deletes carry a null record and are skipped.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: linear-task-projection}
+metadata:
+  id: linear-task-projection
 data:
   properties:
     enabled: true
@@ -66,4 +73,6 @@ data:
         kinds: [linear.bundles.substrate.reamde.dev/issue]
         ops: [create, update]
         when: "record != null"
-    callable: {kind: core.substrate.reamde.dev/function, id: linear.bundles.substrate.reamde.dev/taskprojection}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: linear.bundles.substrate.reamde.dev/taskprojection

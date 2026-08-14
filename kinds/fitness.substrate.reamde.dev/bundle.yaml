@@ -16,13 +16,14 @@ data:
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: fitness.substrate.reamde.dev/fitness}
+metadata:
+  id: fitness.substrate.reamde.dev/fitness
 data:
   authority: fitness.substrate.reamde.dev
   description: >-
     Training: the exercise catalog, workout templates, workouts with their
-    sets and tracker numbers, and the done-or-skipped log against a
-    recurring workout.
+    sets and tracker numbers, and the done-or-skipped log against a recurring
+    workout.
   installs:
     - fitness.substrate.reamde.dev/exercise
     - fitness.substrate.reamde.dev/workout

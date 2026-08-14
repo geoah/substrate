@@ -11,9 +11,9 @@ data:
   authority: core.substrate.reamde.dev
   description: >-
     One turn of an agent thread — the transcript and the tool-call audit,
-    written by the loop as it runs. A user turn is the envelope or the
-    human's message, an assistant turn its prose and tool calls, a tool
-    turn one dispatched call's result.
+    written by the loop as it runs. A user turn is the envelope or the human's
+    message, an assistant turn its prose and tool calls, a tool turn one dispatched
+    call's result.
   # v1alpha3: `thread` became a REFERENCE and tool rows gained `ok`. The
   # declaration carried no version of its own before this, inheriting the
   # authority's — and an unbumped edit is a no-op to the upgrade, so this key

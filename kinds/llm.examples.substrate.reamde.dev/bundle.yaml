@@ -31,12 +31,14 @@
 # `subagentOnly` so the chat list never offers it: it exists to be called.
 # For functions as tools, install the notes example beside this one.
 kind: core.substrate.reamde.dev/authority
-metadata: {id: llm.examples.substrate.reamde.dev}
+metadata:
+  id: llm.examples.substrate.reamde.dev
 data:
   version: v1alpha1
 ---
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: llm.examples.substrate.reamde.dev/llm}
+metadata:
+  id: llm.examples.substrate.reamde.dev/llm
 data:
   authority: llm.examples.substrate.reamde.dev
   description: >-
@@ -54,7 +56,8 @@ data:
 # agent is talked into can land without the owner accepting it. Its emit names
 # exactly one kind, the request type propose emits.
 kind: core.substrate.reamde.dev/agent
-metadata: {id: llm.examples.substrate.reamde.dev/substrate}
+metadata:
+  id: llm.examples.substrate.reamde.dev/substrate
 data:
   authority: llm.examples.substrate.reamde.dev
   description: >-
@@ -94,14 +97,18 @@ data:
   model: claude-sonnet-5
   tools: [graphql, propose]
   emit: [core.substrate.reamde.dev/recordpatchrequest]
-  budgets: {maxTurns: 16, maxToolCalls: 12, deadlineSeconds: 300}
+  budgets:
+    maxTurns: 16
+    maxToolCalls: 12
+    deadlineSeconds: 300
 ---
 # ---- a SUB-AGENT: its own loop, its own budget, its own thread. It declares
 # no emit at all, so nothing it is asked to do can write a record; and it is
 # subagentOnly, so the chat list never offers it while the loop still
 # dispatches it when substrate-echo calls.
 kind: core.substrate.reamde.dev/agent
-metadata: {id: llm.examples.substrate.reamde.dev/substrate-summarizer}
+metadata:
+  id: llm.examples.substrate.reamde.dev/substrate-summarizer
 data:
   authority: llm.examples.substrate.reamde.dev
   description: Summarize a piece of text in one sentence.
@@ -111,12 +118,15 @@ data:
   provider: anthropic
   model: claude-haiku-4-5
   subagentOnly: true
-  budgets: {maxTurns: 2, maxToolCalls: 1}
+  budgets:
+    maxTurns: 2
+    maxToolCalls: 1
 ---
 # ---- the delegation demo: calls the sub-agent, which is a tool call like
 # any other and shows up as one in the console's transcript.
 kind: core.substrate.reamde.dev/agent
-metadata: {id: llm.examples.substrate.reamde.dev/substrate-echo}
+metadata:
+  id: llm.examples.substrate.reamde.dev/substrate-echo
 data:
   authority: llm.examples.substrate.reamde.dev
   description: Answers you, and summarizes what you said through a sub-agent.
@@ -128,4 +138,7 @@ data:
   provider: anthropic
   model: claude-haiku-4-5
   agents: [llm.examples.substrate.reamde.dev/substrate-summarizer]
-  budgets: {maxTurns: 4, maxToolCalls: 2, depth: 2}
+  budgets:
+    maxTurns: 4
+    maxToolCalls: 2
+    depth: 2

@@ -28,13 +28,14 @@ data:
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: commerce.substrate.reamde.dev/commerce}
+metadata:
+  id: commerce.substrate.reamde.dev/commerce
 data:
   authority: commerce.substrate.reamde.dev
   description: >-
-    What was bought: orders whose lifecycle stamps its own shipped and
-    delivered times, the items inside them, and an ISO 4217 currency type
-    kept separate from the amount.
+    What was bought: orders whose lifecycle stamps its own shipped and delivered
+    times, the items inside them, and an ISO 4217 currency type kept separate
+    from the amount.
   installs:
     - commerce.substrate.reamde.dev/currency
     - commerce.substrate.reamde.dev/order

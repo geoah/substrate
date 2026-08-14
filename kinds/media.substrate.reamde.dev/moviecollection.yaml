@@ -5,9 +5,9 @@ metadata:
 data:
   authority: media.substrate.reamde.dev
   description: >-
-    A franchise — what Radarr calls "belongs to collection". Films point
-    at it, and it holds nothing but a name and a blurb: it is a grouping
-    the catalogue asserts, not a shelf you curate.
+    A franchise — what Radarr calls "belongs to collection". Films point at
+    it, and it holds nothing but a name and a blurb: it is a grouping the
+    catalogue asserts, not a shelf you curate.
   names:
     singular: moviecollection
     plural: moviecollections

@@ -14,7 +14,8 @@
 # The first backfill: an account whose OAuth just landed (tokenStatus
 # connected), that wants at least one collection, and that has never synced.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: whoop-on-connect}
+metadata:
+  id: whoop-on-connect
 data:
   properties:
     enabled: true
@@ -35,13 +36,16 @@ data:
           || ("enabledSleep" in record.properties && record.properties.enabledSleep
           == true) || ("enabledWorkouts" in record.properties && record.properties.enabledWorkouts
           == true))
-    callable: {kind: core.substrate.reamde.dev/function, id: whoop.bundles.substrate.reamde.dev/whoopsync}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: whoop.bundles.substrate.reamde.dev/whoopsync
 ---
 # The steady-state re-sync: an hourly tick fires the same function with no
 # envelope record, so the body iterates every connected account with a toggle
 # on and syncs the ones due by their own syncFrequency.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: whoop-scheduled}
+metadata:
+  id: whoop-scheduled
 data:
   properties:
     enabled: true
@@ -52,4 +56,6 @@ data:
         # A fixed past anchor, so every occurrence since is well-defined
         # (occurrences compute forward from startsAt).
         startsAt: "2025-01-06T09:00:00Z"
-    callable: {kind: core.substrate.reamde.dev/function, id: whoop.bundles.substrate.reamde.dev/whoopsync}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: whoop.bundles.substrate.reamde.dev/whoopsync

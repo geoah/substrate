@@ -10,10 +10,10 @@ metadata:
 data:
   authority: people.substrate.reamde.dev
   description: >-
-    One human, one record: every edge in every authority that means "a
-    person" lands here. What one source holds about them — a Google
-    contact, a GitHub user — is that bundle's own record pointing here, so
-    a person carries many provider identities and stays one row.
+    One human, one record: every edge in every authority that means "a person"
+    lands here. What one source holds about them — a Google contact, a GitHub
+    user — is that bundle's own record pointing here, so a person carries
+    many provider identities and stays one row.
   names:
     singular: person
     # `people`, not `persons`: R5 allows any one-word plural, `people` is the

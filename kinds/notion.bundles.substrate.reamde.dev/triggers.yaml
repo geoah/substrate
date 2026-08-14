@@ -18,7 +18,8 @@
 # map-indexing an absent key throws, and toggles are absent until set, so an
 # unguarded read would park the delivery instead of skipping it.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: notion-on-connect}
+metadata:
+  id: notion-on-connect
 data:
   properties:
     enabled: true
@@ -30,13 +31,16 @@ data:
           record != null && (("enabledPages" in record.properties && record.properties.enabledPages
           == true) || ("enabledDatabases" in record.properties && record.properties.enabledDatabases
           == true)) && !("lastSyncedAt" in record.properties)
-    callable: {kind: core.substrate.reamde.dev/function, id: notion.bundles.substrate.reamde.dev/workspacesync}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: notion.bundles.substrate.reamde.dev/workspacesync
 ---
 # The steady-state re-sync: an hourly tick fires the same function with no
 # envelope record, so the body stamps any duplicate account rows and syncs
 # the primary account when its own syncFrequency says it is due.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: notion-scheduled}
+metadata:
+  id: notion-scheduled
 data:
   properties:
     enabled: true
@@ -47,4 +51,6 @@ data:
         # A fixed past anchor, so every occurrence since is well-defined
         # (occurrences compute forward from startsAt).
         startsAt: "2025-01-06T09:30:00Z"
-    callable: {kind: core.substrate.reamde.dev/function, id: notion.bundles.substrate.reamde.dev/workspacesync}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: notion.bundles.substrate.reamde.dev/workspacesync

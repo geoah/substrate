@@ -6,9 +6,9 @@ data:
   authority: health.substrate.reamde.dev
   description: >-
     When and how much of one medication: a dose, an RRULE, and the span the
-    schedule runs. The substrate stores the rule and never expands it; a
-    dose that was actually taken or skipped is a medicationschedulelog. A
-    schedule with no recurrence is as-needed.
+    schedule runs. The substrate stores the rule and never expands it; a dose
+    that was actually taken or skipped is a medicationschedulelog. A schedule
+    with no recurrence is as-needed.
   names:
     singular: medicationschedule
     plural: medicationschedules

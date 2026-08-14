@@ -5,10 +5,10 @@ metadata:
 data:
   authority: media.substrate.reamde.dev
   description: >-
-    One television series, the thing Sonarr tracks: the premiere year,
-    whether it is upcoming, continuing or ended, its certification,
-    genres, synopsis and poster. Runtime is not here — the truth is per
-    episode, so it lives there.
+    One television series, the thing Sonarr tracks: the premiere year, whether
+    it is upcoming, continuing or ended, its certification, genres, synopsis
+    and poster. Runtime is not here — the truth is per episode, so it lives
+    there.
   names:
     singular: tvseries
     plural: tvseries

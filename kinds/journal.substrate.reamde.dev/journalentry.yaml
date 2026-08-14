@@ -6,8 +6,8 @@ data:
   authority: journal.substrate.reamde.dev
   description: >-
     One day's reflection: a heading and the prose. One entry per day is the
-    convention, not a constraint; the timeline anchor is the day written
-    about, which is not always the day of writing.
+    convention, not a constraint; the timeline anchor is the day written about,
+    which is not always the day of writing.
   names:
     singular: journalentry
     plural: journalentries

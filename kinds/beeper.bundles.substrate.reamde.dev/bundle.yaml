@@ -29,7 +29,8 @@
 #   No OAuth flow: the on-connect trigger fires straight off the create.
 # ---- the owned authority ------------------------------------------------------
 kind: core.substrate.reamde.dev/authority
-metadata: {id: beeper.bundles.substrate.reamde.dev}
+metadata:
+  id: beeper.bundles.substrate.reamde.dev
 data:
   version: v1alpha1
 ---
@@ -38,7 +39,8 @@ data:
 # bundle authenticates with a pasted token, so the manifest stays
 # credential-flow-free and StartOAuth refuses the authority.
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: beeper.bundles.substrate.reamde.dev/beeper}
+metadata:
+  id: beeper.bundles.substrate.reamde.dev/beeper
 data:
   authority: beeper.bundles.substrate.reamde.dev
   description: >-
@@ -68,15 +70,18 @@ data:
 # stores it un-sealed and the injected input hands it over usable — see the
 # header note.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: beeper.bundles.substrate.reamde.dev/config}
+metadata:
+  id: beeper.bundles.substrate.reamde.dev/config
 data:
   authority: beeper.bundles.substrate.reamde.dev
   description: >-
     The Beeper homeserver and the Matrix access token this bundle spends,
-    the record the bundle's connector input resolves. The token is
-    owner-written and origin-pinned: it travels to a beeper.com host over
-    https and nowhere else.
-  names: {singular: config, plural: configs}
+    the record the bundle's connector input resolves. The token is owner-written
+    and origin-pinned: it travels to a beeper.com host over https and nowhere
+    else.
+  names:
+    singular: config
+    plural: configs
   displayTemplate: "Beeper at {homeserverUrl}"
   properties:
     homeserverUrl:
@@ -105,14 +110,17 @@ data:
 # whole life. The trigger therefore gates on the owner's toggle plus the
 # connector's own completion marker, never on tokenStatus.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: beeper.bundles.substrate.reamde.dev/account}
+metadata:
+  id: beeper.bundles.substrate.reamde.dev/account
 data:
   authority: beeper.bundles.substrate.reamde.dev
   description: >-
-    One connected Beeper account: the owner's sync toggles and the
-    connector's own progress. The account trait's OAuth hands are declared
-    but stay dormant, since no OAuth flow ever runs for this bundle.
-  names: {singular: account, plural: accounts}
+    One connected Beeper account: the owner's sync toggles and the connector's
+    own progress. The account trait's OAuth hands are declared but stay dormant,
+    since no OAuth flow ever runs for this bundle.
+  names:
+    singular: account
+    plural: accounts
   traits: [accountconfig]
   displayTemplate: "{userId}"
   properties:
@@ -140,9 +148,12 @@ data:
     syncFrequency:
       type: enum
       values:
-        - {value: off, label: Off}
-        - {value: hourly, label: "Every hour"}
-        - {value: daily, label: "Once a day"}
+        - value: off
+          label: Off
+        - value: hourly
+          label: "Every hour"
+        - value: daily
+          label: "Once a day"
       required: true
       default: hourly
       writer: owner
@@ -151,11 +162,16 @@ data:
     backfillDepth:
       type: enum
       values:
-        - {value: none, label: "Don't backfill"}
-        - {value: last30d, label: "Last 30 days"}
-        - {value: last90d, label: "Last 90 days"}
-        - {value: last1y, label: "Last year"}
-        - {value: all, label: Everything}
+        - value: none
+          label: "Don't backfill"
+        - value: last30d
+          label: "Last 30 days"
+        - value: last90d
+          label: "Last 90 days"
+        - value: last1y
+          label: "Last year"
+        - value: all
+          label: Everything
       required: true
       default: last30d
       writer: owner
@@ -225,14 +241,17 @@ data:
 # patches ONLY the fields it carried, so a partial /sync (lazy-loaded state,
 # an owner-only timeline window) never erases a name or resets a network.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: beeper.bundles.substrate.reamde.dev/room}
+metadata:
+  id: beeper.bundles.substrate.reamde.dev/room
 data:
   authority: beeper.bundles.substrate.reamde.dev
   description: >-
-    What Beeper holds about one bridged chat, in Matrix's own shape: the
-    room id, its name where it has one, and which network it bridges.
-    Written mint-then-patch, so a partial sync never erases a name.
-  names: {singular: room, plural: rooms}
+    What Beeper holds about one bridged chat, in Matrix's own shape: the room
+    id, its name where it has one, and which network it bridges. Written mint-then-patch,
+    so a partial sync never erases a name.
+  names:
+    singular: room
+    plural: rooms
   displayTemplate: "{name|roomId}"
   properties:
     account:
@@ -265,14 +284,17 @@ data:
 # (rooms commit earlier in the same drain); ownerRef so a deleted room
 # takes its mirrored messages with it.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: beeper.bundles.substrate.reamde.dev/message}
+metadata:
+  id: beeper.bundles.substrate.reamde.dev/message
 data:
   authority: beeper.bundles.substrate.reamde.dev
   description: >-
     One bridged Matrix message, keyed by its globally unique event id, so
-    a write is put-if-absent and a re-read is a no-op. The sender is a
-    Matrix id, often a bridge ghost rather than a human's own.
-  names: {singular: message, plural: messages}
+    a write is put-if-absent and a re-read is a no-op. The sender is a Matrix
+    id, often a bridge ghost rather than a human's own.
+  names:
+    singular: message
+    plural: messages
   displayTemplate: "{sender}: {text}"
   properties:
     account:
@@ -353,7 +375,8 @@ data:
 # fields, and the resumed-walk existence check. No real Matrix call runs at
 # admission; the closure test drives the body against a fake homeserver.
 kind: core.substrate.reamde.dev/function
-metadata: {id: beeper.bundles.substrate.reamde.dev/messagessync}
+metadata:
+  id: beeper.bundles.substrate.reamde.dev/messagessync
 data:
   authority: beeper.bundles.substrate.reamde.dev
   description: >-
@@ -372,7 +395,8 @@ data:
         - beeper.bundles.substrate.reamde.dev/room
       # A rooms page evaluates the filter fallback for at most 25 rooms; a
       # backfill page checks at most one resumed room.
-      budgets: {calls: 40}
+      budgets:
+        calls: 40
     network:
       - "matrix.beeper.com"
       - "beeper.com/*"

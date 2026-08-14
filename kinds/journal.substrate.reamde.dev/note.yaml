@@ -5,10 +5,10 @@ metadata:
 data:
   authority: journal.substrate.reamde.dev
   description: >-
-    One note. Its kind is the writer's own declaration of audience, read
-    before anything acts on it: an instruction is an order to act on and
-    close, standing context is never done, and an idea asks for nothing.
-    Handling stamps its time, so nothing has to remember to.
+    One note. Its kind is the writer's own declaration of audience, read before
+    anything acts on it: an instruction is an order to act on and close, standing
+    context is never done, and an idea asks for nothing. Handling stamps its
+    time, so nothing has to remember to.
   names:
     singular: note
     plural: notes
@@ -39,7 +39,8 @@ data:
     # handled instruction is spent. Handling stamps handledAt by itself.
     status:
       type: state
-      description: "open until triaged; standing is never done; handled is spent"
+      description: "open until triaged; standing is never done; handled is
+        spent"
       states:
         - open
         - standing

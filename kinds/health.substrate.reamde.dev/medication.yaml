@@ -5,9 +5,9 @@ metadata:
 data:
   authority: health.substrate.reamde.dev
   description: >-
-    One medication at one strength and one form: a new strength is a new
-    record, so a schedule's dose arithmetic never has to ask which variant
-    was meant. When and how much lives on its medicationschedules.
+    One medication at one strength and one form: a new strength is a new record,
+    so a schedule's dose arithmetic never has to ask which variant was meant.
+    When and how much lives on its medicationschedules.
   names:
     singular: medication
     plural: medications

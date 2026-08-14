@@ -11,10 +11,10 @@ metadata:
 data:
   authority: core.substrate.reamde.dev
   description: >-
-    One content-addressed blob's manifest — digest, size, name and media
-    type — while the bytes themselves live in the store behind /blobs. The
-    digest is the id, so identical bytes always mint the same blob, and a
-    blobref property elsewhere points at one.
+    One content-addressed blob's manifest — digest, size, name and media type
+    — while the bytes themselves live in the store behind /blobs. The digest
+    is the id, so identical bytes always mint the same blob, and a blobref
+    property elsewhere points at one.
   # v1alpha2 added `name`. Both it and `mimeType` are DESCRIPTIVE and optional:
   # the digest is the identity, so neither is part of dedup, and a second
   # upload of the same bytes under a different name gets the first one back.

@@ -5,10 +5,10 @@ metadata:
 data:
   authority: core.substrate.reamde.dev
   description: >-
-    One authority whose kinds this repository holds, named by its
-    DNS-style label. The row says who may write under it and where its
-    declarations came from, and carries the quarantine mark set when a
-    stored closure no longer admits.
+    One authority whose kinds this repository holds, named by its DNS-style
+    label. The row says who may write under it and where its declarations
+    came from, and carries the quarantine mark set when a stored closure no
+    longer admits.
   names:
     singular: authority
     plural: authorities
@@ -31,8 +31,7 @@ data:
       values:
         - builtin
         - installed
-      description: builtin for seeded authorities, installed for bundle
-        ones
+      description: builtin for seeded authorities, installed for bundle ones
     # Issue 010 runtime state, owned by repository-open: set when a stored
     # closure no longer admits under the current binary — the authority
     # is left out of the live registry and the repository opens without it.
@@ -47,8 +46,8 @@ data:
     quarantined:
       type: bool
       description: set at repository-open when the authority's stored closure
-        fails admission; cleared by re-applying a valid closure, or by an open
-        that admits the stored one
+        fails admission; cleared by re-applying a valid closure, or by an
+        open that admits the stored one
     quarantineReason:
       type: string
       description: the admission error that quarantined the authority

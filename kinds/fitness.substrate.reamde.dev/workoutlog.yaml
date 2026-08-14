@@ -5,10 +5,10 @@ metadata:
 data:
   authority: fitness.substrate.reamde.dev
   description: >-
-    The done-or-skipped mark against one occurrence of a recurring
-    workout. There is deliberately no missed state: absence in the logs is
-    what missed means, so a reader computes it from the RRULE. What was
-    actually lifted lives on the workout's sets, not here.
+    The done-or-skipped mark against one occurrence of a recurring workout.
+    There is deliberately no missed state: absence in the logs is what missed
+    means, so a reader computes it from the RRULE. What was actually lifted
+    lives on the workout's sets, not here.
   names:
     singular: workoutlog
     plural: workoutlogs

@@ -40,7 +40,8 @@
 # wiring lives beside it in triggers.yaml as ordinary data records.
 # ---- the owned authority ------------------------------------------------------
 kind: core.substrate.reamde.dev/authority
-metadata: {id: google.bundles.substrate.reamde.dev}
+metadata:
+  id: google.bundles.substrate.reamde.dev
 data:
   version: v1alpha1
 ---
@@ -50,7 +51,8 @@ data:
 # record types plus the shared emailaddress source, the three sync functions,
 # the batched id migration, and the two mappings onto person.
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: google.bundles.substrate.reamde.dev/google}
+metadata:
+  id: google.bundles.substrate.reamde.dev/google
 data:
   authority: google.bundles.substrate.reamde.dev
   description: >-
@@ -126,15 +128,18 @@ data:
 # mapping are trusted manifest metadata (the bundle's `oauth2:` block above),
 # never properties on this mutable row (review-google #1).
 kind: core.substrate.reamde.dev/kind
-metadata: {id: google.bundles.substrate.reamde.dev/config}
+metadata:
+  id: google.bundles.substrate.reamde.dev/config
 data:
   authority: google.bundles.substrate.reamde.dev
   description: >-
     The Google OAuth client this bundle authenticates through: a client id
-    and a sealed client secret, the record the bundle's client input
-    resolves. The endpoints and the feature-to-scope mapping are trusted
-    manifest metadata, never properties on this row.
-  names: {singular: config, plural: configs}
+    and a sealed client secret, the record the bundle's client input resolves.
+    The endpoints and the feature-to-scope mapping are trusted manifest metadata,
+    never properties on this row.
+  names:
+    singular: config
+    plural: configs
   traits: [oauth2]
   displayTemplate: "Google client {clientId}"
   properties:
@@ -158,15 +163,18 @@ data:
 # live here — each with a `writer:` role so only its rightful hand may set it
 # (review-google #2).
 kind: core.substrate.reamde.dev/kind
-metadata: {id: google.bundles.substrate.reamde.dev/account}
+metadata:
+  id: google.bundles.substrate.reamde.dev/account
 data:
   authority: google.bundles.substrate.reamde.dev
   description: >-
     One connected Google account. The OAuth facility writes its credential
-    reference, status and granted scopes; the owner enables features and
-    picks the cadence, and each feature keeps its own sync state here —
-    except the per-calendar cursor, which lives on the calendar row.
-  names: {singular: account, plural: accounts}
+    reference, status and granted scopes; the owner enables features and picks
+    the cadence, and each feature keeps its own sync state here — except the
+    per-calendar cursor, which lives on the calendar row.
+  names:
+    singular: account
+    plural: accounts
   traits: [accountconfig]
   displayTemplate: "{email}"
   properties:
@@ -229,9 +237,12 @@ data:
     syncFrequency:
       type: enum
       values:
-        - {value: off, label: Off}
-        - {value: hourly, label: "Every hour"}
-        - {value: daily, label: "Once a day"}
+        - value: off
+          label: Off
+        - value: hourly
+          label: "Every hour"
+        - value: daily
+          label: "Once a day"
       required: true
       default: daily
       writer: owner
@@ -247,11 +258,16 @@ data:
     backfillDepth:
       type: enum
       values:
-        - {value: none, label: "Don't backfill"}
-        - {value: last30d, label: "Last 30 days"}
-        - {value: last90d, label: "Last 90 days"}
-        - {value: last1y, label: "Last year"}
-        - {value: all, label: Everything}
+        - value: none
+          label: "Don't backfill"
+        - value: last30d
+          label: "Last 30 days"
+        - value: last90d
+          label: "Last 90 days"
+        - value: last1y
+          label: "Last year"
+        - value: all
+          label: Everything
       required: true
       default: last30d
       writer: owner
@@ -372,14 +388,17 @@ data:
 # EMPTY on write; the mapping below matches or mints the person and links it
 # in the same transaction.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: google.bundles.substrate.reamde.dev/contact}
+metadata:
+  id: google.bundles.substrate.reamde.dev/contact
 data:
   authority: google.bundles.substrate.reamde.dev
   description: >-
-    What Google holds about one address-book contact, in Google's own
-    shape. It points at a person — matched on an address or minted as a
-    shell — so a contact and a mail sender end up on the same human.
-  names: {singular: contact, plural: contacts}
+    What Google holds about one address-book contact, in Google's own shape.
+    It points at a person — matched on an address or minted as a shell — so
+    a contact and a mail sender end up on the same human.
+  names:
+    singular: contact
+    plural: contacts
   displayTemplate: "{name.displayName}"
   properties:
     # The account this contact belongs to (the account record id): the
@@ -468,7 +487,8 @@ data:
 # runs in tests — the body's admission and shape are what the closure test
 # proves; live OAuth + sync is verified against a connected account.
 kind: core.substrate.reamde.dev/function
-metadata: {id: google.bundles.substrate.reamde.dev/contactssync}
+metadata:
+  id: google.bundles.substrate.reamde.dev/contactssync
 data:
   authority: google.bundles.substrate.reamde.dev
   description: >-
@@ -894,7 +914,8 @@ data:
 # scheme. Runbook (disable the two triggers first): README "Migrating
 # contact ids".
 kind: core.substrate.reamde.dev/function
-metadata: {id: google.bundles.substrate.reamde.dev/contactsidmigration}
+metadata:
+  id: google.bundles.substrate.reamde.dev/contactsidmigration
 data:
   authority: google.bundles.substrate.reamde.dev
   description: >-
@@ -917,9 +938,12 @@ data:
   output:
     type: object
     properties:
-      migrated: {type: number}
-      absorbed: {type: number}
-      skipped: {type: number}
+      migrated:
+        type: number
+      absorbed:
+        type: number
+      skipped:
+        type: number
       nextCursor:
         type: string
         description: feed back as `cursor`; empty means the book is drained
@@ -1122,7 +1146,8 @@ data:
 # connectors googlepeople identity logic. map copies the name and unions the
 # emails/phones onto the person (machine-managed, yielding to any owner edit).
 kind: core.substrate.reamde.dev/recordmapping
-metadata: {id: google.bundles.substrate.reamde.dev/contactperson}
+metadata:
+  id: google.bundles.substrate.reamde.dev/contactperson
 data:
   authority: google.bundles.substrate.reamde.dev
   from: google.bundles.substrate.reamde.dev/contact
@@ -1156,15 +1181,18 @@ data:
 # edge target (record 50), which is exactly why the mirrors below carry
 # addresses as object PROPERTIES instead.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: google.bundles.substrate.reamde.dev/emailaddress}
+metadata:
+  id: google.bundles.substrate.reamde.dev/emailaddress
 data:
   authority: google.bundles.substrate.reamde.dev
   description: >-
-    One address, one person: every mail header or attendee address that
-    parses as a mailbox becomes one of these, keyed per account. It is how
-    gmail and calendar rows reach people at all, mapped onto a person
-    exactly as a contact is.
-  names: {singular: emailaddress, plural: emailaddresses}
+    One address, one person: every mail header or attendee address that parses
+    as a mailbox becomes one of these, keyed per account. It is how gmail
+    and calendar rows reach people at all, mapped onto a person exactly as
+    a contact is.
+  names:
+    singular: emailaddress
+    plural: emailaddresses
   displayTemplate: "{displayName|address}"
   properties:
     account:
@@ -1198,7 +1226,8 @@ data:
 # weaker than an address book's nickname, and atomic selection is latest-write
 # wins, so mail volume would otherwise clobber the contact's contribution.
 kind: core.substrate.reamde.dev/recordmapping
-metadata: {id: google.bundles.substrate.reamde.dev/emailaddressperson}
+metadata:
+  id: google.bundles.substrate.reamde.dev/emailaddressperson
 data:
   authority: google.bundles.substrate.reamde.dev
   from: google.bundles.substrate.reamde.dev/emailaddress
@@ -1223,15 +1252,17 @@ data:
 # as new — because a backfill walks a mailbox newest-first, and a blind put
 # would let an older page overwrite a newer one.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: google.bundles.substrate.reamde.dev/thread}
+metadata:
+  id: google.bundles.substrate.reamde.dev/thread
 data:
   authority: google.bundles.substrate.reamde.dev
   description: >-
-    One Gmail thread, derived entirely from the message stream — no
-    threads.get call is ever made. Its subject, preview and last-message
-    time are written newest-wins, so a backfill walking a mailbox
-    backwards cannot stale them.
-  names: {singular: thread, plural: threads}
+    One Gmail thread, derived entirely from the message stream — no threads.get
+    call is ever made. Its subject, preview and last-message time are written
+    newest-wins, so a backfill walking a mailbox backwards cannot stale them.
+  names:
+    singular: thread
+    plural: threads
   displayTemplate: "{subject|threadId}"
   properties:
     account:
@@ -1280,15 +1311,18 @@ data:
 # `raw` is the messages.get payload with every base64 `data` field stripped
 # (a page of inline bodies would eat the 8 MiB frame twice over).
 kind: core.substrate.reamde.dev/kind
-metadata: {id: google.bundles.substrate.reamde.dev/message}
+metadata:
+  id: google.bundles.substrate.reamde.dev/message
 data:
   authority: google.bundles.substrate.reamde.dev
   description: >-
-    One Gmail message in Google's own shape: headers, body text, labels
-    and attachment metadata. Attachment BYTES are not fetched, and the raw
-    payload keeps everything but the inline data, so one page of mirrors
-    stays inside the frame cap.
-  names: {singular: message, plural: messages}
+    One Gmail message in Google's own shape: headers, body text, labels and
+    attachment metadata. Attachment BYTES are not fetched, and the raw payload
+    keeps everything but the inline data, so one page of mirrors stays inside
+    the frame cap.
+  names:
+    singular: message
+    plural: messages
   displayTemplate: "{subject|messageId}"
   properties:
     account:
@@ -1406,7 +1440,8 @@ data:
 # core rows are emitted DIRECTLY because no recordmapping may target them (a
 # mapping's shell mint cannot fill emailmessage.thread, which is required).
 kind: core.substrate.reamde.dev/function
-metadata: {id: google.bundles.substrate.reamde.dev/gmailsync}
+metadata:
+  id: google.bundles.substrate.reamde.dev/gmailsync
 data:
   authority: google.bundles.substrate.reamde.dev
   description: >-
@@ -2401,14 +2436,17 @@ data:
 # advance skip another's tail, which is exactly the per-stage-cursor bug the
 # github review had to fix.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: google.bundles.substrate.reamde.dev/calendar}
+metadata:
+  id: google.bundles.substrate.reamde.dev/calendar
 data:
   authority: google.bundles.substrate.reamde.dev
   description: >-
-    One entry of a Google calendar list, in Google's own shape. The
-    per-calendar sync token lives here rather than on the account, so one
-    calendar advancing can never skip another calendar's tail.
-  names: {singular: calendar, plural: calendars}
+    One entry of a Google calendar list, in Google's own shape. The per-calendar
+    sync token lives here rather than on the account, so one calendar advancing
+    can never skip another calendar's tail.
+  names:
+    singular: calendar
+    plural: calendars
   displayTemplate: "{summary|calendarId}"
   properties:
     account:
@@ -2467,15 +2505,18 @@ data:
 # an edge carries no properties, so the core row's `attendees` edge cannot
 # hold them.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: google.bundles.substrate.reamde.dev/event}
+metadata:
+  id: google.bundles.substrate.reamde.dev/event
 data:
   authority: google.bundles.substrate.reamde.dev
   description: >-
-    One Google calendar event, always a concrete occurrence — the sync
-    expands single events. Attendee response status and the recurrence
-    fields stay here, because the core record reaches attendees by edge
-    and an edge carries no properties.
-  names: {singular: event, plural: events}
+    One Google calendar event, always a concrete occurrence — the sync expands
+    single events. Attendee response status and the recurrence fields stay
+    here, because the core record reaches attendees by edge and an edge carries
+    no properties.
+  names:
+    singular: event
+    plural: events
   displayTemplate: "{summary|eventId}"
   properties:
     account:
@@ -2600,7 +2641,8 @@ data:
 # entries which are DELETES — core's calendarevent is documented as retracted
 # rather than tombstoned, so a reader never filters cancellations.
 kind: core.substrate.reamde.dev/function
-metadata: {id: google.bundles.substrate.reamde.dev/calendarsync}
+metadata:
+  id: google.bundles.substrate.reamde.dev/calendarsync
 data:
   authority: google.bundles.substrate.reamde.dev
   description: >-

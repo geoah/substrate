@@ -6,8 +6,8 @@ data:
   authority: routines.substrate.reamde.dev
   description: >-
     One occurrence of a routine, done or skipped. There is deliberately no
-    missed state: absence in the logs is what missed means, so a reader
-    computes it from the RRULE rather than trusting a stored flag.
+    missed state: absence in the logs is what missed means, so a reader computes
+    it from the RRULE rather than trusting a stored flag.
   names:
     singular: routinelog
     plural: routinelogs

@@ -1,0 +1,42 @@
+# How every YAML in this tree is shaped. `mise run fmt:yaml` writes it,
+# `mise run fmt:check` fails on it, and CI runs the same task.
+#
+# The vocabulary is the reason this exists: `kinds/` is the contract as files,
+# 100-odd documents written by hand and by agents, and they had drifted into
+# three styles at once — `metadata: {id: x}` on one line here, a block map
+# there. One formatter settles it, so a review reads the change and not the
+# punctuation.
+formatter:
+  type: basic
+  # Two spaces, sequences indented under their key — the shape `kinds/`
+  # already had.
+  indent: 2
+  indentless_arrays: false
+  # KEEP THE BLANK LINES, ALL OF THEM. The default drops every one, which
+  # welds the prose comments in these files into a single wall. Not
+  # `retain_line_breaks_single`, which keeps one and collapses runs: a bundle
+  # carries its function bodies as literal scalars, and the two blank lines
+  # PEP 8 puts between two Python functions are part of that source, not
+  # layout. yamlfmt cannot tell the difference, so it keeps what it finds.
+  retain_line_breaks: true
+  # Do not touch `on:` in a workflow, or `no`/`yes` anywhere. The YAML 1.1
+  # bool set would rewrite those keys and break GitHub Actions.
+  scan_folded_as_literal: false
+  # Folded scalars (`>-`) rewrap deterministically instead of being welded
+  # into one 300-column line. 72 and not 80: the emitter breaks at the first
+  # word that CROSSES the limit, so the line it produces runs a word past it
+  # — 72 lands the result at the ~78 columns the comments beside it wrap to.
+  # Comments themselves are never touched.
+  max_line_length: 72
+  eof_newline: true
+# Everything, then the exclusions. Lockfiles and vendored trees are not ours
+# to shape, and .dev/ is a running substrate's scratch.
+include:
+  - "**/*.yaml"
+  - "**/*.yml"
+exclude:
+  - "**/node_modules/**"
+  - "web/console/pnpm-lock.yaml"
+  - "web/console/dist/**"
+  - ".dev/**"
+  - "bin/**"

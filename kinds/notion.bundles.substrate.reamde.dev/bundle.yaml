@@ -47,7 +47,8 @@
 #   the on-connect trigger fires the first sync directly.
 # ---- the owned authority ------------------------------------------------------
 kind: core.substrate.reamde.dev/authority
-metadata: {id: notion.bundles.substrate.reamde.dev}
+metadata:
+  id: notion.bundles.substrate.reamde.dev
 data:
   version: v1alpha1
 ---
@@ -56,7 +57,8 @@ data:
 # block and no oauth2 trait anywhere: the loader holds those two paired both
 # ways, and this bundle authenticates by token.
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: notion.bundles.substrate.reamde.dev/notion}
+metadata:
+  id: notion.bundles.substrate.reamde.dev/notion
 data:
   authority: notion.bundles.substrate.reamde.dev
   description: >-
@@ -83,15 +85,18 @@ data:
 # the sync body itself spends against api.notion.com; it injects in plaintext
 # and the invocation scrubber holds it to the runner boundary.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: notion.bundles.substrate.reamde.dev/config}
+metadata:
+  id: notion.bundles.substrate.reamde.dev/config
 data:
   authority: notion.bundles.substrate.reamde.dev
   description: >-
-    The Notion integration token this bundle spends, and the API origin
-    it may be sent to. The bundle's connector input resolves one record
-    of this kind; the token is sealed against read-back and the origin is
-    pinned, so an owner edit cannot become an exfiltration channel.
-  names: {singular: config, plural: configs}
+    The Notion integration token this bundle spends, and the API origin it
+    may be sent to. The bundle's connector input resolves one record of this
+    kind; the token is sealed against read-back and the origin is pinned,
+    so an owner edit cannot become an exfiltration channel.
+  names:
+    singular: config
+    plural: configs
   displayTemplate: "Notion integration"
   properties:
     integrationToken:
@@ -127,14 +132,17 @@ data:
 # THE connection and stamps every other row `syncStatus: "ignored: duplicate
 # account …"` — per-account credentials are issue-011 territory.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: notion.bundles.substrate.reamde.dev/account}
+metadata:
+  id: notion.bundles.substrate.reamde.dev/account
 data:
   authority: notion.bundles.substrate.reamde.dev
   description: >-
-    One connected Notion workspace. The account trait's OAuth hands are
-    declared but dormant — this bundle authenticates with a pasted token —
-    so connection health reads off the sync's own status instead.
-  names: {singular: account, plural: accounts}
+    One connected Notion workspace. The account trait's OAuth hands are declared
+    but dormant — this bundle authenticates with a pasted token — so connection
+    health reads off the sync's own status instead.
+  names:
+    singular: account
+    plural: accounts
   traits: [accountconfig]
   displayTemplate: "{displayName}"
   properties:
@@ -181,9 +189,12 @@ data:
     syncFrequency:
       type: enum
       values:
-        - {value: off, label: Off}
-        - {value: hourly, label: "Every hour"}
-        - {value: daily, label: "Once a day"}
+        - value: off
+          label: Off
+        - value: hourly
+          label: "Every hour"
+        - value: daily
+          label: "Once a day"
       required: true
       default: daily
       writer: owner
@@ -193,11 +204,16 @@ data:
     backfillDepth:
       type: enum
       values:
-        - {value: none, label: "Don't backfill"}
-        - {value: last30d, label: "Last 30 days"}
-        - {value: last90d, label: "Last 90 days"}
-        - {value: last1y, label: "Last year"}
-        - {value: all, label: Everything}
+        - value: none
+          label: "Don't backfill"
+        - value: last30d
+          label: "Last 30 days"
+        - value: last90d
+          label: "Last 90 days"
+        - value: last1y
+          label: "Last year"
+        - value: all
+          label: Everything
       required: true
       default: all
       writer: owner
@@ -239,14 +255,17 @@ data:
 # VERBATIM — its last_edited_time is the delta marker the short-circuit
 # compares (the engine normalizes datetime properties, json passes byte-true).
 kind: core.substrate.reamde.dev/kind
-metadata: {id: notion.bundles.substrate.reamde.dev/page}
+metadata:
+  id: notion.bundles.substrate.reamde.dev/page
 data:
   authority: notion.bundles.substrate.reamde.dev
   description: >-
     What Notion holds about one page shared with the integration: its URL,
     its block tree normalized to text, and the last-edited stamp the delta
     sync compares to decide whether anything changed.
-  names: {singular: page, plural: pages}
+  names:
+    singular: page
+    plural: pages
   properties:
     account:
       type: string
@@ -303,15 +322,18 @@ data:
 # `title` is the built-in; `raw` keeps the data-source object verbatim (its
 # last_edited_time is the delta marker here too).
 kind: core.substrate.reamde.dev/kind
-metadata: {id: notion.bundles.substrate.reamde.dev/database}
+metadata:
+  id: notion.bundles.substrate.reamde.dev/database
 data:
   authority: notion.bundles.substrate.reamde.dev
   description: >-
-    One Notion data source shared with the integration; a multi-source
-    database yields one mirror per source, all naming the same containing
-    database. The raw object is kept, and its last-edited stamp drives the
-    delta here too.
-  names: {singular: database, plural: databases}
+    One Notion data source shared with the integration; a multi-source database
+    yields one mirror per source, all naming the same containing database.
+    The raw object is kept, and its last-edited stamp drives the delta here
+    too.
+  names:
+    singular: database
+    plural: databases
   properties:
     account:
       type: string
@@ -357,7 +379,8 @@ data:
 # flag) matches its mirror is SKIPPED — no block fetch, no effect — so
 # steady-state syncs cost one search walk and nothing else.
 kind: core.substrate.reamde.dev/function
-metadata: {id: notion.bundles.substrate.reamde.dev/workspacesync}
+metadata:
+  id: notion.bundles.substrate.reamde.dev/workspacesync
 data:
   authority: notion.bundles.substrate.reamde.dev
   # Deliveries sync the account off the causal chain; a direct call with
@@ -390,7 +413,9 @@ data:
       kinds:
         - notion.bundles.substrate.reamde.dev/page
         - notion.bundles.substrate.reamde.dev/database
-      budgets: {calls: 300, rows: 3000}
+      budgets:
+        calls: 300
+        rows: 3000
     network:
       - "api.notion.com"
   source: |

@@ -5,10 +5,10 @@ metadata:
 data:
   authority: health.substrate.reamde.dev
   description: >-
-    One dose of a schedule, taken or skipped. There is deliberately no
-    missed state: absence in the logs is what missed means, so adherence is
-    expected minus logged, computed by a reader. As-needed doses log
-    against their schedule the same way, just without a scheduledAt.
+    One dose of a schedule, taken or skipped. There is deliberately no missed
+    state: absence in the logs is what missed means, so adherence is expected
+    minus logged, computed by a reader. As-needed doses log against their
+    schedule the same way, just without a scheduledAt.
   names:
     singular: medicationschedulelog
     plural: medicationschedulelogs

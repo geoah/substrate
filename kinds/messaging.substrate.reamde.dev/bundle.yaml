@@ -28,7 +28,8 @@ data:
 # registry rather than seeded. It maps onto people, so it requires that
 # authority to be present first.
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: messaging.substrate.reamde.dev/messaging}
+metadata:
+  id: messaging.substrate.reamde.dev/messaging
 data:
   authority: messaging.substrate.reamde.dev
   description: >-

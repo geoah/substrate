@@ -25,7 +25,8 @@
 # wiring lives beside it in triggers.yaml as ordinary data records.
 # ---- the owned authority ------------------------------------------------------
 kind: core.substrate.reamde.dev/authority
-metadata: {id: github.bundles.substrate.reamde.dev}
+metadata:
+  id: github.bundles.substrate.reamde.dev
 data:
   version: v1alpha1
 ---
@@ -34,7 +35,8 @@ data:
 # authority header and the bundle itself): the two config types, the four mirror
 # types, the sync function, and the user→person mapping.
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: github.bundles.substrate.reamde.dev/github}
+metadata:
+  id: github.bundles.substrate.reamde.dev/github
 data:
   authority: github.bundles.substrate.reamde.dev
   description: >-
@@ -105,15 +107,18 @@ data:
 # the GitHub OAuth app the owner registers — ONLY its clientId and
 # secret-typed clientSecret. Endpoints and scopes are manifest metadata above.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: github.bundles.substrate.reamde.dev/config}
+metadata:
+  id: github.bundles.substrate.reamde.dev/config
 data:
   authority: github.bundles.substrate.reamde.dev
   description: >-
-    The GitHub OAuth app this bundle authenticates through — its client
-    id and a sealed client secret, and nothing else. The record the
-    bundle's client input resolves; endpoints and scopes are manifest
-    metadata rather than editable rows.
-  names: {singular: config, plural: configs}
+    The GitHub OAuth app this bundle authenticates through — its client id
+    and a sealed client secret, and nothing else. The record the bundle's
+    client input resolves; endpoints and scopes are manifest metadata rather
+    than editable rows.
+  names:
+    singular: config
+    plural: configs
   traits: [oauth2]
   displayTemplate: "GitHub app {clientId}"
   properties:
@@ -135,15 +140,18 @@ data:
 # THIS account's enabled toggles (engine/oauth.go). Every property carries a
 # `writer:` role so only its rightful hand may set it (review-google #2).
 kind: core.substrate.reamde.dev/kind
-metadata: {id: github.bundles.substrate.reamde.dev/account}
+metadata:
+  id: github.bundles.substrate.reamde.dev/account
 data:
   authority: github.bundles.substrate.reamde.dev
   description: >-
-    One connected GitHub account: these records ARE the bundle's
-    connections. The OAuth facility writes the credential reference and
-    the connection status, the owner flips the feature toggles, and the
-    scopes asked for are derived from them.
-  names: {singular: account, plural: accounts}
+    One connected GitHub account: these records ARE the bundle's connections.
+    The OAuth facility writes the credential reference and the connection
+    status, the owner flips the feature toggles, and the scopes asked for
+    are derived from them.
+  names:
+    singular: account
+    plural: accounts
   traits: [accountconfig]
   # The public email when GitHub exposes one, else the connector-stamped
   # login — a private-email account never renders as a blank row
@@ -217,9 +225,12 @@ data:
     syncFrequency:
       type: enum
       values:
-        - {value: off, label: Off}
-        - {value: hourly, label: "Every hour"}
-        - {value: daily, label: "Once a day"}
+        - value: off
+          label: Off
+        - value: hourly
+          label: "Every hour"
+        - value: daily
+          label: "Once a day"
       required: true
       default: daily
       writer: owner
@@ -233,11 +244,16 @@ data:
     backfillDepth:
       type: enum
       values:
-        - {value: none, label: "Don't backfill"}
-        - {value: last30d, label: "Last 30 days"}
-        - {value: last90d, label: "Last 90 days"}
-        - {value: last1y, label: "Last year"}
-        - {value: all, label: Everything}
+        - value: none
+          label: "Don't backfill"
+        - value: last30d
+          label: "Last 30 days"
+        - value: last90d
+          label: "Last 90 days"
+        - value: last1y
+          label: "Last year"
+        - value: all
+          label: Everything
       required: true
       default: last30d
       writer: owner
@@ -274,15 +290,17 @@ data:
 # subject edge is left EMPTY on write; the mapping below matches a person on
 # the public email or mints a shell in the same transaction.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: github.bundles.substrate.reamde.dev/user}
+metadata:
+  id: github.bundles.substrate.reamde.dev/user
 data:
   authority: github.bundles.substrate.reamde.dev
   description: >-
     What GitHub holds about one user, in GitHub's own shape: login, name,
-    public email and profile URL. It points at a person, so a GitHub
-    identity and the same human's address-book contact converge on one
-    record.
-  names: {singular: user, plural: users}
+    public email and profile URL. It points at a person, so a GitHub identity
+    and the same human's address-book contact converge on one record.
+  names:
+    singular: user
+    plural: users
   displayTemplate: "{name|login}"
   properties:
     account:
@@ -330,15 +348,18 @@ data:
 # mint create-only stubs for repositories the repo listing did not cover
 # (a PR in someone else's repo), so the required parent edge always resolves.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: github.bundles.substrate.reamde.dev/repository}
+metadata:
+  id: github.bundles.substrate.reamde.dev/repository
 data:
   authority: github.bundles.substrate.reamde.dev
   description: >-
     One GitHub repository as GitHub describes it — full name, visibility,
     default branch, page URL. Issues and pull requests hang off it, and a
-    stub is minted for repositories the listing never covered, so that
-    edge always resolves.
-  names: {singular: repository, plural: repositories}
+    stub is minted for repositories the listing never covered, so that edge
+    always resolves.
+  names:
+    singular: repository
+    plural: repositories
   displayTemplate: "{fullName}"
   properties:
     account:
@@ -390,15 +411,18 @@ data:
 # chars; the raw payload drops it so one page of mirrors stays inside the
 # frame cap).
 kind: core.substrate.reamde.dev/kind
-metadata: {id: github.bundles.substrate.reamde.dev/issue}
+metadata:
+  id: github.bundles.substrate.reamde.dev/issue
 data:
   authority: github.bundles.substrate.reamde.dev
   description: >-
-    One GitHub issue, mirrored plainly: number, state, labels, author
-    login and the timestamps the sync watermarks on. GitHub owns the
-    lifecycle, so the state is a plain string — the mirror reports it and
-    never decides it.
-  names: {singular: issue, plural: issues}
+    One GitHub issue, mirrored plainly: number, state, labels, author login
+    and the timestamps the sync watermarks on. GitHub owns the lifecycle,
+    so the state is a plain string — the mirror reports it and never decides
+    it.
+  names:
+    singular: issue
+    plural: issues
   properties:
     account:
       type: string
@@ -453,15 +477,17 @@ data:
 # folds GitHub's split fields (merged beats closed beats draft beats open),
 # still a plain string.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: github.bundles.substrate.reamde.dev/pullrequest}
+metadata:
+  id: github.bundles.substrate.reamde.dev/pullrequest
 data:
   authority: github.bundles.substrate.reamde.dev
   description: >-
-    One GitHub pull request, mirrored like an issue with the merge facts
-    added. Its state folds GitHub's separate fields into one word — merged
-    beats closed beats draft beats open — and stays a plain string GitHub
-    owns.
-  names: {singular: pullrequest, plural: pullrequests}
+    One GitHub pull request, mirrored like an issue with the merge facts added.
+    Its state folds GitHub's separate fields into one word — merged beats
+    closed beats draft beats open — and stays a plain string GitHub owns.
+  names:
+    singular: pullrequest
+    plural: pullrequests
   properties:
     account:
       type: string
@@ -539,7 +565,8 @@ data:
 # token anywhere but https://api.github.com or loopback (the bundle-side
 # origin pin, review-fleet-codex #1).
 kind: core.substrate.reamde.dev/function
-metadata: {id: github.bundles.substrate.reamde.dev/githubsync}
+metadata:
+  id: github.bundles.substrate.reamde.dev/githubsync
 data:
   authority: github.bundles.substrate.reamde.dev
   description: >-
@@ -1116,7 +1143,8 @@ data:
 # and unions the email onto the person (machine-managed, yielding to any
 # owner edit).
 kind: core.substrate.reamde.dev/recordmapping
-metadata: {id: github.bundles.substrate.reamde.dev/userperson}
+metadata:
+  id: github.bundles.substrate.reamde.dev/userperson
 data:
   authority: github.bundles.substrate.reamde.dev
   from: github.bundles.substrate.reamde.dev/user

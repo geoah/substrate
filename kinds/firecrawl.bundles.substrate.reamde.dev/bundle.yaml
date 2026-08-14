@@ -15,7 +15,8 @@
 # bundle: with no triggers there is no second file.
 # ---- the owned authority ------------------------------------------------------
 kind: core.substrate.reamde.dev/authority
-metadata: {id: firecrawl.bundles.substrate.reamde.dev}
+metadata:
+  id: firecrawl.bundles.substrate.reamde.dev
 data:
   version: v1alpha1
 ---
@@ -24,7 +25,8 @@ data:
 # authority header and the bundle itself) — the loader holds the two equal both
 # ways.
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: firecrawl.bundles.substrate.reamde.dev/firecrawl}
+metadata:
+  id: firecrawl.bundles.substrate.reamde.dev/firecrawl
 data:
   authority: firecrawl.bundles.substrate.reamde.dev
   description: >-
@@ -53,15 +55,17 @@ data:
 # into its functions' invocations (and held to the runner boundary by the
 # invocation scrubber), never read back over the API.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: firecrawl.bundles.substrate.reamde.dev/config}
+metadata:
+  id: firecrawl.bundles.substrate.reamde.dev/config
 data:
   authority: firecrawl.bundles.substrate.reamde.dev
   description: >-
-    The Firecrawl API key and the API root it may be sent to. One key
-    serves the whole repository — no OAuth client, no per-user accounts —
-    and the origin is pinned, so editing the URL cannot redirect the
-    credential.
-  names: {singular: config, plural: configs}
+    The Firecrawl API key and the API root it may be sent to. One key serves
+    the whole repository — no OAuth client, no per-user accounts — and the
+    origin is pinned, so editing the URL cannot redirect the credential.
+  names:
+    singular: config
+    plural: configs
   displayTemplate: "Firecrawl {baseUrl}"
   properties:
     apiKey:
@@ -87,14 +91,17 @@ data:
 # it); the id is host.ids.url(url), so re-scraping the same URL updates one
 # document instead of minting a second.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: firecrawl.bundles.substrate.reamde.dev/webdocument}
+metadata:
+  id: firecrawl.bundles.substrate.reamde.dev/webdocument
 data:
   authority: firecrawl.bundles.substrate.reamde.dev
   description: >-
-    What a scrape leaves behind: the page as markdown, capped, with the
-    scrape metadata beside it. The id is a hash of the URL, so scraping
-    the same page again updates one document instead of minting a second.
-  names: {singular: webdocument, plural: webdocuments}
+    What a scrape leaves behind: the page as markdown, capped, with the scrape
+    metadata beside it. The id is a hash of the URL, so scraping the same
+    page again updates one document instead of minting a second.
+  names:
+    singular: webdocument
+    plural: webdocuments
   properties:
     url:
       type: url
@@ -124,7 +131,8 @@ data:
 # `emit` is declared because the manifest requires a non-empty allowlist; it
 # is a ceiling, not a promise, and this body stages nothing under it.
 kind: core.substrate.reamde.dev/function
-metadata: {id: firecrawl.bundles.substrate.reamde.dev/websearch}
+metadata:
+  id: firecrawl.bundles.substrate.reamde.dev/websearch
 data:
   authority: firecrawl.bundles.substrate.reamde.dev
   description: >-
@@ -151,9 +159,12 @@ data:
         items:
           type: object
           properties:
-            title: {type: string}
-            url: {type: string}
-            snippet: {type: string}
+            title:
+              type: string
+            url:
+              type: string
+            snippet:
+              type: string
           required: [title, url]
     required: [results]
   capabilities:
@@ -231,7 +242,8 @@ data:
 # FALSE on purpose, so a re-scrape UPDATES the one document — and return the
 # document id plus the content.
 kind: core.substrate.reamde.dev/function
-metadata: {id: firecrawl.bundles.substrate.reamde.dev/scrapepage}
+metadata:
+  id: firecrawl.bundles.substrate.reamde.dev/scrapepage
 data:
   authority: firecrawl.bundles.substrate.reamde.dev
   description: >-
@@ -253,10 +265,14 @@ data:
       document:
         type: string
         description: the webdocument record id the page was kept under
-      url: {type: string}
-      title: {type: string}
-      content: {type: string}
-      truncated: {type: boolean}
+      url:
+        type: string
+      title:
+        type: string
+      content:
+        type: string
+      truncated:
+        type: boolean
     required: [document, url, content]
   capabilities:
     emit: [firecrawl.bundles.substrate.reamde.dev/webdocument]

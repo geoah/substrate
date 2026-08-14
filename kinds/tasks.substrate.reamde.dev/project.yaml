@@ -5,9 +5,9 @@ metadata:
 data:
   authority: tasks.substrate.reamde.dev
   description: >-
-    What tasks group under: a name, a lifecycle and a summary, with the
-    tasks pointing at it. Still thin on purpose: everything else about the
-    work lives on the tasks themselves.
+    What tasks group under: a name, a lifecycle and a summary, with the tasks
+    pointing at it. Still thin on purpose: everything else about the work
+    lives on the tasks themselves.
   names:
     singular: project
     plural: projects

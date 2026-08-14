@@ -11,10 +11,10 @@ metadata:
 data:
   authority: core.substrate.reamde.dev
   description: >-
-    One agent invocation's conversation state; there is no agent-run
-    record, the thread IS the run. Status, turns, tokens and cost
-    accumulate as the loop goes, and a root thread's tally rolls up every
-    sub-agent's spend, so one number answers what a chain cost.
+    One agent invocation's conversation state; there is no agent-run record,
+    the thread IS the run. Status, turns, tokens and cost accumulate as the
+    loop goes, and a root thread's tally rolls up every sub-agent's spend,
+    so one number answers what a chain cost.
   # v1alpha3: the `llm` column split into `provider` + `model` — the run records
   # WHERE it bought its completions and WHAT model it sent. The bump is what
   # carries the new columns into repositories that stored the authority's

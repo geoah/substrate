@@ -6,9 +6,9 @@ data:
   authority: people.substrate.reamde.dev
   description: >-
     A corporate body a person belongs to: employer, workspace, publisher,
-    studio, network, label. Which of those it is depends on the edge
-    pointing at it, not on a second kind, and nothing matches on the
-    domain — grouping contacts under one is deliberate.
+    studio, network, label. Which of those it is depends on the edge pointing
+    at it, not on a second kind, and nothing matches on the domain — grouping
+    contacts under one is deliberate.
   names:
     singular: organization
     plural: organizations

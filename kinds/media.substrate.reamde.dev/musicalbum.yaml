@@ -5,10 +5,10 @@ metadata:
 data:
   authority: media.substrate.reamde.dev
   description: >-
-    One album or release: when it came out, its genres, its cover, the
-    artists credited and the label that put it out. Its tracks point back
-    at it and carry their own artist, because a compilation's tracks do
-    not share the album's.
+    One album or release: when it came out, its genres, its cover, the artists
+    credited and the label that put it out. Its tracks point back at it and
+    carry their own artist, because a compilation's tracks do not share the
+    album's.
   names:
     singular: musicalbum
     plural: musicalbums

@@ -28,7 +28,8 @@
 #   GET …/api/v1/core.substrate.reamde.dev/oauth/callback (see README).
 # ---- the owned authority ------------------------------------------------------
 kind: core.substrate.reamde.dev/authority
-metadata: {id: linear.bundles.substrate.reamde.dev}
+metadata:
+  id: linear.bundles.substrate.reamde.dev
 data:
   version: v1alpha1
 ---
@@ -37,7 +38,8 @@ data:
 # authority header and the bundle itself): the two config types, the three mirror
 # types, the two functions, and the two →person mappings.
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: linear.bundles.substrate.reamde.dev/linear}
+metadata:
+  id: linear.bundles.substrate.reamde.dev/linear
 data:
   authority: linear.bundles.substrate.reamde.dev
   description: >-
@@ -85,14 +87,17 @@ data:
 # the Linear OAuth application the owner registers — ONLY its clientId
 # and secret-typed clientSecret. Endpoints live on the bundle manifest above.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: linear.bundles.substrate.reamde.dev/config}
+metadata:
+  id: linear.bundles.substrate.reamde.dev/config
 data:
   authority: linear.bundles.substrate.reamde.dev
   description: >-
-    The Linear OAuth application this bundle authenticates through: a
-    client id and a sealed client secret, the record the bundle's client
-    input resolves. The endpoints live on the bundle manifest.
-  names: {singular: config, plural: configs}
+    The Linear OAuth application this bundle authenticates through: a client
+    id and a sealed client secret, the record the bundle's client input resolves.
+    The endpoints live on the bundle manifest.
+  names:
+    singular: config
+    plural: configs
   traits: [oauth2]
   displayTemplate: "Linear client {clientId}"
   properties:
@@ -115,15 +120,17 @@ data:
 # account's enabled toggles. Every property carries a `writer:` role so only
 # its rightful hand may set it (review-google #2).
 kind: core.substrate.reamde.dev/kind
-metadata: {id: linear.bundles.substrate.reamde.dev/account}
+metadata:
+  id: linear.bundles.substrate.reamde.dev/account
 data:
   authority: linear.bundles.substrate.reamde.dev
   description: >-
-    One connected Linear login. The OAuth facility writes the credential
-    reference and status; the address is stamped by the sync from Linear's
-    viewer query, because Linear exposes no userinfo endpoint to read at
-    the exchange.
-  names: {singular: account, plural: accounts}
+    One connected Linear login. The OAuth facility writes the credential reference
+    and status; the address is stamped by the sync from Linear's viewer query,
+    because Linear exposes no userinfo endpoint to read at the exchange.
+  names:
+    singular: account
+    plural: accounts
   traits: [accountconfig]
   displayTemplate: "{email}"
   properties:
@@ -175,9 +182,12 @@ data:
     syncFrequency:
       type: enum
       values:
-        - {value: off, label: Off}
-        - {value: hourly, label: "Every hour"}
-        - {value: daily, label: "Once a day"}
+        - value: off
+          label: Off
+        - value: hourly
+          label: "Every hour"
+        - value: daily
+          label: "Once a day"
       required: true
       default: daily
       writer: owner
@@ -191,11 +201,16 @@ data:
     backfillDepth:
       type: enum
       values:
-        - {value: none, label: "Don't backfill"}
-        - {value: last30d, label: "Last 30 days"}
-        - {value: last90d, label: "Last 90 days"}
-        - {value: last1y, label: "Last year"}
-        - {value: all, label: Everything}
+        - value: none
+          label: "Don't backfill"
+        - value: last30d
+          label: "Last 30 days"
+        - value: last90d
+          label: "Last 90 days"
+        - value: last1y
+          label: "Last year"
+        - value: all
+          label: Everything
       required: true
       default: last30d
       writer: owner
@@ -228,14 +243,17 @@ data:
 # edge is left EMPTY on write; the mapping below matches or mints the person
 # and links it in the same transaction.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: linear.bundles.substrate.reamde.dev/user}
+metadata:
+  id: linear.bundles.substrate.reamde.dev/user
 data:
   authority: linear.bundles.substrate.reamde.dev
   description: >-
-    What Linear holds about one user — full name, handle, login address
-    and profile URL. It points at a person, so a Linear login and the same
-    human's other identities converge on one record.
-  names: {singular: user, plural: users}
+    What Linear holds about one user — full name, handle, login address and
+    profile URL. It points at a person, so a Linear login and the same human's
+    other identities converge on one record.
+  names:
+    singular: user
+    plural: users
   displayTemplate: "{displayName|name}"
   properties:
     account:
@@ -274,14 +292,17 @@ data:
 # Teams arrive as the issues' team refs — enough to hang the issue→team edge
 # off. Id: host.ids.external("linear", account, "team:<uuid>").
 kind: core.substrate.reamde.dev/kind
-metadata: {id: linear.bundles.substrate.reamde.dev/team}
+metadata:
+  id: linear.bundles.substrate.reamde.dev/team
 data:
   authority: linear.bundles.substrate.reamde.dev
   description: >-
-    One Linear team, arriving as the issues' team references: its key —
-    the ENG in ENG-123 — and its name. Enough to hang an issue off,
-    deliberately no more.
-  names: {singular: team, plural: teams}
+    One Linear team, arriving as the issues' team references: its key — the
+    ENG in ENG-123 — and its name. Enough to hang an issue off, deliberately
+    no more.
+  names:
+    singular: team
+    plural: teams
   displayTemplate: "{name}"
   properties:
     account:
@@ -309,15 +330,18 @@ data:
 # just minted. `title` is the reserved built-in — the sync writes it, no
 # declaration here.
 kind: core.substrate.reamde.dev/kind
-metadata: {id: linear.bundles.substrate.reamde.dev/issue}
+metadata:
+  id: linear.bundles.substrate.reamde.dev/issue
 data:
   authority: linear.bundles.substrate.reamde.dev
   description: >-
-    What Linear holds about one assigned issue: identifier, workflow
-    state, priority, due date and assignee. It projects onto a task and
-    remembers the last upstream state it adopted, so an unchanged Linear
-    state never overwrites a status you set.
-  names: {singular: issue, plural: issues}
+    What Linear holds about one assigned issue: identifier, workflow state,
+    priority, due date and assignee. It projects onto a task and remembers
+    the last upstream state it adopted, so an unchanged Linear state never
+    overwrites a status you set.
+  names:
+    singular: issue
+    plural: issues
   properties:
     account:
       type: string
@@ -418,7 +442,8 @@ data:
 # outbox, issue 009). Deleted/unassigned issues are not swept — their mirrors
 # stay until a future tombstone slice (see README).
 kind: core.substrate.reamde.dev/function
-metadata: {id: linear.bundles.substrate.reamde.dev/issuessync}
+metadata:
+  id: linear.bundles.substrate.reamde.dev/issuessync
 data:
   authority: linear.bundles.substrate.reamde.dev
   description: >-
@@ -866,7 +891,8 @@ data:
 # SUBSTRATE write; nothing here (or anywhere in this bundle) writes back to
 # Linear.
 kind: core.substrate.reamde.dev/function
-metadata: {id: linear.bundles.substrate.reamde.dev/taskprojection}
+metadata:
+  id: linear.bundles.substrate.reamde.dev/taskprojection
 data:
   authority: linear.bundles.substrate.reamde.dev
   description: >-
@@ -972,7 +998,8 @@ data:
 # and unions the address onto the person (machine-managed, yielding to any
 # owner edit).
 kind: core.substrate.reamde.dev/recordmapping
-metadata: {id: linear.bundles.substrate.reamde.dev/userperson}
+metadata:
+  id: linear.bundles.substrate.reamde.dev/userperson
 data:
   authority: linear.bundles.substrate.reamde.dev
   from: linear.bundles.substrate.reamde.dev/user
@@ -994,7 +1021,8 @@ data:
 # person, so this resolves to the same human). No map block — an issue
 # describes work, not the person; nothing of it belongs on the human.
 kind: core.substrate.reamde.dev/recordmapping
-metadata: {id: linear.bundles.substrate.reamde.dev/issueperson}
+metadata:
+  id: linear.bundles.substrate.reamde.dev/issueperson
 data:
   authority: linear.bundles.substrate.reamde.dev
   from: linear.bundles.substrate.reamde.dev/issue

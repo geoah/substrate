@@ -5,10 +5,10 @@ metadata:
 data:
   authority: people.substrate.reamde.dev
   description: >-
-    A working group finer than an organization: the people who share a
-    backlog. Teams nest through the parent edge, and leadership is the
-    leads edge rather than a flag on the member, so one person can lead
-    one team and merely sit on another.
+    A working group finer than an organization: the people who share a backlog.
+    Teams nest through the parent edge, and leadership is the leads edge rather
+    than a flag on the member, so one person can lead one team and merely
+    sit on another.
   names:
     singular: team
     plural: teams

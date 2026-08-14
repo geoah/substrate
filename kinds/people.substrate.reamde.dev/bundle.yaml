@@ -38,7 +38,8 @@ data:
 # nothing else — no inputs, no functions, no agents, no OAuth, no
 # triggers — so `installs:` is exactly the authority's declared members.
 kind: core.substrate.reamde.dev/bundle
-metadata: {id: people.substrate.reamde.dev/people}
+metadata:
+  id: people.substrate.reamde.dev/people
 data:
   authority: people.substrate.reamde.dev
   description: >-

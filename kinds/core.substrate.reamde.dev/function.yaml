@@ -8,10 +8,10 @@ metadata:
 data:
   authority: core.substrate.reamde.dev
   description: >-
-    One declared function: a callable reaction to the substrate's own
-    changes, invoked by a trigger or called directly. The declaration IS
-    the record — a write admits it, the commit activates it, and the
-    dispatcher reads the registry this row rebuilds into.
+    One declared function: a callable reaction to the substrate's own changes,
+    invoked by a trigger or called directly. The declaration IS the record
+    — a write admits it, the commit activates it, and the dispatcher reads
+    the registry this row rebuilds into.
   # v1alpha2: the display template dropped the authority. A declaration's
   # identity is `<authority>/<name>` and the dotted composite it used to render
   # names nothing — the bump is what carries the new template into repositories

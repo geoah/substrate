@@ -5,10 +5,9 @@ metadata:
 data:
   authority: media.substrate.reamde.dev
   description: >-
-    One episode, on the timeline at its air date. The season number is a
-    property as well as an edge on purpose: an unaired special can arrive
-    before its season row exists, so the episode always knows where it
-    belongs.
+    One episode, on the timeline at its air date. The season number is a property
+    as well as an edge on purpose: an unaired special can arrive before its
+    season row exists, so the episode always knows where it belongs.
   names:
     singular: tvepisode
     plural: tvepisodes

@@ -7,8 +7,8 @@ data:
   description: >-
     One recorded value of an observation: the value as a string, typed by
     the observation's valueKind, with where it came from. A spanning entry
-    (sleep, a walk) carries its whole range; a point entry carries only
-    when it was observed.
+    (sleep, a walk) carries its whole range; a point entry carries only when
+    it was observed.
   names:
     singular: observationlog
     plural: observationlogs
@@ -64,4 +64,5 @@ data:
     # other one.
     subject:
       to: any
-      description: the meal, workout or blood test this entry was derived from
+      description: the meal, workout or blood test this entry was derived
+        from

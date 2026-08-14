@@ -10,10 +10,10 @@ metadata:
 data:
   authority: core.substrate.reamde.dev
   description: >-
-    One installed bundle, the install unit. It names the authority the
-    bundle owns and the exact closure it ships — kinds, record mappings,
-    functions, agents and triggers — and carries the runtime state the
-    lifecycle verbs own: disabled, uninstalled, purging.
+    One installed bundle, the install unit. It names the authority the bundle
+    owns and the exact closure it ships — kinds, record mappings, functions,
+    agents and triggers — and carries the runtime state the lifecycle verbs
+    own: disabled, uninstalled, purging.
   names:
     singular: bundle
     plural: bundles

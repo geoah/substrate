@@ -5,10 +5,9 @@ metadata:
 data:
   authority: health.substrate.reamde.dev
   description: >-
-    One blood draw: which lab, when it was drawn, and the report files.
-    Individual markers worth tracking over time are observationlog entries
-    whose subject edge points back here, so a marker's history reads like
-    any other observation's.
+    One blood draw: which lab, when it was drawn, and the report files. Individual
+    markers worth tracking over time are observationlog entries whose subject
+    edge points back here, so a marker's history reads like any other observation's.
   names:
     singular: bloodtest
     plural: bloodtests

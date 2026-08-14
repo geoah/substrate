@@ -20,10 +20,10 @@ metadata:
 data:
   authority: core.substrate.reamde.dev
   description: >-
-    One place completions are bought: the wire an adapter speaks, the
-    endpoint, the key that reaches it, and what its models cost. An agent
-    names a provider and a model, so re-pointing every agent on a provider
-    is one patch to this row.
+    One place completions are bought: the wire an adapter speaks, the endpoint,
+    the key that reaches it, and what its models cost. An agent names a provider
+    and a model, so re-pointing every agent on a provider is one patch to
+    this row.
   # v1alpha3: wire became an enum, and headers/defaults/pricing became declared
   # objects instead of json. The bump is what carries the shapes into
   # repositories that already stored the v1alpha2 declaration — and what makes
@@ -56,7 +56,8 @@ data:
     baseURL:
       type: url
       description: the endpoint; empty on openai means the host's configured
-        gateway, empty on anthropic the official endpoint, and azure requires it
+        gateway, empty on anthropic the official endpoint, and azure requires
+        it
     apiKey:
       type: secret
       description: bearer for the endpoint; empty is only meaningful on an

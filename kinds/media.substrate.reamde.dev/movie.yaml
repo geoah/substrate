@@ -6,9 +6,9 @@ data:
   authority: media.substrate.reamde.dev
   description: >-
     One film, as Radarr and TMDb describe it: the year it is filed under,
-    when it came out, runtime, certification, genres, synopsis and where
-    the file lives. One kind and no edition split — a film's public
-    identifiers name the work itself.
+    when it came out, runtime, certification, genres, synopsis and where the
+    file lives. One kind and no edition split — a film's public identifiers
+    name the work itself.
   names:
     singular: movie
     plural: movies

@@ -5,10 +5,9 @@ metadata:
 data:
   authority: calendar.substrate.reamde.dev
   description: >-
-    A meeting's transcript, pointed at the occurrence that actually
-    happened and the people who spoke. The text is embedded, so what was
-    said in a meeting is searchable alongside everything else rather than
-    only scrollable.
+    A meeting's transcript, pointed at the occurrence that actually happened
+    and the people who spoke. The text is embedded, so what was said in a
+    meeting is searchable alongside everything else rather than only scrollable.
   names:
     singular: transcript
     plural: transcripts

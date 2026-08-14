@@ -6,8 +6,8 @@ data:
   authority: food.substrate.reamde.dev
   description: >-
     Instructions for one dish: where it came from, how long it takes, how
-    many it feeds, and the steps as prose. Cooking it is a meal pointing
-    here, so the recipe never accumulates history.
+    many it feeds, and the steps as prose. Cooking it is a meal pointing here,
+    so the recipe never accumulates history.
   names:
     singular: recipe
     plural: recipes

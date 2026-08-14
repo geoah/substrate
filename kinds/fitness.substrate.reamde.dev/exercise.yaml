@@ -5,9 +5,9 @@ metadata:
 data:
   authority: fitness.substrate.reamde.dev
   description: >-
-    One movement in the catalog: what it is, what it works and what it
-    needs. Performances of it are workoutsets pointing here, so the
-    catalog stays small and the history lives on the sets.
+    One movement in the catalog: what it is, what it works and what it needs.
+    Performances of it are workoutsets pointing here, so the catalog stays
+    small and the history lives on the sets.
   names:
     singular: exercise
     plural: exercises

@@ -6,8 +6,8 @@ data:
   authority: places.substrate.reamde.dev
   description: >-
     Somewhere worth remembering: home, the gym, a restaurant that earned a
-    note. The record is the place itself; what happened there lives on
-    whatever points at it.
+    note. The record is the place itself; what happened there lives on whatever
+    points at it.
   names:
     singular: place
     plural: places

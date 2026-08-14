@@ -5,10 +5,10 @@ metadata:
 data:
   authority: routines.substrate.reamde.dev
   description: >-
-    One recurring obligation: a chore, a habit, hygiene, a practice. It
-    carries its own name so display never needs a hop, an RRULE for when,
-    and a window for how precisely when matters. Each occurrence that
-    actually happened or was skipped is a routinelog.
+    One recurring obligation: a chore, a habit, hygiene, a practice. It carries
+    its own name so display never needs a hop, an RRULE for when, and a window
+    for how precisely when matters. Each occurrence that actually happened
+    or was skipped is a routinelog.
   names:
     singular: routine
     plural: routines

@@ -8,7 +8,8 @@
 #   weekly schedule  --weeklyrollup-->  digest proposal
 # findurls fires on any conversationmessage create/update.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: web-findurls-on-message}
+metadata:
+  id: web-findurls-on-message
 data:
   properties:
     enabled: true
@@ -16,11 +17,14 @@ data:
       record:
         kinds: [messaging.substrate.reamde.dev/conversationmessage]
         ops: [create, update]
-    callable: {kind: core.substrate.reamde.dev/function, id: web.bundles.substrate.reamde.dev/findurls}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: web.bundles.substrate.reamde.dev/findurls
 ---
 # fetchpage fires when a page is born pending.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: web-fetch-on-page}
+metadata:
+  id: web-fetch-on-page
 data:
   properties:
     enabled: true
@@ -29,11 +33,14 @@ data:
         kinds: [web.bundles.substrate.reamde.dev/page]
         ops: [create]
         when: 'record != null && record.properties.fetch == "pending"'
-    callable: {kind: core.substrate.reamde.dev/function, id: web.bundles.substrate.reamde.dev/fetchpage}
+    callable:
+      kind: core.substrate.reamde.dev/function
+      id: web.bundles.substrate.reamde.dev/fetchpage
 ---
 # the classifier fires when a fetched page is still unclassified.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: web-classify-on-page}
+metadata:
+  id: web-classify-on-page
 data:
   properties:
     enabled: true
@@ -43,11 +50,14 @@ data:
         ops: [update]
         when: 'record != null && record.properties.fetch == "fetched" && !("class"
           in record.properties)'
-    callable: {kind: core.substrate.reamde.dev/agent, id: web.bundles.substrate.reamde.dev/pageclassifier}
+    callable:
+      kind: core.substrate.reamde.dev/agent
+      id: web.bundles.substrate.reamde.dev/pageclassifier
 ---
 # the weekly rollup fires on a schedule, no changelog row underneath.
 kind: core.substrate.reamde.dev/trigger
-metadata: {id: web-rollup-weekly}
+metadata:
+  id: web-rollup-weekly
 data:
   properties:
     enabled: true
@@ -58,4 +68,6 @@ data:
         # a fixed past anchor, so every Monday since is a well-defined
         # occurrence (occurrences are computed forward from startsAt).
         startsAt: "2025-01-06T09:00:00Z"
-    callable: {kind: core.substrate.reamde.dev/agent, id: web.bundles.substrate.reamde.dev/weeklyrollup}
+    callable:
+      kind: core.substrate.reamde.dev/agent
+      id: web.bundles.substrate.reamde.dev/weeklyrollup
