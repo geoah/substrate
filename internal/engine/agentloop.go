@@ -225,7 +225,9 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 // LOADER's own validator, so a provider row is held to exactly the rules an
 // agent manifest is and neither can carry a knob the loop would drop.
 func mergeParams(providerID string, defaults, own map[string]any) (llm.Params, error) {
-	merged := make(map[string]any, len(defaults)+len(own))
+	// Sized to one half: a summed capacity hint is an overflowable
+	// allocation size to the scanner, and the other half grows the map.
+	merged := make(map[string]any, len(defaults))
 	for k, v := range defaults {
 		merged[k] = v
 	}

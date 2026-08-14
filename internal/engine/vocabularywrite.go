@@ -690,7 +690,10 @@ func (t *txn) declarationReplacement(d declaration) (map[string]any, error) {
 	if err != nil || row == nil {
 		return d.props, err
 	}
-	props := make(map[string]any, len(d.props)+len(row.Props))
+	// Sized to the declaration's half alone: the sum of two lengths is what
+	// CodeQL flags as an overflowable allocation size, and a map hint is not
+	// worth the finding — the row's keys grow the map organically below.
+	props := make(map[string]any, len(d.props))
 	for k, v := range d.props {
 		props[k] = v
 	}
