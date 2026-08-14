@@ -153,7 +153,12 @@ function fieldSpecs(v: unknown): PropSpec[] | undefined {
   const out = Object.keys(raw)
     .sort((a, b) => a.localeCompare(b))
     .map((name) =>
-      specOf(name, typeof raw[name] === "string" ? { type: raw[name] } : (raw[name] as Record<string, unknown>) ?? {})
+      specOf(
+        name,
+        typeof raw[name] === "string"
+          ? { type: raw[name] }
+          : ((raw[name] as Record<string, unknown>) ?? {})
+      )
     )
   return out.length ? out : undefined
 }
@@ -208,7 +213,10 @@ export function propSpecs(kind: KindInfo): PropSpec[] {
  * undeclared, because the substrate accepts them. */
 export function systemSpecs(kind: KindInfo): PropSpec[] {
   const specs: PropSpec[] = [
-    specOf("title", { type: "string", description: "the record's display title" }),
+    specOf("title", {
+      type: "string",
+      description: "the record's display title",
+    }),
     specOf("body", { type: "text", description: "the record's body text" }),
   ]
   for (const name of temporalProperties(kind)) {
@@ -330,7 +338,8 @@ export function seedValue(spec: PropSpec): unknown {
 // ── the value rules (the substrate's own, client-side) ───────────────────────
 
 /** RFC 3339, and the two shorter forms the substrate's `parseTime` accepts. */
-const DATETIME = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/
+const DATETIME =
+  /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/
 const CIVIL_DATE = /^\d{4}-\d{2}-\d{2}$/
 /** Go's duration grammar (`time.ParseDuration`): `47m12s`, `1.5h`, `-3ms`. */
 const DURATION = /^[-+]?(\d+(\.\d*)?(ns|us|µs|μs|ms|s|m|h))+$/
@@ -413,8 +422,10 @@ export function checkItem(spec: PropSpec, value: unknown): string | undefined {
     ) {
       return "expected an integer"
     }
-    if (spec.min !== undefined && value < spec.min) return `must be >= ${spec.min}`
-    if (spec.max !== undefined && value > spec.max) return `must be <= ${spec.max}`
+    if (spec.min !== undefined && value < spec.min)
+      return `must be >= ${spec.min}`
+    if (spec.max !== undefined && value > spec.max)
+      return `must be <= ${spec.max}`
     return undefined
   }
 
@@ -470,7 +481,8 @@ export function checkItem(spec: PropSpec, value: unknown): string | undefined {
       if (!SHA256.test(s)) return "expected a SHA-256 digest (64 lowercase hex)"
       break
     case "blobref":
-      if (!BLOB_REF.test(s)) return "expected a blob digest (blob-sha256-<64 hex>)"
+      if (!BLOB_REF.test(s))
+        return "expected a blob digest (blob-sha256-<64 hex>)"
       break
   }
 
@@ -479,7 +491,8 @@ export function checkItem(spec: PropSpec, value: unknown): string | undefined {
   }
   if (spec.pattern) {
     try {
-      if (!new RegExp(spec.pattern).test(s)) return `does not match ${spec.pattern}`
+      if (!new RegExp(spec.pattern).test(s))
+        return `does not match ${spec.pattern}`
     } catch {
       // A Go pattern JavaScript cannot compile is the server's to enforce.
     }
@@ -515,7 +528,9 @@ export function formatValue(spec: PropSpec, value: unknown): string {
   if (controlFor(spec) === "secret") return ""
   if (Array.isArray(value)) {
     return value
-      .map((v) => (typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)))
+      .map((v) =>
+        typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)
+      )
       .join("\n")
   }
   if (typeof value === "object") return JSON.stringify(value, null, 2)

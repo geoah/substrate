@@ -159,9 +159,7 @@ export function ChangeDetail({ row }: { row: ChangeRow }) {
         </span>
       </DetailRow>
       {properties.length > 0 && (
-        <DetailRow
-          label={properties.length === 1 ? "property" : "properties"}
-        >
+        <DetailRow label={properties.length === 1 ? "property" : "properties"}>
           {states.length > 0 ? (
             // A state property's new value rides the row; a plain one's does
             // not, so only the states get an arrow.
@@ -213,7 +211,10 @@ export function ChangeDetail({ row }: { row: ChangeRow }) {
                   </span>
                 )}
                 {effect.detail && (
-                  <span className="text-muted-foreground"> — {effect.detail}</span>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    — {effect.detail}
+                  </span>
                 )}
               </li>
             ))}

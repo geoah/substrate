@@ -37,7 +37,11 @@ import {
   type AgentResult,
   type ChatHandle,
 } from "@/lib/api/agents"
-import { transcriptOf, type ToolCallView, type TurnView } from "@/lib/api/transcript"
+import {
+  transcriptOf,
+  type ToolCallView,
+  type TurnView,
+} from "@/lib/api/transcript"
 import { agentChatRoute } from "@/router"
 
 /** The live overlay. `closed` marks the assistant turn as finished with its
@@ -56,7 +60,12 @@ function pushDelta(live: Live, text: string, seq: number): Live {
   const turns = [...live.turns]
   const last = turns[turns.length - 1]
   if (!last || last.role !== "assistant" || live.closed) {
-    turns.push({ key: `live-a${seq}`, role: "assistant", content: text, tools: [] })
+    turns.push({
+      key: `live-a${seq}`,
+      role: "assistant",
+      content: text,
+      tools: [],
+    })
     return { turns, closed: false }
   }
   turns[turns.length - 1] = { ...last, content: last.content + text }
@@ -69,7 +78,12 @@ function pushToolStart(live: Live, call: ToolCallView, seq: number): Live {
   const turns = [...live.turns]
   const last = turns[turns.length - 1]
   if (!last || last.role !== "assistant") {
-    turns.push({ key: `live-a${seq}`, role: "assistant", content: "", tools: [call] })
+    turns.push({
+      key: `live-a${seq}`,
+      role: "assistant",
+      content: "",
+      tools: [call],
+    })
     return { ...live, turns }
   }
   turns[turns.length - 1] = { ...last, tools: [...last.tools, call] }
@@ -203,13 +217,18 @@ function ChatSurface({ id }: { id: string }) {
         if (ev.thread && ev.thread !== thread) void setThread(ev.thread)
         break
       case "delta":
-        if (ev.text) update(pushDelta(liveRef.current, ev.text, seqRef.current++))
+        if (ev.text)
+          update(pushDelta(liveRef.current, ev.text, seqRef.current++))
         break
       case "toolStarted":
         update(
           pushToolStart(
             liveRef.current,
-            { id: ev.id ?? "", name: ev.tool ?? "tool", arguments: ev.args ?? "" },
+            {
+              id: ev.id ?? "",
+              name: ev.tool ?? "tool",
+              arguments: ev.args ?? "",
+            },
             seqRef.current++
           )
         )
@@ -218,7 +237,11 @@ function ChatSurface({ id }: { id: string }) {
         update(
           settleTool(
             liveRef.current,
-            { id: ev.id ?? "", name: ev.tool ?? "tool", arguments: ev.args ?? "" },
+            {
+              id: ev.id ?? "",
+              name: ev.tool ?? "tool",
+              arguments: ev.args ?? "",
+            },
             ev.output ?? "",
             ev.ok ?? true,
             seqRef.current++
@@ -242,7 +265,12 @@ function ChatSurface({ id }: { id: string }) {
     setSettledAt(0)
     update({
       turns: [
-        { key: `live-u${seqRef.current}`, role: "user", content: message, tools: [] },
+        {
+          key: `live-u${seqRef.current}`,
+          role: "user",
+          content: message,
+          tools: [],
+        },
       ],
       closed: false,
     })
@@ -359,8 +387,8 @@ function ChatSurface({ id }: { id: string }) {
               {result && (
                 <div className="rounded-md border bg-muted/40 px-3 py-2 data text-xs text-muted-foreground">
                   {result.status}
-                  {result.reason ? ` (${result.reason})` : ""}, {result.turns} turns,{" "}
-                  {result.toolCalls} tool calls,{" "}
+                  {result.reason ? ` (${result.reason})` : ""}, {result.turns}{" "}
+                  turns, {result.toolCalls} tool calls,{" "}
                   {result.totalTokens.toLocaleString()} tokens
                   {result.costUSD ? `, $${result.costUSD.toFixed(4)}` : ""}
                 </div>

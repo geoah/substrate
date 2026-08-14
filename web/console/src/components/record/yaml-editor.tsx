@@ -73,7 +73,11 @@ const HIGHLIGHT = HighlightStyle.define([
     tag: [tags.number, tags.bool, tags.null, tags.atom],
     color: "var(--shiki-token-constant)",
   },
-  { tag: tags.comment, color: "var(--shiki-token-comment)", fontStyle: "italic" },
+  {
+    tag: tags.comment,
+    color: "var(--shiki-token-comment)",
+    fontStyle: "italic",
+  },
   {
     tag: [tags.punctuation, tags.separator, tags.meta],
     color: "var(--shiki-token-punctuation)",
@@ -115,7 +119,10 @@ const THEME = EditorView.theme({
     borderRadius: "0.375rem",
     boxShadow: "0 4px 12px rgb(0 0 0 / 0.12)",
   },
-  ".cm-tooltip-autocomplete > ul > li": { fontFamily: "inherit", padding: "2px 6px" },
+  ".cm-tooltip-autocomplete > ul > li": {
+    fontFamily: "inherit",
+    padding: "2px 6px",
+  },
   ".cm-tooltip-autocomplete > ul > li[aria-selected]": {
     backgroundColor: "color-mix(in oklab, var(--primary) 18%, transparent)",
     color: "var(--popover-foreground)",
@@ -165,7 +172,10 @@ export function YamlEditor({
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
 
-  const specs = useMemo(() => [...propSpecs(kind), ...systemSpecs(kind)], [kind])
+  const specs = useMemo(
+    () => [...propSpecs(kind), ...systemSpecs(kind)],
+    [kind]
+  )
 
   // The live props, read by extensions that outlive the render that made them.
   // They are refreshed in an effect, never during render: the editor is built
@@ -189,7 +199,10 @@ export function YamlEditor({
       if (!found) return null
       // Nothing typed yet: only an explicit ask opens the list, so the popup
       // does not blink open on every newline.
-      const typed = context.state.doc.sliceString(line.from + found.from, context.pos)
+      const typed = context.state.doc.sliceString(
+        line.from + found.from,
+        context.pos
+      )
       if (!context.explicit && !typed) return null
       return {
         from: line.from + found.from,
@@ -265,7 +278,8 @@ export function YamlEditor({
       ]),
       EditorView.contentAttributes.of({ "aria-label": label }),
       EditorView.updateListener.of((update) => {
-        if (update.docChanged) latest.current.onChange(update.state.doc.toString())
+        if (update.docChanged)
+          latest.current.onChange(update.state.doc.toString())
       }),
     ]
 

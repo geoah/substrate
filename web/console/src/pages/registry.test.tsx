@@ -80,7 +80,10 @@ const PEOPLE = bundle({
   version: "v1alpha1",
   vocabulary: true,
   closure: {
-    kinds: ["people.substrate.reamde.dev/person", "people.substrate.reamde.dev/personmerge"],
+    kinds: [
+      "people.substrate.reamde.dev/person",
+      "people.substrate.reamde.dev/personmerge",
+    ],
   },
 })
 
@@ -96,7 +99,11 @@ const GOOGLE = bundle({
     },
   },
   integration: true,
-  requires: ["people.substrate.reamde.dev", "messaging.substrate.reamde.dev", "calendar.substrate.reamde.dev"],
+  requires: [
+    "people.substrate.reamde.dev",
+    "messaging.substrate.reamde.dev",
+    "calendar.substrate.reamde.dev",
+  ],
   closure: {
     kinds: [
       "google.bundles.substrate.reamde.dev/config",
@@ -104,7 +111,9 @@ const GOOGLE = bundle({
       "google.bundles.substrate.reamde.dev/contact",
     ],
     functions: ["google.bundles.substrate.reamde.dev/syncgoogle"],
-    records: [{ kind: "core.substrate.reamde.dev/trigger", id: "ongooglesync" }],
+    records: [
+      { kind: "core.substrate.reamde.dev/trigger", id: "ongooglesync" },
+    ],
   },
 })
 
@@ -232,7 +241,10 @@ describe("RegistryPage", () => {
           installed: true,
           enabled: true,
           inputs: [
-            { name: "client", kind: "google.bundles.substrate.reamde.dev/config" },
+            {
+              name: "client",
+              kind: "google.bundles.substrate.reamde.dev/config",
+            },
           ],
           setup: [
             {
@@ -276,7 +288,9 @@ describe("RegistryPage", () => {
     expect(within(detail).getByText("syncgoogle")).toBeTruthy()
     expect(within(detail).getByText("ongooglesync")).toBeTruthy()
     // What it is, and what it declares against.
-    expect(within(detail).getByText(/connects an external provider/i)).toBeTruthy()
+    expect(
+      within(detail).getByText(/connects an external provider/i)
+    ).toBeTruthy()
     expect(
       within(detail).getByTitle(
         "people.substrate.reamde.dev is not imported — the import is refused until it is"
@@ -291,7 +305,9 @@ describe("RegistryPage", () => {
     // Not imported: the kind exists on paper only, so it does not pretend to
     // link anywhere.
     expect(person.tagName).toBe("SPAN")
-    expect(person.getAttribute("title")).toBe("people.substrate.reamde.dev/person")
+    expect(person.getAttribute("title")).toBe(
+      "people.substrate.reamde.dev/person"
+    )
   })
 
   it("refuses the import while a required authority is missing, naming it", async () => {
@@ -305,7 +321,9 @@ describe("RegistryPage", () => {
       )
     ).toBeTruthy()
     // …and the row itself says what is missing, without opening anything.
-    expect(within(google).getByText(/needs people.substrate.reamde.dev/)).toBeTruthy()
+    expect(
+      within(google).getByText(/needs people.substrate.reamde.dev/)
+    ).toBeTruthy()
   })
 
   it("imports a closure that declares against nothing", async () => {
@@ -332,7 +350,11 @@ describe("RegistryPage", () => {
     serve({
       install: () =>
         jsonResponse(422, {
-          error: { code: "validation", message: "validation error", problems: [problem] },
+          error: {
+            code: "validation",
+            message: "validation error",
+            problems: [problem],
+          },
         }),
     })
     renderPage(<RegistryPage />)
@@ -383,9 +405,9 @@ describe("RegistryPage", () => {
       renderPage(<RegistryPage />)
       const google = await rowOf("google")
       expect(
-        within(google).getByRole("button", { name: /Import/ }).hasAttribute(
-          "disabled"
-        )
+        within(google)
+          .getByRole("button", { name: /Import/ })
+          .hasAttribute("disabled")
       ).toBe(false)
       expect(within(google).queryByText(/needs /)).toBeNull()
       const detail = expand(google)
@@ -418,7 +440,9 @@ describe("RegistryPage", () => {
       serve({ statuses: [peopleStatus()], catalog: [MOVED, GOOGLE] })
       renderPage(<RegistryPage />)
       const people = await rowOf("people")
-      expect(within(people).getByText("update v1alpha1 → v1alpha2")).toBeTruthy()
+      expect(
+        within(people).getByText("update v1alpha1 → v1alpha2")
+      ).toBeTruthy()
       fireEvent.click(within(people).getByRole("button", { name: /Upgrade/ }))
       await waitFor(() => {
         expect(

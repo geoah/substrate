@@ -28,8 +28,7 @@ function kindFromRecord(item: Record<string, unknown>): KindInfo | undefined {
   if (!identity) return undefined
   const { authority, name } = splitKind(identity)
   const definition = properties.definition as
-    | Record<string, unknown>
-    | undefined
+    Record<string, unknown> | undefined
   return {
     identity,
     name: String(properties.name ?? name),
@@ -43,9 +42,7 @@ function kindFromRecord(item: Record<string, unknown>): KindInfo | undefined {
     // renders as prose, and `String()` would turn a malformed declaration's
     // object into "[object Object]" on the page.
     description:
-      typeof definition?.description === "string"
-        ? definition.description
-        : "",
+      typeof definition?.description === "string" ? definition.description : "",
     definition,
   }
 }
@@ -157,10 +154,5 @@ export function buildKindNav(kinds: KindInfo[]): KindNav {
  * explicitly so a bad one never touches the stored session. */
 export async function probeToken(token: string): Promise<void> {
   const q = new URLSearchParams({ first: "1" })
-  await request<Page>(
-    "GET",
-    `${corePath(KINDS)}?${q}`,
-    undefined,
-    { token }
-  )
+  await request<Page>("GET", `${corePath(KINDS)}?${q}`, undefined, { token })
 }

@@ -31,7 +31,13 @@ import { EvidenceChips, MergePair } from "@/components/merge-request"
 /** Evidence cards the zone shows; the queue holds the rest. */
 const TOP_N = 3
 
-function PendingCard({ mr, kinds }: { mr: SubstrateRecord; kinds: KindInfo[] }) {
+function PendingCard({
+  mr,
+  kinds,
+}: {
+  mr: SubstrateRecord
+  kinds: KindInfo[]
+}) {
   const navigate = useNavigate()
   return (
     <div
@@ -54,7 +60,7 @@ function PendingCard({ mr, kinds }: { mr: SubstrateRecord; kinds: KindInfo[] }) 
           types={kinds}
         />
         <span
-          className="data ml-auto shrink-0 text-muted-foreground"
+          className="ml-auto shrink-0 data text-muted-foreground"
           title={mr.createdAt}
         >
           {relativeTime(mr.createdAt)}
@@ -78,7 +84,8 @@ export function MergeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
     enabled: Boolean(requests.data?.cursor),
   })
   const pending = derivedTotal ?? count.data?.value
-  const pendingCapped = derivedTotal === undefined && Boolean(count.data?.capped)
+  const pendingCapped =
+    derivedTotal === undefined && Boolean(count.data?.capped)
 
   return (
     <Card size="sm" className="h-full gap-2">

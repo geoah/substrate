@@ -146,7 +146,10 @@ export async function listTokens(): Promise<TokenInfo[]> {
 }
 
 /** Mint a token for a script or a device. The secret comes back ONCE. */
-export function mintToken(label: string, expiresAt?: string): Promise<MintedToken> {
+export function mintToken(
+  label: string,
+  expiresAt?: string
+): Promise<MintedToken> {
   const body: { label: string; expiresAt?: string } = { label }
   if (expiresAt) body.expiresAt = expiresAt
   return request<MintedToken>("POST", "/tokens", body)

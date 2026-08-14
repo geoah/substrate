@@ -18,10 +18,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import type { ColumnDef } from "@tanstack/react-table"
 import { HistoryIcon, PlusIcon } from "lucide-react"
 
-import {
-  changeActorColumn,
-  timeColumn,
-} from "@/components/data-table/columns"
+import { changeActorColumn, timeColumn } from "@/components/data-table/columns"
 import { DataTable, useDataTable } from "@/components/data-table/data-table"
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
 import { DataTableCursorPagination } from "@/components/data-table/data-table-cursor-pagination"
@@ -112,7 +109,7 @@ function CreationFallback({
         <PlusIcon className="size-3 shrink-0 text-muted-foreground" />
         <span className="data text-muted-foreground">created</span>
         <span
-          className="ml-auto data shrink-0 text-muted-foreground"
+          className="ml-auto shrink-0 data text-muted-foreground"
           title={createdAt}
         >
           {relativeTime(createdAt)}

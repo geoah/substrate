@@ -76,15 +76,17 @@ describe("the feed column set", () => {
 
   it("accessors read the row the way the cell will speak it", () => {
     const accessor = (col: unknown) =>
-      (
-        (col as { accessorFn: (r: ChangeRow, i: number) => unknown })
-          .accessorFn
-      )(row, 0)
+      (col as { accessorFn: (r: ChangeRow, i: number) => unknown }).accessorFn(
+        row,
+        0
+      )
     expect(accessor(changeOpColumn())).toBe("updated")
     expect(accessor(changeKindColumn())).toBe("issue")
-    expect(accessor(changeAuthorityColumn())).toBe("github.bundles.substrate.reamde.dev")
-    expect(
-      accessor(timeColumn<ChangeRow>({ id: "t", iso: (r) => r.ts }))
-    ).toBe(row.ts)
+    expect(accessor(changeAuthorityColumn())).toBe(
+      "github.bundles.substrate.reamde.dev"
+    )
+    expect(accessor(timeColumn<ChangeRow>({ id: "t", iso: (r) => r.ts }))).toBe(
+      row.ts
+    )
   })
 })

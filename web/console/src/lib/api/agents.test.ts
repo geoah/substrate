@@ -72,14 +72,18 @@ describe("parseAgentEvent", () => {
     })
   })
   it("reads a tool lifecycle event with ok", () => {
-    expect(parseAgentEvent('{"kind":"toolFinished","tool":"query","ok":true}')).toEqual({
+    expect(
+      parseAgentEvent('{"kind":"toolFinished","tool":"query","ok":true}')
+    ).toEqual({
       kind: "toolFinished",
       tool: "query",
       ok: true,
     })
   })
   it("reads a done event carrying the result", () => {
-    const ev = parseAgentEvent('{"kind":"done","result":{"reply":"ok","thread":"t-1","status":"ok","effects":0,"turns":1,"toolCalls":0,"promptTokens":1,"completionTokens":1,"totalTokens":2,"costUSD":0}}')
+    const ev = parseAgentEvent(
+      '{"kind":"done","result":{"reply":"ok","thread":"t-1","status":"ok","effects":0,"turns":1,"toolCalls":0,"promptTokens":1,"completionTokens":1,"totalTokens":2,"costUSD":0}}'
+    )
     expect(ev?.kind).toBe("done")
     expect(ev?.result?.status).toBe("ok")
   })
@@ -163,9 +167,9 @@ describe("provider rows", () => {
   })
 
   it("reads an empty openai baseURL as the host's gateway", () => {
-    expect(providerEndpoint(provider({ name: "default", wire: "openai" }))).toBe(
-      "host gateway"
-    )
+    expect(
+      providerEndpoint(provider({ name: "default", wire: "openai" }))
+    ).toBe("host gateway")
   })
   it("reads an empty non-openai baseURL as that wire's own endpoint", () => {
     expect(providerEndpoint(provider({ wire: "anthropic", baseURL: "" }))).toBe(
@@ -177,7 +181,9 @@ describe("provider rows", () => {
     expect(providerEndpoint(provider({ wire: "azure", baseURL: "" }))).toBe(
       "missing baseURL"
     )
-    expect(providerEndpoint(provider({ wire: "azure" }))).toBe("missing baseURL")
+    expect(providerEndpoint(provider({ wire: "azure" }))).toBe(
+      "missing baseURL"
+    )
   })
   it("shows a declared baseURL verbatim", () => {
     const row = provider({ wire: "openai", baseURL: "https://example.com/v1" })

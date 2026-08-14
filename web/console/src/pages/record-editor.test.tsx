@@ -86,7 +86,11 @@ const openTask: SubstrateRecord = {
 }
 
 function renderEditor(
-  over: { mode?: "create" | "edit"; record?: SubstrateRecord; seed?: string } = {}
+  over: {
+    mode?: "create" | "edit"
+    record?: SubstrateRecord
+    seed?: string
+  } = {}
 ) {
   const mode = over.mode ?? "create"
   const client = new QueryClient({
@@ -160,7 +164,9 @@ describe("the record editor", () => {
 
   it("names a datatype problem before the apply, and bars the save", async () => {
     renderEditor()
-    fireEvent.change(screen.getByLabelText(/^Title/), { target: { value: "hi" } })
+    fireEvent.change(screen.getByLabelText(/^Title/), {
+      target: { value: "hi" },
+    })
     fireEvent.change(screen.getByLabelText(/Due at/), {
       target: { value: "yesterday" },
     })
@@ -184,8 +190,12 @@ describe("the record editor", () => {
   it("writes the DECLARED types, and leaves the blanks it never filled in", async () => {
     createRecord.mockResolvedValue({ ...openTask, id: "t9" })
     renderEditor()
-    fireEvent.change(screen.getByLabelText(/^Title/), { target: { value: "hi" } })
-    fireEvent.change(screen.getByLabelText(/^Effort/), { target: { value: "3" } })
+    fireEvent.change(screen.getByLabelText(/^Title/), {
+      target: { value: "hi" },
+    })
+    fireEvent.change(screen.getByLabelText(/^Effort/), {
+      target: { value: "3" },
+    })
     fireEvent.click(screen.getByRole("button", { name: "Create" }))
     await waitFor(() => expect(createRecord).toHaveBeenCalled())
     const [authority, plural, input] = createRecord.mock.calls[0]
@@ -212,8 +222,11 @@ describe("the record editor", () => {
       expect(screen.getByText(/moves by transition/)).toBeTruthy()
     )
     expect(
-      (screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement)
-        .disabled
+      (
+        screen.getByRole("button", {
+          name: "Save changes",
+        }) as HTMLButtonElement
+      ).disabled
     ).toBe(true)
   })
 

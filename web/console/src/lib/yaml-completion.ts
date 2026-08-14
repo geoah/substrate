@@ -101,7 +101,10 @@ function inProperties(path: string[]): boolean {
 
 /** The OBJECT property whose block this path sits inside, if any: the fields
  * of `data.properties.<name>` are completable exactly as properties are. */
-function objectAt(path: string[], byName: Map<string, PropSpec>): PropSpec | undefined {
+function objectAt(
+  path: string[],
+  byName: Map<string, PropSpec>
+): PropSpec | undefined {
   if (path.length !== 3 || path[0] !== "data" || path[1] !== "properties") {
     return undefined
   }
@@ -134,7 +137,10 @@ function suggestValues(spec: PropSpec): Suggestion[] {
   return example ? [{ label: example, detail: "example", type: "value" }] : []
 }
 
-function propertySuggestion(spec: PropSpec, taken: Set<string>): Suggestion | null {
+function propertySuggestion(
+  spec: PropSpec,
+  taken: Set<string>
+): Suggestion | null {
   if (taken.has(spec.name)) return null
   return {
     label: spec.name,
@@ -232,7 +238,10 @@ export function completionsAt(
     }
     if (key === "rel") {
       const edges = (kind.definition ?? {}) as Record<string, unknown>
-      const declared = (edges.edges ?? {}) as Record<string, { to?: string; description?: string }>
+      const declared = (edges.edges ?? {}) as Record<
+        string,
+        { to?: string; description?: string }
+      >
       const options = Object.entries(declared).map(([rel, def]) => ({
         label: rel,
         detail: def?.to ? `→ ${def.to}` : undefined,

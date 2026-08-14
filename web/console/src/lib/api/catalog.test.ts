@@ -43,7 +43,9 @@ describe("catalog reads and writes", () => {
   it("GETs the catalog and unwraps the entries with their installed flag", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
-        JSON.stringify({ catalog: [item(), item({ id: "x", installed: true })] }),
+        JSON.stringify({
+          catalog: [item(), item({ id: "x", installed: true })],
+        }),
         { status: 200 }
       )
     )
@@ -60,9 +62,15 @@ describe("catalog reads and writes", () => {
 
   it("POSTs install to the catalog item's install path", async () => {
     fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ id: "google.bundles.substrate.reamde.dev", installed: true }), {
-        status: 200,
-      })
+      new Response(
+        JSON.stringify({
+          id: "google.bundles.substrate.reamde.dev",
+          installed: true,
+        }),
+        {
+          status: 200,
+        }
+      )
     )
     await importBundle("google.bundles.substrate.reamde.dev")
     const [url, init] = fetchMock.mock.calls[0]
@@ -85,14 +93,19 @@ describe("catalog reads and writes", () => {
 
 describe("catalogItemQueryOptions", () => {
   it("shares the list cache and selects the entry by bundle id", () => {
-    const items = [item(), item({ id: "slack.bundles.substrate.reamde.dev", name: "slack" })]
+    const items = [
+      item(),
+      item({ id: "slack.bundles.substrate.reamde.dev", name: "slack" }),
+    ]
     const opts = catalogItemQueryOptions("slack.bundles.substrate.reamde.dev")
     expect(opts.queryKey).toEqual(catalogQueryOptions.queryKey)
     expect(opts.select?.(items)?.name).toBe("slack")
   })
 
   it("selects undefined when this repository's bundle is not a shipped closure", () => {
-    const opts = catalogItemQueryOptions("applied-only.bundles.substrate.reamde.dev")
+    const opts = catalogItemQueryOptions(
+      "applied-only.bundles.substrate.reamde.dev"
+    )
     expect(opts.select?.([item()])).toBeUndefined()
   })
 })
@@ -105,6 +118,8 @@ describe("oauthCallbackURL", () => {
   })
   it("does not depend on window.location — a deployment setting is not guessed", () => {
     expect(oauthCallbackURL()).toBe(OAUTH_CALLBACK_URL)
-    expect(OAUTH_CALLBACK_URL.startsWith("https://substrate.example.com/")).toBe(true)
+    expect(
+      OAUTH_CALLBACK_URL.startsWith("https://substrate.example.com/")
+    ).toBe(true)
   })
 })

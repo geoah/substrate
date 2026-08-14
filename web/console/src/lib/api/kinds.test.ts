@@ -165,7 +165,9 @@ describe("buildKindNav", () => {
 
   it("sorts kinds inside an authority by name", () => {
     const nav = buildKindNav(kinds)
-    const people = nav.authorities.find((a) => a.authority === "people.substrate.reamde.dev")
+    const people = nav.authorities.find(
+      (a) => a.authority === "people.substrate.reamde.dev"
+    )
     expect(people?.kinds.map((k) => k.name)).toEqual(["organization", "person"])
   })
 

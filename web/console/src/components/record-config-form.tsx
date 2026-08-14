@@ -101,7 +101,9 @@ export function RecordConfigForm({
     onError: (error) => {
       toast.add({
         type: "error",
-        title: record ? `Could not update the ${name}` : `Could not create the ${name}`,
+        title: record
+          ? `Could not update the ${name}`
+          : `Could not create the ${name}`,
         description: error.message,
       })
     },
@@ -174,7 +176,10 @@ export function RecordConfigForm({
                         type="button"
                         className="text-xs text-muted-foreground underline-offset-4 hover:underline"
                         onClick={() =>
-                          setValue(field.name, cleared ? seed[field.name] : null)
+                          setValue(
+                            field.name,
+                            cleared ? seed[field.name] : null
+                          )
                         }
                       >
                         {cleared ? "Undo" : "Clear"}

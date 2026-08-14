@@ -28,7 +28,11 @@ const agentKind: KindInfo = {
   source: "builtin",
   definition: {
     properties: {
-      prompt: { type: "text", required: true, description: "the system prompt" },
+      prompt: {
+        type: "text",
+        required: true,
+        description: "the system prompt",
+      },
       model: {
         type: "string",
         default: "opus",
@@ -97,7 +101,9 @@ describe("propSpecs", () => {
   })
 
   it("carries enum values, defaults and repeated off the raw manifest", () => {
-    const byName = Object.fromEntries(propSpecs(agentKind).map((s) => [s.name, s]))
+    const byName = Object.fromEntries(
+      propSpecs(agentKind).map((s) => [s.name, s])
+    )
     expect(byName.model.values).toEqual([
       { value: "opus", label: "Opus 4" },
       { value: "sonnet", label: "Sonnet 4" },
@@ -112,7 +118,11 @@ describe("propSpecs", () => {
     expect(spec(wideKind, "hidden").writer).toBe("oauth")
     expect(spec(wideKind, "calls").min).toBe(1)
     expect(spec(wideKind, "code").pattern).toBe("^[a-z]{3}$")
-    expect(spec(wideKind, "status").states).toEqual(["proposed", "open", "done"])
+    expect(spec(wideKind, "status").states).toEqual([
+      "proposed",
+      "open",
+      "done",
+    ])
     expect(spec(wideKind, "owner").to).toBe("core.substrate.reamde.dev/actor")
   })
 
@@ -162,11 +172,17 @@ describe("exampleFor", () => {
 
 describe("checkValue", () => {
   it("admits what the substrate admits", () => {
-    expect(checkValue(spec(wideKind, "seenAt"), "2026-01-31T09:00:00Z")).toBeUndefined()
+    expect(
+      checkValue(spec(wideKind, "seenAt"), "2026-01-31T09:00:00Z")
+    ).toBeUndefined()
     expect(checkValue(spec(wideKind, "born"), "2026-01-31")).toBeUndefined()
     expect(checkValue(spec(wideKind, "every"), "47m12s")).toBeUndefined()
-    expect(checkValue(spec(wideKind, "mailbox"), "a@example.com")).toBeUndefined()
-    expect(checkValue(spec(wideKind, "baseURL"), "https://example.com")).toBeUndefined()
+    expect(
+      checkValue(spec(wideKind, "mailbox"), "a@example.com")
+    ).toBeUndefined()
+    expect(
+      checkValue(spec(wideKind, "baseURL"), "https://example.com")
+    ).toBeUndefined()
     expect(checkValue(spec(wideKind, "zone"), "Europe/London")).toBeUndefined()
     expect(checkValue(spec(wideKind, "calls"), 5)).toBeUndefined()
     expect(checkValue(spec(wideKind, "headers"), { a: 1 })).toBeUndefined()
@@ -180,12 +196,20 @@ describe("checkValue", () => {
   it("names the reason a value is wrong, on the datatype's own terms", () => {
     // The issue's own example: apiKey is a string, so a bare 123 is wrong.
     expect(checkValue(spec(wideKind, "apiKey"), 123)).toMatch(/string/)
-    expect(checkValue(spec(wideKind, "seenAt"), "yesterday")).toMatch(/timestamp/)
-    expect(checkValue(spec(wideKind, "born"), "31/01/2026")).toMatch(/civil date/)
+    expect(checkValue(spec(wideKind, "seenAt"), "yesterday")).toMatch(
+      /timestamp/
+    )
+    expect(checkValue(spec(wideKind, "born"), "31/01/2026")).toMatch(
+      /civil date/
+    )
     expect(checkValue(spec(wideKind, "every"), "soon")).toMatch(/duration/)
     expect(checkValue(spec(wideKind, "mailbox"), "nobody")).toMatch(/mailbox/)
-    expect(checkValue(spec(wideKind, "baseURL"), "example.com")).toMatch(/absolute URL/)
-    expect(checkValue(spec(wideKind, "zone"), "Middle/Earth")).toMatch(/time zone/)
+    expect(checkValue(spec(wideKind, "baseURL"), "example.com")).toMatch(
+      /absolute URL/
+    )
+    expect(checkValue(spec(wideKind, "zone"), "Middle/Earth")).toMatch(
+      /time zone/
+    )
     expect(checkValue(spec(wideKind, "calls"), "5")).toMatch(/number/)
     expect(checkValue(spec(wideKind, "calls"), 1.5)).toMatch(/integer/)
     expect(checkValue(spec(wideKind, "calls"), 99)).toMatch(/<= 10/)
@@ -202,7 +226,12 @@ describe("checkValue", () => {
 
   it("knows a reference needs an id, and a kind when it points anywhere", () => {
     const anyRef = spec(wideKind, "callable")
-    expect(checkValue(anyRef, { kind: "core.substrate.reamde.dev/function", id: "f" })).toBeUndefined()
+    expect(
+      checkValue(anyRef, {
+        kind: "core.substrate.reamde.dev/function",
+        id: "f",
+      })
+    ).toBeUndefined()
     expect(checkValue(anyRef, { id: "f" })).toMatch(/explicit kind/)
     expect(checkValue(anyRef, "f")).toMatch(/explicit kind/)
     expect(checkValue(anyRef, { kind: "x", id: "" })).toMatch(/needs an id/)
@@ -232,7 +261,9 @@ describe("parseValue / formatValue", () => {
   })
 
   it("hands back the datatype's complaint instead of a value", () => {
-    expect(parseValue(spec(wideKind, "seenAt"), "yesterday").error).toMatch(/timestamp/)
+    expect(parseValue(spec(wideKind, "seenAt"), "yesterday").error).toMatch(
+      /timestamp/
+    )
     expect(parseValue(spec(wideKind, "headers"), "{oops").error).toMatch(/JSON/)
     expect(parseValue(spec(wideKind, "calls"), "many").error).toMatch(/number/)
   })

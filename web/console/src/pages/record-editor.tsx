@@ -43,7 +43,9 @@ import { PropertyForm } from "@/components/record/property-form"
  * YAML lens is first opened, never with the rest of the console (the same
  * discipline the shiki chunk keeps). */
 const YamlEditor = lazy(() =>
-  import("@/components/record/yaml-editor").then((m) => ({ default: m.YamlEditor }))
+  import("@/components/record/yaml-editor").then((m) => ({
+    default: m.YamlEditor,
+  }))
 )
 import { Button } from "@/components/ui/button"
 import {
@@ -230,7 +232,8 @@ export function RecordEditorForm({
     onSuccess: (saved) => {
       toast.add({
         type: "success",
-        title: mode === "edit" ? `${kind.name} updated.` : `${kind.name} created.`,
+        title:
+          mode === "edit" ? `${kind.name} updated.` : `${kind.name} created.`,
       })
       void queryClient.invalidateQueries()
       void navigate({
@@ -309,7 +312,11 @@ export function RecordEditorForm({
               mode === "edit" && record ? (
                 <Link
                   to="/data/$authority/$plural/$id"
-                  params={{ authority: authority, plural: plural, id: record.id }}
+                  params={{
+                    authority: authority,
+                    plural: plural,
+                    id: record.id,
+                  }}
                 />
               ) : (
                 <Link
@@ -363,7 +370,12 @@ export function RecordEditorForm({
                 </div>
               }
             >
-              <YamlEditor value={text} onChange={onChange} kind={kind} ctx={ctx} />
+              <YamlEditor
+                value={text}
+                onChange={onChange}
+                kind={kind}
+                ctx={ctx}
+              />
             </Suspense>
           </TabsContent>
         </Tabs>
@@ -477,14 +489,16 @@ function ProblemRow({
         <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
       )}
       <div className="min-w-0">
-        <span className={cn(isError ? "text-foreground" : "text-muted-foreground")}>
+        <span
+          className={cn(isError ? "text-foreground" : "text-muted-foreground")}
+        >
           {problem.message}
         </span>
         {problem.line !== undefined && (
           <button
             type="button"
             onClick={onShowLine}
-            className="data ml-1.5 text-muted-foreground underline-offset-4 hover:underline"
+            className="ml-1.5 data text-muted-foreground underline-offset-4 hover:underline"
           >
             line {problem.line}
           </button>

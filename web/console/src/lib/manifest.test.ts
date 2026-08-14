@@ -25,7 +25,11 @@ const record: SubstrateRecord = {
   updatedAt: "2026-08-05T16:26:27.310967Z",
   edges: {
     memberOf: [
-      { id: "org1", kind: "people.substrate.reamde.dev/organization", title: "Acme" },
+      {
+        id: "org1",
+        kind: "people.substrate.reamde.dev/organization",
+        title: "Acme",
+      },
     ],
   },
   propertyMeta: {
@@ -79,7 +83,9 @@ describe("manifestYAML", () => {
     expect(yaml.indexOf("metadata:")).toBeLessThan(yaml.indexOf("data:"))
     expect(yaml.indexOf("data:")).toBeLessThan(yaml.indexOf("status:"))
     expect(yaml).toContain("prominence: known")
-    expect(yaml).toContain("manager: people.google.bundles.substrate.reamde.dev")
+    expect(yaml).toContain(
+      "manager: people.google.bundles.substrate.reamde.dev"
+    )
   })
 })
 
@@ -113,7 +119,9 @@ const registry: KindInfo[] = [
 describe("linkTargetsOf", () => {
   it("maps edge target ids and the referenced kind refs", () => {
     const t = linkTargetsOf(record, registry)
-    expect(t.ids.org1).toBe("/data/people.substrate.reamde.dev/organizations/org1")
+    expect(t.ids.org1).toBe(
+      "/data/people.substrate.reamde.dev/organizations/org1"
+    )
     expect(t.kinds["people.substrate.reamde.dev/organization"]).toBe(
       "/data/people.substrate.reamde.dev/organizations"
     )
@@ -128,7 +136,9 @@ describe("linkTargetsOf", () => {
       registry
     )
     expect(t.ids.canon1).toBe("/data/people.substrate.reamde.dev/people/canon1")
-    expect(t.ids["old-a@x.io"]).toBe("/data/people.substrate.reamde.dev/people/old-a@x.io")
+    expect(t.ids["old-a@x.io"]).toBe(
+      "/data/people.substrate.reamde.dev/people/old-a@x.io"
+    )
   })
 
   it("knows every registry kind by its reference", () => {
@@ -141,7 +151,11 @@ describe("linkTargetsOf", () => {
   it("does not link an edge target whose kind is not in the registry", () => {
     const stray: SubstrateRecord = {
       ...record,
-      edges: { memberOf: [{ id: "org2", kind: "crm.substrate.reamde.dev/organization" }] },
+      edges: {
+        memberOf: [
+          { id: "org2", kind: "crm.substrate.reamde.dev/organization" },
+        ],
+      },
     }
     const t = linkTargetsOf(stray, registry)
     expect(t.kinds["crm.substrate.reamde.dev/organization"]).toBeUndefined()

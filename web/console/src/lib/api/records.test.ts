@@ -36,7 +36,10 @@ describe("listPath", () => {
   })
 
   it("addresses a repository-local kind with no authority as a bare collection", () => {
-    const url = new URL(listPath({ authority: "", plural: "tasks" }), "http://x")
+    const url = new URL(
+      listPath({ authority: "", plural: "tasks" }),
+      "http://x"
+    )
     expect(url.pathname).toBe("/api/v1/tasks")
   })
 
@@ -83,7 +86,9 @@ describe("record writes (integrations flow)", () => {
 
   it("createRecord POSTs the properties to the collection, no id (the substrate mints one)", async () => {
     fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ id: "abc", properties: {} }), { status: 201 })
+      new Response(JSON.stringify({ id: "abc", properties: {} }), {
+        status: 201,
+      })
     )
     await createRecord("google.bundles.substrate.reamde.dev", "accounts", {
       properties: {
@@ -93,7 +98,9 @@ describe("record writes (integrations flow)", () => {
       },
     })
     const [url, init] = fetchMock.mock.calls[0]
-    expect(String(url)).toBe("/api/v1/google.bundles.substrate.reamde.dev/accounts")
+    expect(String(url)).toBe(
+      "/api/v1/google.bundles.substrate.reamde.dev/accounts"
+    )
     expect(init?.method).toBe("POST")
     expect(JSON.parse(String(init?.body))).toEqual({
       properties: {
@@ -106,13 +113,22 @@ describe("record writes (integrations flow)", () => {
 
   it("patchRecord PATCHes the addressed record's properties", async () => {
     fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ id: "abc", properties: {} }), { status: 200 })
+      new Response(JSON.stringify({ id: "abc", properties: {} }), {
+        status: 200,
+      })
     )
-    await patchRecord("google.bundles.substrate.reamde.dev", "accounts", "abc", {
-      properties: { syncFrequency: "hourly" },
-    })
+    await patchRecord(
+      "google.bundles.substrate.reamde.dev",
+      "accounts",
+      "abc",
+      {
+        properties: { syncFrequency: "hourly" },
+      }
+    )
     const [url, init] = fetchMock.mock.calls[0]
-    expect(String(url)).toBe("/api/v1/google.bundles.substrate.reamde.dev/accounts/abc")
+    expect(String(url)).toBe(
+      "/api/v1/google.bundles.substrate.reamde.dev/accounts/abc"
+    )
     expect(init?.method).toBe("PATCH")
     expect(JSON.parse(String(init?.body))).toEqual({
       properties: { syncFrequency: "hourly" },
@@ -196,8 +212,12 @@ describe("groupIncoming", () => {
   })
 
   it("keeps buckets whole across page concatenation", () => {
-    const pageOne = [row("author", "github.bundles.substrate.reamde.dev/pr", "1")]
-    const pageTwo = [row("author", "github.bundles.substrate.reamde.dev/pr", "2")]
+    const pageOne = [
+      row("author", "github.bundles.substrate.reamde.dev/pr", "1"),
+    ]
+    const pageTwo = [
+      row("author", "github.bundles.substrate.reamde.dev/pr", "2"),
+    ]
     const groups = groupIncoming([...pageOne, ...pageTwo])
     expect(groups).toHaveLength(1)
     expect(groups[0].rows).toHaveLength(2)

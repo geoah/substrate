@@ -143,7 +143,9 @@ describe("the form lens", () => {
     fireEvent.change(screen.getByLabelText(/Max retries/), {
       target: { value: "3" },
     })
-    expect(propertiesOf(onChange.mock.calls[0][0] as string)?.maxRetries).toBe(3)
+    expect(propertiesOf(onChange.mock.calls[0][0] as string)?.maxRetries).toBe(
+      3
+    )
 
     fireEvent.change(screen.getByLabelText(/Extras/), {
       target: { value: '{"opus": 5}' },
@@ -176,9 +178,9 @@ data:
     expect(apiKey.value).toBe("")
     // Typing one seals a new value; clearing it again leaves the sealed one.
     fireEvent.change(apiKey, { target: { value: "sk-live" } })
-    expect(
-      propertiesOf(onChange.mock.calls[0][0] as string)?.apiKey
-    ).toBe("sk-live")
+    expect(propertiesOf(onChange.mock.calls[0][0] as string)?.apiKey).toBe(
+      "sk-live"
+    )
     onChange.mockClear()
     fireEvent.change(apiKey, { target: { value: "" } })
     expect(onChange).not.toHaveBeenCalled()
@@ -205,7 +207,9 @@ data:
     fireEvent.change(screen.getByLabelText("Model"), {
       target: { value: "claude-opus-5" },
     })
-    fireEvent.change(screen.getByLabelText(/^Input/i), { target: { value: "5" } })
+    fireEvent.change(screen.getByLabelText(/^Input/i), {
+      target: { value: "5" },
+    })
     const last = onChange.mock.calls.at(-1)![0] as string
     expect(propertiesOf(last)?.pricing).toEqual([
       { model: "claude-opus-5", inputPer1M: 5 },

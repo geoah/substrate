@@ -33,8 +33,18 @@ export function shortDate(iso: string): string {
 }
 
 const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ]
 
 /** `Aug 6, 01:10` — the table datetime voice, local timezone; the year joins
@@ -46,9 +56,8 @@ export function tableDateTime(iso: string, now = Date.now()): string {
   const d = new Date(t)
   const pad = (n: number) => String(n).padStart(2, "0")
   const day = `${MONTHS[d.getMonth()]} ${d.getDate()}`
-  const year = d.getFullYear() === new Date(now).getFullYear()
-    ? ""
-    : ` ${d.getFullYear()}`
+  const year =
+    d.getFullYear() === new Date(now).getFullYear() ? "" : ` ${d.getFullYear()}`
   return `${day}${year}, ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 

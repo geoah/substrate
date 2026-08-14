@@ -154,7 +154,9 @@ export function AuthorityPage() {
               <FileCode2Icon />
             </EmptyMedia>
             <EmptyTitle>
-              {registry.isError ? "The registry didn't load" : "No such authority"}
+              {registry.isError
+                ? "The registry didn't load"
+                : "No such authority"}
             </EmptyTitle>
             <EmptyDescription>
               {registry.isError ? (

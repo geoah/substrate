@@ -175,7 +175,9 @@ describe("authorityCountsQueryOptions", () => {
       const opts = authorityCountsQueryOptions("g.dev", kinds, gate)
       const out = await opts.queryFn!({ signal: undefined } as never)
       expect(out.map((c) => c.kind.name)).toEqual(["a", "b", "c", "d"])
-      expect(out.every((c) => c.count?.value === 0 && !c.count.capped)).toBe(true)
+      expect(out.every((c) => c.count?.value === 0 && !c.count.capped)).toBe(
+        true
+      )
       expect(peak).toBe(1)
     } finally {
       globalThis.fetch = savedFetch
@@ -183,7 +185,10 @@ describe("authorityCountsQueryOptions", () => {
   })
 
   it("keeps counting when the substrate refuses one collection", async () => {
-    const kinds = [kindInfo("tenant", "core.dev"), kindInfo("actor", "core.dev")]
+    const kinds = [
+      kindInfo("tenant", "core.dev"),
+      kindInfo("actor", "core.dev"),
+    ]
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       if (String(input).includes("/tenants")) {
         return new Response(
@@ -193,7 +198,11 @@ describe("authorityCountsQueryOptions", () => {
       }
       return new Response(JSON.stringify({ records: [] }), { status: 200 })
     }) as typeof fetch
-    const opts = authorityCountsQueryOptions("core.dev", kinds, new Semaphore(2))
+    const opts = authorityCountsQueryOptions(
+      "core.dev",
+      kinds,
+      new Semaphore(2)
+    )
     const out = await opts.queryFn!({ signal: undefined } as never)
     expect(out).toEqual([
       { kind: kinds[1], count: { value: 0, capped: false } }, // actor sorts first

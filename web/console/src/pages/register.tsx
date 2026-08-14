@@ -21,7 +21,12 @@ import {
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
-import { CODE_DIGITS, normalizeCode, register, registerEnroll } from "@/lib/api/auth"
+import {
+  CODE_DIGITS,
+  normalizeCode,
+  register,
+  registerEnroll,
+} from "@/lib/api/auth"
 import { useAuthPolicy } from "@/lib/api/discovery"
 import { saveSession } from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
@@ -47,7 +52,7 @@ function CopyBlock({ value, label }: { value: string; label: string }) {
   }
   return (
     <div className="flex items-center gap-2">
-      <code className="data min-w-0 flex-1 truncate rounded-lg bg-muted px-2.5 py-1.5 text-xs">
+      <code className="min-w-0 flex-1 truncate rounded-lg bg-muted px-2.5 py-1.5 data text-xs">
         {value}
       </code>
       <Button
@@ -83,7 +88,7 @@ function RecoveryKeyField({ value }: { value: string }) {
       <Input
         id="recovery-key"
         name="recovery-key"
-        className="data min-w-0 flex-1"
+        className="min-w-0 flex-1 data"
         readOnly
         autoComplete="off"
         value={value}
@@ -268,183 +273,191 @@ export function RegisterPage() {
           </Card>
         )}
         {recoveryKey === null && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Register</CardTitle>
-            <CardDescription>
-              An invite code creates your user and your repository, seeded with
-              the shipped kinds.{" "}
-              {totpRequired
-                ? `All three factors are required: username, password and a ${CODE_DIGITS}-digit code.`
-                : "This substrate does not verify a second factor, so there is no authenticator to enroll: a username and a password make the user."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-6">
-            {error && (
-              <p role="alert" className="text-sm font-normal text-destructive">
-                {error}
-              </p>
-            )}
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                void beginEnrollment()
-              }}
-            >
-              <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor="inviteCode">Invite code</FieldLabel>
-                  <Input
-                    id="inviteCode"
-                    className="data"
-                    value={inviteCode}
-                    onChange={(e) => setInviteCode(e.target.value)}
-                    disabled={enrollment !== null}
-                    autoFocus
-                  />
-                  <FieldDescription>
-                    The code the operator configured on this substrate.
-                  </FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="username">Username</FieldLabel>
-                  <Input
-                    id="username"
-                    autoComplete="username"
-                    value={username}
-                    onChange={(e) =>
-                      setUsername(e.target.value.toLowerCase())
-                    }
-                    disabled={enrollment !== null}
-                  />
-                  <FieldDescription>
-                    Lowercase letters and digits. It cannot be changed later.
-                  </FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="password">Password</FieldLabel>
-                  <Input
-                    id="password"
-                    type="password"
-                    autoComplete="new-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    disabled={enrollment !== null}
-                  />
-                  <FieldDescription>
-                    At least {MIN_PASSWORD} characters. There is no self-serve
-                    recovery: lose both factors and only the operator can reset
-                    you.
-                  </FieldDescription>
-                </Field>
-                <Field
-                  data-invalid={
-                    (confirm.length > 0 && !passwordsMatch) || undefined
-                  }
+          <Card>
+            <CardHeader>
+              <CardTitle>Register</CardTitle>
+              <CardDescription>
+                An invite code creates your user and your repository, seeded
+                with the shipped kinds.{" "}
+                {totpRequired
+                  ? `All three factors are required: username, password and a ${CODE_DIGITS}-digit code.`
+                  : "This substrate does not verify a second factor, so there is no authenticator to enroll: a username and a password make the user."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-6">
+              {error && (
+                <p
+                  role="alert"
+                  className="text-sm font-normal text-destructive"
                 >
-                  <FieldLabel htmlFor="confirm">Confirm password</FieldLabel>
-                  <Input
-                    id="confirm"
-                    type="password"
-                    autoComplete="new-password"
-                    aria-invalid={confirm.length > 0 && !passwordsMatch}
-                    value={confirm}
-                    onChange={(e) => setConfirm(e.target.value)}
-                    disabled={enrollment !== null}
-                  />
-                  {confirm.length > 0 && !passwordsMatch && (
-                    <FieldError
-                      errors={[{ message: "The two passwords differ." }]}
-                    />
-                  )}
-                </Field>
-                {!enrollment && (
+                  {error}
+                </p>
+              )}
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void beginEnrollment()
+                }}
+              >
+                <FieldGroup>
                   <Field>
-                    <Button type="submit" disabled={!canEnroll || isBusy}>
-                      {isBusy && <Spinner />}
-                      {totpRequired ? "Continue" : "Create my repository"}
-                    </Button>
+                    <FieldLabel htmlFor="inviteCode">Invite code</FieldLabel>
+                    <Input
+                      id="inviteCode"
+                      className="data"
+                      value={inviteCode}
+                      onChange={(e) => setInviteCode(e.target.value)}
+                      disabled={enrollment !== null}
+                      autoFocus
+                    />
+                    <FieldDescription>
+                      The code the operator configured on this substrate.
+                    </FieldDescription>
                   </Field>
-                )}
-              </FieldGroup>
-            </form>
-
-            {enrollment && (
-              <>
-                <Separator />
-                <div className="flex flex-col gap-3">
-                  <div>
-                    <h2 className="text-sm font-medium">Your authenticator</h2>
-                    <p className="text-sm text-muted-foreground">
-                      Scan this with your password manager or authenticator app,
-                      then prove it with one code below. Nothing has been written
-                      yet — leaving now creates nothing.
-                    </p>
-                  </div>
-                  <div className="flex justify-center">
-                    <div className="rounded-xl bg-white p-3">
-                      <QRCodeCanvas
-                        value={enrollment.otpauthUri}
-                        size={168}
-                        marginSize={0}
-                        level="M"
-                        title="TOTP enrollment QR code"
+                  <Field>
+                    <FieldLabel htmlFor="username">Username</FieldLabel>
+                    <Input
+                      id="username"
+                      autoComplete="username"
+                      value={username}
+                      onChange={(e) =>
+                        setUsername(e.target.value.toLowerCase())
+                      }
+                      disabled={enrollment !== null}
+                    />
+                    <FieldDescription>
+                      Lowercase letters and digits. It cannot be changed later.
+                    </FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="password">Password</FieldLabel>
+                    <Input
+                      id="password"
+                      type="password"
+                      autoComplete="new-password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={enrollment !== null}
+                    />
+                    <FieldDescription>
+                      At least {MIN_PASSWORD} characters. There is no self-serve
+                      recovery: lose both factors and only the operator can
+                      reset you.
+                    </FieldDescription>
+                  </Field>
+                  <Field
+                    data-invalid={
+                      (confirm.length > 0 && !passwordsMatch) || undefined
+                    }
+                  >
+                    <FieldLabel htmlFor="confirm">Confirm password</FieldLabel>
+                    <Input
+                      id="confirm"
+                      type="password"
+                      autoComplete="new-password"
+                      aria-invalid={confirm.length > 0 && !passwordsMatch}
+                      value={confirm}
+                      onChange={(e) => setConfirm(e.target.value)}
+                      disabled={enrollment !== null}
+                    />
+                    {confirm.length > 0 && !passwordsMatch && (
+                      <FieldError
+                        errors={[{ message: "The two passwords differ." }]}
                       />
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Can&rsquo;t scan? Add the secret by hand, or open{" "}
-                    <a
-                      href={enrollment.otpauthUri}
-                      className="underline underline-offset-4 hover:text-foreground"
-                    >
-                      the enrollment link
-                    </a>{" "}
-                    on a device with an authenticator.
-                  </p>
-                  <CopyBlock value={enrollment.totpSecret} label="secret" />
-                  <CopyBlock value={enrollment.otpauthUri} label="otpauth URI" />
-                </div>
-
-                <Separator />
-
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    void finish()
-                  }}
-                >
-                  <FieldGroup>
+                    )}
+                  </Field>
+                  {!enrollment && (
                     <Field>
-                      <FieldLabel htmlFor="code">One-time code</FieldLabel>
-                      <Input
-                        id="code"
-                        inputMode="numeric"
-                        autoComplete="one-time-code"
-                        maxLength={CODE_DIGITS + 2}
-                        placeholder="123456"
-                        className="data tracking-[0.25em]"
-                        value={code}
-                        onChange={(e) => setCode(e.target.value)}
-                      />
-                      <FieldDescription>
-                        The {CODE_DIGITS}-digit code your authenticator shows
-                        for this secret.
-                      </FieldDescription>
-                    </Field>
-                    <Field>
-                      <Button type="submit" disabled={!canFinish || isBusy}>
+                      <Button type="submit" disabled={!canEnroll || isBusy}>
                         {isBusy && <Spinner />}
-                        Create my repository
+                        {totpRequired ? "Continue" : "Create my repository"}
                       </Button>
                     </Field>
-                  </FieldGroup>
-                </form>
-              </>
-            )}
-          </CardContent>
-        </Card>
+                  )}
+                </FieldGroup>
+              </form>
+
+              {enrollment && (
+                <>
+                  <Separator />
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <h2 className="text-sm font-medium">
+                        Your authenticator
+                      </h2>
+                      <p className="text-sm text-muted-foreground">
+                        Scan this with your password manager or authenticator
+                        app, then prove it with one code below. Nothing has been
+                        written yet — leaving now creates nothing.
+                      </p>
+                    </div>
+                    <div className="flex justify-center">
+                      <div className="rounded-xl bg-white p-3">
+                        <QRCodeCanvas
+                          value={enrollment.otpauthUri}
+                          size={168}
+                          marginSize={0}
+                          level="M"
+                          title="TOTP enrollment QR code"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Can&rsquo;t scan? Add the secret by hand, or open{" "}
+                      <a
+                        href={enrollment.otpauthUri}
+                        className="underline underline-offset-4 hover:text-foreground"
+                      >
+                        the enrollment link
+                      </a>{" "}
+                      on a device with an authenticator.
+                    </p>
+                    <CopyBlock value={enrollment.totpSecret} label="secret" />
+                    <CopyBlock
+                      value={enrollment.otpauthUri}
+                      label="otpauth URI"
+                    />
+                  </div>
+
+                  <Separator />
+
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      void finish()
+                    }}
+                  >
+                    <FieldGroup>
+                      <Field>
+                        <FieldLabel htmlFor="code">One-time code</FieldLabel>
+                        <Input
+                          id="code"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          maxLength={CODE_DIGITS + 2}
+                          placeholder="123456"
+                          className="data tracking-[0.25em]"
+                          value={code}
+                          onChange={(e) => setCode(e.target.value)}
+                        />
+                        <FieldDescription>
+                          The {CODE_DIGITS}-digit code your authenticator shows
+                          for this secret.
+                        </FieldDescription>
+                      </Field>
+                      <Field>
+                        <Button type="submit" disabled={!canFinish || isBusy}>
+                          {isBusy && <Spinner />}
+                          Create my repository
+                        </Button>
+                      </Field>
+                    </FieldGroup>
+                  </form>
+                </>
+              )}
+            </CardContent>
+          </Card>
         )}
         <p className="text-center text-xs text-muted-foreground">
           Already registered?{" "}

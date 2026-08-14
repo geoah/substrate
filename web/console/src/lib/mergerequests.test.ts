@@ -31,7 +31,9 @@ describe("evidenceSignals", () => {
   })
 
   it("accepts a generic score field", () => {
-    const signals = evidenceSignals({ signals: [{ signal: "phone", score: 0.5 }] })
+    const signals = evidenceSignals({
+      signals: [{ signal: "phone", score: 0.5 }],
+    })
     expect(signals).toEqual([{ kind: "phone", value: undefined, score: 0.5 }])
   })
 
@@ -39,7 +41,9 @@ describe("evidenceSignals", () => {
     expect(evidenceSignals(undefined)).toEqual([])
     expect(evidenceSignals("text")).toEqual([])
     expect(evidenceSignals({ signals: "not-a-list" })).toEqual([])
-    expect(evidenceSignals({ signals: [{ value: "no signal name" }] })).toEqual([])
+    expect(evidenceSignals({ signals: [{ value: "no signal name" }] })).toEqual(
+      []
+    )
     expect(evidenceSignals({ signals: [null] })).toEqual([])
   })
 })
@@ -139,7 +143,10 @@ describe("deriveDiff", () => {
     const loser = person(
       "l",
       { name: "Georgios", emails: ["b@x.gr"], prominence: "known" },
-      { name: "github.connectors.substrate.reamde.dev", emails: "github.connectors.substrate.reamde.dev" }
+      {
+        name: "github.connectors.substrate.reamde.dev",
+        emails: "github.connectors.substrate.reamde.dev",
+      }
     )
     const rows = deriveDiff(winner, loser, personType)
     const byKey = Object.fromEntries(rows.map((r) => [r.key, r]))
@@ -151,7 +158,11 @@ describe("deriveDiff", () => {
   })
 
   it("flags owner-held when the LOSER side is the owner's", () => {
-    const winner = person("w", { name: "A" }, { name: "github.connectors.substrate.reamde.dev" })
+    const winner = person(
+      "w",
+      { name: "A" },
+      { name: "github.connectors.substrate.reamde.dev" }
+    )
     const loser = person("l", { name: "B" }, { name: "owner" })
     const rows = deriveDiff(winner, loser, personType)
     expect(rows.find((r) => r.key === "name")?.posture).toBe("choice")
@@ -179,7 +190,9 @@ describe("deriveDiff", () => {
 
   it("diffs edges by target id set and postures a difference as moves", () => {
     const winner = person("w", {}, undefined, {
-      memberOf: [{ id: "org1", kind: "people.substrate.reamde.dev/organization" }],
+      memberOf: [
+        { id: "org1", kind: "people.substrate.reamde.dev/organization" },
+      ],
     })
     const loser = person("l", {}, undefined, {
       memberOf: [
@@ -199,13 +212,21 @@ describe("deriveDiff", () => {
       "w",
       { name: "A", emails: ["a@x.gr"], prominence: "known" },
       { name: "owner" },
-      { memberOf: [{ id: "org1", kind: "people.substrate.reamde.dev/organization" }] }
+      {
+        memberOf: [
+          { id: "org1", kind: "people.substrate.reamde.dev/organization" },
+        ],
+      }
     )
     const loser = person(
       "l",
       { name: "B", emails: ["b@x.gr"], prominence: "known" },
       undefined,
-      { memberOf: [{ id: "org2", kind: "people.substrate.reamde.dev/organization" }] }
+      {
+        memberOf: [
+          { id: "org2", kind: "people.substrate.reamde.dev/organization" },
+        ],
+      }
     )
     const rows = deriveDiff(winner, loser, personType)
     expect(rows.map((r) => r.posture)).toEqual([
@@ -238,7 +259,11 @@ describe("deriveDiff", () => {
     const loser = person("l", { name: "B" })
     const rows = deriveDiff(winner, loser, undefined)
     expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({ key: "name", declared: false, posture: "recompute" })
+    expect(rows[0]).toMatchObject({
+      key: "name",
+      declared: false,
+      posture: "recompute",
+    })
   })
 })
 
@@ -255,10 +280,12 @@ describe("verdictPatch", () => {
   })
 
   it("rides the note as the owner/note annotation in the same write", () => {
-    expect(verdictPatch("accepted", "  same person, checked emails  ")).toEqual({
-      properties: { decision: "accepted" },
-      annotations: { "owner/note": "same person, checked emails" },
-    })
+    expect(verdictPatch("accepted", "  same person, checked emails  ")).toEqual(
+      {
+        properties: { decision: "accepted" },
+        annotations: { "owner/note": "same person, checked emails" },
+      }
+    )
   })
 
   it("omits an empty note entirely", () => {

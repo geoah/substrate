@@ -90,7 +90,9 @@ function RegistryUpgradeBadge() {
   return (
     <SidebarMenuBadge className="bg-primary text-primary-foreground">
       <span className="sr-only">
-        {count === 1 ? "1 bundle upgrade available" : `${count} bundle upgrades available`}
+        {count === 1
+          ? "1 bundle upgrade available"
+          : `${count} bundle upgrades available`}
       </span>
       <span aria-hidden>{count}</span>
     </SidebarMenuBadge>
@@ -145,7 +147,9 @@ function AuthorityGroup({ nav }: { nav: AuthorityNav }) {
       render={<SidebarMenuItem />}
     >
       <CollapsibleTrigger
-        render={<SidebarMenuButton tooltip={label} className="cursor-pointer" />}
+        render={
+          <SidebarMenuButton tooltip={label} className="cursor-pointer" />
+        }
       >
         <FileCode2Icon />
         <span className="truncate">{label}</span>

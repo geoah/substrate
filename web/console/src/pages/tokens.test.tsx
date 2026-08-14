@@ -39,9 +39,7 @@ function renderWithClient(ui: ReactElement) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
-  return render(
-    <QueryClientProvider client={client}>{ui}</QueryClientProvider>
-  )
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
 
 describe("TokensPage", () => {
@@ -91,8 +89,7 @@ describe("TokensPage", () => {
     await screen.findByText("substrate_tok_fresh_secret")
     const post = fetchMock.mock.calls.find(
       ([url, init]) =>
-        String(url) === "/tokens" &&
-        (init as RequestInit).method === "POST"
+        String(url) === "/tokens" && (init as RequestInit).method === "POST"
     )
     expect(post).toBeTruthy()
     expect(JSON.parse((post![1] as RequestInit).body as string)).toEqual({

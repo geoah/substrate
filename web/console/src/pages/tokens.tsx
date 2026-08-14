@@ -64,7 +64,10 @@ const TOKENS_KEY = ["tokens"] as const
 function isCalendarDay(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
   const parsed = new Date(`${value}T00:00:00Z`)
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  )
 }
 
 async function copy(secret: string) {
@@ -72,7 +75,10 @@ async function copy(secret: string) {
     await navigator.clipboard?.writeText(secret)
     toast.add({ type: "success", title: "Secret copied." })
   } catch {
-    toast.add({ type: "error", title: "Could not reach the clipboard — select and copy." })
+    toast.add({
+      type: "error",
+      title: "Could not reach the clipboard — select and copy.",
+    })
   }
 }
 
@@ -87,7 +93,9 @@ function MintedPanel({
   return (
     <Card className="ring-primary/30">
       <CardHeader>
-        <CardTitle>“{minted.token.label}” is live — copy the secret now</CardTitle>
+        <CardTitle>
+          “{minted.token.label}” is live — copy the secret now
+        </CardTitle>
         <CardDescription>
           This is the only time the secret is shown. The substrate stores its
           SHA-256 and nothing else — lose it and the only remedy is minting
@@ -105,7 +113,7 @@ function MintedPanel({
         </CardAction>
       </CardHeader>
       <CardContent className="flex items-center gap-2">
-        <code className="data min-w-0 flex-1 truncate rounded-lg bg-muted px-2.5 py-1.5 text-xs">
+        <code className="min-w-0 flex-1 truncate rounded-lg bg-muted px-2.5 py-1.5 data text-xs">
           {minted.secret}
         </code>
         <Button
@@ -143,7 +151,11 @@ function MintForm({ onMinted }: { onMinted: (m: MintedToken) => void }) {
       void queryClient.invalidateQueries({ queryKey: TOKENS_KEY })
     },
     onError: (error) => {
-      toast.add({ type: "error", title: "Could not mint", description: error.message })
+      toast.add({
+        type: "error",
+        title: "Could not mint",
+        description: error.message,
+      })
     },
   })
 
@@ -236,7 +248,11 @@ function TokenRows({
       void queryClient.invalidateQueries({ queryKey: TOKENS_KEY })
     },
     onError: (error) => {
-      toast.add({ type: "error", title: "Could not revoke", description: error.message })
+      toast.add({
+        type: "error",
+        title: "Could not revoke",
+        description: error.message,
+      })
     },
   })
 
@@ -306,7 +322,7 @@ export function TokensPage() {
             <h2 className="text-sm font-medium">
               Live tokens
               {rows.length > 0 && (
-                <span className="data ml-2 text-xs font-normal text-muted-foreground">
+                <span className="ml-2 data text-xs font-normal text-muted-foreground">
                   {rows.length}
                 </span>
               )}

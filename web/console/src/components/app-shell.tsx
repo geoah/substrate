@@ -49,10 +49,7 @@ function crumbsFor(pathname: string): Crumb[] {
     ]
   }
   if (pathname.startsWith("/registry/connections")) {
-    return [
-      { label: "Registry", to: "/registry" },
-      { label: "Connections" },
-    ]
+    return [{ label: "Registry", to: "/registry" }, { label: "Connections" }]
   }
   if (pathname.startsWith("/registry/")) {
     const id = decodeURIComponent(pathname.slice("/registry/".length))

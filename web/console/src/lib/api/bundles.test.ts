@@ -41,7 +41,9 @@ function status(over: Partial<BundleStatus> = {}): BundleStatus {
 
 describe("bundleState", () => {
   it("reads uninstalled first — the marker overrides everything", () => {
-    expect(bundleState(status({ installed: false, enabled: false }))).toBe("uninstalled")
+    expect(bundleState(status({ installed: false, enabled: false }))).toBe(
+      "uninstalled"
+    )
   })
   it("reads disabled when installed but execution stopped", () => {
     expect(bundleState(status({ enabled: false }))).toBe("disabled")
@@ -93,7 +95,9 @@ describe("lifecycle verbs", () => {
   })
 
   it("POSTs a verb to the bundle's computed endpoint by its owned-authority id", async () => {
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(status({ enabled: false })), { status: 200 }))
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify(status({ enabled: false })), { status: 200 })
+    )
     await runBundleVerb("web.bundles.substrate.reamde.dev", "disable")
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe(
@@ -103,9 +107,13 @@ describe("lifecycle verbs", () => {
   })
 
   it("purge returns the tombstoned-row count", async () => {
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ purged: 12 }), { status: 200 }))
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ purged: 12 }), { status: 200 })
+    )
     const res = await purgeBundle("web.bundles.substrate.reamde.dev")
-    expect(String(fetchMock.mock.calls[0][0])).toContain("/bundles/web.bundles.substrate.reamde.dev/purge")
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "/bundles/web.bundles.substrate.reamde.dev/purge"
+    )
     expect(res.purged).toBe(12)
   })
 
@@ -143,7 +151,9 @@ describe("lifecycle verbs", () => {
   })
 
   it("oauth/start sends the account record id and returns the consent url", async () => {
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ url: "https://consent" }), { status: 200 }))
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ url: "https://consent" }), { status: 200 })
+    )
     const res = await startOAuth("acct-1")
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe("/api/v1/core.substrate.reamde.dev/oauth/start")
@@ -181,9 +191,15 @@ describe("parseSubstrateOAuthMessage — the callback return contract", () => {
 
   it("ignores a message whose source is not substrate-oauth", () => {
     expect(
-      parseSubstrateOAuthMessage({ source: "other", ok: true, record: "acct-1" })
+      parseSubstrateOAuthMessage({
+        source: "other",
+        ok: true,
+        record: "acct-1",
+      })
     ).toBeNull()
-    expect(parseSubstrateOAuthMessage({ ok: true, record: "acct-1" })).toBeNull()
+    expect(
+      parseSubstrateOAuthMessage({ ok: true, record: "acct-1" })
+    ).toBeNull()
   })
 
   it("ignores a success with no record id (a connected row must be named)", () => {
@@ -191,7 +207,11 @@ describe("parseSubstrateOAuthMessage — the callback return contract", () => {
       parseSubstrateOAuthMessage({ source: SUBSTRATE_OAUTH_SOURCE, ok: true })
     ).toBeNull()
     expect(
-      parseSubstrateOAuthMessage({ source: SUBSTRATE_OAUTH_SOURCE, ok: true, record: "" })
+      parseSubstrateOAuthMessage({
+        source: SUBSTRATE_OAUTH_SOURCE,
+        ok: true,
+        record: "",
+      })
     ).toBeNull()
   })
 
@@ -202,6 +222,8 @@ describe("parseSubstrateOAuthMessage — the callback return contract", () => {
     expect(
       parseSubstrateOAuthMessage({ source: SUBSTRATE_OAUTH_SOURCE, ok: "yes" })
     ).toBeNull()
-    expect(parseSubstrateOAuthMessage({ source: SUBSTRATE_OAUTH_SOURCE })).toBeNull()
+    expect(
+      parseSubstrateOAuthMessage({ source: SUBSTRATE_OAUTH_SOURCE })
+    ).toBeNull()
   })
 })

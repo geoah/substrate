@@ -198,18 +198,15 @@ export function streamChat(opts: {
       }
       const token = getToken()
       if (token) headers.Authorization = `Bearer ${token}`
-      const res = await fetch(
-        `${corePath("agents", opts.agent)}/chat`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            thread: opts.thread ?? "",
-            message: opts.message,
-          }),
-          signal: ctrl.signal,
-        }
-      )
+      const res = await fetch(`${corePath("agents", opts.agent)}/chat`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          thread: opts.thread ?? "",
+          message: opts.message,
+        }),
+        signal: ctrl.signal,
+      })
       if (res.status === 401) {
         sessionExpired()
         opts.onError?.(new ApiError("auth", "session expired", 401))
@@ -225,7 +222,9 @@ export function streamChat(opts: {
       const handle = (event: AgentEvent) => {
         const isError =
           event.kind === "error" ||
-          (event.kind === "done" && !event.result && Boolean(event.error || event.text))
+          (event.kind === "done" &&
+            !event.result &&
+            Boolean(event.error || event.text))
         if (isError) {
           errored = true
           opts.onError?.(
@@ -268,7 +267,9 @@ export function streamChat(opts: {
 
 /** The assistant reply a settled thread carries — the newest assistant
  * message's content, read back off the transcript. */
-export function lastAssistantReply(messages: SubstrateRecord[]): string | undefined {
+export function lastAssistantReply(
+  messages: SubstrateRecord[]
+): string | undefined {
   for (let i = messages.length - 1; i >= 0; i--) {
     const p = messages[i].properties
     if (p.role === "assistant" && typeof p.content === "string" && p.content) {

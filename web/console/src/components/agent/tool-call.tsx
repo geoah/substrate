@@ -29,7 +29,7 @@ function Payload({ label, raw }: { label: string; raw: string }) {
   const { text, json } = prettyJSON(raw)
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+      <span className="text-[0.65rem] tracking-wide text-muted-foreground uppercase">
         {label}
       </span>
       {text ? (
@@ -38,7 +38,7 @@ function Payload({ label, raw }: { label: string; raw: string }) {
         ) : (
           // Not JSON: a tool returns whatever it returns, and tinting a stack
           // trace as if it had parsed would be a lie about the payload.
-          <pre className="overflow-x-auto rounded-sm bg-background/60 p-2 data text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">
+          <pre className="overflow-x-auto rounded-sm bg-background/60 p-2 data text-xs [overflow-wrap:anywhere] whitespace-pre-wrap">
             {text}
           </pre>
         )

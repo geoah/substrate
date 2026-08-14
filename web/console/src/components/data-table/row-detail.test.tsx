@@ -82,7 +82,9 @@ describe("ChangeDetail", () => {
 
   it("attributes the write to its actor", () => {
     render(<ChangeDetail row={ROW} />)
-    expect(screen.getByTitle("github.bundles.substrate.reamde.dev")).toBeTruthy()
+    expect(
+      screen.getByTitle("github.bundles.substrate.reamde.dev")
+    ).toBeTruthy()
   })
 
   it("keeps the raw payload closed until asked", () => {

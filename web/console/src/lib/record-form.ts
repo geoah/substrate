@@ -112,7 +112,8 @@ export function buildFormFields(kind: KindInfo): FormField[] {
  * required properties before optional ones. */
 export function requiredFirst(fields: FormField[]): FormField[] {
   return [...fields].sort(
-    (a, b) => Number(b.required) - Number(a.required) || a.name.localeCompare(b.name)
+    (a, b) =>
+      Number(b.required) - Number(a.required) || a.name.localeCompare(b.name)
   )
 }
 
@@ -120,7 +121,8 @@ export function requiredFirst(fields: FormField[]): FormField[] {
  * newlines, a json control carries its JSON text), a bool carries a boolean, a
  * reference carries `{kind, id}`, and `null` marks a field the person
  * EXPLICITLY cleared (distinct from a merely-blank, untouched one). */
-export type FormValue = string | boolean | null | RefValue | FieldBag | FieldBag[]
+export type FormValue =
+  string | boolean | null | RefValue | FieldBag | FieldBag[]
 export type FormValues = Record<string, FormValue>
 
 /** Which shape a value is in is the CONTROL's business, never a guess at the
@@ -149,7 +151,11 @@ export function objectFields(field: FormField): FormField[] {
 /** Seed one field from a stored value (absent on a create). A secret NEVER
  * seeds (write-only); a reference keeps its pinned kind; everything else
  * renders through the schema's own formatting. */
-export function seedField(field: FormField, stored: unknown, creating: boolean): FormValue {
+export function seedField(
+  field: FormField,
+  stored: unknown,
+  creating: boolean
+): FormValue {
   switch (field.control) {
     case "secret":
       return ""
@@ -179,7 +185,9 @@ export function seedField(field: FormField, stored: unknown, creating: boolean):
       )
     case "state":
       if (typeof stored === "string" && stored) return stored
-      return creating ? (field.spec.initial ?? field.spec.states?.[0] ?? "") : ""
+      return creating
+        ? (field.spec.initial ?? field.spec.states?.[0] ?? "")
+        : ""
     default:
       if (stored === null || stored === undefined) {
         return creating && field.defaultValue ? field.defaultValue : ""
@@ -193,7 +201,8 @@ function seedBag(field: FormField, stored: unknown): FieldBag {
   const row = (stored ?? {}) as Record<string, unknown>
   const bag: FieldBag = {}
   for (const sub of objectFields(field)) {
-    bag[sub.name] = seedField(sub, row[sub.name], false) as string | boolean | null
+    bag[sub.name] = seedField(sub, row[sub.name], false) as
+      string | boolean | null
   }
   return bag
 }
@@ -205,7 +214,11 @@ export function initialValues(
 ): FormValues {
   const values: FormValues = {}
   for (const field of fields) {
-    values[field.name] = seedField(field, record?.properties?.[field.name], !record)
+    values[field.name] = seedField(
+      field,
+      record?.properties?.[field.name],
+      !record
+    )
   }
   return values
 }
@@ -237,7 +250,9 @@ export function toFieldValue(field: FormField, value: FormValue): FieldValue {
   if (field.control === "object") {
     const row = bagValue(field, asBag(value))
     if (row.error) return row
-    return row.value && Object.keys(row.value).length ? { value: row.value } : {}
+    return row.value && Object.keys(row.value).length
+      ? { value: row.value }
+      : {}
   }
   if (field.control === "objectList") {
     const out: Record<string, unknown>[] = []
@@ -253,7 +268,8 @@ export function toFieldValue(field: FormField, value: FormValue): FieldValue {
     const id = ref.id.trim()
     if (!id) return {}
     const kind = ref.kind.trim()
-    if (!kind) return { error: "a reference to any kind needs an explicit kind" }
+    if (!kind)
+      return { error: "a reference to any kind needs an explicit kind" }
     return { value: { kind, id } }
   }
   if (field.control === "list") {
@@ -308,7 +324,10 @@ export function validate(
     }
     const submitted = toFieldValue(field, value)
     if (submitted.error) {
-      errors.push({ name: field.name, message: `${field.name}: ${submitted.error}.` })
+      errors.push({
+        name: field.name,
+        message: `${field.name}: ${submitted.error}.`,
+      })
       continue
     }
     if (!field.required || field.control === "bool") continue

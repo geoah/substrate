@@ -53,7 +53,11 @@ export function RecordPeek({
         render={
           <Link
             to="/data/$authority/$plural/$id"
-            params={{ authority: authority, plural: targetKind.plural, id: target.id }}
+            params={{
+              authority: authority,
+              plural: targetKind.plural,
+              id: target.id,
+            }}
             onClick={(e) => e.stopPropagation()}
           />
         }

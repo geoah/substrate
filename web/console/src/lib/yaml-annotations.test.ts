@@ -39,7 +39,9 @@ describe("describableSpan", () => {
 
   it("never describes envelope keys — depth guards the collision", () => {
     // A top-level key is the envelope's, even when a property shares the name.
-    expect(describableSpan("authority: people.substrate.reamde.dev", docs)).toBeNull()
+    expect(
+      describableSpan("authority: people.substrate.reamde.dev", docs)
+    ).toBeNull()
     expect(describableSpan("    authority: x", docs)).toEqual({
       text: "authority",
       doc: {
@@ -124,8 +126,10 @@ const targets: YamlLinkTargets = {
       "/data/calendar.substrate.reamde.dev/calendars/gcal-a@x.io-b@y.io",
   },
   kinds: {
-    "people.substrate.reamde.dev/person": "/data/people.substrate.reamde.dev/people",
-    "people.substrate.reamde.dev/organization": "/data/people.substrate.reamde.dev/organizations",
+    "people.substrate.reamde.dev/person":
+      "/data/people.substrate.reamde.dev/people",
+    "people.substrate.reamde.dev/organization":
+      "/data/people.substrate.reamde.dev/organizations",
   },
 }
 
@@ -150,12 +154,17 @@ describe("linkableSpan", () => {
 
   it("links a kind reference value in its key position only", () => {
     // The top-level envelope `kind:` and an edge target's indented `to.kind:`.
-    expect(linkableSpan("kind: people.substrate.reamde.dev/person", targets)).toEqual({
+    expect(
+      linkableSpan("kind: people.substrate.reamde.dev/person", targets)
+    ).toEqual({
       text: "people.substrate.reamde.dev/person",
       href: "/data/people.substrate.reamde.dev/people",
     })
     expect(
-      linkableSpan("        kind: people.substrate.reamde.dev/organization", targets)
+      linkableSpan(
+        "        kind: people.substrate.reamde.dev/organization",
+        targets
+      )
     ).toEqual({
       text: "people.substrate.reamde.dev/organization",
       href: "/data/people.substrate.reamde.dev/organizations",
@@ -168,7 +177,10 @@ describe("linkableSpan", () => {
 
   it("links manager and actor rows to the actor view — depth-guarded", () => {
     expect(
-      linkableSpan("      manager: people.google.bundles.substrate.reamde.dev", targets)
+      linkableSpan(
+        "      manager: people.google.bundles.substrate.reamde.dev",
+        targets
+      )
     ).toEqual({
       text: "people.google.bundles.substrate.reamde.dev",
       href: "/actors/people.google.bundles.substrate.reamde.dev",
@@ -191,7 +203,9 @@ describe("linkableSpan", () => {
 
   it("stays silent on unknown values and empty rows", () => {
     expect(linkableSpan("      id: unknown-id", targets)).toBeNull()
-    expect(linkableSpan("kind: ghost.substrate.reamde.dev/thing", targets)).toBeNull()
+    expect(
+      linkableSpan("kind: ghost.substrate.reamde.dev/thing", targets)
+    ).toBeNull()
     expect(linkableSpan("    to:", targets)).toBeNull()
   })
 })

@@ -16,7 +16,9 @@ import {
   validate,
 } from "./record-form"
 
-function typeWith(properties: Record<string, Record<string, unknown>>): KindInfo {
+function typeWith(
+  properties: Record<string, Record<string, unknown>>
+): KindInfo {
   return {
     identity: "google.bundles.substrate.reamde.dev/account",
     name: "account",
@@ -126,11 +128,7 @@ describe("buildFormFields", () => {
     expect(names).not.toContain("email")
     expect(names).not.toContain("grantedScopes")
     // Only the owner-writable feature toggles + cadence + backfill remain.
-    expect(names).toEqual([
-      "backfillDepth",
-      "enabledContacts",
-      "syncFrequency",
-    ])
+    expect(names).toEqual(["backfillDepth", "enabledContacts", "syncFrequency"])
   })
 
   it("maps kinds to controls: secret→secret, repeated→list, bool→bool, email→text", () => {
@@ -322,7 +320,9 @@ describe("default seeding", () => {
 
   it("patch: a stored-absent default field stays empty (default seeds create only)", () => {
     const fields = buildFormFields(typedAccountType)
-    const record = { properties: { email: "alice@example.com" } } as unknown as SubstrateRecord
+    const record = {
+      properties: { email: "alice@example.com" },
+    } as unknown as SubstrateRecord
     const values = initialValues(fields, record)
     expect(values.syncFrequency).toBe("")
   })
