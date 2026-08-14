@@ -441,6 +441,50 @@ func TestDerivedTitleTokens(t *testing.T) {
 
 const dtAuthority = "dtemplate.example.substrate.reamde.dev"
 
+// core/llmthread's own title, against the SHIPPED declarations: `{agent}` is a
+// bare token on a reference, so it follows the pointer to the referent's title,
+// which is agent's `{localName}`. The template read `{agent.name}` until
+// core/agent stopped declaring `name`, and every thread in every repository
+// titled ": running" — a stale worked example is why this case is a test and
+// not a comment.
+func TestLLMThreadTitleFollowsItsAgent(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	const authority = "titlecrew.example.substrate.reamde.dev"
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/llmprovider", ID: "default",
+		Properties: map[string]any{"wire": "openai", "baseURL": "https://llm.example.com/v1"},
+	}); err != nil {
+		t.Fatalf("put the llmprovider row: %v", err)
+	}
+	docs := []map[string]any{
+		vocabulary.AuthorityManifest(authority, ""),
+		vocabulary.AgentManifest(authority, "scribe", map[string]any{
+			"description": "writes things down",
+			"prompt":      "You write things down.",
+			"provider":    "default",
+			"model":       "example-model",
+		}),
+	}
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+		t.Fatalf("install the agent: %v", err)
+	}
+	thread := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/llmthread", ID: "t1",
+		Properties: map[string]any{
+			"agent": map[string]any{
+				"kind": "core.substrate.reamde.dev/agent",
+				"id":   authority + "/scribe",
+			},
+			"status": "running",
+		},
+	})
+	if thread.Title != "scribe: running" {
+		t.Fatalf("llmthread title = %q, want the agent's own title and the status", thread.Title)
+	}
+}
+
 // A declaration that loaded before this dialect must load after it. The
 // nested-reference widening arrives on stored rows, not just fresh applies: the
 // repository rebuilds its whole registry from its own records at every open, so

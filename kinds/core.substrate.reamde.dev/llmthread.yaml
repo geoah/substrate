@@ -25,11 +25,15 @@ data:
   # erase every thread's record of what ran. A reference survives as a dangling
   # pointer, and the graph reads it in reverse either way.
   # v1alpha5: the index names its properties, the declared spelling.
-  version: v1alpha5
+  # v1alpha6: the title FOLLOWS the reference instead of reading a property off
+  # the referent. core/agent stopped declaring `name`, so `{agent.name}` read
+  # nothing and every thread titled ": running"; a bare token on a reference
+  # renders the referent's own title, which is agent's `{localName}`.
+  version: v1alpha6
   names:
     singular: llmthread
     plural: llmthreads
-  displayTemplate: "{agent.name}: {status}"
+  displayTemplate: "{agent}: {status}"
   # No index on `agent`: a reference filters by containment, which rides the
   # repository-wide GIN index on props.
   indices:

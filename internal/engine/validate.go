@@ -580,10 +580,13 @@ func (r *titleResolver) Edge(rel, prop string) string {
 			}
 			return ""
 		}
-		// `{agent.name}` where `agent` is a REFERENCE reads the referent's
-		// property, the same hop a dotted edge token takes. The loader has
-		// checked the head names a declared edge, object or reference, so the
-		// three forms cannot collide.
+		// A dotted token whose head is a REFERENCE reads that property off the
+		// referent, the same hop a dotted edge token takes. No shipped
+		// declaration spells one: llmthread titled itself `{agent.name}` until
+		// core/agent stopped declaring `name`, and the bare `{agent}` that
+		// replaced it renders the referent's own TITLE instead (Prop, above).
+		// The loader has checked the head names a declared edge, object or
+		// reference, so the three forms cannot collide.
 		if p, ok := r.ty.Prop(rel); ok && p.Datatype == vocabulary.DatatypeReference {
 			return r.reference(rel, prop)
 		}
