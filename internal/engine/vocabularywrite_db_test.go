@@ -223,7 +223,7 @@ def main(input, host):
 			"source": map[string]any{"record": map[string]any{
 				"kinds": []any{swAuthority + "/widget"}, "ops": []any{"create", "update"},
 			}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": swAuthority + "/mirror"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", swAuthority+"/mirror"),
 		},
 	}); err != nil {
 		t.Fatalf("put trigger: %v", err)
@@ -909,7 +909,7 @@ def main(input, host):
 		Kind: "core.substrate.reamde.dev/trigger", ID: triggerID,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{swAuthority + "/widget"}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": swAuthority + "/mirror"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", swAuthority+"/mirror"),
 		},
 	}); err != nil {
 		t.Fatalf("put trigger: %v", err)

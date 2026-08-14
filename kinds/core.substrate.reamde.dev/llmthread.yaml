@@ -49,6 +49,11 @@ data:
       inverse: threads
       inverseDescription: the runs this agent has had
       description: the agent this thread ran
+    # NOT a reference, unlike the agent's own `provider:`. This one is what the
+    # ENGINE resolved for this run — provenance on a finished thread, not a
+    # pointer an author picks — and retyping a live string property to a
+    # reference is a narrowing the boot upgrade refuses while rows hold the old
+    # shape.
     provider:
       type: string
       description: the llmprovider row id the run resolved

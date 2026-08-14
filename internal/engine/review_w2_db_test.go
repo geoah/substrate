@@ -98,7 +98,7 @@ def main(input, host):
 			Properties: map[string]any{
 				"enabled":  true,
 				"source":   map[string]any{"record": map[string]any{"kinds": []any{w2Widget}, "ops": []any{"create", "update"}}},
-				"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": w2Mirror},
+				"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", w2Mirror),
 			},
 		}}
 	}

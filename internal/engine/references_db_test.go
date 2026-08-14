@@ -66,7 +66,7 @@ func TestReferenceRoundTrip(t *testing.T) {
 	// not an edge, so no existence gate refuses it.
 	h := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       refAuthority + "/holder",
-		Properties: map[string]any{"pin": map[string]any{"kind": "widget", "id": "ghost"}},
+		Properties: map[string]any{"pin": "ghost"},
 	})
 	got := mustGet(t, ds, h.Kind, h.ID)
 	kind, id := asRef(t, got.Properties["pin"])
@@ -94,7 +94,7 @@ func TestReferenceUnknownTypeRefused(t *testing.T) {
 
 	_, err := ds.Put(context.Background(), owner, substrate.PutInput{
 		Kind:       refAuthority + "/holder",
-		Properties: map[string]any{"anyref": map[string]any{"kind": "nosuch", "id": "x"}},
+		Properties: map[string]any{"anyref": vocabulary.RecordPath("nosuch.example.com/thing", "x")},
 	})
 	wantErr(t, err, substrate.ErrValidation, "unknown referent type")
 }
@@ -108,7 +108,7 @@ func TestReferenceToMismatchRefused(t *testing.T) {
 
 	_, err := ds.Put(context.Background(), owner, substrate.PutInput{
 		Kind:       refAuthority + "/holder",
-		Properties: map[string]any{"pin": map[string]any{"kind": "gadget", "id": "g1"}},
+		Properties: map[string]any{"pin": vocabulary.RecordPath(refAuthority+"/gadget", "g1")},
 	})
 	wantErr(t, err, substrate.ErrValidation, "to mismatch")
 }
@@ -136,8 +136,8 @@ func TestRepeatedReferences(t *testing.T) {
 	h := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: refAuthority + "/holder",
 		Properties: map[string]any{"pins": []any{
-			map[string]any{"kind": "widget", "id": "a"},
-			map[string]any{"authority": refAuthority, "type": "widget", "id": "b"},
+			"a",
+			vocabulary.RecordPath(refAuthority+"/widget", "b"),
 		}},
 	})
 	got := mustGet(t, ds, h.Kind, h.ID)

@@ -886,7 +886,7 @@ func TestW3BundledAgentUpgradeGuard(t *testing.T) {
 		Properties: map[string]any{
 			"enabled":  true,
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{wagAuthority + "/wagconfig"}, "ops": []any{"create"}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/agent", "id": wagAuthority + "/helper"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", wagAuthority+"/helper"),
 		},
 	})
 
@@ -963,7 +963,7 @@ func TestW3TriggerVsUpgradeBarrier(t *testing.T) {
 			Properties: map[string]any{
 				"enabled":  true,
 				"source":   map[string]any{"record": map[string]any{"kinds": []any{mbItemType}, "ops": []any{"create"}}},
-				"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": mbMarkFn},
+				"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", mbMarkFn),
 			},
 		})
 		triggerDone <- err

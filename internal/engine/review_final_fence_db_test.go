@@ -117,7 +117,7 @@ func TestFinalFenceDrainsBundledAgentTrigger(t *testing.T) {
 		Properties: map[string]any{
 			"enabled":  true,
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{abAuthority + "/abconfig"}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/agent", "id": abAuthority + "/greeter"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", abAuthority+"/greeter"),
 		},
 	}); err != nil {
 		t.Fatalf("put trigger: %v", err)

@@ -167,41 +167,95 @@ func coerceObject(p *vocabulary.Property, v any) (any, error) {
 //     concrete kind, which then supplies what the value omits, mirroring a
 //     single-target edge's shorthand.
 //
-// Which of the two a string is, is decided by the kind grammar alone
-// (vocabulary.SplitRecordPath) and never by the registry, so an authored value
-// means the same thing on every path that reads it.
+// Which of the two a string is, is decided by the value's own SHAPE against the
+// pin and never by the registry, so an authored value means the same thing on
+// every path that reads it.
+//
+// AN AMBIGUOUS VALUE IS REFUSED, NEVER GUESSED. Under a pin, a value that
+// parses as a full path whose kind is NOT the pin has two live readings — that
+// pointer, or a bare id the pin would complete — and they name different
+// records. "foo.bar/baz/qux" under a pin at `p/target` is the case: a pointer at
+// `foo.bar/baz`, or an id `foo.bar/baz/qux`. Both are refused together, naming
+// both readings, because picking one silently is how a pointer ends up at the
+// wrong row.
+//
+// A value that does NOT parse as a path is unambiguous even carrying slashes,
+// and that is deliberate: a kind or function IDENTITY is the ordinary short form
+// for the properties that name one ("writes: [web.…/page]" under a pin at
+// core's `kind`), and it cannot be read as a path because nothing is left for an
+// id. Only empty-segment shapes are refused there, since "target/" is an id of
+// nothing.
 func coerceReference(p *vocabulary.Property, v any) (any, error) {
-	var id string
+	pin := p.To
+	if pin == vocabulary.ToAny {
+		pin = ""
+	}
 	switch t := v.(type) {
 	case string:
-		if t == "" {
-			return nil, fmt.Errorf("a reference needs an id")
-		}
-		if _, _, ok := vocabulary.SplitRecordPath(t); ok {
-			return t, nil
-		}
-		id = t
+		return coerceReferencePath(pin, t)
 	case map[string]any:
-		// The RELEASED dialect-1 shape, admitted for exactly one reason: the
-		// boot rung re-projects stored declaration rows through this same
-		// coercion, so folding the pair to a path here is the whole migration
-		// and no second writer has to know the old shape. Nothing AUTHORS this.
+		// The retired dialect-1 shape, refused BY NAME rather than folded. The
+		// boot rung canonicalizes the stored rows that hold one
+		// (canonicalizeTriggerCallables), so this door never has to: a pair
+		// arriving here is either an author writing the dead shape or a store
+		// that skipped the rung, and quietly accepting it would keep the old
+		// spelling alive in a dialect that says it is gone.
 		kind, _ := t["kind"].(string)
-		rid, _ := t["id"].(string)
-		if rid == "" {
-			return nil, fmt.Errorf("a reference needs an id")
-		}
-		if kind != "" {
-			return vocabulary.RecordPath(kind, rid), nil
-		}
-		id = rid
+		id, _ := t["id"].(string)
+		return nil, fmt.Errorf(
+			"a reference is a %q path string; the {kind: %q, id: %q} pair is the retired shape, and the boot rung is what migrates a stored one",
+			"<kind>/<id>", kind, id)
 	default:
 		return nil, fmt.Errorf(`a reference is a "<kind>/<id>" path string`)
 	}
-	if p.To == "" || p.To == vocabulary.ToAny {
-		return nil, fmt.Errorf(`a reference to any kind needs a full "<kind>/<id>" path, not the bare id %q`, id)
+}
+
+// coerceReferencePath holds one authored string to the value model: the whole
+// decision, in one place, so the write path and the rung cannot answer it
+// differently.
+func coerceReferencePath(pin, s string) (any, error) {
+	if s == "" {
+		return nil, fmt.Errorf("a reference needs an id")
 	}
-	return vocabulary.RecordPath(p.To, id), nil
+	kind, id, isPath := vocabulary.SplitRecordPath(s)
+	if pin == "" {
+		// Unpinned there is no kind to borrow, so only a full path says what
+		// this names. A dotted first segment is an AUTHORITY, so "foo.bar/baz"
+		// names the kind `foo.bar/baz` and leaves nothing for the id; "note/abc"
+		// is the local kind `note` and the id `abc`.
+		if !isPath {
+			return nil, fmt.Errorf(
+				`a reference to any kind needs a full "<kind>/<id>" path, and %q is not one`, s)
+		}
+		if hasEmptySegment(id) {
+			return nil, fmt.Errorf("reference %q has an empty id segment", s)
+		}
+		return s, nil
+	}
+	if isPath {
+		if kind == pin {
+			if hasEmptySegment(id) {
+				return nil, fmt.Errorf("reference %q has an empty id segment", s)
+			}
+			return s, nil
+		}
+		// Both readings, named, because either end may be the one to change.
+		return nil, fmt.Errorf(
+			"reference %q is ambiguous: it reads as a pointer at %s, or as a bare id the pin would complete to %q — and the declaration pins %s, so write that path in full",
+			s, kind, vocabulary.RecordPath(pin, s), pin)
+	}
+	if hasEmptySegment(s) {
+		return nil, fmt.Errorf("reference %q has an empty segment, so it names no record", s)
+	}
+	return vocabulary.RecordPath(pin, s), nil
+}
+
+// hasEmptySegment reports whether a record id has a slash with nothing on one
+// side of it. "target/" and "/x" and "a//b" all name no record, and completing
+// one from a pin would store a path that can never be split back.
+func hasEmptySegment(id string) bool {
+	return id == "" || strings.HasPrefix(id, "/") || strings.HasSuffix(id, "/") ||
+		strings.Contains(id, "//")
 }
 
 func coerceScalar(p *vocabulary.Property, v any) (any, error) {

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // dnBaseProps is dwProps plus one keyed FIELD, which is the position the
@@ -278,7 +279,7 @@ func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: dwAuthority + "/target", ID: "a", Properties: map[string]any{"name": "Ada"},
 	})
-	target := map[string]any{"kind": dwAuthority + "/target", "id": "a"}
+	target := vocabulary.RecordPath(dwAuthority+"/target", "a")
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: dwAuthority + "/holder", ID: "conforms",
 		Properties: map[string]any{
@@ -338,8 +339,8 @@ func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: dwAuthority + "/holder", ID: "strays",
 		Properties: map[string]any{
-			"loose":     map[string]any{"ref": map[string]any{"kind": dwAuthority + "/other", "id": "o1"}},
-			"keyedRefs": map[string]any{"primary": map[string]any{"kind": dwAuthority + "/other", "id": "o1"}},
+			"loose":     map[string]any{"ref": vocabulary.RecordPath(dwAuthority+"/other", "o1")},
+			"keyedRefs": map[string]any{"primary": vocabulary.RecordPath(dwAuthority+"/other", "o1")},
 			"notes":     map[string]any{"not a camel key": "x"},
 		},
 	})

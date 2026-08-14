@@ -276,7 +276,7 @@ func TestReferenceRendersInADisplayTemplate(t *testing.T) {
 	// difference from an edge. A bare token then falls back to the id it
 	// holds: a dangling pointer still NAMES something, and rendering nothing
 	// would throw away the only identifier the row had.
-	ghost := map[string]any{"kind": firstClassAuthority + "/target", "id": "ghost"}
+	ghost := vocabulary.RecordPath(firstClassAuthority+"/target", "ghost")
 	dangling := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: firstClassAuthority + "/tag", ID: "t2",
 		Properties: map[string]any{"target": ghost},

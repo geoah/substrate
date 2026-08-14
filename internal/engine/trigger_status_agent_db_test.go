@@ -22,7 +22,7 @@ func TestTriggerStatusResolvesAgentCallables(t *testing.T) {
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewAuthority + "/widget"}, "ops": []any{"create"}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/agent", "id": crewAuthority + "/classifier"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", crewAuthority+"/classifier"),
 		},
 	})
 	if err != nil {
@@ -32,7 +32,7 @@ func TestTriggerStatusResolvesAgentCallables(t *testing.T) {
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewAuthority + "/widget"}, "ops": []any{"create"}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": crewAuthority + "/annotate"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", crewAuthority+"/annotate"),
 		},
 	})
 	if err != nil {

@@ -315,6 +315,10 @@ data:
     plural: users
   displayTemplate: "{name|login}"
   properties:
+    # NOT a reference, and every `account:` in this closure reads the same way:
+    # the connector writes it as provenance on synced rows, and retyping a live
+    # string property to a reference is a NARROWING the boot upgrade refuses
+    # while rows hold the old shape — it would strand every released store.
     account:
       type: string
       displayName: Account

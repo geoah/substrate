@@ -42,7 +42,7 @@ func TestScheduleFireIdempotentAndCoalesced(t *testing.T) {
 			"source": map[string]any{"schedule": map[string]any{
 				"recurrence": "FREQ=HOURLY", "timezone": "UTC",
 			}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": authority + "/hourly"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", authority+"/hourly"),
 		},
 	})
 	if err == nil {
@@ -72,7 +72,7 @@ def main(input, host):
 			"source": map[string]any{"schedule": map[string]any{
 				"recurrence": "FREQ=HOURLY", "timezone": "UTC",
 			}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": authority + "/hourly"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", authority+"/hourly"),
 		},
 	})
 	if err != nil {

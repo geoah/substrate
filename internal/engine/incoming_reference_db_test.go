@@ -92,7 +92,7 @@ func TestIncomingReadsReferencesAndEdgesAsOne(t *testing.T) {
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: graphAuthority + "/loose", ID: "x1",
 		Properties: map[string]any{
-			"anything": map[string]any{"kind": graphAuthority + "/hub", "id": "h1"},
+			"anything": vocabulary.RecordPath(graphAuthority+"/hub", "h1"),
 		},
 	})
 

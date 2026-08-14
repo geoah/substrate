@@ -153,6 +153,14 @@ func (ds *dataset) promoteTypedDeclarations(ctx context.Context) error {
 				}
 			}
 		}
+		// The one DATA row the rung owns. Everything above is a declaration; a
+		// trigger is not, and its `callable` is the only reference value that
+		// shipped as a {kind, id} pair, so nothing else would ever move it.
+		callables, err := t.canonicalizeTriggerCallables()
+		if err != nil {
+			return err
+		}
+		moved += callables
 		// THE STRUCTURAL INVARIANT, before the stamp and inside the transaction: no
 		// live declaration row still carries a `definition`. Everything above is a
 		// derivation from what the loader parsed, and a row it never reached — an
@@ -263,6 +271,87 @@ func (t *txn) definitionBearingRows() ([]string, error) {
 		out = append(out, kind+" "+id)
 	}
 	return out, rows.Err()
+}
+
+// canonicalizeTriggerCallables rewrites every live trigger whose `callable`
+// still holds the released `{kind, id}` pair into the flat "<kind>/<id>" path,
+// through the fold, in the promotion's own transaction.
+//
+// It is here because a trigger is a DATA row. The rest of the rung walks
+// declarations, and a released store's trigger would otherwise keep the pair
+// forever — which is not a cosmetic difference: the uninstall teardown and the
+// dropped-callable guard both compare `props->>'callable'`, and a jsonb object
+// answers neither, so an upgrade could strip a callable a live trigger still
+// names and an uninstall could leave that trigger behind. Every released store
+// is dialect 1 and passes here at first open, so after promotion the pair does
+// not exist.
+//
+// CONTENT-GATED, so re-running the rung is free: only an object with both halves
+// is rewritten, a path is left exactly as it is, and a malformed object is left
+// for the reader to refuse rather than turned into a path naming nothing.
+func (t *txn) canonicalizeTriggerCallables() (int, error) {
+	rows, err := t.query(`
+		SELECT id FROM records
+		WHERE kind = $1 AND deleted_at IS NULL AND jsonb_typeof(props->'callable') = 'object'
+		ORDER BY id`, typeTrigger)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return 0, err
+	}
+	_ = rows.Close()
+
+	moved := 0
+	for _, id := range ids {
+		ref := eref{Kind: typeTrigger, ID: id}
+		row, err := t.loadRow(ref, true)
+		if err != nil {
+			return 0, err
+		}
+		if row == nil {
+			continue
+		}
+		pair, ok := row.Props["callable"].(map[string]any)
+		if !ok {
+			continue
+		}
+		kind, _ := pair["kind"].(string)
+		callableID, _ := pair["id"].(string)
+		if kind == "" || callableID == "" {
+			continue
+		}
+		before := row.clone()
+		props := make(map[string]any, len(row.Props))
+		for k, v := range row.Props {
+			props[k] = v
+		}
+		props["callable"] = vocabulary.RecordPath(kind, callableID)
+		row.Props = props
+		res, err := t.foldRow(before, row, false, false)
+		if err != nil {
+			return 0, err
+		}
+		if !res.changed {
+			continue
+		}
+		if err := t.appendChange(substrate.ActorSystem, substrate.OpPatch, id, typeTrigger,
+			map[string]any{"properties": []string{"callable"}, "dialect": dialectTypedDeclarations}); err != nil {
+			return 0, err
+		}
+		moved++
+	}
+	return moved, nil
 }
 
 // retypeDeclarationRow rewrites one declaration row's properties to the typed

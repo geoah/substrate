@@ -90,9 +90,31 @@ func TestReferencePathAuthoredStoredAndReadBack(t *testing.T) {
 		"local pin, authored bare": {authored: "a", stored: target},
 		// Unpinned: no kind to borrow, so only a full path says what it names.
 		"unpinned, authored full path": {authored: target, stored: target},
-		// The four-segment case, both ways round.
+		// The four-segment case, both ways round. The bare form here CARRIES A
+		// SLASH and is still unambiguous: a kind identity cannot be read as a
+		// path, because splitting it leaves nothing for the id. This is the
+		// ordinary spelling for every property that names a kind or a function.
 		"declaration pin, authored bare": {authored: pathAuthority + "/target", stored: declared},
 		"declaration pin, authored path": {authored: declared, stored: declared},
+		// An id that is EQUAL to a kind identity works on purpose, not by
+		// accident: same reasoning, pinned at an ordinary kind this time.
+		"pinned, id equal to a kind identity": {
+			authored: "core.substrate.reamde.dev/kind",
+			stored:   vocabulary.RecordPath(pathAuthority+"/target", "core.substrate.reamde.dev/kind"),
+		},
+		// A slash-bearing id that WOULD parse as a path is refused as a short
+		// form (below) and accepted written out in full.
+		"pinned, slash-bearing id in full path form": {
+			authored: vocabulary.RecordPath(pathAuthority+"/target", "foo.bar/baz/qux"),
+			stored:   vocabulary.RecordPath(pathAuthority+"/target", "foo.bar/baz/qux"),
+		},
+		// Unpinned, the dot rule alone decides: no dot in the first segment
+		// means a repository-LOCAL kind, which then resolves to its full
+		// identity, so the stored path is spelled one way either way.
+		"unpinned, local kind path": {
+			authored: "target/abc",
+			stored:   vocabulary.RecordPath(pathAuthority+"/target", "abc"),
+		},
 		// Containers carry the same rule elementwise, at every declared depth.
 		"repeated, mixed forms": {
 			authored: []any{"a", target},
@@ -112,16 +134,19 @@ func TestReferencePathAuthoredStoredAndReadBack(t *testing.T) {
 		},
 	} {
 		prop := map[string]string{
-			"pinned, authored bare":          "pinned",
-			"pinned, authored full path":     "pinned",
-			"local pin, authored bare":       "local",
-			"unpinned, authored full path":   "free",
-			"declaration pin, authored bare": "declared",
-			"declaration pin, authored path": "declared",
-			"repeated, mixed forms":          "many",
-			"keyed, mixed forms":             "keyed",
-			"inside an object":               "spec",
-			"inside a repeated object":       "entries",
+			"pinned, authored bare":                      "pinned",
+			"pinned, authored full path":                 "pinned",
+			"local pin, authored bare":                   "local",
+			"unpinned, authored full path":               "free",
+			"declaration pin, authored bare":             "declared",
+			"declaration pin, authored path":             "declared",
+			"pinned, id equal to a kind identity":        "pinned",
+			"pinned, slash-bearing id in full path form": "pinned",
+			"unpinned, local kind path":                  "free",
+			"repeated, mixed forms":                      "many",
+			"keyed, mixed forms":                         "keyed",
+			"inside an object":                           "spec",
+			"inside a repeated object":                   "entries",
 		}[name]
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -176,9 +201,38 @@ func TestReferencePathRefusals(t *testing.T) {
 			prop: "free", value: "nosuch.example.com/thing/x",
 			want: []string{"unknown"},
 		},
-		"the retired pair, unpinned": {
+		// The retired pair is refused by NAME wherever it appears: the rung is
+		// what migrates a stored one, so nothing may author a new one.
+		"the retired pair": {
 			prop: "free", value: map[string]any{"id": "a"},
-			want: []string{"any kind", "full"},
+			want: []string{"retired", "rung"},
+		},
+		// THE AMBIGUOUS CORNER. Under a pin, a value that parses as a path whose
+		// kind is not the pin reads two ways, and both are named rather than one
+		// being guessed.
+		"a slash-bearing id that also parses as a path": {
+			prop: "pinned", value: "foo.bar/baz/qux",
+			want: []string{
+				"ambiguous",
+				"a pointer at foo.bar/baz",
+				vocabulary.RecordPath(pathAuthority+"/target", "foo.bar/baz/qux"),
+				"the declaration pins " + pathAuthority + "/target",
+			},
+		},
+		// Empty-id shapes name no record, pinned or not.
+		"a trailing slash under a pin": {
+			prop: "pinned", value: "target/",
+			want: []string{"empty segment"},
+		},
+		"the bare pin itself, with nothing after it": {
+			prop: "pinned", value: pathAuthority + "/target/",
+			want: []string{"empty"},
+		},
+		// Unpinned, a two-segment value with a DOTTED first segment names a kind
+		// and leaves nothing for the id, so it is not a path.
+		"unpinned, a kind identity with no id": {
+			prop: "free", value: "foo.bar/baz",
+			want: []string{"any kind", "full", "foo.bar/baz"},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

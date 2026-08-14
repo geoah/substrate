@@ -235,7 +235,7 @@ func mbTrigger(t *testing.T, ds substrate.Dataset) *substrate.Record {
 		Properties: map[string]any{
 			"enabled":  true,
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{mbItemType}, "ops": []any{"create"}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": mbMarkFn},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", mbMarkFn),
 		},
 	})
 }

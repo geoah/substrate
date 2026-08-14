@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
@@ -78,14 +79,16 @@ func TestTriggerCallableReadsTheReleasedPairAndTheFlatPath(t *testing.T) {
 		})
 	}
 
-	// The rewrite half: coercion is what turns a stored pair into the path, so
-	// the row canonicalizes the next time anything writes it.
+	// The WRITE half: the pair is the retired shape, refused by name, because the
+	// rung is what migrates a stored one and nothing may author a new one.
 	pin := &vocabulary.Property{Datatype: vocabulary.DatatypeReference, To: kindFunction}
-	got, err := coerceReference(pin, map[string]any{"kind": kindFunction, "id": id})
-	if err != nil {
-		t.Fatalf("coerce the released pair: %v", err)
+	_, err := coerceReference(pin, map[string]any{"kind": kindFunction, "id": id})
+	if err == nil {
+		t.Fatal("the retired {kind, id} pair must be refused at the write door")
 	}
-	if want := vocabulary.RecordPath(kindFunction, id); got != want {
-		t.Fatalf("the released pair coerced to %#v, want the flat path %q", got, want)
+	for _, want := range []string{"retired", "rung"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal must name %q, got: %v", want, err)
+		}
 	}
 }

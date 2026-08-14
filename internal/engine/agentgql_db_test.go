@@ -341,7 +341,7 @@ func TestTriggerFiresAgentThatAcceptsRequest(t *testing.T) {
 			"source": map[string]any{"record": map[string]any{
 				"kinds": []any{vocabulary.KindRecordPatchRequest}, "ops": []any{"create"},
 			}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/agent", "id": crewAuthority + "/arbiter"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", crewAuthority+"/arbiter"),
 		},
 	}); err != nil {
 		t.Fatalf("put the proposal trigger: %v", err)

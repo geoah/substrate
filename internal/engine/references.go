@@ -127,12 +127,14 @@ func (t *txn) normalizeReferenceValue(p *vocabulary.Property, v any, where strin
 // storedReferencePath reads a STORED reference value as its record path,
 // tolerating the released dialect-1 {kind, id} pair.
 //
-// One property can still hold a pair: `trigger.callable` is the only reference
-// that shipped before the flat form, and a trigger is a DATA row, so no rung
-// re-projects it (the rung walks declaration rows alone, vocabularywrite.go).
-// It canonicalizes when the row is next written — coerceReference folds the
-// pair — and it has to dispatch correctly until then, which is what this is
-// for. Nothing AUTHORS a pair: the write path refuses to store one.
+// POST-RUNG THIS IS UNREACHABLE: the promotion rewrites every trigger holding a
+// pair (canonicalizeTriggerCallables), and every released store passes through
+// it at first open, so a dialect-2 store has none. It stays as stated defense,
+// so a dispatcher reading a row mid-migration reads it correctly rather than
+// skipping a live trigger — the failure mode a silent nil would cause here is
+// delivery that stops without saying so.
+//
+// Nothing AUTHORS a pair: the write path refuses it by name (coerceReference).
 func storedReferencePath(v any) string {
 	switch t := v.(type) {
 	case string:
@@ -159,16 +161,14 @@ func (t *txn) normalizeReference(p *vocabulary.Property, v any) (any, error) {
 		return nil, fmt.Errorf(`a reference is a "<kind>/<id>" path string`)
 	}
 	pinned := p.To != "" && p.To != vocabulary.ToAny
+	// This pass RESOLVES; it does not re-decide what the writer meant. Coercion
+	// already turned the authored value into a path — refusing the ambiguous
+	// spellings at that one door — and reading it a second time as an authored
+	// form would call a canonical value ambiguous and hide the real problem
+	// (a `{kind, id}` pair naming an unknown kind reported "ambiguous" instead).
 	kind, id, ok := vocabulary.SplitRecordPath(s)
 	if !ok {
-		// Coercion completes an authored bare id from the pin, so a value still
-		// short of a path here is either unpinned or a stored row written before
-		// the pin existed. Completing it again rather than refusing keeps the
-		// rung's re-projection idempotent.
-		if !pinned {
-			return nil, fmt.Errorf(`a reference to any kind needs a full "<kind>/<id>" path, not the bare id %q`, s)
-		}
-		kind, id = p.To, s
+		return nil, fmt.Errorf(`a reference is a "<kind>/<id>" path string, and %q is not one`, s)
 	}
 	rt, err := t.ds.resolveType(kind)
 	if err != nil {

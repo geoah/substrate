@@ -235,7 +235,7 @@ func TestTypedDeclarationRungTranslatesEveryStoredDeclaration(t *testing.T) {
 				"source": map[string]any{"record": map[string]any{
 					"kinds": []any{"web.bundles.substrate.reamde.dev/page"}, "ops": []any{"create"},
 				}},
-				"callable": map[string]any{"kind": callable.kind, "id": callable.id},
+				"callable": vocabulary.RecordPath(callable.kind, callable.id),
 			},
 		}); err != nil {
 			t.Fatalf("a trigger naming the translated %s refuses — the callable did not survive: %v", callable.id, err)
@@ -1001,5 +1001,131 @@ func TestTypedDeclarationRungHoldsRowsToTheRepositorysOwnDeclarations(t *testing
 	stillAhead := mustGet(t, ds2, "core.substrate.reamde.dev/kind", "core.substrate.reamde.dev/kind")
 	if v, _ := stillAhead.Properties["version"].(string); v != "v1alpha99" {
 		t.Fatalf("the newer stored declaration was downgraded to %q", v)
+	}
+}
+
+// THE ONE DATA ROW THE RUNG OWNS. `trigger.callable` is the only reference that
+// shipped as a `{kind, id}` pair, and a trigger is not a declaration, so the
+// rest of the promotion would walk straight past it. That is not cosmetic: the
+// uninstall teardown and the dropped-callable guard both read
+// `props->>'callable'`, which a jsonb object answers with NULL, so a released
+// store that kept the pair would let an upgrade strip a callable a live trigger
+// still names, and an uninstall leave that trigger behind.
+func TestRungCanonicalizesLegacyTriggerCallables(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := testdb.NewSchema(t)
+	open := func() substrate.Service {
+		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		t.Cleanup(func() { _ = svc.Close() })
+		return svc
+	}
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "geoah"), engine.RoleApp)
+	if err != nil {
+		t.Fatalf("open repository schema: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	// A bundle function, not a host built-in: a built-in has no grants of its
+	// own and trigger admission refuses one as a callable.
+	importVocabulary(t, ds)
+	installShippedBundle(t, ds, "web")
+	const callableID = "web.bundles.substrate.reamde.dev/findurls"
+	want := vocabulary.RecordPath("core.substrate.reamde.dev/function", callableID)
+	tr, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/trigger", ID: "legacy-callable",
+		Properties: map[string]any{
+			"enabled": false,
+			"source": map[string]any{"record": map[string]any{
+				"kinds": []any{"web.bundles.substrate.reamde.dev/page"}, "ops": []any{"create"},
+			}},
+			"callable": want,
+		},
+	})
+	if err != nil {
+		t.Fatalf("put the trigger: %v", err)
+	}
+
+	// Wind the row back to the RELEASED shape behind the write path's back, the
+	// way a store written before the flat form holds it.
+	if _, err := db.ExecContext(ctx, `
+		UPDATE records SET props = jsonb_set(props, '{callable}', $3::jsonb)
+		WHERE kind = $1 AND id = $2`,
+		"core.substrate.reamde.dev/trigger", tr.ID,
+		`{"kind":"core.substrate.reamde.dev/function","id":"`+callableID+`"}`); err != nil {
+		t.Fatalf("plant the released pair: %v", err)
+	}
+	windBackDialect(t, db)
+	_ = svc.Close()
+
+	// The rung runs at open, and the pair is gone from the store.
+	svc2 := open()
+	if _, err := svc2.Dataset(ctx, "geoah"); err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	var typ, got string
+	if err := db.QueryRowContext(ctx, `
+		SELECT jsonb_typeof(props->'callable'), props->>'callable' FROM records
+		WHERE kind = $1 AND id = $2`,
+		"core.substrate.reamde.dev/trigger", tr.ID).Scan(&typ, &got); err != nil {
+		t.Fatalf("read the migrated callable: %v", err)
+	}
+	if typ != "string" || got != want {
+		t.Fatalf("callable is %s %q after the rung, want the string %q", typ, got, want)
+	}
+	if d := storedDialect(t, db); d != 2 {
+		t.Fatalf("the store stamped dialect %d, want 2", d)
+	}
+
+	// And the guards' own SQL now answers, which is the whole point: against the
+	// pair this read was NULL and every lifecycle check silently passed.
+	var guarded int
+	if err := db.QueryRowContext(ctx, `
+		SELECT count(*) FROM records
+		WHERE kind = $1 AND deleted_at IS NULL AND props->>'callable' = $2`,
+		"core.substrate.reamde.dev/trigger", want).Scan(&guarded); err != nil {
+		t.Fatal(err)
+	}
+	if guarded != 1 {
+		t.Fatalf("the guard query found %d triggers naming %s, want 1", guarded, want)
+	}
+}
+
+// A dialect-2 store may not be written back into the retired shape: the pair is
+// refused BY NAME at the write door, so nothing can reintroduce what the rung
+// just removed.
+func TestDialectTwoRefusesTheRetiredCallablePair(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	_, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/trigger", ID: "retired-pair",
+		Properties: map[string]any{
+			"source": map[string]any{"record": map[string]any{
+				"kinds": []any{"core.substrate.reamde.dev/blob"}, "ops": []any{"create"},
+			}},
+			"callable": map[string]any{
+				"kind": "core.substrate.reamde.dev/function", "id": "core.substrate.reamde.dev/query",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("the retired {kind, id} pair was admitted")
+	}
+	for _, said := range []string{"retired", "rung"} {
+		if !strings.Contains(err.Error(), said) {
+			t.Errorf("the refusal must name %q, got: %v", said, err)
+		}
 	}
 }

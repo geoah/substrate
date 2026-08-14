@@ -285,7 +285,7 @@ func TestTriggerRefusesAHostFunctionCallable(t *testing.T) {
 			"source": map[string]any{
 				"record": map[string]any{"kinds": []any{"tasks.substrate.reamde.dev/task"}, "ops": []any{"create"}},
 			},
-			"callable": map[string]any{"kind": kindFunction, "id": vocabulary.HostFunctionQuery},
+			"callable": vocabulary.RecordPath(kindFunction, vocabulary.HostFunctionQuery),
 		},
 	})
 	if !errors.Is(err, substrate.ErrValidation) {
@@ -432,7 +432,7 @@ func TestTriggerWarnsWhenTheOutputIsDiscarded(t *testing.T) {
 				"source": map[string]any{
 					"record": map[string]any{"kinds": []any{"pure.test.dev/gizmo"}, "ops": []any{"create"}},
 				},
-				"callable": map[string]any{"kind": kindFunction, "id": fn},
+				"callable": vocabulary.RecordPath(kindFunction, fn),
 			},
 		}); err != nil {
 			t.Fatalf("trigger %s: %v", id, err)

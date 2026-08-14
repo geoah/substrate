@@ -435,7 +435,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewAuthority + "/widget"}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/agent", "id": crewAuthority + "/ghost"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", crewAuthority+"/ghost"),
 		},
 	}); err == nil {
 		t.Fatal("a trigger naming an unknown agent landed")
@@ -444,7 +444,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewAuthority + "/widget"}, "ops": []any{"create"}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/agent", "id": crewAuthority + "/classifier"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", crewAuthority+"/classifier"),
 		},
 	})
 	if err != nil {
@@ -915,7 +915,7 @@ func TestAgentRetryKeepsIdempotencyKeys(t *testing.T) {
 		Kind: typeTrigger,
 		Properties: map[string]any{
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{crewAuthority + "/widget"}, "ops": []any{"create"}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/agent", "id": crewAuthority + "/keeper"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", crewAuthority+"/keeper"),
 		},
 	})
 	if err != nil {

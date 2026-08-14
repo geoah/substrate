@@ -132,7 +132,7 @@ func TestDialectWideningsRoundTrip(t *testing.T) {
 				"task": map[string]any{"version": "v1", "source": "a"},
 				"tasks.example.com/task": map[string]any{
 					"version": "v2",
-					"source":  map[string]any{"kind": dwAuthority + "/target", "id": "a"},
+					"source":  vocabulary.RecordPath(dwAuthority+"/target", "a"),
 				},
 			},
 			"tools": []any{
@@ -262,11 +262,11 @@ func TestDialectWideningsRefuseBadValues(t *testing.T) {
 			}}},
 			says: "the declaration pins " + dwAuthority + "/target",
 		},
-		"nested reference names an unknown kind": {
-			props: map[string]any{"installs": map[string]any{"task": map[string]any{
-				"source": map[string]any{"kind": "nosuchkind", "id": "x"},
-			}}},
-			says: "is unknown",
+		// Unknown-kind is reachable only where nothing is pinned: under a pin, a
+		// path naming another kind is refused as ambiguous first.
+		"an unconstrained reference names an unknown kind": {
+			props: map[string]any{"keyedRefs": map[string]any{"primary": "nosuch.example.com/thing/x"}},
+			says:  "is unknown",
 		},
 	}
 	for name, c := range cases {
@@ -471,10 +471,7 @@ func TestLLMThreadTitleFollowsItsAgent(t *testing.T) {
 	thread := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/llmthread", ID: "t1",
 		Properties: map[string]any{
-			"agent": map[string]any{
-				"kind": "core.substrate.reamde.dev/agent",
-				"id":   authority + "/scribe",
-			},
+			"agent":  vocabulary.RecordPath("core.substrate.reamde.dev/agent", authority+"/scribe"),
 			"status": "running",
 		},
 	})

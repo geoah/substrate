@@ -70,14 +70,16 @@ const (
 	// is never a refinement base, never a capability property, and its parse
 	// branch owns its own key set.
 	DatatypeObject Datatype = "object"
-	// DatatypeReference is a typed POINTER stored as a property value: the
-	// canonical {kind, id} record reference, a stored value rather than a graph
-	// edge. An EDGE is a traversable relationship (incoming views, subject
-	// resolution); a `reference` is data — a declaration field that names
+	// DatatypeReference is a typed POINTER stored as a property value: ONE flat
+	// string, the referent's record PATH ("<kind>/<id>"), a stored value rather
+	// than a graph edge. An EDGE is a traversable relationship (incoming views,
+	// subject resolution); a `reference` is data — a declaration field that names
 	// another record (a trigger's `callable`). Its optional `kind:` PIN says
 	// which kind's records it names (`kind: any`, or absent, leaves it
 	// unconstrained), which is what lets a client offer a picker and what
-	// supplies the kind a bare authored id omits. Validation checks shape + that
+	// supplies the kind an authored bare id omits — an id with no slash in it,
+	// because a slash-bearing one is written in full path form or refused
+	// (SplitRecordPath says why). Validation checks shape + that
 	// the referent KIND exists; the referent RECORD is NOT required to exist at
 	// write time — a reference is a pointer, like an edge target may be a bare id
 	// the target's own admission resolves. Its own parse branch owns its key set.
@@ -86,9 +88,10 @@ const (
 )
 
 // ToAny is the unconstrained pin: any kind is an admissible referent, and the
-// value must then carry an explicit kind. It is spelled `kind: any` on a
-// reference property and `to: any` on an edge — one word each, for the two
-// things they are — and an absent pin on a reference reads the same.
+// value must then be a FULL path, since there is no pin to supply the kind a
+// bare id leaves out. It is spelled `kind: any` on a reference property and
+// `to: any` on an edge — one word each, for the two things they are — and an
+// absent pin on a reference reads the same.
 const ToAny = "any"
 
 var builtinKinds = map[Datatype]bool{

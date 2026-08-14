@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/corekinds"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // properties is what every generated struct offers: its properties map.
@@ -299,7 +300,7 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodeRecordPatchRequest)
 
 	roundTrip(t, "recordsplit", &corekinds.RecordSplit{
-		Result: []any{map[string]any{"kind": "tasks.substrate.reamde.dev/task", "id": "t-2"}},
+		Result: []any{vocabulary.RecordPath("tasks.substrate.reamde.dev/task", "t-2")},
 	}, corekinds.DecodeRecordSplit)
 
 	roundTrip(t, "recoverykey", &corekinds.RecoveryKey{

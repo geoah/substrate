@@ -81,7 +81,7 @@ func trigOn(fn string, record map[string]any) enginetest.Trigger {
 		Properties: map[string]any{
 			"enabled":  true,
 			"source":   map[string]any{"record": record},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": fnAuthority + "/" + fn},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", fnAuthority+"/"+fn),
 		},
 	}
 }
@@ -860,7 +860,7 @@ func TestTriggerWriteAdmission(t *testing.T) {
 		pyFn("mirror", map[string]any{}, []any{taskType}, mirrorSource))
 	ctx := context.Background()
 
-	callable := map[string]any{"kind": "core.substrate.reamde.dev/function", "id": fnAuthority + "/mirror"}
+	callable := vocabulary.RecordPath("core.substrate.reamde.dev/function", fnAuthority+"/mirror")
 	cases := map[string]map[string]any{
 		"no source": {
 			"callable": callable,
@@ -892,11 +892,11 @@ func TestTriggerWriteAdmission(t *testing.T) {
 		},
 		"unknown callable": {
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{widgetType}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": fnAuthority + "/nothing"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", fnAuthority+"/nothing"),
 		},
 		"undispatchable kind": {
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{widgetType}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/agent", "id": fnAuthority + "/mirror"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/agent", fnAuthority+"/mirror"),
 		},
 		"bad recurrence": {
 			"source":   map[string]any{"schedule": map[string]any{"recurrence": "EVERY=DAY"}},
@@ -931,7 +931,7 @@ func TestTriggerWriteAdmission(t *testing.T) {
 		t.Fatalf("valid trigger refused: %v", err)
 	}
 	if _, err := ds.Patch(ctx, owner, tr.Kind, tr.ID, substrate.PatchInput{
-		Properties: map[string]any{"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": fnAuthority + "/nothing"}},
+		Properties: map[string]any{"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", fnAuthority+"/nothing")},
 	}); err == nil {
 		t.Fatal("a breaking patch landed")
 	}

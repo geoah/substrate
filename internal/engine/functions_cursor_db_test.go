@@ -115,7 +115,7 @@ def main(input, host):
 			Properties: map[string]any{
 				"enabled":  true,
 				"source":   map[string]any{"record": map[string]any{"kinds": []any{widgetType}}},
-				"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": authority + "/mirror"},
+				"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", authority+"/mirror"),
 			},
 		}},
 	}); err != nil {

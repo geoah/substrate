@@ -416,6 +416,10 @@ data:
     # mark-and-sweep filters this account's rows without touching another
     # connected account's, and it keeps per-account resource-name collisions
     # legible (review-google #6).
+    # NOT a reference, and every `account:` in this closure reads the same way:
+    # the connector writes it as provenance on synced rows, and retyping a live
+    # string property to a reference is a NARROWING the boot upgrade refuses
+    # while rows hold the old shape — it would strand every released store.
     account:
       type: string
       description: the account record id this contact was synced from

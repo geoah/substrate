@@ -162,7 +162,7 @@ func TestScrubberHoldsErrorsAndParkedFailures(t *testing.T) {
 		Properties: map[string]any{
 			"enabled":  true,
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{vConfigType}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": vAuthority + "/crash"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", vAuthority+"/crash"),
 		},
 	})
 	mustPatch(t, ds, owner, vConfigType, mustConfigID(t, ds), substrate.PatchInput{Properties: map[string]any{"note": "poke"}})
@@ -260,7 +260,7 @@ func TestScrubberRejectsSecretThroughParkedTrigger(t *testing.T) {
 		Properties: map[string]any{
 			"enabled":  true,
 			"source":   map[string]any{"record": map[string]any{"kinds": []any{vConfigType}}},
-			"callable": map[string]any{"kind": "core.substrate.reamde.dev/function", "id": vAuthority + "/leakval"},
+			"callable": vocabulary.RecordPath("core.substrate.reamde.dev/function", vAuthority+"/leakval"),
 		},
 	})
 	mustPatch(t, ds, owner, vConfigType, mustConfigID(t, ds), substrate.PatchInput{Properties: map[string]any{"note": "poke"}})
