@@ -68,6 +68,10 @@ data:
               max: 90
     moment:
       type: datetime
+    hook:
+      type: object
+      fields:
+      description: a closed empty object, admitting no key at all
 `
 
 func generate(t *testing.T, document string) (goFiles map[string]string, ts string) {
@@ -139,7 +143,7 @@ func TestWiderDialectGenerates(t *testing.T) {
 		"Names a kind in the registry.",
 		"Managed: the engine stamps it",
 		// keys are the admitted set, sorted
-		`var BlobKeys = []string{"digest", "emit", "inputs", "labels", "moment", "version"}`,
+		`var BlobKeys = []string{"digest", "emit", "hook", "inputs", "labels", "moment", "version"}`,
 	} {
 		if !strings.Contains(blob, want) {
 			t.Errorf("generated Go is missing %q", want)
@@ -151,13 +155,26 @@ func TestWiderDialectGenerates(t *testing.T) {
 		// Optional in TypeScript too, for the same reason, with the requirement
 		// beside it as data a form can read.
 		"digest?: string",
-		`export const blobRequired: string[] = [`,
-		`export type BlobInputsWindowUnit =`,
-		`"day": "Days",`,
+		// PRETTIER'S SHAPE, not one construct per line: kinds:gen:check demands
+		// byte equality with the generator and console:fmt:check demands
+		// prettier, so a list that fits on one line is on one line and an object
+		// key that needs no quotes carries none.
+		`export const blobRequired: string[] = ["digest"]`,
+		`export type BlobInputsWindowUnit = "day" | "week"`,
+		`day: "Days"`,
+		// A name long enough to overflow the declaration line splits the generic
+		// annotation, which is where prettier breaks before it moves the value.
+		"export const blobInputsWindowUnitLabels: Partial<\n  Record<BlobInputsWindowUnit, string>\n> = { day: \"Days\" }\n",
+		// A fieldless object is CLOSED, and eslint refuses the empty interface
+		// that used to say so.
+		`export type BlobHook = Record<string, never>`,
 	} {
 		if !strings.Contains(ts, want) {
 			t.Errorf("generated TypeScript is missing %q", want)
 		}
+	}
+	if strings.Contains(ts, "interface BlobHook {") {
+		t.Error("generated TypeScript declares an empty interface, which eslint's no-empty-object-type refuses")
 	}
 	if strings.Contains(ts, "digest: string") {
 		t.Error("generated TypeScript promises a required property the server does not guarantee")

@@ -156,10 +156,5 @@ export function buildKindNav(kinds: KindInfo[]): KindNav {
  * explicitly so a bad one never touches the stored session. */
 export async function probeToken(token: string): Promise<void> {
   const q = new URLSearchParams({ first: "1" })
-  await request<Page>(
-    "GET",
-    `${corePath(KINDS)}?${q}`,
-    undefined,
-    { token }
-  )
+  await request<Page>("GET", `${corePath(KINDS)}?${q}`, undefined, { token })
 }

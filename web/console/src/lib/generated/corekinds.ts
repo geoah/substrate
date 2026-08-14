@@ -79,37 +79,23 @@ export interface Actor {
  * without them; the server does not, so nothing here is a guarantee about a
  * record that arrives.
  */
-export const actorRequired: string[] = [
-  "authority",
-]
+export const actorRequired: string[] = ["authority"]
 
 /** ActorSource is a declared enum: the admissible set, in declaration order.
  *
  * builtin for shipped authorities, installed for connector authorities
  */
-export type ActorSource =
-  | "builtin"
-  | "installed"
+export type ActorSource = "builtin" | "installed"
 
-export const actorSourceValues: ActorSource[] = [
-  "builtin",
-  "installed",
-]
+export const actorSourceValues: ActorSource[] = ["builtin", "installed"]
 
 /** ActorTier is a declared enum: the admissible set, in declaration order.
  *
  * the manager tier this actor's direct writes hold at
  */
-export type ActorTier =
-  | "owner"
-  | "bundle"
-  | "machine"
+export type ActorTier = "owner" | "bundle" | "machine"
 
-export const actorTierValues: ActorTier[] = [
-  "owner",
-  "bundle",
-  "machine",
-]
+export const actorTierValues: ActorTier[] = ["owner", "bundle", "machine"]
 
 /** Agent is core.substrate.reamde.dev/agent.
  *
@@ -202,11 +188,7 @@ export interface AgentTools {
  *
  * the built-in tool this entry names
  */
-export type AgentToolsBuiltin =
-  | "query"
-  | "propose"
-  | "graphql"
-  | "mutate"
+export type AgentToolsBuiltin = "query" | "propose" | "graphql" | "mutate"
 
 export const agentToolsBuiltinValues: AgentToolsBuiltin[] = [
   "query",
@@ -294,14 +276,9 @@ export interface Authority {
  *
  * builtin for seeded authorities, installed for bundle ones
  */
-export type AuthoritySource =
-  | "builtin"
-  | "installed"
+export type AuthoritySource = "builtin" | "installed"
 
-export const authoritySourceValues: AuthoritySource[] = [
-  "builtin",
-  "installed",
-]
+export const authoritySourceValues: AuthoritySource[] = ["builtin", "installed"]
 
 /** Blob is core.substrate.reamde.dev/blob.
  *
@@ -337,16 +314,9 @@ export interface Blob {
  *
  * pending until bytes land, then stored; failed on a rejected store
  */
-export type BlobStatus =
-  | "pending"
-  | "stored"
-  | "failed"
+export type BlobStatus = "pending" | "stored" | "failed"
 
-export const blobStatusValues: BlobStatus[] = [
-  "pending",
-  "stored",
-  "failed",
-]
+export const blobStatusValues: BlobStatus[] = ["pending", "stored", "failed"]
 
 /** The state a creation is born into. */
 export const blobStatusInitial: BlobStatus = "pending"
@@ -405,9 +375,7 @@ export interface Bundle {
  * without them; the server does not, so nothing here is a guarantee about a
  * record that arrives.
  */
-export const bundleRequired: string[] = [
-  "authority",
-]
+export const bundleRequired: string[] = ["authority"]
 
 /** BundleInputs is one value of the `inputs` object declared on
  * core.substrate.reamde.dev/bundle.
@@ -433,12 +401,9 @@ export interface BundleInputs {
  * the consumer the resolved record is handed to; absent means a host facility
  * reads it
  */
-export type BundleInputsInject =
-  | "functions"
+export type BundleInputsInject = "functions"
 
-export const bundleInputsInjectValues: BundleInputsInject[] = [
-  "functions",
-]
+export const bundleInputsInjectValues: BundleInputsInject[] = ["functions"]
 
 /** BundleOauth2 is one value of the `oauth2` object declared on
  * core.substrate.reamde.dev/bundle.
@@ -548,28 +513,18 @@ export const functionRequired: string[] = [
  *
  * the language the inline body is written in
  */
-export type FunctionRuntime =
-  | "python"
-  | "go"
+export type FunctionRuntime = "python" | "go"
 
-export const functionRuntimeValues: FunctionRuntime[] = [
-  "python",
-  "go",
-]
+export const functionRuntimeValues: FunctionRuntime[] = ["python", "go"]
 
 /** FunctionMutations is a declared enum: the admissible set, in declaration
  * order.
  *
  * the gated identity mutations this function is granted
  */
-export type FunctionMutations =
-  | "merge"
-  | "split"
+export type FunctionMutations = "merge" | "split"
 
-export const functionMutationsValues: FunctionMutations[] = [
-  "merge",
-  "split",
-]
+export const functionMutationsValues: FunctionMutations[] = ["merge", "split"]
 
 /** FunctionArguments is one value of the `arguments` object declared on
  * core.substrate.reamde.dev/function.
@@ -595,9 +550,7 @@ export interface FunctionArguments {
  * refuses to submit without them; the server does not, so nothing here is a
  * guarantee about a record that arrives.
  */
-export const functionArgumentsRequired: string[] = [
-  "name",
-]
+export const functionArgumentsRequired: string[] = ["name"]
 
 /** FunctionArgumentsType is a declared enum: the admissible set, in declaration
  * order.
@@ -605,12 +558,7 @@ export const functionArgumentsRequired: string[] = [
  * what the value is
  */
 export type FunctionArgumentsType =
-  | "string"
-  | "int"
-  | "float"
-  | "bool"
-  | "enum"
-  | "json"
+  "string" | "int" | "float" | "bool" | "enum" | "json"
 
 export const functionArgumentsTypeValues: FunctionArgumentsType[] = [
   "string",
@@ -645,9 +593,7 @@ export interface FunctionReturns {
  * to submit without them; the server does not, so nothing here is a guarantee
  * about a record that arrives.
  */
-export const functionReturnsRequired: string[] = [
-  "name",
-]
+export const functionReturnsRequired: string[] = ["name"]
 
 /** FunctionReturnsType is a declared enum: the admissible set, in declaration
  * order.
@@ -655,12 +601,7 @@ export const functionReturnsRequired: string[] = [
  * what the value is
  */
 export type FunctionReturnsType =
-  | "string"
-  | "int"
-  | "float"
-  | "bool"
-  | "enum"
-  | "json"
+  "string" | "int" | "float" | "bool" | "enum" | "json"
 
 export const functionReturnsTypeValues: FunctionReturnsType[] = [
   "string",
@@ -738,22 +679,15 @@ export interface Kind {
  * without them; the server does not, so nothing here is a guarantee about a
  * record that arrives.
  */
-export const kindRequired: string[] = [
-  "authority",
-]
+export const kindRequired: string[] = ["authority"]
 
 /** KindSource is a declared enum: the admissible set, in declaration order.
  *
  * builtin for seeded kinds, installed for bundle ones
  */
-export type KindSource =
-  | "builtin"
-  | "installed"
+export type KindSource = "builtin" | "installed"
 
-export const kindSourceValues: KindSource[] = [
-  "builtin",
-  "installed",
-]
+export const kindSourceValues: KindSource[] = ["builtin", "installed"]
 
 /** KindNames is one value of the `names` object declared on
  * core.substrate.reamde.dev/kind.
@@ -771,10 +705,7 @@ export interface KindNames {
  * submit without them; the server does not, so nothing here is a guarantee
  * about a record that arrives.
  */
-export const kindNamesRequired: string[] = [
-  "plural",
-  "singular",
-]
+export const kindNamesRequired: string[] = ["plural", "singular"]
 
 /** KindIndices is one value of the `indices` object declared on
  * core.substrate.reamde.dev/kind.
@@ -840,9 +771,7 @@ export interface LLMMessage {
  * submit without them; the server does not, so nothing here is a guarantee
  * about a record that arrives.
  */
-export const llmMessageRequired: string[] = [
-  "thread",
-]
+export const llmMessageRequired: string[] = ["thread"]
 
 /** LLMMessageToolCalls is one value of the `toolCalls` object declared on
  * core.substrate.reamde.dev/llmmessage.
@@ -894,10 +823,7 @@ export interface LLMProvider {
  * the wire protocol the adapter speaks; a gateway that speaks OpenAI's wire is
  * an openai row
  */
-export type LLMProviderWire =
-  | "openai"
-  | "anthropic"
-  | "azure"
+export type LLMProviderWire = "openai" | "anthropic" | "azure"
 
 export const llmProviderWireValues: LLMProviderWire[] = [
   "openai",
@@ -909,9 +835,9 @@ export const llmProviderWireValues: LLMProviderWire[] = [
  * no declared label is absent, and the client humanizes it.
  */
 export const llmProviderWireLabels: Partial<Record<LLMProviderWire, string>> = {
-  "openai": "OpenAI",
-  "anthropic": "Anthropic",
-  "azure": "Azure OpenAI",
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  azure: "Azure OpenAI",
 }
 
 /** LLMProviderHeaders is one value of the `headers` object declared on
@@ -1007,9 +933,7 @@ export interface LLMThread {
  * submit without them; the server does not, so nothing here is a guarantee
  * about a record that arrives.
  */
-export const llmThreadRequired: string[] = [
-  "agent",
-]
+export const llmThreadRequired: string[] = ["agent"]
 
 /** PropertyType is core.substrate.reamde.dev/propertytype.
  *
@@ -1047,19 +971,14 @@ export interface PropertyType {
  * submit without them; the server does not, so nothing here is a guarantee
  * about a record that arrives.
  */
-export const propertyTypeRequired: string[] = [
-  "authority",
-  "base",
-]
+export const propertyTypeRequired: string[] = ["authority", "base"]
 
 /** PropertyTypeSource is a declared enum: the admissible set, in declaration
  * order.
  *
  * builtin for seeded refinements, installed for bundle ones
  */
-export type PropertyTypeSource =
-  | "builtin"
-  | "installed"
+export type PropertyTypeSource = "builtin" | "installed"
 
 export const propertyTypeSourceValues: PropertyTypeSource[] = [
   "builtin",
@@ -1132,9 +1051,7 @@ export interface PropertyTypeValues {
  * refuses to submit without them; the server does not, so nothing here is a
  * guarantee about a record that arrives.
  */
-export const propertyTypeValuesRequired: string[] = [
-  "value",
-]
+export const propertyTypeValuesRequired: string[] = ["value"]
 
 /** RecordMapping is core.substrate.reamde.dev/recordmapping.
  *
@@ -1187,9 +1104,7 @@ export const recordMappingRequired: string[] = [
  *
  * builtin for seeded mappings, installed for bundle ones
  */
-export type RecordMappingSource =
-  | "builtin"
-  | "installed"
+export type RecordMappingSource = "builtin" | "installed"
 
 export const recordMappingSourceValues: RecordMappingSource[] = [
   "builtin",
@@ -1212,10 +1127,7 @@ export interface RecordMappingMatch {
  * refuses to submit without them; the server does not, so nothing here is a
  * guarantee about a record that arrives.
  */
-export const recordMappingMatchRequired: string[] = [
-  "from",
-  "to",
-]
+export const recordMappingMatchRequired: string[] = ["from", "to"]
 
 /** RecordMappingMap is one value of the `map` object declared on
  * core.substrate.reamde.dev/recordmapping.
@@ -1233,18 +1145,14 @@ export interface RecordMappingMap {
  * to submit without them; the server does not, so nothing here is a guarantee
  * about a record that arrives.
  */
-export const recordMappingMapRequired: string[] = [
-  "path",
-]
+export const recordMappingMapRequired: string[] = ["path"]
 
 /** RecordMappingMapMerge is a declared enum: the admissible set, in declaration
  * order.
  *
  * whether a value replaces or joins what other sources offer
  */
-export type RecordMappingMapMerge =
-  | "atomic"
-  | "union"
+export type RecordMappingMapMerge = "atomic" | "union"
 
 export const recordMappingMapMergeValues: RecordMappingMapMerge[] = [
   "atomic",
@@ -1295,10 +1203,7 @@ export interface RecordMergeRequest {
  *
  * proposed until somebody decides; accepting is what performs the merge
  */
-export type RecordMergeRequestDecision =
-  | "proposed"
-  | "accepted"
-  | "rejected"
+export type RecordMergeRequestDecision = "proposed" | "accepted" | "rejected"
 
 export const recordMergeRequestDecisionValues: RecordMergeRequestDecision[] = [
   "proposed",
@@ -1307,12 +1212,19 @@ export const recordMergeRequestDecisionValues: RecordMergeRequestDecision[] = [
 ]
 
 /** The state a creation is born into. */
-export const recordMergeRequestDecisionInitial: RecordMergeRequestDecision = "proposed"
+export const recordMergeRequestDecisionInitial: RecordMergeRequestDecision =
+  "proposed"
 
-export const recordMergeRequestDecisionTransitions: StateTransition<RecordMergeRequestDecision>[] = [
-  { from: "proposed", to: "accepted", stamps: { "decidedAt": "now" }, onEnter: "applyMerge" },
-  { from: "proposed", to: "rejected", stamps: { "decidedAt": "now" } },
-]
+export const recordMergeRequestDecisionTransitions: StateTransition<RecordMergeRequestDecision>[] =
+  [
+    {
+      from: "proposed",
+      to: "accepted",
+      stamps: { decidedAt: "now" },
+      onEnter: "applyMerge",
+    },
+    { from: "proposed", to: "rejected", stamps: { decidedAt: "now" } },
+  ]
 
 /** RecordPatchRequest is core.substrate.reamde.dev/recordpatchrequest.
  *
@@ -1350,10 +1262,7 @@ export interface RecordPatchRequest {
  *
  * the change verb — patch (default when absent), create, or delete
  */
-export type RecordPatchRequestOp =
-  | "create"
-  | "patch"
-  | "delete"
+export type RecordPatchRequestOp = "create" | "patch" | "delete"
 
 export const recordPatchRequestOpValues: RecordPatchRequestOp[] = [
   "create",
@@ -1369,10 +1278,7 @@ export const recordPatchRequestOpValues: RecordPatchRequestOp[] = [
  *
  * proposed until somebody decides; accepting is what applies the change
  */
-export type RecordPatchRequestDecision =
-  | "proposed"
-  | "accepted"
-  | "rejected"
+export type RecordPatchRequestDecision = "proposed" | "accepted" | "rejected"
 
 export const recordPatchRequestDecisionValues: RecordPatchRequestDecision[] = [
   "proposed",
@@ -1381,12 +1287,19 @@ export const recordPatchRequestDecisionValues: RecordPatchRequestDecision[] = [
 ]
 
 /** The state a creation is born into. */
-export const recordPatchRequestDecisionInitial: RecordPatchRequestDecision = "proposed"
+export const recordPatchRequestDecisionInitial: RecordPatchRequestDecision =
+  "proposed"
 
-export const recordPatchRequestDecisionTransitions: StateTransition<RecordPatchRequestDecision>[] = [
-  { from: "proposed", to: "accepted", stamps: { "decidedAt": "now" }, onEnter: "applyDiff" },
-  { from: "proposed", to: "rejected", stamps: { "decidedAt": "now" } },
-]
+export const recordPatchRequestDecisionTransitions: StateTransition<RecordPatchRequestDecision>[] =
+  [
+    {
+      from: "proposed",
+      to: "accepted",
+      stamps: { decidedAt: "now" },
+      onEnter: "applyDiff",
+    },
+    { from: "proposed", to: "rejected", stamps: { decidedAt: "now" } },
+  ]
 
 /** RecordSplit is core.substrate.reamde.dev/recordsplit.
  *
@@ -1443,10 +1356,7 @@ export interface Repository {
  *
  * active until the operator suspends it
  */
-export type RepositoryLifecycle =
-  | "active"
-  | "suspended"
-  | "deleting"
+export type RepositoryLifecycle = "active" | "suspended" | "deleting"
 
 export const repositoryLifecycleValues: RepositoryLifecycle[] = [
   "active",
@@ -1457,10 +1367,11 @@ export const repositoryLifecycleValues: RepositoryLifecycle[] = [
 /** The state a creation is born into. */
 export const repositoryLifecycleInitial: RepositoryLifecycle = "active"
 
-export const repositoryLifecycleTransitions: StateTransition<RepositoryLifecycle>[] = [
-  { from: "active", to: "suspended" },
-  { from: "suspended", to: "active" },
-]
+export const repositoryLifecycleTransitions: StateTransition<RepositoryLifecycle>[] =
+  [
+    { from: "active", to: "suspended" },
+    { from: "suspended", to: "active" },
+  ]
 
 /** Run is core.substrate.reamde.dev/run.
  *
@@ -1548,22 +1459,15 @@ export interface Trait {
  * without them; the server does not, so nothing here is a guarantee about a
  * record that arrives.
  */
-export const traitRequired: string[] = [
-  "authority",
-]
+export const traitRequired: string[] = ["authority"]
 
 /** TraitSource is a declared enum: the admissible set, in declaration order.
  *
  * builtin for seeded traits, installed for bundle ones
  */
-export type TraitSource =
-  | "builtin"
-  | "installed"
+export type TraitSource = "builtin" | "installed"
 
-export const traitSourceValues: TraitSource[] = [
-  "builtin",
-  "installed",
-]
+export const traitSourceValues: TraitSource[] = ["builtin", "installed"]
 
 /** TraitOneOf is one value of the `oneOf` object declared on
  * core.substrate.reamde.dev/trait.
@@ -1581,9 +1485,7 @@ export interface TraitOneOf {
  * submit without them; the server does not, so nothing here is a guarantee
  * about a record that arrives.
  */
-export const traitOneOfRequired: string[] = [
-  "name",
-]
+export const traitOneOfRequired: string[] = ["name"]
 
 /** Trigger is core.substrate.reamde.dev/trigger.
  *
@@ -1626,10 +1528,7 @@ export interface TriggerSource {
  *
  * which arm below carries the source
  */
-export type TriggerSourceKind =
-  | "record"
-  | "schedule"
-  | "webhook"
+export type TriggerSourceKind = "record" | "schedule" | "webhook"
 
 export const triggerSourceKindValues: TriggerSourceKind[] = [
   "record",
@@ -1658,10 +1557,7 @@ export interface TriggerSourceRecord {
  *
  * which changes deliver; absent is all three
  */
-export type TriggerSourceRecordOps =
-  | "create"
-  | "update"
-  | "delete"
+export type TriggerSourceRecordOps = "create" | "update" | "delete"
 
 export const triggerSourceRecordOpsValues: TriggerSourceRecordOps[] = [
   "create",
@@ -1688,5 +1584,4 @@ export interface TriggerSourceSchedule {
  *
  * an authenticated wake endpoint
  */
-export interface TriggerSourceWebhook {
-}
+export type TriggerSourceWebhook = Record<string, never>

@@ -61,6 +61,14 @@ func tsStruct(b *bytes.Buffer, s *structPlan) {
 		doc += "\n\n" + s.Doc
 	}
 	tsComment(b, doc, "")
+	// A fieldless object is CLOSED: it declares no field, so it admits no key,
+	// and the empty record is the type that says so. `interface X {}` says it
+	// too, but eslint's no-empty-object-type refuses that spelling because it
+	// reads as "any non-nullish value" everywhere else it appears.
+	if len(s.Fields) == 0 {
+		fmt.Fprintf(b, "export type %s = Record<string, never>\n", s.Name)
+		return
+	}
 	fmt.Fprintf(b, "export interface %s {\n", s.Name)
 	for _, f := range s.Fields {
 		if doc := tsFieldDoc(f); doc != "" {
@@ -85,11 +93,7 @@ func tsStruct(b *bytes.Buffer, s *structPlan) {
 	sort.Strings(required)
 	b.WriteString("\n")
 	tsComment(b, "The properties "+s.Name+"'s declaration marks required. A form refuses to submit without them; the server does not, so nothing here is a guarantee about a record that arrives.", "")
-	fmt.Fprintf(b, "export const %sRequired: string[] = [\n", uncapitalize(s.Name))
-	for _, key := range required {
-		fmt.Fprintf(b, "  %q,\n", key)
-	}
-	b.WriteString("]\n")
+	tsAssign(b, "export const "+uncapitalize(s.Name)+"Required: string[]", tsStrings(required))
 }
 
 func tsFieldDoc(f *fieldPlan) string {
@@ -150,28 +154,34 @@ func tsEnum(b *bytes.Buffer, e *enumPlan) {
 		doc += "\n\n" + e.Doc
 	}
 	tsComment(b, doc, "")
-	fmt.Fprintf(b, "export type %s =\n", e.Name)
+	values := make([]string, 0, len(e.Values))
 	for _, v := range e.Values {
-		fmt.Fprintf(b, "  | %q\n", v.Value)
+		values = append(values, v.Value)
 	}
+	tsUnion(b, e.Name, values)
 	b.WriteString("\n")
 	name := uncapitalize(e.Name)
-	fmt.Fprintf(b, "export const %sValues: %s[] = [\n", name, e.Name)
-	for _, v := range e.Values {
-		fmt.Fprintf(b, "  %q,\n", v.Value)
-	}
-	b.WriteString("]\n")
+	tsAssign(b, fmt.Sprintf("export const %sValues: %s[]", name, e.Name), tsStrings(values))
 	labels := e.labels()
 	if len(labels) == 0 {
 		return
 	}
 	b.WriteString("\n")
 	tsComment(b, "The declared human labels: render the label, submit the value. A value with no declared label is absent, and the client humanizes it.", "")
-	fmt.Fprintf(b, "export const %sLabels: Partial<Record<%s, string>> = {\n", name, e.Name)
+	object := make(tsObject, 0, len(labels))
 	for _, v := range labels {
-		fmt.Fprintf(b, "  %q: %q,\n", v.Value, v.Label)
+		object = append(object, tsPair{Key: v.Value, Value: tsLiteral(v.Label)})
 	}
-	b.WriteString("}\n")
+	lhs := fmt.Sprintf("export const %sLabels: Partial<Record<%s, string>>", name, e.Name)
+	// Prettier breaks a generic annotation whose one type argument is ITSELF
+	// generic before it breaks the assignment, so a name long enough to overflow
+	// the declaration line splits `Partial<>` and leaves the object where it is.
+	// (`StateTransition<X>[]` and `X[]` below never take this shape: a lone
+	// simple type argument hugs its brackets at any width.)
+	if len(lhs)+len(" = {") > printWidth {
+		lhs = fmt.Sprintf("export const %sLabels: Partial<\n  Record<%s, string>\n>", name, e.Name)
+	}
+	tsAssign(b, lhs, object)
 }
 
 func tsState(b *bytes.Buffer, s *statePlan) {
@@ -182,38 +192,213 @@ func tsState(b *bytes.Buffer, s *statePlan) {
 		doc += "\n\n" + s.Doc
 	}
 	tsComment(b, doc, "")
-	fmt.Fprintf(b, "export type %s =\n", s.Name)
-	for _, v := range s.Machine.States {
-		fmt.Fprintf(b, "  | %q\n", v)
-	}
+	tsUnion(b, s.Name, s.Machine.States)
 	name := uncapitalize(s.Name)
 	b.WriteString("\n")
-	fmt.Fprintf(b, "export const %sValues: %s[] = [\n", name, s.Name)
-	for _, v := range s.Machine.States {
-		fmt.Fprintf(b, "  %q,\n", v)
-	}
-	b.WriteString("]\n\n")
+	tsAssign(b, fmt.Sprintf("export const %sValues: %s[]", name, s.Name), tsStrings(s.Machine.States))
+	b.WriteString("\n")
 	tsComment(b, "The state a creation is born into.", "")
-	fmt.Fprintf(b, "export const %sInitial: %s = %q\n\n", name, s.Name, s.Machine.Initial)
-	fmt.Fprintf(b, "export const %sTransitions: StateTransition<%s>[] = [\n", name, s.Name)
+	tsAssign(b, fmt.Sprintf("export const %sInitial: %s", name, s.Name), tsLiteral(s.Machine.Initial))
+	b.WriteString("\n")
+	transitions := make(tsArray, 0, len(s.Machine.Transitions))
 	for _, t := range s.Machine.Transitions {
-		fmt.Fprintf(b, "  { from: %q, to: %q", t.From, t.To)
+		move := tsObject{{Key: "from", Value: tsLiteral(t.From)}, {Key: "to", Value: tsLiteral(t.To)}}
 		if len(t.Stamps) > 0 {
-			b.WriteString(", stamps: { ")
-			for i, st := range t.Stamps {
-				if i > 0 {
-					b.WriteString(", ")
-				}
-				fmt.Fprintf(b, "%q: %q", st.Property, st.Value)
+			stamps := make(tsObject, 0, len(t.Stamps))
+			for _, st := range t.Stamps {
+				stamps = append(stamps, tsPair{Key: st.Property, Value: tsLiteral(st.Value)})
 			}
-			b.WriteString(" }")
+			move = append(move, tsPair{Key: "stamps", Value: stamps})
 		}
 		if t.OnEnter != "" {
-			fmt.Fprintf(b, ", onEnter: %q", t.OnEnter)
+			move = append(move, tsPair{Key: "onEnter", Value: tsLiteral(t.OnEnter)})
 		}
-		b.WriteString(" },\n")
+		transitions = append(transitions, move)
 	}
-	b.WriteString("]\n")
+	tsAssign(b, fmt.Sprintf("export const %sTransitions: StateTransition<%s>[]", name, s.Name), transitions)
+}
+
+// printWidth is the console's prettier `printWidth`, and the reason this
+// generator lays its output out at all rather than emitting one construct per
+// line: `kinds:gen:check` demands the checked-in module be BYTE-EQUAL to what
+// the generator produces, while `console:fmt:check` demands prettier's shape,
+// so the only text that satisfies both is text prettier would already leave
+// alone. Everything below is prettier's layout for the four constructs this
+// file emits, and a change to any of them is checked by running both gates.
+const printWidth = 80
+
+// tsValue is the small value language the generated module is written in: a
+// literal, an array or an object. It exists to answer two questions per value,
+// which is all prettier's layout needs — how wide the flat form is, and what
+// the broken form looks like at a given indent.
+type tsValue interface {
+	flat() string
+	// mustBreak reports a value prettier refuses to print flat at ANY width.
+	mustBreak() bool
+	// render writes the broken form. The opening bracket goes at the cursor and
+	// the closing one at indent, so a caller that hugs an `=` and one that broke
+	// after it pass different indents for the same value.
+	render(b *bytes.Buffer, indent int)
+}
+
+// tsLiteral is an already-quotable scalar: a string, the only leaf kind this
+// generator emits. It never breaks.
+type tsLiteral string
+
+func (l tsLiteral) flat() string                  { return fmt.Sprintf("%q", string(l)) }
+func (l tsLiteral) mustBreak() bool               { return false }
+func (l tsLiteral) render(b *bytes.Buffer, _ int) { b.WriteString(l.flat()) }
+
+type tsArray []tsValue
+
+// tsStrings is the common array: string literals in the order given.
+func tsStrings(values []string) tsArray {
+	out := make(tsArray, 0, len(values))
+	for _, v := range values {
+		out = append(out, tsLiteral(v))
+	}
+	return out
+}
+
+func (a tsArray) flat() string {
+	parts := make([]string, 0, len(a))
+	for _, v := range a {
+		parts = append(parts, v.flat())
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}
+
+// mustBreak is prettier's own rule for an array of objects: more than one
+// element, every one of them an object carrying more than one property, and it
+// breaks however short the line would be.
+func (a tsArray) mustBreak() bool {
+	if len(a) < 2 {
+		return false
+	}
+	for _, v := range a {
+		object, ok := v.(tsObject)
+		if !ok || len(object) < 2 {
+			return false
+		}
+	}
+	return true
+}
+
+func (a tsArray) render(b *bytes.Buffer, indent int) {
+	if len(a) == 0 {
+		b.WriteString("[]")
+		return
+	}
+	b.WriteString("[\n")
+	for _, v := range a {
+		b.WriteString(strings.Repeat(" ", indent+2))
+		tsInline(b, v, indent+2, 0)
+		b.WriteString(",\n")
+	}
+	b.WriteString(strings.Repeat(" ", indent) + "]")
+}
+
+type tsPair struct {
+	Key   string
+	Value tsValue
+}
+
+type tsObject []tsPair
+
+func (o tsObject) flat() string {
+	if len(o) == 0 {
+		return "{}"
+	}
+	parts := make([]string, 0, len(o))
+	for _, p := range o {
+		parts = append(parts, tsKey(p.Key)+": "+p.Value.flat())
+	}
+	return "{ " + strings.Join(parts, ", ") + " }"
+}
+
+func (o tsObject) mustBreak() bool { return false }
+
+func (o tsObject) render(b *bytes.Buffer, indent int) {
+	if len(o) == 0 {
+		b.WriteString("{}")
+		return
+	}
+	b.WriteString("{\n")
+	for _, p := range o {
+		key := tsKey(p.Key) + ": "
+		b.WriteString(strings.Repeat(" ", indent+2) + key)
+		tsInline(b, p.Value, indent+2, len(key))
+		b.WriteString(",\n")
+	}
+	b.WriteString(strings.Repeat(" ", indent) + "}")
+}
+
+// tsInline writes v where a trailing comma follows it: flat when the flat form
+// and that comma still fit, broken otherwise. used is what the line already
+// holds past the indent.
+func tsInline(b *bytes.Buffer, v tsValue, indent, used int) {
+	if !v.mustBreak() && indent+used+len(v.flat())+len(",") <= printWidth {
+		b.WriteString(v.flat())
+		return
+	}
+	v.render(b, indent)
+}
+
+// tsAssign writes `<lhs> = <value>` in prettier's assignment layout, which is
+// three shapes and not two: the whole declaration on one line where it fits;
+// the value's opening bracket HUGGING the `=` where that bracket fits, its body
+// broken beneath; and, only where even the bracket would overflow, a break
+// after the `=` with the value indented on the next line. A literal has no
+// bracket to hug, so it takes the third shape directly.
+func tsAssign(b *bytes.Buffer, lhs string, v tsValue) {
+	head := lhs + " = "
+	// The LAST line is the one the value has to fit beside: an lhs whose type
+	// annotation already broke leaves only `> = ` in front of the value.
+	width := len(head)
+	if i := strings.LastIndex(head, "\n"); i >= 0 {
+		width = len(head) - i - 1
+	}
+	if !v.mustBreak() && width+len(v.flat()) <= printWidth {
+		b.WriteString(head + v.flat() + "\n")
+		return
+	}
+	_, literal := v.(tsLiteral)
+	if !literal && width+len("[") <= printWidth {
+		b.WriteString(head)
+		v.render(b, 0)
+		b.WriteString("\n")
+		return
+	}
+	b.WriteString(lhs + " =\n  ")
+	if !v.mustBreak() && 2+len(v.flat()) <= printWidth {
+		b.WriteString(v.flat() + "\n")
+		return
+	}
+	v.render(b, 2)
+	b.WriteString("\n")
+}
+
+// tsUnion writes a union type alias in prettier's three shapes for one: the
+// members on the declaration line where they fit, flat on the next line where
+// they fit there, and one `|`-led member per line otherwise.
+func tsUnion(b *bytes.Buffer, name string, members []string) {
+	lhs := "export type " + name + " ="
+	quoted := make([]string, 0, len(members))
+	for _, m := range members {
+		quoted = append(quoted, fmt.Sprintf("%q", m))
+	}
+	flat := strings.Join(quoted, " | ")
+	switch {
+	case len(lhs)+len(" ")+len(flat) <= printWidth:
+		b.WriteString(lhs + " " + flat + "\n")
+	case 2+len(flat) <= printWidth:
+		b.WriteString(lhs + "\n  " + flat + "\n")
+	default:
+		b.WriteString(lhs + "\n")
+		for _, m := range quoted {
+			b.WriteString("  | " + m + "\n")
+		}
+	}
 }
 
 // tsComment writes a JSDoc block wrapped at the console's print width, so the
