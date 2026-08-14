@@ -49,11 +49,10 @@ func (ds *dataset) PlantDeclarationRow(ctx context.Context, kindIdent, id string
 func (ds *dataset) DialectOneProps(kindIdent, id string, props map[string]any) map[string]any {
 	short := vocabularyRecordKinds[kindIdent]
 	out := map[string]any{"name": localNameOf(id)}
-	// The server-owned properties are the same in both dialects; the authored
+	// The engine's own properties are the same in both dialects; the authored
 	// ones move into the blob.
-	server := serverDeclarationProps(short)
 	for k, v := range props {
-		if server[k] && !columnBackedProp[k] {
+		if engineOwned(short, k) {
 			out[k] = v
 		}
 	}

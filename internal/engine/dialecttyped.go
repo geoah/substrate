@@ -35,7 +35,10 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -44,42 +47,57 @@ import (
 // dialectTypedDeclarations is dialect 2's name in vocabulary_promotions.
 const dialectTypedDeclarations = "typed-declarations"
 
+// ErrDeclarationUntranslated is the rung's refusal: a declaration row this
+// binary cannot put into the typed shape. THE OPEN FAILS, and that is the point
+// — stamping the dialect with one dialect-1 row left would leave the store in
+// the two-encodings state the design forbids, where some declarations read
+// through their properties and some through a blob, and no reader can tell which
+// it is holding. A closure that no longer parses is repaired by re-installing
+// the bundle (or by opening under the binary that wrote it) BEFORE this one
+// migrates the repository.
+var ErrDeclarationUntranslated = errors.New("substrate/engine: a stored declaration cannot be translated to the typed shape")
+
 // promoteTypedDeclarations rewrites every declaration row this repository holds
 // into its typed form, in one transaction with the dialect stamp.
 func (ds *dataset) promoteTypedDeclarations(ctx context.Context) error {
 	// The translation, before any write: the stored rows parse through the
 	// current loader, and what comes back is the typed property map of every
-	// declaration each authority holds. A closure that no longer PARSES cannot be
-	// translated — it is left exactly as it stands and quarantined a moment later
-	// by loadStoredVocabulary, which is the same answer this repository already
-	// got from the binary before it.
+	// declaration each authority holds.
 	built, unparsed, err := ds.storedAuthorities(ctx, nil)
 	if err != nil {
 		return err
 	}
-	for _, q := range unparsed {
-		ds.svc.log.Error("substrate: leaving a stored closure at the old declaration shape — it no longer parses under this binary, so there is nothing to translate; re-install the bundle",
-			"repository", ds.info.Name, "authority", q.name, "reason", q.reason)
+	// A closure that no longer PARSES cannot be translated, and skipping it is
+	// not an option: the stamp below says the whole store is typed, so one
+	// untranslatable row would make the stamp a lie. It refuses, loudly, naming
+	// the authority — a quarantine is a state a MIGRATED repository may reach, not
+	// one it may be migrated in.
+	if len(unparsed) > 0 {
+		names := make([]string, 0, len(unparsed))
+		for _, q := range unparsed {
+			names = append(names, q.name)
+			ds.svc.log.Error("substrate: REFUSING to migrate a repository's declarations — this closure no longer parses under this binary, so its rows cannot be translated; re-install the bundle (or open under the binary that wrote it) first",
+				"repository", ds.info.Name, "authority", q.name, "reason", q.reason)
+		}
+		return fmt.Errorf("%w: repository %s: %s", ErrDeclarationUntranslated, ds.info.Name, strings.Join(names, ", "))
 	}
 	if len(built) == 0 {
 		return nil
 	}
-	// The rung's OWN candidate registry, built from the translated documents.
-	// The live registry is empty at rung time (promote runs before
-	// loadStoredVocabulary), so nothing here may resolve against it; this proves
-	// the translated set still resolves whole — meta-kinds included, since core is
-	// among the authorities rebuilt above and a repository whose meta-kinds do not
-	// parse never reaches here (storedAuthorities returns core's failure as an
-	// error).
+	// THE RUNG'S OWN CANDIDATE REGISTRY, built from the translated documents. The
+	// live registry is empty at rung time (promote runs before
+	// loadStoredVocabulary), so nothing here resolves against it; this proves the
+	// translated set still admits whole, meta-kinds included — core is among the
+	// authorities rebuilt above, and a repository whose meta-kinds do not parse
+	// never reaches here (storedAuthorities returns core's failure as an error).
 	candidate := vocabulary.NewRegistry()
 	if err := candidate.InstallAll(built); err != nil {
-		ds.svc.log.Error("substrate: the translated declarations do not admit together — the rung writes the rows it can and the inadmissible closures quarantine at open",
-			"repository", ds.info.Name, "reason", err.Error())
+		return fmt.Errorf("%w: repository %s: the translated declarations do not admit together: %w",
+			ErrDeclarationUntranslated, ds.info.Name, err)
 	}
 
-	// What each row must BECOME, keyed by kind+id. The typed properties are the
-	// projection's own derivation; the row's server-owned values (its version,
-	// its origin, the quarantine marks, the bundle lifecycle bools) are kept as
+	// What each row must BECOME, keyed by authority. The typed properties are the
+	// projection's own derivation; the row's engine-owned values are kept as
 	// stored, because the rung is a change of SHAPE and never of content.
 	want := map[string][]declaration{}
 	for _, g := range built {
@@ -90,16 +108,17 @@ func (ds *dataset) promoteTypedDeclarations(ctx context.Context) error {
 		want[g.Name] = decls
 	}
 
-	// Every typed row is held to the declaration it will live under: the
-	// BINARY's, which is what the boot upgrade installs a moment later and what
-	// this shape is defined by. A row the new declarations would refuse fails the
-	// rung — and the open — before anything is written, rather than landing a
-	// store no binary can read back.
+	// Every typed row is held to the declaration it will LIVE under, and which
+	// one that is depends on the repository, not on the binary (rungValidators).
+	validators, err := ds.rungValidators(candidate, want)
+	if err != nil {
+		return err
+	}
 	for _, aname := range sortedKeys(want) {
 		for _, d := range want[aname] {
-			ty, err := resolveKindIn(ds.svc.base, d.typ)
-			if err != nil {
-				return fmt.Errorf("substrate/engine: typed declaration %s %s: %w", d.short, d.id, err)
+			ty := validators[d.typ]
+			if ty == nil {
+				return fmt.Errorf("%w: repository %s: nothing declares %s", ErrDeclarationUntranslated, ds.info.Name, d.typ)
 			}
 			authored, _, _, err := splitProps(ty, d.props)
 			if err != nil {
@@ -112,6 +131,13 @@ func (ds *dataset) promoteTypedDeclarations(ctx context.Context) error {
 	}
 
 	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		// The bands are an index over the row computed from the declaration the row
+		// is validated against, so the rung's fold reads its own candidate: a row
+		// indexed under the empty registry (title and body alone) would be
+		// re-indexed differently by its own replay, and for an installed authority
+		// nothing would ever restate it.
+		t.writeReg = candidate
+		defer func() { t.writeReg = nil }()
 		moved := 0
 		for _, aname := range sortedKeys(want) {
 			for _, d := range want[aname] {
@@ -124,6 +150,18 @@ func (ds *dataset) promoteTypedDeclarations(ctx context.Context) error {
 				}
 			}
 		}
+		// THE STRUCTURAL INVARIANT, before the stamp and inside the transaction: no
+		// live declaration row still carries a `definition`. Everything above is a
+		// derivation from what the loader parsed, and a row it never reached — an
+		// orphan whose authority row is gone, a kind this binary does not know —
+		// would otherwise survive the stamp unmigrated. The count rolls the whole
+		// rewrite back with it.
+		if left, err := t.definitionBearingRows(); err != nil {
+			return err
+		} else if len(left) > 0 {
+			return fmt.Errorf("%w: repository %s: %d row(s) still carry a definition: %s",
+				ErrDeclarationUntranslated, ds.info.Name, len(left), strings.Join(left, ", "))
+		}
 		if moved > 0 {
 			ds.svc.log.Info("substrate: migrated a repository's declaration rows to their typed shape",
 				"repository", ds.info.Name, "rows", moved)
@@ -133,6 +171,95 @@ func (ds *dataset) promoteTypedDeclarations(ctx context.Context) error {
 		// the step returns, which is a no-op (the stamp only ever moves up).
 		return t.stampDialect(2, dialectTypedDeclarations)
 	})
+}
+
+// rungValidators is the declaration each translated row is held to, per
+// meta-kind: THE ONE THAT WILL BE LIVE once this open finishes.
+//
+// The repository decides, not the binary. A stored meta-kind declaration at or
+// AHEAD of the binary's version survives this open untouched — the boot upgrade
+// never downgrades (seed.go) — so its own translated declaration is what its rows
+// must satisfy, and holding them to the binary's instead would refuse a
+// repository for being newer than the substrate reading it. A stored declaration
+// BEHIND the binary's is the one the upgrade replaces minutes later, so the
+// binary's is what decides; that is the ordinary migration, where the stored
+// meta-kind still declares the `definition` blob and could not admit a typed row
+// at all.
+func (ds *dataset) rungValidators(candidate *vocabulary.Registry, want map[string][]declaration) (map[string]*vocabulary.Kind, error) {
+	shipped, err := ds.shippedDeclarationVersions()
+	if err != nil {
+		return nil, err
+	}
+	stored := map[string]string{}
+	for _, decls := range want {
+		for _, d := range decls {
+			if d.typ == kindKind {
+				stored[d.id] = d.version()
+			}
+		}
+	}
+	out := map[string]*vocabulary.Kind{}
+	for ident := range vocabularyRecordKinds {
+		if vocabulary.CompareVersions(stored[ident], shipped[ident]) >= 0 {
+			if ty, ok := candidate.ByIdentity(ident); ok {
+				out[ident] = ty
+				continue
+			}
+		}
+		if ty, ok := ds.svc.base.ByIdentity(ident); ok {
+			out[ident] = ty
+		}
+	}
+	return out, nil
+}
+
+// shippedDeclarationVersions is the version the embedded tree declares for each
+// meta-kind — what the boot upgrade compares a stored declaration against.
+func (ds *dataset) shippedDeclarationVersions() (map[string]string, error) {
+	core, ok := ds.svc.base.AuthorityByName(vocabulary.AuthorityCore)
+	if !ok {
+		return nil, fmt.Errorf("substrate/engine: the binary ships no %s authority", vocabulary.AuthorityCore)
+	}
+	decls, err := authorityDeclarations(core)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, d := range decls {
+		if d.typ == kindKind {
+			out[d.id] = d.version()
+		}
+	}
+	return out, nil
+}
+
+// definitionBearingRows lists the live declaration rows that still carry a
+// `definition` property — the dialect-1 shape — as the ids the refusal names.
+func (t *txn) definitionBearingRows() ([]string, error) {
+	args := make([]any, 0, len(vocabularyKindRefs))
+	ph := make([]string, 0, len(vocabularyKindRefs))
+	for i, ident := range vocabularyKindRefs {
+		args = append(args, ident)
+		ph = append(ph, "$"+strconv.Itoa(i+1))
+	}
+	rows, err := t.query(`
+		SELECT kind, id FROM records
+		WHERE kind IN (`+strings.Join(ph, ", ")+`) AND deleted_at IS NULL
+		  AND props ? 'definition'
+		ORDER BY kind, id`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var kind, id string
+		if err := rows.Scan(&kind, &id); err != nil {
+			return nil, err
+		}
+		out = append(out, kind+" "+id)
+	}
+	return out, rows.Err()
 }
 
 // retypeDeclarationRow rewrites one declaration row's properties to the typed
@@ -153,18 +280,19 @@ func (t *txn) retypeDeclarationRow(d declaration) (bool, error) {
 	}
 	before := row.clone()
 	props := make(map[string]any, len(d.props))
-	server := serverDeclarationProps(d.short)
 	for k, v := range d.props {
 		if v == nil {
 			continue // a retired key: absent is what it means
 		}
 		props[k] = v
 	}
-	// The server-owned values are the ROW's, not the derivation's: a declaration
+	// The ENGINE'S OWN values are the ROW's, not the derivation's: a declaration
 	// held at a version ahead of its authority's keeps it, a quarantine mark
-	// survives the rewrite, and a disabled bundle stays disabled.
-	for k := range server {
-		if v, held := row.Props[k]; held {
+	// survives the rewrite, a disabled bundle stays disabled — and a property some
+	// NEWER binary stamps rides through untouched instead of being dropped by a
+	// binary that does not know it.
+	for k, v := range row.Props {
+		if engineOwned(d.short, k) {
 			props[k] = v
 		}
 	}
@@ -172,13 +300,12 @@ func (t *txn) retypeDeclarationRow(d declaration) (bool, error) {
 		delete(props, k)
 	}
 	row.Props = props
-	// The TITLE is deliberately not recomputed: deriving it needs the registry,
-	// which is empty at rung time, and every declaration's title is its local
-	// name under both the old template ({name}, the id-derived mirror) and the new
-	// one ({localName}) — so there is nothing to move. The same holds for the
-	// search bands: the fold falls back to title and body while the registry is
-	// empty, and the next write of the row (the boot upgrade's re-projection)
-	// restates them.
+	// The TITLE is deliberately not recomputed: every declaration's title is its
+	// local name under both the old template ({name}, the id-derived mirror) and
+	// the new one ({localName}), so there is nothing to move. The search bands DO
+	// move, and they are computed from the candidate the rows are validated
+	// against (the fold's writeReg above), so a replay of this entry reproduces
+	// them.
 	res, err := t.foldRow(before, row, false, false)
 	if err != nil || !res.changed {
 		return false, err

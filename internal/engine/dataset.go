@@ -219,6 +219,16 @@ type txn struct {
 	seqLocked bool
 	// internal writes bypass the system-type guard.
 	internal bool
+	// writeReg is the registry this transaction's DECLARATIONS come from, when it
+	// is not the live one: the vocabulary projection resolves a declaration row's
+	// kind against the candidate it is installing (vocabularywrite.go
+	// projectionKind) and the dialect rung against the candidate it translated
+	// (dialecttyped.go). The fold consults the registry for exactly one thing —
+	// the weighted search bands — and computing those from a declaration OTHER
+	// than the one the row was validated against is what made a live row and its
+	// own replay disagree: a replay reads the registry the rebuild holds, which is
+	// the declaration the row ended up under.
+	writeReg *vocabulary.Registry
 	// recomputing marks a mapping recompute's own write (§7.1): recompute
 	// never triggers recompute, and the manager ledger records the winning
 	// contributor's actor — recomputeManagers, per accepted property —

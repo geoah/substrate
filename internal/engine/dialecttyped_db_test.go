@@ -323,7 +323,11 @@ func TestTypedDeclarationRungMigratesOnlyTheUntypedRows(t *testing.T) {
 
 // TestTypedDeclarationRungRebuildsIdentically is the rebuild-equivalence pin:
 // the rung's entries are ordinary changelog entries, so replaying the whole log
-// reproduces the migrated rows exactly.
+// reproduces the migrated rows EXACTLY — the properties, the title, the body and
+// the SEARCH BANDS, which are the one thing the fold reads a declaration for. An
+// installed authority is in the fixture on purpose: nothing re-projects its rows
+// after the rung, so a band the rung got wrong would stay wrong and only a
+// rebuild would disagree.
 func TestTypedDeclarationRungRebuildsIdentically(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -344,7 +348,8 @@ func TestTypedDeclarationRungRebuildsIdentically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	importVocabulary(t, ds, "tasks")
+	importVocabulary(t, ds)
+	installShippedBundle(t, ds, "web")
 	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "geoah"), engine.RoleApp)
 	if err != nil {
 		t.Fatalf("open repository schema: %v", err)
@@ -354,11 +359,10 @@ func TestTypedDeclarationRungRebuildsIdentically(t *testing.T) {
 	_ = svc.Close()
 
 	svc2 := open()
-	ds2, err := svc2.Dataset(ctx, "geoah")
-	if err != nil {
+	if _, err := svc2.Dataset(ctx, "geoah"); err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	migrated := propsByRow(t, ds2)
+	migrated := foldSnapshot(t, db)
 
 	rebuilder, ok := svc2.(interface {
 		RebuildRepository(context.Context, string) (engine.RebuildReport, error)
@@ -369,19 +373,68 @@ func TestTypedDeclarationRungRebuildsIdentically(t *testing.T) {
 	if _, err := rebuilder.RebuildRepository(ctx, "geoah"); err != nil {
 		t.Fatalf("rebuild: %v", err)
 	}
-	replayed := propsByRow(t, ds2)
+	replayed := foldSnapshot(t, db)
 	for key, want := range migrated {
 		got, held := replayed[key]
 		if !held {
 			t.Fatalf("%s did not survive the replay", key)
 		}
-		if !reflect.DeepEqual(want, got) {
-			t.Fatalf("%s replayed differently:\n live   %v\n replay %v", key, want, got)
+		if want != got {
+			t.Fatalf("%s replayed differently:\n live   %s\n replay %s", key, want, got)
 		}
 	}
 	if len(replayed) != len(migrated) {
 		t.Fatalf("the replay holds %d declaration rows, the live fold %d", len(replayed), len(migrated))
 	}
+}
+
+// foldSnapshot is every declaration row's WHOLE folded state — properties,
+// title, body, states and the search bands — as one comparable string per row.
+// The fts column is in it because it is the fold's one registry-dependent
+// column: a rung that indexed a row under a declaration other than the one it
+// stored would show up here and nowhere else.
+func foldSnapshot(t *testing.T, db *sql.DB) map[string]string {
+	t.Helper()
+	rows, err := db.Query(`
+		SELECT kind, id, props::text, title, body, states::text, coalesce(fts::text, '')
+		FROM records
+		WHERE kind LIKE 'core.substrate.reamde.dev/%' AND deleted_at IS NULL
+		  AND kind IN ('core.substrate.reamde.dev/authority', 'core.substrate.reamde.dev/actor',
+		               'core.substrate.reamde.dev/kind', 'core.substrate.reamde.dev/trait',
+		               'core.substrate.reamde.dev/propertytype', 'core.substrate.reamde.dev/recordmapping',
+		               'core.substrate.reamde.dev/function', 'core.substrate.reamde.dev/agent',
+		               'core.substrate.reamde.dev/bundle')
+		ORDER BY kind, id`)
+	if err != nil {
+		t.Fatalf("read the fold: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]string{}
+	for rows.Next() {
+		var kind, id, props, title, body, states, fts string
+		if err := rows.Scan(&kind, &id, &props, &title, &body, &states, &fts); err != nil {
+			t.Fatalf("scan the fold: %v", err)
+		}
+		out[kind+" "+id] = strings.Join([]string{props, title, body, states, fts}, "\x1f")
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read the fold: %v", err)
+	}
+	if len(out) == 0 {
+		t.Fatal("the repository holds no declaration rows")
+	}
+	// A snapshot of empty bands would compare equal for the wrong reason.
+	indexed := false
+	for _, row := range out {
+		if fields := strings.Split(row, "\x1f"); fields[len(fields)-1] != "" {
+			indexed = true
+			break
+		}
+	}
+	if !indexed {
+		t.Fatal("no declaration row carries search bands — the fts comparison would prove nothing")
+	}
+	return out
 }
 
 // propsByRow reads every declaration row's properties, keyed by kind+id.
@@ -567,5 +620,167 @@ func TestBootUpgradeDeliversTheTypedFlip(t *testing.T) {
 	}
 	if v, _ := upgraded.Properties["version"].(string); v == "v1alpha2" {
 		t.Fatalf("the declaration is still at the planted version: %v", upgraded.Properties)
+	}
+}
+
+// TestTypedDeclarationRungRefusesAnUntranslatableRow is the structural half of
+// the atomicity: the rung stamps the dialect only when NO live declaration row
+// still carries a `definition`, so a row it cannot translate fails the rung —
+// and the open — rather than surviving the stamp as the one row nobody can read
+// twice the same way.
+func TestTypedDeclarationRungRefusesAnUntranslatableRow(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := testdb.NewSchema(t)
+	open := func() substrate.Service {
+		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		t.Cleanup(func() { _ = svc.Close() })
+		return svc
+	}
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	importVocabulary(t, ds)
+	installShippedBundle(t, ds, "web")
+	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "geoah"), engine.RoleApp)
+	if err != nil {
+		t.Fatalf("open repository schema: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	plantDialectOne(t, ds, db, nil)
+	// One stored closure this binary can no longer PARSE: the pre-refactor `llm`
+	// key on an agent, which the loader refuses by name. Nothing can translate its
+	// rows, so nothing may stamp over them.
+	if _, err := db.ExecContext(ctx, `
+		UPDATE records SET props = jsonb_set(props, '{definition,llm}', '"cheap"')
+		WHERE kind = $1 AND id = $2`,
+		"core.substrate.reamde.dev/agent", "web.bundles.substrate.reamde.dev/pageclassifier"); err != nil {
+		t.Fatalf("break one stored closure: %v", err)
+	}
+	_ = svc.Close()
+
+	svc2 := open()
+	_, err = svc2.Dataset(ctx, "geoah")
+	if !errors.Is(err, engine.ErrDeclarationUntranslated) {
+		t.Fatalf("the rung must refuse an untranslatable row by name, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "web.bundles.substrate.reamde.dev") {
+		t.Fatalf("the refusal must name the closure: %v", err)
+	}
+	// NOTHING WAS STAMPED: the rewrite and the stamp are one transaction, so the
+	// store is still dialect-1 and a later open can try again.
+	var stamped int
+	switch err := db.QueryRowContext(ctx, `SELECT dialect FROM vocabulary_dialect`).Scan(&stamped); {
+	case errors.Is(err, sql.ErrNoRows): // never stamped, which is the fixture
+	case err != nil:
+		t.Fatalf("read the stamp: %v", err)
+	case stamped >= engine.MaxSchemaDialect():
+		t.Fatalf("the failed rung stamped dialect %d", stamped)
+	}
+
+	// The same repository opens under the posture it had before: with the store
+	// already stamped, the rung does not run, and the broken closure quarantines
+	// exactly as it did before this release.
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO vocabulary_dialect (dialect) VALUES ($1)
+		ON CONFLICT (repository) DO UPDATE SET dialect = EXCLUDED.dialect`,
+		engine.MaxSchemaDialect()); err != nil {
+		t.Fatalf("stamp the dialect by hand: %v", err)
+	}
+	_ = svc2.Close()
+	svc3 := open()
+	if _, err := svc3.Dataset(ctx, "geoah"); err != nil {
+		t.Fatalf("with the rung skipped the repository must still open: %v", err)
+	}
+}
+
+// TestTypedDeclarationRungHoldsRowsToTheRepositorysOwnDeclarations is the
+// validation half: a repository whose stored meta-kind declaration is AHEAD of
+// the binary's keeps it (the boot upgrade never downgrades), so its rows are
+// held to ITS declaration and not to the one this binary ships. Holding them to
+// the binary's would refuse a repository for being newer than the substrate
+// reading it.
+func TestTypedDeclarationRungHoldsRowsToTheRepositorysOwnDeclarations(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := testdb.NewSchema(t)
+	open := func() substrate.Service {
+		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		t.Cleanup(func() { _ = svc.Close() })
+		return svc
+	}
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	importVocabulary(t, ds, "tasks")
+	p := planter(t, ds)
+
+	// The store as a NEWER binary left it: core's `kind` declaration one version
+	// ahead, declaring a `lifecycle` property this binary knows nothing about, and
+	// one kind row carrying it.
+	kindRow := mustGet(t, ds, "core.substrate.reamde.dev/kind", "core.substrate.reamde.dev/kind")
+	ahead := map[string]any{}
+	for k, v := range kindRow.Properties {
+		ahead[k] = v
+	}
+	declared, _ := ahead["properties"].(map[string]any)
+	if declared == nil {
+		t.Fatalf("the kind declaration carries no properties: %v", ahead)
+	}
+	newer := map[string]any{}
+	for k, v := range declared {
+		newer[k] = v
+	}
+	newer["lifecycle"] = map[string]any{"type": "string", "managed": true}
+	ahead["properties"] = newer
+	ahead["version"] = "v1alpha99"
+	if err := p.PlantDeclarationRow(ctx, "core.substrate.reamde.dev/kind", "core.substrate.reamde.dev/kind", ahead); err != nil {
+		t.Fatalf("plant the newer kind declaration: %v", err)
+	}
+	taskRow := mustGet(t, ds, "core.substrate.reamde.dev/kind", "tasks.substrate.reamde.dev/task")
+	withLifecycle := map[string]any{}
+	for k, v := range taskRow.Properties {
+		withLifecycle[k] = v
+	}
+	withLifecycle["lifecycle"] = "beta"
+	if err := p.PlantDeclarationRow(ctx, "core.substrate.reamde.dev/kind", "tasks.substrate.reamde.dev/task", withLifecycle); err != nil {
+		t.Fatalf("plant the newer binary's stamped property: %v", err)
+	}
+	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "geoah"), engine.RoleApp)
+	if err != nil {
+		t.Fatalf("open repository schema: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	windBackDialect(t, db)
+	_ = svc.Close()
+
+	svc2 := open()
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("a repository ahead of this binary must still migrate: %v", err)
+	}
+	migrated := mustGet(t, ds2, "core.substrate.reamde.dev/kind", "tasks.substrate.reamde.dev/task")
+	if migrated.Properties["lifecycle"] != "beta" {
+		t.Fatalf("the newer binary's stamped property did not survive: %v", migrated.Properties)
+	}
+	stillAhead := mustGet(t, ds2, "core.substrate.reamde.dev/kind", "core.substrate.reamde.dev/kind")
+	if v, _ := stillAhead.Properties["version"].(string); v != "v1alpha99" {
+		t.Fatalf("the newer stored declaration was downgraded to %q", v)
 	}
 }
