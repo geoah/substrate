@@ -3,13 +3,18 @@
  * + ChangeTarget). Each card opens its request; the header opens the kind's
  * collection, which is the queue in full. The count rides the page read where
  * the queue is short (a cursorless page IS the count) and probes only when it
- * isn't, exactly as the merge queue does. */
+ * isn't, exactly as the merge queue does.
+ *
+ * NO PROPOSER on a row, deliberately: who proposed a change is the manager of
+ * its `diff` property, and `propertyMeta` rides the SINGLE-record read only
+ * (engine query.go), so a collection page cannot know it. Three extra reads to
+ * label three rows is not a trade this glance is worth: the detail page says
+ * who proposed, and the card does not pretend to. */
 
 import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
 import { FilePenLineIcon } from "lucide-react"
 
-import { ActorChip } from "@/components/actor-chip"
 import { ChangeTarget, OpBadge } from "@/components/change-request"
 import { ZoneError } from "@/components/home/zone"
 import {
@@ -27,12 +32,7 @@ import {
 } from "@/lib/api/changerequests"
 import { CORE_AUTHORITY } from "@/lib/api/http"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
-import {
-  changeOp,
-  changeTarget,
-  proposerOf,
-  rationaleOf,
-} from "@/lib/changerequests"
+import { changeOp, changeTarget, rationaleOf } from "@/lib/changerequests"
 import { relativeTime } from "@/lib/format"
 
 /** Cards the zone shows; the queue holds the rest. */
@@ -49,7 +49,6 @@ function PendingCard({
   const open = () =>
     void navigate({ to: "/change-requests/$id", params: { id: request.id } })
   const rationale = rationaleOf(request)
-  const proposer = proposerOf(request)
   return (
     <div
       role="link"
@@ -72,11 +71,6 @@ function PendingCard({
       </span>
       {rationale && (
         <span className="line-clamp-2 text-muted-foreground">{rationale}</span>
-      )}
-      {proposer && (
-        <span className="flex items-center gap-1.5 text-muted-foreground">
-          proposed by <ActorChip actor={proposer} />
-        </span>
       )}
     </div>
   )

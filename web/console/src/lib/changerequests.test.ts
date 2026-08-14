@@ -2,15 +2,22 @@ import { describe, expect, it } from "vitest"
 
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import {
+  appliesNothing,
   applyConflict,
   changeOp,
   changeTarget,
   deciderOf,
+  decisionNote,
+  decisionOf,
   decisionPatch,
   deriveChangeRows,
   describeProposedEdge,
+  diffCannotApply,
+  diffNamesNothing,
+  effectiveCAS,
   proposedDiff,
   proposerOf,
+  sameApplied,
   targetDrift,
 } from "@/lib/changerequests"
 
@@ -229,10 +236,133 @@ describe("proposedDiff", () => {
       properties: {},
       labels: undefined,
       annotations: undefined,
+      addFinalizers: [],
+      removeFinalizers: [],
+      ifVersion: undefined,
       edges: [],
       refused: [],
+      malformed: [],
       unreadable: false,
     })
+  })
+
+  it("carries the finalizers and the diff's own ifVersion, which the accept applies", () => {
+    const diff = proposedDiff(
+      requestRecord({
+        diff: {
+          addFinalizers: ["owner/hold"],
+          removeFinalizers: ["app/lock"],
+          ifVersion: 11,
+        },
+      })
+    )
+    expect(diff.addFinalizers).toEqual(["owner/hold"])
+    expect(diff.removeFinalizers).toEqual(["app/lock"])
+    expect(diff.ifVersion).toBe(11)
+    // A finalizer-only diff names something: the accept is not refused as empty.
+    expect(diffNamesNothing(diff)).toBe(false)
+    expect(diffCannotApply(diff)).toBe(false)
+  })
+
+  it("names nothing only when it truly names nothing", () => {
+    expect(diffNamesNothing(proposedDiff(requestRecord({})))).toBe(true)
+    expect(
+      diffNamesNothing(
+        proposedDiff(requestRecord({ diff: { labels: { a: "1" } } }))
+      )
+    ).toBe(false)
+  })
+
+  it("keeps a malformed wrapper visible instead of previewing an empty diff", () => {
+    // Each of these decodes fine as JSON and FAILS the substrate's strict
+    // decode, so a silent empty preview would be a lie.
+    const diff = proposedDiff(
+      requestRecord({
+        diff: {
+          properties: [],
+          labels: "x",
+          addFinalizers: [3],
+          ifVersion: "soon",
+        },
+      })
+    )
+    expect(diff.properties).toEqual({})
+    // Key order, so the list renders the same way twice.
+    expect(diff.malformed).toEqual([
+      { key: "addFinalizers", raw: [3] },
+      { key: "ifVersion", raw: "soon" },
+      { key: "labels", raw: "x" },
+      { key: "properties", raw: [] },
+    ])
+    // The keys themselves are admitted here, so this is a shape problem, not a
+    // refused key, and either way no accept can succeed.
+    expect(diff.refused).toEqual([])
+    expect(diffCannotApply(diff)).toBe(true)
+    expect(diffNamesNothing(diff)).toBe(true)
+  })
+
+  it("keeps an edges value that is not a list", () => {
+    const diff = proposedDiff(
+      requestRecord({ op: "create", diff: { edges: { assignee: "p1" } } })
+    )
+    expect(diff.edges).toEqual([])
+    expect(diff.malformed).toEqual([{ key: "edges", raw: { assignee: "p1" } }])
+    expect(diffCannotApply(diff)).toBe(true)
+  })
+
+  it("keeps a malformed edge ENTRY, with its index and its raw value", () => {
+    const diff = proposedDiff(
+      requestRecord({
+        op: "create",
+        diff: {
+          edges: [
+            { rel: "assignee", to: { id: "p1" } },
+            { rel: "blockedBy" },
+            "junk",
+          ],
+        },
+      })
+    )
+    expect(diff.edges).toHaveLength(1)
+    expect(diff.malformed).toEqual([
+      { key: "edges[1]", raw: { rel: "blockedBy" } },
+      { key: "edges[2]", raw: "junk" },
+    ])
+    expect(diffCannotApply(diff)).toBe(true)
+  })
+
+  it("a key the strict decode does not carry still reads as refused", () => {
+    const diff = proposedDiff(requestRecord({ diff: { saved: true } }))
+    expect(diffCannotApply(diff)).toBe(true)
+  })
+})
+
+// ── value equality, as the apply decides it ─────────────────────────────────
+
+describe("sameApplied", () => {
+  it("is ORDER-SENSITIVE for arrays, because the apply is", () => {
+    // write.go's `take` compares with jsonEqual (Marshal byte equality), so a
+    // reorder IS a change and the accept writes it.
+    expect(sameApplied(["a", "b"], ["b", "a"])).toBe(false)
+    expect(sameApplied(["a", "b"], ["a", "b"])).toBe(true)
+    expect(sameApplied(["a", "a"], ["a"])).toBe(false)
+  })
+
+  it("ignores object key order, because Go's encoder sorts map keys", () => {
+    expect(sameApplied({ a: 1, b: 2 }, { b: 2, a: 1 })).toBe(true)
+    expect(sameApplied({ a: 1 }, { a: 2 })).toBe(false)
+  })
+
+  it("reaches arrays nested inside a json value", () => {
+    expect(sameApplied({ tags: ["a", "b"] }, { tags: ["b", "a"] })).toBe(false)
+    expect(sameApplied([{ x: [1, 2] }], [{ x: [1, 2] }])).toBe(true)
+    expect(sameApplied([{ x: [1, 2] }], [{ x: [2, 1] }])).toBe(false)
+  })
+
+  it("distinguishes absent from empty", () => {
+    expect(sameApplied(undefined, "")).toBe(false)
+    expect(sameApplied(undefined, undefined)).toBe(true)
+    expect(sameApplied(null, undefined)).toBe(false)
   })
 })
 
@@ -277,9 +407,29 @@ describe("deriveChangeRows", () => {
     expect(rows[0].effect).toBe("unchanged")
   })
 
-  it("compares structurally, so a reordered repeated value is unchanged", () => {
+  it("reads a REORDER as a change, because the accept applies it", () => {
     const target = targetRecord({ tags: ["b", "a"] })
     const rows = deriveChangeRows({ tags: ["a", "b"] }, target, taskKind)
+    expect(rows[0].effect).toBe("set")
+    // The same values in the same order really are unchanged.
+    expect(
+      deriveChangeRows({ tags: ["b", "a"] }, target, taskKind)[0].effect
+    ).toBe("unchanged")
+  })
+
+  it("reads a reorder nested inside a json value as a change too", () => {
+    const target = targetRecord({ shape: { tags: ["a", "b"] } })
+    const rows = deriveChangeRows(
+      { shape: { tags: ["b", "a"] } },
+      target,
+      taskKind
+    )
+    expect(rows[0].effect).toBe("set")
+  })
+
+  it("ignores object key order, which the apply also ignores", () => {
+    const target = targetRecord({ shape: { a: 1, b: 2 } })
+    const rows = deriveChangeRows({ shape: { b: 2, a: 1 } }, target, taskKind)
     expect(rows[0].effect).toBe("unchanged")
   })
 
@@ -335,25 +485,96 @@ describe("describeProposedEdge", () => {
 
 // ── the stale target ────────────────────────────────────────────────────────
 
-describe("targetDrift", () => {
-  it("reports the two versions when the target moved after the proposal", () => {
+/** The parsed diff a drift check needs; the stamp lives on the request. */
+function diffOf(properties: Record<string, unknown>) {
+  return proposedDiff(requestRecord(properties))
+}
+
+describe("effectiveCAS / targetDrift", () => {
+  it("checks against the stamped targetVersion when the diff names none", () => {
+    const r = requestRecord({ targetVersion: 3 })
+    expect(effectiveCAS(r, diffOf({}))).toEqual({
+      version: 3,
+      via: "targetVersion",
+    })
     expect(
-      targetDrift(
-        requestRecord({ targetVersion: 3 }),
-        targetRecord({}, { version: 5 })
-      )
-    ).toEqual({ proposedAgainst: 3, current: 5 })
+      targetDrift(r, diffOf({}), targetRecord({}, { version: 5 }))
+    ).toEqual({ version: 3, via: "targetVersion", current: 5 })
   })
 
-  it("is silent when the versions agree, or when either is unknown", () => {
+  it("lets the diff's OWN ifVersion override the stamp, as the accept does", () => {
+    // write.go's applyPatchRequest falls back to targetVersion only when the
+    // decoded diff carries no ifVersion, so the override is the real CAS.
+    const r = requestRecord({ targetVersion: 3 })
+    const diff = diffOf({
+      diff: { properties: { summary: "x" }, ifVersion: 7 },
+    })
+    expect(effectiveCAS(r, diff)).toEqual({
+      version: 7,
+      via: "diff.ifVersion",
+    })
+    // Agreeing with the stamp is NOT the question: 7 against a target at 3 is
+    // drift, and 7 against a target at 7 is not.
+    expect(targetDrift(r, diff, targetRecord({}, { version: 3 }))).toEqual({
+      version: 7,
+      via: "diff.ifVersion",
+      current: 3,
+    })
+    expect(
+      targetDrift(r, diff, targetRecord({}, { version: 7 }))
+    ).toBeUndefined()
+  })
+
+  it("is silent when the versions agree, or when neither is known", () => {
     expect(
       targetDrift(
         requestRecord({ targetVersion: 3 }),
+        diffOf({}),
         targetRecord({}, { version: 3 })
       )
     ).toBeUndefined()
-    expect(targetDrift(requestRecord({}), targetRecord({}))).toBeUndefined()
-    expect(targetDrift(requestRecord({ targetVersion: 3 }))).toBeUndefined()
+    expect(
+      targetDrift(requestRecord({}), diffOf({}), targetRecord({}))
+    ).toBeUndefined()
+    expect(
+      targetDrift(requestRecord({ targetVersion: 3 }), diffOf({}))
+    ).toBeUndefined()
+  })
+})
+
+describe("appliesNothing", () => {
+  const target = targetRecord({ summary: "same" })
+
+  it("is true when every named property already matches and nothing else rides", () => {
+    const diff = diffOf({ diff: { properties: { summary: "same" } } })
+    const rows = deriveChangeRows(diff.properties, target, taskKind)
+    expect(appliesNothing(diff, rows)).toBe(true)
+  })
+
+  it("is FALSE for a finalizer-only diff, which applies something", () => {
+    const diff = diffOf({ diff: { addFinalizers: ["owner/hold"] } })
+    const rows = deriveChangeRows(diff.properties, target, taskKind)
+    expect(rows).toEqual([])
+    expect(appliesNothing(diff, rows)).toBe(false)
+  })
+
+  it("is false when a label or an annotation rides along unchanged properties", () => {
+    const withLabel = diffOf({
+      diff: { properties: { summary: "same" }, labels: { tier: "a" } },
+    })
+    expect(
+      appliesNothing(
+        withLabel,
+        deriveChangeRows(withLabel.properties, target, taskKind)
+      )
+    ).toBe(false)
+  })
+
+  it("is false as soon as one property really changes", () => {
+    const diff = diffOf({ diff: { properties: { summary: "other" } } })
+    expect(
+      appliesNothing(diff, deriveChangeRows(diff.properties, target, taskKind))
+    ).toBe(false)
   })
 })
 
@@ -436,6 +657,34 @@ describe("applyConflict", () => {
 })
 
 // ── who ─────────────────────────────────────────────────────────────────────
+
+describe("decisionOf / decisionNote", () => {
+  // Declared here rather than borrowed from the merge request: nothing holds
+  // the two kinds' `decision` declarations to the same states.
+  it("defaults an unreadable decision to proposed", () => {
+    expect(decisionOf(requestRecord({ decision: "accepted" }))).toBe("accepted")
+    expect(decisionOf(requestRecord({ decision: "rejected" }))).toBe("rejected")
+    expect(decisionOf(requestRecord({}))).toBe("proposed")
+    expect(decisionOf(requestRecord({ decision: 3 }))).toBe("proposed")
+  })
+
+  it("reads any actor's /note key back, and ignores a non-string", () => {
+    expect(
+      decisionNote(
+        requestRecord({}, { annotations: { "owner/note": "checked" } })
+      )
+    ).toBe("checked")
+    expect(
+      decisionNote(
+        requestRecord({}, { annotations: { "app.foo/note": "theirs" } })
+      )
+    ).toBe("theirs")
+    expect(
+      decisionNote(requestRecord({}, { annotations: { "owner/note": 7 } }))
+    ).toBeUndefined()
+    expect(decisionNote(requestRecord({}))).toBeUndefined()
+  })
+})
 
 describe("proposerOf / deciderOf", () => {
   it("reads the proposer off a property only a proposal writes", () => {

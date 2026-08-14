@@ -1,6 +1,6 @@
 /** Change-request domain logic, pure and tested: the op a request carries,
  * the target it names, the stored diff read as before/after rows against the
- * target's live values, the drift between the version the diff was computed
+ * target's live values, the drift between the version the accept will CAS
  * against and the target's current one, and the decision patch.
  *
  * Wire facts (kinds/core.substrate.reamde.dev/recordpatchrequest.yaml,
@@ -8,34 +8,73 @@
  * PATCH (an older request stores no op, so back-compat is by omission);
  * `targetKind`/`targetId` name a create's record, which nothing can point at
  * yet; the `target` edge names a patch's or a delete's; `targetVersion` is the
- * version the diff was computed against and the accept CAS's against it;
- * `diff` is json, decoded STRICTLY as a PatchInput (`properties`) or, for a
- * create, a PutInput (`properties` plus `edges`). Accepting is what applies
- * the change: the `decision` transition runs `applyDiff` in the same
- * transaction, and a decision on the human path must carry the REQUEST's
- * `ifVersion` (write.go refuses it otherwise), which is also what enforces the
- * envelope the reviewer read. */
+ * version the diff was computed against, which the accept CAS's against unless
+ * the diff carries its own `ifVersion`; `diff` is json, decoded STRICTLY as a
+ * PatchInput (properties, labels, annotations, finalizers, ifVersion) or, for a
+ * create, a PutInput (those plus `edges`). Accepting is what applies the
+ * change: the `decision` transition runs `applyDiff` in the same transaction,
+ * and a decision on the human path must carry the REQUEST's `ifVersion`
+ * (write.go refuses it otherwise), which is also what enforces the envelope the
+ * reviewer read.
+ *
+ * NOTHING here is shared with the merge request's logic, deliberately. The two
+ * kinds are two independent declarations that happen to spell `decision` the
+ * same way today; neither guarantees the other's states, and their value
+ * equality is genuinely different (see `sameApplied`). */
 
 import type { EdgeTarget, KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { declaredEdges, declaredProperties } from "@/lib/definition"
-import {
-  DECISION_INITIAL,
-  decisionOf,
-  sameValue,
-  verdictNote,
-  type Decision,
-  type MergeVerdict,
-} from "@/lib/mergerequests"
 
-// The decision is ONE machine and both request kinds declare it identically
-// (proposed → accepted|rejected, accepting is what applies), and the note
-// convention is one too, so they are read from one place rather than declared
-// twice and left free to drift.
-export { DECISION_INITIAL, decisionOf, verdictNote as decisionNote }
-export type { Decision }
+// ── the decision ────────────────────────────────────────────────────────────
+
+export const DECISIONS = ["proposed", "accepted", "rejected"] as const
+export type Decision = (typeof DECISIONS)[number]
+export const DECISION_INITIAL: Decision = "proposed"
 
 /** The two verdicts a person hands down. */
-export type Verdict = MergeVerdict
+export type Verdict = "accepted" | "rejected"
+
+export function decisionOf(r: SubstrateRecord): Decision {
+  const d = r.properties.decision
+  return d === "accepted" || d === "rejected" ? d : "proposed"
+}
+
+/** The note a decided request carries, wherever the namespace put it:
+ * `owner/note` is what the console writes; any `<actor>/note` reads back. */
+export function decisionNote(r: SubstrateRecord): string | undefined {
+  for (const [key, value] of Object.entries(r.annotations ?? {})) {
+    if (!/(^|\/)note$/.test(key)) continue
+    if (typeof value === "string" && value) return value
+  }
+  return undefined
+}
+
+// ── value equality, as the APPLY decides it ─────────────────────────────────
+
+/** Whether the accept would consider a proposed value equal to the stored one.
+ * The write path compares with `jsonEqual` (write.go's `take`): byte equality
+ * over Go's JSON encoding, so ARRAYS ARE ORDER-SENSITIVE (`["b","a"]` over
+ * `["a","b"]` is a real change and the accept applies it) while object keys are
+ * not (Go marshals maps with sorted keys). A recompute-flavoured compare that
+ * sorted arrays would report "no change" for a reorder the substrate performs,
+ * which is a preview that lies. */
+export function sameApplied(a: unknown, b: unknown): boolean {
+  return canonicalJSON(a) === canonicalJSON(b)
+}
+
+function canonicalJSON(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonicalJSON).join(",")}]`
+  if (typeof v === "object" && v !== null) {
+    const rec = v as Record<string, unknown>
+    // An undefined-valued key does not survive JSON on either side, exactly as
+    // it does not survive Go's encoder.
+    const keys = Object.keys(rec)
+      .filter((k) => rec[k] !== undefined)
+      .sort()
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJSON(rec[k])}`).join(",")}}`
+  }
+  return JSON.stringify(v) ?? "undefined"
+}
 
 // ── the op ──────────────────────────────────────────────────────────────────
 
@@ -93,7 +132,7 @@ function declaredRef(r: SubstrateRecord): ChangeTargetRef | undefined {
 /** One edge a create request would write, normalized off `diff.edges`
  * (`substrate.EdgeInput`: `{rel, to: {kind?, id}, properties?}`). `kind` is
  * absent where the declaration pins one target kind and the writer left it
- * implicit. */
+ * implicit; `properties` are the EDGE's own, reviewed content like any other. */
 export interface ProposedEdge {
   rel: string
   kind?: string
@@ -101,15 +140,38 @@ export interface ProposedEdge {
   properties?: Record<string, unknown>
 }
 
+/** A value the console cannot read where the decode expects a shape: kept
+ * verbatim, because "the diff names nothing" and "the diff names something the
+ * substrate will refuse" are opposite facts and the reviewer needs the second
+ * one said out loud. */
+export interface UnreadableField {
+  /** The diff key, or `edges[2]` for one entry of the edge list. */
+  key: string
+  /** What was actually there. */
+  raw: unknown
+}
+
 export interface ProposedDiff {
   properties: Record<string, unknown>
   labels?: Record<string, unknown>
   annotations?: Record<string, unknown>
+  /** Finalizers the patch adds or removes. Named by the diff, applied by the
+   * accept, and invisible in a property table, so they are carried here rather
+   * than dropped: a finalizer-only diff is NOT an empty one. */
+  addFinalizers: string[]
+  removeFinalizers: string[]
+  /** The diff's OWN CAS precondition. When present it OVERRIDES the stamped
+   * `targetVersion` at accept (write.go: the stamp is only a fallback), so it
+   * is what a drift warning must compare against. */
+  ifVersion?: number
   /** Create only: the edges the minted record is born with. */
   edges: ProposedEdge[]
   /** Top-level keys the substrate's strict decode would refuse, so the surface
    * can say why an accept will fail before anybody presses the button. */
   refused: string[]
+  /** Keys whose value is the wrong SHAPE for the decode (`properties: []`,
+   * `edges: {}`, a malformed edge entry). The accept fails on these too. */
+  malformed: UnreadableField[]
   /** True when `diff` is present but is not an object at all. */
   unreadable: boolean
 }
@@ -141,8 +203,11 @@ export function proposedDiff(r: SubstrateRecord): ProposedDiff {
   const raw = r.properties.diff
   const empty: ProposedDiff = {
     properties: {},
+    addFinalizers: [],
+    removeFinalizers: [],
     edges: [],
     refused: [],
+    malformed: [],
     unreadable: false,
   }
   if (raw === undefined || raw === null) return empty
@@ -151,14 +216,49 @@ export function proposedDiff(r: SubstrateRecord): ProposedDiff {
   }
   const diff = raw as Record<string, unknown>
   const admitted = changeOp(r) === "create" ? CREATE_DIFF_KEYS : PATCH_DIFF_KEYS
+  const malformed: UnreadableField[] = []
+
+  const map = (key: string): Record<string, unknown> | undefined => {
+    if (!(key in diff) || diff[key] === undefined || diff[key] === null) {
+      return undefined
+    }
+    const value = mapOf(diff[key])
+    if (!value) malformed.push({ key, raw: diff[key] })
+    return value
+  }
+  const strings = (key: string): string[] => {
+    if (!(key in diff) || diff[key] === undefined || diff[key] === null) {
+      return []
+    }
+    const value = diff[key]
+    if (!Array.isArray(value) || value.some((v) => typeof v !== "string")) {
+      malformed.push({ key, raw: value })
+      return []
+    }
+    return value as string[]
+  }
+
+  let ifVersion: number | undefined
+  if (diff.ifVersion !== undefined && diff.ifVersion !== null) {
+    if (typeof diff.ifVersion === "number") ifVersion = diff.ifVersion
+    else malformed.push({ key: "ifVersion", raw: diff.ifVersion })
+  }
+
   return {
-    properties: mapOf(diff.properties) ?? {},
-    labels: mapOf(diff.labels),
-    annotations: mapOf(diff.annotations),
-    edges: proposedEdges(diff.edges),
+    properties: map("properties") ?? {},
+    labels: map("labels"),
+    annotations: map("annotations"),
+    addFinalizers: strings("addFinalizers"),
+    removeFinalizers: strings("removeFinalizers"),
+    ifVersion,
+    edges: proposedEdges(diff, malformed),
     refused: Object.keys(diff)
       .filter((k) => !admitted.includes(k))
       .sort(),
+    // Sorted for the same reason `refused` is: the order values happen to be
+    // parsed in is not information, and a stable list is what a surface can
+    // render twice the same way.
+    malformed: malformed.sort((a, b) => a.key.localeCompare(b.key)),
     unreadable: false,
   }
 }
@@ -170,24 +270,56 @@ function mapOf(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>
 }
 
-function proposedEdges(value: unknown): ProposedEdge[] {
-  if (!Array.isArray(value)) return []
+function proposedEdges(
+  diff: Record<string, unknown>,
+  malformed: UnreadableField[]
+): ProposedEdge[] {
+  const value = diff.edges
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value)) {
+    malformed.push({ key: "edges", raw: value })
+    return []
+  }
   const out: ProposedEdge[] = []
-  for (const item of value) {
+  value.forEach((item, i) => {
     const edge = mapOf(item)
-    if (!edge) continue
-    const rel = str(edge.rel)
-    const to = mapOf(edge.to)
+    const rel = str(edge?.rel)
+    const to = mapOf(edge?.to)
     const id = str(to?.id)
-    if (!rel || !id) continue
+    if (!rel || !id) {
+      malformed.push({ key: `edges[${i}]`, raw: item })
+      return
+    }
     out.push({
       rel,
       kind: str(to?.kind),
       id,
-      properties: mapOf(edge.properties),
+      properties: mapOf(edge?.properties),
     })
-  }
+  })
   return out
+}
+
+/** True when the substrate's strict decode will refuse this diff whole: an
+ * unreadable value, a key PatchInput/PutInput does not carry, or a key whose
+ * value is the wrong shape. Nothing is applied in that case, and no accept can
+ * succeed until the proposal is rewritten. */
+export function diffCannotApply(diff: ProposedDiff): boolean {
+  return diff.unreadable || diff.refused.length > 0 || diff.malformed.length > 0
+}
+
+/** True when the diff names NOTHING the write path would act on. The accept is
+ * refused outright (write.go's `diffEmpty`), so this is a warning, not a quiet
+ * detail. Finalizers count: a finalizer-only diff names something. */
+export function diffNamesNothing(diff: ProposedDiff): boolean {
+  return (
+    Object.keys(diff.properties).length === 0 &&
+    Object.keys(diff.labels ?? {}).length === 0 &&
+    Object.keys(diff.annotations ?? {}).length === 0 &&
+    diff.addFinalizers.length === 0 &&
+    diff.removeFinalizers.length === 0 &&
+    diff.edges.length === 0
+  )
 }
 
 // ── before / after ──────────────────────────────────────────────────────────
@@ -199,9 +331,9 @@ function proposedEdges(value: unknown): ProposedEdge[] {
  * - `set`: a value the target already carries, replaced.
  * - `add`: a value the target has no key for at all, and every property of a
  *   create (nothing exists yet to compare against).
- * - `unchanged`: the target already satisfies the proposed value. A patch
- *   whose whole diff is unchanged FAILS the accept (write.go refuses the
- *   silent no-op), so this is a warning, not a detail. */
+ * - `unchanged`: the target already satisfies the proposed value, as the APPLY
+ *   compares it (`sameApplied`). A patch whose whole diff is unchanged FAILS
+ *   the accept (write.go refuses the silent no-op). */
 export type ChangeEffect = "clear" | "set" | "add" | "unchanged"
 
 export interface ChangeRow {
@@ -250,7 +382,7 @@ export function deriveChangeRows(
     } else if (!target || !had) {
       effect = "add"
     } else {
-      effect = sameValue(before, after) ? "unchanged" : "set"
+      effect = sameApplied(before, after) ? "unchanged" : "set"
     }
     rows.push({
       key,
@@ -272,6 +404,23 @@ export function deriveChangeRows(
   return rows
 }
 
+/** True when accepting would apply NOTHING even though the diff names things:
+ * every named property already matches, and no label, annotation, finalizer or
+ * edge rides along. The write path refuses that accept rather than recording a
+ * decision that changed nothing, so the page says so before the button. Only
+ * meaningful where the live target was read; a create has nothing to match. */
+export function appliesNothing(diff: ProposedDiff, rows: ChangeRow[]): boolean {
+  if (rows.length === 0) return false
+  if (!rows.every((r) => r.effect === "unchanged")) return false
+  return (
+    Object.keys(diff.labels ?? {}).length === 0 &&
+    Object.keys(diff.annotations ?? {}).length === 0 &&
+    diff.addFinalizers.length === 0 &&
+    diff.removeFinalizers.length === 0 &&
+    diff.edges.length === 0
+  )
+}
+
 /** An edge a create would write, matched to its declaration so the preview can
  * say what the rel IS and whether the kind declares it at all. */
 export function describeProposedEdge(
@@ -289,24 +438,45 @@ export function describeProposedEdge(
 
 // ── the stale target ────────────────────────────────────────────────────────
 
-export interface TargetDrift {
-  /** `targetVersion`: what the target was when the diff was computed. */
-  proposedAgainst: number
+/** Where the version the accept CAS's against comes from: the diff's own
+ * `ifVersion` overrides, and the engine falls back to the stamped
+ * `targetVersion` only when the diff carries none. */
+export type CASSource = "diff.ifVersion" | "targetVersion"
+
+export interface EffectiveCAS {
+  version: number
+  via: CASSource
+}
+
+export function effectiveCAS(
+  r: SubstrateRecord,
+  diff: ProposedDiff
+): EffectiveCAS | undefined {
+  if (diff.ifVersion !== undefined) {
+    return { version: diff.ifVersion, via: "diff.ifVersion" }
+  }
+  const stamped = r.properties.targetVersion
+  return typeof stamped === "number"
+    ? { version: stamped, via: "targetVersion" }
+    : undefined
+}
+
+export interface TargetDrift extends EffectiveCAS {
   current: number
 }
 
-/** The target moved after the proposal was written. It is a WARNING, not a
- * refusal: the accept CAS's the patch against `targetVersion` and fails the
- * whole transition, so a stale request must be re-proposed rather than
- * force-accepted. Undefined when the versions agree or either is unknown. */
+/** The target moved past the version the accept will check it against. It is a
+ * WARNING, not a refusal the console invents: the accept CAS's the patch and
+ * fails the whole transition, so a stale request must be re-proposed rather
+ * than force-accepted. Undefined when the versions agree or either is unknown. */
 export function targetDrift(
   r: SubstrateRecord,
+  diff: ProposedDiff,
   target?: SubstrateRecord
 ): TargetDrift | undefined {
-  const proposedAgainst = r.properties.targetVersion
-  if (typeof proposedAgainst !== "number" || !target) return undefined
-  if (proposedAgainst === target.version) return undefined
-  return { proposedAgainst, current: target.version }
+  const cas = effectiveCAS(r, diff)
+  if (!cas || !target || cas.version === target.version) return undefined
+  return { ...cas, current: target.version }
 }
 
 // ── the decision patch ─────────────────────────────────────────────────────
@@ -368,7 +538,8 @@ export function applyConflict(r: SubstrateRecord): ApplyConflict | undefined {
 
 /** Properties only a PROPOSAL writes, so the manager of the first one present
  * is whoever proposed the change. `decision` is not among them: it is a state,
- * and states carry no manager row. */
+ * and states carry no manager row. Reads off `propertyMeta`, which ONLY the
+ * single-record read carries. */
 const PROPOSAL_PROPERTIES = [
   "diff",
   "op",

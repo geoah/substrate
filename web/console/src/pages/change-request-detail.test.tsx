@@ -218,10 +218,11 @@ describe("ChangeRequestDetailPage", () => {
     await screen.findByText("The request moved, or the apply was refused")
   })
 
-  it("warns when the target has moved past the version the diff was computed for", async () => {
+  it("warns when the target has moved past the stamped targetVersion", async () => {
     serve(patchRequest, { target: { ...target, version: 9 } })
     renderPage(<ChangeRequestDetailPage />)
-    await screen.findByText(/The target has moved since this diff was written/)
+    await screen.findByText(/The target has moved/)
+    expect(screen.getByText(/the stamped targetVersion/)).toBeTruthy()
   })
 
   it("surfaces the substrate/conflict annotation a refused apply left", async () => {
@@ -316,6 +317,109 @@ describe("ChangeRequestDetailPage", () => {
     renderPage(<ChangeRequestDetailPage />)
     await screen.findByText(/names an op the console does not know/)
     expect(screen.getByText("unknown op")).toBeTruthy()
+  })
+
+  it("renders a finalizer-only patch as work, not as 'applies nothing'", async () => {
+    serve(
+      request({
+        properties: {
+          targetVersion: 3,
+          diff: {
+            addFinalizers: ["owner/hold"],
+            removeFinalizers: ["app/lock"],
+          },
+        },
+        edges: {
+          target: [{ id: "task-1", kind: TASK_KIND, title: "Ship the inbox" }],
+        },
+      }),
+      { target }
+    )
+    renderPage(<ChangeRequestDetailPage />)
+
+    await screen.findByText("finalizers it adds")
+    expect(screen.getByText("owner/hold")).toBeTruthy()
+    expect(screen.getByText("finalizers it removes")).toBeTruthy()
+    expect(screen.getByText("app/lock")).toBeTruthy()
+    // No property is named, and that is not the same as applying nothing.
+    expect(await screen.findByText(/No property is named/)).toBeTruthy()
+    expect(screen.queryByText(/applies nothing/)).toBeNull()
+  })
+
+  it("compares against the diff's own ifVersion, which overrides the stamp", async () => {
+    serve(
+      request({
+        ...patchRequest,
+        properties: {
+          ...patchRequest.properties,
+          diff: {
+            properties: { summary: "New summary" },
+            ifVersion: 7,
+          },
+        },
+      }),
+      // The stamped targetVersion (3) agrees with the target, the diff's own
+      // ifVersion (7) does not: the accept checks 7, so the page must warn.
+      { target }
+    )
+    renderPage(<ChangeRequestDetailPage />)
+
+    await screen.findByText(/The target has moved/)
+    expect(
+      screen.getByText(/the diff's own ifVersion, which overrides/)
+    ).toBeTruthy()
+    expect(
+      screen.getByText("the version it checks the target against")
+    ).toBeTruthy()
+  })
+
+  it("renders a create edge's own properties, which the accept writes", async () => {
+    serve(
+      request({
+        properties: {
+          op: "create",
+          targetKind: TASK_KIND,
+          targetId: "task-9",
+          diff: {
+            properties: { summary: "Write it down" },
+            edges: [
+              {
+                rel: "assignee",
+                to: { id: "p1" },
+                properties: { since: "2026-08-14" },
+              },
+            ],
+          },
+        },
+      })
+    )
+    renderPage(<ChangeRequestDetailPage />)
+
+    await screen.findByText("assignee")
+    expect(screen.getByText("since")).toBeTruthy()
+    expect(screen.getByText("2026-08-14")).toBeTruthy()
+  })
+
+  it("says a malformed wrapper is unreadable instead of showing an empty diff", async () => {
+    serve(
+      request({
+        properties: { targetVersion: 3, diff: { properties: [] } },
+        edges: {
+          target: [{ id: "task-1", kind: TASK_KIND, title: "Ship the inbox" }],
+        },
+      }),
+      { target }
+    )
+    renderPage(<ChangeRequestDetailPage />)
+
+    await screen.findByText(/stored in a shape the substrate's decoder refuses/)
+    // The raw value, kept verbatim beside the key it was stored under.
+    expect(
+      screen.getByText("stored values the substrate's decoder cannot read")
+    ).toBeTruthy()
+    expect(screen.getByText("properties")).toBeTruthy()
+    expect(screen.getByText("[]")).toBeTruthy()
+    expect(screen.queryByText(/names nothing at all/)).toBeNull()
   })
 
   it("names the diff keys the substrate's strict decode would refuse", async () => {

@@ -11,17 +11,13 @@
  * `substrate/conflict`, so a rejected call means re-read, never retry. */
 
 import { CORE_AUTHORITY } from "./http"
-// The `decision` filter is the merge request's, because the state machine is:
-// both request kinds declare the same proposed → accepted|rejected property,
-// so one filter serves both collections rather than two that can drift.
-import { decisionFilter } from "./mergerequests"
 import {
   patchRecord,
   recordCountQueryOptions,
   recordQueryOptions,
   recordsQueryOptions,
 } from "./records"
-import type { SubstrateRecord } from "./types"
+import type { RecordFilter, SubstrateRecord } from "./types"
 import {
   decisionPatch,
   type Decision,
@@ -30,6 +26,23 @@ import {
 
 export const CR_PLURAL = "recordpatchrequests"
 export const CR_KIND = `${CORE_AUTHORITY}/recordpatchrequest`
+
+/** `decision` is a state property; states filter through `properties` like any
+ * other, one value as `eq` and several as `in`. No decision = the whole queue,
+ * decided included. THIS kind's states, not a filter borrowed from the merge
+ * queue: nothing holds the two declarations to the same set of states, so
+ * sharing one filter would be a coupling neither kind promises. */
+export function decisionFilter(
+  decision?: Decision | Decision[]
+): RecordFilter | undefined {
+  const list = Array.isArray(decision) ? decision : decision ? [decision] : []
+  if (!list.length) return undefined
+  return {
+    properties: {
+      decision: list.length === 1 ? { eq: list[0] } : { in: list },
+    },
+  }
+}
 
 export function changeRequestsQueryOptions(opts: {
   decision?: Decision | Decision[]

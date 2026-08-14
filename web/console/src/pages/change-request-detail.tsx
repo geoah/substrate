@@ -80,6 +80,7 @@ import { recordQueryOptions } from "@/lib/api/records"
 import { ApiError, type KindInfo, type SubstrateRecord } from "@/lib/api/types"
 import {
   DECISION_INITIAL,
+  appliesNothing,
   applyConflict,
   changeOp,
   changeTarget,
@@ -89,6 +90,8 @@ import {
   decisionOf,
   deriveChangeRows,
   describeProposedEdge,
+  diffCannotApply,
+  diffNamesNothing,
   proposedDiff,
   proposerOf,
   rationaleOf,
@@ -99,6 +102,7 @@ import {
   type ChangeTargetRef,
   type ProposedDiff,
   type ProposedEdge,
+  type UnreadableField,
   type Verdict,
 } from "@/lib/changerequests"
 import { kindByIdentity, splitKind } from "@/lib/definition"
@@ -228,9 +232,13 @@ function FieldCell({ row }: { row: ChangeRow }) {
 function BeforeAfter({
   rows,
   target,
+  emptyText,
 }: {
   rows: ChangeRow[]
   target?: ChangeTargetRef
+  /** What an EMPTY table means here, which is never simply "nothing": a
+   * refused decode, or a change that lives in the labels/finalizers instead. */
+  emptyText: string
 }) {
   return (
     <div className="mx-6 mb-4 overflow-x-auto rounded-md border">
@@ -275,8 +283,7 @@ function BeforeAfter({
                 colSpan={4}
                 className="px-4 text-xs text-muted-foreground"
               >
-                The diff names no property, so accepting would apply nothing:
-                the substrate refuses that decision.
+                {emptyText}
               </TableCell>
             </TableRow>
           )}
@@ -306,6 +313,74 @@ function BeforeAfter({
   )
 }
 
+/** One edge a create would write, with the EDGE's own properties beside it:
+ * they are reviewed content like any value, and the accept writes them. */
+function EdgeRows({ edges, kind }: { edges: ProposedEdge[]; kind?: KindInfo }) {
+  return (
+    <>
+      {edges.map((edge) => {
+        const declaration = describeProposedEdge(edge, kind)
+        const props = Object.entries(edge.properties ?? {})
+        return (
+          <TableRow key={`edge-${edge.rel}-${edge.id}`}>
+            <TableCell className="pl-4 align-top">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <span className="block truncate data text-muted-foreground" />
+                  }
+                >
+                  {edge.rel}
+                </TooltipTrigger>
+                <TooltipContent className="max-w-72">
+                  {declaration.description ??
+                    (declaration.declared
+                      ? "declared edge"
+                      : "not declared by the target's kind")}
+                </TooltipContent>
+              </Tooltip>
+            </TableCell>
+            <TableCell className="pr-4 align-top">
+              <span className="flex min-w-0 flex-col gap-1">
+                <span className="flex min-w-0 items-baseline gap-1.5">
+                  <span className="text-muted-foreground" aria-hidden>
+                    →
+                  </span>
+                  <span className="min-w-0 truncate data" title={edge.id}>
+                    {edge.id}
+                  </span>
+                  {edge.kind && (
+                    <span className="shrink-0 data text-xs text-muted-foreground">
+                      {splitKind(edge.kind).name}
+                    </span>
+                  )}
+                </span>
+                {props.length > 0 && (
+                  <span className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 pl-4 text-xs">
+                    {props.map(([key, value]) => (
+                      <span key={key} className="contents">
+                        <span className="max-w-40 truncate data text-muted-foreground">
+                          {key}
+                        </span>
+                        <span
+                          className="min-w-0 truncate data"
+                          title={cellValue(value)}
+                        >
+                          {value === null ? "removed" : cellValue(value)}
+                        </span>
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </span>
+            </TableCell>
+          </TableRow>
+        )
+      })}
+    </>
+  )
+}
+
 /** The proposed values alone: the record a create would mint, and the fallback
  * whenever the live target cannot be read (a value with nothing to compare it
  * to must not be dressed up as a comparison). */
@@ -314,11 +389,15 @@ function ProposedValues({
   edges,
   kind,
   caption,
+  emptyText,
 }: {
   rows: ChangeRow[]
   edges: ProposedEdge[]
   kind?: KindInfo
   caption: string
+  /** What an EMPTY table means here, which is never simply "nothing": a
+   * refused decode, or a change that lives in the labels/finalizers instead. */
+  emptyText: string
 }) {
   return (
     <div className="mx-6 mb-4 overflow-x-auto rounded-md border">
@@ -338,8 +417,7 @@ function ProposedValues({
                 colSpan={2}
                 className="px-4 text-xs text-muted-foreground"
               >
-                The diff names nothing at all, so there is nothing here to
-                review.
+                {emptyText}
               </TableCell>
             </TableRow>
           )}
@@ -353,45 +431,7 @@ function ProposedValues({
               </TableCell>
             </TableRow>
           ))}
-          {edges.map((edge) => {
-            const declaration = describeProposedEdge(edge, kind)
-            return (
-              <TableRow key={`edge-${edge.rel}-${edge.id}`}>
-                <TableCell className="pl-4 align-top">
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <span className="block truncate data text-muted-foreground" />
-                      }
-                    >
-                      {edge.rel}
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-72">
-                      {declaration.description ??
-                        (declaration.declared
-                          ? "declared edge"
-                          : "not declared by the target's kind")}
-                    </TooltipContent>
-                  </Tooltip>
-                </TableCell>
-                <TableCell className="pr-4 align-top">
-                  <span className="flex min-w-0 items-baseline gap-1.5">
-                    <span className="text-muted-foreground" aria-hidden>
-                      →
-                    </span>
-                    <span className="min-w-0 truncate data" title={edge.id}>
-                      {edge.id}
-                    </span>
-                    {edge.kind && (
-                      <span className="shrink-0 data text-xs text-muted-foreground">
-                        {splitKind(edge.kind).name}
-                      </span>
-                    )}
-                  </span>
-                </TableCell>
-              </TableRow>
-            )
-          })}
+          <EdgeRows edges={edges} kind={kind} />
         </TableBody>
       </Table>
     </div>
@@ -561,6 +601,20 @@ function DecisionDialog({
   )
 }
 
+/** What an empty value table means, which is never simply "nothing proposed":
+ * the decode refuses part of the diff, or the change is real but lives in the
+ * labels, annotations or finalizers listed under the table, or the diff truly
+ * names nothing and the substrate will refuse the accept for it. */
+function emptyTableText(diff: ProposedDiff, blocked: boolean): string {
+  if (blocked) {
+    return "Nothing readable here: what the diff carries is listed below, as it is stored."
+  }
+  if (!diffNamesNothing(diff)) {
+    return "No property is named. What the accept would write is listed under this table."
+  }
+  return "The diff names nothing at all, so accepting would apply nothing: the substrate refuses that decision."
+}
+
 // ── the page ────────────────────────────────────────────────────────────────
 
 /** The live target, read only where there is one to read: a create's target
@@ -670,8 +724,13 @@ export function ChangeRequestDetailPage() {
   const conflict = applyConflict(request)
 
   const targetRecord = targetSide.query.data
-  const drift = op === "patch" ? targetDrift(request, targetRecord) : undefined
+  // The CAS the accept will actually use, which is the diff's own `ifVersion`
+  // wherever it carries one: only a patch checks it.
+  const drift =
+    op === "patch" ? targetDrift(request, diff, targetRecord) : undefined
   const comparable = op === "patch" && Boolean(targetRecord)
+  const blocked = diffCannotApply(diff)
+  const emptyText = emptyTableText(diff, blocked)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -807,15 +866,30 @@ export function ChangeRequestDetailPage() {
           </Warning>
         )}
 
+        {/* Independent of the refused-key warning: a diff can carry both, and
+            each is its own reason no accept can succeed. */}
+        {diff.malformed.length > 0 && (
+          <Warning>
+            <p>
+              Part of this diff is stored in a shape the substrate's decoder
+              refuses, so no accept can succeed until it is proposed again: the
+              keys and their stored values are listed below.
+            </p>
+          </Warning>
+        )}
+
         {drift && (
           <Warning>
             <p>
-              The target has moved since this diff was written: it was computed
-              against version{" "}
-              <span className="data">{drift.proposedAgainst}</span> and the
-              record is now at <span className="data">{drift.current}</span>.
-              Accepting is REFUSED while they differ, rather than overwriting a
-              write nobody reviewed, so the change has to be proposed again.
+              The target has moved. The accept checks it against version{" "}
+              <span className="data">{drift.version}</span>
+              {drift.via === "diff.ifVersion"
+                ? " (the diff's own ifVersion, which overrides the stamped targetVersion)"
+                : " (the stamped targetVersion)"}
+              , and the record is now at{" "}
+              <span className="data">{drift.current}</span>. Accepting is
+              REFUSED while they differ, rather than overwriting a write nobody
+              reviewed, so the change has to be proposed again.
             </p>
           </Warning>
         )}
@@ -853,6 +927,7 @@ export function ChangeRequestDetailPage() {
             loading={targetSide.query.isLoading}
             error={targetSide.query.error?.message}
             kindMissing={Boolean(target && !targetSide.kind)}
+            emptyText={emptyText}
           />
         )}
 
@@ -897,10 +972,12 @@ export function ChangeRequestDetailPage() {
             edges={op === "create" ? diff.edges : []}
             kind={targetSide.kind}
             caption="proposed value"
+            emptyText={emptyText}
           />
         )}
 
         <ExtraDiffKeys diff={diff} />
+        <UnreadableFields fields={diff.malformed} />
       </ScrollArea>
 
       {confirming && (
@@ -931,6 +1008,7 @@ function PatchBody({
   loading,
   error,
   kindMissing,
+  emptyText,
 }: {
   request: SubstrateRecord
   diff: ProposedDiff
@@ -942,6 +1020,7 @@ function PatchBody({
   loading: boolean
   error?: string
   kindMissing: boolean
+  emptyText: string
 }) {
   const rows = useMemo(
     () =>
@@ -952,13 +1031,10 @@ function PatchBody({
       ),
     [diff.properties, comparable, targetRecord, targetKind]
   )
-  // A patch whose every row is a no-op fails the accept: the write path refuses
-  // a green decision that applied nothing.
-  const noop =
-    op === "patch" &&
-    comparable &&
-    rows.length > 0 &&
-    rows.every((r) => r.effect === "unchanged")
+  // A patch that would apply nothing fails the accept: the write path refuses a
+  // green decision that changed nothing. A label, an annotation or a finalizer
+  // riding along means it DOES apply something, so the warning stays quiet.
+  const noop = op === "patch" && comparable && appliesNothing(diff, rows)
 
   if (op === "patch" && !comparable) {
     if (loading) {
@@ -984,6 +1060,7 @@ function PatchBody({
           edges={[]}
           kind={targetKind}
           caption="proposed value"
+          emptyText={emptyText}
         />
       </>
     )
@@ -1013,13 +1090,14 @@ function PatchBody({
           the console cannot read, show the proposed values alone rather than
           dressing them up as a comparison with nothing. */}
       {op === "patch" ? (
-        <BeforeAfter rows={rows} target={target} />
+        <BeforeAfter rows={rows} target={target} emptyText={emptyText} />
       ) : (
         <ProposedValues
           rows={rows}
           edges={op === "create" ? diff.edges : []}
           kind={targetKind}
           caption={op === "create" ? "the accept writes" : "proposed value"}
+          emptyText={emptyText}
         />
       )}
     </>
@@ -1063,16 +1141,35 @@ function DeleteSummary({
   )
 }
 
-/** Labels and annotations a diff carries beside its properties: rarer than
- * properties, and invisible in the before/after table, so they are said out
- * loud rather than applied unseen. */
+/** Everything else the accept would write or check, none of which fits the
+ * property table: labels, annotations, the finalizers a patch adds or removes,
+ * and the diff's own `ifVersion` (which OVERRIDES the stamped targetVersion, so
+ * a reviewer must be able to see it). Applied unseen is not an option. */
 function ExtraDiffKeys({ diff }: { diff: ProposedDiff }) {
-  const groups: Array<[string, Record<string, unknown>]> = []
+  const groups: Array<[string, Array<[string, unknown]>]> = []
   if (diff.labels && Object.keys(diff.labels).length) {
-    groups.push(["labels", diff.labels])
+    groups.push(["labels", Object.entries(diff.labels)])
   }
   if (diff.annotations && Object.keys(diff.annotations).length) {
-    groups.push(["annotations", diff.annotations])
+    groups.push(["annotations", Object.entries(diff.annotations)])
+  }
+  if (diff.addFinalizers.length) {
+    groups.push([
+      "finalizers it adds",
+      diff.addFinalizers.map((f) => [f, "added"] as [string, unknown]),
+    ])
+  }
+  if (diff.removeFinalizers.length) {
+    groups.push([
+      "finalizers it removes",
+      diff.removeFinalizers.map((f) => [f, "removed"] as [string, unknown]),
+    ])
+  }
+  if (diff.ifVersion !== undefined) {
+    groups.push([
+      "the version it checks the target against",
+      [["ifVersion", diff.ifVersion]],
+    ])
   }
   if (!groups.length) return null
   return (
@@ -1080,10 +1177,12 @@ function ExtraDiffKeys({ diff }: { diff: ProposedDiff }) {
       {groups.map(([name, values]) => (
         <div key={name}>
           <p className="text-xs text-muted-foreground">
-            the accept also writes {name}
+            {name === "labels" || name === "annotations"
+              ? `the accept also writes ${name}`
+              : name}
           </p>
           <div className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
-            {Object.entries(values).map(([key, value]) => (
+            {values.map(([key, value]) => (
               <span key={key} className="contents">
                 <span className="max-w-40 truncate data text-muted-foreground">
                   {key}
@@ -1096,6 +1195,36 @@ function ExtraDiffKeys({ diff }: { diff: ProposedDiff }) {
           </div>
         </div>
       ))}
+    </div>
+  )
+}
+
+/** What the diff carries where the decode expects a shape and finds another:
+ * the key and the raw value, verbatim. The accept fails the strict decode on
+ * every one of these, so the reviewer sees WHAT is wrong rather than a table
+ * that looks merely empty. */
+function UnreadableFields({ fields }: { fields: UnreadableField[] }) {
+  if (!fields.length) return null
+  return (
+    <div className="mx-6 mb-4 rounded-md border border-warning/40 px-4 py-3 text-sm">
+      <p className="text-xs text-muted-foreground">
+        stored values the substrate's decoder cannot read
+      </p>
+      <div className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
+        {fields.map((field) => {
+          const raw = JSON.stringify(field.raw) ?? String(field.raw)
+          return (
+            <span key={field.key} className="contents">
+              <span className="max-w-40 truncate data text-warning">
+                {field.key}
+              </span>
+              <span className="min-w-0 truncate data" title={raw}>
+                {raw}
+              </span>
+            </span>
+          )
+        })}
+      </div>
     </div>
   )
 }
