@@ -68,14 +68,16 @@ func TestHostFunctionsAreSeededAsRecords(t *testing.T) {
 			t.Fatalf("%s declares no arguments: %v", id, row.Properties)
 		}
 	}
-	// propose is the one with an emit of its own, because it writes one kind and
-	// always the same one; mutate declares none, since the ceiling is its caller's.
-	if emit, _ := rows[vocabulary.HostFunctionPropose].Properties["emit"].([]any); len(emit) != 1 ||
-		emit[0] != vocabulary.KindRecordPatchRequest {
-		t.Fatalf("propose emit = %v", rows[vocabulary.HostFunctionPropose].Properties["emit"])
+	// propose is the one with a write permission of its own, because it writes one
+	// kind and always the same one; mutate declares none, since the ceiling is its
+	// caller's.
+	perms, _ := rows[vocabulary.HostFunctionPropose].Properties["permissions"].(map[string]any)
+	if writes, _ := perms["writes"].([]any); len(writes) != 1 ||
+		writes[0] != vocabulary.KindRecordPatchRequest {
+		t.Fatalf("propose permissions = %v", rows[vocabulary.HostFunctionPropose].Properties["permissions"])
 	}
-	if _, has := rows[vocabulary.HostFunctionMutate].Properties["emit"]; has {
-		t.Fatal("mutate declares an emit of its own — the ceiling is the calling agent's")
+	if _, has := rows[vocabulary.HostFunctionMutate].Properties["permissions"]; has {
+		t.Fatal("mutate declares a grant of its own; the ceiling is the calling agent's")
 	}
 }
 
@@ -184,7 +186,7 @@ func preHostKindsDir(t *testing.T) string {
 		}
 		body := string(raw)
 		if e.Name() == "function.yaml" {
-			body = strings.Replace(body, "  version: v1alpha5\n", "  version: v1alpha4\n", 1)
+			body = strings.Replace(body, "  version: v1alpha6\n", "  version: v1alpha4\n", 1)
 			body = strings.Replace(body, "        - go\n        - host\n", "        - go\n", 1)
 			body = strings.Replace(body,
 				"      fts: false\n      description: the inline body, on an inline runtime\n",
@@ -414,7 +416,7 @@ func TestTriggerWarnsWhenTheOutputIsDiscarded(t *testing.T) {
 		vocabulary.FunctionManifest("pure.test.dev", "stamper", map[string]any{
 			"description": "stamps a gizmo",
 			"runtime":     vocabulary.RuntimePython,
-			"emit":        []any{"pure.test.dev/gizmo"},
+			"permissions": map[string]any{"writes": []any{"pure.test.dev/gizmo"}},
 			"source":      "def main(input, host): return {\"effects\": []}",
 		}),
 	}

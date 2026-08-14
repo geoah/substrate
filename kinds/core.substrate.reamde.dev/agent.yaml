@@ -31,7 +31,7 @@ data:
   # withholding (an llm-as-judge exists to be called by other agents); the
   # bump carries the column into repositories that stored the v1alpha4 shape.
   # v1alpha6: TYPED. `definition` and the `functions`/`subagents` mirrors are
-  # gone; the manifest's own keys — params, tools, budgets, emit, reads — are
+  # gone; the manifest's own keys (params, tools, budgets and the grants) are
   # properties, and `name` left with them (a declaration's local name is its
   # id's last segment, which is what `{localName}` renders).
   # v1alpha7: the `builtin` field left `tools`. The four built-ins are function
@@ -40,7 +40,10 @@ data:
   # narrowing, and this one is safe because dialect 2 has never shipped in a
   # release: no store outside our own development instances holds a row with the
   # field, and the dialect rung rewrites the ones that do.
-  version: v1alpha7
+  # v1alpha8: `emit` and `reads` became one `permissions` object, and `emit` is
+  # `writes` inside it: the same grouping a function's five grants took, and
+  # safe for the same reason v1alpha7 was.
+  version: v1alpha8
   names:
     singular: agent
     plural: agents
@@ -144,34 +147,44 @@ data:
           min: 1
           max: 3
           description: how deep the sub-agent chain below may go
-    emit:
-      type: string
-      repeated: true
-      refersTo: kind
-      description: the kinds this agent's tool-call effects may address
-    reads:
+    # THE GRANT, in one object, spelled the way a function's is: an agent has
+    # no body of its own to spend, so it carries two of the five, what it may
+    # read and what it may write.
+    permissions:
       type: object
-      description: what the `query` built-in may touch; absent withholds it
+      description: what this agent is allowed to do while it runs; leave a
+        grant out and what it covers is refused
       fields:
-        kinds:
+        reads:
+          type: object
+          description: which record kinds this agent may read, and how much;
+            leave it out and the query tool is withheld
+          fields:
+            kinds:
+              type: string
+              repeated: true
+              refersTo: kind
+              description: the record kinds every read is held to
+            budgets:
+              type: object
+              description: how much one run may read
+              fields:
+                calls:
+                  type: int
+                  min: 1
+                  max: 1000
+                  description: how many reads one run may make
+                rows:
+                  type: int
+                  min: 1
+                  max: 10000
+                  description: how many records one run may read
+        writes:
           type: string
           repeated: true
           refersTo: kind
-          description: the kinds every read is held to
-        budgets:
-          type: object
-          description: what one invocation's reads may spend
-          fields:
-            calls:
-              type: int
-              min: 1
-              max: 1000
-              description: host read calls per invocation
-            rows:
-              type: int
-              min: 1
-              max: 10000
-              description: rows read per invocation
+          description: which record kinds it may create or change, the change
+            requests it proposes among them
     # Withholds the agent from the interactive chat surface only: the console
     # keeps it off the chat list and the chat API refuses it, while sub-agent
     # calls, the call API and triggers still dispatch it. Any agent, marked or

@@ -28,7 +28,10 @@ data:
   # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
-  version: v1alpha2
+  # v1alpha3: the grants group under one `permissions:` object, and the permission
+  # to write is `writes:` inside it. This closure's functions and agents
+  # follow core's declaration.
+  version: v1alpha3
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members: the two config types,
@@ -439,13 +442,14 @@ data:
     records, and stamp the account's lastSyncedAt/syncStatus.
   runtime: python
   timeoutMs: 30000
-  emit:
-    - whoop.bundles.substrate.reamde.dev/recovery
-    - whoop.bundles.substrate.reamde.dev/sleep
-    - whoop.bundles.substrate.reamde.dev/workout
-    - whoop.bundles.substrate.reamde.dev/account
-  network:
-    - "api.prod.whoop.com"
+  permissions:
+    writes:
+      - whoop.bundles.substrate.reamde.dev/recovery
+      - whoop.bundles.substrate.reamde.dev/sleep
+      - whoop.bundles.substrate.reamde.dev/workout
+      - whoop.bundles.substrate.reamde.dev/account
+    network:
+      - "api.prod.whoop.com"
   source: |
     # /// script
     # requires-python = ">=3.11"

@@ -123,7 +123,7 @@ type Repository struct {
 	Owner string `json:"owner"`
 }
 
-// Budgets mirrors the manifest's `capabilities.reads.budgets`.
+// Budgets mirrors the manifest's `permissions.reads.budgets`.
 type Budgets struct {
 	Calls int `json:"calls"`
 	Rows  int `json:"rows"`
@@ -310,7 +310,7 @@ func (h *Host) Search(params map[string]any) ([]any, error) {
 }
 
 // Call invokes another function by full identity — gated by the manifest's
-// `capabilities.call` allowlist and charged against the call budget — and
+// `permissions.call` allowlist and charged against the call budget, and
 // returns its output. The callee's effects apply in THIS delivery's
 // transaction.
 func (h *Host) Call(function string, args any) (any, error) {
@@ -506,7 +506,7 @@ func (e *Records) Search(s SearchQuery) ([]ReadHit, error) {
 // SearchRaw is the untyped escape hatch: the hits as a slice of any.
 func (e *Records) SearchRaw(s SearchQuery) ([]any, error) { return e.host.Search(s.params()) }
 
-// Functions is function-to-function composition, gated by capabilities.call.
+// Functions is function-to-function composition, gated by permissions.call.
 // The callee's effects accumulate into THIS delivery's transaction.
 type Functions struct{ host *Host }
 
@@ -709,7 +709,7 @@ func (e *Effects) Unlink(u UnlinkEffect) *Staged {
 }
 
 // Merge stages a merge (id is the winner, loser is folded into it); needs the
-// capabilities.mutations grant, enforced by the engine.
+// permissions.mutations grant, enforced by the engine.
 func (e *Effects) Merge(kind, id, loser string) *Staged {
 	if err := validKind("merge", kind); err != nil {
 		return e.fail(err)
@@ -761,7 +761,7 @@ type ProposeEffect struct {
 
 // Propose stages the put of a change request the owner decides on: no write
 // lands until somebody accepts it. It is ordinary sugar — the effect is a put
-// of KindRecordPatchRequest, held to `capabilities.emit` by that kind like any
+// of KindRecordPatchRequest, held to `permissions.writes` by that kind like any
 // other, so a proposing function names the request kind in its emit and needs
 // nothing else. A patch or delete points at its target through the request's
 // `target` edge; a create names targetKind/targetId, because the record it

@@ -275,7 +275,7 @@ func (b *callBackend) ResolveKind(name string) string {
 }
 
 // Call runs another function to completion inside this invocation. The
-// runner already gated the caller's `capabilities.call` allowlist and
+// runner already gated the caller's `permissions.call` allowlist and
 // charged its call budget; the engine's half gates depth, recursion and the
 // callee's declared input/output shapes. The callee's effects accumulate on
 // the shared invocation — they apply in the ROOT delivery's transaction —

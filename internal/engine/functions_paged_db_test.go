@@ -42,7 +42,7 @@ func openPagedDataset(t *testing.T, authority, source string) (*dataset, string)
 			vocabulary.FunctionManifest(authority, "page", map[string]any{
 				"description": "a paged backfill body",
 				"runtime":     vocabulary.RuntimePython,
-				"emit":        []any{"tasks.substrate.reamde.dev/task"},
+				"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 				"source":      source,
 			}),
 		},

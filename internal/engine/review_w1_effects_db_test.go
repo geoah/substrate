@@ -314,7 +314,7 @@ func TestSchemaApplyRejectsUnpreparableBody(t *testing.T) {
 					"description": "a body that must compile at registration",
 					"runtime":     vocabulary.RuntimePython,
 					"source":      source,
-					"emit":        []any{raceWidget},
+					"permissions": map[string]any{"writes": []any{raceWidget}},
 				}),
 			},
 		}

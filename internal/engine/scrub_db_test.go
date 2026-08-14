@@ -36,7 +36,7 @@ func installVaultBundle(t *testing.T) substrate.Dataset {
 			"description": "test function " + name,
 			"runtime":     vocabulary.RuntimePython,
 			"source":      source,
-			"emit":        []any{vConfigType},
+			"permissions": map[string]any{"writes": []any{vConfigType}},
 		})
 	}
 	// noteFn emits the plain vaultnote type (and may host-call a target): the
@@ -44,10 +44,10 @@ func installVaultBundle(t *testing.T) substrate.Dataset {
 	noteFn := func(name string, call []any, source string) map[string]any {
 		data := map[string]any{
 			"description": "test function " + name, "runtime": vocabulary.RuntimePython,
-			"source": source, "emit": []any{vNoteType},
+			"source": source, "permissions": map[string]any{"writes": []any{vNoteType}},
 		}
 		if call != nil {
-			data["call"] = call
+			data["permissions"].(map[string]any)["call"] = call
 		}
 		return vocabulary.FunctionManifest(vAuthority, name, data)
 	}

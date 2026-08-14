@@ -62,7 +62,7 @@ type probeFn struct {
 func (f probeFn) document() string {
 	net := ""
 	if len(f.network) > 0 {
-		net = "\n  network:\n" + indent(f.network, "    - ")
+		net = "\n    network:\n" + indent(f.network, "      - ")
 	}
 	return fmt.Sprintf(`kind: core.substrate.reamde.dev/function
 metadata: {id: %s/%s}
@@ -71,7 +71,8 @@ data:
   description: a sandbox probe
   runtime: python
   timeoutMs: 20000
-  emit: [%s/note]%s
+  permissions:
+    writes: [%s/note]%s
   source: |
 %s
 `, probeAuthority, f.name, probeAuthority, probeAuthority, net, blockScalar(f.source))
@@ -150,7 +151,7 @@ def main(input, host):
 	}
 }
 
-// capabilities.network, enforced through the whole stack: the manifest says
+// permissions.network, enforced through the whole stack: the manifest says
 // nothing about egress, so the body gets none, and the same body with a
 // declaration gets its socket.
 func TestNetworkCapabilityIsEnforcedEndToEnd(t *testing.T) {

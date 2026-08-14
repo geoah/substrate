@@ -14,7 +14,7 @@ import (
 // A function is the seventh manifest kind: a pure reusable CALLABLE — a named
 // piece of real code, inline Python or Go source on the manifest (`runtime:`
 // + `source:`) — with a model-facing `description`, optional `arguments:` and
-// `returns:` shapes, and a capability envelope (emit, reads, call, network,
+// `returns:` shapes, and a `permissions:` grant (reads, writes, call, network,
 // mutations). A function has NO subscription:
 // what fires it is a `trigger` data record (core.substrate.reamde.dev), which
 // owns the cursor, retries, parking and replay. The body executes in the
@@ -55,9 +55,9 @@ const (
 	HostFunctionMutate  = AuthorityCore + "/mutate"
 )
 
-// The capability-gated identity mutations (`mutations:`). The
+// The capability-gated identity mutations (`permissions.mutations`). The
 // five ordinary effects — put, patch, delete, link, unlink — are granted by
-// `emit:` alone; merge and split need this explicit grant.
+// `permissions.writes` alone; merge and split need this explicit grant.
 const (
 	MutationMerge = "merge"
 	MutationSplit = "split"
@@ -531,10 +531,9 @@ func checkValue(path string, schema map[string]any, v any) error {
 var functionDataKeys = map[string]bool{
 	"authority": true, "description": true, "runtime": true, "source": true,
 	"timeoutMs": true,
-	// The IO shapes and the capability envelope ride `data` itself: the flat
-	// argument lists, and the five keys of functionCapsKeys.
-	"arguments": true, "returns": true,
-	"emit": true, "reads": true, "call": true, "network": true, "mutations": true,
+	// The IO shapes are `data`'s own; the grant is ONE key beside them, holding
+	// the five of functionPermissionKeys.
+	"arguments": true, "returns": true, "permissions": true,
 }
 
 // deletedFunctionKeys are the removed keys, each naming what replaced it: the
@@ -548,16 +547,21 @@ var deletedFunctionKeys = map[string]string{
 	"on":           "a trigger record (core.substrate.reamde.dev) — the subscription lives on the trigger, the function is a pure callable",
 	"when":         "trigger source.record.when — the guard lives on the trigger record",
 	"coalesce":     "trigger source.record.coalesce — coalescing lives on the trigger record",
-	"capabilities": "emit, reads, call, network and mutations on `data` itself — one grant, declared once, at the level the declaration declares it",
+	"capabilities": "permissions: the grant is one object, and its keys are reads, writes, call, network and mutations",
 	"input":        "arguments — a flat LIST of named arguments ({name, type}), so the tool card is valid by construction",
 	"output":       "returns — the same flat list on the result side",
+	"emit":         "permissions.writes: the grants group under `permissions:`, and the permission to write is named for writing",
+	"reads":        "permissions.reads: the grants group under `permissions:`",
+	"call":         "permissions.call: the grants group under `permissions:`",
+	"network":      "permissions.network: the grants group under `permissions:`",
+	"mutations":    "permissions.mutations: the grants group under `permissions:`",
 }
 
-// functionCapsKeys is the capability envelope's five keys, each declared on
-// `data` itself. The sorted order of the set is the order the loader reads them
-// in, so a document with two problems reports the same one on every run.
-var functionCapsKeys = map[string]bool{
-	"emit": true, "reads": true, "call": true, "network": true, "mutations": true,
+// functionPermissionKeys is the grant object's five keys. The sorted order of
+// the set is the order the loader reads them in, so a document with two
+// problems reports the same one on every run.
+var functionPermissionKeys = map[string]bool{
+	"reads": true, "writes": true, "call": true, "network": true, "mutations": true,
 }
 
 var functionReadsKeys = map[string]bool{"kinds": true, "budgets": true}
@@ -658,71 +662,89 @@ func (l *loader) parseFunctionBody(where string, data map[string]any, fn *Functi
 	return true
 }
 
-// parseFunctionCaps reads the capability envelope. `emit` is OPTIONAL, and an
-// absent one is a function that writes nothing: a pure function returns its
-// output and stages no effect, which the emit gate then refuses every effect
-// against. It used to be required and non-empty, which taught authors to declare
-// a kind they never wrote to (firecrawl's websearch declared `webdocument` and
-// apologized for it in a comment).
+// parseFunctionCaps reads the capability envelope out of `permissions:`.
+// `writes` is OPTIONAL, and an absent one is a function that writes nothing: a
+// pure function returns its output and stages no effect, which the emit gate
+// then refuses every effect against. It used to be required and non-empty, which
+// taught authors to declare a kind they never wrote to (firecrawl's websearch
+// declared `webdocument` and apologized for it in a comment).
 //
-// The five keys ride `data` itself — the `capabilities:` wrapper is a deleted key
-// (deletedFunctionKeys) — so one grant is declared once, in one place, and the
-// path a refusal names is `data.<key>` with nothing to remember.
+// ONE object holds all five, because a bare `emit:` beside `returns:` said
+// nothing about being a permission and read as the output shape. The
+// `capabilities:` wrapper and the five hoisted spellings are deleted keys
+// (deletedFunctionKeys), so a refusal names `data.permissions.<key>` and there
+// is one place to look.
 func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Function) *Function {
-	caps := map[string]any{}
-	for k := range functionCapsKeys {
-		if v, declared := data[k]; declared {
-			caps[k] = v
-		}
-	}
-	if _, isList := caps["emit"].(map[string]any); isList {
-		l.errf("%s: data.emit: a LIST of full type identities", where)
+	perms, ok := l.permissionsObject(where, data, functionPermissionKeys)
+	if !ok {
 		return nil
 	}
-	for i, ev := range mslice(caps, "emit") {
+	if _, isMap := perms["writes"].(map[string]any); isMap {
+		l.errf("%s: data.permissions.writes: a LIST of full type identities", where)
+		return nil
+	}
+	for i, ev := range mslice(perms, "writes") {
 		t := fmt.Sprint(ev)
 		if !ValidKindReference(t) {
-			l.errf("%s: data.emit[%d]: %q — emit names kinds, bare or authority-qualified, no globs", where, i, t)
+			l.errf("%s: data.permissions.writes[%d]: %q is not a kind; writes names them, bare or authority-qualified, no globs", where, i, t)
 			continue
 		}
 		fn.Caps.Emit = append(fn.Caps.Emit, t)
 	}
-	for i, cv := range mslice(caps, "call") {
+	for i, cv := range mslice(perms, "call") {
 		ident := fmt.Sprint(cv)
 		if !Qualified(ident) || strings.Contains(ident, "*") {
-			l.errf("%s: data.call[%d]: %q — call names full function identities, no globs", where, i, ident)
+			l.errf("%s: data.permissions.call[%d]: %q is not a full function identity; call names them, no globs", where, i, ident)
 			continue
 		}
 		fn.Caps.Call = append(fn.Caps.Call, ident)
 	}
-	for i, nv := range mslice(caps, "network") {
+	for i, nv := range mslice(perms, "network") {
 		pat := fmt.Sprint(nv)
 		if pat == "" {
-			l.errf("%s: data.network[%d]: empty pattern", where, i)
+			l.errf("%s: data.permissions.network[%d]: empty pattern", where, i)
 			continue
 		}
 		fn.Caps.Network = append(fn.Caps.Network, pat)
 	}
-	for i, mv := range mslice(caps, "mutations") {
+	for i, mv := range mslice(perms, "mutations") {
 		m := fmt.Sprint(mv)
 		if !functionMutations[m] {
-			l.errf("%s: data.mutations[%d]: %q — merge and split are the gated mutations; put/patch/delete/link/unlink ride emit alone", where, i, m)
+			l.errf("%s: data.permissions.mutations[%d]: %q is not one of merge, split, the gated mutations; put/patch/delete/link/unlink ride permissions.writes alone", where, i, m)
 			continue
 		}
 		fn.Caps.Mutations = append(fn.Caps.Mutations, m)
 	}
-	if !l.parseReads(where, caps, fn) {
+	if !l.parseReads(where, perms, fn) {
 		return nil
 	}
 	return fn
 }
 
-// parseReads reads the optional read capability off an envelope. Both callers
-// carry it at `data.reads` (a function's capability key, and an agent's beside
-// its tools), so the path a refusal names is that one, spelled here.
-func (l *loader) parseReads(where string, caps map[string]any, fn *Function) bool {
-	const path = "data.reads"
-	rv, has := caps["reads"]
+// permissionsObject reads the `permissions:` grant off a declaration's data,
+// held to the key set its kind admits. An absent one is the empty grant, which
+// is what a declaration that asks for nothing means; a value that is not an
+// object refuses, since a list of words would name grants nothing enforces.
+func (l *loader) permissionsObject(where string, data map[string]any, keys map[string]bool) (map[string]any, bool) {
+	raw, declared := data["permissions"]
+	if !declared {
+		return map[string]any{}, true
+	}
+	perms := asMapOrNil(raw)
+	if perms == nil {
+		l.errf("%s: data.permissions: an OBJECT of grants (%s), got %T", where, strings.Join(sortedKeys(mapOfAny(keys)), ", "), raw)
+		return nil, false
+	}
+	l.checkKeys(where+": data.permissions", perms, keys)
+	return perms, true
+}
+
+// parseReads reads the optional read capability off a grant. Both callers carry
+// it at `data.permissions.reads` (a function's and an agent's are the same
+// shape), so the path a refusal names is that one, spelled here.
+func (l *loader) parseReads(where string, perms map[string]any, fn *Function) bool {
+	const path = "data.permissions.reads"
+	rv, has := perms["reads"]
 	if !has {
 		return true
 	}
@@ -771,7 +793,7 @@ func (l *loader) boundedInt(where string, m map[string]any, key string, def, lim
 }
 
 // resolveFunction validates a function against the loaded registry: every
-// emit kind and read kind must exist, and every call target must be a
+// written kind and read kind must exist, and every call target must be a
 // registered function (same-batch installs count — resolution runs over the
 // whole candidate).
 //
@@ -787,7 +809,7 @@ func (r *Registry) resolveFunction(f *Function) []string {
 	for i, t := range f.Caps.Emit {
 		ty, err := r.Resolve(t)
 		if err != nil || ty == nil {
-			problems = append(problems, fmt.Sprintf("%s: data.emit: unknown type %q", where, t))
+			problems = append(problems, fmt.Sprintf("%s: data.permissions.writes: unknown type %q", where, t))
 			continue
 		}
 		f.Caps.Emit[i] = ty.Identity
@@ -796,7 +818,7 @@ func (r *Registry) resolveFunction(f *Function) []string {
 		for i, t := range f.Caps.Reads.Kinds {
 			ty, err := r.Resolve(t)
 			if err != nil || ty == nil {
-				problems = append(problems, fmt.Sprintf("%s: data.reads.kinds: unknown type %q", where, t))
+				problems = append(problems, fmt.Sprintf("%s: data.permissions.reads.kinds: unknown type %q", where, t))
 				continue
 			}
 			f.Caps.Reads.Kinds[i] = ty.Identity
@@ -805,7 +827,7 @@ func (r *Registry) resolveFunction(f *Function) []string {
 	for _, ident := range f.Caps.Call {
 		target, err := r.ResolveFunction(ident)
 		if err != nil {
-			problems = append(problems, fmt.Sprintf("%s: data.call: unknown function %q", where, ident))
+			problems = append(problems, fmt.Sprintf("%s: data.permissions.call: unknown function %q", where, ident))
 			continue
 		}
 		// A host function runs under the GRANTS OF ITS CALLER, and a function body
@@ -814,7 +836,7 @@ func (r *Registry) resolveFunction(f *Function) []string {
 		// cannot sub-call one, and the refusal names where the tool does work.
 		if target.IsHost() {
 			problems = append(problems, fmt.Sprintf(
-				"%s: data.call: %q is a host function — the engine runs it under a CALLER's grants and a function body has none to lend; carry it as an agent tool instead",
+				"%s: data.permissions.call: %q is a host function: the engine runs it under a CALLER's grants and a function body has none to lend, so carry it as an agent tool instead",
 				where, ident))
 		}
 	}

@@ -3,7 +3,7 @@ package engine_test
 // The callable contract: input/output schemas hold call-mode
 // arguments to their shape, the invocation API applies effects under the
 // function's actor with no cursor motion, a body's host Call is gated on
-// `capabilities.call` and lands its callee's effects in the CALLER's
+// `permissions.call` and lands its callee's effects in the CALLER's
 // delivery transaction — and the run-ledger retention keeps failures while
 // pruning successes.
 
@@ -78,13 +78,13 @@ func TestCallModeValidatesAndApplies(t *testing.T) {
 func TestHostCallGatingAndCallerTransaction(t *testing.T) {
 	t.Parallel()
 	// outer Calls adder during a trigger delivery: the grant is
-	// capabilities.call, the callee's effects ride the CALLER's delivery
+	// permissions.call, the callee's effects ride the CALLER's delivery
 	// transaction (they land and roll back with it), and an ungranted
 	// caller parks deterministically.
 	outer := func(name string, granted bool, ownEffect string) map[string]any {
 		data := map[string]any{}
 		if granted {
-			data["call"] = []any{fnAuthority + "/adder"}
+			fnPermissions(data)["call"] = []any{fnAuthority + "/adder"}
 		}
 		return pyFn(name, data, []any{taskType}, `
 def main(input, host):
@@ -166,8 +166,8 @@ def main(input, host):
 `)
 	mid := func(name, after string) map[string]any {
 		return pyFn(name, map[string]any{
-			"call":    []any{fnAuthority + "/leaf"},
-			"returns": []any{map[string]any{"name": "ok", "type": "bool"}},
+			"permissions": map[string]any{"call": []any{fnAuthority + "/leaf"}},
+			"returns":     []any{map[string]any{"name": "ok", "type": "bool"}},
 		}, []any{taskType}, `
 def main(input, host):
     host.call("`+fnAuthority+`/leaf", None)
@@ -175,9 +175,9 @@ def main(input, host):
 `)
 	}
 	caller := pyFn("catcher", map[string]any{
-		"call": []any{
+		"permissions": map[string]any{"call": []any{
 			fnAuthority + "/raiser", fnAuthority + "/badeffect", fnAuthority + "/badoutput",
-		},
+		}},
 		"arguments": []any{map[string]any{"name": "mid", "type": "string"}},
 	}, []any{taskType}, `
 def main(input, host):
@@ -233,7 +233,7 @@ def main(input, host):
     return {}
 `)
 	nestCaller := pyFn("nestcaller", map[string]any{
-		"call": []any{fnAuthority + "/silent"},
+		"permissions": map[string]any{"call": []any{fnAuthority + "/silent"}},
 	}, []any{taskType}, `
 def main(input, host):
     out = host.call("`+fnAuthority+`/silent", None)
@@ -278,7 +278,7 @@ def main(input, host):
     return {"output": input["idempotencyKey"]}
 `)
 	twice := pyFn("twice", map[string]any{
-		"call": []any{fnAuthority + "/echo"},
+		"permissions": map[string]any{"call": []any{fnAuthority + "/echo"}},
 	}, []any{taskType}, `
 def main(input, host):
     k1 = host.call("`+fnAuthority+`/echo", {"n": 1})

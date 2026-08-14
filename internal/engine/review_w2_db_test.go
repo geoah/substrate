@@ -81,7 +81,7 @@ func w2Manifest(withTrigger bool) enginetest.Manifest {
 			vocabulary.FunctionManifest(w2Group, "mirror", map[string]any{
 				"description": "mirrors widgets into tasks",
 				"runtime":     vocabulary.RuntimePython,
-				"emit":        []any{"tasks.substrate.reamde.dev/task"},
+				"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 				"source": `
 def main(input, host):
     env = input["envelope"]

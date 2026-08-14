@@ -16,18 +16,18 @@ import (
 // data-record id plus the `model` it asks that provider for,
 // `tools:` (callable functions, the four host built-ins among them, each
 // optionally aliased for the agent's own prompt context), `agents:`
-// (sub-agents), `budgets:` and `emit:`. Agents dispatch exactly like
+// (sub-agents), `budgets:` and `permissions:`. Agents dispatch exactly like
 // functions — triggers, the call API, sub-agent calls — under the actor
 // `function:<name>`; the loop itself is host-side (engine/agentloop.go).
 
 // The built-in agent tools, by the LOCAL NAME of the host function record that
 // declares each one. `query` is the capability-scoped read (gated by the agent's
-// `reads:`); `propose` emits `recordpatchrequest` records (gated by `emit:`
-// naming the request type); `graphql` is the WHOLE-repository read-only GraphQL
-// surface (declaring it is the grant: there is no narrower scope to declare,
-// which is why the scoped `query` survives beside it); `mutate` executes GraphQL
-// mutations, each written kind held to the agent's effective emit (so it needs a
-// non-empty `emit:`).
+// `permissions.reads`); `propose` emits `recordpatchrequest` records (gated by
+// `permissions.writes` naming the request type); `graphql` is the
+// WHOLE-repository read-only GraphQL surface (declaring it is the grant: there
+// is no narrower scope to declare, which is why the scoped `query` survives
+// beside it); `mutate` executes GraphQL mutations, each written kind held to the
+// agent's effective emit (so it needs a non-empty `permissions.writes`).
 //
 // A `tools:` entry names ONE of them the way it names any other function: by
 // identity, under `callable:`. There is no second arm — see agentBuiltinByIdentity.
@@ -107,12 +107,12 @@ type Agent struct {
 	Agents []string
 	// Budgets bounds one invocation.
 	Budgets AgentBudgets
-	// Emit is the allowlist for the agent's writes: every tool-call effect is
-	// held to it, and it names which request types `propose` may emit. Empty
-	// means the agent writes nothing.
+	// Emit is `permissions.writes` parsed: every tool-call effect is held to it,
+	// and it names which request types `propose` may emit. Empty means the agent
+	// writes nothing.
 	Emit []string
-	// Reads scopes the `query` built-in exactly like a function's
-	// capability-scoped reads; nil means `query` is not granted.
+	// Reads is `permissions.reads` parsed, scoping the `query` built-in exactly
+	// like a function's; nil means `query` is not granted.
 	Reads *FunctionReads
 	// SubagentOnly withholds the agent from the interactive chat surface: the
 	// console keeps it off the chat list and ChatAgent refuses it. Everything
@@ -163,7 +163,7 @@ func (a *Agent) Identity() string { return KindRef(a.Authority, a.Name) }
 // sharing a name share an actor.
 func (a *Agent) Actor() string { return substrate.FunctionActorPrefix + a.Name }
 
-// EmitAllows reports whether the agent's emit allowlist names a type.
+// EmitAllows reports whether the agent's write allowlist names a type.
 func (a *Agent) EmitAllows(ident string) bool {
 	for _, t := range a.Emit {
 		if t == ident {
@@ -182,9 +182,23 @@ var reToolName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`)
 var agentDataKeys = map[string]bool{
 	"authority": true, "description": true, "prompt": true,
 	"provider": true, "model": true, "params": true,
-	"tools": true, "agents": true, "budgets": true, "emit": true, "reads": true,
+	"tools": true, "agents": true, "budgets": true, "permissions": true,
 	"subagentOnly": true,
 }
+
+// deletedAgentKeys are the removed keys, each naming what replaced it. An
+// agent's two grants group under `permissions:` with a function's five, and the
+// permission to write is named for writing: a bare `emit:` said nothing about
+// being a grant at all. No compatibility shim: the rows written that way are
+// translated by the dialect rung (engine/dialectonegrammar.go).
+var deletedAgentKeys = map[string]string{
+	"emit":  "permissions.writes: the grants group under `permissions:`, and the permission to write is named for writing",
+	"reads": "permissions.reads: the grants group under `permissions:`",
+}
+
+// agentPermissionKeys is the agent's grant object: a function's five minus the
+// three an LLM loop has no body to spend (call, network, mutations).
+var agentPermissionKeys = map[string]bool{"reads": true, "writes": true}
 
 var agentBudgetKeys = map[string]bool{
 	"maxTurns": true, "maxToolCalls": true, "deadlineSeconds": true, "depth": true,
@@ -221,13 +235,19 @@ func (l *loader) buildAuthorityAgents(gd *authorityDocs, g *Authority) {
 	sort.Strings(g.AgentOrder)
 }
 
-// parseAgent parses one agent document. Emit, reads, tool callables and
+// parseAgent parses one agent document. The permissions, tool callables and
 // sub-agents resolve against the registry in Finalize/Install, like a
-// function's capability envelope; the provider reference is a DATA row and
-// resolves at dispatch instead.
+// function's grant; the provider reference is a DATA row and resolves at
+// dispatch instead.
 func (l *loader) parseAgent(d Document) *Agent {
 	g := l.authority
 	where := DocAgent + " " + d.ID
+	for k := range d.Data {
+		if replacement, gone := deletedAgentKeys[k]; gone {
+			l.errf("%s: key %q is deleted — %s", where, k, replacement)
+			return nil
+		}
+	}
 	l.checkKeys(where, d.Data, agentDataKeys)
 	local, ok := l.localName(where, d.ID, g.Name)
 	if !ok {
@@ -298,10 +318,14 @@ func (l *loader) parseAgent(d Document) *Agent {
 		toolNames[local] = true
 		a.Agents = append(a.Agents, ident)
 	}
-	for i, ev := range mslice(d.Data, "emit") {
+	perms, ok := l.permissionsObject(where, d.Data, agentPermissionKeys)
+	if !ok {
+		return nil
+	}
+	for i, ev := range mslice(perms, "writes") {
 		t := fmt.Sprint(ev)
 		if !Qualified(t) || strings.Contains(t, "*") {
-			l.errf("%s: data.emit[%d]: %q — emit names full type identities, no globs", where, i, t)
+			l.errf("%s: data.permissions.writes[%d]: %q is not a full type identity; writes names them, no globs", where, i, t)
 			continue
 		}
 		a.Emit = append(a.Emit, t)
@@ -309,9 +333,9 @@ func (l *loader) parseAgent(d Document) *Agent {
 	if !l.parseAgentBudgets(where, d.Data, a) {
 		return nil
 	}
-	// `reads:` reuses the function envelope's shape verbatim.
+	// `permissions.reads` reuses the function grant's shape verbatim.
 	fn := &Function{}
-	if !l.parseReads(where, d.Data, fn) {
+	if !l.parseReads(where, perms, fn) {
 		return nil
 	}
 	a.Reads = fn.Caps.Reads
@@ -323,17 +347,17 @@ func (l *loader) parseAgent(d Document) *Agent {
 		switch t.Builtin {
 		case AgentToolQuery:
 			if a.Reads == nil {
-				l.errf("%s: data.tools: query needs data.reads — the built-in is capability-scoped like a function's reads", where)
+				l.errf("%s: data.tools: query needs data.permissions.reads, since the built-in is capability-scoped like a function's reads", where)
 				return nil
 			}
 		case AgentToolPropose:
 			if !a.EmitAllows(KindRecordPatchRequest) {
-				l.errf("%s: data.tools: propose needs %s in data.emit — emit names which request types the agent may propose", where, KindRecordPatchRequest)
+				l.errf("%s: data.tools: propose needs %s in data.permissions.writes, which names the request kinds the agent may create", where, KindRecordPatchRequest)
 				return nil
 			}
 		case AgentToolMutate:
 			if len(a.Emit) == 0 {
-				l.errf("%s: data.tools: mutate needs data.emit — emit names which kinds the agent may write", where)
+				l.errf("%s: data.tools: mutate needs data.permissions.writes, which names the kinds the agent may create or change", where)
 				return nil
 			}
 		}
@@ -512,7 +536,7 @@ func (l *loader) parseAgentBudgets(where string, data map[string]any, a *Agent) 
 }
 
 // resolveAuthorityAgents validates an authority's agents against the loaded registry:
-// every emit and read type must exist, every tool callable must be a
+// every written and read type must exist, every tool callable must be a
 // registered function, and every sub-agent must be a registered agent —
 // same-batch installs count, like a function's call targets.
 func (r *Registry) resolveAuthorityAgents(g *Authority) []string {
@@ -522,13 +546,13 @@ func (r *Registry) resolveAuthorityAgents(g *Authority) []string {
 		where := DocAgent + " " + a.Identity()
 		for _, t := range a.Emit {
 			if _, ok := r.ByIdentity(t); !ok {
-				problems = append(problems, fmt.Sprintf("%s: data.emit: unknown type %q", where, t))
+				problems = append(problems, fmt.Sprintf("%s: data.permissions.writes: unknown type %q", where, t))
 			}
 		}
 		if a.Reads != nil {
 			for _, t := range a.Reads.Kinds {
 				if _, ok := r.ByIdentity(t); !ok {
-					problems = append(problems, fmt.Sprintf("%s: data.reads.kinds: unknown type %q", where, t))
+					problems = append(problems, fmt.Sprintf("%s: data.permissions.reads.kinds: unknown type %q", where, t))
 				}
 			}
 		}

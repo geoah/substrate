@@ -37,7 +37,10 @@ data:
   # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
-  version: v1alpha2
+  # v1alpha3: the grants group under one `permissions:` object, and the permission
+  # to write is `writes:` inside it. This closure's functions and agents
+  # follow core's declaration.
+  version: v1alpha3
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block — an oauth2 block would demand a client input, and this
@@ -390,20 +393,21 @@ data:
     next incremental run. Read-only.
   runtime: python
   timeoutMs: 30000
-  emit:
-    - beeper.bundles.substrate.reamde.dev/room
-    - beeper.bundles.substrate.reamde.dev/message
-    - beeper.bundles.substrate.reamde.dev/account
-  reads:
-    kinds:
+  permissions:
+    writes:
       - beeper.bundles.substrate.reamde.dev/room
-    # A rooms page evaluates the filter fallback for at most 25 rooms; a
-    # backfill page checks at most one resumed room.
-    budgets:
-      calls: 40
-  network:
-    - "matrix.beeper.com"
-    - "beeper.com/*"
+      - beeper.bundles.substrate.reamde.dev/message
+      - beeper.bundles.substrate.reamde.dev/account
+    reads:
+      kinds:
+        - beeper.bundles.substrate.reamde.dev/room
+      # A rooms page evaluates the filter fallback for at most 25 rooms; a
+      # backfill page checks at most one resumed room.
+      budgets:
+        calls: 40
+    network:
+      - "matrix.beeper.com"
+      - "beeper.com/*"
   source: |
     # /// script
     # requires-python = ">=3.11"

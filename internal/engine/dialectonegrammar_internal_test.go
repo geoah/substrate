@@ -55,7 +55,7 @@ func TestDialectOneSpellingsTranslateToTheTypedDeclaration(t *testing.T) {
 	const header = dialectOneHeader
 	for _, tc := range []dialectOnePair{
 		{
-			name: "a function's capability wrapper hoists and its schema flattens",
+			name: "a function's capability wrapper becomes permissions and its schema flattens",
 			old: `
 kind: core.substrate.reamde.dev/function
 metadata:
@@ -123,10 +123,11 @@ data:
     - name: hits
       type: json
       repeated: true
-  emit: [x.example.com/widget]
-  network: ["api.example.com"]
-  reads:
-    kinds: [x.example.com/widget]
+  permissions:
+    writes: [x.example.com/widget]
+    network: ["api.example.com"]
+    reads:
+      kinds: [x.example.com/widget]
 `,
 		},
 		{
@@ -159,9 +160,10 @@ data:
   tools:
     - callable: core.substrate.reamde.dev/query
     - callable: x.example.com/fn
-  emit: [x.example.com/widget]
-  reads:
-    kinds: [x.example.com/widget]
+  permissions:
+    writes: [x.example.com/widget]
+    reads:
+      kinds: [x.example.com/widget]
 `,
 		},
 		{
@@ -198,7 +200,54 @@ data:
   tools:
     - callable: core.substrate.reamde.dev/graphql
     - callable: x.example.com/fn
+  permissions:
+    writes: [x.example.com/widget]
+`,
+		},
+		{
+			// THE OTHER INTERIM SPELLING, for the same reason: the grants spent one
+			// unreleased series hoisted onto `data` itself, between the
+			// `capabilities:` wrapper and the `permissions:` object, so a
+			// development store holds rows wearing them.
+			name: "a function's interim hoisted grants become the permissions object",
+			old: `
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: x.example.com/fn
+data:
+  authority: x.example.com
+  description: does a thing
+  runtime: python
+  source: |
+    def main(input, host):
+        return {}
   emit: [x.example.com/widget]
+  call: [x.example.com/fn]
+  network: ["api.example.com"]
+  mutations: [merge]
+  reads:
+    kinds: [x.example.com/widget]
+    budgets: {calls: 4}
+`,
+			want: `
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: x.example.com/fn
+data:
+  authority: x.example.com
+  description: does a thing
+  runtime: python
+  source: |
+    def main(input, host):
+        return {}
+  permissions:
+    writes: [x.example.com/widget]
+    call: [x.example.com/fn]
+    network: ["api.example.com"]
+    mutations: [merge]
+    reads:
+      kinds: [x.example.com/widget]
+      budgets: {calls: 4}
 `,
 		},
 		{

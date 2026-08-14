@@ -95,7 +95,7 @@ func TestLiveAgentChainAcrossWires(t *testing.T) {
 			"runtime":     vocabulary.RuntimePython,
 			// The envelope is required even for a function that writes
 			// nothing; this one returns output and emits no effects at all.
-			"emit": []any{"tasks.substrate.reamde.dev/task"},
+			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 			// The argument list is BOTH the function's input contract and the
 			// model-facing tool card, which is what the flat spelling buys.
 			"arguments": []any{

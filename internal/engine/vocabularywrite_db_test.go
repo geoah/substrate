@@ -199,7 +199,7 @@ func TestSchemaApplySwapsFunctionsLive(t *testing.T) {
 			"authority":   swAuthority,
 			"description": "mirrors widgets into tasks",
 			"runtime":     vocabulary.RuntimePython,
-			"emit":        []any{"tasks.substrate.reamde.dev/task"},
+			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 			"source": `
 def main(input, host):
     c = input["envelope"]["change"]
@@ -767,7 +767,7 @@ func TestTriggerOutlivesItsCallable(t *testing.T) {
 		"authority":   swAuthority,
 		"description": "mirrors widgets into tasks",
 		"runtime":     vocabulary.RuntimePython,
-		"emit":        []any{"tasks.substrate.reamde.dev/task"},
+		"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 		"source": `
 def main(input, host):
     c = input["envelope"]["change"]

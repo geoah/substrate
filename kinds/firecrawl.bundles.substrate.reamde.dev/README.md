@@ -99,15 +99,16 @@ data:
     - callable: firecrawl.bundles.substrate.reamde.dev/websearch
     - callable: firecrawl.bundles.substrate.reamde.dev/scrapepage
   budgets: {maxTurns: 8, maxToolCalls: 16, depth: 3}
-  emit:
-    # scrapepage writes webdocuments, and a child's effective emit is its
-    # own ∩ the caller's — so the agent's ceiling must name the type or the
-    # tool's put is refused.
-    - firecrawl.bundles.substrate.reamde.dev/webdocument
+  permissions:
+    writes:
+      # scrapepage writes webdocuments, and a child's effective emit is its
+      # own ∩ the caller's, so the agent's ceiling must name the type or the
+      # tool's put is refused.
+      - firecrawl.bundles.substrate.reamde.dev/webdocument
 ```
 
 Both functions are equally callable without an agent — the HTTP call API or
-another function's `host.call` (gated by that caller's `call:` grant).
+another function's `host.call` (gated by that caller's `permissions.call`).
 
 ## Files
 

@@ -45,12 +45,9 @@ type Agent struct {
 	// Budgets is what bounds one invocation.
 	Budgets *AgentBudgets
 
-	// Emit is the kinds this agent's tool-call effects may address. Names a
-	// kind in the registry.
-	Emit []string
-
-	// Reads is what the `query` built-in may touch; absent withholds it.
-	Reads *AgentReads
+	// Permissions is what this agent is allowed to do while it runs; leave a
+	// grant out and what it covers is refused.
+	Permissions *AgentPermissions
 
 	// SubagentOnly is only callable by other agents; withheld from the chat
 	// surface.
@@ -61,7 +58,7 @@ type Agent struct {
 // core.substrate.reamde.dev/agent declares, sorted. A key outside it is
 // refused by Decode, which is what replaces a hand-kept list of admitted keys
 // in Go.
-var AgentKeys = []string{"agents", "authority", "budgets", "description", "emit", "model", "params", "prompt", "provider", "reads", "subagentOnly", "tools", "version"}
+var AgentKeys = []string{"agents", "authority", "budgets", "description", "model", "params", "permissions", "prompt", "provider", "subagentOnly", "tools", "version"}
 
 // DecodeAgent decodes a properties map into Agent, refusing what the
 // declaration cannot hold: an undeclared key, a value of the wrong type, an
@@ -189,21 +186,10 @@ func decodeAgent(d *decoder, path string, v any) (Agent, bool) {
 			if e, ok := decodeAgentBudgets(d, p, props[key]); ok {
 				out.Budgets = &e
 			}
-		case "emit":
-			p := at(path, "emit")
-			if items, listed := d.list(p, props[key]); listed {
-				list := make([]string, 0, len(items))
-				for i, item := range items {
-					if e, ok := d.text(index(p, i), item, nil, nil); ok {
-						list = append(list, e)
-					}
-				}
-				out.Emit = list
-			}
-		case "reads":
-			p := at(path, "reads")
-			if e, ok := decodeAgentReads(d, p, props[key]); ok {
-				out.Reads = &e
+		case "permissions":
+			p := at(path, "permissions")
+			if e, ok := decodeAgentPermissions(d, p, props[key]); ok {
+				out.Permissions = &e
 			}
 		case "subagentOnly":
 			p := at(path, "subagentOnly")
@@ -264,15 +250,8 @@ func (v *Agent) Encode() map[string]any {
 	if v.Budgets != nil {
 		out["budgets"] = v.Budgets.Encode()
 	}
-	if v.Emit != nil {
-		items := make([]any, 0, len(v.Emit))
-		for i := range v.Emit {
-			items = append(items, v.Emit[i])
-		}
-		out["emit"] = items
-	}
-	if v.Reads != nil {
-		out["reads"] = v.Reads.Encode()
+	if v.Permissions != nil {
+		out["permissions"] = v.Permissions.Encode()
 	}
 	if v.SubagentOnly != nil {
 		out["subagentOnly"] = *v.SubagentOnly
@@ -515,25 +494,101 @@ func (v *AgentBudgets) Encode() map[string]any {
 	return out
 }
 
-// AgentReads is one value of the `reads` object declared on
+// AgentPermissions is one value of the `permissions` object declared on
 // core.substrate.reamde.dev/agent.
 //
-// what the `query` built-in may touch; absent withholds it
-type AgentReads struct {
-	// Kinds is the kinds every read is held to. Names a kind in the registry.
-	Kinds []string
+// what this agent is allowed to do while it runs; leave a grant out and what
+// it covers is refused
+type AgentPermissions struct {
+	// Reads is which record kinds this agent may read, and how much; leave it
+	// out and the query tool is withheld.
+	Reads *AgentPermissionsReads
 
-	// Budgets is what one invocation's reads may spend.
-	Budgets *AgentReadsBudgets
+	// Writes is which record kinds it may create or change, the change
+	// requests it proposes among them. Names a kind in the registry.
+	Writes []string
 }
 
-// decodeAgentReads decodes one AgentReads value at path.
-func decodeAgentReads(d *decoder, path string, v any) (AgentReads, bool) {
+// decodeAgentPermissions decodes one AgentPermissions value at path.
+func decodeAgentPermissions(d *decoder, path string, v any) (AgentPermissions, bool) {
 	props, mapped := d.mapping(path, v)
 	if !mapped {
-		return AgentReads{}, false
+		return AgentPermissions{}, false
 	}
-	var out AgentReads
+	var out AgentPermissions
+	for _, key := range sortedKeys(props) {
+		// A null is this dialect's delete marker, never a value: it decodes as
+		// absence, and Properties never writes one.
+		if props[key] == nil {
+			continue
+		}
+		switch key {
+		case "reads":
+			p := at(path, "reads")
+			if e, ok := decodeAgentPermissionsReads(d, p, props[key]); ok {
+				out.Reads = &e
+			}
+		case "writes":
+			p := at(path, "writes")
+			if items, listed := d.list(p, props[key]); listed {
+				list := make([]string, 0, len(items))
+				for i, item := range items {
+					if e, ok := d.text(index(p, i), item, nil, nil); ok {
+						list = append(list, e)
+					}
+				}
+				out.Writes = list
+			}
+		default:
+			d.unknown(at(path, key), "core.substrate.reamde.dev/agent")
+		}
+	}
+	return out, true
+}
+
+// Encode is AgentPermissions as the properties map holds it, and
+// decodeAgentPermissions's exact inverse: a nil pointer, a nil slice and a nil
+// map each omit their key, so absence survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *AgentPermissions) Encode() map[string]any {
+	out := map[string]any{}
+	if v.Reads != nil {
+		out["reads"] = v.Reads.Encode()
+	}
+	if v.Writes != nil {
+		items := make([]any, 0, len(v.Writes))
+		for i := range v.Writes {
+			items = append(items, v.Writes[i])
+		}
+		out["writes"] = items
+	}
+	return out
+}
+
+// AgentPermissionsReads is one value of the `permissions.reads` object
+// declared on core.substrate.reamde.dev/agent.
+//
+// which record kinds this agent may read, and how much; leave it out and the
+// query tool is withheld
+type AgentPermissionsReads struct {
+	// Kinds is the record kinds every read is held to. Names a kind in the
+	// registry.
+	Kinds []string
+
+	// Budgets is how much one run may read.
+	Budgets *AgentPermissionsReadsBudgets
+}
+
+// decodeAgentPermissionsReads decodes one AgentPermissionsReads value at path.
+func decodeAgentPermissionsReads(d *decoder, path string, v any) (AgentPermissionsReads, bool) {
+	props, mapped := d.mapping(path, v)
+	if !mapped {
+		return AgentPermissionsReads{}, false
+	}
+	var out AgentPermissionsReads
 	for _, key := range sortedKeys(props) {
 		// A null is this dialect's delete marker, never a value: it decodes as
 		// absence, and Properties never writes one.
@@ -554,7 +609,7 @@ func decodeAgentReads(d *decoder, path string, v any) (AgentReads, bool) {
 			}
 		case "budgets":
 			p := at(path, "budgets")
-			if e, ok := decodeAgentReadsBudgets(d, p, props[key]); ok {
+			if e, ok := decodeAgentPermissionsReadsBudgets(d, p, props[key]); ok {
 				out.Budgets = &e
 			}
 		default:
@@ -564,14 +619,14 @@ func decodeAgentReads(d *decoder, path string, v any) (AgentReads, bool) {
 	return out, true
 }
 
-// Encode is AgentReads as the properties map holds it, and decodeAgentReads's
-// exact inverse: a nil pointer, a nil slice and a nil map each omit their key,
-// so absence survives the round trip.
+// Encode is AgentPermissionsReads as the properties map holds it, and
+// decodeAgentPermissionsReads's exact inverse: a nil pointer, a nil slice and
+// a nil map each omit their key, so absence survives the round trip.
 //
 // It is NOT called Properties: a declaration may declare a property of that
 // name (core's `kind` does), and a field and a method cannot share one.
 // Decode/Encode is the pair the rest of the generator already names.
-func (v *AgentReads) Encode() map[string]any {
+func (v *AgentPermissionsReads) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Kinds != nil {
 		items := make([]any, 0, len(v.Kinds))
@@ -586,25 +641,25 @@ func (v *AgentReads) Encode() map[string]any {
 	return out
 }
 
-// AgentReadsBudgets is one value of the `reads.budgets` object declared on
-// core.substrate.reamde.dev/agent.
+// AgentPermissionsReadsBudgets is one value of the `permissions.reads.budgets`
+// object declared on core.substrate.reamde.dev/agent.
 //
-// what one invocation's reads may spend
-type AgentReadsBudgets struct {
-	// Calls is host read calls per invocation.
+// how much one run may read
+type AgentPermissionsReadsBudgets struct {
+	// Calls is how many reads one run may make.
 	Calls *int64
 
-	// Rows is rows read per invocation.
+	// Rows is how many records one run may read.
 	Rows *int64
 }
 
-// decodeAgentReadsBudgets decodes one AgentReadsBudgets value at path.
-func decodeAgentReadsBudgets(d *decoder, path string, v any) (AgentReadsBudgets, bool) {
+// decodeAgentPermissionsReadsBudgets decodes one AgentPermissionsReadsBudgets value at path.
+func decodeAgentPermissionsReadsBudgets(d *decoder, path string, v any) (AgentPermissionsReadsBudgets, bool) {
 	props, mapped := d.mapping(path, v)
 	if !mapped {
-		return AgentReadsBudgets{}, false
+		return AgentPermissionsReadsBudgets{}, false
 	}
-	var out AgentReadsBudgets
+	var out AgentPermissionsReadsBudgets
 	for _, key := range sortedKeys(props) {
 		// A null is this dialect's delete marker, never a value: it decodes as
 		// absence, and Properties never writes one.
@@ -629,14 +684,14 @@ func decodeAgentReadsBudgets(d *decoder, path string, v any) (AgentReadsBudgets,
 	return out, true
 }
 
-// Encode is AgentReadsBudgets as the properties map holds it, and
-// decodeAgentReadsBudgets's exact inverse: a nil pointer, a nil slice and a
-// nil map each omit their key, so absence survives the round trip.
+// Encode is AgentPermissionsReadsBudgets as the properties map holds it, and
+// decodeAgentPermissionsReadsBudgets's exact inverse: a nil pointer, a nil
+// slice and a nil map each omit their key, so absence survives the round trip.
 //
 // It is NOT called Properties: a declaration may declare a property of that
 // name (core's `kind` does), and a field and a method cannot share one.
 // Decode/Encode is the pair the rest of the generator already names.
-func (v *AgentReadsBudgets) Encode() map[string]any {
+func (v *AgentPermissionsReadsBudgets) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Calls != nil {
 		out["calls"] = *v.Calls

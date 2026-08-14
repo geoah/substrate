@@ -78,10 +78,11 @@ substratectl function call stats --input '{"text": "hello world"}'
 ```
 
 `notekeeper` is the root agent. It calls `titler` (a sub-agent with its own
-budget and thread, no tools and an empty `emit`), then `stats` (pure Python,
-declaring no `network:`, so the sandbox denies it sockets), then `savenote`,
+budget and thread, no tools and an empty `permissions.writes`), then `stats`
+(pure Python, declaring no `permissions.network`, so the sandbox denies it
+sockets), then `savenote`,
 which writes the one kind the bundle declares — `note`. That write lands only
-because the kind is in BOTH the function's `emit` and the calling agent's,
+because the kind is in BOTH the function's writes and the calling agent's,
 which is the capability envelope in one closure.
 
 Both agents name `provider: default`, so running them wants an `llmprovider`

@@ -109,7 +109,7 @@ func mbFnDoc(name, source string) map[string]any {
 		"description": "test function " + name,
 		"runtime":     vocabulary.RuntimePython,
 		"source":      source,
-		"emit":        []any{mbMessageType},
+		"permissions": map[string]any{"writes": []any{mbMessageType}},
 	})
 }
 

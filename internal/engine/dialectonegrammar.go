@@ -20,7 +20,12 @@ package engine
 //
 // It changes ONLY if a bug is found in the translation itself. A new spelling is
 // never added here: dialect 1 is closed, and a spelling dialect 2 retires is
-// dialect 2's business, not this file's.
+// dialect 2's business, not this file's. The one standing exception is an
+// INTERIM shape: a spelling an unreleased binary wrote and the same unreleased
+// series retired, so no release ever carried it and no other rung will ever be
+// asked to read it (dialectOneAgentTools' `{builtin: x}`, dialectOneGrants'
+// hoisted grant keys). Translating one costs a few lines; refusing it is a
+// development store that cannot open.
 //
 // Every TRANSLATION here is a total rewrite of one dialect-1 spelling into the
 // dialect-2 one, in place, and never a validation: what comes out goes straight
@@ -78,6 +83,7 @@ func dialectOneData(short string, data map[string]any) (map[string]any, error) {
 		}
 	case vocabulary.DocAgent:
 		dialectOneAgentTools(data)
+		dialectOneAgentCaps(data)
 	case vocabulary.DocBundle:
 		dialectOneFeatureScopes(data)
 	}
@@ -266,28 +272,77 @@ func dialectOneAgentTools(d map[string]any) {
 	d["tools"] = out
 }
 
-// dialectOneFunctionCaps hoists the capability envelope out of the
-// `capabilities:` wrapper onto the data map itself. A key already hoisted wins:
-// dialect 1 admitted either place and refused both at once, so at most one is
-// present.
+// dialectOneFunctionCaps moves the capability envelope into the `permissions:`
+// object the live loader reads, whichever of the two older places the row wrote
+// it: dialect 1's `capabilities:` wrapper, or the hoisted top-level keys the
+// interim binaries wrote. `emit` becomes `writes` on the way in, since the
+// live loader has no other spelling for the permission to write.
+//
+// The hoisted spelling is not a dialect-1 one, exactly like `{builtin: x}` under
+// dialectOneAgentTools: it was the stage between the wrapper and this object, so
+// the only rows wearing it were written by an unreleased binary. It is
+// translated for the same reason that one is: the rung's ONE job is to hand the
+// live loader a document it admits, and a row the loader refuses is a repository
+// that cannot open.
+//
+// A grant already under `permissions:` wins over either older place, which is
+// what makes the translation idempotent, and the wrapper loses to the hoisted
+// key as it always did: dialect 1 admitted either and refused both at once.
 func dialectOneFunctionCaps(d map[string]any) {
-	// Dialect 1's five capability keys, frozen: what the wrapper could hold.
-	caps := map[string]bool{
+	dialectOneGrants(d, map[string]bool{
+		// Dialect 1's five capability keys, frozen: what the wrapper could hold,
+		// and what the interim hoist put on `data` itself.
 		"emit": true, "reads": true, "call": true, "network": true, "mutations": true,
+	})
+}
+
+// dialectOneAgentCaps is the same move for an agent's two grants, which took the
+// same interim hoisted spelling. An agent never had a `capabilities:` wrapper,
+// since dialect 1 declared its two keys on `data` itself, so only the hoisted
+// arm finds anything here.
+func dialectOneAgentCaps(d map[string]any) {
+	dialectOneGrants(d, map[string]bool{"emit": true, "reads": true})
+}
+
+// dialectOneGrants collects the older grant spellings under `permissions:`.
+// `grants` is the closed set of keys that older shape could hold.
+func dialectOneGrants(d map[string]any, grants map[string]bool) {
+	perms := dialectOneMap(d["permissions"])
+	taken := map[string]bool{}
+	for k := range perms {
+		taken[k] = true
 	}
-	wrapped, has := d["capabilities"]
-	if !has {
-		return
-	}
-	for k, v := range dialectOneMap(wrapped) {
-		if !caps[k] {
-			continue
+	// A grant already under `permissions:` wins, so the older spellings only ever
+	// FILL what the row does not already say, which is what makes a half-migrated
+	// row migrate exactly the rest.
+	take := func(k string, v any) {
+		if k == "emit" {
+			k = "writes"
 		}
-		if _, hoisted := d[k]; !hoisted {
-			d[k] = v
+		if taken[k] {
+			return
+		}
+		perms[k], taken[k] = v, true
+	}
+	// The hoisted key is read before the wrapper because dialect 1 preferred it
+	// there: it admitted either place and refused both at once.
+	for k := range grants {
+		if v, hoisted := d[k]; hoisted {
+			delete(d, k)
+			take(k, v)
 		}
 	}
-	delete(d, "capabilities")
+	if wrapped, has := d["capabilities"]; has {
+		for _, k := range sortedKeys(dialectOneMap(wrapped)) {
+			if grants[k] {
+				take(k, dialectOneMap(wrapped)[k])
+			}
+		}
+		delete(d, "capabilities")
+	}
+	if len(perms) > 0 {
+		d["permissions"] = perms
+	}
 }
 
 // dialectOneFunctionIO rewrites a recursive `input:`/`output:` schema as the flat

@@ -117,9 +117,10 @@ data:
       description: values for the variables the document declares
 ---
 # ---- propose: the reviewed write -------------------------------------------
-# The one host function with an `emit:`, because it writes one kind and always
-# the same one. The calling agent's emit must name it too — the grant is checked
-# at load on the agent and again at dispatch against the effective set.
+# The one host function with a write permission, because it writes one kind and
+# always the same one. The calling agent's writes must name it too: the grant
+# is checked at load on the agent and again at dispatch against the effective
+# set.
 kind: core.substrate.reamde.dev/function
 metadata:
   id: core.substrate.reamde.dev/propose
@@ -163,5 +164,6 @@ data:
     - name: rationale
       type: string
       description: why you propose this
-  emit:
-    - core.substrate.reamde.dev/recordpatchrequest
+  permissions:
+    writes:
+      - core.substrate.reamde.dev/recordpatchrequest

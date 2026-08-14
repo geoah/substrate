@@ -33,7 +33,10 @@ data:
   # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
-  version: v1alpha2
+  # v1alpha3: the grants group under one `permissions:` object, and the permission
+  # to write is `writes:` inside it. This closure's functions and agents
+  # follow core's declaration.
+  version: v1alpha3
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -584,15 +587,16 @@ data:
     page per invocation, never writing back to GitHub.
   runtime: python
   timeoutMs: 30000
-  emit:
-    - github.bundles.substrate.reamde.dev/user
-    - github.bundles.substrate.reamde.dev/repository
-    - github.bundles.substrate.reamde.dev/issue
-    - github.bundles.substrate.reamde.dev/pullrequest
-    - github.bundles.substrate.reamde.dev/account
-  network:
-    - "api.github.com"
-    - "github.com"
+  permissions:
+    writes:
+      - github.bundles.substrate.reamde.dev/user
+      - github.bundles.substrate.reamde.dev/repository
+      - github.bundles.substrate.reamde.dev/issue
+      - github.bundles.substrate.reamde.dev/pullrequest
+      - github.bundles.substrate.reamde.dev/account
+    network:
+      - "api.github.com"
+      - "github.com"
   source: |
     # /// script
     # requires-python = ">=3.11"

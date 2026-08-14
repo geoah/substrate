@@ -646,8 +646,7 @@ def main(input, host):
     return {"effects": [{"action": "merge", "kind": "` + mbAccountType + `",
                          "id": a["winner"], "loser": a["loser"]}]}
 `,
-			"emit":      []any{mbAccountType},
-			"mutations": []any{"merge"},
+			"permissions": map[string]any{"writes": []any{mbAccountType}, "mutations": []any{"merge"}},
 		}),
 	}
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, mergerDocs); err != nil {
@@ -746,8 +745,10 @@ func w3WaiterDoc() map[string]any {
 		"runtime":     vocabulary.RuntimePython,
 		"source":      w3WaiterSource,
 		"timeoutMs":   20000,
-		"emit":        []any{mbMessageType},
-		"reads":       map[string]any{"kinds": []any{mbItemType}, "budgets": map[string]any{"calls": 500}},
+		"permissions": map[string]any{
+			"writes": []any{mbMessageType},
+			"reads":  map[string]any{"kinds": []any{mbItemType}, "budgets": map[string]any{"calls": 500}},
+		},
 	})
 }
 

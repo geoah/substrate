@@ -36,7 +36,10 @@ data:
   # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
-  version: v1alpha2
+  # v1alpha3: the grants group under one `permissions:` object, and the permission
+  # to write is `writes:` inside it. This closure's functions and agents
+  # follow core's declaration.
+  version: v1alpha3
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -457,19 +460,20 @@ data:
     its OAuth token, mirror the viewer/teams/issues, and stamp lastSyncedAt.
   runtime: python
   timeoutMs: 30000
-  emit:
-    - linear.bundles.substrate.reamde.dev/issue
-    - linear.bundles.substrate.reamde.dev/team
-    - linear.bundles.substrate.reamde.dev/user
-    - linear.bundles.substrate.reamde.dev/account
-  reads:
-    kinds:
+  permissions:
+    writes:
       - linear.bundles.substrate.reamde.dev/issue
-    budgets:
-      calls: 128
-      rows: 256
-  network:
-    - "api.linear.app"
+      - linear.bundles.substrate.reamde.dev/team
+      - linear.bundles.substrate.reamde.dev/user
+      - linear.bundles.substrate.reamde.dev/account
+    reads:
+      kinds:
+        - linear.bundles.substrate.reamde.dev/issue
+      budgets:
+        calls: 128
+        rows: 256
+    network:
+      - "api.linear.app"
   source: |
     # /// script
     # requires-python = ">=3.11"
@@ -905,12 +909,13 @@ data:
     keys of existing ones — status moves only on a real upstream transition,
     under an if_version guard.
   runtime: python
-  emit:
-    - tasks.substrate.reamde.dev/task
-    - linear.bundles.substrate.reamde.dev/issue
-  reads:
-    kinds:
+  permissions:
+    writes:
       - tasks.substrate.reamde.dev/task
+      - linear.bundles.substrate.reamde.dev/issue
+    reads:
+      kinds:
+        - tasks.substrate.reamde.dev/task
   source: |
     TASK_TYPE = "tasks.substrate.reamde.dev/task"
     ISSUE_TYPE = "linear.bundles.substrate.reamde.dev/issue"

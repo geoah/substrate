@@ -209,7 +209,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 			"description": "writes one annotated task under the id you pass",
 			"runtime":     vocabulary.RuntimePython,
 			"arguments":   []any{map[string]any{"name": "id", "type": "string", "required": true}},
-			"emit":        []any{"tasks.substrate.reamde.dev/task"},
+			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 			"source": `
 def main(input, host):
     tid = input["args"]["id"]
@@ -233,7 +233,7 @@ def main(input, host):
 		vocabulary.FunctionManifest(crewAuthority, "keyecho", map[string]any{
 			"description": "writes one task carrying the invocation's idempotency key",
 			"runtime":     vocabulary.RuntimePython,
-			"emit":        []any{"tasks.substrate.reamde.dev/task"},
+			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 			"source": `
 def main(input, host):
     key = input["idempotencyKey"]
@@ -249,7 +249,9 @@ def main(input, host):
 				map[string]any{"callable": vocabulary.HostFunctionPropose},
 			},
 			"agents": []any{crewAuthority + "/scribe"},
-			"emit":   []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
+			"permissions": map[string]any{
+				"writes": []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
+			},
 		}),
 		agent("scribe", map[string]any{"provider": "subllm", "model": "sub"}),
 		agent("rogue", map[string]any{
@@ -259,8 +261,9 @@ def main(input, host):
 		}),
 		agent("budgeter", map[string]any{
 			"provider": "budgetllm", "model": "budget",
-			"tools": []any{map[string]any{"callable": crewAuthority + "/annotate"}},
-			"emit":  []any{"tasks.substrate.reamde.dev/task"}, "budgets": map[string]any{"maxTurns": 2},
+			"tools":       []any{map[string]any{"callable": crewAuthority + "/annotate"}},
+			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+			"budgets":     map[string]any{"maxTurns": 2},
 		}),
 		agent("chatter", map[string]any{"provider": "chatllm", "model": "chat"}),
 		// warden writes NOTHING (empty emit) but delegates to minion, whose
@@ -274,14 +277,16 @@ def main(input, host):
 				map[string]any{"callable": crewAuthority + "/annotate"},
 				map[string]any{"callable": vocabulary.HostFunctionPropose},
 			},
-			"emit": []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
+			"permissions": map[string]any{
+				"writes": []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
+			},
 		}),
 		// keeper's keyecho tool records its idempotency key — the stable-key
 		// retry test.
 		agent("keeper", map[string]any{
 			"provider": "keepllm", "model": "keep",
-			"tools": []any{map[string]any{"callable": crewAuthority + "/keyecho"}},
-			"emit":  []any{"tasks.substrate.reamde.dev/task"},
+			"tools":       []any{map[string]any{"callable": crewAuthority + "/keyecho"}},
+			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 		}),
 		// archivist reads the whole graph through the graphql built-in and
 		// writes nothing; editor holds both graphql tools, its mutate gated to
@@ -296,7 +301,7 @@ def main(input, host):
 				map[string]any{"callable": vocabulary.HostFunctionGraphQL},
 				map[string]any{"callable": vocabulary.HostFunctionMutate},
 			},
-			"emit": []any{crewAuthority + "/widget"},
+			"permissions": map[string]any{"writes": []any{crewAuthority + "/widget"}},
 		}),
 		// arbiter DECIDES change requests through the mutate tool: its emit
 		// names the request kind (so it may write the decision) and widgets (so
@@ -305,14 +310,18 @@ def main(input, host):
 		agent("arbiter", map[string]any{
 			"provider": "arbiterllm", "model": "arbiter",
 			"tools": []any{map[string]any{"callable": vocabulary.HostFunctionMutate}},
-			"emit":  []any{vocabulary.KindRecordPatchRequest, crewAuthority + "/widget"},
+			"permissions": map[string]any{
+				"writes": []any{vocabulary.KindRecordPatchRequest, crewAuthority + "/widget"},
+			},
 		}),
 		// librarian holds the capability-scoped read: the query built-in named by
 		// identity, with the `reads:` that grants it.
 		agent("librarian", map[string]any{
 			"provider": "libllm", "model": "lib",
 			"tools": []any{map[string]any{"callable": vocabulary.HostFunctionQuery}},
-			"reads": map[string]any{"kinds": []any{crewAuthority + "/widget"}},
+			"permissions": map[string]any{
+				"reads": map[string]any{"kinds": []any{crewAuthority + "/widget"}},
+			},
 		}),
 		// purist carries the PURE function as a tool: no emit anywhere, an output
 		// the model reads.

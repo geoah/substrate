@@ -131,12 +131,10 @@ export interface Agent {
   agents?: string[]
   /** What bounds one invocation. */
   budgets?: AgentBudgets
-  /** The kinds this agent's tool-call effects may address. Names a kind: offer
-   * a picker, not a text box.
+  /** What this agent is allowed to do while it runs; leave a grant out and what
+   * it covers is refused.
    */
-  emit?: string[]
-  /** What the `query` built-in may touch; absent withholds it. */
-  reads?: AgentReads
+  permissions?: AgentPermissions
   /** Only callable by other agents; withheld from the chat surface. */
   subagentOnly?: boolean
 }
@@ -203,29 +201,47 @@ export interface AgentBudgets {
   depth?: number
 }
 
-/** AgentReads is one value of the `reads` object declared on
+/** AgentPermissions is one value of the `permissions` object declared on
  * core.substrate.reamde.dev/agent.
  *
- * what the `query` built-in may touch; absent withholds it
+ * what this agent is allowed to do while it runs; leave a grant out and what
+ * it covers is refused
  */
-export interface AgentReads {
-  /** The kinds every read is held to. Names a kind: offer a picker, not a text
-   * box.
+export interface AgentPermissions {
+  /** Which record kinds this agent may read, and how much; leave it out and the
+   * query tool is withheld.
    */
-  kinds?: string[]
-  /** What one invocation's reads may spend. */
-  budgets?: AgentReadsBudgets
+  reads?: AgentPermissionsReads
+  /** Which record kinds it may create or change, the change requests it
+   * proposes among them. Names a kind: offer a picker, not a text box.
+   */
+  writes?: string[]
 }
 
-/** AgentReadsBudgets is one value of the `reads.budgets` object declared on
- * core.substrate.reamde.dev/agent.
+/** AgentPermissionsReads is one value of the `permissions.reads` object
+ * declared on core.substrate.reamde.dev/agent.
  *
- * what one invocation's reads may spend
+ * which record kinds this agent may read, and how much; leave it out and the
+ * query tool is withheld
  */
-export interface AgentReadsBudgets {
-  /** Host read calls per invocation. */
+export interface AgentPermissionsReads {
+  /** The record kinds every read is held to. Names a kind: offer a picker, not
+   * a text box.
+   */
+  kinds?: string[]
+  /** How much one run may read. */
+  budgets?: AgentPermissionsReadsBudgets
+}
+
+/** AgentPermissionsReadsBudgets is one value of the `permissions.reads.budgets`
+ * object declared on core.substrate.reamde.dev/agent.
+ *
+ * how much one run may read
+ */
+export interface AgentPermissionsReadsBudgets {
+  /** How many reads one run may make. */
   calls?: number
-  /** Rows read per invocation. */
+  /** How many records one run may read. */
   rows?: number
 }
 
@@ -471,20 +487,10 @@ export interface Function {
   arguments?: FunctionArguments[]
   /** The named values the body returns. */
   returns?: FunctionReturns[]
-  /** The kinds this function's effects may address. Names a kind: offer a
-   * picker, not a text box.
+  /** What this function is allowed to do while it runs; leave a grant out and
+   * what it covers is refused.
    */
-  emit?: string[]
-  /** What the body's host reads may touch; absent trips every read. */
-  reads?: FunctionReads
-  /** The function identities the body's host Call may invoke. Names a function:
-   * offer a picker, not a text box.
-   */
-  call?: string[]
-  /** The declared egress allowlist. */
-  network?: string[]
-  /** The gated identity mutations this function is granted. */
-  mutations?: FunctionMutations[]
+  permissions?: FunctionPermissions
 }
 
 /** The properties Function's declaration marks required. A form refuses to
@@ -505,15 +511,6 @@ export const functionRequired: string[] = [
 export type FunctionRuntime = "python" | "go" | "host"
 
 export const functionRuntimeValues: FunctionRuntime[] = ["python", "go", "host"]
-
-/** FunctionMutations is a declared enum: the admissible set, in declaration
- * order.
- *
- * the gated identity mutations this function is granted
- */
-export type FunctionMutations = "merge" | "split"
-
-export const functionMutationsValues: FunctionMutations[] = ["merge", "split"]
 
 /** FunctionArguments is one value of the `arguments` object declared on
  * core.substrate.reamde.dev/function.
@@ -601,29 +598,68 @@ export const functionReturnsTypeValues: FunctionReturnsType[] = [
   "json",
 ]
 
-/** FunctionReads is one value of the `reads` object declared on
+/** FunctionPermissions is one value of the `permissions` object declared on
  * core.substrate.reamde.dev/function.
  *
- * what the body's host reads may touch; absent trips every read
+ * what this function is allowed to do while it runs; leave a grant out and
+ * what it covers is refused
  */
-export interface FunctionReads {
-  /** The kinds every read is held to. Names a kind: offer a picker, not a text
-   * box.
+export interface FunctionPermissions {
+  /** Which record kinds this function may read while it runs, and how much;
+   * leave it out and any read it attempts fails.
    */
-  kinds?: string[]
-  /** What one invocation's reads may spend. */
-  budgets?: FunctionReadsBudgets
+  reads?: FunctionPermissionsReads
+  /** Which record kinds it may create or change. Names a kind: offer a picker,
+   * not a text box.
+   */
+  writes?: string[]
+  /** Which other functions its code may invoke. Names a function: offer a
+   * picker, not a text box.
+   */
+  call?: string[]
+  /** The hosts it may reach; any entry grants network access, and enforcement
+   * is all-or-nothing today.
+   */
+  network?: string[]
+  /** The identity-changing operations it may perform: merge, split. */
+  mutations?: FunctionPermissionsMutations[]
 }
 
-/** FunctionReadsBudgets is one value of the `reads.budgets` object declared on
+/** FunctionPermissionsMutations is a declared enum: the admissible set, in
+ * declaration order.
+ *
+ * the identity-changing operations it may perform: merge, split
+ */
+export type FunctionPermissionsMutations = "merge" | "split"
+
+export const functionPermissionsMutationsValues: FunctionPermissionsMutations[] =
+  ["merge", "split"]
+
+/** FunctionPermissionsReads is one value of the `permissions.reads` object
+ * declared on core.substrate.reamde.dev/function.
+ *
+ * which record kinds this function may read while it runs, and how much; leave
+ * it out and any read it attempts fails
+ */
+export interface FunctionPermissionsReads {
+  /** The record kinds every read is held to. Names a kind: offer a picker, not
+   * a text box.
+   */
+  kinds?: string[]
+  /** How much one run may read. */
+  budgets?: FunctionPermissionsReadsBudgets
+}
+
+/** FunctionPermissionsReadsBudgets is one value of the
+ * `permissions.reads.budgets` object declared on
  * core.substrate.reamde.dev/function.
  *
- * what one invocation's reads may spend
+ * how much one run may read
  */
-export interface FunctionReadsBudgets {
-  /** Host read calls per invocation. */
+export interface FunctionPermissionsReadsBudgets {
+  /** How many reads one run may make. */
   calls?: number
-  /** Rows read per invocation. */
+  /** How many records one run may read. */
   rows?: number
 }
 

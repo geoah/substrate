@@ -42,11 +42,11 @@ message ──findurls──▶ page(pending) ──fetchpage──▶ page(fetc
 - **`pageclassifier`**, **`readinglistagent`**, **`weeklyrollup`** are agents —
   LLM loops referencing the seeded `default` llmprovider row, each naming its
   own `model` (opus, sonnet and haiku respectively). The
-  classifier's emit names `recordpatchrequest` too, so the sub-agent's `propose`
+  classifier's writes name `recordpatchrequest` too, so the sub-agent's `propose`
   survives the emit ceiling (a child's effective emit is its own ∩ the
   caller's).
 - **`stampconfig`** (python) is the emit ceiling's NEGATIVE proof. The
-  reading-list agent carries it and declares `config` in its own emit, but when
+  reading-list agent carries it and declares `config` in its own writes, but when
   it runs as the classifier's sub-agent its effective emit narrows to the
   classifier's (`page` + `recordpatchrequest`), so a `stampconfig` call is
   refused and nothing lands — delegation can only narrow, never widen.

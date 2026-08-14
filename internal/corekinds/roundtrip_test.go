@@ -100,7 +100,7 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodeActor)
 
 	roundTrip(t, "agent", &corekinds.Agent{
-		Version:   str("v1alpha7"),
+		Version:   str("v1alpha8"),
 		Authority: str("core.substrate.reamde.dev"),
 		Prompt:    str("be useful"),
 		Provider:  str("default"),
@@ -113,11 +113,13 @@ func TestRoundTripPopulated(t *testing.T) {
 			{Callable: str("web.bundles.substrate.reamde.dev/setclass"), Name: str("classify")},
 		},
 		// Absent and empty are different answers: `agents` names one sub-agent,
-		// `emit` names none.
-		Agents:       []string{"core.substrate.reamde.dev/titler"},
-		Emit:         []string{},
-		Budgets:      &corekinds.AgentBudgets{MaxTurns: i64(8), Depth: i64(3)},
-		Reads:        &corekinds.AgentReads{Kinds: []string{"tasks.substrate.reamde.dev/task"}},
+		// `permissions.writes` names none.
+		Agents:  []string{"core.substrate.reamde.dev/titler"},
+		Budgets: &corekinds.AgentBudgets{MaxTurns: i64(8), Depth: i64(3)},
+		Permissions: &corekinds.AgentPermissions{
+			Writes: []string{},
+			Reads:  &corekinds.AgentPermissionsReads{Kinds: []string{"tasks.substrate.reamde.dev/task"}},
+		},
 		SubagentOnly: boolean(true),
 	}, corekinds.DecodeAgent)
 
@@ -174,10 +176,12 @@ func TestRoundTripPopulated(t *testing.T) {
 			{Name: str("query"), Type: ptr(corekinds.FunctionArgumentsTypeString), Required: boolean(true)},
 			{Name: str("mode"), Type: ptr(corekinds.FunctionArgumentsTypeEnum), Values: []string{"fast", "thorough"}},
 		},
-		Returns:   []corekinds.FunctionReturns{{Name: str("results"), Type: ptr(corekinds.FunctionReturnsTypeJson)}},
-		Emit:      []string{"firecrawl.substrate.reamde.dev/webdocument"},
-		Network:   []string{"api.example.com"},
-		Mutations: []corekinds.FunctionMutations{corekinds.FunctionMutationsMerge},
+		Returns: []corekinds.FunctionReturns{{Name: str("results"), Type: ptr(corekinds.FunctionReturnsTypeJson)}},
+		Permissions: &corekinds.FunctionPermissions{
+			Writes:    []string{"firecrawl.substrate.reamde.dev/webdocument"},
+			Network:   []string{"api.example.com"},
+			Mutations: []corekinds.FunctionPermissionsMutations{corekinds.FunctionPermissionsMutationsMerge},
+		},
 	}, corekinds.DecodeFunction)
 
 	roundTrip(t, "kind", &corekinds.Kind{

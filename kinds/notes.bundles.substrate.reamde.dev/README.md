@@ -9,7 +9,7 @@ it installs on a fresh substrate and runs from one command.
 
 ```
 notekeeper (agent)
-├── titler (sub-agent)          writes the title. No tools, no emit.
+├── titler (sub-agent)          writes the title. No tools, no writes.
 ├── stats (function tool)       counts words and characters. No network.
 └── savenote (function tool)    puts the note. Emits notes/note.
 ```

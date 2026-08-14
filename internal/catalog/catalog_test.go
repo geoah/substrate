@@ -43,8 +43,8 @@ func TestCatalogListsShippedBundle(t *testing.T) {
 	if b.Authority != "web.bundles.substrate.reamde.dev" {
 		t.Errorf("authority = %q", b.Authority)
 	}
-	if b.Version != "v1alpha3" {
-		t.Errorf("version = %q, want v1alpha3", b.Version)
+	if b.Version != "v1alpha4" {
+		t.Errorf("version = %q, want v1alpha4", b.Version)
 	}
 	if _, ok := b.Inputs["connector"]; !ok {
 		t.Errorf("inputs = %v, want a connector input", b.Inputs)

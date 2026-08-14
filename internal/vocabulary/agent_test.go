@@ -34,7 +34,8 @@ data:
   description: annotates a widget
   runtime: python
   source: "def main(input, host): return {}"
-  emit: [ag.example.com/widget]
+  permissions:
+    writes: [ag.example.com/widget]
 ---
 kind: core.substrate.reamde.dev/agent
 metadata:
@@ -112,7 +113,8 @@ data:
   authority: core.substrate.reamde.dev
   description: lands a reviewed change request
   runtime: host
-  emit: [core.substrate.reamde.dev/recordpatchrequest]
+  permissions:
+    writes: [core.substrate.reamde.dev/recordpatchrequest]
 `
 
 // loadAgAuthorityWithCore is loadAgAuthority with the core stub beside it, for
@@ -135,11 +137,12 @@ func TestAgentLoads(t *testing.T) {
     - {callable: ag.example.com/annotate, name: markWidget, description: marks one widget}
   agents: [ag.example.com/sorter]
   budgets: {maxTurns: 4, depth: 2}
-  emit:
-    - ag.example.com/widget
-    - core.substrate.reamde.dev/recordpatchrequest
-  reads:
-    kinds: [ag.example.com/widget]
+  permissions:
+    writes:
+      - ag.example.com/widget
+      - core.substrate.reamde.dev/recordpatchrequest
+    reads:
+      kinds: [ag.example.com/widget]
 `))
 	// recordpatchrequest lives in core, which this fixture does not declare
 	// — resolution must fail on exactly that, proving emit resolves.
@@ -158,9 +161,10 @@ func TestAgentLoadsWithoutCoreEmit(t *testing.T) {
     - {callable: ag.example.com/annotate, name: markWidget}
   agents: [ag.example.com/sorter]
   budgets: {maxTurns: 4, depth: 2}
-  emit: [ag.example.com/widget]
-  reads:
-    kinds: [ag.example.com/widget]
+  permissions:
+    writes: [ag.example.com/widget]
+    reads:
+      kinds: [ag.example.com/widget]
 `))
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -197,7 +201,8 @@ func TestAgentGraphQLBuiltinsAndSubagentOnly(t *testing.T) {
   tools:
     - {callable: core.substrate.reamde.dev/graphql}
     - {callable: core.substrate.reamde.dev/mutate}
-  emit: [ag.example.com/widget]
+  permissions:
+    writes: [ag.example.com/widget]
 `))
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -264,19 +269,19 @@ func TestAgentRefusals(t *testing.T) {
   provider: default
   model: claude-opus-5
   tools: [{callable: core.substrate.reamde.dev/query}]
-`, "query needs data.reads"},
+`, "query needs data.permissions.reads"},
 		{"propose without emit", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
   tools: [{callable: core.substrate.reamde.dev/propose}]
-`, "propose needs core.substrate.reamde.dev/recordpatchrequest in data.emit"},
+`, "propose needs core.substrate.reamde.dev/recordpatchrequest in data.permissions.writes"},
 		{"mutate without emit", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
   tools: [{callable: core.substrate.reamde.dev/mutate}]
-`, "mutate needs data.emit"},
+`, "mutate needs data.permissions.writes"},
 		{"self sub-agent", `  description: d
   prompt: p
   provider: default
@@ -316,6 +321,26 @@ func TestAgentRefusals(t *testing.T) {
   model: claude-opus-5
   tools: [{builtin: query}]
 `, `builtin "query" is deleted — the built-ins are function records: {callable: core.substrate.reamde.dev/query}`},
+		// The hoisted grants are deleted too: an agent's two live under
+		// `permissions:` beside a function's five.
+		{"the hoisted emit", `  description: d
+  prompt: p
+  provider: default
+  model: claude-opus-5
+  emit: [ag.example.com/widget]
+`, `key "emit" is deleted — permissions.writes`},
+		{"the hoisted reads", `  description: d
+  prompt: p
+  provider: default
+  model: claude-opus-5
+  reads: {kinds: [ag.example.com/widget]}
+`, `key "reads" is deleted — permissions.reads`},
+		{"a grant outside the agent's set", `  description: d
+  prompt: p
+  provider: default
+  model: claude-opus-5
+  permissions: {network: ["api.example.com"]}
+`, `data.permissions: unknown key "network"`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

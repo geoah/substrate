@@ -100,7 +100,7 @@ func openCursorDataset(t *testing.T) *dataset {
 			vocabulary.FunctionManifest(authority, "mirror", map[string]any{
 				"description": "mirrors widgets into tasks",
 				"runtime":     vocabulary.RuntimePython,
-				"emit":        []any{"tasks.substrate.reamde.dev/task"},
+				"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 				"source": `
 def main(input, host):
     env = input["envelope"]

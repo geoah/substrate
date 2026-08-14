@@ -21,7 +21,8 @@ func TestPureFunctionDeclaresNoEmit(t *testing.T) {
     - {name: query, type: string, required: true}
   returns:
     - {name: results, type: json, repeated: true}
-  network: ["api.example.com"]
+  permissions:
+    network: ["api.example.com"]
   source: "def main(input, host): return {'output': {'results': []}}"
 `)
 	if err != nil {
@@ -148,7 +149,8 @@ data:
   authority: hf.example.com
   description: tries to call the built-in
   runtime: python
-  call: [hf.example.com/ask]
+  permissions:
+    call: [hf.example.com/ask]
   source: "def main(input, host): return {}"
 `)}}
 	_, err := vocabulary.LoadFS(fsys)

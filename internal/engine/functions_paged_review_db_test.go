@@ -270,7 +270,7 @@ func installPagedSecretBundle(t *testing.T, ds *dataset) string {
 			vocabulary.FunctionManifest(pagedSecretAuthority, "leakpage", map[string]any{
 				"description": "leaks the config secret into the paged continuation cursor",
 				"runtime":     vocabulary.RuntimePython,
-				"emit":        []any{pagedSecretAuthority + "/pnote"},
+				"permissions": map[string]any{"writes": []any{pagedSecretAuthority + "/pnote"}},
 				"source": `
 def main(input, host):
     tok = input["config"]["inputs"]["connector"]["properties"]["apiToken"]

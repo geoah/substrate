@@ -11,8 +11,8 @@ import (
 // the host applies them through the ordinary write path, transactionally with
 // the cursor CAS. All seven Dataset mutations are reachable — put, patch,
 // delete, link, unlink, merge, split — every one held to the manifest's
-// `capabilities.emit` allowlist, merge/split additionally to its
-// `capabilities.mutations` grant. Two contract rules live here: `ifAbsent`
+// `permissions.writes` allowlist, merge/split additionally to its
+// `permissions.mutations` grant. Two contract rules live here: `ifAbsent`
 // makes a put create-only (a minting function never resets state owned by
 // later stages), and a put or patch addressed to a FORMER id resolves onto
 // the canonical winner instead of parking (the deterministic-id trap after a
@@ -177,7 +177,7 @@ func (ds *dataset) decodeEffect(fn *vocabulary.Function, v any) (effect, error) 
 		ef.To = ref
 	case effectMerge:
 		if !fn.Caps.AllowsMutation(vocabulary.MutationMerge) {
-			return ef, fmt.Errorf("merge needs the capabilities.mutations grant %s lacks", fn.Identity())
+			return ef, fmt.Errorf("merge needs the permissions.mutations grant %s lacks", fn.Identity())
 		}
 		ef.Loser, _ = m["loser"].(string)
 		if ef.Loser == "" {
@@ -185,7 +185,7 @@ func (ds *dataset) decodeEffect(fn *vocabulary.Function, v any) (effect, error) 
 		}
 	case effectSplit:
 		if !fn.Caps.AllowsMutation(vocabulary.MutationSplit) {
-			return ef, fmt.Errorf("split needs the capabilities.mutations grant %s lacks", fn.Identity())
+			return ef, fmt.Errorf("split needs the permissions.mutations grant %s lacks", fn.Identity())
 		}
 		ef.MergeID, _ = m["merge"].(string)
 		if ef.MergeID == "" {

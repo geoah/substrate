@@ -181,7 +181,7 @@ func TestTypedDeclarationRungTranslatesEveryStoredDeclaration(t *testing.T) {
 	wantProps := map[string][]string{
 		"core.substrate.reamde.dev/kind":          {"names", "properties"},
 		"core.substrate.reamde.dev/agent":         {"prompt", "tools", "provider"},
-		"core.substrate.reamde.dev/function":      {"runtime", "source", "emit"},
+		"core.substrate.reamde.dev/function":      {"runtime", "source", "permissions"},
 		"core.substrate.reamde.dev/bundle":        {"installs"},
 		"core.substrate.reamde.dev/trait":         {"authority"},
 		"core.substrate.reamde.dev/recordmapping": {"from", "to", "edge"},
@@ -297,8 +297,8 @@ func TestTypedDeclarationRungTranslatesRetiredToolSpellings(t *testing.T) {
 			"tools": []any{map[string]any{"callable": vocabulary.HostFunctionGraphQL}},
 		}),
 		agent("armed", map[string]any{
-			"tools": []any{map[string]any{"callable": vocabulary.HostFunctionMutate}},
-			"emit":  []any{authority + "/gizmo"},
+			"tools":       []any{map[string]any{"callable": vocabulary.HostFunctionMutate}},
+			"permissions": map[string]any{"writes": []any{authority + "/gizmo"}},
 		}),
 	}); err != nil {
 		t.Fatalf("install the tools authority: %v", err)

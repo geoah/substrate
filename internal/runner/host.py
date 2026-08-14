@@ -583,7 +583,7 @@ class Records:
 
 
 class Functions:
-    """Function-to-function composition, gated by capabilities.call. The
+    """Function-to-function composition, gated by permissions.call. The
     callee's effects accumulate into THIS delivery's transaction."""
 
     def __init__(self, host):
@@ -657,7 +657,7 @@ class Host:
         return self._call("search", params).get("hits") or []
 
     def call(self, function, input=None):
-        """Invoke another function (capabilities.call gated) -> its output.
+        """Invoke another function (permissions.call gated) -> its output.
         Its effects apply in THIS delivery's transaction."""
         return self._call("call", {"function": function, "input": input}).get("output")
 

@@ -24,7 +24,10 @@ data:
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
   # v1alpha3: websearch's fake `emit` is gone — a pure function declares none.
-  version: v1alpha3
+  # v1alpha4: the grants group under one `permissions:` object, and the permission
+  # to write is `writes:` inside it. This closure's functions and agents
+  # follow core's declaration.
+  version: v1alpha4
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -161,8 +164,9 @@ data:
       type: json
       repeated: true
       required: true
-  network:
-    - "api.firecrawl.dev"
+  permissions:
+    network:
+      - "api.firecrawl.dev"
   source: |
     import json
     import urllib.request
@@ -264,9 +268,10 @@ data:
       required: true
     - name: truncated
       type: bool
-  emit: [firecrawl.bundles.substrate.reamde.dev/webdocument]
-  network:
-    - "api.firecrawl.dev"
+  permissions:
+    writes: [firecrawl.bundles.substrate.reamde.dev/webdocument]
+    network:
+      - "api.firecrawl.dev"
   source: |
     import datetime
     import json

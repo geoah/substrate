@@ -46,9 +46,10 @@ data:
     - callable: web.bundles.substrate.reamde.dev/setclass
   agents: [web.bundles.substrate.reamde.dev/readinglistagent]
   budgets: {maxTurns: 4, maxToolCalls: 8, depth: 3}
-  emit:
-    - web.bundles.substrate.reamde.dev/page
-    - core.substrate.reamde.dev/recordpatchrequest
+  permissions:
+    writes:
+      - web.bundles.substrate.reamde.dev/page
+      - core.substrate.reamde.dev/recordpatchrequest
 ```
 
 `data` carries:
@@ -73,10 +74,13 @@ data:
 - **`budgets:`** bounds one run: `maxTurns` (default 8, max 64),
   `maxToolCalls` (default 32, max 256), `deadlineSeconds` (default 120, max
   600), and `depth` (default 3, max 3).
-- **`emit:`**, the allowlist for the agent's writes, and which `*request` kinds
-  `propose` may emit. Empty means the agent writes nothing.
-- optional **`reads:`**, the function envelope's read shape verbatim: a
-  `kinds:` allowlist plus `budgets:` calls and rows.
+- **`permissions:`**, what the agent is allowed to do while it runs: a
+  function's grant, minus the three an LLM loop has no body to spend.
+  - **`writes:`**, which record kinds it may create or change, the change
+    requests it proposes among them. Empty means the agent writes nothing.
+  - optional **`reads:`**, which record kinds it may read and how much: a
+    `kinds:` allowlist plus `budgets:` calls and rows. Leave it out and the
+    `query` tool is withheld.
 - optional **`subagentOnly:`**, the chat-surface withholding: `true` keeps the
   agent off the console's chat list and makes the chat API refuse it, while
   sub-agent calls, the call API and triggers still dispatch it. An
@@ -107,7 +111,7 @@ data:
 Because vocabulary is records, a parsed agent projects to a row the console
 lists and creates like any other, and **the properties are the declaration.**
 The row holds the manifest's own keys, one property per key: `params`, `tools`,
-`budgets`, `emit` and `reads` are declared properties like `prompt` and `model`,
+`budgets` and `permissions` are declared properties like `prompt` and `model`,
 and the loader rebuilds the registry from exactly these. There is no
 `definition` blob and no projected mirror beside it, so what an author writes is
 what gets stored, and a write that names the retired blob is refused rather than
@@ -138,7 +142,7 @@ an agent could name that no record declared, and it is gone now that they are
 records.
 
 - **`core.substrate.reamde.dev/query`** is the capability-scoped read, and
-  requires `reads:` — a load error otherwise. A get outside the allowlist
+  requires `permissions.reads`, a load error otherwise. A get outside the allowlist
   answers like an absent id; list and search clamp to the remaining row budget;
   a blown budget is a tool error the model sees.
 - **`core.substrate.reamde.dev/graphql`** is the whole-repository read: the
@@ -152,14 +156,14 @@ records.
   graph itself.
 - **`core.substrate.reamde.dev/mutate`** executes GraphQL mutations (`put`,
   `patch`, `delete`, `link`, `unlink`) through the same resolvers, and requires
-  a non-empty `emit:` (a load error otherwise). Every written kind is resolved
+  a non-empty `permissions.writes` (a load error otherwise). Every written kind is resolved
   and held to the agent's **effective** emit before the write applies, so a
   sub-agent's ceiling narrows it like any other effect; `merge` and `split`
   refuse outright, as fusing identities is the owner's reviewed decision. Writes
   ride the full public path (kind guards, schema-record admission) under the
   agent's actor.
 - **`core.substrate.reamde.dev/propose`** is the reviewed write, and requires
-  `emit:` to name
+  `permissions.writes` to name
   `core.substrate.reamde.dev/recordpatchrequest`. It lands one
   [`recordpatchrequest`](projection.md#the-patch-request-sibling), never a
   direct mutation. It carries a `rationale` and an `op`: `patch`, the default,
@@ -406,7 +410,7 @@ data:
   budgets: {maxTurns: 1}
 ```
 
-No `tools:` and no `emit:`, so it can write nothing at all. Swap `provider:`
+No `tools:` and no `permissions:`, so it can write nothing at all. Swap `provider:`
 for the row under test and `model:` for an id that row serves — on the
 `default` gateway row the alias form (`anthropic/claude-haiku-4-5`), on a
 native `anthropic` row the bare id.

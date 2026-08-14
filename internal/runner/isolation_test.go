@@ -178,7 +178,7 @@ def main(input, host):
 	}
 }
 
-// capabilities.network, enforced. A manifest that declares no egress gets no
+// permissions.network, enforced. A manifest that declares no egress gets no
 // sockets; one that declares egress keeps working exactly as it did.
 func TestNetworkCapabilityGatesABody(t *testing.T) {
 	r := New()
@@ -362,7 +362,7 @@ func TestIdleProcessesAreReaped(t *testing.T) {
 	}
 }
 
-// Withdrawing `capabilities.network` has to take effect on the NEXT delivery,
+// Withdrawing `permissions.network` has to take effect on the NEXT delivery,
 // not on the next unrelated source edit. The sandbox policy is applied once,
 // when the process starts, so a manifest change that left the content hash
 // alone would keep serving deliveries from the process that was started while
