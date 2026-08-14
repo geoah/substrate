@@ -25,6 +25,13 @@ func dnBaseProps() map[string]any {
 	spec["fields"].(map[string]any)["slots"] = map[string]any{
 		"type": "enum", "values": []any{"low", "high"}, "keyed": true,
 	}
+	// A LEVEL-4 object with a scalar leaf: the deepest the dialect admits, and
+	// the shape core's own `permissions.reads.budgets.calls` now wears. The
+	// property-level arms stop three notches short of it, so a guard that walks
+	// one level too few shows up here and nowhere else.
+	spec["fields"].(map[string]any)["limits"].(map[string]any)["fields"].(map[string]any)["budgets"] = map[string]any{"type": "object", "fields": map[string]any{
+		"calls": map[string]any{"type": "int"},
+	}}
 	props["plain"] = map[string]any{"type": "string"}
 	return props
 }
@@ -41,8 +48,12 @@ func dnRow(t *testing.T, ds substrate.Dataset) {
 		Properties: map[string]any{
 			"grant": map[string]any{"scopes": []any{"read"}, "subject": "ada"},
 			"spec": map[string]any{
-				"mode":   "high",
-				"limits": map[string]any{"depth": 3, "ref": "a", "grade": "high"},
+				"mode": "high",
+				"limits": map[string]any{
+					"depth": 3, "ref": "a", "grade": "high",
+					// The level-4 leaf, so the deepest arm counts a live row too.
+					"budgets": map[string]any{"calls": 4},
+				},
 				// Keys no camelCase contract would admit: a tightening is a
 				// narrowing for the rows holding a key it REFUSES, so the row that
 				// drives those arms has to hold one.
@@ -76,6 +87,11 @@ func dnCases() map[string]struct {
 	limitFields := func(props map[string]any) map[string]any {
 		return specFields(props)["limits"].(map[string]any)["fields"].(map[string]any)
 	}
+	// The level-4 fields: a kind's own property is level 1, so this is the last
+	// level the dialect admits and its leaves are scalars.
+	budgetFields := func(props map[string]any) map[string]any {
+		return limitFields(props)["budgets"].(map[string]any)["fields"].(map[string]any)
+	}
 	return map[string]struct {
 		mutate func(props map[string]any)
 		says   string
@@ -83,6 +99,16 @@ func dnCases() map[string]struct {
 		"level-2 field dropped": {
 			mutate: func(props map[string]any) { delete(limitFields(props), "depth") },
 			says:   `object "spec.limits" drops field "depth"`,
+		},
+		"level-4 field dropped": {
+			mutate: func(props map[string]any) { delete(budgetFields(props), "calls") },
+			says:   `object "spec.limits.budgets" drops field "calls"`,
+		},
+		"level-4 field retyped": {
+			mutate: func(props map[string]any) {
+				budgetFields(props)["calls"] = map[string]any{"type": "string"}
+			},
+			says: `object "spec.limits.budgets" field "calls" changes kind int → string`,
 		},
 		"level-2 field retyped": {
 			mutate: func(props map[string]any) {

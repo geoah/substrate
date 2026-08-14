@@ -24,7 +24,7 @@ data:
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
   # v1alpha3: the built-ins are function records, so the two agents' tool
-  # entries name them under `callable:` like any other function.
+  # entries name them under `function:` like any other function.
   # v1alpha4: the grants group under one `permissions:` object, and the permission
   # to write is `writes:` inside it. This closure's functions and agents
   # follow core's declaration.
@@ -302,7 +302,7 @@ data:
   provider: default
   model: anthropic/claude-opus-5
   tools:
-    - callable: web.bundles.substrate.reamde.dev/setclass
+    - function: web.bundles.substrate.reamde.dev/setclass
   agents: [web.bundles.substrate.reamde.dev/readinglistagent]
   budgets:
     maxTurns: 4
@@ -331,8 +331,8 @@ data:
   provider: default
   model: anthropic/claude-sonnet-5
   tools:
-    - callable: core.substrate.reamde.dev/propose
-    - callable: web.bundles.substrate.reamde.dev/stampconfig
+    - function: core.substrate.reamde.dev/propose
+    - function: web.bundles.substrate.reamde.dev/stampconfig
   budgets:
     maxTurns: 4
     maxToolCalls: 4
@@ -359,8 +359,8 @@ data:
   provider: default
   model: anthropic/claude-haiku-4-5
   tools:
-    - callable: core.substrate.reamde.dev/query
-    - callable: core.substrate.reamde.dev/propose
+    - function: core.substrate.reamde.dev/query
+    - function: core.substrate.reamde.dev/propose
   permissions:
     reads:
       kinds: [web.bundles.substrate.reamde.dev/page]

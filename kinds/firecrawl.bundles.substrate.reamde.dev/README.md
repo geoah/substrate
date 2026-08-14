@@ -96,8 +96,8 @@ data:
   provider: default
   model: anthropic/claude-opus-5
   tools:
-    - callable: firecrawl.bundles.substrate.reamde.dev/websearch
-    - callable: firecrawl.bundles.substrate.reamde.dev/scrapepage
+    - function: firecrawl.bundles.substrate.reamde.dev/websearch
+    - function: firecrawl.bundles.substrate.reamde.dev/scrapepage
   budgets: {maxTurns: 8, maxToolCalls: 16, depth: 3}
   permissions:
     writes:

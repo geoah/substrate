@@ -35,14 +35,15 @@ data:
   # properties, and `name` left with them (a declaration's local name is its
   # id's last segment, which is what `{localName}` renders).
   # v1alpha7: the `builtin` field left `tools`. The four built-ins are function
-  # records now (`runtime: host`), so an entry names one under `callable:` like
+  # records now (`runtime: host`), so an entry names one under `function:` like
   # any other function and the union has ONE arm. Dropping a field is a
   # narrowing, and this one is safe because dialect 2 has never shipped in a
   # release: no store outside our own development instances holds a row with the
   # field, and the dialect rung rewrites the ones that do.
   # v1alpha8: `emit` and `reads` became one `permissions` object, and `emit` is
   # `writes` inside it: the same grouping a function's five grants took, and
-  # safe for the same reason v1alpha7 was.
+  # safe for the same reason v1alpha7 was. A tool entry's `callable` field
+  # became `function` in the same bump, since an entry admits nothing else.
   version: v1alpha8
   names:
     singular: agent
@@ -97,27 +98,30 @@ data:
           type: int
           min: 1
           description: the completion cap sent on every request
-    # `callable` names the tool, and it is the ONE arm: the four built-ins are
+    # `function` names the tool, and it is the ONE arm: the four built-ins are
     # `runtime: host` function records core ships, so
-    # `{callable: core.substrate.reamde.dev/graphql}` names one exactly as a
-    # bundle's function is named. `name` and `description` alias the card for
-    # this agent's prompt context, built-ins included.
+    # `{function: core.substrate.reamde.dev/graphql}` names one exactly as a
+    # bundle's function is named. An entry can name nothing else — a sub-agent
+    # is named on `agents:` — which is why the field is not `callable`, the
+    # trigger's word for a target that really may be either. `name` and
+    # `description` alias the card for this agent's prompt context, built-ins
+    # included.
     tools:
       type: object
       repeated: true
       description: what the model may call, in declaration order
       fields:
-        callable:
+        function:
           type: string
           refersTo: function
           required: true
-          description: the function identity this entry names
+          description: the function this entry names, by identity
         name:
           type: string
-          description: the model-facing tool name, aliasing a callable
+          description: the model-facing tool name, aliasing the function
         description:
           type: string
-          description: the model-facing card, overriding the callable's own
+          description: the model-facing card, overriding the function's own
     agents:
       type: string
       repeated: true

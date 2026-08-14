@@ -220,7 +220,7 @@ def main(input, host):
 	user := vocabulary.AgentManifest(uAuthority, "user", map[string]any{
 		"description": "uses the bundled writer tool", "prompt": "You write.",
 		"provider": "userllm", "model": "user",
-		"tools":       []any{map[string]any{"callable": tbAuthority + "/writer"}},
+		"tools":       []any{map[string]any{"function": tbAuthority + "/writer"}},
 		"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{

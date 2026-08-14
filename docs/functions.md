@@ -189,7 +189,7 @@ body. Core ships four of them, and they are the agent
 
 They are **ordinary function records**: seeded into every new repository,
 delivered to an existing one by the [boot upgrade](vocabulary.md), listed in the
-`functions` collection, and named by an agent under `callable:` like any other
+`functions` collection, and named by an agent under `function:` like any other
 function. They used to be engine constants and a `tools: [{builtin: query}]` arm
 — the one thing an agent could name that no record declared.
 

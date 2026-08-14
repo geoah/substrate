@@ -109,8 +109,8 @@ func TestRoundTripPopulated(t *testing.T) {
 		// One arm, two entries: a host built-in named by identity, and a bundle's
 		// function carrying an alias.
 		Tools: []corekinds.AgentTools{
-			{Callable: str("core.substrate.reamde.dev/query")},
-			{Callable: str("web.bundles.substrate.reamde.dev/setclass"), Name: str("classify")},
+			{Function: str("core.substrate.reamde.dev/query")},
+			{Function: str("web.bundles.substrate.reamde.dev/setclass"), Name: str("classify")},
 		},
 		// Absent and empty are different answers: `agents` names one sub-agent,
 		// `permissions.writes` names none.

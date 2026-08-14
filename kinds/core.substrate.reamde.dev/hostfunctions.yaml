@@ -5,7 +5,7 @@
 # writer — and this file is what makes each of them a RECORD like every other
 # function: seeded into a new repository, delivered to an existing one by the
 # boot upgrade, listed in the functions collection, and named by an agent under
-# `tools: [{callable: core.substrate.reamde.dev/…}]` exactly as a bundle's
+# `tools: [{function: core.substrate.reamde.dev/…}]` exactly as a bundle's
 # function is. They used to be four engine constants and a `{builtin: x}` arm on
 # `tools:` — the one thing an agent could name that no record declared.
 #
@@ -18,7 +18,7 @@
 # THE GRANT IS THE CALLER'S. A host function declares no `reads:` and (except
 # propose) no `emit:`, because the grant that scopes it belongs to whoever
 # called it: `query` is held to the calling agent's `reads:`, `mutate` to its
-# effective `emit:`. That is also why two of the four are NOT callable through
+# effective writes. That is also why two of the four are NOT callable through
 # the direct call API and never a trigger's target — there is no calling agent
 # whose grants would bound them.
 # ---- query: the capability-scoped read -------------------------------------

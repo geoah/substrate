@@ -624,6 +624,34 @@ func DeclarationDataKeys(short string) map[string]bool {
 	return out
 }
 
+// deletedDeclarationKeys is every schema kind's own deleted `data` keys, keyed
+// by the manifest short name. The kinds absent from it retired no key of their
+// own; the keys every kind retired live in deletedDataKeys.
+var deletedDeclarationKeys = map[string]map[string]string{
+	DocFunction: deletedFunctionKeys,
+	DocAgent:    deletedAgentKeys,
+}
+
+// DeletedDeclarationKeys is one schema kind's deleted `data` keys, each naming
+// what replaced it.
+//
+// The YAML door refuses a document by this set (parseFunction, parseAgent). It
+// is exported because a declaration also arrives as PROPERTIES, through the
+// generic record verbs, and that door has to say the same sentence: a PUT
+// carrying `emit` is the same mistake as a manifest carrying it, and being told
+// "not declared" there while the loader names `permissions.writes` here would
+// make the fix depend on which door the writer knocked at.
+//
+// The map is a copy: the sets themselves are this package's own.
+func DeletedDeclarationKeys(short string) map[string]string {
+	keys := deletedDeclarationKeys[short]
+	out := make(map[string]string, len(keys))
+	for k, v := range keys {
+		out[k] = v
+	}
+	return out
+}
+
 func (l *loader) checkKeys(where string, data map[string]any, allowed map[string]bool) {
 	for k := range data {
 		if allowed[k] {

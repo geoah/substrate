@@ -325,14 +325,14 @@ func (v *AgentParams) Encode() map[string]any {
 //
 // what the model may call, in declaration order
 type AgentTools struct {
-	// Callable is the function identity this entry names. Names a function in
-	// the registry.
-	Callable *string
+	// Function is the function this entry names, by identity. Names a function
+	// in the registry.
+	Function *string
 
-	// Name is the model-facing tool name, aliasing a callable.
+	// Name is the model-facing tool name, aliasing the function.
 	Name *string
 
-	// Description is the model-facing card, overriding the callable's own.
+	// Description is the model-facing card, overriding the function's own.
 	Description *string
 }
 
@@ -340,7 +340,7 @@ type AgentTools struct {
 // sorted. It is a FORM-LEVEL contract: the write path does not enforce it, so
 // Decode admits a value that leaves one absent and this is what a client
 // checks before it submits one.
-var AgentToolsRequired = []string{"callable"}
+var AgentToolsRequired = []string{"function"}
 
 // Missing names the required properties this value leaves absent, in
 // declaration order. Empty means every declared requirement is answered —
@@ -348,8 +348,8 @@ var AgentToolsRequired = []string{"callable"}
 // type's.
 func (v *AgentTools) Missing() []string {
 	var out []string
-	if v.Callable == nil {
-		out = append(out, "callable")
+	if v.Function == nil {
+		out = append(out, "function")
 	}
 	return out
 }
@@ -368,10 +368,10 @@ func decodeAgentTools(d *decoder, path string, v any) (AgentTools, bool) {
 			continue
 		}
 		switch key {
-		case "callable":
-			p := at(path, "callable")
+		case "function":
+			p := at(path, "function")
 			if e, ok := d.text(p, props[key], nil, nil); ok {
-				out.Callable = &e
+				out.Function = &e
 			}
 		case "name":
 			p := at(path, "name")
@@ -399,8 +399,8 @@ func decodeAgentTools(d *decoder, path string, v any) (AgentTools, bool) {
 // Decode/Encode is the pair the rest of the generator already names.
 func (v *AgentTools) Encode() map[string]any {
 	out := map[string]any{}
-	if v.Callable != nil {
-		out["callable"] = *v.Callable
+	if v.Function != nil {
+		out["function"] = *v.Function
 	}
 	if v.Name != nil {
 		out["name"] = *v.Name

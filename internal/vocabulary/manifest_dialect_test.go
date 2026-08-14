@@ -1,7 +1,7 @@
 package vocabulary_test
 
 // The manifest dialect's typed spellings, and they are the ONLY ones: a tool
-// entry names its callable, a function declares flat arguments and one
+// entry names its function, a function declares flat arguments and one
 // `permissions:` grant, a mapping rule is an object, a trait's variants are a list.
 // Each spelling that came before is refused here, naming what replaced it — the
 // stored rows written that way are translated by the dialect rung, whose frozen
@@ -45,10 +45,10 @@ func TestAgentToolEntriesNameTheirCallable(t *testing.T) {
 		}
 		return ag.Tools
 	}
-	entries := tools(`[{callable: core.substrate.reamde.dev/query},
-    {callable: core.substrate.reamde.dev/graphql},
-    {callable: core.substrate.reamde.dev/mutate},
-    {callable: ag.example.com/annotate}]`)
+	entries := tools(`[{function: core.substrate.reamde.dev/query},
+    {function: core.substrate.reamde.dev/graphql},
+    {function: core.substrate.reamde.dev/mutate},
+    {function: ag.example.com/annotate}]`)
 	if len(entries) != 4 || entries[0].Builtin != vocabulary.AgentToolQuery || entries[0].Name != vocabulary.AgentToolQuery {
 		t.Fatalf("tools %+v", entries)
 	}
@@ -56,7 +56,7 @@ func TestAgentToolEntriesNameTheirCallable(t *testing.T) {
 		t.Fatalf("the built-in entry does not carry its identity: %+v", entries[0])
 	}
 	if entries[3].Callable != "ag.example.com/annotate" || entries[3].Name != "annotate" || entries[3].Builtin != "" {
-		t.Fatalf("the callable entry %+v", entries[3])
+		t.Fatalf("the function entry %+v", entries[3])
 	}
 }
 
@@ -69,7 +69,7 @@ func TestAgentBuiltinToolAliases(t *testing.T) {
   provider: default
   model: claude-opus-5
   tools:
-    - {callable: core.substrate.reamde.dev/graphql, name: ask, description: asks the graph}
+    - {function: core.substrate.reamde.dev/graphql, name: ask, description: asks the graph}
 `))
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -84,16 +84,16 @@ func TestAgentBuiltinToolAliases(t *testing.T) {
 	}
 }
 
-// The grants a built-in needs fire on the callable spelling: the entry is the
+// The grants a built-in needs fire on the function spelling: the entry is the
 // declaration, not its spelling, and the grant is keyed on the identity.
 func TestAgentBuiltinToolEntryGrants(t *testing.T) {
 	cases := map[string]struct{ tools, want string }{
-		"query needs reads": {`[{callable: core.substrate.reamde.dev/query}]`, "query needs data.permissions.reads"},
+		"query needs reads": {`[{function: core.substrate.reamde.dev/query}]`, "query needs data.permissions.reads"},
 		"propose needs the request type in emit": {
-			`[{callable: core.substrate.reamde.dev/propose}]`,
+			`[{function: core.substrate.reamde.dev/propose}]`,
 			"propose needs core.substrate.reamde.dev/recordpatchrequest in data.permissions.writes",
 		},
-		"mutate needs emit": {`[{callable: core.substrate.reamde.dev/mutate}]`, "mutate needs data.permissions.writes"},
+		"mutate needs emit": {`[{function: core.substrate.reamde.dev/mutate}]`, "mutate needs data.permissions.writes"},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -112,25 +112,36 @@ func TestAgentBuiltinToolEntryGrants(t *testing.T) {
 
 func TestAgentToolEntryRefusals(t *testing.T) {
 	cases := map[string]struct{ tools, want string }{
-		"no callable":               {`[{name: markWidget}]`, "no callable — an entry names one function identity"},
-		"a callable is an identity": {`[{callable: annotate}]`, "callable \"annotate\" — a full function identity"},
-		"unknown entry key":         {`[{callable: ag.example.com/annotate, alias: ask}]`, "unknown key \"alias\""},
+		"no function":               {`[{name: markWidget}]`, "no function — an entry names one function identity"},
+		"a function is an identity": {`[{function: annotate}]`, "function \"annotate\" — a full function identity"},
+		"unknown entry key":         {`[{function: ag.example.com/annotate, alias: ask}]`, "unknown key \"alias\""},
+		// THE RENAMED KEY. `callable` said an entry might name something other
+		// than a function, and it never could: a sub-agent is named on `agents:`,
+		// and the word belongs to a trigger, whose target really is either.
+		"the callable key": {
+			`[{function: ag.example.com/annotate, callable: ag.example.com/annotate}]`,
+			`key "callable" is deleted — function`,
+		},
+		"the callable key alone": {
+			`[{callable: ag.example.com/annotate}]`,
+			`key "callable" is deleted — function`,
+		},
 		// THE TOMBSTONE. `{builtin: x}` was the interim arm, and it made the
 		// built-ins the one thing an agent could name that no record declared.
 		"the builtin arm": {
 			`[{builtin: query}]`,
-			`builtin "query" is deleted — the built-ins are function records: {callable: core.substrate.reamde.dev/query}`,
+			`builtin "query" is deleted — the built-ins are function records: {function: core.substrate.reamde.dev/query}`,
 		},
 		"the builtin arm, whatever it named": {
 			`[{builtin: frobnicate}]`,
 			`builtin "frobnicate" is deleted — the built-ins are function records`,
 		},
 		// The older retired spelling: a bare string named the arm by its value, so a
-		// typo in a built-in's name became a callable nothing declares.
-		"a bare built-in name": {`[query]`, `"query" is a bare string — an entry names its callable: {callable: core.substrate.reamde.dev/query}`},
-		"a bare callable identity": {
+		// typo in a built-in's name became a function nothing declares.
+		"a bare built-in name": {`[query]`, `"query" is a bare string — an entry names its function: {function: core.substrate.reamde.dev/query}`},
+		"a bare function identity": {
 			`[ag.example.com/annotate]`,
-			`"ag.example.com/annotate" is a bare string — an entry names its callable: {callable: ag.example.com/annotate}`,
+			`"ag.example.com/annotate" is a bare string — an entry names its function: {function: ag.example.com/annotate}`,
 		},
 	}
 	for name, tc := range cases {

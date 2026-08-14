@@ -126,7 +126,7 @@ def main(input, host):
 				"Step 3: reply with DONE followed by the speller tool's answer, and nothing else.",
 				"Never do the arithmetic or the spelling yourself.",
 			}, "\n"),
-			"tools":   []any{map[string]any{"callable": crewAuthority + "/add"}},
+			"tools":   []any{map[string]any{"function": crewAuthority + "/add"}},
 			"agents":  []any{crewAuthority + "/speller"},
 			"budgets": map[string]any{"maxTurns": 6, "maxToolCalls": 4, "depth": 3, "deadlineSeconds": 120},
 		}),

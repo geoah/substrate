@@ -63,7 +63,7 @@ func loadAgAuthority(t *testing.T, agData string) (*vocabulary.Registry, error) 
 
 // coreHostStub is the minimum of core an agent fixture needs to NAME a built-in.
 // The four built-ins are `runtime: host` function records, so
-// `{callable: core.substrate.reamde.dev/graphql}` resolves against the registry
+// `{function: core.substrate.reamde.dev/graphql}` resolves against the registry
 // like any other callable — a fixture declaring no core cannot name one, which is
 // exactly the refusal a real repository gets for a function nobody installed.
 // (`host` is admissible here because LoadFS builds `builtin`.)
@@ -134,7 +134,7 @@ func TestAgentLoads(t *testing.T) {
   provider: default
   model: claude-opus-5
   tools:
-    - {callable: ag.example.com/annotate, name: markWidget, description: marks one widget}
+    - {function: ag.example.com/annotate, name: markWidget, description: marks one widget}
   agents: [ag.example.com/sorter]
   budgets: {maxTurns: 4, depth: 2}
   permissions:
@@ -158,7 +158,7 @@ func TestAgentLoadsWithoutCoreEmit(t *testing.T) {
   provider: default
   model: claude-opus-5
   tools:
-    - {callable: ag.example.com/annotate, name: markWidget}
+    - {function: ag.example.com/annotate, name: markWidget}
   agents: [ag.example.com/sorter]
   budgets: {maxTurns: 4, depth: 2}
   permissions:
@@ -199,8 +199,8 @@ func TestAgentGraphQLBuiltinsAndSubagentOnly(t *testing.T) {
   model: claude-opus-5
   subagentOnly: true
   tools:
-    - {callable: core.substrate.reamde.dev/graphql}
-    - {callable: core.substrate.reamde.dev/mutate}
+    - {function: core.substrate.reamde.dev/graphql}
+    - {function: core.substrate.reamde.dev/mutate}
   permissions:
     writes: [ag.example.com/widget]
 `))
@@ -268,19 +268,19 @@ func TestAgentRefusals(t *testing.T) {
   prompt: p
   provider: default
   model: claude-opus-5
-  tools: [{callable: core.substrate.reamde.dev/query}]
+  tools: [{function: core.substrate.reamde.dev/query}]
 `, "query needs data.permissions.reads"},
 		{"propose without emit", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
-  tools: [{callable: core.substrate.reamde.dev/propose}]
+  tools: [{function: core.substrate.reamde.dev/propose}]
 `, "propose needs core.substrate.reamde.dev/recordpatchrequest in data.permissions.writes"},
 		{"mutate without emit", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
-  tools: [{callable: core.substrate.reamde.dev/mutate}]
+  tools: [{function: core.substrate.reamde.dev/mutate}]
 `, "mutate needs data.permissions.writes"},
 		{"self sub-agent", `  description: d
   prompt: p
@@ -305,7 +305,7 @@ func TestAgentRefusals(t *testing.T) {
   provider: default
   model: claude-opus-5
   tools:
-    - {callable: ag.example.com/annotate, name: sorter}
+    - {function: ag.example.com/annotate, name: sorter}
   agents: [ag.example.com/sorter]
 `, "collides with tool name"},
 		{"a bare tool string", `  description: d
@@ -313,14 +313,14 @@ func TestAgentRefusals(t *testing.T) {
   provider: default
   model: claude-opus-5
   tools: [frobnicate]
-`, `"frobnicate" is a bare string — an entry names its callable`},
+`, `"frobnicate" is a bare string — an entry names its function`},
 		// THE TOMBSTONE: the `builtin:` arm is deleted, whatever it named.
 		{"the builtin arm", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
   tools: [{builtin: query}]
-`, `builtin "query" is deleted — the built-ins are function records: {callable: core.substrate.reamde.dev/query}`},
+`, `builtin "query" is deleted — the built-ins are function records: {function: core.substrate.reamde.dev/query}`},
 		// The hoisted grants are deleted too: an agent's two live under
 		// `permissions:` beside a function's five.
 		{"the hoisted emit", `  description: d

@@ -218,8 +218,8 @@ data:
   provider: default
   model: anthropic/claude-sonnet-5
   tools:
-    - callable: notes.bundles.substrate.reamde.dev/stats
-    - callable: notes.bundles.substrate.reamde.dev/savenote
+    - function: notes.bundles.substrate.reamde.dev/stats
+    - function: notes.bundles.substrate.reamde.dev/savenote
   agents:
     - notes.bundles.substrate.reamde.dev/titler
   budgets:

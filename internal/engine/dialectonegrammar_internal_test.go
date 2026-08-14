@@ -158,8 +158,8 @@ data:
   provider: default
   model: gpt-5
   tools:
-    - callable: core.substrate.reamde.dev/query
-    - callable: x.example.com/fn
+    - function: core.substrate.reamde.dev/query
+    - function: x.example.com/fn
   permissions:
     writes: [x.example.com/widget]
     reads:
@@ -171,7 +171,7 @@ data:
 			// — no released binary ever wrote it — but the rung's one job is to hand
 			// the live loader a document it admits, and a row it refuses is a
 			// repository that cannot open.
-			name: "an agent's interim builtin arm becomes a callable",
+			name: "an agent's interim builtin arm becomes a function",
 			old: `
 kind: core.substrate.reamde.dev/agent
 metadata:
@@ -184,7 +184,7 @@ data:
   model: gpt-5
   tools:
     - builtin: graphql
-    - callable: x.example.com/fn
+    - function: x.example.com/fn
   emit: [x.example.com/widget]
 `,
 			want: `
@@ -198,10 +198,49 @@ data:
   provider: default
   model: gpt-5
   tools:
-    - callable: core.substrate.reamde.dev/graphql
-    - callable: x.example.com/fn
+    - function: core.substrate.reamde.dev/graphql
+    - function: x.example.com/fn
   permissions:
     writes: [x.example.com/widget]
+`,
+		},
+		{
+			// THE ENTRY KEY'S OWN INTERIM SPELLING. `callable` was the single arm's
+			// first key, renamed once it was clear an entry admits nothing but a
+			// function. The alias beside it is preserved: this arm was the live one,
+			// so an entry wearing it may carry a name and a description.
+			name: "an agent's interim callable key becomes function",
+			old: `
+kind: core.substrate.reamde.dev/agent
+metadata:
+  id: x.example.com/ag
+data:
+  authority: x.example.com
+  description: an agent
+  prompt: be useful
+  provider: default
+  model: gpt-5
+  tools:
+    - callable: core.substrate.reamde.dev/graphql
+      name: ask
+      description: asks the graph
+    - callable: x.example.com/fn
+`,
+			want: `
+kind: core.substrate.reamde.dev/agent
+metadata:
+  id: x.example.com/ag
+data:
+  authority: x.example.com
+  description: an agent
+  prompt: be useful
+  provider: default
+  model: gpt-5
+  tools:
+    - function: core.substrate.reamde.dev/graphql
+      name: ask
+      description: asks the graph
+    - function: x.example.com/fn
 `,
 		},
 		{
@@ -710,8 +749,8 @@ metadata:
 data:
   authority: x.example.com
   tools:
-    - callable: core.substrate.reamde.dev/query
-    - callable: x.example.com/fn
+    - function: core.substrate.reamde.dev/query
+    - function: x.example.com/fn
   indices: []
 `)
 	once, err := dialectOneData(vocabulary.DocAgent, docs[0].Data)
@@ -733,6 +772,62 @@ data:
 		if _, isEntry := tv.(map[string]any); !isEntry {
 			t.Fatalf("a tool entry is %T", tv)
 		}
+	}
+}
+
+// TestDialectOneGrantsPrecedence is the grant translation's own half of that
+// rule, on the one row that can hold ALL THREE spellings at once: the live
+// `permissions:` object, the interim hoisted keys, and dialect 1's
+// `capabilities:` wrapper. The order is live, then hoisted, then wrapper — a
+// grant the row already states in the live spelling is never overwritten by an
+// older one, which is exactly what lets the rung run over a half-migrated row —
+// and the second pass moves nothing.
+func TestDialectOneGrantsPrecedence(t *testing.T) {
+	docs := documents(t, `
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: x.example.com/fn
+data:
+  authority: x.example.com
+  description: does a thing
+  runtime: python
+  source: "def main(input, host): return {}"
+  permissions:
+    writes: [x.example.com/live]
+  emit: [x.example.com/hoisted]
+  call: [x.example.com/hoisted]
+  capabilities:
+    emit: [x.example.com/wrapped]
+    call: [x.example.com/wrapped]
+    network: ["wrapped.example.com"]
+`)
+	once, err := dialectOneData(vocabulary.DocFunction, docs[0].Data)
+	if err != nil {
+		t.Fatalf("translating refused: %v", err)
+	}
+	perms, _ := once["permissions"].(map[string]any)
+	want := map[string]any{
+		// live wins over both older places,
+		"writes": []any{"x.example.com/live"},
+		// the hoisted key wins over the wrapper, as dialect 1 itself preferred,
+		"call": []any{"x.example.com/hoisted"},
+		// and a grant only the wrapper states still arrives.
+		"network": []any{"wrapped.example.com"},
+	}
+	if !reflect.DeepEqual(perms, want) {
+		t.Fatalf("the grants collected to\n %#v\nwant\n %#v", perms, want)
+	}
+	for _, gone := range []string{"emit", "call", "capabilities"} {
+		if _, held := once[gone]; held {
+			t.Fatalf("the older spelling %q survived the translation: %#v", gone, once)
+		}
+	}
+	twice, err := dialectOneData(vocabulary.DocFunction, once)
+	if err != nil {
+		t.Fatalf("translating twice refused: %v", err)
+	}
+	if !reflect.DeepEqual(once, twice) {
+		t.Fatalf("translating twice moved the data:\n once %#v\n twice %#v", once, twice)
 	}
 }
 

@@ -294,10 +294,10 @@ func TestTypedDeclarationRungTranslatesRetiredToolSpellings(t *testing.T) {
 		vocabulary.KindManifest(authority, map[string]any{"singular": "gizmo", "plural": "gizmos"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		agent("bare", map[string]any{
-			"tools": []any{map[string]any{"callable": vocabulary.HostFunctionGraphQL}},
+			"tools": []any{map[string]any{"function": vocabulary.HostFunctionGraphQL}},
 		}),
 		agent("armed", map[string]any{
-			"tools":       []any{map[string]any{"callable": vocabulary.HostFunctionMutate}},
+			"tools":       []any{map[string]any{"function": vocabulary.HostFunctionMutate}},
 			"permissions": map[string]any{"writes": []any{authority + "/gizmo"}},
 		}),
 	}); err != nil {
@@ -346,8 +346,8 @@ func TestTypedDeclarationRungTranslatesRetiredToolSpellings(t *testing.T) {
 			t.Fatalf("%s tools = %v", id, row.Properties["tools"])
 		}
 		entry, _ := entries[0].(map[string]any)
-		if entry["callable"] != want {
-			t.Fatalf("%s translated to %v, want {callable: %s}", id, entry, want)
+		if entry["function"] != want {
+			t.Fatalf("%s translated to %v, want {function: %s}", id, entry, want)
 		}
 		if _, held := entry["builtin"]; held {
 			t.Fatalf("%s kept the retired arm: %v", id, entry)
@@ -858,6 +858,66 @@ func TestTypedDialectRefusesANullBlobProperty(t *testing.T) {
 	if !strings.Contains(err.Error(), "definition") ||
 		!strings.Contains(err.Error(), "web.bundles.substrate.reamde.dev/findurls") {
 		t.Fatalf("the refusal must name the blob and the row: %v", err)
+	}
+}
+
+// TestTypedDialectRefusesAnInterimGrantRow pins the POSTURE on the one store no
+// rung migrates: stamped dialect 2, with a TYPED row wearing an interim spelling
+// that only an unreleased binary ever wrote (here the hoisted `emit`, before the
+// grants grouped under `permissions:`). There is no rung 3 for it — the standing
+// answer for a development store is `dev:wipe` — so what it must meet is an
+// ACTIONABLE refusal at open, naming the row and the replacement, rather than a
+// read that whitelists the key away and leaves a function that writes nothing.
+func TestTypedDialectRefusesAnInterimGrantRow(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := testdb.NewSchema(t)
+	open := func() substrate.Service {
+		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		t.Cleanup(func() { _ = svc.Close() })
+		return svc
+	}
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	importVocabulary(t, ds)
+	installShippedBundle(t, ds, "web")
+	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "geoah"), engine.RoleApp)
+	if err != nil {
+		t.Fatalf("open repository schema: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	// The row as the flip's own unreleased binary left it: the grant hoisted onto
+	// `data` itself, with no `permissions` object.
+	if _, err := db.ExecContext(ctx, `
+		UPDATE records
+		SET props = jsonb_set(props - 'permissions', '{emit}', $3::jsonb)
+		WHERE kind = $1 AND id = $2`,
+		"core.substrate.reamde.dev/function", "web.bundles.substrate.reamde.dev/findurls",
+		`["web.bundles.substrate.reamde.dev/page"]`); err != nil {
+		t.Fatalf("plant an interim grant row: %v", err)
+	}
+	_ = svc.Close()
+
+	svc2 := open()
+	_, err = svc2.Dataset(ctx, "geoah")
+	if !errors.Is(err, engine.ErrDeclarationUntranslated) {
+		t.Fatalf("an interim grant row must refuse by name, got %v", err)
+	}
+	for _, want := range []string{
+		"web.bundles.substrate.reamde.dev/findurls", "`emit`", "permissions.writes",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the refusal must name %q: %v", want, err)
+		}
 	}
 }
 

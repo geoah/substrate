@@ -43,7 +43,7 @@ data:
   provider: default
   model: anthropic/claude-opus-5
   tools:
-    - callable: web.bundles.substrate.reamde.dev/setclass
+    - function: web.bundles.substrate.reamde.dev/setclass
   agents: [web.bundles.substrate.reamde.dev/readinglistagent]
   budgets: {maxTurns: 4, maxToolCalls: 8, depth: 3}
   permissions:
@@ -69,7 +69,7 @@ data:
   merged over the provider row's `defaults`. The set is closed, so a knob the
   loop could not pass on is a load error rather than a line that silently does
   nothing.
-- **`tools:`**, the callables the model may invoke (below).
+- **`tools:`**, the functions the model may invoke (below).
 - **`agents:`**, sub-agent references (self-reference is a load error).
 - **`budgets:`** bounds one run: `maxTurns` (default 8, max 64),
   `maxToolCalls` (default 32, max 256), `deadlineSeconds` (default 120, max
@@ -87,7 +87,7 @@ data:
   llm-as-judge is the shape it exists for. Any agent, marked or not, remains
   selectable as another agent's sub-agent.
 
-Tool callables, sub-agents, and every emitted and read kind resolve against
+Tool functions, sub-agents, and every emitted and read kind resolve against
 the registry at admission, where same-batch installs count.
 
 What fires an agent is the same [trigger](functions.md#triggers) record a
@@ -119,9 +119,12 @@ half-obeyed.
 
 ## Tools
 
-A `tools:` entry names its **callable**: `{callable: <function reference>}`,
+A `tools:` entry names its **function**: `{function: <function reference>}`,
 optionally with `name` and `description` to recolor this agent's prompt context
 without changing the function's canonical card. Tool names are unique per agent.
+The key is `function` because an entry admits nothing else: a sub-agent is named
+on `agents:`, and `callable` is the [trigger](functions.md#triggers)'s word,
+where a target really may be a function or an agent.
 
 That is the only arm, because the four built-ins are
 [**host functions**](functions.md#host-functions) — `runtime: host` records core
@@ -129,17 +132,18 @@ ships — so an agent names one exactly as it names a bundle's function:
 
 ```yaml
   tools:
-    - callable: core.substrate.reamde.dev/graphql
-    - callable: core.substrate.reamde.dev/propose
-    - callable: web.bundles.substrate.reamde.dev/setclass
+    - function: core.substrate.reamde.dev/graphql
+    - function: core.substrate.reamde.dev/propose
+    - function: web.bundles.substrate.reamde.dev/setclass
 ```
 
-Two older spellings are refused, each naming its replacement. A bare string
+Three older spellings are refused, each naming its replacement. A bare string
 (`tools: [query]`) named the arm by its value, so a typo in a built-in's name
-silently became a callable nothing declares. And `{builtin: query}` was the
+silently became a function nothing declares. `{builtin: query}` was the
 interim arm that split the union explicitly: it made the built-ins the one thing
 an agent could name that no record declared, and it is gone now that they are
-records.
+records. And `{callable: …}` was this key's first name, before it was clear an
+entry could name only a function.
 
 - **`core.substrate.reamde.dev/query`** is the capability-scoped read, and
   requires `permissions.reads`, a load error otherwise. A get outside the allowlist

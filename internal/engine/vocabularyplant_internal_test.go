@@ -83,8 +83,8 @@ func (ds *dataset) DialectOneProps(kindIdent, id string, props map[string]any) m
 	case vocabulary.DocRecordMapping:
 		out["from"], out["to"], out["edge"] = data["from"], data["to"], data["edge"]
 	case vocabulary.DocAgent:
-		// The mirrors: the callable tools and the sub-agent identities, projected
-		// beside the blob for a reader that would not parse it.
+		// The mirrors: the functions the tools name and the sub-agent identities,
+		// projected beside the blob for a reader that would not parse it.
 		out["description"], out["prompt"] = data["description"], data["prompt"]
 		out["provider"], out["model"] = data["provider"], data["model"]
 		if v, ok := data["subagentOnly"]; ok {
@@ -93,8 +93,8 @@ func (ds *dataset) DialectOneProps(kindIdent, id string, props map[string]any) m
 		var functions []any
 		for _, tv := range asAnyList(data["tools"]) {
 			entry, _ := tv.(map[string]any)
-			if callable, ok := entry["callable"]; ok {
-				functions = append(functions, callable)
+			if fn, ok := entry["function"]; ok {
+				functions = append(functions, fn)
 			}
 		}
 		if len(functions) > 0 {

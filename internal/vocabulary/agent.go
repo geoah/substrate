@@ -30,7 +30,7 @@ import (
 // agent's effective emit (so it needs a non-empty `permissions.writes`).
 //
 // A `tools:` entry names ONE of them the way it names any other function: by
-// identity, under `callable:`. There is no second arm — see agentBuiltinByIdentity.
+// identity, under `function:`. There is no second arm — see agentBuiltinByIdentity.
 const (
 	AgentToolQuery   = "query"
 	AgentToolPropose = "propose"
@@ -39,7 +39,7 @@ const (
 )
 
 // agentBuiltinByIdentity maps a host function's IDENTITY onto the built-in the
-// loop dispatches. It is what makes `{callable: core.substrate.reamde.dev/query}`
+// loop dispatches. It is what makes `{function: core.substrate.reamde.dev/query}`
 // carry the same grant check and the same dispatch as the retired `{builtin:
 // query}` arm: the four are ordinary function records the registry ships, so
 // they resolve like any callable, and this is the only place that knows which of
@@ -125,7 +125,7 @@ type Agent struct {
 	Definition map[string]any
 }
 
-// AgentTool is one `tools:` entry: a callable function, with an optional
+// AgentTool is one `tools:` entry: the FUNCTION it names, with an optional
 // per-agent alias (name/description override the prompt-facing card; the
 // function declaration stays the canonical source).
 type AgentTool struct {
@@ -134,7 +134,10 @@ type AgentTool struct {
 	// loop's dispatch switch read it, so what used to be a second arm of the
 	// `tools:` union is now one lookup on the identity the entry already carries.
 	Builtin string
-	// Callable is the function identity — always set, built-ins included.
+	// Callable is the identity `function:` names — always set, built-ins
+	// included. The authored key is `function` because an entry admits nothing
+	// else: a sub-agent is named on `agents:`, and `callable` is the TRIGGER's
+	// word, where a target really may be either.
 	Callable string
 	// Name is the model-facing tool name: the alias when declared, else the
 	// function's local name.
@@ -204,10 +207,18 @@ var agentBudgetKeys = map[string]bool{
 	"maxTurns": true, "maxToolCalls": true, "deadlineSeconds": true, "depth": true,
 }
 
-// agentToolKeys is a tool entry's key set: `callable` names the tool, `name` and
+// agentToolKeys is a tool entry's key set: `function` names the tool, `name` and
 // `description` alias its card for this agent.
 var agentToolKeys = map[string]bool{
-	"callable": true, "name": true, "description": true,
+	"function": true, "name": true, "description": true,
+}
+
+// deletedAgentToolKeys are the retired keys of a tool ENTRY, each naming its
+// replacement. `callable` said the entry might name something other than a
+// function, and it never could: a sub-agent is named on `agents:`, and the word
+// belongs to a trigger, whose target really is a function OR an agent.
+var deletedAgentToolKeys = map[string]string{
+	"callable": "function — a tool entry names a function, and only a function",
 }
 
 // agentBuiltinIdentities lists the four host functions in the order the errors
@@ -235,7 +246,7 @@ func (l *loader) buildAuthorityAgents(gd *authorityDocs, g *Authority) {
 	sort.Strings(g.AgentOrder)
 }
 
-// parseAgent parses one agent document. The permissions, tool callables and
+// parseAgent parses one agent document. The permissions, tool functions and
 // sub-agents resolve against the registry in Finalize/Install, like a
 // function's grant; the provider reference is a DATA row and resolves at
 // dispatch instead.
@@ -423,20 +434,22 @@ func (l *loader) parseAgentParams(where string, data map[string]any, a *Agent) b
 }
 
 // parseAgentTools reads the `tools:` list. An entry names ONE tool, ONE way:
-// `callable:` plus a function identity, optionally aliased for this agent's
+// `function:` plus a function identity, optionally aliased for this agent's
 // prompt context with `name`/`description`. The four built-ins are function
 // records like any other (`core.substrate.reamde.dev/query`, …), so they are
-// named here exactly like a bundle's callable is.
+// named here exactly like a bundle's function is.
 //
-// TWO OLDER SPELLINGS ARE REFUSED, each naming what replaced it. A bare STRING
+// THREE OLDER SPELLINGS ARE REFUSED, each naming what replaced it. A bare STRING
 // named the arm by its value — a built-in if the word happened to be one, a
-// callable otherwise — so one shape held two kinds of thing and a typo in a
-// built-in's name silently became a callable nothing declares. And `{builtin: x}`
+// function otherwise — so one shape held two kinds of thing and a typo in a
+// built-in's name silently became a function nothing declares. `{builtin: x}`
 // was the interim arm that split the union explicitly: it was a design miss,
 // because it made the built-ins the ONE thing an agent could name that no record
-// declared, and it is gone now that they are records. The stored rows written
-// either way are translated by the dialect rung
-// (engine/dialectonegrammar.go), which is the only reader of those spellings left.
+// declared, and it is gone now that they are records. And `{callable: x}` said
+// the entry might name something other than a function; it never could, since a
+// sub-agent is named on `agents:`. The stored rows written any of those ways are
+// translated by the dialect rung (engine/dialectonegrammar.go), which is the
+// only reader of those spellings left.
 func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bool {
 	seen := map[string]bool{}
 	add := func(i int, t AgentTool) bool {
@@ -455,55 +468,61 @@ func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bo
 	for i, tv := range mslice(data, "tools") {
 		switch entry := tv.(type) {
 		case string:
-			l.errf("%s: data.tools[%d]: %q is a bare string — an entry names its callable: {callable: %s}",
-				where, i, entry, toolCallableHint(entry))
+			l.errf("%s: data.tools[%d]: %q is a bare string — an entry names its function: {function: %s}",
+				where, i, entry, toolFunctionHint(entry))
 			return false
 		case map[string]any:
 			twhere := fmt.Sprintf("%s: data.tools[%d]", where, i)
 			if builtin := mstr(entry, "builtin"); builtin != "" {
 				// THE TOMBSTONE. The built-ins are records, so the union has one arm.
-				l.errf("%s: builtin %q is deleted — the built-ins are function records: {callable: %s}",
-					twhere, builtin, toolCallableHint(builtin))
+				l.errf("%s: builtin %q is deleted — the built-ins are function records: {function: %s}",
+					twhere, builtin, toolFunctionHint(builtin))
 				return false
 			}
+			for k := range entry {
+				if replacement, gone := deletedAgentToolKeys[k]; gone {
+					l.errf("%s: key %q is deleted — %s", twhere, k, replacement)
+					return false
+				}
+			}
 			l.checkKeys(twhere, entry, agentToolKeys)
-			callable := mstr(entry, "callable")
-			if callable == "" {
-				l.errf("%s: no callable — an entry names one function identity (a built-in is one of %s)",
+			fnIdent := mstr(entry, "function")
+			if fnIdent == "" {
+				l.errf("%s: no function — an entry names one function identity (a built-in is one of %s)",
 					twhere, strings.Join(agentBuiltinIdentities, ", "))
 				return false
 			}
-			if !Qualified(callable) || strings.Contains(callable, "*") {
-				l.errf("%s: callable %q — a full function identity, no globs", twhere, callable)
+			if !Qualified(fnIdent) || strings.Contains(fnIdent, "*") {
+				l.errf("%s: function %q — a full function identity, no globs", twhere, fnIdent)
 				return false
 			}
 			name := mstr(entry, "name")
 			if name == "" {
-				name = KindName(callable)
+				name = KindName(fnIdent)
 			}
-			// A built-in is aliasable exactly like any other callable: the loop
+			// A built-in is aliasable exactly like any other function: the loop
 			// reads the tool's name and description off the entry when it carries
 			// them and off the resolved function record otherwise, which is the
 			// same rule for all four arms of the old union and for every bundle
 			// function.
 			if !add(i, AgentTool{
-				Callable: callable, Name: name, Builtin: agentBuiltinByIdentity[callable],
+				Callable: fnIdent, Name: name, Builtin: agentBuiltinByIdentity[fnIdent],
 				Description: l.parseDescription(twhere, entry),
 			}) {
 				return false
 			}
 		default:
-			l.errf("%s: data.tools[%d]: a tool is a {callable, name, description} map, got %T", where, i, tv)
+			l.errf("%s: data.tools[%d]: a tool is a {function, name, description} map, got %T", where, i, tv)
 			return false
 		}
 	}
 	return true
 }
 
-// toolCallableHint spells the identity a retired entry meant, so a refusal names
+// toolFunctionHint spells the identity a retired entry meant, so a refusal names
 // the exact replacement: a built-in's bare word becomes its core identity, and
 // anything else was already an identity.
-func toolCallableHint(named string) string {
+func toolFunctionHint(named string) string {
 	for ident, word := range agentBuiltinByIdentity {
 		if word == named {
 			return ident
@@ -536,7 +555,7 @@ func (l *loader) parseAgentBudgets(where string, data map[string]any, a *Agent) 
 }
 
 // resolveAuthorityAgents validates an authority's agents against the loaded registry:
-// every written and read type must exist, every tool callable must be a
+// every written and read type must exist, every tool must name a
 // registered function, and every sub-agent must be a registered agent —
 // same-batch installs count, like a function's call targets.
 func (r *Registry) resolveAuthorityAgents(g *Authority) []string {
@@ -561,7 +580,7 @@ func (r *Registry) resolveAuthorityAgents(g *Authority) []string {
 		// existence check.
 		for _, t := range a.Tools {
 			if _, err := r.ResolveFunction(t.Callable); err != nil {
-				problems = append(problems, fmt.Sprintf("%s: data.tools: unknown function %q", where, t.Callable))
+				problems = append(problems, fmt.Sprintf("%s: data.tools.function: unknown function %q", where, t.Callable))
 			}
 		}
 		for _, ident := range a.Agents {

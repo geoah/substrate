@@ -245,8 +245,8 @@ def main(input, host):
 		agent("classifier", map[string]any{
 			"provider": "rootllm", "model": "root",
 			"tools": []any{
-				map[string]any{"callable": crewAuthority + "/annotate"},
-				map[string]any{"callable": vocabulary.HostFunctionPropose},
+				map[string]any{"function": crewAuthority + "/annotate"},
+				map[string]any{"function": vocabulary.HostFunctionPropose},
 			},
 			"agents": []any{crewAuthority + "/scribe"},
 			"permissions": map[string]any{
@@ -256,12 +256,12 @@ def main(input, host):
 		agent("scribe", map[string]any{"provider": "subllm", "model": "sub"}),
 		agent("rogue", map[string]any{
 			"provider": "roguellm", "model": "rogue",
-			"tools": []any{map[string]any{"callable": crewAuthority + "/annotate"}},
+			"tools": []any{map[string]any{"function": crewAuthority + "/annotate"}},
 			// annotate emits tasks, but THIS agent's emit does not allow them.
 		}),
 		agent("budgeter", map[string]any{
 			"provider": "budgetllm", "model": "budget",
-			"tools":       []any{map[string]any{"callable": crewAuthority + "/annotate"}},
+			"tools":       []any{map[string]any{"function": crewAuthority + "/annotate"}},
 			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 			"budgets":     map[string]any{"maxTurns": 2},
 		}),
@@ -274,8 +274,8 @@ def main(input, host):
 		agent("minion", map[string]any{
 			"provider": "minionllm", "model": "minion",
 			"tools": []any{
-				map[string]any{"callable": crewAuthority + "/annotate"},
-				map[string]any{"callable": vocabulary.HostFunctionPropose},
+				map[string]any{"function": crewAuthority + "/annotate"},
+				map[string]any{"function": vocabulary.HostFunctionPropose},
 			},
 			"permissions": map[string]any{
 				"writes": []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
@@ -285,7 +285,7 @@ def main(input, host):
 		// retry test.
 		agent("keeper", map[string]any{
 			"provider": "keepllm", "model": "keep",
-			"tools":       []any{map[string]any{"callable": crewAuthority + "/keyecho"}},
+			"tools":       []any{map[string]any{"function": crewAuthority + "/keyecho"}},
 			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 		}),
 		// archivist reads the whole graph through the graphql built-in and
@@ -293,13 +293,13 @@ def main(input, host):
 		// widgets alone.
 		agent("archivist", map[string]any{
 			"provider": "gqlllm", "model": "gql",
-			"tools": []any{map[string]any{"callable": vocabulary.HostFunctionGraphQL}},
+			"tools": []any{map[string]any{"function": vocabulary.HostFunctionGraphQL}},
 		}),
 		agent("editor", map[string]any{
 			"provider": "mutllm", "model": "mut",
 			"tools": []any{
-				map[string]any{"callable": vocabulary.HostFunctionGraphQL},
-				map[string]any{"callable": vocabulary.HostFunctionMutate},
+				map[string]any{"function": vocabulary.HostFunctionGraphQL},
+				map[string]any{"function": vocabulary.HostFunctionMutate},
 			},
 			"permissions": map[string]any{"writes": []any{crewAuthority + "/widget"}},
 		}),
@@ -309,7 +309,7 @@ def main(input, host):
 		// the confused-deputy half of the pair.
 		agent("arbiter", map[string]any{
 			"provider": "arbiterllm", "model": "arbiter",
-			"tools": []any{map[string]any{"callable": vocabulary.HostFunctionMutate}},
+			"tools": []any{map[string]any{"function": vocabulary.HostFunctionMutate}},
 			"permissions": map[string]any{
 				"writes": []any{vocabulary.KindRecordPatchRequest, crewAuthority + "/widget"},
 			},
@@ -318,7 +318,7 @@ def main(input, host):
 		// identity, with the `reads:` that grants it.
 		agent("librarian", map[string]any{
 			"provider": "libllm", "model": "lib",
-			"tools": []any{map[string]any{"callable": vocabulary.HostFunctionQuery}},
+			"tools": []any{map[string]any{"function": vocabulary.HostFunctionQuery}},
 			"permissions": map[string]any{
 				"reads": map[string]any{"kinds": []any{crewAuthority + "/widget"}},
 			},
@@ -327,7 +327,7 @@ def main(input, host):
 		// the model reads.
 		agent("purist", map[string]any{
 			"provider": "purellm", "model": "pure",
-			"tools": []any{map[string]any{"callable": crewAuthority + "/measure"}},
+			"tools": []any{map[string]any{"function": crewAuthority + "/measure"}},
 		}),
 		// judge is subagentOnly: off the chat surface, still a callable and
 		// still justice's sub-agent.

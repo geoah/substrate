@@ -23,9 +23,20 @@ package engine
 // dialect 2's business, not this file's. The one standing exception is an
 // INTERIM shape: a spelling an unreleased binary wrote and the same unreleased
 // series retired, so no release ever carried it and no other rung will ever be
-// asked to read it (dialectOneAgentTools' `{builtin: x}`, dialectOneGrants'
-// hoisted grant keys). Translating one costs a few lines; refusing it is a
-// development store that cannot open.
+// asked to read it (dialectOneAgentTools' `{builtin: x}` and its interim
+// `{callable: …}`, dialectOneGrants' hoisted grant keys). Translating one costs
+// a few lines; refusing it is a development store that cannot open.
+//
+// THE INTERIM SHAPES ARE TRANSLATED ONLY INSIDE A DIALECT-1 BLOB, and that bound
+// is the posture, not an oversight. A blob is read by definition through this
+// grammar, so covering the interim spellings there is free. A store already
+// STAMPED dialect 2 whose TYPED rows wear one is a different thing: it was
+// written by a pre-release binary of this very series, no release ever produced
+// it, and the standing answer for a development store is `mise run dev:wipe`.
+// So there is no rung 3 and there will not be one. What such a store meets is
+// the read path naming the deleted key and its replacement (rowDocument,
+// vocabularywrite.go) — an actionable refusal at open rather than a grant
+// silently dropped, which is the whole of the handling it gets.
 //
 // Every TRANSLATION here is a total rewrite of one dialect-1 spelling into the
 // dialect-2 one, in place, and never a validation: what comes out goes straight
@@ -218,24 +229,27 @@ func dialectOneMapRules(d map[string]any) {
 }
 
 // dialectOneAgentTools rewrites each `tools:` entry as the ONE arm the live
-// loader admits: `{callable: <function identity>}`.
+// loader admits: `{function: <function identity>}`.
 //
 // A bare string named the arm by its value — a built-in by name, anything else a
-// callable identity — and the four built-in names are dialect 1's own closed set,
+// function identity — and the four built-in names are dialect 1's own closed set,
 // frozen here. Each one now IS a function record core ships
 // (`core.substrate.reamde.dev/query`, …), so the built-in's bare word translates
 // to that identity and stops being a shape of its own.
 //
-// `{builtin: x}` translates too. It is not a dialect-1 spelling: it was the
-// interim arm stage B introduced and this stage retired, so the only rows wearing
-// it were written by an unreleased binary. It is here because the rung's ONE job
-// is to hand the live loader a document it admits, and a row the loader refuses
-// is a repository that cannot open — the cost of translating a shape nobody
-// shipped is three lines.
+// TWO INTERIM ENTRY SHAPES translate too, neither of them dialect 1's:
+// `{builtin: x}` was the arm stage B introduced and a later stage retired, and
+// `{callable: x}` was the single arm's first key, renamed once it was clear an
+// entry could name nothing but a function. Only unreleased binaries wrote
+// either. They are here because the rung's ONE job is to hand the live loader a
+// document it admits, and a row the loader refuses is a repository that cannot
+// open — the cost of translating a shape nobody shipped is a few lines. An entry
+// ALREADY spelling `function:` is left alone, which is what keeps the
+// translation idempotent.
 func dialectOneAgentTools(d map[string]any) {
 	builtins := map[string]bool{"query": true, "propose": true, "graphql": true, "mutate": true}
-	callableOf := func(name string) map[string]any {
-		return map[string]any{"callable": vocabulary.KindRef(vocabulary.AuthorityCore, name)}
+	functionOf := func(name string) map[string]any {
+		return map[string]any{"function": vocabulary.KindRef(vocabulary.AuthorityCore, name)}
 	}
 	raw, has := d["tools"]
 	if !has {
@@ -249,9 +263,9 @@ func dialectOneAgentTools(d map[string]any) {
 	for _, tv := range list {
 		if s, isString := tv.(string); isString {
 			if builtins[s] {
-				out = append(out, callableOf(s))
+				out = append(out, functionOf(s))
 			} else {
-				out = append(out, map[string]any{"callable": s})
+				out = append(out, map[string]any{"function": s})
 			}
 			continue
 		}
@@ -260,14 +274,26 @@ func dialectOneAgentTools(d map[string]any) {
 			out = append(out, tv)
 			continue
 		}
-		builtin, _ := entry["builtin"].(string)
-		if !builtins[builtin] {
+		if builtin, _ := entry["builtin"].(string); builtins[builtin] {
+			// The interim arm carried no alias (the loop owned a built-in's card), so
+			// there is nothing else on the entry to preserve.
+			out = append(out, functionOf(builtin))
+			continue
+		}
+		callable, named := entry["callable"].(string)
+		if !named {
 			out = append(out, tv)
 			continue
 		}
-		// The interim arm carried no alias (the loop owned a built-in's card), so
-		// there is nothing else on the entry to preserve.
-		out = append(out, callableOf(builtin))
+		// The renamed key, and the aliases beside it ARE preserved: this arm was
+		// the live one, so an entry wearing it may carry a name and a description.
+		renamed := map[string]any{"function": callable}
+		for k, v := range entry {
+			if k != "callable" && k != "function" {
+				renamed[k] = v
+			}
+		}
+		out = append(out, renamed)
 	}
 	d["tools"] = out
 }

@@ -40,7 +40,7 @@ data:
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
   # v1alpha4: the built-ins are function records, so `substrate`'s tool entries
-  # name them under `callable:` like any other function.
+  # name them under `function:` like any other function.
   # v1alpha5: the grants group under one `permissions:` object, and the permission
   # to write is `writes:` inside it. This closure's functions and agents
   # follow core's declaration.
@@ -106,8 +106,8 @@ data:
   provider: anthropic
   model: claude-sonnet-5
   tools:
-    - callable: core.substrate.reamde.dev/graphql
-    - callable: core.substrate.reamde.dev/propose
+    - function: core.substrate.reamde.dev/graphql
+    - function: core.substrate.reamde.dev/propose
   permissions:
     writes: [core.substrate.reamde.dev/recordpatchrequest]
   budgets:

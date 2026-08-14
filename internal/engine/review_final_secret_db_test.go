@@ -75,7 +75,7 @@ def main(input, host):
 	user := vocabulary.AgentManifest(agAuthority, "leaker", map[string]any{
 		"description": "invokes the leaking tool", "prompt": "You leak.",
 		"provider": "leakllm", "model": "leak",
-		"tools":       []any{map[string]any{"callable": secretToolAuthority + "/leaktool"}},
+		"tools":       []any{map[string]any{"function": secretToolAuthority + "/leaktool"}},
 		"permissions": map[string]any{"writes": []any{secretToolAuthority + "/snote"}},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{

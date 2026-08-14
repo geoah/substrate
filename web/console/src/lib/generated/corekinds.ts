@@ -169,13 +169,13 @@ export interface AgentParams {
  * what the model may call, in declaration order
  */
 export interface AgentTools {
-  /** The function identity this entry names. Names a function: offer a picker,
-   * not a text box.
+  /** The function this entry names, by identity. Names a function: offer a
+   * picker, not a text box.
    */
-  callable?: string
-  /** The model-facing tool name, aliasing a callable. */
+  function?: string
+  /** The model-facing tool name, aliasing the function. */
   name?: string
-  /** The model-facing card, overriding the callable's own. */
+  /** The model-facing card, overriding the function's own. */
   description?: string
 }
 
@@ -183,7 +183,7 @@ export interface AgentTools {
  * submit without them; the server does not, so nothing here is a guarantee
  * about a record that arrives.
  */
-export const agentToolsRequired: string[] = ["callable"]
+export const agentToolsRequired: string[] = ["function"]
 
 /** AgentBudgets is one value of the `budgets` object declared on
  * core.substrate.reamde.dev/agent.
