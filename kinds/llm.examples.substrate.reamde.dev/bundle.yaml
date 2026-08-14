@@ -34,10 +34,11 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: llm.examples.substrate.reamde.dev
 data:
-  # v1alpha3: THE TYPED CORE SWEEP. This closure moved to the declared
-  # spellings — a tool entry names its arm, a function's IO is a flat argument
-  # list and its grants ride `data` itself, a mapping rule is `{path}`, an index
-  # names its properties — so every declaration in it changed shape.
+  # v1alpha3: THE TYPED CORE SWEEP. Declarations in this closure moved to the
+  # declared spellings — whichever of them they used: a tool entry naming its arm,
+  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
+  # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
+  # carries the closure whole rather than saying every declaration in it moved.
   version: v1alpha3
 ---
 kind: core.substrate.reamde.dev/bundle

@@ -454,8 +454,10 @@ func pinPropertyDiscards(t *testing.T, at string, p *vocabulary.Property) {
 	}
 	// FIELDORDER is PropOrder's twin one level down, sorted the same way, and
 	// discarded for the same reason: the generator emits fields in authored order.
+	// A CLOSED EMPTY object declares no fields and orders none, so the two agree
+	// by both being empty.
 	if p.Fields != nil {
-		if got := sortedKeys(p.Fields); !reflect.DeepEqual(p.FieldOrder, got) {
+		if got := sortedKeys(p.Fields); len(got)+len(p.FieldOrder) > 0 && !reflect.DeepEqual(p.FieldOrder, got) {
 			t.Errorf("%s: FieldOrder is %v, no longer the sorted field set %v", at, p.FieldOrder, got)
 		}
 		for _, field := range p.FieldOrder {

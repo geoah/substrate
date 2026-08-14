@@ -26,7 +26,7 @@ type PropertyType struct {
 	Description *string
 
 	// Base is the built-in datatype it refines.
-	Base *string
+	Base *PropertyTypeBase
 
 	// Pattern is the regular expression a value matches.
 	Pattern *string
@@ -58,6 +58,42 @@ var PropertyTypeSourceValues = []string{"builtin", "installed"}
 
 // Valid reports whether v is one of the declared values.
 func (v PropertyTypeSource) Valid() bool { return Declared(PropertyTypeSourceValues, string(v)) }
+
+// PropertyTypeBase is a declared enum: the admissible set, in declaration
+// order.
+//
+// the built-in datatype it refines
+type PropertyTypeBase string
+
+const (
+	PropertyTypeBaseString     PropertyTypeBase = "string"
+	PropertyTypeBaseText       PropertyTypeBase = "text"
+	PropertyTypeBaseMarkdown   PropertyTypeBase = "markdown"
+	PropertyTypeBaseInt        PropertyTypeBase = "int"
+	PropertyTypeBaseFloat      PropertyTypeBase = "float"
+	PropertyTypeBaseBool       PropertyTypeBase = "bool"
+	PropertyTypeBaseDatetime   PropertyTypeBase = "datetime"
+	PropertyTypeBaseDate       PropertyTypeBase = "date"
+	PropertyTypeBaseDuration   PropertyTypeBase = "duration"
+	PropertyTypeBaseEmail      PropertyTypeBase = "email"
+	PropertyTypeBaseUrl        PropertyTypeBase = "url"
+	PropertyTypeBasePhone      PropertyTypeBase = "phone"
+	PropertyTypeBaseTimezone   PropertyTypeBase = "timezone"
+	PropertyTypeBaseRecurrence PropertyTypeBase = "recurrence"
+	PropertyTypeBaseEnum       PropertyTypeBase = "enum"
+	PropertyTypeBaseJson       PropertyTypeBase = "json"
+	PropertyTypeBaseSecret     PropertyTypeBase = "secret"
+	PropertyTypeBaseDigest     PropertyTypeBase = "digest"
+	PropertyTypeBaseState      PropertyTypeBase = "state"
+	PropertyTypeBaseBlobref    PropertyTypeBase = "blobref"
+)
+
+// PropertyTypeBaseValues are the declared values in declaration order, which
+// is render order.
+var PropertyTypeBaseValues = []string{"string", "text", "markdown", "int", "float", "bool", "datetime", "date", "duration", "email", "url", "phone", "timezone", "recurrence", "enum", "json", "secret", "digest", "state", "blobref"}
+
+// Valid reports whether v is one of the declared values.
+func (v PropertyTypeBase) Valid() bool { return Declared(PropertyTypeBaseValues, string(v)) }
 
 // PropertyTypeKeys is the admitted key set: every property
 // core.substrate.reamde.dev/propertytype declares, sorted. A key outside it is
@@ -115,6 +151,15 @@ func decodePropertyTypeSource(d *decoder, path string, v any) (PropertyTypeSourc
 	return PropertyTypeSource(s), true
 }
 
+// decodePropertyTypeBase decodes a declared PropertyTypeBase value.
+func decodePropertyTypeBase(d *decoder, path string, v any) (PropertyTypeBase, bool) {
+	s, ok := d.text(path, v, PropertyTypeBaseValues, nil)
+	if !ok {
+		return "", false
+	}
+	return PropertyTypeBase(s), true
+}
+
 // decodePropertyType decodes one PropertyType value at path.
 func decodePropertyType(d *decoder, path string, v any) (PropertyType, bool) {
 	props, mapped := d.mapping(path, v)
@@ -151,7 +196,7 @@ func decodePropertyType(d *decoder, path string, v any) (PropertyType, bool) {
 			}
 		case "base":
 			p := at(path, "base")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := decodePropertyTypeBase(d, p, props[key]); ok {
 				out.Base = &e
 			}
 		case "pattern":
@@ -209,7 +254,7 @@ func (v *PropertyType) Encode() map[string]any {
 		out["description"] = *v.Description
 	}
 	if v.Base != nil {
-		out["base"] = *v.Base
+		out["base"] = string(*v.Base)
 	}
 	if v.Pattern != nil {
 		out["pattern"] = *v.Pattern

@@ -1032,7 +1032,7 @@ export interface PropertyType {
   /** What the refinement is for. */
   description?: string
   /** The built-in datatype it refines. */
-  base?: string
+  base?: PropertyTypeBase
   /** The regular expression a value matches. */
   pattern?: string
   /** The lowest admitted number. */
@@ -1064,6 +1064,56 @@ export type PropertyTypeSource =
 export const propertyTypeSourceValues: PropertyTypeSource[] = [
   "builtin",
   "installed",
+]
+
+/** PropertyTypeBase is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * the built-in datatype it refines
+ */
+export type PropertyTypeBase =
+  | "string"
+  | "text"
+  | "markdown"
+  | "int"
+  | "float"
+  | "bool"
+  | "datetime"
+  | "date"
+  | "duration"
+  | "email"
+  | "url"
+  | "phone"
+  | "timezone"
+  | "recurrence"
+  | "enum"
+  | "json"
+  | "secret"
+  | "digest"
+  | "state"
+  | "blobref"
+
+export const propertyTypeBaseValues: PropertyTypeBase[] = [
+  "string",
+  "text",
+  "markdown",
+  "int",
+  "float",
+  "bool",
+  "datetime",
+  "date",
+  "duration",
+  "email",
+  "url",
+  "phone",
+  "timezone",
+  "recurrence",
+  "enum",
+  "json",
+  "secret",
+  "digest",
+  "state",
+  "blobref",
 ]
 
 /** PropertyTypeValues is one value of the `values` object declared on
@@ -1547,13 +1597,96 @@ export interface Trigger {
    * without losing the cursor.
    */
   enabled?: boolean
-  /** The one source arm: record {kinds, ops, when, coalesce}, schedule
-   * {recurrence, timezone, startsAt}, or webhook {}. Its shape is not core's
-   * to declare: narrow it where you read it.
-   */
-  source?: Dynamic
+  /** The one source this trigger delivers from. */
+  source?: TriggerSource
   /** The function or agent a matched delivery invokes ({kind, id}). Points at
    * any.
    */
   callable?: Reference
+}
+
+/** TriggerSource is one value of the `source` object declared on
+ * core.substrate.reamde.dev/trigger.
+ *
+ * the one source this trigger delivers from
+ */
+export interface TriggerSource {
+  /** Which arm below carries the source. */
+  kind?: TriggerSourceKind
+  /** Matched records — the changelog is the source. */
+  record?: TriggerSourceRecord
+  /** A recurrence — the clock is the source. */
+  schedule?: TriggerSourceSchedule
+  /** An authenticated wake endpoint. */
+  webhook?: TriggerSourceWebhook
+}
+
+/** TriggerSourceKind is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * which arm below carries the source
+ */
+export type TriggerSourceKind =
+  | "record"
+  | "schedule"
+  | "webhook"
+
+export const triggerSourceKindValues: TriggerSourceKind[] = [
+  "record",
+  "schedule",
+  "webhook",
+]
+
+/** TriggerSourceRecord is one value of the `source.record` object declared on
+ * core.substrate.reamde.dev/trigger.
+ *
+ * matched records — the changelog is the source
+ */
+export interface TriggerSourceRecord {
+  /** The kinds watched, each a reference, `<authority>/*` or `*`. */
+  kinds?: string[]
+  /** Which changes deliver; absent is all three. */
+  ops?: TriggerSourceRecordOps[]
+  /** The CEL guard over change/record/repository. */
+  when?: string
+  /** Collapse a burst on one record into one delivery. */
+  coalesce?: boolean
+}
+
+/** TriggerSourceRecordOps is a declared enum: the admissible set, in
+ * declaration order.
+ *
+ * which changes deliver; absent is all three
+ */
+export type TriggerSourceRecordOps =
+  | "create"
+  | "update"
+  | "delete"
+
+export const triggerSourceRecordOpsValues: TriggerSourceRecordOps[] = [
+  "create",
+  "update",
+  "delete",
+]
+
+/** TriggerSourceSchedule is one value of the `source.schedule` object declared
+ * on core.substrate.reamde.dev/trigger.
+ *
+ * a recurrence — the clock is the source
+ */
+export interface TriggerSourceSchedule {
+  /** The RFC 5545 RRULE the fires follow. */
+  recurrence?: string
+  /** The IANA zone the recurrence is read in. */
+  timezone?: string
+  /** The instant the recurrence counts from. */
+  startsAt?: string
+}
+
+/** TriggerSourceWebhook is one value of the `source.webhook` object declared on
+ * core.substrate.reamde.dev/trigger.
+ *
+ * an authenticated wake endpoint
+ */
+export interface TriggerSourceWebhook {
 }

@@ -250,7 +250,7 @@ func TestRoundTripPopulated(t *testing.T) {
 	roundTrip(t, "propertytype", &corekinds.PropertyType{
 		Version:   str("v1alpha1"),
 		Authority: str("shopping.substrate.reamde.dev"),
-		Base:      str("string"),
+		Base:      ptr(corekinds.PropertyTypeBaseString),
 		Pattern:   str("^[A-Z0-9]{10}$"),
 		Values:    []corekinds.PropertyTypeValues{{Value: str("chore"), Label: str("Chore")}},
 	}, corekinds.DecodePropertyType)
@@ -336,8 +336,11 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodeTrait)
 
 	roundTrip(t, "trigger", &corekinds.Trigger{
-		Enabled:  boolean(true),
-		Source:   map[string]any{"schedule": "0 3 * * *"},
+		Enabled: boolean(true),
+		Source: &corekinds.TriggerSource{
+			Kind:     ptr(corekinds.TriggerSourceKindSchedule),
+			Schedule: &corekinds.TriggerSourceSchedule{Recurrence: str("RRULE:FREQ=DAILY"), Timezone: str("UTC")},
+		},
 		Callable: &corekinds.Reference{Kind: "core.substrate.reamde.dev/function", ID: "core.substrate.reamde.dev/sync"},
 	}, corekinds.DecodeTrigger)
 }
