@@ -104,6 +104,32 @@ description = "The LIVE suite: real completions from real providers, when the ke
 # but do not loop it.
 run = "go test -count=1 -run '^TestLive' -v ./internal/llm/... ./internal/engine/..."
 
+# =============================================================================
+# Lint and format
+# =============================================================================
+#
+# ONE NAMING RULE, so the task you want is the one you guess: the bare name is
+# every check of that kind (`lint`, `fmt`, `fmt:check`), and a suffix narrows
+# it to one language (`lint:go`, `fmt:yaml`, `fmt:yaml:check`). The bare name
+# is always an aggregate and never the Go one wearing a short name — `lint`
+# meaning golangci-lint alone is what made `lint:yaml` look optional.
+#
+# The console is not one of those suffixes. It is a second toolchain with its
+# own family (`console:lint`, `console:typecheck`) and its own CI job, exactly
+# as `test` is the Go suite and `console:test` is the console's. Running
+# eslint from `lint` would drag pnpm into the lint job and run it twice.
+
+[tasks.lint]
+description = "Every linter: Go and YAML"
+depends = ["lint:go", "lint:yaml"]
+
+[tasks."lint:go"]
+description = "golangci-lint over the module"
+# --max-same-issues 0 --max-issues-per-linter 0: the default caps the report at
+# three of any one finding, which makes a cleanup pass look finished when it is
+# not. Report everything.
+run = "golangci-lint run --max-same-issues 0 --max-issues-per-linter 0"
+
 [tasks."lint:yaml"]
 description = "yamllint over every YAML in the tree — block style, and nothing else"
 # The rules are in .yamllint, and there is deliberately almost nothing in it:
@@ -111,13 +137,9 @@ description = "yamllint over every YAML in the tree — block style, and nothing
 # contradict it. What is here is what a formatter cannot say.
 run = "yamllint ."
 
-[tasks.lint]
-description = "golangci-lint over the module"
-# --max-same-issues 0 --max-issues-per-linter 0: the default caps the report at
-# three of any one finding, which makes a cleanup pass look finished when it is
-# not. Report everything.
-run = "golangci-lint run --max-same-issues 0 --max-issues-per-linter 0"
-
+# NOT `lint:kinds`, and so not part of `lint`: this reads the DIFF against the
+# base, not the files, so it is only meaningful where there is a change to
+# judge. `ci:lint` names it; a laptop runs it when it wants that answer.
 [tasks."kinds:check"]
 description = "Refuse a kinds/ change that does not bump a declaration version"
 run = ".mise/kindscheck.sh"
@@ -135,7 +157,7 @@ description = "yamlfmt every YAML in the tree in place; config is .yamlfmt"
 run = "yamlfmt ."
 
 [tasks."fmt:check"]
-description = "Fail if anything is unformatted"
+description = "Fail if anything is unformatted: Go and YAML"
 depends = ["fmt:go:check", "fmt:yaml:check"]
 
 [tasks."fmt:go:check"]
@@ -318,7 +340,7 @@ run = "goreleaser release --clean"
 
 [tasks."ci:lint"]
 description = "CI job `lint` — formatting, the linters, the release config, and the kinds/ version-bump guard"
-depends = ["fmt:check", "lint", "lint:yaml", "release:check", "kinds:check"]
+depends = ["fmt:check", "lint", "release:check", "kinds:check"]
 
 [tasks."ci:go"]
 description = "CI job `go test`: the cross-compile check, then the suite in its two halves"
