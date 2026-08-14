@@ -148,7 +148,7 @@ func installContactSource(t *testing.T, ds *dataset) {
 				"from": csrcContact, "to": subjPerson, "edge": "person",
 				"match": []any{map[string]any{"from": "email", "to": "emails"}},
 				"map": map[string]any{
-					"name":   "name",
+					"name":   map[string]any{"path": "name"},
 					"emails": map[string]any{"path": "email", "merge": "union"},
 				},
 			}),

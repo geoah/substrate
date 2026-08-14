@@ -76,19 +76,19 @@ type Function struct {
 	TimeoutMs int
 	// Input and Output are the optional shape schemas CheckValue validates
 	// against: call-mode arguments are held to Input, a declared Output checks
-	// the returned value. Either is compiled from a flat `arguments:`/`returns:`
-	// list or read from an `input:`/`output:` schema map — one representation
-	// whichever spelling declared it.
+	// the returned value. Each is COMPILED from the flat `arguments:`/`returns:`
+	// list the declaration carries, so the schema is one level of named arguments
+	// and every model-facing card is valid by construction.
 	Input  map[string]any
 	Output map[string]any
 	// Caps is the capability envelope every function carries.
 	Caps FunctionCaps
 
-	// Definition is the manifest's data map, exactly as authored.
+	// Definition is the declaration's own data map, exactly as authored — what
+	// the row stores as its properties (engine/vocabularywrite.go
+	// authorityDeclarations). The retired `definition` blob is a different thing
+	// and has no spelling left: this is the document, not a wrapper around it.
 	Definition map[string]any
-	// SourceYAML is the verbatim manifest; installed authorities have no original
-	// text, so theirs is derived.
-	SourceYAML string
 
 	// capsPath remembers where each capability key was authored. Resolution
 	// against the registry happens long after the parse (a call target may be
@@ -268,87 +268,6 @@ func CompileWhen(src string) (cel.Program, error) {
 	)
 }
 
-// --- the input/output shape dialect --------------------------------------------
-
-// The minimal shape dialect `input:`/`output:` declare — deliberately tiny:
-// `type` (object/array/string/number/boolean/any), `properties` (object),
-// `items` (array), `required` (object), `description`. Shape only, no
-// formats, no unions, no refs.
-var ioSchemaKeys = map[string]bool{
-	"type": true, "description": true, "properties": true, "items": true, "required": true,
-}
-
-var ioSchemaTypes = map[string]bool{
-	"object": true, "array": true, "string": true, "number": true, "boolean": true, "any": true,
-}
-
-// parseIOSchema validates one input/output schema at load; every problem is a
-// loader hard error.
-func (l *loader) parseIOSchema(where string, v any) map[string]any {
-	m, ok := v.(map[string]any)
-	if !ok {
-		l.errf("%s: a schema is a map with a type", where)
-		return nil
-	}
-	for k := range m {
-		if !ioSchemaKeys[k] {
-			l.errf("%s: unknown key %q — type, description, properties, items, required", where, k)
-			return nil
-		}
-	}
-	ty, _ := m["type"].(string)
-	if !ioSchemaTypes[ty] {
-		l.errf("%s: type %q — object, array, string, number, boolean or any", where, m["type"])
-		return nil
-	}
-	props, hasProps := m["properties"]
-	if hasProps && ty != "object" {
-		l.errf("%s: properties only belongs on type object", where)
-		return nil
-	}
-	if hasProps {
-		pm, ok := props.(map[string]any)
-		if !ok {
-			l.errf("%s: properties is a map of name → schema", where)
-			return nil
-		}
-		for _, name := range sortedKeys(pm) {
-			if l.parseIOSchema(where+".properties."+name, pm[name]) == nil {
-				return nil
-			}
-		}
-	}
-	if items, has := m["items"]; has {
-		if ty != "array" {
-			l.errf("%s: items only belongs on type array", where)
-			return nil
-		}
-		if l.parseIOSchema(where+".items", items) == nil {
-			return nil
-		}
-	}
-	if req, has := m["required"]; has {
-		if ty != "object" {
-			l.errf("%s: required only belongs on type object", where)
-			return nil
-		}
-		names, ok := req.([]any)
-		if !ok {
-			l.errf("%s: required is a list of property names", where)
-			return nil
-		}
-		pm, _ := props.(map[string]any)
-		for i, nv := range names {
-			name := fmt.Sprint(nv)
-			if _, declared := pm[name]; !declared {
-				l.errf("%s: required[%d]: %q is not a declared property", where, i, name)
-				return nil
-			}
-		}
-	}
-	return m
-}
-
 // --- the flat argument dialect -------------------------------------------------
 
 // The argument types `arguments:`/`returns:` declare. `int` and `float` are two
@@ -484,25 +403,15 @@ func (l *loader) parseArgumentValues(where string, v any) []any {
 	return out
 }
 
-// parseFunctionIO reads one side of a function's IO. `flat` is the named
-// argument list; `nested` is the schema map. One side is declared once: both
-// spellings on one function leaves the reader to pick which shape is the
-// contract.
-func (l *loader) parseFunctionIO(where string, data map[string]any, flat, nested string) (map[string]any, bool) {
-	flatRaw, hasFlat := data[flat]
-	nestedRaw, hasNested := data[nested]
-	switch {
-	case hasFlat && hasNested:
-		l.errf("%s: data.%s and data.%s both declare one shape — %s is the flat spelling and it is enough", where, flat, nested, flat)
-		return nil, false
-	case hasFlat:
-		schema := l.parseArguments(where+": data."+flat, flatRaw)
-		return schema, schema != nil
-	case hasNested:
-		schema := l.parseIOSchema(where+": data."+nested, nestedRaw)
-		return schema, schema != nil
+// parseFunctionIO reads one side of a function's IO: the named argument list, or
+// nothing at all, which is a side the function does not constrain.
+func (l *loader) parseFunctionIO(where string, data map[string]any, key string) (map[string]any, bool) {
+	raw, declared := data[key]
+	if !declared {
+		return nil, true
 	}
-	return nil, true
+	schema := l.parseArguments(where+": data."+key, raw)
+	return schema, schema != nil
 }
 
 // CheckValue holds one value to a declared input/output schema: shape only.
@@ -592,27 +501,32 @@ func checkValue(path string, schema map[string]any, v any) error {
 
 var functionDataKeys = map[string]bool{
 	"authority": true, "description": true, "runtime": true, "source": true,
-	"timeoutMs": true, "capabilities": true, "input": true, "output": true,
-	// The flat IO spelling (`arguments:`/`returns:`) and the capability envelope
-	// hoisted onto data — the five keys of functionCapsKeys, admitted here too.
+	"timeoutMs": true,
+	// The IO shapes and the capability envelope ride `data` itself: the flat
+	// argument lists, and the five keys of functionCapsKeys.
 	"arguments": true, "returns": true,
 	"emit": true, "reads": true, "call": true, "network": true, "mutations": true,
 }
 
 // deletedFunctionKeys are the removed keys, each naming what replaced it: the
-// CEL and wasm bodies are removed (POC verdicts, ticket 009), and the
-// subscription moved onto trigger records. No compatibility shim.
+// CEL and wasm bodies are removed (POC verdicts, ticket 009), the subscription
+// moved onto trigger records, and the typed core retired the wrapper and the
+// recursive IO schemas. No compatibility shim for any of them — the rows written
+// that way are translated by the dialect rung
+// (engine/dialectonegrammar.go), which is the last reader of those spellings.
 var deletedFunctionKeys = map[string]string{
-	"run":      "runtime + source — the CEL and wasm run arms are removed; CEL survives only as the trigger's when: guard",
-	"on":       "a trigger record (core.substrate.reamde.dev) — the subscription lives on the trigger, the function is a pure callable",
-	"when":     "trigger source.record.when — the guard lives on the trigger record",
-	"coalesce": "trigger source.record.coalesce — coalescing lives on the trigger record",
+	"run":          "runtime + source — the CEL and wasm run arms are removed; CEL survives only as the trigger's when: guard",
+	"on":           "a trigger record (core.substrate.reamde.dev) — the subscription lives on the trigger, the function is a pure callable",
+	"when":         "trigger source.record.when — the guard lives on the trigger record",
+	"coalesce":     "trigger source.record.coalesce — coalescing lives on the trigger record",
+	"capabilities": "emit, reads, call, network and mutations on `data` itself — one grant, declared once, at the level the declaration declares it",
+	"input":        "arguments — a flat LIST of named arguments ({name, type}), so the tool card is valid by construction",
+	"output":       "returns — the same flat list on the result side",
 }
 
 // functionCapsKeys is the capability envelope's five keys, each declared on
-// `data` itself or under the `capabilities:` wrapper. The sorted order of the
-// set is the order the loader reads them in, so a document with two problems
-// reports the same one on every run.
+// `data` itself. The sorted order of the set is the order the loader reads them
+// in, so a document with two problems reports the same one on every run.
 var functionCapsKeys = map[string]bool{
 	"emit": true, "reads": true, "call": true, "network": true, "mutations": true,
 }
@@ -644,7 +558,7 @@ func (l *loader) parseFunction(d Document) *Function {
 	fn := &Function{
 		Name: local, Authority: g.Name,
 		Description: l.parseDescription(where+": data", d.Data),
-		Definition:  d.Data, SourceYAML: d.Source,
+		Definition:  d.Data,
 	}
 	if fn.Description == "" {
 		l.errf("%s: data.description is required — the function is its own tool card", where)
@@ -669,51 +583,32 @@ func (l *loader) parseFunction(d Document) *Function {
 		DefaultRunTimeoutMs, MaxRunTimeoutMs); !ok {
 		return nil
 	}
-	if fn.Input, ok = l.parseFunctionIO(where, d.Data, "arguments", "input"); !ok {
+	if fn.Input, ok = l.parseFunctionIO(where, d.Data, "arguments"); !ok {
 		return nil
 	}
-	if fn.Output, ok = l.parseFunctionIO(where, d.Data, "returns", "output"); !ok {
+	if fn.Output, ok = l.parseFunctionIO(where, d.Data, "returns"); !ok {
 		return nil
 	}
 	if fn = l.parseFunctionCaps(where, d.Data, fn); fn == nil {
 		return nil
 	}
-	canonicalFunctionIO(d.Data)
-	canonicalFunctionCaps(d.Data)
 	return fn
 }
 
 // parseFunctionCaps reads the capability envelope. `emit` is required and
 // non-empty: a function that writes nothing is not a function yet.
 //
-// Each of the five keys is read from `data` itself or from the `capabilities:`
-// wrapper, and one key in both places is refused: two declarations of one grant
-// would leave a reader of the document guessing which one the engine enforces.
-// Every refusal names the location the key was AUTHORED at, so the fix goes
-// where the author is already looking.
+// The five keys ride `data` itself — the `capabilities:` wrapper is a deleted key
+// (deletedFunctionKeys) — so one grant is declared once, in one place. capsPath
+// survives the wrapper it was written for: an agent's `reads:` shares this
+// envelope's parser and names its own path (parseReads).
 func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Function) *Function {
-	wrapped := mmap(data, "capabilities")
-	l.checkKeys(where+": data.capabilities", wrapped, functionCapsKeys)
-	_, hasWrapper := data["capabilities"]
 	caps := map[string]any{}
 	fn.capsPath = map[string]string{}
 	for _, k := range sortedKeys(mapOfAny(functionCapsKeys)) {
-		hoisted, isHoisted := data[k]
-		nested, isNested := wrapped[k]
-		switch {
-		case isHoisted && isNested:
-			l.errf("%s: %q is declared at data.%s AND at data.capabilities.%s — one grant, declared once", where, k, k, k)
-			return nil
-		case isHoisted:
-			caps[k], fn.capsPath[k] = hoisted, "data."+k
-		case isNested:
-			caps[k], fn.capsPath[k] = nested, "data.capabilities."+k
-		case hasWrapper:
-			// Absent: the path a missing key WOULD be written at, which is the
-			// spelling the rest of this document uses.
-			fn.capsPath[k] = "data.capabilities." + k
-		default:
-			fn.capsPath[k] = "data." + k
+		fn.capsPath[k] = "data." + k
+		if v, declared := data[k]; declared {
+			caps[k] = v
 		}
 	}
 	if _, isList := caps["emit"].(map[string]any); isList {
@@ -762,9 +657,9 @@ func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Functi
 	return fn
 }
 
-// parseReads reads the optional read capability off an envelope, at the path
-// the envelope was authored at: a function's is a capability key, an agent's is
-// `data.reads` beside its tools.
+// parseReads reads the optional read capability off an envelope, at the path the
+// envelope carries it: `data.reads` for both callers — a function's capability
+// key, and an agent's beside its tools — which is why the path travels.
 func (l *loader) parseReads(where, path string, caps map[string]any, fn *Function) bool {
 	rv, has := caps["reads"]
 	if !has {

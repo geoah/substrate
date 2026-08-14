@@ -52,9 +52,9 @@ func TestScheduleFireIdempotentAndCoalesced(t *testing.T) {
 	// Install the fire-counting function, then the trigger.
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.FunctionManifest(authority, "hourly", map[string]any{
-			"description":  "mints one task per fire",
-			"runtime":      vocabulary.RuntimePython,
-			"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+			"description": "mints one task per fire",
+			"runtime":     vocabulary.RuntimePython,
+			"emit":        []any{"tasks.substrate.reamde.dev/task"},
 			"source": `
 def main(input, host):
     fire = input["envelope"]["fire"]

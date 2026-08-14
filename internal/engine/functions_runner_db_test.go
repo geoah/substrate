@@ -34,12 +34,7 @@ func onlyParked(t *testing.T, ops fnOps, triggerID string) substrate.TriggerFail
 func goFn(name string, data map[string]any, emit []any, source string) map[string]any {
 	data["runtime"] = vocabulary.RuntimeGo
 	data["source"] = source
-	caps, _ := data["capabilities"].(map[string]any)
-	if caps == nil {
-		caps = map[string]any{}
-		data["capabilities"] = caps
-	}
-	caps["emit"] = emit
+	data["emit"] = emit
 	return fnDoc(name, data)
 }
 
@@ -112,9 +107,7 @@ def main(input, host):
 
 func readerFn(name string, tweak func(map[string]any)) map[string]any {
 	data := map[string]any{
-		"capabilities": map[string]any{
-			"reads": map[string]any{"kinds": []any{widgetType}},
-		},
+		"reads": map[string]any{"kinds": []any{widgetType}},
 	}
 	if tweak != nil {
 		tweak(data)
@@ -187,8 +180,7 @@ func TestTriggerReadBudgetTripParksImmediately(t *testing.T) {
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{readerTrigger("thrifty")},
 		readerFn("thrifty", func(data map[string]any) {
-			caps := data["capabilities"].(map[string]any)
-			caps["reads"].(map[string]any)["budgets"] = map[string]any{"calls": 2}
+			data["reads"].(map[string]any)["budgets"] = map[string]any{"calls": 2}
 		}))
 
 	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"mode": "burn", "calls": float64(5)}})
@@ -393,9 +385,7 @@ func TestTriggerEffectMergeAndSplit(t *testing.T) {
 			"kinds": []any{widgetType}, "ops": []any{"update"},
 		})},
 		pyFn("fuser", map[string]any{
-			"capabilities": map[string]any{
-				"mutations": []any{"merge", "split"},
-			},
+			"mutations": []any{"merge", "split"},
 		}, []any{taskType}, fuserSource))
 	ctx := context.Background()
 

@@ -190,9 +190,9 @@ func installToolBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 		t.Fatalf("put llmprovider row: %v", err)
 	}
 	writer := vocabulary.FunctionManifest(tbAuthority, "writer", map[string]any{
-		"description":  "writes one task",
-		"runtime":      vocabulary.RuntimePython,
-		"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+		"description": "writes one task",
+		"runtime":     vocabulary.RuntimePython,
+		"emit":        []any{"tasks.substrate.reamde.dev/task"},
 		"source": `
 def main(input, host):
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
@@ -220,7 +220,7 @@ def main(input, host):
 	user := vocabulary.AgentManifest(uAuthority, "user", map[string]any{
 		"description": "uses the bundled writer tool", "prompt": "You write.",
 		"provider": "userllm", "model": "user",
-		"tools": []any{tbAuthority + "/writer"},
+		"tools": []any{map[string]any{"callable": tbAuthority + "/writer"}},
 		"emit":  []any{"tasks.substrate.reamde.dev/task"},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
@@ -278,10 +278,8 @@ func installCallerBundle(t *testing.T, ds *dataset) {
 	caller := vocabulary.FunctionManifest(cbAuthority, "caller", map[string]any{
 		"description": "host-calls the bundled writer",
 		"runtime":     vocabulary.RuntimePython,
-		"capabilities": map[string]any{
-			"emit": []any{"tasks.substrate.reamde.dev/task"},
-			"call": []any{"toolb.bundles.substrate.reamde.dev/writer"},
-		},
+		"emit":        []any{"tasks.substrate.reamde.dev/task"},
+		"call":        []any{"toolb.bundles.substrate.reamde.dev/writer"},
 		"source": `
 def main(input, host):
     out = host.call("toolb.bundles.substrate.reamde.dev/writer", {})

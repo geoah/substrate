@@ -11,9 +11,18 @@ import (
 	"github.com/geoah/substrate/internal/strictjson"
 )
 
-// The type definition is the raw YAML-shaped map the schema loader
-// validated; the GraphQL layer reads only the parts it renders and ignores
-// everything else, so unknown keys never break schema construction.
+// WHAT THIS READS. `KindInfo.Definition` is the kind's DECLARATION as the loader
+// parsed it — the authored data map, which is also what the declaration's row
+// stores as its properties (engine/dataset.go typeInfo). It is not a stored
+// `definition` blob: that spelling is refused everywhere now.
+//
+// The builder reads only the parts it renders and ignores everything else, so a
+// key a newer binary declares never breaks schema construction. It walks the map
+// rather than a typed declaration because the schema is built from
+// `substrate.KindInfo` — the API builds it too, and `internal/api` may not import
+// the engine (nor `internal/substrate` the vocabulary, which declares the parsed
+// kind). `kind.properties` is the meta-kind's one json leaf for the same reason a
+// property declaration cannot state its own grammar: it recurses.
 
 func definitionMap(def map[string]any, key string) map[string]any {
 	m, _ := def[key].(map[string]any)

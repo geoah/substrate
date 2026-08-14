@@ -236,7 +236,7 @@ def main(input, host):
     host.effects.put("tasks.substrate.reamde.dev/task", "people 123", properties={"title": "t"})
     return {}
 `),
-		pyFn("selfmerge", map[string]any{"capabilities": map[string]any{"mutations": []any{"merge"}}},
+		pyFn("selfmerge", map[string]any{"mutations": []any{"merge"}},
 			[]any{taskType}, `
 def main(input, host):
     host.effects.merge("tasks.substrate.reamde.dev/task", "x", "x")
@@ -266,7 +266,7 @@ func TestSDKBuilderGoGuardedPatch(t *testing.T) {
 	// *ReadRecord whose int64 Version feeds substratefn.Version(e.Version) on a patch.
 	// A matching version applies; the same stale version then conflicts.
 	ds, ops := newFnDataset(t, nil, goFn("goguard",
-		map[string]any{"capabilities": map[string]any{"reads": map[string]any{"kinds": []any{taskType}}}},
+		map[string]any{"reads": map[string]any{"kinds": []any{taskType}}},
 		[]any{taskType}, `
 import "substratefn.local/substratefn"
 

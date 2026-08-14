@@ -128,11 +128,9 @@ type Bundle struct {
 	// an attacker's server. The host reads only this.
 	OAuth2 *BundleOAuth2
 
-	// Definition is the manifest's data map, exactly as authored.
+	// Definition is the declaration's own data map, exactly as authored — what
+	// the row stores as its properties.
 	Definition map[string]any
-	// SourceYAML is the verbatim manifest; installed documents have no
-	// original text, so theirs is derived.
-	SourceYAML string
 }
 
 // BundleInput is one declared configuration need: a kind whose records can
@@ -343,7 +341,6 @@ func (l *loader) buildBundle(gd *authorityDocs) {
 		Description: l.parseDescription(where+": data", d.Data),
 		Vocabulary:  vocabulary,
 		Definition:  d.Data,
-		SourceYAML:  d.Source,
 	}
 	l.parseBundleInputs(where, b, d.Data)
 	b.Requires = l.parseBundleRequires(where, g.Name, d.Data)
@@ -361,7 +358,6 @@ func (l *loader) buildBundle(gd *authorityDocs) {
 	}
 	b.Modules = l.parseBundleModules(where, d.Data)
 	b.OAuth2 = l.parseBundleOAuth2(where, d.Data)
-	canonicalFeatureScopes(d.Data)
 	if vocabulary {
 		// Pure vocabulary: kinds, property types, traits and mappings. A
 		// callable or a provider flow here would run behind the `builtin`
@@ -604,15 +600,18 @@ func (l *loader) parseBundleOAuth2(where string, data map[string]any) *BundleOAu
 			toggles = append(toggles, k)
 		}
 		for _, toggle := range sortedStrings(toggles) {
-			// TWO SPELLINGS, one meaning: the toggle's scopes as a bare list, or
-			// as `{scopes: [...]}`. The object is the declared form — a keyed map
-			// of lists is the one shape the property dialect cannot state — and the
-			// list is what every bundle written before it says.
-			scopes := mslice(fs, toggle)
-			if inner := asMapOrNil(fs[toggle]); inner != nil {
-				l.checkKeys(fmt.Sprintf("%s.featureScopes[%q]", w, toggle), inner, featureScopeKeys)
-				scopes = mslice(inner, "scopes")
+			// A toggle's value is `{scopes: [...]}`. The bare list is refused: a keyed
+			// map of LISTS is the one shape the property dialect cannot state — keyed
+			// and repeated are the two containers and a declaration is one or the
+			// other — so the value takes a field. Stored bundles written the bare way
+			// are translated by the dialect rung (engine/dialectonegrammar.go).
+			inner := asMapOrNil(fs[toggle])
+			if inner == nil {
+				l.errf("%s.featureScopes[%q]: a bare list of scopes — the toggle's value names them: {scopes: [...]}", w, toggle)
+				continue
 			}
+			l.checkKeys(fmt.Sprintf("%s.featureScopes[%q]", w, toggle), inner, featureScopeKeys)
+			scopes := mslice(inner, "scopes")
 			if len(scopes) == 0 {
 				l.errf("%s.featureScopes[%q]: at least one scope is required", w, toggle)
 				continue

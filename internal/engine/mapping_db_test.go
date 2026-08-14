@@ -63,7 +63,7 @@ func googleManifest() enginetest.Manifest {
 					map[string]any{"from": "phones[].canonical", "to": "phones"},
 				},
 				"map": map[string]any{
-					"name":   "name.displayName",
+					"name":   map[string]any{"path": "name.displayName"},
 					"emails": map[string]any{"path": "emails[].value", "merge": "union"},
 					"phones": map[string]any{"path": "phones[].canonical", "merge": "union"},
 				},
@@ -99,8 +99,8 @@ func slackManifest() enginetest.Manifest {
 				"from": typeSlackUser, "to": typePerson, "edge": "person",
 				"match": []any{map[string]any{"from": "email", "to": "emails"}},
 				"map": map[string]any{
-					"name":        "realName",
-					"displayName": "displayName",
+					"name":        map[string]any{"path": "realName"},
+					"displayName": map[string]any{"path": "displayName"},
 					"emails":      map[string]any{"path": "email", "merge": "union"},
 				},
 			}),
@@ -632,7 +632,10 @@ func TestStatesAreNeverRecomputed(t *testing.T) {
 				}),
 			vocabulary.MappingManifest(authority, "promoterrowperson", map[string]any{
 				"from": authority + "/promoterrow", "to": typePerson, "edge": "person",
-				"map": map[string]any{"name": "name", "prominence": "prominence"},
+				"map": map[string]any{
+					"name":       map[string]any{"path": "name"},
+					"prominence": map[string]any{"path": "prominence"},
+				},
 			}),
 		},
 	}
@@ -1092,7 +1095,9 @@ func TestHotMapTargets(t *testing.T) {
 			vocabulary.MappingManifest(authority, "libraryrowbook", map[string]any{
 				"from": authority + "/libraryrow", "to": "media.substrate.reamde.dev/book", "edge": "work",
 				"map": map[string]any{
-					"title": "title", "body": "body", "subtitle": "subtitle",
+					"title":    map[string]any{"path": "title"},
+					"body":     map[string]any{"path": "body"},
+					"subtitle": map[string]any{"path": "subtitle"},
 				},
 			}),
 		},

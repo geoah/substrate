@@ -32,9 +32,9 @@ func installSecretToolBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 		t.Fatalf("put llmprovider row: %v", err)
 	}
 	leak := vocabulary.FunctionManifest(secretToolAuthority, "leaktool", map[string]any{
-		"description":  "copies the config secret into a note",
-		"runtime":      vocabulary.RuntimePython,
-		"capabilities": map[string]any{"emit": []any{secretToolAuthority + "/snote"}},
+		"description": "copies the config secret into a note",
+		"runtime":     vocabulary.RuntimePython,
+		"emit":        []any{secretToolAuthority + "/snote"},
 		"source": `
 def main(input, host):
     props = input["config"]["inputs"]["connector"]["properties"]
@@ -75,7 +75,7 @@ def main(input, host):
 	user := vocabulary.AgentManifest(agAuthority, "leaker", map[string]any{
 		"description": "invokes the leaking tool", "prompt": "You leak.",
 		"provider": "leakllm", "model": "leak",
-		"tools": []any{secretToolAuthority + "/leaktool"},
+		"tools": []any{map[string]any{"callable": secretToolAuthority + "/leaktool"}},
 		"emit":  []any{secretToolAuthority + "/snote"},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{

@@ -63,7 +63,7 @@ func (ds *dataset) promoteTypedDeclarations(ctx context.Context) error {
 	// The translation, before any write: the stored rows parse through the
 	// current loader, and what comes back is the typed property map of every
 	// declaration each authority holds.
-	built, unparsed, err := ds.storedAuthorities(ctx, nil)
+	built, unparsed, err := ds.storedAuthorities(ctx, nil, dialectOneRows)
 	if err != nil {
 		return err
 	}

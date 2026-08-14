@@ -238,6 +238,47 @@ preserve-unknown-fields (our `json` is the honest escape hatch). Skip:
     mirrors and `groupAgentDeclarations` deleted, the GraphQL builder moved
     onto the parsed `Kind` (net deletion in `internal/gql/defs.go`),
     `KindInfo.Definition` re-provenanced.
+
+### Where PR1 stands
+
+1a, 1a-prime and 1b landed as described. 1c landed in three stages, and the
+code is the contract for all of it:
+
+- **A** — the loader gained the typed spellings beside the old ones.
+- **B** — the core declarations, the `kinds/` sweep, typed declaration ROWS,
+  the dialect rung, and the write path's refusals.
+- **C** — the old spellings die. Each is refused naming its replacement (the
+  `tools:` string arm, the `capabilities:` wrapper, `input`/`output`, the
+  `trait.oneOf` map form, the `mapping.map` string form, and two the plan did
+  not name: an index as a bare list, an OAuth feature's scopes as a bare
+  list). The `definition` machinery is gone with them: the blob arms of
+  `documentFromProps` and `rowDocument`, and a definition-bearing row is now a
+  loud refusal on every path but the rung's. The rung carries a FROZEN copy of
+  the dialect-1 grammar it needs (`engine/dialectonegrammar.go`), exercised
+  only by the rung and pinned by old-shape fixtures per kind, so retiring a
+  spelling from the loader can never move what a stored row translates to.
+
+Two things the plan expected of 1c did not happen, and both are honest
+deferrals rather than oversights:
+
+- **The GraphQL builder still reads the declaration as a map.** The schema is
+  built from `substrate.KindInfo` by two callers — the API's `/graphql` and the
+  agent loop's built-ins — and `internal/api` may not import the engine, while
+  `internal/substrate` cannot import `internal/vocabulary` (the vocabulary
+  imports it). So the parsed `*vocabulary.Kind` is not reachable on the API
+  path, and the net deletion in `internal/gql/defs.go` needs one of two moves
+  first: `KindInfo` grows a typed structural projection, or schema building
+  moves behind the `Dataset` contract. `kind.properties` is the meta-kind's one
+  json leaf either way (a property declaration recurses), so the property walk
+  survives both. PR3 decides it beside the console's typed reads; the file now
+  says what it reads and why.
+- **`Definition` stays on the parsed structs.** It is the authored data map —
+  what the projection stores as the row's properties — and rendering it back
+  from a parsed struct would materialize the loader's defaults, which is
+  exactly the absent-vs-empty loss 1b's pointers exist to avoid. What died is
+  the never-read `SourceYAML` on `Function`, `Bundle` and `Mapping`;
+  `KindInfo.Definition` is re-provenanced in place, so the console is
+  untouched.
 - **PR2 (stacked): host functions and the engine fixes** (content above).
   Safe only because of 1a-prime. Its declaration edits are a second version
   bump on closures PR1 swept.

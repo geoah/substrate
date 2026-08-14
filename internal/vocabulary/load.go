@@ -417,7 +417,6 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 				c.Properties[pname] = k
 			}
 		}
-		canonicalTraitVariants(d.Data)
 		if _, dup := g.Traits[local]; dup {
 			l.errf("%s: declared twice", where)
 			continue
@@ -493,8 +492,12 @@ var traitVariantKeys = map[string]bool{"name": true, "properties": true}
 
 // parseTraitVariants reads a trait's `oneOf:` — the variant set a kind picks one
 // of with `traits: [temporal(point)]`. A variant is an entry carrying its own
-// name ({name, properties}); a mapping of name to properties declares the same
-// set. Nil when nothing is declared, which is what makes a trait variant-free.
+// name ({name, properties}), and the LIST of them is the one spelling: a mapping
+// of name to properties is refused, because a keyed map of keyed maps leaves
+// every reader guessing which level a path addresses. Stored traits written that
+// way are translated by the dialect rung (engine/dialectonegrammar.go).
+//
+// Nil when nothing is declared, which is what makes a trait variant-free.
 func (l *loader) parseTraitVariants(where string, raw any) map[string]map[string]Datatype {
 	out := map[string]map[string]Datatype{}
 	switch list := raw.(type) {
@@ -519,16 +522,24 @@ func (l *loader) parseTraitVariants(where string, raw any) map[string]map[string
 			out[name] = l.parseTraitVariantProps(vwhere+".properties", mmap(ed, "properties"))
 		}
 	default:
-		props := asMap(raw)
-		for _, name := range sortedKeys(props) {
-			out[name] = l.parseTraitVariantProps(
-				fmt.Sprintf("%s: data.oneOf.%s", where, name), asMap(props[name]))
-		}
+		names := sortedKeys(asMap(raw))
+		l.errf("%s: data.oneOf: a mapping of variant name to properties — the variants are a LIST: [{name: %s, properties: {…}}, …]",
+			where, firstOr(names, "<variant>"))
+		return nil
 	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+// firstOr is the first name a refusal can quote, or a placeholder when there is
+// none to quote.
+func firstOr(names []string, fallback string) string {
+	if len(names) == 0 {
+		return fallback
+	}
+	return names[0]
 }
 
 // parseTraitVariantProps reads one variant's properties. A variant's properties
@@ -834,22 +845,26 @@ func (l *loader) parseType(doc Document) *Kind {
 		t.applyCapability(*b)
 	}
 
-	// indices. TWO SPELLINGS, one meaning: an index is `{properties: [...]}`,
-	// which is the declared form, or the bare list of property names every kind
-	// written before it says.
+	// indices. An index NAMES its properties (`{properties: [...]}`); the bare
+	// list of names a kind used to be written with is refused, since one shape
+	// per property is what lets the meta-kind declare this one. Stored rows
+	// written that way are translated by the dialect rung
+	// (engine/dialectonegrammar.go).
 	for _, iv := range mslice(d, "indices") {
-		cols, ok := iv.([]any)
+		if cols, bare := iv.([]any); bare {
+			l.errf("%s: data.indices: a bare list of property names — an index names them: {properties: %v}", where, cols)
+			continue
+		}
+		im := asMapOrNil(iv)
+		if im == nil {
+			l.errf("%s: data.indices: each index names its properties ({properties: [...]})", where)
+			continue
+		}
+		l.checkKeys(where+": data.indices[]", im, indexKeys)
+		cols, ok := im["properties"].([]any)
 		if !ok {
-			im := asMapOrNil(iv)
-			if im == nil {
-				l.errf("%s: data.indices: each index names its properties ({properties: [...]})", where)
-				continue
-			}
-			l.checkKeys(where+": data.indices[]", im, indexKeys)
-			if cols, ok = im["properties"].([]any); !ok {
-				l.errf("%s: data.indices: properties is a list of property names", where)
-				continue
-			}
+			l.errf("%s: data.indices: properties is a list of property names", where)
+			continue
 		}
 		var idx []string
 		for _, c := range cols {
@@ -859,7 +874,6 @@ func (l *loader) parseType(doc Document) *Kind {
 			t.Indices = append(t.Indices, idx)
 		}
 	}
-	canonicalIndices(d)
 
 	if t.DisplayTemplate != "" {
 		tmpl, err := ParseTemplate(t.DisplayTemplate)

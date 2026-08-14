@@ -415,7 +415,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	}
 
 	// Current documents of the touched authorities, from their record rows.
-	existing, err := ds.vocabularyDocumentRows(ctx, touched)
+	existing, err := ds.vocabularyDocumentRows(ctx, touched, typedRows)
 	if err != nil {
 		return nil, err
 	}
@@ -879,21 +879,8 @@ func authorityDeclarations(g *vocabulary.Authority) ([]declaration, error) {
 // DocumentKeys holds the two statements together.
 //
 // The RETIRED half does need a list, because it is a list of DEAD spellings and
-// nothing derives it: the `definition` blob, the id-derived `name` and `plural`,
-// an agent's function/sub-agent mirrors, a never-stored `sourceYAML`. The
-// projection writes each as an explicit null so a merge-only put clears them.
-// The list cannot grow — a spelling is retired once — and stage C deletes it
-// with the arms that read it.
-func retiredDeclarationProps(short string) map[string]bool {
-	out := map[string]bool{"definition": true, "sourceYAML": true, "name": true}
-	switch short {
-	case vocabulary.DocKind:
-		out["plural"] = true
-	case vocabulary.DocAgent:
-		out["functions"], out["subagents"] = true, true
-	}
-	return out
-}
+// nothing derives it. It is dialect 1's own set and lives with dialect 1's
+// grammar: retiredDeclarationProps, in dialectonegrammar.go.
 
 // engineOwned reports whether a stored property is the ENGINE's rather than the
 // declaration's: not a document key, and not one of the retired spellings. It is
@@ -1001,7 +988,9 @@ func mapKeysOf[V any](m map[string]V) []string {
 
 // vocabularyDocumentRows reads the touched authorities' schema record rows back as
 // loader documents — the store is the source the candidate rebuilds from.
-func (ds *dataset) vocabularyDocumentRows(ctx context.Context, authorities map[string]bool) (map[string]vocabulary.Document, error) {
+// dialectOne says whether a row still carrying the `definition` blob is
+// translated (the rung) or refused (everything else): see rowDocument.
+func (ds *dataset) vocabularyDocumentRows(ctx context.Context, authorities map[string]bool, dialectOne bool) (map[string]vocabulary.Document, error) {
 	args := make([]any, 0, len(vocabularyKindRefs))
 	ph := make([]string, 0, len(vocabularyKindRefs))
 	for i, ident := range vocabularyKindRefs {
@@ -1030,7 +1019,7 @@ func (ds *dataset) vocabularyDocumentRows(ctx context.Context, authorities map[s
 				return nil, fmt.Errorf("substrate/engine: decode schema row %s: %w", id, err)
 			}
 		}
-		d, ok, derr := rowDocument(id, typ, props)
+		d, ok, derr := rowDocument(id, typ, props, dialectOne)
 		if derr != nil {
 			return nil, derr
 		}
@@ -1064,6 +1053,18 @@ func (ds *dataset) vocabularyDocumentRows(ctx context.Context, authorities map[s
 	return out, nil
 }
 
+// The two ways a declaration row is read back as a document, and the difference
+// is what a `definition` blob means. On every live path it means CORRUPTION: the
+// rung translated every one of them and refused to stamp the dialect while one
+// was left (dialecttyped.go), so a blob reaching a reader afterwards is a row no
+// binary wrote and rowDocument says so instead of rebuilding an authority around
+// it. The rung's own read is the exception, and the only one: it is what does the
+// translating, through the frozen dialect-1 grammar.
+const (
+	typedRows      = false
+	dialectOneRows = true
+)
+
 // rowDocument rebuilds the loader document a schema record row stores. An
 // unknown kind is an ERROR, never a silent skip: a
 // schema row this binary cannot rebuild means the store speaks a newer
@@ -1072,7 +1073,7 @@ func (ds *dataset) vocabularyDocumentRows(ctx context.Context, authorities map[s
 // The boolean skip survives only for rows that are legitimately not documents
 // (a pre-promotion actor mirror row the seed rewrites, a row too old to
 // rebuild that deleteVocabularyRecord addresses by name alone).
-func rowDocument(id, typeIdent string, props map[string]any) (vocabulary.Document, bool, error) {
+func rowDocument(id, typeIdent string, props map[string]any, dialectOne bool) (vocabulary.Document, bool, error) {
 	short, ok := vocabularyRecordKinds[typeIdent]
 	if !ok {
 		return vocabulary.Document{}, false, fmt.Errorf("%w: schema row %s %s has a kind this binary does not know",
@@ -1103,11 +1104,15 @@ func rowDocument(id, typeIdent string, props map[string]any) (vocabulary.Documen
 		// data is the property map with the engine's own keys dropped
 		// (serverDeclarationProps). Nothing is derived and nothing is renamed —
 		// what the author wrote is what comes back.
-		if def, legacy := props["definition"].(map[string]any); legacy {
-			// A row an older binary wrote, before the typed flip: its authored
-			// content is the blob alone. Reachable only before the dialect rung has
-			// run over this repository (dialect.go).
-			d.Data = def
+		if def, blob := props[propDeclarationBlob].(map[string]any); blob {
+			if !dialectOne {
+				return vocabulary.Document{}, false, fmt.Errorf(
+					"%w: schema row %s %s still carries a `%s` blob — dialect 2 stores a declaration's own properties, so this row is either corruption or a store the rung never migrated",
+					ErrDeclarationUntranslated, typeIdent, id, propDeclarationBlob)
+			}
+			// The rung's read: a row an older binary wrote, whose authored content is
+			// the blob alone, in the grammar of the dialect that wrote it.
+			d.Data = dialectOneData(short, def)
 			break
 		}
 		d.Data = declarationData(short, props)
@@ -1209,7 +1214,7 @@ func cappedQuarantineReason(reason string) string {
 // earlier, for a closure that no longer PARSES (storedAuthorities): both
 // failures arrive here as quarantine candidates and are marked identically.
 func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
-	built, unparsed, err := ds.storedAuthorities(ctx, nil)
+	built, unparsed, err := ds.storedAuthorities(ctx, nil, typedRows)
 	if err != nil {
 		return err
 	}
@@ -1329,8 +1334,9 @@ func (ds *dataset) clearGroupQuarantine(ctx context.Context, authorities []*voca
 // user or a bundle declared — so authority reads the same answer at open
 // as it did at the write. It parses and returns the authorities without installing
 // them anywhere, alongside the ones that no longer parse under this binary —
-// quarantine candidates for the caller to mark.
-func (ds *dataset) storedAuthorities(ctx context.Context, skip func(string) bool) ([]*vocabulary.Authority, []quarantinedAuthority, error) {
+// quarantine candidates for the caller to mark. dialectOne is the rung's read
+// (rowDocument): every other caller reads typed rows and refuses a blob.
+func (ds *dataset) storedAuthorities(ctx context.Context, skip func(string) bool, dialectOne bool) ([]*vocabulary.Authority, []quarantinedAuthority, error) {
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT id, COALESCE(props->>'source', $2) FROM records
 		WHERE kind = $1 AND deleted_at IS NULL
@@ -1366,7 +1372,7 @@ func (ds *dataset) storedAuthorities(ctx context.Context, skip func(string) bool
 	if len(authorities) == 0 {
 		return nil, nil, nil
 	}
-	docs, err := ds.vocabularyDocumentRows(ctx, authorities)
+	docs, err := ds.vocabularyDocumentRows(ctx, authorities, dialectOne)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1525,7 +1531,7 @@ func (ds *dataset) patchSchemaRecord(ctx context.Context, actor substrate.Actor,
 // must still hold without it (an authority header outlives its members; a type
 // with live instances refuses).
 func (ds *dataset) deleteVocabularyRecord(ctx context.Context, actor substrate.Actor, existing *substrate.Record) (*substrate.Record, error) {
-	doc, ok, err := rowDocument(existing.ID, existing.Kind, existing.Properties)
+	doc, ok, err := rowDocument(existing.ID, existing.Kind, existing.Properties, typedRows)
 	if err != nil {
 		return nil, err
 	}
@@ -1548,11 +1554,10 @@ func (ds *dataset) deleteVocabularyRecord(ctx context.Context, actor substrate.A
 // rather than dropped (checkDeclarationWrite, the caller's first step): a
 // silently replaced value would tell a client its edit landed.
 //
-// The `definition` arm survives for one caller shape: a client (or a stored row
-// read before the rung) still speaking the blob. It parses to the same document,
-// so nothing downstream can tell which spelling arrived — but a write carrying
-// BOTH spellings is refused, since obeying one of them means discarding the
-// other's edits.
+// There is no `definition` arm: the blob has no legal spelling any more, on the
+// wire or in a row. A write carrying one is refused by name upstream, and a
+// merge over a row that still holds one carries no declaration at all — which is
+// what the empty-data refusal below says.
 func documentFromProps(short, id string, props map[string]any) (vocabulary.Document, error) {
 	d := vocabulary.Document{Kind: short, ID: id}
 	switch short {
@@ -1572,16 +1577,7 @@ func documentFromProps(short, id string, props map[string]any) (vocabulary.Docum
 			d.Data["tier"] = tier
 		}
 	default:
-		data := declarationData(short, props)
-		if def, blob := props["definition"].(map[string]any); blob {
-			if len(data) > 0 {
-				return d, fmt.Errorf("%w: a %s write carries its declaration TWICE — in `definition` and in %s; send one",
-					substrate.ErrValidation, short, strings.Join(sortedKeys(data), ", "))
-			}
-			d.Data = def
-			break
-		}
-		d.Data = data
+		d.Data = declarationData(short, props)
 		if len(d.Data) == 0 {
 			return d, fmt.Errorf("%w: a %s record carries its declaration in its properties — this write carries none",
 				substrate.ErrValidation, short)
@@ -1601,21 +1597,28 @@ func documentFromProps(short, id string, props map[string]any) (vocabulary.Docum
 //     round-trip. A DIFFERENT value is refused, naming the property: silently
 //     replacing it would tell the client its edit landed;
 //   - anything else is refused as undeclared, rather than dropped, so a typo
-//     is not a change that vanishes.
+//     is not a change that vanishes. A RETIRED spelling is refused by that name —
+//     the `definition` blob naming the properties that carry the declaration
+//     instead, the dead mirrors naming the rule — since a writer still sending
+//     one is working from a document this substrate stopped storing.
 //
 // `title` and `body` are the exception that proves the rule: every record
 // carries them in a column, a read hands them back in `properties`, and a
 // declaration's title is derived from its template — so an echoed one is
 // ignored, not refused.
 func checkDeclarationWrite(ty *vocabulary.Kind, short string, existing *substrate.Record, props map[string]any) error {
-	if _, blob := props["definition"]; blob {
-		return nil // the retired spelling carries the whole document; nothing to split
-	}
 	dataKeys := vocabulary.DeclarationDataKeys(short)
 	var problems []string
 	for _, name := range sortedKeys(props) {
 		switch {
 		case dataKeys[name], columnBackedProp[name], props[name] == nil:
+			continue
+		case name == propDeclarationBlob:
+			// The blob is not a spelling to choose between any more: nothing reads
+			// one, so obeying it would store a declaration no reader would find.
+			problems = append(problems, fmt.Sprintf(
+				"props.%s: the retired blob — a %s carries its declaration in its own properties: %s",
+				name, short, strings.Join(sortedKeys(dataKeys), ", ")))
 			continue
 		case retiredDeclarationProps(short)[name]:
 			problems = append(problems, fmt.Sprintf("props.%s: the retired spelling — the declaration is the properties now", name))

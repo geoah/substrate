@@ -40,10 +40,10 @@ func openPagedDataset(t *testing.T, authority, source string) (*dataset, string)
 			vocabulary.KindManifest(authority, map[string]any{"singular": "widget", "plural": "widgets"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 			vocabulary.FunctionManifest(authority, "page", map[string]any{
-				"description":  "a paged backfill body",
-				"runtime":      vocabulary.RuntimePython,
-				"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
-				"source":       source,
+				"description": "a paged backfill body",
+				"runtime":     vocabulary.RuntimePython,
+				"emit":        []any{"tasks.substrate.reamde.dev/task"},
+				"source":      source,
 			}),
 		},
 		Triggers: []enginetest.Trigger{{

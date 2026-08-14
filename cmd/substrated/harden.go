@@ -47,7 +47,7 @@ func sandboxReport(mode sandbox.Mode, report sandbox.Report) (slog.Level, string
 				"platform", report.OS,
 				"reason", "landlock and seccomp are Linux facilities, and nothing here stands in for them",
 				"not_enforced", strings.Join([]string{
-					"capabilities.network (a body reaches the internet whether or not it declares egress)",
+					"a function's declared `network:` allowlist (a body reaches the internet whether or not it declares egress)",
 					"filesystem confinement (a body reads this process's environment, its files, and other functions' data)",
 					"resource limits",
 				}, "; "),

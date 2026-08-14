@@ -206,10 +206,10 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 		vocabulary.KindManifest(crewAuthority, map[string]any{"singular": "widget", "plural": "widgets"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		vocabulary.FunctionManifest(crewAuthority, "annotate", map[string]any{
-			"description":  "writes one annotated task under the id you pass",
-			"runtime":      vocabulary.RuntimePython,
-			"input":        map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}, "required": []any{"id"}},
-			"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+			"description": "writes one annotated task under the id you pass",
+			"runtime":     vocabulary.RuntimePython,
+			"arguments":   []any{map[string]any{"name": "id", "type": "string", "required": true}},
+			"emit":        []any{"tasks.substrate.reamde.dev/task"},
 			"source": `
 def main(input, host):
     tid = input["args"]["id"]
@@ -219,9 +219,9 @@ def main(input, host):
 `,
 		}),
 		vocabulary.FunctionManifest(crewAuthority, "keyecho", map[string]any{
-			"description":  "writes one task carrying the invocation's idempotency key",
-			"runtime":      vocabulary.RuntimePython,
-			"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+			"description": "writes one task carrying the invocation's idempotency key",
+			"runtime":     vocabulary.RuntimePython,
+			"emit":        []any{"tasks.substrate.reamde.dev/task"},
 			"source": `
 def main(input, host):
     key = input["idempotencyKey"]
@@ -232,19 +232,23 @@ def main(input, host):
 		}),
 		agent("classifier", map[string]any{
 			"provider": "rootllm", "model": "root",
-			"tools":  []any{crewAuthority + "/annotate", "propose"},
+			"tools": []any{
+				map[string]any{"callable": crewAuthority + "/annotate"},
+				map[string]any{"builtin": "propose"},
+			},
 			"agents": []any{crewAuthority + "/scribe"},
 			"emit":   []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
 		}),
 		agent("scribe", map[string]any{"provider": "subllm", "model": "sub"}),
 		agent("rogue", map[string]any{
 			"provider": "roguellm", "model": "rogue",
-			"tools": []any{crewAuthority + "/annotate"},
+			"tools": []any{map[string]any{"callable": crewAuthority + "/annotate"}},
 			// annotate emits tasks, but THIS agent's emit does not allow them.
 		}),
 		agent("budgeter", map[string]any{
-			"provider": "budgetllm", "model": "budget", "tools": []any{crewAuthority + "/annotate"},
-			"emit": []any{"tasks.substrate.reamde.dev/task"}, "budgets": map[string]any{"maxTurns": 2},
+			"provider": "budgetllm", "model": "budget",
+			"tools": []any{map[string]any{"callable": crewAuthority + "/annotate"}},
+			"emit":  []any{"tasks.substrate.reamde.dev/task"}, "budgets": map[string]any{"maxTurns": 2},
 		}),
 		agent("chatter", map[string]any{"provider": "chatllm", "model": "chat"}),
 		// warden writes NOTHING (empty emit) but delegates to minion, whose
@@ -254,25 +258,33 @@ def main(input, host):
 		}),
 		agent("minion", map[string]any{
 			"provider": "minionllm", "model": "minion",
-			"tools": []any{crewAuthority + "/annotate", "propose"},
-			"emit":  []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
+			"tools": []any{
+				map[string]any{"callable": crewAuthority + "/annotate"},
+				map[string]any{"builtin": "propose"},
+			},
+			"emit": []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
 		}),
 		// keeper's keyecho tool records its idempotency key — the stable-key
 		// retry test.
 		agent("keeper", map[string]any{
-			"provider": "keepllm", "model": "keep", "tools": []any{crewAuthority + "/keyecho"},
-			"emit": []any{"tasks.substrate.reamde.dev/task"},
+			"provider": "keepllm", "model": "keep",
+			"tools": []any{map[string]any{"callable": crewAuthority + "/keyecho"}},
+			"emit":  []any{"tasks.substrate.reamde.dev/task"},
 		}),
 		// archivist reads the whole graph through the graphql built-in and
 		// writes nothing; editor holds both graphql tools, its mutate gated to
 		// widgets alone.
 		agent("archivist", map[string]any{
-			"provider": "gqlllm", "model": "gql", "tools": []any{"graphql"},
+			"provider": "gqlllm", "model": "gql",
+			"tools": []any{map[string]any{"builtin": "graphql"}},
 		}),
 		agent("editor", map[string]any{
 			"provider": "mutllm", "model": "mut",
-			"tools": []any{"graphql", "mutate"},
-			"emit":  []any{crewAuthority + "/widget"},
+			"tools": []any{
+				map[string]any{"builtin": "graphql"},
+				map[string]any{"builtin": "mutate"},
+			},
+			"emit": []any{crewAuthority + "/widget"},
 		}),
 		// judge is subagentOnly: off the chat surface, still a callable and
 		// still justice's sub-agent.

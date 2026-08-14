@@ -112,7 +112,8 @@ type Agent struct {
 	// exists to be called by other agents), the call API, and triggers.
 	SubagentOnly bool
 
-	// Definition is the manifest's data map, exactly as authored.
+	// Definition is the declaration's own data map, exactly as authored — what
+	// the row stores as its properties.
 	Definition map[string]any
 }
 
@@ -260,7 +261,6 @@ func (l *loader) parseAgent(d Document) *Agent {
 	if !l.parseAgentTools(where, d.Data, a) {
 		return nil
 	}
-	canonicalAgentTools(d.Data)
 	// Sub-agents surface as tools under their LOCAL name, so the name space
 	// is one: a collision with a tool (or another sub-agent) is a load
 	// error, not a silent shadow at dispatch.
@@ -389,7 +389,13 @@ func (l *loader) parseAgentParams(where string, data map[string]any, a *Agent) b
 // parseAgentTools reads the `tools:` list. An entry names ONE tool, by one of
 // two arms: `builtin:` (query, propose, graphql, mutate) or `callable:` (a
 // function identity, optionally aliased for this agent's prompt context with
-// `name`/`description`). Bare strings name either arm by value.
+// `name`/`description`).
+//
+// A bare STRING is refused. It named the arm by its value — a built-in if the
+// word happened to be one, a callable otherwise — so one shape held two kinds of
+// thing and a typo in a built-in's name silently became a callable nothing
+// declares. The stored rows written that way are translated by the dialect rung
+// (engine/dialectonegrammar.go), which is the only reader of that spelling left.
 func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bool {
 	seen := map[string]bool{}
 	add := func(i int, t AgentTool) bool {
@@ -408,20 +414,13 @@ func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bo
 	for i, tv := range mslice(data, "tools") {
 		switch entry := tv.(type) {
 		case string:
+			arm := fmt.Sprintf("{callable: %s}", entry)
 			if agentBuiltins[entry] {
-				if !add(i, AgentTool{Builtin: entry, Name: entry}) {
-					return false
-				}
-				continue
+				arm = fmt.Sprintf("{builtin: %s}", entry)
 			}
-			if !Qualified(entry) || strings.Contains(entry, "*") {
-				l.errf("%s: data.tools[%d]: %q — a built-in (%s) or a full function identity", where, i, entry, strings.Join(agentBuiltinNames, ", "))
-				return false
-			}
-			name := KindName(entry)
-			if !add(i, AgentTool{Callable: entry, Name: name}) {
-				return false
-			}
+			l.errf("%s: data.tools[%d]: %q is a bare string — an entry names its arm: %s (a built-in is one of %s; a callable is a full function identity)",
+				where, i, entry, arm, strings.Join(agentBuiltinNames, ", "))
+			return false
 		case map[string]any:
 			twhere := fmt.Sprintf("%s: data.tools[%d]", where, i)
 			l.checkKeys(twhere, entry, agentToolKeys)

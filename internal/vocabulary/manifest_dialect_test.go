@@ -1,11 +1,12 @@
 package vocabulary_test
 
-// The manifest dialect's typed spellings: a tool entry that names its built-in
-// arm explicitly, a function's flat argument list and its hoisted capability
-// keys, a mapping rule as an object, and a trait's variants as a list. Each one
-// is proved to parse to the SAME parsed struct the map/wrapper/string spelling
-// parses to — the dialect is two ways to write one declaration, never two
-// declarations — and each refusal the dialect adds is asserted by message.
+// The manifest dialect's typed spellings, and they are the ONLY ones: a tool
+// entry names its arm, a function declares flat arguments and its capability keys
+// on `data` itself, a mapping rule is an object, a trait's variants are a list.
+// Each spelling that came before is refused here, naming what replaced it — the
+// stored rows written that way are translated by the dialect rung, whose frozen
+// grammar and fixtures live in internal/engine — and each refusal the dialect
+// adds is asserted by message.
 
 import (
 	"reflect"
@@ -18,8 +19,9 @@ import (
 
 // --- agent tools: the explicit builtin arm -------------------------------------
 
-// `{builtin: query}` and the bare `query` are one entry.
-func TestAgentBuiltinToolEntryEqualsBareName(t *testing.T) {
+// An entry names its arm: `{builtin: query}` for a built-in, `{callable: …}` for
+// a function, and the parsed tool carries the model-facing name either way.
+func TestAgentToolEntriesNameTheirArm(t *testing.T) {
 	tools := func(entries string) []vocabulary.AgentTool {
 		t.Helper()
 		r, err := loadAgAuthority(t, agAuthority(`  description: classifies widgets
@@ -40,13 +42,12 @@ func TestAgentBuiltinToolEntryEqualsBareName(t *testing.T) {
 		}
 		return ag.Tools
 	}
-	bare := tools(`[query, graphql, mutate, ag.example.com/annotate]`)
-	explicit := tools(`[{builtin: query}, {builtin: graphql}, {builtin: mutate}, {callable: ag.example.com/annotate}]`)
-	if !reflect.DeepEqual(bare, explicit) {
-		t.Fatalf("tools differ:\n bare     %+v\n explicit %+v", bare, explicit)
+	entries := tools(`[{builtin: query}, {builtin: graphql}, {builtin: mutate}, {callable: ag.example.com/annotate}]`)
+	if len(entries) != 4 || entries[0].Builtin != vocabulary.AgentToolQuery || entries[0].Name != vocabulary.AgentToolQuery {
+		t.Fatalf("tools %+v", entries)
 	}
-	if len(bare) != 4 || bare[0].Builtin != vocabulary.AgentToolQuery || bare[3].Callable == "" {
-		t.Fatalf("tools %+v", bare)
+	if entries[3].Callable != "ag.example.com/annotate" || entries[3].Name != "annotate" {
+		t.Fatalf("the callable entry %+v", entries[3])
 	}
 }
 
@@ -85,6 +86,13 @@ func TestAgentToolEntryRefusals(t *testing.T) {
 		"described builtin":         {`[{builtin: graphql, description: asks the graph}]`, "builtin \"graphql\" takes no name or description"},
 		"unknown entry key":         {`[{builtin: graphql, alias: ask}]`, "unknown key \"alias\""},
 		"a callable is an identity": {`[{callable: annotate}]`, "callable \"annotate\" — a full function identity"},
+		// The retired spelling: a bare string named the arm by its value, so a typo
+		// in a built-in's name became a callable nothing declares.
+		"a bare built-in name": {`[query]`, `"query" is a bare string — an entry names its arm: {builtin: query}`},
+		"a bare callable identity": {
+			`[ag.example.com/annotate]`,
+			`"ag.example.com/annotate" is a bare string — an entry names its arm: {callable: ag.example.com/annotate}`,
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -125,21 +133,17 @@ func flatFn(t *testing.T, io string) *vocabulary.Function {
 	return fn
 }
 
-// An argument list compiles to the schema map the engine already reads: the one
-// the `input:` spelling produces, key for key.
+// An argument list compiles to the schema map the engine reads: CheckValue holds
+// a call to it, and the model-facing tool card is rendered from it.
 func TestFunctionArgumentsCompileToTheSchema(t *testing.T) {
 	cases := []struct {
 		name string
 		args string
-		// input is the schema spelling of the same shape, empty where the
-		// schema dialect has no way to say it (an enum's values).
-		input string
-		want  map[string]any
+		want map[string]any
 	}{
 		{
-			name:  "a described scalar",
-			args:  `    - {name: url, type: string, description: the page to fetch}`,
-			input: `    type: object` + "\n" + `    properties: {url: {type: string, description: the page to fetch}}`,
+			name: "a described scalar",
+			args: `    - {name: url, type: string, description: the page to fetch}`,
 			want: map[string]any{"type": "object", "properties": map[string]any{
 				"url": map[string]any{"type": "string", "description": "the page to fetch"},
 			}},
@@ -149,11 +153,6 @@ func TestFunctionArgumentsCompileToTheSchema(t *testing.T) {
 			args: `    - {name: limit, type: int}
     - {name: ratio, type: float}
     - {name: dryRun, type: bool}`,
-			input: `    type: object
-    properties:
-      limit: {type: number}
-      ratio: {type: number}
-      dryRun: {type: boolean}`,
 			want: map[string]any{"type": "object", "properties": map[string]any{
 				"limit":  map[string]any{"type": "number"},
 				"ratio":  map[string]any{"type": "number"},
@@ -161,9 +160,8 @@ func TestFunctionArgumentsCompileToTheSchema(t *testing.T) {
 			}},
 		},
 		{
-			name:  "repeated is the array arm",
-			args:  `    - {name: kinds, type: string, repeated: true, description: the kinds to sweep}`,
-			input: `    type: object` + "\n" + `    properties: {kinds: {type: array, description: the kinds to sweep, items: {type: string}}}`,
+			name: "repeated is the array arm",
+			args: `    - {name: kinds, type: string, repeated: true, description: the kinds to sweep}`,
 			want: map[string]any{"type": "object", "properties": map[string]any{
 				"kinds": map[string]any{
 					"type": "array", "description": "the kinds to sweep",
@@ -176,12 +174,6 @@ func TestFunctionArgumentsCompileToTheSchema(t *testing.T) {
 			args: `    - {name: url, type: string, required: true}
     - {name: depth, type: int}
     - {name: token, type: string, required: true}`,
-			input: `    type: object
-    properties:
-      url: {type: string}
-      depth: {type: number}
-      token: {type: string}
-    required: [url, token]`,
 			want: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -200,18 +192,16 @@ func TestFunctionArgumentsCompileToTheSchema(t *testing.T) {
 			}},
 		},
 		{
-			name:  "json is the escape hatch",
-			args:  `    - {name: payload, type: json, description: whatever the endpoint returns}`,
-			input: `    type: object` + "\n" + `    properties: {payload: {type: any, description: whatever the endpoint returns}}`,
+			name: "json is the escape hatch",
+			args: `    - {name: payload, type: json, description: whatever the endpoint returns}`,
 			want: map[string]any{"type": "object", "properties": map[string]any{
 				"payload": map[string]any{"type": "any", "description": "whatever the endpoint returns"},
 			}},
 		},
 		{
-			name:  "no arguments closes the object",
-			args:  `    []`,
-			input: `    {type: object, properties: {}}`,
-			want:  map[string]any{"type": "object", "properties": map[string]any{}},
+			name: "no arguments closes the object",
+			args: `    []`,
+			want: map[string]any{"type": "object", "properties": map[string]any{}},
 		},
 	}
 	for _, tc := range cases {
@@ -219,13 +209,6 @@ func TestFunctionArgumentsCompileToTheSchema(t *testing.T) {
 			args := flatFn(t, "  arguments:\n"+tc.args+"\n").Input
 			if !reflect.DeepEqual(args, tc.want) {
 				t.Fatalf("arguments compiled to\n %#v\nwant\n %#v", args, tc.want)
-			}
-			if tc.input == "" {
-				return
-			}
-			schema := flatFn(t, "  input:\n"+tc.input+"\n").Input
-			if !reflect.DeepEqual(args, schema) {
-				t.Fatalf("arguments compiled to\n %#v\ninput: declares\n %#v", args, schema)
 			}
 		})
 	}
@@ -259,18 +242,6 @@ func TestFunctionReturnsCompileToTheSchema(t *testing.T) {
 
 func TestFunctionArgumentRefusals(t *testing.T) {
 	cases := map[string]struct{ io, want string }{
-		"arguments and input both declare the call": {
-			`  arguments: [{name: url, type: string}]
-  input: {type: object}
-`,
-			"data.arguments and data.input both declare one shape",
-		},
-		"returns and output both declare the result": {
-			`  returns: [{name: ok, type: bool}]
-  output: {type: object}
-`,
-			"data.returns and data.output both declare one shape",
-		},
 		"arguments is a list": {
 			`  arguments: {url: {type: string}}
 `,
@@ -336,88 +307,29 @@ func TestFunctionArgumentRefusals(t *testing.T) {
 	}
 }
 
-// --- function capabilities: hoisted onto data ----------------------------------
+// --- function capabilities: on data itself --------------------------------------
 
-// The five capability keys parse to one envelope wherever they are written.
-func TestFunctionHoistedCapabilitiesEqualTheWrapper(t *testing.T) {
-	caps := func(io string) vocabulary.FunctionCaps {
-		t.Helper()
-		return flatFn(t, io).Caps
-	}
-	// flatFn's own envelope is hoisted, so the fixture declares the wrapper
-	// arm here and the hoisted one is added around it.
-	hoisted := caps(`  reads:
+// The five capability keys ride `data` — one grant, declared once — and the
+// envelope they parse to is what every gate downstream reads.
+func TestFunctionCapabilitiesRideData(t *testing.T) {
+	caps := flatFn(t, `  reads:
     kinds: [fn.example.com/widget]
     budgets: {calls: 4}
   call: [fn.example.com/mirror]
   network: ["https://*"]
   mutations: [merge]
-`)
-	r, err := loadFnAuthority(t, `  description: d
-  runtime: python
-  source: "def main(input, host): return {}"
-  capabilities:
-    emit: [fn.example.com/gadget]
-    reads:
-      kinds: [fn.example.com/widget]
-      budgets: {calls: 4}
-    call: [fn.example.com/mirror]
-    network: ["https://*"]
-    mutations: [merge]
-`)
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	fn, err := r.ResolveFunction("fn.example.com/mirror")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(hoisted, fn.Caps) {
-		t.Fatalf("envelopes differ:\n hoisted %+v\n wrapped %+v", hoisted, fn.Caps)
-	}
-	if len(hoisted.Emit) != 1 || hoisted.Reads == nil || hoisted.Reads.Calls != 4 ||
-		!hoisted.AllowsCall("fn.example.com/mirror") || !hoisted.AllowsMutation(vocabulary.MutationMerge) {
-		t.Fatalf("envelope %+v", hoisted)
-	}
-}
-
-// Mixing is legal as long as no key is written twice: the wrapper is a place to
-// put a key, not a mode the document is in.
-func TestFunctionMixedCapabilitySpellings(t *testing.T) {
-	fn := flatFn(t, `  capabilities:
-    reads:
-      kinds: [fn.example.com/widget]
-`)
-	if len(fn.Caps.Emit) != 1 || fn.Caps.Reads == nil || len(fn.Caps.Reads.Kinds) != 1 {
-		t.Fatalf("envelope %+v", fn.Caps)
+`).Caps
+	if len(caps.Emit) != 1 || caps.Reads == nil || caps.Reads.Calls != 4 ||
+		!caps.AllowsCall("fn.example.com/mirror") || !caps.AllowsMutation(vocabulary.MutationMerge) {
+		t.Fatalf("envelope %+v", caps)
 	}
 }
 
 func TestFunctionCapabilityRefusals(t *testing.T) {
 	cases := map[string]struct{ data, want string }{
-		"emit declared twice": {
-			`  description: d
-  runtime: python
-  emit: [fn.example.com/gadget]
-  capabilities: {emit: [fn.example.com/widget]}
-  source: "def main(input, host): return {}"
-`,
-			`"emit" is declared at data.emit AND at data.capabilities.emit`,
-		},
-		"reads declared twice": {
-			`  description: d
-  runtime: python
-  emit: [fn.example.com/gadget]
-  reads: {kinds: [fn.example.com/widget]}
-  capabilities:
-    reads: {kinds: [fn.example.com/gadget]}
-  source: "def main(input, host): return {}"
-`,
-			`"reads" is declared at data.reads AND at data.capabilities.reads`,
-		},
-		// A hoisted key's own refusals name the hoisted path, so the fix goes
-		// where the author wrote it.
-		"a hoisted refusal names the hoisted path": {
+		// A capability key's refusals name the path it was written at, so the fix
+		// goes where the author is already looking.
+		"a refusal names the key's path": {
 			`  description: d
   runtime: python
   emit: [fn.example.com/nothing]
@@ -425,7 +337,7 @@ func TestFunctionCapabilityRefusals(t *testing.T) {
 `,
 			"data.emit: unknown type",
 		},
-		"a hoisted reads refusal names the hoisted path": {
+		"a reads refusal names the key's path": {
 			`  description: d
   runtime: python
   emit: [fn.example.com/gadget]
@@ -434,7 +346,7 @@ func TestFunctionCapabilityRefusals(t *testing.T) {
 `,
 			"data.reads.kinds: unknown type",
 		},
-		"a hoisted call refusal names the hoisted path": {
+		"a call refusal names the key's path": {
 			`  description: d
   runtime: python
   emit: [fn.example.com/gadget]
@@ -443,7 +355,7 @@ func TestFunctionCapabilityRefusals(t *testing.T) {
 `,
 			"data.call: unknown function",
 		},
-		"a hoisted mutations refusal names the hoisted path": {
+		"a mutations refusal names the key's path": {
 			`  description: d
   runtime: python
   emit: [fn.example.com/gadget]
@@ -519,16 +431,10 @@ func loadMapping(t *testing.T, rules string) *vocabulary.Mapping {
 	return m
 }
 
-// A map value is a rule object; the bare path is the same rule with the default
-// merge.
-func TestMappingRuleObjectEqualsBarePath(t *testing.T) {
-	bare := loadMapping(t, `    name: name.displayName
-`)
+// A map value is a rule OBJECT, and its merge defaults to atomic.
+func TestMappingRuleIsAnObject(t *testing.T) {
 	object := loadMapping(t, `    name: {path: name.displayName}
 `)
-	if !reflect.DeepEqual(bare.Map, object.Map) || !reflect.DeepEqual(bare.MapOrder, object.MapOrder) {
-		t.Fatalf("rules differ:\n bare   %+v\n object %+v", bare.Map["name"], object.Map["name"])
-	}
 	want := vocabulary.MapRule{
 		Path:  vocabulary.Path{Prop: "name", Field: "displayName"},
 		Merge: vocabulary.MergeAtomic,
@@ -565,6 +471,13 @@ func TestMappingRuleRefusals(t *testing.T) {
 			`    name: {merge: union}
 `,
 			"a path is required",
+		},
+		// The retired spelling: a bare path string, which left one property with
+		// two shapes.
+		"a bare path is refused": {
+			`    name: name.displayName
+`,
+			`"name.displayName" is a bare path — a rule is an object: {path: name.displayName}`,
 		},
 	}
 	for name, tc := range cases {
@@ -615,7 +528,7 @@ func loadTrait(t *testing.T, oneOf string) *vocabulary.Registry {
 	return r
 }
 
-func TestTraitVariantListEqualsTheMapping(t *testing.T) {
+func TestTraitVariantsAreAList(t *testing.T) {
 	variants := func(r *vocabulary.Registry) map[string]map[string]vocabulary.Datatype {
 		t.Helper()
 		g, ok := r.AuthorityByName("c.example.com")
@@ -624,17 +537,11 @@ func TestTraitVariantListEqualsTheMapping(t *testing.T) {
 		}
 		return g.Traits["temporal"].Variants
 	}
-	mapped := variants(loadTrait(t, `    point: {at: datetime}
-    range: {at: datetime, endsAt: datetime}
-`))
 	listed := variants(loadTrait(t, `    - name: point
       properties: {at: datetime}
     - name: range
       properties: {at: datetime, endsAt: datetime}
 `))
-	if !reflect.DeepEqual(mapped, listed) {
-		t.Fatalf("variants differ:\n mapping %+v\n list    %+v", mapped, listed)
-	}
 	if len(listed) != 2 || listed["range"]["endsAt"] != vocabulary.DatatypeDatetime {
 		t.Fatalf("variants %+v", listed)
 	}
@@ -684,6 +591,14 @@ func TestTraitVariantListRefusals(t *testing.T) {
 `,
 			`unknown key "hot"`,
 		},
+		// The retired spelling: a mapping of variant name to properties, which is a
+		// keyed map of keyed maps.
+		"the variant mapping is refused": {
+			`    point: {at: datetime}
+    range: {at: datetime, endsAt: datetime}
+`,
+			"a mapping of variant name to properties — the variants are a LIST",
+		},
 		"a variant property is a known datatype": {
 			`    - name: range
       properties: {at: datetime, endsAt: instant}
@@ -695,6 +610,84 @@ func TestTraitVariantListRefusals(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, err := vocabulary.LoadFS(fstest.MapFS{
 				"c.example.com/all.yaml": &fstest.MapFile{Data: []byte(traitDocs(tc.oneOf))},
+			})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want %q, got: %v", tc.want, err)
+			}
+		})
+	}
+}
+
+// --- the two bare LISTS the flip retired ----------------------------------------
+
+// An index names its properties and an OAuth feature names its scopes: both used
+// to be written as a bare list, and the property dialect cannot state either of
+// those shapes — a list of lists, or a keyed map of lists. Each is refused
+// naming the object that replaced it; stored rows are translated by the rung.
+func TestBareListSpellingsAreRefused(t *testing.T) {
+	const indexDoc = `kind: core.substrate.reamde.dev/authority
+metadata: {id: i.example.com}
+data: {version: v1alpha1}
+---
+kind: core.substrate.reamde.dev/kind
+metadata: {id: i.example.com/widget}
+data:
+  authority: i.example.com
+  names: {singular: widget, plural: widgets}
+  indices: [[label, other]]
+  properties:
+    label: {type: string}
+    other: {type: string}
+`
+	const scopesDoc = `kind: core.substrate.reamde.dev/authority
+metadata: {id: s.bundles.example.com}
+data: {version: v1alpha1}
+---
+kind: core.substrate.reamde.dev/trait
+metadata: {id: s.bundles.example.com/oauth2}
+data:
+  authority: s.bundles.example.com
+  properties: {clientId: string, clientSecret: secret}
+---
+kind: core.substrate.reamde.dev/kind
+metadata: {id: s.bundles.example.com/config}
+data:
+  authority: s.bundles.example.com
+  names: {singular: config, plural: configs}
+  traits: [oauth2]
+  properties:
+    enabledThing: {type: bool}
+---
+kind: core.substrate.reamde.dev/bundle
+metadata: {id: s.bundles.example.com/s}
+data:
+  authority: s.bundles.example.com
+  description: one config, so the closure is whole
+  inputs:
+    client: {kind: s.bundles.example.com/config}
+  installs:
+    - s.bundles.example.com/config
+    - s.bundles.example.com/oauth2
+  oauth2:
+    clientInput: client
+    authorizationEndpoint: https://example.com/authorize
+    tokenEndpoint: https://example.com/token
+    featureScopes:
+      enabledThing: [read:thing]
+`
+	for name, tc := range map[string]struct{ doc, want string }{
+		"an index is an object": {
+			indexDoc,
+			"data.indices: a bare list of property names — an index names them: {properties: [label other]}",
+		},
+		"a feature's scopes take a field": {
+			scopesDoc,
+			`featureScopes["enabledThing"]: a bare list of scopes — the toggle's value names them: {scopes: [...]}`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := vocabulary.LoadFS(fstest.MapFS{
+				"all.yaml": &fstest.MapFile{Data: []byte(tc.doc)},
 			})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("want %q, got: %v", tc.want, err)

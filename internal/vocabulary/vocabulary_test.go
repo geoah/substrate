@@ -55,8 +55,8 @@ data:
   authority: core.example.com
   # backed by the physical at/ends_at/due_at columns every record row carries
   oneOf:
-    point: {at: datetime}
-    range: {at: datetime, endsAt: datetime}
+    - {name: point, properties: {at: datetime}}
+    - {name: range, properties: {at: datetime, endsAt: datetime}}
 ---
 kind: core.substrate.reamde.dev/kind
 metadata:
@@ -142,7 +142,7 @@ data:
   match:
     - {from: "emails[].value", to: emails}
   map:
-    name: name.displayName
+    name: {path: name.displayName}
     emails: {path: "emails[].value", merge: union}
 ---
 # one book, in whatever formats you hold it
@@ -170,7 +170,7 @@ data:
   authority: vocab.example.com
   names: {singular: task, plural: tasks}
   traits: ["temporal(point: dueAt)"]
-  indices: [[status, dueAt]]
+  indices: [{properties: [status, dueAt]}]
   properties:
     # a machine IS a property: one namespace, one wire map
     status:
@@ -617,7 +617,7 @@ func TestSourceYAMLIsTheDocument(t *testing.T) {
 	}
 	if !strings.HasPrefix(temporal.SourceYAML, "# when a thing sits on the timeline") ||
 		!strings.Contains(temporal.SourceYAML, "  # backed by the physical at/ends_at/due_at columns") ||
-		!strings.HasSuffix(temporal.SourceYAML, "    range: {at: datetime, endsAt: datetime}") {
+		!strings.HasSuffix(temporal.SourceYAML, "    - {name: range, properties: {at: datetime, endsAt: datetime}}") {
 		t.Fatalf("temporal source:\n%s", temporal.SourceYAML)
 	}
 	if temporal.Definition["oneOf"] == nil {
@@ -1109,7 +1109,7 @@ func TestInstalledMapping(t *testing.T) {
 			map[string]any{"from": "email", "to": "emails"},
 		},
 		"map": map[string]any{
-			"name":   "realName",
+			"name":   map[string]any{"path": "realName"},
 			"emails": map[string]any{"path": "email", "merge": "union"},
 		},
 	})
@@ -1321,8 +1321,8 @@ func TestMappings(t *testing.T) {
 	if rule := m.Map["emails"]; rule.Merge != vocabulary.MergeUnion || !rule.Path.OverList {
 		t.Fatalf("map.emails = %+v", rule)
 	}
-	if m.SourceYAML == "" || m.Definition["edge"] != "contact" {
-		t.Fatalf("mapping definition/source lost: %+v", m)
+	if m.Definition["edge"] != "contact" {
+		t.Fatalf("the mapping's own data map lost its edge: %+v", m)
 	}
 
 	// The target side.

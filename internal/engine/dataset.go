@@ -147,6 +147,14 @@ func (ds *dataset) KindByPlural(ctx context.Context, authority, plural string) (
 	return typeInfo(t), nil
 }
 
+// typeInfo is one declared kind as the read surfaces see it.
+//
+// `Definition` is RENDERED FROM THE PARSED DECLARATION — the data map the loader
+// left behind, which is the same map the projection writes as the row's
+// properties (vocabularywrite.go authorityDeclarations) — and no longer read out
+// of a `definition` property, because no row carries one. The value is identical
+// either way, which is what lets the console keep reading it unchanged while the
+// store moves under it.
 func typeInfo(t *vocabulary.Kind) substrate.KindInfo {
 	return substrate.KindInfo{
 		Identity: t.Identity, Name: t.Name, Authority: t.Authority, Version: t.Version,

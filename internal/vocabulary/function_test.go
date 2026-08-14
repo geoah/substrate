@@ -51,24 +51,18 @@ func TestFunctionLoads(t *testing.T) {
 	r, err := loadFnAuthority(t, `  description: mirrors widgets into gadgets
   runtime: python
   timeoutMs: 250
-  input:
-    type: object
-    properties:
-      name: {type: string}
-      count: {type: number}
-    required: [name]
-  output:
-    type: object
-    properties:
-      ok: {type: boolean}
-  capabilities:
-    emit: [fn.example.com/gadget]
-    reads:
-      kinds: [fn.example.com/widget]
-      budgets: {calls: 4}
-    call: [fn.example.com/mirror]
-    network: ["https://*"]
-    mutations: [merge]
+  arguments:
+    - {name: name, type: string, required: true}
+    - {name: count, type: float}
+  returns:
+    - {name: ok, type: bool}
+  emit: [fn.example.com/gadget]
+  reads:
+    kinds: [fn.example.com/widget]
+    budgets: {calls: 4}
+  call: [fn.example.com/mirror]
+  network: ["https://*"]
+  mutations: [merge]
   source: |
     def main(input, host):
         return {"effects": []}
@@ -161,7 +155,7 @@ func TestCheckValueEmptyPropertiesClosesTheObject(t *testing.T) {
 // thing each.
 const minimalFn = `  description: mirrors widgets
   runtime: python
-  capabilities: {emit: [fn.example.com/gadget]}
+  emit: [fn.example.com/gadget]
   source: "def main(input, host): return {}"
 `
 
@@ -172,14 +166,14 @@ func TestFunctionLoadErrors(t *testing.T) {
 	}{
 		"description is required": {
 			data: `  runtime: python
-  capabilities: {emit: [fn.example.com/gadget]}
+  emit: [fn.example.com/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "data.description is required",
 		},
 		"runtime is required": {
 			data: `  description: d
-  capabilities: {emit: [fn.example.com/gadget]}
+  emit: [fn.example.com/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "data.runtime",
@@ -187,7 +181,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 		"runtime is python or go": {
 			data: `  description: d
   runtime: cel
-  capabilities: {emit: [fn.example.com/gadget]}
+  emit: [fn.example.com/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "python or go",
@@ -195,13 +189,13 @@ func TestFunctionLoadErrors(t *testing.T) {
 		"source is required": {
 			data: `  description: d
   runtime: python
-  capabilities: {emit: [fn.example.com/gadget]}
+  emit: [fn.example.com/gadget]
 `,
 			want: "data.source is required",
 		},
 		"the run arm is deleted": {
 			data: `  description: d
-  capabilities: {emit: [fn.example.com/gadget]}
+  emit: [fn.example.com/gadget]
   run: {cel: "[]"}
 `,
 			want: "key \"run\" is deleted",
@@ -210,7 +204,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 			data: `  description: d
   on: {types: ["*"]}
   runtime: python
-  capabilities: {emit: [fn.example.com/gadget]}
+  emit: [fn.example.com/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "trigger record",
@@ -219,7 +213,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 			data: `  description: d
   when: record != null
   runtime: python
-  capabilities: {emit: [fn.example.com/gadget]}
+  emit: [fn.example.com/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "trigger source.record.when",
@@ -228,7 +222,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 			data: `  description: d
   coalesce: true
   runtime: python
-  capabilities: {emit: [fn.example.com/gadget]}
+  emit: [fn.example.com/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "trigger source.record.coalesce",
@@ -237,7 +231,7 @@ func TestFunctionLoadErrors(t *testing.T) {
 			data: `  description: d
   runtime: python
   timeoutMs: 600000
-  capabilities: {emit: [fn.example.com/gadget]}
+  emit: [fn.example.com/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "data.timeoutMs",
@@ -245,9 +239,8 @@ func TestFunctionLoadErrors(t *testing.T) {
 		"reads.kinds is required": {
 			data: `  description: d
   runtime: python
-  capabilities:
-    emit: [fn.example.com/gadget]
-    reads: {budgets: {calls: 4}}
+  emit: [fn.example.com/gadget]
+  reads: {budgets: {calls: 4}}
   source: "def main(input, host): return {}"
 `,
 			want: "reads.kinds is required",
@@ -255,9 +248,8 @@ func TestFunctionLoadErrors(t *testing.T) {
 		"reads.kinds take no globs": {
 			data: `  description: d
   runtime: python
-  capabilities:
-    emit: [fn.example.com/gadget]
-    reads: {kinds: ["fn.example.com/*"]}
+  emit: [fn.example.com/gadget]
+  reads: {kinds: ["fn.example.com/*"]}
   source: "def main(input, host): return {}"
 `,
 			want: "no globs",
@@ -265,9 +257,8 @@ func TestFunctionLoadErrors(t *testing.T) {
 		"reads.kinds must exist": {
 			data: `  description: d
   runtime: python
-  capabilities:
-    emit: [fn.example.com/gadget]
-    reads: {kinds: [fn.example.com/nothing]}
+  emit: [fn.example.com/gadget]
+  reads: {kinds: [fn.example.com/nothing]}
   source: "def main(input, host): return {}"
 `,
 			want: "reads.kinds: unknown type",
@@ -275,9 +266,8 @@ func TestFunctionLoadErrors(t *testing.T) {
 		"reads budgets are bounded": {
 			data: `  description: d
   runtime: python
-  capabilities:
-    emit: [fn.example.com/gadget]
-    reads: {kinds: [fn.example.com/widget], budgets: {rows: 999999}}
+  emit: [fn.example.com/gadget]
+  reads: {kinds: [fn.example.com/widget], budgets: {rows: 999999}}
   source: "def main(input, host): return {}"
 `,
 			want: "budgets.rows",
@@ -285,24 +275,21 @@ func TestFunctionLoadErrors(t *testing.T) {
 		"mutations are merge and split only": {
 			data: `  description: d
   runtime: python
-  capabilities:
-    emit: [fn.example.com/gadget]
-    mutations: [delete]
+  emit: [fn.example.com/gadget]
+  mutations: [delete]
   source: "def main(input, host): return {}"
 `,
-			want: "data.capabilities.mutations[0]",
+			want: "data.mutations[0]",
 		},
 		"after is reserved unimplemented": {
 			data: `  description: d
   after: fn.example.com/other
   runtime: python
-  capabilities: {emit: [fn.example.com/gadget]}
+  emit: [fn.example.com/gadget]
   source: "def main(input, host): return {}"
 `,
 			want: "data.after is reserved",
 		},
-		// The refusal names where emit WOULD have been written: on data itself,
-		// or in the wrapper the rest of the document uses.
 		"emit is required": {
 			data: `  description: d
   runtime: python
@@ -310,28 +297,19 @@ func TestFunctionLoadErrors(t *testing.T) {
 `,
 			want: "data.emit is required and non-empty",
 		},
-		"emit is required, named in the wrapper": {
-			data: `  description: d
-  runtime: python
-  capabilities: {call: [fn.example.com/mirror]}
-  source: "def main(input, host): return {}"
-`,
-			want: "data.capabilities.emit is required and non-empty",
-		},
 		"emit types must exist": {
 			data: `  description: d
   runtime: python
-  capabilities: {emit: [fn.example.com/nothing]}
+  emit: [fn.example.com/nothing]
   source: "def main(input, host): return {}"
 `,
-			want: "capabilities.emit: unknown type",
+			want: "data.emit: unknown type",
 		},
 		"call targets take no globs": {
 			data: `  description: d
   runtime: python
-  capabilities:
-    emit: [fn.example.com/gadget]
-    call: ["fn.example.com/*"]
+  emit: [fn.example.com/gadget]
+  call: ["fn.example.com/*"]
   source: "def main(input, host): return {}"
 `,
 			want: "no globs",
@@ -339,53 +317,38 @@ func TestFunctionLoadErrors(t *testing.T) {
 		"call targets must be registered functions": {
 			data: `  description: d
   runtime: python
-  capabilities:
-    emit: [fn.example.com/gadget]
-    call: [fn.example.com/nothing]
+  emit: [fn.example.com/gadget]
+  call: [fn.example.com/nothing]
   source: "def main(input, host): return {}"
 `,
-			want: "capabilities.call: unknown function",
+			want: "data.call: unknown function",
 		},
-		"input schema type is checked": {
+		// The retired IO spellings, each naming the flat list that replaced it.
+		"the input schema is deleted": {
 			data: `  description: d
   runtime: python
-  input: {type: struct}
+  input: {type: object, properties: {name: {type: string}}}
+  emit: [fn.example.com/gadget]
+  source: "def main(input, host): return {}"
+`,
+			want: `key "input" is deleted — arguments`,
+		},
+		"the output schema is deleted": {
+			data: `  description: d
+  runtime: python
+  output: {type: object}
+  emit: [fn.example.com/gadget]
+  source: "def main(input, host): return {}"
+`,
+			want: `key "output" is deleted — returns`,
+		},
+		"the capability wrapper is deleted": {
+			data: `  description: d
+  runtime: python
   capabilities: {emit: [fn.example.com/gadget]}
   source: "def main(input, host): return {}"
 `,
-			want: "data.input",
-		},
-		"input schema keys are closed": {
-			data: `  description: d
-  runtime: python
-  input: {type: object, additionalProperties: false}
-  capabilities: {emit: [fn.example.com/gadget]}
-  source: "def main(input, host): return {}"
-`,
-			want: "unknown key",
-		},
-		"required names declared properties": {
-			data: `  description: d
-  runtime: python
-  input:
-    type: object
-    properties: {name: {type: string}}
-    required: [missing]
-  capabilities: {emit: [fn.example.com/gadget]}
-  source: "def main(input, host): return {}"
-`,
-			want: "not a declared property",
-		},
-		"output schema nests validation": {
-			data: `  description: d
-  runtime: python
-  output:
-    type: array
-    items: {type: struct}
-  capabilities: {emit: [fn.example.com/gadget]}
-  source: "def main(input, host): return {}"
-`,
-			want: "data.output.items",
+			want: `key "capabilities" is deleted — emit, reads, call, network and mutations on ` + "`data`",
 		},
 	}
 	for name, tc := range cases {
@@ -405,7 +368,7 @@ func TestFunctionSourceSizeCap(t *testing.T) {
 	big := strings.Repeat("# padding\n", vocabulary.SourceMaxBytes/10+1)
 	_, err := loadFnAuthority(t, `  description: d
   runtime: python
-  capabilities: {emit: [fn.example.com/gadget]}
+  emit: [fn.example.com/gadget]
   source: |
 `+"    def main(input, host): return {}\n    "+strings.ReplaceAll(big, "\n", "\n    ")+"\n")
 	if err == nil || !strings.Contains(err.Error(), "the inline cap is") {
@@ -464,10 +427,10 @@ func TestTriggerGlobHelpers(t *testing.T) {
 
 func TestFunctionManifestRenders(t *testing.T) {
 	m := vocabulary.FunctionManifest("fn.example.com", "mirror", map[string]any{
-		"description":  "mirrors",
-		"runtime":      vocabulary.RuntimePython,
-		"capabilities": map[string]any{"emit": []any{"fn.example.com/gadget"}},
-		"source":       "def main(input, host): return {}",
+		"description": "mirrors",
+		"runtime":     vocabulary.RuntimePython,
+		"emit":        []any{"fn.example.com/gadget"},
+		"source":      "def main(input, host): return {}",
 	})
 	if m["kind"] != vocabulary.CoreKind(vocabulary.DocFunction) {
 		t.Fatalf("kind: %v", m["kind"])

@@ -79,9 +79,9 @@ func w2Manifest(withTrigger bool) enginetest.Manifest {
 			vocabulary.KindManifest(w2Group, map[string]any{"singular": "widget", "plural": "widgets"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 			vocabulary.FunctionManifest(w2Group, "mirror", map[string]any{
-				"description":  "mirrors widgets into tasks",
-				"runtime":      vocabulary.RuntimePython,
-				"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+				"description": "mirrors widgets into tasks",
+				"runtime":     vocabulary.RuntimePython,
+				"emit":        []any{"tasks.substrate.reamde.dev/task"},
 				"source": `
 def main(input, host):
     env = input["envelope"]

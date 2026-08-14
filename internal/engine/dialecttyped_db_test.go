@@ -686,9 +686,11 @@ func TestTypedDeclarationRungRefusesAnUntranslatableRow(t *testing.T) {
 		t.Fatalf("the failed rung stamped dialect %d", stamped)
 	}
 
-	// The same repository opens under the posture it had before: with the store
-	// already stamped, the rung does not run, and the broken closure quarantines
-	// exactly as it did before this release.
+	// A HAND-STAMPED STORE is the one way a dialect-1 row outlives the rung, and
+	// it is corruption rather than a state to recover from: the stamp says every
+	// declaration reads through its properties while every row still carries a
+	// blob, so the read path refuses by name instead of rebuilding authorities
+	// around declarations nothing reads (vocabularywrite.go rowDocument).
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO vocabulary_dialect (dialect) VALUES ($1)
 		ON CONFLICT (repository) DO UPDATE SET dialect = EXCLUDED.dialect`,
@@ -697,8 +699,12 @@ func TestTypedDeclarationRungRefusesAnUntranslatableRow(t *testing.T) {
 	}
 	_ = svc2.Close()
 	svc3 := open()
-	if _, err := svc3.Dataset(ctx, "geoah"); err != nil {
-		t.Fatalf("with the rung skipped the repository must still open: %v", err)
+	_, err = svc3.Dataset(ctx, "geoah")
+	if !errors.Is(err, engine.ErrDeclarationUntranslated) {
+		t.Fatalf("a stamped store still holding blob rows must refuse by name, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "definition") {
+		t.Fatalf("the refusal must name the blob: %v", err)
 	}
 }
 

@@ -195,10 +195,10 @@ func TestSchemaApplySwapsFunctionsLive(t *testing.T) {
 
 	fnData := func(title string) map[string]any {
 		return map[string]any{
-			"authority":    swAuthority,
-			"description":  "mirrors widgets into tasks",
-			"runtime":      vocabulary.RuntimePython,
-			"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+			"authority":   swAuthority,
+			"description": "mirrors widgets into tasks",
+			"runtime":     vocabulary.RuntimePython,
+			"emit":        []any{"tasks.substrate.reamde.dev/task"},
 			"source": `
 def main(input, host):
     c = input["envelope"]["change"]
@@ -410,22 +410,25 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 		t.Fatalf("new property not live: %v", e.Properties)
 	}
 
-	// The `definition` spelling still ADMITS — a client that has not moved yet
-	// carries the whole data map under it, and it parses to the same document.
-	// (Stage C is where the arm goes.)
+	// The `definition` blob is REFUSED, naming the properties that carry the
+	// declaration instead: obeying it would store a declaration no reader looks
+	// at, and dropping it would tell the client an edit landed.
 	declared["note"] = map[string]any{"type": "text"}
-	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+	_, blobErr := ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget",
 		Properties: map[string]any{"definition": map[string]any{
 			"authority": swAuthority, "names": row.Properties["names"], "properties": declared,
 		}},
-	}); err != nil {
-		t.Fatalf("generic put through the definition arm: %v", err)
+	})
+	wantErr(t, blobErr, substrate.ErrValidation, "a write carrying a definition blob")
+	if !strings.Contains(fmt.Sprint(blobErr), "props.definition") ||
+		!strings.Contains(fmt.Sprint(blobErr), "properties") {
+		t.Fatalf("the refusal must name the blob and the typed properties: %v", blobErr)
 	}
 	if e := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: swAuthority + "/widget", Properties: map[string]any{"name": "n2", "note": "hi"},
-	}); e.Properties["note"] == nil {
-		t.Fatalf("the definition arm did not activate: %v", e.Properties)
+		Kind: swAuthority + "/widget", Properties: map[string]any{"name": "n2"},
+	}); e.Properties["note"] != nil {
+		t.Fatalf("the refused blob still landed: %v", e.Properties)
 	}
 
 	// A declaration that breaks the closure refuses whole.
@@ -589,10 +592,10 @@ func TestTriggerOutlivesItsCallable(t *testing.T) {
 	}
 
 	fnData := map[string]any{
-		"authority":    swAuthority,
-		"description":  "mirrors widgets into tasks",
-		"runtime":      vocabulary.RuntimePython,
-		"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+		"authority":   swAuthority,
+		"description": "mirrors widgets into tasks",
+		"runtime":     vocabulary.RuntimePython,
+		"emit":        []any{"tasks.substrate.reamde.dev/task"},
 		"source": `
 def main(input, host):
     c = input["envelope"]["change"]

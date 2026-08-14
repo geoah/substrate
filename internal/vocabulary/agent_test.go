@@ -34,8 +34,7 @@ data:
   description: annotates a widget
   runtime: python
   source: "def main(input, host): return {}"
-  capabilities:
-    emit: [ag.example.com/widget]
+  emit: [ag.example.com/widget]
 ---
 kind: core.substrate.reamde.dev/agent
 metadata:
@@ -67,7 +66,7 @@ func TestAgentLoads(t *testing.T) {
   provider: default
   model: claude-opus-5
   tools:
-    - propose
+    - {builtin: propose}
     - {callable: ag.example.com/annotate, name: markWidget, description: marks one widget}
   agents: [ag.example.com/sorter]
   budgets: {maxTurns: 4, depth: 2}
@@ -128,7 +127,7 @@ func TestAgentGraphQLBuiltinsAndSubagentOnly(t *testing.T) {
   provider: default
   model: claude-opus-5
   subagentOnly: true
-  tools: [graphql, mutate]
+  tools: [{builtin: graphql}, {builtin: mutate}]
   emit: [ag.example.com/widget]
 `))
 	if err != nil {
@@ -195,19 +194,19 @@ func TestAgentRefusals(t *testing.T) {
   prompt: p
   provider: default
   model: claude-opus-5
-  tools: [query]
+  tools: [{builtin: query}]
 `, "query needs data.reads"},
 		{"propose without emit", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
-  tools: [propose]
+  tools: [{builtin: propose}]
 `, "propose needs core.substrate.reamde.dev/recordpatchrequest in data.emit"},
 		{"mutate without emit", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
-  tools: [mutate]
+  tools: [{builtin: mutate}]
 `, "mutate needs data.emit"},
 		{"self sub-agent", `  description: d
   prompt: p
@@ -235,12 +234,18 @@ func TestAgentRefusals(t *testing.T) {
     - {callable: ag.example.com/annotate, name: sorter}
   agents: [ag.example.com/sorter]
 `, "collides with tool name"},
-		{"unknown tool string", `  description: d
+		{"a bare tool string", `  description: d
   prompt: p
   provider: default
   model: claude-opus-5
   tools: [frobnicate]
-`, "a built-in (query, propose, graphql, mutate) or a full function identity"},
+`, `"frobnicate" is a bare string — an entry names its arm`},
+		{"unknown builtin", `  description: d
+  prompt: p
+  provider: default
+  model: claude-opus-5
+  tools: [{builtin: frobnicate}]
+`, "builtin \"frobnicate\" — one of query, propose, graphql, mutate"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
