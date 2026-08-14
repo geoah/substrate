@@ -12,7 +12,11 @@
 # stage. dist/ is arch-independent; build it once on the native arch, never qemu.
 FROM --platform=$BUILDPLATFORM node:26-alpine AS web
 WORKDIR /web/console
-RUN corepack enable
+# Node 25 dropped corepack from the distribution, so node:26-alpine does not
+# ship one. It is installed from npm rather than replaced by a `pnpm@x` install
+# so that web/console/package.json's `packageManager` stays the one place the
+# pnpm version is pinned.
+RUN npm install --global corepack@latest && corepack enable
 COPY web/console/package.json web/console/pnpm-lock.yaml* web/console/pnpm-workspace.yaml* ./
 RUN corepack prepare --activate && pnpm install --frozen-lockfile
 COPY web/console/ ./
