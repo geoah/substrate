@@ -292,7 +292,7 @@ cmd_status() {
 		# The RUNNING server's own answer, not what this shell would start one
 		# with: `dev` and `dev:totp` differ, so status must report the door
 		# that is actually up.
-		case "$(curl -fsS "http://127.0.0.1:${PORT}/api" 2>/dev/null)" in
+		case "$(curl -fsS "http://127.0.0.1:${PORT}/.well-known/substrate/server.json" 2>/dev/null)" in
 		*'"totpRequired":false'*) echo "  second factor: OFF (username + password)" ;;
 		*'"totpRequired":true'*) echo "  second factor: enforced" ;;
 		esac
