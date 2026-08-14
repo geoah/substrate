@@ -32,7 +32,7 @@ mise run test           # the whole Go suite, in its two halves
 mise run test:short     # skips every suite that wants a database
 mise run test:race      # the short suite under the race detector
 mise run test:coverage  # both halves, with a profile -> coverage.out
-mise run lint           # every linter: Go, YAML, shell, Python, doc links
+mise run lint           # every linter: Go, YAML, shell, Python, the docs
 mise run lint:go        # one of them; lint:yaml/:shell/:python/:docs are the rest
 mise run audit          # the vulnerability scans: govulncheck and pnpm audit
 mise run fmt            # every formatter, in place: gofumpt/goimports and yamlfmt
@@ -261,9 +261,14 @@ Do not half-do it.
   so the PR title IS the commit release-please reads.
 - Keep `mise run lint` and `mise run fmt:check` at zero. Both are aggregates,
   and the `lint` job runs both: `lint` is Go, YAML, shell, Python and the
-  docs' links, `fmt:check` is Go and YAML. The console has its own pair
+  docs, `fmt:check` is Go and YAML. The console has its own pair
   (`console:lint`, `console:fmt:check`) inside `ci:console`.
-- **A relative link that names a file which is not there fails the build.**
-  `lint:docs` resolves every Markdown link and `#anchor` against the tree,
-  offline, so renaming a doc means fixing what points at it. External URLs are
-  never fetched: somebody else's outage is not this repo's build failure.
+- **`lint:docs` is the one docs linter**, and it holds two halves. What the
+  pages point at: every Markdown link and `#anchor` resolves against the tree,
+  offline, so renaming a doc or a heading means fixing what points at it, and
+  external URLs are never fetched because somebody else's outage is not this
+  repo's build failure. What they say: `.mise/docscheck.sh` refuses a dead
+  word from [docs/terms.md](docs/terms.md), a retired envelope key in an
+  example, a `mise run` name that no longer exists, and a page
+  `docs/README.md` does not list. A mechanical docs rule worth enforcing goes
+  in that script, so there is one place to run and one place to add to.

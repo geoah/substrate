@@ -165,7 +165,7 @@ run = "go test -count=1 -run '^TestLive' -v ./internal/llm/... ./internal/engine
 # eslint from `lint` would drag pnpm into the lint job and run it twice.
 
 [tasks.lint]
-description = "Every linter: Go, YAML, shell, Python and the docs' links"
+description = "Every linter: Go, YAML, shell, Python and the docs"
 depends = ["lint:go", "lint:yaml", "lint:shell", "lint:python", "lint:docs"]
 
 [tasks."lint:go"]
@@ -183,10 +183,18 @@ description = "yamllint over every YAML in the tree — block style, and nothing
 run = "yamllint ."
 
 [tasks."lint:shell"]
-description = "shellcheck over .mise/*.sh — the dev loop and the kinds guard"
+description = "shellcheck over every tracked shell script"
 # These scripts are the only code here no compiler reads, and they run docker,
 # psql and signals against a developer's machine. -x follows `source`.
-run = "shellcheck -x .mise/*.sh"
+#
+# `git ls-files` rather than `.mise/*.sh`: a script is held because it is in
+# the tree, not because of where it was put. The narrower glob meant a script
+# added anywhere else was linted by nobody.
+#
+# The `$#` guard is not ceremony: with no matches GNU xargs still runs the
+# command, and `shellcheck` with no operands is an error, so a tree with no
+# scripts would fail the lint job rather than pass it.
+run = "git ls-files -z '*.sh' | xargs -0 sh -c 'test \"$#\" -eq 0 || shellcheck -x \"$@\"' sh"
 
 [tasks."lint:python"]
 description = "ruff over the runner's Python host"
@@ -196,14 +204,31 @@ description = "ruff over the runner's Python host"
 run = "ruff check internal/runner/host.py"
 
 [tasks."lint:docs"]
-description = "lychee over every Markdown file — relative links and anchors, OFFLINE"
-# --offline: a relative link that names a file that is not there is a bug in
-# this tree and fails. An external URL that is down today is not, so nothing
-# here opens a socket and CI never flakes on somebody else's outage.
-# Config is .lychee.toml.
-# --hidden: without it lychee skips every dotted directory, so .github/ — the
-# PR template and the issue forms, which link into docs/ — went unchecked.
-run = "lychee --config .lychee.toml --offline --hidden --no-progress ."
+description = "The docs, held: links and anchors (lychee), then the prose rules"
+# ONE task for "is the documentation still true", in two halves that answer
+# different halves of it. Splitting them across two entry points is how one of
+# them stops being run.
+#
+# lychee, for what the pages POINT AT. --offline: a relative link that names a
+# file that is not there is a bug in this tree and fails. An external URL that
+# is down today is not, so nothing here opens a socket and CI never flakes on
+# somebody else's outage. Config is .lychee.toml. --hidden: without it lychee
+# skips every dotted directory, so .github/ — the PR template and the issue
+# forms, which link into docs/ — went unchecked.
+#
+# docscheck.sh, for what they SAY: the dead words docs/terms.md retired, the
+# retired envelope keys, `mise run` names that no longer exist, and a page the
+# index does not list. Only what a grep can decide; the rest is a reading pass.
+#
+# Both halves run even when the first fails, and the task exits nonzero if
+# either did: a `run` array is fail-fast, which would hide every prose finding
+# behind one broken link and cost a second round trip to see it.
+run = """
+status=0
+lychee --config .lychee.toml --offline --hidden --no-progress . || status=1
+.mise/docscheck.sh || status=1
+exit $status
+"""
 
 # NOT `lint:kinds`, and so not part of `lint`: this reads the DIFF against the
 # base, not the files, so it is only meaningful where there is a change to
