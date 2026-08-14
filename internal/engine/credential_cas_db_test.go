@@ -57,6 +57,7 @@ func openCredentialService(t *testing.T) (*service, Repository) {
 // turn the second write into a CONFLICT rather than a silent overwrite that
 // reverts the first.
 func TestCredentialRewriteCASPreventsLostUpdate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, repo := openCredentialService(t)
 	ds, err := s.open(ctx, repo)
@@ -123,6 +124,7 @@ func TestCredentialRewriteCASPreventsLostUpdate(t *testing.T) {
 // stored value — never back to the step it read — or the later code could be
 // replayed.
 func TestCredentialRewriteStepNeverRegresses(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, repo := openCredentialService(t)
 	ds, err := s.open(ctx, repo)
@@ -175,6 +177,7 @@ func TestCredentialRewriteStepNeverRegresses(t *testing.T) {
 // durable — the other must fail (a conflict or a spent code), never silently
 // overwrite the winner.
 func TestConcurrentCredentialChangesNeitherSilentlyLost(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, repo := openCredentialService(t)
 

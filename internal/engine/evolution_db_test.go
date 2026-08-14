@@ -62,6 +62,7 @@ func wantNarrowingGuard(t *testing.T, err error, fragments ...string) {
 }
 
 func TestSchemaEvolutionNarrowingRefused(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if err := evoApply(t, ds, evoBaseProps()); err != nil {
@@ -162,6 +163,7 @@ func TestSchemaEvolutionNarrowingRefused(t *testing.T) {
 }
 
 func TestSchemaEvolutionAdditiveAdmits(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if err := evoApply(t, ds, evoBaseProps()); err != nil {
@@ -216,6 +218,7 @@ func TestSchemaEvolutionAdditiveAdmits(t *testing.T) {
 }
 
 func TestSchemaEvolutionRenamedFromRoundTrips(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	props := evoBaseProps()

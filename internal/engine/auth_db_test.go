@@ -15,6 +15,7 @@ import (
 // nothing, and the commit creates the repository, the sealed material, the
 // credential record and the first token together.
 func TestRegistrationCreatesTheUserAndNothingBefore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
 
@@ -102,6 +103,7 @@ func TestRegistrationCreatesTheUserAndNothingBefore(t *testing.T) {
 // under the policy, and a seed that is not a usable TOTP secret — and each
 // refusal creates nothing.
 func TestRegistrationRefusals(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
 	enrollment, err := svc.BeginRegistration(ctx, "geoah")
@@ -136,6 +138,7 @@ func TestRegistrationRefusals(t *testing.T) {
 // Login is the second door: both factors, a token record minted, and the code
 // spent — a replay of the same code is refused even with the right password.
 func TestLoginMintsATokenAndSpendsTheCode(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
 	user, _, _ := registerUser(t, svc, "geoah")
@@ -177,6 +180,7 @@ func TestLoginMintsATokenAndSpendsTheCode(t *testing.T) {
 // Every login failure answers the same way, whoever the caller is: a wrong
 // password, a wrong code and a username that does not exist are one error.
 func TestLoginGivesNoOracle(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
 	user, _, _ := registerUser(t, svc, "geoah")
@@ -201,6 +205,7 @@ func TestLoginGivesNoOracle(t *testing.T) {
 // takes the CURRENT password and code, the new one works, the old one stops,
 // and the second factor survives the change.
 func TestChangePasswordKeepsTheSecondFactor(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
 	user, _, secret := registerUser(t, svc, "geoah")
@@ -246,6 +251,7 @@ func TestChangePasswordKeepsTheSecondFactor(t *testing.T) {
 // TOTP re-enrollment: the current factors AND one code from the candidate
 // seed, then the old seed is dead and the password is untouched.
 func TestReenrollTOTPSwapsTheSecondFactor(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
 	user, _, _ := registerUser(t, svc, "geoah")
@@ -290,6 +296,7 @@ func TestReenrollTOTPSwapsTheSecondFactor(t *testing.T) {
 // The operator's door for a user who lost both factors: fresh material, a new
 // credential record, and the repository's data untouched.
 func TestResetUser(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
 	registerUser(t, svc, "geoah")
@@ -331,6 +338,7 @@ func TestResetUser(t *testing.T) {
 // credential cannot be written or deleted through it at all, and a token can
 // only be deleted — which is what revoking is.
 func TestAuthKindsRefuseGenericWrites(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
 	registerUser(t, svc, "geoah")
@@ -370,6 +378,7 @@ func TestAuthKindsRefuseGenericWrites(t *testing.T) {
 // opens that repository and no other, and two repositories' tokens never
 // cross.
 func TestTokenLookupScopesTheRequest(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
 	_, _, alphaSecret := registerUser(t, svc, "alpha")
@@ -399,6 +408,7 @@ func TestTokenLookupScopesTheRequest(t *testing.T) {
 // no number of authentications appends anything to the changelog — the
 // changelog is the user's data, not the substrate's access log.
 func TestAuthenticationWritesNothing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
 	registerUser(t, svc, "geoah")
@@ -424,6 +434,7 @@ func TestAuthenticationWritesNothing(t *testing.T) {
 // The enrollment URI is the otpauth:// form a password manager imports, with
 // the verifier's own parameters.
 func TestEnrollmentURIShape(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t)
 	enrollment, err := svc.BeginRegistration(ctx, "geoah")
@@ -445,6 +456,7 @@ func TestEnrollmentURIShape(t *testing.T) {
 // takes the password alone, and a WRONG password is still refused: the factor
 // that is gone is the only thing that is gone.
 func TestInsecureDisableTOTPTakesThePasswordAlone(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t, engine.WithInsecureDisableTOTP())
 
@@ -500,6 +512,7 @@ func TestInsecureDisableTOTPTakesThePasswordAlone(t *testing.T) {
 // who enrolled an authenticator ahead of time keeps it — and the code that
 // comes with it is simply not checked.
 func TestInsecureDisableTOTPKeepsASuppliedSeed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t, engine.WithInsecureDisableTOTP())
 

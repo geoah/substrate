@@ -44,6 +44,7 @@ func swTypeDoc(singular, plural string, props map[string]any) map[string]any {
 // The batch is one transaction: a single bad document fails the whole apply
 // with the loader's full problem list, and nothing lands.
 func TestSchemaApplyBatchAllOrNone(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	before := maxSeq(t, ds)
@@ -95,6 +96,7 @@ func asValidationErr(err error, target **substrate.ValidationError) bool {
 // type is immediately writable, the rows are the registry a reopen rebuilds
 // from — and the reopen itself is silent.
 func TestSchemaApplyActivatesOnCommit(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
@@ -180,6 +182,7 @@ func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 // A changed function activates on commit: the next dispatcher pass runs the
 // NEW body, no restart, and the new function's cursor starts at head.
 func TestSchemaApplySwapsFunctionsLive(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	sa := applier(t, ds)
@@ -252,6 +255,7 @@ def main(input, host):
 // mutex (both land; neither validates against a stale base), and data writes
 // flow while schema writes run.
 func TestSchemaWritesSerializeDataWritesFlow(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	sa := applier(t, ds)
@@ -307,6 +311,7 @@ func TestSchemaWritesSerializeDataWritesFlow(t *testing.T) {
 // transaction; with the instances gone the delete admits, the row tombstones,
 // and the identity leaves the registry.
 func TestSchemaDeleteRefusesWithInstances(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	sa := applier(t, ds)
@@ -363,6 +368,7 @@ func TestSchemaDeleteRefusesWithInstances(t *testing.T) {
 // definition work and activate; a write into shipped vocabulary refuses; a
 // definition that breaks the closure refuses with the problem list.
 func TestGenericWritesRouteThroughAdmission(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	sa := applier(t, ds)
@@ -418,6 +424,7 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 // the interim change delivers late, never lost, and never as an implicit
 // backfill of anything older.
 func TestTriggerOutlivesItsCallable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	sa := applier(t, ds)
@@ -497,6 +504,7 @@ def main(input, host):
 // authority must refuse — otherwise the projection overwrites the shipped row and
 // the write silently unwinds at the next boot.
 func TestBuiltinActorRowsRefuseRedeclaration(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	sa := applier(t, ds)
@@ -541,6 +549,7 @@ func TestBuiltinActorRowsRefuseRedeclaration(t *testing.T) {
 // because the repository's own changelog is the truth and nothing rewrites it from
 // outside.
 func TestOpenNeverPrunesShippedRows(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {

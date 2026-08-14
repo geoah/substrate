@@ -160,6 +160,7 @@ func wantMeta(t *testing.T, e *substrate.Record, property, manager string, tier 
 // wave-1 review's silent-freeze (#12), made legible. The actor's tier is its
 // DECLARED attribute (`tier: bundle`), not its spelling.
 func TestExtensionWriteIsAVisiblePin(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -217,6 +218,7 @@ func TestExtensionWriteIsAVisiblePin(t *testing.T) {
 // `tier: bundle` actor above (nothing in its name says bundle) is the
 // other half of the assertion, pinned here side by side.
 func TestTierIsActorDataNotSpelling(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -274,6 +276,7 @@ func TestTierIsActorDataNotSpelling(t *testing.T) {
 // The loader refuses a tier outside the closed set — the attribute is
 // validated data.
 func TestActorTierValidated(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -295,6 +298,7 @@ func TestActorTierValidated(t *testing.T) {
 // with an error naming the removal and the replacement pattern; a plain
 // patch stays a plain patch.
 func TestOfferRemovedAtDecode(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -329,6 +333,7 @@ func TestOfferRemovedAtDecode(t *testing.T) {
 // loser is a bundle pin on the winner, and the winner's recompute yields
 // to it — and split takes exactly the migrated rows back.
 func TestMergeCarriesTier(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}

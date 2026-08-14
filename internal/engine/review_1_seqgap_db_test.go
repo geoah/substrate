@@ -16,6 +16,7 @@ import (
 // commit. If bigserial + READ COMMITTED lets a lower seq commit after a higher
 // one, the poller permanently skips rows.
 func TestZZSK1SeqGap(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)

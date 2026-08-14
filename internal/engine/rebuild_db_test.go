@@ -105,6 +105,7 @@ func writeSomeHistory(t *testing.T, ds substrate.Dataset) {
 // since a repository's vocabulary is written into its own changelog like everything
 // else.
 func TestRebuildReproducesTheFold(t *testing.T) {
+	t.Parallel()
 	svc, ds := newDataset(t)
 	writeSomeHistory(t, ds)
 
@@ -146,6 +147,7 @@ func TestRebuildReproducesTheFold(t *testing.T) {
 // same place — anything else means an effect is being replayed relative to
 // the wall clock or to state the changelog does not hold.
 func TestRebuildIsIdempotent(t *testing.T) {
+	t.Parallel()
 	svc, ds := newDataset(t)
 	writeSomeHistory(t, ds)
 	rb := svc.(rebuilder)
@@ -166,6 +168,7 @@ func TestRebuildIsIdempotent(t *testing.T) {
 // nothing else, so nothing could replay it. An entry now carries what they
 // BECAME.
 func TestLogEntryCarriesValues(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	before := maxSeq(t, ds)
 	e := mustPut(t, ds, owner, substrate.PutInput{
@@ -268,6 +271,7 @@ func writeAMergeablePair(t *testing.T, ds substrate.Dataset) mergedPair {
 // the after-state of every side-store row the rewrite touched. A repository
 // that merged must rebuild bit for bit like any other.
 func TestRebuildReproducesAMerge(t *testing.T) {
+	t.Parallel()
 	svc, ds := newDataset(t)
 	ctx := context.Background()
 	writeSomeHistory(t, ds)
@@ -300,6 +304,7 @@ func TestRebuildReproducesAMerge(t *testing.T) {
 // TestRebuildReproducesASplit: and the undo replays too — split rewrites the
 // same graph in the other direction, and carries its own resync.
 func TestRebuildReproducesASplit(t *testing.T) {
+	t.Parallel()
 	svc, ds := newDataset(t)
 	ctx := context.Background()
 	pair := writeAMergeablePair(t, ds)
@@ -344,6 +349,7 @@ func TestRebuildReproducesASplit(t *testing.T) {
 // split's undo and nothing the fold can act on — a rebuild must say so rather
 // than produce a fold that is quietly not the changelog's.
 func TestRebuildRefusesWhatItCannotReplay(t *testing.T) {
+	t.Parallel()
 	svc, dsn := newService(t)
 	ctx := context.Background()
 	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {

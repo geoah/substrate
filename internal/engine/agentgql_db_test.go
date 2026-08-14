@@ -39,6 +39,7 @@ func lastToolMessage(t *testing.T, ds *dataset, threadID string) map[string]any 
 }
 
 func TestAgentGraphQLReads(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
@@ -71,6 +72,7 @@ func TestAgentGraphQLReads(t *testing.T) {
 }
 
 func TestAgentGraphQLRefusesMutations(t *testing.T) {
+	t.Parallel()
 	// The chat-grade read tool holds at the AST: a mutation in its document
 	// is a tool error the model sees, and nothing lands.
 	ctx := context.Background()
@@ -101,6 +103,7 @@ func TestAgentGraphQLRefusesMutations(t *testing.T) {
 }
 
 func TestAgentMutateWritesWithinEmit(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 	fake.script("mut",
@@ -138,6 +141,7 @@ func TestAgentMutateWritesWithinEmit(t *testing.T) {
 }
 
 func TestAgentMutateHoldsEmitAndRefusesMerge(t *testing.T) {
+	t.Parallel()
 	// Editor's emit names widgets alone: a put outside it refuses naming the
 	// allowlist, and merge refuses on principle — both as results the model
 	// sees, with nothing applied.
@@ -185,6 +189,7 @@ func TestAgentMutateHoldsEmitAndRefusesMerge(t *testing.T) {
 }
 
 func TestSubagentOnlyWithholdsChatAlone(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 

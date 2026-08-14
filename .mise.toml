@@ -342,10 +342,18 @@ run = "goreleaser release --clean"
 description = "CI job `lint` — formatting, the linters, the release config, and the kinds/ version-bump guard"
 depends = ["fmt:check", "lint", "release:check", "kinds:check"]
 
+[tasks."ci:cross"]
+description = "CI job `cross` — the cross-compile check, on a runner of its own"
+# Split out of `ci:go` because it was the critical path's cheapest 29 seconds:
+# it shares nothing with the suite (no database, no container) and every job
+# runs on its own machine, so a compile check queued in front of a five-minute
+# test run only delayed the answer.
+depends = ["cross"]
+
 [tasks."ci:go"]
-description = "CI job `go test`: the cross-compile check, then the suite in its two halves"
+description = "CI job `go test` — the suite in its two halves"
 # See `test` above: the two halves MUST NOT run concurrently.
-run = ["mise run cross", "mise run test:short", "mise run test:db"]
+run = ["mise run test:short", "mise run test:db"]
 
 [tasks."ci:console"]
 description = "CI job `console` — typecheck, lint, test, build"
@@ -357,7 +365,7 @@ run = "docker build -t $IMAGE:ci ."
 
 [tasks.ci]
 description = "Every CI job, locally. This is the whole pipeline."
-depends = ["ci:lint", "ci:go", "ci:console", "ci:image"]
+depends = ["ci:lint", "ci:cross", "ci:go", "ci:console", "ci:image"]
 
 [tasks.check]
 description = "Alias for ci"

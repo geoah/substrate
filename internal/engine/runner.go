@@ -92,7 +92,8 @@ func isMissingKeyErr(err error) bool {
 
 // runnerSpec flattens one function's body and capabilities for the runner,
 // pinned to this repository: live runner state (python namespaces, Go processes)
-// is keyed by repository + function identity, never by bare source.
+// is keyed by repository ID + function identity, never by bare source and never
+// by the repository's NAME, which two different repositories can share.
 func (ds *dataset) runnerSpec(fn *vocabulary.Function) runner.Spec {
 	return ds.runnerSpecIn(fn, ds.registry())
 }
@@ -103,7 +104,7 @@ func (ds *dataset) runnerSpec(fn *vocabulary.Function) runner.Spec {
 // live registry does not yet carry the bundle).
 func (ds *dataset) runnerSpecIn(fn *vocabulary.Function, reg *vocabulary.Registry) runner.Spec {
 	spec := runner.Spec{
-		Repository: ds.Repository().Name, Function: fn.Identity(),
+		Repository: ds.Repository().ID, Function: fn.Identity(),
 		Runtime: fn.Runtime, Source: fn.Source, TimeoutMs: fn.TimeoutMs,
 		CallTargets: fn.Caps.Call,
 		// The network declaration reaches the runner so the sandbox can
@@ -512,5 +513,5 @@ func (ds *dataset) reconcileRunner(ctx context.Context) {
 	for _, fn := range fns {
 		live = append(live, ds.runnerSpec(fn))
 	}
-	runner.Shared.Reconcile(ctx, ds.Repository().Name, live)
+	runner.Shared.Reconcile(ctx, ds.Repository().ID, live)
 }

@@ -191,6 +191,7 @@ func mustPutInternal(t *testing.T, ds *dataset, in substrate.PutInput) *substrat
 }
 
 func TestURLHarvesterBundleConformance(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}

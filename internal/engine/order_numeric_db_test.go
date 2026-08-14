@@ -17,6 +17,7 @@ import (
 const orderAuthority = "order.example.substrate.reamde.dev"
 
 func TestOrderByAnIntPropertySortsNumerically(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
@@ -66,6 +67,7 @@ func TestOrderByAnIntPropertySortsNumerically(t *testing.T) {
 }
 
 func TestOrderByAStringPropertyStaysTextual(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{

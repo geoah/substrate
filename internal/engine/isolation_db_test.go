@@ -73,6 +73,7 @@ func twoRepositories(t *testing.T) pair {
 // the rawest possible SQL, with no predicate at all, on a pool scoped to one
 // repository. It must still see one repository's rows and no others.
 func TestRepositoryIsolationSurvivesADroppedPredicate(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	repos := twoRepositories(t)
 	dsn, alpha, beta := repos.dsn, repos.alpha, repos.beta
@@ -165,6 +166,7 @@ func TestRepositoryIsolationSurvivesADroppedPredicate(t *testing.T) {
 // missing_ok current_setting fails closed, and the column default raises
 // rather than inventing a repository.
 func TestUnscopedConnectionIsBlindAndMute(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dsn := twoRepositories(t).dsn
 
@@ -208,6 +210,7 @@ func TestUnscopedConnectionIsBlindAndMute(t *testing.T) {
 // the two roles exist with the right bypass attribute. It is what stops the
 // engine's degraded fallback (no roles, owner-bound only) from shipping.
 func TestRowLevelSecurityIsDeclared(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dsn := twoRepositories(t).dsn
 	db, err := sql.Open("pgx", dsn)
@@ -274,6 +277,7 @@ func TestRowLevelSecurityIsDeclared(t *testing.T) {
 // v0 took one lock id for the whole database, so a held changelog lock stalled every
 // write on the box. Holding alpha's must leave beta's writes alone.
 func TestAdvisoryLocksArePerRepository(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	repos := twoRepositories(t)
 	svc, dsn, alpha := repos.svc, repos.dsn, repos.alpha

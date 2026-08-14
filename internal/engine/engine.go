@@ -28,6 +28,7 @@ import (
 
 	"github.com/geoah/substrate/internal/gql"
 	"github.com/geoah/substrate/internal/oauthflow"
+	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -338,6 +339,12 @@ func (s *service) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, ds := range s.datasets {
+		// Retire this repository's function processes with it. They are
+		// children of THIS process in their own process groups, so nothing else
+		// reclaims them: the pool's idle TTL is ten minutes, and a server that
+		// exits first leaves them orphaned. Reconcile against an empty live set
+		// is "this repository runs nothing now", which is true once it closes.
+		runner.Shared.Reconcile(context.Background(), ds.Repository().ID, nil)
 		ds.close()
 	}
 	err := s.maint.Close()

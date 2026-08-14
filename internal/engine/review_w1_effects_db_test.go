@@ -76,6 +76,7 @@ func racePut(t *testing.T, ds *dataset, props map[string]any) *substrate.Record 
 }
 
 func TestEffectAddressingSerializesWithMerge(t *testing.T) {
+	t.Parallel()
 	// Review W1 #2, the reviewer's exact interleaving: an effect addressed
 	// at the loser must not resolve BEFORE a concurrent merge commits, wait
 	// out the merge on the row lock, and then resurrect the tombstoned
@@ -161,6 +162,7 @@ func TestEffectAddressingSerializesWithMerge(t *testing.T) {
 }
 
 func TestEffectIfAbsentMintsSerialize(t *testing.T) {
+	t.Parallel()
 	// Review W1 #3: two concurrent ifAbsent mints of one absent id. SELECT
 	// FOR UPDATE cannot lock an absent row, so before the fix both saw nil
 	// and the second's ON CONFLICT UPDATE overwrote the first. Under the
@@ -214,6 +216,7 @@ func TestEffectIfAbsentMintsSerialize(t *testing.T) {
 }
 
 func TestEffectDecodeRejectsNonBooleanIfAbsent(t *testing.T) {
+	t.Parallel()
 	// Review W1 #3's decode half: a typo'd ifAbsent must fail loudly, never
 	// silently become a destructive upsert.
 	ds := newRaceDataset(t)
@@ -230,6 +233,7 @@ func TestEffectDecodeRejectsNonBooleanIfAbsent(t *testing.T) {
 }
 
 func TestMergeSplitReplayIdempotent(t *testing.T) {
+	t.Parallel()
 	// Review W1 #11: replaying a merge whose loser is already former-to-the-
 	// winner is a VERIFIED no-op returning the record; replaying a split
 	// whose merge record is already tombstoned is a verified no-op returning
@@ -293,6 +297,7 @@ func TestMergeSplitReplayIdempotent(t *testing.T) {
 }
 
 func TestSchemaApplyRejectsUnpreparableBody(t *testing.T) {
+	t.Parallel()
 	// Review W1 #8: schema apply prepares every added or changed body BEFORE
 	// activation — invalid python fails admission with the register error,
 	// and nothing activates.

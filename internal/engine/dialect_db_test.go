@@ -17,6 +17,7 @@ import (
 )
 
 func TestSchemaDialectLadder(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {

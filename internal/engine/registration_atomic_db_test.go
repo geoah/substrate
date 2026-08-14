@@ -72,6 +72,7 @@ func plantOrphan(t *testing.T, dsn, id string) {
 // window (after the seed, before the control-plane row) and asserts nothing
 // durable survives — and that a retry with the SAME username then succeeds.
 func TestFailedRegistrationLeavesNoDurableRows(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, _ := openBareService(t)
 	s.testFailAfterSeed = func() error { return errors.New("boom after the seed committed") }
@@ -102,6 +103,7 @@ func TestFailedRegistrationLeavesNoDurableRows(t *testing.T) {
 // from the request's. Erasing under an already-canceled context must still
 // wipe the scope.
 func TestEraseRepositorySurvivesRequestCancellation(t *testing.T) {
+	t.Parallel()
 	s, dsn := openBareService(t)
 	plantOrphan(t, dsn, "orphanrepoidcancel")
 	if orphanRowCount(t, s) == 0 {
@@ -122,6 +124,7 @@ func TestEraseRepositorySurvivesRequestCancellation(t *testing.T) {
 // crashed registration's orphan rows and leaves a legitimate repository's rows
 // untouched.
 func TestBootSweepReclaimsOrphanedRows(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s, dsn := openBareService(t)
 

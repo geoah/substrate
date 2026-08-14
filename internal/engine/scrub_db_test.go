@@ -119,6 +119,7 @@ def main(input, host):
 }
 
 func TestScrubberHoldsFunctionOutput(t *testing.T) {
+	t.Parallel()
 	// The body sees the raw secret; the output crossing back out does not.
 	ctx := context.Background()
 	ds := installVaultBundle(t)
@@ -137,6 +138,7 @@ func TestScrubberHoldsFunctionOutput(t *testing.T) {
 }
 
 func TestScrubberHoldsErrorsAndParkedFailures(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds := installVaultBundle(t)
 
@@ -204,6 +206,7 @@ func noVaultNotes(t *testing.T, ds substrate.Dataset) {
 // persists. The scrubber cannot redact addressed data in place, so refusal is
 // the only safe move.
 func TestScrubberRejectsSecretInEffectValue(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds := installVaultBundle(t)
 	_, _, err := ds.(fnOps).CallFunction(ctx, vAuthority+"/leakval", map[string]any{})
@@ -217,6 +220,7 @@ func TestScrubberRejectsSecretInEffectValue(t *testing.T) {
 }
 
 func TestScrubberRejectsSecretInEffectID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds := installVaultBundle(t)
 	_, _, err := ds.(fnOps).CallFunction(ctx, vAuthority+"/leakid", map[string]any{})
@@ -231,6 +235,7 @@ func TestScrubberRejectsSecretInEffectID(t *testing.T) {
 
 // The host-Call boundary rejects a callee's secret-bearing effect too.
 func TestScrubberRejectsSecretThroughHostCall(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds := installVaultBundle(t)
 	_, _, err := ds.(fnOps).CallFunction(ctx, vAuthority+"/callerleak", map[string]any{})
@@ -247,6 +252,7 @@ func TestScrubberRejectsSecretThroughHostCall(t *testing.T) {
 // effect parks without persisting the effect, and neither the parked-failure
 // row nor its run row carries the raw secret.
 func TestScrubberRejectsSecretThroughParkedTrigger(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds := installVaultBundle(t)
 	tr := mustPut(t, ds, owner, substrate.PutInput{

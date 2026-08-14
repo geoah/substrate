@@ -27,6 +27,7 @@ import (
 // the flow — the consent URL and the token exchange both use the manifest's
 // (fake-provider) endpoints. Scopes derive from the account's toggles.
 func TestReviewGoogleEndpointsFromManifest(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, ds, ops, p, account := installOAuthBundle(t)
 
@@ -65,6 +66,7 @@ func TestReviewGoogleEndpointsFromManifest(t *testing.T) {
 // #1: a disabled toggle requests NO scope — an unwired feature (here, a
 // toggled-off enabledMail) is never requested.
 func TestReviewGoogleScopeFromTogglesOnly(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds, ops, _, account := installOAuthBundle(t)
 
@@ -82,6 +84,7 @@ func TestReviewGoogleScopeFromTogglesOnly(t *testing.T) {
 
 // #2: oauth/start is owner-gated — a bundle (connector) actor is refused.
 func TestReviewGoogleOAuthStartOwnerGated(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds, ops, _, account := installOAuthBundle(t)
 	_ = ds
@@ -92,6 +95,7 @@ func TestReviewGoogleOAuthStartOwnerGated(t *testing.T) {
 
 // #2: external create/delete of a config/account record is owner-only.
 func TestReviewGoogleConfigAccountCreateOwnerGated(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds, _, _, account := installOAuthBundle(t)
 	const connector = substrate.Actor("function:echo")
@@ -114,6 +118,7 @@ func TestReviewGoogleConfigAccountCreateOwnerGated(t *testing.T) {
 // syncToken is the connector's; the owner writes neither. The owner writes the
 // account's email and toggles.
 func TestReviewGooglePropertyOwnership(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds, _, _, account := installOAuthBundle(t)
 
@@ -152,6 +157,7 @@ func TestReviewGooglePropertyOwnership(t *testing.T) {
 // #3: the clientSecret never sits in the record's JSONB — the stored value
 // is a sealed-store ref, and a raw database read shows no plaintext.
 func TestReviewGoogleClientSecretSealedAtRest(t *testing.T) {
+	t.Parallel()
 	_, _, db, _, _, _ := installW3OAuthBundle(t)
 	var props string
 	if err := db.QueryRow(

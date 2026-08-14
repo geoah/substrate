@@ -12,6 +12,7 @@ import (
 // the property (never stores a null — literal null is unwritable), and a state
 // value among the properties is a TRANSITION that stamps its clock.
 func TestPatchNullDeleteAndStateTransition_S7(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -60,6 +61,7 @@ func TestPatchNullDeleteAndStateTransition_S7(t *testing.T) {
 // the TokenInfo and the stored record, and a passed one makes Authenticate
 // fail with an auth error — server-enforced, no revoke step.
 func TestTokenExpiry_S7(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, ds := newDataset(t)
 

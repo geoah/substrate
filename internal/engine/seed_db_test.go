@@ -125,6 +125,7 @@ func openTree(t *testing.T, dsn, tree string) substrate.Service {
 // entries under `bundle:core`, and the vocabulary the repository then speaks
 // is read back from those rows — not from the tree.
 func TestSeedIsWrittenAtCreation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t)
 	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
@@ -221,6 +222,7 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 // again writes nothing (convergent, idempotent); and a repository never
 // opened again stays untouched.
 func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	tree := shippedTree(t)
@@ -343,6 +345,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 // Only same-or-newer wins: a binary whose tree went BACKWARDS never rewrites a
 // repository's declarations, and never prunes what it stopped shipping.
 func TestBootUpgradeNeverDowngrades(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	tree := shippedTree(t)
@@ -389,6 +392,7 @@ func TestBootUpgradeNeverDowngrades(t *testing.T) {
 // The authority chokepoint: shipped declarations are the substrate's to write
 // (seed, upgrade, install); the repository's user owns everything else.
 func TestDeclarationAuthority(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 

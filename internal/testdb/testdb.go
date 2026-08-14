@@ -43,6 +43,14 @@ func DSN(t *testing.T) string {
 				postgres.WithDatabase("substrate"),
 				postgres.WithUsername("postgres"),
 				postgres.WithPassword("postgres"),
+				// The suite runs t.Parallel, so the connection ceiling is a
+				// function of the MACHINE: one test holds ~4 connections
+				// across its admin, maintenance and scoped pools, and Go runs
+				// GOMAXPROCS of them at once. The stock 100 is comfortable at
+				// 16 cores (measured: ~56) and would not survive 32, and the
+				// failure — "too many clients already" — reads like a leak
+				// rather than a limit, so it is raised here once.
+				testcontainers.WithCmdArgs("-c", "max_connections=500"),
 				testcontainers.WithWaitStrategy(
 					wait.ForLog("database system is ready to accept connections").
 						WithOccurrence(2).WithStartupTimeout(120*time.Second)),

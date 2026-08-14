@@ -20,6 +20,7 @@ import (
 // beside the rest of its machinery — and NOT under the retired
 // agents.substrate.reamde.dev or the folded-away ai.substrate.reamde.dev.
 func TestAgentLoopKindsResolveInCore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
@@ -55,6 +56,7 @@ func TestAgentLoopKindsResolveInCore(t *testing.T) {
 // The connector kinds are no longer writable through the ordinary API: a put
 // naming connector/connectoraccount fails to resolve the type.
 func TestConnectorKindsRemoved(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	for _, typ := range []string{"core.substrate.reamde.dev/connector", "core.substrate.reamde.dev/connectoraccount"} {

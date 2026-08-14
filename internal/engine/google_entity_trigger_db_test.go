@@ -21,6 +21,7 @@ import (
 // also meant a freshly connected account with `syncFrequency: off` never
 // synced at all. Nothing covered it, which is why the rename did not catch it.
 func TestGoogleRecordTriggerSyncsOnlyTheNamedAccount(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}

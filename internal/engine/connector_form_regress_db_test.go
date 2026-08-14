@@ -18,6 +18,7 @@ import (
 // displayName + enum values survive a round-trip on the type read, and an
 // out-of-set enum value is refused on write.
 func TestConnectorFormDisplayNameAndEnumSurviveTypeRead(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	sa := applier(t, ds)
@@ -75,6 +76,7 @@ func TestConnectorFormDisplayNameAndEnumSurviveTypeRead(t *testing.T) {
 // it, the account is created without it, and the OAuth facility fills it from
 // the connected Google account after the exchange.
 func TestOAuthPopulatesAccountEmailFromGrant(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	p := newFakeProvider(t)
 	svc, ds := newDataset(t,

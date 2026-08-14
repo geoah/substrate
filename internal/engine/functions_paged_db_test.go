@@ -82,6 +82,7 @@ def main(input, host):
 // at the DELIVERY's causal depth — the self-continuation never consumes the
 // causal-depth budget (the whole point over a self-emit).
 func TestPagedDrainConstantDepth(t *testing.T) {
+	t.Parallel()
 	ds, triggerID := openPagedDataset(t, "pageddepth.test.dev", pagedBody(3))
 	ctx := context.Background()
 	actor := substrate.Actor("connector:pageddepth")
@@ -249,6 +250,7 @@ func TestPagedParkResumesFromCursor(t *testing.T) {
 // ordinary single transaction and never touches the paged bookkeeping — the
 // continuation path is purely additive.
 func TestNonPagedDeliveryUntouched(t *testing.T) {
+	t.Parallel()
 	source := `
 def main(input, host):
     env = input["envelope"]
@@ -292,6 +294,7 @@ def main(input, host):
 // by the now-stale version 0 conflicts and parks — page 0's write stands, page
 // 1's does not. Proves the paged path is not a CAS blind spot.
 func TestPagedDeliveryHonorsIfVersion(t *testing.T) {
+	t.Parallel()
 	source := `
 def main(input, host):
     page = input.get("resume") or 0
@@ -326,6 +329,10 @@ def main(input, host):
 // --- helpers ------------------------------------------------------------------
 
 // withMaxPages lowers the drain cap for one test, returning a restore.
+//
+// This writes a package-level var, so a test that calls it MUST NOT call
+// t.Parallel — it would be changing the cap out from under every other test in
+// flight. These are the only tests in the package that still run serially.
 func withMaxPages(n int) func() {
 	prev := maxPagesPerDrain
 	maxPagesPerDrain = n

@@ -12,6 +12,7 @@ const gcal = substrate.Actor("connector:calendar")
 
 // §10.2 A meeting, its people, its transcript, its task.
 func TestMeetingScenario(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
@@ -117,6 +118,7 @@ func TestMeetingScenario(t *testing.T) {
 
 // §10.3 The UI renders a conversation — one query.
 func TestQueryGrammar(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
@@ -259,6 +261,7 @@ func TestQueryGrammar(t *testing.T) {
 
 // §10.4 Replying — no send endpoint exists.
 func TestReplyLifecycle(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)

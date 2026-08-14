@@ -66,6 +66,7 @@ const (
 // bundle closure on top of it through the ordinary loader/resolver — the same
 // admission the batch apply runs, minus the function-body warm.
 func TestWhoopBundleAdmitsSchema(t *testing.T) {
+	t.Parallel()
 	// The registry an install actually admits into: the seeded tree (core
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
@@ -231,6 +232,7 @@ func TestWhoopBundleAdmitsSchema(t *testing.T) {
 // asserts every member installs. It warms the PEP 723 sync body through uv,
 // so it skips when uv is absent or cannot provision.
 func TestWhoopBundleInstalls(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -534,6 +536,7 @@ func whoopPropFloat(t *testing.T, e *substrate.Record, name string) float64 {
 // over the host OAuth facility, then let the on-connect trigger drain the
 // paged sync and assert the mirrors, the skip tally and the stamp.
 func TestWhoopBundleFakeSyncMirrors(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}

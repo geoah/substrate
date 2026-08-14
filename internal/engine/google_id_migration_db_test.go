@@ -186,6 +186,7 @@ func (h *migrationHarness) drain(limit int) migrationResult {
 }
 
 func TestGoogleContactsIDMigration(t *testing.T) {
+	t.Parallel()
 	h := newMigrationHarness(t)
 	ctx, ds := h.ctx, h.ds
 
@@ -351,6 +352,7 @@ func TestGoogleContactsIDMigration(t *testing.T) {
 // edits, so it wins — leaving ONE person, the shell resolving onto it. The
 // email-matched case resolved the SAME person and absorbs without a merge.
 func TestGoogleContactsIDMigrationAbsorbedMerge(t *testing.T) {
+	t.Parallel()
 	h := newMigrationHarness(t)
 	ctx, ds := h.ctx, h.ds
 	const acct = "workacct"
@@ -452,6 +454,7 @@ func TestGoogleContactsIDMigrationAbsorbedMerge(t *testing.T) {
 // re-put nor swept from under the operator; it is counted, logged and left
 // alone, stable across re-runs. Same for a row with no provider key.
 func TestGoogleContactsIDMigrationSkipPaths(t *testing.T) {
+	t.Parallel()
 	h := newMigrationHarness(t)
 	ctx, ds := h.ctx, h.ds
 	const acct = "workacct"

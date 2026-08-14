@@ -18,6 +18,7 @@ import (
 // window sits between a pass reading its cursor and its delivery committing,
 // and only the dispatcher's own pieces can hold it open deterministically.
 func TestTriggerCursorSwapLosesToReplay(t *testing.T) {
+	t.Parallel()
 	ds := openCursorDataset(t)
 	ctx := context.Background()
 

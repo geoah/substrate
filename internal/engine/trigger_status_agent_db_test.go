@@ -13,6 +13,7 @@ import (
 // "callable … does not resolve" while it was dispatching perfectly — on a clean
 // install that is the shipped conformance bundle looking broken out of the box.
 func TestTriggerStatusResolvesAgentCallables(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	ds, _ := openAgentDataset(t)
 

@@ -122,6 +122,7 @@ func TestBlobUploadGraceSparesFreshBlob(t *testing.T) {
 // #9: the generic record API may not forge a blob manifest, and a dedup PUT
 // returns the FIRST writer's authoritative mime, not the second request's claim.
 func TestBlobManifestForgeRefusedAndDedupAuthoritative(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	bs := blobStoreOf(t, ds)

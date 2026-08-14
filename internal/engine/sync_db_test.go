@@ -115,6 +115,7 @@ func fullSync(t *testing.T, ds substrate.Dataset) {
 
 // THE headline test: a full re-sync of identical data is completely silent.
 func TestResyncIsSilent(t *testing.T) {
+	t.Parallel()
 	_, ds := newDataset(t)
 	fullSync(t, ds)
 	seq := maxSeq(t, ds)
@@ -148,6 +149,7 @@ func TestResyncIsSilent(t *testing.T) {
 // , so a re-sync is a primary-key upsert. `asin`/`isbn` are
 // denormalized convenience on the edition; the refinements still police them.
 func TestWriterKeyDeterminismAndRefinements(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	work := mustPut(t, ds, owner, substrate.PutInput{Kind: "book", Properties: map[string]any{"title": "Piranesi"}})
@@ -215,6 +217,7 @@ func TestWriterKeyDeterminismAndRefinements(t *testing.T) {
 }
 
 func TestFinalizersAndOwnerRefGC(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
@@ -299,6 +302,7 @@ func TestFinalizersAndOwnerRefGC(t *testing.T) {
 }
 
 func TestLinkUnlink(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	c := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Alex"}})

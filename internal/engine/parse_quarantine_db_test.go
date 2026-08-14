@@ -58,6 +58,7 @@ func lqDocs() []map[string]any {
 // key and its replacement — while the sibling installed bundle and the shipped
 // vocabulary stay live. Re-applying the corrected manifest clears the mark.
 func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {

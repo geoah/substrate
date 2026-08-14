@@ -83,6 +83,7 @@ const (
 // assertion is a rule the loader enforces at admission, aimed at the shapes
 // that make this bundle the non-OAuth one.
 func TestBeeperBundleAdmitsSchema(t *testing.T) {
+	t.Parallel()
 	// The registry an install actually admits into: the seeded tree (core
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
@@ -470,6 +471,7 @@ func beeperMaxRunPages(t *testing.T, ds *dataset) int {
 // and the erroring stamp. It warms the PEP 723 sync body through uv, so it
 // skips when uv is absent or cannot provision.
 func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -841,6 +843,7 @@ func (f *beeperCapFake) lastFrom() string {
 // next run resumes the walk from exactly that token, drains the room, and
 // clears the pending state.
 func TestBeeperBundleBackfillCapResumes(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}

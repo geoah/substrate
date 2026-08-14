@@ -28,6 +28,7 @@ func maxSeqOf(t *testing.T, ds *dataset) int64 {
 }
 
 func TestScheduleFireIdempotentAndCoalesced(t *testing.T) {
+	t.Parallel()
 	// Missed ticks coalesce to ONE fire with a stable id, the fire state
 	// advances compare-and-swap in the delivery's transaction, and a second
 	// pass at the same instant fires nothing.
@@ -139,6 +140,7 @@ func countLiveOf(t *testing.T, ds *dataset, typeIdent string) int {
 }
 
 func TestCallAtDepthCapRefuses(t *testing.T) {
+	t.Parallel()
 	// The engine's half of the sub-call gates: a Call whose callee would sit
 	// at the causal-depth cap refuses with the distinct error, and a Call to
 	// a function already on the stack refuses as recursion.

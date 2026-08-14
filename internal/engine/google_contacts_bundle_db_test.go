@@ -69,6 +69,7 @@ const (
 // same admission the batch apply runs, minus the function-body warm. Every
 // assertion is a rule the loader enforces at admission time.
 func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
+	t.Parallel()
 	// The registry an install actually admits into: the seeded tree (core
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
@@ -229,6 +230,7 @@ func TestGoogleContactsBundleAdmitsSchema(t *testing.T) {
 // and asserts every member installs. It warms the PEP 723 sync body through uv,
 // so it skips when uv is absent or cannot provision.
 func TestGoogleContactsBundleInstalls(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -344,6 +346,7 @@ func isUVProvisionError(err error) bool {
 // needs no Google, no uv and no database — the closure is text and so is the
 // body.
 func TestGoogleContactsSyncWritesDeclaredFields(t *testing.T) {
+	t.Parallel()
 	data, err := os.ReadFile(googleExampleDir + "/bundle.yaml")
 	if err != nil {
 		t.Fatalf("read bundle.yaml: %v", err)

@@ -89,6 +89,7 @@ const (
 // admission the batch apply runs, minus the function-body warm. Every
 // assertion is a rule the loader enforces at admission time.
 func TestGithubBundleAdmitsSchema(t *testing.T) {
+	t.Parallel()
 	// The registry an install actually admits into: the seeded tree (core
 	// alone) plus the shipped VOCABULARY bundles this repository imported —
 	// what a closure declaring onto people/tasks/messaging/calendar/media
@@ -276,6 +277,7 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 // asserts every member installs. It warms the PEP 723 sync body through uv,
 // so it skips when uv is absent or cannot provision.
 func TestGithubBundleInstalls(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -608,6 +610,7 @@ func githubInstallRewired(t *testing.T, ds *dataset, baseURL string) {
 // over the host OAuth facility, then let the on-connect trigger drain the
 // three-search sync and assert the mirrors, the dedupe and the stamp.
 func TestGithubBundleFakeSyncMirrors(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -888,6 +891,7 @@ func githubStepConfig(props map[string]any) map[string]any {
 // stored per-stage JSON (and its legacy plain-string spelling) drives each
 // stage's window independently, 120s of overlap behind the floor.
 func TestGithubBundleCursorAndWatermarks(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}
@@ -1068,6 +1072,7 @@ func TestGithubBundleCursorAndWatermarks(t *testing.T) {
 // immediately), the account stamps `syncStatus: erroring` with the refusal,
 // and the chain completes instead of parking.
 func TestGithubBundleOriginPinRefusal(t *testing.T) {
+	t.Parallel()
 	if testing.Short() {
 		t.Skip("db test")
 	}

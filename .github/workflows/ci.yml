@@ -1,4 +1,4 @@
-# Every push and every PR, as four jobs so a failure names itself.
+# Every push and every PR, as five jobs so a failure names itself.
 #
 # This file holds NO commands. Each job runs one `mise run ci:*` task, and
 # those tasks are defined once in .mise.toml — so `mise run ci` on a laptop is
@@ -57,6 +57,25 @@ jobs:
           restore-keys: ${{ runner.os }}-go-lint-
       - run: mise run ci:lint
 
+  cross:
+    name: cross compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+        with:
+          experimental: true
+      # Its own key: this job's working set is four foreign GOARCHes, which the
+      # test job's cache never holds and would only evict.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-cross-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-go-cross-
+      - run: mise run ci:cross
+
   go:
     name: go test
     runs-on: ubuntu-latest
@@ -67,6 +86,12 @@ jobs:
     # is not one. A service container is the runner's own job to keep alive, and
     # testdb picks it up through SUBSTRATE_TEST_DATABASE_URL. Same task, same
     # assertions; only the machine differs.
+    #
+    # Its stock 100 connections are not raised the way testdb raises its own
+    # container's, because a service container takes no command: the suite runs
+    # GOMAXPROCS tests at once holding ~4 connections each, which is ~16 on this
+    # runner's four vCPUs. A LARGER runner would need that ceiling lifted, and
+    # the failure says "too many clients already".
     services:
       postgres:
         image: pgvector/pgvector:pg16

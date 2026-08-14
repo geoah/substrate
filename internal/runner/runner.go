@@ -67,6 +67,12 @@ type Spec struct {
 	// Repository and Function pin the INSTALLATION identity: live runner state
 	// (python module namespaces, Go processes) never crosses repositories or
 	// functions, even for byte-identical source.
+	//
+	// Repository is the repository's ID, never its name. The id is the
+	// identity; a name is a lookup key, and two DIFFERENT repositories can
+	// carry the same one — every test schema in a test binary calls its
+	// repository "geoah", and keying on that made them share interpreters and
+	// retire each other's mid-delivery through Reconcile.
 	Repository string
 	Function   string // "<authority>/<name>"
 

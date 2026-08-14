@@ -50,6 +50,7 @@ func unwrapWithIdentity(t *testing.T, identityStr, sealedKeyB64 string) []byte {
 }
 
 func TestRegistrationEnrollsRecoveryKey(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t, engine.WithCredentialKey("test-cred-key"))
 
@@ -152,6 +153,7 @@ func TestRegistrationEnrollsRecoveryKey(t *testing.T) {
 }
 
 func TestServerMintedRecoveryKeyAndEnrollOnce(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, _ := newService(t, engine.WithCredentialKey("test-cred-key"))
 	enrollment, err := svc.BeginRegistration(ctx, "bo")
@@ -207,6 +209,7 @@ type recoveryEnroller interface {
 // enrollment must re-key them under the DEK in the same commit, or "a backup
 // plus the recovery key, no host involved" is a false promise.
 func TestEnrollRecoveryKeyMigratesLegacyPayloads(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t, engine.WithCredentialKey("test-cred-key"))
 	enrollment, err := svc.BeginRegistration(ctx, "cleo")

@@ -53,6 +53,7 @@ func liveKeys(t *testing.T) (string, string) {
 }
 
 func TestLiveAgentChainAcrossWires(t *testing.T) {
+	t.Parallel()
 	openaiKey, anthropicKey := liveKeys(t)
 	ctx := context.Background()
 
