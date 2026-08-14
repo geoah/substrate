@@ -1,13 +1,15 @@
-# The tip of main as one image: ghcr.io/geoah/substrate:edge.
+# The tip of main as one image: ghcr.io/geoah/substrate:latest.
 #
-# `edge` is NOT a release. It moves with every commit to main, carries no
-# version, and has no changelog entry behind it — deploy it only if you meant
-# to track main. Released versions come from a tag, through release.yml, and
-# are the only images with a semver tag or `latest`.
+# This `latest` is NOT a stable release tag in the usual sense — it moves
+# with every commit to main, carries no version, and has no changelog entry
+# behind it. Deploy it only if you meant to track main. Released versions
+# come from a tag, through release.yml, and carry their own semver tags
+# (goreleaser does not tag a release `latest`, so the two never race for the
+# same name).
 #
 # No per-commit tags: one moving tag, so the registry does not fill up with
 # images nobody will ever ask for by name.
-name: edge
+name: latest
 
 on:
   push:
@@ -15,16 +17,17 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Newer commits win — an in-flight edge build for an older commit is wasted.
-  group: edge
+  # Newer commits win — an in-flight latest build for an older commit is
+  # wasted.
+  group: latest
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  edge:
-    name: push edge image
+  latest:
+    name: push latest image
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -41,4 +44,4 @@ jobs:
       - uses: jdx/mise-action@v2
         with:
           experimental: true
-      - run: mise run image:edge
+      - run: mise run image:latest
