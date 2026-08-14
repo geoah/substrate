@@ -97,10 +97,17 @@ func typeMachines(def map[string]any) map[string][]string {
 // : the element type is resolved first, then wrapped once — the
 // prior code returned the bare scalar for numeric/boolean/date/json before the
 // list wrapper was ever applied.
+//
+// A `keyed: true` property is a name-keyed MAP, and its stored value is a JSON
+// object whatever its values are: it renders as the JSON scalar, because typing
+// it as its value type would make every read of it a serialization error.
 func (b *schemaBuilder) propertyType(def map[string]any, prop string) graphql.Output {
 	pd := propertyDef(def, prop)
 	kind, _ := pd["type"].(string)
 	repeated, _ := pd["repeated"].(bool)
+	if keyed, _ := pd["keyed"].(bool); keyed {
+		return jsonScalar
+	}
 
 	var elem graphql.Output
 	switch kind {

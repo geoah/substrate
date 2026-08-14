@@ -11,7 +11,9 @@ package engine
 //   - property dropped (a rename without machinery is a drop — a declared
 //     `renamedFrom:` is recorded but NOT yet acted on, so it refuses the same
 //     way, naming the reservation);
-//   - property kind changed (repeated flips count: a list is not a scalar);
+//   - property kind changed (container flips count: a list is not a scalar and
+//     a keyed map is neither), at every declared level of an object's fields;
+//   - a keyed map's key contract tightened while rows hold the map;
 //   - enum value removed while rows hold it;
 //   - state removed while rows occupy it (a state property dropped or turned
 //     scalar counts as a kind change);
@@ -64,15 +66,6 @@ const countPropValuesQuery = `SELECT count(*) FROM records
 	  AND CASE WHEN jsonb_typeof(props->$2) = 'array'
 	       THEN EXISTS (SELECT 1 FROM jsonb_array_elements(props->$2) e WHERE $3::jsonb @> e.value)
 	       ELSE $3::jsonb @> (props->$2) END`
-
-// countObjectFieldQuery counts live rows whose object property ($2) carries a
-// given field ($3), covering both the scalar-object and repeated-object stored
-// shape: a dropped or kind-changed object field strands those rows.
-const countObjectFieldQuery = `SELECT count(*) FROM records
-	WHERE kind = $1 AND deleted_at IS NULL AND props ? $2
-	  AND CASE WHEN jsonb_typeof(props->$2) = 'array'
-	       THEN EXISTS (SELECT 1 FROM jsonb_array_elements(props->$2) e WHERE e ? $3)
-	       ELSE props->$2 ? $3 END`
 
 // countRefOutsideQuery counts live rows whose reference property ($2) points at
 // a kind OTHER than the newly required target ($3, a full identity), covering
@@ -178,7 +171,9 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 				})
 			}
 		default:
-			if curP.Datatype != candP.Datatype || curP.Repeated != candP.Repeated {
+			// A container flip is a kind change: a map is not a list and neither
+			// is a scalar, and no stored value converts between them.
+			if curP.Datatype != candP.Datatype || curP.Repeated != candP.Repeated || curP.Keyed != candP.Keyed {
 				from, to := kindShape(curP), kindShape(candP)
 				out = append(out, narrowing{
 					format: fmt.Sprintf("type %s: property %q changes kind %s → %s while %%d live records hold values of the old kind — migrate them first",
@@ -204,10 +199,18 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 					query: countRefOutsideQuery, args: []any{ident, pname, candP.To},
 				})
 			}
+			if keyPatternTightens(curP, candP) {
+				out = append(out, narrowing{
+					format: fmt.Sprintf("type %s: property %q tightens its keys to %s while %%d live records hold the map — rekey them first",
+						ident, pname, candP.KeyPattern),
+					query: countPropQuery, args: []any{ident, pname},
+				})
+			}
 			// An object property that drops or kind-changes a declared field
-			// strands rows holding that field.
+			// strands rows holding that field, at every declared level.
 			if curP.Datatype == vocabulary.DatatypeObject {
-				out = append(out, objectFieldNarrowings(ident, pname, curP, candP)...)
+				out = append(out, objectFieldNarrowings(ident,
+					[]fieldStep{{key: pname, repeated: curP.Repeated, keyed: curP.Keyed}}, curP, candP)...)
 			}
 			if !curP.Required && candP.Required {
 				out = append(out, narrowing{
@@ -302,30 +305,170 @@ func refTargetNarrows(cur, cand string) bool {
 	return cur != cand
 }
 
-// objectFieldNarrowings classifies an object property's field-level diff: a
-// dropped field, or a field whose kind/repetition changed, each stranding the
-// rows that carry that field.
-func objectFieldNarrowings(ident, pname string, curP, candP *vocabulary.Property) []narrowing {
+// fieldStep is one step down a declared path: the key, and the CONTAINER the
+// value under it is stored in. The container is what a count has to walk — a
+// repeated object is a jsonb array of members, a keyed map a jsonb object of
+// them — so the path carries the declared shape, never a guess from the data.
+type fieldStep struct {
+	key      string
+	repeated bool
+	keyed    bool
+}
+
+// pathLabel renders a path for a guard message: the keys, dotted. A one-step
+// path reads as the property's own name, which is what the level-1 guards said
+// before they could recurse.
+func pathLabel(path []fieldStep) string {
+	out := ""
+	for i, s := range path {
+		if i > 0 {
+			out += "."
+		}
+		out += s.key
+	}
+	return out
+}
+
+// sqlArgs numbers a generated query's placeholders. The keys it binds are
+// loader-validated camelCase, but they are bound rather than interpolated all
+// the same: a declaration is data from an install, and one query builder that
+// interpolates is one habit away from a query that matters.
+type sqlArgs struct{ args []any }
+
+func (a *sqlArgs) add(v any) string {
+	a.args = append(a.args, v)
+	return fmt.Sprintf("$%d", len(a.args))
+}
+
+// countAtPath renders a live-row count over a declared path: it descends the
+// path's containers with one jsonb notch per level and applies `final` to the
+// jsonb expression addressing the value at the end of it.
+//
+// This is the recursive form of the level-1 query it replaces, which read
+// `CASE WHEN jsonb_typeof(props->$2) = 'array' THEN EXISTS(...) ELSE ... END`.
+// The tolerance survives the generalization: a repeated level accepts a stored
+// SCALAR object too, because a repeated-flip narrowing is refused by counting
+// exactly the rows that still hold the other shape.
+func countAtPath(ident string, path []fieldStep, final func(expr string, a *sqlArgs) string) (string, []any) {
+	a := &sqlArgs{}
+	kind := a.add(ident)
+	head := a.add(path[0].key)
+	pred := descendPath("props->"+head, path, 0, a, final)
+	return fmt.Sprintf(
+		"SELECT count(*) FROM records WHERE kind = %s AND deleted_at IS NULL AND props ? %s AND %s",
+		kind, head, pred), a.args
+}
+
+// descendPath renders the predicate over the value at path[i], addressed by
+// expr: the container is expanded to its members, then either the next key is
+// taken from a member or `final` closes over it.
+func descendPath(expr string, path []fieldStep, i int, a *sqlArgs, final func(string, *sqlArgs) string) string {
+	step := path[i]
+	member, wrap := expr, func(inner string) string { return inner }
+	switch {
+	case step.repeated:
+		alias := fmt.Sprintf("e%d", i)
+		member = alias
+		wrap = func(inner string) string {
+			return fmt.Sprintf(
+				"EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(%s) = 'array' THEN %s ELSE jsonb_build_array(%s) END) %s WHERE %s)",
+				expr, expr, expr, alias, inner)
+		}
+	case step.keyed:
+		alias := fmt.Sprintf("k%d", i)
+		member = alias + ".value"
+		wrap = func(inner string) string {
+			return fmt.Sprintf(
+				"EXISTS (SELECT 1 FROM jsonb_each(CASE WHEN jsonb_typeof(%s) = 'object' THEN %s ELSE '{}'::jsonb END) %s WHERE %s)",
+				expr, expr, alias, inner)
+		}
+	}
+	if i == len(path)-1 {
+		return wrap(final(member, a))
+	}
+	return wrap(descendPath(fmt.Sprintf("%s->%s", member, a.add(path[i+1].key)), path, i+1, a, final))
+}
+
+// fieldPresence counts the live rows carrying `key` inside the container the
+// path names — the rows a dropped, retyped or re-boxed field strands.
+func fieldPresence(ident string, path []fieldStep, key string) (string, []any) {
+	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
+		return fmt.Sprintf("jsonb_typeof(%s) = 'object' AND %s ? %s", expr, expr, a.add(key))
+	})
+}
+
+// refOutsidePath counts the live rows whose reference at the end of the path
+// points at a kind OTHER than the newly required target, the nested twin of
+// countRefOutsideQuery. The reference's own container is the path's last step,
+// so a repeated or keyed reference field is walked element by element.
+func refOutsidePath(ident string, path []fieldStep, target string) (string, []any) {
+	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
+		return fmt.Sprintf("COALESCE(%s->>'kind','') <> %s", expr, a.add(target))
+	})
+}
+
+// objectFieldNarrowings classifies one object level's field diff, recursing to
+// the declared depth: a dropped field, a field whose kind, container or key
+// contract changed, and a reference field that narrows its target — each
+// stranding the rows that carry that field, counted where it actually sits.
+func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabulary.Property) []narrowing {
 	var out []narrowing
+	label := pathLabel(path)
 	for _, fname := range curP.FieldOrder {
 		curF := curP.Fields[fname]
 		candF := candP.Fields[fname]
-		switch {
-		case candF == nil:
+		if candF == nil {
+			q, args := fieldPresence(ident, path, fname)
 			out = append(out, narrowing{
 				format: fmt.Sprintf("type %s: object %q drops field %q while %%d live records still carry it — null it on them first",
-					ident, pname, fname),
-				query: countObjectFieldQuery, args: []any{ident, pname, fname},
+					ident, label, fname),
+				query: q, args: args,
 			})
-		case curF.Datatype != candF.Datatype || curF.Repeated != candF.Repeated:
+			continue
+		}
+		if curF.Datatype != candF.Datatype || curF.Repeated != candF.Repeated || curF.Keyed != candF.Keyed {
+			q, args := fieldPresence(ident, path, fname)
 			out = append(out, narrowing{
 				format: fmt.Sprintf("type %s: object %q field %q changes kind %s → %s while %%d live records hold the old kind — migrate them first",
-					ident, pname, fname, kindShape(curF), kindShape(candF)),
-				query: countObjectFieldQuery, args: []any{ident, pname, fname},
+					ident, label, fname, kindShape(curF), kindShape(candF)),
+				query: q, args: args,
 			})
+			continue
+		}
+		if keyPatternTightens(curF, candF) {
+			q, args := fieldPresence(ident, path, fname)
+			out = append(out, narrowing{
+				format: fmt.Sprintf("type %s: object %q field %q tightens its keys to %s while %%d live records hold the map — rekey them first",
+					ident, label, fname, candF.KeyPattern),
+				query: q, args: args,
+			})
+		}
+		next := append(append([]fieldStep(nil), path...), fieldStep{key: fname, repeated: curF.Repeated, keyed: curF.Keyed})
+		if curF.Datatype == vocabulary.DatatypeReference && refTargetNarrows(curF.To, candF.To) {
+			q, args := refOutsidePath(ident, next, candF.To)
+			out = append(out, narrowing{
+				format: fmt.Sprintf("type %s: object %q reference %q narrows its target to %s while %%d live records point elsewhere — repoint them first",
+					ident, label, fname, candF.To),
+				query: q, args: args,
+			})
+		}
+		if curF.Datatype == vocabulary.DatatypeObject {
+			out = append(out, objectFieldNarrowings(ident, next, curF, candF)...)
 		}
 	}
 	return out
+}
+
+// keyPatternTightens reports whether a keyed map's declared key contract moved
+// to a STRICTER one: none → a pattern, or one pattern replaced by another. Live
+// keys that satisfied the old contract may fail the new one, and a key is not
+// rewritable in place — the whole map has to be rewritten — so it narrows.
+// Dropping the contract admits everything the old one did and does not.
+func keyPatternTightens(curP, candP *vocabulary.Property) bool {
+	if !candP.Keyed || candP.KeyPattern == "" {
+		return false
+	}
+	return curP.KeyPattern != candP.KeyPattern
 }
 
 // renamedTo reports the candidate property (if any) that declares the given
@@ -373,10 +516,15 @@ func quotedList(values []string) string {
 	return out
 }
 
-// kindShape renders a property's kind for a guard message, list-aware.
+// kindShape renders a property's kind for a guard message, container-aware: the
+// container is part of the kind, because nothing converts a list into a map or
+// either into a scalar.
 func kindShape(p *vocabulary.Property) string {
-	if p.Repeated {
+	switch {
+	case p.Repeated:
 		return "repeated " + string(p.Datatype)
+	case p.Keyed:
+		return "keyed " + string(p.Datatype)
 	}
 	return string(p.Datatype)
 }

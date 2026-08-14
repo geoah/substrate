@@ -333,8 +333,7 @@ itself must compare it in SQL: a one-way SHA-256 the server minted, stored
 as the value. The `core.substrate.reamde.dev/token` kind stores its hash
 this way ([users and tokens](auth.md)).
 
-**Objects.** An `object` property declares its fields inline, each a scalar
-type, one level deep, no object inside an object. This is how an
+**Objects.** An `object` property declares its fields inline. This is how an
 integration's kinds mirror what their provider actually sends. In the GitHub
 [integration](bundles-catalog.md#github), issues carry milestones in
 GitHub's own shape:
@@ -349,9 +348,35 @@ milestone:
     dueOn: datetime
 ```
 
+A field is a scalar, a reference or another object, and it carries its own
+`repeated:`/`keyed:` container. Nesting is bounded: a kind's own property is
+level 1 and a field may sit at level 4 at most, so the guards that refuse a
+narrowing definition change can walk the whole shape. `json` is still the only
+escape hatch, and it stays reserved for payloads whose shape we do not own —
+a `secret`, a `digest`, a `blobref` and a state machine are each a whole
+property and never a field.
+
 `repeated: true` over an object holds a list of objects. Object properties
 validate recursively on write and stay out of the filter grammar until a
 consumer needs them.
+
+**Keyed maps.** `keyed: true` is `repeated:`'s twin: the value is a map whose
+KEYS are data and whose every value follows the rest of the declaration —
+`{type: int, keyed: true}` is a map of ints, and a keyed object is a map of
+that object. An optional `keyPattern:` is the contract the keys hold to,
+`camel` (a property-name key) or `kindRef` (a bare or qualified kind
+reference); absent, any non-empty key is admitted. A declaration is keyed or
+repeated, never both, and a map whose values are themselves a map is not
+declarable — flatten it, or make the inner level a repeated list of variants.
+Like objects, keyed maps stay out of search and the filter grammar.
+
+**Naming something without pointing at it.** A string property may carry
+`refersTo: kind | function | agent | authority | provider`, which says what its
+value NAMES so a client can offer a picker instead of a text box. It is a
+marker and nothing else: no stored value changes and no validation is added
+(a declaration's own closure checks are what refuse an unknown name). Where a
+single record is meant, a `reference` with `to:` is the stronger declaration;
+`refersTo` is for the selectors that stay plain strings, like `emit: [person]`.
 
 **References.** A `reference` is a typed pointer stored as a property value:
 the same `{kind, id}` pair an edge target wears, but data, not a graph edge.

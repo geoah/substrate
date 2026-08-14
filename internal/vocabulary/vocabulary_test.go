@@ -1703,10 +1703,17 @@ type testResolver struct {
 	props   map[string]string
 	edges   map[string]string
 	snippet string
+	derived map[string]string
 }
 
 func (r testResolver) Prop(n string) string { return r.props[n] }
-func (r testResolver) Snippet() string      { return r.snippet }
+func (r testResolver) Derived(token string) string {
+	if token == vocabulary.DerivedSnippet {
+		return r.snippet
+	}
+	return r.derived[token]
+}
+
 func (r testResolver) Edge(rel, prop string) string {
 	if prop == "" {
 		return r.edges[rel]
@@ -1943,11 +1950,9 @@ data:
 		"unknown data key": typ(`  names: {singular: contact, plural: contacts}
   fields: {a: {type: string}}
 `),
-		// Object properties: fields are one level deep, declared
-		// scalars only, camelCase, one value each — and never a refinement base.
-		"nested object": typ(`  names: {singular: contact, plural: contacts}
-  properties: {name: {type: object, fields: {inner: {type: object, fields: {a: {type: string}}}}}}
-`),
+		// Object fields nest to MaxFieldDepth and hold declared shapes: never
+		// json/secret/digest/state/blobref, never a snake name, never a reserved
+		// one — and an object is never a refinement base.
 		"json field": typ(`  names: {singular: contact, plural: contacts}
   properties: {name: {type: object, fields: {raw: {type: json}}}}
 `),
@@ -1963,9 +1968,6 @@ data:
 		"reserved field": typ(`  names: {singular: contact, plural: contacts}
   properties: {name: {type: object, fields: {title: {type: string}}}}
 `),
-		"repeated field": typ(`  names: {singular: contact, plural: contacts}
-  properties: {name: {type: object, fields: {alias: {type: string, repeated: true}}}}
-`),
 		"object without fields": typ(`  names: {singular: contact, plural: contacts}
   properties: {name: {type: object}}
 `),
@@ -1977,6 +1979,73 @@ data:
 `),
 		"fts on an object": typ(`  names: {singular: contact, plural: contacts}
   properties: {name: {type: object, fts: true, fields: {a: {type: string}}}}
+`),
+		// A level-5 field: the dialect admits four, and the guards that refuse a
+		// narrowing walk exactly that many jsonb notches.
+		"field nested past the depth": typ(`  names: {singular: contact, plural: contacts}
+  properties:
+    deep:
+      type: object
+      fields:
+        l2: {type: object, fields: {l3: {type: object, fields: {l4: {type: object, fields: {l5: {type: string}}}}}}}
+`),
+		"json field at depth": typ(`  names: {singular: contact, plural: contacts}
+  properties:
+    deep: {type: object, fields: {l2: {type: object, fields: {raw: {type: json}}}}}
+`),
+		"secret field at depth": typ(`  names: {singular: contact, plural: contacts}
+  properties:
+    deep: {type: object, fields: {l2: {type: object, fields: {key: {type: secret}}}}}
+`),
+		"blobref field at depth": typ(`  names: {singular: contact, plural: contacts}
+  properties:
+    deep: {type: object, fields: {l2: {type: object, fields: {bytes: {type: blobref}}}}}
+`),
+		// keyed and repeated are the two containers, and a declaration is one.
+		"keyed and repeated": typ(`  names: {singular: contact, plural: contacts}
+  properties: {scopes: {type: string, keyed: true, repeated: true}}
+`),
+		// A keyed map of maps has no second node to declare: the value's shape IS
+		// the declaration, so leaving the fields out is refused by name.
+		"keyed object without fields": typ(`  names: {singular: contact, plural: contacts}
+  properties: {variants: {type: object, keyed: true}}
+`),
+		"keyed field of maps": typ(`  names: {singular: contact, plural: contacts}
+  properties:
+    spec: {type: object, fields: {variants: {type: object, keyed: true}}}
+`),
+		"keyed json": typ(`  names: {singular: contact, plural: contacts}
+  properties: {raw: {type: json, keyed: true}}
+`),
+		"keyed secret": typ(`  names: {singular: contact, plural: contacts}
+  properties: {keys: {type: secret, keyed: true}}
+`),
+		"keyPattern without keyed": typ(`  names: {singular: contact, plural: contacts}
+  properties: {scopes: {type: string, keyPattern: camel}}
+`),
+		"unknown keyPattern": typ(`  names: {singular: contact, plural: contacts}
+  properties: {scopes: {type: string, keyed: true, keyPattern: snake}}
+`),
+		"fts on a keyed map": typ(`  names: {singular: contact, plural: contacts}
+  properties: {scopes: {type: string, keyed: true, fts: true}}
+`),
+		"embed on a keyed map": typ(`  names: {singular: contact, plural: contacts}
+  properties: {scopes: {type: string, keyed: true, embed: true}}
+`),
+		// refersTo marks what a STRING names; a typed pointer is a reference.
+		"refersTo on an int": typ(`  names: {singular: contact, plural: contacts}
+  properties: {count: {type: int, refersTo: kind}}
+`),
+		"refersTo on a reference": typ(`  names: {singular: contact, plural: contacts}
+  properties: {target: {type: reference, to: any, refersTo: kind}}
+`),
+		"unknown refersTo": typ(`  names: {singular: contact, plural: contacts}
+  properties: {emit: {type: string, repeated: true, refersTo: widget}}
+`),
+		// managed says the ENGINE stamps a property; a field is a position
+		// inside one, and nothing stamps a position.
+		"managed on a field": typ(`  names: {singular: contact, plural: contacts}
+  properties: {spec: {type: object, fields: {version: {type: string, managed: true}}}}
 `),
 		"object refinement base": head + `kind: core.substrate.reamde.dev/propertytype
 metadata: {id: x.example.com/shape}

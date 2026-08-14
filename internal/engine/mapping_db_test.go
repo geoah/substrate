@@ -1017,7 +1017,9 @@ func TestObjectPropertyValidation(t *testing.T) {
 		t.Fatalf("a null field must be dropped, got %v", name)
 	}
 
-	// Fields are one level deep: a nested object is a LOAD error.
+	// Fields nest to vocabulary.MaxFieldDepth — a kind's own property is level 1
+	// — and one level past it is a LOAD error, because the narrowing guards walk
+	// exactly that many jsonb notches.
 	const authority = "nested.connectors.substrate.reamde.dev"
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, enginetest.Manifest{
 		Name: "nested", Authority: authority,
@@ -1034,10 +1036,33 @@ func TestObjectPropertyValidation(t *testing.T) {
 					}},
 				}}),
 		},
+	}); err != nil {
+		t.Fatalf("an object nested inside an object must register: %v", err)
+	}
+	const deep = "toodeep.connectors.substrate.reamde.dev"
+	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, enginetest.Manifest{
+		Name: "toodeep", Authority: deep,
+		Manifests: []map[string]any{
+			vocabulary.AuthorityManifest(deep, "v1alpha1"),
+			vocabulary.ActorManifest(deep, "connector:toodeep"),
+			vocabulary.KindManifest(deep,
+				map[string]any{"singular": "row", "plural": "rows"},
+				map[string]any{"properties": map[string]any{
+					"l1": map[string]any{"type": "object", "fields": map[string]any{
+						"l2": map[string]any{"type": "object", "fields": map[string]any{
+							"l3": map[string]any{"type": "object", "fields": map[string]any{
+								"l4": map[string]any{"type": "object", "fields": map[string]any{
+									"l5": "string",
+								}},
+							}},
+						}},
+					}},
+				}}),
+		},
 	}); err == nil {
-		t.Fatal("a nested object must not register")
+		t.Fatal("a level-5 field must not register")
 	} else {
-		wantErr(t, err, substrate.ErrValidation, "nested object")
+		wantErr(t, err, substrate.ErrValidation, "fields nest")
 	}
 }
 
