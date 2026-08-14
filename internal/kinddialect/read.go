@@ -613,10 +613,18 @@ func (r *reader) readProperty(where, name string, n *yaml.Node, depth int) *Prop
 			r.errf("%s: fields nest %d levels deep at most (a kind's own property is level 1)", where, MaxFieldDepth)
 			return nil
 		}
+		// THE CLOSED EMPTY OBJECT: `fields:` declared and empty is a value with no
+		// fields at all — every key refused. It is spelled apart from an ABSENT
+		// `fields:`, which is the author forgetting to say what the object holds.
+		declared := d.has("fields")
 		fields, _ := asMapping(d.at("fields"))
-		if fields == nil || len(fields.keys) == 0 {
+		if !declared {
 			r.errf("%s: an object declares the fields its values follow", where)
 			return nil
+		}
+		if fields == nil || len(fields.keys) == 0 {
+			p.Fields = []*Property{}
+			return p
 		}
 		for _, fname := range fields.keys {
 			f := r.readProperty(where+".fields."+fname, fname, fields.at(fname), depth+1)
@@ -800,6 +808,13 @@ func shorthand(datatype string) *mapping {
 }
 
 func (m *mapping) at(key string) *yaml.Node { return m.values[key] }
+
+// has reports whether the key was WRITTEN, whatever its value: `fields:` with
+// nothing under it is a declaration of emptiness, and absent is not that.
+func (m *mapping) has(key string) bool {
+	_, ok := m.values[key]
+	return ok
+}
 
 func (m *mapping) str(key string) string {
 	s, _ := scalar(m.values[key])

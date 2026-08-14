@@ -16,7 +16,8 @@ data:
   # v1alpha3: the declaration gained a `description` — the bump is what
   # carries it into repositories that already stored the v1alpha2 one.
   # v1alpha4: TYPED. `definition` and `name` are gone; the refinement — the
-  # pattern, the range and the value set — is properties.
+  # base, the pattern, the range and the value set — is properties, and the base
+  # is the closed set of built-in datatypes rather than free text.
   version: v1alpha4
   names:
     singular: propertytype
@@ -43,9 +44,33 @@ data:
     description:
       type: string
       description: what the refinement is for
+    # The closed set of BUILT-IN datatypes a refinement may narrow — the same set
+    # the loader admits as a base. `object` and `reference` are not in it: each
+    # owns its own key set and neither is a refinement base.
     base:
-      type: string
+      type: enum
       required: true
+      values:
+        - string
+        - text
+        - markdown
+        - int
+        - float
+        - bool
+        - datetime
+        - date
+        - duration
+        - email
+        - url
+        - phone
+        - timezone
+        - recurrence
+        - enum
+        - json
+        - secret
+        - digest
+        - state
+        - blobref
       description: the built-in datatype it refines
     pattern:
       type: string

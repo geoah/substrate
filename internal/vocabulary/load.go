@@ -568,6 +568,40 @@ func (l *loader) localName(where, identity, authority string) (string, bool) {
 	return local, true
 }
 
+// declarationDataKeys is every schema kind's admitted `data` key set, keyed by
+// the manifest short name — the same maps checkKeys holds each document to.
+var declarationDataKeys = map[string]map[string]bool{
+	DocAuthority:     authorityDataKeys,
+	DocActor:         actorDataKeys,
+	DocKind:          typeDataKeys,
+	DocTrait:         capabilityDataKeys,
+	DocPropertyType:  datatypeDataKeys,
+	DocRecordMapping: mappingDataKeys,
+	DocFunction:      functionDataKeys,
+	DocAgent:         agentDataKeys,
+	DocBundle:        bundleDataKeys,
+}
+
+// DeclarationDataKeys is the `data` keys a schema kind's document admits.
+//
+// It exists because a declaration ROW carries more than its document does: what
+// the engine stamps (a version, an origin, the quarantine marks, the bundle
+// lifecycle bools) and, on a repository an older binary once wrote, the retired
+// spellings. Reading a row back as a document is therefore a WHITELIST — these
+// keys and nothing else — which is what keeps a property some FUTURE binary
+// stamps from reaching this loader as an unknown key, and keeps the engine from
+// holding a second, hand-maintained copy of this set.
+//
+// The map is a copy: the sets themselves are this package's own.
+func DeclarationDataKeys(short string) map[string]bool {
+	keys := declarationDataKeys[short]
+	out := make(map[string]bool, len(keys))
+	for k := range keys {
+		out[k] = true
+	}
+	return out
+}
+
 func (l *loader) checkKeys(where string, data map[string]any, allowed map[string]bool) {
 	for k := range data {
 		if allowed[k] {
@@ -1459,6 +1493,15 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 			l.errf("%s: a keyed object declares the fields its values follow — a map OF maps is not declarable; flatten it or make the inner level a repeated variant list", where)
 			return nil
 		}
+		// THE CLOSED EMPTY OBJECT: `fields: {}`, declared and empty, is a value
+		// with no fields at all — every key refused, which is what an arm that
+		// says "present" and nothing more needs (a trigger's webhook source). It
+		// is spelled apart from an ABSENT `fields:`, which is the author forgetting
+		// to say what the object holds.
+		if raw, declared := d["fields"]; declared && len(asMap(raw)) == 0 {
+			p.Fields = map[string]*Property{}
+			return p
+		}
 		p.Fields = l.parseFields(where, d, depth+1)
 		if p.Fields == nil {
 			return nil
@@ -1639,7 +1682,7 @@ func (l *loader) parseFields(where string, d map[string]any, depth int) map[stri
 	}
 	raw := mmap(d, "fields")
 	if len(raw) == 0 {
-		l.errf("%s: object needs fields", where)
+		l.errf("%s: object needs fields — `fields: {}` is the closed empty object, and absent is not that", where)
 		return nil
 	}
 	out := map[string]*Property{}
