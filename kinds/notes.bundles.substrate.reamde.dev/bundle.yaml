@@ -1,12 +1,14 @@
 # The note-taking example: the smallest bundle that shows an AGENT calling
 # FUNCTIONS as tools and delegating to a SUB-AGENT.
 #
-# It is deliberately self-contained. Nothing here needs the network, a
-# provider account, an OAuth consent or another bundle's vocabulary, so it can
-# be installed on a fresh substrate and driven by hand in one command:
+# It is deliberately self-contained. Nothing here needs an OAuth consent, a
+# provider account or another bundle's vocabulary, so it installs on a fresh
+# substrate; the agents buy completions like any others, so a keyed
+# llmprovider row at id `default` is the one prerequisite. Then:
 #
 #   substratectl apply -f bundle.yaml
-#   substratectl call notekeeper --input '{"text": "..."}'
+#   POST /api/v1/core.substrate.reamde.dev/agents/notekeeper/call
+#     {"input": {"text": "..."}}
 #
 # What it demonstrates, in the order the loop hits it:
 #

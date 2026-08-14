@@ -71,7 +71,7 @@ func (a *app) triggerReplayCommand() *cobra.Command {
 	var from int64
 	cmd := &cobra.Command{
 		Use:   "replay <id>",
-		Short: "Reset an record-sourced trigger's cursor; delivery does the rest",
+		Short: "Reset a record-sourced trigger's cursor; delivery does the rest",
 		Long: `Set a trigger's cursor to --from (default 0: everything). Effects are
 idempotent by construction and identical puts are no-ops, so a full replay
 converges instead of duplicating.`,
@@ -95,14 +95,14 @@ converges instead of duplicating.`,
 
 func (a *app) triggerRunCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "run <id> <type> <record-id>",
+		Use:   "run <id> <kind> <record-id>",
 		Short: "Deliver one record's current state through a trigger, cursor untouched",
 		Long: `Synthesize one delivery of a record's current state through a trigger's
 callable, without moving the cursor.
 
-A record is addressed by (type, id) — an id alone names no record, since two
-types may share one — so the delivery takes BOTH. The type may be the plural or
-singular the registry knows ("tasks", "task") or the full identity
+A record is addressed by (kind, id) — an id alone names no record, since two
+kinds may share one — so the delivery takes BOTH. The kind may be the plural or
+singular the registry knows ("tasks", "task") or the full reference
 ("tasks.substrate.reamde.dev/task").`,
 		Example: `  substratectl trigger run classify-page task t9
   substratectl trigger run classify-page tasks.substrate.reamde.dev/task t9`,
@@ -116,10 +116,10 @@ singular the registry knows ("tasks", "task") or the full identity
 			var res struct {
 				Ran int `json:"ran"`
 			}
-			// The wire wants the type identity. A plural or singular the registry
+			// The wire wants the kind reference. A plural or singular the registry
 			// knows is resolved here; anything else travels verbatim, because the
-			// server resolves identities and bare names too and its error names the
-			// type better than a guess would.
+			// server resolves references and bare names too and its error names the
+			// kind better than a guess would.
 			recordKind := args[1]
 			if col, err := a.resolveCollection(ctx, args[1], ""); err == nil && col.Identity != "" {
 				recordKind = col.Identity

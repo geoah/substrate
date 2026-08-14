@@ -4,7 +4,7 @@ Almost every suite here is hermetic: the agent loop is driven by an in-process
 fake that speaks the OpenAI wire, and the engine's database cases run against a
 throwaway Postgres container. Two things a fake cannot prove — that the wire
 adapters still match what the providers actually accept, and that a whole agent
-chain works end to end against them — are what the LIVE suite is for.
+chain works end to end against them — are what the **live** suite is for.
 
 It buys real completions with real keys, so it runs only when those keys are in
 the environment and **skips** otherwise. `mise run test` and CI never need one.
@@ -81,11 +81,14 @@ Both halves honor the same two variables.
 
 ## Why it stays out of the default suites
 
-Every live case is named `TestLive…`. One name, used twice: `test:llm` selects
-the set with `-run '^TestLive'`, and `test:db` excludes it with
+Every live case is named `TestLive…`, and that one name is used twice:
+`test:llm` selects the set with `-run '^TestLive'`, and `test:db` excludes it with
 `-skip '^TestLive'`. On top of that every live case skips under `-short`, which
 is what `test:short` runs.
 
 So `mise run test` spends nothing even on a machine whose environment is full
 of keys — the live suite runs when you ask for it by name, and never as a side
 effect of running the tests.
+
+Next: the [built-in kinds](builtin-kinds.md), the vocabulary a repository
+can import.

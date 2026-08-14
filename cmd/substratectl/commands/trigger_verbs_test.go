@@ -10,11 +10,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// A trigger run delivers ONE RECORD, and a record is addressed by (type, id):
-// an id alone names no record, since two types may share one. The CLI used to
+// A trigger run delivers ONE RECORD, and a record is addressed by (kind, id):
+// an id alone names no record, since two kinds may share one. The CLI used to
 // send `{"id": …}` alone, which every real substrate answered with 400 — a
 // drift no test caught, because the fake accepted any body at all.
-func TestTriggerRunSendsTypeAndID(t *testing.T) {
+func TestTriggerRunSendsKindAndID(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 
@@ -23,33 +23,33 @@ func TestTriggerRunSendsTypeAndID(t *testing.T) {
 		t.Fatalf("trigger run output = %q, want the applied-effects line", out)
 	}
 	body := h.fake.lastBody
-	var gotType, gotID string
+	var gotKind, gotID string
 	if raw, ok := body["kind"]; ok {
-		_ = json.Unmarshal(raw, &gotType)
+		_ = json.Unmarshal(raw, &gotKind)
 	}
 	if raw, ok := body["id"]; ok {
 		_ = json.Unmarshal(raw, &gotID)
 	}
-	// The bare `task` resolves against the registry to the full identity, which
-	// is what the wire names.
-	if gotType != "tasks.substrate.reamde.dev/task" {
-		t.Errorf("body kind = %q, want the resolved identity", gotType)
+	// The bare `task` resolves against the registry to the full reference,
+	// which is what the wire names.
+	if gotKind != "tasks.substrate.reamde.dev/task" {
+		t.Errorf("body kind = %q, want the resolved reference", gotKind)
 	}
 	if gotID != "t9" {
 		t.Errorf("body id = %q, want t9", gotID)
 	}
 }
 
-// A qualified type travels verbatim — the server resolves identities too, and
-// its error names the type better than a client-side guess would.
-func TestTriggerRunAcceptsAQualifiedType(t *testing.T) {
+// A qualified kind travels verbatim — the server resolves references too, and
+// its error names the kind better than a client-side guess would.
+func TestTriggerRunAcceptsAQualifiedKind(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	h.mustRun("trigger", "run", "classify-page", "tasks.substrate.reamde.dev/task", "t9")
-	var gotType string
-	_ = json.Unmarshal(h.fake.lastBody["kind"], &gotType)
-	if gotType != "tasks.substrate.reamde.dev/task" {
-		t.Fatalf("body kind = %q, want it passed through", gotType)
+	var gotKind string
+	_ = json.Unmarshal(h.fake.lastBody["kind"], &gotKind)
+	if gotKind != "tasks.substrate.reamde.dev/task" {
+		t.Fatalf("body kind = %q, want it passed through", gotKind)
 	}
 }
 

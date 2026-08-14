@@ -1,10 +1,12 @@
 # Bundles catalog
 
-The substrate ships eight bundles in the binary, each a real closure a user
-installs with `substratectl apply` or from the [catalog](bundles.md#the-catalog).
+The substrate ships ten behavior and example bundles in the binary, each a
+real closure a user installs with `substratectl apply` or from the
+[catalog](bundles.md#the-catalog); the thirteen vocabulary bundles ship
+beside them, and [built-in kinds](builtin-kinds.md) is their reference.
 Google, GitHub, Linear, WHOOP, Notion, and Beeper carry the `integration`
-facet; Firecrawl and the web harvester do not — they add callables and
-vocabulary with no provider account. The facet
+facet; LLM, notes, and the web harvester carry `example`; Firecrawl carries
+neither, adding callables behind an API key with no provider account. Each facet
 is the catalog's own curated flag, stated per bundle rather than inferred
 from the closure. Every integration syncs from the provider into the
 repository; none writes back to the provider, and each ships a README stating
@@ -21,8 +23,9 @@ authority carries the provider, so no name repeats it — GitHub's issue mirror
 is `github.bundles.substrate.reamde.dev/issue`, Linear's is
 `linear.bundles.substrate.reamde.dev/issue`, and one record of either is addressed as
 `<authority>/<kind>/<id>`. What a closure declares is exactly what its
-`installs:` lists. Beside that closure every bundle may ship ORDINARY RECORDS,
-written by the same install: an integration's triggers (the delivery wiring, in
+`installs:` lists. Beside that closure every bundle may ship **ordinary
+records**, written by the same install: an integration's triggers (the
+delivery wiring, in
 `triggers.yaml`) and the LLM example's two provider rows are the same kind of
 thing, and the Records column counts them.
 
@@ -35,16 +38,17 @@ thing, and the Records column counts them.
 | Notion        | Integration | Internal token | 4     | 1         | 2       | 0      |
 | Beeper        | Integration | Pasted token   | 4     | 1         | 2       | 0      |
 | LLM           | Example     | Key, per row   | 0     | 0         | 2       | 3      |
-| Firecrawl     | Capability  | API key        | 2     | 2         | 0       | 0      |
-| Web harvester | Capability  | none           | 2     | 4         | 4       | 3      |
+| Notes         | Example     | none           | 1     | 2         | 0       | 2      |
+| Firecrawl     | —           | API key        | 2     | 2         | 0       | 0      |
+| Web harvester | Example     | none           | 2     | 4         | 4       | 3      |
 
 ## LLM (example)
 
-Authority `llm.examples.substrate.reamde.dev`. The bundle a fresh substrate
-installs FIRST if it wants to run an agent at all: nothing seeds an
-`llmprovider` row, so this ships the two an agent can name — `anthropic` and
-`openai`, correctly shaped for their wires and deliberately KEYLESS — plus
-three agents. `substrate` is the one to chat with: it reads the whole graph
+Authority `llm.examples.substrate.reamde.dev`. Install this bundle first if
+you want to run an agent at all. A fresh substrate seeds no `llmprovider` row,
+so this bundle ships the two an agent can name (`anthropic` and `openai`),
+correctly shaped for their wires and deliberately keyless, plus three agents.
+`substrate` is the one to chat with: it reads the whole graph
 through the `graphql` built-in and writes nothing directly, proposing every
 change as a `recordpatchrequest` the owner decides on. `substrateEcho` and
 `substrateSummarizer` are the delegation demo, and the summarizer is
@@ -54,10 +58,33 @@ Installing it gives you rows that refuse until you key them. The key is a
 record write: **Data → llmproviders → `anthropic` → Edit**, put it in `apiKey`,
 apply. It is secret-typed, so it reads back redacted from then on and rotating
 it is the same write again. The `openai` row is the other wire, and with an
-empty `baseURL` it means whatever gateway the host was configured with.
+empty `baseURL` it resolves to the host's configured gateway:
+[providers](agents.md#providers) has the host-gateway rule, the wires, and
+pricing.
 
-See [agents.md](agents.md#providers) for wires, pricing and the host-gateway
-rule.
+## Notes (example)
+
+Authority `notes.bundles.substrate.reamde.dev`. The smallest bundle that shows
+an agent calling functions as tools and delegating to a sub-agent. It is
+deliberately self-contained: no OAuth consent, no provider account, no other
+bundle's vocabulary, so it installs on a fresh substrate. Its agents buy
+completions like any others and name `provider: default`, so the one
+prerequisite is a keyed `llmprovider` row at that id
+([providers](agents.md#providers)). Then one call drives it:
+`POST …/core.substrate.reamde.dev/agents/notekeeper/call`, or a chat with
+`notekeeper` in the console.
+
+- **Kinds (1)**: `note`, a saved note (the text handed in, the title the
+  sub-agent wrote, the counts the stats function computed), written by the
+  `savenote` function and never by hand.
+- **Functions (2)**: `stats` counts words and characters in pure Python,
+  declares no network and is therefore denied sockets by the sandbox;
+  `savenote` emits the `note`, and that write is held to both envelopes, the
+  function's own `emit` and the calling agent's.
+- **Agents (2)**: `notekeeper` is the root loop; `titler` is a sub-agent with
+  its own budget and thread, called as a tool. `titler` declares no emit at
+  all, so a sub-agent on this chain can write nothing whatever it is asked.
+- **Triggers**: none, and the bundle declares no inputs.
 
 ## Google
 
@@ -229,9 +256,10 @@ row is stamped `syncStatus: ignored: duplicate account`.
 
 ## Firecrawl
 
-Authority `firecrawl.bundles.substrate.reamde.dev`. A capability bundle, not a provider
-account: web search and page scraping over the Firecrawl API, exposed as two
-callables an agent binds as tools.
+Authority `firecrawl.bundles.substrate.reamde.dev`. Not an integration: no
+provider account is connected and nothing syncs. It is web search and page
+scraping over the Firecrawl API, exposed as two callables an agent binds as
+tools, behind an API key.
 
 - **Kinds (2)**: `config` (holding an API key) and `webdocument` (a scraped
   page kept as markdown).
@@ -248,7 +276,7 @@ owner-editable `baseUrl` can never redirect the key.
 
 ## Web harvester
 
-Authority `web.bundles.substrate.reamde.dev`. A capability bundle, and the substrate's
+Authority `web.bundles.substrate.reamde.dev`. The substrate's
 shipped end-to-end conformance example: it proves that `bundle`, `kind`,
 `function`, `agent`, and `trigger` declarations compose into a real
 feature (harvest URLs from a message, fetch and classify each page, propose
@@ -271,11 +299,11 @@ the running example these pages build on.
   `readinglistagent`, which proposes reading-list notes; `weeklyrollup` queries
   the week's pages and proposes a digest. Both proposals travel as
   `core.substrate.reamde.dev/recordpatchrequest` records for the owner to accept. All
-  three run on the seeded `default` provider, each naming its own `model` —
+  three name `provider: default`, a row nothing seeds (the owner writes and
+  keys it before they can run), and each names its own `model` —
   what the agent does is what picks the model, not a tier.
 
-This is the only shipped bundle with agents, and the only one whose
-functions are deterministic stubs, because it exists to exercise the machinery
-rather than talk to a provider.
+Its functions are deterministic stubs, because the bundle exists to exercise
+the machinery rather than talk to a provider.
 
 Next: [substratectl](substratectl.md), the command line over all of it.

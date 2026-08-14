@@ -10,7 +10,7 @@ installs on request, exactly the way a [bundle](bundles.md) does, under the
 same `bundle:<name>` actor. So a brand-new repository has no `person` kind
 until you ask for one.
 
-Importing is one action per bundle, and a bundle that maps ONTO another
+Importing is one action per bundle, and a bundle that maps onto another
 authority says so in its `requires:` — installing `google` before `people`
 is refused, naming what to import first. Nothing installed ever redefines a
 shipped kind. Every declaration is queryable in your own repository
@@ -164,7 +164,8 @@ speaks:
 | Kind                 | What it is                                                                                                                                          |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `repository`         | The repository describing itself from the inside: its id, the owning username, and a lifecycle state.                                               |
-| `credential`         | The singleton holding your auth material by reference into the sealed store ([users and tokens](auth.md)).                                         |
+| `credential`         | The one record (id `self`) holding your auth material by reference into the sealed store ([users and tokens](auth.md)).                                         |
+| `recoverykey`        | The one record (id `self`) holding the age recipient the user enrolled and the repository's data-encryption key wrapped to it; only the user's age identity opens the wrap.  |
 | `token`              | One bearer credential: label, optional expiry, coarse last-used, and the hash of its secret.                                                        |
 | `actor`              | One declared actor, the name writes are attributed to, and the tier it writes at.                                                                   |
 | `agent`              | One declared agent: an LLM-loop callable ([agents](agents.md)).                                                                                    |
@@ -198,5 +199,5 @@ The nine [declarable kinds](vocabulary.md#the-declarable-kinds) — `authority`,
 `temporal`, which puts a record on the timeline, and the `accountconfig` and
 `oauth2` interfaces the OAuth facility recognizes.
 
-Back to [substrate.reamde.dev](../README.md), or reread the [introduction](introduction.md) with the pieces
+Back to [the README](../README.md), or reread the [introduction](introduction.md) with the pieces
 in place.

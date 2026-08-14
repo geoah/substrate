@@ -19,7 +19,9 @@ resting state for a substrate that already has its user. The code is compared
 in constant time.
 
 Users cannot see each other, and there is no admin user. The operator acts on
-the box, through [substratectl's operator hat](operations.md#operator-recovery).
+the box, through
+[substratectl's operator mode](operations.md#operator-recovery) (its "operator
+hat", the DSN-speaking side of the CLI).
 
 ## Registering
 
@@ -41,8 +43,16 @@ POST /register
 {"inviteCode": "…", "username": "ada", "password": "…",
  "totpSecret": "JBSWY3DPEHPK3PXP", "totpCode": "123456", "label": "laptop"}
 
-→ 201 {"token": {…}, "secret": "substrate_tok_…"}
+→ 201 {"token": {…}, "secret": "substrate_tok_…",
+       "recoveryKey": "AGE-SECRET-KEY-1…", "recoveryPublicKey": "age1…"}
 ```
+
+A request that names no `recoveryPublicKey` asks the server to mint the
+recovery pair, and the response carries the age identity exactly once,
+beside the token secret: that `recoveryKey` is what opens the repository's
+`recoverykey` record in a backup, and the substrate never stores it. A
+client that generated its own pair sends `recoveryPublicKey` instead and no
+key comes back.
 
 That second call is **one creation act**: the seed of the shipped vocabulary,
 the sealed material, the credential record and the first token all commit as
@@ -121,7 +131,7 @@ Authorization: Bearer substrate_tok_…
 
 ## The credential, and the password-factor rule
 
-The user's own auth material is a singleton record,
+The user's own auth material is one record,
 `core.substrate.reamde.dev/credential` at id `self`. It carries the username and two
 secret-typed references into the repository's sealed store — one for the
 password hash (argon2id), one for the TOTP seed and its replay counter. **The
@@ -158,23 +168,23 @@ TOTP is RFC 6238: SHA-1, six digits, a 30-second step, one step of skew either
 way. Codes are one-time — the consumed step is compare-and-swapped under a row
 lock, so two requests racing on one code cannot both win.
 
-## Rate limits and lockout
+## Rate limits
 
 Registration and the credential endpoints are the substrate's only
-unauthenticated write paths, so they share one posture: one attempt per five
-seconds keyed per (client IP, username) and per username, under one global
-bucket 32 attempts wide so a flood is bounded without an honest login waiting
-out somebody else's; plus a consecutive-failure
-lockout (five failures buys a minute, doubling to a one-hour cap, cleared by a
-success). An attempt is a gesture rather than a request: registration is two
-calls — `/register/enroll` then `/register` — and they share one attempt, so
-the pair goes through back to back while the next registration still waits out
-the interval. The peer address is the transport's,
+unauthenticated write paths, so they share one posture. Attempts are paced to
+one per five seconds, keyed by (client IP, username) and by username alone,
+under one global bucket 32 attempts wide, so a flood is bounded without an
+honest login waiting out somebody else's. There is no failure lockout: a
+lockout keyed off the caller is a denial-of-service lever rather than a
+defense, so pacing is all there is. One user action counts as one attempt
+even when it takes two requests: `/register/enroll` and `/register` share an
+attempt, so the pair goes through back to back while the next registration
+still waits out the interval. The peer address is the transport's,
 never a header's. A refusal is `429 rate_limited` with a `Retry-After`.
 
 Everything authenticated is unmetered.
 
-## Actors, again
+## Actors are attribution, not authorization
 
 Writes carry an [actor](api.md#actors), and it is worth restating here what it
 is not: an actor is attribution, not authorization. A token holds its whole
@@ -192,13 +202,14 @@ machine that gets wiped daily — every `mise run dev*` task sets it, and nothin
 else in the tree does. On a reachable deployment it would make a leaked
 password the account, which is the whole reason the second factor is there.
 
-What does NOT change: the password is still required and still argon2id, the
+What does **not** change: the password is still required and still argon2id, the
 [password-factor rule](#the-credential-and-the-password-factor-rule) still
 refuses a bearer token as evidence for a credential change, the rate limits are
 untouched, and a seed is still minted and sealed with every credential — the
 factor is off, not absent.
 
-A deployment SAYS which door it runs, unauthenticated, at `GET /api`:
+A deployment states, unauthenticated at `GET /api`, whether it verifies the
+second factor:
 
 ```json
 { "auth": { "totpRequired": false } }
@@ -209,7 +220,7 @@ so neither prompts for a code nothing will check; a client that cannot reach
 discovery, or one talking to a substrate too old to answer, asks for a code as
 before.
 
-Putting the factor back is one restart — but a user who REGISTERED while it was
+Putting the factor back is one restart — but a user who **registered** while it was
 off holds no authenticator, because the seed sealed with their credential was
 minted server-side and shown to nobody. Reset them (below), or wipe the
 database.

@@ -103,7 +103,7 @@ key-wise; a raw -p patch may use null values to delete keys.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&authority, "authority", "g", "", "type authority for a bare plural")
+	cmd.Flags().StringVarP(&authority, "authority", "g", "", "kind authority for a bare plural")
 	cmd.Flags().StringArrayVar(&states, "state", nil, "state transition name=state (repeatable)")
 	cmd.Flags().StringArrayVar(&labels, "label", nil, "label key=value (repeatable)")
 	cmd.Flags().StringArrayVar(&properties, "prop", nil, "property key=value (repeatable)")

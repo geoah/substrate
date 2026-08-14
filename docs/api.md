@@ -1,7 +1,7 @@
 # The API
 
-One surface for everything. Four reads (`record`, `records`, `search`,
-`changelog`) plus a watch stream, and seven mutations. A new kind never adds an
+The substrate serves one surface for everything: four reads (`record`,
+`records`, `search`, `changelog`) plus a watch stream, and seven mutations. A new kind never adds an
 endpoint: the REST path pattern is the same routes for every authority, and the
 [GraphQL](graphql-and-search.md) schema is generated from the loaded kinds.
 This page is the REST surface, the filter grammar, pagination, the mutations,
@@ -50,8 +50,9 @@ GET /api/v1/core.substrate.reamde.dev/kinds/tasks.substrate.reamde.dev%2Ftask
 
 Reverse edges are a derived view of their own, paged separately so a popular
 record's fan-in never inflates its document. The response is
-`{"incoming": [{"rel": …, "from": {"id", "kind", "title"}}], "cursor": …,
-"total": n}`, ordered by `rel`, then source kind, then source id.
+`{"incoming": [{"rel": …, "via": "edge" | "reference", "createdAt": …,
+"from": {"id", "kind", "title"}}], "cursor": …, "total": n}`, ordered by
+`rel`, then source kind, then `via`, then newest first.
 
 ## The flat record
 
@@ -176,12 +177,13 @@ and passed whole to GraphQL's `filter` argument:
 ```
 
 - `kinds` names kinds by reference (implied by the path on a REST collection).
-- `properties` carries one condition per property. Which operators a property
-  offers is decided by its declared
-  [property type](data-model.md#property-types): `eq`, `in`, and `prefix` for
-  the string family; `gt`, `gte`, `lt`, `lte` for numbers and datetimes;
-  `contains` for `repeated` properties; `exists` for presence. State
-  properties filter here like any other.
+- `properties` carries one condition per property. The operator set is one
+  rule, not a per-type table: `secret` and `digest` properties refuse
+  filtering entirely, `reference` takes `eq`, `in`, `contains` and `exists`,
+  and every other declared property takes the full grammar (`eq`, `gt`,
+  `gte`, `lt`, `lte`, `in`, `prefix`, `contains`, `exists`), compared as its
+  declared [property type](data-model.md#property-types). State properties
+  filter here like any other.
 - `labels` matches the short, indexed metadata, and takes the **same condition
   objects** a property does: `{"owner/starred": {"eq": true}}`, never a bare
   value.
@@ -211,8 +213,8 @@ never a silent success. On a collection list the path names the kind, so an
 explicit `filter.kinds` conflicts and is refused (drop it, or list a different
 collection). A `watch=1` stream ignores the list-query grammar, so
 `filter`/`orderBy`/`first`/`after`/`withEdges`/`withAnnotations` alongside it
-are refused. A reverse-edge (`incoming`) read honors only `first`/`after`, so
-`filter`/`orderBy` are refused. A misspelled ordering column is refused naming
+are refused. A reverse-edge (`incoming`) read honors `first`/`after` and the `rel` and
+`fromKind` narrowings; `filter`/`orderBy` are refused. A misspelled ordering column is refused naming
 the camelCase replacement, and a malformed filter document is refused naming
 the field that would not decode.
 
@@ -244,11 +246,11 @@ rejected rather than silently mis-seeking. An exhausted list carries no
 `cursor` at all over REST, and an empty one over GraphQL; both mean the same
 thing, there is no next page.
 
-The continuation rule is one sentence: **transparent sequence numbers are
-`from` and `before`; opaque cursors are `after`.** The changelog's history and
-watch use the transparent `seq` (it is a real, meaningful ordinal, so its
-history response returns a `cursor` seq to pass as the next `before`); record
-lists and reverse-edge (`incoming`) lists use the opaque `after` cursor.
+Two continuation styles exist, and the parameter name says which you are
+holding. The changelog uses real sequence numbers, `from` forward and `before`
+backward, because a seq is a meaningful ordinal (its history response returns
+a `cursor` seq to pass as the next `before`). Record lists and reverse-edge
+(`incoming`) lists use an opaque cursor, passed back as `after`.
 
 Every list response also carries the changelog **head** seq captured at the snapshot
 it was served from, pinned once at the walk's start and carried through the
@@ -260,16 +262,18 @@ handoff has no gap and no double-see.
 ## Discovery
 
 `GET /api` is discovery. It is unversioned and unauthenticated, and opens no
-repository, so a client can call it before it holds a token. It reports the
-served API versions, the server build, the binary's maximum
-[vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract) (a
-repository's own stored dialect is internal to its store and never on the wire;
-a binary too old for it refuses the open, which surfaces as `unavailable`), the
-[changelog horizon](changelog.md#frames-and-the-horizon), the reference **grammar**
-this deployment speaks, the door endpoints beside the versioned API, what those
-doors ask for, and a feature list. That feature list is what replaces probing
-for 501s: each entry names a feature and its stability, and the agent surface
-reports `alpha`:
+repository, so a client can call it before it holds a token. It reports: the
+served API versions; the server build; the binary's maximum
+[vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract);
+the [changelog horizon](changelog.md#frames-and-the-horizon); the reference
+grammar this deployment speaks; the authentication endpoints beside the
+versioned API (`/register`, `/login`, `/tokens`, `/password`, `/totp`);
+whether the second factor is verified (`auth.totpRequired`); and a
+feature list. (A repository's own stored dialect never appears on the wire; a
+binary too old for a store refuses to open it, which surfaces as
+`unavailable`.) That feature list is what replaces probing for 501s: each
+entry names a feature and its stability, and the agent surface reports
+`alpha`:
 
 ```json
 {"versions": [{"name": "v1", "status": "served"}],
@@ -294,7 +298,8 @@ it is `false` only where the second factor is
 a local substrate. It states a requirement, never a verdict — the service
 refuses on its own terms either way.
 
-Address `/api/v1`. Today it is the only prefix served, and `versions` is where
+Send every request to the `/api/v1` prefix. Today it is the only prefix
+served, and `versions` is where
 that is said: were a deployment ever to answer on a second one, it would be
 listed there as `deprecated` with the prefix that replaces it, and every
 response on it would carry a `Warning` header (RFC 7234 warn-code 299) naming
@@ -315,14 +320,14 @@ closed and flat, seven names:
 ```
 console            a write from the console
 substratectl              a write from the command line
-api                a write from a client holding a token, door unnamed
+api                a write from a client holding a token, client unnamed
 connector:<name>   a connector's own hand
 function:<name>    a function's or an agent's effects
 bundle:<name>      a bundle writing its own declarations
 substrate          the engine's own hand
 ```
 
-A request names its door with the optional `X-Substrate-Actor` header, and a
+A request names its actor with the optional `X-Substrate-Actor` header, and a
 request that names none is `api`, which is exactly what the substrate knows
 about it. This is **attribution, not authorization**: a token has full access
 to its repository either way, so there is nothing an actor name could unlock.
@@ -341,15 +346,11 @@ Attribution is load-bearing three ways:
 - **Self-exclusion**: a [function](functions.md) never sees writes carrying
   its own actor, which is one half of what keeps functions from looping.
 
-The manager **tier** a write holds at is explicit data on the write context,
-never derived from an actor's name: the three human doors (`api`, `console`,
-`substratectl`) write at the owner tier, function and agent dispatch stamps the
-bundle tier, a declared actor document may carry
-`tier: owner|bundle|machine` (machine is the default for an
-authority-declared actor), and an actor no declaration knows — a stranger's
-own client — holds at the owner tier. The tier is read from the live
-declarations on every write, not frozen when a token was minted, so
-re-declaring it takes effect at once.
+The manager **tier** a write holds at (owner, bundle, or machine) is explicit
+data on the write context, never derived from an actor's name: the three
+interactive clients (`api`, `console`, `substratectl`) write at the owner
+tier. [Managed properties](projection.md#managed-properties) owns the tier
+rules, who writes at which tier, and how recompute yields to them.
 
 ## The canonical envelope
 
@@ -422,7 +423,7 @@ case is worth calling out: a well-formed token whose repository cannot be
 opened answers `unavailable`, never a masked `401`, so a store the binary
 cannot serve is diagnosable instead of looking like a bad credential.
 
-The same problem object appears in a GraphQL error's `bundles` and in the
+The same problem object appears under `extensions` in a GraphQL error and in the
 [watch stream](changelog.md)'s terminal error frame, so an error means the same
 thing wherever it surfaces. An unmatched path under an API prefix is that same
 object with `404 not_found` — never the console's HTML with a 200.
@@ -433,4 +434,4 @@ telling a consumer that has fallen too far behind to re-list rather than
 silently miss rows. That is the whole closed set; nothing else appears in
 `error.code`.
 
-Next: [users and tokens](auth.md), the door and what a token is.
+Next: [users and tokens](auth.md), the way in and what a token is.

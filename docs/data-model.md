@@ -21,13 +21,12 @@ repository. A repository is:
 
 **The changelog is the truth and the records are its fold.** One piece of code turns
 the first into the second, so a live write and a full rebuild take the same
-path and cannot drift. `substratectl repository rebuild` clears the fold and replays
-the whole changelog into it, reproducing the records bit for bit and appending
-nothing — a required, tested path, not a recovery hope.
+path and cannot drift. `substratectl repository rebuild` replays the whole
+changelog through that same fold code
+([running a substrate](operations.md#operator-recovery)).
 
 The changelog does not carry the side stores' bytes, so **a backup is changelog plus blobs
-plus sealed, as one unit**. That sentence is also the definition of what a
-repository contains.
+plus sealed, as one unit**.
 
 Sequence numbers are per repository, gapless, and assigned at commit, so
 commit-visibility order **is** sequence order and a consumer resuming from a
@@ -57,7 +56,7 @@ Three more words, used precisely on every page:
 - The **envelope** is the four-key document shape every record serializes to:
   `kind`, `metadata`, `data`, `status`.
 - A **manifest** is an envelope-shaped document written to be applied
-  declaratively: a kind declaration in git, an
+  declaratively: a kind declaration in git, a
   [bundle](bundles.md)'s install closure, anything `apply -f` takes.
 
 The envelope is the YAML form. It is what [`substratectl get -o yaml`](substratectl.md)
@@ -133,7 +132,8 @@ Opinions about a record never get welded into it. They layer on under
 - **Annotations**: arbitrary JSON under the same key convention. Fetched
   with the record, never filtered on.
 
-The rule of thumb is mechanical: filter on it, label; blob, annotation.
+The rule of thumb is mechanical: if you need to filter on it, make it a
+label; if it is a blob you only fetch, make it an annotation.
 Writers may only touch their own key namespace.
 
 ## Kinds and references
@@ -162,7 +162,7 @@ its own authority: `people.substrate.reamde.dev`, `messaging.substrate.reamde.de
 `calendar.substrate.reamde.dev`, `tasks.substrate.reamde.dev`, `media.substrate.reamde.dev`, and the
 mneme-ported `health`, `fitness`, `routines`, `journal`, `places`, `food`,
 `commerce` and `memory` under the same domain — each a bundle you
-IMPORT — and `core.substrate.reamde.dev` for the substrate's own machinery, which is the
+**import** — and `core.substrate.reamde.dev` for the substrate's own machinery, which is the
 only one a new repository is seeded with. Authorities namespace names; they
 never partition the data: an edge crosses authorities as easily as it stays
 inside one.
@@ -172,9 +172,7 @@ like everything else, whatever authority it declares into. Your repository was
 seeded with `core.substrate.reamde.dev` when it was created, and everything else — the
 vocabulary above included — arrived as an import you asked for; either way the
 declarations are rows in your repository, not a file the server reads at query
-time. So "what
-does the vocabulary say" is a query, not a file read.
-[Vocabulary as records](vocabulary.md) is that whole story.
+time. [Vocabulary as records](vocabulary.md) is that whole story.
 
 The to-do list needs two kinds. **`people.substrate.reamde.dev/person` ships built in**,
 one record per human, the target of every "a person" edge in the system:
@@ -191,7 +189,7 @@ data:
 ```
 
 The task kind we declare ourselves. Kinds are manifests: YAML documents,
-versioned and reviewed in git (or installed by an
+versioned and reviewed in git (or installed by a
 [bundle](bundles.md)). A declaration wears the same envelope as data,
 and its `kind` is always a core kind — the meta-model lives in
 `core.substrate.reamde.dev` whatever authority the document declares into:
@@ -251,33 +249,37 @@ Every property here names a declared property type (`markdown`, `url`,
 
 ## Property types
 
-Every property declares a type. The type decides two things: what a write
-must look like to be accepted, and which filter operators the query grammar
-offers for it. Nothing else about a property is special; `title` and
-`description` are declared and written identically.
+Every property declares a type. The type decides what a write must look like
+to be accepted and how a filter compares the value. The operator set follows
+one rule rather than a per-type table: `secret` and `digest` refuse filtering
+entirely, `reference` takes `eq`, `in`, `contains` and `exists`, and every
+other type takes the full grammar (`eq`, `gt`, `gte`, `lt`, `lte`, `in`,
+`prefix`, `contains`, `exists`), compared as its declared type. Nothing else
+about a property is special; `title` and `description` are declared and
+written identically.
 
-| Property type      | Validation / meaning                                        | Filter operators |
-| ------------------ | ----------------------------------------------------------- | ---------------- |
-| `string`           | short, single-line                                          | eq, prefix, in   |
-| `text`             | long-form prose                                             | (full-text only) |
-| `markdown`         | `text` renderers treat as Markdown                          | (full-text only) |
-| `int`, `float`     | numbers, optional `min`/`max`                               | eq, range        |
-| `bool`             | true/false                                                  | eq               |
-| `datetime`, `date` | RFC 3339 instants / civil dates                             | range            |
-| `duration`         | e.g. `47m12s`                                               | range            |
-| `email`            | refined `string`, RFC 5322 mailbox                          | eq               |
-| `url`              | refined `string`, absolute URL                              | eq, prefix       |
-| `phone`            | refined `string`, E.164 normalized                          | eq               |
-| `timezone`         | IANA zone name                                              | eq               |
-| `recurrence`       | RFC 5545 RRULE string                                       | eq               |
-| `enum`             | one of declared `values`                                    | eq, in           |
-| `state`            | a state machine: `states`, `initial`, `transitions`, stamps | eq, in           |
-| `secret`           | a credential: written like a string, read back redacted, stored in the sealed store | (none) |
-| `digest`           | a server-minted SHA-256 comparator, redacted like a secret  | (none)           |
-| `blobref`          | names stored bytes by digest                                | (none)           |
-| `object`           | inline `fields:` of scalar types, one level                 | (none)           |
-| `reference`        | a typed pointer at another record: `{kind, id}`             | (none)           |
-| `json`             | escape hatch: schemaless blob, never filtered               | (none)           |
+| Property type      | Validation / meaning                                        |
+| ------------------ | ----------------------------------------------------------- |
+| `string`           | short, single-line                                          |
+| `text`             | long-form prose                                             |
+| `markdown`         | `text` renderers treat as Markdown                          |
+| `int`, `float`     | numbers, optional `min`/`max`                               |
+| `bool`             | true/false                                                  |
+| `datetime`, `date` | RFC 3339 instants / civil dates                             |
+| `duration`         | e.g. `47m12s`                                               |
+| `email`            | refined `string`, RFC 5322 mailbox                          |
+| `url`              | refined `string`, absolute URL                              |
+| `phone`            | refined `string`, E.164 normalized                          |
+| `timezone`         | IANA zone name                                              |
+| `recurrence`       | RFC 5545 RRULE string                                       |
+| `enum`             | one of declared `values`                                    |
+| `state`            | a state machine: `states`, `initial`, `transitions`, stamps |
+| `secret`           | a credential: written like a string, read back redacted, stored in the sealed store |
+| `digest`           | a server-minted SHA-256 comparator, redacted like a secret  |
+| `blobref`          | names stored bytes by digest                                |
+| `object`           | inline `fields:` of scalar types, one level                 |
+| `reference`        | a typed pointer at another record: `{kind, id}`             |
+| `json`             | escape hatch: a schemaless blob                             |
 
 Our to-do list already uses four: the task's `description` is `markdown`,
 its `url` is a `url`, `dueAt` is a `datetime`, and `status` is a `state`.
@@ -317,7 +319,7 @@ like any other property, but the material never lands in the record: the
 engine moves it into the sealed store (encrypted, AES-256-GCM under the
 deployment's credential key) and the record and the changelog carry only an
 opaque ref, so rotation deletes the old material instead of retiring it into
-an immutable log. Every read, whatever the surface, returns the sentinel
+the immutable changelog. Every read, whatever the surface, returns the sentinel
 `<redacted>`. Applying a document carrying the sentinel back leaves the
 stored value alone, so a read-edit-apply round trip never wipes a
 credential. A secret offers no filter operators and cannot be ordered by
@@ -353,7 +355,7 @@ consumer needs them.
 
 **References.** A `reference` is a typed pointer stored as a property value:
 the same `{kind, id}` pair an edge target wears, but data, not a graph edge.
-Reach for it where a manifest field needs to NAME another record, like a
+Reach for it where a manifest field needs to **name** another record, like a
 trigger's `callable`:
 
 ```yaml
@@ -366,16 +368,16 @@ An optional `to:` pins the referent kind, exactly like an edge's `to:`;
 `to: any` (and an absent `to:`) leaves it unconstrained, and then the value
 must carry an explicit kind. A value is `{kind, id}`, and a bare id string is
 accepted only when `to:` pins a concrete kind. Validation checks the shape and
-that the referent KIND exists; the referent RECORD need not exist at write
+that the referent **kind** exists; the referent **record** need not exist at write
 time, because a reference is a pointer, not an edge. `repeated: true` holds a
 list of references. The [console](console.md) renders a reference as a link
 to the referent's detail page.
 
-A reference is not an edge. An edge is a traversable relationship with its own
+A reference is not an edge. An edge is a traversable link with its own
 [incoming views](api.md#rest-resources) and its part in
 [record mapping](projection.md) subject resolution; a reference is an inert
-value you read and rewrite like any other property. Point at a record as a
-relationship with an edge; name one as data with a reference.
+value you read and rewrite like any other property. Point at a record with an
+edge when the graph should see the link; name one as data with a reference.
 
 **Blob references.** A `blobref` names stored bytes by their digest. The bytes
 live in the repository's content-addressed blob store
@@ -407,8 +409,8 @@ data:
   pattern: "^(97[89])?[0-9]{9}[0-9X]$"
 ```
 
-Because the declaration is a record, "what does `isbn` validate" is a
-query, not a file read.
+Because the declaration is a record, clients can query what `isbn`
+validates.
 
 **Search coverage.** Full-text search covers the title and every string-family
 property by default; a property may additionally declare `embed: true` to opt
@@ -469,14 +471,15 @@ answers every `Temporal` query. (Temporal properties are the substrate's one
 lives in core.)
 
 **Bundle traits.** A few traits are more than shared properties: the host
-recognizes them by identity and builds behavior on top. These are how an
+recognizes them by identity and builds behavior on top. These are how a
 [bundle](bundles.md) declares the pieces the substrate's OAuth
 facility and lifecycle machinery need to see. Two ship in core:
 
 - **`accountconfig`** is a **Connection** kind. Binding it gives the kind
-  `tokenRef` (a secret), `tokenStatus`, and a repeated `grantedScopes`, the
-  properties the OAuth facility owns and writes as a provider account connects
-  and syncs.
+  `tokenRef` (a secret), `tokenStatus`, and `grantedScopes` (a plain string
+  in the trait; the provider kinds redeclare it `repeated`), the properties
+  the OAuth facility owns and writes as a provider account connects and
+  syncs.
 - **`oauth2`** carries the OAuth client credentials, `clientId` and a
   secret-typed `clientSecret`, for a bundle that speaks OAuth.
 

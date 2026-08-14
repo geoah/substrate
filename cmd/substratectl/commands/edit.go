@@ -18,7 +18,7 @@ func (a *app) editCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "edit <plural> <id>",
 		Short: "Edit a record in $EDITOR and apply the result",
-		Long: `Open the record's manifest (authority/type/metadata/data/status) in
+		Long: `Open the record's manifest (kind/metadata/data/status) in
 $EDITOR, then apply what comes back. The ` + "`status`" + ` block is server-set and
 ignored on the way in; emptying the file aborts.`,
 		Args: cobra.ExactArgs(2),
@@ -65,7 +65,7 @@ ignored on the way in; emptying the file aborts.`,
 			return a.applyDocument(ctx, cl, d)
 		},
 	}
-	cmd.Flags().StringVarP(&authority, "authority", "g", "", "type authority for a bare plural")
+	cmd.Flags().StringVarP(&authority, "authority", "g", "", "kind authority for a bare plural")
 	return cmd
 }
 

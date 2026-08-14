@@ -7,13 +7,13 @@ how to stand one up and look after it.
 
 ## What it needs
 
-- **Postgres**, with the `vector` and `pgcrypto` bundles available. The
+- **Postgres**, with the `vector` and `pgcrypto` extensions available. The
   binary runs its own migration at boot, creates the two roles isolation rests
   on (`substrate_app`, bound by row level security, and `substrate_maint`,
   which bypasses it for registration and cross-repository lookups), and enables
-  the bundles, so the DSN it starts with must be allowed to do those things.
-- **One port**. The service serves the API under `/api`, the door endpoints
-  beside it, and the console at `/`.
+  the extensions, so the DSN it starts with must be allowed to do those things.
+- **One port**. The service serves the API under `/api`, the authentication
+  endpoints beside it, and the console at `/`.
 - **Nothing else.** Search, the change feed, the function runner, and the OAuth
   facility are all in the one process; the image also carries `python3`, the Go
   toolchain, and `uv`, because [functions](functions.md) run as child
@@ -35,13 +35,13 @@ boot.
 | `PORT`                         | `8080`                                 | The port served.                                                                                          |
 | `LOG_LEVEL`                    | `info`                                 | `debug`, `info`, `warn`, `error`.                                                                         |
 | `WEB_DIR`                      | —                                      | The built console, served at `/`. Empty disables static serving.                                          |
-| `SUBSTRATE_INVITE_CODE`        | — (unset: registration is off)         | The one door. See below.                                                                                  |
+| `SUBSTRATE_INVITE_CODE`        | — (unset: registration is off)         | The one way in. See below.                                                                                  |
 | `SUBSTRATE_CREDENTIAL_KEY`     | —                                      | Seals the sealed store, which holds every secret-typed property's material (AES-256-GCM). Unset stores payloads unsealed, with a boot warning; `repository reseal` upgrades once it is set. |
-| `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                             | **Local development only.** Stops verifying the second factor, so a password is the whole credential: see [the dev door](auth.md#the-second-factor-can-be-switched-off-locally). Boots with a warning, and `GET /api` says so. |
+| `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                             | **Local development only.** Stops verifying the second factor, so a password is the whole credential: see [the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally). Boots with a warning, and `GET /api` says so. |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. Unset mints a random key per boot, with a warning: flows in progress break on restart. |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers.                                                        |
 | `SUBSTRATE_CONSOLE_URL`        | —                                      | The console origin the OAuth return-page posts to and falls back to redirecting into. Empty is local dev. |
-| `SUBSTRATE_LLM_BASE_URL`       | — (unset: no embedder)                 | The host's OpenAI-compatible gateway: it backs embeddings, and it is what the seeded `default` provider resolves to. |
+| `SUBSTRATE_LLM_BASE_URL`       | — (unset: no embedder)                 | The host's OpenAI-compatible gateway: it backs embeddings, and an `openai`-wire provider row with an empty `baseURL` resolves to it. |
 | `SUBSTRATE_LLM_API_KEY`        | —                                      | The bearer for that gateway, and the fallback key for a provider row that names neither a `baseURL` nor an `apiKey`. Absent means no embedder: the embed queue simply does not drain. |
 | `SUBSTRATE_LLM_EMBED_MODEL`    | `text-embedding-3-small`               | Must be a 1536-dimension model.                                                                           |
 | `SUBSTRATE_SANDBOX`            | `best-effort`                          | How hard to confine function bodies: `off`, `best-effort`, or `enforce` (refuse to run a body unconfined). |
@@ -68,7 +68,7 @@ which turns that into a refusal to run bodies at all.
 
 **Both layers work in a stock container**: Docker's and containerd's default
 seccomp profiles permit the `landlock_*` and `seccomp` syscalls, and neither
-needs a capability. What does NOT work in a stock container is anything built
+needs a capability. What does **not** work in a stock container is anything built
 on user namespaces or cgroup delegation: `CLONE_NEWUSER` is denied by the
 default profile and `/sys/fs/cgroup` is mounted read-only, which is why the
 sandbox has no memory or process-count ceiling. Do not add `--privileged` to
@@ -77,27 +77,24 @@ try to get one.
 ## The invite code
 
 `SUBSTRATE_INVITE_CODE` is the only way a user gets created. Set it, register,
-then unset it and restart — with it unset the registration endpoints answer
-`501 unsupported`, which is the right resting state for a substrate that
-already has its user. Registration is rate-limited and lockout-guarded whether
-or not the code is set ([users and tokens](auth.md)).
+then unset it and restart: with it unset, registration is closed
+(`501 unsupported`). Registration is rate-limited (paced, with no failure
+lockout) whether or not the code is set ([users and tokens](auth.md)).
 
 There is no admin user and no operator password. Everything privileged happens
 on the box, through the DSN.
 
 ## What happens at boot
 
-- The migration runs, under an advisory lock, and the roles and bundles are
-  ensured.
+- The migration runs, under an advisory lock, and the roles and Postgres
+  extensions are ensured.
 - Each repository is opened the first time something touches it. Opening
   rebuilds its kind registry **from its own stored declaration records** —
   nothing on the serving path reads the binary's embedded tree.
-- **Shipped vocabulary is upgraded, per repository, in one transaction.** Every
-  declaration carries a version; the first open under a new binary diffs the
-  binary's shipped declarations against the stored ones and appends the
-  difference to that repository's changelog as explicit entries under the `substrate`
-  actor. Same-or-newer only: never a downgrade, never a prune. An unchanged
-  tree writes nothing at all, and a repository nobody opens is never touched.
+- **Shipped vocabulary is upgraded, per repository, in one transaction**: the
+  first open under a new binary appends the version diff to that repository's
+  changelog under the `substrate` actor
+  ([the boot-time upgrade](vocabulary.md#how-the-vocabulary-reaches-a-repository)).
 - Persisted function bodies re-warm in the background. One that no longer
   prepares logs an error naming the function, and its deliveries park rather
   than the repository failing.
@@ -116,22 +113,18 @@ scale.
 
 Two safety rails matter when you roll a new image forward.
 
-**The vocabulary dialect** is a monotonic integer stamped on each repository,
-describing the shape its stored declarations are written in. A binary whose
-maximum is **below** a repository's stored dialect refuses to open it, with a
-named error, rather than misreading rows a newer shape wrote. The API surfaces
-that refusal as `503 unavailable` with a `Retry-After` — never as an invalid
-token, so a store the binary cannot serve is diagnosable. Rolling back to the
-older binary, or forward to a newer one, is the fix.
+A binary too old for a repository's stored
+[vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)
+refuses to open it, and the API surfaces that refusal as `503 unavailable` with
+a `Retry-After`, never as an invalid token, so a store the binary cannot serve
+is diagnosable. Rolling back to the older binary, or forward to a newer one, is
+the fix.
 
-**Quarantine** covers the other direction. A binary that tightens a contract
-can make an already-installed bundle's stored closure fail admission. The
-repository is not bricked: it installs the maximal admissible subset and
-quarantines the rest, logging each failed authority with its reason, leaving it
-out of the live registry (its kinds refuse writes, its callables do not run)
-and marking it on its `authority` record so the console shows "needs
-re-install". Re-installing that bundle clears the marker, and so does a
-later open under a binary that relaxed the contract again.
+[Quarantine](vocabulary.md#quarantine) covers the other direction: a binary
+that tightens a contract quarantines each installed bundle whose stored
+closure no longer admits, rather than bricking the repository, and
+re-installing the bundle (or a later open under a binary that relaxed the
+contract) clears the marker.
 
 ## Backups
 
@@ -150,9 +143,10 @@ and its indexes are derived; the changelog is the truth.
 
 ## Operator recovery
 
-The operator's hat on [substratectl](substratectl.md) speaks to Postgres directly and holds
-no token. It needs `--dsn` (or `DATABASE_URL`), and refuses before touching
-anything without one.
+Operator commands (the "operator hat" of
+[substratectl](substratectl.md#two-hats)) speak to Postgres directly over the
+DSN and hold no token. They need `--dsn` (or `DATABASE_URL`), and refuse
+before touching anything without one.
 
 ```
 DATABASE_URL=… substratectl repository list
@@ -186,10 +180,11 @@ SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl user reset ada
   prints a fresh TOTP enrollment. The data is untouched; the account gets new
   keys. There is no self-serve recovery, deliberately.
 
-Two disciplines keep the operator hat honest, and are worth knowing because
-they explain its output: it opens the engine with an empty registry, so an
-operator command can never re-vocabulary a repository from the CLI's own build;
-and its reads assume the `substrate_app` role, because row level security does
+Two rules keep operator commands honest, and they explain the output: the CLI
+opens the engine with an empty registry, so an operator command can never
+overwrite a repository's stored vocabulary with the declarations compiled into
+the CLI's own build; and its reads assume the `substrate_app` role, because
+row level security does
 not bind a superuser and an operator DSN usually is one — without that,
 `inspect` would count every repository's rows and report them as one user's.
 
@@ -200,5 +195,5 @@ No erasure, compaction, or retention policy: the changelog keeps everything, and
 horizon stays 0. The changelog is unsigned — trusted storage, not evidence. Each of
 those is a deliberate absence, not an oversight.
 
-Next: the [built-in kinds](builtin-kinds.md), the vocabulary every repository
-starts with.
+Next: [the live tests](testing.md), the one suite that talks to real LLM
+providers.

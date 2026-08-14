@@ -5,8 +5,9 @@ software talks to instead of keeping its own copy.
 
 One invite code admits a person. Registering creates a **user** — username,
 password and TOTP — and that user's one **repository**. Everything they own
-lives in it: an append-only changelog is the truth, and the records you read are its
-fold, so what you see can never drift from what actually happened. Tokens and
+lives in it: an append-only changelog is the source of truth, and the records
+you read are computed by replaying it, so what you see can never drift from
+what actually happened. Tokens and
 the login credential are records like any other.
 
 Records have a **kind**, kinds are declared in YAML, and a **bundle** installs
@@ -30,12 +31,12 @@ write a record, watch it land:
 ```bash
 mise run build:cli
 
-# The invite code is the one door. This asks for a username and password,
+# Registration needs the invite code. This asks for a username and password,
 # prints a TOTP enrollment once for your authenticator, and ends logged in:
 # the token it mints is stored as a context in ~/.config/substratectl.
 bin/substratectl register --server http://localhost:8080
 
-# A new repository holds the CORE vocabulary and nothing else — there is no
+# A new repository holds the core vocabulary and nothing else — there is no
 # `tasks` collection to get yet. Install the bundle that ships one. This is
 # the same closure the catalog serves, applied from the tree. Tasks name an
 # assignee, so people comes first:
@@ -68,19 +69,21 @@ bin/substratectl watch                   # the changelog, streaming
 
 The console's Registry page installs the same bundle from the catalog compiled
 into the binary, and so does
-`POST /api/v1/core.substrate.reamde.dev/catalog/{id}/install` — all three are
-the same admission. [`docs/getting-started.md`](docs/getting-started.md) walks
+`POST /api/v1/core.substrate.reamde.dev/catalog/{id}/install`: all three run
+the same install path and validation, which
+[docs/vocabulary.md](docs/vocabulary.md#admission) calls admission.
+[`docs/getting-started.md`](docs/getting-started.md) walks
 the same path in full.
 
 ### Running an agent
 
 A fresh repository holds no LLM provider: a provider row carries the wire, the
-endpoint and the KEY, and a substrate cannot invent a key. Registry →
+endpoint and the key, and a substrate cannot invent a key. Registry →
 **Examples** → the LLM example installs two keyless rows (`anthropic`,
 `openai`) and an agent chain that uses them, or apply the same closure from the
 tree:
 
-```sh
+```bash
 bin/substratectl apply \
   -f kinds/llm.examples.substrate.reamde.dev/bundle.yaml \
   -f kinds/llm.examples.substrate.reamde.dev/providers.yaml
@@ -89,7 +92,7 @@ bin/substratectl apply \
 Then put a key on the row — it is an ordinary record write, and `apiKey` is
 secret-typed, so it reads back redacted ever after:
 
-```sh
+```bash
 cat <<'EOF' | bin/substratectl apply -f -
 kind: core.substrate.reamde.dev/llmprovider
 metadata: {id: anthropic}
@@ -112,7 +115,7 @@ budgets.
 | `PORT`                         | `8080`                          |                                                                |
 | `LOG_LEVEL`                    | `info`                          | debug/info/warn/error                                          |
 | `WEB_DIR`                      | —                               | the built console, served at `/`; empty disables it            |
-| `SUBSTRATE_INVITE_CODE`        | — (unset ⇒ registration closed) | the one door: `POST /register` needs it                        |
+| `SUBSTRATE_INVITE_CODE`        | — (unset ⇒ registration closed) | required by `POST /register`                                   |
 | `SUBSTRATE_CREDENTIAL_KEY`     | —                               | seals the sealed store (provider tokens, every secret property's material); unset ⇒ plaintext and a warning |
 | `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                      | **local development only**: stops verifying the second factor, so a password is the whole credential |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                               | the one redirect URI providers register                        |
@@ -122,11 +125,9 @@ budgets.
 | `SUBSTRATE_LLM_API_KEY`        | —                               | its bearer; unset ⇒ no embedder and the embed queue idles      |
 | `SUBSTRATE_LLM_EMBED_MODEL`    | `text-embedding-3-small`        | must be 1536-dim                                               |
 
-Those three configure the **host gateway** and nothing else. Anywhere else an
-agent buys completions — OpenRouter, Anthropic natively, an Azure deployment —
-is a record, not configuration:
-[registering a provider](docs/agents.md#registering-a-provider) writes one, and
-[testing a provider](docs/agents.md#testing-a-provider) proves it.
+Those three configure the **host gateway** and nothing else; every other place
+an agent buys completions is a provider record, as
+[docs/agents.md](docs/agents.md#providers) explains.
 
 ## Development
 
@@ -134,13 +135,13 @@ Toolchain is [mise](https://mise.jdx.dev). `mise install` once, then:
 
 ```bash
 mise run dev            # Postgres in a container + the server on :8080
-mise run dev:totp       # the same, with the second factor ENFORCED
+mise run dev:totp       # the same, with the second factor enforced
 mise run dev:up         # dev, in the background
-mise run dev:status     # what is running, on which URLs, which door
+mise run dev:status     # what is running, on which URLs, whether TOTP is enforced
 mise run dev:logs       # follow the background server
 mise run dev:restart    # rebuild and restart; the data stays
 mise run dev:stop       # stop the server and its Postgres; the data stays
-mise run dev:wipe       # DELETE the database — the next start is a fresh substrate
+mise run dev:wipe       # delete the database — the next start is a fresh substrate
 ```
 
 `docker compose up` builds an image; `mise run dev` runs the binary from the
@@ -149,23 +150,17 @@ tree, so a change is a restart rather than a rebuild. The invite code is
 log live in `.dev/`.
 
 **A fresh substrate means deleting the database.** Registration is one-shot per
-user and there is no unregister, so testing the door twice means throwing it
-away: `mise run dev:wipe` on this path, `docker compose down -v` on the compose
+user and there is no unregister, so testing registration twice means throwing
+the database away: `mise run dev:wipe` on this path, `docker compose down -v` on the compose
 one.
 
-**The second factor is off here, and nowhere else.** Every `mise run dev*` task
-sets `SUBSTRATE_INSECURE_DISABLE_TOTP=true`, so registering takes a username
-and a password, signing in takes the same two, and no authenticator entry is
-enrolled for a repository `dev:wipe` will delete tomorrow. The console and
-`substratectl` both read `GET /api` and stop asking for a code when the
-substrate says it verifies none; `dev:status` prints which door is up, and
-every start says so on its first line. `mise run dev:totp` runs the same
-substrate with the factor enforced — test a change to the door there. A user
-registered while it was off has a seed the substrate minted and nobody holds,
-so putting the factor back means `substratectl user reset <username>` on the
-box (or `dev:wipe`). Set `SUBSTRATE_INSECURE_DISABLE_TOTP=false` in the
-environment to opt out per run; never set it anywhere a substrate is reachable,
-where it would make a leaked password the account.
+**The second factor is off here, and nowhere else.** Every `mise run dev*`
+task except `dev:totp` sets `SUBSTRATE_INSECURE_DISABLE_TOTP=true`, so local
+registering and signing in take only a username and a password. Test a change
+to auth under `mise run dev:totp`, which runs the same substrate with the
+factor enforced.
+[docs/auth.md](docs/auth.md#the-second-factor-can-be-switched-off-locally)
+says exactly what the switch does and does not change.
 
 The server binds every interface, so anything on the same LAN or tailnet
 reaches it — `dev:status` prints the addresses it finds. That is the point when
@@ -181,7 +176,7 @@ mise run console:build  # -> web/console/dist, served by the substrate at /
 mise run console:dev    # or the live one on :5173, proxying /api to :8080
 ```
 
-The operator hat wants the DSN, never HTTP:
+Operator commands talk to Postgres directly over the DSN, never over HTTP:
 
 ```bash
 bin/substratectl --dsn "$(mise run dev:dsn)" repository list
@@ -222,7 +217,7 @@ not merge.
 [`docs/`](docs/README.md) builds one thing — a to-do list — from registration
 through to the API call that completes a task: the
 [data model](docs/data-model.md), the [API](docs/api.md),
-[extensions and functions](docs/extensions.md), and
+[bundles](docs/bundles.md) and [functions](docs/functions.md), and
 [running a substrate](docs/operations.md).
 
 `AGENTS.md` is the guide for anyone — person or agent — working on this code.
