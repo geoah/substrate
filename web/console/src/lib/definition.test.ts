@@ -213,7 +213,10 @@ describe("declaration detail", () => {
             { value: "daily", label: "" },
           ],
         },
-        owner: { type: "reference", to: "people.substrate.reamde.dev/person" },
+        owner: {
+          type: "reference",
+          kind: "people.substrate.reamde.dev/person",
+        },
         plain: { type: "string" },
       },
       edges: { subject: { to: "issue", required: true } },

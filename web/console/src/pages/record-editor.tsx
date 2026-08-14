@@ -63,10 +63,12 @@ import { toast } from "@/components/ui/toast"
 import { createRecord, recordQueryOptions, putRecord } from "@/lib/api/records"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import { ApiError, type SubstrateRecord, type KindInfo } from "@/lib/api/types"
+import { AGENT_KIND, grantHints } from "@/lib/agent-grants"
 import {
   applyManifestYAML,
   formatYAML,
   parseApplyDoc,
+  propertiesOf,
   templateYAML,
   toPutInput,
   validateApplyDoc,
@@ -200,10 +202,21 @@ export function RecordEditorForm({
 
   const ctx = useMemo(() => ({ record }), [record])
 
-  const problems = useMemo(
-    () => validateApplyDoc(debounced, kind, ctx),
-    [debounced, kind, ctx]
-  )
+  // The document's own problems, plus the grants an agent's host tools need:
+  // the loader refuses an unpaid tool, so the panel says which property pays
+  // for it rather than letting the apply be the first place it is mentioned.
+  const problems = useMemo(() => {
+    const found = validateApplyDoc(debounced, kind, ctx)
+    if (kind.identity !== AGENT_KIND) return found
+    const hints: Problem[] = grantHints(propertiesOf(debounced)).map(
+      (hint) => ({
+        severity: "warning" as const,
+        message: hint.message,
+        path: hint.property,
+      })
+    )
+    return [...found, ...hints]
+  }, [debounced, kind, ctx])
   // Save is gated on the LIVE text, not the debounced copy — a fast Save right
   // after a fix must see the fix.
   const liveErrors = useMemo(

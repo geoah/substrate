@@ -412,8 +412,8 @@ describe("toProperties explicit clear", () => {
  * `<kind>/<id>`. These hold the join, both directions. */
 describe("reference fields", () => {
   const pointerKind = typeWith({
-    owner: { type: "reference", to: "people.substrate.reamde.dev/person" },
-    callable: { type: "reference", to: "any" },
+    owner: { type: "reference", kind: "people.substrate.reamde.dev/person" },
+    callable: { type: "reference", kind: "any" },
   })
   const fieldsOf = () => buildFormFields(pointerKind)
 
@@ -456,7 +456,7 @@ describe("reference fields", () => {
   it("keeps a declaration id whole: the kind joins in front of its slash", () => {
     const fields = buildFormFields(
       typeWith({
-        of: { type: "reference", to: "core.substrate.reamde.dev/kind" },
+        of: { type: "reference", kind: "core.substrate.reamde.dev/kind" },
       })
     )
     const values = initialValues(fields)
