@@ -26,3 +26,9 @@ dist/
 # `mise run test:coverage` writes.
 .ruff_cache/
 .lycheecache
+
+# Local deployment configuration: these hold KEYS. `.envrc` is direnv's and
+# feeds compose's variable substitution; `.env` is compose's own. Neither is
+# ever committed.
+.envrc
+.env

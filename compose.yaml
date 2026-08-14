@@ -33,6 +33,14 @@ services:
       # Seals stored provider tokens at rest. Unset means plaintext and a
       # warning at boot — fine on a laptop, never on a real deployment.
       SUBSTRATE_CREDENTIAL_KEY: ${SUBSTRATE_CREDENTIAL_KEY:-}
+      # The host's OpenAI-compatible gateway. This is the ONLY thing that backs
+      # embeddings: unset, the embed queue never drains and hybrid search
+      # degrades to lexical. It is deployment configuration, not a record,
+      # because one embedding space has to outlive any provider row.
+      SUBSTRATE_LLM_BASE_URL: ${SUBSTRATE_LLM_BASE_URL:-}
+      SUBSTRATE_LLM_API_KEY: ${SUBSTRATE_LLM_API_KEY:-}
+      # 1536 dimensions, to match the vector columns.
+      SUBSTRATE_LLM_EMBED_MODEL: ${SUBSTRATE_LLM_EMBED_MODEL:-text-embedding-3-small}
       LOG_LEVEL: ${LOG_LEVEL:-info}
 
 volumes:
