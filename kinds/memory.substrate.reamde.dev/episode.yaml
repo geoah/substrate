@@ -14,8 +14,9 @@ data:
     plural: episodes
   displayTemplate: "{name}"
   indices:
-    - - grain
-      - period
+    - properties:
+        - grain
+        - period
   properties:
     name:
       type: string

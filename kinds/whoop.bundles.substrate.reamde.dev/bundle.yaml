@@ -23,7 +23,12 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: whoop.bundles.substrate.reamde.dev
 data:
-  version: v1alpha1
+  # v1alpha2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
+  # declared spellings — whichever of them they used: a tool entry naming its arm,
+  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
+  # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
+  # carries the closure whole rather than saying every declaration in it moved.
+  version: v1alpha2
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members: the two config types,
@@ -70,17 +75,20 @@ data:
     emailProperty: email
     featureScopes:
       enabledRecovery:
-        - read:recovery
-        - read:profile
-        - offline
+        scopes:
+          - read:recovery
+          - read:profile
+          - offline
       enabledSleep:
-        - read:sleep
-        - read:profile
-        - offline
+        scopes:
+          - read:sleep
+          - read:profile
+          - offline
       enabledWorkouts:
-        - read:workout
-        - read:profile
-        - offline
+        scopes:
+          - read:workout
+          - read:profile
+          - offline
   installs:
     - whoop.bundles.substrate.reamde.dev/config
     - whoop.bundles.substrate.reamde.dev/account
@@ -431,14 +439,13 @@ data:
     records, and stamp the account's lastSyncedAt/syncStatus.
   runtime: python
   timeoutMs: 30000
-  capabilities:
-    emit:
-      - whoop.bundles.substrate.reamde.dev/recovery
-      - whoop.bundles.substrate.reamde.dev/sleep
-      - whoop.bundles.substrate.reamde.dev/workout
-      - whoop.bundles.substrate.reamde.dev/account
-    network:
-      - "api.prod.whoop.com"
+  emit:
+    - whoop.bundles.substrate.reamde.dev/recovery
+    - whoop.bundles.substrate.reamde.dev/sleep
+    - whoop.bundles.substrate.reamde.dev/workout
+    - whoop.bundles.substrate.reamde.dev/account
+  network:
+    - "api.prod.whoop.com"
   source: |
     # /// script
     # requires-python = ">=3.11"

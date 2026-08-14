@@ -109,9 +109,7 @@ func mbFnDoc(name, source string) map[string]any {
 		"description": "test function " + name,
 		"runtime":     vocabulary.RuntimePython,
 		"source":      source,
-		"capabilities": map[string]any{
-			"emit": []any{mbMessageType},
-		},
+		"emit":        []any{mbMessageType},
 	})
 }
 
@@ -160,7 +158,7 @@ func mbDocs(installs []string, members ...map[string]any) []map[string]any {
 				"tokenEndpoint":         "https://provider.example/token",
 				"revocationEndpoint":    "https://provider.example/revoke",
 				"featureScopes": map[string]any{
-					"enabledMail": []any{"mail.read", "mail.send"},
+					"enabledMail": map[string]any{"scopes": []any{"mail.read", "mail.send"}},
 				},
 			},
 		}),

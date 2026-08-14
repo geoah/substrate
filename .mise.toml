@@ -267,6 +267,52 @@ depends = ["console:install"]
 # stop the line; the rest are read in the job's output.
 run = "pnpm audit --audit-level high"
 
+# =============================================================================
+# Codegen from the declarations
+# =============================================================================
+#
+# The declarations under kinds/ are the single source of truth for what a record
+# is, and every TYPE representation of them is generated from those files, so
+# the code and the contract cannot drift. The output is CHECKED IN — a reviewer
+# reads the types a declaration change produces, and no consumer needs a
+# generator to build.
+#
+# The naming rule holds here too: the bare name is both halves, and a suffix
+# narrows it to one language.
+
+[tasks."kinds:gen"]
+description = "Generate the core types from kinds/: Go and TypeScript"
+run = "go run ./cmd/kindsgen"
+
+[tasks."kinds:gen:go"]
+description = "Generate internal/corekinds alone"
+run = "go run ./cmd/kindsgen -lang go"
+
+[tasks."kinds:gen:ts"]
+description = "Generate the console's generated module alone"
+run = "go run ./cmd/kindsgen -lang ts"
+
+[tasks."kinds:gen:check"]
+description = "Fail if the generated types are not what the declarations produce, printing the diff"
+# Regenerates into a temporary tree and diffs, so the check never writes into
+# the working tree it is judging. -x '*_test.go': the conformance tests live in
+# internal/corekinds and are hand-written, so they exist only on the checked-in
+# side.
+run = '''
+    set -e
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    go run ./cmd/kindsgen -go "$tmp/corekinds" -ts "$tmp/corekinds.ts"
+    if ! diff -ru -x '*_test.go' internal/corekinds "$tmp/corekinds"; then
+      echo "internal/corekinds is not what kinds/ produces: run \`mise run kinds:gen\`" >&2
+      exit 1
+    fi
+    if ! diff -u web/console/src/lib/generated/corekinds.ts "$tmp/corekinds.ts"; then
+      echo "the console's generated module is not what kinds/ produces: run \`mise run kinds:gen\`" >&2
+      exit 1
+    fi
+    '''
+
 [tasks.fmt]
 description = "Format the tree in place: Go and YAML"
 depends = ["fmt:go", "fmt:yaml"]
@@ -476,8 +522,11 @@ run = "goreleaser release --clean"
 # here; the workflow needs no edit.
 
 [tasks."ci:lint"]
-description = "CI job `lint` — formatting, the linters, the release config, and the kinds/ version-bump guard"
-depends = ["fmt:check", "lint", "release:check", "kinds:check"]
+description = "CI job `lint` — formatting, the linters, the release config, and the kinds/ guards"
+# `kinds:gen:check` sits beside `kinds:check` because both hold kinds/ to
+# something: one that a changed declaration bumped its version, the other that
+# the generated types are the ones the declarations produce.
+depends = ["fmt:check", "lint", "release:check", "kinds:check", "kinds:gen:check"]
 
 [tasks."ci:cross"]
 description = "CI job `cross` — the cross-compile check, on a runner of its own"

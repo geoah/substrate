@@ -7,6 +7,7 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -150,12 +151,14 @@ func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 	}
 	// And the declarations are ordinary, queryable records.
 	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
-	if row.Kind != "core.substrate.reamde.dev/kind" || row.Properties["plural"] != "widgets" ||
+	names, _ := row.Properties["names"].(map[string]any)
+	if row.Kind != "core.substrate.reamde.dev/kind" || names["plural"] != "widgets" ||
 		row.Properties["source"] != "installed" {
-		t.Fatalf("schema record = %v", row.Properties)
+		t.Fatalf("declaration record = %v", row.Properties)
 	}
-	if row.Properties["definition"] == nil {
-		t.Fatal("schema record carries no definition")
+	// The row's properties ARE the declaration: the authored keys, no blob.
+	if row.Properties["properties"] == nil {
+		t.Fatalf("declaration record carries no properties: %v", row.Properties)
 	}
 
 	// Reopen: the registry rebuilds FROM the rows — same types, no writes.
@@ -193,10 +196,10 @@ func TestSchemaApplySwapsFunctionsLive(t *testing.T) {
 
 	fnData := func(title string) map[string]any {
 		return map[string]any{
-			"authority":    swAuthority,
-			"description":  "mirrors widgets into tasks",
-			"runtime":      vocabulary.RuntimePython,
-			"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+			"authority":   swAuthority,
+			"description": "mirrors widgets into tasks",
+			"runtime":     vocabulary.RuntimePython,
+			"emit":        []any{"tasks.substrate.reamde.dev/task"},
 			"source": `
 def main(input, host):
     c = input["envelope"]["change"]
@@ -244,9 +247,10 @@ def main(input, host):
 	if got := mustGet(t, ds, taskType, "t-"+b.ID); got.Title != "v2" {
 		t.Fatalf("post-swap delivery title = %q (the old registry answered)", got.Title)
 	}
-	// The function is queryable as a record, definition included.
+	// The function is queryable as a record, its declaration in its properties.
 	fnRow := mustGet(t, ds, "core.substrate.reamde.dev/function", swAuthority+"/mirror")
-	if fnRow.Kind != "core.substrate.reamde.dev/function" || fnRow.Properties["definition"] == nil {
+	if fnRow.Kind != "core.substrate.reamde.dev/function" || fnRow.Properties["source"] == nil ||
+		fnRow.Properties["runtime"] == nil {
 		t.Fatalf("function record = %v", fnRow.Properties)
 	}
 }
@@ -364,6 +368,162 @@ func TestSchemaDeleteRefusesWithInstances(t *testing.T) {
 	}
 }
 
+// M5: WHAT PROJECTION STORES IS WHAT THE AUTHOR WROTE. The declaration a
+// registry object carries is a read-only view of the document, and the projection
+// serializes it into the row — so a value the loader normalized on the way past
+// would be stored as though it had been authored, and every reader downstream
+// (the console's editors, a client's `get -o yaml | apply -f`) would be looking at
+// the substrate's opinion instead of the author's.
+//
+// An enum's values are the case that used to move: authored as bare scalars, they
+// were rewritten into {value, label} objects in place. The kind's own
+// `properties` is the meta-kind's one json leaf, so nothing about the row needs
+// them rewritten — and the stored row now says exactly what the manifest said.
+//
+// A PROPERTY TYPE's values are the one exception, and the meta-kind's declaration
+// is the reason: core's `propertytype` types them as a repeated {value, label}
+// object, so a bare scalar could not be stored at all. The loader normalizes a
+// COPY (internal/vocabulary, TestTheParseNeverMutatesTheDocument), and that is the
+// whole of the exception.
+func TestProjectionStoresTheAuthoredDeclaration(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(swAuthority, ""),
+		{
+			"kind":     vocabulary.CoreKind(vocabulary.DocPropertyType),
+			"metadata": map[string]any{"id": swAuthority + "/grade"},
+			"data": map[string]any{
+				"authority": swAuthority,
+				"base":      "enum",
+				"values":    []any{"good", "bad"},
+			},
+		},
+		swTypeDoc("widget", "widgets", map[string]any{
+			"status": map[string]any{
+				"type":   "enum",
+				"values": []any{"draft", "live"},
+			},
+		}),
+	}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	props, _ := row.Properties["properties"].(map[string]any)
+	status, _ := props["status"].(map[string]any)
+	values, _ := status["values"].([]any)
+	if len(values) != 2 {
+		t.Fatalf("the stored enum values = %#v", status["values"])
+	}
+	for i, v := range values {
+		if _, rewritten := v.(map[string]any); rewritten {
+			t.Fatalf("the stored declaration rewrote value %d into %#v — the row must carry what the author wrote", i, v)
+		}
+	}
+	if values[0] != "draft" || values[1] != "live" {
+		t.Fatalf("the stored enum values = %#v", values)
+	}
+
+	// The property type's row carries the objects its own declaration types.
+	pt := mustGet(t, ds, "core.substrate.reamde.dev/propertytype", swAuthority+"/grade")
+	ptValues, _ := pt.Properties["values"].([]any)
+	if len(ptValues) != 2 {
+		t.Fatalf("the stored property type values = %#v", pt.Properties["values"])
+	}
+	first, isObject := ptValues[0].(map[string]any)
+	if !isObject || first["value"] != "good" {
+		t.Fatalf("a property type's stored values must be {value, label} objects: %#v", ptValues[0])
+	}
+}
+
+// KindInfo.Definition IS THE AUTHORED DECLARATION, and it reads the same before
+// and after a restart. A kind that pins no version of its own has the authority's
+// stamped onto its row; the row is what a reopen rebuilds the registry from, so a
+// definition that carried the stored properties verbatim would gain a `version`
+// nobody authored the moment the process restarted — one declaration, two answers,
+// and any client diffing or fingerprinting it (gql.RegistryKey) would see a change
+// that never happened.
+func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := testdb.NewSchema(t)
+	open := func() substrate.Service {
+		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		t.Cleanup(func() { _ = svc.Close() })
+		return svc
+	}
+	svc := open()
+	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// No `version:` on the declaration — the authority's is what the row gets.
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(swAuthority, "v1alpha3"),
+		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+	}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	before, err := ds.KindByRef(ctx, swAuthority+"/widget")
+	if err != nil {
+		t.Fatalf("read the kind: %v", err)
+	}
+	if _, stamped := before.Definition["version"]; stamped {
+		t.Fatalf("the rendered declaration carries the engine's version: %v", before.Definition)
+	}
+	if before.Version != "v1alpha3" {
+		t.Fatalf("the stamped version is not on the KindInfo: %+v", before)
+	}
+	// The ROW carries it, because a boot upgrade diffs on it.
+	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	if row.Properties["version"] != "v1alpha3" {
+		t.Fatalf("the row carries no stamped version: %v", row.Properties)
+	}
+	_ = svc.Close()
+
+	// The reopen rebuilds the registry from that row.
+	svc2 := open()
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	after, err := ds2.KindByRef(ctx, swAuthority+"/widget")
+	if err != nil {
+		t.Fatalf("read the kind again: %v", err)
+	}
+	if !reflect.DeepEqual(before.Definition, after.Definition) {
+		t.Fatalf("the declaration moved across a restart:\n before %#v\n after  %#v",
+			before.Definition, after.Definition)
+	}
+	if after.Version != "v1alpha3" {
+		t.Fatalf("the version did not survive the reload: %+v", after)
+	}
+	// A declaration that PINS its own version keeps reading it off KindInfo.
+	if _, err := applier(t, ds2).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.KindManifest(swAuthority,
+			map[string]any{"singular": "gadget", "plural": "gadgets"},
+			map[string]any{"version": "v2alpha1", "properties": map[string]any{"name": map[string]any{"type": "string"}}}),
+	}); err != nil {
+		t.Fatalf("apply the pinned declaration: %v", err)
+	}
+	pinned, err := ds2.KindByRef(ctx, swAuthority+"/gadget")
+	if err != nil {
+		t.Fatalf("read the pinned kind: %v", err)
+	}
+	if pinned.Version != "v2alpha1" {
+		t.Fatalf("the pinned version is not on the KindInfo: %+v", pinned)
+	}
+}
+
 // The generic verbs write schema records THROUGH admission: put/patch with a
 // definition work and activate; a write into shipped vocabulary refuses; a
 // definition that breaks the closure refuses with the problem list.
@@ -380,16 +540,26 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 
-	// PUT with an extended definition: the new property is usable at once.
+	// PUT with an extended declaration: the new property is usable at once. The
+	// row's properties ARE the declaration — there is no `definition` blob to
+	// reach into — so what a reader gets back is what a writer sends.
 	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
-	def, _ := row.Properties["definition"].(map[string]any)
-	props, _ := def["properties"].(map[string]any)
-	props["count"] = map[string]any{"type": "float"}
+	if _, blob := row.Properties["definition"]; blob {
+		t.Fatalf("a declaration row still carries a definition blob: %v", row.Properties)
+	}
+	declared, _ := row.Properties["properties"].(map[string]any)
+	if declared == nil {
+		t.Fatalf("the declaration row carries no properties: %v", row.Properties)
+	}
+	declared["count"] = map[string]any{"type": "float"}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget",
-		Properties: map[string]any{"definition": def},
+		Properties: map[string]any{
+			"authority": swAuthority, "names": row.Properties["names"],
+			"properties": declared,
+		},
 	}); err != nil {
-		t.Fatalf("generic put of a schema record: %v", err)
+		t.Fatalf("generic put of a declaration record: %v", err)
 	}
 	if e := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: swAuthority + "/widget", Properties: map[string]any{"name": "n", "count": 3},
@@ -397,24 +567,184 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 		t.Fatalf("new property not live: %v", e.Properties)
 	}
 
-	// A definition that breaks the closure refuses whole.
-	broken, _ := def["properties"].(map[string]any)
-	broken["bad"] = map[string]any{"type": "nosuchkind"}
+	// The `definition` blob is REFUSED, naming the properties that carry the
+	// declaration instead: obeying it would store a declaration no reader looks
+	// at, and dropping it would tell the client an edit landed.
+	declared["note"] = map[string]any{"type": "text"}
+	_, blobErr := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget",
+		Properties: map[string]any{"definition": map[string]any{
+			"authority": swAuthority, "names": row.Properties["names"], "properties": declared,
+		}},
+	})
+	wantErr(t, blobErr, substrate.ErrValidation, "a write carrying a definition blob")
+	if !strings.Contains(fmt.Sprint(blobErr), "props.definition") ||
+		!strings.Contains(fmt.Sprint(blobErr), "properties") {
+		t.Fatalf("the refusal must name the blob and the typed properties: %v", blobErr)
+	}
+	if e := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: swAuthority + "/widget", Properties: map[string]any{"name": "n2"},
+	}); e.Properties["note"] != nil {
+		t.Fatalf("the refused blob still landed: %v", e.Properties)
+	}
+	// A NULL under that key is refused too. A null deletes a property everywhere
+	// else in this dialect, but there is nothing left to delete here — no row
+	// carries a blob — so a client naming the key at all is working from a
+	// document this substrate stopped storing.
+	_, nullErr := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget",
+		Properties: map[string]any{
+			"authority": swAuthority, "names": row.Properties["names"],
+			"properties": declared, "definition": nil,
+		},
+	})
+	wantErr(t, nullErr, substrate.ErrValidation, "a write carrying a null definition")
+	if !strings.Contains(fmt.Sprint(nullErr), "props.definition") {
+		t.Fatalf("the refusal must name the blob: %v", nullErr)
+	}
+
+	// A declaration that breaks the closure refuses whole.
+	declared["bad"] = map[string]any{"type": "nosuchkind"}
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget",
-		Properties: map[string]any{"definition": def},
+		Properties: map[string]any{
+			"authority": swAuthority, "names": row.Properties["names"], "properties": declared,
+		},
 	})
-	wantErr(t, err, substrate.ErrValidation, "closure-breaking definition")
+	wantErr(t, err, substrate.ErrValidation, "closure-breaking declaration")
 
 	// The shipped vocabulary is the embedded tree's to change.
 	taskRow := mustGet(t, ds, "core.substrate.reamde.dev/kind", "tasks.substrate.reamde.dev/task")
 	_, err = ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/kind", ID: "tasks.substrate.reamde.dev/task",
-		Properties: map[string]any{"definition": taskRow.Properties["definition"]},
+		Properties: map[string]any{
+			"authority": "tasks.substrate.reamde.dev", "names": taskRow.Properties["names"],
+			"properties": taskRow.Properties["properties"],
+		},
 	})
 	wantErr(t, err, substrate.ErrForbidden, "builtin authority write")
 	_, err = ds.Delete(ctx, owner, "core.substrate.reamde.dev/kind", "tasks.substrate.reamde.dev/task")
 	wantErr(t, err, substrate.ErrForbidden, "builtin authority delete")
+}
+
+// THE ENGINE'S PROPERTIES ARE NOT THE WRITER'S. A declaration write that
+// supplies a managed property round-trips when it echoes the stored value and is
+// REFUSED when it invents one — silently replacing it would tell the client its
+// edit landed. Two more refusals sit beside it: the retired blob and the typed
+// properties in one write (obeying either discards the other's edits), and an
+// undeclared property, which is a typo rather than a change that vanishes.
+func TestDeclarationWritesRefuseWhatTheEngineOwns(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	sa := applier(t, ds)
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(swAuthority, ""),
+		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+	}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	declared, _ := row.Properties["properties"].(map[string]any)
+	base := func() map[string]any {
+		return map[string]any{
+			"authority": swAuthority, "names": row.Properties["names"], "properties": declared,
+		}
+	}
+
+	// The round trip: `get -o yaml | apply -f` echoes every property a read hands
+	// back — the stamped `source` and `version` among them, and the derived
+	// `title` — and must land.
+	echoed := base()
+	echoed["source"] = row.Properties["source"]
+	echoed["version"] = row.Properties["version"]
+	echoed["title"] = row.Title
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget", Properties: echoed,
+	}); err != nil {
+		t.Fatalf("a read echoed straight back must apply: %v", err)
+	}
+
+	// The ORIGIN is the engine's: a kind may pin its own `version` (the loader
+	// admits `data.version`, which is why echoing one above landed), and nothing
+	// authors where a declaration came from.
+	origin := base()
+	origin["source"] = "builtin"
+	_, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget", Properties: origin,
+	})
+	wantErr(t, err, substrate.ErrValidation, "managed origin mismatch")
+	if !strings.Contains(err.Error(), "props.source") {
+		t.Fatalf("the refusal must name the property: %v", err)
+	}
+	if got := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget"); got.Properties["source"] != row.Properties["source"] {
+		t.Fatalf("the refused write moved the origin to %v", got.Properties["source"])
+	}
+
+	// A TRAIT's version is the engine's whole and simple: its document admits no
+	// `version:` at all, so an invented one is refused and the stored one echoes.
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{{
+		"kind":     "core.substrate.reamde.dev/trait",
+		"metadata": map[string]any{"id": swAuthority + "/spanned"},
+		"data": map[string]any{
+			"authority":  swAuthority,
+			"properties": map[string]any{"span": "string"},
+		},
+	}}); err != nil {
+		t.Fatalf("apply a trait: %v", err)
+	}
+	traitRow := mustGet(t, ds, "core.substrate.reamde.dev/trait", swAuthority+"/spanned")
+	_, err = ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/trait", ID: swAuthority + "/spanned",
+		Properties: map[string]any{
+			"authority": swAuthority, "properties": traitRow.Properties["properties"],
+			"version": "v9alpha1",
+		},
+	})
+	wantErr(t, err, substrate.ErrValidation, "managed version mismatch")
+	if !strings.Contains(err.Error(), "props.version") {
+		t.Fatalf("the refusal must name the property: %v", err)
+	}
+	if got := mustGet(t, ds, "core.substrate.reamde.dev/trait", swAuthority+"/spanned"); got.Properties["version"] != traitRow.Properties["version"] {
+		t.Fatalf("the refused write moved the version to %v", got.Properties["version"])
+	}
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/trait", ID: swAuthority + "/spanned",
+		Properties: map[string]any{
+			"authority": swAuthority, "properties": traitRow.Properties["properties"],
+			"version": traitRow.Properties["version"], "title": traitRow.Title,
+		},
+	}); err != nil {
+		t.Fatalf("a trait read echoed straight back must apply: %v", err)
+	}
+
+	// Both spellings in one write: refused, naming what it carried twice.
+	both := base()
+	both["definition"] = map[string]any{
+		"authority": swAuthority, "names": row.Properties["names"], "properties": declared,
+	}
+	_, err = ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget", Properties: both,
+	})
+	wantErr(t, err, substrate.ErrValidation, "definition and typed properties")
+	if !strings.Contains(err.Error(), "definition") || !strings.Contains(err.Error(), "properties") {
+		t.Fatalf("the refusal must name both spellings: %v", err)
+	}
+
+	// A typo is refused rather than dropped.
+	typo := base()
+	typo["displayTemplat"] = "{name}"
+	_, err = ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget", Properties: typo,
+	})
+	wantErr(t, err, substrate.ErrValidation, "undeclared property")
+
+	// A PATCH of an ordinary property is unaffected: the merge carries the stored
+	// managed values, which are the engine's own answer by definition.
+	if _, err := ds.Patch(ctx, owner, "core.substrate.reamde.dev/kind", swAuthority+"/widget",
+		substrate.PatchInput{Properties: map[string]any{"description": "the widget kind"}}); err != nil {
+		t.Fatalf("patch an ordinary property: %v", err)
+	}
 }
 
 // A function's uninstall does NOT touch delivery state any more: the cursor
@@ -434,10 +764,10 @@ func TestTriggerOutlivesItsCallable(t *testing.T) {
 	}
 
 	fnData := map[string]any{
-		"authority":    swAuthority,
-		"description":  "mirrors widgets into tasks",
-		"runtime":      vocabulary.RuntimePython,
-		"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+		"authority":   swAuthority,
+		"description": "mirrors widgets into tasks",
+		"runtime":     vocabulary.RuntimePython,
+		"emit":        []any{"tasks.substrate.reamde.dev/task"},
 		"source": `
 def main(input, host):
     c = input["envelope"]["change"]
@@ -615,5 +945,230 @@ func TestOpenNeverPrunesShippedRows(t *testing.T) {
 	}
 	if len(types) == 0 {
 		t.Fatal("the repository opened with no vocabulary at all")
+	}
+}
+
+// bundleInstaller is the closure-install seam (a bundle's vocabulary AND its
+// shipped data documents as one repository transaction), asserted at runtime
+// the way the catalog reaches it: it is deliberately not on the frozen
+// substrate.Dataset.
+type bundleInstaller interface {
+	InstallBundleClosure(ctx context.Context, actor substrate.Actor,
+		vocabularyDocs []map[string]any, dataDocs []substrate.PutInput) ([]*substrate.Record, error)
+}
+
+// swInstallAuthority is the closure the install below admits, kept apart from
+// swAuthority so the whole-authority replace never prunes the widget kind its
+// data documents are written against.
+const swInstallAuthority = "installer.example.substrate.reamde.dev"
+
+// The projection resolves a declaration row's kind against the CANDIDATE when
+// this projection is what installs that kind's declaration, because the row is
+// then newer than the stored declaration (engine.projectionKind). Every other
+// write, that pass's own rows of a kind it leaves alone included, is held to the
+// declarations the repository STORES: an ordinary put and an install's data
+// documents are validated against the live registry, so an undeclared property
+// is refused at both doors.
+func TestCandidateResolutionIsTheProjectionsAlone(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(swAuthority, ""),
+		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+	}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	t.Run("an ordinary put", func(t *testing.T) {
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: swAuthority + "/widget", ID: "declared",
+			Properties: map[string]any{"name": "ok"},
+		})
+		_, err := ds.Put(ctx, owner, substrate.PutInput{
+			Kind: swAuthority + "/widget", ID: "undeclared",
+			Properties: map[string]any{"name": "ok", "color": "red"},
+		})
+		wantErr(t, err, substrate.ErrValidation, "a put carrying an undeclared property")
+		if !strings.Contains(fmt.Sprint(err), "not declared") {
+			t.Fatalf("the refusal must name the undeclared property: %v", err)
+		}
+		if _, err := ds.Get(ctx, swAuthority+"/widget", "undeclared"); err == nil {
+			t.Fatal("the refused put landed a row")
+		}
+	})
+
+	t.Run("an install's data documents", func(t *testing.T) {
+		inst, ok := ds.(bundleInstaller)
+		if !ok {
+			t.Fatal("dataset does not implement the closure-install seam")
+		}
+		closure := []map[string]any{vocabulary.AuthorityManifest(swInstallAuthority, "")}
+
+		_, err := inst.InstallBundleClosure(ctx, owner, closure, []substrate.PutInput{{
+			Kind: swAuthority + "/widget", ID: "from-install",
+			Properties: map[string]any{"name": "ok", "color": "red"},
+		}})
+		wantErr(t, err, substrate.ErrValidation, "an install's data document carrying an undeclared property")
+		// The whole install rolled back with it: no data row, and no closure.
+		if _, err := ds.Get(ctx, swAuthority+"/widget", "from-install"); err == nil {
+			t.Fatal("the refused data document landed a row")
+		}
+		if _, err := ds.Get(ctx, "core.substrate.reamde.dev/authority", swInstallAuthority); err == nil {
+			t.Fatal("a refused data document must roll the closure back with it")
+		}
+
+		// The same install with a declared property admits both halves.
+		if _, err := inst.InstallBundleClosure(ctx, owner, closure, []substrate.PutInput{{
+			Kind: swAuthority + "/widget", ID: "from-install",
+			Properties: map[string]any{"name": "ok"},
+		}}); err != nil {
+			t.Fatalf("install: %v", err)
+		}
+		mustGet(t, ds, swAuthority+"/widget", "from-install")
+		mustGet(t, ds, "core.substrate.reamde.dev/authority", swInstallAuthority)
+	})
+}
+
+// vocabularyRemover is the batch seam that upserts AND removes in one admission
+// unit (vocabularyplant_internal_test.go): the shape no public door offers, and
+// the one that can write a declaration row of a category the same batch drops.
+type vocabularyRemover interface {
+	ApplyVocabularyWithRemoval(ctx context.Context, actor substrate.Actor,
+		docs []map[string]any, removeShort, removeID, removeAuthority string) error
+}
+
+const dkAuthority = "dropkind.example.substrate.reamde.dev"
+
+// dkDocs is the bundle's whole closure: header, actor, the bundle listing what
+// it installs, and the members. A re-apply REPLACES the authority, so a member
+// left out of this list is a member the upgrade removes.
+func dkDocs(members ...map[string]any) []map[string]any {
+	installs := make([]any, 0, len(members))
+	for _, m := range members {
+		meta, _ := m["metadata"].(map[string]any)
+		installs = append(installs, meta["id"])
+	}
+	return append([]map[string]any{
+		vocabulary.AuthorityManifest(dkAuthority, ""),
+		vocabulary.ActorManifest(dkAuthority, vocabulary.AuthorityActor(dkAuthority)),
+		vocabulary.BundleManifest(dkAuthority, map[string]any{
+			"description": "the drop-kind bundle",
+			"installs":    installs,
+		}),
+	}, members...)
+}
+
+func dkKindDoc(singular, plural string) map[string]any {
+	return vocabulary.KindManifest(dkAuthority,
+		map[string]any{"singular": singular, "plural": plural},
+		map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}})
+}
+
+// NO TRANSACTION PUBLISHES A VOCABULARY WITHOUT A KIND IT JUST WROTE ROWS OF.
+//
+// The dropped-kind guard counts live rows as the transaction FINDS them, and two
+// writes after it create rows: an install's data documents (put against the
+// still-live pre-commit registry) and the projection's own declaration rows. A
+// bundle upgrade that removes a kind and ships a data document of that same kind
+// would pass the opening count, create the row, prune the declaration and
+// publish a registry that cannot resolve it. The guard runs again with every
+// write behind it, so the row and the removal cannot both land.
+func TestBundleUpgradeRefusesARowOfTheKindItRemoves(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newCoreDataset(t)
+	inst, ok := ds.(bundleInstaller)
+	if !ok {
+		t.Fatal("dataset does not implement the closure-install seam")
+	}
+	actor := substrate.BundleActor("dropkind")
+
+	if _, err := inst.InstallBundleClosure(ctx, actor,
+		dkDocs(dkKindDoc("widget", "widgets"), dkKindDoc("gadget", "gadgets")), nil); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if _, err := ds.KindByRef(ctx, dkAuthority+"/widget"); err != nil {
+		t.Fatalf("the installed widget kind: %v", err)
+	}
+
+	// The upgrade drops `widget` (no live rows, so the opening count admits it)
+	// and carries a widget record in the same package.
+	_, err := inst.InstallBundleClosure(ctx, actor, dkDocs(dkKindDoc("gadget", "gadgets")),
+		[]substrate.PutInput{{
+			Kind: dkAuthority + "/widget", ID: "late", Properties: map[string]any{"name": "late"},
+		}})
+	wantErr(t, err, substrate.ErrGuard, "an upgrade that writes a row of the kind it removes")
+	if !strings.Contains(err.Error(), dkAuthority+"/widget") {
+		t.Fatalf("the refusal must name the kind: %v", err)
+	}
+	// Whole rollback: the kind is still live, and the row it would have stranded
+	// is not there.
+	if _, err := ds.KindByRef(ctx, dkAuthority+"/widget"); err != nil {
+		t.Fatalf("the refused upgrade removed the kind anyway: %v", err)
+	}
+	if _, err := ds.Get(ctx, dkAuthority+"/widget", "late"); err == nil {
+		t.Fatal("the refused upgrade landed the row")
+	}
+
+	// And the same upgrade WITHOUT the row admits: this is refuse-while-stranded,
+	// not refuse-forever.
+	if _, err := inst.InstallBundleClosure(ctx, actor, dkDocs(dkKindDoc("gadget", "gadgets")), nil); err != nil {
+		t.Fatalf("an upgrade that removes an unused kind must admit: %v", err)
+	}
+	if _, err := ds.KindByRef(ctx, dkAuthority+"/widget"); err == nil {
+		t.Fatal("the upgrade did not remove the unused kind")
+	}
+	if _, err := ds.KindByRef(ctx, dkAuthority+"/gadget"); err != nil {
+		t.Fatalf("the upgrade removed a member it keeps: %v", err)
+	}
+}
+
+// The projection's own converse: a batch that stops declaring one of the
+// META-kinds while projecting a declaration row OF that category. The row is
+// validated against the retained live definition and lands, the prune then takes
+// the definition, and the publish would leave the row unresolvable. The same
+// final guard catches it.
+func TestVocabularyApplyRefusesADeclarationRowOfTheMetaKindItRemoves(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newCoreDataset(t)
+	const metaKind = "core.substrate.reamde.dev/propertytype"
+
+	// A core-only repository declares no property types at all, so the opening
+	// count is zero and the removal looks free.
+	page, err := ds.List(ctx, substrate.Query{Filter: substrate.Filter{Kinds: []string{metaKind}}, First: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Records) != 0 {
+		t.Skipf("the seed now ships %d property types; this fixture needs a category with none", len(page.Records))
+	}
+
+	rm, ok := ds.(vocabularyRemover)
+	if !ok {
+		t.Fatal("dataset does not implement the upsert-and-remove seam")
+	}
+	// One batch: a property type declared into a new authority (its row's kind is
+	// the meta-kind), and core's declaration of that meta-kind removed.
+	err = rm.ApplyVocabularyWithRemoval(ctx, substrate.ActorSystem, []map[string]any{
+		vocabulary.AuthorityManifest("mine.example.com", ""),
+		{
+			"kind":     metaKind,
+			"metadata": map[string]any{"id": "mine.example.com/color"},
+			"data":     map[string]any{"authority": "mine.example.com", "base": "string"},
+		},
+	}, vocabulary.DocKind, metaKind, "core.substrate.reamde.dev")
+	wantErr(t, err, substrate.ErrGuard, "a batch that projects a row of the meta-kind it removes")
+	if !strings.Contains(err.Error(), metaKind) {
+		t.Fatalf("the refusal must name the kind: %v", err)
+	}
+	// Nothing landed: the meta-kind is still live vocabulary and the row is not
+	// there.
+	if _, err := ds.KindByRef(ctx, metaKind); err != nil {
+		t.Fatalf("the refused batch removed the meta-kind anyway: %v", err)
+	}
+	if _, err := ds.Get(ctx, metaKind, "mine.example.com/color"); err == nil {
+		t.Fatal("the refused batch landed the declaration row")
 	}
 }

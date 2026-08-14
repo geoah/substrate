@@ -2,13 +2,29 @@ package vocabulary
 
 import "regexp"
 
+// Three naming rules are kept as regular-expression SOURCE, because one of them
+// has to leave the process: the guard that counts a keyed map's key-contract
+// violations asks Postgres exactly the question CheckKey asks here
+// (engine/schemadiff.go), and a second spelling of a grammar is a second
+// grammar. KeyPatternRegexp is the seam and TestKeyPatternRegexpAgreesWithCheckKey
+// pins the two sides together. The subset used — literals, classes, groups, ?,
+// *, +, anchors — means the same thing to RE2 and to Postgres.
+const (
+	authorityRE = `[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+`
+	wordRE      = `[a-z][a-z0-9]*`
+	camelRE     = `[a-z][a-zA-Z0-9]*`
+	// kindRefRE is the kind REFERENCE grammar (ref.go): a bare local name, or an
+	// authority and a name split by the one slash.
+	kindRefRE = `(` + authorityRE + `/)?` + wordRE
+)
+
 // Naming rules enforced at load (proposal §3, the contract).
 // Identifiers are storage keys and URL segments; readability lives in display
 // templates.
 var (
-	reAuthority = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
-	reWord      = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
-	reCamel     = regexp.MustCompile(`^[a-z][a-zA-Z0-9]*$`)
+	reAuthority = regexp.MustCompile("^" + authorityRE + "$")
+	reWord      = regexp.MustCompile("^" + wordRE + "$")
+	reCamel     = regexp.MustCompile("^" + camelRE + "$")
 	// An actor is one of the closed domain's names: a bare
 	// word (`console`, `substratectl`, `api`, `substrate`) or a prefixed machine hand
 	// (`connector:<name>`, `function:<name>`, `bundle:<name>`).

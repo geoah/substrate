@@ -18,7 +18,12 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: firecrawl.bundles.substrate.reamde.dev
 data:
-  version: v1alpha1
+  # v1alpha2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
+  # declared spellings — whichever of them they used: a tool entry naming its arm,
+  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
+  # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
+  # carries the closure whole rather than saying every declaration in it moved.
+  version: v1alpha2
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -141,36 +146,22 @@ data:
     read with scrapepage. Read-only.
   runtime: python
   timeoutMs: 30000
-  input:
-    type: object
-    properties:
-      query:
-        type: string
-        description: the search query — specific beats terse
-      limit:
-        type: number
-        description: max hits to return (default 5, capped at 20)
-    required: [query]
-  output:
-    type: object
-    properties:
-      results:
-        type: array
-        items:
-          type: object
-          properties:
-            title:
-              type: string
-            url:
-              type: string
-            snippet:
-              type: string
-          required: [title, url]
-    required: [results]
-  capabilities:
-    emit: [firecrawl.bundles.substrate.reamde.dev/webdocument]
-    network:
-      - "api.firecrawl.dev"
+  arguments:
+    - name: query
+      type: string
+      required: true
+      description: the search query — specific beats terse
+    - name: limit
+      type: float
+      description: "max hits to return (default 5, capped at 20)"
+  returns:
+    - name: results
+      type: json
+      repeated: true
+      required: true
+  emit: [firecrawl.bundles.substrate.reamde.dev/webdocument]
+  network:
+    - "api.firecrawl.dev"
   source: |
     import json
     import urllib.request
@@ -252,32 +243,29 @@ data:
     the same URL updates it.
   runtime: python
   timeoutMs: 30000
-  input:
-    type: object
-    properties:
-      url:
-        type: string
-        description: the URL to fetch — an absolute https:// URL
-    required: [url]
-  output:
-    type: object
-    properties:
-      document:
-        type: string
-        description: the webdocument record id the page was kept under
-      url:
-        type: string
-      title:
-        type: string
-      content:
-        type: string
-      truncated:
-        type: boolean
-    required: [document, url, content]
-  capabilities:
-    emit: [firecrawl.bundles.substrate.reamde.dev/webdocument]
-    network:
-      - "api.firecrawl.dev"
+  arguments:
+    - name: url
+      type: string
+      required: true
+      description: "the URL to fetch — an absolute https:// URL"
+  returns:
+    - name: document
+      type: string
+      required: true
+      description: the webdocument record id the page was kept under
+    - name: url
+      type: string
+      required: true
+    - name: title
+      type: string
+    - name: content
+      type: string
+      required: true
+    - name: truncated
+      type: bool
+  emit: [firecrawl.bundles.substrate.reamde.dev/webdocument]
+  network:
+    - "api.firecrawl.dev"
   source: |
     import datetime
     import json

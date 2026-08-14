@@ -31,7 +31,12 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: linear.bundles.substrate.reamde.dev
 data:
-  version: v1alpha1
+  # v1alpha2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
+  # declared spellings — whichever of them they used: a tool entry naming its arm,
+  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
+  # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
+  # carries the closure whole rather than saying every declaration in it moved.
+  version: v1alpha2
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -70,7 +75,8 @@ data:
     revocationEndpoint: https://api.linear.app/oauth/revoke
     featureScopes:
       enabledIssues:
-        - read
+        scopes:
+          - read
   installs:
     - linear.bundles.substrate.reamde.dev/config
     - linear.bundles.substrate.reamde.dev/account
@@ -451,20 +457,19 @@ data:
     its OAuth token, mirror the viewer/teams/issues, and stamp lastSyncedAt.
   runtime: python
   timeoutMs: 30000
-  capabilities:
-    emit:
+  emit:
+    - linear.bundles.substrate.reamde.dev/issue
+    - linear.bundles.substrate.reamde.dev/team
+    - linear.bundles.substrate.reamde.dev/user
+    - linear.bundles.substrate.reamde.dev/account
+  reads:
+    kinds:
       - linear.bundles.substrate.reamde.dev/issue
-      - linear.bundles.substrate.reamde.dev/team
-      - linear.bundles.substrate.reamde.dev/user
-      - linear.bundles.substrate.reamde.dev/account
-    reads:
-      kinds:
-        - linear.bundles.substrate.reamde.dev/issue
-      budgets:
-        calls: 128
-        rows: 256
-    network:
-      - "api.linear.app"
+    budgets:
+      calls: 128
+      rows: 256
+  network:
+    - "api.linear.app"
   source: |
     # /// script
     # requires-python = ">=3.11"
@@ -900,13 +905,12 @@ data:
     keys of existing ones — status moves only on a real upstream transition,
     under an if_version guard.
   runtime: python
-  capabilities:
-    emit:
+  emit:
+    - tasks.substrate.reamde.dev/task
+    - linear.bundles.substrate.reamde.dev/issue
+  reads:
+    kinds:
       - tasks.substrate.reamde.dev/task
-      - linear.bundles.substrate.reamde.dev/issue
-    reads:
-      kinds:
-        - tasks.substrate.reamde.dev/task
   source: |
     TASK_TYPE = "tasks.substrate.reamde.dev/task"
     ISSUE_TYPE = "linear.bundles.substrate.reamde.dev/issue"
@@ -1009,8 +1013,10 @@ data:
     - from: email
       to: emails
   map:
-    name: name
-    displayName: displayName
+    name:
+      path: name
+    displayName:
+      path: displayName
     emails:
       path: email
       merge: union

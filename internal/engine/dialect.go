@@ -12,12 +12,12 @@ package engine
 //   - an older store is promoted step by step, each step recorded in
 //     vocabulary_promotions before the dialect is stamped.
 //
-// THE LADDER IS EMPTY. v1 is dialect 1 and it is the first stored shape that
-// has ever existed: the substrate boots on a fresh database, so there is no
-// older store to repair and no promotion to run. The mechanism stays because
-// it is what makes a FUTURE shape change safe — a new dialect appends a step
-// and bumps maxVocabularyDialect — but nothing in it borrows the shipped tree, and
-// a repository's vocabulary is only ever its own rows (seed.go).
+// THE LADDER HAS ONE RUNG. Dialect 1 stored a declaration's content in a
+// `definition` json blob; dialect 2 stores the declaration's own properties, and
+// dialecttyped.go is the step that moves a repository from the first to the
+// second. Nothing in the ladder borrows the shipped tree to decide a
+// repository's CONTENT — a repository's vocabulary is only ever its own rows
+// (seed.go) — and the rung changes shape alone.
 
 import (
 	"context"
@@ -43,16 +43,25 @@ type dialectStep struct {
 	run     func(*dataset, context.Context) error
 }
 
-// dialectSteps is the ladder: empty at v1 (see the file comment). A new
-// dialect appends a step here and bumps maxVocabularyDialect; steps are never
-// deleted or reordered once they ship, since vocabulary_promotions records which
-// repositories passed which one.
-var dialectSteps []dialectStep
+// dialectSteps is the ladder. A new dialect appends a step here and bumps
+// maxVocabularyDialect; steps are never deleted or reordered once they ship,
+// since vocabulary_promotions records which repositories passed which one.
+//
+// Step 2 stamps the dialect ITSELF, inside the transaction that rewrites the
+// rows (t.stampDialect): the rewrite and the stamp are indivisible, because an
+// older binary reading the new rows under the old stamp would read declarations
+// with no declaration in them. The stamp below is then a no-op for it — the
+// stamp only ever moves up.
+var dialectSteps = []dialectStep{
+	{dialect: 2, name: dialectTypedDeclarations, run: func(ds *dataset, ctx context.Context) error {
+		return ds.promoteTypedDeclarations(ctx)
+	}},
+}
 
 // maxVocabularyDialect is the newest dialect this binary speaks. A fresh
 // repository is stamped here at its first open; a repository stored above it
 // refuses to open.
-const maxVocabularyDialect = 1
+const maxVocabularyDialect = 2
 
 // MaxSchemaDialect is the newest dialect this binary speaks — the value GET
 // /api discovery reports as the binary maximum. Exported so the
@@ -105,10 +114,10 @@ func (ds *dataset) promoteSchemaDialect(ctx context.Context) error {
 			return err
 		}
 	}
-	// An empty ladder still stamps: the dialect is the store's SHAPE, not a
-	// count of promotions run, so a fresh repository leaves its first open at
-	// the binary's maximum and never re-enters this path.
-	return ds.recordDialectStep(ctx, maxVocabularyDialect, "v1")
+	// A ladder that ran nothing still stamps: the dialect is the store's SHAPE,
+	// not a count of promotions run, so a fresh repository leaves its first open
+	// at the binary's maximum and never re-enters this path.
+	return ds.recordDialectStep(ctx, maxVocabularyDialect, dialectTypedDeclarations)
 }
 
 // storedSchemaDialect reads the repository's stored dialect; an absent row is

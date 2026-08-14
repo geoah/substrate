@@ -49,18 +49,13 @@ func fnDoc(name string, data map[string]any) map[string]any {
 	return vocabulary.FunctionManifest(fnAuthority, name, data)
 }
 
-// pyFn renders a python function manifest: the inline body as source, the
-// emit allowlist as its capability envelope, `data` carrying any further
-// keys (timeoutMs, input/output, more capabilities).
+// pyFn renders a python function manifest: the inline body as source, the emit
+// allowlist beside it, `data` carrying any further keys (timeoutMs, arguments,
+// the rest of the capability envelope — every one of them on data itself).
 func pyFn(name string, data map[string]any, emit []any, source string) map[string]any {
 	data["runtime"] = vocabulary.RuntimePython
 	data["source"] = source
-	caps, _ := data["capabilities"].(map[string]any)
-	if caps == nil {
-		caps = map[string]any{}
-		data["capabilities"] = caps
-	}
-	caps["emit"] = emit
+	data["emit"] = emit
 	return fnDoc(name, data)
 }
 

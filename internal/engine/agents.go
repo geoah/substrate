@@ -9,59 +9,12 @@ import (
 
 	"github.com/geoah/substrate/internal/runner"
 	"github.com/geoah/substrate/internal/substrate"
-	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// The engine's agent plumbing around the loop (agentloop.go): the schema-row
-// projection, the well-known llmprovider row, and the two direct entry points
-// — the call API and chat. Trigger dispatch enters through functions.go's
-// deliver/deliverFire, which branch on the trigger's callable kind.
-
-// groupAgentDeclarations renders one authority's agent declarations as projected
-// rows — schemawrite.go's one-line seam, kept with the kind it projects.
-func groupAgentDeclarations(g *vocabulary.Authority, add func(short, typeIdent, id string, props map[string]any)) error {
-	for _, n := range g.AgentOrder {
-		a := g.Agents[n]
-		def, err := jsonSafe(a.Definition)
-		if err != nil {
-			return err
-		}
-		// The first-class columns (core.substrate.reamde.dev/agent) are the projected
-		// summary of the manifest; `definition` stays authoritative.
-		// functions lists the CALLABLE tools (built-ins query/propose are not
-		// records and stay in `definition`); subagents mirrors the sub-agent
-		// identities.
-		var functions []any
-		for _, t := range a.Tools {
-			if t.Callable != "" {
-				functions = append(functions, t.Callable)
-			}
-		}
-		subagents := make([]any, 0, len(a.Agents))
-		for _, ident := range a.Agents {
-			subagents = append(subagents, ident)
-		}
-		props := map[string]any{
-			"name": a.Name, "authority": a.Authority,
-			"description": a.Description, "prompt": a.Prompt,
-			"provider": a.Provider, "model": a.Model,
-			"definition": def, "sourceYAML": nil,
-		}
-		if len(functions) > 0 {
-			props["functions"] = functions
-		}
-		if len(subagents) > 0 {
-			props["subagents"] = subagents
-		}
-		if a.SubagentOnly {
-			// Projected only when set, like the lists above: the console's
-			// chat list filters on it, and an absent key reads as chattable.
-			props["subagentOnly"] = true
-		}
-		add(vocabulary.DocAgent, kindAgent, a.Identity(), props)
-	}
-	return nil
-}
+// The engine's agent plumbing around the loop (agentloop.go): the well-known
+// llmprovider row, and the two direct entry points — the call API and chat.
+// Trigger dispatch enters through functions.go's deliver/deliverFire, which
+// branch on the trigger's callable kind.
 
 // deliverToAgent runs one record delivery through the loop (deliver()'s
 // agent branch, after the guard passed): the envelope becomes the first user

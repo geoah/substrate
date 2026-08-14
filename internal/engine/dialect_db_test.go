@@ -52,12 +52,19 @@ func TestSchemaDialectLadder(t *testing.T) {
 	if dialect < 1 {
 		t.Fatalf("stamped dialect = %d, want >= 1", dialect)
 	}
-	var steps int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM vocabulary_promotions`).Scan(&steps); err != nil {
+	// Every step the ladder RAN is recorded, and the newest recorded step is the
+	// stamp. A fresh repository never had the older shapes, so it records the
+	// steps it passed through rather than one row per dialect that ever existed.
+	var steps, newest int
+	if err := db.QueryRowContext(ctx,
+		`SELECT count(*), coalesce(max(dialect), 0) FROM vocabulary_promotions`).Scan(&steps, &newest); err != nil {
 		t.Fatalf("read recorded steps: %v", err)
 	}
-	if steps != dialect {
-		t.Fatalf("recorded %d promotion steps for dialect %d — every step N -> N+1 must be recorded", steps, dialect)
+	if steps == 0 {
+		t.Fatal("the open recorded no promotion step at all")
+	}
+	if newest != dialect {
+		t.Fatalf("the newest recorded step is %d, the stamp %d — the two must agree", newest, dialect)
 	}
 
 	// A reopen at the same dialect is silent and does not refuse.

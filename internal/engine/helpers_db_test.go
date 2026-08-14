@@ -94,6 +94,16 @@ func importVocabulary(t *testing.T, ds substrate.Dataset, names ...string) {
 	}
 }
 
+// installShippedBundle installs one shipped EXTENSION bundle's closure — the
+// declaration rows a vocabulary bundle does not bring: the bundle document, its
+// functions and its agents.
+func installShippedBundle(t *testing.T, ds substrate.Dataset, name string) {
+	t.Helper()
+	if err := enginetest.InstallBundle(context.Background(), ds, name); err != nil {
+		t.Fatalf("install the %s bundle: %v", name, err)
+	}
+}
+
 // testPassword is what every registered test user gets: past the length
 // policy, and the same everywhere so a test that CHANGES it is obvious.
 const testPassword = "correct-horse-battery-staple"

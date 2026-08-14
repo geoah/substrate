@@ -95,14 +95,13 @@ func TestLiveAgentChainAcrossWires(t *testing.T) {
 			"runtime":     vocabulary.RuntimePython,
 			// The envelope is required even for a function that writes
 			// nothing; this one returns output and emits no effects at all.
-			"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
-			// "number", not "integer": the vocabulary's schema vocabulary has
-			// no integer, and this schema is BOTH the function's input contract
-			// and the model-facing tool card.
-			"input": map[string]any{"type": "object", "properties": map[string]any{
-				"a": map[string]any{"type": "number", "description": "the first addend"},
-				"b": map[string]any{"type": "number", "description": "the second addend"},
-			}, "required": []any{"a", "b"}},
+			"emit": []any{"tasks.substrate.reamde.dev/task"},
+			// The argument list is BOTH the function's input contract and the
+			// model-facing tool card, which is what the flat spelling buys.
+			"arguments": []any{
+				map[string]any{"name": "a", "type": "float", "required": true, "description": "the first addend"},
+				map[string]any{"name": "b", "type": "float", "required": true, "description": "the second addend"},
+			},
 			"source": `
 def main(input, host):
     args = input["args"]
@@ -127,7 +126,7 @@ def main(input, host):
 				"Step 3: reply with DONE followed by the speller tool's answer, and nothing else.",
 				"Never do the arithmetic or the spelling yourself.",
 			}, "\n"),
-			"tools":   []any{crewAuthority + "/add"},
+			"tools":   []any{map[string]any{"callable": crewAuthority + "/add"}},
 			"agents":  []any{crewAuthority + "/speller"},
 			"budgets": map[string]any{"maxTurns": 6, "maxToolCalls": 4, "depth": 3, "deadlineSeconds": 120},
 		}),

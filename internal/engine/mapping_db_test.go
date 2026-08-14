@@ -63,7 +63,7 @@ func googleManifest() enginetest.Manifest {
 					map[string]any{"from": "phones[].canonical", "to": "phones"},
 				},
 				"map": map[string]any{
-					"name":   "name.displayName",
+					"name":   map[string]any{"path": "name.displayName"},
 					"emails": map[string]any{"path": "emails[].value", "merge": "union"},
 					"phones": map[string]any{"path": "phones[].canonical", "merge": "union"},
 				},
@@ -99,8 +99,8 @@ func slackManifest() enginetest.Manifest {
 				"from": typeSlackUser, "to": typePerson, "edge": "person",
 				"match": []any{map[string]any{"from": "email", "to": "emails"}},
 				"map": map[string]any{
-					"name":        "realName",
-					"displayName": "displayName",
+					"name":        map[string]any{"path": "realName"},
+					"displayName": map[string]any{"path": "displayName"},
 					"emails":      map[string]any{"path": "email", "merge": "union"},
 				},
 			}),
@@ -632,7 +632,10 @@ func TestStatesAreNeverRecomputed(t *testing.T) {
 				}),
 			vocabulary.MappingManifest(authority, "promoterrowperson", map[string]any{
 				"from": authority + "/promoterrow", "to": typePerson, "edge": "person",
-				"map": map[string]any{"name": "name", "prominence": "prominence"},
+				"map": map[string]any{
+					"name":       map[string]any{"path": "name"},
+					"prominence": map[string]any{"path": "prominence"},
+				},
 			}),
 		},
 	}
@@ -1017,7 +1020,9 @@ func TestObjectPropertyValidation(t *testing.T) {
 		t.Fatalf("a null field must be dropped, got %v", name)
 	}
 
-	// Fields are one level deep: a nested object is a LOAD error.
+	// Fields nest to vocabulary.MaxFieldDepth — a kind's own property is level 1
+	// — and one level past it is a LOAD error, because the narrowing guards walk
+	// exactly that many jsonb notches.
 	const authority = "nested.connectors.substrate.reamde.dev"
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, enginetest.Manifest{
 		Name: "nested", Authority: authority,
@@ -1034,10 +1039,33 @@ func TestObjectPropertyValidation(t *testing.T) {
 					}},
 				}}),
 		},
+	}); err != nil {
+		t.Fatalf("an object nested inside an object must register: %v", err)
+	}
+	const deep = "toodeep.connectors.substrate.reamde.dev"
+	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, enginetest.Manifest{
+		Name: "toodeep", Authority: deep,
+		Manifests: []map[string]any{
+			vocabulary.AuthorityManifest(deep, "v1alpha1"),
+			vocabulary.ActorManifest(deep, "connector:toodeep"),
+			vocabulary.KindManifest(deep,
+				map[string]any{"singular": "row", "plural": "rows"},
+				map[string]any{"properties": map[string]any{
+					"l1": map[string]any{"type": "object", "fields": map[string]any{
+						"l2": map[string]any{"type": "object", "fields": map[string]any{
+							"l3": map[string]any{"type": "object", "fields": map[string]any{
+								"l4": map[string]any{"type": "object", "fields": map[string]any{
+									"l5": "string",
+								}},
+							}},
+						}},
+					}},
+				}}),
+		},
 	}); err == nil {
-		t.Fatal("a nested object must not register")
+		t.Fatal("a level-5 field must not register")
 	} else {
-		wantErr(t, err, substrate.ErrValidation, "nested object")
+		wantErr(t, err, substrate.ErrValidation, "fields nest")
 	}
 }
 
@@ -1067,7 +1095,9 @@ func TestHotMapTargets(t *testing.T) {
 			vocabulary.MappingManifest(authority, "libraryrowbook", map[string]any{
 				"from": authority + "/libraryrow", "to": "media.substrate.reamde.dev/book", "edge": "work",
 				"map": map[string]any{
-					"title": "title", "body": "body", "subtitle": "subtitle",
+					"title":    map[string]any{"path": "title"},
+					"body":     map[string]any{"path": "body"},
+					"subtitle": map[string]any{"path": "subtitle"},
 				},
 			}),
 		},

@@ -41,11 +41,9 @@ type Mapping struct {
 	Map      map[string]*MapRule
 	MapOrder []string
 
-	// Definition is the manifest's data map, exactly as authored.
+	// Definition is the declaration's own data map, exactly as authored — what
+	// the row stores as its properties.
 	Definition map[string]any
-	// SourceYAML is the verbatim manifest; installed authorities have no original
-	// text, so theirs is derived.
-	SourceYAML string
 }
 
 // Identity is "<authority>/<name>".
@@ -185,7 +183,7 @@ func (l *loader) parseMapping(d Document) *Mapping {
 		Name: local, Authority: g.Name,
 		From: mstr(d.Data, "from"), To: mstr(d.Data, "to"), Edge: mstr(d.Data, "edge"),
 		Map:        map[string]*MapRule{},
-		Definition: d.Data, SourceYAML: d.Source,
+		Definition: d.Data,
 	}
 	// `from` lives in data.authority and is spelled in full (§6.1): a mapping is
 	// authority-local, like a datatype.
@@ -243,21 +241,23 @@ func (l *loader) parseMapping(d Document) *Mapping {
 			continue
 		}
 		rule := &MapRule{Merge: MergeAtomic}
-		var raw string
-		switch v := rv.(type) {
-		case string:
-			raw = v
-		default:
-			rd := asMap(rv)
-			l.checkKeys(mwhere, rd, mapRuleKeys)
-			raw = mstr(rd, "path")
-			if mg := mstr(rd, "merge"); mg != "" {
-				if mg != MergeAtomic && mg != MergeUnion {
-					l.errf("%s.merge: %q is not a merge — \"atomic\" or \"union\"", mwhere, mg)
-					continue
-				}
-				rule.Merge = mg
+		// A rule is an OBJECT. The bare path string is refused: one property has
+		// one shape, which is what lets the meta-kind declare a rule's own fields.
+		// Stored mappings written that way are translated by the dialect rung
+		// (engine/dialectonegrammar.go).
+		if s, bare := rv.(string); bare {
+			l.errf("%s: %q is a bare path — a rule is an object: {path: %s}", mwhere, s, s)
+			continue
+		}
+		rd := asMap(rv)
+		l.checkKeys(mwhere, rd, mapRuleKeys)
+		raw := mstr(rd, "path")
+		if mg := mstr(rd, "merge"); mg != "" {
+			if mg != MergeAtomic && mg != MergeUnion {
+				l.errf("%s.merge: %q is not a merge — \"atomic\" or \"union\"", mwhere, mg)
+				continue
 			}
+			rule.Merge = mg
 		}
 		p, err := ParsePath(raw)
 		if err != nil {

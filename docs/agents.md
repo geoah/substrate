@@ -42,7 +42,8 @@ data:
     setclass tool, then hand the page to the reading-list agent.
   provider: default
   model: anthropic/claude-opus-5
-  tools: [web.bundles.substrate.reamde.dev/setclass]
+  tools:
+    - callable: web.bundles.substrate.reamde.dev/setclass
   agents: [web.bundles.substrate.reamde.dev/readinglistagent]
   budgets: {maxTurns: 4, maxToolCalls: 8, depth: 3}
   emit:
@@ -64,8 +65,9 @@ data:
   The substrate keeps no model table: re-pointing an agent at a cheaper model
   is one word here.
 - optional **`params`**: `{temperature, maxTokens}` for this agent's calls,
-  merged over the provider row's `defaults`. It lives in the manifest only —
-  there is no first-class column for it.
+  merged over the provider row's `defaults`. The set is closed, so a knob the
+  loop could not pass on is a load error rather than a line that silently does
+  nothing.
 - **`tools:`**, the callables the model may invoke (below).
 - **`agents:`**, sub-agent references (self-reference is a load error).
 - **`budgets:`** bounds one run: `maxTurns` (default 8, max 64),
@@ -102,20 +104,27 @@ data:
     callable: {kind: core.substrate.reamde.dev/agent, id: web.bundles.substrate.reamde.dev/pageclassifier}
 ```
 
-Because vocabulary is records, a parsed agent projects to a row the console lists
-and creates like any other, with first-class columns (`name`, `authority`,
-`description`, `prompt`, `provider`, `model`, `functions`, `subagents`)
-mirroring the manifest beside a `definition` json carrying the authoritative
-envelope. The loader rebuilds the registry from `definition` alone, so a create
-must set it and the columns stay its faithful mirror rather than a second
-source of truth.
+Because vocabulary is records, a parsed agent projects to a row the console
+lists and creates like any other, and **the properties are the declaration.**
+The row holds the manifest's own keys, one property per key: `params`, `tools`,
+`budgets`, `emit` and `reads` are declared properties like `prompt` and `model`,
+and the loader rebuilds the registry from exactly these. There is no
+`definition` blob and no projected mirror beside it, so what an author writes is
+what gets stored, and a write that names the retired blob is refused rather than
+half-obeyed.
 
 ## Tools
 
-A `tools:` entry is a bare string, one of the four built-ins or a function
-reference, or a `{callable, name, description}` alias that recolors this
-agent's prompt context without changing the function's canonical description.
-Tool names are unique per agent.
+A `tools:` entry names its arm: **`{builtin: …}`** for one of the four
+built-ins, or **`{callable: …}`** for a function identity, optionally aliased
+with `name` and `description` to recolor this agent's prompt context without
+changing the function's canonical card. Exactly one arm per entry, a built-in
+takes no alias (the loop owns its card), and tool names are unique per agent.
+
+A bare string is refused, naming the arm it meant. It named the arm by its
+value (a built-in if the word happened to be one, a callable otherwise), so one
+shape held two kinds of thing and a typo in a built-in's name silently became a
+callable nothing declares.
 
 - **`query`** is the capability-scoped read, and requires `reads:` — a load
   error otherwise. A get outside the allowlist answers like an absent id; list
@@ -149,10 +158,11 @@ Tool names are unique per agent.
   property must be writable on the target kind — so a malformed proposal (a
   wrapper-less diff, an immutable or unknown key) is a tool error the model
   sees, never a bad request reaching the owner's inbox.
-- **A function tool** runs through the same runner invoke a host call uses,
-  its declared input and output schemas enforced. Its effects pass both
-  envelopes: decoded against the function's capabilities, then held whole to
-  the agent's emit. One effect outside the agent's emit fails the whole tool
+- **A function tool** runs through the same runner invoke a host call uses, its
+  declared [arguments and returns](functions.md#arguments-and-returns) enforced,
+  and its compiled argument schema is the card the model is shown. Its effects
+  pass both grants: decoded against the function's own, then held whole to the
+  agent's emit. One effect outside the agent's emit fails the whole tool
   call as a result the model sees, and nothing applies.
 
 Applied effects land in their own transaction under the agent's actor, each row
@@ -242,9 +252,10 @@ pricing:
 **Every one of these is declared, not a json blob.** `wire` is an enum of the
 three wires, so a typo is refused at the write; `defaults` is an object of the
 two request knobs there are (`temperature`, `maxTokens`); `headers` and
-`pricing` are repeated objects, because the substrate has no map datatype and a
-keyed table is a list whose key is a declared field (`name`, `model`). A later
-row for the same key wins.
+`pricing` are repeated objects whose key is a declared field (`name`, `model`),
+and a later row for the same key wins. A map is declarable: a property marked
+`keyed: true` is one, which is how a kind's own `properties` block stays a map.
+These two stay lists because each row's key is a value with a name of its own.
 
 **The host key travels only to the host gateway.** An `openai` row with an
 empty `baseURL` means the host's configured gateway

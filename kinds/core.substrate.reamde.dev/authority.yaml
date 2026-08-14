@@ -12,25 +12,27 @@ data:
   names:
     singular: authority
     plural: authorities
-  displayTemplate: "{name}"
+  displayTemplate: "{localName}"
   # the authority-level keys a kind projection cannot carry: who may write
   # under the authority, and where its declarations came from.
   properties:
-    name:
-      type: string
-      description: the authority's DNS name
     version:
       type: string
+      managed: true
       description: the declared maturity statement, v1alpha1 unless said otherwise
+    # The authority's actors are read off the actor documents it declares, so
+    # the engine writes this list; nothing authors it on the header itself.
     actors:
       type: string
       repeated: true
+      managed: true
       description: the actors declared under this authority
     source:
       type: enum
       values:
         - builtin
         - installed
+      managed: true
       description: builtin for seeded authorities, installed for bundle ones
     # Issue 010 runtime state, owned by repository-open: set when a stored
     # closure no longer admits under the current binary — the authority
@@ -45,10 +47,12 @@ data:
     # too, and has no bundle row to carry the mark.
     quarantined:
       type: bool
+      managed: true
       description: set at repository-open when the authority's stored closure
         fails admission; cleared by re-applying a valid closure, or by an
         open that admits the stored one
     quarantineReason:
       type: string
+      managed: true
       description: the admission error that quarantined the authority
     # No sourceYAML (record 61): declaration rows store parsed facts only.

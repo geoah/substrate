@@ -18,7 +18,9 @@ data:
   # declaration carried no version of its own before this, inheriting the
   # authority's — and an unbumped edit is a no-op to the upgrade, so this key
   # is what carries the change into repositories that already hold the row.
-  version: v1alpha3
+  # v1alpha4: `toolCalls` is typed — a repeated {id, name, arguments} object
+  # instead of a json blob; the arguments stay the verbatim wire string.
+  version: v1alpha4
   names:
     singular: llmmessage
     plural: llmmessages
@@ -33,9 +35,24 @@ data:
     turn:
       type: int
       description: the loop iteration this row belongs to, for ordering
+    # The arguments ride as the VERBATIM wire string: they are the model's own
+    # JSON, echoed back on the tool result, and re-encoding them would change
+    # the bytes the provider matched a call by.
     toolCalls:
-      type: json
-      description: an assistant turn's dispatched calls, [{id, name, arguments}]
+      type: object
+      repeated: true
+      description: an assistant turn's dispatched calls
+      fields:
+        id:
+          type: string
+          description: the provider's call id, which a tool row answers by
+        name:
+          type: string
+          description: the tool the model called
+        arguments:
+          type: text
+          fts: false
+          description: the call's arguments, as the provider wrote them
     toolCallId:
       type: string
       description: the assistant tool call a tool row answers

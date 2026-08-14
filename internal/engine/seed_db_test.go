@@ -342,6 +342,151 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 	_ = svc3.Close()
 }
 
+// kindDecl is the record kind a kind DECLARATION stores as, spelled once for
+// the projection test below.
+const kindDecl = "core.substrate.reamde.dev/kind"
+
+// plantKindDeclarationsWithout stands the repository up as a binary that never
+// declared `prop` on core's `kind` left it: `prop` absent from core's own `kind`
+// declaration, absent from every kind declaration ROW because that binary's
+// projection never wrote it, and that declaration at `version` — ahead of the
+// tree's, so the boot upgrade keeps it. Every other declaration keeps the
+// version the tree ships, so the upgrade leaves those alone too.
+func plantKindDeclarationsWithout(t *testing.T, ds substrate.Dataset, prop, version string) {
+	t.Helper()
+	p := planter(t, ds)
+	rows := declarationRows(t, ds)[kindDecl]
+	if len(rows) == 0 {
+		t.Fatalf("the repository holds no %s row", kindDecl)
+	}
+	seen := false
+	for _, row := range rows {
+		props := map[string]any{}
+		for k, v := range row.Properties {
+			if k != prop {
+				props[k] = v
+			}
+		}
+		if row.ID == kindDecl {
+			seen = true
+			declared, _ := props["properties"].(map[string]any)
+			if _, ok := declared[prop]; !ok {
+				t.Fatalf("core's kind declaration does not declare %q to begin with", prop)
+			}
+			narrowed := map[string]any{}
+			for k, v := range declared {
+				if k != prop {
+					narrowed[k] = v
+				}
+			}
+			props["properties"] = narrowed
+			props["version"] = version
+		}
+		if err := p.PlantDeclarationRow(context.Background(), kindDecl, row.ID, props); err != nil {
+			t.Fatalf("plant %s %s: %v", kindDecl, row.ID, err)
+		}
+	}
+	if !seen {
+		t.Fatalf("the repository holds no %s declaration of its own", kindDecl)
+	}
+}
+
+// THE MIXED CASE, and the other half of the projection's registry rule.
+//
+// A stored declaration at or ahead of the binary's is never downgraded, so the
+// upgrade SKIPS it and its definition survives the commit. The rows the same
+// upgrade does write are therefore still that declaration's business: validating
+// them against the binary's candidate would admit rows the surviving declaration
+// rejects, and the repository would open holding rows its own live kind refuses.
+// projectionKind resolves a row's kind from the candidate only when this
+// projection installs that kind's declaration, so here it resolves the stored
+// one and the row does not land.
+func TestBootUpgradeHoldsRowsToADeclarationItKeeps(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	dsn := testdb.NewSchema(t)
+	tree := shippedTree(t)
+
+	svc1 := openTree(t, dsn, tree)
+	if _, err := svc1.CreateRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	ds1, err := svc1.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The sibling declaration the upgrade will write, picked from the store: any
+	// core kind but `kind` itself whose declaration carries a `description`, which
+	// is the property the newer stored `kind` declaration below stops declaring.
+	sibling := ""
+	for _, row := range declarationRows(t, ds1)[kindDecl] {
+		if desc, _ := row.Properties["description"].(string); row.ID != kindDecl && desc != "" {
+			sibling = row.ID
+			break
+		}
+	}
+	if sibling == "" {
+		t.Fatal("no core kind declaration carries a description; the fixture needs one")
+	}
+
+	// The repository as a binary AHEAD of this one left it: its `kind` declaration
+	// stops declaring `description` and stands at a version the tree cannot touch,
+	// and its projection wrote no `description` on any declaration row.
+	plantKindDeclarationsWithout(t, ds1, "description", "v1alpha99")
+	// …and ONE sibling declaration with its version deleted, which compares below
+	// every version, so the upgrade has something to write into core at all. The
+	// row it would project carries `description`.
+	stale := mustGet(t, ds1, kindDecl, sibling)
+	props := map[string]any{}
+	for k, v := range stale.Properties {
+		if k != "version" {
+			props[k] = v
+		}
+	}
+	if err := planter(t, ds1).PlantDeclarationRow(ctx, kindDecl, sibling, props); err != nil {
+		t.Fatalf("plant the stale sibling: %v", err)
+	}
+	_ = svc1.Close()
+
+	svc2 := openTree(t, dsn, tree)
+	t.Cleanup(func() { _ = svc2.Close() })
+	_, err = svc2.Dataset(ctx, "geoah")
+	// What matters is the invariant below: no row lands that the surviving
+	// declaration rejects. Today the projection's refusal is how it holds, so the
+	// upgrade fails rather than writing such a row.
+	if err == nil {
+		t.Fatal("the upgrade admitted a row the declaration it kept does not declare")
+	}
+	if !strings.Contains(err.Error(), "not declared") {
+		t.Fatalf("the refusal must name the undeclared property: %v", err)
+	}
+
+	raw, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "geoah"), engine.RoleApp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	var carrying int
+	if err := raw.QueryRowContext(ctx,
+		`SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL AND props ? 'description'`,
+		kindDecl).Scan(&carrying); err != nil {
+		t.Fatal(err)
+	}
+	if carrying != 0 {
+		t.Fatalf("%d declaration rows carry a property the stored declaration does not declare", carrying)
+	}
+	// And the newer stored declaration stands: nothing was downgraded.
+	var version string
+	if err := raw.QueryRowContext(ctx,
+		`SELECT props->>'version' FROM records WHERE kind = $1 AND id = $1`, kindDecl).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != "v1alpha99" {
+		t.Fatalf("the stored declaration version = %q, want v1alpha99", version)
+	}
+}
+
 // Only same-or-newer wins: a binary whose tree went BACKWARDS never rewrites a
 // repository's declarations, and never prunes what it stopped shipping.
 func TestBootUpgradeNeverDowngrades(t *testing.T) {

@@ -43,7 +43,12 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: google.bundles.substrate.reamde.dev
 data:
-  version: v1alpha1
+  # v1alpha2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
+  # declared spellings — whichever of them they used: a tool entry naming its arm,
+  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
+  # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
+  # carries the closure whole rather than saying every declaration in it moved.
+  version: v1alpha2
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -100,11 +105,14 @@ data:
     emailProperty: email
     featureScopes:
       enabledContacts:
-        - https://www.googleapis.com/auth/contacts.readonly
+        scopes:
+          - https://www.googleapis.com/auth/contacts.readonly
       enabledGmail:
-        - https://www.googleapis.com/auth/gmail.readonly
+        scopes:
+          - https://www.googleapis.com/auth/gmail.readonly
       enabledCalendar:
-        - https://www.googleapis.com/auth/calendar.readonly
+        scopes:
+          - https://www.googleapis.com/auth/calendar.readonly
   installs:
     - google.bundles.substrate.reamde.dev/config
     - google.bundles.substrate.reamde.dev/account
@@ -497,19 +505,18 @@ data:
     the People sync token for the next incremental run.
   runtime: python
   timeoutMs: 30000
-  capabilities:
-    emit:
+  emit:
+    - google.bundles.substrate.reamde.dev/contact
+    - google.bundles.substrate.reamde.dev/account
+  # The mark-and-sweep reads this account's own local contacts to find the
+  # rows a full re-read could not tombstone (review-google #6).
+  reads:
+    kinds:
       - google.bundles.substrate.reamde.dev/contact
-      - google.bundles.substrate.reamde.dev/account
-    # The mark-and-sweep reads this account's own local contacts to find the
-    # rows a full re-read could not tombstone (review-google #6).
-    reads:
-      kinds:
-        - google.bundles.substrate.reamde.dev/contact
-    network:
-      - "people.googleapis.com"
-      - "www.googleapis.com"
-      - "oauth2.googleapis.com"
+  network:
+    - "people.googleapis.com"
+    - "www.googleapis.com"
+    - "oauth2.googleapis.com"
   source: |
     # /// script
     # requires-python = ">=3.11"
@@ -924,43 +931,41 @@ data:
     loop with nextCursor until empty.
   runtime: python
   timeoutMs: 60000
-  input:
-    type: object
-    properties:
-      limit:
-        type: number
-        description: max contacts examined this call (default 200, capped
-          at 200)
-      cursor:
-        type: string
-        description: the nextCursor a previous call returned — omit on the
-          first call
-  output:
-    type: object
-    properties:
-      migrated:
-        type: number
-      absorbed:
-        type: number
-      skipped:
-        type: number
-      nextCursor:
-        type: string
-        description: feed back as `cursor`; empty means the book is drained
-    required: [migrated, absorbed, skipped, nextCursor]
-  capabilities:
-    emit:
+  arguments:
+    - name: limit
+      type: float
+      description: "max contacts examined this call (default 200, capped at
+        200)"
+    - name: cursor
+      type: string
+      description: the nextCursor a previous call returned — omit on the first
+        call
+  returns:
+    - name: migrated
+      type: float
+      required: true
+    - name: absorbed
+      type: float
+      required: true
+    - name: skipped
+      type: float
+      required: true
+    - name: nextCursor
+      type: string
+      required: true
+      description: "feed back as `cursor`; empty means the book is drained"
+  emit:
+    - google.bundles.substrate.reamde.dev/contact
+    # The absorbed-orphan fix emits a person MERGE (old person wins);
+    # merge effects gate on BOTH the emit ceiling and the mutations grant.
+    - people.substrate.reamde.dev/person
+  mutations: [merge]
+  reads:
+    kinds:
       - google.bundles.substrate.reamde.dev/contact
-      # The absorbed-orphan fix emits a person MERGE (old person wins);
-      # merge effects gate on BOTH the emit ceiling and the mutations grant.
-      - people.substrate.reamde.dev/person
-    mutations: [merge]
-    reads:
-      kinds:
-        - google.bundles.substrate.reamde.dev/contact
-      budgets:
-        calls: 256
-        rows: 10000
+    budgets:
+      calls: 256
+      rows: 10000
   source: |
     """Re-key contact rows onto the SDK external-id scheme — one
     BOUNDED batch per call (fleet review: Claude P0-2, Codex H2/H6).
@@ -1159,8 +1164,10 @@ data:
     - from: "emails[].value"
       to: emails
   map:
-    name: name.displayName
-    displayName: name.displayName
+    name:
+      path: name.displayName
+    displayName:
+      path: name.displayName
     emails:
       path: "emails[].value"
       merge: union
@@ -1237,7 +1244,8 @@ data:
     - from: address
       to: emails
   map:
-    name: displayName
+    name:
+      path: displayName
     emails:
       path: address
       merge: union
@@ -1432,7 +1440,7 @@ data:
 # Dependency-free: stdlib urllib + json + email.utils, NO PEP 723 block, so it
 # runs on the shared python3 fast path (no uv provisioning at registration)
 # and the request origin is ours to pin by hand — a discovery client picks its
-# own hosts, and `capabilities.network` is declared-but-unenforced.
+# own hosts, and the `network:` grant is declared-but-unenforced.
 #
 # emit names the two mirrors, the shared emailaddress source, the account (the
 # stream's own stamp) AND the two core messaging types: the emit ceiling is
@@ -1450,29 +1458,28 @@ data:
     rows with person-resolved addresses.
   runtime: python
   timeoutMs: 30000
-  capabilities:
-    emit:
+  emit:
+    - google.bundles.substrate.reamde.dev/thread
+    - google.bundles.substrate.reamde.dev/message
+    - google.bundles.substrate.reamde.dev/emailaddress
+    - google.bundles.substrate.reamde.dev/account
+    - messaging.substrate.reamde.dev/emailthread
+    - messaging.substrate.reamde.dev/emailmessage
+  # The mirrors drive the newest-wins thread merge and the sweep; the core
+  # types are read ONLY to prove a row exists before retracting it (a
+  # delete of something never written is ErrNotFound and would fail the
+  # whole delivery).
+  reads:
+    kinds:
       - google.bundles.substrate.reamde.dev/thread
       - google.bundles.substrate.reamde.dev/message
-      - google.bundles.substrate.reamde.dev/emailaddress
-      - google.bundles.substrate.reamde.dev/account
       - messaging.substrate.reamde.dev/emailthread
       - messaging.substrate.reamde.dev/emailmessage
-    # The mirrors drive the newest-wins thread merge and the sweep; the core
-    # types are read ONLY to prove a row exists before retracting it (a
-    # delete of something never written is ErrNotFound and would fail the
-    # whole delivery).
-    reads:
-      kinds:
-        - google.bundles.substrate.reamde.dev/thread
-        - google.bundles.substrate.reamde.dev/message
-        - messaging.substrate.reamde.dev/emailthread
-        - messaging.substrate.reamde.dev/emailmessage
-      budgets:
-        calls: 256
-        rows: 10000
-    network:
-      - "gmail.googleapis.com"
+    budgets:
+      calls: 256
+      rows: 10000
+  network:
+    - "gmail.googleapis.com"
   source: |
     """Gmail sync — one provider page, or one hydrate batch, per invocation.
 
@@ -2651,30 +2658,29 @@ data:
     rows with person-resolved attendees.
   runtime: python
   timeoutMs: 30000
-  capabilities:
-    emit:
+  emit:
+    - google.bundles.substrate.reamde.dev/calendar
+    - google.bundles.substrate.reamde.dev/event
+    - google.bundles.substrate.reamde.dev/emailaddress
+    - google.bundles.substrate.reamde.dev/account
+    - calendar.substrate.reamde.dev/calendar
+    - calendar.substrate.reamde.dev/calendarevent
+  # The calendar mirror holds each calendar's own sync token; the event
+  # mirror drives the sweep. The core types are read ONLY to prove a row
+  # exists before retracting it — every delta carries `cancelled` entries
+  # for events this window never stored, and deleting one that was never
+  # written is ErrNotFound and would fail the whole delivery.
+  reads:
+    kinds:
       - google.bundles.substrate.reamde.dev/calendar
       - google.bundles.substrate.reamde.dev/event
-      - google.bundles.substrate.reamde.dev/emailaddress
-      - google.bundles.substrate.reamde.dev/account
       - calendar.substrate.reamde.dev/calendar
       - calendar.substrate.reamde.dev/calendarevent
-    # The calendar mirror holds each calendar's own sync token; the event
-    # mirror drives the sweep. The core types are read ONLY to prove a row
-    # exists before retracting it — every delta carries `cancelled` entries
-    # for events this window never stored, and deleting one that was never
-    # written is ErrNotFound and would fail the whole delivery.
-    reads:
-      kinds:
-        - google.bundles.substrate.reamde.dev/calendar
-        - google.bundles.substrate.reamde.dev/event
-        - calendar.substrate.reamde.dev/calendar
-        - calendar.substrate.reamde.dev/calendarevent
-      budgets:
-        calls: 256
-        rows: 10000
-    network:
-      - "www.googleapis.com"
+    budgets:
+      calls: 256
+      rows: 10000
+  network:
+    - "www.googleapis.com"
   source: |
     """Google Calendar sync — one events page per calendar per invocation.
 
@@ -2769,7 +2775,7 @@ data:
 
 
     def _get(token, path, params=None):
-        # F1 origin pinning: `capabilities.network` is declared but NOT
+        # F1 origin pinning: the `network:` grant is declared but NOT
         # enforced, so this refusal is the defense. It raises inside the
         # per-account try/except, so a tampered base stamps THAT account
         # erroring rather than parking the whole delivery.

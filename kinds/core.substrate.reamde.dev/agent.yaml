@@ -5,15 +5,10 @@
 # functions — trigger deliveries, the call API, sub-agent calls — under the
 # actor `function:<name>`.
 #
-# The row surfaces the agent's shape as first-class fields — prompt, the
-# provider + model, the function tools and the sub-agents — so an ordinary
-# create-from-type form can compose one. `definition` remains the authoritative
-# manifest store (the loader rebuilds the registry from it, record 61): it
-# carries the full envelope the first-class columns summarize — the built-in
-# tools (query/propose), tool aliases, budgets, emit and reads — and a create
-# must set it. The first-class columns are the projection's faithful mirror,
-# not a second source of truth. The built-in tool set is query/propose/
-# graphql/mutate; like the aliases and budgets, a grant lives in `definition`.
+# THE PROPERTIES ARE THE DECLARATION. There is no `definition` blob and no
+# projected mirror beside it: the row holds the manifest's own keys, one
+# property per key, and what an author writes is what gets stored. The loader
+# rebuilds the registry from exactly these.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: core.substrate.reamde.dev/agent
@@ -35,54 +30,146 @@ data:
   # v1alpha5: the declaration gained `subagentOnly`, the chat-surface
   # withholding (an llm-as-judge exists to be called by other agents); the
   # bump carries the column into repositories that stored the v1alpha4 shape.
-  version: v1alpha5
+  # v1alpha6: TYPED. `definition` and the `functions`/`subagents` mirrors are
+  # gone; the manifest's own keys — params, tools, budgets, emit, reads — are
+  # properties, and `name` left with them (a declaration's local name is its
+  # id's last segment, which is what `{localName}` renders).
+  version: v1alpha6
   names:
     singular: agent
     plural: agents
-  displayTemplate: "{name}"
+  displayTemplate: "{localName}"
   properties:
-    # Every declaration carries its own version: the
-    # declaring authority's, unless the declaration overrides it. It is what the
-    # boot-time upgrade diffs a repository's shipped vocabulary against, so
-    # it is written on every projected declaration row.
+    # Every declaration carries its own version: the declaring authority's,
+    # unless the declaration overrides it. It is what the boot-time upgrade
+    # diffs a repository's shipped vocabulary against, so it is written on
+    # every declaration row — by the engine, which is what `managed` says.
     version:
       type: string
+      managed: true
       description: this declaration's version
-    name:
-      type: string
-      description: the agent's local name
     authority:
       type: string
+      required: true
       description: the authority that declares it
     description:
       type: string
+      required: true
       description: the model-facing tool card — what this agent is for as
         a sub-agent
+    # NEVER FTS-indexed: a system prompt is a page of prose, and indexing it
+    # would make every agent the top hit for any word it happens to use.
     prompt:
       type: text
+      fts: false
+      required: true
       description: the system prompt; the row is the prompt store
     # The llmprovider data-record id (`default` or a custom row); the loop reads
-    # wire/baseURL/apiKey off that row at dispatch
-    # (core.substrate.reamde.dev/llmprovider). The model is the agent's own
-    # word, sent verbatim on every completion.
+    # wire/baseURL/apiKey off that row at dispatch. A record id, not a
+    # reference: an llmprovider row is runtime state and resolves at dispatch.
     provider:
       type: string
+      refersTo: provider
+      required: true
       description: the llmprovider record id this agent's loop completes against
     model:
       type: string
+      required: true
       description: the model id sent on every completion
-    # The callable function identities the agent may call, in declaration order
-    # (a ref-typed list — each value is a core.substrate.reamde.dev/function record id).
-    functions:
+    params:
+      type: object
+      description: this agent's request knobs; the provider row's defaults
+        sit under them
+      fields:
+        temperature:
+          type: float
+          description: the sampling temperature, when the model accepts one
+        maxTokens:
+          type: int
+          min: 1
+          description: the completion cap sent on every request
+    # Exactly one of builtin/callable names the tool. A built-in takes no alias:
+    # the loop owns its card.
+    tools:
+      type: object
+      repeated: true
+      description: what the model may call, in declaration order
+      fields:
+        builtin:
+          type: enum
+          values:
+            - query
+            - propose
+            - graphql
+            - mutate
+          description: the built-in tool this entry names
+        callable:
+          type: string
+          refersTo: function
+          description: the function identity this entry names
+        name:
+          type: string
+          description: the model-facing tool name, aliasing a callable
+        description:
+          type: string
+          description: the model-facing card, overriding the callable's own
+    agents:
       type: string
       repeated: true
-      description: the function records this agent may call as tools
-    # The sub-agent identities the loop exposes as tools (each an
-    # core.substrate.reamde.dev/agent record id); the depth cap bounds the chain below.
-    subagents:
+      refersTo: agent
+      description: the sub-agent identities the loop exposes as tools
+    budgets:
+      type: object
+      description: what bounds one invocation
+      fields:
+        maxTurns:
+          type: int
+          min: 1
+          max: 64
+          description: completions the loop may spend
+        maxToolCalls:
+          type: int
+          min: 1
+          max: 256
+          description: tool calls the loop may spend
+        deadlineSeconds:
+          type: int
+          min: 1
+          max: 600
+          description: wall clock for the whole invocation
+        depth:
+          type: int
+          min: 1
+          max: 3
+          description: how deep the sub-agent chain below may go
+    emit:
       type: string
       repeated: true
-      description: the sub-agent records this agent may delegate to
+      refersTo: kind
+      description: the kinds this agent's tool-call effects may address
+    reads:
+      type: object
+      description: what the `query` built-in may touch; absent withholds it
+      fields:
+        kinds:
+          type: string
+          repeated: true
+          refersTo: kind
+          description: the kinds every read is held to
+        budgets:
+          type: object
+          description: what one invocation's reads may spend
+          fields:
+            calls:
+              type: int
+              min: 1
+              max: 1000
+              description: host read calls per invocation
+            rows:
+              type: int
+              min: 1
+              max: 10000
+              description: rows read per invocation
     # Withholds the agent from the interactive chat surface only: the console
     # keeps it off the chat list and the chat API refuses it, while sub-agent
     # calls, the call API and triggers still dispatch it. Any agent, marked or
@@ -90,9 +177,3 @@ data:
     subagentOnly:
       type: bool
       description: only callable by other agents; withheld from the chat surface
-    # The authoritative manifest data — prompt/provider/model/params/tools/
-    # agents/budgets/emit/reads, exactly as authored. The loader rebuilds the agent from this; the
-    # first-class columns above are its projected summary.
-    definition:
-      type: json
-      description: the parsed manifest data the registry rebuilds from

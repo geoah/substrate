@@ -63,11 +63,12 @@ const (
 	// the only TRAVERSABLE relationship, but a stored typed pointer is
 	// DatatypeReference below.
 	DatatypeState Datatype = "state"
-	// DatatypeObject is an inline structured property: named scalar fields, one
-	// level deep, declared right on the property. `json` survives
-	// only for payloads whose shape we do not own; anything a path reads must
-	// be declared. Not in builtinKinds: it is never a refinement base, never a
-	// capability property, and its parse branch owns its own key set.
+	// DatatypeObject is an inline structured property: named fields declared
+	// right on the property, each a scalar, a reference or another object, to
+	// MaxFieldDepth levels. `json` survives only for payloads whose shape we do
+	// not own; anything a path reads must be declared. Not in builtinKinds: it
+	// is never a refinement base, never a capability property, and its parse
+	// branch owns its own key set.
 	DatatypeObject Datatype = "object"
 	// DatatypeReference is a typed POINTER stored as a property value: the same
 	// {authority, type, id} triple S1/A9 made canonical for an edge target
@@ -126,6 +127,23 @@ type Property struct {
 	Datatype    Datatype
 	Refined     string // the declared type name when it is a custom refinement
 	Repeated    bool   // declared `repeated: true`: a list of Datatype
+	// Keyed is declared `keyed: true`, the twin of Repeated: the stored value is
+	// a JSON OBJECT whose every value follows the rest of this declaration (the
+	// declared fields for an object, the declared scalar otherwise). The KEYS are
+	// data, so nothing declares them one by one — KeyPattern is the whole
+	// contract they hold to. Keyed and Repeated are never both true: a map is
+	// not a list.
+	//
+	// A keyed map whose values are themselves a keyed map is not declarable, and
+	// that is deliberate: the value's shape IS this declaration, so there is no
+	// second node to hang a second `keyed:` on. Two data-keyed levels in a row
+	// would leave every reader guessing which level a path addressed.
+	Keyed bool
+	// KeyPattern is the declared contract a keyed map's keys hold to:
+	// KeyPatternCamel (a property-name key), KeyPatternKindRef (a bare or
+	// qualified kind reference), or empty for any non-empty key. It is
+	// meaningless without Keyed and refused there.
+	KeyPattern string
 	// Values is an enum's ordered admissible set — each an opaque value paired
 	// with an OPTIONAL human label. Declaration order is render
 	// order. Validation reads Value alone (ValueStrings); the Label is purely
@@ -178,14 +196,34 @@ type Property struct {
 	// property's Description.
 	Inverse            string
 	InverseDescription string
-	// Fields are an object property's declared fields: scalar
-	// kinds or authority-local refinements, one level deep, one value each. Nil
-	// for every other kind. Object properties stay out of FTS, embed and the
-	// filter grammar until a consumer arrives (§15).
+	// Fields are an object's declared fields: scalar kinds, authority-local
+	// refinements, references or further objects, each in its own container
+	// (single, Repeated or Keyed), nesting to MaxFieldDepth. Nil for every other
+	// kind. Objects and keyed maps stay out of FTS, embed and the filter grammar
+	// at every level until a consumer arrives (§15).
 	Fields     map[string]*Property
 	FieldOrder []string
 	// Implicit marks properties declared indirectly (machine stamps).
 	Implicit bool
+	// Managed marks a property the ENGINE stamps: `version`, `source`, the
+	// quarantine fields, the bundle lifecycle bools. It is the declaration of
+	// that fact, so a client can render the property read-only instead of
+	// offering an input the write path will not honor. The write path READS this
+	// flag: a declaration write carrying a managed property is refused unless the
+	// value equals the one the row already holds, so an edit can never look
+	// obeyed, and `get -o yaml | apply -f` still round-trips
+	// (checkDeclarationWrite, in internal/engine). This is the only statement of
+	// the stamped set; the engine keeps no hand-written list beside it.
+	Managed bool
+	// RefersTo marks a STRING property whose value names something in the
+	// registry rather than being free text: a kind (`emit: [person]`), a
+	// function, an agent, an authority or an llmprovider. It changes no stored
+	// value and validates nothing — existence is settled at registry
+	// finalization, which knows the whole closure — and exists so a client can
+	// offer a picker from the declaration alone instead of a hand-kept map of
+	// property name to picker. Refused on any other datatype: a reference-typed
+	// pointer already carries its referent in `to:`.
+	RefersTo string
 	// Writer restricts WHICH actor role may write this property, enforced
 	// server-side after the merged row is known. Empty is
 	// unrestricted — the ordinary "nothing ranks writers" rule. The declared
@@ -207,6 +245,90 @@ const (
 	WriterConnector = "connector"
 	WriterOwner     = "owner"
 )
+
+// The admitted `keyPattern:` contracts of a keyed map's keys. Both reuse the
+// validator the rest of the loader holds the same spelling to, so a key and a
+// declared name (or a kind reference) can never drift apart.
+const (
+	KeyPatternCamel   = "camel"
+	KeyPatternKindRef = "kindRef"
+)
+
+// The admitted `refersTo:` markers: what a string property's value NAMES.
+// `provider` is an llmprovider record, which is data rather than vocabulary and
+// is why it is not spelled with the others' registry sense.
+const (
+	RefersToKind      = "kind"
+	RefersToFunction  = "function"
+	RefersToAgent     = "agent"
+	RefersToAuthority = "authority"
+	RefersToProvider  = "provider"
+)
+
+// MaxFieldDepth is how deep declared fields nest: a kind's own property is
+// level 1, so a level-MaxFieldDepth field holds a scalar and never an object.
+// The bound is declared rather than discovered because every narrowing guard
+// walks it (engine/schemadiff.go) — an unbounded dialect would need a general
+// jsonb path walker in exactly the code a regression must not hide in.
+const MaxFieldDepth = 4
+
+// KeyPatternRegexp is the anchored regular expression a keyed map's keys match
+// under the given contract, and "" when the contract admits every non-empty key.
+// It exists so a SQL guard can count the keys a TIGHTENED contract would refuse
+// instead of refusing every populated map: the pattern travels, the grammar
+// stays here (naming.go).
+func KeyPatternRegexp(pattern string) string {
+	switch pattern {
+	case KeyPatternCamel:
+		return "^" + camelRE + "$"
+	case KeyPatternKindRef:
+		return "^" + kindRefRE + "$"
+	}
+	return ""
+}
+
+// keyPatternRE compiles what KeyPatternRegexp hands out, so the write path and
+// the narrowing guard's SQL are not two spellings of one grammar but one
+// spelling asked twice. Nothing else in the loader needs to be this literal;
+// this contract does, because a key the write path admits and the guard refuses
+// is a stored map that can never be brought under its own declaration.
+var keyPatternRE = map[string]*regexp.Regexp{
+	KeyPatternCamel:   regexp.MustCompile(KeyPatternRegexp(KeyPatternCamel)),
+	KeyPatternKindRef: regexp.MustCompile(KeyPatternRegexp(KeyPatternKindRef)),
+}
+
+// keyPatternRule is what each contract says when it refuses, in the author's
+// terms rather than the regexp's.
+var keyPatternRule = map[string]string{
+	KeyPatternCamel:   camelRule,
+	KeyPatternKindRef: "a kind reference (`task` or `tasks.example.com/task`)",
+}
+
+// CheckKey holds one key of a keyed map to the declared contract. The keys are
+// DATA: an undeclared key is admitted (that is what a map is for), and this is
+// the whole check that stands between the writer and the stored value.
+//
+// It matches the shared PATTERN rather than calling the sibling validators, and
+// for kindRef that is a deliberate narrowing of one: ValidKindReference splits on
+// the first slash and validates the authority only when it is non-empty, so it
+// admits "/task" — an empty authority, which is not a kind reference and which
+// no reference the registry resolves has ever been spelled as. Fixing the
+// validator itself would move a trigger source and every function allowlist that
+// stored one, so the quirk stays where it is and the KEY contract holds to the
+// grammar the guard counts against.
+func (p *Property) CheckKey(key string) error {
+	if key == "" {
+		return fmt.Errorf("a keyed map's key is never empty")
+	}
+	re, contracted := keyPatternRE[p.KeyPattern]
+	if !contracted {
+		return nil
+	}
+	if !re.MatchString(key) {
+		return fmt.Errorf("key %q must be %s", key, keyPatternRule[p.KeyPattern])
+	}
+	return nil
+}
 
 // EnumValue is one admissible value of an enum, paired with the OPTIONAL
 // human label a client renders beside it (`last30d` → "Last 30 days"), so a

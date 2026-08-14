@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -54,8 +55,8 @@ data:
   authority: core.example.com
   # backed by the physical at/ends_at/due_at columns every record row carries
   oneOf:
-    point: {at: datetime}
-    range: {at: datetime, endsAt: datetime}
+    - {name: point, properties: {at: datetime}}
+    - {name: range, properties: {at: datetime, endsAt: datetime}}
 ---
 kind: core.substrate.reamde.dev/kind
 metadata:
@@ -141,7 +142,7 @@ data:
   match:
     - {from: "emails[].value", to: emails}
   map:
-    name: name.displayName
+    name: {path: name.displayName}
     emails: {path: "emails[].value", merge: union}
 ---
 # one book, in whatever formats you hold it
@@ -169,7 +170,7 @@ data:
   authority: vocab.example.com
   names: {singular: task, plural: tasks}
   traits: ["temporal(point: dueAt)"]
-  indices: [[status, dueAt]]
+  indices: [{properties: [status, dueAt]}]
   properties:
     # a machine IS a property: one namespace, one wire map
     status:
@@ -373,17 +374,21 @@ data:
 	if got := p.ValueStrings(); len(got) != 3 || got[0] != "none" || got[2] != "all" {
 		t.Fatalf("ValueStrings = %v", got)
 	}
-	// The read surfaces (the console) get one canonical shape off the Definition
-	// map: [{value, label}], both keys present, even for the bare-scalar entry.
+	// THE DECLARATION IS UNTOUCHED. The Definition map is what a row stores, so
+	// the values stay spelled the way they were authored — two mappings and one
+	// bare scalar — and every reader of the stored form takes both spellings
+	// (EnumValue.UnmarshalYAML here, parseEnumValues in the console).
 	props := acct.Definition["properties"].(map[string]any)
 	def := props["backfillDepth"].(map[string]any)
 	vals, ok := def["values"].([]any)
 	if !ok || len(vals) != 3 {
-		t.Fatalf("definition values = %v (want a [{value,label}] list)", def["values"])
+		t.Fatalf("definition values = %v", def["values"])
 	}
-	bare := vals[2].(map[string]any)
-	if bare["value"] != "all" || bare["label"] != "" {
-		t.Fatalf("bare entry canonicalized to %v, want {value: all, label: \"\"}", bare)
+	if first, isMap := vals[0].(map[string]any); !isMap || first["label"] != "Don't backfill" {
+		t.Fatalf("the labeled entry was rewritten: %#v", vals[0])
+	}
+	if vals[2] != "all" {
+		t.Fatalf("the bare entry was rewritten to %#v — the declaration is what the author wrote", vals[2])
 	}
 }
 
@@ -616,7 +621,7 @@ func TestSourceYAMLIsTheDocument(t *testing.T) {
 	}
 	if !strings.HasPrefix(temporal.SourceYAML, "# when a thing sits on the timeline") ||
 		!strings.Contains(temporal.SourceYAML, "  # backed by the physical at/ends_at/due_at columns") ||
-		!strings.HasSuffix(temporal.SourceYAML, "    range: {at: datetime, endsAt: datetime}") {
+		!strings.HasSuffix(temporal.SourceYAML, "    - {name: range, properties: {at: datetime, endsAt: datetime}}") {
 		t.Fatalf("temporal source:\n%s", temporal.SourceYAML)
 	}
 	if temporal.Definition["oneOf"] == nil {
@@ -1108,7 +1113,7 @@ func TestInstalledMapping(t *testing.T) {
 			map[string]any{"from": "email", "to": "emails"},
 		},
 		"map": map[string]any{
-			"name":   "realName",
+			"name":   map[string]any{"path": "realName"},
 			"emails": map[string]any{"path": "email", "merge": "union"},
 		},
 	})
@@ -1320,8 +1325,8 @@ func TestMappings(t *testing.T) {
 	if rule := m.Map["emails"]; rule.Merge != vocabulary.MergeUnion || !rule.Path.OverList {
 		t.Fatalf("map.emails = %+v", rule)
 	}
-	if m.SourceYAML == "" || m.Definition["edge"] != "contact" {
-		t.Fatalf("mapping definition/source lost: %+v", m)
+	if m.Definition["edge"] != "contact" {
+		t.Fatalf("the mapping's own data map lost its edge: %+v", m)
 	}
 
 	// The target side.
@@ -1703,10 +1708,31 @@ type testResolver struct {
 	props   map[string]string
 	edges   map[string]string
 	snippet string
+	derived map[string]string
+	// declares is the kind's declared property set where it differs from the
+	// props map — a property declared but EMPTY on the row.
+	declares []string
 }
 
 func (r testResolver) Prop(n string) string { return r.props[n] }
-func (r testResolver) Snippet() string      { return r.snippet }
+
+func (r testResolver) Declares(n string) bool {
+	if _, ok := r.props[n]; ok {
+		return true
+	}
+	if _, ok := r.edges[n]; ok {
+		return true
+	}
+	return slices.Contains(r.declares, n)
+}
+
+func (r testResolver) Derived(token string) string {
+	if token == vocabulary.DerivedSnippet {
+		return r.snippet
+	}
+	return r.derived[token]
+}
+
 func (r testResolver) Edge(rel, prop string) string {
 	if prop == "" {
 		return r.edges[rel]
@@ -1943,11 +1969,9 @@ data:
 		"unknown data key": typ(`  names: {singular: contact, plural: contacts}
   fields: {a: {type: string}}
 `),
-		// Object properties: fields are one level deep, declared
-		// scalars only, camelCase, one value each — and never a refinement base.
-		"nested object": typ(`  names: {singular: contact, plural: contacts}
-  properties: {name: {type: object, fields: {inner: {type: object, fields: {a: {type: string}}}}}}
-`),
+		// Object fields nest to MaxFieldDepth and hold declared shapes: never
+		// json/secret/digest/state/blobref, never a snake name, never a reserved
+		// one — and an object is never a refinement base.
 		"json field": typ(`  names: {singular: contact, plural: contacts}
   properties: {name: {type: object, fields: {raw: {type: json}}}}
 `),
@@ -1963,9 +1987,6 @@ data:
 		"reserved field": typ(`  names: {singular: contact, plural: contacts}
   properties: {name: {type: object, fields: {title: {type: string}}}}
 `),
-		"repeated field": typ(`  names: {singular: contact, plural: contacts}
-  properties: {name: {type: object, fields: {alias: {type: string, repeated: true}}}}
-`),
 		"object without fields": typ(`  names: {singular: contact, plural: contacts}
   properties: {name: {type: object}}
 `),
@@ -1977,6 +1998,73 @@ data:
 `),
 		"fts on an object": typ(`  names: {singular: contact, plural: contacts}
   properties: {name: {type: object, fts: true, fields: {a: {type: string}}}}
+`),
+		// A level-5 field: the dialect admits four, and the guards that refuse a
+		// narrowing walk exactly that many jsonb notches.
+		"field nested past the depth": typ(`  names: {singular: contact, plural: contacts}
+  properties:
+    deep:
+      type: object
+      fields:
+        l2: {type: object, fields: {l3: {type: object, fields: {l4: {type: object, fields: {l5: {type: string}}}}}}}
+`),
+		"json field at depth": typ(`  names: {singular: contact, plural: contacts}
+  properties:
+    deep: {type: object, fields: {l2: {type: object, fields: {raw: {type: json}}}}}
+`),
+		"secret field at depth": typ(`  names: {singular: contact, plural: contacts}
+  properties:
+    deep: {type: object, fields: {l2: {type: object, fields: {key: {type: secret}}}}}
+`),
+		"blobref field at depth": typ(`  names: {singular: contact, plural: contacts}
+  properties:
+    deep: {type: object, fields: {l2: {type: object, fields: {bytes: {type: blobref}}}}}
+`),
+		// keyed and repeated are the two containers, and a declaration is one.
+		"keyed and repeated": typ(`  names: {singular: contact, plural: contacts}
+  properties: {scopes: {type: string, keyed: true, repeated: true}}
+`),
+		// A keyed map of maps has no second node to declare: the value's shape IS
+		// the declaration, so leaving the fields out is refused by name.
+		"keyed object without fields": typ(`  names: {singular: contact, plural: contacts}
+  properties: {variants: {type: object, keyed: true}}
+`),
+		"keyed field of maps": typ(`  names: {singular: contact, plural: contacts}
+  properties:
+    spec: {type: object, fields: {variants: {type: object, keyed: true}}}
+`),
+		"keyed json": typ(`  names: {singular: contact, plural: contacts}
+  properties: {raw: {type: json, keyed: true}}
+`),
+		"keyed secret": typ(`  names: {singular: contact, plural: contacts}
+  properties: {keys: {type: secret, keyed: true}}
+`),
+		"keyPattern without keyed": typ(`  names: {singular: contact, plural: contacts}
+  properties: {scopes: {type: string, keyPattern: camel}}
+`),
+		"unknown keyPattern": typ(`  names: {singular: contact, plural: contacts}
+  properties: {scopes: {type: string, keyed: true, keyPattern: snake}}
+`),
+		"fts on a keyed map": typ(`  names: {singular: contact, plural: contacts}
+  properties: {scopes: {type: string, keyed: true, fts: true}}
+`),
+		"embed on a keyed map": typ(`  names: {singular: contact, plural: contacts}
+  properties: {scopes: {type: string, keyed: true, embed: true}}
+`),
+		// refersTo marks what a STRING names; a typed pointer is a reference.
+		"refersTo on an int": typ(`  names: {singular: contact, plural: contacts}
+  properties: {count: {type: int, refersTo: kind}}
+`),
+		"refersTo on a reference": typ(`  names: {singular: contact, plural: contacts}
+  properties: {target: {type: reference, to: any, refersTo: kind}}
+`),
+		"unknown refersTo": typ(`  names: {singular: contact, plural: contacts}
+  properties: {emit: {type: string, repeated: true, refersTo: widget}}
+`),
+		// managed says the ENGINE stamps a property; a field is a position
+		// inside one, and nothing stamps a position.
+		"managed on a field": typ(`  names: {singular: contact, plural: contacts}
+  properties: {spec: {type: object, fields: {version: {type: string, managed: true}}}}
 `),
 		"object refinement base": head + `kind: core.substrate.reamde.dev/propertytype
 metadata: {id: x.example.com/shape}

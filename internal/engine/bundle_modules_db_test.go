@@ -49,7 +49,9 @@ def main(input, host):
 				"authorizationEndpoint": "https://provider.example/authorize",
 				"tokenEndpoint":         "https://provider.example/token",
 				"revocationEndpoint":    "https://provider.example/revoke",
-				"featureScopes":         map[string]any{"enabledMail": []any{"mail.read"}},
+				"featureScopes": map[string]any{
+					"enabledMail": map[string]any{"scopes": []any{"mail.read"}},
+				},
 			},
 		}),
 	}

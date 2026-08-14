@@ -18,7 +18,8 @@ data:
   traits:
     - temporal(range)
   indices:
-    - - category
+    - properties:
+        - category
   properties:
     name:
       type: string

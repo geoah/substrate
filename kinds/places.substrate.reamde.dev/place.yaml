@@ -13,7 +13,8 @@ data:
     plural: places
   displayTemplate: "{name}"
   indices:
-    - - category
+    - properties:
+        - category
   properties:
     name:
       type: string

@@ -152,12 +152,12 @@ func TestSchemaEvolutionNarrowingRefused(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read stored type: %v", err)
 	}
-	def, _ := ty.Properties["definition"].(map[string]any)
-	if def == nil {
-		t.Fatal("stored definition missing")
+	declared := ty.Properties["properties"]
+	if declared == nil {
+		t.Fatal("the stored declaration carries no properties")
 	}
-	if !strings.Contains(fmt.Sprint(def["properties"]), "size") {
-		t.Fatalf("failed applies must leave the stored definition alone: %v", def["properties"])
+	if !strings.Contains(fmt.Sprint(declared), "size") {
+		t.Fatalf("failed applies must leave the stored declaration alone: %v", declared)
 	}
 	_ = gizmo
 }
@@ -235,8 +235,7 @@ func TestSchemaEvolutionRenamedFromRoundTrips(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: read stored type: %v", when, err)
 		}
-		def, _ := ty.Properties["definition"].(map[string]any)
-		p, _ := def["properties"].(map[string]any)
+		p, _ := ty.Properties["properties"].(map[string]any)
 		alias, _ := p["alias"].(map[string]any)
 		if got, _ := alias["renamedFrom"].(string); got != "nickname" {
 			t.Fatalf("%s: stored renamedFrom = %q, want nickname", when, got)

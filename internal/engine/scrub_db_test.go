@@ -33,23 +33,23 @@ func installVaultBundle(t *testing.T) substrate.Dataset {
 	_, ds := newDataset(t)
 	fn := func(name, source string) map[string]any {
 		return vocabulary.FunctionManifest(vAuthority, name, map[string]any{
-			"description":  "test function " + name,
-			"runtime":      vocabulary.RuntimePython,
-			"source":       source,
-			"capabilities": map[string]any{"emit": []any{vConfigType}},
+			"description": "test function " + name,
+			"runtime":     vocabulary.RuntimePython,
+			"source":      source,
+			"emit":        []any{vConfigType},
 		})
 	}
 	// noteFn emits the plain vaultnote type (and may host-call a target): the
 	// leak/escape fixtures write ordinary rows carrying a secret verbatim.
 	noteFn := func(name string, call []any, source string) map[string]any {
-		caps := map[string]any{"emit": []any{vNoteType}}
-		if call != nil {
-			caps["call"] = call
-		}
-		return vocabulary.FunctionManifest(vAuthority, name, map[string]any{
+		data := map[string]any{
 			"description": "test function " + name, "runtime": vocabulary.RuntimePython,
-			"source": source, "capabilities": caps,
-		})
+			"source": source, "emit": []any{vNoteType},
+		}
+		if call != nil {
+			data["call"] = call
+		}
+		return vocabulary.FunctionManifest(vAuthority, name, data)
 	}
 	docs := []map[string]any{
 		vocabulary.AuthorityManifest(vAuthority, ""),

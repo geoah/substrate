@@ -98,9 +98,9 @@ func openCursorDataset(t *testing.T) *dataset {
 			vocabulary.KindManifest(authority, map[string]any{"singular": "widget", "plural": "widgets"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 			vocabulary.FunctionManifest(authority, "mirror", map[string]any{
-				"description":  "mirrors widgets into tasks",
-				"runtime":      vocabulary.RuntimePython,
-				"capabilities": map[string]any{"emit": []any{"tasks.substrate.reamde.dev/task"}},
+				"description": "mirrors widgets into tasks",
+				"runtime":     vocabulary.RuntimePython,
+				"emit":        []any{"tasks.substrate.reamde.dev/task"},
 				"source": `
 def main(input, host):
     env = input["envelope"]

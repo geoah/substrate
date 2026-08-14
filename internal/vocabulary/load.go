@@ -360,18 +360,28 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 			"min":     d.Data["min"],
 			"max":     d.Data["max"],
 			"values":  d.Data["values"],
-		}, false)
+		}, false, 1)
 		if p == nil {
 			continue
 		}
 		p.Refined = local
+		// THE ONE VALUE THE PARSE NORMALIZES, and it normalizes a COPY. Core's
+		// `propertytype` declares `values` as a repeated OBJECT, so the row this
+		// declaration projects into must hold {value, label} entries whichever form
+		// the author wrote — a bare scalar would be refused by the meta-kind's own
+		// declaration. The caller's document is left untouched: nothing this parse
+		// does may reach a map somebody else holds.
+		data := d.Data
+		if _, declared := data["values"]; declared && len(p.Values) > 0 {
+			data = mapWith(data, "values", enumValuesToAny(p.Values))
+		}
 		if _, dup := g.PropertyTypes[local]; dup {
 			l.errf("%s: declared twice", where)
 			continue
 		}
 		g.PropertyTypes[local] = &PropertyType{
 			Name: local, Authority: name, Base: p.Datatype, Prop: p,
-			Definition: d.Data, SourceYAML: d.Source,
+			Definition: data, SourceYAML: d.Source,
 		}
 		g.DatatypeOrder = append(g.DatatypeOrder, local)
 	}
@@ -390,24 +400,8 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 		c := &Trait{
 			Name: local, Authority: name, Definition: d.Data, SourceYAML: d.Source,
 		}
-		if one := mmap(d.Data, "oneOf"); len(one) > 0 {
-			c.Variants = map[string]map[string]Datatype{}
-			for vname, vdef := range one {
-				props := map[string]Datatype{}
-				for pname, pkind := range asMap(vdef) {
-					if !ValidCamel(pname) {
-						l.errf("%s: data.oneOf.%s.%s: must be %s", where, vname, pname, camelRule)
-						continue
-					}
-					k := Datatype(fmt.Sprint(pkind))
-					if !builtinKinds[k] {
-						l.errf("%s: data.oneOf.%s.%s: unknown property type %q", where, vname, pname, k)
-						continue
-					}
-					props[pname] = k
-				}
-				c.Variants[vname] = props
-			}
+		if one, has := d.Data["oneOf"]; has {
+			c.Variants = l.parseTraitVariants(where, one)
 		}
 		if props := mmap(d.Data, "properties"); len(props) > 0 {
 			c.Properties = map[string]Datatype{}
@@ -496,6 +490,82 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 	return g
 }
 
+// traitVariantKeys is one `oneOf:` entry's closed key set.
+var traitVariantKeys = map[string]bool{"name": true, "properties": true}
+
+// parseTraitVariants reads a trait's `oneOf:` — the variant set a kind picks one
+// of with `traits: [temporal(point)]`. A variant is an entry carrying its own
+// name ({name, properties}), and the LIST of them is the one spelling: a mapping
+// of name to properties is refused, because a keyed map of keyed maps leaves
+// every reader guessing which level a path addresses. Stored traits written that
+// way are translated by the dialect rung (engine/dialectonegrammar.go).
+//
+// Nil when nothing is declared, which is what makes a trait variant-free.
+func (l *loader) parseTraitVariants(where string, raw any) map[string]map[string]Datatype {
+	out := map[string]map[string]Datatype{}
+	switch list := raw.(type) {
+	case []any:
+		for i, ev := range list {
+			vwhere := fmt.Sprintf("%s: data.oneOf[%d]", where, i)
+			ed := asMapOrNil(ev)
+			if ed == nil {
+				l.errf("%s: a variant is a {name, properties} map, got %T", vwhere, ev)
+				continue
+			}
+			l.checkKeys(vwhere, ed, traitVariantKeys)
+			name := mstr(ed, "name")
+			if !ValidCamel(name) {
+				l.errf("%s.name: %q must be %s", vwhere, name, camelRule)
+				continue
+			}
+			if _, dup := out[name]; dup {
+				l.errf("%s.name: variant %q is declared twice", vwhere, name)
+				continue
+			}
+			out[name] = l.parseTraitVariantProps(vwhere+".properties", mmap(ed, "properties"))
+		}
+	default:
+		names := sortedKeys(asMap(raw))
+		l.errf("%s: data.oneOf: a mapping of variant name to properties — the variants are a LIST: [{name: %s, properties: {…}}, …]",
+			where, firstOr(names, "<variant>"))
+		return nil
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// firstOr is the first name a refusal can quote, or a placeholder when there is
+// none to quote.
+func firstOr(names []string, fallback string) string {
+	if len(names) == 0 {
+		return fallback
+	}
+	return names[0]
+}
+
+// parseTraitVariantProps reads one variant's properties. A variant's properties
+// are built-in datatypes only: the variants exist for the machinery bound to
+// record columns, and a refinement is authority-local while a trait resolves
+// across authorities.
+func (l *loader) parseTraitVariantProps(where string, props map[string]any) map[string]Datatype {
+	out := map[string]Datatype{}
+	for _, pname := range sortedKeys(props) {
+		if !ValidCamel(pname) {
+			l.errf("%s.%s: must be %s", where, pname, camelRule)
+			continue
+		}
+		k := Datatype(fmt.Sprint(props[pname]))
+		if !builtinKinds[k] {
+			l.errf("%s.%s: unknown property type %q", where, pname, k)
+			continue
+		}
+		out[pname] = k
+	}
+	return out
+}
+
 // localName splits an `<authority>/<name>` kind reference and checks it
 // addresses this authority. Identity is metadata.id (FORMAT.md §2), so a
 // manifest that spells it inconsistently is a load error, not a silent rename.
@@ -510,6 +580,40 @@ func (l *loader) localName(where, identity, authority string) (string, bool) {
 		return "", false
 	}
 	return local, true
+}
+
+// declarationDataKeys is every schema kind's admitted `data` key set, keyed by
+// the manifest short name — the same maps checkKeys holds each document to.
+var declarationDataKeys = map[string]map[string]bool{
+	DocAuthority:     authorityDataKeys,
+	DocActor:         actorDataKeys,
+	DocKind:          typeDataKeys,
+	DocTrait:         capabilityDataKeys,
+	DocPropertyType:  datatypeDataKeys,
+	DocRecordMapping: mappingDataKeys,
+	DocFunction:      functionDataKeys,
+	DocAgent:         agentDataKeys,
+	DocBundle:        bundleDataKeys,
+}
+
+// DeclarationDataKeys is the `data` keys a schema kind's document admits.
+//
+// It exists because a declaration ROW carries more than its document does: what
+// the engine stamps (a version, an origin, the quarantine marks, the bundle
+// lifecycle bools) and, on a repository an older binary once wrote, the retired
+// spellings. Reading a row back as a document is therefore a WHITELIST — these
+// keys and nothing else — which is what keeps a property some FUTURE binary
+// stamps from reaching this loader as an unknown key, and keeps the engine from
+// holding a second, hand-maintained copy of this set.
+//
+// The map is a copy: the sets themselves are this package's own.
+func DeclarationDataKeys(short string) map[string]bool {
+	keys := declarationDataKeys[short]
+	out := make(map[string]bool, len(keys))
+	for k := range keys {
+		out[k] = true
+	}
+	return out
 }
 
 func (l *loader) checkKeys(where string, data map[string]any, allowed map[string]bool) {
@@ -528,6 +632,13 @@ func (l *loader) checkKeys(where string, data map[string]any, allowed map[string
 // deletedDataKeys are the keys the pinned design removed, each naming what
 // replaced it. No compatibility shim for any of them: a manifest still
 // carrying one would otherwise look obeyed.
+//
+// The last block is dialect 1's own row spellings: the `definition` blob and the
+// mirrors a pre-typed projection wrote beside it. They are not manifest keys
+// anybody authored, but a legacy EXPORT is a document too, and `apply -f` of one
+// arrives here. The write path already names them (engine's
+// checkDeclarationWrite), so this door says the same thing rather than "unknown
+// key".
 var deletedDataKeys = map[string]string{
 	"capabilities":       "traits (records 62 and 63: the binding key follows the kind)",
 	"bundles":            "traits (record 63 — `bundle` now names the install unit)",
@@ -543,6 +654,13 @@ var deletedDataKeys = map[string]string{
 	"projects":           "an ordinary edge plus a recordmapping document (record 50)",
 	"actor":              "transitions carry no guard — anyone may perform any of them",
 	"configType":         "inputs — named configuration needs, each naming a kind; resolution is bound edge, the id \"default\", then the sole live record",
+
+	"definition": "the retired blob: a declaration carries its own properties now, one key per authored field",
+	"name":       "the retired mirror: a declaration's local name is metadata.id",
+	"plural":     "the retired mirror: a kind's collection segment is `names.plural`",
+	"functions":  "the retired mirror: an agent names its callables under `tools`",
+	"subagents":  "the retired mirror: an agent names its sub-agents under `agents`",
+	"sourceYAML": "the retired mirror: nothing stores a document's text, and the parsed declaration is the row",
 }
 
 // sortDocs orders a type's manifests by identity, so the registry a stream
@@ -558,6 +676,9 @@ var typeDataKeys = map[string]bool{
 }
 
 var namesKeys = map[string]bool{"singular": true, "plural": true}
+
+// indexKeys is one declared index's key set: the properties it covers, in order.
+var indexKeys = map[string]bool{"properties": true}
 
 func (l *loader) parseType(doc Document) *Kind {
 	g := l.authority
@@ -620,7 +741,7 @@ func (l *loader) parseType(doc Document) *Kind {
 			l.errf("%s: data.properties.%s: %s", where, pname, reason)
 			continue
 		}
-		p := l.parseProperty(fmt.Sprintf("%s: data.properties.%s", where, pname), pname, asMap(pdef), true)
+		p := l.parseProperty(fmt.Sprintf("%s: data.properties.%s", where, pname), pname, asMap(pdef), true, 1)
 		if p == nil {
 			continue
 		}
@@ -741,11 +862,25 @@ func (l *loader) parseType(doc Document) *Kind {
 		t.applyCapability(*b)
 	}
 
-	// indices
+	// indices. An index NAMES its properties (`{properties: [...]}`); the bare
+	// list of names a kind used to be written with is refused, since one shape
+	// per property is what lets the meta-kind declare this one. Stored rows
+	// written that way are translated by the dialect rung
+	// (engine/dialectonegrammar.go).
 	for _, iv := range mslice(d, "indices") {
-		cols, ok := iv.([]any)
+		if cols, bare := iv.([]any); bare {
+			l.errf("%s: data.indices: a bare list of property names — an index names them: {properties: %v}", where, cols)
+			continue
+		}
+		im := asMapOrNil(iv)
+		if im == nil {
+			l.errf("%s: data.indices: each index names its properties ({properties: [...]})", where)
+			continue
+		}
+		l.checkKeys(where+": data.indices[]", im, indexKeys)
+		cols, ok := im["properties"].([]any)
 		if !ok {
-			l.errf("%s: data.indices: each index is a list of columns", where)
+			l.errf("%s: data.indices: properties is a list of property names", where)
 			continue
 		}
 		var idx []string
@@ -771,13 +906,22 @@ func (l *loader) parseType(doc Document) *Kind {
 
 // checkTemplate validates a display template's tokens against the type's own
 // declarations, so a typo fails at load and not as an empty title. A bare
-// token is a property, an edge, a column-backed property or {snippet}; a
-// dotted one is an edge's property — the target is another type's business —
-// or one level into an object property's declared fields.
+// token is a property, an edge, a column-backed property or a DERIVED token
+// ({snippet}, {localName}, {id}); a dotted one is an edge's property — the
+// target is another type's business — or one level into an object property's
+// declared fields.
 func (l *loader) checkTemplate(where string, t *Kind, tmpl *Template) {
 	for _, ref := range tmpl.Refs() {
 		switch {
-		case ref.Snippet:
+		// A derived token needs no declaration to check against: it is computed
+		// from the record. But a kind MAY declare a property or an edge of the
+		// token's name, and then the declaration is what renders
+		// (Template.Render), so the token is held to the same rules the bare form
+		// gets — a sensitive property must not reach a title by wearing a derived
+		// token's name. The answer is discarded on purpose: undeclared is legal
+		// here and nowhere else.
+		case ref.Derived != "":
+			l.ownToken(where, t, ref.Derived)
 		case ref.Edge != "":
 			if _, ok := t.Edges[ref.Edge]; ok {
 				continue
@@ -801,28 +945,37 @@ func (l *loader) checkTemplate(where string, t *Kind, tmpl *Template) {
 			l.errf("%s: data.displayTemplate: {%s.%s}: %s declares no edge, reference or object property %q",
 				where, ref.Edge, ref.Prop, t.Name, ref.Edge)
 		default:
-			if p, ok := t.Props[ref.Prop]; ok {
-				// A title is an unredacted, FTS-indexed column: a sensitive
-				// property rendered into it would leak around every
-				// read-surface redaction. The runtime resolver skips them too
-				// (edge targets and legacy vocabularies), but a declaration
-				// should fail loudly, not render empty.
-				if p.Sensitive() {
-					l.errf("%s: data.displayTemplate: {%s}: %s is %s-typed and a sensitive value never renders into a title",
-						where, ref.Prop, ref.Prop, p.Datatype)
-				}
-				continue
-			}
-			if _, ok := t.Edges[ref.Prop]; ok {
-				continue
-			}
-			if _, reserved := reservedProps[ref.Prop]; reserved {
+			if l.ownToken(where, t, ref.Prop) {
 				continue
 			}
 			l.errf("%s: data.displayTemplate: {%s}: %s declares no property or edge %q",
 				where, ref.Prop, t.Name, ref.Prop)
 		}
 	}
+}
+
+// ownToken resolves a BARE token against the kind's own declarations and reports
+// whether anything declared the name: a property, an edge, or one of the
+// column-backed properties every record carries. It is where the refusals that
+// belong to a bare token live, so the derived tokens get them too.
+//
+// A title is an unredacted, FTS-indexed column, so a sensitive property rendered
+// into one would leak around every read-surface redaction. The runtime resolver
+// skips them as well (edge targets and legacy vocabularies), but a declaration
+// should fail loudly rather than render empty.
+func (l *loader) ownToken(where string, t *Kind, name string) bool {
+	if p, ok := t.Props[name]; ok {
+		if p.Sensitive() {
+			l.errf("%s: data.displayTemplate: {%s}: %s is %s-typed and a sensitive value never renders into a title",
+				where, name, name, p.Datatype)
+		}
+		return true
+	}
+	if _, ok := t.Edges[name]; ok {
+		return true
+	}
+	_, reserved := reservedProps[name]
+	return reserved
 }
 
 // mapOfAny adapts a typed map to the shape sortedKeys reads, so key ordering
@@ -1216,6 +1369,11 @@ var propKeys = map[string]bool{
 	"pattern": true, "min": true, "max": true,
 	"description": true, "base": true,
 	"fields": true, "writer": true, "displayName": true,
+	// `keyed` is `repeated`'s twin (a map instead of a list) and `keyPattern` is
+	// the contract its keys hold to; `refersTo` says what a string value NAMES;
+	// `managed` says the engine stamps the property. All three are declared
+	// shape, so they ride into the Definition map like every other key.
+	"keyed": true, "keyPattern": true, "refersTo": true, "managed": true,
 	// Presentational hints the read surfaces (the console's config/account form)
 	// consume verbatim from the Definition map: `required` marks a field the
 	// form refuses to submit empty, `default` seeds a create (an enum's default
@@ -1233,6 +1391,13 @@ var propKeys = map[string]bool{
 	"renamedFrom": true,
 }
 
+// refersToTargets is the closed set of `refersTo:` markers: what a string
+// value NAMES, for a client that wants to offer a picker instead of a text box.
+var refersToTargets = map[string]bool{
+	RefersToKind: true, RefersToFunction: true, RefersToAgent: true,
+	RefersToAuthority: true, RefersToProvider: true,
+}
+
 // writerRoles is the closed set of a property's `writer:` restriction: who
 // alone may write the property, enforced in the write path after the merged
 // row is known.
@@ -1242,10 +1407,11 @@ var writerRoles = map[string]bool{
 
 // objectPropKeys is an object property's own key set: no fts, no
 // embed, no filter machinery — object properties stay out of all three until
-// a consumer arrives (§15). `repeated: true` is allowed.
+// a consumer arrives (§15). `repeated: true` is allowed, and `keyed: true` is
+// its twin.
 var objectPropKeys = map[string]bool{
 	"type": true, "fields": true, "repeated": true, "description": true,
-	"displayName": true,
+	"displayName": true, "keyed": true, "keyPattern": true, "managed": true,
 }
 
 // referencePropKeys is a reference property's own key set: `to:`
@@ -1257,22 +1423,35 @@ var referencePropKeys = map[string]bool{
 	"type": true, "to": true, "repeated": true, "description": true,
 	"displayName": true, "required": true, "renamedFrom": true,
 	"inverse": true, "inverseDescription": true,
+	"keyed": true, "keyPattern": true, "managed": true,
 }
 
-// fieldForbiddenKinds are the kinds an object field may not be:
-// fields are one level deep and hold declared scalars — `json` is for shapes
-// we do not own, a secret never hides inside a struct, a machine is a
-// property of its own.
+// fieldForbiddenKinds are the kinds an object field may not be, at any level:
+// each of them is a whole property. `json` is for shapes we do not own and a
+// field is declared shape by definition; a secret never hides inside a struct
+// (redacted means the whole value); a digest is server-minted; a machine moves
+// by transition, which needs a property to move; a blob-ref resolves to a
+// manifest on read, which reads walk properties to do.
 var fieldForbiddenKinds = map[Datatype]string{
-	DatatypeObject:  "object fields are one level deep — no nested objects",
-	DatatypeJSON:    "a field is a declared scalar; `json` is only for shapes we do not own",
+	DatatypeJSON:    "a field is declared shape; `json` is only for shapes we do not own",
 	DatatypeSecret:  "a secret is its own property, never a field",
 	DatatypeDigest:  "a digest is its own property, never a field",
 	DatatypeState:   "a machine is its own property, never a field",
 	DatatypeBlobRef: "a blob-ref is its own property, never a field — reads resolve it to a manifest",
 }
 
-func (l *loader) parseProperty(where, name string, d map[string]any, allowRefinement bool) *Property {
+// keyedForbiddenKinds are the datatypes `keyed:` never applies to. They are
+// fieldForbiddenKinds for the same reason plus one: a keyed `json` would be two
+// escape hatches stacked, and a `json` property already holds the whole map.
+var keyedForbiddenKinds = map[Datatype]string{
+	DatatypeJSON:    "`json` already holds a map — a keyed json is two escape hatches in one",
+	DatatypeSecret:  "a secret holds one value, never a map of them",
+	DatatypeDigest:  "a digest holds one value, never a map of them",
+	DatatypeState:   "a machine is one state, never a map of them",
+	DatatypeBlobRef: "a blob-ref names one blob, never a map of them",
+}
+
+func (l *loader) parseProperty(where, name string, d map[string]any, allowRefinement bool, depth int) *Property {
 	raw := mstr(d, "type")
 	if raw == "" {
 		l.checkKeys(where, d, propKeys)
@@ -1289,6 +1468,25 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 	p.Description = l.parseDescription(where, d)
 	p.DisplayName = l.parseDisplayName(where, d)
 	kind := Datatype(raw)
+	// `keyed` and `managed` are read before the branch: all three parse branches
+	// (scalar, object, reference) admit them, and the state branch's own key set
+	// refuses them as unknown.
+	p.Keyed = mbool(d, "keyed")
+	p.Managed = mbool(d, "managed")
+	if p.Keyed && p.Repeated {
+		l.errf("%s: keyed and repeated are the two containers — a declaration is one or the other", where)
+		return nil
+	}
+	if kp := mstr(d, "keyPattern"); kp != "" {
+		switch {
+		case !p.Keyed:
+			l.errf("%s: keyPattern is the contract on a KEYED map's keys — declare `keyed: true` or drop it", where)
+		case kp != KeyPatternCamel && kp != KeyPatternKindRef:
+			l.errf("%s: keyPattern %q is not a contract — one of %s, %s", where, kp, KeyPatternCamel, KeyPatternKindRef)
+		default:
+			p.KeyPattern = kp
+		}
+	}
 
 	// A state property IS the machine (MODEL §11.4): its own key set, its own
 	// parser, and nothing else on this branch applies to it.
@@ -1318,7 +1516,24 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 			return nil
 		}
 		p.Datatype = DatatypeObject
-		p.Fields = l.parseFields(where, d)
+		// A keyed object's fields describe its VALUES, so leaving them out is the
+		// one way to reach for a map of maps — refused by name rather than as a
+		// bare "object needs fields", because the author asking for it has to hear
+		// what to write instead.
+		if p.Keyed && len(mmap(d, "fields")) == 0 {
+			l.errf("%s: a keyed object declares the fields its values follow — a map OF maps is not declarable; flatten it or make the inner level a repeated variant list", where)
+			return nil
+		}
+		// THE CLOSED EMPTY OBJECT: `fields: {}`, declared and empty, is a value
+		// with no fields at all — every key refused, which is what an arm that
+		// says "present" and nothing more needs (a trigger's webhook source). It
+		// is spelled apart from an ABSENT `fields:`, which is the author forgetting
+		// to say what the object holds.
+		if raw, declared := d["fields"]; declared && len(asMap(raw)) == 0 {
+			p.Fields = map[string]*Property{}
+			return p
+		}
+		p.Fields = l.parseFields(where, d, depth+1)
 		if p.Fields == nil {
 			return nil
 		}
@@ -1401,14 +1616,13 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 	if p.Datatype == DatatypeEnum && len(p.Values) == 0 {
 		l.errf("%s: enum needs values", where)
 	}
-	// Canonicalize the Definition map's `values` to the labeled wire form so
-	// the read surfaces see one shape regardless of how the manifest authored
-	// them. Only when this property declared `values` inline: a datatype
-	// refinement inherits its set from the base and carries no `values` key
-	// here.
-	if _, declared := d["values"]; declared && len(p.Values) > 0 {
-		d["values"] = enumValuesToAny(p.Values)
-	}
+	// NOTHING IS WRITTEN BACK. A property's `values` stay exactly as the author
+	// spelled them — bare scalars or {value, label} mappings — because the map this
+	// parse walks IS the declaration a row stores (engine/vocabularywrite.go
+	// authorityDeclarations), and rewriting it here would store a document nobody
+	// wrote. Both spellings parse to the same Values, and every reader of the
+	// stored form takes both (the console's parseEnumValues, EnumValue's own
+	// UnmarshalYAML).
 	p.Embed = mbool(d, "embed")
 	p.FTS = IsShortString(p.Datatype) || IsLongText(p.Datatype)
 	if p.Sensitive() {
@@ -1425,6 +1639,35 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 	}
 	if p.Embed && !IsLongText(p.Datatype) && !IsShortString(p.Datatype) {
 		l.errf("%s: embed is only meaningful for string-family properties", where)
+	}
+	// A keyed map is a container, and containers stay out of FTS, embed and the
+	// filter grammar exactly as objects do: a map renders as "" everywhere a
+	// value is read as a string, so an indexed keyed property would claim a band
+	// it can never fill.
+	if p.Keyed {
+		if reason, bad := keyedForbiddenKinds[p.Datatype]; bad {
+			l.errf("%s: %s", where, reason)
+			return nil
+		}
+		// The DECLARED keys, not the computed ones: FTS defaults to true for the
+		// whole string family, and a keyed string is exactly the case that must
+		// leave the band without the author being blamed for it.
+		if mbool(d, "fts") || mbool(d, "embed") {
+			l.errf("%s: a keyed map stays out of fts and embed, exactly as an object does", where)
+		}
+		p.FTS, p.Embed = false, false
+	}
+	if rt := mstr(d, "refersTo"); rt != "" {
+		switch {
+		case p.Datatype != DatatypeString:
+			l.errf("%s: refersTo marks what a STRING value names, and this is %s — a typed pointer is `type: reference` with `to:`",
+				where, p.Datatype)
+		case !refersToTargets[rt]:
+			l.errf("%s: refersTo %q is not one of %s, %s, %s, %s, %s", where, rt,
+				RefersToKind, RefersToFunction, RefersToAgent, RefersToAuthority, RefersToProvider)
+		default:
+			p.RefersTo = rt
+		}
 	}
 	if w := mstr(d, "writer"); w != "" {
 		if !writerRoles[w] {
@@ -1451,14 +1694,25 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 	return p
 }
 
-// parseFields parses an object property's field declarations:
-// camelCase names, the reserved-word rule, scalar built-ins or authority-local
-// refinements only, one level deep, one value each. A bare kind is shorthand
-// for `{type: kind}`.
-func (l *loader) parseFields(where string, d map[string]any) map[string]*Property {
+// parseFields parses one object level's field declarations: camelCase names,
+// the reserved-word rule, declared scalars, references or further objects, each
+// a single value, a list (`repeated`) or a map (`keyed`). A bare kind is
+// shorthand for `{type: kind}`.
+//
+// depth is the level the FIELDS sit at — a kind's own property is level 1, so
+// its fields are level 2 — and MaxFieldDepth is the floor: the guards that
+// refuse a narrowing walk this nesting one jsonb notch per level
+// (engine/schemadiff.go), and a dialect that recursed without a bound would
+// need a general path walker there instead.
+func (l *loader) parseFields(where string, d map[string]any, depth int) map[string]*Property {
+	if depth > MaxFieldDepth {
+		l.errf("%s: fields nest %d levels deep at most (a kind's own property is level 1) — flatten this one",
+			where, MaxFieldDepth)
+		return nil
+	}
 	raw := mmap(d, "fields")
 	if len(raw) == 0 {
-		l.errf("%s: object needs fields", where)
+		l.errf("%s: object needs fields — `fields: {}` is the closed empty object, and absent is not that", where)
 		return nil
 	}
 	out := map[string]*Property{}
@@ -1482,7 +1736,7 @@ func (l *loader) parseFields(where string, d map[string]any) map[string]*Propert
 			l.errf("%s: %s (record 49)", fwhere, reason)
 			continue
 		}
-		fp := l.parseProperty(fwhere, fname, fd, true)
+		fp := l.parseProperty(fwhere, fname, fd, true, depth)
 		if fp == nil {
 			continue
 		}
@@ -1491,12 +1745,15 @@ func (l *loader) parseFields(where string, d map[string]any) map[string]*Propert
 			l.errf("%s: %s (record 49)", fwhere, reason)
 			continue
 		}
-		if fp.Repeated {
-			l.errf("%s: a field holds one value — repeat the object property, not the field", fwhere)
-			continue
-		}
 		if fp.RenamedFrom != "" {
 			l.errf("%s: renamedFrom is only for a type's own property, not a field", fwhere)
+			continue
+		}
+		// `managed` says the ENGINE stamps a property; the write path stamps
+		// properties, never positions inside one, so on a field it would be a
+		// claim nothing can honor.
+		if fp.Managed {
+			l.errf("%s: managed marks a type's own property, not a field", fwhere)
 			continue
 		}
 		out[fname] = fp
@@ -1682,6 +1939,20 @@ func (r *Registry) checkAuthorityInverses(g *Authority) []string {
 			e := t.Edges[en]
 			take(where+": data.edges."+en, e.To, e.Inverse, claim{t.Name, en})
 		}
+		// A KIND'S OWN reference properties, and deliberately not the reference
+		// FIELDS inside its objects.
+		//
+		// A nested `inverse` was admitted and STORED by every earlier binary (the
+		// key set allowed it; resolution and this check simply walked past it), so
+		// claiming one here would make a declaration that finalized yesterday
+		// inadmissible today — a core parse of it is fatal at repository open and
+		// an installed closure quarantines, both for a label nothing resolves,
+		// routes or looks anything up by. This check runs on the STORED-row
+		// rebuild and on a fresh admission through the same Install, so there is
+		// no seam that could hold new declarations to a stricter rule without
+		// holding old rows to it too. The claim moves to depth the day something
+		// CONSUMES a nested inverse: then the rebuild needs a tolerant path
+		// first, and this comment is the record of why.
 		for _, pn := range t.PropOrder {
 			p := t.Props[pn]
 			if p.Datatype != DatatypeReference {
@@ -1691,6 +1962,39 @@ func (r *Registry) checkAuthorityInverses(g *Authority) []string {
 		}
 	}
 	return problems
+}
+
+// referenceSite is one reference-typed declaration found on a kind: the
+// property, and the dotted path that addresses it ("callable", or
+// "tools.fields.callable" for one declared inside an object).
+type referenceSite struct {
+	Path string
+	Prop *Property
+}
+
+// referenceSites lists every reference a kind declares — its own properties and
+// the reference FIELDS inside object properties, keyed maps and repeated objects
+// alike, to MaxFieldDepth. `to:` resolution walks it, so a nested pointer cannot
+// be half-admitted: before this, a reference field parsed and then never had its
+// `to:` resolved at all, leaving the write path to compare a bare name against a
+// full identity. The inverse-claim check deliberately does NOT
+// (checkAuthorityInverses says why).
+func referenceSites(t *Kind) []referenceSite {
+	var out []referenceSite
+	for _, pn := range t.PropOrder {
+		out = appendReferenceSites(out, pn, t.Props[pn])
+	}
+	return out
+}
+
+func appendReferenceSites(out []referenceSite, path string, p *Property) []referenceSite {
+	if p.Datatype == DatatypeReference {
+		out = append(out, referenceSite{Path: path, Prop: p})
+	}
+	for _, fn := range p.FieldOrder {
+		out = appendReferenceSites(out, path+".fields."+fn, p.Fields[fn])
+	}
+	return out
 }
 
 func (r *Registry) resolveAuthority(g *Authority) []string {
@@ -1723,15 +2027,18 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 		}
 		// Reference properties resolve their `to:` the same way an edge does:
 		// a bare name to a full identity, in-authority first then uniquely across
-		// authorities; `any` (and absent) stay unconstrained.
-		for _, pn := range t.PropOrder {
-			p := t.Props[pn]
-			if p.Datatype != DatatypeReference || p.To == "" || p.To == ToAny {
+		// authorities; `any` (and absent) stay unconstrained. Every admitted
+		// depth, not just the kind's own properties: an unresolved `to:` on a
+		// nested reference would compare a bare name against a full identity on
+		// every write and refuse the value the declaration asked for.
+		for _, site := range referenceSites(t) {
+			p := site.Prop
+			if p.To == "" || p.To == ToAny {
 				continue
 			}
 			if Qualified(p.To) {
 				if _, ok := r.ByIdentity(p.To); !ok {
-					problems = append(problems, fmt.Sprintf("%s: data.properties.%s.to: unknown referent type %q", where, pn, p.To))
+					problems = append(problems, fmt.Sprintf("%s: data.properties.%s.to: unknown referent type %q", where, site.Path, p.To))
 				}
 				continue
 			}
@@ -1741,7 +2048,7 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 			}
 			resolved, err := r.Resolve(p.To)
 			if err != nil {
-				problems = append(problems, fmt.Sprintf("%s: data.properties.%s.to: %v", where, pn, err))
+				problems = append(problems, fmt.Sprintf("%s: data.properties.%s.to: %v", where, site.Path, err))
 				continue
 			}
 			p.To = resolved.Identity
@@ -1803,6 +2110,18 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 }
 
 // --- small YAML map helpers ---
+
+// mapWith is m with one key replaced, on a COPY: the declaration a parse hands
+// on may differ from the document only where the meta-kind's own shape demands
+// it, and never by mutating what the caller holds.
+func mapWith(m map[string]any, key string, value any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	out[key] = value
+	return out
+}
 
 func asMap(v any) map[string]any {
 	switch m := v.(type) {

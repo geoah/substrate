@@ -34,7 +34,12 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: llm.examples.substrate.reamde.dev
 data:
-  version: v1alpha2
+  # v1alpha3: THE TYPED CORE SWEEP. Declarations in this closure moved to the
+  # declared spellings — whichever of them they used: a tool entry naming its arm,
+  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
+  # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
+  # carries the closure whole rather than saying every declaration in it moved.
+  version: v1alpha3
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata:
@@ -95,7 +100,9 @@ data:
     the reply text. Chat-only turns with no proposal are normal.
   provider: anthropic
   model: claude-sonnet-5
-  tools: [graphql, propose]
+  tools:
+    - builtin: graphql
+    - builtin: propose
   emit: [core.substrate.reamde.dev/recordpatchrequest]
   budgets:
     maxTurns: 16

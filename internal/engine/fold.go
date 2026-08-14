@@ -297,6 +297,11 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 // registry, and a record whose kind the binary no longer declares still
 // indexes its title and body rather than failing the replay.
 func (t *txn) foldFTS(row *erow) [3]string {
+	if t.writeReg != nil {
+		if ty, ok := t.writeReg.ByIdentity(row.Kind); ok {
+			return ftsBands(ty, row)
+		}
+	}
 	if ty, ok := t.ds.registry().ByIdentity(row.Kind); ok {
 		return ftsBands(ty, row)
 	}

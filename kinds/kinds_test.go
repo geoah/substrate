@@ -107,6 +107,139 @@ func TestBothViewsLoad(t *testing.T) {
 // The actor grammar has no room for the authority, so the shipped catalog has
 // to keep its own names apart; installing two third-party bundles that collide
 // is a known issue, shipping two that do is a bug.
+// THE SHIPPED TREE IS AUTHORED IN THE DECLARED SPELLING. The loader admits one
+// spelling per key and refuses each pre-typed one by name, so a tree document
+// left in an old spelling does not store as something other than what it says: it
+// does not load at all. The only reader that still understands those spellings is
+// the frozen dialect-1 grammar (internal/engine/dialectonegrammar.go), and it
+// translates the ROWS an older binary stored, never a document.
+//
+// The test still earns its keep for what it says when that happens. A load
+// failure names one key inside one closure; this names the document (its kind and
+// its id) and what took the spelling's place, and it is the one list of every
+// retired spelling a rebase could put back into the tree.
+func TestTheTreeIsAuthoredInTheDeclaredSpelling(t *testing.T) {
+	for _, d := range readTreeDocuments(t) {
+		at := d.Kind + " " + d.ID
+		if _, wrapped := d.Data["capabilities"]; wrapped {
+			t.Errorf("%s: the capability envelope rides `data` itself now", at)
+		}
+		for _, side := range []string{"input", "output"} {
+			if _, nested := d.Data[side]; nested {
+				t.Errorf("%s: `%s` is a flat argument list now (`arguments`/`returns`)", at, side)
+			}
+		}
+		for i, tv := range asList(d.Data["tools"]) {
+			if _, bare := tv.(string); bare {
+				t.Errorf("%s: tools[%d] is a bare string — an entry names its arm ({builtin} or {callable})", at, i)
+			}
+		}
+		if one, has := d.Data["oneOf"]; has {
+			if _, isList := one.([]any); !isList {
+				t.Errorf("%s: `oneOf` is the variant LIST now", at)
+			}
+		}
+		for name, rv := range asMapping(d.Data["map"]) {
+			if _, bare := rv.(string); bare {
+				t.Errorf("%s: map rule %q is a bare path — a rule is `{path}`", at, name)
+			}
+		}
+		for i, iv := range asList(d.Data["indices"]) {
+			if _, bare := iv.([]any); bare {
+				t.Errorf("%s: indices[%d] is a bare list — an index names its properties", at, i)
+			}
+		}
+		for toggle, sv := range asMapping(asMapping(d.Data["oauth2"])["featureScopes"]) {
+			if _, bare := sv.([]any); bare {
+				t.Errorf("%s: featureScopes[%q] is a bare list — the scopes take a field", at, toggle)
+			}
+		}
+	}
+}
+
+// THE TWO STATEMENTS ABOUT WHO OWNS A PROPERTY AGREE. A declaration row carries
+// what its document declares plus what the ENGINE stamps, and each half is said
+// once: the loader's admitted `data` keys (vocabulary.DeclarationDataKeys) are the
+// document's, and `managed: true` on the core declaration is the engine's. A row
+// reads back as a document by whitelisting the first set, so a managed property
+// that is ALSO a document key would be read back as authored — which is right
+// for the two that genuinely are (a kind and an authority may pin their own
+// `version`) and wrong for anything else, silently.
+//
+// This is the pin the engine does not have to repeat: without it, a new managed
+// property spelled like a document key would be handed to the loader as authored
+// content and refused as an unknown key at the next open.
+func TestManagedPropertiesAreNotDocumentKeys(t *testing.T) {
+	reg, err := vocabulary.LoadFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	// The two deliberate duals: stamped when absent, authored when present.
+	dual := map[string]bool{
+		"kind.version":      true,
+		"authority.version": true,
+	}
+	for _, short := range []string{
+		vocabulary.DocAuthority, vocabulary.DocActor, vocabulary.DocKind, vocabulary.DocTrait,
+		vocabulary.DocPropertyType, vocabulary.DocRecordMapping, vocabulary.DocFunction,
+		vocabulary.DocAgent, vocabulary.DocBundle,
+	} {
+		ty, ok := reg.ByIdentity(vocabulary.KindRef(vocabulary.AuthorityCore, short))
+		if !ok {
+			t.Fatalf("core declares no %s", short)
+		}
+		keys := vocabulary.DeclarationDataKeys(short)
+		for _, name := range ty.PropOrder {
+			p := ty.Props[name]
+			if !p.Managed || !keys[name] || dual[short+"."+name] {
+				continue
+			}
+			t.Errorf("%s.%s is managed AND a document key — a row would read it back as authored; drop the marker or the key, or add it to the duals with a reason",
+				short, name)
+		}
+	}
+}
+
+// readTreeDocuments parses every DECLARATION document in the tree.
+func readTreeDocuments(t *testing.T) []vocabulary.Document {
+	t.Helper()
+	var docs []vocabulary.Document
+	err := fs.WalkDir(kinds.All(), ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(path) != ".yaml" {
+			return err
+		}
+		raw, err := fs.ReadFile(kinds.All(), path)
+		if err != nil {
+			return err
+		}
+		parsed, err := vocabulary.ParseStream(raw)
+		if err != nil {
+			// A bundle's delivery wiring (trigger records) sits in the same tree
+			// and is not a declaration: those files parse nowhere near here.
+			return nil
+		}
+		docs = append(docs, parsed...)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("read the tree: %v", err)
+	}
+	if len(docs) == 0 {
+		t.Fatal("the tree holds no documents")
+	}
+	return docs
+}
+
+func asList(v any) []any {
+	out, _ := v.([]any)
+	return out
+}
+
+func asMapping(v any) map[string]any {
+	out, _ := v.(map[string]any)
+	return out
+}
+
 func TestShippedCallableActorsAreDistinct(t *testing.T) {
 	cat, err := catalog.Load(kinds.Bundles())
 	if err != nil {

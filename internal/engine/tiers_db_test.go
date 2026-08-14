@@ -96,7 +96,7 @@ func newTierDataset(t *testing.T) *dataset {
 				"from": typeTierRecord, "to": typeTierProfile, "edge": "profile",
 				"match": []any{map[string]any{"from": "email", "to": "emails"}},
 				"map": map[string]any{
-					"name":   "name",
+					"name":   map[string]any{"path": "name"},
 					"emails": map[string]any{"path": "email", "merge": "union"},
 				},
 			}),

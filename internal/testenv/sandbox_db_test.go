@@ -62,7 +62,7 @@ type probeFn struct {
 func (f probeFn) document() string {
 	net := ""
 	if len(f.network) > 0 {
-		net = "\n    network:\n" + indent(f.network, "      - ")
+		net = "\n  network:\n" + indent(f.network, "    - ")
 	}
 	return fmt.Sprintf(`kind: core.substrate.reamde.dev/function
 metadata: {id: %s/%s}
@@ -71,8 +71,7 @@ data:
   description: a sandbox probe
   runtime: python
   timeoutMs: 20000
-  capabilities:
-    emit: [%s/note]%s
+  emit: [%s/note]%s
   source: |
 %s
 `, probeAuthority, f.name, probeAuthority, probeAuthority, net, blockScalar(f.source))

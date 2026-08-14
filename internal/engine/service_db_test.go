@@ -78,11 +78,13 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	if err != nil {
 		t.Fatalf("type record by identity: %v", err)
 	}
-	if msgType.Properties["plural"] != "conversationmessages" || msgType.Properties["source"] != "builtin" {
-		t.Fatalf("type projection = %v", msgType.Properties)
+	names, _ := msgType.Properties["names"].(map[string]any)
+	if names["plural"] != "conversationmessages" || msgType.Properties["source"] != "builtin" {
+		t.Fatalf("kind projection = %v", msgType.Properties)
 	}
-	if msgType.Properties["definition"] == nil {
-		t.Fatal("type projection should carry its definition")
+	// The row's properties ARE the declaration: no blob beside them.
+	if msgType.Properties["properties"] == nil || msgType.Properties["definition"] != nil {
+		t.Fatalf("kind projection is not the typed shape: %v", msgType.Properties)
 	}
 	actors, err := ds.List(ctx, substrate.Query{
 		Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/actor"}}, First: 50,
@@ -200,13 +202,13 @@ func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A builtin projection carries the parsed definition and no verbatim text.
+	// A builtin projection carries the parsed declaration and no verbatim text.
 	req, err := ds.Get(ctx, "core.substrate.reamde.dev/kind", "core.substrate.reamde.dev/recordpatchrequest")
 	if err != nil {
-		t.Fatalf("type projection: %v", err)
+		t.Fatalf("kind projection: %v", err)
 	}
-	if def, _ := req.Properties["definition"].(map[string]any); def == nil {
-		t.Fatalf("type projection lost its definition: %v", req.Properties)
+	if req.Properties["properties"] == nil {
+		t.Fatalf("kind projection lost its declaration: %v", req.Properties)
 	}
 	if _, has := req.Properties["sourceYAML"]; has {
 		t.Fatalf("builtin projection stores sourceYAML (record 61 removed it): %v", req.Properties["sourceYAML"])
@@ -229,17 +231,17 @@ func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
 		t.Fatal("installed projection stores sourceYAML (record 61 removed it)")
 	}
 
-	// A generic write smuggling the retired property is ignored, like every
-	// property the projection does not own.
-	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+	// A generic write smuggling the retired property is REFUSED, not ignored: a
+	// dropped edit is a write that reads as obeyed.
+	_, err = ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/kind", ID: authority + "/widget",
 		Properties: map[string]any{
-			"definition": widget.Properties["definition"],
+			"authority": authority, "names": widget.Properties["names"],
+			"properties": widget.Properties["properties"],
 			"sourceYAML": "# smuggled bytes",
 		},
-	}); err != nil {
-		t.Fatalf("put with retired property: %v", err)
-	}
+	})
+	wantErr(t, err, substrate.ErrValidation, "retired property")
 	if _, has := mustGet(t, ds, "core.substrate.reamde.dev/kind", authority+"/widget").Properties["sourceYAML"]; has {
 		t.Fatal("a write-supplied sourceYAML was stored")
 	}
@@ -294,9 +296,8 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	if _, has := capa.Properties["sourceYAML"]; has {
 		t.Fatalf("capability projection stores sourceYAML (record 61 removed it): %v", capa.Properties)
 	}
-	def, _ := capa.Properties["definition"].(map[string]any)
-	if _, ok := def["oneOf"]; !ok {
-		t.Fatalf("capability definition = %v", capa.Properties["definition"])
+	if _, ok := capa.Properties["oneOf"].([]any); !ok {
+		t.Fatalf("the trait's variants are not the declared list: %v", capa.Properties)
 	}
 
 	dt, err := ds.Get(ctx, "core.substrate.reamde.dev/propertytype", "media.substrate.reamde.dev/asin")
@@ -309,8 +310,8 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	if _, has := dt.Properties["sourceYAML"]; has {
 		t.Fatalf("datatype projection stores sourceYAML (record 61 removed it): %v", dt.Properties)
 	}
-	if !strings.Contains(fmt.Sprint(dt.Properties["definition"]), "^B0") {
-		t.Fatalf("datatype definition = %v", dt.Properties["definition"])
+	if !strings.Contains(fmt.Sprint(dt.Properties["pattern"]), "^B0") {
+		t.Fatalf("the refinement's pattern = %v", dt.Properties)
 	}
 
 	// Mappings mirror like the rest of the meta-model: one

@@ -21,8 +21,7 @@ data:
   authority: web.bundles.substrate.reamde.dev
   description: Fetch one pending page as markdown and mark it fetched.
   runtime: python
-  capabilities:
-    emit: [web.bundles.substrate.reamde.dev/page]
+  emit: [web.bundles.substrate.reamde.dev/page]
   source: |
     def main(input, host):
         env = input.get("envelope") or {}
@@ -55,33 +54,32 @@ host call and the call API all address it with.
 - **`source`** is the inline body (bounded, at most 256 KiB).
 - **`timeoutMs`** bounds one invocation's wall clock, host calls included
   (default 5000, max 60000).
-- Optional **`input:`** and **`output:`** shape schemas check a caller's
-  arguments before the body runs and the returned value after. The schema
-  dialect is deliberately tiny:
-  `{type: object|array|string|number|boolean|any, properties, items, required,
-  description}`, nothing else. An object schema with a `properties` key refuses
-  undeclared keys (key presence closes the object); an object schema with no
-  `properties` key is the open object. Trigger deliveries ignore both, because
-  the envelope is the input.
-- **`capabilities`** is the capability envelope, the whole security boundary:
+- Optional **`arguments:`** and **`returns:`** are the flat named IO: a caller's
+  arguments are checked before the body runs, the returned value after.
+  [Arguments and returns](#arguments-and-returns) is the whole grammar.
+- The **grant** is five keys on `data` itself, `emit`, `reads`, `call`,
+  `network` and `mutations`, and it is the whole security boundary:
 
 ```yaml
-capabilities:
-  emit:                            # required, non-empty: the write allowlist
-    - tasks.substrate.reamde.dev/task
-  reads:                           # the host-read allowlist and budget
-    kinds:
-      - people.substrate.reamde.dev/person
-    budgets:
-      calls: 16
-      rows: 500
-  call:                            # host-call allowlist (registered functions)
-    - web.bundles.substrate.reamde.dev/setclass
-  network:                         # any entry grants egress; none denies it
-    - api.example.com
-  mutations:                       # gates the merge / split effects
-    - merge
+emit:                              # required, non-empty: the write allowlist
+  - tasks.substrate.reamde.dev/task
+reads:                             # the host-read allowlist and budget
+  kinds:
+    - people.substrate.reamde.dev/person
+  budgets:
+    calls: 16
+    rows: 500
+call:                              # host-call allowlist (registered functions)
+  - web.bundles.substrate.reamde.dev/setclass
+network:                           # any entry grants egress; none denies it
+  - api.example.com
+mutations:                         # gates the merge / split effects
+  - merge
 ```
+
+There is no `capabilities:` wrapper: one grant is declared once, at the level
+the declaration declares it, and a document that still nests these five under
+`capabilities:` is refused naming them.
 
 `emit` is required and lists the kinds the effects may address: this function
 may write those kinds and nothing else. `reads.kinds` is the host-read
@@ -101,6 +99,71 @@ the `mode` that woke the body (`trigger`, `schedule`, `webhook`, `manual` or
 carries that mode's payload: a delivery puts the envelope under
 `input["envelope"]`, while a direct call puts the caller's own JSON under
 **`input["args"]`**.
+
+### Arguments and returns
+
+What a call carries and what it answers are declared as **flat named
+arguments**: `arguments:` is a list, in declaration order, and `returns:` is
+the same list on the result side. Neither nests, and that is the design: one
+level of named arguments is what makes a function's tool card valid by
+construction and keeps the value check off a recursion.
+
+```yaml
+arguments:
+  - name: query
+    type: string
+    required: true
+    description: the search query; specific beats terse
+  - name: mode
+    type: enum
+    values: [lexical, semantic, hybrid]
+    description: how to search; hybrid by default
+  - name: limit
+    type: int
+    description: max hits to return
+returns:
+  - name: results
+    type: json
+    repeated: true
+    required: true
+```
+
+An entry carries six keys and no others:
+
+- **`name`** is camelCase, and unique within the list.
+- **`type`** is one of `string`, `int`, `float`, `bool`, `enum` or `json`.
+  `int` and `float` are two words for one wire number, kept apart because the
+  declaration is also documentation; `enum` is a string closed over its
+  `values`; `json` is the named escape hatch for a value whose shape the
+  function does not own, and it checks nothing.
+- **`repeated: true`** makes the argument a list of that type.
+- **`required: true`** puts it on the required list: a call without it is
+  refused before the body runs.
+- **`description`** is what the model reads. On a repeated argument it
+  describes the list, not each item.
+- **`values`** is the admitted set, and belongs to `enum` alone: an enum
+  without values is refused (it would be a string), and values on any other
+  type are refused too. They are wire values a model echoes back verbatim, not
+  declared names, so they are not held to the camelCase rule.
+
+The engine **compiles** the list into the object schema every consumer reads:
+`{type: object, properties: …}`, carrying `required` only when something is
+required. That object is closed, so a call passing a name the list does not
+declare is refused rather than silently ignored, and a declared `returns:` holds
+the answer to the same closure: omitting `output` entirely fails it, because
+absent is not an object.
+
+**The tool card is rendered from it.** Where a function is an
+[agent's](agents.md#tools) tool, the compiled schema *is* the card's parameter
+schema, so what the model is shown and what the engine enforces cannot drift; a
+function that declares no `arguments:` is offered as the open object, and the
+model may send anything. This is why an enum belongs in `values:` rather than in
+prose: the model sees the closed set.
+
+Both sides are checked on every path that carries arguments: the
+[call API](#driving-triggers), a [host call](#host-call), and an agent's function
+tool. A trigger delivery checks neither, because its payload is the envelope
+below rather than `args`.
 
 ## The delivery envelope
 
@@ -214,7 +277,7 @@ unprivileged, none requiring a container runtime:
 - **seccomp** removes the syscall classes a body has no use for: `ptrace` and
   the other reach-into-another-process calls, the mount APIs, `io_uring`,
   `bpf`, the kernel keyring, module loading, and enforces
-  `capabilities.network`: **a function that declares no `network:` is denied
+  the `network:` grant: **a function that declares no `network:` is denied
   `AF_INET` and `AF_INET6` sockets outright.** The enforcement is binary. A
   syscall filter cannot read the address behind a `connect(2)` pointer, so
   holding a body to the *specific hosts* it declared needs an egress proxy and
@@ -277,7 +340,7 @@ body.
 
 Effects are the ordinary [seven mutations](api.md#the-seven-mutations),
 applied through the write path in the same transaction as the delivery's
-cursor advance, every one held to `capabilities.emit` by the kind it names.
+cursor advance, every one held to the `emit:` allowlist by the kind it names.
 Every effect names its target the same way, a `kind` carrying a kind
 reference:
 
@@ -298,7 +361,7 @@ reference:
   the edge's own `properties`. Emit gates by the source kind.
 - **`merge`** `{action: merge, kind, id, loser}` (`id` is the winner) and
   **`split`** `{action: split, kind, merge}`, both refused unless
-  `capabilities.mutations` grants them; the `*request` records stay the polite
+  the `mutations:` grant names them; the `*request` records stay the polite
   default for agent chains.
 
 A put or patch addressed to a former id resolves onto the canonical winner
@@ -329,7 +392,7 @@ full reference, the (kind, id) pair; a bare id names nothing and the frame is
 refused. Reads see committed state, never this delivery's own staged effects,
 so a local overlay can never lie. A forbidden kind answers exactly like an
 absent id (same nil shape, same budget charge), so a disallowed `get` is never
-an existence or kind oracle. Reads are held to `capabilities.reads`: with no
+an existence or kind oracle. Reads are held to the `reads:` grant: with no
 `reads:` block the allowlist is empty, so every `list` and `search` is refused
 and every `get` answers absent. Calls are charged before they run, `first` and
 `k` clamp to the remaining row budget, and returned rows charge on top. In Go
@@ -406,7 +469,7 @@ at once.
 
 `host.functions.call(function, input)` runs another function to completion
 inside the caller's invocation. The runner refuses a target outside the
-caller's `capabilities.call` and charges the call budget before executing; the
+caller's `call:` grant and charges the call budget before executing; the
 engine refuses a target already on the call stack (direct and mutual recursion
 both) and one that would exceed the causal-depth cap. The callee gets its own
 fresh read budgets and its own timeout (bounded by the caller's remaining

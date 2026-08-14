@@ -10,6 +10,12 @@ type KindInfo struct {
 	Source    string `json:"source"` // "builtin" | "installed"
 	// Description is what the kind is for, as its declaration says it: the
 	// line a reader gets above the collection, empty when undeclared.
-	Description string         `json:"description"`
-	Definition  map[string]any `json:"definition"`
+	Description string `json:"description"`
+	// Definition is the kind's DECLARATION, rendered from the parsed one: the
+	// authored data map (names, properties, edges, traits, indices), which is also
+	// what the declaration's row stores as its properties. It is not a stored
+	// `definition` blob — that spelling is refused everywhere now — and the name
+	// survives here because a client reading a kind's shape is reading the same
+	// map it always was.
+	Definition map[string]any `json:"definition"`
 }

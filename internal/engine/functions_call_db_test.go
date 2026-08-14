@@ -20,19 +20,10 @@ import (
 // task, answers {id}.
 func adderFn() map[string]any {
 	return pyFn("adder", map[string]any{
-		"input": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"title": map[string]any{"type": "string"},
-			},
-			"required": []any{"title"},
+		"arguments": []any{
+			map[string]any{"name": "title", "type": "string", "required": true},
 		},
-		"output": map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"id": map[string]any{"type": "string"},
-			},
-		},
+		"returns": []any{map[string]any{"name": "id", "type": "string"}},
 	}, []any{taskType}, `
 def main(input, host):
     title = input["args"]["title"]
@@ -93,7 +84,7 @@ func TestHostCallGatingAndCallerTransaction(t *testing.T) {
 	outer := func(name string, granted bool, ownEffect string) map[string]any {
 		data := map[string]any{}
 		if granted {
-			data["capabilities"] = map[string]any{"call": []any{fnAuthority + "/adder"}}
+			data["call"] = []any{fnAuthority + "/adder"}
 		}
 		return pyFn(name, data, []any{taskType}, `
 def main(input, host):
@@ -175,11 +166,8 @@ def main(input, host):
 `)
 	mid := func(name, after string) map[string]any {
 		return pyFn(name, map[string]any{
-			"capabilities": map[string]any{"call": []any{fnAuthority + "/leaf"}},
-			"output": map[string]any{
-				"type":       "object",
-				"properties": map[string]any{"ok": map[string]any{"type": "boolean"}},
-			},
+			"call":    []any{fnAuthority + "/leaf"},
+			"returns": []any{map[string]any{"name": "ok", "type": "bool"}},
 		}, []any{taskType}, `
 def main(input, host):
     host.call("`+fnAuthority+`/leaf", None)
@@ -187,13 +175,10 @@ def main(input, host):
 `)
 	}
 	caller := pyFn("catcher", map[string]any{
-		"capabilities": map[string]any{"call": []any{
+		"call": []any{
 			fnAuthority + "/raiser", fnAuthority + "/badeffect", fnAuthority + "/badoutput",
-		}},
-		"input": map[string]any{
-			"type":       "object",
-			"properties": map[string]any{"mid": map[string]any{"type": "string"}},
 		},
+		"arguments": []any{map[string]any{"name": "mid", "type": "string"}},
 	}, []any{taskType}, `
 def main(input, host):
     mid = input["args"]["mid"]
@@ -226,29 +211,29 @@ def main(input, host):
 	}
 }
 
-// Review W2 #8: a declared `output:` validates even an omitted or null
-// answer, on BOTH call paths; `any` alone stays open to nil.
+// Review W2 #8: a declared `returns:` validates even an omitted or null
+// answer, on BOTH call paths; a function that declares no result side stays
+// open to nil.
 func TestDeclaredOutputRefusesNil(t *testing.T) {
 	t.Parallel()
-	shaped := map[string]any{
-		"type":       "object",
-		"properties": map[string]any{"id": map[string]any{"type": "string"}},
-	}
-	silent := pyFn("silent", map[string]any{"output": shaped}, []any{taskType}, `
+	shaped := []any{map[string]any{"name": "id", "type": "string", "required": true}}
+	silent := pyFn("silent", map[string]any{"returns": shaped}, []any{taskType}, `
 def main(input, host):
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
                          "id": "silent-effect", "properties": {"title": "x"}}]}
 `)
-	nuller := pyFn("nuller", map[string]any{"output": shaped}, []any{taskType}, `
+	nuller := pyFn("nuller", map[string]any{"returns": shaped}, []any{taskType}, `
 def main(input, host):
     return {"output": None}
 `)
-	anyOut := pyFn("anyout", map[string]any{"output": map[string]any{"type": "any"}}, []any{taskType}, `
+	// An UNDECLARED result side constrains nothing, which is what stays open to
+	// nil now that every declared one is a named argument list.
+	anyOut := pyFn("anyout", map[string]any{}, []any{taskType}, `
 def main(input, host):
     return {}
 `)
 	nestCaller := pyFn("nestcaller", map[string]any{
-		"capabilities": map[string]any{"call": []any{fnAuthority + "/silent"}},
+		"call": []any{fnAuthority + "/silent"},
 	}, []any{taskType}, `
 def main(input, host):
     out = host.call("`+fnAuthority+`/silent", None)
@@ -269,7 +254,7 @@ def main(input, host):
 		!strings.Contains(err.Error(), "output") {
 		t.Fatalf("an explicit null passed the declared shape: %v", err)
 	}
-	// `any` stays open.
+	// An undeclared result side stays open.
 	if _, _, err := ops.CallFunction(ctx, fnAuthority+"/anyout", nil); err != nil {
 		t.Fatalf("any refused nil: %v", err)
 	}
@@ -293,7 +278,7 @@ def main(input, host):
     return {"output": input["idempotencyKey"]}
 `)
 	twice := pyFn("twice", map[string]any{
-		"capabilities": map[string]any{"call": []any{fnAuthority + "/echo"}},
+		"call": []any{fnAuthority + "/echo"},
 	}, []any{taskType}, `
 def main(input, host):
     k1 = host.call("`+fnAuthority+`/echo", {"n": 1})

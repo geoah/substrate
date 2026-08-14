@@ -11,9 +11,18 @@ import (
 	"github.com/geoah/substrate/internal/strictjson"
 )
 
-// The type definition is the raw YAML-shaped map the schema loader
-// validated; the GraphQL layer reads only the parts it renders and ignores
-// everything else, so unknown keys never break schema construction.
+// WHAT THIS READS. `KindInfo.Definition` is the kind's DECLARATION as the loader
+// parsed it — the authored data map, which is also what the declaration's row
+// stores as its properties (engine/dataset.go typeInfo). It is not a stored
+// `definition` blob: that spelling is refused everywhere now.
+//
+// The builder reads only the parts it renders and ignores everything else, so a
+// key a newer binary declares never breaks schema construction. It walks the map
+// rather than a typed declaration because the schema is built from
+// `substrate.KindInfo` — the API builds it too, and `internal/api` may not import
+// the engine (nor `internal/substrate` the vocabulary, which declares the parsed
+// kind). `kind.properties` is the meta-kind's one json leaf for the same reason a
+// property declaration cannot state its own grammar: it recurses.
 
 func definitionMap(def map[string]any, key string) map[string]any {
 	m, _ := def[key].(map[string]any)
@@ -97,10 +106,17 @@ func typeMachines(def map[string]any) map[string][]string {
 // : the element type is resolved first, then wrapped once — the
 // prior code returned the bare scalar for numeric/boolean/date/json before the
 // list wrapper was ever applied.
+//
+// A `keyed: true` property is a name-keyed MAP, and its stored value is a JSON
+// object whatever its values are: it renders as the JSON scalar, because typing
+// it as its value type would make every read of it a serialization error.
 func (b *schemaBuilder) propertyType(def map[string]any, prop string) graphql.Output {
 	pd := propertyDef(def, prop)
 	kind, _ := pd["type"].(string)
 	repeated, _ := pd["repeated"].(bool)
+	if keyed, _ := pd["keyed"].(bool); keyed {
+		return jsonScalar
+	}
 
 	var elem graphql.Output
 	switch kind {

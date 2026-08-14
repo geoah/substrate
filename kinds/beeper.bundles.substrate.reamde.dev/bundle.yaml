@@ -32,7 +32,12 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: beeper.bundles.substrate.reamde.dev
 data:
-  version: v1alpha1
+  # v1alpha2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
+  # declared spellings — whichever of them they used: a tool entry naming its arm,
+  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
+  # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
+  # carries the closure whole rather than saying every declaration in it moved.
+  version: v1alpha2
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block — an oauth2 block would demand a client input, and this
@@ -385,21 +390,20 @@ data:
     next incremental run. Read-only.
   runtime: python
   timeoutMs: 30000
-  capabilities:
-    emit:
+  emit:
+    - beeper.bundles.substrate.reamde.dev/room
+    - beeper.bundles.substrate.reamde.dev/message
+    - beeper.bundles.substrate.reamde.dev/account
+  reads:
+    kinds:
       - beeper.bundles.substrate.reamde.dev/room
-      - beeper.bundles.substrate.reamde.dev/message
-      - beeper.bundles.substrate.reamde.dev/account
-    reads:
-      kinds:
-        - beeper.bundles.substrate.reamde.dev/room
-      # A rooms page evaluates the filter fallback for at most 25 rooms; a
-      # backfill page checks at most one resumed room.
-      budgets:
-        calls: 40
-    network:
-      - "matrix.beeper.com"
-      - "beeper.com/*"
+    # A rooms page evaluates the filter fallback for at most 25 rooms; a
+    # backfill page checks at most one resumed room.
+    budgets:
+      calls: 40
+  network:
+    - "matrix.beeper.com"
+    - "beeper.com/*"
   source: |
     # /// script
     # requires-python = ">=3.11"

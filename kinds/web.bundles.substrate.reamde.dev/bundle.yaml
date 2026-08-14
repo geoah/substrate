@@ -18,7 +18,12 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: web.bundles.substrate.reamde.dev
 data:
-  version: v1alpha1
+  # v1alpha2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
+  # declared spellings — whichever of them they used: a tool entry naming its arm,
+  # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
+  # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
+  # carries the closure whole rather than saying every declaration in it moved.
+  version: v1alpha2
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -138,8 +143,7 @@ data:
   description: Extract every URL from the triggering record and mint pending
     pages.
   runtime: python
-  capabilities:
-    emit: [web.bundles.substrate.reamde.dev/page]
+  emit: [web.bundles.substrate.reamde.dev/page]
   source: |
     import re
 
@@ -195,8 +199,7 @@ data:
   authority: web.bundles.substrate.reamde.dev
   description: Fetch one pending page as markdown and mark it fetched.
   runtime: python
-  capabilities:
-    emit: [web.bundles.substrate.reamde.dev/page]
+  emit: [web.bundles.substrate.reamde.dev/page]
   source: |
     def main(input, host):
         env = input.get("envelope") or {}
@@ -221,18 +224,16 @@ data:
   authority: web.bundles.substrate.reamde.dev
   description: Set a page's class. Call with {id, class}.
   runtime: python
-  input:
-    type: object
-    properties:
-      id:
-        type: string
-        description: the page id
-      class:
-        type: string
-        description: article | tool | video
-    required: [id, class]
-  capabilities:
-    emit: [web.bundles.substrate.reamde.dev/page]
+  arguments:
+    - name: id
+      type: string
+      required: true
+      description: the page id
+    - name: class
+      type: string
+      required: true
+      description: article | tool | video
+  emit: [web.bundles.substrate.reamde.dev/page]
   source: |
     def main(input, host):
         args = input.get("args") or {}
@@ -255,15 +256,12 @@ data:
   authority: web.bundles.substrate.reamde.dev
   description: Stamp the bundle config directly. Call with {id}.
   runtime: python
-  input:
-    type: object
-    properties:
-      id:
-        type: string
-        description: the config record id
-    required: [id]
-  capabilities:
-    emit: [web.bundles.substrate.reamde.dev/config]
+  arguments:
+    - name: id
+      type: string
+      required: true
+      description: the config record id
+  emit: [web.bundles.substrate.reamde.dev/config]
   source: |
     def main(input, host):
         args = input.get("args") or {}
@@ -294,7 +292,8 @@ data:
     setclass tool, then hand the page to the reading-list agent.
   provider: default
   model: anthropic/claude-opus-5
-  tools: [web.bundles.substrate.reamde.dev/setclass]
+  tools:
+    - callable: web.bundles.substrate.reamde.dev/setclass
   agents: [web.bundles.substrate.reamde.dev/readinglistagent]
   budgets:
     maxTurns: 4
@@ -321,7 +320,9 @@ data:
     does not name config it will be refused — propose instead.
   provider: default
   model: anthropic/claude-sonnet-5
-  tools: [propose, web.bundles.substrate.reamde.dev/stampconfig]
+  tools:
+    - builtin: propose
+    - callable: web.bundles.substrate.reamde.dev/stampconfig
   budgets:
     maxTurns: 4
     maxToolCalls: 4
@@ -346,7 +347,9 @@ data:
     plus its target id); reads name a type beside the id too.
   provider: default
   model: anthropic/claude-haiku-4-5
-  tools: [query, propose]
+  tools:
+    - builtin: query
+    - builtin: propose
   reads:
     kinds: [web.bundles.substrate.reamde.dev/page]
   budgets:

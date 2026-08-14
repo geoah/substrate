@@ -108,16 +108,20 @@ func decodeTypeInfo(raw json.RawMessage) (substrate.KindInfo, bool) {
 	if definition == nil {
 		definition, _ = r.Properties["definition"].(map[string]any)
 	}
-	// A kind's description is the DECLARATION's — core's `kind` projects no
-	// column for it (kinds/core.substrate.reamde.dev/kind.yaml says why), so the
-	// record shape reads it out of `definition` and the bare shape off the field.
+	// THE PROPERTIES ARE THE DECLARATION: a typed row carries description and
+	// the names object directly, and `definition` survives only for a row an
+	// older substrate wrote. The bare-TypeInfo shape keeps its own fields.
+	if definition == nil {
+		definition = r.Properties
+	}
 	description, _ := definition["description"].(string)
+	names, _ := definition["names"].(map[string]any)
 	ti := substrate.KindInfo{
 		Identity:    r.Identity,
-		Name:        firstNonEmpty(r.Name, propString(r.Properties, "name")),
+		Name:        firstNonEmpty(r.Name, propString(names, "singular"), propString(r.Properties, "name")),
 		Authority:   firstNonEmpty(r.Authority, propString(r.Properties, "authority")),
 		Version:     firstNonEmpty(version, propString(r.Properties, "version")),
-		Plural:      firstNonEmpty(r.Plural, propString(r.Properties, "plural")),
+		Plural:      firstNonEmpty(r.Plural, propString(names, "plural"), propString(r.Properties, "plural")),
 		Source:      firstNonEmpty(r.Source, propString(r.Properties, "source")),
 		Description: firstNonEmpty(r.Description, description),
 		Definition:  definition,
@@ -128,9 +132,15 @@ func decodeTypeInfo(raw json.RawMessage) (substrate.KindInfo, bool) {
 	if ti.Identity == "" && ti.Name != "" && ti.Authority != "" {
 		ti.Identity = vocabulary.KindRef(ti.Authority, ti.Name)
 	}
-	if ti.Name == "" || ti.Authority == "" {
-		if name, authority, ok := splitIdentity(ti.Identity); ok {
-			ti.Name, ti.Authority = name, authority
+	// Fill only the missing half: a typed row authors `authority` and derives
+	// its name from the id, and the derivation must never clobber the
+	// authored value.
+	if name, authority, ok := splitIdentity(ti.Identity); ok {
+		if ti.Name == "" {
+			ti.Name = name
+		}
+		if ti.Authority == "" {
+			ti.Authority = authority
 		}
 	}
 	if ti.Identity == "" {
@@ -198,12 +208,15 @@ func firstNonEmpty(vals ...string) string {
 }
 
 // splitIdentity splits "<name>.<authority>" at the first dot.
+// splitIdentity splits a kind identity into its name and authority. The
+// reference is `{authority}/{name}` and splits on its one slash; a bare
+// repository-local name has no authority to derive.
 func splitIdentity(identity string) (name, authority string, ok bool) {
-	i := strings.Index(identity, ".")
-	if i <= 0 || i == len(identity)-1 {
+	authority, name = vocabulary.SplitKindRef(identity)
+	if authority == "" || name == "" {
 		return "", "", false
 	}
-	return identity[:i], identity[i+1:], true
+	return name, authority, true
 }
 
 // collection is a resolved REST collection.

@@ -40,8 +40,7 @@ func TestConnectorFormDisplayNameAndEnumSurviveTypeRead(t *testing.T) {
 	// The type read (the projection the console/GraphQL get) carries both the
 	// human label and the enum's allowed values.
 	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/gizmo")
-	def, _ := row.Properties["definition"].(map[string]any)
-	props, _ := def["properties"].(map[string]any)
+	props, _ := row.Properties["properties"].(map[string]any)
 	cadence, _ := props["cadence"].(map[string]any)
 	if cadence["displayName"] != "Sync frequency" {
 		t.Fatalf("displayName did not survive the type read: %v", cadence)
@@ -49,17 +48,16 @@ func TestConnectorFormDisplayNameAndEnumSurviveTypeRead(t *testing.T) {
 	if cadence["description"] != "how often to sync" {
 		t.Fatalf("description did not survive the type read: %v", cadence)
 	}
-	// Enum values reach the console in the canonical labeled wire form:
-	// [{value, label}], both keys present even when the manifest authored bare
-	// scalars (label is "" — the UI humanizes).
+	// Enum values reach the console AS AUTHORED — bare scalars stay bare, a
+	// labeled mapping stays labeled — because the row stores the declaration and
+	// the declaration is what the author wrote. Both spellings are read by every
+	// consumer of the stored form (the console's parseEnumValues).
 	vals, _ := cadence["values"].([]any)
 	if len(vals) != 3 {
 		t.Fatalf("enum values did not survive the type read: %v", cadence["values"])
 	}
-	first, _ := vals[0].(map[string]any)
-	last, _ := vals[2].(map[string]any)
-	if first["value"] != "off" || first["label"] != "" || last["value"] != "daily" {
-		t.Fatalf("enum values not canonicalized to {value,label}: %v", cadence["values"])
+	if vals[0] != "off" || vals[2] != "daily" {
+		t.Fatalf("the stored enum values were rewritten: %#v", cadence["values"])
 	}
 
 	// A value in the set is accepted; one outside it is rejected on write.

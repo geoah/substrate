@@ -9,8 +9,8 @@ import (
 // tokens. A token is a pipe-separated list of alternatives, the first
 // non-empty one rendering ({name|participants}). An alternative is a
 // property name, an edge name (renders the targets' titles), a dotted
-// edge.property (renders the first target's property), or the special
-// {snippet}.
+// edge.property (renders the first target's property), or one of the DERIVED
+// tokens ({snippet}, {localName}, {id}).
 type Template struct {
 	Raw   string
 	Parts []TemplatePart
@@ -24,15 +24,36 @@ type TemplatePart struct {
 
 // TemplateRef is one alternative inside a token.
 type TemplateRef struct {
-	Edge    string // edge name, "" for own property
-	Prop    string // property name, "" when the ref is a bare edge
-	Snippet bool
+	Edge string // edge name, "" for own property
+	Prop string // property name, "" when the ref is a bare edge
+	// Derived names a token computed from the record itself rather than read off
+	// a declared property, so it needs no declaration to check against. Every
+	// derived token except {snippet} yields to a REAL property of the same name
+	// (Render): a kind that declares `localName` means its own property, and a
+	// derived token silently shadowing it would be the worse surprise.
+	Derived string
+}
+
+// The derived template tokens. {snippet} is the precedent the other two follow;
+// {localName} and {id} exist because a record's identity is its id and nothing
+// else, so the nine core kinds that titled themselves `{name}` have somewhere
+// to point once `name` stops being a stored property. Not spelled {name}:
+// llmprovider declares a real `name`.
+const (
+	DerivedSnippet   = "snippet"
+	DerivedLocalName = "localName"
+	DerivedID        = "id"
+)
+
+// derivedTokens is the closed set parseToken recognizes.
+var derivedTokens = map[string]bool{
+	DerivedSnippet: true, DerivedLocalName: true, DerivedID: true,
 }
 
 func (r TemplateRef) String() string {
 	switch {
-	case r.Snippet:
-		return "snippet"
+	case r.Derived != "":
+		return r.Derived
 	case r.Edge != "" && r.Prop != "":
 		return r.Edge + "." + r.Prop
 	case r.Edge != "":
@@ -88,8 +109,8 @@ func parseToken(body string) (TemplatePart, error) {
 		if alt == "" {
 			return part, fmt.Errorf("empty alternative in {%s}", body)
 		}
-		if alt == "snippet" {
-			part.Alts = append(part.Alts, TemplateRef{Snippet: true})
+		if derivedTokens[alt] {
+			part.Alts = append(part.Alts, TemplateRef{Derived: alt})
 			continue
 		}
 		name, prop, dotted := strings.Cut(alt, ".")
@@ -136,12 +157,21 @@ func (t *Template) EdgeRefs() []string {
 type Resolver interface {
 	// Prop renders a declared property of the record itself.
 	Prop(name string) string
+	// Declares reports whether the kind DECLARES anything of that name — a
+	// property or an edge, the two things a bare token can mean — whatever the row
+	// holds for it. A derived token turns on the declaration and not on the value:
+	// `{localName}` on a kind that declares an optional `localName` must render
+	// that property's value — including nothing, when the row left it empty —
+	// because falling back to the derived value would make an empty property look
+	// like a filled one. An EDGE of that name counts for the same reason: one name
+	// is one pointer, and a token cannot mean the declaration sometimes.
+	Declares(name string) bool
 	// Edge renders an edge: prop == "" asks for the targets' titles, a
 	// named prop asks for that property of the first target.
 	Edge(rel, prop string) string
-	// Snippet is the first 80 characters of the longest text-family
-	// property.
-	Snippet() string
+	// Derived renders a derived token (DerivedSnippet, DerivedLocalName,
+	// DerivedID) from the record itself.
+	Derived(token string) string
 }
 
 // Render resolves the template, dropping tokens whose alternatives are all
@@ -156,8 +186,25 @@ func (t *Template) Render(r Resolver) string {
 		for _, alt := range p.Alts {
 			var v string
 			switch {
-			case alt.Snippet:
-				v = r.Snippet()
+			case alt.Derived == DerivedSnippet:
+				v = r.Derived(alt.Derived)
+			case alt.Derived != "":
+				// A REAL declaration of the token's name wins, by DECLARATION and
+				// not by having a value: a kind that declares `localName` means its
+				// own property or edge every time it is rendered, and only a kind
+				// that declares neither gets the derived one. Declared, the token
+				// resolves exactly as the bare identifier below does — property,
+				// then edge — because a derived token that skipped the edge would
+				// render an id where the model says a target's title.
+				//
+				// {snippet} predates the rule and keeps its old meaning: it has
+				// always been derived-only, and a kind declaring `snippet` would
+				// silently change what its shipped template rendered.
+				if !r.Declares(alt.Derived) {
+					v = r.Derived(alt.Derived)
+				} else if v = r.Prop(alt.Derived); v == "" {
+					v = r.Edge(alt.Derived, "")
+				}
 			case alt.Edge != "":
 				v = r.Edge(alt.Edge, alt.Prop)
 			default:

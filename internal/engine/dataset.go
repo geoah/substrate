@@ -147,16 +147,58 @@ func (ds *dataset) KindByPlural(ctx context.Context, authority, plural string) (
 	return typeInfo(t), nil
 }
 
+// typeInfo is one declared kind as the read surfaces see it.
+//
+// `Definition` is RENDERED FROM THE PARSED DECLARATION — the data map the loader
+// left behind, which is the same map the projection writes as the row's
+// properties (vocabularywrite.go authorityDeclarations) — and no longer read out
+// of a `definition` property, because no row carries one.
+//
+// It is the AUTHORED half of that map: the engine's own `version` is dropped,
+// because a declaration that pinned none has one stamped onto its row, and after
+// a reload the map would otherwise hand back a value nobody wrote — the same
+// declaration reading differently before and after a restart, which is exactly
+// what a client diffing it (or fingerprinting it, gql.RegistryKey) would trip
+// over. The stamped value is `Version` beside it, which is where a reader that
+// wants it already looks. Nothing else on a kind is engine-owned: `source` is
+// not a document key at all.
 func typeInfo(t *vocabulary.Kind) substrate.KindInfo {
 	return substrate.KindInfo{
 		Identity: t.Identity, Name: t.Name, Authority: t.Authority, Version: t.Version,
 		Plural: t.Plural, Source: t.Source, Description: t.Description,
-		Definition: t.Definition,
+		Definition: authoredKindData(t.Definition),
 	}
 }
 
+// authoredKindData is a kind's declaration without the engine-stamped `version`.
+// It copies rather than deletes: the map it is given is the REGISTRY's, and a
+// registry-resident declaration is a read-only view (M5) — a delete here would
+// reach the row the projection writes from it.
+func authoredKindData(data map[string]any) map[string]any {
+	if _, stamped := data[propDeclarationVersion]; !stamped {
+		return data
+	}
+	out := make(map[string]any, len(data))
+	for k, v := range data {
+		if k == propDeclarationVersion {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
 func (ds *dataset) resolveType(name string) (*vocabulary.Kind, error) {
-	t, err := ds.registry().Resolve(name)
+	return resolveKindIn(ds.registry(), name)
+}
+
+// resolveKindIn resolves a kind reference against a GIVEN registry. Every
+// ordinary write resolves against the LIVE one (resolveType above); the
+// vocabulary projection resolves a declaration row's kind against the candidate
+// when this projection is what decides that kind's stored declaration
+// (vocabularywrite.go projectionKind).
+func resolveKindIn(reg *vocabulary.Registry, name string) (*vocabulary.Kind, error) {
+	t, err := reg.Resolve(name)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 	}
@@ -210,6 +252,16 @@ type txn struct {
 	seqLocked bool
 	// internal writes bypass the system-type guard.
 	internal bool
+	// writeReg is the registry this transaction's DECLARATIONS come from, when it
+	// is not the live one: the vocabulary projection resolves a declaration row's
+	// kind against the candidate it is installing (vocabularywrite.go
+	// projectionKind) and the dialect rung against the candidate it translated
+	// (dialecttyped.go). The fold consults the registry for exactly one thing —
+	// the weighted search bands — and computing those from a declaration OTHER
+	// than the one the row was validated against is what made a live row and its
+	// own replay disagree: a replay reads the registry the rebuild holds, which is
+	// the declaration the row ended up under.
+	writeReg *vocabulary.Registry
 	// recomputing marks a mapping recompute's own write (§7.1): recompute
 	// never triggers recompute, and the manager ledger records the winning
 	// contributor's actor — recomputeManagers, per accepted property —

@@ -43,6 +43,7 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 | **vocabulary** | Everything declarable, held as ordinary records: authorities, kinds, property types, traits, recordmappings, functions, agents, bundles and actors. Applied through `POST /{core}/vocabulary/apply`. |
 | **registry** | The live, in-memory vocabulary a repository rebuilds from its own stored declarations when it opens. |
 | **dialect** | A monotonic integer stamped on each repository naming the shape its stored declarations speak. A binary older than the stamp refuses to open it. |
+| **managed** | A declared property the ENGINE stamps (`managed: true`): a declaration's `version`, its `source`, the quarantine marks, a bundle's lifecycle bools. A write may echo the stored value, but a different one is refused rather than dropped, and a client renders it read-only. Not projection's *managed properties*, which is the ownership rule over a record's values. |
 
 ## Installed things
 
@@ -56,7 +57,7 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 | **account** | One configured connection to a provider: a record of an `accountconfig`-trait kind. The console groups these under **Connections**. |
 | **catalog** | The read-only list of the bundle closures built into the binary. A source to install from, never an authority. |
 | **callable** | The union of function and agent — what a trigger binds and what dispatch invokes. |
-| **function** | A callable whose body is inline Python or Go, bounded by a declared `capabilities` envelope. |
+| **function** | A callable whose body is inline Python or Go, bounded by its declared grant: `emit`, `reads`, `call`, `network` and `mutations`, five keys on the declaration itself. |
 | **agent** | A callable whose body is an LLM loop. Alpha. |
 | **llmprovider** | One place an agent buys completions: a wire, an endpoint and a key, as data. Alpha. |
 | **wire** | The protocol an `llmprovider`'s adapter speaks — `openai`, `anthropic` or `azure` — never a company: a gateway that speaks OpenAI's wire is an `openai` row. |
@@ -87,11 +88,14 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 
 ## Words that mean something narrower than they look
 
-- **capabilities** — only ever a function's declared security envelope. The
-  substrate does not otherwise use the word; what a deployment offers is a
-  *feature*, and what a kind promises is a *trait*.
-- **schema** — only GraphQL's own schema, JSON Schema for a function's input
-  and output, and Postgres. The substrate's declarations are its *vocabulary*.
+- **capabilities** — only ever the name for a function's security envelope, and
+  no longer a key: the grant is five keys on the declaration itself, and a
+  document nesting them under `capabilities:` is refused. The substrate does not
+  otherwise use the word; what a deployment offers is a *feature*, and what a
+  kind promises is a *trait*.
+- **schema** — only GraphQL's own schema, the JSON Schema a function's
+  `arguments`/`returns` compile into, and Postgres. The substrate's declarations
+  are its *vocabulary*.
 - **log** — only logging. What holds the deltas is the *changelog*.
 - **extension** — only a file extension or a Postgres extension. What you
   install is a *bundle*.

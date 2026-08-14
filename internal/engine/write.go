@@ -100,18 +100,29 @@ func (ds *dataset) putWith(ctx context.Context, actor substrate.Actor, in substr
 }
 
 func (t *txn) put(in substrate.PutInput) (*substrate.Record, error) {
-	sp, err := t.putSpec(in)
+	ty, err := t.ds.resolveType(in.Kind)
+	if err != nil {
+		return nil, err
+	}
+	return t.putKind(ty, in)
+}
+
+// putKind is put with the write's kind ALREADY RESOLVED. THE VOCABULARY
+// PROJECTION IS ITS ONE OUTSIDE CALLER, and it has to be: a projected
+// declaration row must be validated against the definition that will be live
+// once the projection commits, which is not always the stored one the live
+// registry holds (vocabularywrite.go projectionKind). Nothing else about the
+// write changes: the same locks, the same system-kind guard, the same coercion
+// and the same apply path.
+func (t *txn) putKind(ty *vocabulary.Kind, in substrate.PutInput) (*substrate.Record, error) {
+	sp, err := t.putSpec(ty, in)
 	if err != nil {
 		return nil, err
 	}
 	return t.apply(sp)
 }
 
-func (t *txn) putSpec(in substrate.PutInput) (*applySpec, error) {
-	ty, err := t.ds.resolveType(in.Kind)
-	if err != nil {
-		return nil, err
-	}
+func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, error) {
 	if err := t.guardSystemKind(ty, substrate.OpPut); err != nil {
 		return nil, err
 	}

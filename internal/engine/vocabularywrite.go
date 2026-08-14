@@ -312,6 +312,24 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 				return err
 			}
 		}
+		// THE DROPPED-KIND GUARD AGAIN, with every write this transaction makes
+		// behind it. The count above is the transaction's opening reading, and
+		// both writes below it CREATE rows: `extra` puts a bundle's data
+		// documents against the still-live pre-commit registry (a widget row for
+		// a kind the same upgrade removes), and the projection writes declaration
+		// rows of the meta-kinds (a declaration of a category the same batch
+		// stops declaring). Either way the publish would leave a
+		// changelog-backed live row whose kind the registry it publishes cannot
+		// resolve, so the count that decides is the one taken LAST. It also
+		// covers whatever write is added to this transaction next.
+		final, err := droppedTypeGuards(t, st.droppedTypes)
+		if err != nil {
+			return err
+		}
+		if len(final) > 0 {
+			return fmt.Errorf("%w: this apply wrote rows of a kind it removes: %s",
+				substrate.ErrGuard, strings.Join(final, "; "))
+		}
 		return nil
 	})
 	if err != nil {
@@ -415,7 +433,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	}
 
 	// Current documents of the touched authorities, from their record rows.
-	existing, err := ds.vocabularyDocumentRows(ctx, touched)
+	existing, err := ds.vocabularyDocumentRows(ctx, touched, typedRows)
 	if err != nil {
 		return nil, err
 	}
@@ -560,12 +578,38 @@ func (t *txn) projectAuthorities(reg *vocabulary.Registry, authorities map[strin
 		names = append(names, g)
 	}
 	sort.Strings(names)
+	// Enumerate before writing: which kinds' OWN declarations this pass writes
+	// decides what every row of the pass is validated against, so the set has to
+	// be complete before the first row lands (projectionKind).
+	var passes [][]declaration
+	projecting := map[string]bool{}
 	for _, aname := range names {
 		g, ok := reg.AuthorityByName(aname)
 		if !ok {
 			continue // the authority is being removed whole; prune takes its rows
 		}
-		if err := t.projectAuthority(g, live, opts, out); err != nil {
+		decls, err := authorityDeclarations(g)
+		if err != nil {
+			return nil, err
+		}
+		passes = append(passes, decls)
+		for _, d := range decls {
+			if d.typ != kindKind || (opts.skip != nil && opts.skip(d.key())) {
+				continue
+			}
+			projecting[d.id] = true
+		}
+	}
+	// The projection's rows are validated against `reg` (projectionKind), so the
+	// fold's search bands come from it too: a row indexed under a declaration
+	// other than the one it was admitted against would be re-indexed differently
+	// by its own replay. Restored before the batch's `extra` hook, whose data
+	// documents are ordinary writes against the live registry.
+	prevReg := t.writeReg
+	t.writeReg = reg
+	defer func() { t.writeReg = prevReg }()
+	for _, decls := range passes {
+		if err := t.projectAuthority(reg, projecting, decls, live, opts, out); err != nil {
 			return nil, err
 		}
 	}
@@ -600,22 +644,27 @@ func (d declaration) version() string {
 
 // projectAuthority writes one authority's declarations: the header, its actors, and
 // every property type, trait, record type, mapping, function, agent and
-// bundle.
-func (t *txn) projectAuthority(g *vocabulary.Authority, live map[string]bool, opts projectOpts, out map[string]*substrate.Record) error {
-	decls, err := authorityDeclarations(g)
-	if err != nil {
-		return err
-	}
+// bundle. `projecting` is the whole pass's set of kinds whose own declaration
+// this projection writes, which is what projectionKind reads.
+func (t *txn) projectAuthority(reg *vocabulary.Registry, projecting map[string]bool, decls []declaration, live map[string]bool, opts projectOpts, out map[string]*substrate.Record) error {
 	for _, d := range decls {
 		if opts.skip != nil && opts.skip(d.key()) {
 			continue
 		}
-		in := substrate.PutInput{Kind: d.typ, ID: d.id, Properties: d.props}
+		props, err := t.declarationReplacement(d)
+		if err != nil {
+			return err
+		}
+		in := substrate.PutInput{Kind: d.typ, ID: d.id, Properties: props}
 		if m, ok := opts.meta[d.short+"\x00"+d.id]; ok {
 			in.Labels = m.labels
 			in.Annotations = m.annotations
 		}
-		e, err := t.put(in)
+		ty, err := t.projectionKind(reg, projecting, d.typ)
+		if err != nil {
+			return fmt.Errorf("substrate/engine: project %s %s: %w", d.short, d.id, err)
+		}
+		e, err := t.putKind(ty, in)
 		if err != nil {
 			return fmt.Errorf("substrate/engine: project %s %s: %w", d.short, d.id, err)
 		}
@@ -625,11 +674,82 @@ func (t *txn) projectAuthority(g *vocabulary.Authority, live map[string]bool, op
 	return nil
 }
 
+// declarationReplacement is the declaration's properties plus an explicit null
+// for every AUTHORED property the stored row still holds and the declaration no
+// longer declares.
+//
+// A put MERGES, and a declaration is not a merge: the row's properties ARE the
+// declaration, so a key an author deleted has to leave the row or the rebuild
+// would keep handing it back and the change would never land. (While the content
+// rode in one `definition` blob, replacing the blob did this for free.) What is
+// deliberately NOT nulled is the engine's own — a disabled bundle stays
+// disabled, a quarantine mark survives a re-projection — since those are the
+// server's properties and not the declaration's.
+func (t *txn) declarationReplacement(d declaration) (map[string]any, error) {
+	row, err := t.loadRow(eref{Kind: d.typ, ID: d.id}, false)
+	if err != nil || row == nil {
+		return d.props, err
+	}
+	// Sized to the declaration's half alone: the sum of two lengths is what
+	// CodeQL flags as an overflowable allocation size, and a map hint is not
+	// worth the finding — the row's keys grow the map organically below.
+	props := make(map[string]any, len(d.props))
+	for k, v := range d.props {
+		props[k] = v
+	}
+	for k := range row.Props {
+		if _, written := props[k]; written || engineOwned(d.short, k) {
+			continue
+		}
+		props[k] = nil
+	}
+	return props, nil
+}
+
+// projectionKind resolves the kind a projected declaration row stores as,
+// against the declaration that will be LIVE once this projection commits.
+//
+// Which of a declaration row's properties are DECLARED is decided by the
+// meta-kind's own declaration: core's `kind` for a kind row, `trait` for a trait
+// row, and so on down the list. Two cases, and they need opposite registries.
+//
+//   - This pass writes that meta-kind's declaration too. Then the candidate's
+//     declaration is the one the repository ends up holding, and the row has to
+//     be held to it: a property added to core's `kind` rides on every row the
+//     same pass projects, and validating those rows against the STORED (older)
+//     declaration refuses them, taking the boot upgrade, and with it the
+//     repository's open, down. The candidate does not publish until commit, so
+//     writing the new declaration row earlier in the same transaction cannot
+//     help. This is what carries the typed flip itself into a repository whose
+//     stored meta-kinds still declare a `definition` blob.
+//   - This pass leaves that declaration alone: the boot upgrade's
+//     never-downgrade skip (a stored declaration at or ahead of the binary's),
+//     or an authority the batch does not touch. Then the STORED declaration
+//     survives the commit and the live registry is what decides, so a row the
+//     candidate would admit and the surviving declaration rejects must not
+//     land.
+func (t *txn) projectionKind(reg *vocabulary.Registry, projecting map[string]bool, typeIdent string) (*vocabulary.Kind, error) {
+	if projecting[typeIdent] {
+		return resolveKindIn(reg, typeIdent)
+	}
+	return t.ds.resolveType(typeIdent)
+}
+
 // authorityDeclarations renders every declaration an authority stores as rows, in one
 // stable order. It is the ONE enumeration of an authority's contents: the
 // projection writes it, and the boot-time upgrade diffs versions across it
 // (seed.go), so the writer and the differ can never disagree about what a
 // authority holds.
+//
+// A ROW IS THE DECLARATION'S OWN DATA MAP plus what the engine stamps. There is
+// no `definition` blob and no projected mirror: the loader admits ONE spelling
+// per key and refuses every retired one by name (vocabulary/load.go's
+// tombstones), so the properties a row carries are the keys the author wrote, and
+// the read-back (rowDocument) is that same map with the stamped keys dropped.
+// Translating what an older binary stored is the frozen dialect-1 grammar's job,
+// off to the side (dialectonegrammar.go), and it hands the loader the admitted
+// spelling like anybody else. What the engine stamps is declared `managed: true`
+// on the core kinds, which is the same list spelled where a client can read it.
 //
 // EVERY DECLARATION CARRIES A VERSION. A record type's own
 // `version:` wins where it declares one; every other kind takes the declaring
@@ -638,38 +758,54 @@ func (t *txn) projectAuthority(g *vocabulary.Authority, live map[string]bool, op
 func authorityDeclarations(g *vocabulary.Authority) ([]declaration, error) {
 	var decls []declaration
 	var missing []string
-	add := func(short, typeIdent, id string, props map[string]any) {
-		if v, ok := props["version"].(string); !ok || v == "" {
-			props["version"] = g.Version
+	// add takes the declaration's own data map and the properties the engine
+	// stamps over it. The retired keys of the kind — the `definition` blob an
+	// older binary stored, the id-derived `name`, the agent mirrors, a
+	// never-stored `sourceYAML` — travel as explicit nulls: a projection's put
+	// MERGES, so without them a migrated row would keep the blob it was
+	// translated out of. A null against an absent property is a no-op, so a
+	// repository that never held them stays changelog-silent.
+	add := func(short, typeIdent, id string, data, stamped map[string]any) error {
+		props, err := jsonSafe(data)
+		if err != nil {
+			return err
 		}
-		if v, _ := props["version"].(string); v == "" {
+		for k, v := range stamped {
+			props[k] = v
+		}
+		for k := range retiredDeclarationProps(short) {
+			if _, live := props[k]; !live {
+				props[k] = nil
+			}
+		}
+		if v, ok := props[propDeclarationVersion].(string); !ok || v == "" {
+			props[propDeclarationVersion] = g.Version
+		}
+		if v, _ := props[propDeclarationVersion].(string); v == "" {
 			// The version is MANDATORY: it is what a boot-time upgrade diffs
 			// against, so a declaration without one could never converge.
 			missing = append(missing, short+" "+id)
 		}
 		decls = append(decls, declaration{short: short, typ: typeIdent, id: id, props: props})
+		return nil
 	}
 
 	actors := make([]any, 0, len(g.Actors))
 	for _, a := range g.Actors {
 		actors = append(actors, a)
 	}
-	// sourceYAML is never stored, on any schema kind (record 61, superseding
-	// record 19's keep-for-authored posture): the parsed definition is the
-	// document, and the source view re-renders it. Comments live in the
-	// authored files and their git history, not in rows. The explicit null
-	// DELETES the property off rows written before the record — deletion
-	// needs no declaration — and null against an absent property is a no-op,
-	// so a boot re-projection writes nothing.
 	// The explicit quarantined/quarantineReason nulls CLEAR any issue-010
 	// marker: a re-projection of the authority (a catalog re-install producing a
 	// valid closure) is what lifts the quarantine. Null against an absent
 	// property is a no-op, so a healthy authority's re-projection writes nothing.
-	add(vocabulary.DocAuthority, kindAuthority, g.Name, map[string]any{
-		"name": g.Name, "version": g.Version, "actors": actors,
-		"source": g.Source, "sourceYAML": nil,
-		propAuthorityQuarantined: nil, propAuthorityQuarantineReason: nil,
-	})
+	if err := add(vocabulary.DocAuthority, kindAuthority, g.Name,
+		map[string]any{"version": g.Version},
+		map[string]any{
+			"actors": actors, "source": g.Source,
+			propAuthorityQuarantined: nil, propAuthorityQuarantineReason: nil,
+		}); err != nil {
+		return nil, err
+	}
 	for _, a := range g.Actors {
 		// A single-writer connector's actor IS its authority: the
 		// authority row above already holds that id and lists the actor.
@@ -683,99 +819,106 @@ func authorityDeclarations(g *vocabulary.Authority) ([]declaration, error) {
 		if declared, ok := g.ActorTiers[a]; ok {
 			tier = string(declared)
 		}
-		add(kindActorLocal, kindActor, a, map[string]any{
-			"name": a, "authority": g.Name, "source": g.Source, "tier": tier,
-		})
+		if err := add(kindActorLocal, kindActor, a,
+			map[string]any{"authority": g.Name, "tier": tier},
+			map[string]any{"source": g.Source}); err != nil {
+			return nil, err
+		}
 	}
 	for _, n := range g.DatatypeOrder {
 		d := g.PropertyTypes[n]
-		def, err := jsonSafe(d.Definition)
-		if err != nil {
+		if err := add(vocabulary.DocPropertyType, kindPropertyType, d.Identity(),
+			d.Definition, map[string]any{"source": g.Source}); err != nil {
 			return nil, err
 		}
-		add(vocabulary.DocPropertyType, kindPropertyType, d.Identity(), map[string]any{
-			"name": d.Name, "authority": d.Authority, "base": string(d.Base),
-			"definition": def, "sourceYAML": nil,
-		})
 	}
 	for _, n := range g.TraitOrder {
 		c := g.Traits[n]
-		def, err := jsonSafe(c.Definition)
-		if err != nil {
+		if err := add(vocabulary.DocTrait, kindTrait, c.Identity(),
+			c.Definition, map[string]any{"source": g.Source}); err != nil {
 			return nil, err
 		}
-		add(vocabulary.DocTrait, kindTrait, c.Identity(), map[string]any{
-			"name": c.Name, "authority": c.Authority,
-			"definition": def, "sourceYAML": nil,
-		})
 	}
 	for _, n := range g.KindOrder {
 		ty := g.Kinds[n]
-		def, err := jsonSafe(ty.Definition)
-		if err != nil {
+		// The type's OWN version (the loader defaults it to the authority's and a
+		// `version:` in the declaration overrides it) — the one kind whose data
+		// may carry a per-declaration version.
+		if err := add(vocabulary.DocKind, kindKind, ty.Identity, ty.Definition,
+			map[string]any{"version": ty.Version, "source": ty.Source}); err != nil {
 			return nil, err
 		}
-		// The type's OWN version (the loader defaults it to the authority's and a
-		// `version:` in the declaration overrides it) — the one kind that
-		// carries a per-declaration version today.
-		//
-		// The kind's `description` is NOT projected as a column: it rides in
-		// `definition` like the rest of the declaration, and a new property on
-		// core's `kind` would be one every declaration row carries at once —
-		// which a repository still holding the old `kind` declaration refuses,
-		// taking the boot upgrade (and the open) down with it.
-		add(vocabulary.DocKind, kindKind, ty.Identity, map[string]any{
-			"name": ty.Name, "authority": ty.Authority, "version": ty.Version,
-			"plural": ty.Plural, "source": ty.Source, "definition": def,
-			"sourceYAML": nil,
-		})
 	}
 	for _, n := range g.MappingOrder {
 		m := g.Mappings[n]
-		def, err := jsonSafe(m.Definition)
-		if err != nil {
+		if err := add(vocabulary.DocRecordMapping, kindRecordMapping, m.Identity(),
+			m.Definition, map[string]any{"source": g.Source}); err != nil {
 			return nil, err
 		}
-		add(vocabulary.DocRecordMapping, kindRecordMapping, m.Identity(), map[string]any{
-			"name": m.Name, "authority": m.Authority,
-			"from": m.From, "to": m.To, "edge": m.Edge,
-			"definition": def, "sourceYAML": nil,
-		})
 	}
 	for _, n := range g.FunctionOrder {
 		fn := g.Functions[n]
-		def, err := jsonSafe(fn.Definition)
-		if err != nil {
+		// NO `source` stamp: on a function that word is the BODY, an authored
+		// property, and the declaration's origin is not projected here at all.
+		if err := add(vocabulary.DocFunction, kindFunction, fn.Identity(),
+			fn.Definition, nil); err != nil {
 			return nil, err
 		}
-		add(vocabulary.DocFunction, kindFunction, fn.Identity(), map[string]any{
-			"name": fn.Name, "authority": fn.Authority,
-			"definition": def, "sourceYAML": nil,
-		})
 	}
-	if err := groupAgentDeclarations(g, add); err != nil {
-		return nil, err
+	for _, n := range g.AgentOrder {
+		a := g.Agents[n]
+		if err := add(vocabulary.DocAgent, kindAgent, a.Identity(), a.Definition, nil); err != nil {
+			return nil, err
+		}
 	}
 	if b := g.Bundle; b != nil {
-		def, err := jsonSafe(b.Definition)
-		if err != nil {
+		// `disabled` and `purging` are deliberately untouched: an upgrade of a
+		// disabled bundle stays disabled. The explicit `uninstalled` null clears
+		// the retired reversible-uninstall marker off any legacy row a
+		// pre-teardown binary wrote — uninstall is a whole-authority teardown now
+		// (bundles.go), so no live bundle row ever carries it, and the null is a
+		// no-op otherwise.
+		if err := add(vocabulary.DocBundle, kindBundle, b.Identity(),
+			b.Definition, map[string]any{"uninstalled": nil}); err != nil {
 			return nil, err
 		}
-		// `disabled` is deliberately untouched: an upgrade of a disabled bundle
-		// stays disabled. The explicit `uninstalled` null clears the retired
-		// reversible-uninstall marker off any legacy row a pre-teardown binary
-		// wrote — uninstall is a whole-authority teardown now (bundles.go), so no
-		// live bundle row ever carries it, and the null is a no-op otherwise.
-		add(vocabulary.DocBundle, kindBundle, b.Identity(), map[string]any{
-			"name": b.Name, "authority": b.Authority,
-			"definition": def, "uninstalled": nil, "sourceYAML": nil,
-		})
 	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("%w: every declaration needs a version: %s",
 			substrate.ErrValidation, strings.Join(missing, ", "))
 	}
 	return decls, nil
+}
+
+// engineDeclarationProps are the properties a declaration ROW carries that its
+// DOCUMENT does not, split by who put them there.
+//
+// The ENGINE-STAMPED half is not listed anywhere in Go: a row reads back as a
+// document by WHITELIST — the keys the loader admits for that kind
+// (vocabulary.DeclarationDataKeys) and nothing else — so the stamped set needs
+// no second spelling here, and a property some FUTURE binary stamps cannot reach
+// this loader as an unknown key. Which properties the engine owns is declared
+// where a client can read it (`managed: true`), and TestManagedPropertiesAreNot
+// DocumentKeys holds the two statements together.
+//
+// The RETIRED half does need a list, because it is a list of DEAD spellings and
+// nothing derives it. It is dialect 1's own set and lives with dialect 1's
+// grammar: retiredDeclarationProps, in dialectonegrammar.go.
+
+// propDeclarationVersion is the version EVERY declaration row carries: the
+// property a boot-time upgrade diffs on, stamped by the projection when the
+// declaration pinned none (authorityDeclarations) and therefore not part of the
+// authored declaration a read surface renders (dataset.go authoredKindData).
+const propDeclarationVersion = "version"
+
+// engineOwned reports whether a stored property is the ENGINE's rather than the
+// declaration's: not a document key, and not one of the retired spellings. It is
+// what the rung preserves across a translation (a version ahead of its
+// authority's, a quarantine mark, a disabled bundle) and what a projection
+// leaves alone.
+func engineOwned(short, prop string) bool {
+	return !vocabulary.DeclarationDataKeys(short)[prop] && !retiredDeclarationProps(short)[prop] &&
+		!columnBackedProp[prop]
 }
 
 // pruneSchemaRows tombstones schema record rows of the touched authorities the
@@ -874,7 +1017,9 @@ func mapKeysOf[V any](m map[string]V) []string {
 
 // vocabularyDocumentRows reads the touched authorities' schema record rows back as
 // loader documents — the store is the source the candidate rebuilds from.
-func (ds *dataset) vocabularyDocumentRows(ctx context.Context, authorities map[string]bool) (map[string]vocabulary.Document, error) {
+// dialectOne says whether a row still carrying the `definition` blob is
+// translated (the rung) or refused (everything else): see rowDocument.
+func (ds *dataset) vocabularyDocumentRows(ctx context.Context, authorities map[string]bool, dialectOne bool) (map[string]vocabulary.Document, error) {
 	args := make([]any, 0, len(vocabularyKindRefs))
 	ph := make([]string, 0, len(vocabularyKindRefs))
 	for i, ident := range vocabularyKindRefs {
@@ -903,7 +1048,7 @@ func (ds *dataset) vocabularyDocumentRows(ctx context.Context, authorities map[s
 				return nil, fmt.Errorf("substrate/engine: decode schema row %s: %w", id, err)
 			}
 		}
-		d, ok, derr := rowDocument(id, typ, props)
+		d, ok, derr := rowDocument(id, typ, props, dialectOne)
 		if derr != nil {
 			return nil, derr
 		}
@@ -937,6 +1082,18 @@ func (ds *dataset) vocabularyDocumentRows(ctx context.Context, authorities map[s
 	return out, nil
 }
 
+// The two ways a declaration row is read back as a document, and the difference
+// is what a `definition` blob means. On every live path it means CORRUPTION: the
+// rung translated every one of them and refused to stamp the dialect while one
+// was left (dialecttyped.go), so a blob reaching a reader afterwards is a row no
+// binary wrote and rowDocument says so instead of rebuilding an authority around
+// it. The rung's own read is the exception, and the only one: it is what does the
+// translating, through the frozen dialect-1 grammar.
+const (
+	typedRows      = false
+	dialectOneRows = true
+)
+
 // rowDocument rebuilds the loader document a schema record row stores. An
 // unknown kind is an ERROR, never a silent skip: a
 // schema row this binary cannot rebuild means the store speaks a newer
@@ -945,13 +1102,47 @@ func (ds *dataset) vocabularyDocumentRows(ctx context.Context, authorities map[s
 // The boolean skip survives only for rows that are legitimately not documents
 // (a pre-promotion actor mirror row the seed rewrites, a row too old to
 // rebuild that deleteVocabularyRecord addresses by name alone).
-func rowDocument(id, typeIdent string, props map[string]any) (vocabulary.Document, bool, error) {
+func rowDocument(id, typeIdent string, props map[string]any, dialectOne bool) (vocabulary.Document, bool, error) {
 	short, ok := vocabularyRecordKinds[typeIdent]
 	if !ok {
 		return vocabulary.Document{}, false, fmt.Errorf("%w: schema row %s %s has a kind this binary does not know",
 			ErrVocabularyDialectNewer, typeIdent, id)
 	}
 	d := vocabulary.Document{Kind: short, ID: id}
+	// THE BLOB IS DECIDED FIRST, BY PRESENCE, for every schema kind and whatever
+	// the value is. A null, a string or a list under that key is not a declaration
+	// this binary can read either, and reading the row's typed properties around it
+	// would rebuild an authority from half a declaration — so presence alone is the
+	// question, and only the rung may answer it with a translation.
+	if blob, held := props[propDeclarationBlob]; held {
+		if !dialectOne {
+			return vocabulary.Document{}, false, fmt.Errorf(
+				"%w: schema row %s %s carries a `%s` property — dialect 2 stores a declaration's own properties, so this row is either corruption or a store the rung never migrated",
+				ErrDeclarationUntranslated, typeIdent, id, propDeclarationBlob)
+		}
+		def, isMap := blob.(map[string]any)
+		switch {
+		case short == vocabulary.DocAuthority || short == kindActorLocal:
+			// Neither ever carried one: an authority row's whole content is its
+			// version, an actor's its authority and tier (DialectOneProps).
+			return vocabulary.Document{}, false, fmt.Errorf(
+				"%w: schema row %s %s carries a `%s` property, which no dialect ever stored on a %s",
+				ErrDeclarationUntranslated, typeIdent, id, propDeclarationBlob, short)
+		case !isMap:
+			return vocabulary.Document{}, false, fmt.Errorf(
+				"%w: schema row %s %s carries a `%s` that is %T, not the declaration map dialect 1 stored",
+				ErrDeclarationUntranslated, typeIdent, id, propDeclarationBlob, blob)
+		}
+		// The rung's read: a row an older binary wrote, whose authored content is
+		// the blob alone, in the grammar of the dialect that wrote it.
+		data, err := dialectOneData(short, def)
+		if err != nil {
+			return vocabulary.Document{}, false, fmt.Errorf("%w: schema row %s %s: %w",
+				ErrDeclarationUntranslated, typeIdent, id, err)
+		}
+		d.Data = data
+		return d, true, nil
+	}
 	switch short {
 	case vocabulary.DocAuthority:
 		data := map[string]any{}
@@ -972,16 +1163,42 @@ func rowDocument(id, typeIdent string, props map[string]any) (vocabulary.Documen
 			d.Data["tier"] = tier
 		}
 	default:
-		def, _ := props["definition"].(map[string]any)
-		if def == nil {
-			return vocabulary.Document{}, false, nil
-		}
-		d.Data = def
+		// THE TYPED ROW: its properties ARE the declaration, so the document's
+		// data is the property map with the engine's own keys dropped
+		// (serverDeclarationProps). Nothing is derived and nothing is renamed —
+		// what the author wrote is what comes back.
+		d.Data = declarationData(short, props)
 	}
-	// No sourceYAML read-back: rows store the parsed definition only (record
+	// No sourceYAML read-back: rows store the parsed declaration only (record
 	// 61), so the rebuilt document's source is agreed absence — the boot no-op
 	// comparison is parsed projection against parsed projection.
 	return d, true, nil
+}
+
+// declarationData is one declaration row's DOCUMENT data: the properties the
+// loader admits for that kind, and nothing else. It is the read half of the
+// projection's write (authorityDeclarations), and it is a WHITELIST rather than
+// a list of exclusions on purpose — see engineDeclarationProps.
+func declarationData(short string, props map[string]any) map[string]any {
+	keys := vocabulary.DeclarationDataKeys(short)
+	data := make(map[string]any, len(props))
+	for k, v := range props {
+		if !keys[k] || v == nil {
+			continue
+		}
+		data[k] = v
+	}
+	return data
+}
+
+// columnBackedProp are the properties every record carries in a column of its
+// own and no declaration ever declares. They read back in `properties` like any
+// other (the wire shows them there), so a client echoing a record it just read
+// would otherwise send `title` into a declaration's data and be told the loader
+// does not know the key.
+var columnBackedProp = map[string]bool{
+	substrate.PropTitle: true, substrate.PropBody: true,
+	substrate.PropAt: true, substrate.PropEndsAt: true, substrate.PropDueAt: true,
 }
 
 // anyStrings reads a jsonb string list property.
@@ -1049,7 +1266,7 @@ func cappedQuarantineReason(reason string) string {
 // earlier, for a closure that no longer PARSES (storedAuthorities): both
 // failures arrive here as quarantine candidates and are marked identically.
 func (ds *dataset) loadStoredVocabulary(ctx context.Context) error {
-	built, unparsed, err := ds.storedAuthorities(ctx, nil)
+	built, unparsed, err := ds.storedAuthorities(ctx, nil, typedRows)
 	if err != nil {
 		return err
 	}
@@ -1169,8 +1386,9 @@ func (ds *dataset) clearGroupQuarantine(ctx context.Context, authorities []*voca
 // user or a bundle declared — so authority reads the same answer at open
 // as it did at the write. It parses and returns the authorities without installing
 // them anywhere, alongside the ones that no longer parse under this binary —
-// quarantine candidates for the caller to mark.
-func (ds *dataset) storedAuthorities(ctx context.Context, skip func(string) bool) ([]*vocabulary.Authority, []quarantinedAuthority, error) {
+// quarantine candidates for the caller to mark. dialectOne is the rung's read
+// (rowDocument): every other caller reads typed rows and refuses a blob.
+func (ds *dataset) storedAuthorities(ctx context.Context, skip func(string) bool, dialectOne bool) ([]*vocabulary.Authority, []quarantinedAuthority, error) {
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT id, COALESCE(props->>'source', $2) FROM records
 		WHERE kind = $1 AND deleted_at IS NULL
@@ -1206,7 +1424,7 @@ func (ds *dataset) storedAuthorities(ctx context.Context, skip func(string) bool
 	if len(authorities) == 0 {
 		return nil, nil, nil
 	}
-	docs, err := ds.vocabularyDocumentRows(ctx, authorities)
+	docs, err := ds.vocabularyDocumentRows(ctx, authorities, dialectOne)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1280,14 +1498,22 @@ func buildAuthoritiesSeparately(docs []vocabulary.Document, source string) ([]*v
 // --- the generic verbs, routed through admission --------------------------------
 
 // putSchemaRecord is a generic PUT of one schema record: a batch of one. The
-// row's authored content is its `definition` property (the manifest's data
-// map); anything else — a retired `sourceYAML` included — is ignored, like
-// every property the projection does not own.
+// row's authored content IS its properties, and what the engine owns is refused
+// rather than obeyed or dropped (checkDeclarationWrite).
 func (ds *dataset) putSchemaRecord(ctx context.Context, actor substrate.Actor, ty *vocabulary.Kind, in substrate.PutInput) (*substrate.Record, error) {
 	short := vocabularyRecordKinds[ty.Identity]
 	if in.ID == "" {
 		return nil, fmt.Errorf("%w: %s records are addressed by their declared identity — put carries metadata.id",
 			substrate.ErrValidation, short)
+	}
+	// The stored row is what an echoed managed property is compared against; a
+	// missing one is a create, where there is nothing to echo.
+	existing, err := ds.Get(ctx, ty.Identity, in.ID)
+	if err != nil && !errors.Is(err, substrate.ErrNotFound) {
+		return nil, err
+	}
+	if err := checkDeclarationWrite(ty, short, existing, in.Properties); err != nil {
+		return nil, err
 	}
 	doc, err := documentFromProps(short, in.ID, in.Properties)
 	if err != nil {
@@ -1313,6 +1539,15 @@ func (ds *dataset) putSchemaRecord(ctx context.Context, actor substrate.Actor, t
 // the result through admission, exactly like a put.
 func (ds *dataset) patchSchemaRecord(ctx context.Context, actor substrate.Actor, existing *substrate.Record, in substrate.PatchInput) (*substrate.Record, error) {
 	short := vocabularyRecordKinds[existing.Kind]
+	ty, err := ds.resolveType(existing.Kind)
+	if err != nil {
+		return nil, err
+	}
+	// The PATCH's own properties are what the writer supplied; the merge below
+	// carries the stored ones, which are the engine's own answer by definition.
+	if err := checkDeclarationWrite(ty, short, existing, in.Properties); err != nil {
+		return nil, err
+	}
 	props := map[string]any{}
 	for k, v := range existing.Properties {
 		props[k] = v
@@ -1348,7 +1583,7 @@ func (ds *dataset) patchSchemaRecord(ctx context.Context, actor substrate.Actor,
 // must still hold without it (an authority header outlives its members; a type
 // with live instances refuses).
 func (ds *dataset) deleteVocabularyRecord(ctx context.Context, actor substrate.Actor, existing *substrate.Record) (*substrate.Record, error) {
-	doc, ok, err := rowDocument(existing.ID, existing.Kind, existing.Properties)
+	doc, ok, err := rowDocument(existing.ID, existing.Kind, existing.Properties, typedRows)
 	if err != nil {
 		return nil, err
 	}
@@ -1366,9 +1601,15 @@ func (ds *dataset) deleteVocabularyRecord(ctx context.Context, actor substrate.A
 }
 
 // documentFromProps rebuilds the loader document a generic write carries: the
-// declaration travels in `definition` (or `version`/`authority` for the header
-// and actor kinds). Every other property is ignored — a write-supplied
-// `sourceYAML` in particular is never stored.
+// declaration IS the properties, so the document's data is the supplied
+// properties the loader admits for that kind. What the ENGINE owns is refused
+// rather than dropped (checkDeclarationWrite, the caller's first step): a
+// silently replaced value would tell a client its edit landed.
+//
+// There is no `definition` arm: the blob has no legal spelling any more, on the
+// wire or in a row. A write carrying one is refused by name upstream, and a
+// merge over a row that still holds one carries no declaration at all — which is
+// what the empty-data refusal below says.
 func documentFromProps(short, id string, props map[string]any) (vocabulary.Document, error) {
 	d := vocabulary.Document{Kind: short, ID: id}
 	switch short {
@@ -1388,12 +1629,75 @@ func documentFromProps(short, id string, props map[string]any) (vocabulary.Docum
 			d.Data["tier"] = tier
 		}
 	default:
-		def, _ := props["definition"].(map[string]any)
-		if def == nil {
-			return d, fmt.Errorf("%w: a %s record carries its declaration in `definition` (the manifest's data map)",
+		d.Data = declarationData(short, props)
+		if len(d.Data) == 0 {
+			return d, fmt.Errorf("%w: a %s record carries its declaration in its properties — this write carries none",
 				substrate.ErrValidation, short)
 		}
-		d.Data = def
 	}
 	return d, nil
+}
+
+// checkDeclarationWrite holds a generic declaration write to what the writer
+// owns. Three answers, and they are the settled rule:
+//
+//   - a property the loader admits is the DECLARATION's, and it lands;
+//   - a MANAGED property (the version, the origin, the quarantine marks, the
+//     bundle lifecycle bools — each declared `managed: true`) is the engine's:
+//     absent is fine, since the engine stamps it, and an echoed value EQUAL to
+//     the one the row already holds is fine, since `get -o yaml | apply -f` must
+//     round-trip. A DIFFERENT value is refused, naming the property: silently
+//     replacing it would tell the client its edit landed;
+//   - anything else is refused as undeclared, rather than dropped, so a typo
+//     is not a change that vanishes. A RETIRED spelling is refused by that name —
+//     the `definition` blob naming the properties that carry the declaration
+//     instead, the dead mirrors naming the rule — since a writer still sending
+//     one is working from a document this substrate stopped storing.
+//
+// `title` and `body` are the exception that proves the rule: every record
+// carries them in a column, a read hands them back in `properties`, and a
+// declaration's title is derived from its template — so an echoed one is
+// ignored, not refused.
+func checkDeclarationWrite(ty *vocabulary.Kind, short string, existing *substrate.Record, props map[string]any) error {
+	dataKeys := vocabulary.DeclarationDataKeys(short)
+	var problems []string
+	for _, name := range sortedKeys(props) {
+		switch {
+		// THE BLOB FIRST, and by PRESENCE: a null is this dialect's delete marker
+		// everywhere else, but there is nothing left to delete under this key — no
+		// row carries one — so a write naming it is a client working from a
+		// document this substrate stopped storing, whatever value it sends.
+		case name == propDeclarationBlob:
+			problems = append(problems, fmt.Sprintf(
+				"props.%s: the retired blob — a %s carries its declaration in its own properties: %s",
+				name, short, strings.Join(sortedKeys(dataKeys), ", ")))
+			continue
+		case dataKeys[name], columnBackedProp[name], props[name] == nil:
+			continue
+		case retiredDeclarationProps(short)[name]:
+			problems = append(problems, fmt.Sprintf("props.%s: the retired spelling — the declaration is the properties now", name))
+			continue
+		}
+		p, declared := ty.Prop(name)
+		if !declared {
+			problems = append(problems, fmt.Sprintf("props.%s: not declared on %s", name, ty.Identity))
+			continue
+		}
+		if !p.Managed {
+			continue // an ordinary property of the kind the loader does not read
+		}
+		var held any
+		if existing != nil {
+			held = existing.Properties[name]
+		}
+		if jsonEqual(held, props[name]) {
+			continue
+		}
+		problems = append(problems, fmt.Sprintf(
+			"props.%s: the engine stamps it (%v) — drop it or send the stored value", name, held))
+	}
+	if len(problems) > 0 {
+		return &substrate.ValidationError{Problems: problems}
+	}
+	return nil
 }

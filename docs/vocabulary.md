@@ -167,9 +167,12 @@ against the old shape. The contract has two halves.
 vocabulary-dialect integer, stamped by the binary when the repository is opened.
 Dialect promotions are keyed, recorded, ordered steps from N to N+1, run at
 open and recorded per repository, so the history of how a repository's vocabulary
-advanced is itself readable. A binary whose maximum supported dialect is
+advanced is itself readable. A step that rewrites stored rows stamps the new
+number in the same transaction as the rewrite, which is what makes a promotion
+**one-way**: [upgrading the binary](operations.md#upgrading-the-binary) is where
+that lands on an operator. A binary whose maximum supported dialect is
 below a repository's stored dialect refuses to open that repository with a
-named error ("the store speaks a newer vocabulary dialect than this binary"),
+named error ("the store speaks a newer schema dialect than this binary"),
 rather than opening it and misreading rows written by a newer shape; the API
 surfaces the refusal as `503 repository temporarily unavailable`, never as an
 invalid token. A repository's stored dialect is internal to its own store and
@@ -177,17 +180,30 @@ never appears on the wire; what
 [API discovery](api.md#discovery) reports is the binary's maximum, which is
 the number a client actually needs.
 
-**Admission refuses narrowing.** A definition change that would strand
+**Admission refuses narrowing.** A declaration change that would strand
 existing data is refused at admission, as a `guard` error naming every
 narrowed property with the count of live records affected, all problems at
 once. The narrowing diffs that refuse:
 
 - dropping a property a record still carries
 - renaming a property (`renamedFrom:`, below)
-- changing a property's kind, a `repeated:` flip included
+- changing a property's datatype, or its container: a `repeated:` flip and a
+  `keyed:` flip both count, because a map is not a list and neither is a scalar,
+  and no stored value converts between them
 - removing an enum value a record still holds
 - removing a state a record still occupies
-- adding `required:` to a property a record lacks
+- narrowing a `reference` property's `to:` target while records point outside
+  the new one (unconstrained to a kind, or one kind to another; widening back
+  to `any` narrows nothing)
+- tightening a keyed map's `keyPattern:` while records hold a key the new
+  contract refuses, since a key is not rewritable in place
+- every one of those inside an object property's declared `fields:`, at each
+  level the dialect nests: a dropped field, a field whose datatype or container
+  changed, a field's removed enum value, a field's tightened keys, a field
+  reference's narrowed target, each counted where the value actually sits
+- adding `required:` to a property a record lacks, and declaring a **new**
+  property `required:`, which strands every live record at once: none of them
+  can carry a property no declaration had
 
 Widening diffs (a new kind, a new optional property, a new enum value, a new
 state or transition, removing `required:`) always admit. The guard counts, it

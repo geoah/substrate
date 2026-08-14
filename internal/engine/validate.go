@@ -73,8 +73,15 @@ func coerceProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, error)
 	return out, nil
 }
 
+// coerceValue validates one declared value in its declared CONTAINER: a keyed
+// map, a list, or the value itself. The container is the declaration's, so the
+// same function coerces a kind's own property and a field at any admitted
+// depth — which is what keeps a nested list and a top-level list one rule.
 func coerceValue(p *vocabulary.Property, v any) (any, error) {
-	if p.Repeated {
+	switch {
+	case p.Keyed:
+		return coerceKeyed(p, v)
+	case p.Repeated:
 		items, ok := v.([]any)
 		if !ok {
 			return nil, fmt.Errorf("expected a list of %s", p.Datatype)
@@ -92,10 +99,39 @@ func coerceValue(p *vocabulary.Property, v any) (any, error) {
 	return coerceScalar(p, v)
 }
 
+// coerceKeyed validates a keyed map: the KEYS are data, so nothing refuses one
+// for being undeclared — the declared key contract is the whole check — and
+// every VALUE follows the rest of the declaration (the declared fields for an
+// object, the declared scalar otherwise). A null value drops its key, exactly as
+// a null field drops from an object. An empty map stores as {}.
+func coerceKeyed(p *vocabulary.Property, v any) (any, error) {
+	in, ok := v.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("expected a keyed map of %s", p.Datatype)
+	}
+	out := make(map[string]any, len(in))
+	for _, key := range sortedKeys(in) {
+		if err := p.CheckKey(key); err != nil {
+			return nil, err
+		}
+		kv := in[key]
+		if kv == nil {
+			continue
+		}
+		cv, err := coerceScalar(p, kv)
+		if err != nil {
+			return nil, fmt.Errorf(".%s: %w", key, err)
+		}
+		out[key] = cv
+	}
+	return out, nil
+}
+
 // coerceObject validates one object value against its declared fields
 // : undeclared fields are rejected, a field explicitly null is
-// dropped from the stored object, and each field coerces with the scalar
-// rules. An empty object stores as {}.
+// dropped from the stored object, and each field coerces in its OWN declared
+// container — a repeated field elementwise, a keyed field per key, a nested
+// object recursively. An empty object stores as {}.
 func coerceObject(p *vocabulary.Property, v any) (any, error) {
 	in, ok := v.(map[string]any)
 	if !ok {
@@ -111,7 +147,7 @@ func coerceObject(p *vocabulary.Property, v any) (any, error) {
 		if fv == nil {
 			continue
 		}
-		cv, err := coerceScalar(f, fv)
+		cv, err := coerceValue(f, fv)
 		if err != nil {
 			return nil, fmt.Errorf(".%s: %w", fname, err)
 		}
@@ -394,6 +430,23 @@ func (r *titleResolver) Prop(name string) string {
 	return ""
 }
 
+// Declares reports whether the kind declares a property OR an edge of that name,
+// which is what a derived token yields to. An edge counts because a bare token
+// means either one and the loader refuses a kind that declares both under one
+// name: without it, `{localName}` on a kind whose EDGE is `localName` would
+// render the id's last segment where the model says the target's title.
+//
+// A sensitive property counts as declared too: Prop renders it empty on purpose,
+// and answering with the id-derived value instead would put something in a title
+// the declaration meant to keep out of one.
+func (r *titleResolver) Declares(name string) bool {
+	if _, ok := r.ty.Prop(name); ok {
+		return true
+	}
+	_, ok := r.ty.Edge(name)
+	return ok
+}
+
 // reference renders a reference property: the referent's title, or the named
 // property of it. Repeated references render each, comma-joined, the way a
 // many-edge does.
@@ -478,7 +531,38 @@ func referenceTargets(v any) []eref {
 	return nil
 }
 
-func (r *titleResolver) Snippet() string { return snippetOf(r.ty, r.row) }
+// Derived renders a derived token from the row itself. {localName} is the id's
+// last segment and {id} the whole id: a DECLARATION's id is a kind reference
+// ("people.substrate.reamde.dev/person"), so the local name is what a reader
+// calls the thing, and for an ordinary slashless id the two answer the same.
+func (r *titleResolver) Derived(token string) string {
+	switch token {
+	case vocabulary.DerivedSnippet:
+		return snippetOf(r.ty, r.row)
+	case vocabulary.DerivedLocalName:
+		return localNameOf(r.row.ID)
+	case vocabulary.DerivedID:
+		return r.row.ID
+	}
+	return ""
+}
+
+// localNameOf is an id's last non-empty segment, and the whole id when it has
+// none. The LAST slash, not the kind reference's one: an id may legally carry
+// several (the alphabet admits "/" so a declaration's id can BE a kind
+// reference), and the last segment is the one a reader would call the thing.
+//
+// A TRAILING slash is legal in the id alphabet, and splitting on it plainly
+// would render an empty title for a row whose id is anything but empty — so it
+// is trimmed first. The alphabet's first character is alphanumeric, so trimming
+// can never empty the whole id.
+func localNameOf(id string) string {
+	trimmed := strings.TrimRight(id, "/")
+	if i := strings.LastIndexByte(trimmed, '/'); i >= 0 {
+		return trimmed[i+1:]
+	}
+	return trimmed
+}
 
 func (r *titleResolver) Edge(rel, prop string) string {
 	// A dotted token whose head is an OBJECT PROPERTY reads its field
@@ -496,10 +580,13 @@ func (r *titleResolver) Edge(rel, prop string) string {
 			}
 			return ""
 		}
-		// `{agent.name}` where `agent` is a REFERENCE reads the referent's
-		// property, the same hop a dotted edge token takes. The loader has
-		// checked the head names a declared edge, object or reference, so the
-		// three forms cannot collide.
+		// A dotted token whose head is a REFERENCE reads that property off the
+		// referent, the same hop a dotted edge token takes. No shipped
+		// declaration spells one: llmthread titled itself `{agent.name}` until
+		// core/agent stopped declaring `name`, and the bare `{agent}` that
+		// replaced it renders the referent's own TITLE instead (Prop, above).
+		// The loader has checked the head names a declared edge, object or
+		// reference, so the three forms cannot collide.
 		if p, ok := r.ty.Prop(rel); ok && p.Datatype == vocabulary.DatatypeReference {
 			return r.reference(rel, prop)
 		}

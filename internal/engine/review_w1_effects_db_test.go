@@ -311,10 +311,10 @@ func TestSchemaApplyRejectsUnpreparableBody(t *testing.T) {
 				vocabulary.AuthorityManifest(badAuthority, ""),
 				vocabulary.ActorManifest(badAuthority, vocabulary.AuthorityActor(badAuthority)),
 				vocabulary.FunctionManifest(badAuthority, "mangle", map[string]any{
-					"description":  "a body that must compile at registration",
-					"runtime":      vocabulary.RuntimePython,
-					"source":       source,
-					"capabilities": map[string]any{"emit": []any{raceWidget}},
+					"description": "a body that must compile at registration",
+					"runtime":     vocabulary.RuntimePython,
+					"source":      source,
+					"emit":        []any{raceWidget},
 				}),
 			},
 		}

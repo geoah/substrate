@@ -19,8 +19,9 @@ data:
     singular: run
     plural: runs
   indices:
-    - - trigger
-      - status
+    - properties:
+        - trigger
+        - status
   properties:
     trigger:
       type: string
@@ -57,8 +58,11 @@ data:
     error:
       type: string
       description: the last error, on parked runs
+    # The keys are the action words the effect applier names (put, patch,
+    # delete, link, unlink, merge, split), held to that set by the engine.
     effects:
-      type: json
+      type: int
+      keyed: true
       description: "the applied-effects summary: action → count"
     pages:
       type: int

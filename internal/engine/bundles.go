@@ -754,8 +754,7 @@ func (ds *dataset) BundleStatuses(ctx context.Context) ([]substrate.BundleStatus
 // status comes from the store.
 func (ds *dataset) quarantinedBundleStatuses(ctx context.Context) ([]substrate.BundleStatus, error) {
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT b.id, COALESCE(b.props->>'name', ''), g.id,
-		       COALESCE(g.props->>$3, '')
+		SELECT b.id, g.id, COALESCE(g.props->>$3, '')
 		FROM records g
 		JOIN records b ON b.kind = $2 AND b.deleted_at IS NULL AND b.props->>'authority' = g.id
 		WHERE g.kind = $1 AND g.deleted_at IS NULL AND (g.props ? $4) AND g.props->>$4 = 'true'
@@ -767,10 +766,14 @@ func (ds *dataset) quarantinedBundleStatuses(ctx context.Context) ([]substrate.B
 	defer func() { _ = rows.Close() }()
 	var out []substrate.BundleStatus
 	for rows.Next() {
-		var id, name, authority, reason string
-		if err := rows.Scan(&id, &name, &authority, &reason); err != nil {
+		var id, authority, reason string
+		if err := rows.Scan(&id, &authority, &reason); err != nil {
 			return nil, err
 		}
+		// The bundle's NAME is its id's last segment (vocabulary.BundleName is
+		// the same answer from the authority): a declaration row carries no
+		// id-derived name property to read it off.
+		name := vocabulary.KindName(id)
 		out = append(out, substrate.BundleStatus{
 			ID: id, Name: name, Authority: authority,
 			Installed: false, Enabled: false,

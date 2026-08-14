@@ -33,10 +33,10 @@ import type { SubstrateRecord } from "@/lib/api/types"
 import { cellValue } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-function definitionField(agent: SubstrateRecord, key: string): string {
-  const def = agent.properties.definition
-  if (typeof def !== "object" || def === null) return ""
-  const value = (def as Record<string, unknown>)[key]
+/** A declaration row's properties ARE the declaration: `provider` and `model`
+ * are columns of the row, not keys inside a blob. */
+function declaredField(agent: SubstrateRecord, key: string): string {
+  const value = agent.properties[key]
   return value === undefined ? "" : cellValue(value)
 }
 
@@ -106,14 +106,14 @@ function agentColumns(): DataTableColumn<SubstrateRecord>[] {
     textColumn({
       id: "provider",
       title: "provider",
-      value: (a) => definitionField(a, "provider"),
+      value: (a) => declaredField(a, "provider"),
       data: true,
       meta: { label: "provider", width: 120 },
     }),
     textColumn({
       id: "model",
       title: "model",
-      value: (a) => definitionField(a, "model"),
+      value: (a) => declaredField(a, "model"),
       data: true,
       tooltip: true,
       meta: { label: "model", size: { min: 140, weight: 1 } },
