@@ -435,8 +435,25 @@ func (ds *dataset) warnDiscardedOutput(t *trigger, fn *vocabulary.Function) {
 	if len(fn.Caps.Emit) > 0 || len(fn.Caps.Call) > 0 || len(fn.Caps.Network) > 0 {
 		return
 	}
+	// The ids are user-authored strings from record rows: logged only after
+	// the id grammar re-admits them (no control characters can pass it), so
+	// a crafted id cannot forge log lines and no secret-shaped value — the
+	// scanner taints every props-map read alike — reaches the log.
 	ds.svc.log.Warn("substrate: trigger fires a function whose output is discarded — it declares no emit, no call and no network, so a delivery can change nothing; call it instead, or give it the grant it needs",
-		"repository", ds.Repository().Name, "trigger", t.ID, "function", fn.Identity())
+		"repository", logSafeID(ds.Repository().Name), "trigger", logSafeID(t.ID), "function", logSafeID(fn.Identity()))
+}
+
+// logSafeID admits a value into a log line only when the id grammar does: a
+// record id, a kind reference and a repository name are all built from the
+// same charset, which admits no control character. Anything else logs as a
+// fixed placeholder rather than as itself.
+func logSafeID(s string) string {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			return "(unloggable id)"
+		}
+	}
+	return s
 }
 
 // --- loading ---------------------------------------------------------------------
