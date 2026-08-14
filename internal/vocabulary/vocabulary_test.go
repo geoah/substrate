@@ -1716,6 +1716,9 @@ func (r testResolver) Declares(n string) bool {
 	if _, ok := r.props[n]; ok {
 		return true
 	}
+	if _, ok := r.edges[n]; ok {
+		return true
+	}
 	return slices.Contains(r.declares, n)
 }
 

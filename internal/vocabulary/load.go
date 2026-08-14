@@ -779,9 +779,14 @@ func (l *loader) checkTemplate(where string, t *Kind, tmpl *Template) {
 	for _, ref := range tmpl.Refs() {
 		switch {
 		// A derived token needs no declaration to check against: it is computed
-		// from the record. A kind that ALSO declares a property of that name is
-		// legal and wins at render time (Template.Render).
+		// from the record. But a kind MAY declare a property or an edge of the
+		// token's name, and then the declaration is what renders
+		// (Template.Render), so the token is held to the same rules the bare form
+		// gets — a sensitive property must not reach a title by wearing a derived
+		// token's name. The answer is discarded on purpose: undeclared is legal
+		// here and nowhere else.
 		case ref.Derived != "":
+			l.ownToken(where, t, ref.Derived)
 		case ref.Edge != "":
 			if _, ok := t.Edges[ref.Edge]; ok {
 				continue
@@ -805,28 +810,37 @@ func (l *loader) checkTemplate(where string, t *Kind, tmpl *Template) {
 			l.errf("%s: data.displayTemplate: {%s.%s}: %s declares no edge, reference or object property %q",
 				where, ref.Edge, ref.Prop, t.Name, ref.Edge)
 		default:
-			if p, ok := t.Props[ref.Prop]; ok {
-				// A title is an unredacted, FTS-indexed column: a sensitive
-				// property rendered into it would leak around every
-				// read-surface redaction. The runtime resolver skips them too
-				// (edge targets and legacy vocabularies), but a declaration
-				// should fail loudly, not render empty.
-				if p.Sensitive() {
-					l.errf("%s: data.displayTemplate: {%s}: %s is %s-typed and a sensitive value never renders into a title",
-						where, ref.Prop, ref.Prop, p.Datatype)
-				}
-				continue
-			}
-			if _, ok := t.Edges[ref.Prop]; ok {
-				continue
-			}
-			if _, reserved := reservedProps[ref.Prop]; reserved {
+			if l.ownToken(where, t, ref.Prop) {
 				continue
 			}
 			l.errf("%s: data.displayTemplate: {%s}: %s declares no property or edge %q",
 				where, ref.Prop, t.Name, ref.Prop)
 		}
 	}
+}
+
+// ownToken resolves a BARE token against the kind's own declarations and reports
+// whether anything declared the name: a property, an edge, or one of the
+// column-backed properties every record carries. It is where the refusals that
+// belong to a bare token live, so the derived tokens get them too.
+//
+// A title is an unredacted, FTS-indexed column, so a sensitive property rendered
+// into one would leak around every read-surface redaction. The runtime resolver
+// skips them as well (edge targets and legacy vocabularies), but a declaration
+// should fail loudly rather than render empty.
+func (l *loader) ownToken(where string, t *Kind, name string) bool {
+	if p, ok := t.Props[name]; ok {
+		if p.Sensitive() {
+			l.errf("%s: data.displayTemplate: {%s}: %s is %s-typed and a sensitive value never renders into a title",
+				where, name, name, p.Datatype)
+		}
+		return true
+	}
+	if _, ok := t.Edges[name]; ok {
+		return true
+	}
+	_, reserved := reservedProps[name]
+	return reserved
 }
 
 // mapOfAny adapts a typed map to the shape sortedKeys reads, so key ordering

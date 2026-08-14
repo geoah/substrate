@@ -314,6 +314,32 @@ func TestDerivedTemplateTokensNeedNoDeclaration(t *testing.T) {
 			t.Fatalf("%s: no parsed template", tmpl)
 		}
 	}
+	// A kind that DECLARES the token's name — as a property or as an edge — is
+	// legal, and the declaration is what renders.
+	for name, body := range map[string]string{
+		"property": `  displayTemplate: "{localName}"
+  properties: {localName: {type: string}}
+`,
+		"edge": `  displayTemplate: "{localName}"
+  edges: {localName: {to: target}}
+`,
+	} {
+		if _, err := dialectLoad(t, body); err != nil {
+			t.Fatalf("a declared %s of the token's name must load: %v", name, err)
+		}
+	}
+	// And a derived token is held to the bare token's rules where the kind DOES
+	// declare the name: a sensitive value never renders into a title, whichever
+	// spelling asked for it.
+	_, err := dialectLoad(t, `  displayTemplate: "{localName}"
+  properties: {localName: {type: secret}}
+`)
+	if err == nil {
+		t.Fatal("expected a load error")
+	}
+	if !strings.Contains(err.Error(), "sensitive value never renders into a title") {
+		t.Fatalf("the refusal must name the leak it prevents, got: %v", err)
+	}
 }
 
 // A REAL property wins over the derived token of the same name, and it wins by
@@ -360,6 +386,19 @@ func TestDerivedTokenYieldsToADeclaredProperty(t *testing.T) {
 	}); got != "people.example.com/person" {
 		t.Fatalf("an empty alternative must yield to the next, got %q", got)
 	}
+	// A declared EDGE of the token's name wins the same way a property does, and
+	// resolves as the bare form: property first, then the edge's targets. One name
+	// is one pointer, so a token cannot mean the id here and the edge there.
+	localName, err := vocabulary.ParseTemplate("{localName}")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := localName.Render(testResolver{
+		edges:   map[string]string{vocabulary.DerivedLocalName: "Ada"},
+		derived: derived,
+	}); got != "Ada" {
+		t.Fatalf("a declared edge must win over the derived token, got %q", got)
+	}
 }
 
 // The key contract has ONE grammar: CheckKey asks it in Go and the narrowing
@@ -369,6 +408,14 @@ func TestKeyPatternRegexpAgreesWithCheckKey(t *testing.T) {
 		"backfillDepth", "a", "task", "tasks.example.com/task", "x9",
 		"back_fill", "Backfill", "tasks.*", "a b", "9lives", "a/b/c",
 		"tasks.example.com/Task", "-nope", "tasks.example.com/",
+		// The spellings where the two sides could disagree, and one where they
+		// did: ValidKindReference admits "/task" (SplitKindRef yields an empty
+		// authority and it only validates a non-empty one), which is not a kind
+		// reference. A key the write path admitted and the guard refused was a
+		// stored map that could never be brought under its own declaration, so
+		// CheckKey holds to the grammar (types.go says why the validator keeps its
+		// quirk).
+		"/task", "task/", "a//b", "/", "//", "tasks.example.com//task",
 	}
 	for _, contract := range []string{vocabulary.KeyPatternCamel, vocabulary.KeyPatternKindRef} {
 		src := vocabulary.KeyPatternRegexp(contract)

@@ -430,12 +430,20 @@ func (r *titleResolver) Prop(name string) string {
 	return ""
 }
 
-// Declares reports whether the kind declares the property, which is what a
-// derived token yields to. A sensitive property counts as declared: Prop renders
-// it empty on purpose, and answering with the id-derived value instead would put
-// something in a title the declaration meant to keep out of one.
+// Declares reports whether the kind declares a property OR an edge of that name,
+// which is what a derived token yields to. An edge counts because a bare token
+// means either one and the loader refuses a kind that declares both under one
+// name: without it, `{localName}` on a kind whose EDGE is `localName` would
+// render the id's last segment where the model says the target's title.
+//
+// A sensitive property counts as declared too: Prop renders it empty on purpose,
+// and answering with the id-derived value instead would put something in a title
+// the declaration meant to keep out of one.
 func (r *titleResolver) Declares(name string) bool {
-	_, ok := r.ty.Prop(name)
+	if _, ok := r.ty.Prop(name); ok {
+		return true
+	}
+	_, ok := r.ty.Edge(name)
 	return ok
 }
 

@@ -284,22 +284,45 @@ func KeyPatternRegexp(pattern string) string {
 	return ""
 }
 
+// keyPatternRE compiles what KeyPatternRegexp hands out, so the write path and
+// the narrowing guard's SQL are not two spellings of one grammar but one
+// spelling asked twice. Nothing else in the loader needs to be this literal;
+// this contract does, because a key the write path admits and the guard refuses
+// is a stored map that can never be brought under its own declaration.
+var keyPatternRE = map[string]*regexp.Regexp{
+	KeyPatternCamel:   regexp.MustCompile(KeyPatternRegexp(KeyPatternCamel)),
+	KeyPatternKindRef: regexp.MustCompile(KeyPatternRegexp(KeyPatternKindRef)),
+}
+
+// keyPatternRule is what each contract says when it refuses, in the author's
+// terms rather than the regexp's.
+var keyPatternRule = map[string]string{
+	KeyPatternCamel:   camelRule,
+	KeyPatternKindRef: "a kind reference (`task` or `tasks.example.com/task`)",
+}
+
 // CheckKey holds one key of a keyed map to the declared contract. The keys are
 // DATA: an undeclared key is admitted (that is what a map is for), and this is
 // the whole check that stands between the writer and the stored value.
+//
+// It matches the shared PATTERN rather than calling the sibling validators, and
+// for kindRef that is a deliberate narrowing of one: ValidKindReference splits on
+// the first slash and validates the authority only when it is non-empty, so it
+// admits "/task" — an empty authority, which is not a kind reference and which
+// no reference the registry resolves has ever been spelled as. Fixing the
+// validator itself would move a trigger source and every function allowlist that
+// stored one, so the quirk stays where it is and the KEY contract holds to the
+// grammar the guard counts against.
 func (p *Property) CheckKey(key string) error {
 	if key == "" {
 		return fmt.Errorf("a keyed map's key is never empty")
 	}
-	switch p.KeyPattern {
-	case KeyPatternCamel:
-		if !ValidCamel(key) {
-			return fmt.Errorf("key %q must be %s", key, camelRule)
-		}
-	case KeyPatternKindRef:
-		if !ValidKindReference(key) {
-			return fmt.Errorf("key %q must be a kind reference (`task` or `tasks.example.com/task`)", key)
-		}
+	re, contracted := keyPatternRE[p.KeyPattern]
+	if !contracted {
+		return nil
+	}
+	if !re.MatchString(key) {
+		return fmt.Errorf("key %q must be %s", key, keyPatternRule[p.KeyPattern])
 	}
 	return nil
 }

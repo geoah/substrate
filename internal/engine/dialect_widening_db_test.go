@@ -241,6 +241,15 @@ func TestDialectWideningsRefuseBadValues(t *testing.T) {
 			props: map[string]any{"installs": map[string]any{"tasks.*": map[string]any{"version": "v1"}}},
 			says:  "must be a kind reference",
 		},
+		// A LEADING SLASH is an empty authority, which is not a kind reference.
+		// It matters more than it looks: the guard that counts a tightened
+		// contract's violations refuses it, so a key the write path admitted here
+		// would be a stored map that could never be brought under its own
+		// declaration.
+		"leading-slash key is not a kind reference": {
+			props: map[string]any{"installs": map[string]any{"/task": map[string]any{"version": "v1"}}},
+			says:  "must be a kind reference",
+		},
 		"empty key": {
 			props: map[string]any{"notes": map[string]any{"": "x"}},
 			says:  "never empty",
@@ -340,6 +349,20 @@ func TestDerivedTitleTokens(t *testing.T) {
 				"displayTemplate": "{localName}",
 				"properties":      map[string]any{"localName": map[string]any{"type": "string"}},
 			}),
+		// And a kind whose EDGE takes the name. One name is one pointer, so the
+		// token means the edge here — the same thing the bare form would mean.
+		vocabulary.KindManifest(dtAuthority,
+			map[string]any{"singular": "named", "plural": "nameds"},
+			map[string]any{
+				"displayTemplate": "{name}",
+				"properties":      map[string]any{"name": map[string]any{"type": "string"}},
+			}),
+		vocabulary.KindManifest(dtAuthority,
+			map[string]any{"singular": "edgeclaimer", "plural": "edgeclaimers"},
+			map[string]any{
+				"displayTemplate": "{localName}",
+				"edges":           map[string]any{"localName": map[string]any{"to": "named"}},
+			}),
 	}
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
 		t.Fatalf("install the template authority: %v", err)
@@ -387,6 +410,32 @@ func TestDerivedTitleTokens(t *testing.T) {
 	})
 	if empty.Title != "" {
 		t.Fatalf("a declared-but-empty property must not fall back to the derived value, got %q", empty.Title)
+	}
+
+	// A declared EDGE of the token's name wins too, and renders what a bare token
+	// would: the target's title. Rendering the id's last segment here would say
+	// the record's own name where the model points at another record's.
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: dtAuthority + "/named", ID: "n1", Properties: map[string]any{"name": "Ada"},
+	})
+	viaEdge := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: dtAuthority + "/edgeclaimer", ID: "people.example.com/person",
+		Edges: []substrate.EdgeInput{{
+			Rel: "localName",
+			To:  substrate.EdgeRef{Kind: dtAuthority + "/named", ID: "n1"},
+		}},
+	})
+	if viaEdge.Title != "Ada" {
+		t.Fatalf("a declared edge must win over the derived token, got %q", viaEdge.Title)
+	}
+	// With the edge unset it renders empty, exactly as a declared-but-empty
+	// property does: the declaration decides the meaning, the row decides the
+	// value.
+	noEdge := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: dtAuthority + "/edgeclaimer", ID: "people.example.com/other",
+	})
+	if noEdge.Title != "" {
+		t.Fatalf("an unset declared edge must not fall back to the derived value, got %q", noEdge.Title)
 	}
 }
 
