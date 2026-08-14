@@ -635,7 +635,7 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 // not context — so the replay stays robust against tool renames.
 func (l *agentLoop) loadHistory(ctx context.Context) ([]llm.Message, int, error) {
 	probe, err := json.Marshal(map[string]any{
-		msgRelThread: map[string]any{"kind": typeThread, "id": l.threadID},
+		msgRelThread: vocabulary.RecordPath(typeThread, l.threadID),
 	})
 	if err != nil {
 		return nil, 0, err

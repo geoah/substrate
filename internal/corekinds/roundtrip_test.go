@@ -49,6 +49,11 @@ func secret(s string) *corekinds.SecretRef {
 	return &r
 }
 
+func refPath(s string) *corekinds.ReferencePath {
+	r := corekinds.ReferencePath(s)
+	return &r
+}
+
 // The one digest shape a decoder admits: 64 lowercase hex.
 const testDigest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
@@ -103,22 +108,22 @@ func TestRoundTripPopulated(t *testing.T) {
 		Version:   str("v1alpha8"),
 		Authority: str("core.substrate.reamde.dev"),
 		Prompt:    str("be useful"),
-		Provider:  str("default"),
+		Provider:  refPath("core.substrate.reamde.dev/llmprovider/default"),
 		Model:     str("gpt-5"),
 		Params:    &corekinds.AgentParams{Temperature: f64(0.2), MaxTokens: i64(2048)},
 		// One arm, two entries: a host built-in named by identity, and a bundle's
 		// function carrying an alias.
 		Tools: []corekinds.AgentTools{
-			{Function: str("core.substrate.reamde.dev/query")},
-			{Function: str("web.bundles.substrate.reamde.dev/setclass"), Name: str("classify")},
+			{Function: refPath("core.substrate.reamde.dev/function/core.substrate.reamde.dev/query")},
+			{Function: refPath("core.substrate.reamde.dev/function/web.bundles.substrate.reamde.dev/setclass"), Name: str("classify")},
 		},
 		// Absent and empty are different answers: `agents` names one sub-agent,
 		// `permissions.writes` names none.
-		Agents:  []string{"core.substrate.reamde.dev/titler"},
+		Agents:  []corekinds.ReferencePath{"core.substrate.reamde.dev/agent/core.substrate.reamde.dev/titler"},
 		Budgets: &corekinds.AgentBudgets{MaxTurns: i64(8), Depth: i64(3)},
 		Permissions: &corekinds.AgentPermissions{
-			Writes: []string{},
-			Reads:  &corekinds.AgentPermissionsReads{Kinds: []string{"tasks.substrate.reamde.dev/task"}},
+			Writes: []corekinds.ReferencePath{},
+			Reads:  &corekinds.AgentPermissionsReads{Kinds: []corekinds.ReferencePath{"core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev/task"}},
 		},
 		SubagentOnly: boolean(true),
 	}, corekinds.DecodeAgent)
@@ -145,7 +150,7 @@ func TestRoundTripPopulated(t *testing.T) {
 		Authority: str("tasks.bundles.substrate.reamde.dev"),
 		Inputs: map[string]corekinds.BundleInputs{
 			"connector": {
-				Kind:   str("tasks.bundles.substrate.reamde.dev/config"),
+				Kind:   refPath("core.substrate.reamde.dev/kind/tasks.bundles.substrate.reamde.dev/config"),
 				Inject: ptr(corekinds.BundleInputsInjectFunctions),
 			},
 		},
@@ -178,7 +183,7 @@ func TestRoundTripPopulated(t *testing.T) {
 		},
 		Returns: []corekinds.FunctionReturns{{Name: str("results"), Type: ptr(corekinds.FunctionReturnsTypeJson)}},
 		Permissions: &corekinds.FunctionPermissions{
-			Writes:    []string{"firecrawl.substrate.reamde.dev/webdocument"},
+			Writes:    []corekinds.ReferencePath{"core.substrate.reamde.dev/kind/firecrawl.substrate.reamde.dev/webdocument"},
 			Network:   []string{"api.example.com"},
 			Mutations: []corekinds.FunctionPermissionsMutations{corekinds.FunctionPermissionsMutationsMerge},
 		},
@@ -214,7 +219,7 @@ func TestRoundTripPopulated(t *testing.T) {
 		ToolCallId: str("c1"),
 		Tool:       str("query"),
 		Ok:         boolean(true),
-		Thread:     &corekinds.Reference{Kind: "core.substrate.reamde.dev/llmthread", ID: "t1"},
+		Thread:     refPath("core.substrate.reamde.dev/llmthread/t1"),
 	}, corekinds.DecodeLLMMessage)
 
 	roundTrip(t, "llmprovider", &corekinds.LLMProvider{
@@ -234,7 +239,7 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodeLLMProvider)
 
 	roundTrip(t, "llmthread", &corekinds.LLMThread{
-		Agent:            &corekinds.Reference{Kind: "core.substrate.reamde.dev/agent", ID: "core.substrate.reamde.dev/assistant"},
+		Agent:            refPath("core.substrate.reamde.dev/agent/core.substrate.reamde.dev/assistant"),
 		Provider:         str("default"),
 		Model:            str("gpt-5"),
 		Mode:             str("chat"),
@@ -248,7 +253,7 @@ func TestRoundTripPopulated(t *testing.T) {
 		CostUSD:          f64(0.0042),
 		StartedAt:        str(testInstant),
 		FinishedAt:       str("2026-08-14T09:42:00Z"),
-		Parent:           &corekinds.Reference{Kind: "core.substrate.reamde.dev/llmthread", ID: "t0"},
+		Parent:           refPath("core.substrate.reamde.dev/llmthread/t0"),
 	}, corekinds.DecodeLLMThread)
 
 	roundTrip(t, "propertytype", &corekinds.PropertyType{
@@ -262,8 +267,8 @@ func TestRoundTripPopulated(t *testing.T) {
 	roundTrip(t, "recordmapping", &corekinds.RecordMapping{
 		Version:   str("v1alpha1"),
 		Authority: str("mail.substrate.reamde.dev"),
-		From:      str("mail.substrate.reamde.dev/message"),
-		To:        str("mail.substrate.reamde.dev/thread"),
+		From:      refPath("core.substrate.reamde.dev/kind/mail.substrate.reamde.dev/message"),
+		To:        refPath("core.substrate.reamde.dev/kind/mail.substrate.reamde.dev/thread"),
 		Edge:      str("thread"),
 		Match:     []corekinds.RecordMappingMatch{{From: str("subject"), To: str("title")}},
 		Map: map[string]corekinds.RecordMappingMap{
@@ -345,7 +350,7 @@ func TestRoundTripPopulated(t *testing.T) {
 			Kind:     ptr(corekinds.TriggerSourceKindSchedule),
 			Schedule: &corekinds.TriggerSourceSchedule{Recurrence: str("RRULE:FREQ=DAILY"), Timezone: str("UTC")},
 		},
-		Callable: &corekinds.Reference{Kind: "core.substrate.reamde.dev/function", ID: "core.substrate.reamde.dev/sync"},
+		Callable: refPath("core.substrate.reamde.dev/function/core.substrate.reamde.dev/sync"),
 	}, corekinds.DecodeTrigger)
 }
 
@@ -404,7 +409,7 @@ func TestRequiredIsMetadata(t *testing.T) {
 	if missing := got.Missing(); !reflect.DeepEqual(missing, []string{"thread"}) {
 		t.Errorf("Missing is %v, expected the absent required property", missing)
 	}
-	answered := &corekinds.LLMMessage{Thread: &corekinds.Reference{Kind: "core.substrate.reamde.dev/llmthread", ID: "t1"}}
+	answered := &corekinds.LLMMessage{Thread: refPath("core.substrate.reamde.dev/llmthread/t1")}
 	if missing := answered.Missing(); len(missing) != 0 {
 		t.Errorf("Missing is %v with the requirement answered", missing)
 	}

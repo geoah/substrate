@@ -216,15 +216,6 @@ type Property struct {
 	// (checkDeclarationWrite, in internal/engine). This is the only statement of
 	// the stamped set; the engine keeps no hand-written list beside it.
 	Managed bool
-	// RefersTo marks a STRING property whose value names something in the
-	// registry rather than being free text: a kind (`emit: [person]`), a
-	// function, an agent, an authority or an llmprovider. It changes no stored
-	// value and validates nothing — existence is settled at registry
-	// finalization, which knows the whole closure — and exists so a client can
-	// offer a picker from the declaration alone instead of a hand-kept map of
-	// property name to picker. Refused on any other datatype: a reference-typed
-	// pointer already carries its referent in `to:`.
-	RefersTo string
 	// Writer restricts WHICH actor role may write this property, enforced
 	// server-side after the merged row is known. Empty is
 	// unrestricted — the ordinary "nothing ranks writers" rule. The declared
@@ -253,17 +244,6 @@ const (
 const (
 	KeyPatternCamel   = "camel"
 	KeyPatternKindRef = "kindRef"
-)
-
-// The admitted `refersTo:` markers: what a string property's value NAMES.
-// `provider` is an llmprovider record, which is data rather than vocabulary and
-// is why it is not spelled with the others' registry sense.
-const (
-	RefersToKind      = "kind"
-	RefersToFunction  = "function"
-	RefersToAgent     = "agent"
-	RefersToAuthority = "authority"
-	RefersToProvider  = "provider"
 )
 
 // MaxFieldDepth is how deep declared fields nest: a kind's own property is

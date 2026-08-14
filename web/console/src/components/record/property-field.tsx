@@ -356,7 +356,10 @@ export function PropertyField({
 
 /** A typed pointer: the kind it points at (fixed when the declaration pins one,
  * chosen from the registry when it is `to: any`) and the record itself, offered
- * from that collection so an id is picked, not remembered. */
+ * from that collection so an id is picked, not remembered. The two controls
+ * edit two halves; the WRITE carries the one record path they join into
+ * (`record-form.toFieldValue`), which is why the picker may keep offering bare
+ * ids. */
 function ReferenceField({
   id,
   field,

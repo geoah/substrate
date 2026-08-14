@@ -17,9 +17,7 @@ data:
       record:
         kinds: [messaging.substrate.reamde.dev/conversationmessage]
         ops: [create, update]
-    callable:
-      kind: core.substrate.reamde.dev/function
-      id: web.bundles.substrate.reamde.dev/findurls
+    callable: core.substrate.reamde.dev/function/web.bundles.substrate.reamde.dev/findurls
 ---
 # fetchpage fires when a page is born pending.
 kind: core.substrate.reamde.dev/trigger
@@ -33,9 +31,7 @@ data:
         kinds: [web.bundles.substrate.reamde.dev/page]
         ops: [create]
         when: 'record != null && record.properties.fetch == "pending"'
-    callable:
-      kind: core.substrate.reamde.dev/function
-      id: web.bundles.substrate.reamde.dev/fetchpage
+    callable: core.substrate.reamde.dev/function/web.bundles.substrate.reamde.dev/fetchpage
 ---
 # the classifier fires when a fetched page is still unclassified.
 kind: core.substrate.reamde.dev/trigger
@@ -50,9 +46,7 @@ data:
         ops: [update]
         when: 'record != null && record.properties.fetch == "fetched" && !("class"
           in record.properties)'
-    callable:
-      kind: core.substrate.reamde.dev/agent
-      id: web.bundles.substrate.reamde.dev/pageclassifier
+    callable: core.substrate.reamde.dev/agent/web.bundles.substrate.reamde.dev/pageclassifier
 ---
 # the weekly rollup fires on a schedule, no changelog row underneath.
 kind: core.substrate.reamde.dev/trigger
@@ -68,6 +62,4 @@ data:
         # a fixed past anchor, so every Monday since is a well-defined
         # occurrence (occurrences are computed forward from startsAt).
         startsAt: "2025-01-06T09:00:00Z"
-    callable:
-      kind: core.substrate.reamde.dev/agent
-      id: web.bundles.substrate.reamde.dev/weeklyrollup
+    callable: core.substrate.reamde.dev/agent/web.bundles.substrate.reamde.dev/weeklyrollup

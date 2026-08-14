@@ -354,8 +354,8 @@ func agentThreadsOf(t *testing.T, ds *dataset, agent string) []map[string]any {
 	t.Helper()
 	rows, err := ds.db.QueryContext(context.Background(), `
 		SELECT id, props FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props->'agent'->>'id' = $2
-		ORDER BY created_at, id`, typeThread, crewAuthority+"/"+agent)
+		WHERE kind = $1 AND deleted_at IS NULL AND props->>'agent' = $2
+		ORDER BY created_at, id`, typeThread, vocabulary.RecordPath(kindAgent, crewAuthority+"/"+agent))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,8 +379,8 @@ func threadMessages(t *testing.T, ds *dataset, threadID string) []map[string]any
 	t.Helper()
 	rows, err := ds.db.QueryContext(context.Background(), `
 		SELECT e.props FROM records e
-		WHERE e.kind = $2 AND e.deleted_at IS NULL AND e.props->'thread'->>'id' = $1
-		ORDER BY e.created_at, e.id`, threadID, typeMessage)
+		WHERE e.kind = $2 AND e.deleted_at IS NULL AND e.props->>'thread' = $1
+		ORDER BY e.created_at, e.id`, vocabulary.RecordPath(typeThread, threadID), typeMessage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,8 +405,8 @@ func threadCountOf(t *testing.T, ds *dataset, identity string) int {
 	var n int
 	if err := ds.db.QueryRowContext(context.Background(), `
 		SELECT count(*) FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props->'agent'->>'id' = $2`,
-		typeThread, identity).Scan(&n); err != nil {
+		WHERE kind = $1 AND deleted_at IS NULL AND props->>'agent' = $2`,
+		typeThread, vocabulary.RecordPath(kindAgent, identity)).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -522,11 +522,11 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	}
 	var parent string
 	if err := ds.db.QueryRowContext(ctx, `
-		SELECT props->'parent'->>'id' FROM records WHERE kind = $2 AND id = $1`,
+		SELECT props->>'parent' FROM records WHERE kind = $2 AND id = $1`,
 		child["__id"], typeThread).Scan(&parent); err != nil {
 		t.Fatal(err)
 	}
-	if parent != root["__id"] {
+	if parent != vocabulary.RecordPath(typeThread, root["__id"].(string)) {
 		t.Fatalf("child parent edge points at %q, root is %q", parent, root["__id"])
 	}
 

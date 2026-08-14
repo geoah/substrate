@@ -224,19 +224,28 @@ describe("checkValue", () => {
     expect(checkValue(spec(agentKind, "functions"), ["a", 2])).toMatch(/\[1\]/)
   })
 
-  it("knows a reference needs an id, and a kind when it points anywhere", () => {
+  it("knows a reference is a path, and that only a pin completes a bare id", () => {
     const anyRef = spec(wideKind, "callable")
+    expect(
+      checkValue(anyRef, "core.substrate.reamde.dev/function/f")
+    ).toBeUndefined()
+    // Unpinned, a bare id names nothing: the refusal quotes it back, as the
+    // engine's does.
+    expect(checkValue(anyRef, "f")).toMatch(/full "<kind>\/<id>" path/)
+    expect(checkValue(anyRef, "f")).toMatch(/"f"/)
+    expect(checkValue(anyRef, "")).toMatch(/needs an id/)
+    // The released pair is not a value any more, and says so by shape.
     expect(
       checkValue(anyRef, {
         kind: "core.substrate.reamde.dev/function",
         id: "f",
       })
-    ).toBeUndefined()
-    expect(checkValue(anyRef, { id: "f" })).toMatch(/explicit kind/)
-    expect(checkValue(anyRef, "f")).toMatch(/explicit kind/)
-    expect(checkValue(anyRef, { kind: "x", id: "" })).toMatch(/needs an id/)
-    // A pinned `to:` supplies the kind a bare id omits.
+    ).toMatch(/path string/)
+    // A pinned kind supplies what the bare id omits, on the server and here.
     expect(checkValue(spec(wideKind, "owner"), "alice")).toBeUndefined()
+    expect(
+      checkValue(spec(wideKind, "owner"), "core.substrate.reamde.dev/actor/a")
+    ).toBeUndefined()
   })
 })
 

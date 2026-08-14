@@ -21,9 +21,9 @@ type Trigger struct {
 	// Source is the one source this trigger delivers from.
 	Source *TriggerSource
 
-	// Callable is the function or agent a matched delivery invokes ({kind,
-	// id}). Points at any.
-	Callable *Reference
+	// Callable is the function or agent a matched delivery invokes, as its
+	// `<kind>/<id>` path. Points at any.
+	Callable *ReferencePath
 }
 
 // TriggerKeys is the admitted key set: every property
@@ -104,7 +104,7 @@ func (v *Trigger) Encode() map[string]any {
 		out["source"] = v.Source.Encode()
 	}
 	if v.Callable != nil {
-		out["callable"] = v.Callable.Encode()
+		out["callable"] = string(*v.Callable)
 	}
 	return out
 }

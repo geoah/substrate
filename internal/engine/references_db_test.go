@@ -39,19 +39,19 @@ func installRefAuthority(t *testing.T, ds substrate.Dataset) {
 	}
 }
 
-// asRef asserts a stored value is a canonical {authority, type, id} reference.
-func asRef(t *testing.T, v any) map[string]any {
+// asRef asserts a stored value is a canonical reference — ONE flat
+// "<kind>/<id>" path — and answers its two halves.
+func asRef(t *testing.T, v any) (kind, id string) {
 	t.Helper()
-	m, ok := v.(map[string]any)
+	s, ok := v.(string)
 	if !ok {
-		t.Fatalf("reference did not read back as an object: %T %v", v, v)
+		t.Fatalf("reference did not read back as a path string: %T %v", v, v)
 	}
-	for _, k := range []string{"kind", "id"} {
-		if _, ok := m[k].(string); !ok {
-			t.Fatalf("reference missing %q: %v", k, m)
-		}
+	kind, id, ok = vocabulary.SplitRecordPath(s)
+	if !ok {
+		t.Fatalf("reference %q is not a \"<kind>/<id>\" path", s)
 	}
-	return m
+	return kind, id
 }
 
 // TestReferenceRoundTrip writes a reference from a bare {type, id} and reads
@@ -69,9 +69,9 @@ func TestReferenceRoundTrip(t *testing.T) {
 		Properties: map[string]any{"pin": map[string]any{"kind": "widget", "id": "ghost"}},
 	})
 	got := mustGet(t, ds, h.Kind, h.ID)
-	ref := asRef(t, got.Properties["pin"])
-	if ref["kind"] != refAuthority+"/widget" || ref["id"] != "ghost" {
-		t.Fatalf("pin = %v, want the bare name resolved to a kind reference", ref)
+	kind, id := asRef(t, got.Properties["pin"])
+	if kind != refAuthority+"/widget" || id != "ghost" {
+		t.Fatalf("pin = %v, want the bare name resolved to a kind reference", got.Properties["pin"])
 	}
 
 	// Re-apply the canonical shape the read produced (apply round-trip).
@@ -80,8 +80,8 @@ func TestReferenceRoundTrip(t *testing.T) {
 		ID:         h.ID,
 		Properties: map[string]any{"pin": got.Properties["pin"]},
 	})
-	if r2 := asRef(t, h2.Properties["pin"]); r2["id"] != "ghost" {
-		t.Fatalf("round-trip pin = %v", r2)
+	if _, id := asRef(t, h2.Properties["pin"]); id != "ghost" {
+		t.Fatalf("round-trip pin = %v", h2.Properties["pin"])
 	}
 }
 
@@ -146,8 +146,8 @@ func TestRepeatedReferences(t *testing.T) {
 		t.Fatalf("pins = %T %v", got.Properties["pins"], got.Properties["pins"])
 	}
 	for i, want := range []string{"a", "b"} {
-		if r := asRef(t, list[i]); r["id"] != want || r["kind"] != refAuthority+"/widget" {
-			t.Fatalf("pins[%d] = %v", i, r)
+		if kind, id := asRef(t, list[i]); id != want || kind != refAuthority+"/widget" {
+			t.Fatalf("pins[%d] = %v", i, list[i])
 		}
 	}
 }

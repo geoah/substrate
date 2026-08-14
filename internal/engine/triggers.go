@@ -228,19 +228,20 @@ func parseTrigger(id string, props map[string]any) (*trigger, error) {
 		t.Enabled = b
 	}
 
-	// callable is a reference: a {kind, id} record reference whose
-	// kind is core.substrate.reamde.dev/function or core.substrate.reamde.dev/agent. Dispatch keys on
-	// the LOCAL name of that kind — `function` or `agent` — beside the id.
-	callable, ok := props["callable"].(map[string]any)
-	if !ok || len(callable) == 0 {
-		return nil, fmt.Errorf("callable is required: a {kind, id} reference to a function or agent")
+	// callable is a reference: ONE record path naming a
+	// core.substrate.reamde.dev/function or core.substrate.reamde.dev/agent.
+	// Dispatch keys on the LOCAL name of that kind — `function` or `agent` —
+	// beside the id.
+	callable := storedReferencePath(props["callable"])
+	if callable == "" {
+		return nil, fmt.Errorf(`callable is required: a "<kind>/<id>" reference to a function or agent`)
 	}
-	callableRef, _ := callable["kind"].(string)
+	callableRef, callableID, ok := vocabulary.SplitRecordPath(callable)
+	if !ok {
+		return nil, fmt.Errorf(`callable %q is not a "<kind>/<id>" record path`, callable)
+	}
 	t.CallableKind = vocabulary.KindName(callableRef)
-	t.CallableID, _ = callable["id"].(string)
-	if t.CallableKind == "" || t.CallableID == "" {
-		return nil, fmt.Errorf("callable needs a kind and an id")
-	}
+	t.CallableID = callableID
 	if t.CallableKind != callableKindFunction && t.CallableKind != callableKindAgent {
 		return nil, fmt.Errorf("callable kind %q is not dispatchable — core.substrate.reamde.dev/function or core.substrate.reamde.dev/agent", callableRef)
 	}

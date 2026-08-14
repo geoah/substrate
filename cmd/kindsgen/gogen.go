@@ -150,9 +150,6 @@ func fieldDoc(f *fieldPlan) string {
 	if f.Decl.Writer != "" {
 		parts = append(parts, "Writer: only the "+f.Decl.Writer+" actor may write it.")
 	}
-	if f.Decl.RefersTo != "" {
-		parts = append(parts, "Names a "+f.Decl.RefersTo+" in the registry.")
-	}
 	if f.Class == classReference && f.Decl.To != "" {
 		parts = append(parts, "Points at "+f.Decl.To+".")
 	}
@@ -476,9 +473,9 @@ func emitFieldEncode(b *bytes.Buffer, f *fieldPlan) {
 // and a named string in it would decode as the wrong type on the way back.
 func encodeExpr(f *fieldPlan, access string) string {
 	switch f.Class {
-	case classEnum, classState, classSecret, classDigest, classBlobRef:
+	case classEnum, classState, classSecret, classDigest, classBlobRef, classReference:
 		return "string(" + access + ")"
-	case classReference, classObject:
+	case classObject:
 		if strings.HasPrefix(access, "*") {
 			return strings.TrimPrefix(access, "*") + ".Encode()"
 		}

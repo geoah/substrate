@@ -153,22 +153,38 @@ func TestGraphQLReferenceRoundTrip(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 
+	// A reference is ONE flat path, so it selects as a scalar: asking for
+	// `manager { kind id }` is now a query error, which is the schema saying the
+	// pair is gone rather than answering half of it.
+	const path = "people.substrate.reamde.dev/person/boss1"
 	put := env.gql(t, tok,
-		`mutation ($in: JSON!) { put(input: $in) { id ... on Person { manager { kind id } } } }`,
+		`mutation ($in: JSON!) { put(input: $in) { id ... on Person { manager } } }`,
 		map[string]any{"in": map[string]any{
 			"kind": "people.substrate.reamde.dev/person",
 			"properties": map[string]any{
 				"title":   "Ada",
-				"manager": map[string]any{"kind": "people.substrate.reamde.dev/person", "id": "boss1"},
+				"manager": path,
 			},
 		}})
 	created, _ := put.Data["put"].(map[string]any)
-	mgr, ok := created["manager"].(map[string]any)
-	if !ok {
-		t.Fatalf("manager did not render as a Reference: %v", created)
+	if created["manager"] != path {
+		t.Fatalf("manager reference = %v, want the flat path %q", created["manager"], path)
 	}
-	if mgr["kind"] != "people.substrate.reamde.dev/person" || mgr["id"] != "boss1" {
-		t.Fatalf("manager reference = %v", mgr)
+}
+
+// A Reference is a SCALAR, and a client that still asks for its fields is told
+// so at query time rather than handed a null.
+func TestGraphQLReferenceRefusesASubSelection(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+
+	res := env.gqlRaw(t, tok,
+		`query { records(first: 1) { nodes { ... on Person { manager { kind id } } } } }`, nil)
+	if len(res.Errors) == 0 {
+		t.Fatalf("a sub-selection on a scalar Reference must be a query error, got %+v", res.Data)
+	}
+	if !strings.Contains(res.Errors[0].Message, "must not have a sub selection") {
+		t.Fatalf("error = %q", res.Errors[0].Message)
 	}
 }
 

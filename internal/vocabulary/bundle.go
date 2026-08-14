@@ -286,7 +286,7 @@ func VocabularyBundleAuthorities(docs []Document) map[string]bool {
 		if d.Kind != DocBundle {
 			continue
 		}
-		authority := mstr(d.Data, "authority")
+		authority := d.DeclaredAuthority()
 		if ValidVocabularyAuthority(authority) {
 			out[authority] = true
 		}
@@ -432,7 +432,7 @@ func (l *loader) parseBundleInputs(where string, b *Bundle, data map[string]any)
 		}
 		l.checkKeys(w, im, bundleInputKeys)
 		in := BundleInput{
-			Kind:        mstr(im, "kind"),
+			Kind:        ReferentID(im["kind"], KindRef(AuthorityCore, DocKind)),
 			Inject:      mstr(im, "inject"),
 			Description: l.parseDescription(w, im),
 		}

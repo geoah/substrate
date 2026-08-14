@@ -582,13 +582,13 @@ type FunctionPermissions struct {
 	// how much; leave it out and any read it attempts fails.
 	Reads *FunctionPermissionsReads
 
-	// Writes is which record kinds it may create or change. Names a kind in
-	// the registry.
-	Writes []string
+	// Writes is which record kinds it may create or change. Points at
+	// core.substrate.reamde.dev/kind.
+	Writes []ReferencePath
 
-	// Call is which other functions its code may invoke. Names a function in
-	// the registry.
-	Call []string
+	// Call is which other functions its code may invoke. Points at
+	// core.substrate.reamde.dev/function.
+	Call []ReferencePath
 
 	// Network is the hosts it may reach; any entry grants network access, and
 	// enforcement is all-or-nothing today.
@@ -650,9 +650,9 @@ func decodeFunctionPermissions(d *decoder, path string, v any) (FunctionPermissi
 		case "writes":
 			p := at(path, "writes")
 			if items, listed := d.list(p, props[key]); listed {
-				list := make([]string, 0, len(items))
+				list := make([]ReferencePath, 0, len(items))
 				for i, item := range items {
-					if e, ok := d.text(index(p, i), item, nil, nil); ok {
+					if e, ok := d.reference(index(p, i), item, "core.substrate.reamde.dev/kind"); ok {
 						list = append(list, e)
 					}
 				}
@@ -661,9 +661,9 @@ func decodeFunctionPermissions(d *decoder, path string, v any) (FunctionPermissi
 		case "call":
 			p := at(path, "call")
 			if items, listed := d.list(p, props[key]); listed {
-				list := make([]string, 0, len(items))
+				list := make([]ReferencePath, 0, len(items))
 				for i, item := range items {
-					if e, ok := d.text(index(p, i), item, nil, nil); ok {
+					if e, ok := d.reference(index(p, i), item, "core.substrate.reamde.dev/function"); ok {
 						list = append(list, e)
 					}
 				}
@@ -713,14 +713,14 @@ func (v *FunctionPermissions) Encode() map[string]any {
 	if v.Writes != nil {
 		items := make([]any, 0, len(v.Writes))
 		for i := range v.Writes {
-			items = append(items, v.Writes[i])
+			items = append(items, string(v.Writes[i]))
 		}
 		out["writes"] = items
 	}
 	if v.Call != nil {
 		items := make([]any, 0, len(v.Call))
 		for i := range v.Call {
-			items = append(items, v.Call[i])
+			items = append(items, string(v.Call[i]))
 		}
 		out["call"] = items
 	}
@@ -747,9 +747,9 @@ func (v *FunctionPermissions) Encode() map[string]any {
 // which record kinds this function may read while it runs, and how much; leave
 // it out and any read it attempts fails
 type FunctionPermissionsReads struct {
-	// Kinds is the record kinds every read is held to. Names a kind in the
-	// registry.
-	Kinds []string
+	// Kinds is the record kinds every read is held to. Points at
+	// core.substrate.reamde.dev/kind.
+	Kinds []ReferencePath
 
 	// Budgets is how much one run may read.
 	Budgets *FunctionPermissionsReadsBudgets
@@ -772,9 +772,9 @@ func decodeFunctionPermissionsReads(d *decoder, path string, v any) (FunctionPer
 		case "kinds":
 			p := at(path, "kinds")
 			if items, listed := d.list(p, props[key]); listed {
-				list := make([]string, 0, len(items))
+				list := make([]ReferencePath, 0, len(items))
 				for i, item := range items {
-					if e, ok := d.text(index(p, i), item, nil, nil); ok {
+					if e, ok := d.reference(index(p, i), item, "core.substrate.reamde.dev/kind"); ok {
 						list = append(list, e)
 					}
 				}
@@ -804,7 +804,7 @@ func (v *FunctionPermissionsReads) Encode() map[string]any {
 	if v.Kinds != nil {
 		items := make([]any, 0, len(v.Kinds))
 		for i := range v.Kinds {
-			items = append(items, v.Kinds[i])
+			items = append(items, string(v.Kinds[i]))
 		}
 		out["kinds"] = items
 	}

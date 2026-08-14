@@ -31,9 +31,7 @@ data:
           record != null && (("enabledPages" in record.properties && record.properties.enabledPages
           == true) || ("enabledDatabases" in record.properties && record.properties.enabledDatabases
           == true)) && !("lastSyncedAt" in record.properties)
-    callable:
-      kind: core.substrate.reamde.dev/function
-      id: notion.bundles.substrate.reamde.dev/workspacesync
+    callable: core.substrate.reamde.dev/function/notion.bundles.substrate.reamde.dev/workspacesync
 ---
 # The steady-state re-sync: an hourly tick fires the same function with no
 # envelope record, so the body stamps any duplicate account rows and syncs
@@ -51,6 +49,4 @@ data:
         # A fixed past anchor, so every occurrence since is well-defined
         # (occurrences compute forward from startsAt).
         startsAt: "2025-01-06T09:30:00Z"
-    callable:
-      kind: core.substrate.reamde.dev/function
-      id: notion.bundles.substrate.reamde.dev/workspacesync
+    callable: core.substrate.reamde.dev/function/notion.bundles.substrate.reamde.dev/workspacesync

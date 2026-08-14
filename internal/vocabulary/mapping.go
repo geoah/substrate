@@ -181,7 +181,9 @@ func (l *loader) parseMapping(d Document) *Mapping {
 	}
 	m := &Mapping{
 		Name: local, Authority: g.Name,
-		From: mstr(d.Data, "from"), To: mstr(d.Data, "to"), Edge: mstr(d.Data, "edge"),
+		From:       ReferentID(d.Data["from"], KindRef(AuthorityCore, DocKind)),
+		To:         ReferentID(d.Data["to"], KindRef(AuthorityCore, DocKind)),
+		Edge:       mstr(d.Data, "edge"),
 		Map:        map[string]*MapRule{},
 		Definition: d.Data,
 	}

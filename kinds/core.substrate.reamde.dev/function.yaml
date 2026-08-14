@@ -34,7 +34,7 @@ data:
   # one is safe because dialect 2 has never shipped in a release: no store
   # outside our own development instances holds a row with them, and the
   # dialect rung rewrites the ones that do.
-  version: v1alpha6
+  version: v1alpha7
   names:
     singular: function
     plural: functions
@@ -48,6 +48,11 @@ data:
       type: string
       managed: true
       description: this declaration's version
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
     authority:
       type: string
       required: true
@@ -172,9 +177,9 @@ data:
             runs, and how much; leave it out and any read it attempts fails
           fields:
             kinds:
-              type: string
+              type: reference
+              kind: core.substrate.reamde.dev/kind
               repeated: true
-              refersTo: kind
               description: the record kinds every read is held to
             budgets:
               type: object
@@ -191,14 +196,14 @@ data:
                   max: 10000
                   description: how many records one run may read
         writes:
-          type: string
+          type: reference
+          kind: core.substrate.reamde.dev/kind
           repeated: true
-          refersTo: kind
           description: which record kinds it may create or change
         call:
-          type: string
+          type: reference
+          kind: core.substrate.reamde.dev/function
           repeated: true
-          refersTo: function
           description: which other functions its code may invoke
         # Host patterns, never references: an egress allowlist names the
         # internet.

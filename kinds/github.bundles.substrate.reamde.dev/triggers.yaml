@@ -37,9 +37,7 @@ data:
           == true) || ("enabledIssues" in record.properties && record.properties.enabledIssues
           == true) || ("enabledPullRequests" in record.properties && record.properties.enabledPullRequests
           == true)) && !("lastSyncedAt" in record.properties)
-    callable:
-      kind: core.substrate.reamde.dev/function
-      id: github.bundles.substrate.reamde.dev/githubsync
+    callable: core.substrate.reamde.dev/function/github.bundles.substrate.reamde.dev/githubsync
 ---
 # The steady-state re-sync: an hourly tick fires the same function with no
 # envelope record, so the body iterates every connected, feature-enabled
@@ -57,6 +55,4 @@ data:
         # A fixed past anchor, so every occurrence since is well-defined
         # (occurrences compute forward from startsAt).
         startsAt: "2025-01-06T09:30:00Z"
-    callable:
-      kind: core.substrate.reamde.dev/function
-      id: github.bundles.substrate.reamde.dev/githubsync
+    callable: core.substrate.reamde.dev/function/github.bundles.substrate.reamde.dev/githubsync

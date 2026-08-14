@@ -24,9 +24,9 @@ type Agent struct {
 	// Prompt is the system prompt; the row is the prompt store.
 	Prompt *string
 
-	// Provider is the llmprovider record id this agent's loop completes
-	// against. Names a provider in the registry.
-	Provider *string
+	// Provider is the llmprovider this agent's loop completes against. Points
+	// at core.substrate.reamde.dev/llmprovider.
+	Provider *ReferencePath
 
 	// Model is the model id sent on every completion.
 	Model *string
@@ -38,9 +38,9 @@ type Agent struct {
 	// Tools is what the model may call, in declaration order.
 	Tools []AgentTools
 
-	// Agents is the sub-agent identities the loop exposes as tools. Names a
-	// agent in the registry.
-	Agents []string
+	// Agents is the sub-agents the loop exposes as tools. Points at
+	// core.substrate.reamde.dev/agent.
+	Agents []ReferencePath
 
 	// Budgets is what bounds one invocation.
 	Budgets *AgentBudgets
@@ -146,7 +146,7 @@ func decodeAgent(d *decoder, path string, v any) (Agent, bool) {
 			}
 		case "provider":
 			p := at(path, "provider")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := d.reference(p, props[key], "core.substrate.reamde.dev/llmprovider"); ok {
 				out.Provider = &e
 			}
 		case "model":
@@ -173,9 +173,9 @@ func decodeAgent(d *decoder, path string, v any) (Agent, bool) {
 		case "agents":
 			p := at(path, "agents")
 			if items, listed := d.list(p, props[key]); listed {
-				list := make([]string, 0, len(items))
+				list := make([]ReferencePath, 0, len(items))
 				for i, item := range items {
-					if e, ok := d.text(index(p, i), item, nil, nil); ok {
+					if e, ok := d.reference(index(p, i), item, "core.substrate.reamde.dev/agent"); ok {
 						list = append(list, e)
 					}
 				}
@@ -225,7 +225,7 @@ func (v *Agent) Encode() map[string]any {
 		out["prompt"] = *v.Prompt
 	}
 	if v.Provider != nil {
-		out["provider"] = *v.Provider
+		out["provider"] = string(*v.Provider)
 	}
 	if v.Model != nil {
 		out["model"] = *v.Model
@@ -243,7 +243,7 @@ func (v *Agent) Encode() map[string]any {
 	if v.Agents != nil {
 		items := make([]any, 0, len(v.Agents))
 		for i := range v.Agents {
-			items = append(items, v.Agents[i])
+			items = append(items, string(v.Agents[i]))
 		}
 		out["agents"] = items
 	}
@@ -325,9 +325,9 @@ func (v *AgentParams) Encode() map[string]any {
 //
 // what the model may call, in declaration order
 type AgentTools struct {
-	// Function is the function this entry names, by identity. Names a function
-	// in the registry.
-	Function *string
+	// Function is the function this entry names. Points at
+	// core.substrate.reamde.dev/function.
+	Function *ReferencePath
 
 	// Name is the model-facing tool name, aliasing the function.
 	Name *string
@@ -370,7 +370,7 @@ func decodeAgentTools(d *decoder, path string, v any) (AgentTools, bool) {
 		switch key {
 		case "function":
 			p := at(path, "function")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := d.reference(p, props[key], "core.substrate.reamde.dev/function"); ok {
 				out.Function = &e
 			}
 		case "name":
@@ -400,7 +400,7 @@ func decodeAgentTools(d *decoder, path string, v any) (AgentTools, bool) {
 func (v *AgentTools) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Function != nil {
-		out["function"] = *v.Function
+		out["function"] = string(*v.Function)
 	}
 	if v.Name != nil {
 		out["name"] = *v.Name
@@ -505,8 +505,9 @@ type AgentPermissions struct {
 	Reads *AgentPermissionsReads
 
 	// Writes is which record kinds it may create or change, the change
-	// requests it proposes among them. Names a kind in the registry.
-	Writes []string
+	// requests it proposes among them. Points at
+	// core.substrate.reamde.dev/kind.
+	Writes []ReferencePath
 }
 
 // decodeAgentPermissions decodes one AgentPermissions value at path.
@@ -531,9 +532,9 @@ func decodeAgentPermissions(d *decoder, path string, v any) (AgentPermissions, b
 		case "writes":
 			p := at(path, "writes")
 			if items, listed := d.list(p, props[key]); listed {
-				list := make([]string, 0, len(items))
+				list := make([]ReferencePath, 0, len(items))
 				for i, item := range items {
-					if e, ok := d.text(index(p, i), item, nil, nil); ok {
+					if e, ok := d.reference(index(p, i), item, "core.substrate.reamde.dev/kind"); ok {
 						list = append(list, e)
 					}
 				}
@@ -561,7 +562,7 @@ func (v *AgentPermissions) Encode() map[string]any {
 	if v.Writes != nil {
 		items := make([]any, 0, len(v.Writes))
 		for i := range v.Writes {
-			items = append(items, v.Writes[i])
+			items = append(items, string(v.Writes[i]))
 		}
 		out["writes"] = items
 	}
@@ -574,9 +575,9 @@ func (v *AgentPermissions) Encode() map[string]any {
 // which record kinds this agent may read, and how much; leave it out and the
 // query tool is withheld
 type AgentPermissionsReads struct {
-	// Kinds is the record kinds every read is held to. Names a kind in the
-	// registry.
-	Kinds []string
+	// Kinds is the record kinds every read is held to. Points at
+	// core.substrate.reamde.dev/kind.
+	Kinds []ReferencePath
 
 	// Budgets is how much one run may read.
 	Budgets *AgentPermissionsReadsBudgets
@@ -599,9 +600,9 @@ func decodeAgentPermissionsReads(d *decoder, path string, v any) (AgentPermissio
 		case "kinds":
 			p := at(path, "kinds")
 			if items, listed := d.list(p, props[key]); listed {
-				list := make([]string, 0, len(items))
+				list := make([]ReferencePath, 0, len(items))
 				for i, item := range items {
-					if e, ok := d.text(index(p, i), item, nil, nil); ok {
+					if e, ok := d.reference(index(p, i), item, "core.substrate.reamde.dev/kind"); ok {
 						list = append(list, e)
 					}
 				}
@@ -631,7 +632,7 @@ func (v *AgentPermissionsReads) Encode() map[string]any {
 	if v.Kinds != nil {
 		items := make([]any, 0, len(v.Kinds))
 		for i := range v.Kinds {
-			items = append(items, v.Kinds[i])
+			items = append(items, string(v.Kinds[i]))
 		}
 		out["kinds"] = items
 	}

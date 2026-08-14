@@ -1,6 +1,6 @@
 // The generator's own suite covers the dialect the SHIPPED declarations do not
-// exercise yet. Core declares no keyed map, no nested object past level two, no
-// pattern and no refersTo today, so the conformance test in internal/corekinds
+// exercise yet. Core declares no keyed map, no nested object past level two and
+// no pattern today, so the conformance test in internal/corekinds
 // cannot reach those paths — and they are exactly the paths the typed core is
 // about to walk into. A synthetic declaration reaches them, and the generated
 // package is COMPILED to prove the emission is more than plausible text.
@@ -33,9 +33,9 @@ data:
       pattern: "^[0-9a-f]{64}$"
       required: true
     emit:
-      type: string
+      type: reference
+      kind: core.substrate.reamde.dev/kind
       repeated: true
-      refersTo: kind
       description: the kinds this may write
     version:
       type: string
@@ -138,9 +138,13 @@ func TestWiderDialectGenerates(t *testing.T) {
 		"Digest *string",
 		`var BlobRequired = []string{"digest"}`,
 		"func (v *Blob) Missing() []string",
-		// the markers reach the doc, which is the only place a client can read
-		// them without the declaration.
-		"Names a kind in the registry.",
+		// A pinned reference carries its pin into the DECODER, which is what
+		// completes an authored bare id, and into the doc, which is the only
+		// place a client can read it without the declaration. The doc is
+		// asserted on the phrase alone: comments wrap, so the identity beside it
+		// may be on the next line.
+		`d.reference(index(p, i), item, "core.substrate.reamde.dev/kind")`,
+		"Points at",
 		"Managed: the engine stamps it",
 		// keys are the admitted set, sorted
 		`var BlobKeys = []string{"digest", "emit", "hook", "inputs", "labels", "moment", "version"}`,
@@ -240,9 +244,11 @@ func TestRefusals(t *testing.T) {
 			document: propertyDocument("digest:\n      type: string\n      keyPattern: camel\n"),
 			problem:  "keyPattern is the contract",
 		},
-		"refersTo on something that is not a string": {
+		// refersTo is dead: the reader knows the dialect it generates from, and an
+		// unknown key would generate a type that means something else.
+		"the retired refersTo marker": {
 			document: propertyDocument("size:\n      type: int\n      refersTo: kind\n"),
-			problem:  "refersTo marks what a STRING value names",
+			problem:  `unknown key "refersTo"`,
 		},
 		"an enum without values": {
 			document: propertyDocument("mode:\n      type: enum\n"),

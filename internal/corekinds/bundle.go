@@ -29,7 +29,7 @@ type Bundle struct {
 	Installs []string
 
 	// Requires is the authorities this closure declares against; an install
-	// refuses while one is absent. Names a authority in the registry.
+	// refuses while one is absent.
 	Requires []string
 
 	// Modules is the shared library modules the bundle's functions import.
@@ -270,9 +270,9 @@ func (v *Bundle) Encode() map[string]any {
 //
 // the bundle's named configuration needs, each naming a kind
 type BundleInputs struct {
-	// Kind is the kind whose records satisfy this input. Names a kind in the
-	// registry.
-	Kind *string
+	// Kind is the kind whose records satisfy this input. Points at
+	// core.substrate.reamde.dev/kind.
+	Kind *ReferencePath
 
 	// Inject is the consumer the resolved record is handed to; absent means a
 	// host facility reads it.
@@ -325,7 +325,7 @@ func decodeBundleInputs(d *decoder, path string, v any) (BundleInputs, bool) {
 		switch key {
 		case "kind":
 			p := at(path, "kind")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := d.reference(p, props[key], "core.substrate.reamde.dev/kind"); ok {
 				out.Kind = &e
 			}
 		case "inject":
@@ -355,7 +355,7 @@ func decodeBundleInputs(d *decoder, path string, v any) (BundleInputs, bool) {
 func (v *BundleInputs) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Kind != nil {
-		out["kind"] = *v.Kind
+		out["kind"] = string(*v.Kind)
 	}
 	if v.Inject != nil {
 		out["inject"] = string(*v.Inject)

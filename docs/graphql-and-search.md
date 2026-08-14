@@ -92,8 +92,9 @@ Property types render as their proper shapes. A `repeated` property is a GraphQL
 list of its element type for every kind (`[Int]`, `[Float]`, `[Boolean]`,
 `[String]`), not a bare scalar. An `object` property (inline structured fields)
 renders as the `JSON` scalar, lossless, rather than flattening to `String`. A
-`reference` property is the `Reference` object (`{kind, id}`), the same record
-reference an edge target wears.
+`reference` property is the `Reference` SCALAR: the referent's path,
+`<kind>/<id>`, one string rather than a pair. It stays a named scalar so a
+client can still tell a pointer from prose and deep-link it.
 
 ## Search
 

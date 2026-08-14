@@ -18,7 +18,7 @@ data:
   # v1alpha4: TYPED. `definition` and `name` are gone; the properties and the
   # variants are properties, and `oneOf` is the variant LIST — a map of maps is
   # not declarable, so the map form went with the blob.
-  version: v1alpha4
+  version: v1alpha5
   names:
     singular: trait
     plural: traits
@@ -37,6 +37,11 @@ data:
         - installed
       managed: true
       description: builtin for seeded traits, installed for bundle ones
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
     authority:
       type: string
       required: true

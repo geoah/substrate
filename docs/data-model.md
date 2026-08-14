@@ -278,7 +278,7 @@ written identically.
 | `digest`           | a server-minted SHA-256 comparator, redacted like a secret  |
 | `blobref`          | names stored bytes by digest                                |
 | `object`           | inline `fields:` of scalar types, one level                 |
-| `reference`        | a typed pointer at another record: `{kind, id}`             |
+| `reference`        | a typed pointer at another record: `<kind>/<id>`            |
 | `json`             | escape hatch: a schemaless blob                             |
 
 Our to-do list already uses four: the task's `description` is `markdown`,
@@ -370,16 +370,8 @@ repeated, never both, and a map whose values are themselves a map is not
 declarable — flatten it, or make the inner level a repeated list of variants.
 Like objects, keyed maps stay out of search and the filter grammar.
 
-**Naming something without pointing at it.** A string property may carry
-`refersTo: kind | function | agent | authority | provider`, which says what its
-value NAMES so a client can offer a picker instead of a text box. It is a
-marker and nothing else: no stored value changes and no validation is added
-(a declaration's own closure checks are what refuse an unknown name). Where a
-single record is meant, a `reference` with a `kind:` pin is the stronger declaration;
-`refersTo` is for the selectors that stay plain strings, like `emit: [person]`.
-
 **References.** A `reference` is a typed pointer stored as a property value:
-the same `{kind, id}` pair an edge target wears, but data, not a graph edge.
+one record **path**, `<kind>/<id>`, which is data rather than a graph edge.
 Reach for it where a declaration field needs to **name** another record, like a
 trigger's `callable`:
 
@@ -397,8 +389,24 @@ reference is data naming a record, and which kind's records it names is exactly
 what a client needs to offer a picker. A reference still spelling `to:` is
 refused naming the pin.
 
-A value is `{kind, id}`, and a bare id string is accepted only when the pin
-names a concrete kind. Validation checks the shape and that the referent
+A value is ONE FLAT STRING, the referent's path:
+`core.substrate.reamde.dev/llmprovider/claude`, or `task/abc123` for a
+repository-local kind. Against a concrete pin a bare record id is accepted as
+the authored short form and canonicalized to the full path on write, so
+`provider: default` stores as
+`core.substrate.reamde.dev/llmprovider/default`; unpinned, a bare id names no
+kind and is refused. A path that contradicts its pin is refused naming both
+ends.
+
+Splitting a path back into its two halves needs no registry, because an
+authority always carries a dot and a kind name never does: if the first segment
+has a dot the kind is the first two segments, otherwise it is the first alone,
+and the id is **everything after the kind** — slashes included, since a
+declaration record's id is itself a kind reference
+(`core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev/task` names one
+record).
+
+Validation checks the shape and that the referent
 **kind** exists; the referent **record** need not exist at write time, because a
 reference is a pointer, not an edge. `repeated: true` holds a list of
 references, and a reference is admitted inside an object or a keyed map at any

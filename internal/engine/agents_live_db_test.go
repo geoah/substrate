@@ -191,7 +191,7 @@ def main(input, host):
 	}
 	var parent string
 	if err := ds.db.QueryRowContext(ctx, `
-		SELECT props->'parent'->>'id' FROM records WHERE kind = $2 AND id = $1`,
+		SELECT props->>'parent' FROM records WHERE kind = $2 AND id = $1`,
 		child["__id"], typeThread).Scan(&parent); err != nil {
 		t.Fatalf("the child's parent: %v", err)
 	}

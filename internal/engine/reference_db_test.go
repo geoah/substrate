@@ -136,9 +136,9 @@ func TestReferenceFilterFindsWhatPointsAtARecord(t *testing.T) {
 	if got := list("a"); len(got) != 1 || got[0] != at.ID {
 		t.Fatalf("a bare id must find the rows pointing at it, got %v", got)
 	}
-	// The canonical {kind, id} form answers identically.
-	if got := list(map[string]any{"kind": firstClassAuthority + "/target", "id": "a"}); len(got) != 1 {
-		t.Fatalf("the {kind, id} form must find the same row, got %v", got)
+	// The canonical PATH answers identically to the bare id the pin completes.
+	if got := list(vocabulary.RecordPath(firstClassAuthority+"/target", "a")); len(got) != 1 {
+		t.Fatalf("the full path must find the same row, got %v", got)
 	}
 	if got := list("b"); len(got) != 1 || got[0] != "p2" {
 		t.Fatalf("the filter must not leak across referents, got %v", got)

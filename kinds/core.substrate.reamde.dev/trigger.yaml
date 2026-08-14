@@ -7,8 +7,8 @@
 #   schedule: {recurrence: <RRULE>, timezone: <IANA name>, startsAt?: RFC3339}
 #   webhook:  {}                       # an authenticated wake endpoint
 #
-# and `callable` is a `reference` (ticket 033) naming the registered function
-# or agent a matched delivery invokes: {kind, id} — the kind
+# and `callable` is a `reference` naming the registered function or agent a
+# matched delivery invokes: ONE path, `<kind>/<id>` — the kind
 # core.substrate.reamde.dev/function or core.substrate.reamde.dev/agent, the id the callable that
 # dispatch resolves. The trigger owns its cursor:
 # a new trigger starts at head, replay is a cursor reset, park-and-advance
@@ -97,5 +97,5 @@ data:
     callable:
       type: reference
       kind: any
-      description: the function or agent a matched delivery invokes ({kind,
-        id})
+      description: the function or agent a matched delivery invokes, as its
+        `<kind>/<id>` path

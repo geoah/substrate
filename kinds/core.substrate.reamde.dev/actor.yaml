@@ -27,6 +27,11 @@ data:
       description: this declaration's version
     # the authority whose manifests declared this actor — what the registry
     # rebuild reads to put the actor back under its authority.
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
     authority:
       type: string
       required: true

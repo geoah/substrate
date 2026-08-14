@@ -9,10 +9,10 @@ import (
 
 // validateReferences is the existence gate for reference-typed properties
 // , the twin of validateBlobRefs: coercion checked the SHAPE and
-// left the value at most a {type, id} pair, and this registry-aware pass —
-// taken inside the write transaction — resolves the referent TYPE, refuses an
+// left the value a record PATH, and this registry-aware pass —
+// taken inside the write transaction — resolves the referent KIND, refuses an
 // unknown one, refuses a pin mismatch, and rewrites the stored value to the
-// canonical {authority, type, id} triple. It does NOT require the referent RECORD
+// canonical path. It does NOT require the referent RECORD
 // to exist: a reference is a typed POINTER, not a graph edge, so it may name a
 // row that is not present yet (a trigger's `callable` names a function the
 // same batch installs; the trigger's OWN admission resolves the callable
@@ -60,7 +60,7 @@ func holdsReference(p *vocabulary.Property) bool {
 }
 
 // normalizeReferencesIn rewrites every reference inside one coerced value to its
-// canonical pair, descending the declaration's containers (keyed map, list) and
+// canonical path, descending the declaration's containers (keyed map, list) and
 // then its declared fields. It returns the rewritten value: a keyed map's values
 // and an object's fields are replaced in place, so the caller stores what came
 // back and nothing depends on which container aliased which map.
@@ -124,29 +124,61 @@ func (t *txn) normalizeReferenceValue(p *vocabulary.Property, v any, where strin
 	return m, problems
 }
 
+// storedReferencePath reads a STORED reference value as its record path,
+// tolerating the released dialect-1 {kind, id} pair.
+//
+// One property can still hold a pair: `trigger.callable` is the only reference
+// that shipped before the flat form, and a trigger is a DATA row, so no rung
+// re-projects it (the rung walks declaration rows alone, vocabularywrite.go).
+// It canonicalizes when the row is next written — coerceReference folds the
+// pair — and it has to dispatch correctly until then, which is what this is
+// for. Nothing AUTHORS a pair: the write path refuses to store one.
+func storedReferencePath(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case map[string]any:
+		kind, _ := t["kind"].(string)
+		id, _ := t["id"].(string)
+		if kind == "" || id == "" {
+			return ""
+		}
+		return vocabulary.RecordPath(kind, id)
+	}
+	return ""
+}
+
 // normalizeReference resolves one reference value's referent kind against the
-// registry, checks the declaration's `kind:` pin, and returns the canonical {kind, id}
-// pair — the record reference an edge target wears too. A bare local name
-// resolves here.
+// registry, checks the declaration's `kind:` pin, and returns the canonical
+// RECORD PATH — "<kind>/<id>", one flat string. A bare local kind name resolves
+// to its full identity here, so the stored path is spelled one way whatever the
+// writer typed.
 func (t *txn) normalizeReference(p *vocabulary.Property, v any) (any, error) {
-	m, ok := v.(map[string]any)
+	s, ok := v.(string)
+	if !ok || s == "" {
+		return nil, fmt.Errorf(`a reference is a "<kind>/<id>" path string`)
+	}
+	pinned := p.To != "" && p.To != vocabulary.ToAny
+	kind, id, ok := vocabulary.SplitRecordPath(s)
 	if !ok {
-		return nil, fmt.Errorf("a reference is a {kind, id} object")
-	}
-	kind, _ := m["kind"].(string)
-	id, _ := m["id"].(string)
-	if id == "" {
-		return nil, fmt.Errorf("a reference needs an id")
-	}
-	if kind == "" {
-		return nil, fmt.Errorf("a reference to any kind needs an explicit kind")
+		// Coercion completes an authored bare id from the pin, so a value still
+		// short of a path here is either unpinned or a stored row written before
+		// the pin existed. Completing it again rather than refusing keeps the
+		// rung's re-projection idempotent.
+		if !pinned {
+			return nil, fmt.Errorf(`a reference to any kind needs a full "<kind>/<id>" path, not the bare id %q`, s)
+		}
+		kind, id = p.To, s
 	}
 	rt, err := t.ds.resolveType(kind)
 	if err != nil {
 		return nil, fmt.Errorf("referent kind %q is unknown", kind)
 	}
-	if p.To != "" && p.To != vocabulary.ToAny && rt.Identity != p.To {
-		return nil, fmt.Errorf("reference points at %s, not %s", rt.Identity, p.To)
+	// Both sides get named: the pin says one kind and the value spells another,
+	// and a message carrying only one of them leaves the writer to guess which
+	// end to change.
+	if pinned && rt.Identity != p.To {
+		return nil, fmt.Errorf("reference points at %s, but the declaration pins %s", rt.Identity, p.To)
 	}
-	return map[string]any{"kind": rt.Identity, "id": id}, nil
+	return vocabulary.RecordPath(rt.Identity, id), nil
 }

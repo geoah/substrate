@@ -161,7 +161,7 @@ func TestDialectWideningsRoundTrip(t *testing.T) {
 	if d, ok := limits["depth"].(float64); !ok || d != 3 {
 		t.Fatalf("spec.limits.depth = %#v, want float64(3)", limits["depth"])
 	}
-	wantRef := map[string]any{"kind": dwAuthority + "/target", "id": "a"}
+	wantRef := vocabulary.RecordPath(dwAuthority+"/target", "a")
 	assertRef(t, "spec.limits.ref", limits["ref"], wantRef)
 	assertRef(t, "pinned", props["pinned"], wantRef)
 
@@ -199,16 +199,12 @@ func TestDialectWideningsRoundTrip(t *testing.T) {
 	}
 }
 
-// assertRef pins a stored reference to the canonical {kind, id} pair: the whole
-// point of reaching nested positions is that a bare id does not survive as one.
-func assertRef(t *testing.T, where string, got any, want map[string]any) {
+// assertRef pins a stored reference to the canonical PATH: the whole point of
+// reaching nested positions is that a bare id does not survive as one.
+func assertRef(t *testing.T, where string, got any, want string) {
 	t.Helper()
-	m, ok := got.(map[string]any)
-	if !ok {
-		t.Fatalf("%s = %#v, want a {kind, id} pair", where, got)
-	}
-	if m["kind"] != want["kind"] || m["id"] != want["id"] {
-		t.Fatalf("%s = %v, want %v", where, m, want)
+	if got != want {
+		t.Fatalf("%s = %#v, want the path %q", where, got, want)
 	}
 }
 
@@ -258,11 +254,13 @@ func TestDialectWideningsRefuseBadValues(t *testing.T) {
 			props: map[string]any{"effects": []any{1, 2}},
 			says:  "expected a keyed map",
 		},
+		// The refusal names BOTH ends: what the value points at, and what the
+		// declaration pins, so the writer can tell which of the two to change.
 		"nested reference points at the wrong kind": {
 			props: map[string]any{"tools": []any{map[string]any{
-				"callable": map[string]any{"kind": dwAuthority + "/holder", "id": "h1"},
+				"callable": vocabulary.RecordPath(dwAuthority+"/holder", "h1"),
 			}}},
-			says: "not " + dwAuthority + "/target",
+			says: "the declaration pins " + dwAuthority + "/target",
 		},
 		"nested reference names an unknown kind": {
 			props: map[string]any{"installs": map[string]any{"task": map[string]any{
@@ -551,5 +549,5 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 	read := mustGet(t, ds2, authority+"/holder", "h1")
 	tools := read.Properties["tools"].([]any)
 	assertRef(t, "tools[].callable", tools[0].(map[string]any)["callable"],
-		map[string]any{"kind": authority + "/target", "id": "a"})
+		vocabulary.RecordPath(authority+"/target", "a"))
 }

@@ -36,9 +36,7 @@ data:
           || ("enabledSleep" in record.properties && record.properties.enabledSleep
           == true) || ("enabledWorkouts" in record.properties && record.properties.enabledWorkouts
           == true))
-    callable:
-      kind: core.substrate.reamde.dev/function
-      id: whoop.bundles.substrate.reamde.dev/whoopsync
+    callable: core.substrate.reamde.dev/function/whoop.bundles.substrate.reamde.dev/whoopsync
 ---
 # The steady-state re-sync: an hourly tick fires the same function with no
 # envelope record, so the body iterates every connected account with a toggle
@@ -56,6 +54,4 @@ data:
         # A fixed past anchor, so every occurrence since is well-defined
         # (occurrences compute forward from startsAt).
         startsAt: "2025-01-06T09:00:00Z"
-    callable:
-      kind: core.substrate.reamde.dev/function
-      id: whoop.bundles.substrate.reamde.dev/whoopsync
+    callable: core.substrate.reamde.dev/function/whoop.bundles.substrate.reamde.dev/whoopsync

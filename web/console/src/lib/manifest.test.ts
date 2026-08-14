@@ -148,6 +148,36 @@ describe("linkTargetsOf", () => {
     )
   })
 
+  it("deep-links a reference property by the whole path the document carries", () => {
+    const withPointer: KindInfo[] = [
+      {
+        ...registry[0],
+        definition: {
+          properties: {
+            manager: {
+              type: "reference",
+              to: "people.substrate.reamde.dev/person",
+            },
+          },
+        },
+      },
+      ...registry.slice(1),
+    ]
+    const pointing: SubstrateRecord = {
+      ...record,
+      properties: {
+        ...record.properties,
+        manager: "people.substrate.reamde.dev/person/boss1",
+      },
+    }
+    const t = linkTargetsOf(pointing, withPointer)
+    expect(t.ids["people.substrate.reamde.dev/person/boss1"]).toBe(
+      "/data/people.substrate.reamde.dev/people/boss1"
+    )
+    // The id alone never appears in the document, so it is not a target.
+    expect(t.ids.boss1).toBeUndefined()
+  })
+
   it("does not link an edge target whose kind is not in the registry", () => {
     const stray: SubstrateRecord = {
       ...record,

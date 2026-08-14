@@ -282,7 +282,9 @@ func (l *loader) parseAgent(d Document) *Agent {
 		l.errf("%s: data.prompt is %d bytes — the cap is %d", where, len(a.Prompt), AgentPromptMaxBytes)
 		return nil
 	}
-	a.Provider = mstr(d.Data, "provider")
+	// `provider` is a REFERENCE at llmprovider: a manifest authors the bare
+	// record id and the row stores the full path, and the loop resolves the id.
+	a.Provider = ReferentID(d.Data["provider"], KindRef(AuthorityCore, "llmprovider"))
 	if a.Provider == "" {
 		l.errf("%s: data.provider is required — an llmprovider record id (default, or a custom row)", where)
 		return nil
@@ -311,8 +313,7 @@ func (l *loader) parseAgent(d Document) *Agent {
 	for _, t := range a.Tools {
 		toolNames[t.Name] = true
 	}
-	for i, sv := range mslice(d.Data, "agents") {
-		ident := fmt.Sprint(sv)
+	for i, ident := range ReferentIDs(mslice(d.Data, "agents"), KindRef(AuthorityCore, DocAgent)) {
 		if !Qualified(ident) || strings.Contains(ident, "*") {
 			l.errf("%s: data.agents[%d]: %q — sub-agents are full agent identities, no globs", where, i, ident)
 			continue
@@ -333,8 +334,7 @@ func (l *loader) parseAgent(d Document) *Agent {
 	if !ok {
 		return nil
 	}
-	for i, ev := range mslice(perms, "writes") {
-		t := fmt.Sprint(ev)
+	for i, t := range ReferentIDs(mslice(perms, "writes"), KindRef(AuthorityCore, DocKind)) {
 		if !Qualified(t) || strings.Contains(t, "*") {
 			l.errf("%s: data.permissions.writes[%d]: %q is not a full type identity; writes names them, no globs", where, i, t)
 			continue
@@ -486,7 +486,7 @@ func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bo
 				}
 			}
 			l.checkKeys(twhere, entry, agentToolKeys)
-			fnIdent := mstr(entry, "function")
+			fnIdent := ReferentID(entry["function"], KindRef(AuthorityCore, DocFunction))
 			if fnIdent == "" {
 				l.errf("%s: no function — an entry names one function identity (a built-in is one of %s)",
 					twhere, strings.Join(agentBuiltinIdentities, ", "))

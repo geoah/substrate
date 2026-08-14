@@ -73,7 +73,7 @@ func TestHostFunctionsAreSeededAsRecords(t *testing.T) {
 	// caller's.
 	perms, _ := rows[vocabulary.HostFunctionPropose].Properties["permissions"].(map[string]any)
 	if writes, _ := perms["writes"].([]any); len(writes) != 1 ||
-		writes[0] != vocabulary.KindRecordPatchRequest {
+		writes[0] != vocabulary.RecordPath(kindKind, vocabulary.KindRecordPatchRequest) {
 		t.Fatalf("propose permissions = %v", rows[vocabulary.HostFunctionPropose].Properties["permissions"])
 	}
 	if _, has := rows[vocabulary.HostFunctionMutate].Properties["permissions"]; has {
@@ -186,7 +186,7 @@ func preHostKindsDir(t *testing.T) string {
 		}
 		body := string(raw)
 		if e.Name() == "function.yaml" {
-			body = strings.Replace(body, "  version: v1alpha6\n", "  version: v1alpha4\n", 1)
+			body = strings.Replace(body, "  version: v1alpha7\n", "  version: v1alpha4\n", 1)
 			body = strings.Replace(body, "        - go\n        - host\n", "        - go\n", 1)
 			body = strings.Replace(body,
 				"      fts: false\n      description: the inline body, on an inline runtime\n",

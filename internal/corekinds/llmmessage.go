@@ -34,7 +34,7 @@ type LLMMessage struct {
 
 	// Thread is the thread this turn belongs to. Points at
 	// core.substrate.reamde.dev/llmthread.
-	Thread *Reference
+	Thread *ReferencePath
 }
 
 // LLMMessageKeys is the admitted key set: every property
@@ -183,7 +183,7 @@ func (v *LLMMessage) Encode() map[string]any {
 		out["ok"] = *v.Ok
 	}
 	if v.Thread != nil {
-		out["thread"] = v.Thread.Encode()
+		out["thread"] = string(*v.Thread)
 	}
 	return out
 }

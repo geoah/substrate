@@ -53,6 +53,7 @@ import {
   splitKind,
   type DeclaredPointer,
 } from "@/lib/definition"
+import { splitRecordPath } from "@/lib/record-path"
 import { cn } from "@/lib/utils"
 
 /** How deep a drill-down goes before it asks the reader to open the record
@@ -174,11 +175,12 @@ function outgoingOf(
     } else {
       const value = record.properties[pointer.name]
       for (const one of Array.isArray(value) ? value : [value]) {
-        if (typeof one !== "object" || one === null) continue
-        const ref = one as Record<string, unknown>
-        if (typeof ref.id === "string" && typeof ref.kind === "string") {
-          targets.push({ id: ref.id, kind: ref.kind })
-        }
+        if (typeof one !== "string") continue
+        // A stored reference is the referent's whole record path, and the kind
+        // grammar is what splits it — the registry is not consulted, so a
+        // pointer at a kind nobody installed still draws its row.
+        const target = splitRecordPath(one)
+        if (target) targets.push(target)
       }
     }
     if (targets.length) out.push({ pointer, targets })

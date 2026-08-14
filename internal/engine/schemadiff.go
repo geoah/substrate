@@ -392,18 +392,19 @@ func fieldPresence(ident string, path []fieldStep, key string) (string, []any) {
 // The value must BE a canonical reference before its kind is compared. An
 // absent optional reference inside a present object is not a row pointing
 // elsewhere, and counting it as one refused the legal `kind: any` → concrete
-// evolution for every row that simply left the field out.
+// evolution for every row that simply left the field out. That is what the
+// string test buys: a missing value is jsonb NULL, whose jsonb_typeof is not
+// 'string', so it is not counted.
 //
-// It reads `kind` and nothing else. The query used to reconstruct the referent
-// as `kind || '.' || authority`, which had matched a long-dead stored shape:
-// normalizeReference writes {kind: <full identity>, id} and has never written
-// an `authority` key (references.go), so every comparison was against
-// `<identity>.` and the guard counted every live row or none — it was dead
-// either way, and silently.
+// A stored reference is ONE flat path ("<kind>/<id>", references.go), so
+// "points at the target" is a PREFIX: the value begins with the target kind and
+// a slash. Compared with `left(…)` rather than LIKE because a kind reference is
+// data here — no pattern of the target's can leak into the operator.
 func refOutsidePath(ident string, path []fieldStep, target string) (string, []any) {
 	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
-		return fmt.Sprintf("jsonb_typeof(%s) = 'object' AND %s ? 'kind' AND COALESCE(%s->>'kind','') <> %s",
-			expr, expr, expr, a.add(target))
+		arg := a.add(target)
+		return fmt.Sprintf("jsonb_typeof(%s) = 'string' AND left(%s #>> '{}', length(%s) + 1) <> %s || '/'",
+			expr, expr, arg, arg)
 	})
 }
 

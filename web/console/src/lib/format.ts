@@ -2,6 +2,8 @@
  * temporality, compact absolute stamps for detail contexts, and the flat
  * rendering of a property value into a table cell. */
 
+import { splitRecordPath } from "@/lib/record-path"
+
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
@@ -90,28 +92,30 @@ export function timeRange(oldestISO: string, newestISO: string): string {
   return a === b ? b : `${a}–${b}`
 }
 
-/** A stored reference — `{kind, id}` — read back as the id it names, or ""
- * when the value is not one. A reference is the one object shape the console
- * knows how to say out loud, so it never reaches the key-list summary below:
- * a cell reading the literal text `{kind, id}` names nothing at all. */
+/** A stored reference — the referent's record PATH — read back as the id it
+ * names, or "" when the value is not a path. A cell repeating the whole
+ * `<kind>/<id>` says the column's own kind back at the reader, so the surfaces
+ * that KNOW a property is a reference call this instead of `cellValue`: the
+ * datatype is what tells a path from a string that merely has slashes in it. */
 export function referenceID(value: unknown): string {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return ""
-  }
-  const ref = value as Record<string, unknown>
-  const id = ref.id
-  return typeof id === "string" && typeof ref.kind === "string" ? id : ""
+  return typeof value === "string" ? (splitRecordPath(value)?.id ?? "") : ""
 }
 
-/** One property value flattened into a cell: arrays join, references name what
- * they point at, other objects summarize, scalars pass through. The cell
- * truncates; this only has to be honest. */
+/** A reference PROPERTY's value in a cell: the id it names, and a repeated one
+ * joined the way `cellValue` joins a list. */
+export function referenceCell(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map(referenceID).filter(Boolean).join(", ")
+  }
+  return referenceID(value)
+}
+
+/** One property value flattened into a cell: arrays join, objects summarize,
+ * scalars pass through. The cell truncates; this only has to be honest. */
 export function cellValue(value: unknown): string {
   if (value === null || value === undefined) return ""
   if (Array.isArray(value)) return value.map(cellValue).join(", ")
   if (typeof value === "object") {
-    const ref = referenceID(value)
-    if (ref) return ref
     const keys = Object.keys(value as Record<string, unknown>)
     return keys.length ? `{${keys.join(", ")}}` : "{}"
   }

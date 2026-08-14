@@ -53,7 +53,7 @@ data:
   # v1alpha4: the grants group under one `permissions:` object, and `emit`
   # is `writes` inside it. The function and agent kinds pin their own bump;
   # this one carries the `propose` host function's rewritten grant.
-  version: v1alpha4
+  version: v1alpha5
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands

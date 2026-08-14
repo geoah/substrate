@@ -157,38 +157,51 @@ func coerceObject(p *vocabulary.Property, v any) (any, error) {
 }
 
 // coerceReference validates a reference value's SHAPE and normalizes it toward
-// the canonical {kind, id} pair — the same record reference an
-// edge target wears. Like a blob-ref, this is the PURE half: the existence
-// gate — the referent KIND must be known, and the `kind:` pin must match —
-// is taken inside the transaction (validateReferences). Here we only ensure
-// there is an id and a knowable kind:
+// the canonical RECORD PATH — "<kind>/<id>", ONE flat string, the whole stored
+// value. Like a blob-ref, this is the PURE half: the existence gate — the
+// referent KIND must be known, and the `kind:` pin must match — is taken inside
+// the transaction (validateReferences). Here we only reach a path:
 //
-//   - a {kind, id} object,
-//   - a bare id string, ONLY when `kind:` pins a concrete kind (the kind comes
-//     from the declaration, mirroring a single-target edge's shorthand).
+//   - a full path ("core.substrate.reamde.dev/llmprovider/claude"), left alone;
+//   - the AUTHORED SHORT FORM, a bare record id, ONLY when `kind:` pins a
+//     concrete kind, which then supplies what the value omits, mirroring a
+//     single-target edge's shorthand.
+//
+// Which of the two a string is, is decided by the kind grammar alone
+// (vocabulary.SplitRecordPath) and never by the registry, so an authored value
+// means the same thing on every path that reads it.
 func coerceReference(p *vocabulary.Property, v any) (any, error) {
-	var kind, id string
+	var id string
 	switch t := v.(type) {
-	case map[string]any:
-		kind, _ = t["kind"].(string)
-		id, _ = t["id"].(string)
 	case string:
+		if t == "" {
+			return nil, fmt.Errorf("a reference needs an id")
+		}
+		if _, _, ok := vocabulary.SplitRecordPath(t); ok {
+			return t, nil
+		}
 		id = t
+	case map[string]any:
+		// The RELEASED dialect-1 shape, admitted for exactly one reason: the
+		// boot rung re-projects stored declaration rows through this same
+		// coercion, so folding the pair to a path here is the whole migration
+		// and no second writer has to know the old shape. Nothing AUTHORS this.
+		kind, _ := t["kind"].(string)
+		rid, _ := t["id"].(string)
+		if rid == "" {
+			return nil, fmt.Errorf("a reference needs an id")
+		}
+		if kind != "" {
+			return vocabulary.RecordPath(kind, rid), nil
+		}
+		id = rid
 	default:
-		return nil, fmt.Errorf("a reference is a {kind, id} object")
+		return nil, fmt.Errorf(`a reference is a "<kind>/<id>" path string`)
 	}
-	if id == "" {
-		return nil, fmt.Errorf("a reference needs an id")
+	if p.To == "" || p.To == vocabulary.ToAny {
+		return nil, fmt.Errorf(`a reference to any kind needs a full "<kind>/<id>" path, not the bare id %q`, id)
 	}
-	// A concrete `kind:` pin supplies the kind a bare value omits, exactly as
-	// a single-target edge's declaration supplies it.
-	if kind == "" && p.To != "" && p.To != vocabulary.ToAny {
-		kind = p.To
-	}
-	if kind == "" {
-		return nil, fmt.Errorf("a reference to any kind needs an explicit kind")
-	}
-	return map[string]any{"kind": kind, "id": id}, nil
+	return vocabulary.RecordPath(p.To, id), nil
 }
 
 func coerceScalar(p *vocabulary.Property, v any) (any, error) {
@@ -414,9 +427,10 @@ func (r *titleResolver) Prop(name string) string {
 		return ""
 	}
 	if v, ok := r.row.Props[name]; ok {
-		// A reference is a {kind, id} OBJECT, which scalarString renders as ""
-		// — a template naming one would silently lose its whole token. It
-		// follows the pointer instead, exactly as a bare edge token does, and
+		// A reference is a record PATH, which scalarString would render
+		// verbatim — a title reading "core.substrate.reamde.dev/agent/x"
+		// names the pointer, not the thing. It follows the pointer instead,
+		// exactly as a bare edge token does, and
 		// falls back to the id when the referent is not there to read: a
 		// reference may name a row that does not exist (references.go).
 		if p, ok := r.ty.Prop(name); ok && p.Datatype == vocabulary.DatatypeReference {
@@ -492,7 +506,7 @@ func (r *titleResolver) referenceProp(ref eref, prop string) string {
 }
 
 // referenceID reads the id a stored reference names, "" when the value is not
-// one. A reference is a {kind, id} pair, so nothing reads it as a string.
+// one.
 func referenceID(v any) string {
 	refs := referenceTargets(v)
 	if len(refs) == 0 {
@@ -502,26 +516,27 @@ func referenceID(v any) string {
 }
 
 // referenceTargets reads the stored shape of a reference property — one
-// canonical {kind, id} pair, or a list of them when repeated.
+// canonical record PATH, or a list of them when repeated. A stored value is
+// always a full path (normalizeReference wrote it), so a string that does not
+// split is not a reference and yields nothing rather than a kindless target.
 func referenceTargets(v any) []eref {
-	one := func(m map[string]any) (eref, bool) {
-		kind, _ := m["kind"].(string)
-		id, _ := m["id"].(string)
-		if id == "" {
+	one := func(s string) (eref, bool) {
+		kind, id, ok := vocabulary.SplitRecordPath(s)
+		if !ok {
 			return eref{}, false
 		}
 		return eref{Kind: kind, ID: id}, true
 	}
 	switch t := v.(type) {
-	case map[string]any:
+	case string:
 		if ref, ok := one(t); ok {
 			return []eref{ref}
 		}
 	case []any:
 		var out []eref
 		for _, item := range t {
-			if m, ok := item.(map[string]any); ok {
-				if ref, ok := one(m); ok {
+			if s, ok := item.(string); ok {
+				if ref, ok := one(s); ok {
 					out = append(out, ref)
 				}
 			}

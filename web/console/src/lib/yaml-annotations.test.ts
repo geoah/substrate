@@ -124,6 +124,10 @@ const targets: YamlLinkTargets = {
     "o-abc123": "/data/people.substrate.reamde.dev/organizations/o-abc123",
     "gcal-a@x.io-b@y.io":
       "/data/calendar.substrate.reamde.dev/calendars/gcal-a@x.io-b@y.io",
+    // A reference property's value is keyed by the whole path, because that is
+    // the text the document carries.
+    "people.substrate.reamde.dev/person/p1":
+      "/data/people.substrate.reamde.dev/people/p1",
   },
   kinds: {
     "people.substrate.reamde.dev/person":
@@ -173,6 +177,22 @@ describe("linkableSpan", () => {
     expect(
       linkableSpan("    title: people.substrate.reamde.dev/person", targets)
     ).toBeNull()
+  })
+
+  it("links a reference property's value under the property's own key", () => {
+    // The key is whatever the declaration named the pointer, so the VALUE has
+    // to say what it is: a record path the targets know.
+    expect(
+      linkableSpan("    owner: people.substrate.reamde.dev/person/p1", targets)
+    ).toEqual({
+      text: "people.substrate.reamde.dev/person/p1",
+      href: "/data/people.substrate.reamde.dev/people/p1",
+    })
+    // A path nobody registered stays text, and so does a bare id in prose.
+    expect(
+      linkableSpan("    owner: people.substrate.reamde.dev/person/p9", targets)
+    ).toBeNull()
+    expect(linkableSpan("    title: o-abc123", targets)).toBeNull()
   })
 
   it("links manager and actor rows to the actor view — depth-guarded", () => {

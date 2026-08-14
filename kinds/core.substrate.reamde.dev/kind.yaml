@@ -37,6 +37,11 @@ data:
         - installed
       managed: true
       description: builtin for seeded kinds, installed for bundle ones
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
     authority:
       type: string
       required: true
@@ -82,9 +87,10 @@ data:
       keyPattern: camel
       description: the named, directed links a record of this kind may hold
       fields:
+        # NOT a reference: `any` is an admissible value here, and a pin that
+        # admits a non-path is not a pin.
         to:
           type: string
-          refersTo: kind
           description: the target kind, or `any`
         many:
           type: bool

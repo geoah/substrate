@@ -683,16 +683,14 @@ func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Functi
 		l.errf("%s: data.permissions.writes: a LIST of full type identities", where)
 		return nil
 	}
-	for i, ev := range mslice(perms, "writes") {
-		t := fmt.Sprint(ev)
+	for i, t := range ReferentIDs(mslice(perms, "writes"), KindRef(AuthorityCore, DocKind)) {
 		if !ValidKindReference(t) {
 			l.errf("%s: data.permissions.writes[%d]: %q is not a kind; writes names them, bare or authority-qualified, no globs", where, i, t)
 			continue
 		}
 		fn.Caps.Emit = append(fn.Caps.Emit, t)
 	}
-	for i, cv := range mslice(perms, "call") {
-		ident := fmt.Sprint(cv)
+	for i, ident := range ReferentIDs(mslice(perms, "call"), KindRef(AuthorityCore, DocFunction)) {
 		if !Qualified(ident) || strings.Contains(ident, "*") {
 			l.errf("%s: data.permissions.call[%d]: %q is not a full function identity; call names them, no globs", where, i, ident)
 			continue
@@ -751,8 +749,7 @@ func (l *loader) parseReads(where string, perms map[string]any, fn *Function) bo
 	r := asMap(rv)
 	l.checkKeys(where+": "+path, r, functionReadsKeys)
 	reads := &FunctionReads{}
-	for i, tv := range mslice(r, "kinds") {
-		t := fmt.Sprint(tv)
+	for i, t := range ReferentIDs(mslice(r, "kinds"), KindRef(AuthorityCore, DocKind)) {
 		if !ValidKindReference(t) {
 			l.errf("%s: %s.kinds[%d]: %q — reads names kinds, bare or authority-qualified, no globs", where, path, i, t)
 			continue

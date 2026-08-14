@@ -19,13 +19,12 @@
  * initial state and legal moves are the consts beside the interface.
  */
 
-/** A typed pointer: the referent's kind reference and its id, the same {kind,
- * id} pair an edge target wears.
+/** A typed pointer, as the referent's record PATH: `<kind>/<id>` — one
+ * string, the whole stored value.
+ * `core.substrate.reamde.dev/llmprovider/claude` names the llmprovider
+ * `claude`; a repository-local kind drops the authority, `task/abc`.
  */
-export interface Reference {
-  kind: string
-  id: string
-}
+export type ReferencePath = string
 
 /** What a secret property STORES: an opaque ref into the server's sealed store,
  * never the material. Reads redact even the ref.
@@ -115,20 +114,20 @@ export interface Agent {
   description?: string
   /** The system prompt; the row is the prompt store. */
   prompt?: string
-  /** The llmprovider record id this agent's loop completes against. Names a
-   * provider: offer a picker, not a text box.
+  /** The llmprovider this agent's loop completes against. Points at
+   * core.substrate.reamde.dev/llmprovider.
    */
-  provider?: string
+  provider?: ReferencePath
   /** The model id sent on every completion. */
   model?: string
   /** This agent's request knobs; the provider row's defaults sit under them. */
   params?: AgentParams
   /** What the model may call, in declaration order. */
   tools?: AgentTools[]
-  /** The sub-agent identities the loop exposes as tools. Names a agent: offer a
-   * picker, not a text box.
+  /** The sub-agents the loop exposes as tools. Points at
+   * core.substrate.reamde.dev/agent.
    */
-  agents?: string[]
+  agents?: ReferencePath[]
   /** What bounds one invocation. */
   budgets?: AgentBudgets
   /** What this agent is allowed to do while it runs; leave a grant out and what
@@ -169,10 +168,10 @@ export interface AgentParams {
  * what the model may call, in declaration order
  */
 export interface AgentTools {
-  /** The function this entry names, by identity. Names a function: offer a
-   * picker, not a text box.
+  /** The function this entry names. Points at
+   * core.substrate.reamde.dev/function.
    */
-  function?: string
+  function?: ReferencePath
   /** The model-facing tool name, aliasing the function. */
   name?: string
   /** The model-facing card, overriding the function's own. */
@@ -213,9 +212,9 @@ export interface AgentPermissions {
    */
   reads?: AgentPermissionsReads
   /** Which record kinds it may create or change, the change requests it
-   * proposes among them. Names a kind: offer a picker, not a text box.
+   * proposes among them. Points at core.substrate.reamde.dev/kind.
    */
-  writes?: string[]
+  writes?: ReferencePath[]
 }
 
 /** AgentPermissionsReads is one value of the `permissions.reads` object
@@ -225,10 +224,10 @@ export interface AgentPermissions {
  * query tool is withheld
  */
 export interface AgentPermissionsReads {
-  /** The record kinds every read is held to. Names a kind: offer a picker, not
-   * a text box.
+  /** The record kinds every read is held to. Points at
+   * core.substrate.reamde.dev/kind.
    */
-  kinds?: string[]
+  kinds?: ReferencePath[]
   /** How much one run may read. */
   budgets?: AgentPermissionsReadsBudgets
 }
@@ -354,7 +353,7 @@ export interface Bundle {
   /** The exact identities the bundle ships into its authority. */
   installs?: string[]
   /** The authorities this closure declares against; an install refuses while
-   * one is absent. Names a authority: offer a picker, not a text box.
+   * one is absent.
    */
   requires?: string[]
   /** The shared library modules the bundle's functions import. */
@@ -389,10 +388,10 @@ export const bundleRequired: string[] = ["authority"]
  * the bundle's named configuration needs, each naming a kind
  */
 export interface BundleInputs {
-  /** The kind whose records satisfy this input. Names a kind: offer a picker,
-   * not a text box.
+  /** The kind whose records satisfy this input. Points at
+   * core.substrate.reamde.dev/kind.
    */
-  kind?: string
+  kind?: ReferencePath
   /** The consumer the resolved record is handed to; absent means a host
    * facility reads it.
    */
@@ -609,14 +608,14 @@ export interface FunctionPermissions {
    * leave it out and any read it attempts fails.
    */
   reads?: FunctionPermissionsReads
-  /** Which record kinds it may create or change. Names a kind: offer a picker,
-   * not a text box.
+  /** Which record kinds it may create or change. Points at
+   * core.substrate.reamde.dev/kind.
    */
-  writes?: string[]
-  /** Which other functions its code may invoke. Names a function: offer a
-   * picker, not a text box.
+  writes?: ReferencePath[]
+  /** Which other functions its code may invoke. Points at
+   * core.substrate.reamde.dev/function.
    */
-  call?: string[]
+  call?: ReferencePath[]
   /** The hosts it may reach; any entry grants network access, and enforcement
    * is all-or-nothing today.
    */
@@ -642,10 +641,10 @@ export const functionPermissionsMutationsValues: FunctionPermissionsMutations[] 
  * it out and any read it attempts fails
  */
 export interface FunctionPermissionsReads {
-  /** The record kinds every read is held to. Names a kind: offer a picker, not
-   * a text box.
+  /** The record kinds every read is held to. Points at
+   * core.substrate.reamde.dev/kind.
    */
-  kinds?: string[]
+  kinds?: ReferencePath[]
   /** How much one run may read. */
   budgets?: FunctionPermissionsReadsBudgets
 }
@@ -748,7 +747,7 @@ export interface KindIndices {
  * the named, directed links a record of this kind may hold
  */
 export interface KindEdges {
-  /** The target kind, or `any`. Names a kind: offer a picker, not a text box. */
+  /** The target kind, or `any`. */
   to?: string
   /** Several targets instead of one. */
   many?: boolean
@@ -789,7 +788,7 @@ export interface LLMMessage {
   /** The thread this turn belongs to. Points at
    * core.substrate.reamde.dev/llmthread.
    */
-  thread?: Reference
+  thread?: ReferencePath
 }
 
 /** The properties LLMMessage's declaration marks required. A form refuses to
@@ -912,7 +911,7 @@ export interface LLMProviderPricing {
  */
 export interface LLMThread {
   /** The agent this thread ran. Points at core.substrate.reamde.dev/agent. */
-  agent?: Reference
+  agent?: ReferencePath
   /** The llmprovider row id the run resolved. */
   provider?: string
   /** The model id the run sent. */
@@ -951,7 +950,7 @@ export interface LLMThread {
   /** The calling agent's thread, on sub-agent threads. Points at
    * core.substrate.reamde.dev/llmthread.
    */
-  parent?: Reference
+  parent?: ReferencePath
 }
 
 /** The properties LLMThread's declaration marks required. A form refuses to
@@ -1097,14 +1096,14 @@ export interface RecordMapping {
   authority?: string
   /** What the mapping keeps up to date. */
   description?: string
-  /** The source kind whose records project. Names a kind: offer a picker, not a
-   * text box.
+  /** The source kind whose records project. Points at
+   * core.substrate.reamde.dev/kind.
    */
-  from?: string
-  /** The subject kind, always a full kind reference. Names a kind: offer a
-   * picker, not a text box.
+  from?: ReferencePath
+  /** The subject kind, always a full kind reference. Points at
+   * core.substrate.reamde.dev/kind.
    */
-  to?: string
+  to?: ReferencePath
   /** The declared edge on the source kind that records the link. */
   edge?: string
   /** The probes that find an existing subject, in order. */
@@ -1526,10 +1525,10 @@ export interface Trigger {
   enabled?: boolean
   /** The one source this trigger delivers from. */
   source?: TriggerSource
-  /** The function or agent a matched delivery invokes ({kind, id}). Points at
-   * any.
+  /** The function or agent a matched delivery invokes, as its `<kind>/<id>`
+   * path. Points at any.
    */
-  callable?: Reference
+  callable?: ReferencePath
 }
 
 /** TriggerSource is one value of the `source` object declared on

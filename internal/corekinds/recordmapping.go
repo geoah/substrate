@@ -24,13 +24,13 @@ type RecordMapping struct {
 	// Description is what the mapping keeps up to date.
 	Description *string
 
-	// From is the source kind whose records project. Names a kind in the
-	// registry.
-	From *string
+	// From is the source kind whose records project. Points at
+	// core.substrate.reamde.dev/kind.
+	From *ReferencePath
 
-	// To is the subject kind, always a full kind reference. Names a kind in
-	// the registry.
-	To *string
+	// To is the subject kind, always a full kind reference. Points at
+	// core.substrate.reamde.dev/kind.
+	To *ReferencePath
 
 	// Edge is the declared edge on the source kind that records the link.
 	Edge *string
@@ -159,12 +159,12 @@ func decodeRecordMapping(d *decoder, path string, v any) (RecordMapping, bool) {
 			}
 		case "from":
 			p := at(path, "from")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := d.reference(p, props[key], "core.substrate.reamde.dev/kind"); ok {
 				out.From = &e
 			}
 		case "to":
 			p := at(path, "to")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := d.reference(p, props[key], "core.substrate.reamde.dev/kind"); ok {
 				out.To = &e
 			}
 		case "edge":
@@ -226,10 +226,10 @@ func (v *RecordMapping) Encode() map[string]any {
 		out["description"] = *v.Description
 	}
 	if v.From != nil {
-		out["from"] = *v.From
+		out["from"] = string(*v.From)
 	}
 	if v.To != nil {
-		out["to"] = *v.To
+		out["to"] = string(*v.To)
 	}
 	if v.Edge != nil {
 		out["edge"] = *v.Edge

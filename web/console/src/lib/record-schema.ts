@@ -18,6 +18,7 @@
 
 import { parseEnumValues, type EnumValue, type KindInfo } from "@/lib/api/types"
 import { temporalProperties } from "@/lib/definition"
+import { splitRecordPath } from "@/lib/record-path"
 
 /** The `to:` value a reference uses when it is pinned to no kind at all. */
 export const TO_ANY = "any"
@@ -305,8 +306,8 @@ export function exampleFor(spec: PropSpec): string | undefined {
       return "the value to seal"
     case "reference":
       return spec.to && spec.to !== TO_ANY
-        ? `{kind: ${spec.to}, id: some-id}`
-        : "{kind: <kind>, id: <id>}"
+        ? `${spec.to}/some-id`
+        : "<kind>/<id>"
     case "json":
     case "object":
     case "map":
@@ -383,23 +384,18 @@ export function checkItem(spec: PropSpec, value: unknown): string | undefined {
     return undefined
   }
 
+  // The substrate's own three refusals, verbatim (engine's coerceReference): a
+  // reference is the referent's record PATH, and a bare id is the authored
+  // short form only where the declaration pins the kind that completes it.
   if (spec.kind === "reference") {
-    if (typeof value === "string") {
-      if (!value.trim()) return "a reference needs an id"
-      return spec.to && spec.to !== TO_ANY
-        ? undefined
-        : "a reference to any kind needs an explicit kind"
+    if (typeof value !== "string") {
+      return 'a reference is a "<kind>/<id>" path string'
     }
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
-      return "a reference is a {kind, id} object"
-    }
-    const ref = value as Record<string, unknown>
-    if (typeof ref.id !== "string" || !ref.id.trim()) {
-      return "a reference needs an id"
-    }
-    const hasKind = typeof ref.kind === "string" && ref.kind.trim().length > 0
-    if (!hasKind && (!spec.to || spec.to === TO_ANY)) {
-      return "a reference to any kind needs an explicit kind"
+    const path = value.trim()
+    if (!path) return "a reference needs an id"
+    if (splitRecordPath(path)) return undefined
+    if (!spec.to || spec.to === TO_ANY) {
+      return `a reference to any kind needs a full "<kind>/<id>" path, not the bare id ${JSON.stringify(path)}`
     }
     return undefined
   }

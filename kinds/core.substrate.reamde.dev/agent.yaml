@@ -44,7 +44,7 @@ data:
   # `writes` inside it: the same grouping a function's five grants took, and
   # safe for the same reason v1alpha7 was. A tool entry's `callable` field
   # became `function` in the same bump, since an entry admits nothing else.
-  version: v1alpha8
+  version: v1alpha9
   names:
     singular: agent
     plural: agents
@@ -58,6 +58,11 @@ data:
       type: string
       managed: true
       description: this declaration's version
+    # NOT a reference, and the reason is identity: an authority is what this
+    # declaration IS part of, not a record it points at. Pinning it made the
+    # stored row spell it as a path while the manifest spelled the name, so one
+    # declaration had two Definitions — the authored one and the one that came
+    # back after a restart.
     authority:
       type: string
       required: true
@@ -74,14 +79,15 @@ data:
       fts: false
       required: true
       description: the system prompt; the row is the prompt store
-    # The llmprovider data-record id (`default` or a custom row); the loop reads
-    # wire/baseURL/apiKey off that row at dispatch. A record id, not a
-    # reference: an llmprovider row is runtime state and resolves at dispatch.
+    # The llmprovider the loop reads wire/baseURL/apiKey off at dispatch. The
+    # pin is what lets a client offer a picker, and it supplies the kind an
+    # authored bare id omits: `default` stores as
+    # `core.substrate.reamde.dev/llmprovider/default`.
     provider:
-      type: string
-      refersTo: provider
+      type: reference
+      kind: core.substrate.reamde.dev/llmprovider
       required: true
-      description: the llmprovider record id this agent's loop completes against
+      description: the llmprovider this agent's loop completes against
     model:
       type: string
       required: true
@@ -112,10 +118,10 @@ data:
       description: what the model may call, in declaration order
       fields:
         function:
-          type: string
-          refersTo: function
+          type: reference
+          kind: core.substrate.reamde.dev/function
           required: true
-          description: the function this entry names, by identity
+          description: the function this entry names
         name:
           type: string
           description: the model-facing tool name, aliasing the function
@@ -123,10 +129,10 @@ data:
           type: string
           description: the model-facing card, overriding the function's own
     agents:
-      type: string
+      type: reference
+      kind: core.substrate.reamde.dev/agent
       repeated: true
-      refersTo: agent
-      description: the sub-agent identities the loop exposes as tools
+      description: the sub-agents the loop exposes as tools
     budgets:
       type: object
       description: what bounds one invocation
@@ -165,9 +171,9 @@ data:
             leave it out and the query tool is withheld
           fields:
             kinds:
-              type: string
+              type: reference
+              kind: core.substrate.reamde.dev/kind
               repeated: true
-              refersTo: kind
               description: the record kinds every read is held to
             budgets:
               type: object
@@ -184,9 +190,9 @@ data:
                   max: 10000
                   description: how many records one run may read
         writes:
-          type: string
+          type: reference
+          kind: core.substrate.reamde.dev/kind
           repeated: true
-          refersTo: kind
           description: which record kinds it may create or change, the change
             requests it proposes among them
     # Withholds the agent from the interactive chat surface only: the console

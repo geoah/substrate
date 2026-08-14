@@ -166,10 +166,7 @@ func BuildAuthorities(docs []Document, source string) ([]*Authority, error) {
 		return b
 	}
 	for _, d := range docs {
-		authority := mstr(d.Data, "authority")
-		if d.Kind == DocAuthority {
-			authority = d.ID
-		}
+		authority := d.DeclaredAuthority()
 		if authority == "" {
 			l.errf("%s %s: data.authority is required", d.Kind, d.ID)
 			continue
@@ -697,6 +694,11 @@ var deletedDataKeys = map[string]string{
 	"functions":  "the retired mirror: an agent names its callables under `tools`",
 	"subagents":  "the retired mirror: an agent names its sub-agents under `agents`",
 	"sourceYAML": "the retired mirror: nothing stores a document's text, and the parsed declaration is the row",
+
+	// A pointer is a POINTER now. `refersTo` was a hint beside a string, read by
+	// nothing server-side and enforced nowhere; the property it marked is
+	// `type: reference` with a `kind:` pin, which is checked on every write.
+	"refersTo": "`type: reference` with a `kind:` pin — a pointer is a reference, and the pin is enforced rather than suggested",
 }
 
 // sortDocs orders a type's manifests by identity, so the registry a stream
@@ -1414,10 +1416,10 @@ var propKeys = map[string]bool{
 	"description": true, "base": true,
 	"fields": true, "writer": true, "displayName": true,
 	// `keyed` is `repeated`'s twin (a map instead of a list) and `keyPattern` is
-	// the contract its keys hold to; `refersTo` says what a string value NAMES;
-	// `managed` says the engine stamps the property. All three are declared
-	// shape, so they ride into the Definition map like every other key.
-	"keyed": true, "keyPattern": true, "refersTo": true, "managed": true,
+	// the contract its keys hold to; `managed` says the engine stamps the
+	// property. Both are declared shape, so they ride into the Definition map
+	// like every other key.
+	"keyed": true, "keyPattern": true, "managed": true,
 	// Presentational hints the read surfaces (the console's config/account form)
 	// consume verbatim from the Definition map: `required` marks a field the
 	// form refuses to submit empty, `default` seeds a create (an enum's default
@@ -1433,13 +1435,6 @@ var propKeys = map[string]bool{
 	// reserved-name checks live in parseType, where the whole property set is
 	// known.
 	"renamedFrom": true,
-}
-
-// refersToTargets is the closed set of `refersTo:` markers: what a string
-// value NAMES, for a client that wants to offer a picker instead of a text box.
-var refersToTargets = map[string]bool{
-	RefersToKind: true, RefersToFunction: true, RefersToAgent: true,
-	RefersToAuthority: true, RefersToProvider: true,
 }
 
 // writerRoles is the closed set of a property's `writer:` restriction: who
@@ -1720,18 +1715,6 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 			l.errf("%s: a keyed map stays out of fts and embed, exactly as an object does", where)
 		}
 		p.FTS, p.Embed = false, false
-	}
-	if rt := mstr(d, "refersTo"); rt != "" {
-		switch {
-		case p.Datatype != DatatypeString:
-			l.errf("%s: refersTo marks what a STRING value names, and this is %s — a typed pointer is `type: reference` with `to:`",
-				where, p.Datatype)
-		case !refersToTargets[rt]:
-			l.errf("%s: refersTo %q is not one of %s, %s, %s, %s, %s", where, rt,
-				RefersToKind, RefersToFunction, RefersToAgent, RefersToAuthority, RefersToProvider)
-		default:
-			p.RefersTo = rt
-		}
 	}
 	if w := mstr(d, "writer"); w != "" {
 		if !writerRoles[w] {
