@@ -31,7 +31,8 @@ func (a *app) loginCommand() *cobra.Command {
 		Long: `Log in to a substrate.
 
 Both factors are presented directly: the password and one code from the
-authenticator holding this account. The login mints a token record and returns
+authenticator holding this account — unless the substrate verifies no second
+factor, in which case no code is asked for. The login mints a token record and returns
 its secret exactly once; substratectl writes it to the config file (mode 0600) as the
 current context. The token implies the repository — there is nothing else to
 configure.
@@ -61,17 +62,18 @@ configure.
 			if err != nil {
 				return err
 			}
+			cl := newClient(server, "", a.hc)
 			// Validated before the request: every auth attempt is rate limited
 			// and a failure counts toward a lockout, so a code that cannot be
-			// right must not spend one.
-			code, err = a.askCode(code, "TOTP code: ")
+			// right must not spend one. The deployment says whether there is a
+			// code to ask for at all.
+			code, err = a.askCodeIfRequired(cmd.Context(), cl, code, "TOTP code: ")
 			if err != nil {
 				return err
 			}
 			if label == "" {
 				label = defaultTokenLabel()
 			}
-			cl := newClient(server, "", a.hc)
 			res, err := cl.login(cmd.Context(), factors{
 				Username: username, Password: password, TOTPCode: code, Label: label,
 			})

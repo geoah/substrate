@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { CODE_DIGITS, normalizeCode, register, registerEnroll } from "@/lib/api/auth"
+import { useAuthPolicy } from "@/lib/api/discovery"
 import { saveSession } from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
 
@@ -110,8 +111,12 @@ function RecoveryKeyField({ value }: { value: string }) {
  * attaches the one-time password to the login it just created rather than to
  * some existing item. Step two proves one code and commits the whole user in
  * one transaction — the repository, the sealed material, the credential and the
- * first token — ending LOGGED IN, because the response carries that token. */
+ * first token — ending LOGGED IN, because the response carries that token.
+ *
+ * Where the substrate verifies no second factor there IS no step two: the one
+ * form commits, and the seed is minted server-side and enrolled nowhere. */
 export function RegisterPage() {
+  const { totpRequired } = useAuthPolicy()
   const navigate = useNavigate()
   const [inviteCode, setInviteCode] = useState("")
   const [username, setUsername] = useState("")
@@ -119,7 +124,7 @@ export function RegisterPage() {
   const [confirm, setConfirm] = useState("")
   const [code, setCode] = useState("")
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null)
-  const [enrollment, setEnrollment] = useState<TOTPEnrollment | null>(null)
+  const [enrolled, setEnrolled] = useState<TOTPEnrollment | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setBusy] = useState(false)
 
@@ -150,12 +155,25 @@ export function RegisterPage() {
     password.length >= MIN_PASSWORD &&
     passwordsMatch
 
+  // DERIVED, not stored: a registration submitted before discovery answered
+  // runs under the strict default and buys an enrollment (which writes
+  // nothing). If the answer then says this substrate verifies no code, that
+  // enrollment is a seed with no door behind it, and the second step it would
+  // open is a ceremony over a secret nothing will check.
+  const enrollment = totpRequired ? enrolled : null
+
+  /** Step one. With no second factor to enroll it IS the whole registration:
+   * buying a seed nobody will ever be shown would be theater. */
   async function beginEnrollment() {
     if (!canEnroll) return
+    if (!totpRequired) {
+      await finish()
+      return
+    }
     setError(null)
     setBusy(true)
     try {
-      setEnrollment(await registerEnroll(inviteCode.trim(), username.trim()))
+      setEnrolled(await registerEnroll(inviteCode.trim(), username.trim()))
     } catch (err) {
       fail(err)
     } finally {
@@ -163,11 +181,15 @@ export function RegisterPage() {
     }
   }
 
-  const canFinish = enrollment !== null && normalizeCode(code) !== null
+  const canFinish = totpRequired
+    ? enrollment !== null && normalizeCode(code) !== null
+    : canEnroll
 
   async function finish() {
-    const normalized = normalizeCode(code)
-    if (!enrollment || !canFinish || !normalized) return
+    // An absent seed asks the substrate to mint one, which it only does where
+    // it verifies no code — so the enrolled-nowhere seed is never a surprise.
+    const normalized = totpRequired ? normalizeCode(code) : ""
+    if (!canFinish || normalized === null) return
     setError(null)
     setBusy(true)
     try {
@@ -176,7 +198,7 @@ export function RegisterPage() {
         inviteCode: inviteCode.trim(),
         username: name,
         password,
-        totpSecret: enrollment.totpSecret,
+        totpSecret: enrollment?.totpSecret ?? "",
         totpCode: normalized,
         label: "console",
       })
@@ -192,7 +214,9 @@ export function RegisterPage() {
     } catch (err) {
       if (err instanceof ApiError && err.code === "auth") {
         setError(
-          "The invite code or the 6-digit code is wrong. Check the code your authenticator shows right now and try again."
+          totpRequired
+            ? "The invite code or the 6-digit code is wrong. Check the code your authenticator shows right now and try again."
+            : "The invite code is wrong."
         )
         setCode("")
       } else {
@@ -249,8 +273,10 @@ export function RegisterPage() {
             <CardTitle>Register</CardTitle>
             <CardDescription>
               An invite code creates your user and your repository, seeded with
-              the shipped kinds. All three factors are required: username,
-              password and a {CODE_DIGITS}-digit code.
+              the shipped kinds.{" "}
+              {totpRequired
+                ? `All three factors are required: username, password and a ${CODE_DIGITS}-digit code.`
+                : "This substrate does not verify a second factor, so there is no authenticator to enroll: a username and a password make the user."}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
@@ -337,7 +363,7 @@ export function RegisterPage() {
                   <Field>
                     <Button type="submit" disabled={!canEnroll || isBusy}>
                       {isBusy && <Spinner />}
-                      Continue
+                      {totpRequired ? "Continue" : "Create my repository"}
                     </Button>
                   </Field>
                 )}

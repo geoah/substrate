@@ -37,6 +37,7 @@ boot.
 | `WEB_DIR`                      | —                                      | The built console, served at `/`. Empty disables static serving.                                          |
 | `SUBSTRATE_INVITE_CODE`        | — (unset: registration is off)         | The one door. See below.                                                                                  |
 | `SUBSTRATE_CREDENTIAL_KEY`     | —                                      | Seals the sealed store, which holds every secret-typed property's material (AES-256-GCM). Unset stores payloads unsealed, with a boot warning; `repository reseal` upgrades once it is set. |
+| `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                             | **Local development only.** Stops verifying the second factor, so a password is the whole credential: see [the dev door](auth.md#the-second-factor-can-be-switched-off-locally). Boots with a warning, and `GET /api` says so. |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. Unset mints a random key per boot, with a warning: flows in progress break on restart. |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers.                                                        |
 | `SUBSTRATE_CONSOLE_URL`        | —                                      | The console origin the OAuth return-page posts to and falls back to redirecting into. Empty is local dev. |

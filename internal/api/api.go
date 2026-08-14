@@ -54,6 +54,13 @@ type Config struct {
 	// the endpoints answer `unsupported`, exactly like any capability this
 	// deployment lacks.
 	InviteCode string
+	// TOTPDisabled mirrors the service's own dev escape hatch
+	// (SUBSTRATE_INSECURE_DISABLE_TOTP): the second factor is not verified, so
+	// the door stops DEMANDING a code — the credential changes take the
+	// password alone, and GET /api reports `auth.totpRequired: false` so a
+	// client hides the field instead of asking for something nothing checks.
+	// It changes no verification: refusing is the service's job either way.
+	TOTPDisabled bool
 	// Now is an optional clock seam for the auth rate limiter.
 	Now func() time.Time
 	// AuthInterval is the minimum spacing between unauthenticated auth
@@ -63,13 +70,14 @@ type Config struct {
 }
 
 type handler struct {
-	svc        substrate.Service
-	now        func() time.Time
-	authRate   *rateLimiter
-	inviteCode string
-	catalog    *catalog.Catalog
-	consoleURL string
-	maxDialect int
+	svc          substrate.Service
+	now          func() time.Time
+	authRate     *rateLimiter
+	inviteCode   string
+	totpDisabled bool
+	catalog      *catalog.Catalog
+	consoleURL   string
+	maxDialect   int
 
 	// schemas is the GraphQL schema cache, one entry per repository, rebuilt
 	// on registry-fingerprint changes (internal/gql owns the key and builder).
@@ -87,14 +95,15 @@ func New(cfg Config) http.Handler {
 		interval = defaultAuthInterval
 	}
 	h := &handler{
-		svc:        cfg.Service,
-		now:        now,
-		authRate:   newRateLimiter(interval, now),
-		inviteCode: cfg.InviteCode,
-		catalog:    cfg.Catalog,
-		consoleURL: strings.TrimRight(cfg.ConsoleURL, "/"),
-		maxDialect: cfg.MaxDialect,
-		schemas:    gql.NewCache(),
+		svc:          cfg.Service,
+		now:          now,
+		authRate:     newRateLimiter(interval, now),
+		inviteCode:   cfg.InviteCode,
+		totpDisabled: cfg.TOTPDisabled,
+		catalog:      cfg.Catalog,
+		consoleURL:   strings.TrimRight(cfg.ConsoleURL, "/"),
+		maxDialect:   cfg.MaxDialect,
+		schemas:      gql.NewCache(),
 	}
 
 	r := chi.NewRouter()

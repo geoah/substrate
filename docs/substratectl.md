@@ -41,6 +41,12 @@ back one code with the password you choose. `--totp-secret` brings your own
 seed and skips the enrollment call, which is what makes an unattended
 registration possible.
 
+Against a substrate that verifies no second factor
+([the dev door](auth.md#the-second-factor-can-be-switched-off-locally)),
+`register` and `login` ask for no code and `register` skips the enrollment
+entirely: `substratectl` reads `GET /api` first and stops asking for something
+nothing checks.
+
 `substratectl login` presents both factors and mints a token record, which it stores
 as the current context. `substratectl logout` revokes that token record and then
 forgets it — a session _is_ the record, so leaving it alive would leave the

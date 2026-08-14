@@ -110,7 +110,7 @@ func TestRegisterWaitsOutTheDoorsPacing(t *testing.T) {
 	if !strings.Contains(out, "registered geoah") {
 		t.Errorf("the retry did not land:\n%s", out)
 	}
-	if got := h.fake.requests; len(got) != 3 {
+	if got := h.fake.doorRequests(); len(got) != 3 {
 		t.Fatalf("requests = %v, want the enrollment and TWO commits", got)
 	}
 }
@@ -127,7 +127,7 @@ func TestRegisterDoesNotWaitOutALockout(t *testing.T) {
 	if err == nil {
 		t.Fatal("an hour-long lockout was waited out")
 	}
-	if len(h.fake.requests) != 1 {
-		t.Errorf("requests = %v, want the one refused commit", h.fake.requests)
+	if got := h.fake.doorRequests(); len(got) != 1 {
+		t.Errorf("requests = %v, want the one refused commit", got)
 	}
 }

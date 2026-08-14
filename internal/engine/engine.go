@@ -47,6 +47,9 @@ type options struct {
 	// insecureAllowSuperuser downgrades the fail-closed role check to a warning
 	// (WithInsecureAllowSuperuser). Dev/test only; never the production default.
 	insecureAllowSuperuser bool
+	// insecureDisableTOTP stops verifying the second factor
+	// (WithInsecureDisableTOTP). Dev/test only; never the production default.
+	insecureDisableTOTP bool
 }
 
 // Option configures Open.
@@ -106,6 +109,20 @@ func WithInsecureAllowSuperuser() Option {
 	return func(o *options) { o.insecureAllowSuperuser = true }
 }
 
+// WithInsecureDisableTOTP STOPS VERIFYING THE SECOND FACTOR. Every door that
+// takes a code — login, registration, the password change, the re-enrollment —
+// accepts any code and an absent one, so the password is the only thing
+// between a caller and the account. It exists for a local substrate that is
+// wiped daily (SUBSTRATE_INSECURE_DISABLE_TOTP, which `mise run dev` sets);
+// never set it where the substrate is reachable.
+//
+// A seed is still minted, still sealed and still carried through every
+// credential rewrite, so turning this back off restores the factor rather than
+// locking the user out of an account that has none.
+func WithInsecureDisableTOTP() Option {
+	return func(o *options) { o.insecureDisableTOTP = true }
+}
+
 type service struct {
 	dsn string
 	// admin is the DSN's own user: the DDL, the role setup, and the index
@@ -131,7 +148,10 @@ type service struct {
 	oauth *oauthflow.Client
 	// credKey seals the sealed store (AES-256-GCM); empty stores plain.
 	credKey []byte
-	log     *slog.Logger
+	// totpDisabled stops verifying the second factor (WithInsecureDisableTOTP):
+	// the password is then the whole credential. Dev only.
+	totpDisabled bool
+	log          *slog.Logger
 	// gqlSchemas caches the agent loop's GraphQL schema per repository
 	// (internal/gql owns the key and builder); the API layer holds its own.
 	gqlSchemas *gql.Cache
@@ -193,17 +213,18 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	// nothing and may not create, so the DSN's own user is the point.
 	admin.SetMaxOpenConns(4)
 	s := &service{
-		dsn:        dsn,
-		admin:      admin,
-		base:       reg,
-		embedder:   o.embedder,
-		llmBaseURL: o.llmBaseURL,
-		llmAPIKey:  o.llmAPIKey,
-		credKey:    deriveCredentialKey(o.credKey),
-		log:        o.log,
-		gqlSchemas: gql.NewCache(),
-		datasets:   map[string]*dataset{},
-		opening:    map[string]chan struct{}{},
+		dsn:          dsn,
+		admin:        admin,
+		base:         reg,
+		embedder:     o.embedder,
+		llmBaseURL:   o.llmBaseURL,
+		llmAPIKey:    o.llmAPIKey,
+		credKey:      deriveCredentialKey(o.credKey),
+		totpDisabled: o.insecureDisableTOTP,
+		log:          o.log,
+		gqlSchemas:   gql.NewCache(),
+		datasets:     map[string]*dataset{},
+		opening:      map[string]chan struct{}{},
 	}
 	if o.oauthKey != "" || o.oauthURL != "" {
 		// An empty HMAC key would make every state "signature" forgeable —
@@ -222,6 +243,9 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	}
 	if len(s.credKey) == 0 {
 		s.log.Warn("substrate: no credential key (WithCredentialKey) — stored provider tokens are not sealed")
+	}
+	if s.totpDisabled {
+		s.log.Warn("substrate: TOTP VERIFICATION IS OFF (SUBSTRATE_INSECURE_DISABLE_TOTP) — a password is the whole credential; this is a local-development setting")
 	}
 	// FAIL CLOSED on the isolation roles. The scoped pools run as substrate_app
 	// (bound by FORCE ROW LEVEL SECURITY) and the maintenance pool as

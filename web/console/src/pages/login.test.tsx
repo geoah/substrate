@@ -22,6 +22,12 @@ vi.mock("@/router", () => ({
   loginRoute: { useSearch: () => ({ redirect: undefined }) },
 }))
 
+/** What GET /api said about the door. Mocked at the module so the fetch
+ * assertions below stay about the login call itself; discovery.test.ts covers
+ * the fetching. */
+const policy = vi.hoisted(() => ({ totpRequired: true }))
+vi.mock("@/lib/api/discovery", () => ({ useAuthPolicy: () => policy }))
+
 import { LoginPage } from "./login"
 
 function jsonResponse(
@@ -60,6 +66,7 @@ describe("LoginPage", () => {
     vi.stubGlobal("fetch", fetchMock)
     clearSession()
     navigate.mockClear()
+    policy.totpRequired = true
   })
 
   afterEach(() => {
@@ -123,6 +130,29 @@ describe("LoginPage", () => {
     signIn()
     await screen.findByText(/try again in 5s/i)
     expect(getToken()).toBeNull()
+  })
+
+  it("asks for no code where the substrate verifies none", async () => {
+    policy.totpRequired = false
+    fetchMock.mockResolvedValue(jsonResponse(201, MINT))
+    render(<LoginPage />)
+    expect(screen.queryByLabelText("One-time code")).toBeNull()
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "geoah" },
+    })
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct horse battery" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }))
+    await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe("/login")
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      username: "geoah",
+      password: "correct horse battery",
+      totpCode: "",
+      label: "console",
+    })
   })
 
   it("rejects a non-six-digit code before any request", async () => {

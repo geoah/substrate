@@ -16,6 +16,10 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }))
 
+/** What GET /api said about the door; discovery.test.ts covers the fetching. */
+const policy = vi.hoisted(() => ({ totpRequired: true }))
+vi.mock("@/lib/api/discovery", () => ({ useAuthPolicy: () => policy }))
+
 import { AccountPage } from "./account"
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -40,6 +44,7 @@ describe("AccountPage", () => {
     vi.stubGlobal("fetch", fetchMock)
     clearSession()
     saveSession("substrate_tok_current", "geoah", "tok-1")
+    policy.totpRequired = true
   })
 
   afterEach(() => {
@@ -131,6 +136,43 @@ describe("AccountPage", () => {
       totpCode: "111111",
       newTotpSecret: "NEWSEED",
       newTotpCode: "222222",
+    })
+  })
+
+  it("drops the code field and the re-enrollment where no factor is verified", async () => {
+    policy.totpRequired = false
+    fetchMock.mockResolvedValue(jsonResponse(200, { username: "geoah" }))
+    render(<AccountPage />)
+    // Nothing to replace, so the re-enrollment card is not offered at all.
+    expect(screen.queryByText("Replace your authenticator")).toBeNull()
+    expect(screen.getByText("Second factor: off")).toBeTruthy()
+
+    const card = within(cardFor("Change password"))
+    expect(card.queryByLabelText("Current code")).toBeNull()
+    fireEvent.change(card.getByLabelText("Current password"), {
+      target: { value: "old-passphrase" },
+    })
+    fireEvent.change(card.getByLabelText("New password"), {
+      target: { value: "hunter2hunter2" },
+    })
+    fireEvent.change(card.getByLabelText("Confirm new password"), {
+      target: { value: "hunter2hunter2" },
+    })
+    fireEvent.click(card.getByRole("button", { name: "Change password" }))
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([url]) => String(url) === "/password")
+      ).toBe(true)
+    )
+    const call = fetchMock.mock.calls.find(
+      ([url]) => String(url) === "/password"
+    )!
+    expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({
+      username: "geoah",
+      password: "old-passphrase",
+      totpCode: "",
+      newPassword: "hunter2hunter2",
     })
   })
 })

@@ -23,6 +23,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { CODE_DIGITS, login, normalizeCode } from "@/lib/api/auth"
+import { useAuthPolicy } from "@/lib/api/discovery"
 import { saveSession } from "@/lib/api/session"
 import { ApiError } from "@/lib/api/types"
 import { loginRoute } from "@/router"
@@ -45,15 +46,19 @@ function describeError(err: unknown): string {
   return "Something went wrong. Try again."
 }
 
-const loginSchema = z.object({
-  username: z.string().trim().min(1, "Enter your username."),
-  password: z.string().min(1, "Enter your password."),
-  code: z.string().refine((v) => normalizeCode(v) !== null, {
-    message: `Enter the current ${CODE_DIGITS}-digit code.`,
-  }),
-})
+/** The code is required exactly when the substrate verifies one; where it does
+ * not, an empty field is valid and the input is never rendered. */
+function loginSchema(totpRequired: boolean) {
+  return z.object({
+    username: z.string().trim().min(1, "Enter your username."),
+    password: z.string().min(1, "Enter your password."),
+    code: z.string().refine((v) => !totpRequired || normalizeCode(v) !== null, {
+      message: `Enter the current ${CODE_DIGITS}-digit code.`,
+    }),
+  })
+}
 
-type LoginValues = z.infer<typeof loginSchema>
+type LoginValues = z.infer<ReturnType<typeof loginSchema>>
 
 /** Sign in: username, password and the current TOTP code — all three, every
  * time. The response is a token RECORD and its secret; there is no session
@@ -61,16 +66,24 @@ type LoginValues = z.infer<typeof loginSchema>
 export function LoginPage() {
   const navigate = useNavigate()
   const search = loginRoute.useSearch()
+  const { totpRequired } = useAuthPolicy()
   const [apiError, setApiError] = useState<string | null>(null)
+  // The policy lands one render AFTER the first paint, so the resolver has to
+  // FOLLOW it rather than be fixed at mount: react-hook-form reads the options
+  // it is given on every render, and this form must not be remounted to change
+  // them — a remount resets the fields, and by then a password manager has
+  // filled the username and password in.
   const form = useForm<LoginValues>({
-    resolver: zodResolver(loginSchema),
+    resolver: zodResolver(loginSchema(totpRequired)),
     defaultValues: { username: "", password: "", code: "" },
   })
 
   async function onSubmit(values: LoginValues) {
     setApiError(null)
-    const code = normalizeCode(values.code)
-    if (!code) return
+    // Where nothing verifies a code, none is sent: the field is not shown, so
+    // there is nothing to normalize and nothing to refuse.
+    const code = totpRequired ? normalizeCode(values.code) : ""
+    if (code === null) return
     const username = values.username.trim()
     let minted
     try {
@@ -100,7 +113,9 @@ export function LoginPage() {
           <CardHeader>
             <CardTitle>Sign in</CardTitle>
             <CardDescription>
-              Your username, password and the current {CODE_DIGITS}-digit code.
+              {totpRequired
+                ? `Your username, password and the current ${CODE_DIGITS}-digit code.`
+                : "Your username and password — this substrate does not verify a second factor."}{" "}
               Signing in mints a token that stays in this browser.
             </CardDescription>
           </CardHeader>
@@ -129,24 +144,26 @@ export function LoginPage() {
                   />
                   <FieldError errors={[errors.password]} />
                 </Field>
-                <Field data-invalid={!!errors.code || undefined}>
-                  <FieldLabel htmlFor="code">One-time code</FieldLabel>
-                  <Input
-                    id="code"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    maxLength={CODE_DIGITS + 2}
-                    placeholder="123456"
-                    className="data tracking-[0.25em]"
-                    aria-invalid={!!errors.code || !!apiError}
-                    {...form.register("code")}
-                  />
-                  <FieldDescription>
-                    The current {CODE_DIGITS}-digit code from your
-                    authenticator.
-                  </FieldDescription>
-                  <FieldError errors={[errors.code]} />
-                </Field>
+                {totpRequired && (
+                  <Field data-invalid={!!errors.code || undefined}>
+                    <FieldLabel htmlFor="code">One-time code</FieldLabel>
+                    <Input
+                      id="code"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={CODE_DIGITS + 2}
+                      placeholder="123456"
+                      className="data tracking-[0.25em]"
+                      aria-invalid={!!errors.code || !!apiError}
+                      {...form.register("code")}
+                    />
+                    <FieldDescription>
+                      The current {CODE_DIGITS}-digit code from your
+                      authenticator.
+                    </FieldDescription>
+                    <FieldError errors={[errors.code]} />
+                  </Field>
+                )}
                 {apiError && (
                   <p
                     role="alert"

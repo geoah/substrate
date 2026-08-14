@@ -41,7 +41,8 @@ is a restart. Every task is a subcommand of `.mise/dev.sh`.
 
 ```bash
 mise run dev            # foreground; dev:up is the same in the background
-mise run dev:status     # database, server, console, URLs
+mise run dev:totp       # dev, with the second factor ENFORCED
+mise run dev:status     # database, server, console, URLs, which door
 mise run dev:restart    # rebuild and restart; the data stays
 mise run dev:logs
 mise run dev:wipe       # DELETE the database: the next start is a fresh substrate
@@ -51,6 +52,16 @@ mise run dev:wipe       # DELETE the database: the next start is a fresh substra
 there is no unregister, so any change to the door is tested by throwing the
 database away — `dev:wipe` here, `docker compose down -v` on the compose path. `bin/substratectl --dsn "$(mise run dev:dsn)" …` is the operator
 hat against it, and `mise run console:build` puts the console at `/`.
+
+**The dev door has no second factor.** Every `dev*` task sets
+`SUBSTRATE_INSECURE_DISABLE_TOTP=true`, so registering and signing in are a
+username and a password: enrolling an authenticator for a database that gets
+wiped is friction with nothing behind it. The engine still mints and seals a
+seed, and the deployment says which door it runs at `GET /api`
+(`auth.totpRequired`), which is what the console and `substratectl` read before
+they ask anybody for a code. A change to the door is tested under
+`mise run dev:totp`, where the factor is enforced, and NEVER by setting the
+variable outside this tree.
 
 **Run the engine suite on its own.** `internal/engine`'s `*_db_test.go` files
 each start a pgvector testcontainer, and they starve under a full-tree parallel

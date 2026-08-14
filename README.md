@@ -114,6 +114,7 @@ budgets.
 | `WEB_DIR`                      | —                               | the built console, served at `/`; empty disables it            |
 | `SUBSTRATE_INVITE_CODE`        | — (unset ⇒ registration closed) | the one door: `POST /register` needs it                        |
 | `SUBSTRATE_CREDENTIAL_KEY`     | —                               | seals the sealed store (provider tokens, every secret property's material); unset ⇒ plaintext and a warning |
+| `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                      | **local development only**: stops verifying the second factor, so a password is the whole credential |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                               | the one redirect URI providers register                        |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                               | signs OAuth flow state                                         |
 | `SUBSTRATE_CONSOLE_URL`        | —                               | postMessage origin for the OAuth return page                   |
@@ -133,8 +134,9 @@ Toolchain is [mise](https://mise.jdx.dev). `mise install` once, then:
 
 ```bash
 mise run dev            # Postgres in a container + the server on :8080
-mise run dev:up         # the same, in the background
-mise run dev:status     # what is running, and on which URLs
+mise run dev:totp       # the same, with the second factor ENFORCED
+mise run dev:up         # dev, in the background
+mise run dev:status     # what is running, on which URLs, which door
 mise run dev:logs       # follow the background server
 mise run dev:restart    # rebuild and restart; the data stays
 mise run dev:stop       # stop the server and its Postgres; the data stays
@@ -150,6 +152,20 @@ log live in `.dev/`.
 user and there is no unregister, so testing the door twice means throwing it
 away: `mise run dev:wipe` on this path, `docker compose down -v` on the compose
 one.
+
+**The second factor is off here, and nowhere else.** Every `mise run dev*` task
+sets `SUBSTRATE_INSECURE_DISABLE_TOTP=true`, so registering takes a username
+and a password, signing in takes the same two, and no authenticator entry is
+enrolled for a repository `dev:wipe` will delete tomorrow. The console and
+`substratectl` both read `GET /api` and stop asking for a code when the
+substrate says it verifies none; `dev:status` prints which door is up, and
+every start says so on its first line. `mise run dev:totp` runs the same
+substrate with the factor enforced — test a change to the door there. A user
+registered while it was off has a seed the substrate minted and nobody holds,
+so putting the factor back means `substratectl user reset <username>` on the
+box (or `dev:wipe`). Set `SUBSTRATE_INSECURE_DISABLE_TOTP=false` in the
+environment to opt out per run; never set it anywhere a substrate is reachable,
+where it would make a leaked password the account.
 
 The server binds every interface, so anything on the same LAN or tailnet
 reaches it — `dev:status` prints the addresses it finds. That is the point when

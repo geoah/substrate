@@ -40,6 +40,7 @@ import {
   totpChange,
   totpEnroll,
 } from "@/lib/api/auth"
+import { useAuthPolicy } from "@/lib/api/discovery"
 import { getUsername } from "@/lib/api/session"
 import { ApiError, type TOTPEnrollment } from "@/lib/api/types"
 
@@ -72,6 +73,7 @@ async function copy(value: string) {
 
 export function AccountPage() {
   const username = getUsername() ?? ""
+  const { totpRequired } = useAuthPolicy()
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -79,8 +81,9 @@ export function AccountPage() {
         <div>
           <h1 className="text-lg font-semibold">Account</h1>
           <p className="text-xs text-muted-foreground">
-            Your credential. Both changes below need your current password and
-            code in the request — a signed-in browser is not enough, by design.
+            Your credential. Changing it needs your current password
+            {totpRequired && " and code"} in the request — a signed-in browser
+            is not enough, by design.
           </p>
         </div>
       </div>
@@ -109,15 +112,21 @@ export function AccountPage() {
             </CardContent>
           </Card>
 
-          <PasswordCard username={username} />
-          <TotpCard username={username} />
+          <PasswordCard username={username} totpRequired={totpRequired} />
+          {totpRequired ? <TotpCard username={username} /> : <TotpOffCard />}
         </div>
       </div>
     </div>
   )
 }
 
-function PasswordCard({ username }: { username: string }) {
+function PasswordCard({
+  username,
+  totpRequired,
+}: {
+  username: string
+  totpRequired: boolean
+}) {
   const [password, setPassword] = useState("")
   const [code, setCode] = useState("")
   const [next, setNext] = useState("")
@@ -129,13 +138,13 @@ function PasswordCard({ username }: { username: string }) {
   const canSubmit =
     username !== "" &&
     password.length > 0 &&
-    normalizeCode(code) !== null &&
+    (!totpRequired || normalizeCode(code) !== null) &&
     next.length >= MIN_PASSWORD &&
     matches
 
   async function submit() {
-    const normalized = normalizeCode(code)
-    if (!canSubmit || !normalized) return
+    const normalized = totpRequired ? normalizeCode(code) : ""
+    if (!canSubmit || normalized === null) return
     setError(null)
     setBusy(true)
     try {
@@ -185,19 +194,21 @@ function PasswordCard({ username }: { username: string }) {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </Field>
-            <Field>
-              <FieldLabel htmlFor="pw-code">Current code</FieldLabel>
-              <Input
-                id="pw-code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={CODE_DIGITS + 2}
-                placeholder="123456"
-                className="data tracking-[0.25em]"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-              />
-            </Field>
+            {totpRequired && (
+              <Field>
+                <FieldLabel htmlFor="pw-code">Current code</FieldLabel>
+                <Input
+                  id="pw-code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={CODE_DIGITS + 2}
+                  placeholder="123456"
+                  className="data tracking-[0.25em]"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                />
+              </Field>
+            )}
             <Field>
               <FieldLabel htmlFor="pw-new">New password</FieldLabel>
               <Input
@@ -235,6 +246,35 @@ function PasswordCard({ username }: { username: string }) {
             </Field>
           </FieldGroup>
         </form>
+      </CardContent>
+    </Card>
+  )
+}
+
+/** What stands where the re-enrollment normally does on a substrate that
+ * verifies no code. Replacing an authenticator here would be a ceremony with
+ * nothing on the other end of it — and the seed a registration minted was
+ * never shown to anybody, so the honest thing is to say who can put the factor
+ * back and what it costs. */
+function TotpOffCard() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Second factor: off</CardTitle>
+        <CardDescription>
+          This substrate boots with{" "}
+          <code className="data">SUBSTRATE_INSECURE_DISABLE_TOTP</code>, so no
+          code is verified anywhere and your password is the whole credential.
+          It is a local-development setting.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-muted-foreground">
+          Turning it back on restores the factor as it was — which for a user
+          registered while it was off is a secret nobody holds. The operator
+          re-issues one on the box with{" "}
+          <code className="data">substratectl user reset</code>.
+        </p>
       </CardContent>
     </Card>
   )
