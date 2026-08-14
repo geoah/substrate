@@ -75,7 +75,7 @@ type graphqlRequest struct {
 	// Extensions is the standard GraphQL-over-HTTP escape hatch (persisted
 	// queries, tracing). It is an open map so the strict body decoder accepts
 	// a spec-compliant client while still rejecting a misspelled `query`.
-	Extensions map[string]any `json:"bundles,omitempty"`
+	Extensions map[string]any `json:"extensions,omitempty"`
 }
 
 func (h *handler) postGraphQL(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +114,7 @@ func (h *handler) postGraphQL(w http.ResponseWriter, r *http.Request) {
 }
 
 // attachProblemExtensions puts the ONE wire problem object into
-// each resolver-originated error's `bundles`, so a GraphQL error carries
+// each resolver-originated error's `extensions`, so a GraphQL error carries
 // the same {code, message, problems} a REST caller would see. Query
 // syntax/validation errors have no underlying resolver error and are left with
 // their native GraphQL shape.
