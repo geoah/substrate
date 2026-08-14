@@ -26,7 +26,7 @@ FROM golang:1.26-alpine AS gotoolchain
 # with those deps — so a connector can `import googleapiclient` by declaring it
 # inline, with no pip in the base image. Dependency-free Python and all Go
 # functions never touch uv.
-FROM alpine:3.21
+FROM alpine:3.24
 
 ARG TARGETPLATFORM
 
