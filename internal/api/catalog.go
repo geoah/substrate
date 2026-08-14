@@ -5,18 +5,25 @@ import (
 	"net/http"
 
 	"github.com/geoah/substrate/internal/catalog"
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // catalogItem is one catalog entry on the wire: the shipped bundle plus
-// whether THIS repository already installed it. The bundle's closure documents are
-// unexported, so only the preview metadata marshals.
+// whether THIS repository already installed it, and (for an installed one the
+// shipped closure has moved past) what re-installing would do. The bundle's
+// closure documents are unexported, so only the preview metadata marshals.
 type catalogItem struct {
 	*catalog.Bundle
 	Installed bool `json:"installed"`
+	// Upgrade is present only when the shipped closure moves something here:
+	// the version motion and the guard lines an install would refuse on. The
+	// upgrade itself is the existing install verb, unchanged.
+	Upgrade *substrate.BundleUpgrade `json:"upgrade,omitempty"`
 }
 
 // getCatalog lists the installable bundle closures shipped in the binary, each
-// flagged with whether this repository has it installed.
+// flagged with whether this repository has it installed and whether the
+// shipped closure would upgrade it.
 func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 	items := []catalogItem{}
 	if h.catalog != nil {
@@ -26,7 +33,7 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, b := range h.catalog.Bundles() {
-			items = append(items, catalogItem{Bundle: b, Installed: installed[b.ID]})
+			items = append(items, h.catalogItemFor(r.Context(), b, installed[b.ID]))
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"catalog": items})
@@ -34,7 +41,7 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 
 // getCatalogItem is one shipped bundle's detail — the resources it installs
 // (types/functions/agents/triggers) so the console can preview, plus the
-// installed flag.
+// installed flag and the upgrade preview.
 func (h *handler) getCatalogItem(w http.ResponseWriter, r *http.Request) {
 	if h.catalog == nil {
 		writeError(w, http.StatusNotFound, codeNotFound, "no catalog is shipped")
@@ -50,7 +57,30 @@ func (h *handler) getCatalogItem(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, catalogItem{Bundle: b, Installed: installed[b.ID]})
+	writeJSON(w, http.StatusOK, h.catalogItemFor(r.Context(), b, installed[b.ID]))
+}
+
+// catalogItemFor assembles one wire entry, asking the catalog for the upgrade
+// preview only where it can mean anything: an installed bundle. The preview is
+// attached only when it moves something, so an up-to-date bundle marshals
+// exactly as before.
+//
+// A preview that FAILS costs that entry its upgrade offer and nothing else.
+// The listing is what the console's Registry (and now its sidebar badge, on
+// every page) reads, so one unpreviewable closure must not blank it — the
+// same reason catalog.Load drops a broken directory instead of bricking the
+// shipped set. The offer is an extra; the listing is the promise.
+func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, installed bool) catalogItem {
+	item := catalogItem{Bundle: b, Installed: installed}
+	if !installed {
+		return item
+	}
+	up, err := h.catalog.Upgrade(ctx, b.ID, DatasetFrom(ctx))
+	if err != nil || up == nil || !up.Available {
+		return item
+	}
+	item.Upgrade = up
+	return item
 }
 
 // postCatalogInstall applies a shipped bundle's closure into the caller's

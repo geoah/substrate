@@ -44,6 +44,44 @@ type BundleStatus struct {
 	QuarantineReason string `json:"quarantineReason,omitempty"`
 }
 
+// BundleUpgrade is what re-installing a bundle's SHIPPED closure over this
+// repository's stored declarations would do, computed on read and stored
+// nowhere. The install verb is already the upgrade (a bundle document
+// replaces its authority whole, breakage refused); this is that verb's
+// preview, so the console can offer the upgrade, or explain why it would be
+// refused, before anyone asks for it.
+type BundleUpgrade struct {
+	// Available reports the shipped closure moves at least one stored
+	// declaration: a declaration this repository lacks, one whose shipped
+	// version is newer, or one the closure stopped shipping (which a
+	// re-install prunes).
+	Available bool `json:"available"`
+	// From and To are the stored and shipped versions of the bundle's owned
+	// authority. From is empty when the stored authority row carries none.
+	From string `json:"from,omitempty"`
+	To   string `json:"to,omitempty"`
+	// Changes lists each declaration the upgrade would move.
+	Changes []BundleUpgradeChange `json:"changes,omitempty"`
+	// Blockers are the refuse-breakage guard lines the install verb would
+	// refuse this closure on: the same guards, with the live-row counts.
+	// Empty means the upgrade would be admitted.
+	Blockers []string `json:"blockers,omitempty"`
+}
+
+// BundleUpgradeChange is one declaration an upgrade would move.
+type BundleUpgradeChange struct {
+	// Kind is the declaration's manifest kind: "kind", "function", "authority"…
+	Kind string `json:"kind"`
+	// ID is the declaration's record id.
+	ID string `json:"id"`
+	// From is the stored version; empty when this repository lacks the
+	// declaration.
+	From string `json:"from,omitempty"`
+	// To is the shipped version; empty when the closure stopped shipping the
+	// declaration and the upgrade would prune it.
+	To string `json:"to,omitempty"`
+}
+
 // InputStatus is one declared input's resolution.
 type InputStatus struct {
 	// Name is the input's declared name — also the edge rel the bind verb

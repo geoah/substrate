@@ -49,6 +49,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSkeleton,
@@ -59,12 +60,14 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 import { logout } from "@/lib/api/auth"
+import { catalogQueryOptions } from "@/lib/api/catalog"
 import {
   buildKindNav,
   kindsQueryOptions,
   type AuthorityNav,
 } from "@/lib/api/kinds"
 import { getToken, getUsername, maskedToken } from "@/lib/api/session"
+import { upgradableBundleCount } from "@/lib/bundles"
 
 const consoleItems = [
   { title: "Overview", to: "/", icon: HomeIcon },
@@ -72,6 +75,27 @@ const consoleItems = [
   { title: "Registry", to: "/registry", icon: PackageIcon },
   { title: "Agents", to: "/agents", icon: BotIcon },
 ] as const
+
+/** The Registry row's number: imported bundles whose shipped closure moved
+ * past what this repository stores, from the same catalog read the Registry
+ * page makes (shared cache, no second endpoint). Nothing to upgrade renders
+ * nothing: a permanent zero is noise, not a signal. */
+function RegistryUpgradeBadge() {
+  const catalog = useQuery(catalogQueryOptions)
+  const count = useMemo(
+    () => upgradableBundleCount(catalog.data ?? []),
+    [catalog.data]
+  )
+  if (count <= 0) return null
+  return (
+    <SidebarMenuBadge className="bg-primary text-primary-foreground">
+      <span className="sr-only">
+        {count === 1 ? "1 bundle upgrade available" : `${count} bundle upgrades available`}
+      </span>
+      <span aria-hidden>{count}</span>
+    </SidebarMenuBadge>
+  )
+}
 
 /* Rule 1 (GUIDE §5): sub rows hover full-width, exactly like top-level rows —
  * the default inset/border of SidebarMenuSub is removed and depth is carried
@@ -304,6 +328,7 @@ export function AppSidebar() {
                     <item.icon />
                     <span>{item.title}</span>
                   </SidebarMenuButton>
+                  {item.to === "/registry" && <RegistryUpgradeBadge />}
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>

@@ -138,7 +138,7 @@ func shippedAuthorities(reg *vocabulary.Registry) map[string]bool {
 // already own here.
 func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	reg := ds.svc.base
-	stored, err := ds.storedDeclarationVersions(ctx)
+	stored, err := ds.storedDeclarations(ctx)
 	if err != nil {
 		return err
 	}
@@ -170,7 +170,7 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 			switch {
 			case !exists:
 				write = true // a declaration this repository has never had
-			case compareSchemaVersion(d.version(), have) > 0:
+			case vocabulary.CompareVersions(d.version(), have.version) > 0:
 				write = true // the shipped declaration moved forward
 			default:
 				keep[d.key()] = true // same or older than stored: never a downgrade
@@ -213,7 +213,7 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 		if err := t.lockKey(registryDepKey(ds)); err != nil {
 			return err
 		}
-		guards, err := t.narrowingGuards(narrowings)
+		guards, err := narrowingGuards(t, narrowings)
 		if err != nil {
 			return err
 		}
@@ -249,122 +249,47 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	return ds.loadStoredVocabulary(ctx)
 }
 
-// storedDeclarationVersions reads every stored declaration's version, keyed
-// exactly as authorityDeclarations keys it. A row without one reads as the empty
-// version, which compares below everything — so a declaration written before
-// versions were mandatory upgrades on the next open rather than sticking.
-func (ds *dataset) storedDeclarationVersions(ctx context.Context) (map[string]string, error) {
-	args := make([]any, 0, len(vocabularyKindRefs))
+// storedDeclaration is one stored declaration as the version diff sees it:
+// its version, and its declaring authority (the authority row's own id).
+type storedDeclaration struct {
+	version   string
+	authority string
+}
+
+// storedDeclarations reads every stored declaration's version and authority,
+// keyed exactly as authorityDeclarations keys it. A row without a version
+// reads as the empty version, which compares below everything — so a
+// declaration written before versions were mandatory upgrades on the next
+// open rather than sticking.
+func (ds *dataset) storedDeclarations(ctx context.Context) (map[string]storedDeclaration, error) {
+	args := make([]any, 0, len(vocabularyKindRefs)+1)
 	ph := make([]string, 0, len(vocabularyKindRefs))
 	for i, ident := range vocabularyKindRefs {
 		args = append(args, ident)
 		ph = append(ph, "$"+strconv.Itoa(i+1))
 	}
+	args = append(args, kindAuthority)
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT kind, id, COALESCE(props->>'version', '') FROM records
+		SELECT kind, id, COALESCE(props->>'version', ''),
+		       CASE WHEN kind = $`+strconv.Itoa(len(args))+` THEN id
+		            ELSE COALESCE(props->>'authority', '') END
+		FROM records
 		WHERE kind IN (`+strings.Join(ph, ", ")+`) AND deleted_at IS NULL`, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	out := map[string]string{}
+	out := map[string]storedDeclaration{}
 	for rows.Next() {
-		var typ, id, version string
-		if err := rows.Scan(&typ, &id, &version); err != nil {
+		var typ, id, version, authority string
+		if err := rows.Scan(&typ, &id, &version, &authority); err != nil {
 			return nil, err
 		}
-		out[typ+"\x00"+id] = version
+		out[typ+"\x00"+id] = storedDeclaration{version: version, authority: authority}
 	}
 	return out, rows.Err()
 }
 
-// --- version ordering ---------------------------------------------------------
-
-// compareSchemaVersion orders two declaration versions the way Kubernetes
-// orders API versions, because that is the shape the manifests use
-// (`v1alpha1`, `v1beta2`, `v1`, `v2`): a GA version outranks any pre-release
-// of the same major, beta outranks alpha, and the trailing number breaks the
-// tie. Anything unparseable falls back to a plain string comparison, so two
-// spellings of the same convention still order deterministically and an
-// unfamiliar one never silently wins.
-//
-// It returns -1, 0 or 1 for a < b, a == b, a > b.
-func compareSchemaVersion(a, b string) int {
-	if a == b {
-		return 0
-	}
-	av, aok := parseVocabularyVersion(a)
-	bv, bok := parseVocabularyVersion(b)
-	if !aok || !bok {
-		return strings.Compare(a, b)
-	}
-	if av.major != bv.major {
-		return cmpInt(av.major, bv.major)
-	}
-	if av.stage != bv.stage {
-		return cmpInt(av.stage, bv.stage)
-	}
-	return cmpInt(av.minor, bv.minor)
-}
-
-// vocabularyVersion is a parsed `v<major>[alpha|beta<minor>]`.
-type vocabularyVersion struct {
-	major int
-	// stage orders the maturity: alpha 0, beta 1, GA 2.
-	stage int
-	minor int
-}
-
-func parseVocabularyVersion(s string) (vocabularyVersion, bool) {
-	var v vocabularyVersion
-	rest, ok := strings.CutPrefix(s, "v")
-	if !ok || rest == "" {
-		return v, false
-	}
-	digits := 0
-	for digits < len(rest) && rest[digits] >= '0' && rest[digits] <= '9' {
-		digits++
-	}
-	if digits == 0 {
-		return v, false
-	}
-	major, err := strconv.Atoi(rest[:digits])
-	if err != nil {
-		return v, false
-	}
-	v.major = major
-	tail := rest[digits:]
-	switch {
-	case tail == "":
-		v.stage = 2 // GA
-		return v, true
-	case strings.HasPrefix(tail, "alpha"):
-		v.stage = 0
-		tail = strings.TrimPrefix(tail, "alpha")
-	case strings.HasPrefix(tail, "beta"):
-		v.stage = 1
-		tail = strings.TrimPrefix(tail, "beta")
-	default:
-		return v, false
-	}
-	if tail == "" {
-		return v, true
-	}
-	minor, err := strconv.Atoi(tail)
-	if err != nil {
-		return v, false
-	}
-	v.minor = minor
-	return v, true
-}
-
-func cmpInt(a, b int) int {
-	switch {
-	case a < b:
-		return -1
-	case a > b:
-		return 1
-	default:
-		return 0
-	}
-}
+// Version ordering lives with the vocabulary (vocabulary.CompareVersions):
+// the boot upgrade here, the upgrade preview and the tree checker all diff
+// through the one comparator.

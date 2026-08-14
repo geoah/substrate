@@ -191,6 +191,19 @@ Do not half-do it.
 - **The changelog is the truth.** `internal/engine/fold.go` is the one path from changelog to
   `records`, so a live write and `RebuildRepository` cannot drift. Anything
   that writes `records` directly is wrong.
+- **A changed declaration ships a changed version.** Every document under
+  `kinds/` projects with a `version` (a kind's own `data.version` where it
+  pins one, else its authority's, Kubernetes-style `v1alpha1`). The boot
+  upgrade, the catalog's upgrade preview and the console's upgrade offer all
+  key on it, so editing a declaration without bumping is an upgrade no
+  repository ever receives. Bump the kind's own version for a one-kind change,
+  the authority's (in its `bundle.yaml`) for a closure-wide one, and the
+  authority's when a declaration is removed, so the prune reads as an upgrade.
+  Additive changes (new kind, new optional property, new enum value, new
+  state) upgrade cleanly; narrowings (drop, retype, remove a value, add
+  `required`) are refused while live records hold the old shape, so prefer
+  add-and-deprecate. CI runs `mise run kinds:check` and refuses the merge
+  otherwise.
 - **Comments carry constraints, not narration.** Say why a thing must be so,
   or say nothing.
 - **Every commit title is a conventional commit** —

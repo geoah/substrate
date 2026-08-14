@@ -102,6 +102,111 @@ func newCatalogEnv(t *testing.T) *testEnv {
 	}
 }
 
+// upgradeErrDataset installs the web bundle and then fails every upgrade
+// PREVIEW: the listing must still serve, because the console's Registry (and
+// its sidebar badge, on every page) reads it.
+type upgradeErrDataset struct {
+	*fakeDataset
+	err error
+}
+
+func (d upgradeErrDataset) BundleStatuses(context.Context) ([]substrate.BundleStatus, error) {
+	return []substrate.BundleStatus{{
+		ID: webBundleID, Name: "web", Authority: "web.bundles.substrate.reamde.dev",
+		Installed: true, Enabled: true,
+	}}, nil
+}
+
+func (d upgradeErrDataset) BundleStatus(context.Context, string) (substrate.BundleStatus, error) {
+	return substrate.BundleStatus{ID: webBundleID, Installed: true, Enabled: true}, nil
+}
+
+func (d upgradeErrDataset) PlanBundleUpgrade(context.Context, []map[string]any) (substrate.BundleUpgrade, error) {
+	return substrate.BundleUpgrade{}, d.err
+}
+
+func (d upgradeErrDataset) BundleAuthority(context.Context, string) (string, error) {
+	return "web.bundles.substrate.reamde.dev", nil
+}
+func (d upgradeErrDataset) DisableBundle(context.Context, string) error { return nil }
+func (d upgradeErrDataset) BindBundleInput(context.Context, string, string, string) error {
+	return nil
+}
+func (d upgradeErrDataset) EnableBundle(context.Context, string) error    { return nil }
+func (d upgradeErrDataset) UninstallBundle(context.Context, string) error { return nil }
+func (d upgradeErrDataset) PurgeBundle(context.Context, string) (int, error) {
+	return 0, nil
+}
+
+func (d upgradeErrDataset) StartOAuth(context.Context, substrate.Actor, string) (string, error) {
+	return "", nil
+}
+
+func (d upgradeErrDataset) TypesImplementing(context.Context, string) ([]substrate.KindInfo, error) {
+	return nil, nil
+}
+
+type upgradeErrService struct {
+	*fakeService
+	err error
+}
+
+func (s *upgradeErrService) Authenticate(ctx context.Context, secret string) (substrate.Dataset, substrate.TokenInfo, error) {
+	ds, info, err := s.fakeService.Authenticate(ctx, secret)
+	if err != nil {
+		return nil, info, err
+	}
+	return upgradeErrDataset{fakeDataset: ds.(*fakeDataset), err: s.err}, info, nil
+}
+
+func newUpgradeErrEnv(t *testing.T) *testEnv {
+	t.Helper()
+	cat, err := catalog.Load(kinds.Bundles())
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	base := newFakeService()
+	svc := &upgradeErrService{fakeService: base, err: errBoom}
+	clock := &testClock{}
+	return &testEnv{
+		svc:   base,
+		h:     New(Config{Service: svc, Now: clock.now, Catalog: cat}),
+		clock: clock,
+	}
+}
+
+// A preview that fails costs that entry its upgrade offer and NOTHING else.
+// The offer is an extra; the listing is the promise, and the console reads it
+// on every page.
+func TestCatalogListSurvivesAFailedUpgradePreview(t *testing.T) {
+	env := newUpgradeErrEnv(t)
+	tok := env.svc.token("geoah")
+
+	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/catalog", tok, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("catalog list = %d, want 200 (a failed preview must not blank the listing): %s", rec.Code, rec.Body)
+	}
+	body := decodeJSON[struct {
+		Catalog []struct {
+			ID      string                   `json:"id"`
+			Upgrade *substrate.BundleUpgrade `json:"upgrade"`
+		} `json:"catalog"`
+	}](t, rec)
+	if len(body.Catalog) == 0 {
+		t.Fatal("the listing is empty")
+	}
+	for _, item := range body.Catalog {
+		if item.Upgrade != nil {
+			t.Errorf("bundle %s carries an upgrade from a failed preview", item.ID)
+		}
+	}
+
+	rec = env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/catalog/"+url.PathEscape(webBundleID), tok, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("catalog detail = %d, want 200: %s", rec.Code, rec.Body)
+	}
+}
+
 func TestCatalogListReturnsShippedBundles(t *testing.T) {
 	env := newCatalogEnv(t)
 	tok := env.svc.token("geoah")

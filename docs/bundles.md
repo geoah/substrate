@@ -102,6 +102,17 @@ ceremony; [vocabulary evolution](vocabulary.md#vocabulary-evolution-and-the-dial
 is the full contract a bundle author designs against. Accounts, triggers,
 and cursors persist by reference across upgrades.
 
+The upgrade has a read-only PREVIEW beside it: the catalog compares the
+shipped closure's declaration versions against the stored ones (the same diff
+the boot upgrade runs for core, engine `PlanBundleUpgrade`) and attaches the
+result to the catalog read as `upgrade`, with the same refuse-breakage guard
+lines the install would refuse on as `blockers`. The console's Registry counts
+these on the sidebar badge, offers Upgrade where nothing blocks, and states
+the guard lines where something does; the button is the install verb,
+unchanged. A changed declaration therefore MUST ship a changed version, or no
+repository ever learns it moved; CI enforces that (`mise run kinds:check`,
+AGENTS.md).
+
 After that, three lifecycle verbs act on an installed bundle, each guarded
 by one dataset-wide fence so in-flight work drains first and nothing new admits
 after. An invocation tree takes the fence once at its root and holds it through

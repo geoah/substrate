@@ -25,6 +25,9 @@ import {
   presentAuthorities,
   requirementsOf,
   requiresHint,
+  upgradableBundleCount,
+  upgradeBlocked,
+  upgradeMotion,
 } from "./bundles"
 
 function status(over: Partial<BundleStatus> = {}): BundleStatus {
@@ -220,6 +223,75 @@ describe("filterBundles", () => {
   it("vocabulary narrows to the pure-vocabulary bundles", () => {
     const only = filterBundles(rows, "vocabulary")
     expect(only.map((r) => r.id)).toEqual(["people.substrate.reamde.dev/people"])
+  })
+
+  it("upgrades narrows to rows whose preview says the closure moved", () => {
+    const moved = mergeBundles(
+      [],
+      [
+        catalog({ id: "a.bundles.substrate.reamde.dev/a", name: "a", installed: true }),
+        catalog({
+          id: "b.bundles.substrate.reamde.dev/b",
+          name: "b",
+          installed: true,
+          upgrade: { available: true, from: "v1alpha1", to: "v1alpha2" },
+        }),
+      ]
+    )
+    expect(filterBundles(moved, "upgrades").map((r) => r.id)).toEqual([
+      "b.bundles.substrate.reamde.dev/b",
+    ])
+  })
+})
+
+describe("the upgrade preview helpers", () => {
+  it("counts installed bundles whose closure moved, and only those", () => {
+    expect(
+      upgradableBundleCount([
+        catalog({ id: "a", installed: true }),
+        catalog({
+          id: "b",
+          installed: true,
+          upgrade: { available: true, to: "v1alpha2" },
+        }),
+        // Not installed: nothing to upgrade, whatever the preview would say.
+        catalog({ id: "c", installed: false }),
+        // Blocked still counts: it needs the reader's hand.
+        catalog({
+          id: "d",
+          installed: true,
+          upgrade: { available: true, to: "v2", blockers: ["live rows"] },
+        }),
+      ])
+    ).toBe(2)
+  })
+
+  it("blocked means available AND the server named blockers", () => {
+    expect(upgradeBlocked({ upgrade: undefined })).toBe(false)
+    expect(
+      upgradeBlocked({ upgrade: { available: true, to: "v2" } })
+    ).toBe(false)
+    expect(
+      upgradeBlocked({
+        upgrade: { available: true, to: "v2", blockers: ["a guard line"] },
+      })
+    ).toBe(true)
+  })
+
+  it("renders the version motion, tolerating a store with no version", () => {
+    expect(
+      upgradeMotion({ available: true, from: "v1alpha1", to: "v1alpha2" })
+    ).toBe("v1alpha1 → v1alpha2")
+    expect(upgradeMotion({ available: true, to: "v1alpha2" })).toBe("v1alpha2")
+  })
+
+  it("states one version when the authority did not move", () => {
+    // A kind's own bump, or a kind the closure ADDED, upgrades without the
+    // authority version moving — both legal. "v1alpha1 → v1alpha1" would read
+    // as a bug, so it collapses to the version itself.
+    expect(
+      upgradeMotion({ available: true, from: "v1alpha1", to: "v1alpha1" })
+    ).toBe("v1alpha1")
   })
 })
 

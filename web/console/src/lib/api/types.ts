@@ -350,6 +350,35 @@ export interface CatalogInput {
   description?: string
 }
 
+/** One declaration a bundle upgrade would move (substrate.BundleUpgradeChange). */
+export interface BundleUpgradeChange {
+  /** The declaration's manifest kind: "authority", "kind", "function", ... */
+  kind: string
+  /** The declaration's record id. */
+  id: string
+  /** The stored version; absent when this repository lacks the declaration. */
+  from?: string
+  /** The shipped version; absent when the closure stopped shipping the
+   * declaration and the upgrade prunes it. */
+  to?: string
+}
+
+/** What re-importing a bundle's shipped closure would do here
+ * (substrate.BundleUpgrade): the version motion and, when the server would
+ * refuse it, the refusal's own guard lines. The upgrade verb IS the import
+ * verb; this is its preview. */
+export interface BundleUpgrade {
+  available: boolean
+  /** Stored and shipped versions of the bundle's owned authority. */
+  from?: string
+  to?: string
+  changes?: BundleUpgradeChange[]
+  /** The refuse-breakage guard lines the import would refuse on, with live
+   * row counts. Non-empty means the upgrade is BLOCKED: the console shows the
+   * lines and offers no button, because the server refuses it anyway. */
+  blockers?: string[]
+}
+
 /** One installable bundle from the catalog embedded in the binary, plus
  * whether THIS repository has it. */
 export interface CatalogBundle {
@@ -382,6 +411,9 @@ export interface CatalogBundle {
    * import while one of them is absent from the repository, naming what to
    * import first, so the console shows them before the button is pressed. */
   requires?: string[]
+  /** Present only on an installed bundle whose shipped closure moved past the
+   * stored one: what re-importing would change, or why it is blocked. */
+  upgrade?: BundleUpgrade
 }
 
 /** How an input's record was chosen: an explicit bind edge, the record named

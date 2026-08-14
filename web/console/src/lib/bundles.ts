@@ -16,7 +16,7 @@
 
 import type { BundleStatus, InputStatus, SetupItem } from "@/lib/api/bundles"
 import type { CatalogItem } from "@/lib/api/catalog"
-import type { KindInfo } from "@/lib/api/types"
+import type { BundleUpgrade, KindInfo } from "@/lib/api/types"
 import { kindByIdentity, splitKind } from "@/lib/definition"
 
 /** One bundle row: the installed status (when the lifecycle knows it) and
@@ -39,6 +39,9 @@ export interface BundleRow {
   /** The authorities this closure declares against; the server refuses the
    * import while one of them is missing (catalog.Bundle.requires). */
   requires: string[]
+  /** The upgrade preview, present only when the shipped closure moved past
+   * what this repository stores (server-computed, catalog read). */
+  upgrade?: BundleUpgrade
 }
 
 /** Fold the two reads into one id-keyed row set: imported bundles carry their
@@ -60,6 +63,7 @@ export function mergeBundles(
       example: Boolean(item.example),
       vocabulary: Boolean(item.vocabulary),
       requires: item.requires ?? [],
+      upgrade: item.upgrade,
     })
   }
   for (const status of statuses) {
@@ -79,6 +83,7 @@ export function mergeBundles(
       // make.
       vocabulary: existing?.vocabulary ?? false,
       requires: existing?.requires ?? [],
+      upgrade: existing?.upgrade,
     })
   }
   // Not-imported first (they invite an action), then imported; alpha in each.
@@ -92,8 +97,15 @@ export function mergeBundles(
  * every bundle, `vocabulary` narrows to the pure-vocabulary bundles (what a
  * fresh repository imports first), `integrations` to provider integrations,
  * `examples` to the worked demonstrations — which is where a substrate with no
- * llmprovider row of its own is pointed. */
-export type BundleFacet = "all" | "vocabulary" | "integrations" | "examples"
+ * llmprovider row of its own is pointed — and `upgrades` to the imported
+ * bundles whose shipped closure moved past what is stored (the sidebar badge's
+ * set). */
+export type BundleFacet =
+  | "all"
+  | "vocabulary"
+  | "integrations"
+  | "examples"
+  | "upgrades"
 
 export function filterBundles(
   rows: BundleRow[],
@@ -106,9 +118,47 @@ export function filterBundles(
       return rows.filter((r) => r.example)
     case "vocabulary":
       return rows.filter((r) => r.vocabulary)
+    case "upgrades":
+      return rows.filter((r) => upgradeAvailable(r))
     default:
       return rows
   }
+}
+
+// ── upgrades: the shipped closure moved past the stored one ─────────────────
+
+/** Whether a row has an upgrade to offer or to explain: the server attaches
+ * the preview only to an installed bundle whose closure moved, so presence is
+ * the signal. A blocked upgrade still counts (it needs the reader's hand). */
+export function upgradeAvailable(
+  row: Pick<BundleRow, "upgrade">
+): boolean {
+  return Boolean(row.upgrade?.available)
+}
+
+/** A blocked upgrade: the server's refuse-breakage guards would refuse the
+ * re-import, so the console shows the guard lines and no button. */
+export function upgradeBlocked(row: Pick<BundleRow, "upgrade">): boolean {
+  return Boolean(row.upgrade?.available && row.upgrade.blockers?.length)
+}
+
+/** The sidebar badge's number: installed bundles whose shipped closure moved,
+ * computed straight off the catalog read so the sidebar needs no second
+ * endpoint. */
+export function upgradableBundleCount(catalog: CatalogItem[]): number {
+  return catalog.filter((item) => item.installed && item.upgrade?.available)
+    .length
+}
+
+/** "v1alpha1 → v1alpha2", or just the one version when there is no motion to
+ * show: the store held none, or the AUTHORITY version did not move because
+ * what moved was a kind's own version or a kind the closure added. Both are
+ * legal upgrades (AGENTS.md), and "v1alpha1 → v1alpha1" would read as a bug. */
+export function upgradeMotion(upgrade: BundleUpgrade): string {
+  if (upgrade.from && upgrade.to && upgrade.from !== upgrade.to) {
+    return `${upgrade.from} → ${upgrade.to}`
+  }
+  return upgrade.to ?? upgrade.from ?? ""
 }
 
 // ── requirements: what must be imported first ───────────────────────────────

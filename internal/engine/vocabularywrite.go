@@ -112,13 +112,9 @@ type vocabularyBatch struct {
 
 func docKey(d vocabulary.Document) string { return d.Kind + "\x00" + d.ID }
 
-// ApplyVocabularyDocuments is the batch apply verb: every document admitted or
-// none, one transaction, activation on commit. Documents wear the same
-// authority/type/metadata/data envelope the loader has always parsed.
-func (ds *dataset) ApplyVocabularyDocuments(ctx context.Context, actor substrate.Actor, raw []map[string]any) ([]*substrate.Record, error) {
-	if len(raw) == 0 {
-		return nil, fmt.Errorf("%w: no documents", substrate.ErrValidation)
-	}
+// parseVocabularyDocs parses raw envelope maps into documents, every
+// document's problems collected into one ValidationError.
+func parseVocabularyDocs(raw []map[string]any) ([]vocabulary.Document, error) {
 	var docs []vocabulary.Document
 	var problems []string
 	for _, r := range raw {
@@ -135,6 +131,20 @@ func (ds *dataset) ApplyVocabularyDocuments(ctx context.Context, actor substrate
 	}
 	if len(problems) > 0 {
 		return nil, &substrate.ValidationError{Problems: problems}
+	}
+	return docs, nil
+}
+
+// ApplyVocabularyDocuments is the batch apply verb: every document admitted or
+// none, one transaction, activation on commit. Documents wear the same
+// authority/type/metadata/data envelope the loader has always parsed.
+func (ds *dataset) ApplyVocabularyDocuments(ctx context.Context, actor substrate.Actor, raw []map[string]any) ([]*substrate.Record, error) {
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("%w: no documents", substrate.ErrValidation)
+	}
+	docs, err := parseVocabularyDocs(raw)
+	if err != nil {
+		return nil, err
 	}
 	written, err := ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{docs: docs})
 	if err != nil {
@@ -164,22 +174,9 @@ func (ds *dataset) InstallBundleClosure(ctx context.Context, actor substrate.Act
 	if len(vocabularyDocs) == 0 {
 		return nil, fmt.Errorf("%w: no schema documents", substrate.ErrValidation)
 	}
-	var docs []vocabulary.Document
-	var problems []string
-	for _, r := range vocabularyDocs {
-		d, err := vocabulary.DocumentFromMap(r)
-		if err != nil {
-			var ve *substrate.ValidationError
-			if errors.As(err, &ve) {
-				problems = append(problems, ve.Problems...)
-				continue
-			}
-			return nil, err
-		}
-		docs = append(docs, d)
-	}
-	if len(problems) > 0 {
-		return nil, &substrate.ValidationError{Problems: problems}
+	docs, err := parseVocabularyDocs(vocabularyDocs)
+	if err != nil {
+		return nil, err
 	}
 	written, err := ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{
 		docs: docs,
@@ -222,7 +219,139 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 	defer ds.vocabularyWriteMu.Unlock()
 
 	current := ds.registry()
+	st, err := ds.stageVocabularyBatch(ctx, current, &actor, b)
+	if err != nil {
+		return nil, err
+	}
+	candidate, touched := st.candidate, st.touched
 
+	// Bodies prepare BEFORE the transaction — and therefore before
+	// activation: every function the batch adds or changes must compile (Go)
+	// or register (python) NOW, and the first failure fails the whole batch
+	// as an admission error. Registration never accepts source that cannot
+	// run; the lazy restart path stays what it is — recovery, not
+	// validation.
+	var prepare []*vocabulary.Function
+	for _, aname := range sortedKeys(touched) {
+		cand, _ := candidate.AuthorityByName(aname)
+		if cand == nil {
+			continue
+		}
+		cur, _ := current.AuthorityByName(aname)
+		// A re-install after an uninstall is a FRESH install: uninstall tears
+		// the owned authority down whole (bundles.go), so `cur` is nil here and
+		// every body prepares — the retired runner registrations warm again.
+		for _, fname := range cand.FunctionOrder {
+			f := cand.Functions[fname]
+			if cur != nil {
+				if prev := cur.Functions[fname]; prev != nil &&
+					prev.Runtime == f.Runtime && prev.Source == f.Source {
+					continue // unchanged body, already prepared
+				}
+			}
+			prepare = append(prepare, f)
+		}
+	}
+	if err := ds.prepareFunctions(ctx, candidate, prepare); err != nil {
+		return nil, err
+	}
+
+	// The transaction: rows + changelog together, all or none.
+	written := map[string]*substrate.Record{}
+	err = ds.inTx(ctx, actor, true, func(t *txn) error {
+		// The registry-dependency barrier's EXCLUSIVE side (wave-3 review
+		// #11): trigger admission holds the shared side from callable
+		// validation to commit, so the dropped-reference query below can
+		// never race a trigger transaction that validated against the old
+		// registry and is still uncommitted — that trigger commits first and
+		// is seen, or it waits and revalidates against the committed rows.
+		if err := t.lockKey(registryDepKey(ds)); err != nil {
+			return err
+		}
+		// A whole-authority teardown (bundle uninstall) removes the owned authority's
+		// delivery wiring first — under the same lock, before the guards below —
+		// so dropping every callable never strands its own triggers. If a guard
+		// then refuses (live data instances), this rolls back with the batch.
+		if b.beforeGuards != nil {
+			if err := b.beforeGuards(t); err != nil {
+				return err
+			}
+		}
+		// Refuse-breakage, all problems at once: a dropped type with live
+		// rows, a narrowing definition diff stranding live rows, and (bundle
+		// authorities) a dropped callable live triggers name.
+		guards, err := droppedTypeGuards(t, st.droppedTypes)
+		if err != nil {
+			return err
+		}
+		narrowed, err := narrowingGuards(t, st.narrowings)
+		if err != nil {
+			return err
+		}
+		guards = append(guards, narrowed...)
+		more, err := droppedCallableGuards(t, st.droppedCallables)
+		if err != nil {
+			return err
+		}
+		guards = append(guards, more...)
+		if len(guards) > 0 {
+			return fmt.Errorf("%w: %s", substrate.ErrGuard, strings.Join(guards, "; "))
+		}
+		if err := t.checkSchemaCAS(b.meta); err != nil {
+			return err
+		}
+		got, err := t.projectAuthorities(candidate, touched, projectOpts{meta: b.meta, prune: true})
+		if err != nil {
+			return err
+		}
+		for k, e := range got {
+			written[k] = e
+		}
+		if b.extra != nil {
+			if err := b.extra(t, candidate); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Publish: commit happened, the pointer swap is the activation. A crash
+	// between the two is healed by the rebuild-from-records at repository open.
+	ds.mu.Lock()
+	ds.reg = candidate
+	ds.mu.Unlock()
+
+	if err := ds.ensureIndices(ctx); err != nil {
+		return nil, err
+	}
+	// Bodies prepared synchronously above; what remains after publish is the
+	// opposite motion — retiring runner state (python registrations, Go
+	// processes) that no live installation references anymore.
+	ds.reconcileRunner(ctx)
+	return written, nil
+}
+
+// vocabularyStage is one batch's admission work, done before any transaction:
+// the compiled candidate registry and the refuse-breakage classification of
+// the diff against the currently stored one. The apply door and the read-only
+// upgrade preview (PlanBundleUpgrade) share it, so what the preview reports
+// and what the install refuses can never disagree.
+type vocabularyStage struct {
+	candidate        *vocabulary.Registry
+	touched          map[string]bool
+	droppedTypes     []string
+	droppedCallables []droppedCallable
+	narrowings       []narrowing
+}
+
+// stageVocabularyBatch builds the batch's candidate registry and classifies
+// what admitting it would break. actor is the writing hand, checked at the
+// authority chokepoint; nil means the caller is only ASKING (the upgrade
+// preview), and a read needs no license to write: nothing here writes.
+func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary.Registry, actor *substrate.Actor, b vocabularyBatch) (*vocabularyStage, error) {
 	// A batch carrying a bundle document is a whole-authority apply: the closure
 	// the document lists IS the authority, so install and upgrade both REPLACE it
 	// — one atomic re-apply, absent declarations pruned, breakage refused
@@ -254,27 +383,29 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 	if len(touched) == 0 {
 		return nil, fmt.Errorf("%w: no documents", substrate.ErrValidation)
 	}
-	// THE AUTHORITY CHECK, at the one chokepoint (seed.go): who may write a
-	// kind DECLARATION into each touched authority.
-	for _, g := range sortedKeys(touched) {
-		if err := authorizeDeclarationWrite(actor, current, g); err != nil {
-			return nil, err
+	if actor != nil {
+		// THE AUTHORITY CHECK, at the one chokepoint (seed.go): who may write a
+		// kind DECLARATION into each touched authority.
+		for _, g := range sortedKeys(touched) {
+			if err := authorizeDeclarationWrite(*actor, current, g); err != nil {
+				return nil, err
+			}
 		}
-	}
-	// An actor's id does not embed its authority (alone among the kinds), so a
-	// document can CLAIM any authority. Check by the actor declaration's CURRENT
-	// authority too: a shipped actor redeclared into an installed authority would
-	// otherwise overwrite the shipped row from outside its authority.
-	for _, d := range append(append([]vocabulary.Document(nil), b.docs...), b.deletes...) {
-		if d.Kind != kindActorLocal {
-			continue
-		}
-		g, ok := current.ActorAuthority(d.ID)
-		if !ok {
-			continue
-		}
-		if err := authorizeDeclarationWrite(actor, current, g); err != nil {
-			return nil, fmt.Errorf("actor %s belongs to %s: %w", d.ID, g, err)
+		// An actor's id does not embed its authority (alone among the kinds), so a
+		// document can CLAIM any authority. Check by the actor declaration's CURRENT
+		// authority too: a shipped actor redeclared into an installed authority would
+		// otherwise overwrite the shipped row from outside its authority.
+		for _, d := range append(append([]vocabulary.Document(nil), b.docs...), b.deletes...) {
+			if d.Kind != kindActorLocal {
+				continue
+			}
+			g, ok := current.ActorAuthority(d.ID)
+			if !ok {
+				continue
+			}
+			if err := authorizeDeclarationWrite(*actor, current, g); err != nil {
+				return nil, fmt.Errorf("actor %s belongs to %s: %w", d.ID, g, err)
+			}
 		}
 	}
 
@@ -353,134 +484,24 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 	}
 	sort.Strings(droppedTypes)
 
-	// Bundle upgrades additionally refuse dropping a callable — function OR
-	// agent — that live triggers still reference (bundles.go): the closure
-	// re-apply is atomic and must not strand delivery. Outside bundle authorities
-	// the looser contract stands — the dispatcher skips an unresolvable
-	// callable loudly.
-	droppedCallables := droppedBundleCallables(current, candidate, touched)
-
-	// Evolution-with-data: a NARROWING definition
-	// diff — property dropped/renamed/kind-changed, enum value or state
-	// removed, required added — is classified here against the currently
-	// stored definitions and refused below while live rows would be stranded,
-	// with the count. Additive changes pass through untouched (schemadiff.go).
-	narrowings := classifyNarrowings(current, candidate, touched)
-
-	// Bodies prepare BEFORE the transaction — and therefore before
-	// activation: every function the batch adds or changes must compile (Go)
-	// or register (python) NOW, and the first failure fails the whole batch
-	// as an admission error. Registration never accepts source that cannot
-	// run; the lazy restart path stays what it is — recovery, not
-	// validation.
-	var prepare []*vocabulary.Function
-	for _, aname := range sortedKeys(touched) {
-		cand, _ := candidate.AuthorityByName(aname)
-		if cand == nil {
-			continue
-		}
-		cur, _ := current.AuthorityByName(aname)
-		// A re-install after an uninstall is a FRESH install: uninstall tears
-		// the owned authority down whole (bundles.go), so `cur` is nil here and
-		// every body prepares — the retired runner registrations warm again.
-		for _, fname := range cand.FunctionOrder {
-			f := cand.Functions[fname]
-			if cur != nil {
-				if prev := cur.Functions[fname]; prev != nil &&
-					prev.Runtime == f.Runtime && prev.Source == f.Source {
-					continue // unchanged body, already prepared
-				}
-			}
-			prepare = append(prepare, f)
-		}
-	}
-	if err := ds.prepareFunctions(ctx, candidate, prepare); err != nil {
-		return nil, err
-	}
-
-	// The transaction: rows + changelog together, all or none.
-	written := map[string]*substrate.Record{}
-	err = ds.inTx(ctx, actor, true, func(t *txn) error {
-		// The registry-dependency barrier's EXCLUSIVE side (wave-3 review
-		// #11): trigger admission holds the shared side from callable
-		// validation to commit, so the dropped-reference query below can
-		// never race a trigger transaction that validated against the old
-		// registry and is still uncommitted — that trigger commits first and
-		// is seen, or it waits and revalidates against the committed rows.
-		if err := t.lockKey(registryDepKey(ds)); err != nil {
-			return err
-		}
-		// A whole-authority teardown (bundle uninstall) removes the owned authority's
-		// delivery wiring first — under the same lock, before the guards below —
-		// so dropping every callable never strands its own triggers. If a guard
-		// then refuses (live data instances), this rolls back with the batch.
-		if b.beforeGuards != nil {
-			if err := b.beforeGuards(t); err != nil {
-				return err
-			}
-		}
-		// Refuse-breakage, all problems at once: a dropped type with live
-		// rows, a narrowing definition diff stranding live rows, and (bundle
-		// authorities) a dropped callable live triggers name.
-		var guards []string
-		for _, ident := range droppedTypes {
-			var n int64
-			if err := t.row(`SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL`, ident).Scan(&n); err != nil {
-				return err
-			}
-			if n > 0 {
-				guards = append(guards, fmt.Sprintf("type %s has %d live records — delete or migrate them first (identities are never reused)",
-					ident, n))
-			}
-		}
-		narrowed, err := t.narrowingGuards(narrowings)
-		if err != nil {
-			return err
-		}
-		guards = append(guards, narrowed...)
-		more, err := t.droppedCallableGuards(droppedCallables)
-		if err != nil {
-			return err
-		}
-		guards = append(guards, more...)
-		if len(guards) > 0 {
-			return fmt.Errorf("%w: %s", substrate.ErrGuard, strings.Join(guards, "; "))
-		}
-		if err := t.checkSchemaCAS(b.meta); err != nil {
-			return err
-		}
-		got, err := t.projectAuthorities(candidate, touched, projectOpts{meta: b.meta, prune: true})
-		if err != nil {
-			return err
-		}
-		for k, e := range got {
-			written[k] = e
-		}
-		if b.extra != nil {
-			if err := b.extra(t, candidate); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// Publish: commit happened, the pointer swap is the activation. A crash
-	// between the two is healed by the rebuild-from-records at repository open.
-	ds.mu.Lock()
-	ds.reg = candidate
-	ds.mu.Unlock()
-
-	if err := ds.ensureIndices(ctx); err != nil {
-		return nil, err
-	}
-	// Bodies prepared synchronously above; what remains after publish is the
-	// opposite motion — retiring runner state (python registrations, Go
-	// processes) that no live installation references anymore.
-	ds.reconcileRunner(ctx)
-	return written, nil
+	return &vocabularyStage{
+		candidate: candidate,
+		touched:   touched,
+		// Refuse-with-instances, plus:
+		// Bundle upgrades additionally refuse dropping a callable — function OR
+		// agent — that live triggers still reference (bundles.go): the closure
+		// re-apply is atomic and must not strand delivery. Outside bundle authorities
+		// the looser contract stands — the dispatcher skips an unresolvable
+		// callable loudly.
+		droppedTypes:     droppedTypes,
+		droppedCallables: droppedBundleCallables(current, candidate, touched),
+		// Evolution-with-data: a NARROWING definition
+		// diff — property dropped/renamed/kind-changed, enum value or state
+		// removed, required added — is classified here against the currently
+		// stored definitions and refused while live rows would be stranded,
+		// with the count. Additive changes pass through untouched (schemadiff.go).
+		narrowings: classifyNarrowings(current, candidate, touched),
+	}, nil
 }
 
 // checkSchemaCAS verifies each document's ifVersion against the stored row,
