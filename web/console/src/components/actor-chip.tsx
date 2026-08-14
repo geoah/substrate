@@ -19,7 +19,7 @@ export function ActorChip({ actor }: { actor: string }) {
       className="inline-flex max-w-full min-w-0 items-center rounded-full border bg-muted/50 px-2 py-0.5 text-xs transition-colors hover:bg-muted"
       onClick={(e) => e.stopPropagation()}
     >
-      <span className="data truncate">{actorShortName(actor)}</span>
+      <span className="truncate data">{actorShortName(actor)}</span>
     </Link>
   )
 }

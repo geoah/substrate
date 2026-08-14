@@ -102,11 +102,7 @@ export function mergeBundles(
  * bundles whose shipped closure moved past what is stored (the sidebar badge's
  * set). */
 export type BundleFacet =
-  | "all"
-  | "vocabulary"
-  | "integrations"
-  | "examples"
-  | "upgrades"
+  "all" | "vocabulary" | "integrations" | "examples" | "upgrades"
 
 export function filterBundles(
   rows: BundleRow[],
@@ -131,9 +127,7 @@ export function filterBundles(
 /** Whether a row has an upgrade to offer or to explain: the server attaches
  * the preview only to an installed bundle whose closure moved, so presence is
  * the signal. A blocked upgrade still counts (it needs the reader's hand). */
-export function upgradeAvailable(
-  row: Pick<BundleRow, "upgrade">
-): boolean {
+export function upgradeAvailable(row: Pick<BundleRow, "upgrade">): boolean {
   return Boolean(row.upgrade?.available)
 }
 

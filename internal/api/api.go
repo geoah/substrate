@@ -109,9 +109,15 @@ func New(cfg Config) http.Handler {
 	}
 
 	r := chi.NewRouter()
-	// peerAddress runs before RealIP: the rate limiter must key on the
-	// transport peer, which no request header can vary.
-	r.Use(peerAddress, middleware.RequestID, middleware.RealIP, middleware.Recoverer)
+	// NO middleware.RealIP. It rewrote RemoteAddr from X-Forwarded-For,
+	// X-Real-IP or True-Client-IP whether or not anything in front of this
+	// server sets them, so a caller could name its own address by sending a
+	// header (GHSA-3fxj-6jh8-hvhx and friends; chi deprecated it in v5.3.0).
+	// Nothing here wanted the rewrite: peerAddress records the TRANSPORT peer,
+	// which is what the rate limiter keys on, and no other handler reads
+	// RemoteAddr. Anything that needs a client address behind a proxy has to
+	// name which proxies it trusts first.
+	r.Use(peerAddress, middleware.RequestID, middleware.Recoverer)
 
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

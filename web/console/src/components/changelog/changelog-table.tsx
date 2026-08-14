@@ -175,9 +175,7 @@ export function ChangelogTable({
   // Live rows join the top of page 1 only; elsewhere they hold in the pill.
   const rows = useMemo(
     () =>
-      page === 1
-        ? mergeFeed(live.rows, pageRows).filter(inRange)
-        : pageRows,
+      page === 1 ? mergeFeed(live.rows, pageRows).filter(inRange) : pageRows,
     // eslint-disable-next-line react-hooks/exhaustive-deps -- inRange is pure over these
     [page, live.rows, pageRows, sinceMs, untilMs]
   )
@@ -284,8 +282,7 @@ export function ChangelogTable({
     defaultHidden,
   })
 
-  const loading =
-    history.isPending || (untilMs !== undefined && seek.isPending)
+  const loading = history.isPending || (untilMs !== undefined && seek.isPending)
   const error = history.isError
     ? history.error
     : seek.isError

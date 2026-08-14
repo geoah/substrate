@@ -138,7 +138,9 @@ export function templateYAML(kind: KindInfo): string {
  * without the server-owned `status` block. Order-preserving so the yaml
  * serializes what the read served. Labels ride in `metadata`; edge references
  * travel whole as `{kind, id}`. */
-export function applyManifestOf(record: SubstrateRecord): Record<string, unknown> {
+export function applyManifestOf(
+  record: SubstrateRecord
+): Record<string, unknown> {
   const metadata: Record<string, unknown> = { id: record.id }
   if (Object.keys(record.labels ?? {}).length) metadata.labels = record.labels
   if (record.annotations && Object.keys(record.annotations).length) {
@@ -235,7 +237,9 @@ function isEmptyValue(v: unknown): boolean {
  * so a problem can point a gutter at it. Matches the key at any indentation. */
 function lineOfKey(text: string, key: string): number | undefined {
   const lines = text.split("\n")
-  const re = new RegExp(`^\\s+${key.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\s*:`)
+  const re = new RegExp(
+    `^\\s+${key.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}\\s*:`
+  )
   for (let i = 0; i < lines.length; i++) {
     if (re.test(lines[i])) return i + 1
   }
@@ -448,7 +452,9 @@ export function validateApplyDoc(
 /** The document's authored properties, or undefined when the text does not
  * parse to an envelope. The form lens reads its values through this, so the
  * YAML is the single source of truth for both lenses. */
-export function propertiesOf(text: string): Record<string, unknown> | undefined {
+export function propertiesOf(
+  text: string
+): Record<string, unknown> | undefined {
   const parsed = parseApplyDoc(text)
   if (parsed.error || !parsed.value) return undefined
   const props = parsed.value.data?.properties

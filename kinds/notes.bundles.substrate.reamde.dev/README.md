@@ -29,8 +29,10 @@ substratectl function call stats --input '{"text": "hello world"}'
 # {"output": {"words": 2, "characters": 11}, "effects": 0}
 ```
 
-The agent needs a provider. `notekeeper` names `default`, the seeded
-`llmprovider` row, which points at the host's own gateway:
+The agent needs a provider. `notekeeper` names `default`, so a repository
+running it wants an `llmprovider` row at that id — nothing seeds one, and the
+LLM example bundle ships `anthropic` and `openai` instead, so this row is one
+you write:
 
 ```sh
 curl -s -X POST "$SUBSTRATE_SERVER/api/v1/core.substrate.reamde.dev/agents/notekeeper/call" \

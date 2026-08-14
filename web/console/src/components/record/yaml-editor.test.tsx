@@ -21,7 +21,8 @@ const taskKind: KindInfo = {
   },
 }
 
-const DOC = "kind: tasks.substrate.reamde.dev/task\ndata:\n  properties:\n    title: hi\n"
+const DOC =
+  "kind: tasks.substrate.reamde.dev/task\ndata:\n  properties:\n    title: hi\n"
 
 function editor() {
   const view = EditorView.findFromDOM(
@@ -44,7 +45,9 @@ describe("the YAML lens", () => {
     render(<YamlEditor value={DOC} onChange={onChange} kind={taskKind} />)
     const view = editor()
     act(() => {
-      view.dispatch({ changes: { from: view.state.doc.length, insert: "    x: 1\n" } })
+      view.dispatch({
+        changes: { from: view.state.doc.length, insert: "    x: 1\n" },
+      })
     })
     expect(onChange).toHaveBeenCalledWith(expect.stringContaining("x: 1"))
   })

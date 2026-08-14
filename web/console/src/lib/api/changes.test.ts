@@ -26,7 +26,10 @@ function row(seq: number, tsMs = T0 + seq * 1000): ChangeRow {
 describe("changesSearch", () => {
   it("carries every server-side facet, repeated params for lists", () => {
     const params = changesSearch({
-      kinds: ["people.substrate.reamde.dev/person", "tasks.substrate.reamde.dev/task"],
+      kinds: [
+        "people.substrate.reamde.dev/person",
+        "tasks.substrate.reamde.dev/task",
+      ],
       actors: ["owner"],
       ops: ["put", "merge"],
       recordId: "e1",
@@ -47,7 +50,9 @@ describe("changesSearch", () => {
   it("refuses recordId without its recordKind companion (server rejects either alone)", () => {
     expect(changesSearch({ recordId: "e1" }).has("recordId")).toBe(false)
     expect(
-      changesSearch({ recordKind: "tasks.substrate.reamde.dev/task" }).has("recordKind")
+      changesSearch({ recordKind: "tasks.substrate.reamde.dev/task" }).has(
+        "recordKind"
+      )
     ).toBe(false)
   })
 

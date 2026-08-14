@@ -152,7 +152,11 @@ export function formatCount(count: RecordCount): string {
 
 // ── single record ───────────────────────────────────────────────────────────
 
-export function recordQueryOptions(authority: string, plural: string, id: string) {
+export function recordQueryOptions(
+  authority: string,
+  plural: string,
+  id: string
+) {
   return queryOptions({
     queryKey: ["record", authority, plural, id],
     queryFn: ({ signal }) =>
@@ -196,7 +200,11 @@ export function createRecord(
   plural: string,
   input: RecordWrite
 ): Promise<SubstrateRecord> {
-  return request<SubstrateRecord>("POST", collectionPath(authority, plural), input)
+  return request<SubstrateRecord>(
+    "POST",
+    collectionPath(authority, plural),
+    input
+  )
 }
 
 /** Upsert one record by id: `PUT /{authority}/{plural}/{id}`. A full-document

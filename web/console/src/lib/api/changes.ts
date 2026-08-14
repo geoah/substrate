@@ -193,12 +193,7 @@ export function seekQueryOptions(untilMs: number) {
  * re-list from a fresh head. `stopped` = a terminal error frame (or a
  * non-retriable open failure) ended the stream — no silent reconnect loop. */
 export type WatchStatus =
-  | "connecting"
-  | "live"
-  | "retrying"
-  | "compacted"
-  | "stopped"
-  | "off"
+  "connecting" | "live" | "retrying" | "compacted" | "stopped" | "off"
 
 /** The problem object the substrate carries in a REST envelope, a GraphQL
  * error's bundles, AND the watch terminal error frame. */

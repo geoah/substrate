@@ -118,7 +118,7 @@ budgets.
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                               | the one redirect URI providers register                        |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                               | signs OAuth flow state                                         |
 | `SUBSTRATE_CONSOLE_URL`        | —                               | postMessage origin for the OAuth return page                   |
-| `SUBSTRATE_LLM_BASE_URL`       | —                               | the host gateway: embeddings, and the seeded `default` provider |
+| `SUBSTRATE_LLM_BASE_URL`       | —                               | the host gateway: embeddings, and any provider row naming no `baseURL` |
 | `SUBSTRATE_LLM_API_KEY`        | —                               | its bearer; unset ⇒ no embedder and the embed queue idles      |
 | `SUBSTRATE_LLM_EMBED_MODEL`    | `text-embedding-3-small`        | must be 1536-dim                                               |
 
@@ -223,7 +223,7 @@ not merge.
 [`docs/`](docs/README.md) builds one thing — a to-do list — from registration
 through to the API call that completes a task: the
 [data model](docs/data-model.md), the [API](docs/api.md),
-[extensions and functions](docs/extensions.md), and
+[bundles](docs/bundles.md), [functions](docs/functions.md), and
 [running a substrate](docs/operations.md).
 
 `AGENTS.md` is the guide for anyone — person or agent — working on this code.

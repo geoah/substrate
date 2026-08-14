@@ -101,7 +101,9 @@ export function PropertyField({
           </FieldLabel>
           {labelAction}
         </div>
-        {field.description && <FieldDescription>{field.description}</FieldDescription>}
+        {field.description && (
+          <FieldDescription>{field.description}</FieldDescription>
+        )}
       </Field>
     )
   }
@@ -125,7 +127,9 @@ export function PropertyField({
   // never one run-on line.
   const help = (hint?: string) => (
     <>
-      {field.description && <FieldDescription>{field.description}</FieldDescription>}
+      {field.description && (
+        <FieldDescription>{field.description}</FieldDescription>
+      )}
       {hint && <FieldDescription>{hint}</FieldDescription>}
     </>
   )
@@ -147,7 +151,9 @@ export function PropertyField({
           onChange={(e) => onChange(e.target.value)}
         >
           {showEmpty && (
-            <option value="">{field.required ? "— select —" : "— none —"}</option>
+            <option value="">
+              {field.required ? "— select —" : "— none —"}
+            </option>
           )}
           {field.options?.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -409,7 +415,9 @@ function ReferenceField({
           aria-invalid={Boolean(error)}
           placeholder={target ? `an ${target.name} id` : "the record id"}
           value={ref.id}
-          onChange={(e) => onChange({ kind: ref.kind || pinned, id: e.target.value })}
+          onChange={(e) =>
+            onChange({ kind: ref.kind || pinned, id: e.target.value })
+          }
         />
         <datalist id={`${id}-options`}>
           {(options.data?.records ?? []).map((r) => (

@@ -98,7 +98,9 @@ describe("KindDefinition", () => {
     expect(yaml).toContain("kind: core.substrate.reamde.dev/kind")
     expect(yaml).toContain("id: core.substrate.reamde.dev/llmprovider")
     expect(yaml).toContain("displayTemplate: ")
-    expect(yaml).toContain("description: the wire protocol this endpoint speaks")
+    expect(yaml).toContain(
+      "description: the wire protocol this endpoint speaks"
+    )
   })
 
   it("tints that YAML with the record manifest's own renderer", async () => {
@@ -141,11 +143,16 @@ describe("KindDefinition", () => {
     const link = [...container.querySelectorAll("a")].find(
       (a) => a.textContent === "→ account"
     )
-    expect(link?.getAttribute("href")).toBe("/data/core.substrate.reamde.dev/accounts")
+    expect(link?.getAttribute("href")).toBe(
+      "/data/core.substrate.reamde.dev/accounts"
+    )
   })
 
   it("says so plainly when the registry stored no declaration", () => {
-    const { container } = renderDefinition({ ...llmprovider, definition: undefined })
+    const { container } = renderDefinition({
+      ...llmprovider,
+      definition: undefined,
+    })
     expect(container.textContent).toContain("No stored declaration")
     expect(container.querySelector("pre")).toBeNull()
   })

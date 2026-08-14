@@ -1,0 +1,27 @@
+# What the image build does NOT need. Everything here is large, machine-local,
+# rebuilt inside the image anyway, or secret.
+
+# Machine-local secrets. `.mise.local.toml` carries provider API keys on a dev
+# box; nothing in an image may ever see them.
+.mise.local.toml
+.env
+.env.*
+
+# Rebuilt in the web stage from the lockfile; also the single largest directory
+# in the tree.
+**/node_modules
+
+# Build output and the dev substrate's state.
+bin/
+.dev/
+*.log
+
+# History and CI definitions. Dropping .git also settles VCS stamping: the
+# runtime image reports the fallback build rather than depending on a git
+# binary the golang:alpine stage does not carry. Release binaries are stamped
+# by goreleaser OUTSIDE docker, where the repository is whole.
+.git
+.github
+
+# NOT ignored: web/console/dist. Dockerfile.release copies the console
+# goreleaser already built, and the source Dockerfile rebuilds it regardless.

@@ -60,16 +60,22 @@ describe("isVocabularyChange", () => {
 
   it("data kinds are not schema, even under the core authority", () => {
     expect(
-      isVocabularyChange(row({ seq: 1, kind: "core.substrate.reamde.dev/recordmergerequest" }))
+      isVocabularyChange(
+        row({ seq: 1, kind: "core.substrate.reamde.dev/recordmergerequest" })
+      )
     ).toBe(false)
     expect(
-      isVocabularyChange(row({ seq: 1, kind: "people.substrate.reamde.dev/person" }))
+      isVocabularyChange(
+        row({ seq: 1, kind: "people.substrate.reamde.dev/person" })
+      )
     ).toBe(false)
   })
 
   it("registry names only count under the core authority", () => {
     expect(
-      isVocabularyChange(row({ seq: 1, kind: "acme.substrate.reamde.dev/function" }))
+      isVocabularyChange(
+        row({ seq: 1, kind: "acme.substrate.reamde.dev/function" })
+      )
     ).toBe(false)
   })
 })
@@ -126,23 +132,65 @@ describe("the effects a write recorded", () => {
           { kind: "tombstone", ref: "k", id: "a", finalizer: "merge" },
           { kind: "purge", ref: "k", id: "b" },
           { kind: "bump", ref: "k", id: "c" },
-          { kind: "edge", ref: "k", id: "d", rel: "member", dstType: "o", dst: "o1" },
-          { kind: "unedge", ref: "k", id: "e", rel: "member", dstType: "o", dst: "o1" },
-          { kind: "edge1", ref: "k", id: "f", rel: "owner", dstType: "p", dst: "p1" },
-          { kind: "annotation", ref: "k", id: "g", key: "owner/note", value: "hi" },
+          {
+            kind: "edge",
+            ref: "k",
+            id: "d",
+            rel: "member",
+            dstType: "o",
+            dst: "o1",
+          },
+          {
+            kind: "unedge",
+            ref: "k",
+            id: "e",
+            rel: "member",
+            dstType: "o",
+            dst: "o1",
+          },
+          {
+            kind: "edge1",
+            ref: "k",
+            id: "f",
+            rel: "owner",
+            dstType: "p",
+            dst: "p1",
+          },
+          {
+            kind: "annotation",
+            ref: "k",
+            id: "g",
+            key: "owner/note",
+            value: "hi",
+          },
           { kind: "annotation", ref: "k", id: "h", key: "owner/note" },
-          { kind: "manager", ref: "k", id: "i", property: "name", actor: "sync", tier: "bundle" },
+          {
+            kind: "manager",
+            ref: "k",
+            id: "i",
+            property: "name",
+            actor: "sync",
+            tier: "bundle",
+          },
           { kind: "manager", ref: "k", id: "j", property: "name" },
           { kind: "former", ref: "k", formerId: "old", id: "new" },
         ])
       )
     ).toEqual([
       { verb: "deleted", target: "k/a", detail: "held by merge" },
-      { verb: "purged", target: "k/b", detail: "and everything hanging off it" },
+      {
+        verb: "purged",
+        target: "k/b",
+        detail: "and everything hanging off it",
+      },
       { verb: "touched", target: "k/c", detail: "version only" },
       { verb: "linked", target: "k/d", detail: "member → o/o1" },
       { verb: "unlinked", target: "k/e", detail: "member → o/o1" },
-      { verb: "relinked", target: "k/f", detail: "owner now points only at p/p1" },
+      {
+        verb: "relinked",
+        target: "k/f",
+        detail: "owner now points only at p/p1",
+      },
       { verb: "annotated", target: "k/g", detail: "owner/note" },
       { verb: "un-annotated", target: "k/h", detail: "owner/note" },
       { verb: "reassigned", target: "k/i", detail: "name → sync (bundle)" },
@@ -210,7 +258,9 @@ describe("the effects a write recorded", () => {
   it("is empty for a row that recorded none, and never throws on junk", () => {
     expect(changeEffects(row({ seq: 1 }))).toEqual([])
     expect(changeEffects(row({ seq: 1, payload: {} }))).toEqual([])
-    expect(changeEffects(row({ seq: 1, payload: { fold: "nonsense" } }))).toEqual([])
+    expect(
+      changeEffects(row({ seq: 1, payload: { fold: "nonsense" } }))
+    ).toEqual([])
     expect(changeEffects(withEffects([null, 7, "x"]))).toEqual([])
   })
 
@@ -223,7 +273,9 @@ describe("the effects a write recorded", () => {
 
 describe("the summary voice", () => {
   it("verbs each op honestly", () => {
-    expect(verbOf(row({ seq: 1, op: "put", payload: { created: true } }))).toBe("created")
+    expect(verbOf(row({ seq: 1, op: "put", payload: { created: true } }))).toBe(
+      "created"
+    )
     expect(verbOf(row({ seq: 1, op: "put" }))).toBe("updated")
     expect(verbOf(row({ seq: 1, op: "patch" }))).toBe("updated")
     expect(verbOf(row({ seq: 1, op: "link" }))).toBe("linked")
@@ -284,7 +336,9 @@ describe("the summary voice", () => {
         row({
           seq: 1,
           payload: { properties: ["a"], restored: true },
-          triggers: [{ trigger: "tr.g.dev", callable: "fn.g.dev", state: "pending" }],
+          triggers: [
+            { trigger: "tr.g.dev", callable: "fn.g.dev", state: "pending" },
+          ],
         })
       )
     ).toBe("property: a, restored, tr pending")
@@ -331,7 +385,8 @@ describe("the live buffer", () => {
 
   it("caps the tail's memory", () => {
     let feed = EMPTY_LIVE_FEED
-    for (let i = 1; i <= 5; i++) feed = pushLive(feed, row({ seq: i }), false, 3)
+    for (let i = 1; i <= 5; i++)
+      feed = pushLive(feed, row({ seq: i }), false, 3)
     expect(feed.rows.map((r) => r.seq)).toEqual([5, 4, 3])
   })
 })
@@ -369,7 +424,11 @@ describe("toChangelogQuery", () => {
   it("passes kinds, actors and ops straight to the wire", () => {
     const q = toChangelogQuery(
       [
-        { field: "kind", op: "eq", value: "people.substrate.reamde.dev/person" },
+        {
+          field: "kind",
+          op: "eq",
+          value: "people.substrate.reamde.dev/person",
+        },
         { field: "actor", op: "eq", value: "owner,system" },
         { field: "op", op: "eq", value: "merge" },
       ],
@@ -382,17 +441,33 @@ describe("toChangelogQuery", () => {
 
   it("expands an authority facet into its registry kinds (still server-side)", () => {
     const q = toChangelogQuery(
-      [{ field: "authority", op: "eq", value: "github.bundles.substrate.reamde.dev" }],
+      [
+        {
+          field: "authority",
+          op: "eq",
+          value: "github.bundles.substrate.reamde.dev",
+        },
+      ],
       KINDS
     )
-    expect(q.filter.kinds).toEqual(["github.bundles.substrate.reamde.dev/issue"])
+    expect(q.filter.kinds).toEqual([
+      "github.bundles.substrate.reamde.dev/issue",
+    ])
   })
 
   it("intersects explicit kinds with an authority — an empty AND matches nothing", () => {
     const q = toChangelogQuery(
       [
-        { field: "kind", op: "eq", value: "people.substrate.reamde.dev/person" },
-        { field: "authority", op: "eq", value: "github.bundles.substrate.reamde.dev" },
+        {
+          field: "kind",
+          op: "eq",
+          value: "people.substrate.reamde.dev/person",
+        },
+        {
+          field: "authority",
+          op: "eq",
+          value: "github.bundles.substrate.reamde.dev",
+        },
       ],
       KINDS
     )
@@ -414,7 +489,10 @@ describe("toChangelogQuery", () => {
   })
 
   it("tolerates an unparsable instant by dropping it", () => {
-    const q = toChangelogQuery([{ field: "until", op: "eq", value: "yesterdayish" }], KINDS)
+    const q = toChangelogQuery(
+      [{ field: "until", op: "eq", value: "yesterdayish" }],
+      KINDS
+    )
     expect(q.untilMs).toBeUndefined()
   })
 })

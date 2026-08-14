@@ -60,7 +60,11 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { toast } from "@/components/ui/toast"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import {
   bundleState,
@@ -461,9 +465,17 @@ function Line({
  * other kind falls into the trailing `records` line, so a bundle shipping
  * something new is previewed rather than dropped. */
 const RECORD_KINDS = [
-  { kind: `${CORE_AUTHORITY}/function`, label: "functions", icon: FunctionSquareIcon },
+  {
+    kind: `${CORE_AUTHORITY}/function`,
+    label: "functions",
+    icon: FunctionSquareIcon,
+  },
   { kind: `${CORE_AUTHORITY}/agent`, label: "agents", icon: BotIcon },
-  { kind: `${CORE_AUTHORITY}/recordmapping`, label: "mappings", icon: BoxesIcon },
+  {
+    kind: `${CORE_AUTHORITY}/recordmapping`,
+    label: "mappings",
+    icon: BoxesIcon,
+  },
   { kind: `${CORE_AUTHORITY}/trigger`, label: "triggers", icon: ZapIcon },
 ] as const
 
@@ -839,12 +851,14 @@ export function RegistryPage() {
                 : facet === "upgrades"
                   ? " (upgrades)"
                   : ""}
-            , from <span className="data">core.substrate.reamde.dev/catalog</span>
+            , from{" "}
+            <span className="data">core.substrate.reamde.dev/catalog</span>
           </p>
           <p className="pt-0.5 text-xs text-muted-foreground">
-            A new repository ships <span className="data">core.substrate.reamde.dev</span>{" "}
-            alone — the vocabulary it records into and every integration are
-            imported from here. Expand a row to see what it adds.
+            A new repository ships{" "}
+            <span className="data">core.substrate.reamde.dev</span> alone — the
+            vocabulary it records into and every integration are imported from
+            here. Expand a row to see what it adds.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -911,7 +925,10 @@ function RegistrySkeleton() {
       </div>
       <div className="min-h-0 flex-1 overflow-hidden px-6 pt-4">
         {Array.from({ length: 5 }, (_, i) => (
-          <div key={i} className="flex h-12 items-center gap-6 border-b last:border-0">
+          <div
+            key={i}
+            className="flex h-12 items-center gap-6 border-b last:border-0"
+          >
             <Skeleton className="h-4 w-40" />
             <Skeleton className="h-4 w-24" />
             <Skeleton className="ml-auto h-4 w-16" />

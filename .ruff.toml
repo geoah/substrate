@@ -1,0 +1,25 @@
+# The Python here is ONE file — internal/runner/host.py, the long-lived child
+# every `runtime: python` function body is exec'd into. It is a protocol
+# implementation, not application code, and it must run on whatever `python3` a
+# deployment happens to have (mise deliberately does not pin one).
+#
+# So this config selects the rules that catch a BREAK and none that argue about
+# style. A slip in this file takes out every Python function at once and no Go
+# test compiles it, which is the whole reason it is linted; the same file's
+# `%`-formatting and its deliberate blind `except` around the frame loop are
+# not bugs, and a linter that reported them would only teach people to skip it.
+#
+# `ruff format` is deliberately NOT run over this tree. The host is hand-laid
+# out to stay readable beside the protocol it implements, and the function
+# bodies under `kinds/` are YAML literal scalars that yamlfmt already holds.
+
+# The oldest interpreter the host is expected to run on. Bodies may ask for
+# more through PEP 723; the host itself may not.
+target-version = "py39"
+
+[lint]
+# F  — pyflakes: undefined names, unused imports, the errors that are errors.
+# E9 — syntax and IO errors, the ones that stop the file loading at all.
+# B  — bugbear's genuine traps: mutable default arguments, a `raise` inside an
+#      `except` that loses the cause, a loop variable captured by a closure.
+select = ["F", "E9", "B"]

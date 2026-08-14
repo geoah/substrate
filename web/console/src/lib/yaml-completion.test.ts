@@ -130,11 +130,16 @@ describe("completionsAt", () => {
       "open",
       "done",
     ])
-    expect(found?.options.find((o) => o.label === "open")?.detail).toBe("initial")
+    expect(found?.options.find((o) => o.label === "open")?.detail).toBe(
+      "initial"
+    )
   })
 
   it("offers true/false for a bool, and a worked example otherwise", () => {
-    expect(labels("data:\n  properties:\n    pinned: ")).toEqual(["true", "false"])
+    expect(labels("data:\n  properties:\n    pinned: ")).toEqual([
+      "true",
+      "false",
+    ])
     expect(labels("data:\n  properties:\n    dueAt: ")).toEqual([
       "2026-01-31T09:00:00Z",
     ])
@@ -147,7 +152,9 @@ describe("completionsAt", () => {
   it("offers the declared edge rels after a `rel:`", () => {
     const found = at("data:\n  edges:\n    - rel: ")
     expect(found?.options.map((o) => o.label)).toEqual(["assignee"])
-    expect(found?.options[0].detail).toBe("→ people.substrate.reamde.dev/person")
+    expect(found?.options[0].detail).toBe(
+      "→ people.substrate.reamde.dev/person"
+    )
   })
 
   it("offers an object's declared fields inside its block", () => {

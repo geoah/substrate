@@ -133,7 +133,9 @@ export function PropertyForm({
             disabled={Boolean(record)}
             value={idOf(text)}
             placeholder="the substrate mints one when this is blank"
-            onChange={(e) => emit(setIn(text, ["metadata", "id"], e.target.value))}
+            onChange={(e) =>
+              emit(setIn(text, ["metadata", "id"], e.target.value))
+            }
           />
           <FieldDescription>
             {record
@@ -156,8 +158,8 @@ export function PropertyForm({
 
         {fields.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            {kind.name} declares no editable properties. Everything it carries is
-            host-managed, so the YAML lens is the honest surface.
+            {kind.name} declares no editable properties. Everything it carries
+            is host-managed, so the YAML lens is the honest surface.
           </p>
         )}
 
@@ -165,8 +167,8 @@ export function PropertyForm({
           <p className="text-xs text-muted-foreground">
             <span className="data">{elsewhere.join(", ")}</span>{" "}
             {elsewhere.length === 1 ? "is" : "are"} in the document but not
-            offered here (undeclared, or host-managed). The YAML lens edits them,
-            and they are written as they stand.
+            offered here (undeclared, or host-managed). The YAML lens edits
+            them, and they are written as they stand.
           </p>
         )}
       </FieldGroup>

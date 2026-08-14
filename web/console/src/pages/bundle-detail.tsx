@@ -120,8 +120,7 @@ import { bundleDetailRoute } from "@/router"
 
 /** Google's own "create an OAuth client" documentation — where the owner sets
  * up the client and registers the redirect URI below. */
-const GOOGLE_OAUTH_DOCS =
-  "https://support.google.com/cloud/answer/6158849"
+const GOOGLE_OAUTH_DOCS = "https://support.google.com/cloud/answer/6158849"
 
 /** The provider callback URL, read-only with a copy affordance — the value the
  * owner must register in their OAuth client. Provider-specific: it renders only
@@ -143,7 +142,11 @@ function CallbackUrlNote() {
             setTimeout(() => setCopied(false), 1500)
           }}
         >
-          {copied ? <CheckIcon className="size-3" /> : <CopyIcon className="size-3" />}
+          {copied ? (
+            <CheckIcon className="size-3" />
+          ) : (
+            <CopyIcon className="size-3" />
+          )}
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>
@@ -205,7 +208,9 @@ function RequiresNote({ requirements }: { requirements: Requirement[] }) {
         {missing.length
           ? `Not in this repository: ${missing
               .map((r) => r.authority)
-              .join(", ")}. This bundle's mappings and edges point at it — re-import that authority's bundle from the registry.`
+              .join(
+                ", "
+              )}. This bundle's mappings and edges point at it — re-import that authority's bundle from the registry.`
           : "The vocabulary this bundle's mappings, edges and trigger subscriptions point at. All of it is imported."}
       </p>
     </div>
@@ -266,7 +271,9 @@ function verbPlan(verb: BundleVerb | "purge", b: BundleStatus): VerbPlan {
           <>
             Tombstones every live row in{" "}
             <span className="data">{b.authority}</span> —{" "}
-            <span className="data">{(b.liveRecords ?? 0).toLocaleString()}</span>{" "}
+            <span className="data">
+              {(b.liveRecords ?? 0).toLocaleString()}
+            </span>{" "}
             {(b.liveRecords ?? 0) === 1 ? "record" : "records"} — through the
             finalizer flow. Refused while the bundle is running: disable it
             first. This is not reversible, and it must run before uninstall.
@@ -335,7 +342,13 @@ function LifecycleButtons({ bundle }: { bundle: BundleStatus }) {
           return (
             <Button
               key={verb}
-              variant={plan.destructive ? "outline" : verb === "enable" ? "default" : "outline"}
+              variant={
+                plan.destructive
+                  ? "outline"
+                  : verb === "enable"
+                    ? "default"
+                    : "outline"
+              }
               size="sm"
               disabled={mutation.isPending}
               className={plan.destructive ? "text-destructive" : undefined}
@@ -349,12 +362,17 @@ function LifecycleButtons({ bundle }: { bundle: BundleStatus }) {
       {!bundle.installed && (
         <p className="max-w-xs text-right text-xs text-muted-foreground">
           Uninstalled — re-apply the closure to reinstall (
-          <span className="data">substratectl apply -f bundle.yaml</span>). Enable
-          cannot restore a removed registration.
+          <span className="data">substratectl apply -f bundle.yaml</span>).
+          Enable cannot restore a removed registration.
         </p>
       )}
       {confirming && (
-        <Dialog open onOpenChange={(open) => !open && !mutation.isPending && setConfirming(null)}>
+        <Dialog
+          open
+          onOpenChange={(open) =>
+            !open && !mutation.isPending && setConfirming(null)
+          }
+        >
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>{confirming.title}</DialogTitle>
@@ -386,7 +404,13 @@ function LifecycleButtons({ bundle }: { bundle: BundleStatus }) {
 
 // ── setup: the declared inputs and what still stands ────────────────────────
 
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+function Fact({
+  label,
+  children,
+}: {
+  label: string
+  children: React.ReactNode
+}) {
   return (
     <Fragment>
       <dt className="text-muted-foreground">{label}</dt>
@@ -450,7 +474,11 @@ function InputCard({
   const [editing, setEditing] = useState<SubstrateRecord | "new" | null>(null)
 
   const records = useQuery({
-    ...recordsQueryOptions({ authority, plural: kind?.plural ?? "", first: 50 }),
+    ...recordsQueryOptions({
+      authority,
+      plural: kind?.plural ?? "",
+      first: 50,
+    }),
     enabled: Boolean(kind),
   })
   const rows = records.data?.records ?? []
@@ -467,9 +495,7 @@ function InputCard({
     onSuccess: (status, record) => {
       toast.add({
         type: "success",
-        title: record
-          ? `${input.name} bound.`
-          : `${input.name} unbound.`,
+        title: record ? `${input.name} bound.` : `${input.name} unbound.`,
       })
       // The bind verb answers with the refreshed status, the freshest there
       // is. Seed it, then re-read the surfaces that render it.
@@ -706,7 +732,9 @@ function PropertyGrid({ record }: { record: SubstrateRecord }) {
       {rows.map(([key, value]) => (
         <Fact key={key} label={key}>
           <span className="block truncate" title={cellValue(value)}>
-            {cellValue(value) || <span className="text-muted-foreground">—</span>}
+            {cellValue(value) || (
+              <span className="text-muted-foreground">—</span>
+            )}
           </span>
         </Fact>
       ))}
@@ -756,7 +784,9 @@ function AccountRow({
         try {
           target = new URL(url)
         } catch {
-          throw new Error("The connect flow returned an invalid authorization URL.")
+          throw new Error(
+            "The connect flow returned an invalid authorization URL."
+          )
         }
         if (target.protocol !== "https:") {
           throw new Error(
@@ -847,14 +877,20 @@ function AccountRow({
         </div>
         <div className="flex items-center gap-2 text-xs">
           <span
-            className={connected ? "data text-muted-foreground" : "data text-destructive"}
+            className={
+              connected ? "data text-muted-foreground" : "data text-destructive"
+            }
           >
             {status || "not connected"}
           </span>
           {type && (
             <Link
               to="/data/$authority/$plural/$id"
-              params={{ authority: authority, plural: type.plural, id: account.id }}
+              params={{
+                authority: authority,
+                plural: type.plural,
+                id: account.id,
+              }}
               className="inline-flex items-center gap-0.5 text-muted-foreground underline-offset-4 hover:underline"
             >
               record
@@ -888,7 +924,9 @@ function AccountRow({
       {confirming && (
         <Dialog
           open
-          onOpenChange={(open) => !open && !connect.isPending && setConfirming(false)}
+          onOpenChange={(open) =>
+            !open && !connect.isPending && setConfirming(false)
+          }
         >
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
@@ -937,7 +975,13 @@ function AccountRow({
   )
 }
 
-function AccountsSection({ bundle, types }: { bundle: BundleStatus; types: KindInfo[] }) {
+function AccountsSection({
+  bundle,
+  types,
+}: {
+  bundle: BundleStatus
+  types: KindInfo[]
+}) {
   const accounts = useQuery(traitRecordsQueryOptions(ACCOUNT_CONFIG_TRAIT))
   const [adding, setAdding] = useState(false)
   const accountType = useMemo(
@@ -1082,14 +1126,19 @@ function kindColumns(): ColumnDef<KindRow, unknown>[] {
       accessorFn: (t) => t.name,
       enableSorting: false,
       enableHiding: false,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="kind" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="kind" />
+      ),
       cell: ({ row }) => {
         const t = row.original
         const name = (
           <span className="inline-flex min-w-0 items-center gap-1.5">
             <span className="truncate font-medium">{t.name}</span>
             {t.role && (
-              <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
+              <Badge
+                variant="outline"
+                className="shrink-0 text-[10px] font-normal"
+              >
                 {t.role}
               </Badge>
             )}
@@ -1151,7 +1200,10 @@ function ShippedRecordName({
   const name = (
     <div className="min-w-0">
       <div className="truncate font-medium">{row.name}</div>
-      <div className="truncate data text-xs text-muted-foreground" title={row.id}>
+      <div
+        className="truncate data text-xs text-muted-foreground"
+        title={row.id}
+      >
         {row.id}
       </div>
     </div>
@@ -1200,14 +1252,18 @@ const RECORD_ICON: Record<string, typeof BotIcon> = {
 
 /** Kind FIRST, then the record: the kind is what the reader scans this table
  * by, and it is the same order the Data surface reads in. */
-function shippedRecordColumns(types: KindInfo[]): ColumnDef<ShippedRecordRow, unknown>[] {
+function shippedRecordColumns(
+  types: KindInfo[]
+): ColumnDef<ShippedRecordRow, unknown>[] {
   return [
     {
       id: "kind",
       accessorFn: (r) => r.kind,
       enableSorting: false,
       enableHiding: false,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="kind" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="kind" />
+      ),
       cell: ({ row }) => {
         const Icon = RECORD_ICON[row.original.kind] ?? BoxIcon
         return (
@@ -1216,7 +1272,9 @@ function shippedRecordColumns(types: KindInfo[]): ColumnDef<ShippedRecordRow, un
             title={row.original.kind}
           >
             <Icon className="size-3.5 shrink-0" />
-            <span className="truncate data">{splitKind(row.original.kind).name}</span>
+            <span className="truncate data">
+              {splitKind(row.original.kind).name}
+            </span>
           </span>
         )
       },
@@ -1343,7 +1401,11 @@ export function BundleDetailPage() {
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <Button variant="outline" size="sm" onClick={() => void status.refetch()}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void status.refetch()}
+            >
               Retry
             </Button>
           </EmptyContent>
@@ -1379,8 +1441,8 @@ export function BundleDetailPage() {
             <SetupBadge count={setupCount(bundle)} />
             {bundle.quarantined && bundle.quarantineReason ? (
               <span className="basis-full text-xs text-warning">
-                Quarantined: {bundle.quarantineReason} Re-install the bundle
-                to clear it.
+                Quarantined: {bundle.quarantineReason} Re-install the bundle to
+                clear it.
               </span>
             ) : null}
             {vocabulary ? (
@@ -1396,7 +1458,11 @@ export function BundleDetailPage() {
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <Link
               to="/data/$authority/$plural/$id"
-              params={{ authority: "core.substrate.reamde.dev", plural: "bundles", id: bundle.id }}
+              params={{
+                authority: "core.substrate.reamde.dev",
+                plural: "bundles",
+                id: bundle.id,
+              }}
               className="inline-flex items-center gap-0.5 underline-offset-4 hover:underline"
             >
               <span className="data">{bundle.authority}</span>
@@ -1424,8 +1490,8 @@ export function BundleDetailPage() {
               <p className="pb-2 text-xs text-muted-foreground">
                 {(bundle.inputs?.length ?? 0) > 0 ? (
                   <>
-                    Each declared input resolves ONE record: an explicitly
-                    bound one first, then the record named{" "}
+                    Each declared input resolves ONE record: an explicitly bound
+                    one first, then the record named{" "}
                     <span className="data">default</span>, then the sole live
                     record of its kind.
                   </>
@@ -1462,8 +1528,8 @@ export function BundleDetailPage() {
             <h2 className="pb-1 text-sm font-medium">Kinds</h2>
             <p className="pb-2 text-xs text-muted-foreground">
               The record kinds this bundle installed in{" "}
-              <span className="data">{bundle.authority}</span>, each with its live
-              row count.
+              <span className="data">{bundle.authority}</span>, each with its
+              live row count.
             </p>
             {registry.isPending ? (
               <Skeleton className="h-24 w-full rounded-md" />

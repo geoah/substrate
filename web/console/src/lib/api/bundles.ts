@@ -48,12 +48,9 @@ export function bundleStatusQueryOptions(id: string) {
   return queryOptions({
     queryKey: ["bundle", "status", id],
     queryFn: ({ signal }) =>
-      request<BundleStatus>(
-        "GET",
-        `${BUNDLES}/${seg(id)}/status`,
-        undefined,
-        { signal }
-      ),
+      request<BundleStatus>("GET", `${BUNDLES}/${seg(id)}/status`, undefined, {
+        signal,
+      }),
     staleTime: 30_000,
   })
 }
@@ -71,7 +68,10 @@ export function runBundleVerb(
 }
 
 export function uninstallBundle(id: string): Promise<{ uninstalled: boolean }> {
-  return request<{ uninstalled: boolean }>("POST", `${BUNDLES}/${seg(id)}/uninstall`)
+  return request<{ uninstalled: boolean }>(
+    "POST",
+    `${BUNDLES}/${seg(id)}/uninstall`
+  )
 }
 
 export function purgeBundle(id: string): Promise<{ purged: number }> {
@@ -108,10 +108,12 @@ export function seedBundleStatus(
         : [...prev, status]
     }
   )
-  queryClient.setQueryData<CatalogItem[]>(catalogQueryOptions.queryKey, (prev) =>
-    prev?.map((item) =>
-      item.id === status.id ? { ...item, installed: status.installed } : item
-    )
+  queryClient.setQueryData<CatalogItem[]>(
+    catalogQueryOptions.queryKey,
+    (prev) =>
+      prev?.map((item) =>
+        item.id === status.id ? { ...item, installed: status.installed } : item
+      )
   )
 }
 
@@ -188,12 +190,13 @@ export const SUBSTRATE_OAUTH_SOURCE = "substrate-oauth"
  * connected (so the right row invalidates), a failure names a correlation id
  * for the owner to quote when the host logs the reason. */
 export type SubstrateOAuthMessage =
-  | { ok: true; record: string }
-  | { ok: false; correlation: string }
+  { ok: true; record: string } | { ok: false; correlation: string }
 
 /** Validate an untrusted `MessageEvent.data` as one of our OAuth-return
  * messages, returning null for anything that is not ours. */
-export function parseSubstrateOAuthMessage(data: unknown): SubstrateOAuthMessage | null {
+export function parseSubstrateOAuthMessage(
+  data: unknown
+): SubstrateOAuthMessage | null {
   if (typeof data !== "object" || data === null) return null
   const msg = data as Record<string, unknown>
   if (msg.source !== SUBSTRATE_OAUTH_SOURCE) return null

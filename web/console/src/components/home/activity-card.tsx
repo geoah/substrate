@@ -45,9 +45,7 @@ function ActivityRow({ row, kinds }: { row: ChangeRow; kinds: KindInfo[] }) {
       )}
     >
       <ActorChip actor={row.actor} />
-      <span className="data shrink-0 text-muted-foreground">
-        {verbOf(row)}
-      </span>
+      <span className="shrink-0 data text-muted-foreground">{verbOf(row)}</span>
       <ChangeRecordLink row={row} kinds={kinds} />
       <span
         className="data text-muted-foreground"

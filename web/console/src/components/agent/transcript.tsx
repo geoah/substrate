@@ -14,8 +14,13 @@ import { cn } from "@/lib/utils"
 export function Turn({ turn, live }: { turn: TurnView; live?: boolean }) {
   const isUser = turn.role === "user"
   return (
-    <div className={cn("flex flex-col gap-1.5", isUser ? "items-end" : "items-start")}>
-      <span className="px-1 text-[0.65rem] uppercase tracking-wide text-muted-foreground">
+    <div
+      className={cn(
+        "flex flex-col gap-1.5",
+        isUser ? "items-end" : "items-start"
+      )}
+    >
+      <span className="px-1 text-[0.65rem] tracking-wide text-muted-foreground uppercase">
         {turn.role}
       </span>
       {turn.tools.length > 0 && (
@@ -28,7 +33,7 @@ export function Turn({ turn, live }: { turn: TurnView; live?: boolean }) {
       {(turn.content || live) && (
         <div
           className={cn(
-            "max-w-[85%] rounded-md px-3 py-2 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]",
+            "max-w-[85%] rounded-md px-3 py-2 text-sm [overflow-wrap:anywhere] whitespace-pre-wrap",
             isUser ? "bg-primary text-primary-foreground" : "border bg-muted/40"
           )}
         >

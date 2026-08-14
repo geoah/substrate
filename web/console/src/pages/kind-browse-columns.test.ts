@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import { columnIdOf, propertyColumnId, sortPropertyOf } from "./kind-browse-columns"
+import {
+  columnIdOf,
+  propertyColumnId,
+  sortPropertyOf,
+} from "./kind-browse-columns"
 
 describe("column id ↔ wire property mapping", () => {
   it("namespaces declared properties apart from system columns", () => {

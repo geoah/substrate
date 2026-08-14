@@ -6,7 +6,10 @@
 # be installed on a fresh substrate and driven by hand in one command:
 #
 #   substratectl apply -f bundle.yaml
-#   substratectl call notekeeper --input '{"text": "..."}'
+#   substratectl function call stats --input '{"text": "hello world"}'
+#
+# The agents want an `llmprovider` row at the id they name (`default`); the
+# functions want nothing at all. See README.md beside this file.
 #
 # What it demonstrates, in the order the loop hits it:
 #

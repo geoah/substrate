@@ -67,7 +67,10 @@ async function copy(value: string) {
     await navigator.clipboard?.writeText(value)
     toast.add({ type: "success", title: "Secret copied." })
   } catch {
-    toast.add({ type: "error", title: "Could not reach the clipboard — select and copy." })
+    toast.add({
+      type: "error",
+      title: "Could not reach the clipboard — select and copy.",
+    })
   }
 }
 
@@ -153,7 +156,10 @@ function PasswordCard({
       setCode("")
       setNext("")
       setConfirm("")
-      toast.add({ type: "success", title: "Password changed. Your tokens still work." })
+      toast.add({
+        type: "success",
+        title: "Password changed. Your tokens still work.",
+      })
     } catch (err) {
       setError(describe(err))
       setCode("")
@@ -406,7 +412,7 @@ function TotpCard({ username }: { username: string }) {
                     , or the secret by hand:
                   </p>
                   <div className="flex items-center gap-2">
-                    <code className="data min-w-0 flex-1 truncate rounded-lg bg-muted px-2.5 py-1.5 text-xs">
+                    <code className="min-w-0 flex-1 truncate rounded-lg bg-muted px-2.5 py-1.5 data text-xs">
                       {enrollment.totpSecret}
                     </code>
                     <Button
@@ -443,9 +449,7 @@ function TotpCard({ username }: { username: string }) {
                 type="submit"
                 disabled={
                   isBusy ||
-                  (enrollment
-                    ? normalizeCode(newCode) === null
-                    : !canBegin)
+                  (enrollment ? normalizeCode(newCode) === null : !canBegin)
                 }
               >
                 {isBusy && <Spinner />}

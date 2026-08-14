@@ -25,7 +25,11 @@ const agentKind: KindInfo = {
   source: "builtin",
   definition: {
     properties: {
-      prompt: { type: "text", required: true, description: "the system prompt" },
+      prompt: {
+        type: "text",
+        required: true,
+        description: "the system prompt",
+      },
       model: {
         type: "string",
         default: "opus",
@@ -83,7 +87,8 @@ describe("templateYAML", () => {
 
 describe("validateApplyDoc", () => {
   it("reports a YAML syntax error with its line", () => {
-    const bad = "kind: core.substrate.reamde.dev/agent\ndata:\n  properties:\n    a: [1, 2"
+    const bad =
+      "kind: core.substrate.reamde.dev/agent\ndata:\n  properties:\n    a: [1, 2"
     const problems = validateApplyDoc(bad, agentKind)
     expect(problems).toHaveLength(1)
     expect(problems[0].severity).toBe("error")
@@ -149,7 +154,13 @@ describe("applyManifestYAML (edit seed)", () => {
     createdAt: "2026-08-05T16:26:27.161544Z",
     updatedAt: "2026-08-06T10:00:00.000000Z",
     edges: {
-      uses: [{ id: "gcal.fn", kind: "core.substrate.reamde.dev/function", title: "gcal" }],
+      uses: [
+        {
+          id: "gcal.fn",
+          kind: "core.substrate.reamde.dev/function",
+          title: "gcal",
+        },
+      ],
     },
     propertyMeta: {
       prompt: { manager: "owner", tier: "owner", updatedAt: "x" },
@@ -202,12 +213,18 @@ describe("toPutInput", () => {
     expect(input.properties).toMatchObject({ prompt: "hi", enabled: true })
     expect(input.labels).toMatchObject({ a: "b" })
     expect(input.edges).toEqual([
-      { rel: "uses", to: { id: "t1", kind: "core.substrate.reamde.dev/function" } },
+      {
+        rel: "uses",
+        to: { id: "t1", kind: "core.substrate.reamde.dev/function" },
+      },
     ])
   })
 
   it("omits a blank metadata.id so the substrate mints one on create", () => {
-    const input = toPutInput({ metadata: { id: "" }, data: { properties: { a: 1 } } })
+    const input = toPutInput({
+      metadata: { id: "" },
+      data: { properties: { a: 1 } },
+    })
     expect(input.id).toBeUndefined()
     expect(input.properties).toEqual({ a: 1 })
   })
@@ -272,8 +289,11 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
   })
 
   it("refuses a kind that is not this collection's", () => {
-    const yaml = "kind: core.substrate.reamde.dev/agent\ndata:\n  properties:\n    title: hi\n"
-    const problem = validateApplyDoc(yaml, taskKind).find((p) => p.path === "kind")
+    const yaml =
+      "kind: core.substrate.reamde.dev/agent\ndata:\n  properties:\n    title: hi\n"
+    const problem = validateApplyDoc(yaml, taskKind).find(
+      (p) => p.path === "kind"
+    )
     expect(problem?.severity).toBe("error")
     expect(problem?.line).toBe(1)
   })
@@ -311,7 +331,9 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
     const yaml =
       "data:\n  properties:\n    title: hi\n  edges:\n    - rel: assignee\n      to: {id: p1}\n    - rel: bogus\n      to: {id: p2}\n    - rel: assignee\n      to: {}\n"
     const problems = validateApplyDoc(yaml, taskKind)
-    expect(problems.find((p) => p.path === "edges[1]")?.severity).toBe("warning")
+    expect(problems.find((p) => p.path === "edges[1]")?.severity).toBe(
+      "warning"
+    )
     expect(problems.find((p) => p.path === "edges[2]")?.severity).toBe("error")
   })
 })
@@ -350,7 +372,8 @@ describe("the document as both lenses' truth", () => {
   })
 
   it("formats a hand-mangled document back into shape, comments intact", () => {
-    const mangled = "kind: tasks.substrate.reamde.dev/task\ndata:\n      properties:\n            title: hi # mine\n"
+    const mangled =
+      "kind: tasks.substrate.reamde.dev/task\ndata:\n      properties:\n            title: hi # mine\n"
     const { text, error } = formatYAML(mangled)
     expect(error).toBeUndefined()
     expect(text).toContain("    title: hi # mine")

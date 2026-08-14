@@ -51,7 +51,12 @@ export function evidenceSignals(evidence: unknown): EvidenceSignal[] {
     const s = item as Record<string, unknown>
     const kind = s.signal ?? s.name
     if (typeof kind !== "string" || !kind) return []
-    const score = typeof s.jaccard === "number" ? s.jaccard : typeof s.score === "number" ? s.score : undefined
+    const score =
+      typeof s.jaccard === "number"
+        ? s.jaccard
+        : typeof s.score === "number"
+          ? s.score
+          : undefined
     out.push({
       kind,
       value: typeof s.value === "string" ? s.value : undefined,
@@ -223,7 +228,10 @@ export interface VerdictPatch {
 /** The single atomic submit: the ordinary state-transition patch, with the
  * optional note riding the same write as the `owner/note` annotation (the
  * owner may write any namespaced key; the changelog row is this patch). */
-export function verdictPatch(verdict: MergeVerdict, note?: string): VerdictPatch {
+export function verdictPatch(
+  verdict: MergeVerdict,
+  note?: string
+): VerdictPatch {
   const trimmed = note?.trim()
   const patch: VerdictPatch = { properties: { decision: verdict } }
   if (trimmed) patch.annotations = { "owner/note": trimmed }

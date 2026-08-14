@@ -101,7 +101,10 @@ export function CommandMenu({
                         () =>
                           void navigate({
                             to: "/data/$authority/$plural",
-                            params: { authority: a.authority, plural: k.plural },
+                            params: {
+                              authority: a.authority,
+                              plural: k.plural,
+                            },
                           })
                       )
                     }

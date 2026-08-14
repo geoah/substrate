@@ -115,7 +115,10 @@ describe("mergeBundles", () => {
     const rows = mergeBundles(
       [],
       [
-        catalog({ id: "google.bundles.substrate.reamde.dev", integration: true }),
+        catalog({
+          id: "google.bundles.substrate.reamde.dev",
+          integration: true,
+        }),
         catalog({
           id: "urlharvester.bundles.substrate.reamde.dev",
           name: "urlharvester",
@@ -125,11 +128,16 @@ describe("mergeBundles", () => {
     )
     const byId = Object.fromEntries(rows.map((r) => [r.id, r]))
     expect(byId["google.bundles.substrate.reamde.dev"].integration).toBe(true)
-    expect(byId["urlharvester.bundles.substrate.reamde.dev"].integration).toBe(false)
+    expect(byId["urlharvester.bundles.substrate.reamde.dev"].integration).toBe(
+      false
+    )
   })
 
   it("an installed-only bundle (no catalog entry) is non-integration", () => {
-    const rows = mergeBundles([status({ id: "x.bundles.substrate.reamde.dev" })], [])
+    const rows = mergeBundles(
+      [status({ id: "x.bundles.substrate.reamde.dev" })],
+      []
+    )
     expect(rows[0].integration).toBe(false)
   })
 
@@ -154,7 +162,12 @@ describe("mergeBundles — the closure facets", () => {
           integration: false,
           vocabulary: true,
         }),
-        catalog({ requires: ["people.substrate.reamde.dev", "messaging.substrate.reamde.dev"] }),
+        catalog({
+          requires: [
+            "people.substrate.reamde.dev",
+            "messaging.substrate.reamde.dev",
+          ],
+        }),
       ]
     )
     const byId = Object.fromEntries(rows.map((r) => [r.id, r]))
@@ -169,7 +182,12 @@ describe("mergeBundles — the closure facets", () => {
 
   it("keeps the catalog's facets when a status folds over the same id", () => {
     const rows = mergeBundles(
-      [status({ id: "people.substrate.reamde.dev/people", authority: "people.substrate.reamde.dev" })],
+      [
+        status({
+          id: "people.substrate.reamde.dev/people",
+          authority: "people.substrate.reamde.dev",
+        }),
+      ],
       [
         catalog({
           id: "people.substrate.reamde.dev/people",
@@ -185,7 +203,10 @@ describe("mergeBundles — the closure facets", () => {
   })
 
   it("an applied-only bundle claims neither facet — the catalog states them, nothing derives them", () => {
-    const rows = mergeBundles([status({ id: "x.bundles.substrate.reamde.dev" })], [])
+    const rows = mergeBundles(
+      [status({ id: "x.bundles.substrate.reamde.dev" })],
+      []
+    )
     expect(rows[0].vocabulary).toBe(false)
     expect(rows[0].requires).toEqual([])
   })
@@ -217,19 +238,27 @@ describe("filterBundles", () => {
 
   it("integrations narrows to the integration rows", () => {
     const only = filterBundles(rows, "integrations")
-    expect(only.map((r) => r.id)).toEqual(["google.bundles.substrate.reamde.dev"])
+    expect(only.map((r) => r.id)).toEqual([
+      "google.bundles.substrate.reamde.dev",
+    ])
   })
 
   it("vocabulary narrows to the pure-vocabulary bundles", () => {
     const only = filterBundles(rows, "vocabulary")
-    expect(only.map((r) => r.id)).toEqual(["people.substrate.reamde.dev/people"])
+    expect(only.map((r) => r.id)).toEqual([
+      "people.substrate.reamde.dev/people",
+    ])
   })
 
   it("upgrades narrows to rows whose preview says the closure moved", () => {
     const moved = mergeBundles(
       [],
       [
-        catalog({ id: "a.bundles.substrate.reamde.dev/a", name: "a", installed: true }),
+        catalog({
+          id: "a.bundles.substrate.reamde.dev/a",
+          name: "a",
+          installed: true,
+        }),
         catalog({
           id: "b.bundles.substrate.reamde.dev/b",
           name: "b",
@@ -268,9 +297,9 @@ describe("the upgrade preview helpers", () => {
 
   it("blocked means available AND the server named blockers", () => {
     expect(upgradeBlocked({ upgrade: undefined })).toBe(false)
-    expect(
-      upgradeBlocked({ upgrade: { available: true, to: "v2" } })
-    ).toBe(false)
+    expect(upgradeBlocked({ upgrade: { available: true, to: "v2" } })).toBe(
+      false
+    )
     expect(
       upgradeBlocked({
         upgrade: { available: true, to: "v2", blockers: ["a guard line"] },
@@ -298,7 +327,12 @@ describe("the upgrade preview helpers", () => {
 describe("presentAuthorities — what this repository already holds", () => {
   it("counts an imported bundle's authority and every reconciled kind's", () => {
     const rows = mergeBundles(
-      [status({ id: "people.substrate.reamde.dev/people", authority: "people.substrate.reamde.dev" })],
+      [
+        status({
+          id: "people.substrate.reamde.dev/people",
+          authority: "people.substrate.reamde.dev",
+        }),
+      ],
       [
         catalog({
           id: "people.substrate.reamde.dev/people",
@@ -306,11 +340,17 @@ describe("presentAuthorities — what this repository already holds", () => {
           installed: true,
           vocabulary: true,
         }),
-        catalog({ id: "google.bundles.substrate.reamde.dev", installed: false }),
+        catalog({
+          id: "google.bundles.substrate.reamde.dev",
+          installed: false,
+        }),
       ]
     )
     const present = presentAuthorities(rows, [
-      kindInfo({ identity: "core.substrate.reamde.dev/bundle", authority: "core.substrate.reamde.dev" }),
+      kindInfo({
+        identity: "core.substrate.reamde.dev/bundle",
+        authority: "core.substrate.reamde.dev",
+      }),
     ])
     expect(present.has("people.substrate.reamde.dev")).toBe(true)
     expect(present.has("core.substrate.reamde.dev")).toBe(true)
@@ -330,16 +370,26 @@ describe("presentAuthorities — what this repository already holds", () => {
       ],
       []
     )
-    expect(presentAuthorities(rows).has("people.substrate.reamde.dev")).toBe(false)
+    expect(presentAuthorities(rows).has("people.substrate.reamde.dev")).toBe(
+      false
+    )
   })
 })
 
 describe("requirementsOf / requiresHint — what to import first", () => {
-  const present = new Set(["people.substrate.reamde.dev", "core.substrate.reamde.dev"])
+  const present = new Set([
+    "people.substrate.reamde.dev",
+    "core.substrate.reamde.dev",
+  ])
 
   it("marks each declared authority present or missing, in declaration order", () => {
     const reqs = requirementsOf(
-      { requires: ["people.substrate.reamde.dev", "messaging.substrate.reamde.dev"] },
+      {
+        requires: [
+          "people.substrate.reamde.dev",
+          "messaging.substrate.reamde.dev",
+        ],
+      },
       present
     )
     expect(reqs).toEqual([
@@ -358,8 +408,14 @@ describe("requirementsOf / requiresHint — what to import first", () => {
 
   it("names one missing authority, then several, the way the server names them", () => {
     expect(
-      requiresHint(missingRequirements(requirementsOf({ requires: ["tasks.substrate.reamde.dev"] }, present)))
-    ).toBe("Import tasks.substrate.reamde.dev first — this bundle declares against it.")
+      requiresHint(
+        missingRequirements(
+          requirementsOf({ requires: ["tasks.substrate.reamde.dev"] }, present)
+        )
+      )
+    ).toBe(
+      "Import tasks.substrate.reamde.dev first — this bundle declares against it."
+    )
     expect(
       requiresHint(
         missingRequirements(
@@ -379,7 +435,6 @@ describe("requirementsOf / requiresHint — what to import first", () => {
       "Import messaging.substrate.reamde.dev and calendar.substrate.reamde.dev first — this bundle declares against them."
     )
   })
-
 })
 
 describe("importFailureText — the server's refusal, verbatim", () => {
@@ -406,9 +461,9 @@ describe("importFailureText — the server's refusal, verbatim", () => {
   })
 
   it("falls back to the envelope message when there are no problems", () => {
-    expect(importFailureText(new ApiError("forbidden", "owner only", 403))).toBe(
-      "owner only"
-    )
+    expect(
+      importFailureText(new ApiError("forbidden", "owner only", 403))
+    ).toBe("owner only")
     expect(importFailureText(new Error("network error"))).toBe("network error")
     expect(importFailureText(undefined)).toBe("The import was refused.")
   })
@@ -456,9 +511,13 @@ describe("installedKindRows — the Kinds table", () => {
   })
 
   it("marks the input and account kinds by role", () => {
-    const rows = installedKindRows(status(), registry, catalog({
-      closure: { kinds: registry.map((k) => k.identity) },
-    }))
+    const rows = installedKindRows(
+      status(),
+      registry,
+      catalog({
+        closure: { kinds: registry.map((k) => k.identity) },
+      })
+    )
     const byId = Object.fromEntries(rows.map((r) => [r.identity, r]))
     expect(byId[configKind.identity].role).toBe("input")
     expect(byId[accountKind.identity].role).toBe("account")
@@ -514,7 +573,9 @@ describe("installedKindRows — the Kinds table", () => {
     const rows = installedKindRows(
       status(),
       registry,
-      catalog({ closure: { kinds: ["google.bundles.substrate.reamde.dev/ghost"] } })
+      catalog({
+        closure: { kinds: ["google.bundles.substrate.reamde.dev/ghost"] },
+      })
     )
     expect(rows).toHaveLength(1)
     expect(rows[0].name).toBe("ghost")
@@ -564,17 +625,34 @@ describe("bundleRecordRows — the Records table", () => {
       })
     )
     expect(rows).toEqual([
-      { kind: "core.substrate.reamde.dev/trigger", id: "ongooglesync", name: "ongooglesync" },
-      { kind: "core.substrate.reamde.dev/llmprovider", id: "anthropic", name: "anthropic" },
+      {
+        kind: "core.substrate.reamde.dev/trigger",
+        id: "ongooglesync",
+        name: "ongooglesync",
+      },
+      {
+        kind: "core.substrate.reamde.dev/llmprovider",
+        id: "anthropic",
+        name: "anthropic",
+      },
     ])
   })
 
   it("renders mappings when a catalog carries them, and omits them otherwise", () => {
     const withMappings = bundleRecordRows(
-      catalog({ closure: { kinds: [], mappings: ["google.bundles.substrate.reamde.dev/m"] } })
+      catalog({
+        closure: {
+          kinds: [],
+          mappings: ["google.bundles.substrate.reamde.dev/m"],
+        },
+      })
     )
     expect(withMappings).toEqual([
-      { kind: "core.substrate.reamde.dev/recordmapping", id: "google.bundles.substrate.reamde.dev/m", name: "m" },
+      {
+        kind: "core.substrate.reamde.dev/recordmapping",
+        id: "google.bundles.substrate.reamde.dev/m",
+        name: "m",
+      },
     ])
     expect(bundleRecordRows(catalog({ closure: { kinds: [] } }))).toEqual([])
   })
@@ -601,9 +679,9 @@ describe("declaresProviderInterfaces", () => {
   })
 
   it("is true when the bundle authority ships an accountconfig account kind", () => {
-    expect(accountKindOf([accountKind], "google.bundles.substrate.reamde.dev")).toBe(
-      accountKind
-    )
+    expect(
+      accountKindOf([accountKind], "google.bundles.substrate.reamde.dev")
+    ).toBe(accountKind)
     expect(
       declaresProviderInterfaces(
         { authority: "google.bundles.substrate.reamde.dev", inputs: [] },
@@ -618,7 +696,10 @@ describe("declaresProviderInterfaces", () => {
         {
           authority: "google.bundles.substrate.reamde.dev",
           inputs: [
-            { name: "client", kind: "google.bundles.substrate.reamde.dev/config" },
+            {
+              name: "client",
+              kind: "google.bundles.substrate.reamde.dev/config",
+            },
           ],
         },
         [clientKind]
@@ -638,7 +719,10 @@ describe("declaresProviderInterfaces", () => {
         {
           authority: "web.bundles.substrate.reamde.dev",
           inputs: [
-            { name: "connector", kind: "web.bundles.substrate.reamde.dev/config" },
+            {
+              name: "connector",
+              kind: "web.bundles.substrate.reamde.dev/config",
+            },
           ],
         },
         [connectorKind]
@@ -670,7 +754,12 @@ describe("oauthConnectBlocked, the connect gate", () => {
         {
           inputs,
           setup: [
-            { code: "oauth-client", input: "client", record: "default", message: "m" },
+            {
+              code: "oauth-client",
+              input: "client",
+              record: "default",
+              message: "m",
+            },
           ],
         },
         [clientKind]
@@ -693,13 +782,19 @@ describe("oauthConnectBlocked, the connect gate", () => {
     ]
     expect(
       oauthConnectBlocked(
-        { inputs: both, setup: [{ code: "missing", input: "connector", message: "m" }] },
+        {
+          inputs: both,
+          setup: [{ code: "missing", input: "connector", message: "m" }],
+        },
         [clientKind]
       )
     ).toBe(false)
     expect(
       oauthConnectBlocked(
-        { inputs, setup: [{ code: "provider", record: "openai", message: "m" }] },
+        {
+          inputs,
+          setup: [{ code: "provider", record: "openai", message: "m" }],
+        },
         [clientKind]
       )
     ).toBe(false)

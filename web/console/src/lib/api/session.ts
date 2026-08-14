@@ -54,7 +54,11 @@ export function setToken(token: string): void {
 
 /** The full sign-in write: the secret, the username, and the held token's id,
  * as a mint (login/register/token) hands them back. */
-export function saveSession(secret: string, username: string, tokenId: string): void {
+export function saveSession(
+  secret: string,
+  username: string,
+  tokenId: string
+): void {
   localStorage.setItem(TOKEN_KEY, secret)
   localStorage.setItem(USER_KEY, username)
   localStorage.setItem(TOKEN_ID_KEY, tokenId)

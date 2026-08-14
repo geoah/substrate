@@ -301,7 +301,9 @@ def _json_copy(action, field, value):
     try:
         return json.loads(json.dumps(value))
     except (TypeError, ValueError) as e:
-        raise ValueError("effects.%s: %s is not JSON-serializable: %s" % (action, field, e))
+        raise ValueError(
+            "effects.%s: %s is not JSON-serializable: %s" % (action, field, e)
+        ) from e
 
 
 def _need_kind(action, value):

@@ -56,7 +56,7 @@ function AuthorityCard({ nav, armed }: { nav: AuthorityNav; armed: boolean }) {
                 <Link
                   to="/data/$authority/$plural"
                   params={{ authority: k.authority, plural: k.plural }}
-                  className="data truncate text-xs underline-offset-4 hover:underline"
+                  className="truncate data text-xs underline-offset-4 hover:underline"
                 >
                   {k.name}
                 </Link>
@@ -66,7 +66,7 @@ function AuthorityCard({ nav, armed }: { nav: AuthorityNav; armed: boolean }) {
                     // failed) — the row stays a door, the number stays honest.
                     <span className="text-xs text-muted-foreground">—</span>
                   ) : (
-                    <span className="data text-right text-xs text-muted-foreground">
+                    <span className="text-right data text-xs text-muted-foreground">
                       {formatCount(count)}
                     </span>
                   )
@@ -89,7 +89,11 @@ function AuthorityCard({ nav, armed }: { nav: AuthorityNav; armed: boolean }) {
 // 2026-08-06).
 const AUTHORITY_GRID = "grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-3"
 
-export function DataCountsZone({ authorities }: { authorities: AuthorityNav[] }) {
+export function DataCountsZone({
+  authorities,
+}: {
+  authorities: AuthorityNav[]
+}) {
   const own = authorities.filter(
     (a) => !isMachineryAuthority(a.authority, a.kinds)
   )

@@ -83,7 +83,9 @@ describe("the v1 door", () => {
       username: "geoah",
     })
     // Anonymous: a stored bearer never rides the door.
-    expect((init.headers as Record<string, string>).Authorization).toBeUndefined()
+    expect(
+      (init.headers as Record<string, string>).Authorization
+    ).toBeUndefined()
   })
 
   it("register POSTs the full body and returns the minted token", async () => {
@@ -119,7 +121,9 @@ describe("the v1 door", () => {
       totpCode: "123456",
       label: "console",
     })
-    expect((init.headers as Record<string, string>).Authorization).toBeUndefined()
+    expect(
+      (init.headers as Record<string, string>).Authorization
+    ).toBeUndefined()
   })
 
   it("changePassword is anonymous — the password factor never rides a bearer", async () => {
@@ -134,7 +138,9 @@ describe("the v1 door", () => {
       totpCode: "123456",
       newPassword: "newpw",
     })
-    expect((init.headers as Record<string, string>).Authorization).toBeUndefined()
+    expect(
+      (init.headers as Record<string, string>).Authorization
+    ).toBeUndefined()
   })
 
   it("totpEnroll / totpChange POST the re-enrollment steps anonymously", async () => {

@@ -44,7 +44,8 @@ export function DataTableCursorPagination({
     >
       <span className="flex min-w-0 items-center gap-1.5 truncate data">
         page {page.toLocaleString()}
-        {rows > 0 && `, ${rows.toLocaleString()} ${rows === 1 ? "row" : "rows"}`}
+        {rows > 0 &&
+          `, ${rows.toLocaleString()} ${rows === 1 ? "row" : "rows"}`}
         {summary && <span className="truncate">, {summary}</span>}
       </span>
       <div className="flex shrink-0 items-center gap-1">

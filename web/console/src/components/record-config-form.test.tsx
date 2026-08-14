@@ -98,7 +98,9 @@ describe("RecordConfigForm", () => {
     renderForm()
     const select = screen.getByLabelText(/Sync cadence/) as HTMLSelectElement
     const options = within(select).getAllByRole("option") as HTMLOptionElement[]
-    const byValue = Object.fromEntries(options.map((o) => [o.value, o.textContent]))
+    const byValue = Object.fromEntries(
+      options.map((o) => [o.value, o.textContent])
+    )
     // The visible text is the declared name; the submitted value stays raw.
     expect(byValue.daily).toBe("Once a day")
     expect(byValue.hourly).toBe("Every hour")

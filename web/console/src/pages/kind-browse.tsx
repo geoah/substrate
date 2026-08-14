@@ -115,7 +115,8 @@ export function KindBrowsePage() {
   function persist(next: { filter?: string[]; sort?: string }) {
     saveBrowsePrefs(authority, plural, {
       filter: next.filter ?? filterTokens,
-      sort: (next.sort ?? sort) === DEFAULT_SORT ? undefined : (next.sort ?? sort),
+      sort:
+        (next.sort ?? sort) === DEFAULT_SORT ? undefined : (next.sort ?? sort),
     })
   }
 
@@ -299,10 +300,7 @@ export function KindBrowsePage() {
           <TabsTrigger value="definition">Definition</TabsTrigger>
         </TabsList>
 
-        <TabsContent
-          value="records"
-          className="flex min-h-0 flex-col border-t"
-        >
+        <TabsContent value="records" className="flex min-h-0 flex-col border-t">
           {records.isError ? (
             <PageEmpty
               icon={<SearchXIcon />}
@@ -343,7 +341,11 @@ export function KindBrowsePage() {
                   onRowClick={(row) =>
                     void navigate({
                       to: "/data/$authority/$plural/$id",
-                      params: { authority: authority, plural: plural, id: row.id },
+                      params: {
+                        authority: authority,
+                        plural: plural,
+                        id: row.id,
+                      },
                     })
                   }
                   empty={

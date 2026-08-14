@@ -56,7 +56,9 @@ export function mergeRequestsQueryOptions(opts: {
   })
 }
 
-export function mergeRequestCountQueryOptions(decision?: Decision | Decision[]) {
+export function mergeRequestCountQueryOptions(
+  decision?: Decision | Decision[]
+) {
   return recordCountQueryOptions(
     CORE_AUTHORITY,
     MR_PLURAL,

@@ -60,7 +60,8 @@ export function actorNames(mirrors: ActorMirrors): string[] {
   for (const a of mirrors.authorities) {
     const declared = a.properties?.actors
     if (!Array.isArray(declared)) continue
-    for (const name of declared) if (typeof name === "string" && name) names.add(name)
+    for (const name of declared)
+      if (typeof name === "string" && name) names.add(name)
   }
   return [...names].sort()
 }

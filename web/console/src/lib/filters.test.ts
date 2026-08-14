@@ -176,7 +176,9 @@ describe("browse prefs persistence", () => {
       sort: "name:asc",
     })
     // another collection sees nothing
-    expect(loadBrowsePrefs("people.substrate.reamde.dev", "organizations")).toBeNull()
+    expect(
+      loadBrowsePrefs("people.substrate.reamde.dev", "organizations")
+    ).toBeNull()
   })
 
   it("an all-default save removes the stored entry (clear clears)", () => {

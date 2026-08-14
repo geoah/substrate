@@ -130,16 +130,18 @@ describe("transcriptOf", () => {
 
 describe("toolOK", () => {
   it("believes the declared ok property over the payload", () => {
-    expect(toolOK(row({ role: "tool", ok: false, content: '{"fine":1}' }))).toBe(
-      false
-    )
-    expect(toolOK(row({ role: "tool", ok: true, content: '{"error":"x"}' }))).toBe(
-      true
-    )
+    expect(
+      toolOK(row({ role: "tool", ok: false, content: '{"fine":1}' }))
+    ).toBe(false)
+    expect(
+      toolOK(row({ role: "tool", ok: true, content: '{"error":"x"}' }))
+    ).toBe(true)
   })
 
   it("reads the loop's one-key error envelope as a failure", () => {
-    expect(toolOK(row({ role: "tool", content: '{"error":"boom"}' }))).toBe(false)
+    expect(toolOK(row({ role: "tool", content: '{"error":"boom"}' }))).toBe(
+      false
+    )
   })
 
   it("does not mistake a result that merely carries an error key", () => {

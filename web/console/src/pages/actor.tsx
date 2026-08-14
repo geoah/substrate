@@ -49,7 +49,7 @@ function IdentityCard({ actorId }: { actorId: string }) {
     <div className="flex min-w-0 items-center gap-3">
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
-          <h1 className="truncate text-lg font-semibold data">{actorId}</h1>
+          <h1 className="truncate data text-lg font-semibold">{actorId}</h1>
           {source && (
             <Badge variant="outline" className="font-normal">
               {source}
@@ -82,8 +82,8 @@ function IdentityCard({ actorId }: { actorId: string }) {
             <span>{resolved.error.message}</span>
           ) : (
             <span>
-              Not in the actor registry — the changelog below is still its
-              full record.
+              Not in the actor registry — the changelog below is still its full
+              record.
             </span>
           )}
         </p>

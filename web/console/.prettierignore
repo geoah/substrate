@@ -1,7 +1,17 @@
+# Generated, vendored or machine-owned. `pnpm fmt` writes everything else in
+# this directory, including the JSON, CSS and Markdown that the old
+# `**/*.{ts,tsx}` glob quietly skipped.
 node_modules/
+dist/
 coverage/
 .pnpm-store/
+
+# Lockfiles are the package manager's format, not ours.
 pnpm-lock.yaml
 package-lock.json
-pnpm-lock.yaml
 yarn.lock
+
+# Written by internal/substrate/wire_test.go, in Go's json.MarshalIndent shape.
+# Prettier reformatting it would put the two generators in a loop: the Go test
+# rewrites it, this rewrites it back, and neither check is ever green.
+src/lib/api/wire.golden.json

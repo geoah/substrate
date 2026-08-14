@@ -1,5 +1,5 @@
 [tools]
-go = "1.26.5"
+go = "1.26.6"
 node = "22.12.0"
 pnpm = "9.14.2"
 golangci-lint = "2.12.2"
@@ -21,6 +21,21 @@ goreleaser = "2.17.1"
 # `# /// script` block is executed through `uv run`, which provisions its
 # declared dependencies. The runner shells out to it, so it must be on PATH.
 uv = "0.7.12"
+# The vulnerability scanner. It is CALL-GRAPH based, so it reports only
+# advisories this tree actually reaches — which is what makes it a gate rather
+# than a list of things to triage. Not in mise's registry; the go backend
+# builds it from its own module.
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.7.0"
+# The shell linter. `.mise/*.sh` hold the dev loop and the kinds guard, and
+# they are the only code in the tree that no compiler reads.
+shellcheck = "0.11.0"
+# The Python linter and formatter, for `internal/runner/host.py` — the function
+# runner's Python host, and the one Python file the server ships.
+ruff = "0.16.2"
+# The link checker, run OFFLINE: it resolves relative links and anchors against
+# the tree and never opens a socket, so a moved doc fails the lint job instead
+# of a reader's click. An external URL is nobody's build failure.
+lychee = "0.24.2"
 #
 # python is deliberately NOT pinned here. The function runner shells out to
 # whatever `python3` is on PATH, and every runner and dev box has one — while
@@ -92,6 +107,36 @@ description = "The suites that want a database: a pgvector container, or SUBSTRA
 # excludes it by name and `test:llm` selects it by the same name.
 run = "go test -p 1 -skip '^TestLive' ./internal/engine/... ./internal/catalog/... ./internal/testenv/..."
 
+[tasks."test:race"]
+description = "The short suite under the race detector"
+# -short, so this is the suite that does NOT want a database. The engine's
+# database suites are where the interesting concurrency lives, but they are
+# also four minutes of container time, and -race multiplies that; this is the
+# cheap gate that catches the runner's process reaping, the API's handlers and
+# the LLM wires. Run `go test -race ./internal/engine/...` by hand when you
+# have touched the engine's goroutines.
+run = "go test -race -short ./..."
+
+[tasks."test:coverage"]
+description = "The whole suite with a coverage profile -> coverage.out"
+# NOT a gate. There is no threshold here on purpose: a number that fails a
+# build teaches people to write tests that move the number, and this repo
+# already has more test code than source. What it is for is finding the paths
+# nothing exercises — `go tool cover -html=coverage.out` is the useful view.
+#
+# The two halves run sequentially for the same reason `test` does, and their
+# profiles are concatenated: a profile is a `mode:` line then one line per
+# block, so keeping the first line and dropping the other's is the whole merge.
+run = [
+  "go test -short -covermode=atomic -coverprofile=coverage.short.out ./...",
+  "go test -p 1 -skip '^TestLive' -covermode=atomic -coverprofile=coverage.db.out ./internal/engine/... ./internal/catalog/... ./internal/testenv/...",
+  """
+    { cat coverage.short.out; tail -n +2 coverage.db.out; } >coverage.out
+    rm -f coverage.short.out coverage.db.out
+    go tool cover -func=coverage.out | tail -1
+    """,
+]
+
 [tasks."test:llm"]
 description = "The LIVE suite: real completions from real providers, when the keys are there"
 # Every case skips itself unless its key is in the environment, so this exits 0
@@ -120,8 +165,8 @@ run = "go test -count=1 -run '^TestLive' -v ./internal/llm/... ./internal/engine
 # eslint from `lint` would drag pnpm into the lint job and run it twice.
 
 [tasks.lint]
-description = "Every linter: Go and YAML"
-depends = ["lint:go", "lint:yaml"]
+description = "Every linter: Go, YAML, shell, Python and the docs' links"
+depends = ["lint:go", "lint:yaml", "lint:shell", "lint:python", "lint:docs"]
 
 [tasks."lint:go"]
 description = "golangci-lint over the module"
@@ -137,6 +182,29 @@ description = "yamllint over every YAML in the tree — block style, and nothing
 # contradict it. What is here is what a formatter cannot say.
 run = "yamllint ."
 
+[tasks."lint:shell"]
+description = "shellcheck over .mise/*.sh — the dev loop and the kinds guard"
+# These scripts are the only code here no compiler reads, and they run docker,
+# psql and signals against a developer's machine. -x follows `source`.
+run = "shellcheck -x .mise/*.sh"
+
+[tasks."lint:python"]
+description = "ruff over the runner's Python host"
+# internal/runner/host.py is the long-lived child every `runtime: python`
+# function body is exec'd into: a syntax slip there takes out every Python
+# function at once, and no Go test compiles it. Config is .ruff.toml.
+run = "ruff check internal/runner/host.py"
+
+[tasks."lint:docs"]
+description = "lychee over every Markdown file — relative links and anchors, OFFLINE"
+# --offline: a relative link that names a file that is not there is a bug in
+# this tree and fails. An external URL that is down today is not, so nothing
+# here opens a socket and CI never flakes on somebody else's outage.
+# Config is .lychee.toml.
+# --hidden: without it lychee skips every dotted directory, so .github/ — the
+# PR template and the issue forms, which link into docs/ — went unchecked.
+run = "lychee --config .lychee.toml --offline --hidden --no-progress ."
+
 # NOT `lint:kinds`, and so not part of `lint`: this reads the DIFF against the
 # base, not the files, so it is only meaningful where there is a change to
 # judge. `ci:lint` names it; a laptop runs it when it wants that answer.
@@ -144,13 +212,48 @@ run = "yamllint ."
 description = "Refuse a kinds/ change that does not bump a declaration version"
 run = ".mise/kindscheck.sh"
 
+# =============================================================================
+# Audit
+# =============================================================================
+#
+# A SEPARATE family from `lint`, because these are the two checks that need the
+# network: they ask a vulnerability database what is known today. That makes
+# them the one kind of check whose answer changes without the tree changing —
+# green this morning, red this afternoon, same commit — so they are their own
+# CI job, and `lint` stays something a laptop can run on a plane.
+
+[tasks.audit]
+description = "Every vulnerability scan: Go and the console"
+depends = ["audit:go", "audit:console"]
+
+[tasks."audit:go"]
+description = "govulncheck over the module — advisories the code actually reaches"
+# Call-graph based: an advisory against a dependency this tree never calls into
+# is not reported. That is what makes it a gate rather than a spreadsheet.
+run = "govulncheck ./..."
+
+[tasks."audit:console"]
+description = "pnpm audit over the console's dependencies"
+dir = "web/console"
+depends = ["console:install"]
+# --audit-level high: a moderate advisory in a build-time devDependency is not
+# worth blocking every pull request in the repository, and a gate that cries
+# wolf gets an `|| true` bolted onto it within the month. High and critical
+# stop the line; the rest are read in the job's output.
+run = "pnpm audit --audit-level high"
+
 [tasks.fmt]
 description = "Format the tree in place: Go and YAML"
 depends = ["fmt:go", "fmt:yaml"]
 
 [tasks."fmt:go"]
-description = "gofmt the module in place"
-run = "gofmt -w ."
+description = "Format the module in place: gofumpt and goimports, through golangci-lint"
+# NOT `gofmt -w .`. The formatters are configured once, in .golangci.yml's
+# `formatters:` block (gofumpt with extra-rules, goimports with a local
+# prefix), and `golangci-lint fmt` is that same configuration applied in
+# place. Running bare gofmt here meant `fmt` could not fix what `lint` would
+# go on to report, which is the one thing a formatter must never do.
+run = "golangci-lint fmt"
 
 [tasks."fmt:yaml"]
 description = "yamlfmt every YAML in the tree in place; config is .yamlfmt"
@@ -161,13 +264,10 @@ description = "Fail if anything is unformatted: Go and YAML"
 depends = ["fmt:go:check", "fmt:yaml:check"]
 
 [tasks."fmt:go:check"]
-description = "Fail if any Go file is unformatted"
-run = '''
-    unformatted=$(gofmt -l . | grep -v '^web/' || true)
-    if [ -n "$unformatted" ]; then
-      echo "unformatted:"; echo "$unformatted"; exit 1
-    fi
-    '''
+description = "Fail if any Go file is unformatted, printing the diff"
+# The same formatters `fmt:go` writes with, as a check — so what fails here is
+# exactly what `mise run fmt` fixes.
+run = "golangci-lint fmt --diff"
 
 [tasks."fmt:yaml:check"]
 description = "Fail if any YAML is unformatted, printing the diff"
@@ -287,6 +387,18 @@ dir = "web/console"
 depends = ["console:install"]
 run = "pnpm lint"
 
+[tasks."console:fmt"]
+description = "prettier over the console, in place"
+dir = "web/console"
+depends = ["console:install"]
+run = "pnpm fmt"
+
+[tasks."console:fmt:check"]
+description = "Fail if anything in the console is unformatted"
+dir = "web/console"
+depends = ["console:install"]
+run = "pnpm fmt:check"
+
 # =============================================================================
 # Image
 # =============================================================================
@@ -351,13 +463,33 @@ description = "CI job `cross` — the cross-compile check, on a runner of its ow
 depends = ["cross"]
 
 [tasks."ci:go"]
-description = "CI job `go test` — the suite in its two halves"
-# See `test` above: the two halves MUST NOT run concurrently.
-run = ["mise run test:short", "mise run test:db"]
+description = "CI job `go test` — the suite in its two halves, with a coverage profile"
+# See `test` above: the two halves MUST NOT run concurrently. This runs them
+# through `test:coverage` so the gate also produces the profile CI keeps as an
+# artifact; `mise run test` is the same two halves without the instrumentation,
+# and stays the inner loop.
+depends = ["test:coverage"]
+
+[tasks."ci:race"]
+description = "CI job `race` — the short suite under the race detector"
+# Its own job, not a step of `ci:go`: -race roughly triples the suite's runtime
+# and the two want different build caches, so sharing a runner would put a slow
+# check in front of the fast one for no gain.
+depends = ["test:race"]
+
+[tasks."ci:audit"]
+description = "CI job `audit` — the vulnerability scans"
+depends = ["audit"]
 
 [tasks."ci:console"]
-description = "CI job `console` — typecheck, lint, test, build"
-depends = ["console:typecheck", "console:lint", "console:test", "console:build"]
+description = "CI job `console` — typecheck, lint, format, test, build"
+depends = [
+  "console:typecheck",
+  "console:lint",
+  "console:fmt:check",
+  "console:test",
+  "console:build",
+]
 
 [tasks."ci:image"]
 description = "CI job `image builds` — the image builds from a clean tree"
@@ -365,7 +497,15 @@ run = "docker build -t $IMAGE:ci ."
 
 [tasks.ci]
 description = "Every CI job, locally. This is the whole pipeline."
-depends = ["ci:lint", "ci:cross", "ci:go", "ci:console", "ci:image"]
+depends = [
+  "ci:lint",
+  "ci:cross",
+  "ci:go",
+  "ci:race",
+  "ci:audit",
+  "ci:console",
+  "ci:image",
+]
 
 [tasks.check]
 description = "Alias for ci"

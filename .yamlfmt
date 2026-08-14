@@ -31,12 +31,18 @@ formatter:
   eof_newline: true
 # Everything, then the exclusions. Lockfiles and vendored trees are not ours
 # to shape, and .dev/ is a running substrate's scratch.
+#
+# .gitignore IS the exclusion list. `exclude:` globs do not match here — a
+# `**/node_modules/**` entry read as if it were honoured while yamlfmt walked
+# straight into it — and the failure was invisible in CI, where the lint job
+# never runs `pnpm install` and so has no node_modules to walk. On a laptop
+# that had built the console once, `mise run fmt:check` failed on a vendored
+# `.travis.yml`. One list, in the file that already holds it.
+gitignore_excludes: true
 include:
   - "**/*.yaml"
   - "**/*.yml"
 exclude:
-  - "**/node_modules/**"
+  # Tracked, so .gitignore says nothing about it: the package manager's
+  # format, not ours.
   - "web/console/pnpm-lock.yaml"
-  - "web/console/dist/**"
-  - ".dev/**"
-  - "bin/**"

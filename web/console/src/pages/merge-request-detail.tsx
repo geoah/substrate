@@ -49,7 +49,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field"
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "@/components/ui/field"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
@@ -61,7 +66,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { recordQueryOptions } from "@/lib/api/records"
-import { mergeRequestQueryOptions, submitVerdict } from "@/lib/api/mergerequests"
+import {
+  mergeRequestQueryOptions,
+  submitVerdict,
+} from "@/lib/api/mergerequests"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { EdgeTarget, SubstrateRecord, KindInfo } from "@/lib/api/types"
 import { cellValue, relativeTime } from "@/lib/format"
@@ -156,7 +164,7 @@ function ValueCell({
     return (
       <span className="flex min-w-0 flex-col gap-0.5">
         {targets.map((t) => (
-          <span key={t.id} className="data min-w-0 truncate">
+          <span key={t.id} className="min-w-0 truncate data">
             <RecordPeek target={t} types={types} />
           </span>
         ))}
@@ -172,11 +180,11 @@ function ValueCell({
     <span className="flex min-w-0 flex-col items-start gap-1">
       {text ? (
         <span className="flex w-full min-w-0 items-baseline gap-1.5">
-          <span className="data min-w-0 truncate" title={text}>
+          <span className="min-w-0 truncate data" title={text}>
             {text}
           </span>
           {count > 0 && (
-            <span className="data shrink-0 text-xs text-muted-foreground">
+            <span className="shrink-0 data text-xs text-muted-foreground">
               ×{count}
             </span>
           )}
@@ -277,7 +285,7 @@ function SideBySide({
                     {loser.id}
                   </span>
                 </span>
-                <span className="font-medium text-muted-foreground uppercase tracking-wide text-[0.65rem]">
+                <span className="text-[0.65rem] font-medium tracking-wide text-muted-foreground uppercase">
                   merges away
                 </span>
               </span>
@@ -294,7 +302,7 @@ function SideBySide({
                     {winner.id}
                   </span>
                 </span>
-                <span className="font-medium text-primary uppercase tracking-wide text-[0.65rem]">
+                <span className="text-[0.65rem] font-medium tracking-wide text-primary uppercase">
                   survives
                 </span>
               </span>
@@ -309,7 +317,10 @@ function SideBySide({
             <DiffRows rows={open} types={types} />
           ) : (
             <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={4} className="px-4 text-xs text-muted-foreground">
+              <TableCell
+                colSpan={4}
+                className="px-4 text-xs text-muted-foreground"
+              >
                 No differences — every field the pair carries already agrees.
               </TableCell>
             </TableRow>
@@ -392,11 +403,17 @@ function VerdictDialog({
               <span className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 rounded-sm border bg-muted/40 px-2.5 py-1.5 text-xs">
                 <span>merges away</span>
                 <span className="min-w-0 truncate text-foreground">
-                  {loserTitle} <span className="data text-muted-foreground">{loser?.id}</span>
+                  {loserTitle}{" "}
+                  <span className="data text-muted-foreground">
+                    {loser?.id}
+                  </span>
                 </span>
                 <span>survives</span>
                 <span className="min-w-0 truncate text-foreground">
-                  {winnerTitle} <span className="data text-muted-foreground">{winner?.id}</span>
+                  {winnerTitle}{" "}
+                  <span className="data text-muted-foreground">
+                    {winner?.id}
+                  </span>
                 </span>
               </span>
               {approving ? (
@@ -405,15 +422,15 @@ function VerdictDialog({
                     The substrate applies the merge in the same transaction as
                     this decision: the merged-away record's edges and sources
                     move across, machine-held properties recompute from the
-                    union of both sides' live sources, and values you hold
-                    stand untouched.
+                    union of both sides' live sources, and values you hold stand
+                    untouched.
                   </span>
                   <span className="block">
-                    Reversible: the merged-away record is tombstoned, not
-                    erased — a <span className="data">recordsplit</span> can
-                    take the merge apart later. If the request went stale
-                    (already merged, deleted), nothing partial happens: the
-                    whole decision fails and the request says why.
+                    Reversible: the merged-away record is tombstoned, not erased
+                    — a <span className="data">recordsplit</span> can take the
+                    merge apart later. If the request went stale (already
+                    merged, deleted), nothing partial happens: the whole
+                    decision fails and the request says why.
                   </span>
                 </>
               ) : (
@@ -431,7 +448,9 @@ function VerdictDialog({
               id="verdict-note"
               rows={2}
               placeholder={
-                approving ? "why these are the same…" : "why these are not the same…"
+                approving
+                  ? "why these are the same…"
+                  : "why these are not the same…"
               }
               aria-invalid={!!form.formState.errors.note}
               {...form.register("note")}
@@ -474,7 +493,11 @@ function conflictAnnotation(mr: SubstrateRecord): string | undefined {
   return undefined
 }
 
-function useSideQuery(ref: EdgeTarget | undefined, types: KindInfo[], enabled: boolean) {
+function useSideQuery(
+  ref: EdgeTarget | undefined,
+  types: KindInfo[],
+  enabled: boolean
+) {
   const type = ref ? kindByIdentity(types, ref.kind) : undefined
   const authority = ref ? splitKind(ref.kind).authority : ""
   return {
@@ -549,7 +572,11 @@ export function MergeRequestDetailPage() {
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <Button variant="outline" size="sm" onClick={() => void mr.refetch()}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void mr.refetch()}
+            >
               Retry
             </Button>
           </EmptyContent>
@@ -574,13 +601,14 @@ export function MergeRequestDetailPage() {
   const note = verdictNote(request)
   const conflict = conflictAnnotation(request)
 
-  const sidesReady =
-    proposed && winnerSide.query.data && loserSide.query.data
+  const sidesReady = proposed && winnerSide.query.data && loserSide.query.data
   const sideError = proposed
-    ? winnerSide.query.error ?? loserSide.query.error
+    ? (winnerSide.query.error ?? loserSide.query.error)
     : undefined
   const sideTypeMissing =
-    proposed && (Boolean(winnerRef && !winnerSide.type) || Boolean(loserRef && !loserSide.type))
+    proposed &&
+    (Boolean(winnerRef && !winnerSide.type) ||
+      Boolean(loserRef && !loserSide.type))
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -595,7 +623,9 @@ export function MergeRequestDetailPage() {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2 pt-0.5">
-          {decision && <StateBadge value={decision} initial={DECISION_INITIAL} />}
+          {decision && (
+            <StateBadge value={decision} initial={DECISION_INITIAL} />
+          )}
           {proposed && (
             <>
               <Button

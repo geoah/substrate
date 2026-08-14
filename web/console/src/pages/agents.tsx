@@ -57,12 +57,17 @@ function textColumn(opts: {
     id: opts.id,
     accessorFn: opts.value,
     enableSorting: false,
-    header: ({ column }) => <DataTableColumnHeader column={column} title={opts.title} />,
+    header: ({ column }) => (
+      <DataTableColumnHeader column={column} title={opts.title} />
+    ),
     cell: ({ getValue }) => {
       const text = getValue<string>()
       return (
         <span
-          className={cn("block truncate text-muted-foreground", opts.data && "data")}
+          className={cn(
+            "block truncate text-muted-foreground",
+            opts.data && "data"
+          )}
           title={opts.tooltip ? text : undefined}
         >
           {text || "—"}
@@ -80,13 +85,18 @@ function agentColumns(): ColumnDef<SubstrateRecord, unknown>[] {
       accessorFn: (a) => a.properties.name ?? a.id,
       enableSorting: false,
       enableHiding: false,
-      header: ({ column }) => <DataTableColumnHeader column={column} title="agent" />,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="agent" />
+      ),
       cell: ({ row }) => (
         <div className="min-w-0">
           <div className="truncate font-medium">
             {cellValue(row.original.properties.name) || row.original.id}
           </div>
-          <div className="truncate data text-xs text-muted-foreground" title={row.original.id}>
+          <div
+            className="truncate data text-xs text-muted-foreground"
+            title={row.original.id}
+          >
             {row.original.id}
           </div>
         </div>
@@ -171,7 +181,11 @@ export function AgentsPage() {
             <EmptyDescription>{agents.error.message}</EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <Button variant="outline" size="sm" onClick={() => void agents.refetch()}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void agents.refetch()}
+            >
               Retry
             </Button>
           </EmptyContent>
@@ -198,7 +212,9 @@ export function AgentsPage() {
         </div>
         <DataTable
           table={aTable}
-          onRowClick={(row) => void navigate({ to: "/agents/$id", params: { id: row.id } })}
+          onRowClick={(row) =>
+            void navigate({ to: "/agents/$id", params: { id: row.id } })
+          }
           empty={
             <Empty className="py-12">
               <EmptyHeader>
@@ -206,13 +222,14 @@ export function AgentsPage() {
                   <BotIcon />
                 </EmptyMedia>
                 <EmptyTitle>No agents</EmptyTitle>
-                <EmptyDescription>No agents are declared on this substrate yet.</EmptyDescription>
+                <EmptyDescription>
+                  No agents are declared on this substrate yet.
+                </EmptyDescription>
               </EmptyHeader>
             </Empty>
           }
         />
       </section>
-
     </div>
   )
 }
@@ -226,7 +243,10 @@ function AgentsSkeleton() {
       </div>
       <div className="px-6 pt-4">
         {Array.from({ length: 4 }, (_, i) => (
-          <div key={i} className="flex h-12 items-center gap-6 border-b last:border-0">
+          <div
+            key={i}
+            className="flex h-12 items-center gap-6 border-b last:border-0"
+          >
             <Skeleton className="h-4 w-48" />
             <Skeleton className="ml-auto h-7 w-16" />
           </div>

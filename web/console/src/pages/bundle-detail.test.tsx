@@ -185,7 +185,11 @@ describe("BundleDetailPage", () => {
       if (path.includes("/bundles/") && path.endsWith("/status")) {
         return jsonResponse(200, bundleStatus)
       }
-      if (path.includes("/bundles/") && path.endsWith("/bind") && method === "POST") {
+      if (
+        path.includes("/bundles/") &&
+        path.endsWith("/bind") &&
+        method === "POST"
+      ) {
         return jsonResponse(200, bundleStatus)
       }
       if (path.startsWith("/api/v1/core.substrate.reamde.dev/kinds")) {
@@ -194,7 +198,9 @@ describe("BundleDetailPage", () => {
       if (path === CATALOG_PATH) {
         return jsonResponse(200, { catalog: [PEOPLE, GOOGLE] })
       }
-      if (path.startsWith("/api/v1/google.bundles.substrate.reamde.dev/configs")) {
+      if (
+        path.startsWith("/api/v1/google.bundles.substrate.reamde.dev/configs")
+      ) {
         return jsonResponse(200, { records: opts.configs ?? [] })
       }
       return jsonResponse(200, { records: [] })
@@ -219,7 +225,9 @@ describe("BundleDetailPage", () => {
       await screen.findByText("people")
       expect(screen.getByText("Vocabulary")).toBeTruthy()
       expect(screen.getByText("· v1alpha1")).toBeTruthy()
-      expect(screen.getByText("The shipped vocabulary for humans.")).toBeTruthy()
+      expect(
+        screen.getByText("The shipped vocabulary for humans.")
+      ).toBeTruthy()
       // No Setup section at all: no heading, no empty state, no chip.
       expect(screen.queryByText("Setup")).toBeNull()
       expect(screen.queryByText(/setup step/)).toBeNull()
@@ -285,10 +293,14 @@ describe("BundleDetailPage", () => {
         within(note).getByTitle("people.substrate.reamde.dev is imported")
       ).toBeTruthy()
       expect(
-        within(note).getByTitle("messaging.substrate.reamde.dev is not imported")
+        within(note).getByTitle(
+          "messaging.substrate.reamde.dev is not imported"
+        )
       ).toBeTruthy()
       expect(
-        screen.getByText(/Not in this repository: messaging.substrate.reamde.dev/)
+        screen.getByText(
+          /Not in this repository: messaging.substrate.reamde.dev/
+        )
       ).toBeTruthy()
     })
 
@@ -302,7 +314,9 @@ describe("BundleDetailPage", () => {
       // The Setup section carries the input by name and kind, with its
       // unresolved problem in the server's words.
       await waitFor(() => expect(screen.getByText("Setup")).toBeTruthy())
-      const section = screen.getByText("Setup").closest("section") as HTMLElement
+      const section = screen
+        .getByText("Setup")
+        .closest("section") as HTMLElement
       expect(within(section).getByText("client")).toBeTruthy()
       expect(
         within(section).getByText("google.bundles.substrate.reamde.dev/config")

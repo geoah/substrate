@@ -159,14 +159,22 @@ describe("kind resolution", () => {
   })
 
   it("routes authority+plural back to the kind", () => {
-    expect(kindByCollection(kinds, "people.substrate.reamde.dev", "people")).toBe(person)
-    expect(kindByCollection(kinds, "people.substrate.reamde.dev", "nope")).toBeUndefined()
+    expect(
+      kindByCollection(kinds, "people.substrate.reamde.dev", "people")
+    ).toBe(person)
+    expect(
+      kindByCollection(kinds, "people.substrate.reamde.dev", "nope")
+    ).toBeUndefined()
   })
 
   it("resolves a bare edge target inside the declaring authority first", () => {
     expect(resolveEdgeTarget(kinds, person, "organization")).toBe(org)
     expect(
-      resolveEdgeTarget(kinds, person, "people.substrate.reamde.dev/organization")
+      resolveEdgeTarget(
+        kinds,
+        person,
+        "people.substrate.reamde.dev/organization"
+      )
     ).toBe(org)
     expect(resolveEdgeTarget(kinds, person, "missing")).toBeUndefined()
   })

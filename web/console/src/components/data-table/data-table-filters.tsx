@@ -209,7 +209,10 @@ function ActiveFilterControl({
               else onChange({ ...filter, value })
             }}
             onCommit={(value) => {
-              onChange({ field: filter.field, ...parseValueInput(value, field) })
+              onChange({
+                field: filter.field,
+                ...parseValueInput(value, field),
+              })
               setOpen(false)
             }}
           />
@@ -287,7 +290,10 @@ export function DataTableFilters({
                 }
               }}
               onCommit={(value) => {
-                upsert({ field: pending.name, ...parseValueInput(value, pending) })
+                upsert({
+                  field: pending.name,
+                  ...parseValueInput(value, pending),
+                })
                 closeAdd()
               }}
             />

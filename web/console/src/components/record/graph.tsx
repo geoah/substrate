@@ -139,7 +139,10 @@ function Row({
             aria-label={open ? "Collapse" : "Expand"}
           >
             <ChevronRightIcon
-              className={cn("size-3.5 transition-transform", open && "rotate-90")}
+              className={cn(
+                "size-3.5 transition-transform",
+                open && "rotate-90"
+              )}
             />
           </button>
         ) : (
@@ -205,7 +208,10 @@ function OutgoingGroup({
           {splitKind(pointer.to).name || pointer.to}
         </span>
         {pointer.description && (
-          <span className="truncate text-muted-foreground/70" title={pointer.description}>
+          <span
+            className="truncate text-muted-foreground/70"
+            title={pointer.description}
+          >
             — {pointer.description}
           </span>
         )}
@@ -339,7 +345,11 @@ function IncomingGroupRow({
           {members.map((row) => (
             <NodeRow
               key={`${row.via}:${row.from.kind}:${row.from.id}`}
-              node={{ id: row.from.id, kind: row.from.kind, title: row.from.title }}
+              node={{
+                id: row.from.id,
+                kind: row.from.kind,
+                title: row.from.title,
+              }}
               kinds={kinds}
               path={path}
               depth={depth}
@@ -545,7 +555,11 @@ export function GraphRail({
           <EmptyTitle>The graph didn't load</EmptyTitle>
           <EmptyDescription>{incoming.error.message}</EmptyDescription>
         </EmptyHeader>
-        <Button variant="outline" size="sm" onClick={() => void incoming.refetch()}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void incoming.refetch()}
+        >
           Retry
         </Button>
       </Empty>
