@@ -26,7 +26,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "@tanstack/react-router"
-import type { ColumnDef } from "@tanstack/react-table"
+import type { DataTableColumn } from "@/components/data-table/data-table"
 import {
   ArrowUpRightIcon,
   BotIcon,
@@ -1119,7 +1119,7 @@ function KindRowCount({ row }: { row: KindRow }) {
   return <span className="data tabular-nums">{formatCount(count.data)}</span>
 }
 
-function kindColumns(): ColumnDef<KindRow, unknown>[] {
+function kindColumns(): DataTableColumn<KindRow>[] {
   return [
     {
       id: "kind",
@@ -1254,7 +1254,7 @@ const RECORD_ICON: Record<string, typeof BotIcon> = {
  * by, and it is the same order the Data surface reads in. */
 function shippedRecordColumns(
   types: KindInfo[]
-): ColumnDef<ShippedRecordRow, unknown>[] {
+): DataTableColumn<ShippedRecordRow>[] {
   return [
     {
       id: "kind",

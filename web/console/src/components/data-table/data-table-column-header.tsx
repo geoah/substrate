@@ -2,9 +2,10 @@
  * in schema casing, the record-56 description as a Tooltip, and — rule 4 —
  * a sort indicator on every sortable column, the active sort distinct. */
 
-import type { Column } from "@tanstack/react-table"
+import type { Column, RowData } from "@tanstack/react-table"
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon } from "lucide-react"
 
+import type { DataTableFeatures } from "@/components/data-table/data-table"
 import {
   Tooltip,
   TooltipContent,
@@ -12,14 +13,14 @@ import {
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
-interface DataTableColumnHeaderProps<TData, TValue> {
-  column: Column<TData, TValue>
+interface DataTableColumnHeaderProps<TData extends RowData, TValue> {
+  column: Column<DataTableFeatures, TData, TValue>
   title: string
   description?: string
   align?: "left" | "right"
 }
 
-export function DataTableColumnHeader<TData, TValue>({
+export function DataTableColumnHeader<TData extends RowData, TValue>({
   column,
   title,
   description,

@@ -6,7 +6,7 @@
  * so no pagination — the row set is the schema's size, not a feed. */
 
 import { useMemo } from "react"
-import type { ColumnDef } from "@tanstack/react-table"
+import type { DataTableColumn } from "@/components/data-table/data-table"
 import { FileLockIcon } from "lucide-react"
 
 import { ActorChip } from "@/components/actor-chip"
@@ -30,7 +30,7 @@ interface ProvenanceRow {
   meta: PropertyMeta
 }
 
-const COLUMNS: ColumnDef<ProvenanceRow, unknown>[] = [
+const COLUMNS: DataTableColumn<ProvenanceRow>[] = [
   {
     id: "property",
     accessorFn: (row) => row.name,

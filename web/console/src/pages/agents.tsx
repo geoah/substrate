@@ -12,7 +12,7 @@ import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router"
 import { Link } from "@tanstack/react-router"
-import type { ColumnDef } from "@tanstack/react-table"
+import type { DataTableColumn } from "@/components/data-table/data-table"
 import { BotIcon, SearchXIcon } from "lucide-react"
 
 import { DataTable, useDataTable } from "@/components/data-table/data-table"
@@ -47,12 +47,12 @@ function textColumn(opts: {
   id: string
   title: string
   value: (record: SubstrateRecord) => string
-  meta: ColumnDef<SubstrateRecord, unknown>["meta"]
+  meta: DataTableColumn<SubstrateRecord>["meta"]
   /** The data voice, for a value the substrate itself carries. */
   data?: boolean
   /** A title attribute, for a value the column is likely to truncate away. */
   tooltip?: boolean
-}): ColumnDef<SubstrateRecord, unknown> {
+}): DataTableColumn<SubstrateRecord> {
   return {
     id: opts.id,
     accessorFn: opts.value,
@@ -78,7 +78,7 @@ function textColumn(opts: {
   }
 }
 
-function agentColumns(): ColumnDef<SubstrateRecord, unknown>[] {
+function agentColumns(): DataTableColumn<SubstrateRecord>[] {
   return [
     {
       id: "agent",

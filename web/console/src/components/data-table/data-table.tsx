@@ -6,7 +6,7 @@
  * requests, record activity/incoming/provenance, connectors, sync runs.
  *
  * Split in two so surfaces differ by config, not code:
- * - `useDataTable` builds the TanStack v8 instance in fully manual mode (the
+ * - `useDataTable` builds the TanStack v9 instance in fully manual mode (the
  *   server sorts/filters/pages) and wires per-surface column visibility AND
  *   order, persisted in localStorage (`lib/table-prefs.ts`) and edited
  *   through `DataTableViewOptions`.
@@ -25,16 +25,22 @@
 
 import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react"
 import {
+  columnOrderingFeature,
+  columnResizingFeature,
+  columnSizingFeature,
+  columnVisibilityFeature,
   flexRender,
-  getCoreRowModel,
-  useReactTable,
+  rowSortingFeature,
+  tableFeatures,
+  useTable,
   type ColumnDef,
   type ColumnOrderState,
   type ColumnSizingState,
+  type ColumnVisibilityState,
   type OnChangeFn,
+  type ReactTable,
+  type RowData,
   type SortingState,
-  type Table as TanstackTable,
-  type VisibilityState,
 } from "@tanstack/react-table"
 import { ChevronRightIcon } from "lucide-react"
 
@@ -62,10 +68,31 @@ import {
 } from "@/lib/table-prefs"
 import { cn } from "@/lib/utils"
 
-/** Per-column presentation knobs carried on `meta` (the v8-sanctioned spot). */
+/** The features this console's tables actually use. v9 registers them
+ * explicitly so the unused ones tree-shake out; an API missing at runtime is
+ * an unregistered feature, not a removed one. */
+const dataTableFeatures = tableFeatures({
+  columnOrderingFeature,
+  columnResizingFeature,
+  columnSizingFeature,
+  columnVisibilityFeature,
+  rowSortingFeature,
+})
+
+export type DataTableFeatures = typeof dataTableFeatures
+
+/** The one column type every surface writes; carries the feature set so
+ * callers never spell the leading generic. */
+export type DataTableColumn<TData extends RowData> = ColumnDef<
+  DataTableFeatures,
+  TData,
+  unknown
+>
+
+/** Per-column presentation knobs carried on `meta` (the sanctioned spot). */
 declare module "@tanstack/react-table" {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  interface ColumnMeta<TData, TValue> {
+  interface ColumnMeta<TFeatures, TData, TValue> {
     headerClassName?: string
     cellClassName?: string
     /** The Columns dropdown's name for this column (defaults to the id). */
@@ -80,7 +107,7 @@ declare module "@tanstack/react-table" {
     size?: FlexSize
   }
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  interface TableMeta<TData> {
+  interface TableMeta<TFeatures, TData> {
     /** The surface's natural column order — the Reset target. */
     naturalIds?: string[]
     /** Hidden-by-default column ids — the Reset target's visibility. */
@@ -93,8 +120,8 @@ declare module "@tanstack/react-table" {
 
 // ── the instance ────────────────────────────────────────────────────────────
 
-export interface UseDataTableOptions<TData> {
-  columns: ColumnDef<TData, unknown>[]
+export interface UseDataTableOptions<TData extends RowData> {
+  columns: DataTableColumn<TData>[]
   data: TData[]
   sorting?: SortingState
   onSortingChange?: OnChangeFn<SortingState>
@@ -109,9 +136,14 @@ export interface UseDataTableOptions<TData> {
 
 const NOOP_SORT: OnChangeFn<SortingState> = () => {}
 
-export function useDataTable<TData>(
+export type DataTableInstance<TData extends RowData> = ReactTable<
+  DataTableFeatures,
+  TData
+>
+
+export function useDataTable<TData extends RowData>(
   opts: UseDataTableOptions<TData>
-): TanstackTable<TData> {
+): DataTableInstance<TData> {
   const { prefsKey, defaultHidden } = opts
   const naturalIds = useMemo(
     () =>
@@ -125,9 +157,11 @@ export function useDataTable<TData>(
     prefsKey ? (loadTablePrefs(prefsKey) ?? {}) : {}
   )
   // A surface switch (browse navigating between types) re-reads its store.
-  const keyRef = useRef(prefsKey)
-  if (keyRef.current !== prefsKey) {
-    keyRef.current = prefsKey
+  // The previous key is STATE, not a ref: adjusting state while rendering is
+  // React's sanctioned shape for this, and a ref read during render is not.
+  const [lastKey, setLastKey] = useState(prefsKey)
+  if (lastKey !== prefsKey) {
+    setLastKey(prefsKey)
     setPrefs(prefsKey ? (loadTablePrefs(prefsKey) ?? {}) : {})
   }
 
@@ -165,7 +199,9 @@ export function useDataTable<TData>(
     const next = typeof updater === "function" ? updater(columnOrder) : updater
     persist(next, columnVisibility, columnSizing)
   }
-  const onColumnVisibilityChange: OnChangeFn<VisibilityState> = (updater) => {
+  const onColumnVisibilityChange: OnChangeFn<ColumnVisibilityState> = (
+    updater
+  ) => {
     const next =
       typeof updater === "function" ? updater(columnVisibility) : updater
     persist(columnOrder, { ...columnVisibility, ...next }, columnSizing)
@@ -175,13 +211,11 @@ export function useDataTable<TData>(
     persist(columnOrder, columnVisibility, next)
   }
 
-  return useReactTable({
+  return useTable({
+    features: dataTableFeatures,
     data: opts.data,
     columns: opts.columns,
-    getCoreRowModel: getCoreRowModel(),
     manualSorting: true,
-    manualFiltering: true,
-    manualPagination: true,
     enableSortingRemoval: false,
     columnResizeMode: "onChange",
     getRowId: opts.getRowId,
@@ -212,8 +246,8 @@ export function useDataTable<TData>(
 
 export type TableDensity = "default" | "compact"
 
-interface DataTableProps<TData> {
-  table: TanstackTable<TData>
+interface DataTableProps<TData extends RowData> {
+  table: DataTableInstance<TData>
   onRowClick?: (row: TData) => void
   /** Render skeleton rows in place of data (initial load). */
   loading?: boolean
@@ -235,7 +269,7 @@ const EXPANDER_PX = 28
 /** A drag can't crush a column below legibility. */
 const RESIZE_MIN_PX = 60
 
-export function DataTable<TData>({
+export function DataTable<TData extends RowData>({
   table,
   onRowClick,
   loading,
@@ -278,7 +312,7 @@ export function DataTable<TData>({
     return () => ro.disconnect()
   }, [])
 
-  const sizingOverrides = table.getState().columnSizing
+  const sizingOverrides = table.state.columnSizing
   const specs: ColumnWidthSpec[] = visible.map((col) => {
     const override = sizingOverrides[col.id]
     if (typeof override === "number" && override > 0) {

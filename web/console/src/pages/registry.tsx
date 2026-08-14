@@ -27,7 +27,7 @@
 import { useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
-import type { ColumnDef } from "@tanstack/react-table"
+import type { DataTableColumn } from "@/components/data-table/data-table"
 import {
   BotIcon,
   BoxesIcon,
@@ -127,7 +127,7 @@ function numColumn(
   id: string,
   title: string,
   value: (r: BundleRow) => number
-): ColumnDef<BundleRow, unknown> {
+): DataTableColumn<BundleRow> {
   return {
     id,
     accessorFn: value,
@@ -331,7 +331,7 @@ function FacetBadge({ row }: { row: BundleRow }) {
 
 function buildColumns(
   requirements: (row: BundleRow) => Requirement[]
-): ColumnDef<BundleRow, unknown>[] {
+): DataTableColumn<BundleRow>[] {
   return [
     {
       id: "bundle",

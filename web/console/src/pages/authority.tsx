@@ -8,7 +8,7 @@
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Link, useNavigate } from "@tanstack/react-router"
-import type { ColumnDef } from "@tanstack/react-table"
+import type { DataTableColumn } from "@/components/data-table/data-table"
 import { FileCode2Icon } from "lucide-react"
 
 import { DataTable, useDataTable } from "@/components/data-table/data-table"
@@ -51,7 +51,7 @@ function CountCell({ kind }: { kind: KindInfo }) {
   )
 }
 
-function buildColumns(authority: string): ColumnDef<KindInfo, unknown>[] {
+function buildColumns(authority: string): DataTableColumn<KindInfo>[] {
   return [
     {
       id: "kind",

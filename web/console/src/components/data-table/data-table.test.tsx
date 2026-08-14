@@ -2,11 +2,19 @@
  * localStorage per surface, defaults apply until overridden, and a reset
  * clears the store — the owner-ruled behavior every table shares. */
 
-import { act, renderHook } from "@testing-library/react"
-import type { ColumnDef } from "@tanstack/react-table"
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+} from "@testing-library/react"
+import type { OnChangeFn, SortingState } from "@tanstack/react-table"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { useDataTable } from "./data-table"
+import { DataTable, useDataTable, type DataTableColumn } from "./data-table"
+import { DataTableColumnHeader } from "./data-table-column-header"
 
 interface Row {
   id: string
@@ -15,7 +23,7 @@ interface Row {
   c: string
 }
 
-const COLUMNS: ColumnDef<Row, unknown>[] = [
+const COLUMNS: DataTableColumn<Row>[] = [
   { id: "a", accessorFn: (r) => r.a },
   { id: "b", accessorFn: (r) => r.b },
   { id: "c", accessorFn: (r) => r.c },
@@ -133,7 +141,7 @@ describe("useDataTable column prefs", () => {
       useDataTable({ columns: COLUMNS, data: DATA, prefsKey: "t" })
     )
     act(() => result.current.setColumnSizing((old) => ({ ...old, b: 260 })))
-    expect(result.current.getState().columnSizing).toEqual({ b: 260 })
+    expect(result.current.state.columnSizing).toEqual({ b: 260 })
     expect(JSON.parse(localStorage.getItem("substrate.table.t")!)).toEqual({
       sizing: { b: 260 },
     })
@@ -141,7 +149,7 @@ describe("useDataTable column prefs", () => {
     const fresh = renderHook(() =>
       useDataTable({ columns: COLUMNS, data: DATA, prefsKey: "t" })
     )
-    expect(fresh.result.current.getState().columnSizing).toEqual({ b: 260 })
+    expect(fresh.result.current.state.columnSizing).toEqual({ b: 260 })
   })
 
   it("clears a single override (double-click) and empties the store", () => {
@@ -156,7 +164,7 @@ describe("useDataTable column prefs", () => {
         return next
       })
     )
-    expect(result.current.getState().columnSizing).toEqual({})
+    expect(result.current.state.columnSizing).toEqual({})
     expect(localStorage.getItem("substrate.table.t")).toBeNull()
   })
 
@@ -174,7 +182,7 @@ describe("useDataTable column prefs", () => {
       "b",
       "c",
     ])
-    expect(result.current.getState().columnSizing).toEqual({})
+    expect(result.current.state.columnSizing).toEqual({})
     expect(localStorage.getItem("substrate.table.t")).toBeNull()
   })
 
@@ -189,5 +197,63 @@ describe("useDataTable column prefs", () => {
     expect(two.result.current.getVisibleLeafColumns().map((c) => c.id)).toEqual(
       ["a", "b", "c"]
     )
+  })
+})
+
+/** Sorting is the one instance feature the server owns (`manualSorting`), so
+ * the header's job is only to hand the page the next SortingState — and with
+ * `enableSortingRemoval: false` a third click never returns to unsorted. */
+describe("useDataTable sorting", () => {
+  const SORTABLE: DataTableColumn<Row>[] = [
+    {
+      id: "a",
+      accessorFn: (r) => r.a,
+      enableSorting: true,
+      header: ({ column }) => (
+        <DataTableColumnHeader column={column} title="a" />
+      ),
+    },
+  ]
+
+  function Surface({
+    sorting,
+    onSortingChange,
+  }: {
+    sorting: SortingState
+    onSortingChange: OnChangeFn<SortingState>
+  }) {
+    const table = useDataTable({
+      columns: SORTABLE,
+      data: DATA,
+      sorting,
+      onSortingChange,
+    })
+    return <DataTable table={table} />
+  }
+
+  /** What the header hands back for a column already sorted this way. */
+  function nextSorting(sorting: SortingState): SortingState {
+    let received: SortingState = []
+    render(
+      <Surface
+        sorting={sorting}
+        onSortingChange={(updater) => {
+          received = typeof updater === "function" ? updater(sorting) : updater
+        }}
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: "a" }))
+    cleanup()
+    return received
+  }
+
+  it("sorts ascending first, then flips, and never back to unsorted", () => {
+    expect(nextSorting([])).toEqual([{ id: "a", desc: false }])
+    expect(nextSorting([{ id: "a", desc: false }])).toEqual([
+      { id: "a", desc: true },
+    ])
+    expect(nextSorting([{ id: "a", desc: true }])).toEqual([
+      { id: "a", desc: false },
+    ])
   })
 })

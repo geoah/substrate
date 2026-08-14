@@ -10,7 +10,7 @@
  * browse page already holds. */
 
 import { useMemo } from "react"
-import type { ColumnDef } from "@tanstack/react-table"
+import type { DataTableColumn } from "@/components/data-table/data-table"
 import { Link } from "@tanstack/react-router"
 import { FileQuestionIcon } from "lucide-react"
 
@@ -101,7 +101,7 @@ function TypeCell({ prop }: { prop: DeclaredProperty }) {
   )
 }
 
-function propertyColumns(): ColumnDef<DeclaredProperty, unknown>[] {
+function propertyColumns(): DataTableColumn<DeclaredProperty>[] {
   return [
     {
       id: "property",
@@ -202,7 +202,7 @@ function TargetCell({
 function edgeColumns(
   kind: KindInfo,
   kinds: KindInfo[]
-): ColumnDef<DeclaredEdge, unknown>[] {
+): DataTableColumn<DeclaredEdge>[] {
   return [
     {
       id: "edge",
