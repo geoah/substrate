@@ -71,24 +71,51 @@ type diffConflict struct {
 func (e *diffConflict) Error() string { return fmt.Sprintf("%s on %s: %v", e.action, e.edit.ID, e.err) }
 func (e *diffConflict) Unwrap() error { return e.err }
 
+// effectCeiling carries a bundle actor's EFFECTIVE emit set into a public
+// write. Every effect-application site stamps the ceiling on the transaction it
+// opens itself (setEffectEmit); the agent mutate built-in cannot, because it
+// delegates to the public Put/Patch/Delete to keep schema admission, the kind
+// guards and the conflict annotation, and those open their transactions
+// internally — so it hands the ceiling down instead. A nil *effectCeiling is
+// the generic API, where no ceiling applies; a non-nil one is bundle dispatch,
+// and an EMPTY set inside it means the actor may emit nothing (the distinction
+// effEmitSet keeps).
+type effectCeiling struct{ emit []string }
+
+// stamp marks the transaction as bundle dispatch under this ceiling.
+func (c *effectCeiling) stamp(t *txn) {
+	if c == nil {
+		return
+	}
+	t.setEffectEmit(c.emit)
+}
+
 func (ds *dataset) Put(ctx context.Context, actor substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
+	return ds.putBounded(ctx, actor, in, nil)
+}
+
+// putBounded is Put with an optional effect ceiling: the SAME door, so the
+// bounded caller keeps schema admission and every guard behind it.
+func (ds *dataset) putBounded(ctx context.Context, actor substrate.Actor, in substrate.PutInput, ceiling *effectCeiling) (*substrate.Record, error) {
 	// Schema is records: a put of a schema kind is a batch of one, through
-	// the loader as admission (schemawrite.go).
+	// the loader as admission (schemawrite.go). A declaration is not a change
+	// request, so no ceiling travels into it.
 	if ty, err := ds.resolveType(in.Kind); err == nil {
 		if _, isVocabulary := vocabularyRecordKinds[ty.Identity]; isVocabulary {
 			return ds.putSchemaRecord(ctx, actor, ty, in)
 		}
 	}
-	return ds.putWith(ctx, actor, in, false)
+	return ds.putWith(ctx, actor, in, false, ceiling)
 }
 
 func (ds *dataset) putInternal(ctx context.Context, actor substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
-	return ds.putWith(ctx, actor, in, true)
+	return ds.putWith(ctx, actor, in, true, nil)
 }
 
-func (ds *dataset) putWith(ctx context.Context, actor substrate.Actor, in substrate.PutInput, internal bool) (*substrate.Record, error) {
+func (ds *dataset) putWith(ctx context.Context, actor substrate.Actor, in substrate.PutInput, internal bool, ceiling *effectCeiling) (*substrate.Record, error) {
 	var out *substrate.Record
 	err := ds.inTx(ctx, actor, internal, func(t *txn) error {
+		ceiling.stamp(t)
 		e, err := t.put(in)
 		out = e
 		return err
@@ -346,6 +373,13 @@ func hotTime(name string, v any) (*time.Time, error) {
 }
 
 func (ds *dataset) Patch(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput) (*substrate.Record, error) {
+	return ds.patchBounded(ctx, actor, typ, id, in, nil)
+}
+
+// patchBounded is Patch with an optional effect ceiling. It is the door an
+// agent's `mutate` accept goes through: the ceiling reaches applyEditDiff's
+// authorizeRequestOp, which fails closed without one.
+func (ds *dataset) patchBounded(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput, ceiling *effectCeiling) (*substrate.Record, error) {
 	// A patch addressed at a schema record routes through admission: the
 	// merged declaration must still close (schemawrite.go). The addressed
 	// type says which rows are schema rows; no peek by bare id exists.
@@ -358,16 +392,17 @@ func (ds *dataset) Patch(ctx context.Context, actor substrate.Actor, typ, id str
 			return ds.patchSchemaRecord(ctx, actor, existing, in)
 		}
 	}
-	return ds.patchWith(ctx, actor, typ, id, in, false)
+	return ds.patchWith(ctx, actor, typ, id, in, false, ceiling)
 }
 
 func (ds *dataset) patchInternal(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput) (*substrate.Record, error) {
-	return ds.patchWith(ctx, actor, typ, id, in, true)
+	return ds.patchWith(ctx, actor, typ, id, in, true, nil)
 }
 
-func (ds *dataset) patchWith(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput, internal bool) (*substrate.Record, error) {
+func (ds *dataset) patchWith(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput, internal bool, ceiling *effectCeiling) (*substrate.Record, error) {
 	var out *substrate.Record
 	err := ds.inTx(ctx, actor, internal, func(t *txn) error {
+		ceiling.stamp(t)
 		ty, err := t.ds.resolveType(typ)
 		if err != nil {
 			return err
@@ -2009,6 +2044,11 @@ func (t *txn) applyMergeRequest(req *erow) error {
 }
 
 func (ds *dataset) Delete(ctx context.Context, actor substrate.Actor, typ, id string) (*substrate.Record, error) {
+	return ds.deleteBounded(ctx, actor, typ, id, nil)
+}
+
+// deleteBounded is Delete with an optional effect ceiling.
+func (ds *dataset) deleteBounded(ctx context.Context, actor substrate.Actor, typ, id string, ceiling *effectCeiling) (*substrate.Record, error) {
 	ty, err := ds.resolveType(typ)
 	if err != nil {
 		return nil, err
@@ -2023,12 +2063,13 @@ func (ds *dataset) Delete(ctx context.Context, actor substrate.Actor, typ, id st
 		}
 		return ds.deleteVocabularyRecord(ctx, actor, existing)
 	}
-	return ds.deleteWith(ctx, actor, eref{Kind: ty.Identity, ID: id}, false)
+	return ds.deleteWith(ctx, actor, eref{Kind: ty.Identity, ID: id}, false, ceiling)
 }
 
-func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref eref, internal bool) (*substrate.Record, error) {
+func (ds *dataset) deleteWith(ctx context.Context, actor substrate.Actor, ref eref, internal bool, ceiling *effectCeiling) (*substrate.Record, error) {
 	var out *substrate.Record
 	err := ds.inTx(ctx, actor, internal, func(t *txn) error {
+		ceiling.stamp(t)
 		e, err := t.softDelete(ref)
 		out = e
 		return err

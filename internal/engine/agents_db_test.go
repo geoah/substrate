@@ -180,7 +180,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	fake := newFakeLLM(t)
-	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm"} {
+	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm", "arbiterllm"} {
 		model := strings.TrimSuffix(id, "llm")
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: typeProvider, ID: id,
@@ -285,6 +285,15 @@ def main(input, host):
 				map[string]any{"builtin": "mutate"},
 			},
 			"emit": []any{crewAuthority + "/widget"},
+		}),
+		// arbiter DECIDES change requests through the mutate tool: its emit
+		// names the request kind (so it may write the decision) and widgets (so
+		// the accept's transitive write is within its ceiling), and NOT tasks —
+		// the confused-deputy half of the pair.
+		agent("arbiter", map[string]any{
+			"provider": "arbiterllm", "model": "arbiter",
+			"tools": []any{map[string]any{"builtin": "mutate"}},
+			"emit":  []any{vocabulary.KindRecordPatchRequest, crewAuthority + "/widget"},
 		}),
 		// judge is subagentOnly: off the chat surface, still a callable and
 		// still justice's sub-agent.

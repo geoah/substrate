@@ -128,14 +128,24 @@ func checkGraphQLOperations(query string, allowMutation bool) error {
 // agentMutateDataset is the mutate built-in's write gate: the resolvers see
 // an ordinary substrate.Dataset, and every mutation lands here first, where
 // the written kind is held to the loop's EFFECTIVE emit (the agent's own,
-// narrowed by any sub-agent ceiling) before the embedded dataset applies it
-// through the full public write path (schema-record admission, kind guards,
-// conflict annotations, all of it). Merge and split refuse outright: fusing or
+// narrowed by any sub-agent ceiling) before the dataset applies it through the
+// full public write path (schema-record admission, kind guards, conflict
+// annotations, all of it). Merge and split refuse outright: fusing or
 // splitting identities is the owner's decision, with its own reviewed flow
 // (recordmergerequest), and no emit grant makes it an agent's.
 type agentMutateDataset struct {
 	substrate.Dataset
 	loop *agentLoop
+}
+
+// ceiling is the emit set every write from this tool carries into its
+// transaction — the same stamp dispatchFunction puts on a function tool's
+// effects. It is what makes ACCEPTING a change request through `mutate` legal:
+// authorizeRequestOp bounds the transitive write by this set and fails closed
+// without it, so an unstamped accept would refuse while rejecting the same
+// request succeeded.
+func (m *agentMutateDataset) ceiling() *effectCeiling {
+	return &effectCeiling{emit: m.loop.emit}
 }
 
 // allow resolves the written kind and holds it to the effective emit set.
@@ -159,7 +169,7 @@ func (m *agentMutateDataset) Put(ctx context.Context, actor substrate.Actor, in 
 	if err := m.allow(in.Kind, "put"); err != nil {
 		return nil, err
 	}
-	e, err := m.Dataset.Put(ctx, actor, in)
+	e, err := m.loop.ds.putBounded(ctx, actor, in, m.ceiling())
 	if err == nil {
 		m.tally("put")
 	}
@@ -170,7 +180,7 @@ func (m *agentMutateDataset) Patch(ctx context.Context, actor substrate.Actor, t
 	if err := m.allow(typ, "patch"); err != nil {
 		return nil, err
 	}
-	e, err := m.Dataset.Patch(ctx, actor, typ, id, in)
+	e, err := m.loop.ds.patchBounded(ctx, actor, typ, id, in, m.ceiling())
 	if err == nil {
 		m.tally("patch")
 	}
@@ -181,7 +191,7 @@ func (m *agentMutateDataset) Delete(ctx context.Context, actor substrate.Actor, 
 	if err := m.allow(typ, "delete"); err != nil {
 		return nil, err
 	}
-	e, err := m.Dataset.Delete(ctx, actor, typ, id)
+	e, err := m.loop.ds.deleteBounded(ctx, actor, typ, id, m.ceiling())
 	if err == nil {
 		m.tally("delete")
 	}
@@ -189,7 +199,9 @@ func (m *agentMutateDataset) Delete(ctx context.Context, actor substrate.Actor, 
 }
 
 // Link and Unlink gate on the SOURCE kind: an edge is part of its source
-// record, so writing one is writing that record.
+// record, so writing one is writing that record. They carry no effect ceiling
+// because an edge write drives no state machine: only a patch can enter the
+// accepted state whose transition materializes a change request.
 func (m *agentMutateDataset) Link(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef, props map[string]any) error {
 	if err := m.allow(srcType, "link"); err != nil {
 		return err
