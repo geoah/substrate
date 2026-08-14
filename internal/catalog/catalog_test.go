@@ -54,34 +54,69 @@ func TestCatalogListsShippedBundle(t *testing.T) {
 	}
 }
 
-func TestCatalogDetailEnumeratesResources(t *testing.T) {
+func TestCatalogDetailEnumeratesTheClosure(t *testing.T) {
 	b, ok := realCatalog(t).ByID("web.bundles.substrate.reamde.dev/web")
 	if !ok {
 		t.Fatal("web bundle missing")
 	}
-	// The web closure ships two record types, four functions, three agents;
-	// its delivery wiring is four triggers.
-	if got := len(b.Resources.Kinds); got != 2 {
-		t.Errorf("kinds = %d, want 2 (%v)", got, b.Resources.Kinds)
+	// The web closure ships two record kinds, four functions, three agents,
+	// and writes four trigger records beside them.
+	if got := len(b.Closure.Kinds); got != 2 {
+		t.Errorf("kinds = %d, want 2 (%v)", got, b.Closure.Kinds)
 	}
-	if got := len(b.Resources.Functions); got != 4 {
-		t.Errorf("functions = %d, want 4 (%v)", got, b.Resources.Functions)
+	if got := len(b.Closure.Functions); got != 4 {
+		t.Errorf("functions = %d, want 4 (%v)", got, b.Closure.Functions)
 	}
-	if got := len(b.Resources.Agents); got != 3 {
-		t.Errorf("agents = %d, want 3 (%v)", got, b.Resources.Agents)
+	if got := len(b.Closure.Agents); got != 3 {
+		t.Errorf("agents = %d, want 3 (%v)", got, b.Closure.Agents)
 	}
-	if got := len(b.Resources.Triggers); got != 4 {
-		t.Errorf("triggers = %d, want 4 (%v)", got, b.Resources.Triggers)
+	if got := len(b.Closure.Records); got != 4 {
+		t.Errorf("records = %d, want 4 (%v)", got, b.Closure.Records)
 	}
-	if !contains(b.Resources.Kinds, "web.bundles.substrate.reamde.dev/config") {
-		t.Errorf("config kind not in resources: %v", b.Resources.Kinds)
+	for _, r := range b.Closure.Records {
+		if r.Kind == "" || r.ID == "" {
+			t.Errorf("a shipped record needs both halves of its identity: %+v", r)
+		}
+	}
+	if !contains(b.Closure.Kinds, "web.bundles.substrate.reamde.dev/config") {
+		t.Errorf("config kind not in the closure: %v", b.Closure.Kinds)
 	}
 	// Each kind's own description rides along: before an install there is no
 	// registry entry to look one up in, and "what does this ship" is the
 	// question the preview exists to answer.
-	for _, ident := range b.Resources.Kinds {
-		if b.Resources.KindDescriptions[ident] == "" {
+	for _, ident := range b.Closure.Kinds {
+		if b.Closure.KindDescriptions[ident] == "" {
 			t.Errorf("%s ships no description in the closure preview", ident)
+		}
+	}
+}
+
+// A bundle's DATA records are half of what installing it does, and the llm
+// example is the case that proves it: its whole closure is three agents, and
+// the two keyless llmprovider rows it writes are the things the reader is then
+// told to go and key. A preview that named only the declarations showed that
+// bundle as "three agents and nothing else", which is what it looked like on
+// the Registry page.
+func TestCatalogPreviewsTheRecordsAnInstallWrites(t *testing.T) {
+	b, ok := realCatalog(t).ByID("llm.examples.substrate.reamde.dev/llm")
+	if !ok {
+		t.Fatal("llm bundle missing")
+	}
+	if got := len(b.Closure.Agents); got != 3 {
+		t.Errorf("agents = %d, want 3 (%v)", got, b.Closure.Agents)
+	}
+	want := map[string]bool{"anthropic": true, "openai": true}
+	got := map[string]bool{}
+	for _, r := range b.Closure.Records {
+		if r.Kind != "core.substrate.reamde.dev/llmprovider" {
+			t.Errorf("unexpected shipped record %+v", r)
+			continue
+		}
+		got[r.ID] = true
+	}
+	for id := range want {
+		if !got[id] {
+			t.Errorf("the %s provider row is invisible in the preview: %+v", id, b.Closure.Records)
 		}
 	}
 }

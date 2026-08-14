@@ -2,11 +2,12 @@
 // SHIPPED in the binary — the registry a repository imports from. A catalog
 // entry is one embedded bundle directory (kinds/<authority>/): its identity, the
 // schema CLOSURE (the core schema documents — the atomic install unit) and the
-// delivery wiring (triggers.yaml — ordinary data records).
+// DATA RECORDS it ships beside them (an extension's triggers, the llm example's
+// provider rows).
 //
-// TWO KINDS OF ENTRY, one install path. A BUNDLE owns a categorized
-// authority (`google.bundles.substrate.reamde.dev`), configures through its declared
-// inputs and may ship callables. A VOCABULARY bundle owns a bare authority
+// TWO KINDS OF ENTRY, one install path. A BUNDLE owns any authority that is not
+// a bare org-domain label (`google.bundles.substrate.reamde.dev`), configures
+// through its declared inputs and may ship callables. A VOCABULARY bundle owns a bare authority
 // (`people.substrate.reamde.dev`, `media.substrate.reamde.dev`) and ships kinds and nothing else —
 // it is the substrate's own vocabulary, which repository creation no longer
 // seeds: a fresh repository holds core alone and imports the rest from here.
@@ -87,20 +88,24 @@ type Bundle struct {
 	// token/webhook integration may declare no OAuth, and an account-shaped
 	// bundle is not necessarily a provider integration.
 	Integration bool `json:"integration"`
-	// Resources enumerates what the closure installs, for the detail preview.
-	Resources Resources `json:"resources"`
+	// Closure enumerates what installing lands, for the detail preview.
+	Closure Closure `json:"closure"`
 
 	// vocabularyDocs is the closure — the core schema documents (bundle.yaml),
 	// applied atomically through ApplyVocabularyDocuments.
 	vocabularyDocs []map[string]any
-	// dataDocs is the delivery wiring (triggers.yaml): ordinary data
-	// records, each PUT after the closure lands.
+	// dataDocs is the data plane: ordinary records (an extension's triggers,
+	// the llm example's provider rows), each PUT after the closure lands.
 	dataDocs []map[string]any
 }
 
-// Resources are the installable members of a bundle, by kind — the detail
-// preview the console shows before installing.
-type Resources struct {
+// Closure is what installing a bundle lands, by kind — the detail preview the
+// console shows before installing. EVERY member of it is a record: a kind, a
+// function and an agent are records of the core meta-kinds, and Records are the
+// ordinary data rows the same transaction writes beside them. The lists are
+// split because a reader asks different questions of each, not because the
+// things differ in nature.
+type Closure struct {
 	Kinds []string `json:"kinds"`
 	// KindDescriptions is each kind's declared description, keyed by identity
 	// — what the closure's kinds ARE, before an install has put them in the
@@ -109,10 +114,24 @@ type Resources struct {
 	KindDescriptions map[string]string `json:"kindDescriptions,omitempty"`
 	Functions        []string          `json:"functions"`
 	Agents           []string          `json:"agents"`
-	Triggers         []string          `json:"triggers"`
 	// Mappings answers "what will this project onto the vocabulary I already
 	// have" — the question a reader asks before importing an integration.
 	Mappings []string `json:"mappings"`
+	// Records are the DATA records the install writes after the declarations
+	// land: an extension's triggers, the llm example's two keyless provider
+	// rows. They are ordinary records the moment they exist — editable,
+	// deletable — and half of what a bundle DOES arrives this way, so a preview
+	// that named only the declarations would hide the very row the reader is
+	// about to be told to go and key.
+	Records []ShippedRecord `json:"records"`
+}
+
+// ShippedRecord is one data record a bundle ships. A data record's identity is
+// its KIND and its id together (a declaration's is one reference), so both
+// travel, and the console addresses the record from them.
+type ShippedRecord struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
 }
 
 // integrationFacets curates the `integration` catalog facet per bundle id.
@@ -277,14 +296,19 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 	found := false
 	for _, d := range docs {
 		authority, typ := vocabulary.SplitKindRef(mstr(d, "kind"))
+		id := docID(d)
 		switch {
 		case isSchemaDoc(authority, typ):
 			b.vocabularyDocs = append(b.vocabularyDocs, d)
 		default:
+			// EVERY data document, not the trigger alone: whatever the install
+			// PUTs is what the reader will find in their repository afterward.
 			b.dataDocs = append(b.dataDocs, d)
+			b.Closure.Records = append(b.Closure.Records, ShippedRecord{
+				Kind: mstr(d, "kind"), ID: id,
+			})
 		}
 		data := mmap(d, "data")
-		id := docID(d)
 		switch typ {
 		case vocabulary.DocBundle:
 			found = true
@@ -301,21 +325,19 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 				version = v
 			}
 		case vocabulary.DocKind:
-			b.Resources.Kinds = append(b.Resources.Kinds, id)
+			b.Closure.Kinds = append(b.Closure.Kinds, id)
 			if desc := mstr(data, "description"); desc != "" {
-				if b.Resources.KindDescriptions == nil {
-					b.Resources.KindDescriptions = map[string]string{}
+				if b.Closure.KindDescriptions == nil {
+					b.Closure.KindDescriptions = map[string]string{}
 				}
-				b.Resources.KindDescriptions[id] = desc
+				b.Closure.KindDescriptions[id] = desc
 			}
 		case vocabulary.DocFunction:
-			b.Resources.Functions = append(b.Resources.Functions, id)
+			b.Closure.Functions = append(b.Closure.Functions, id)
 		case vocabulary.DocAgent:
-			b.Resources.Agents = append(b.Resources.Agents, id)
-		case typeTrigger:
-			b.Resources.Triggers = append(b.Resources.Triggers, id)
+			b.Closure.Agents = append(b.Closure.Agents, id)
 		case vocabulary.DocRecordMapping:
-			b.Resources.Mappings = append(b.Resources.Mappings, id)
+			b.Closure.Mappings = append(b.Closure.Mappings, id)
 		}
 	}
 	if !found {
@@ -328,9 +350,6 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 	b.Version = version
 	return b, nil
 }
-
-// typeTrigger is the delivery-wiring kind the bundle ships as data records.
-const typeTrigger = "trigger"
 
 // isSchemaDoc mirrors the loader's split (and substratectl's): a schema document IS a
 // record of one of the core meta-kinds; everything else is a data record.

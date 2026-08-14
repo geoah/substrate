@@ -16,17 +16,31 @@ import (
 // (disable, uninstall) is runtime state on the bundle's record row, never
 // part of this declaration.
 //
-// TWO SHAPES, told apart by the owned authority's own name (SCHEME.md R1):
-// an EXTENSION owns a CATEGORIZED authority (`<name>.bundles.substrate.reamde.dev`) and
-// may carry inputs, callables and a provider flow; a
-// VOCABULARY bundle owns a BARE org-domain authority (`people.substrate.reamde.dev`) and
-// ships kinds and nothing else. The second exists because repository creation
-// seeds core alone — the substrate's own vocabulary is delivered through the
-// registry rather than the seed, and stays SHIPPED (`source: builtin`) either
-// way.
+// TWO SHAPES, and only ONE of them is a name rule: a VOCABULARY bundle owns a
+// BARE org-domain authority (`people.substrate.reamde.dev`) and ships kinds and
+// nothing else; an EXTENSION owns ANY OTHER legal authority and may carry
+// inputs, callables and a provider flow. The vocabulary shape is checked
+// because it GRANTS something — such an authority is built `source: builtin`
+// whichever door it came through (load.go), which keeps its GraphQL names bare
+// and its declarations behind the authority chokepoint. It exists because
+// repository creation seeds core alone: the substrate's own vocabulary is
+// delivered through the registry rather than the seed, and stays SHIPPED
+// either way. Nothing is granted by an extension's name, so nothing is checked
+// there — `web.bundles.substrate.reamde.dev` is the convention the shipped tree
+// keeps, not a rule the loader enforces.
+//
+// What the fixed `.bundles.` suffix used to guarantee BY CONSTRUCTION is that
+// an authority's first label was unique: the label is the bundle's name, its
+// `metadata.id` suffix, the actor an install writes under (`bundle:<name>`) and
+// the prefix every installed kind's GraphQL name carries (ref.go). With the
+// suffix free, two authorities can reach for one label, so the uniqueness is
+// checked instead of assumed — Registry.Finalize refuses the second (load.go,
+// bundleNameProblems).
 
-// BundleAuthoritySuffix is the categorized-authority rule (SCHEME.md R1): shipped
-// authorities are bare, installed bundle authorities carry the installer's category.
+// BundleAuthoritySuffix is the CONVENTIONAL category the shipped tree's
+// extension authorities carry. It is not admission: an extension authority may
+// be spelled any legal way. The loader reads it for one typo-catcher alone — an
+// authority wearing the convention with no bundle document beside it.
 const BundleAuthoritySuffix = ".bundles.substrate.reamde.dev"
 
 // OrgDomainSuffix is the organization's domain — the namespace a SHIPPED
@@ -56,8 +70,9 @@ const (
 
 // Bundle is one parsed bundle document.
 type Bundle struct {
-	// Name is the categorized authority's first label ("web" of
-	// "web.bundles.substrate.reamde.dev").
+	// Name is the owned authority's first label ("web" of
+	// "web.bundles.substrate.reamde.dev"). It is unique across the registry,
+	// which Finalize checks rather than the authority's spelling implying it.
 	Name string
 	// Authority is the owned authority. The document's id is "<authority>/<name>" like
 	// every member kind's — the authority name itself is the authority
@@ -222,16 +237,24 @@ var stdlibPyModules = func() map[string]bool {
 	return m
 }()
 
-// ValidBundleAuthority reports whether an authority name is a legal owned bundle
-// authority: "<name>.bundles.substrate.reamde.dev", one lowercase word before the category.
+// ValidBundleAuthority reports whether an authority name is a legal owned
+// EXTENSION authority: any legal DNS-style authority that is not the bare
+// org-domain label a vocabulary bundle owns. The two shapes stay disjoint, so a
+// bundle document is still always exactly one of the two — but which one is
+// decided by the shape that grants (vocabulary), never by a category label.
+//
+// The first label must be a plain word: it becomes the bundle's name, its
+// actor and its GraphQL prefix, none of which admit a hyphen.
 func ValidBundleAuthority(authority string) bool {
-	name, ok := strings.CutSuffix(authority, BundleAuthoritySuffix)
-	return ok && ValidName(name)
+	return ValidAuthority(authority) && !ValidVocabularyAuthority(authority) &&
+		ValidName(leadingLabel(authority))
 }
 
 // ValidVocabularyAuthority reports whether an authority name is a legal owned
 // VOCABULARY authority: one bare lowercase label under the org domain —
-// "people.substrate.reamde.dev", "media.substrate.reamde.dev". The categorized form fails it
+// "people.substrate.reamde.dev", "media.substrate.reamde.dev". This is the one
+// authority shape the loader checks, because it is the one that grants: an
+// authority passing it is built `builtin`. Any extra label fails it
 // ("google.bundles" is not one label), so the two owned-authority shapes are
 // disjoint and a bundle document is always exactly one of the two.
 func ValidVocabularyAuthority(authority string) bool {
@@ -239,16 +262,14 @@ func ValidVocabularyAuthority(authority string) bool {
 	return ok && ValidName(label)
 }
 
-// BundleName is the bundle name an owned authority implies — the label before
-// the category for a bundle ("google" of "google.bundles.substrate.reamde.dev"), the
-// bare label for a vocabulary bundle ("people" of "people.substrate.reamde.dev"). It is
-// the bundle's `metadata.id` suffix and the actor an install writes under
-// (`bundle:<name>`).
+// BundleName is the bundle name an owned authority implies — its FIRST LABEL
+// ("google" of "google.bundles.substrate.reamde.dev", "llm" of
+// "llm.examples.substrate.reamde.dev", "people" of "people.substrate.reamde.dev").
+// It is the bundle's `metadata.id` suffix and the actor an install writes under
+// (`bundle:<name>`), and it is what bundleNameProblems holds unique now that
+// the rest of the authority is free.
 func BundleName(authority string) string {
-	if name, ok := strings.CutSuffix(authority, BundleAuthoritySuffix); ok {
-		return name
-	}
-	return strings.TrimSuffix(authority, OrgDomainSuffix)
+	return leadingLabel(authority)
 }
 
 // VocabularyBundleAuthorities names the authorities in a document stream that
@@ -278,8 +299,10 @@ func VocabularyBundleAuthorities(docs []Document) map[string]bool {
 func (l *loader) buildBundle(gd *authorityDocs) {
 	g := l.authority
 	if len(gd.bundles) == 0 {
-		// The categorized-authority rule cuts both ways: a "<name>.bundles.…"
-		// authority without its bundle document is a closure with no owner.
+		// A TYPO-CATCHER, not the rule: an authority may be spelled any legal
+		// way, but one wearing the shipped tree's convention with no bundle
+		// document beside it is a closure with no owner, and far more likely a
+		// forgotten document than a deliberate name.
 		if strings.HasSuffix(g.Name, BundleAuthoritySuffix) {
 			l.errf("authority %s: a %q authority is a bundle's owned authority — it must declare a bundle document",
 				g.Name, "*"+BundleAuthoritySuffix)
@@ -293,14 +316,16 @@ func (l *loader) buildBundle(gd *authorityDocs) {
 	d := gd.bundles[0]
 	where := DocBundle + " " + d.ID
 	l.checkKeys(where, d.Data, bundleDataKeys)
-	// TWO owned-authority shapes, disjoint by construction: an EXTENSION owns
-	// a categorized authority and configures through one config type; a
-	// VOCABULARY bundle owns a bare org-domain authority and ships kinds
-	// alone. Anything else is neither.
+	// TWO owned-authority shapes, disjoint by construction: a VOCABULARY
+	// bundle owns a bare org-domain authority and ships kinds alone; an
+	// EXTENSION owns anything else and may configure, call and connect. Only
+	// the first is a name rule — the second is every remaining legal authority,
+	// so what is refused here is a malformed authority or a first label that
+	// cannot be a bundle name, never a category.
 	vocabulary := ValidVocabularyAuthority(g.Name)
 	if !ValidBundleAuthority(g.Name) && !vocabulary {
-		l.errf("%s: data.authority %q: a bundle's owned authority is categorized — \"<name>%s\" — or a bare label under %s for shipped vocabulary (SCHEME.md R1)",
-			where, g.Name, BundleAuthoritySuffix, OrgDomainSuffix)
+		l.errf("%s: data.authority %q: an authority is DNS-style labels and its FIRST label is the bundle's name, so that label must be one lowercase word",
+			where, g.Name)
 		return
 	}
 	name := BundleName(g.Name)
@@ -334,11 +359,11 @@ func (l *loader) buildBundle(gd *authorityDocs) {
 	b.OAuth2 = l.parseBundleOAuth2(where, d.Data)
 	if vocabulary {
 		// Pure vocabulary: kinds, property types, traits and mappings. A
-		// callable or a provider flow here would be a bundle wearing a
-		// shipped authority's name, which is exactly what the bare/categorized
-		// split exists to prevent.
+		// callable or a provider flow here would run behind the `builtin`
+		// source a bare authority is granted, which is exactly what the
+		// bare/extension split exists to prevent.
 		if len(b.Inputs) > 0 || len(b.Modules) > 0 || b.OAuth2 != nil || len(g.Functions) > 0 || len(g.Agents) > 0 {
-			l.errf("%s: a vocabulary bundle ships kinds and nothing else — no inputs, functions, agents, shared modules or oauth2 block; ship those from a %q authority",
+			l.errf("%s: a vocabulary bundle ships kinds and nothing else — no inputs, functions, agents, shared modules or oauth2 block; ship those from an authority carrying a second label, %q",
 				where, "<name>"+BundleAuthoritySuffix)
 			return
 		}

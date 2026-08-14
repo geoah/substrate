@@ -69,7 +69,7 @@ function bundle(over: Partial<CatalogBundle>): CatalogBundle {
     authority: "x.bundles.substrate.reamde.dev",
     description: "",
     version: "v1",
-    resources: {},
+    closure: {},
     installed: true,
     ...over,
   }
@@ -82,7 +82,7 @@ const PEOPLE = bundle({
   description: "The shipped vocabulary for humans.",
   version: "v1alpha1",
   vocabulary: true,
-  resources: { kinds: ["people.substrate.reamde.dev/person"] },
+  closure: { kinds: ["people.substrate.reamde.dev/person"] },
 })
 
 const GOOGLE = bundle({
@@ -98,7 +98,7 @@ const GOOGLE = bundle({
   },
   integration: true,
   requires: ["people.substrate.reamde.dev", "messaging.substrate.reamde.dev"],
-  resources: {
+  closure: {
     kinds: [
       "google.bundles.substrate.reamde.dev/config",
       "google.bundles.substrate.reamde.dev/contact",

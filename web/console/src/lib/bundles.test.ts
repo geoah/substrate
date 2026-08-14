@@ -14,7 +14,7 @@ import type { CatalogItem } from "@/lib/api/catalog"
 import { ApiError, type KindInfo } from "@/lib/api/types"
 import {
   accountKindOf,
-  bundleResourceRows,
+  bundleRecordRows,
   declaresProviderInterfaces,
   filterBundles,
   importFailureText,
@@ -63,7 +63,7 @@ function catalog(over: Partial<CatalogItem> = {}): CatalogItem {
     inputs: {
       client: { kind: "google.bundles.substrate.reamde.dev/config" },
     },
-    resources: { kinds: ["a", "b"], functions: ["c"] },
+    closure: { kinds: ["a", "b"], functions: ["c"] },
     installed: false,
     integration: true,
     ...over,
@@ -442,7 +442,7 @@ describe("installedKindRows — the Kinds table", () => {
       status(),
       registry,
       catalog({
-        resources: { kinds: [contactKind.identity, configKind.identity] },
+        closure: { kinds: [contactKind.identity, configKind.identity] },
       })
     )
     // sorted by display name: config < contact
@@ -457,7 +457,7 @@ describe("installedKindRows — the Kinds table", () => {
 
   it("marks the input and account kinds by role", () => {
     const rows = installedKindRows(status(), registry, catalog({
-      resources: { kinds: registry.map((k) => k.identity) },
+      closure: { kinds: registry.map((k) => k.identity) },
     }))
     const byId = Object.fromEntries(rows.map((r) => [r.identity, r]))
     expect(byId[configKind.identity].role).toBe("input")
@@ -469,7 +469,7 @@ describe("installedKindRows — the Kinds table", () => {
     const rows = installedKindRows(
       { authority: "google.bundles.substrate.reamde.dev", inputs: undefined },
       registry,
-      catalog({ resources: { kinds: registry.map((k) => k.identity) } })
+      catalog({ closure: { kinds: registry.map((k) => k.identity) } })
     )
     const byId = Object.fromEntries(rows.map((r) => [r.identity, r]))
     expect(byId[configKind.identity].role).toBe("input")
@@ -489,7 +489,7 @@ describe("installedKindRows — the Kinds table", () => {
       status(),
       [],
       catalog({
-        resources: {
+        closure: {
           kinds: [contactKind.identity],
           kindDescriptions: { [contactKind.identity]: "What Google holds." },
         },
@@ -501,7 +501,7 @@ describe("installedKindRows — the Kinds table", () => {
       status(),
       [{ ...contactKind, description: "The reconciled one." }],
       catalog({
-        resources: {
+        closure: {
           kinds: [contactKind.identity],
           kindDescriptions: { [contactKind.identity]: "What Google holds." },
         },
@@ -514,7 +514,7 @@ describe("installedKindRows — the Kinds table", () => {
     const rows = installedKindRows(
       status(),
       registry,
-      catalog({ resources: { kinds: ["google.bundles.substrate.reamde.dev/ghost"] } })
+      catalog({ closure: { kinds: ["google.bundles.substrate.reamde.dev/ghost"] } })
     )
     expect(rows).toHaveLength(1)
     expect(rows[0].name).toBe("ghost")
@@ -523,37 +523,64 @@ describe("installedKindRows — the Kinds table", () => {
   })
 })
 
-describe("bundleResourceRows — the Resources table", () => {
-  it("flattens functions, agents and triggers into kinded rows, names split from refs", () => {
-    const rows = bundleResourceRows(
+describe("bundleRecordRows — the Records table", () => {
+  it("carries every declaration under its own core kind, names split from refs", () => {
+    const rows = bundleRecordRows(
       catalog({
-        resources: {
+        closure: {
           kinds: ["google.bundles.substrate.reamde.dev/t"],
           functions: ["google.bundles.substrate.reamde.dev/syncgoogle"],
           agents: ["google.bundles.substrate.reamde.dev/summarize"],
-          triggers: ["google.bundles.substrate.reamde.dev/ongooglesync"],
         },
       })
     )
     expect(rows).toEqual([
-      { kind: "function", identity: "google.bundles.substrate.reamde.dev/syncgoogle", name: "syncgoogle" },
-      { kind: "agent", identity: "google.bundles.substrate.reamde.dev/summarize", name: "summarize" },
-      { kind: "trigger", identity: "google.bundles.substrate.reamde.dev/ongooglesync", name: "ongooglesync" },
+      {
+        kind: "core.substrate.reamde.dev/function",
+        id: "google.bundles.substrate.reamde.dev/syncgoogle",
+        name: "syncgoogle",
+      },
+      {
+        kind: "core.substrate.reamde.dev/agent",
+        id: "google.bundles.substrate.reamde.dev/summarize",
+        name: "summarize",
+      },
+    ])
+  })
+
+  // The rows an install WRITES are half of what a bundle does — the llm
+  // example's whole point is the provider row you then go and key — so they
+  // ride the same table, carrying the kind they are records of.
+  it("carries the shipped data records with their own kinds", () => {
+    const rows = bundleRecordRows(
+      catalog({
+        closure: {
+          kinds: [],
+          records: [
+            { kind: "core.substrate.reamde.dev/trigger", id: "ongooglesync" },
+            { kind: "core.substrate.reamde.dev/llmprovider", id: "anthropic" },
+          ],
+        },
+      })
+    )
+    expect(rows).toEqual([
+      { kind: "core.substrate.reamde.dev/trigger", id: "ongooglesync", name: "ongooglesync" },
+      { kind: "core.substrate.reamde.dev/llmprovider", id: "anthropic", name: "anthropic" },
     ])
   })
 
   it("renders mappings when a catalog carries them, and omits them otherwise", () => {
-    const withMappings = bundleResourceRows(
-      catalog({ resources: { kinds: [], mappings: ["google.bundles.substrate.reamde.dev/m"] } })
+    const withMappings = bundleRecordRows(
+      catalog({ closure: { kinds: [], mappings: ["google.bundles.substrate.reamde.dev/m"] } })
     )
     expect(withMappings).toEqual([
-      { kind: "mapping", identity: "google.bundles.substrate.reamde.dev/m", name: "m" },
+      { kind: "core.substrate.reamde.dev/recordmapping", id: "google.bundles.substrate.reamde.dev/m", name: "m" },
     ])
-    expect(bundleResourceRows(catalog({ resources: { kinds: [] } }))).toEqual([])
+    expect(bundleRecordRows(catalog({ closure: { kinds: [] } }))).toEqual([])
   })
 
   it("is empty for a bundle with no catalog entry (applied, not shipped)", () => {
-    expect(bundleResourceRows(undefined)).toEqual([])
+    expect(bundleRecordRows(undefined)).toEqual([])
   })
 })
 

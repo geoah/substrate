@@ -26,15 +26,15 @@
 # Three agents, three lessons. `substrate` is the flagship: the mneme-v4 chat
 # shape, reading the whole graph through the `graphql` built-in and writing
 # NOTHING directly (every change is a proposed recordpatchrequest the owner
-# decides on). `substrate-echo` demonstrates delegation, and
-# `substrate-summarizer` is the sub-agent it delegates to, marked
+# decides on). `substrateEcho` demonstrates delegation, and
+# `substrateSummarizer` is the sub-agent it delegates to, marked
 # `subagentOnly` so the chat list never offers it: it exists to be called.
 # For functions as tools, install the notes example beside this one.
 kind: core.substrate.reamde.dev/authority
 metadata:
   id: llm.examples.substrate.reamde.dev
 data:
-  version: v1alpha1
+  version: v1alpha2
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata:
@@ -47,8 +47,8 @@ data:
     pair. Install it, set one key, chat.
   installs:
     - llm.examples.substrate.reamde.dev/substrate
-    - llm.examples.substrate.reamde.dev/substrate-summarizer
-    - llm.examples.substrate.reamde.dev/substrate-echo
+    - llm.examples.substrate.reamde.dev/substrateSummarizer
+    - llm.examples.substrate.reamde.dev/substrateEcho
 ---
 # ---- the flagship: chat with the substrate itself ---------------------------
 # The v4 chat contract, ported: `graphql` is the only read surface (the whole
@@ -105,10 +105,10 @@ data:
 # ---- a SUB-AGENT: its own loop, its own budget, its own thread. It declares
 # no emit at all, so nothing it is asked to do can write a record; and it is
 # subagentOnly, so the chat list never offers it while the loop still
-# dispatches it when substrate-echo calls.
+# dispatches it when substrateEcho calls.
 kind: core.substrate.reamde.dev/agent
 metadata:
-  id: llm.examples.substrate.reamde.dev/substrate-summarizer
+  id: llm.examples.substrate.reamde.dev/substrateSummarizer
 data:
   authority: llm.examples.substrate.reamde.dev
   description: Summarize a piece of text in one sentence.
@@ -126,7 +126,7 @@ data:
 # any other and shows up as one in the console's transcript.
 kind: core.substrate.reamde.dev/agent
 metadata:
-  id: llm.examples.substrate.reamde.dev/substrate-echo
+  id: llm.examples.substrate.reamde.dev/substrateEcho
 data:
   authority: llm.examples.substrate.reamde.dev
   description: Answers you, and summarizes what you said through a sub-agent.
@@ -137,7 +137,7 @@ data:
     than summarizing yourself — the point is to show the call.
   provider: anthropic
   model: claude-haiku-4-5
-  agents: [llm.examples.substrate.reamde.dev/substrate-summarizer]
+  agents: [llm.examples.substrate.reamde.dev/substrateSummarizer]
   budgets:
     maxTurns: 4
     maxToolCalls: 2

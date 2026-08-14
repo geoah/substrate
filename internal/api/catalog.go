@@ -39,7 +39,7 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"catalog": items})
 }
 
-// getCatalogItem is one shipped bundle's detail — the resources it installs
+// getCatalogItem is one shipped bundle's detail — the closure it installs
 // (types/functions/agents/triggers) so the console can preview, plus the
 // installed flag and the upgrade preview.
 func (h *handler) getCatalogItem(w http.ResponseWriter, r *http.Request) {

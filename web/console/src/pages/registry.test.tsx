@@ -63,7 +63,7 @@ function bundle(over: Partial<CatalogBundle>): CatalogBundle {
     authority: "x.bundles.substrate.reamde.dev",
     description: "",
     version: "v1",
-    resources: {},
+    closure: {},
     installed: false,
     ...over,
   }
@@ -79,7 +79,7 @@ const PEOPLE = bundle({
   description: "The shipped vocabulary for humans.",
   version: "v1alpha1",
   vocabulary: true,
-  resources: {
+  closure: {
     kinds: ["people.substrate.reamde.dev/person", "people.substrate.reamde.dev/personmerge"],
   },
 })
@@ -97,14 +97,14 @@ const GOOGLE = bundle({
   },
   integration: true,
   requires: ["people.substrate.reamde.dev", "messaging.substrate.reamde.dev", "calendar.substrate.reamde.dev"],
-  resources: {
+  closure: {
     kinds: [
       "google.bundles.substrate.reamde.dev/config",
       "google.bundles.substrate.reamde.dev/account",
       "google.bundles.substrate.reamde.dev/contact",
     ],
     functions: ["google.bundles.substrate.reamde.dev/syncgoogle"],
-    triggers: ["google.bundles.substrate.reamde.dev/ongooglesync"],
+    records: [{ kind: "core.substrate.reamde.dev/trigger", id: "ongooglesync" }],
   },
 })
 

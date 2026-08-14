@@ -11,8 +11,9 @@ repository; none writes back to the provider, and each ships a README stating
 its limits.
 
 This is the map. The source of truth is each bundle's own manifests under
-`svc/substrate/substrate/examples/`, and the resources an install will add are
-previewable through `GET …/core.substrate.reamde.dev/catalog/{id}`.
+`kinds/`, and everything an install will add — the declarations and the records
+it writes beside them — is previewable through
+`GET …/core.substrate.reamde.dev/catalog/{id}`.
 
 Kinds, functions, agents, and mappings are named `<authority>/<name>`; each
 section's first line gives the authority, and its lists give the name. The
@@ -20,20 +21,22 @@ authority carries the provider, so no name repeats it — GitHub's issue mirror
 is `github.bundles.substrate.reamde.dev/issue`, Linear's is
 `linear.bundles.substrate.reamde.dev/issue`, and one record of either is addressed as
 `<authority>/<kind>/<id>`. What a closure declares is exactly what its
-`installs:` lists; triggers are the delivery wiring, ordinary records with bare
-ids, shipped beside the closure in `triggers.yaml`.
+`installs:` lists. Beside that closure every bundle may ship ORDINARY RECORDS,
+written by the same install: an integration's triggers (the delivery wiring, in
+`triggers.yaml`) and the LLM example's two provider rows are the same kind of
+thing, and the Records column counts them.
 
-| Bundle     | Facet       | Auth           | Kinds | Functions | Triggers | Agents |
-| ------------- | ----------- | -------------- | ----- | --------- | -------- | ------ |
-| Google        | Integration | OAuth          | 8     | 4         | 6        | 0      |
-| GitHub        | Integration | OAuth          | 6     | 1         | 2        | 0      |
-| Linear        | Integration | OAuth          | 5     | 2         | 3        | 0      |
-| WHOOP         | Integration | OAuth          | 5     | 1         | 2        | 0      |
-| Notion        | Integration | Internal token | 4     | 1         | 2        | 0      |
-| Beeper        | Integration | Pasted token   | 4     | 1         | 2        | 0      |
-| LLM           | Example     | Key, per row   | 0     | 0         | 0        | 3      |
-| Firecrawl     | Capability  | API key        | 2     | 2         | 0        | 0      |
-| Web harvester | Capability  | none           | 2     | 4         | 4        | 3      |
+| Bundle     | Facet       | Auth           | Kinds | Functions | Records | Agents |
+| ------------- | ----------- | -------------- | ----- | --------- | ------- | ------ |
+| Google        | Integration | OAuth          | 8     | 4         | 6       | 0      |
+| GitHub        | Integration | OAuth          | 6     | 1         | 2       | 0      |
+| Linear        | Integration | OAuth          | 5     | 2         | 3       | 0      |
+| WHOOP         | Integration | OAuth          | 5     | 1         | 2       | 0      |
+| Notion        | Integration | Internal token | 4     | 1         | 2       | 0      |
+| Beeper        | Integration | Pasted token   | 4     | 1         | 2       | 0      |
+| LLM           | Example     | Key, per row   | 0     | 0         | 2       | 3      |
+| Firecrawl     | Capability  | API key        | 2     | 2         | 0       | 0      |
+| Web harvester | Capability  | none           | 2     | 4         | 4       | 3      |
 
 ## LLM (example)
 
@@ -43,8 +46,8 @@ installs FIRST if it wants to run an agent at all: nothing seeds an
 `openai`, correctly shaped for their wires and deliberately KEYLESS — plus
 three agents. `substrate` is the one to chat with: it reads the whole graph
 through the `graphql` built-in and writes nothing directly, proposing every
-change as a `recordpatchrequest` the owner decides on. `substrate-echo` and
-`substrate-summarizer` are the delegation demo, and the summarizer is
+change as a `recordpatchrequest` the owner decides on. `substrateEcho` and
+`substrateSummarizer` are the delegation demo, and the summarizer is
 `subagentOnly`: off the chat list, callable only by other agents.
 
 Installing it gives you rows that refuse until you key them. The key is a
