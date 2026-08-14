@@ -14,17 +14,36 @@ const packageDoc = `// Package corekinds is the core vocabulary as Go types: one
 // and jsonb all carry. There are no struct tags: a second encoder would be a
 // second answer about what a property is called.
 //
-// AN OPTIONAL SINGLE VALUE IS A POINTER. Absence stored is absence authored,
-// and a materialized zero value is the likeliest silent round-trip bug — an
-// empty string written where the author wrote nothing. A required value is a
-// value; slices and maps carry nil-versus-empty natively.
+// EVERY SINGLE VALUE IS A POINTER. Absence stored is absence authored, and a
+// materialized zero value is the likeliest silent round-trip bug — an empty
+// string written where the author wrote nothing. A REQUIRED property is a
+// pointer too: the write path does not enforce a required: hint, so a stored
+// row may lack one, and a value type there would invent a
+// zero for it. <Kind>Required and Missing carry the requirement instead.
+// Slices and maps carry nil-versus-empty natively.
 //
-// VALIDATION HERE IS STRUCTURAL. Types, enum and state sets, required
-// properties, numeric ranges, patterns, key contracts and undeclared keys. Not:
-// whether a reference's referent exists, whether a transition is legal from
-// where the record stands, or whether this writer may write a managed
-// property. Those need the repository, and this package is a leaf that imports
-// nothing.
+// DECODE READS A STORED SHAPE. It is not the write-admission gate, and the
+// difference is deliberate rather than an omission:
+//
+//   - What it refuses: an undeclared key, a value of the wrong type, an enum or
+//     state outside its declared set, a value outside a declared set or pattern,
+//     a number outside a declared range, an integer past exact precision, a key
+//     breaking a keyed map's contract, and a shape that is not the declared
+//     container.
+//   - What it does NOT check: the SEMANTICS of the string family. An absolute
+//     URL, an RFC 5322 mailbox, an E.164 phone number, an IANA time zone, an
+//     RRULE, a civil date, a Go duration — engine coerceProps refuses each of
+//     those on the way IN, and every stored value has already been through it.
+//     Repeating the checks here would be a second grammar to keep in step, and
+//     the one place they could differ is a row admitted by an older binary,
+//     which refusing now would lock out of its own repository.
+//   - Where it is STRICTER than the write path: a datetime must be RFC 3339,
+//     because coerceProps normalizes every admitted spelling to RFC 3339 Nano
+//     before storing. A stored datetime that is not one did not come from a
+//     write.
+//   - What needs the repository and so cannot be here: whether a reference's
+//     referent exists, whether a transition is legal from where the record
+//     stands, whether this writer may write a managed property.
 `
 
 // supportBody is the shared vocabulary of every generated file: the types the
@@ -166,8 +185,6 @@ func (d *decoder) problemf(path, format string, args ...any) {
 
 func (d *decoder) unknown(path, kind string) { d.problemf(path, "not declared on %s", kind) }
 
-func (d *decoder) missing(path string) { d.problemf(path, "is required") }
-
 func (d *decoder) mapping(path string, v any) (map[string]any, bool) {
 	m, ok := v.(map[string]any)
 	if !ok {
@@ -210,9 +227,14 @@ func (d *decoder) key(path, key, pattern string) bool {
 }
 
 // text decodes a string-family value, held to the declared value set and
-// pattern where the declaration carries either. NOTHING is coerced: a number is
-// not a string, because a decoder that accepted one would store a value the
-// author never wrote.
+// pattern where the declaration carries either — and to NOTHING else. The
+// semantics of a url, an email, a phone, a timezone, a recurrence, a date or a
+// duration are the write path's gate (engine coerceProps); a stored value has
+// already passed it, and a second grammar here would be a second answer. The
+// package doc has the whole boundary.
+//
+// NOTHING is coerced: a number is not a string, because a decoder that accepted
+// one would hand back a value the author never wrote.
 func (d *decoder) text(path string, v any, values []string, pattern *regexp.Regexp) (string, bool) {
 	s, ok := v.(string)
 	if !ok {
@@ -231,8 +253,13 @@ func (d *decoder) text(path string, v any, values []string, pattern *regexp.Rege
 }
 
 // instant decodes a datetime VERBATIM, checking only that it is an RFC 3339
-// instant. Normalizing it to UTC is the write path's business; doing it here
-// would stop Decode and Properties being each other's inverse.
+// instant — which every STORED datetime is, because coerceProps normalizes the
+// spellings it admits to RFC 3339 Nano before storing. This is the one place the
+// decoder is stricter than the write path, and it is stricter about the form it
+// is guaranteed to be handed.
+//
+// Normalizing here is what it must not do: the stored string is the value, and
+// rewriting it would stop Decode and Properties being each other's inverse.
 func (d *decoder) instant(path string, v any) (string, bool) {
 	s, ok := v.(string)
 	if !ok {
@@ -246,7 +273,7 @@ func (d *decoder) instant(path string, v any) (string, bool) {
 	return s, true
 }
 
-// numeric reads a number in every spelling one arrives in. jsonb reads back as
+// numeric reads a FLOAT in every spelling one arrives in. jsonb reads back as
 // float64 and YAML decodes as int, so refusing either would refuse values that
 // have merely been through storage.
 func (d *decoder) numeric(path string, v any) (float64, bool) {
@@ -273,19 +300,53 @@ func (d *decoder) numeric(path string, v any) (float64, bool) {
 	return 0, false
 }
 
+// maxExactInteger is 2^53: the largest integer every float64 below it can hold
+// exactly. Above it, float64 arithmetic skips odd values — 9007199254740993
+// becomes ...992 — so an integer that has NOT been through a float keeps its
+// spelling here, and one that arrives as a float above the line is refused
+// rather than silently rounded into a stored value nobody wrote.
+const maxExactInteger = 1 << 53
+
+// integer decodes an int WITHOUT going through a float: an int64 that came from
+// a Go caller or a json.Number that came off the wire keeps every bit, which is
+// what makes Decode and Properties inverses at the top of the range.
 func (d *decoder) integer(path string, v any, b Bounds) (int64, bool) {
-	f, ok := d.numeric(path, v)
-	if !ok {
-		return 0, false
-	}
-	if f != float64(int64(f)) {
+	var n int64
+	switch t := v.(type) {
+	case int:
+		n = int64(t)
+	case int32:
+		n = int64(t)
+	case int64:
+		n = t
+	case json.Number:
+		parsed, err := t.Int64()
+		if err != nil {
+			d.problemf(path, "expected an integer")
+			return 0, false
+		}
+		n = parsed
+	case float32, float64:
+		f, _ := d.numeric(path, v)
+		if f != math.Trunc(f) {
+			d.problemf(path, "expected an integer")
+			return 0, false
+		}
+		// A float64 past the exact-integer line is a value that may already have
+		// been rounded, and there is no way to tell which integer it was.
+		if f >= maxExactInteger || f <= -maxExactInteger {
+			d.problemf(path, "expected an integer within exact precision (%d); a larger one must not arrive as a float", int64(maxExactInteger))
+			return 0, false
+		}
+		n = int64(f)
+	default:
 		d.problemf(path, "expected an integer")
 		return 0, false
 	}
-	if !d.inBounds(path, f, b) {
+	if !d.inBounds(path, float64(n), b) {
 		return 0, false
 	}
-	return int64(f), true
+	return n, true
 }
 
 func (d *decoder) number(path string, v any, b Bounds) (float64, bool) {

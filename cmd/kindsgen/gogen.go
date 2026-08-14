@@ -50,6 +50,7 @@ func goImports(body string) string {
 	candidates := []struct{ path, token string }{
 		{"encoding/json", "json."},
 		{"fmt", "fmt."},
+		{"math", "math."},
 		{"regexp", "regexp."},
 		{"sort", "sort."},
 		{"strconv", "strconv."},
@@ -92,6 +93,7 @@ func emitKind(b *bytes.Buffer, k *kindPlan) {
 			emitKeys(b, k)
 			emitDecodeEntry(b, k)
 		}
+		emitRequired(b, s)
 		emitEnumDecoders(b, s, states)
 		emitDecode(b, s)
 		emitProperties(b, s)
@@ -249,7 +251,7 @@ func emitKeys(b *bytes.Buffer, k *kindPlan) {
 }
 
 func emitDecodeEntry(b *bytes.Buffer, k *kindPlan) {
-	comment(b, "Decode"+k.Name+" decodes an authored properties map into "+k.Name+", refusing anything the declaration does not admit: an undeclared key, a value of the wrong type, an enum or state outside its set, a number outside its range, a required property left absent. The value is nil unless the problems are empty, so a half-decoded record can never reach a caller.\n\nStructural only. Whether the referent of a reference exists, whether a transition is legal from where the record stands, and whether this writer may write a managed property are the engine's questions, not this package's.")
+	comment(b, "Decode"+k.Name+" decodes a properties map into "+k.Name+", refusing what the declaration cannot hold: an undeclared key, a value of the wrong type, an enum or state outside its set, a number outside its declared range or beyond exact integer precision, a key breaking a keyed map's contract. The value is nil unless the problems are empty, so a half-decoded record can never reach a caller.\n\nIt reads a STORED shape and is not the write-admission gate: see the boundary in support.go. An ABSENT required property is admitted, because the write path admits one too — "+k.Name+"Required and Missing are where requiredness lives.")
 	fmt.Fprintf(b, "func Decode%s(props map[string]any) (*%s, []Problem) {\n", k.Name, k.Name)
 	b.WriteString("\td := &decoder{}\n")
 	fmt.Fprintf(b, "\tout, _ := decode%s(d, \"\", props)\n", k.Name)
@@ -274,13 +276,36 @@ func emitDecode(b *bytes.Buffer, s *structPlan) {
 	b.WriteString("\t\tdefault:\n")
 	fmt.Fprintf(b, "\t\t\td.unknown(at(path, key), %q)\n", s.Owner)
 	b.WriteString("\t\t}\n\t}\n")
+	b.WriteString("\treturn out, true\n}\n\n")
+}
+
+// emitRequired writes the declared `required:` set and the check that reads it.
+// The DECODER does not: the write path admits a row without a required property
+// (vocabulary Property.Required), so refusing one here would refuse stored rows
+// the substrate itself wrote. Requiredness stays a form's question, answerable
+// without reflection.
+func emitRequired(b *bytes.Buffer, s *structPlan) {
+	var required []string
 	for _, f := range s.Fields {
-		if f.Optional {
+		if f.Required {
+			required = append(required, f.Key)
+		}
+	}
+	if len(required) == 0 {
+		return
+	}
+	sort.Strings(required)
+	comment(b, s.Name+"Required names the properties the declaration marks `required:`, sorted. It is a FORM-LEVEL contract: the write path does not enforce it, so Decode admits a value that leaves one absent and this is what a client checks before it submits one.")
+	fmt.Fprintf(b, "var %sRequired = []string{%s}\n\n", s.Name, quoted(required))
+	comment(b, "Missing names the required properties this value leaves absent, in declaration order. Empty means every declared requirement is answered — not that the value is admissible, which is the substrate's answer and not a type's.")
+	fmt.Fprintf(b, "func (v *%s) Missing() []string {\n\tvar out []string\n", s.Name)
+	for _, f := range s.Fields {
+		if !f.Required {
 			continue
 		}
-		fmt.Fprintf(b, "\tif props[%q] == nil {\n\t\td.missing(at(path, %q))\n\t}\n", f.Key, f.Key)
+		fmt.Fprintf(b, "\tif v.%s == nil {\n\t\tout = append(out, %q)\n\t}\n", f.Name, f.Key)
 	}
-	b.WriteString("\treturn out, true\n}\n\n")
+	b.WriteString("\treturn out\n}\n\n")
 }
 
 // emitFieldDecode writes one case body: the declared container around the one

@@ -10,6 +10,7 @@
 package corekinds_test
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -79,15 +80,12 @@ func TestRoundTripEmpty(t *testing.T) {
 	roundTrip(t, "token", &corekinds.Token{}, corekinds.DecodeToken)
 	roundTrip(t, "trait", &corekinds.Trait{}, corekinds.DecodeTrait)
 	roundTrip(t, "trigger", &corekinds.Trigger{}, corekinds.DecodeTrigger)
-	// llmmessage and llmthread each declare a REQUIRED reference, so their empty
-	// fixture is the reference and nothing else: an absent required property is
-	// refused, which is conformance 3 read from the other side.
-	roundTrip(t, "llmmessage", &corekinds.LLMMessage{
-		Thread: corekinds.Reference{Kind: "core.substrate.reamde.dev/llmthread", ID: "t1"},
-	}, corekinds.DecodeLLMMessage)
-	roundTrip(t, "llmthread", &corekinds.LLMThread{
-		Agent: corekinds.Reference{Kind: "core.substrate.reamde.dev/agent", ID: "core.substrate.reamde.dev/assistant"},
-	}, corekinds.DecodeLLMThread)
+	// llmmessage and llmthread each declare a REQUIRED reference, and their empty
+	// fixture is empty all the same: the write path does not enforce
+	// `required:`, so a stored row can lack one and these types have to hold it.
+	// TestRequiredIsMetadata is where that requirement is answered.
+	roundTrip(t, "llmmessage", &corekinds.LLMMessage{}, corekinds.DecodeLLMMessage)
+	roundTrip(t, "llmthread", &corekinds.LLMThread{}, corekinds.DecodeLLMThread)
 }
 
 // TestRoundTripPopulated is the same assertion with values in every shape the
@@ -177,7 +175,7 @@ func TestRoundTripPopulated(t *testing.T) {
 		ToolCallId: str("c1"),
 		Tool:       str("query"),
 		Ok:         boolean(true),
-		Thread:     corekinds.Reference{Kind: "core.substrate.reamde.dev/llmthread", ID: "t1"},
+		Thread:     &corekinds.Reference{Kind: "core.substrate.reamde.dev/llmthread", ID: "t1"},
 	}, corekinds.DecodeLLMMessage)
 
 	roundTrip(t, "llmprovider", &corekinds.LLMProvider{
@@ -197,7 +195,7 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodeLLMProvider)
 
 	roundTrip(t, "llmthread", &corekinds.LLMThread{
-		Agent:            corekinds.Reference{Kind: "core.substrate.reamde.dev/agent", ID: "core.substrate.reamde.dev/assistant"},
+		Agent:            &corekinds.Reference{Kind: "core.substrate.reamde.dev/agent", ID: "core.substrate.reamde.dev/assistant"},
 		Provider:         str("default"),
 		Model:            str("gpt-5"),
 		Mode:             str("chat"),
@@ -333,15 +331,34 @@ func TestDecodeRefuses(t *testing.T) {
 			}
 		})
 	}
-	// A required property left absent, and a bound broken: two kinds of refusal
-	// the blob declaration has no room for.
-	if _, problems := corekinds.DecodeLLMMessage(map[string]any{"role": "user"}); len(problems) == 0 {
-		t.Error("a missing required reference was admitted")
-	}
+	// A declared bound broken, which the blob declaration has no room for.
 	if _, problems := corekinds.DecodeLLMProvider(map[string]any{
 		"defaults": map[string]any{"temperature": 9.0},
 	}); len(problems) == 0 {
 		t.Error("a temperature outside the declared range was admitted")
+	}
+}
+
+// TestRequiredIsMetadata pins the boundary a `required:` hint sits on. The write
+// path does NOT enforce it (vocabulary Property.Required says so in as many
+// words), so a stored row may lack a required property — and these types decode
+// stored rows. A Decode that refused one would refuse rows the substrate itself
+// admitted, which is why requiredness is data and a method here, and not a
+// problem.
+func TestRequiredIsMetadata(t *testing.T) {
+	if want := []string{"thread"}; !reflect.DeepEqual(corekinds.LLMMessageRequired, want) {
+		t.Errorf("LLMMessageRequired is %v, declared %v", corekinds.LLMMessageRequired, want)
+	}
+	got, problems := corekinds.DecodeLLMMessage(map[string]any{"role": "user"})
+	if len(problems) > 0 {
+		t.Fatalf("an absent required property is not a decode problem: %v", problems)
+	}
+	if missing := got.Missing(); !reflect.DeepEqual(missing, []string{"thread"}) {
+		t.Errorf("Missing is %v, expected the absent required property", missing)
+	}
+	answered := &corekinds.LLMMessage{Thread: &corekinds.Reference{Kind: "core.substrate.reamde.dev/llmthread", ID: "t1"}}
+	if missing := answered.Missing(); len(missing) != 0 {
+		t.Errorf("Missing is %v with the requirement answered", missing)
 	}
 }
 
@@ -355,6 +372,65 @@ func TestDecodeReadsBackWhatStorageWrote(t *testing.T) {
 	}
 	if got.Size == nil || *got.Size != 4096 {
 		t.Errorf("size decoded as %v", got.Size)
+	}
+}
+
+// TestIntegersKeepEveryBit is the adversarial half of conformance 3. An int
+// above 2^53 has no exact float64, so a decoder that read every integer through
+// one would hand back 9007199254740992 for 9007199254740993 — a stored value
+// silently becoming a different stored value, in the one type where nobody
+// would look.
+func TestIntegersKeepEveryBit(t *testing.T) {
+	for _, n := range []int64{1 << 53, 1<<53 + 1, 9007199254740993, 1<<62 + 1, -(1<<53 + 1)} {
+		fixture := &corekinds.Blob{Size: &n}
+		props := fixture.Properties()
+		got, problems := corekinds.DecodeBlob(props)
+		if len(problems) > 0 {
+			t.Fatalf("%d: %v", n, problems)
+		}
+		if got.Size == nil || *got.Size != n {
+			t.Errorf("%d decoded as %v", n, got.Size)
+		}
+	}
+	// json.Number is the wire's spelling and keeps its bits the same way.
+	got, problems := corekinds.DecodeBlob(map[string]any{"size": json.Number("9007199254740993")})
+	if len(problems) > 0 {
+		t.Fatalf("json.Number: %v", problems)
+	}
+	if got.Size == nil || *got.Size != 9007199254740993 {
+		t.Errorf("json.Number decoded as %v", got.Size)
+	}
+	// A float64 past the line is REFUSED rather than rounded: which integer it
+	// was is no longer in the value, and guessing would store the guess.
+	if _, problems := corekinds.DecodeBlob(map[string]any{"size": float64(1 << 53)}); len(problems) == 0 {
+		t.Error("an integer beyond exact float precision was admitted from a float")
+	}
+}
+
+// TestDecodeReadsStoredShapes is the pinned answer to "why does this admit a
+// baseURL that is not a URL". The generated decoder is NOT the write-admission
+// gate: engine coerceProps refuses a non-absolute URL, an unparseable mailbox,
+// a phone that is not E.164 and a time zone the machine does not know, and every
+// stored value has already been through it. Repeating those grammars here would
+// be a second copy to keep in step, and the only rows it could catch are rows an
+// older binary admitted — which refusing now would lock out of their own
+// repository.
+//
+// If that boundary ever moves, this test is what has to be rewritten first.
+func TestDecodeReadsStoredShapes(t *testing.T) {
+	// A shape the write path would refuse and a stored row cannot hold: admitted,
+	// deliberately.
+	if _, problems := corekinds.DecodeLLMProvider(map[string]any{"baseURL": "not a URL"}); len(problems) > 0 {
+		t.Errorf("the decoder took on the write path's job: %v", problems)
+	}
+	// The one place it is STRICTER: a datetime must be RFC 3339, because
+	// coerceProps normalizes every admitted spelling to RFC 3339 Nano before
+	// storing. A stored datetime that is not one did not come from a write.
+	if _, problems := corekinds.DecodeRun(map[string]any{"startedAt": "2026-08-14"}); len(problems) == 0 {
+		t.Error("a relaxed datetime spelling was admitted as a stored value")
+	}
+	if _, problems := corekinds.DecodeRun(map[string]any{"startedAt": testInstant}); len(problems) > 0 {
+		t.Errorf("the stored datetime form was refused: %v", problems)
 	}
 }
 

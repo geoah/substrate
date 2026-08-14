@@ -57,15 +57,17 @@ func (v AuthoritySource) Valid() bool { return Declared(AuthoritySourceValues, s
 // in Go.
 var AuthorityKeys = []string{"actors", "name", "quarantineReason", "quarantined", "source", "version"}
 
-// DecodeAuthority decodes an authored properties map into Authority, refusing
-// anything the declaration does not admit: an undeclared key, a value of the
-// wrong type, an enum or state outside its set, a number outside its range, a
-// required property left absent. The value is nil unless the problems are
-// empty, so a half-decoded record can never reach a caller.
+// DecodeAuthority decodes a properties map into Authority, refusing what the
+// declaration cannot hold: an undeclared key, a value of the wrong type, an
+// enum or state outside its set, a number outside its declared range or beyond
+// exact integer precision, a key breaking a keyed map's contract. The value is
+// nil unless the problems are empty, so a half-decoded record can never reach
+// a caller.
 //
-// Structural only. Whether the referent of a reference exists, whether a
-// transition is legal from where the record stands, and whether this writer
-// may write a managed property are the engine's questions, not this package's.
+// It reads a STORED shape and is not the write-admission gate: see the
+// boundary in support.go. An ABSENT required property is admitted, because the
+// write path admits one too — AuthorityRequired and Missing are where
+// requiredness lives.
 func DecodeAuthority(props map[string]any) (*Authority, []Problem) {
 	d := &decoder{}
 	out, _ := decodeAuthority(d, "", props)

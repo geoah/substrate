@@ -354,8 +354,16 @@ export interface LLMMessage {
   /** The thread this turn belongs to. Points at
    * core.substrate.reamde.dev/llmthread.
    */
-  thread: Reference
+  thread?: Reference
 }
+
+/** The properties LLMMessage's declaration marks required. A form refuses to
+ * submit without them; the server does not, so nothing here is a guarantee
+ * about a record that arrives.
+ */
+export const llmMessageRequired: string[] = [
+  "thread",
+]
 
 /** LLMProvider is core.substrate.reamde.dev/llmprovider.
  *
@@ -460,7 +468,7 @@ export interface LLMProviderPricing {
  */
 export interface LLMThread {
   /** The agent this thread ran. Points at core.substrate.reamde.dev/agent. */
-  agent: Reference
+  agent?: Reference
   /** The llmprovider row id the run resolved. */
   provider?: string
   /** The model id the run sent. */
@@ -501,6 +509,14 @@ export interface LLMThread {
    */
   parent?: Reference
 }
+
+/** The properties LLMThread's declaration marks required. A form refuses to
+ * submit without them; the server does not, so nothing here is a guarantee
+ * about a record that arrives.
+ */
+export const llmThreadRequired: string[] = [
+  "agent",
+]
 
 /** PropertyType is core.substrate.reamde.dev/propertytype.
  *

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -65,13 +66,30 @@ func tsStruct(b *bytes.Buffer, s *structPlan) {
 		if doc := tsFieldDoc(f); doc != "" {
 			tsComment(b, doc, "  ")
 		}
-		optional := ""
-		if f.Optional {
-			optional = "?"
-		}
-		fmt.Fprintf(b, "  %s%s: %s\n", tsKey(f.Key), optional, tsType(f))
+		// EVERY property is optional, `required:` ones included. The interface
+		// describes what a STORED record can hold, and the write path does not
+		// enforce `required:` — a non-optional field would promise a value the
+		// server never guaranteed. The requirement is data instead, below.
+		fmt.Fprintf(b, "  %s?: %s\n", tsKey(f.Key), tsType(f))
 	}
 	b.WriteString("}\n")
+	var required []string
+	for _, f := range s.Fields {
+		if f.Required {
+			required = append(required, f.Key)
+		}
+	}
+	if len(required) == 0 {
+		return
+	}
+	sort.Strings(required)
+	b.WriteString("\n")
+	tsComment(b, "The properties "+s.Name+"'s declaration marks required. A form refuses to submit without them; the server does not, so nothing here is a guarantee about a record that arrives.", "")
+	fmt.Fprintf(b, "export const %sRequired: string[] = [\n", uncapitalize(s.Name))
+	for _, key := range required {
+		fmt.Fprintf(b, "  %q,\n", key)
+	}
+	b.WriteString("]\n")
 }
 
 func tsFieldDoc(f *fieldPlan) string {

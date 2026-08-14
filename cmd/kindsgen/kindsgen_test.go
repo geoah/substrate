@@ -128,9 +128,12 @@ func TestWiderDialectGenerates(t *testing.T) {
 		// the declared bounds and pattern travel into the decoder.
 		"Bounds{Min: bound(1), Max: bound(90)}",
 		`regexp.MustCompile("^[0-9a-f]{64}$")`,
-		// a required scalar is a VALUE, not a pointer, and its absence is refused.
-		"Digest string",
-		`if props["digest"] == nil {`,
+		// A required scalar is a POINTER like every other single value, and its
+		// absence is NOT a decode problem: the write path does not enforce
+		// `required:`, so a stored row may lack it. The requirement is data.
+		"Digest *string",
+		`var BlobRequired = []string{"digest"}`,
+		"func (v *Blob) Missing() []string",
 		// the markers reach the doc, which is the only place a client can read
 		// them without the declaration.
 		"Names a kind in the registry.",
@@ -145,13 +148,33 @@ func TestWiderDialectGenerates(t *testing.T) {
 	for _, want := range []string{
 		"labels?: Record<string, string>",
 		"inputs?: Record<string, BlobInputs>",
-		"digest: string",
+		// Optional in TypeScript too, for the same reason, with the requirement
+		// beside it as data a form can read.
+		"digest?: string",
+		`export const blobRequired: string[] = [`,
 		`export type BlobInputsWindowUnit =`,
 		`"day": "Days",`,
 	} {
 		if !strings.Contains(ts, want) {
 			t.Errorf("generated TypeScript is missing %q", want)
 		}
+	}
+	if strings.Contains(ts, "digest: string") {
+		t.Error("generated TypeScript promises a required property the server does not guarantee")
+	}
+}
+
+// TestDecodeAdmitsAnAbsentRequirement is finding 1 as a compiled assertion: the
+// emitted decoder must not carry a missing-property refusal, because the write
+// path admits a row without a required property and these types decode stored
+// rows.
+func TestDecodeAdmitsAnAbsentRequirement(t *testing.T) {
+	goFiles, _ := generate(t, widerDialect)
+	if strings.Contains(goFiles["blob.go"], "d.missing(") {
+		t.Error("the generated decoder refuses an absent required property; the write path does not")
+	}
+	if strings.Contains(goFiles["support.go"], "func (d *decoder) missing(") {
+		t.Error("the decoder still carries a missing-property refusal nothing may call")
 	}
 }
 
@@ -215,6 +238,29 @@ func TestRefusals(t *testing.T) {
 		"a secret as a field": {
 			document: propertyDocument("wrap:\n      type: object\n      fields:\n        key:\n          type: secret\n"),
 			problem:  "secret is its own property, never a field",
+		},
+		// The ENVELOPE is closed too. A key beside `kind:` that nobody reads is a
+		// key an author believes in, and the next reader of the file copies it.
+		"an unknown envelope key": {
+			document: propertyDocument("digest:\n      type: string\n") + "surprise: true\n",
+			problem:  `unknown envelope key "surprise"`,
+		},
+		"an unknown metadata key": {
+			document: strings.Replace(propertyDocument("digest:\n      type: string\n"),
+				"metadata:\n  id:", "metadata:\n  typo: x\n  id:", 1),
+			problem: `unknown key "typo"`,
+		},
+		"a key the design removed": {
+			document: propertyDocument("digest:\n      type: string\n") + "spec:\n  x: 1\n",
+			problem:  `"spec" was replaced by data`,
+		},
+		// The one that silently cost a whole declaration: a misspelled document
+		// kind read as "not a kind document" and the file dropped out of the
+		// generated types without a word.
+		"a misspelled document kind": {
+			document: strings.Replace(propertyDocument("digest:\n      type: string\n"),
+				"kind: core.substrate.reamde.dev/kind\n", "kind: core.substrate.reamde.dev/knid\n", 1),
+			problem: "is neither a vocabulary document nor a kind",
 		},
 	}
 	for name, tc := range cases {

@@ -41,15 +41,17 @@ type Bundle struct {
 // in Go.
 var BundleKeys = []string{"authority", "definition", "disabled", "name", "purging", "uninstalled", "version"}
 
-// DecodeBundle decodes an authored properties map into Bundle, refusing
-// anything the declaration does not admit: an undeclared key, a value of the
-// wrong type, an enum or state outside its set, a number outside its range, a
-// required property left absent. The value is nil unless the problems are
-// empty, so a half-decoded record can never reach a caller.
+// DecodeBundle decodes a properties map into Bundle, refusing what the
+// declaration cannot hold: an undeclared key, a value of the wrong type, an
+// enum or state outside its set, a number outside its declared range or beyond
+// exact integer precision, a key breaking a keyed map's contract. The value is
+// nil unless the problems are empty, so a half-decoded record can never reach
+// a caller.
 //
-// Structural only. Whether the referent of a reference exists, whether a
-// transition is legal from where the record stands, and whether this writer
-// may write a managed property are the engine's questions, not this package's.
+// It reads a STORED shape and is not the write-admission gate: see the
+// boundary in support.go. An ABSENT required property is admitted, because the
+// write path admits one too — BundleRequired and Missing are where
+// requiredness lives.
 func DecodeBundle(props map[string]any) (*Bundle, []Problem) {
 	d := &decoder{}
 	out, _ := decodeBundle(d, "", props)

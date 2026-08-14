@@ -35,7 +35,7 @@ type LLMMessage struct {
 
 	// Thread is the thread this turn belongs to. Points at
 	// core.substrate.reamde.dev/llmthread.
-	Thread Reference
+	Thread *Reference
 }
 
 // LLMMessageKeys is the admitted key set: every property
@@ -44,15 +44,17 @@ type LLMMessage struct {
 // in Go.
 var LLMMessageKeys = []string{"content", "ok", "role", "thread", "tool", "toolCallId", "toolCalls", "turn"}
 
-// DecodeLLMMessage decodes an authored properties map into LLMMessage,
-// refusing anything the declaration does not admit: an undeclared key, a value
-// of the wrong type, an enum or state outside its set, a number outside its
-// range, a required property left absent. The value is nil unless the problems
-// are empty, so a half-decoded record can never reach a caller.
+// DecodeLLMMessage decodes a properties map into LLMMessage, refusing what the
+// declaration cannot hold: an undeclared key, a value of the wrong type, an
+// enum or state outside its set, a number outside its declared range or beyond
+// exact integer precision, a key breaking a keyed map's contract. The value is
+// nil unless the problems are empty, so a half-decoded record can never reach
+// a caller.
 //
-// Structural only. Whether the referent of a reference exists, whether a
-// transition is legal from where the record stands, and whether this writer
-// may write a managed property are the engine's questions, not this package's.
+// It reads a STORED shape and is not the write-admission gate: see the
+// boundary in support.go. An ABSENT required property is admitted, because the
+// write path admits one too — LLMMessageRequired and Missing are where
+// requiredness lives.
 func DecodeLLMMessage(props map[string]any) (*LLMMessage, []Problem) {
 	d := &decoder{}
 	out, _ := decodeLLMMessage(d, "", props)
@@ -60,6 +62,24 @@ func DecodeLLMMessage(props map[string]any) (*LLMMessage, []Problem) {
 		return nil, d.problems
 	}
 	return &out, nil
+}
+
+// LLMMessageRequired names the properties the declaration marks `required:`,
+// sorted. It is a FORM-LEVEL contract: the write path does not enforce it, so
+// Decode admits a value that leaves one absent and this is what a client
+// checks before it submits one.
+var LLMMessageRequired = []string{"thread"}
+
+// Missing names the required properties this value leaves absent, in
+// declaration order. Empty means every declared requirement is answered —
+// not that the value is admissible, which is the substrate's answer and not a
+// type's.
+func (v *LLMMessage) Missing() []string {
+	var out []string
+	if v.Thread == nil {
+		out = append(out, "thread")
+	}
+	return out
 }
 
 // decodeLLMMessage decodes one LLMMessage value at path.
@@ -114,14 +134,11 @@ func decodeLLMMessage(d *decoder, path string, v any) (LLMMessage, bool) {
 		case "thread":
 			p := at(path, "thread")
 			if e, ok := d.reference(p, props[key], "core.substrate.reamde.dev/llmthread"); ok {
-				out.Thread = e
+				out.Thread = &e
 			}
 		default:
 			d.unknown(at(path, key), "core.substrate.reamde.dev/llmmessage")
 		}
-	}
-	if props["thread"] == nil {
-		d.missing(at(path, "thread"))
 	}
 	return out, true
 }
@@ -152,6 +169,8 @@ func (v *LLMMessage) Properties() map[string]any {
 	if v.Ok != nil {
 		out["ok"] = *v.Ok
 	}
-	out["thread"] = v.Thread.Properties()
+	if v.Thread != nil {
+		out["thread"] = v.Thread.Properties()
+	}
 	return out
 }

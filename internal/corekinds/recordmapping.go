@@ -38,15 +38,17 @@ type RecordMapping struct {
 // keys in Go.
 var RecordMappingKeys = []string{"authority", "definition", "edge", "from", "name", "to", "version"}
 
-// DecodeRecordMapping decodes an authored properties map into RecordMapping,
-// refusing anything the declaration does not admit: an undeclared key, a value
-// of the wrong type, an enum or state outside its set, a number outside its
-// range, a required property left absent. The value is nil unless the problems
-// are empty, so a half-decoded record can never reach a caller.
+// DecodeRecordMapping decodes a properties map into RecordMapping, refusing
+// what the declaration cannot hold: an undeclared key, a value of the wrong
+// type, an enum or state outside its set, a number outside its declared range
+// or beyond exact integer precision, a key breaking a keyed map's contract.
+// The value is nil unless the problems are empty, so a half-decoded record can
+// never reach a caller.
 //
-// Structural only. Whether the referent of a reference exists, whether a
-// transition is legal from where the record stands, and whether this writer
-// may write a managed property are the engine's questions, not this package's.
+// It reads a STORED shape and is not the write-admission gate: see the
+// boundary in support.go. An ABSENT required property is admitted, because the
+// write path admits one too — RecordMappingRequired and Missing are where
+// requiredness lives.
 func DecodeRecordMapping(props map[string]any) (*RecordMapping, []Problem) {
 	d := &decoder{}
 	out, _ := decodeRecordMapping(d, "", props)

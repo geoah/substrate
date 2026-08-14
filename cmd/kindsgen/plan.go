@@ -82,11 +82,13 @@ type fieldPlan struct {
 	// applied by the emitters, which spell it differently.
 	GoElem string
 	TSElem string
-	// Optional is the absence of `required: true`. An optional non-repeated,
-	// non-keyed field generates as a POINTER in Go and with `?` in TypeScript:
-	// absence stored is absence authored, and a materialized zero value is a
-	// silent round trip bug.
-	Optional bool
+	// Required mirrors the declared `required:` hint, and it is METADATA — it
+	// changes no generated type. The write path does not enforce it (vocabulary
+	// Property.Required: "The engine does not enforce it on writes"), so a stored
+	// row may legally lack a required property; a generated type that could not
+	// hold that row would refuse rows the substrate itself admitted, and these
+	// types decode stored rows. It reaches <Struct>Required and Missing() instead.
+	Required bool
 	// Nested is the struct an object field's element is.
 	Nested *structPlan
 	// Enum is the enum type an enum field's element is.
@@ -98,10 +100,16 @@ type fieldPlan struct {
 func (f *fieldPlan) repeated() bool { return f.Decl.Repeated }
 func (f *fieldPlan) keyed() bool    { return f.Decl.Keyed }
 
-// pointer reports whether the Go field is a pointer: an optional single value,
-// except a `json` one, whose Dynamic already carries absence as nil.
+// pointer reports whether the Go field is a pointer: EVERY single value except a
+// `json` one, whose Dynamic already carries absence as nil.
+//
+// Every one, including a required property's. Absence stored is absence
+// authored, and `required:` is a form-level hint the write path does not enforce
+// — so a value type there would materialize a zero for a row that legally
+// carries nothing, and Properties would then write that zero back as if someone
+// had authored it. The requiredness survives as metadata, which is what it is.
 func (f *fieldPlan) pointer() bool {
-	return f.Optional && !f.repeated() && !f.keyed() && f.Class != classJSON
+	return !f.repeated() && !f.keyed() && f.Class != classJSON
 }
 
 type enumPlan struct {
@@ -203,7 +211,7 @@ func planFields(k *kindPlan, s *structPlan, props []*kinddialect.Property) error
 			Decl:     prop,
 			Key:      prop.Name,
 			Name:     exported(prop.Name),
-			Optional: !prop.Required,
+			Required: prop.Required,
 		}
 		switch prop.Datatype {
 		case kinddialect.TypeString, kinddialect.TypeText, kinddialect.TypeMarkdown,

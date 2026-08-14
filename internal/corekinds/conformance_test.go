@@ -86,6 +86,19 @@ func TestReadersAgree(t *testing.T) {
 		if read.Description != declared.Description {
 			t.Errorf("%s: descriptions differ", declared.Identity)
 		}
+		if read.Authority != declared.Authority {
+			t.Errorf("%s: authority %q, loader %q", declared.Identity, read.Authority, declared.Authority)
+		}
+		// The EFFECTIVE version: a kind's own where it pins one, its authority's
+		// otherwise. The boot upgrade keys on it, so the two readers agreeing on
+		// the authored value alone would not be agreement.
+		if read.Version != declared.Version {
+			t.Errorf("%s: version %q, loader %q", declared.Identity, read.Version, declared.Version)
+		}
+		if read.DisplayTemplate != declared.DisplayTemplate {
+			t.Errorf("%s: displayTemplate %q, loader %q",
+				declared.Identity, read.DisplayTemplate, declared.DisplayTemplate)
+		}
 		compareProps(t, declared.Identity, declared.Props, read.Props, 1)
 	}
 	for ref := range byRef {
@@ -124,6 +137,33 @@ func compareProps(t *testing.T, where string, declared map[string]*vocabulary.Pr
 		if r.Required != d.Required || r.Managed != d.Managed || r.RefersTo != d.RefersTo || r.Writer != d.Writer {
 			t.Errorf("%s: markers differ: reader %+v, loader required=%v managed=%v refersTo=%q writer=%q",
 				at, r, d.Required, d.Managed, d.RefersTo, d.Writer)
+		}
+		// The prose the generated types carry into their doc comments. A reader
+		// that dropped a description would generate a type nobody can read
+		// without the declaration open beside it, and nothing else would notice.
+		if r.Description != d.Description || r.DisplayName != d.DisplayName {
+			t.Errorf("%s: labels differ: reader description=%q displayName=%q, loader description=%q displayName=%q",
+				at, r.Description, r.DisplayName, d.Description, d.DisplayName)
+		}
+		// Implicit is the property no `properties:` block declares: a transition's
+		// stamp target. It is stored like any other, so a reader that missed one
+		// would generate a type that refuses a value the ENGINE wrote.
+		if r.Implicit != d.Implicit {
+			t.Errorf("%s: implicit %v, loader %v", at, r.Implicit, d.Implicit)
+		}
+		if r.RenamedFrom != d.RenamedFrom {
+			t.Errorf("%s: renamedFrom %q, loader %q", at, r.RenamedFrom, d.RenamedFrom)
+		}
+		if r.Inverse != d.Inverse || r.InverseDescription != d.InverseDescription {
+			t.Errorf("%s: inverse differs: reader %q/%q, loader %q/%q",
+				at, r.Inverse, r.InverseDescription, d.Inverse, d.InverseDescription)
+		}
+		// Refined names the authority-local property type a property refines. The
+		// generator's reader REFUSES a refinement rather than resolving one (it
+		// builds no registry), so this holds core to declaring none — the day one
+		// arrives, generation fails loudly and this line says why.
+		if d.Refined != "" {
+			t.Errorf("%s: refines %q, which the generator's reader refuses rather than resolves", at, d.Refined)
 		}
 		compareEnumValues(t, at, d.Values, r.Values)
 		compareBound(t, at+".min", d.Min, r.Min)
@@ -280,6 +320,83 @@ func TestGeneratedKeysMatchDeclarations(t *testing.T) {
 		if _, ok := loaded.Kinds[name]; !ok {
 			t.Errorf("generatedKeys names %q, which %s does not declare", name, authority)
 		}
+	}
+}
+
+// TestDiscardsAreDeliberate is the other half of "the two readers agree": the
+// loader represents things the generator DOES NOT, and an omission and a
+// decision look identical in a comparison that simply leaves them out. Each one
+// is listed here with what makes it discardable, so removing a discard is an
+// edit to this test and not a silence.
+//
+// This test asserts on the loader side only, because that is where the discarded
+// thing exists. What it pins is that each discard is still true of the shipped
+// tree — a declaration that started depending on one would land here.
+func TestDiscardsAreDeliberate(t *testing.T) {
+	_, loaded := declarations(t)
+	for _, name := range loaded.KindOrder {
+		declared := loaded.Kinds[name]
+		at := declared.Identity
+
+		// INDEX PLACEMENT, not shape. `fts` and `embed` decide which search band
+		// and which embedding a value joins. Neither changes a Go or a TypeScript
+		// type, and FTS's default is computed from the datatype by a rule
+		// (IsShortString/IsLongText, off for sensitive and keyed) that a second
+		// reader could only re-derive — a second derivation of a default is the
+		// drift this arrangement exists to avoid.
+		//
+		// SOURCE is "builtin" for every shipped kind and "installed" for an
+		// imported one: a fact about where a declaration came from, not about what
+		// a record holds.
+		if declared.Source == "" {
+			t.Errorf("%s: the loader stopped carrying a source", at)
+		}
+
+		// EDGES are not properties. They are a traversable relationship with its
+		// own storage and its own read surface; a generated properties struct has
+		// no field for one, and `<Kind>Keys` is the PROPERTY set by definition.
+		// The count is asserted so a kind that grows an edge does not look like a
+		// kind that grew a property.
+		for _, edge := range declared.EdgeOrder {
+			if _, isProp := declared.Props[edge]; isProp {
+				t.Errorf("%s: %q is both an edge and a property", at, edge)
+			}
+		}
+
+		// TRAITS, INDICES and HOTCOLUMNS are how a kind binds shared semantics
+		// and what it asks the database to index. Both are the engine's business:
+		// a bound trait adds no property to the declaration (its properties
+		// arrive as declared ones, which the comparison above already covers).
+		for _, binding := range declared.Traits {
+			if binding.Identity == "" {
+				t.Errorf("%s: a trait binding resolved to nothing", at)
+			}
+		}
+
+		// MACHINES is an INDEX of the state properties, and TEMPLATE is the parsed
+		// displayTemplate. Both are second views of something already compared:
+		// every machine is the Machine on its state property, and the template is
+		// the string. A generator that read the index would be reading the same
+		// declaration twice.
+		for machine := range declared.Machines {
+			if p, ok := declared.Props[machine]; !ok || p.Machine == nil {
+				t.Errorf("%s: machine %q indexes no state property", at, machine)
+			}
+		}
+
+		// DEFINITION and SOURCEYAML are the authored document, kept whole for the
+		// read surfaces. The generator reads the same document; carrying it into a
+		// generated type would put a copy of the contract inside the code
+		// generated from it.
+		if len(declared.Definition) == 0 {
+			t.Errorf("%s: the loader stopped carrying the authored data map", at)
+		}
+
+		// `default:` is a form's seed value. The loader admits the key and puts it
+		// nowhere on Property — it rides the Definition map to the console — so
+		// there is nothing on either side to compare, and the generated types
+		// carry no defaults. A default that ever becomes shape would need this
+		// comment deleted first.
 	}
 }
 

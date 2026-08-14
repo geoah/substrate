@@ -45,12 +45,15 @@ type Kind struct {
 	// that names where to go.
 	File string
 	// Ref is the kind reference, which is the document's metadata.id.
-	Ref         string
-	Authority   string
-	Name        string // names.singular
-	Plural      string
-	Version     string
-	Description string
+	Ref       string
+	Authority string
+	Name      string // names.singular
+	Plural    string
+	// Version is the EFFECTIVE version: the kind's own `data.version` where it
+	// pins one, else its authority's.
+	Version         string
+	Description     string
+	DisplayTemplate string
 	// Props are the declared properties in AUTHORED order: generated output
 	// follows the document's own shape, so a reviewer can read the two side by
 	// side.
@@ -72,10 +75,21 @@ type Property struct {
 	// KeyPattern is the declared contract a keyed map's keys hold to: "camel",
 	// "kindRef", or empty for any non-empty key.
 	KeyPattern string
-	Required   bool
-	Managed    bool
-	RefersTo   string
-	Writer     string
+	// Required mirrors the declared `required:` hint. It is METADATA and never a
+	// container decision: the write path does not enforce it (vocabulary
+	// Property.Required), so a stored row may lack a required property and the
+	// generated types have to be able to hold that row.
+	Required bool
+	Managed  bool
+	RefersTo string
+	Writer   string
+	// RenamedFrom, Inverse and InverseDescription are admitted, carried and
+	// generated INTO NOTHING: a rename nothing performs yet and a label nothing
+	// resolves by change no type. They are read so the conformance test can hold
+	// both readers to one answer about them.
+	RenamedFrom        string
+	Inverse            string
+	InverseDescription string
 	// To is a reference property's declared referent, verbatim: a full kind
 	// reference, a bare kind name or "any". Resolution belongs to the registry.
 	To string
@@ -156,7 +170,7 @@ func ReadFS(fsys fs.FS) ([]*Kind, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &reader{}
+	r := &reader{authorityVersion: DefaultVersion}
 	var out []*Kind
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
@@ -172,6 +186,17 @@ func ReadFS(fsys fs.FS) ([]*Kind, error) {
 		}
 		out = append(out, kinds...)
 	}
+	r.checkOtherDocuments(out)
+	// The EFFECTIVE version, defaulted exactly as the loader defaults it: a
+	// kind's own `data.version` where it pins one, else the authority's, else
+	// v1alpha1. The boot upgrade keys on this answer, so a reader that reported
+	// the authored value would disagree with the loader on every kind that pins
+	// nothing.
+	for _, k := range out {
+		if k.Version == "" {
+			k.Version = r.authorityVersion
+		}
+	}
 	if err := r.err(); err != nil {
 		return nil, err
 	}
@@ -179,10 +204,28 @@ func ReadFS(fsys fs.FS) ([]*Kind, error) {
 	return out, nil
 }
 
+// DefaultVersion is the version a declaration projects with when neither it nor
+// its authority pins one. It mirrors vocabulary.DefaultVersion.
+const DefaultVersion = "v1alpha1"
+
 // reader collects every refusal before reporting, so one run names every
 // declaration a generator would have to be told about rather than the first.
 type reader struct {
 	problems []string
+	// authorityVersion is the authority document's `data.version`, which every
+	// kind that pins none projects with.
+	authorityVersion string
+	// others are the documents in this directory that are NOT kind
+	// declarations, by their envelope's kind reference and the file it sat in.
+	// They are judged once the declared kinds are known: a data record of a
+	// declared kind is legitimately not generator input, and a MISSPELLED
+	// document kind is a declaration silently missing from the generated types.
+	others []otherDocument
+}
+
+type otherDocument struct {
+	ref  string
+	file string
 }
 
 func (r *reader) errf(format string, args ...any) {
@@ -198,10 +241,37 @@ func (r *reader) err() error {
 		len(r.problems), strings.Join(r.problems, "\n  "))
 }
 
-// kindDocumentRef is the one document kind this reader reads. Every other
-// document in the directory (the authority, its actors, its traits, the
-// delivery wiring) is another reader's business.
-const kindDocumentRef = "core.substrate.reamde.dev/kind"
+// AuthorityCore publishes the meta-kinds, so every VOCABULARY document names one
+// of its kinds whatever authority the document declares into. It mirrors
+// vocabulary.AuthorityCore.
+const AuthorityCore = "core.substrate.reamde.dev"
+
+// kindDocumentRef is the one document kind this reader reads.
+const kindDocumentRef = AuthorityCore + "/kind"
+
+// vocabularyDocumentKinds are the other documents a kinds/ directory holds — the
+// authority header, its actors, its traits, its property types, its mappings and
+// its callables. They are recognized and skipped, which is different from being
+// ignored: a document kind that is on NEITHER this list nor the tree's own
+// declared kinds is a misspelling, and a misspelled `kind:` would drop a whole
+// declaration out of the generated types without a word. It mirrors
+// vocabulary's schemaDocumentKinds.
+var vocabularyDocumentKinds = keys("authority", "kind", "trait", "propertytype",
+	"recordmapping", "function", "agent", "actor", "bundle")
+
+// The manifest envelope: four keys, and the keys the pinned design REMOVED each
+// naming what took its job. A document still carrying one would otherwise look
+// obeyed. Both mirror vocabulary/document.go.
+var (
+	envelopeKeys        = keys("kind", "metadata", "data", "status")
+	metadataKeys        = keys("id", "labels", "annotations")
+	deletedEnvelopeKeys = map[string]string{
+		"apiVersion": "kind (the version left the envelope)",
+		"group":      "kind (one kind reference names the authority and the name)",
+		"type":       "kind",
+		"spec":       "data",
+	}
+)
 
 func (r *reader) readFile(file string, raw []byte) ([]*Kind, error) {
 	dec := yaml.NewDecoder(strings.NewReader(string(raw)))
@@ -222,7 +292,19 @@ func (r *reader) readFile(file string, raw []byte) ([]*Kind, error) {
 		if !ok {
 			return nil, fmt.Errorf("%s: a document is a mapping", file)
 		}
-		if m.str("kind") != kindDocumentRef {
+		ref := m.str("kind")
+		where := file + ": " + ref
+		if id := documentID(m); id != "" {
+			where = file + ": " + id
+		}
+		r.checkEnvelope(where, m)
+		if ref != kindDocumentRef {
+			// The AUTHORITY header carries the version every kind that pins none
+			// projects with, so it is read even though it generates nothing.
+			if ref == AuthorityCore+"/"+docAuthority {
+				r.readAuthorityVersion(where, m)
+			}
+			r.others = append(r.others, otherDocument{ref: ref, file: file})
 			continue
 		}
 		if k := r.readKind(file, m); k != nil {
@@ -230,6 +312,100 @@ func (r *reader) readFile(file string, raw []byte) ([]*Kind, error) {
 		}
 	}
 	return out, nil
+}
+
+const docAuthority = "authority"
+
+// checkEnvelope holds the four-key envelope and the metadata block closed. A key
+// nobody reads is a key an author believes in: `metadata.typo` beside a real id
+// reads as accepted, and the next reader of the file copies it.
+func (r *reader) checkEnvelope(where string, doc *mapping) {
+	for _, k := range doc.keys {
+		if replacement, deleted := deletedEnvelopeKeys[k]; deleted {
+			r.errf("%s: %q was replaced by %s", where, k, replacement)
+			continue
+		}
+		if !envelopeKeys[k] {
+			r.errf("%s: unknown envelope key %q — a document is kind, metadata, data and status", where, k)
+		}
+	}
+	if meta, ok := asMapping(doc.at("metadata")); ok {
+		r.checkKeys(where+".metadata", meta, metadataKeys)
+	}
+}
+
+func (r *reader) readAuthorityVersion(where string, doc *mapping) {
+	data, ok := asMapping(doc.at("data"))
+	if !ok {
+		r.errf("%s: an authority document carries data", where)
+		return
+	}
+	if v := data.str("version"); v != "" {
+		r.authorityVersion = v
+	}
+}
+
+// checkOtherDocuments judges the documents this reader did not generate from. A
+// vocabulary document (the authority, an actor, a trait) and a DATA record of a
+// kind the tree declares are both legitimately not generator input; anything
+// else naming one of this authority's own kinds is a name nothing declares, and
+// the likeliest cause is a typo in `kind:` — which silently costs a whole
+// declaration.
+//
+// A document naming ANOTHER authority's kind is not judged: whether that kind
+// exists is the registry's question, and this reader holds one directory.
+func (r *reader) checkOtherDocuments(declared []*Kind) {
+	authority := r.authority(declared)
+	local := map[string]bool{}
+	for _, k := range declared {
+		local[k.Name] = true
+	}
+	for _, other := range r.others {
+		refAuthority, name := splitRef(other.ref)
+		switch {
+		case other.ref == "":
+			r.errf("%s: a document declares its kind", other.file)
+		case refAuthority == AuthorityCore && vocabularyDocumentKinds[name]:
+		case refAuthority == authority && local[name]:
+		case refAuthority == authority || refAuthority == AuthorityCore:
+			r.errf("%s: document kind %q is neither a vocabulary document nor a kind %s declares — a misspelled `kind:` drops the whole document out of the generated types",
+				other.file, other.ref, refAuthority)
+		}
+	}
+}
+
+// authority is the authority this directory declares into: every kind document
+// agrees on it, and a disagreement is a directory holding two authorities, which
+// no shipped tree does.
+func (r *reader) authority(declared []*Kind) string {
+	authority := ""
+	for _, k := range declared {
+		switch {
+		case authority == "":
+			authority = k.Authority
+		case k.Authority != authority:
+			r.errf("%s: %s declares into %s while the rest of the directory declares into %s",
+				k.File, k.Ref, k.Authority, authority)
+		}
+	}
+	return authority
+}
+
+// splitRef splits a kind reference on its ONE slash, mirroring
+// vocabulary.SplitKindRef: a bare name has no authority.
+func splitRef(ref string) (authority, name string) {
+	if i := strings.Index(ref, "/"); i >= 0 {
+		return ref[:i], ref[i+1:]
+	}
+	return "", ref
+}
+
+func documentID(doc *mapping) string {
+	meta, ok := asMapping(doc.at("metadata"))
+	if !ok {
+		return ""
+	}
+	return meta.str("id")
 }
 
 // kindDataKeys mirrors vocabulary's typeDataKeys. An unknown key here is a
@@ -248,11 +424,12 @@ func (r *reader) readKind(file string, doc *mapping) *Kind {
 		return nil
 	}
 	k := &Kind{
-		File:        file,
-		Ref:         meta.str("id"),
-		Authority:   data.str("authority"),
-		Version:     data.str("version"),
-		Description: data.str("description"),
+		File:            file,
+		Ref:             meta.str("id"),
+		Authority:       data.str("authority"),
+		Version:         data.str("version"),
+		Description:     data.str("description"),
+		DisplayTemplate: data.str("displayTemplate"),
 	}
 	where := file + ": " + k.Ref
 	r.checkKeys(where+".data", data, kindDataKeys)
@@ -457,6 +634,8 @@ func (r *reader) readProperty(where, name string, n *yaml.Node, depth int) *Prop
 		r.checkKeys(where, d, referenceKeys)
 		p.To = d.str("to")
 		p.Required = r.flag(where, d, "required")
+		p.RenamedFrom = d.str("renamedFrom")
+		p.Inverse, p.InverseDescription = d.str("inverse"), d.str("inverseDescription")
 		return p
 	}
 	r.checkKeys(where, d, scalarKeys)
@@ -469,6 +648,7 @@ func (r *reader) readProperty(where, name string, n *yaml.Node, depth int) *Prop
 		return nil
 	}
 	p.Required = r.flag(where, d, "required")
+	p.RenamedFrom = d.str("renamedFrom")
 	p.Pattern = d.str("pattern")
 	p.Min, p.Max = r.number(where, d, "min"), r.number(where, d, "max")
 	for i, v := range d.seq("values") {
