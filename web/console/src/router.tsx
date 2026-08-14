@@ -17,6 +17,7 @@ import { AgentsPage } from "@/pages/agents"
 import { ChangelogPage } from "@/pages/changelog"
 import { BundleDetailPage } from "@/pages/bundle-detail"
 import { AuthorityPage } from "@/pages/authority"
+import { ChangeRequestDetailPage } from "@/pages/change-request-detail"
 import { HomePage } from "@/pages/home"
 import { LoginPage } from "@/pages/login"
 import { MergeRequestDetailPage } from "@/pages/merge-request-detail"
@@ -111,6 +112,16 @@ export const mergeRequestDetailRoute = createRoute({
   component: MergeRequestDetailPage,
 })
 
+// Sibling of the merge-request route, and named for what it reviews rather than
+// for the kind: `recordpatchrequest` carries create and delete as well as
+// patch, so "changes" is the honest word. NOT "/changes": the changelog owns
+// that noun in this console.
+export const changeRequestDetailRoute = createRoute({
+  getParentRoute: () => shellRoute,
+  path: "/change-requests/$id",
+  component: ChangeRequestDetailPage,
+})
+
 export const authorityRoute = createRoute({
   getParentRoute: () => shellRoute,
   path: "/data/$authority",
@@ -175,6 +186,7 @@ const routeTree = rootRoute.addChildren([
     agentsRoute,
     agentChatRoute,
     mergeRequestDetailRoute,
+    changeRequestDetailRoute,
     authorityRoute,
     kindBrowseRoute,
     recordNewRoute,
