@@ -1,10 +1,16 @@
-# Every push and every PR, as five jobs so a failure names itself.
+# Every push and every PR, as seven jobs so a failure names itself.
 #
 # This file holds NO commands. Each job runs one `mise run ci:*` task, and
 # those tasks are defined once in .mise.toml — so `mise run ci` on a laptop is
 # the same pipeline, not an approximation of it. A check that passes locally
 # and fails here would have to be a difference in the machine, never in the
 # definition. Add a step to .mise.toml; this file does not change.
+#
+# Every third-party action is pinned to a COMMIT SHA with its version in a
+# trailing comment. A tag is mutable and these jobs are the trust boundary of
+# the whole repository, so a compromised `v4` would otherwise be a compromised
+# release. The comment is what dependabot reads to keep them current, and it is
+# also what proposes the major upgrades none of these are on yet.
 #
 # The actions/cache steps below are the one thing that IS about the machine and
 # so belongs here rather than in .mise.toml: a laptop keeps ~/.cache and
@@ -40,14 +46,15 @@ jobs:
   lint:
     name: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
         with:
           experimental: true
       # golangci-lint typechecks the module, so it wants the same module and
       # build caches `go test` does, plus its own analysis cache.
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/go/pkg/mod
@@ -60,14 +67,15 @@ jobs:
   cross:
     name: cross compile
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
         with:
           experimental: true
       # Its own key: this job's working set is four foreign GOARCHes, which the
       # test job's cache never holds and would only evict.
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/go/pkg/mod
@@ -79,6 +87,7 @@ jobs:
   go:
     name: go test
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     # The database suites start their own pgvector container through
     # testcontainers when they have to, which is right on a laptop. On a runner
     # it is fragile — the container has died mid-suite, and every remaining case
@@ -105,15 +114,15 @@ jobs:
     env:
       SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
         with:
           experimental: true
       # ~/go/pkg/mod is the download cache (`go mod download`); ~/.cache/go-build
       # is the compiled-package cache, which is what makes the second half of
       # the suite cheap. mise does not relocate either — GOPATH and GOCACHE keep
       # their defaults under HOME.
-      - uses: actions/cache@v4
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/go/pkg/mod
@@ -121,13 +130,69 @@ jobs:
           key: ${{ runner.os }}-go-test-${{ hashFiles('go.sum') }}
           restore-keys: ${{ runner.os }}-go-test-
       - run: mise run ci:go
+      # The profile, kept as an artifact rather than sent to a coverage
+      # service. There is no threshold and no badge on purpose (see
+      # `test:coverage` in .mise.toml): this is here so a reviewer asking "is
+      # that new branch tested" can download the answer, not so a number can
+      # fail a build. `if: always()` because a failing suite still produces a
+      # profile, and that is exactly when it is wanted.
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage
+          path: coverage.out
+          if-no-files-found: warn
+          retention-days: 14
+
+  race:
+    name: race
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          experimental: true
+      # Its own key: -race builds a differently-instrumented object for every
+      # package, so sharing the `go test` job's cache would only evict it.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-race-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-go-race-
+      - run: mise run ci:race
+
+  audit:
+    name: audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The one job allowed to fail for a reason that is not in the diff: it asks
+    # a vulnerability database what is known TODAY, so the same commit can be
+    # green this morning and red this afternoon. That is the point of it, and
+    # it is why it is not part of `lint`.
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          experimental: true
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-audit-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-go-audit-
+      - run: mise run ci:audit
 
   console:
     name: console
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
         with:
           experimental: true
       # NO pnpm store cache here, deliberately — it was measured and it does not
@@ -142,9 +207,10 @@ jobs:
   image:
     name: image builds
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: jdx/mise-action@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
         with:
           experimental: true
       - run: mise run ci:image

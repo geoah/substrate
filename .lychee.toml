@@ -1,0 +1,25 @@
+# The link checker's config. `lint:docs` always passes --offline, so nothing
+# here opens a socket: what is checked is that a relative link names a file
+# that exists, and that a `#fragment` names a heading that exists in it. An
+# external URL being down is somebody else's outage, never this repo's build
+# failure, so remote links are not checked at all.
+
+# Anchors too, not just files. `docs/operations.md` links
+# `agents.md#registering-a-provider`, and a renamed heading breaks that link
+# just as thoroughly as a renamed file would.
+include_fragments = "anchor-only"
+
+# Not ours to hold. node_modules and dist are generated, .dev is the local
+# substrate's state, and bin/ is build output.
+exclude_path = [
+  "web/console/node_modules",
+  "web/console/dist",
+  ".dev",
+  "bin",
+  "CHANGELOG.md",
+  # Its one link is `/substrate.svg`, which Vite resolves from
+  # web/console/public at build time. A checker with no root directory reads
+  # that as the filesystem root, and pointing one at the repo root would only
+  # be wrong for every other file here.
+  "web/console/index.html",
+]

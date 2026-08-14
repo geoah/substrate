@@ -44,8 +44,8 @@ API call that completes a task. Start at the
 - [substratectl](substratectl.md) — the CLI
 - [The web console](console.md)
 - [Running a substrate](operations.md)
-- [The live tests](testing.md) — the one suite that talks to real LLM
-  providers, and how to give it keys
+- [Testing](testing.md) — every suite, which to reach for, and how to give the
+  live one keys
 - [Built-in kinds](builtin-kinds.md) — reference
 
 ---

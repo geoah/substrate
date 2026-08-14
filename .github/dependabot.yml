@@ -1,0 +1,84 @@
+# Dependency updates, from GitHub itself.
+#
+# Dependabot rather than Renovate: Renovate is the more configurable of the two
+# and its grouping and digest handling are better, but it is a GitHub App
+# somebody has to install and keep authorized on the org. This file is the
+# whole setup for Dependabot, it works the moment it lands on main, and it now
+# does the two things Renovate used to be needed for here — pinning actions to
+# commit SHAs and updating base-image digests. If the volume of pull requests
+# ever becomes the problem, that is the moment to reconsider, not before.
+#
+# Everything is grouped and weekly. One PR per dependency per week, across four
+# ecosystems, would be a repository nobody reads.
+version: 2
+
+updates:
+  # ---- Go -----------------------------------------------------------------
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      # release-please reads these titles off main, so a title it cannot parse
+      # is a release that does not happen. `chore` keeps a dependency bump out
+      # of the release notes; a security fix is retitled by hand to `fix`.
+      prefix: chore
+    groups:
+      go-minor-and-patch:
+        applies-to: version-updates
+        update-types: [minor, patch]
+      go-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # ---- The console --------------------------------------------------------
+  - package-ecosystem: npm
+    directory: /web/console
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    groups:
+      console-minor-and-patch:
+        applies-to: version-updates
+        update-types: [minor, patch]
+      console-security:
+        applies-to: security-updates
+        patterns: ["*"]
+    ignore:
+      # shadcn output is regenerated through the CLI, never hand-upgraded, and
+      # a bumped registry dependency here would land as an unreviewable diff
+      # across src/components/ui.
+      - dependency-name: shadcn
+
+  # ---- The workflows' actions ---------------------------------------------
+  # Every action is pinned to a commit SHA (see .github/workflows/*), which is
+  # what makes a compromised tag on a third-party action a non-event here.
+  # A SHA cannot be read, so this is what keeps them current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # ---- The images the build stands on -------------------------------------
+  - package-ecosystem: docker
+    directories:
+      - /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: chore
+    groups:
+      base-images:
+        patterns: ["*"]

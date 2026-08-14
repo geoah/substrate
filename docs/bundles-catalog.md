@@ -1,10 +1,14 @@
 # Bundles catalog
 
-The substrate ships eight bundles in the binary, each a real closure a user
-installs with `substratectl apply` or from the [catalog](bundles.md#the-catalog).
+The substrate ships ten of these bundles in the binary, each a real closure a
+user installs with `substratectl apply` or from the
+[catalog](bundles.md#the-catalog). (The vocabulary bundles beside them —
+`people`, `tasks`, `calendar` and the rest — are in
+[built-in kinds](builtin-kinds.md).)
 Google, GitHub, Linear, WHOOP, Notion, and Beeper carry the `integration`
 facet; Firecrawl and the web harvester do not — they add callables and
-vocabulary with no provider account. The facet
+vocabulary with no provider account. LLM and notes carry the `example` facet:
+they exist to be read. The facet
 is the catalog's own curated flag, stated per bundle rather than inferred
 from the closure. Every integration syncs from the provider into the
 repository; none writes back to the provider, and each ships a README stating
@@ -35,6 +39,7 @@ thing, and the Records column counts them.
 | Notion        | Integration | Internal token | 4     | 1         | 2       | 0      |
 | Beeper        | Integration | Pasted token   | 4     | 1         | 2       | 0      |
 | LLM           | Example     | Key, per row   | 0     | 0         | 2       | 3      |
+| Notes         | Example     | none           | 1     | 2         | 0       | 2      |
 | Firecrawl     | Capability  | API key        | 2     | 2         | 0       | 0      |
 | Web harvester | Capability  | none           | 2     | 4         | 4       | 3      |
 
@@ -58,6 +63,37 @@ empty `baseURL` it means whatever gateway the host was configured with.
 
 See [agents.md](agents.md#providers) for wires, pricing and the host-gateway
 rule.
+
+## Notes (example)
+
+Authority `notes.bundles.substrate.reamde.dev`. The smallest bundle that shows
+an agent calling functions as tools and delegating to a sub-agent, and the one
+to read first. It needs no network, no credentials and no other bundle's
+vocabulary, so it installs on a fresh substrate and is driven by hand in one
+command, and its two functions stand on their own with no model at all:
+
+```bash
+substratectl apply -f kinds/notes.bundles.substrate.reamde.dev/bundle.yaml
+substratectl function call stats --input '{"text": "hello world"}'
+```
+
+`notekeeper` is the root agent. It calls `titler` (a sub-agent with its own
+budget and thread, no tools and an empty `emit`), then `stats` (pure Python,
+declaring no `network:`, so the sandbox denies it sockets), then `savenote`,
+which writes the one kind the bundle declares — `note`. That write lands only
+because the kind is in BOTH the function's `emit` and the calling agent's,
+which is the capability envelope in one closure.
+
+Both agents name `provider: default`, so running them wants an `llmprovider`
+row at that id — [nothing seeds one](agents.md#providers), and the LLM example
+above ships `anthropic` and `openai` rather than `default`. Calling an agent is
+an API call, not a CLI verb:
+
+```bash
+curl -s -X POST "$SUBSTRATE_SERVER/api/v1/core.substrate.reamde.dev/agents/notekeeper/call" \
+  -H "Authorization: Bearer $SUBSTRATE_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"input": {"text": "id: my-note\n\nSomething worth keeping."}}'
+```
 
 ## Google
 

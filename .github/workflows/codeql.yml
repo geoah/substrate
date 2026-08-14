@@ -1,0 +1,77 @@
+# CodeQL: GitHub's own static analysis, over both languages in the tree.
+#
+# This is the one check that is NOT a `mise run` task, and it is the exception
+# that proves the rule in ci.yml. CodeQL is not a linter you can install and
+# run — the analysis happens on GitHub's side, the queries are versioned there,
+# and the findings land in the repository's security tab rather than in a job's
+# log. There is nothing to define in .mise.toml that a laptop could reproduce,
+# so it lives here, alone, instead of pretending to be a pipeline step.
+#
+# What it is for, next to `mise run audit`: govulncheck asks "does this tree
+# call into a dependency with a known advisory"; CodeQL asks "does this tree
+# have the bug itself" — taint from a request into a query, a path traversal, a
+# nil deref. Neither one answers the other's question.
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly, because the query packs change even when the code does not: a
+    # commit that was clean in March can be a finding in April.
+    - cron: "17 3 * * 1"
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      # Writing the findings to the security tab is the whole point.
+      security-events: write
+      # The Go extractor reads the workflow run to attribute results.
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: go
+            # Go must be compiled for the extractor to see it, so autobuild
+            # runs `go build ./...` against the toolchain mise installed.
+            build-mode: autobuild
+          - language: javascript-typescript
+            # Nothing to build: the extractor reads the sources directly, and
+            # analysing the Vite output would only be analysing esbuild.
+            build-mode: none
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # The pinned toolchain, so the extractor compiles against the same Go
+      # this project builds with rather than the runner's stock one.
+      - if: matrix.language == 'go'
+        uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2
+        with:
+          experimental: true
+
+      - uses: github/codeql-action/init@f3712979fa5f215279b101dd0a2e3bdfb4353324 # v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # security-and-quality over the default `security` pack: the extra
+          # queries are the ones that catch an ignored error or a resource that
+          # is never closed, which is exactly the class `errcheck` being off in
+          # .golangci.yml leaves uncovered here.
+          queries: security-and-quality
+
+      - uses: github/codeql-action/analyze@f3712979fa5f215279b101dd0a2e3bdfb4353324 # v3
+        with:
+          category: /language:${{ matrix.language }}

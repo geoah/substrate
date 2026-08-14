@@ -30,20 +30,37 @@ mise run build          # bin/substrate
 mise run build:cli      # bin/substratectl
 mise run test           # the whole Go suite, in its two halves
 mise run test:short     # skips every suite that wants a database
-mise run lint           # every linter: golangci-lint and yamllint
-mise run lint:go        # one of them; `lint:yaml` is the other
-mise run fmt            # every formatter, in place: gofmt and yamlfmt
+mise run test:race      # the short suite under the race detector
+mise run test:coverage  # both halves, with a profile -> coverage.out
+mise run lint           # every linter: Go, YAML, shell, Python, doc links
+mise run lint:go        # one of them; lint:yaml/:shell/:python/:docs are the rest
+mise run audit          # the vulnerability scans: govulncheck and pnpm audit
+mise run fmt            # every formatter, in place: gofumpt/goimports and yamlfmt
 mise run fmt:check      # the same, as a check — what CI runs
 mise run console:dev    # the console on :5173, proxying /api to :8080
+mise run ci             # every CI job, locally. The whole pipeline.
 ```
 
 **A bare task name is every check of its kind**, and a suffix narrows it to
-one language: `lint` is golangci-lint and yamllint, `lint:go` is one of them;
-`fmt` writes both, `fmt:yaml` writes one; `fmt:check` is the pair as a check.
+one language: `lint` is all five linters, `lint:go` is one of them; `fmt`
+writes Go and YAML, `fmt:yaml` writes one; `fmt:check` is the pair as a check.
 Nothing is reachable only through the aggregate. The console is not one of
 those suffixes — it is a second toolchain with its own family (`console:lint`,
-`console:test`), exactly as `test` is the Go suite and `console:test` is not
-in it.
+`console:fmt`, `console:test`), exactly as `test` is the Go suite and
+`console:test` is not in it.
+
+**`fmt` and `lint` cannot disagree.** `fmt:go` is `golangci-lint fmt`, not
+bare gofmt: the formatters are configured once, in `.golangci.yml`'s
+`formatters:` block (gofumpt with extra rules, goimports with a local prefix),
+and both the writer and the checker are that same configuration. If `lint:go`
+reports a formatting finding that `mise run fmt` will not fix, that is a bug in
+the configuration, not something to hand-patch.
+
+**`audit` is its own family, not part of `lint`.** It is the one check whose
+answer changes without the tree changing, because it asks a vulnerability
+database what is known today: green this morning, red this afternoon, same
+commit. It also needs the network, and `lint` is something a laptop can run on
+a plane. It has its own CI job for the same reason.
 
 **The YAML is formatted too.** `kinds/` is the contract as files, so its shape
 is held the way Go's is: `mise run fmt` writes it, `mise run fmt:check` fails
@@ -225,6 +242,14 @@ Do not half-do it.
   `required`) are refused while live records hold the old shape, so prefer
   add-and-deprecate. CI runs `mise run kinds:check` and refuses the merge
   otherwise.
+- **The console mirrors the wire by hand, and a golden file holds it to it.**
+  `web/console/src/lib/api/types.ts` is written to match the structs in
+  `internal/substrate`; nothing generates it. `wire.golden.json` is where the
+  two meet: `internal/substrate/wire_test.go` writes the field names Go
+  serializes, and a vitest asserts the TypeScript carries exactly those. Move a
+  wire field and the Go test fails; regenerate with
+  `go test ./internal/substrate/ -run TestWireGolden -update` and the console's
+  test fails until `types.ts` follows. Do not edit the golden by hand.
 - **Comments carry constraints, not narration.** Say why a thing must be so,
   or say nothing.
 - **Every commit title is a conventional commit** —
@@ -234,5 +259,11 @@ Do not half-do it.
   decide the version and write `CHANGELOG.md`, so a title it cannot parse is a
   release that does not happen. A PR title is one too — the merge is a squash,
   so the PR title IS the commit release-please reads.
-- Keep `mise run lint` and `mise run fmt:check` at zero. Both are aggregates —
-  Go and YAML — and the `lint` job runs both.
+- Keep `mise run lint` and `mise run fmt:check` at zero. Both are aggregates,
+  and the `lint` job runs both: `lint` is Go, YAML, shell, Python and the
+  docs' links, `fmt:check` is Go and YAML. The console has its own pair
+  (`console:lint`, `console:fmt:check`) inside `ci:console`.
+- **A relative link that names a file which is not there fails the build.**
+  `lint:docs` resolves every Markdown link and `#anchor` against the tree,
+  offline, so renaming a doc means fixing what points at it. External URLs are
+  never fetched: somebody else's outage is not this repo's build failure.

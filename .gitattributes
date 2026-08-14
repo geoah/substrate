@@ -1,0 +1,19 @@
+# Line endings are LF in the repository, always. Without this, a clone on
+# Windows can check out CRLF, and then gofmt, prettier and yamlfmt all report
+# every file in the tree as unformatted at once.
+* text=auto eol=lf
+
+# Never normalized: these are byte-exact or machine-owned.
+*.svg text eol=lf
+*.png binary
+*.ico binary
+
+# Generated. Collapsing them in a diff makes a review of the change that caused
+# them readable; they are still versioned and still reviewed by their content.
+pnpm-lock.yaml linguist-generated=true -diff
+go.sum linguist-generated=true
+
+# The vocabulary is the contract as files, and the console is a real part of
+# the project — neither is vendored, and neither should be written off as
+# "not code" in the repository's language statistics.
+kinds/** linguist-detectable=true

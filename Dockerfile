@@ -57,15 +57,30 @@ FROM golang:1.26-alpine AS gotoolchain
 # warm, NOT a hard dependency: nothing in the base image imports them.
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata python3 uv
+
+# The runner spawns bundle code as child processes, and NONE of it needs root.
+# uv's cache, the python host and the Go toolchain all write under HOME, so the
+# unprivileged user owns one; GOCACHE sits in /tmp, which it can also write.
+RUN addgroup -g 65532 -S substrate \
+    && adduser -u 65532 -S -G substrate -h /home/substrate substrate \
+    && install -d -o substrate -g substrate /home/substrate
+
 COPY --from=gotoolchain /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:$PATH \
     GOTOOLCHAIN=local \
     GOFLAGS=-mod=mod \
     GOCACHE=/tmp/gocache \
-    HOME=/root
+    HOME=/home/substrate
 COPY --from=build /out/substrate /usr/local/bin/substrate
 COPY --from=web /web/console/dist /web
 ENV WEB_DIR=/web \
     PORT=8080
 EXPOSE 8080
+
+# Shell form, so a PORT override is the port probed. busybox wget is in the
+# base image; nothing else here is a shell dependency.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
+    CMD wget -q -O /dev/null "http://127.0.0.1:${PORT}/healthz" || exit 1
+
+USER substrate
 ENTRYPOINT ["/usr/local/bin/substrate"]

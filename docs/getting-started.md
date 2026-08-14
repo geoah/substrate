@@ -94,11 +94,16 @@ names it. [Users and tokens](auth.md) is the full picture.
 
 Registration seeded the core vocabulary only, so the task kinds are not there
 yet. Install the bundle that ships them from the catalog built into the binary,
-and the collection exists:
+and the collection exists. A catalog id is `{authority}/{name}`, so the slash in
+it is percent-encoded to stay one path segment. Tasks name an assignee, so
+`people` is admitted first — a bundle whose `requires:` is not met is refused:
 
 ```
 curl -X POST -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/core.substrate.reamde.dev/catalog/tasks.substrate.reamde.dev/install
+  http://localhost:8080/api/v1/core.substrate.reamde.dev/catalog/people.substrate.reamde.dev%2Fpeople/install
+
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8080/api/v1/core.substrate.reamde.dev/catalog/tasks.substrate.reamde.dev%2Ftasks/install
 
 substratectl get tasks                     # empty, but the collection is there
 ```

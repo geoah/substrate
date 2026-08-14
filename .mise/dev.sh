@@ -153,16 +153,21 @@ urls() {
 }
 
 # llm_env passes the host's LLM settings through to the dev server when the
-# shell has them. Without a gateway the seeded `default` llmprovider row buys
-# no completions, so every agent refuses and the agent example cannot be run at
-# all: a dev substrate that cannot run the shipped example is not much of a dev
-# substrate. Nothing is invented here, and an unset variable is simply not
-# passed, so this stays a pass-through rather than a second place configuration
-# lives.
+# shell has them. Without a gateway an `llmprovider` row that names no baseURL
+# of its own buys no completions, so every agent refuses and the shipped agent
+# example cannot be run at all: a dev substrate that cannot run the shipped
+# example is not much of a dev substrate. Nothing is invented here, and an
+# unset variable is simply not passed, so this stays a pass-through rather than
+# a second place configuration lives.
+#
+# It fills an ARRAY rather than printing, because a value may hold whitespace:
+# splitting `$(llm_env)` on it would hand the server two broken arguments
+# instead of one whole key.
 llm_env() {
 	local name
+	llm_vars=()
 	for name in SUBSTRATE_LLM_BASE_URL SUBSTRATE_LLM_API_KEY SUBSTRATE_LLM_EMBED_MODEL; do
-		[ -n "${!name:-}" ] && printf '%s=%s ' "$name" "${!name}"
+		[ -n "${!name:-}" ] && llm_vars+=("${name}=${!name}")
 	done
 	return 0
 }
@@ -176,6 +181,8 @@ server_start() {
 	# env -S is not portable enough to be worth it; the list is short.
 	local web=()
 	[ -d "$WEB_DIR" ] && web=("WEB_DIR=${WEB_DIR}")
+	local llm_vars
+	llm_env
 	nohup env \
 		"DATABASE_URL=${DSN}" \
 		"PORT=${PORT}" \
@@ -183,7 +190,7 @@ server_start() {
 		"SUBSTRATE_INSECURE_DISABLE_TOTP=${DISABLE_TOTP}" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
 		"${web[@]}" \
-		$(llm_env) \
+		"${llm_vars[@]}" \
 		bin/substrate >>"$LOGFILE" 2>&1 &
 	echo $! >"$PIDFILE"
 	if ! wait_healthy; then
@@ -233,6 +240,8 @@ cmd_run() {
 	urls
 	local web=()
 	[ -d "$WEB_DIR" ] && web=("WEB_DIR=${WEB_DIR}")
+	local llm_vars
+	llm_env
 	exec env \
 		"DATABASE_URL=${DSN}" \
 		"PORT=${PORT}" \
@@ -240,7 +249,7 @@ cmd_run() {
 		"SUBSTRATE_INSECURE_DISABLE_TOTP=${DISABLE_TOTP}" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
 		"${web[@]}" \
-		$(llm_env) \
+		"${llm_vars[@]}" \
 		bin/substrate
 }
 

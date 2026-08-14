@@ -21,3 +21,8 @@ dist/
 # The dev substrate: the pid and the log of `mise run dev:up`.
 /.dev/
 .mise.local.toml
+
+# Linter caches. `*.out` above already covers the coverage profile
+# `mise run test:coverage` writes.
+.ruff_cache/
+.lycheecache

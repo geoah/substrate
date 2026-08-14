@@ -1,0 +1,66 @@
+name: Bug
+description: Something behaves differently from what the code or the docs
+  say
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Please do not report a security vulnerability here. Issues are public.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+      placeholder: |
+        I installed the tasks bundle and wrote a task, and ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce it
+      description: >-
+        The commands, from a fresh substrate if you can. `mise run dev:reset`
+        gets you one.
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Which substrate
+      description: >-
+        `GET /.well-known/substrate/server.json` reports the version and the
+        build, and `substratectl --version` reports the CLI's. If you built
+        from a branch, name it.
+      placeholder: v0.1.0, or main at abc1234
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      multiple: true
+      options:
+        - The server (API, engine, changelog)
+        - The console
+        - substratectl
+        - Functions or agents
+        - A bundle under kinds/
+        - Build, tooling or CI
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        Server output around the failure, if you have it. Redact anything
+        secret; tokens and keys do not belong in an issue.
+      render: text

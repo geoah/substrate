@@ -20,7 +20,9 @@ before:
 
 builds:
   # The CLI is the artifact people download; the server is the artifact the
-  # image wraps. Both carry the version so `--version` and discovery agree.
+  # image wraps. They learn their version DIFFERENTLY, and each one's build
+  # below says how: the CLI is handed it by the linker, the server reads it off
+  # the build itself, which is what discovery reports.
   - id: substratectl
     binary: substratectl
     main: ./cmd/substratectl
@@ -41,9 +43,14 @@ builds:
     goos: [linux]
     goarch: [amd64, arm64]
     flags: [-trimpath]
-    ldflags:
-      - -s -w -X main.version={{ .Version }} -X main.commit={{ .FullCommit
-        }}
+    # NO -X here, unlike the CLI above. cmd/substrated declares no `version`
+    # or `commit` variable to write into: discovery reports what
+    # debug.ReadBuildInfo() carries (internal/api/discovery.go), and Go stamps
+    # that from the repository itself — Main.Version from the tag being built,
+    # vcs.revision from the commit. Injecting symbols that do not exist is
+    # silently dropped by the linker, so this looked configured for as long as
+    # it was here and did nothing.
+    ldflags: [-s -w]
 
 archives:
   # Only the CLI is worth downloading on its own — the server ships as an image.

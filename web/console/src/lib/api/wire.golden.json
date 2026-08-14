@@ -1,0 +1,53 @@
+{
+  "EdgeInput": [
+    "rel",
+    "to",
+    "properties"
+  ],
+  "EdgeRef": [
+    "kind",
+    "id"
+  ],
+  "EdgeTarget": [
+    "id",
+    "kind",
+    "title",
+    "properties"
+  ],
+  "PropertyAlternative": [
+    "actor",
+    "value",
+    "updatedAt"
+  ],
+  "PropertyMeta": [
+    "manager",
+    "tier",
+    "updatedAt",
+    "alternatives"
+  ],
+  "PutInput": [
+    "kind",
+    "id",
+    "properties",
+    "labels",
+    "annotations",
+    "edges",
+    "ifVersion"
+  ],
+  "SubstrateRecord": [
+    "id",
+    "kind",
+    "canonicalId",
+    "formerIds",
+    "properties",
+    "labels",
+    "annotations",
+    "version",
+    "createdAt",
+    "updatedAt",
+    "deletedAt",
+    "finalizers",
+    "edges",
+    "propertyMeta"
+  ]
+}
