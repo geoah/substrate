@@ -27,22 +27,24 @@ function kindFromRecord(item: Record<string, unknown>): KindInfo | undefined {
   const identity = String(item?.id ?? "")
   if (!identity) return undefined
   const { authority, name } = splitKind(identity)
-  const definition = properties.definition as
-    Record<string, unknown> | undefined
+  // THE PROPERTIES ARE THE DECLARATION. `definition` was the blob a declaration
+  // row used to carry; a row's own properties are the declaration now, and the
+  // blob is read only where a repository still holds one an older substrate
+  // wrote.
+  const legacy = properties.definition as Record<string, unknown> | undefined
+  const definition = legacy ?? properties
+  const names = (definition.names ?? {}) as Record<string, unknown>
   return {
     identity,
-    name: String(properties.name ?? name),
+    name: String(names.singular ?? properties.name ?? name),
     authority: String(properties.authority ?? authority),
     version: String(properties.version ?? ""),
-    plural: String(properties.plural ?? properties.name ?? name),
+    plural: String(names.plural ?? properties.plural ?? name),
     source: String(properties.source ?? "builtin"),
-    // From the DECLARATION, not from a projected column: core's `kind` cannot
-    // grow a property without every declaration row growing it at once, so the
-    // kind's own prose stays where it was authored. A STRING or nothing — this
-    // renders as prose, and `String()` would turn a malformed declaration's
-    // object into "[object Object]" on the page.
+    // A STRING or nothing — this renders as prose, and `String()` would turn a
+    // malformed declaration's object into "[object Object]" on the page.
     description:
-      typeof definition?.description === "string" ? definition.description : "",
+      typeof definition.description === "string" ? definition.description : "",
     definition,
   }
 }
@@ -154,5 +156,10 @@ export function buildKindNav(kinds: KindInfo[]): KindNav {
  * explicitly so a bad one never touches the stored session. */
 export async function probeToken(token: string): Promise<void> {
   const q = new URLSearchParams({ first: "1" })
-  await request<Page>("GET", `${corePath(KINDS)}?${q}`, undefined, { token })
+  await request<Page>(
+    "GET",
+    `${corePath(KINDS)}?${q}`,
+    undefined,
+    { token }
+  )
 }

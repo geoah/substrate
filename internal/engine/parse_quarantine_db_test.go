@@ -10,7 +10,6 @@ package engine_test
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -94,29 +93,13 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = raw.Close() })
 
-	// Fabricate the pre-refactor definition in the store: `llm: cheap` where
-	// this binary wants provider + model.
-	var defRaw []byte
-	if err := raw.QueryRowContext(ctx,
-		`SELECT props->'definition' FROM records WHERE kind = $1 AND id = $2`,
-		kindAgentID, lqAgent).Scan(&defRaw); err != nil {
-		t.Fatalf("read the agent definition: %v", err)
-	}
-	var def map[string]any
-	if err := json.Unmarshal(defRaw, &def); err != nil {
-		t.Fatal(err)
-	}
-	delete(def, "provider")
-	delete(def, "model")
-	def["llm"] = "cheap"
-	newDef, err := json.Marshal(def)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Fabricate the pre-refactor declaration in the store: `llm: cheap` where
+	// this binary wants provider + model. A declaration row's PROPERTIES are the
+	// declaration, so the fabrication is three property moves.
 	if _, err := raw.ExecContext(ctx,
-		`UPDATE records SET props = jsonb_set(props, '{definition}', $3::jsonb) WHERE kind = $1 AND id = $2`,
-		kindAgentID, lqAgent, string(newDef)); err != nil {
-		t.Fatalf("fabricate the pre-refactor agent definition: %v", err)
+		`UPDATE records SET props = (props - 'provider' - 'model') || '{"llm": "cheap"}'::jsonb
+		 WHERE kind = $1 AND id = $2`, kindAgentID, lqAgent); err != nil {
+		t.Fatalf("fabricate the pre-refactor agent declaration: %v", err)
 	}
 	_ = svc.Close()
 

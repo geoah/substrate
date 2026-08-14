@@ -8,7 +8,6 @@ package engine_test
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -55,26 +54,12 @@ func TestIncompatibleClosureQuarantinesInsteadOfBricking(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = raw.Close() })
 
-	// Strip the inputs map from the STORED bundle definition: the oauth2
+	// Strip the inputs map from the STORED bundle declaration: the oauth2
 	// block's clientInput then names no declared input, so on the next open
-	// admission refuses the closure — the prod landmine.
-	var defRaw []byte
-	if err := raw.QueryRowContext(ctx,
-		`SELECT props->'definition' FROM records WHERE id = $1`, mbBundleRow).Scan(&defRaw); err != nil {
-		t.Fatalf("read bundle definition: %v", err)
-	}
-	var def map[string]any
-	if err := json.Unmarshal(defRaw, &def); err != nil {
-		t.Fatal(err)
-	}
-	delete(def, "inputs")
-	newDef, err := json.Marshal(def)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// admission refuses the closure — the prod landmine. A declaration row's
+	// PROPERTIES are the declaration, so the corruption is a property away.
 	if _, err := raw.ExecContext(ctx,
-		`UPDATE records SET props = jsonb_set(props, '{definition}', $2::jsonb) WHERE id = $1`,
-		mbBundleRow, string(newDef)); err != nil {
+		`UPDATE records SET props = props - 'inputs' WHERE id = $1`, mbBundleRow); err != nil {
 		t.Fatalf("corrupt stored closure: %v", err)
 	}
 	_ = svc.Close()

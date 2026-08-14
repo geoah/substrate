@@ -150,12 +150,14 @@ func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 	}
 	// And the declarations are ordinary, queryable records.
 	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
-	if row.Kind != "core.substrate.reamde.dev/kind" || row.Properties["plural"] != "widgets" ||
+	names, _ := row.Properties["names"].(map[string]any)
+	if row.Kind != "core.substrate.reamde.dev/kind" || names["plural"] != "widgets" ||
 		row.Properties["source"] != "installed" {
-		t.Fatalf("schema record = %v", row.Properties)
+		t.Fatalf("declaration record = %v", row.Properties)
 	}
-	if row.Properties["definition"] == nil {
-		t.Fatal("schema record carries no definition")
+	// The row's properties ARE the declaration: the authored keys, no blob.
+	if row.Properties["properties"] == nil {
+		t.Fatalf("declaration record carries no properties: %v", row.Properties)
 	}
 
 	// Reopen: the registry rebuilds FROM the rows — same types, no writes.
@@ -244,9 +246,10 @@ def main(input, host):
 	if got := mustGet(t, ds, taskType, "t-"+b.ID); got.Title != "v2" {
 		t.Fatalf("post-swap delivery title = %q (the old registry answered)", got.Title)
 	}
-	// The function is queryable as a record, definition included.
+	// The function is queryable as a record, its declaration in its properties.
 	fnRow := mustGet(t, ds, "core.substrate.reamde.dev/function", swAuthority+"/mirror")
-	if fnRow.Kind != "core.substrate.reamde.dev/function" || fnRow.Properties["definition"] == nil {
+	if fnRow.Kind != "core.substrate.reamde.dev/function" || fnRow.Properties["source"] == nil ||
+		fnRow.Properties["runtime"] == nil {
 		t.Fatalf("function record = %v", fnRow.Properties)
 	}
 }
@@ -380,16 +383,26 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 
-	// PUT with an extended definition: the new property is usable at once.
+	// PUT with an extended declaration: the new property is usable at once. The
+	// row's properties ARE the declaration — there is no `definition` blob to
+	// reach into — so what a reader gets back is what a writer sends.
 	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
-	def, _ := row.Properties["definition"].(map[string]any)
-	props, _ := def["properties"].(map[string]any)
-	props["count"] = map[string]any{"type": "float"}
+	if _, blob := row.Properties["definition"]; blob {
+		t.Fatalf("a declaration row still carries a definition blob: %v", row.Properties)
+	}
+	declared, _ := row.Properties["properties"].(map[string]any)
+	if declared == nil {
+		t.Fatalf("the declaration row carries no properties: %v", row.Properties)
+	}
+	declared["count"] = map[string]any{"type": "float"}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget",
-		Properties: map[string]any{"definition": def},
+		Properties: map[string]any{
+			"authority": swAuthority, "names": row.Properties["names"],
+			"properties": declared,
+		},
 	}); err != nil {
-		t.Fatalf("generic put of a schema record: %v", err)
+		t.Fatalf("generic put of a declaration record: %v", err)
 	}
 	if e := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: swAuthority + "/widget", Properties: map[string]any{"name": "n", "count": 3},
@@ -397,20 +410,42 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 		t.Fatalf("new property not live: %v", e.Properties)
 	}
 
-	// A definition that breaks the closure refuses whole.
-	broken, _ := def["properties"].(map[string]any)
-	broken["bad"] = map[string]any{"type": "nosuchkind"}
+	// The `definition` spelling still ADMITS — a client that has not moved yet
+	// carries the whole data map under it, and it parses to the same document.
+	// (Stage C is where the arm goes.)
+	declared["note"] = map[string]any{"type": "text"}
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget",
+		Properties: map[string]any{"definition": map[string]any{
+			"authority": swAuthority, "names": row.Properties["names"], "properties": declared,
+		}},
+	}); err != nil {
+		t.Fatalf("generic put through the definition arm: %v", err)
+	}
+	if e := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: swAuthority + "/widget", Properties: map[string]any{"name": "n2", "note": "hi"},
+	}); e.Properties["note"] == nil {
+		t.Fatalf("the definition arm did not activate: %v", e.Properties)
+	}
+
+	// A declaration that breaks the closure refuses whole.
+	declared["bad"] = map[string]any{"type": "nosuchkind"}
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget",
-		Properties: map[string]any{"definition": def},
+		Properties: map[string]any{
+			"authority": swAuthority, "names": row.Properties["names"], "properties": declared,
+		},
 	})
-	wantErr(t, err, substrate.ErrValidation, "closure-breaking definition")
+	wantErr(t, err, substrate.ErrValidation, "closure-breaking declaration")
 
 	// The shipped vocabulary is the embedded tree's to change.
 	taskRow := mustGet(t, ds, "core.substrate.reamde.dev/kind", "tasks.substrate.reamde.dev/task")
 	_, err = ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/kind", ID: "tasks.substrate.reamde.dev/task",
-		Properties: map[string]any{"definition": taskRow.Properties["definition"]},
+		Properties: map[string]any{
+			"authority": "tasks.substrate.reamde.dev", "names": taskRow.Properties["names"],
+			"properties": taskRow.Properties["properties"],
+		},
 	})
 	wantErr(t, err, substrate.ErrForbidden, "builtin authority write")
 	_, err = ds.Delete(ctx, owner, "core.substrate.reamde.dev/kind", "tasks.substrate.reamde.dev/task")

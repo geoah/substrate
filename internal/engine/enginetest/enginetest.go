@@ -107,6 +107,36 @@ func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string
 	return nil
 }
 
+// InstallBundle installs one shipped EXTENSION bundle by its bare label
+// ("web", "firecrawl") through the ordinary batch apply, under the bundle's own
+// actor — the closure a catalog install carries, minus the catalog. A test that
+// needs function, agent and bundle declaration rows calls this; the vocabulary
+// bundles ImportVocabulary handles ship kinds alone.
+func InstallBundle(ctx context.Context, ds substrate.Dataset, name string) error {
+	sa, ok := ds.(vocabularyApplier)
+	if !ok {
+		return errors.New("enginetest: dataset does not support ApplyVocabularyDocuments")
+	}
+	all, err := readBundleDir(filepath.Join(CatalogDir, name+".bundles.substrate.reamde.dev"))
+	if err != nil {
+		return err
+	}
+	// A bundle directory carries its DELIVERY WIRING too (trigger records), which
+	// the batch apply does not take: the closure's declarations install here and
+	// the wiring is the caller's to write if it wants it.
+	var docs []map[string]any
+	for _, d := range all {
+		kind, _ := d["kind"].(string)
+		if vocabulary.VocabularyDocumentKind(vocabulary.KindName(kind)) {
+			docs = append(docs, d)
+		}
+	}
+	if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(name), docs); err != nil {
+		return fmt.Errorf("enginetest: install %s: %w", name, err)
+	}
+	return nil
+}
+
 // bundleRequires reads the authorities a bundle document declares against.
 func bundleRequires(docs []map[string]any) []string {
 	for _, d := range docs {

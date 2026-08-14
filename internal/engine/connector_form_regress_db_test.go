@@ -40,8 +40,7 @@ func TestConnectorFormDisplayNameAndEnumSurviveTypeRead(t *testing.T) {
 	// The type read (the projection the console/GraphQL get) carries both the
 	// human label and the enum's allowed values.
 	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/gizmo")
-	def, _ := row.Properties["definition"].(map[string]any)
-	props, _ := def["properties"].(map[string]any)
+	props, _ := row.Properties["properties"].(map[string]any)
 	cadence, _ := props["cadence"].(map[string]any)
 	if cadence["displayName"] != "Sync frequency" {
 		t.Fatalf("displayName did not survive the type read: %v", cadence)

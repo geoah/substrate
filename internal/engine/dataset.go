@@ -156,7 +156,16 @@ func typeInfo(t *vocabulary.Kind) substrate.KindInfo {
 }
 
 func (ds *dataset) resolveType(name string) (*vocabulary.Kind, error) {
-	t, err := ds.registry().Resolve(name)
+	return resolveKindIn(ds.registry(), name)
+}
+
+// resolveKindIn resolves a kind reference against a GIVEN registry. Every
+// ordinary write resolves against the LIVE one (resolveType above); the
+// vocabulary projection resolves a declaration row's kind against the candidate
+// when this projection is what decides that kind's stored declaration
+// (vocabularywrite.go projectionKind).
+func resolveKindIn(reg *vocabulary.Registry, name string) (*vocabulary.Kind, error) {
+	t, err := reg.Resolve(name)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
 	}
