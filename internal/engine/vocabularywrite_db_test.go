@@ -452,6 +452,126 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 	wantErr(t, err, substrate.ErrForbidden, "builtin authority delete")
 }
 
+// THE ENGINE'S PROPERTIES ARE NOT THE WRITER'S. A declaration write that
+// supplies a managed property round-trips when it echoes the stored value and is
+// REFUSED when it invents one — silently replacing it would tell the client its
+// edit landed. Two more refusals sit beside it: the retired blob and the typed
+// properties in one write (obeying either discards the other's edits), and an
+// undeclared property, which is a typo rather than a change that vanishes.
+func TestDeclarationWritesRefuseWhatTheEngineOwns(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	sa := applier(t, ds)
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(swAuthority, ""),
+		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
+	}); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
+	declared, _ := row.Properties["properties"].(map[string]any)
+	base := func() map[string]any {
+		return map[string]any{
+			"authority": swAuthority, "names": row.Properties["names"], "properties": declared,
+		}
+	}
+
+	// The round trip: `get -o yaml | apply -f` echoes every property a read hands
+	// back — the stamped `source` and `version` among them, and the derived
+	// `title` — and must land.
+	echoed := base()
+	echoed["source"] = row.Properties["source"]
+	echoed["version"] = row.Properties["version"]
+	echoed["title"] = row.Title
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget", Properties: echoed,
+	}); err != nil {
+		t.Fatalf("a read echoed straight back must apply: %v", err)
+	}
+
+	// The ORIGIN is the engine's: a kind may pin its own `version` (the loader
+	// admits `data.version`, which is why echoing one above landed), and nothing
+	// authors where a declaration came from.
+	origin := base()
+	origin["source"] = "builtin"
+	_, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget", Properties: origin,
+	})
+	wantErr(t, err, substrate.ErrValidation, "managed origin mismatch")
+	if !strings.Contains(err.Error(), "props.source") {
+		t.Fatalf("the refusal must name the property: %v", err)
+	}
+	if got := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget"); got.Properties["source"] != row.Properties["source"] {
+		t.Fatalf("the refused write moved the origin to %v", got.Properties["source"])
+	}
+
+	// A TRAIT's version is the engine's whole and simple: its document admits no
+	// `version:` at all, so an invented one is refused and the stored one echoes.
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{{
+		"kind":     "core.substrate.reamde.dev/trait",
+		"metadata": map[string]any{"id": swAuthority + "/spanned"},
+		"data": map[string]any{
+			"authority":  swAuthority,
+			"properties": map[string]any{"span": "string"},
+		},
+	}}); err != nil {
+		t.Fatalf("apply a trait: %v", err)
+	}
+	traitRow := mustGet(t, ds, "core.substrate.reamde.dev/trait", swAuthority+"/spanned")
+	_, err = ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/trait", ID: swAuthority + "/spanned",
+		Properties: map[string]any{
+			"authority": swAuthority, "properties": traitRow.Properties["properties"],
+			"version": "v9alpha1",
+		},
+	})
+	wantErr(t, err, substrate.ErrValidation, "managed version mismatch")
+	if !strings.Contains(err.Error(), "props.version") {
+		t.Fatalf("the refusal must name the property: %v", err)
+	}
+	if got := mustGet(t, ds, "core.substrate.reamde.dev/trait", swAuthority+"/spanned"); got.Properties["version"] != traitRow.Properties["version"] {
+		t.Fatalf("the refused write moved the version to %v", got.Properties["version"])
+	}
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/trait", ID: swAuthority + "/spanned",
+		Properties: map[string]any{
+			"authority": swAuthority, "properties": traitRow.Properties["properties"],
+			"version": traitRow.Properties["version"], "title": traitRow.Title,
+		},
+	}); err != nil {
+		t.Fatalf("a trait read echoed straight back must apply: %v", err)
+	}
+
+	// Both spellings in one write: refused, naming what it carried twice.
+	both := base()
+	both["definition"] = map[string]any{
+		"authority": swAuthority, "names": row.Properties["names"], "properties": declared,
+	}
+	_, err = ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget", Properties: both,
+	})
+	wantErr(t, err, substrate.ErrValidation, "definition and typed properties")
+	if !strings.Contains(err.Error(), "definition") || !strings.Contains(err.Error(), "properties") {
+		t.Fatalf("the refusal must name both spellings: %v", err)
+	}
+
+	// A typo is refused rather than dropped.
+	typo := base()
+	typo["displayTemplat"] = "{name}"
+	_, err = ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/kind", ID: swAuthority + "/widget", Properties: typo,
+	})
+	wantErr(t, err, substrate.ErrValidation, "undeclared property")
+
+	// A PATCH of an ordinary property is unaffected: the merge carries the stored
+	// managed values, which are the engine's own answer by definition.
+	if _, err := ds.Patch(ctx, owner, "core.substrate.reamde.dev/kind", swAuthority+"/widget",
+		substrate.PatchInput{Properties: map[string]any{"description": "the widget kind"}}); err != nil {
+		t.Fatalf("patch an ordinary property: %v", err)
+	}
+}
+
 // A function's uninstall does NOT touch delivery state any more: the cursor
 // belongs to the TRIGGER record, which outlives the callable. While the
 // callable is gone the dispatcher skips the trigger loudly and its cursor

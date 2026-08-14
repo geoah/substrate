@@ -152,6 +152,49 @@ func TestTheTreeIsAuthoredInTheDeclaredSpelling(t *testing.T) {
 	}
 }
 
+// THE TWO STATEMENTS ABOUT WHO OWNS A PROPERTY AGREE. A declaration row carries
+// what its document declares plus what the ENGINE stamps, and each half is said
+// once: the loader's admitted `data` keys (vocabulary.DeclarationDataKeys) are the
+// document's, and `managed: true` on the core declaration is the engine's. A row
+// reads back as a document by whitelisting the first set, so a managed property
+// that is ALSO a document key would be read back as authored — which is right
+// for the two that genuinely are (a kind and an authority may pin their own
+// `version`) and wrong for anything else, silently.
+//
+// This is the pin the engine does not have to repeat: without it, a new managed
+// property spelled like a document key would be handed to the loader as authored
+// content and refused as an unknown key at the next open.
+func TestManagedPropertiesAreNotDocumentKeys(t *testing.T) {
+	reg, err := vocabulary.LoadFS(kinds.Seed())
+	if err != nil {
+		t.Fatalf("load the seed: %v", err)
+	}
+	// The two deliberate duals: stamped when absent, authored when present.
+	dual := map[string]bool{
+		"kind.version":      true,
+		"authority.version": true,
+	}
+	for _, short := range []string{
+		vocabulary.DocAuthority, vocabulary.DocActor, vocabulary.DocKind, vocabulary.DocTrait,
+		vocabulary.DocPropertyType, vocabulary.DocRecordMapping, vocabulary.DocFunction,
+		vocabulary.DocAgent, vocabulary.DocBundle,
+	} {
+		ty, ok := reg.ByIdentity(vocabulary.KindRef(vocabulary.AuthorityCore, short))
+		if !ok {
+			t.Fatalf("core declares no %s", short)
+		}
+		keys := vocabulary.DeclarationDataKeys(short)
+		for _, name := range ty.PropOrder {
+			p := ty.Props[name]
+			if !p.Managed || !keys[name] || dual[short+"."+name] {
+				continue
+			}
+			t.Errorf("%s.%s is managed AND a document key — a row would read it back as authored; drop the marker or the key, or add it to the duals with a reason",
+				short, name)
+		}
+	}
+}
+
 // readTreeDocuments parses every DECLARATION document in the tree.
 func readTreeDocuments(t *testing.T) []vocabulary.Document {
 	t.Helper()

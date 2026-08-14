@@ -118,10 +118,14 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 	if st.Installed || st.Enabled {
 		t.Fatalf("a quarantined bundle is not installed/enabled: %+v", st)
 	}
-	// The reason names the deleted key AND the migration off it, so the
-	// operator reading a status page learns what to re-apply.
-	if !strings.Contains(st.QuarantineReason, `"llm"`) || !strings.Contains(st.QuarantineReason, "provider") {
-		t.Fatalf("quarantine reason should name the deleted llm key and its replacement: %q", st.QuarantineReason)
+	// The reason names what the stored declaration is MISSING, so the operator
+	// reading a status page learns what to re-apply. Not the retired `llm` key
+	// itself: a declaration row reads back through the keys the loader admits and
+	// nothing else, so a property left over from another binary is not read at all
+	// — which is the same rule that lets a NEWER binary's stamped property ride
+	// through this one untouched.
+	if !strings.Contains(st.QuarantineReason, "provider") {
+		t.Fatalf("quarantine reason should name the missing provider: %q", st.QuarantineReason)
 	}
 
 	// The sibling INSTALLED bundle is untouched — the parse failure was

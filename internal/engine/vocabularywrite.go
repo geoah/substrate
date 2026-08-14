@@ -582,6 +582,14 @@ func (t *txn) projectAuthorities(reg *vocabulary.Registry, authorities map[strin
 			projecting[d.id] = true
 		}
 	}
+	// The projection's rows are validated against `reg` (projectionKind), so the
+	// fold's search bands come from it too: a row indexed under a declaration
+	// other than the one it was admitted against would be re-indexed differently
+	// by its own replay. Restored before the batch's `extra` hook, whose data
+	// documents are ordinary writes against the live registry.
+	prevReg := t.writeReg
+	t.writeReg = reg
+	defer func() { t.writeReg = prevReg }()
 	for _, decls := range passes {
 		if err := t.projectAuthority(reg, projecting, decls, live, opts, out); err != nil {
 			return nil, err
@@ -664,13 +672,12 @@ func (t *txn) declarationReplacement(d declaration) (map[string]any, error) {
 	if err != nil || row == nil {
 		return d.props, err
 	}
-	server := serverDeclarationProps(d.short)
 	props := make(map[string]any, len(d.props)+len(row.Props))
 	for k, v := range d.props {
 		props[k] = v
 	}
 	for k := range row.Props {
-		if _, written := props[k]; written || server[k] {
+		if _, written := props[k]; written || engineOwned(d.short, k) {
 			continue
 		}
 		props[k] = nil
@@ -860,43 +867,23 @@ func authorityDeclarations(g *vocabulary.Authority) ([]declaration, error) {
 	return decls, nil
 }
 
-// serverDeclarationProps are the properties a declaration ROW carries that its
-// DOCUMENT does not: what the engine stamps (the version, the origin, the
-// authority's actor list, the quarantine marks, the bundle lifecycle bools) and
-// what an older binary's projection left behind (the `definition` blob, the
-// id-derived `name` and `plural`, the agent's function/sub-agent mirrors, a
-// never-stored `sourceYAML`). A row reads back as a document with these dropped,
-// and a generic write that supplies one is ignored the same way.
+// engineDeclarationProps are the properties a declaration ROW carries that its
+// DOCUMENT does not, split by who put them there.
 //
-// It is per KIND rather than one list because two words are a declaration's own
-// on exactly one kind each: `source` is a FUNCTION's body, and `version` is a
-// KIND's own declared version.
-func serverDeclarationProps(short string) map[string]bool {
-	out := map[string]bool{
-		"definition": true, "sourceYAML": true, "name": true, "version": true,
-		"source": true,
-	}
-	switch short {
-	case vocabulary.DocFunction:
-		delete(out, "source") // the inline body
-	case vocabulary.DocKind:
-		delete(out, "version") // a kind may declare its own
-		out["plural"] = true
-	case vocabulary.DocAgent:
-		out["functions"], out["subagents"] = true, true
-	case vocabulary.DocBundle:
-		out["disabled"], out["uninstalled"], out["purging"] = true, true, true
-	case vocabulary.DocAuthority:
-		out["actors"] = true
-		out[propAuthorityQuarantined], out[propAuthorityQuarantineReason] = true, true
-	}
-	return out
-}
-
-// retiredDeclarationProps are the server-owned properties the projection
-// CLEARS rather than writes: what an older binary stored and this one does not
-// keep. The stamped set is written explicitly by authorityDeclarations, so what
-// is left over here is exactly the retired spelling.
+// The ENGINE-STAMPED half is not listed anywhere in Go: a row reads back as a
+// document by WHITELIST — the keys the loader admits for that kind
+// (vocabulary.DeclarationDataKeys) and nothing else — so the stamped set needs
+// no second spelling here, and a property some FUTURE binary stamps cannot reach
+// this loader as an unknown key. Which properties the engine owns is declared
+// where a client can read it (`managed: true`), and TestManagedPropertiesAreNot
+// DocumentKeys holds the two statements together.
+//
+// The RETIRED half does need a list, because it is a list of DEAD spellings and
+// nothing derives it: the `definition` blob, the id-derived `name` and `plural`,
+// an agent's function/sub-agent mirrors, a never-stored `sourceYAML`. The
+// projection writes each as an explicit null so a merge-only put clears them.
+// The list cannot grow — a spelling is retired once — and stage C deletes it
+// with the arms that read it.
 func retiredDeclarationProps(short string) map[string]bool {
 	out := map[string]bool{"definition": true, "sourceYAML": true, "name": true}
 	switch short {
@@ -906,6 +893,16 @@ func retiredDeclarationProps(short string) map[string]bool {
 		out["functions"], out["subagents"] = true, true
 	}
 	return out
+}
+
+// engineOwned reports whether a stored property is the ENGINE's rather than the
+// declaration's: not a document key, and not one of the retired spellings. It is
+// what the rung preserves across a translation (a version ahead of its
+// authority's, a quarantine mark, a disabled bundle) and what a projection
+// leaves alone.
+func engineOwned(short, prop string) bool {
+	return !vocabulary.DeclarationDataKeys(short)[prop] && !retiredDeclarationProps(short)[prop] &&
+		!columnBackedProp[prop]
 }
 
 // pruneSchemaRows tombstones schema record rows of the touched authorities the
@@ -1121,15 +1118,15 @@ func rowDocument(id, typeIdent string, props map[string]any) (vocabulary.Documen
 	return d, true, nil
 }
 
-// declarationData is one declaration row's DOCUMENT data: its properties minus
-// what the engine owns. It is the read half of the projection's write
-// (authorityDeclarations), and the two share the one list of server-owned keys,
-// so a row cannot read back as a document the loader refuses.
+// declarationData is one declaration row's DOCUMENT data: the properties the
+// loader admits for that kind, and nothing else. It is the read half of the
+// projection's write (authorityDeclarations), and it is a WHITELIST rather than
+// a list of exclusions on purpose — see engineDeclarationProps.
 func declarationData(short string, props map[string]any) map[string]any {
-	server := serverDeclarationProps(short)
+	keys := vocabulary.DeclarationDataKeys(short)
 	data := make(map[string]any, len(props))
 	for k, v := range props {
-		if server[k] || columnBackedProp[k] || v == nil {
+		if !keys[k] || v == nil {
 			continue
 		}
 		data[k] = v
@@ -1443,14 +1440,22 @@ func buildAuthoritiesSeparately(docs []vocabulary.Document, source string) ([]*v
 // --- the generic verbs, routed through admission --------------------------------
 
 // putSchemaRecord is a generic PUT of one schema record: a batch of one. The
-// row's authored content is its `definition` property (the manifest's data
-// map); anything else — a retired `sourceYAML` included — is ignored, like
-// every property the projection does not own.
+// row's authored content IS its properties, and what the engine owns is refused
+// rather than obeyed or dropped (checkDeclarationWrite).
 func (ds *dataset) putSchemaRecord(ctx context.Context, actor substrate.Actor, ty *vocabulary.Kind, in substrate.PutInput) (*substrate.Record, error) {
 	short := vocabularyRecordKinds[ty.Identity]
 	if in.ID == "" {
 		return nil, fmt.Errorf("%w: %s records are addressed by their declared identity — put carries metadata.id",
 			substrate.ErrValidation, short)
+	}
+	// The stored row is what an echoed managed property is compared against; a
+	// missing one is a create, where there is nothing to echo.
+	existing, err := ds.Get(ctx, ty.Identity, in.ID)
+	if err != nil && !errors.Is(err, substrate.ErrNotFound) {
+		return nil, err
+	}
+	if err := checkDeclarationWrite(ty, short, existing, in.Properties); err != nil {
+		return nil, err
 	}
 	doc, err := documentFromProps(short, in.ID, in.Properties)
 	if err != nil {
@@ -1476,6 +1481,15 @@ func (ds *dataset) putSchemaRecord(ctx context.Context, actor substrate.Actor, t
 // the result through admission, exactly like a put.
 func (ds *dataset) patchSchemaRecord(ctx context.Context, actor substrate.Actor, existing *substrate.Record, in substrate.PatchInput) (*substrate.Record, error) {
 	short := vocabularyRecordKinds[existing.Kind]
+	ty, err := ds.resolveType(existing.Kind)
+	if err != nil {
+		return nil, err
+	}
+	// The PATCH's own properties are what the writer supplied; the merge below
+	// carries the stored ones, which are the engine's own answer by definition.
+	if err := checkDeclarationWrite(ty, short, existing, in.Properties); err != nil {
+		return nil, err
+	}
 	props := map[string]any{}
 	for k, v := range existing.Properties {
 		props[k] = v
@@ -1529,14 +1543,16 @@ func (ds *dataset) deleteVocabularyRecord(ctx context.Context, actor substrate.A
 }
 
 // documentFromProps rebuilds the loader document a generic write carries: the
-// declaration IS the properties, so the document's data is what was supplied
-// minus the keys the engine owns (serverDeclarationProps) — a write-supplied
-// `version`, `source` or `sourceYAML` is not the writer's to set and is dropped
-// rather than stored.
+// declaration IS the properties, so the document's data is the supplied
+// properties the loader admits for that kind. What the ENGINE owns is refused
+// rather than dropped (checkDeclarationWrite, the caller's first step): a
+// silently replaced value would tell a client its edit landed.
 //
 // The `definition` arm survives for one caller shape: a client (or a stored row
 // read before the rung) still speaking the blob. It parses to the same document,
-// so nothing downstream can tell which spelling arrived.
+// so nothing downstream can tell which spelling arrived — but a write carrying
+// BOTH spellings is refused, since obeying one of them means discarding the
+// other's edits.
 func documentFromProps(short, id string, props map[string]any) (vocabulary.Document, error) {
 	d := vocabulary.Document{Kind: short, ID: id}
 	switch short {
@@ -1556,15 +1572,75 @@ func documentFromProps(short, id string, props map[string]any) (vocabulary.Docum
 			d.Data["tier"] = tier
 		}
 	default:
+		data := declarationData(short, props)
 		if def, blob := props["definition"].(map[string]any); blob {
+			if len(data) > 0 {
+				return d, fmt.Errorf("%w: a %s write carries its declaration TWICE — in `definition` and in %s; send one",
+					substrate.ErrValidation, short, strings.Join(sortedKeys(data), ", "))
+			}
 			d.Data = def
 			break
 		}
-		d.Data = declarationData(short, props)
+		d.Data = data
 		if len(d.Data) == 0 {
 			return d, fmt.Errorf("%w: a %s record carries its declaration in its properties — this write carries none",
 				substrate.ErrValidation, short)
 		}
 	}
 	return d, nil
+}
+
+// checkDeclarationWrite holds a generic declaration write to what the writer
+// owns. Three answers, and they are the settled rule:
+//
+//   - a property the loader admits is the DECLARATION's, and it lands;
+//   - a MANAGED property (the version, the origin, the quarantine marks, the
+//     bundle lifecycle bools — each declared `managed: true`) is the engine's:
+//     absent is fine, since the engine stamps it, and an echoed value EQUAL to
+//     the one the row already holds is fine, since `get -o yaml | apply -f` must
+//     round-trip. A DIFFERENT value is refused, naming the property: silently
+//     replacing it would tell the client its edit landed;
+//   - anything else is refused as undeclared, rather than dropped, so a typo
+//     is not a change that vanishes.
+//
+// `title` and `body` are the exception that proves the rule: every record
+// carries them in a column, a read hands them back in `properties`, and a
+// declaration's title is derived from its template — so an echoed one is
+// ignored, not refused.
+func checkDeclarationWrite(ty *vocabulary.Kind, short string, existing *substrate.Record, props map[string]any) error {
+	if _, blob := props["definition"]; blob {
+		return nil // the retired spelling carries the whole document; nothing to split
+	}
+	dataKeys := vocabulary.DeclarationDataKeys(short)
+	var problems []string
+	for _, name := range sortedKeys(props) {
+		switch {
+		case dataKeys[name], columnBackedProp[name], props[name] == nil:
+			continue
+		case retiredDeclarationProps(short)[name]:
+			problems = append(problems, fmt.Sprintf("props.%s: the retired spelling — the declaration is the properties now", name))
+			continue
+		}
+		p, declared := ty.Prop(name)
+		if !declared {
+			problems = append(problems, fmt.Sprintf("props.%s: not declared on %s", name, ty.Identity))
+			continue
+		}
+		if !p.Managed {
+			continue // an ordinary property of the kind the loader does not read
+		}
+		var held any
+		if existing != nil {
+			held = existing.Properties[name]
+		}
+		if jsonEqual(held, props[name]) {
+			continue
+		}
+		problems = append(problems, fmt.Sprintf(
+			"props.%s: the engine stamps it (%v) — drop it or send the stored value", name, held))
+	}
+	if len(problems) > 0 {
+		return &substrate.ValidationError{Problems: problems}
+	}
+	return nil
 }

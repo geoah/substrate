@@ -231,18 +231,17 @@ func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
 		t.Fatal("installed projection stores sourceYAML (record 61 removed it)")
 	}
 
-	// A generic write smuggling the retired property is ignored, like every
-	// property the projection does not own.
-	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+	// A generic write smuggling the retired property is REFUSED, not ignored: a
+	// dropped edit is a write that reads as obeyed.
+	_, err = ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/kind", ID: authority + "/widget",
 		Properties: map[string]any{
 			"authority": authority, "names": widget.Properties["names"],
 			"properties": widget.Properties["properties"],
 			"sourceYAML": "# smuggled bytes",
 		},
-	}); err != nil {
-		t.Fatalf("put with retired property: %v", err)
-	}
+	})
+	wantErr(t, err, substrate.ErrValidation, "retired property")
 	if _, has := mustGet(t, ds, "core.substrate.reamde.dev/kind", authority+"/widget").Properties["sourceYAML"]; has {
 		t.Fatal("a write-supplied sourceYAML was stored")
 	}
