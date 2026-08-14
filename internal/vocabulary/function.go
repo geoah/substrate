@@ -13,9 +13,9 @@ import (
 
 // A function is the seventh manifest kind: a pure reusable CALLABLE — a named
 // piece of real code, inline Python or Go source on the manifest (`runtime:`
-// + `source:`) — with a model-facing `description`, optional `input:`/
-// `output:` shape schemas, and a capability envelope (`capabilities:` —
-// emit, reads, call, network, mutations). A function has NO subscription:
+// + `source:`) — with a model-facing `description`, optional `arguments:` and
+// `returns:` shapes, and a capability envelope (emit, reads, call, network,
+// mutations). A function has NO subscription:
 // what fires it is a `trigger` data record (core.substrate.reamde.dev), which
 // owns the cursor, retries, parking and replay. The body executes in the
 // shared runner child process (functions/runner) and returns effects the
@@ -32,7 +32,7 @@ const (
 
 var functionRuntimes = map[string]bool{RuntimePython: true, RuntimeGo: true}
 
-// The capability-gated identity mutations (`capabilities.mutations`). The
+// The capability-gated identity mutations (`mutations:`). The
 // five ordinary effects — put, patch, delete, link, unlink — are granted by
 // `emit:` alone; merge and split need this explicit grant.
 const (
@@ -74,9 +74,11 @@ type Function struct {
 	// TimeoutMs bounds one invocation's wall clock; a timeout rides the
 	// normal retries then parks.
 	TimeoutMs int
-	// Input and Output are the optional shape schemas (`input:`/`output:`,
-	// the minimal dialect CheckValue validates against): call-mode arguments
-	// are held to Input, a declared Output checks the returned value.
+	// Input and Output are the optional shape schemas CheckValue validates
+	// against: call-mode arguments are held to Input, a declared Output checks
+	// the returned value. Either is compiled from a flat `arguments:`/`returns:`
+	// list or read from an `input:`/`output:` schema map — one representation
+	// whichever spelling declared it.
 	Input  map[string]any
 	Output map[string]any
 	// Caps is the capability envelope every function carries.
@@ -87,11 +89,25 @@ type Function struct {
 	// SourceYAML is the verbatim manifest; installed authorities have no original
 	// text, so theirs is derived.
 	SourceYAML string
+
+	// capsPath remembers where each capability key was authored. Resolution
+	// against the registry happens long after the parse (a call target may be
+	// installed in the same batch), and its refusals have to name the line the
+	// author wrote, not the one this loader would have preferred.
+	capsPath map[string]string
 }
 
-// FunctionCaps is the capability envelope (`capabilities:`): what the body's
-// effects may address, what its host reads may touch, which functions it may
-// Call, what network it declares, and which identity mutations it is granted.
+// capPath is the authored location of one capability key, for an error message.
+func (f *Function) capPath(key string) string {
+	if p, ok := f.capsPath[key]; ok {
+		return p
+	}
+	return "data." + key
+}
+
+// FunctionCaps is the capability envelope: what the body's effects may address,
+// what its host reads may touch, which functions it may Call, what network it
+// declares, and which identity mutations it is granted.
 type FunctionCaps struct {
 	// Emit is the allowlist of full type identities the effects may address.
 	Emit []string
@@ -333,6 +349,162 @@ func (l *loader) parseIOSchema(where string, v any) map[string]any {
 	return m
 }
 
+// --- the flat argument dialect -------------------------------------------------
+
+// The argument types `arguments:`/`returns:` declare. `int` and `float` are two
+// words for one wire number, kept apart because the declaration is also
+// documentation; `enum` is a string closed over its `values`; `json` is the
+// named escape hatch for a value whose shape the function does not own.
+const (
+	ArgumentString = "string"
+	ArgumentInt    = "int"
+	ArgumentFloat  = "float"
+	ArgumentBool   = "bool"
+	ArgumentEnum   = "enum"
+	ArgumentJSON   = "json"
+)
+
+// ArgumentTypes lists the argument types in the order the errors name them.
+var ArgumentTypes = []string{
+	ArgumentString, ArgumentInt, ArgumentFloat, ArgumentBool, ArgumentEnum, ArgumentJSON,
+}
+
+// argumentSchemaTypes maps each argument type onto the shape dialect's own
+// type — the compiled schema is what CheckValue and the model-facing tool card
+// read, so a flat declaration cannot produce a schema either of them refuses.
+var argumentSchemaTypes = map[string]string{
+	ArgumentString: "string",
+	ArgumentInt:    "number",
+	ArgumentFloat:  "number",
+	ArgumentBool:   "boolean",
+	ArgumentEnum:   "string",
+	ArgumentJSON:   "any",
+}
+
+// functionArgKeys is one argument's closed key set.
+var functionArgKeys = map[string]bool{
+	"name": true, "type": true, "repeated": true, "required": true,
+	"description": true, "values": true,
+}
+
+// parseArguments compiles a flat argument list into the object schema the
+// engine holds calls to. The list is the authored form and the compiled schema
+// is what every consumer reads: one level of named arguments, so a function's
+// card is valid by construction and CheckValue never walks a recursion.
+func (l *loader) parseArguments(where string, v any) map[string]any {
+	list, ok := v.([]any)
+	if !ok {
+		l.errf("%s: a LIST of named arguments ({name, type}) — the shape is flat", where)
+		return nil
+	}
+	props := map[string]any{}
+	var required []any
+	for i, av := range list {
+		awhere := fmt.Sprintf("%s[%d]", where, i)
+		ad := asMapOrNil(av)
+		if ad == nil {
+			l.errf("%s: an argument is a {name, type} map, got %T", awhere, av)
+			return nil
+		}
+		l.checkKeys(awhere, ad, functionArgKeys)
+		name := mstr(ad, "name")
+		if !ValidCamel(name) {
+			l.errf("%s.name: %q must be %s", awhere, name, camelRule)
+			return nil
+		}
+		if _, dup := props[name]; dup {
+			l.errf("%s.name: %q is declared twice", awhere, name)
+			return nil
+		}
+		ty := mstr(ad, "type")
+		schemaType, known := argumentSchemaTypes[ty]
+		if !known {
+			l.errf("%s.type: %q — one of %s", awhere, ty, strings.Join(ArgumentTypes, ", "))
+			return nil
+		}
+		leaf := map[string]any{"type": schemaType}
+		values, hasValues := ad["values"]
+		switch {
+		case ty == ArgumentEnum && !hasValues:
+			l.errf("%s: type enum declares its values — an enum without them is a string", awhere)
+			return nil
+		case ty != ArgumentEnum && hasValues:
+			l.errf("%s: values belongs to type enum, not %s", awhere, ty)
+			return nil
+		case hasValues:
+			enum := l.parseArgumentValues(awhere, values)
+			if enum == nil {
+				return nil
+			}
+			leaf["enum"] = enum
+		}
+		schema := leaf
+		if mbool(ad, "repeated") {
+			schema = map[string]any{"type": "array", "items": leaf}
+		}
+		// The description belongs to the argument, so it rides the outer schema:
+		// a repeated argument is described once, not once per item.
+		if desc := l.parseDescription(awhere, ad); desc != "" {
+			schema["description"] = desc
+		}
+		props[name] = schema
+		if mbool(ad, "required") {
+			required = append(required, name)
+		}
+	}
+	out := map[string]any{"type": "object", "properties": props}
+	// An absent `required` is an object with no required argument, which is not
+	// the same document as one listing none: the compiled schema carries the key
+	// only when something is required.
+	if len(required) > 0 {
+		out["required"] = required
+	}
+	return out
+}
+
+// parseArgumentValues reads an enum argument's admitted values. They are wire
+// values a model echoes back verbatim, not declared names, so the casing rule
+// every declared name holds to does not apply — only that each is a non-empty
+// string, which is what the compiled `string` type promises.
+func (l *loader) parseArgumentValues(where string, v any) []any {
+	list, ok := v.([]any)
+	if !ok || len(list) == 0 {
+		l.errf("%s.values: a non-empty LIST of the values the argument admits", where)
+		return nil
+	}
+	out := make([]any, 0, len(list))
+	for i, ev := range list {
+		s, ok := ev.(string)
+		if !ok || s == "" {
+			l.errf("%s.values[%d]: %v — a non-empty string", where, i, ev)
+			return nil
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// parseFunctionIO reads one side of a function's IO. `flat` is the named
+// argument list; `nested` is the schema map. One side is declared once: both
+// spellings on one function leaves the reader to pick which shape is the
+// contract.
+func (l *loader) parseFunctionIO(where string, data map[string]any, flat, nested string) (map[string]any, bool) {
+	flatRaw, hasFlat := data[flat]
+	nestedRaw, hasNested := data[nested]
+	switch {
+	case hasFlat && hasNested:
+		l.errf("%s: data.%s and data.%s both declare one shape — %s is the flat spelling and it is enough", where, flat, nested, flat)
+		return nil, false
+	case hasFlat:
+		schema := l.parseArguments(where+": data."+flat, flatRaw)
+		return schema, schema != nil
+	case hasNested:
+		schema := l.parseIOSchema(where+": data."+nested, nestedRaw)
+		return schema, schema != nil
+	}
+	return nil, true
+}
+
 // CheckValue holds one value to a declared input/output schema: shape only.
 // Objects refuse undeclared keys — the schema is the contract, not a hint.
 func CheckValue(schema map[string]any, v any) error {
@@ -421,21 +593,26 @@ func checkValue(path string, schema map[string]any, v any) error {
 var functionDataKeys = map[string]bool{
 	"authority": true, "description": true, "runtime": true, "source": true,
 	"timeoutMs": true, "capabilities": true, "input": true, "output": true,
+	// The flat IO spelling (`arguments:`/`returns:`) and the capability envelope
+	// hoisted onto data — the five keys of functionCapsKeys, admitted here too.
+	"arguments": true, "returns": true,
+	"emit": true, "reads": true, "call": true, "network": true, "mutations": true,
 }
 
 // deletedFunctionKeys are the removed keys, each naming what replaced it: the
-// CEL and wasm bodies are removed (POC verdicts, ticket 009), the envelope
-// moved under `capabilities`, and the subscription moved onto trigger
-// records. No compatibility shim.
+// CEL and wasm bodies are removed (POC verdicts, ticket 009), and the
+// subscription moved onto trigger records. No compatibility shim.
 var deletedFunctionKeys = map[string]string{
 	"run":      "runtime + source — the CEL and wasm run arms are removed; CEL survives only as the trigger's when: guard",
-	"emit":     "capabilities.emit",
-	"reads":    "capabilities.reads",
 	"on":       "a trigger record (core.substrate.reamde.dev) — the subscription lives on the trigger, the function is a pure callable",
 	"when":     "trigger source.record.when — the guard lives on the trigger record",
 	"coalesce": "trigger source.record.coalesce — coalescing lives on the trigger record",
 }
 
+// functionCapsKeys is the capability envelope's five keys, each declared on
+// `data` itself or under the `capabilities:` wrapper. The sorted order of the
+// set is the order the loader reads them in, so a document with two problems
+// reports the same one on every run.
 var functionCapsKeys = map[string]bool{
 	"emit": true, "reads": true, "call": true, "network": true, "mutations": true,
 }
@@ -492,15 +669,11 @@ func (l *loader) parseFunction(d Document) *Function {
 		DefaultRunTimeoutMs, MaxRunTimeoutMs); !ok {
 		return nil
 	}
-	if raw, has := d.Data["input"]; has {
-		if fn.Input = l.parseIOSchema(where+": data.input", raw); fn.Input == nil {
-			return nil
-		}
+	if fn.Input, ok = l.parseFunctionIO(where, d.Data, "arguments", "input"); !ok {
+		return nil
 	}
-	if raw, has := d.Data["output"]; has {
-		if fn.Output = l.parseIOSchema(where+": data.output", raw); fn.Output == nil {
-			return nil
-		}
+	if fn.Output, ok = l.parseFunctionIO(where, d.Data, "returns", "output"); !ok {
+		return nil
 	}
 
 	return l.parseFunctionCaps(where, d.Data, fn)
@@ -508,29 +681,57 @@ func (l *loader) parseFunction(d Document) *Function {
 
 // parseFunctionCaps reads the capability envelope. `emit` is required and
 // non-empty: a function that writes nothing is not a function yet.
+//
+// Each of the five keys is read from `data` itself or from the `capabilities:`
+// wrapper, and one key in both places is refused: two declarations of one grant
+// would leave a reader of the document guessing which one the engine enforces.
+// Every refusal names the location the key was AUTHORED at, so the fix goes
+// where the author is already looking.
 func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Function) *Function {
-	caps := mmap(data, "capabilities")
-	l.checkKeys(where+": data.capabilities", caps, functionCapsKeys)
+	wrapped := mmap(data, "capabilities")
+	l.checkKeys(where+": data.capabilities", wrapped, functionCapsKeys)
+	_, hasWrapper := data["capabilities"]
+	caps := map[string]any{}
+	fn.capsPath = map[string]string{}
+	for _, k := range sortedKeys(mapOfAny(functionCapsKeys)) {
+		hoisted, isHoisted := data[k]
+		nested, isNested := wrapped[k]
+		switch {
+		case isHoisted && isNested:
+			l.errf("%s: %q is declared at data.%s AND at data.capabilities.%s — one grant, declared once", where, k, k, k)
+			return nil
+		case isHoisted:
+			caps[k], fn.capsPath[k] = hoisted, "data."+k
+		case isNested:
+			caps[k], fn.capsPath[k] = nested, "data.capabilities."+k
+		case hasWrapper:
+			// Absent: the path a missing key WOULD be written at, which is the
+			// spelling the rest of this document uses.
+			fn.capsPath[k] = "data.capabilities." + k
+		default:
+			fn.capsPath[k] = "data." + k
+		}
+	}
 	if _, isList := caps["emit"].(map[string]any); isList {
-		l.errf("%s: data.capabilities.emit: a LIST of full type identities", where)
+		l.errf("%s: %s: a LIST of full type identities", where, fn.capPath("emit"))
 		return nil
 	}
 	for i, ev := range mslice(caps, "emit") {
 		t := fmt.Sprint(ev)
 		if !ValidKindReference(t) {
-			l.errf("%s: data.capabilities.emit[%d]: %q — emit names kinds, bare or authority-qualified, no globs", where, i, t)
+			l.errf("%s: %s[%d]: %q — emit names kinds, bare or authority-qualified, no globs", where, fn.capPath("emit"), i, t)
 			continue
 		}
 		fn.Caps.Emit = append(fn.Caps.Emit, t)
 	}
 	if len(fn.Caps.Emit) == 0 {
-		l.errf("%s: data.capabilities.emit is required and non-empty — the allowlist of types the effects may address", where)
+		l.errf("%s: %s is required and non-empty — the allowlist of types the effects may address", where, fn.capPath("emit"))
 		return nil
 	}
 	for i, cv := range mslice(caps, "call") {
 		ident := fmt.Sprint(cv)
 		if !Qualified(ident) || strings.Contains(ident, "*") {
-			l.errf("%s: data.capabilities.call[%d]: %q — call names full function identities, no globs", where, i, ident)
+			l.errf("%s: %s[%d]: %q — call names full function identities, no globs", where, fn.capPath("call"), i, ident)
 			continue
 		}
 		fn.Caps.Call = append(fn.Caps.Call, ident)
@@ -538,7 +739,7 @@ func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Functi
 	for i, nv := range mslice(caps, "network") {
 		pat := fmt.Sprint(nv)
 		if pat == "" {
-			l.errf("%s: data.capabilities.network[%d]: empty pattern", where, i)
+			l.errf("%s: %s[%d]: empty pattern", where, fn.capPath("network"), i)
 			continue
 		}
 		fn.Caps.Network = append(fn.Caps.Network, pat)
@@ -546,46 +747,48 @@ func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Functi
 	for i, mv := range mslice(caps, "mutations") {
 		m := fmt.Sprint(mv)
 		if !functionMutations[m] {
-			l.errf("%s: data.capabilities.mutations[%d]: %q — merge and split are the gated mutations; put/patch/delete/link/unlink ride emit alone", where, i, m)
+			l.errf("%s: %s[%d]: %q — merge and split are the gated mutations; put/patch/delete/link/unlink ride emit alone", where, fn.capPath("mutations"), i, m)
 			continue
 		}
 		fn.Caps.Mutations = append(fn.Caps.Mutations, m)
 	}
-	if !l.parseReads(where, caps, fn) {
+	if !l.parseReads(where, fn.capPath("reads"), caps, fn) {
 		return nil
 	}
 	return fn
 }
 
-// parseReads reads the optional read capability off the envelope.
-func (l *loader) parseReads(where string, caps map[string]any, fn *Function) bool {
+// parseReads reads the optional read capability off an envelope, at the path
+// the envelope was authored at: a function's is a capability key, an agent's is
+// `data.reads` beside its tools.
+func (l *loader) parseReads(where, path string, caps map[string]any, fn *Function) bool {
 	rv, has := caps["reads"]
 	if !has {
 		return true
 	}
 	r := asMap(rv)
-	l.checkKeys(where+": data.capabilities.reads", r, functionReadsKeys)
+	l.checkKeys(where+": "+path, r, functionReadsKeys)
 	reads := &FunctionReads{}
 	for i, tv := range mslice(r, "kinds") {
 		t := fmt.Sprint(tv)
 		if !ValidKindReference(t) {
-			l.errf("%s: data.capabilities.reads.kinds[%d]: %q — reads names kinds, bare or authority-qualified, no globs", where, i, t)
+			l.errf("%s: %s.kinds[%d]: %q — reads names kinds, bare or authority-qualified, no globs", where, path, i, t)
 			continue
 		}
 		reads.Kinds = append(reads.Kinds, t)
 	}
 	if len(reads.Kinds) == 0 {
-		l.errf("%s: data.capabilities.reads.kinds is required and non-empty — the allowlist the host holds every read to", where)
+		l.errf("%s: %s.kinds is required and non-empty — the allowlist the host holds every read to", where, path)
 		return false
 	}
 	budgets := mmap(r, "budgets")
-	l.checkKeys(where+": data.capabilities.reads.budgets", budgets, functionBudgetKeys)
+	l.checkKeys(where+": "+path+".budgets", budgets, functionBudgetKeys)
 	var ok bool
-	if reads.Calls, ok = l.boundedInt(where+": data.capabilities.reads.budgets.calls", budgets, "calls",
+	if reads.Calls, ok = l.boundedInt(where+": "+path+".budgets.calls", budgets, "calls",
 		DefaultReadCalls, MaxReadCalls); !ok {
 		return false
 	}
-	if reads.Rows, ok = l.boundedInt(where+": data.capabilities.reads.budgets.rows", budgets, "rows",
+	if reads.Rows, ok = l.boundedInt(where+": "+path+".budgets.rows", budgets, "rows",
 		DefaultReadRows, MaxReadRows); !ok {
 		return false
 	}
@@ -624,7 +827,7 @@ func (r *Registry) resolveFunction(f *Function) []string {
 	for i, t := range f.Caps.Emit {
 		ty, err := r.Resolve(t)
 		if err != nil || ty == nil {
-			problems = append(problems, fmt.Sprintf("%s: data.capabilities.emit: unknown type %q", where, t))
+			problems = append(problems, fmt.Sprintf("%s: %s: unknown type %q", where, f.capPath("emit"), t))
 			continue
 		}
 		f.Caps.Emit[i] = ty.Identity
@@ -633,7 +836,7 @@ func (r *Registry) resolveFunction(f *Function) []string {
 		for i, t := range f.Caps.Reads.Kinds {
 			ty, err := r.Resolve(t)
 			if err != nil || ty == nil {
-				problems = append(problems, fmt.Sprintf("%s: data.capabilities.reads.kinds: unknown type %q", where, t))
+				problems = append(problems, fmt.Sprintf("%s: %s.kinds: unknown type %q", where, f.capPath("reads"), t))
 				continue
 			}
 			f.Caps.Reads.Kinds[i] = ty.Identity
@@ -641,7 +844,7 @@ func (r *Registry) resolveFunction(f *Function) []string {
 	}
 	for _, ident := range f.Caps.Call {
 		if _, err := r.ResolveFunction(ident); err != nil {
-			problems = append(problems, fmt.Sprintf("%s: data.capabilities.call: unknown function %q", where, ident))
+			problems = append(problems, fmt.Sprintf("%s: %s: unknown function %q", where, f.capPath("call"), ident))
 		}
 	}
 	return problems

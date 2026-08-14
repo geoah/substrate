@@ -233,23 +233,6 @@ func TestFunctionLoadErrors(t *testing.T) {
 `,
 			want: "trigger source.record.coalesce",
 		},
-		"top-level emit is deleted": {
-			data: `  description: d
-  runtime: python
-  emit: [fn.example.com/gadget]
-  source: "def main(input, host): return {}"
-`,
-			want: "capabilities.emit",
-		},
-		"top-level reads is deleted": {
-			data: `  description: d
-  runtime: python
-  reads: {kinds: [fn.example.com/widget]}
-  capabilities: {emit: [fn.example.com/gadget]}
-  source: "def main(input, host): return {}"
-`,
-			want: "capabilities.reads",
-		},
 		"timeout is bounded": {
 			data: `  description: d
   runtime: python
@@ -318,12 +301,22 @@ func TestFunctionLoadErrors(t *testing.T) {
 `,
 			want: "data.after is reserved",
 		},
+		// The refusal names where emit WOULD have been written: on data itself,
+		// or in the wrapper the rest of the document uses.
 		"emit is required": {
 			data: `  description: d
   runtime: python
   source: "def main(input, host): return {}"
 `,
-			want: "capabilities.emit is required",
+			want: "data.emit is required and non-empty",
+		},
+		"emit is required, named in the wrapper": {
+			data: `  description: d
+  runtime: python
+  capabilities: {call: [fn.example.com/mirror]}
+  source: "def main(input, host): return {}"
+`,
+			want: "data.capabilities.emit is required and non-empty",
 		},
 		"emit types must exist": {
 			data: `  description: d

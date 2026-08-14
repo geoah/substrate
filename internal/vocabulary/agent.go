@@ -178,8 +178,15 @@ var agentBudgetKeys = map[string]bool{
 	"maxTurns": true, "maxToolCalls": true, "deadlineSeconds": true, "depth": true,
 }
 
+// agentToolKeys is a tool entry's key set. `builtin` and `callable` are the two
+// arms an entry may take, and exactly one of them names the tool.
 var agentToolKeys = map[string]bool{
-	"callable": true, "name": true, "description": true,
+	"builtin": true, "callable": true, "name": true, "description": true,
+}
+
+// agentBuiltinNames lists the built-ins in the order the errors name them.
+var agentBuiltinNames = []string{
+	AgentToolQuery, AgentToolPropose, AgentToolGraphQL, AgentToolMutate,
 }
 
 // buildAuthorityAgents parses one authority's agent documents — load.go's one-line
@@ -291,7 +298,7 @@ func (l *loader) parseAgent(d Document) *Agent {
 	}
 	// `reads:` reuses the function envelope's shape verbatim.
 	fn := &Function{}
-	if !l.parseReads(where, d.Data, fn) {
+	if !l.parseReads(where, "data.reads", d.Data, fn) {
 		return nil
 	}
 	a.Reads = fn.Caps.Reads
@@ -378,8 +385,10 @@ func (l *loader) parseAgentParams(where string, data map[string]any, a *Agent) b
 	return true
 }
 
-// parseAgentTools reads the `tools:` list: bare strings are built-ins or
-// function identities; maps alias a callable ({callable, name, description}).
+// parseAgentTools reads the `tools:` list. An entry names ONE tool, by one of
+// two arms: `builtin:` (query, propose, graphql, mutate) or `callable:` (a
+// function identity, optionally aliased for this agent's prompt context with
+// `name`/`description`). Bare strings name either arm by value.
 func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bool {
 	seen := map[string]bool{}
 	add := func(i int, t AgentTool) bool {
@@ -405,7 +414,7 @@ func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bo
 				continue
 			}
 			if !Qualified(entry) || strings.Contains(entry, "*") {
-				l.errf("%s: data.tools[%d]: %q — a built-in (query, propose, graphql, mutate) or a full function identity", where, i, entry)
+				l.errf("%s: data.tools[%d]: %q — a built-in (%s) or a full function identity", where, i, entry, strings.Join(agentBuiltinNames, ", "))
 				return false
 			}
 			name := KindName(entry)
@@ -413,24 +422,50 @@ func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bo
 				return false
 			}
 		case map[string]any:
-			l.checkKeys(fmt.Sprintf("%s: data.tools[%d]", where, i), entry, agentToolKeys)
-			callable := mstr(entry, "callable")
-			if !Qualified(callable) || strings.Contains(callable, "*") {
-				l.errf("%s: data.tools[%d]: callable %q — a full function identity (built-ins are bare strings)", where, i, callable)
+			twhere := fmt.Sprintf("%s: data.tools[%d]", where, i)
+			l.checkKeys(twhere, entry, agentToolKeys)
+			builtin, callable := mstr(entry, "builtin"), mstr(entry, "callable")
+			switch {
+			case builtin != "" && callable != "":
+				l.errf("%s: builtin %q and callable %q — an entry names exactly one of builtin and callable", twhere, builtin, callable)
 				return false
-			}
-			name := mstr(entry, "name")
-			if name == "" {
-				name = KindName(callable)
-			}
-			if !add(i, AgentTool{
-				Callable: callable, Name: name,
-				Description: l.parseDescription(fmt.Sprintf("%s: data.tools[%d]", where, i), entry),
-			}) {
+			case builtin == "" && callable == "":
+				l.errf("%s: neither builtin nor callable — an entry names exactly one of them", twhere)
 				return false
+			case builtin != "":
+				if !agentBuiltins[builtin] {
+					l.errf("%s: builtin %q — one of %s", twhere, builtin, strings.Join(agentBuiltinNames, ", "))
+					return false
+				}
+				// A built-in's card is the loop's own (engine/agentloop.go writes
+				// the name and the description it renders), so there is nothing
+				// here to override: an alias would name a tool the model never
+				// sees.
+				if mstr(entry, "name") != "" || mstr(entry, "description") != "" {
+					l.errf("%s: builtin %q takes no name or description — the loop owns a built-in's card", twhere, builtin)
+					return false
+				}
+				if !add(i, AgentTool{Builtin: builtin, Name: builtin}) {
+					return false
+				}
+			default:
+				if !Qualified(callable) || strings.Contains(callable, "*") {
+					l.errf("%s: callable %q — a full function identity, no globs", twhere, callable)
+					return false
+				}
+				name := mstr(entry, "name")
+				if name == "" {
+					name = KindName(callable)
+				}
+				if !add(i, AgentTool{
+					Callable: callable, Name: name,
+					Description: l.parseDescription(twhere, entry),
+				}) {
+					return false
+				}
 			}
 		default:
-			l.errf("%s: data.tools[%d]: a tool is a string or a {callable, name, description} map, got %T", where, i, tv)
+			l.errf("%s: data.tools[%d]: a tool is a string, a {builtin} map or a {callable, name, description} map, got %T", where, i, tv)
 			return false
 		}
 	}

@@ -390,24 +390,8 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 		c := &Trait{
 			Name: local, Authority: name, Definition: d.Data, SourceYAML: d.Source,
 		}
-		if one := mmap(d.Data, "oneOf"); len(one) > 0 {
-			c.Variants = map[string]map[string]Datatype{}
-			for vname, vdef := range one {
-				props := map[string]Datatype{}
-				for pname, pkind := range asMap(vdef) {
-					if !ValidCamel(pname) {
-						l.errf("%s: data.oneOf.%s.%s: must be %s", where, vname, pname, camelRule)
-						continue
-					}
-					k := Datatype(fmt.Sprint(pkind))
-					if !builtinKinds[k] {
-						l.errf("%s: data.oneOf.%s.%s: unknown property type %q", where, vname, pname, k)
-						continue
-					}
-					props[pname] = k
-				}
-				c.Variants[vname] = props
-			}
+		if one, has := d.Data["oneOf"]; has {
+			c.Variants = l.parseTraitVariants(where, one)
 		}
 		if props := mmap(d.Data, "properties"); len(props) > 0 {
 			c.Properties = map[string]Datatype{}
@@ -494,6 +478,70 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 	// in Finalize/Install, after trait bindings.
 	l.buildBundle(gd)
 	return g
+}
+
+// traitVariantKeys is one `oneOf:` entry's closed key set.
+var traitVariantKeys = map[string]bool{"name": true, "properties": true}
+
+// parseTraitVariants reads a trait's `oneOf:` — the variant set a kind picks one
+// of with `traits: [temporal(point)]`. A variant is an entry carrying its own
+// name ({name, properties}); a mapping of name to properties declares the same
+// set. Nil when nothing is declared, which is what makes a trait variant-free.
+func (l *loader) parseTraitVariants(where string, raw any) map[string]map[string]Datatype {
+	out := map[string]map[string]Datatype{}
+	switch list := raw.(type) {
+	case []any:
+		for i, ev := range list {
+			vwhere := fmt.Sprintf("%s: data.oneOf[%d]", where, i)
+			ed := asMapOrNil(ev)
+			if ed == nil {
+				l.errf("%s: a variant is a {name, properties} map, got %T", vwhere, ev)
+				continue
+			}
+			l.checkKeys(vwhere, ed, traitVariantKeys)
+			name := mstr(ed, "name")
+			if !ValidCamel(name) {
+				l.errf("%s.name: %q must be %s", vwhere, name, camelRule)
+				continue
+			}
+			if _, dup := out[name]; dup {
+				l.errf("%s.name: variant %q is declared twice", vwhere, name)
+				continue
+			}
+			out[name] = l.parseTraitVariantProps(vwhere+".properties", mmap(ed, "properties"))
+		}
+	default:
+		props := asMap(raw)
+		for _, name := range sortedKeys(props) {
+			out[name] = l.parseTraitVariantProps(
+				fmt.Sprintf("%s: data.oneOf.%s", where, name), asMap(props[name]))
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// parseTraitVariantProps reads one variant's properties. A variant's properties
+// are built-in datatypes only: the variants exist for the machinery bound to
+// record columns, and a refinement is authority-local while a trait resolves
+// across authorities.
+func (l *loader) parseTraitVariantProps(where string, props map[string]any) map[string]Datatype {
+	out := map[string]Datatype{}
+	for _, pname := range sortedKeys(props) {
+		if !ValidCamel(pname) {
+			l.errf("%s.%s: must be %s", where, pname, camelRule)
+			continue
+		}
+		k := Datatype(fmt.Sprint(props[pname]))
+		if !builtinKinds[k] {
+			l.errf("%s.%s: unknown property type %q", where, pname, k)
+			continue
+		}
+		out[pname] = k
+	}
+	return out
 }
 
 // localName splits an `<authority>/<name>` kind reference and checks it
