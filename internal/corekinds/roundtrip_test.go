@@ -1,0 +1,366 @@
+// Conformance 3, hand-written like its siblings: Decode(Properties(x)) == x for
+// a fixture per kind.
+//
+// The distinction it exists for is ABSENCE. A nil pointer must come back nil and
+// not as an empty string, an empty slice must come back empty and not nil, and a
+// null in the map must come back as absence — each of those is a stored value
+// nobody wrote, which is the silent bug pointers were chosen to prevent. Every
+// kind gets two passes: one fixture with nothing set, and one with as much set
+// as its declaration admits.
+package corekinds_test
+
+import (
+	"reflect"
+	"testing"
+
+	"github.com/geoah/substrate/internal/corekinds"
+)
+
+// properties is what every generated struct offers: its properties map.
+type properties[T any] interface {
+	*T
+	Properties() map[string]any
+}
+
+// roundTrip is the whole assertion: encode, decode, compare. A fixture that
+// survives it proves the generated pair are inverses over exactly the shapes the
+// declaration admits.
+func roundTrip[T any, PT properties[T]](t *testing.T, name string, fixture PT, decode func(map[string]any) (*T, []corekinds.Problem)) {
+	t.Helper()
+	t.Run(name, func(t *testing.T) {
+		props := fixture.Properties()
+		got, problems := decode(props)
+		if len(problems) > 0 {
+			t.Fatalf("decoding %v: %v", props, problems)
+		}
+		if !reflect.DeepEqual(got, (*T)(fixture)) {
+			t.Errorf("round trip differs:\n got %+v\nwant %+v", got, (*T)(fixture))
+		}
+	})
+}
+
+func str(s string) *string   { return &s }
+func i64(n int64) *int64     { return &n }
+func f64(f float64) *float64 { return &f }
+func boolean(b bool) *bool   { return &b }
+func secret(s string) *corekinds.SecretRef {
+	r := corekinds.SecretRef(s)
+	return &r
+}
+
+// The one digest shape a decoder admits: 64 lowercase hex.
+const testDigest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+// The one datetime shape: stored verbatim, so the fixture is what comes back.
+const testInstant = "2026-08-14T09:41:00.123456789Z"
+
+// TestRoundTripEmpty is the absence half: a struct with nothing set encodes to
+// an empty map and decodes back to nothing set. A generated field that
+// materialized its zero would fail here, on every kind at once.
+func TestRoundTripEmpty(t *testing.T) {
+	roundTrip(t, "actor", &corekinds.Actor{}, corekinds.DecodeActor)
+	roundTrip(t, "agent", &corekinds.Agent{}, corekinds.DecodeAgent)
+	roundTrip(t, "authority", &corekinds.Authority{}, corekinds.DecodeAuthority)
+	roundTrip(t, "blob", &corekinds.Blob{}, corekinds.DecodeBlob)
+	roundTrip(t, "bundle", &corekinds.Bundle{}, corekinds.DecodeBundle)
+	roundTrip(t, "credential", &corekinds.Credential{}, corekinds.DecodeCredential)
+	roundTrip(t, "function", &corekinds.Function{}, corekinds.DecodeFunction)
+	roundTrip(t, "kind", &corekinds.Kind{}, corekinds.DecodeKind)
+	roundTrip(t, "llmprovider", &corekinds.LLMProvider{}, corekinds.DecodeLLMProvider)
+	roundTrip(t, "propertytype", &corekinds.PropertyType{}, corekinds.DecodePropertyType)
+	roundTrip(t, "recordmapping", &corekinds.RecordMapping{}, corekinds.DecodeRecordMapping)
+	roundTrip(t, "recordmerge", &corekinds.RecordMerge{}, corekinds.DecodeRecordMerge)
+	roundTrip(t, "recordmergerequest", &corekinds.RecordMergeRequest{}, corekinds.DecodeRecordMergeRequest)
+	roundTrip(t, "recordpatchrequest", &corekinds.RecordPatchRequest{}, corekinds.DecodeRecordPatchRequest)
+	roundTrip(t, "recordsplit", &corekinds.RecordSplit{}, corekinds.DecodeRecordSplit)
+	roundTrip(t, "recoverykey", &corekinds.RecoveryKey{}, corekinds.DecodeRecoveryKey)
+	roundTrip(t, "repository", &corekinds.Repository{}, corekinds.DecodeRepository)
+	roundTrip(t, "run", &corekinds.Run{}, corekinds.DecodeRun)
+	roundTrip(t, "token", &corekinds.Token{}, corekinds.DecodeToken)
+	roundTrip(t, "trait", &corekinds.Trait{}, corekinds.DecodeTrait)
+	roundTrip(t, "trigger", &corekinds.Trigger{}, corekinds.DecodeTrigger)
+	// llmmessage and llmthread each declare a REQUIRED reference, so their empty
+	// fixture is the reference and nothing else: an absent required property is
+	// refused, which is conformance 3 read from the other side.
+	roundTrip(t, "llmmessage", &corekinds.LLMMessage{
+		Thread: corekinds.Reference{Kind: "core.substrate.reamde.dev/llmthread", ID: "t1"},
+	}, corekinds.DecodeLLMMessage)
+	roundTrip(t, "llmthread", &corekinds.LLMThread{
+		Agent: corekinds.Reference{Kind: "core.substrate.reamde.dev/agent", ID: "core.substrate.reamde.dev/assistant"},
+	}, corekinds.DecodeLLMThread)
+}
+
+// TestRoundTripPopulated is the same assertion with values in every shape the
+// core declarations use: enums, states, secrets, digests, instants, references,
+// repeated scalars, repeated objects, a nested object, and json.
+func TestRoundTripPopulated(t *testing.T) {
+	roundTrip(t, "actor", &corekinds.Actor{
+		Version:   str("v1alpha1"),
+		Name:      str("console"),
+		Authority: str("core.substrate.reamde.dev"),
+		Source:    ptr(corekinds.ActorSourceBuiltin),
+		Tier:      ptr(corekinds.ActorTierOwner),
+	}, corekinds.DecodeActor)
+
+	roundTrip(t, "agent", &corekinds.Agent{
+		Version:   str("v1alpha5"),
+		Name:      str("assistant"),
+		Authority: str("core.substrate.reamde.dev"),
+		Prompt:    str("be useful"),
+		Provider:  str("default"),
+		Model:     str("gpt-5"),
+		// Absent and empty are different answers: `functions` names two
+		// callables, `subagents` names none, and `description` was never written.
+		Functions:    []string{"core.substrate.reamde.dev/query", "core.substrate.reamde.dev/graphql"},
+		Subagents:    []string{},
+		SubagentOnly: boolean(true),
+		Definition:   map[string]any{"prompt": "be useful", "budgets": map[string]any{"turns": int64(8)}},
+	}, corekinds.DecodeAgent)
+
+	roundTrip(t, "authority", &corekinds.Authority{
+		Name:             str("tasks.substrate.reamde.dev"),
+		Version:          str("v1alpha2"),
+		Actors:           []string{"function:tasks"},
+		Source:           ptr(corekinds.AuthoritySourceInstalled),
+		Quarantined:      boolean(false),
+		QuarantineReason: str(""),
+	}, corekinds.DecodeAuthority)
+
+	roundTrip(t, "blob", &corekinds.Blob{
+		Digest:    str(corekinds.BlobDigestPrefix + testDigest),
+		Size:      i64(4096),
+		Name:      str("invoice.pdf"),
+		MimeType:  str("application/pdf"),
+		CreatedBy: str("api"),
+		Status:    ptr(corekinds.BlobStatusStored),
+	}, corekinds.DecodeBlob)
+
+	roundTrip(t, "bundle", &corekinds.Bundle{
+		Version:     str("v1alpha1"),
+		Name:        str("tasks"),
+		Authority:   str("tasks.bundles.substrate.reamde.dev"),
+		Definition:  map[string]any{"installs": []any{"tasks.substrate.reamde.dev"}},
+		Disabled:    boolean(false),
+		Uninstalled: boolean(false),
+		Purging:     boolean(false),
+	}, corekinds.DecodeBundle)
+
+	roundTrip(t, "credential", &corekinds.Credential{
+		Username:    str("ada"),
+		PasswordRef: secret("sealed:1:pw"),
+		// The redaction sentinel is what a READ hands back, and handing it
+		// straight on must not be a refusal.
+		TotpRef: secret(corekinds.Redacted),
+	}, corekinds.DecodeCredential)
+
+	roundTrip(t, "function", &corekinds.Function{
+		Version:    str("v1alpha1"),
+		Name:       str("websearch"),
+		Authority:  str("firecrawl.substrate.reamde.dev"),
+		Definition: map[string]any{"runtime": "python"},
+	}, corekinds.DecodeFunction)
+
+	roundTrip(t, "kind", &corekinds.Kind{
+		Name:       str("task"),
+		Authority:  str("tasks.substrate.reamde.dev"),
+		Version:    str("v1alpha1"),
+		Plural:     str("tasks"),
+		Source:     ptr(corekinds.KindSourceInstalled),
+		Definition: map[string]any{"names": map[string]any{"singular": "task"}},
+	}, corekinds.DecodeKind)
+
+	roundTrip(t, "llmmessage", &corekinds.LLMMessage{
+		Role:       str("assistant"),
+		Content:    str("done"),
+		Turn:       i64(3),
+		ToolCalls:  []any{map[string]any{"id": "c1", "name": "query", "arguments": "{}"}},
+		ToolCallId: str("c1"),
+		Tool:       str("query"),
+		Ok:         boolean(true),
+		Thread:     corekinds.Reference{Kind: "core.substrate.reamde.dev/llmthread", ID: "t1"},
+	}, corekinds.DecodeLLMMessage)
+
+	roundTrip(t, "llmprovider", &corekinds.LLMProvider{
+		Name:    str("the host gateway"),
+		Wire:    ptr(corekinds.LLMProviderWireOpenai),
+		BaseURL: str("https://example.com/v1"),
+		ApiKey:  secret("sealed:1:key"),
+		Headers: []corekinds.LLMProviderHeaders{
+			{Name: str("x-attribution"), Value: str("substrate")},
+			// A field left absent inside a repeated object stays absent.
+			{Name: str("x-tenant")},
+		},
+		Defaults: &corekinds.LLMProviderDefaults{Temperature: f64(0.2), MaxTokens: i64(2048)},
+		Pricing: []corekinds.LLMProviderPricing{
+			{Model: str("gpt-5"), InputPer1M: f64(1.25), OutputPer1M: f64(10)},
+		},
+	}, corekinds.DecodeLLMProvider)
+
+	roundTrip(t, "llmthread", &corekinds.LLMThread{
+		Agent:            corekinds.Reference{Kind: "core.substrate.reamde.dev/agent", ID: "core.substrate.reamde.dev/assistant"},
+		Provider:         str("default"),
+		Model:            str("gpt-5"),
+		Mode:             str("chat"),
+		Status:           str("succeeded"),
+		AgentDepth:       i64(0),
+		Turns:            i64(4),
+		ToolCalls:        i64(2),
+		PromptTokens:     i64(1200),
+		CompletionTokens: i64(300),
+		TotalTokens:      i64(1500),
+		CostUSD:          f64(0.0042),
+		StartedAt:        str(testInstant),
+		FinishedAt:       str("2026-08-14T09:42:00Z"),
+		Parent:           &corekinds.Reference{Kind: "core.substrate.reamde.dev/llmthread", ID: "t0"},
+	}, corekinds.DecodeLLMThread)
+
+	roundTrip(t, "propertytype", &corekinds.PropertyType{
+		Version:    str("v1alpha1"),
+		Name:       str("asin"),
+		Authority:  str("shopping.substrate.reamde.dev"),
+		Base:       str("string"),
+		Definition: map[string]any{"base": "string", "pattern": "^[A-Z0-9]{10}$"},
+	}, corekinds.DecodePropertyType)
+
+	roundTrip(t, "recordmapping", &corekinds.RecordMapping{
+		Version:    str("v1alpha1"),
+		Name:       str("messagethread"),
+		Authority:  str("mail.substrate.reamde.dev"),
+		From:       str("mail.substrate.reamde.dev/message"),
+		To:         str("mail.substrate.reamde.dev/thread"),
+		Edge:       str("thread"),
+		Definition: map[string]any{"edge": "thread"},
+	}, corekinds.DecodeRecordMapping)
+
+	roundTrip(t, "recordmerge", &corekinds.RecordMerge{
+		Moved: map[string]any{"tasks/a": []any{"tasks/b"}},
+	}, corekinds.DecodeRecordMerge)
+
+	roundTrip(t, "recordmergerequest", &corekinds.RecordMergeRequest{
+		Rationale: str("same person, two rows"),
+		Evidence:  map[string]any{"email": "ada@example.com"},
+		Decision:  ptr(corekinds.RecordMergeRequestDecisionAccepted),
+		DecidedAt: str(testInstant),
+	}, corekinds.DecodeRecordMergeRequest)
+
+	roundTrip(t, "recordpatchrequest", &corekinds.RecordPatchRequest{
+		Op:            ptr(corekinds.RecordPatchRequestOpPatch),
+		TargetKind:    str("tasks.substrate.reamde.dev/task"),
+		TargetId:      str("t-1"),
+		TargetVersion: i64(7),
+		Diff:          map[string]any{"properties": map[string]any{"title": "renamed"}},
+		Rationale:     str("the title was wrong"),
+		Decision:      ptr(corekinds.RecordPatchRequestDecisionProposed),
+	}, corekinds.DecodeRecordPatchRequest)
+
+	roundTrip(t, "recordsplit", &corekinds.RecordSplit{
+		Result: []any{map[string]any{"kind": "tasks.substrate.reamde.dev/task", "id": "t-2"}},
+	}, corekinds.DecodeRecordSplit)
+
+	roundTrip(t, "recoverykey", &corekinds.RecoveryKey{
+		Algorithm: str("age-x25519"),
+		PublicKey: str("age1exampleexampleexample"),
+		SealedKey: str("sealed"),
+	}, corekinds.DecodeRecoveryKey)
+
+	roundTrip(t, "repository", &corekinds.Repository{
+		Name:      str("ada"),
+		Lifecycle: ptr(corekinds.RepositoryLifecycleActive),
+	}, corekinds.DecodeRepository)
+
+	roundTrip(t, "run", &corekinds.Run{
+		Trigger:    str("core.substrate.reamde.dev/nightly"),
+		Callable:   str("function:sync"),
+		Mode:       str("schedule"),
+		Seq:        i64(12),
+		FireId:     str("f-1"),
+		Record:     str("tasks.substrate.reamde.dev/task/t-1"),
+		Status:     str("succeeded"),
+		Attempt:    i64(1),
+		StartedAt:  str(testInstant),
+		FinishedAt: str("2026-08-14T09:41:03Z"),
+		Effects:    map[string]any{"put": int64(2)},
+		Pages:      i64(1),
+	}, corekinds.DecodeRun)
+
+	roundTrip(t, "token", &corekinds.Token{
+		Label:     str("laptop"),
+		Hash:      digest(testDigest),
+		ExpiresAt: str(testInstant),
+	}, corekinds.DecodeToken)
+
+	roundTrip(t, "trait", &corekinds.Trait{
+		Version:    str("v1alpha1"),
+		Name:       str("temporal"),
+		Authority:  str("core.substrate.reamde.dev"),
+		Definition: map[string]any{"oneOf": map[string]any{"point": map[string]any{"at": "datetime"}}},
+	}, corekinds.DecodeTrait)
+
+	roundTrip(t, "trigger", &corekinds.Trigger{
+		Enabled:  boolean(true),
+		Source:   map[string]any{"schedule": "0 3 * * *"},
+		Callable: &corekinds.Reference{Kind: "core.substrate.reamde.dev/function", ID: "core.substrate.reamde.dev/sync"},
+	}, corekinds.DecodeTrigger)
+}
+
+// TestNullIsAbsence pins the dialect's delete marker: a null in the map decodes
+// as absence, so a round trip through a read that carried one does not
+// materialize a value.
+func TestNullIsAbsence(t *testing.T) {
+	got, problems := corekinds.DecodeBlob(map[string]any{"name": nil, "size": nil})
+	if len(problems) > 0 {
+		t.Fatalf("a null is a delete marker, not a problem: %v", problems)
+	}
+	if got.Name != nil || got.Size != nil {
+		t.Errorf("a null decoded as a value: %+v", got)
+	}
+}
+
+// TestDecodeRefuses is the other half of Decode: what it will not admit. Every
+// case here is a row the generated types must keep out of a typed field.
+func TestDecodeRefuses(t *testing.T) {
+	cases := map[string]map[string]any{
+		"an undeclared key":       {"nope": "x"},
+		"a number where a string": {"name": 4},
+		"a string where an int":   {"size": "4096"},
+		"a fractional int":        {"size": 4.5},
+		"a state outside its set": {"status": "elsewhere"},
+	}
+	for name, props := range cases {
+		t.Run(name, func(t *testing.T) {
+			if got, problems := corekinds.DecodeBlob(props); len(problems) == 0 {
+				t.Errorf("admitted %v as %+v", props, got)
+			}
+		})
+	}
+	// A required property left absent, and a bound broken: two kinds of refusal
+	// the blob declaration has no room for.
+	if _, problems := corekinds.DecodeLLMMessage(map[string]any{"role": "user"}); len(problems) == 0 {
+		t.Error("a missing required reference was admitted")
+	}
+	if _, problems := corekinds.DecodeLLMProvider(map[string]any{
+		"defaults": map[string]any{"temperature": 9.0},
+	}); len(problems) == 0 {
+		t.Error("a temperature outside the declared range was admitted")
+	}
+}
+
+// TestDecodeReadsBackWhatStorageWrote holds the decoder to the spellings a value
+// arrives in: jsonb reads a number back as float64, and refusing that would
+// refuse every row that has been through the database.
+func TestDecodeReadsBackWhatStorageWrote(t *testing.T) {
+	got, problems := corekinds.DecodeBlob(map[string]any{"size": float64(4096)})
+	if len(problems) > 0 {
+		t.Fatalf("float64 from jsonb: %v", problems)
+	}
+	if got.Size == nil || *got.Size != 4096 {
+		t.Errorf("size decoded as %v", got.Size)
+	}
+}
+
+func ptr[T any](v T) *T { return &v }
+
+func digest(s string) *corekinds.Digest {
+	d := corekinds.Digest(s)
+	return &d
+}
