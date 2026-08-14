@@ -39,7 +39,7 @@
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-hook-form": "^7.85.0",
-    "react-resizable-panels": "^2.1.9",
+    "react-resizable-panels": "^4.12.2",
     "shiki": "^4.4.3",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4",
