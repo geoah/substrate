@@ -7,6 +7,7 @@ package api
 import (
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -307,16 +308,95 @@ func (h *handler) mountResources(r chi.Router) {
 	}
 }
 
-// spaHandler serves the built web app with an index.html fallback so
-// client-side routes deep-link correctly.
+// assetPrefix is where the console's build puts every content-hashed file, so
+// it is both the one URL space that may be cached forever and the one that must
+// never fall back to index.html.
+const assetPrefix = "/assets/"
+
+// assetExts are the extensions a MISSING path outside /assets/ must still 404
+// on: the browser asked for code, and HTML is not a worse-shaped answer to that
+// but an unrelated one ("'text/html' is not a valid JavaScript MIME type"
+// instead of "404"). The set is deliberately narrow, both ways. A console
+// route's last segment legitimately carries a dot (a kind reference,
+// `/kinds/people.substrate.reamde.dev`), so a dot on its own may never be read
+// as an extension; and a non-API path that ends `.json` is served to the
+// console today (a wrong METHOD on `/.well-known/substrate/server.json` falls
+// through here), so nothing but code belongs in the set.
+var assetExts = map[string]bool{
+	".js": true, ".mjs": true, ".cjs": true, ".css": true,
+	".map": true, ".wasm": true,
+}
+
+const (
+	// cacheImmutable is for the content-hashed files alone: the URL names that
+	// exact body, so a new build is a new URL rather than a changed one.
+	cacheImmutable = "public, max-age=31536000, immutable"
+	// cacheNever is for index.html and every fallback of it. `no-cache` alone is
+	// not enough: it still permits a CONDITIONAL reuse, and ServeFile's
+	// Last-Modified has one-second resolution, so an index.html replaced within
+	// the same second answers 304 and the tab keeps the dead chunk names this
+	// handler exists to stop serving.
+	cacheNever = "no-store, no-cache"
+)
+
+// spaHandler serves the built web app: a real file as itself, and any other
+// path as index.html so client-side routes deep-link.
+//
+// A path that names a static asset is the ONE thing the fallback does not
+// cover. A tab left open across a rebuild asks for the chunk hashes it was
+// built with, and those files are gone: answering them with index.html turns a
+// plain 404 into a MIME-type parse error the app cannot report on, which is
+// exactly how the console's lazy YAML lens used to fail after a deploy.
 func spaHandler(dir string) http.HandlerFunc {
-	fs := http.FileServer(http.Dir(dir))
+	root := filepath.Clean(dir)
+	if abs, err := filepath.Abs(root); err == nil {
+		root = abs
+	}
+	index := filepath.Join(root, "index.html")
 	return func(w http.ResponseWriter, r *http.Request) {
-		path := filepath.Join(dir, filepath.Clean(strings.TrimPrefix(r.URL.Path, "/")))
-		if info, err := os.Stat(path); err != nil || info.IsDir() {
-			http.ServeFile(w, r, filepath.Join(dir, "index.html"))
+		// A URL path never legitimately carries a backslash, and path.Clean does
+		// not read one as a separator: left in, it reaches filepath as one on the
+		// platforms where it IS one, and `/..\..\x.js` walks out of the directory
+		// before the cleaning below has seen a thing.
+		if strings.Contains(r.URL.Path, `\`) {
+			http.NotFound(w, r)
 			return
 		}
-		fs.ServeHTTP(w, r)
+		// ONE canonical path for both the stat and the serve. The two used to
+		// disagree (a cleaned filesystem path decided, the raw URL was served),
+		// and disagreeing decisions is how a handler answers about one file
+		// while serving another.
+		rel := path.Clean("/" + strings.TrimPrefix(r.URL.Path, "/"))
+		// Confinement is checked BEFORE the stat, not left to ServeFile: an
+		// answer that differs for a file outside the directory is an existence
+		// oracle over the whole filesystem even when no byte of it is served.
+		// filepath.IsLocal is the guard the scanner also credits: the cleaned
+		// relative path may not escape, be absolute, or be empty.
+		if rel != "/" && !filepath.IsLocal(strings.TrimPrefix(rel, "/")) {
+			http.NotFound(w, r)
+			return
+		}
+		file := filepath.Join(root, filepath.FromSlash(rel))
+		if file != root && !strings.HasPrefix(file, root+string(filepath.Separator)) {
+			http.NotFound(w, r)
+			return
+		}
+		info, err := os.Stat(file)
+		switch {
+		case err == nil && !info.IsDir():
+			if strings.HasPrefix(rel, assetPrefix) {
+				w.Header().Set("Cache-Control", cacheImmutable)
+			} else {
+				w.Header().Set("Cache-Control", cacheNever)
+			}
+			http.ServeFile(w, r, file)
+		case strings.HasPrefix(rel, assetPrefix) || assetExts[strings.ToLower(path.Ext(rel))]:
+			http.NotFound(w, r)
+		default:
+			// index.html names the current chunk hashes, so a stored copy is a tab
+			// that cannot learn about a deploy.
+			w.Header().Set("Cache-Control", cacheNever)
+			http.ServeFile(w, r, index)
+		}
 	}
 }

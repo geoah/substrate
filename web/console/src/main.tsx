@@ -9,7 +9,13 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toast"
 import { setUnauthorizedHandler } from "@/lib/api/session"
 import { ApiError } from "@/lib/api/types"
+import { installChunkReload } from "@/lib/chunk-reload"
 import { router } from "@/router"
+
+// A tab open across a rebuild holds the old chunk hashes, so its first lazy
+// import (the YAML lens, shiki) asks for a file that is gone. Only a reload can
+// learn the new names; chunk-reload.ts takes exactly one.
+installChunkReload()
 
 // A 401 anywhere drops the session (session.ts does that part); this routes
 // what's left of the page to the login door.

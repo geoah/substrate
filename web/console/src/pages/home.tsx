@@ -1,7 +1,8 @@
 /** Overview (`/`): "is everything okay, what needs me?" — three zones, every
  * tile a door, nothing decorative (IA ticket 003; charts deferred). Zone 1
  * answers what just happened (the changelog's feed, 60s refetch, no watch), zone 2
- * what needs a verdict (the queue's evidence cards), zone 3 what the substrate
+ * what needs a verdict (the merge queue's evidence cards and the pending
+ * changes beneath them), zone 3 what the substrate
  * holds (per-kind counts behind a concurrency gate, the repository's own
  * authorities only — the machinery is in the nav, not on the glance). Each
  * zone loads, empties and fails on its own — one slow surface never blanks
@@ -10,6 +11,7 @@
 import { useQuery } from "@tanstack/react-query"
 
 import { ActivityCard } from "@/components/home/activity-card"
+import { ChangeRequestsCard } from "@/components/home/change-requests-card"
 import { DataCountsZone } from "@/components/home/data-counts"
 import { MergeRequestsCard } from "@/components/home/merge-requests-card"
 import { ZoneError } from "@/components/home/zone"
@@ -28,20 +30,23 @@ export function HomePage() {
       <div>
         <h1 className="text-lg font-semibold">Overview</h1>
         <p className="text-xs text-muted-foreground">
-          The latest activity, pending merge requests and what the substrate
+          The latest activity, what waits on a verdict and what the substrate
           holds — every tile opens its surface.
         </p>
       </div>
 
-      {/* The two cards share the row's height — a shorter card stretches so
+      {/* The cards share the row's height — a shorter card stretches so
           the blank sits inside its border, deliberate, not a dead zone
-          between zones (codex finding, 2026-08-06). */}
+          between zones (codex finding, 2026-08-06). The verdict zone is one
+          column of two queues: both ask the same question of the reader (is
+          this right?) and differ only in what they would write. */}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="min-w-0 lg:col-span-2">
           <ActivityCard kinds={kinds} />
         </div>
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-col gap-4">
           <MergeRequestsCard kinds={kinds} />
+          <ChangeRequestsCard kinds={kinds} />
         </div>
       </div>
 

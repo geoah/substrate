@@ -20,6 +20,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { CR_PLURAL } from "@/lib/api/changerequests"
 import { CORE_AUTHORITY } from "@/lib/api/http"
 import { MR_PLURAL } from "@/lib/api/mergerequests"
 
@@ -69,6 +70,21 @@ function crumbsFor(pathname: string): Crumb[] {
       {
         label: MR_PLURAL,
         to: `/data/${CORE_AUTHORITY}/${MR_PLURAL}`,
+        mono: true,
+      },
+      { label: id, mono: true },
+    ]
+  }
+  if (pathname.startsWith("/change-requests/")) {
+    const id = decodeURIComponent(pathname.slice("/change-requests/".length))
+    // Same shape as the merge-request crumbs: the queue is the kind's own
+    // collection, so the parent crumb walks back into the data tree.
+    return [
+      { label: "Data" },
+      { label: CORE_AUTHORITY, to: `/data/${CORE_AUTHORITY}`, mono: true },
+      {
+        label: CR_PLURAL,
+        to: `/data/${CORE_AUTHORITY}/${CR_PLURAL}`,
         mono: true,
       },
       { label: id, mono: true },

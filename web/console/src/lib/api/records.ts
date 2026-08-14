@@ -223,6 +223,17 @@ export function putRecord(
   )
 }
 
+/** A patch write body (`substrate.PatchInput`). `ifVersion` is the CAS
+ * precondition: the version the writer READ, refused with `conflict` when the
+ * record has moved since. Some transitions require it (deciding a change
+ * request is one), so it is part of the shape rather than a second door. */
+export interface RecordPatch {
+  properties?: Record<string, unknown>
+  labels?: Record<string, unknown>
+  annotations?: Record<string, unknown>
+  ifVersion?: number
+}
+
 /** Patch one record in place: `PATCH /{authority}/{plural}/{id}`. Maps merge
  * key-wise (a null value deletes the key); omitted fields are untouched — so a
  * blank secret input simply isn't sent and the sealed value stands. */
@@ -230,11 +241,7 @@ export function patchRecord(
   authority: string,
   plural: string,
   id: string,
-  patch: {
-    properties?: Record<string, unknown>
-    labels?: Record<string, unknown>
-    annotations?: Record<string, unknown>
-  }
+  patch: RecordPatch
 ): Promise<SubstrateRecord> {
   return request<SubstrateRecord>(
     "PATCH",
