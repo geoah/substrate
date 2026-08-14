@@ -437,6 +437,42 @@ describe("reference fields", () => {
     })
   })
 
+  it("REFUSES a value that reads two ways, naming both readings", () => {
+    // Under a pin, a value that parses as a path whose kind is NOT the pin is
+    // a pointer at that kind, or an id the pin would complete: two records,
+    // and picking one silently is how a pointer ends up at the wrong row.
+    const fields = fieldsOf()
+    const values = initialValues(fields)
+    values.owner = {
+      kind: "people.substrate.reamde.dev/person",
+      id: "foo.bar/baz/qux",
+    }
+    const errors = validate(fields, values, "create")
+    expect(errors.map((e) => e.name)).toEqual(["owner"])
+    expect(errors[0].message).toContain("ambiguous")
+    expect(errors[0].message).toContain("foo.bar/baz")
+    expect(toProperties(fields, values)).not.toHaveProperty("owner")
+  })
+
+  it("refuses an id of nothing, and keeps a slash-bearing short form", () => {
+    const fields = fieldsOf()
+    const values = initialValues(fields)
+    values.owner = { kind: "people.substrate.reamde.dev/person", id: "target/" }
+    expect(validate(fields, values, "create")[0].message).toMatch(
+      /has an empty segment/
+    )
+    // A slash-bearing value that parses as NO path is the ordinary short form,
+    // and the pin completes it. This is what a tool entry writes.
+    values.owner = {
+      kind: "people.substrate.reamde.dev/person",
+      id: "web.example.com/page",
+    }
+    expect(validate(fields, values, "create")).toEqual([])
+    expect(toProperties(fields, values).owner).toBe(
+      "people.substrate.reamde.dev/person/web.example.com/page"
+    )
+  })
+
   it("submits the two halves as ONE path, and a pasted path unchanged", () => {
     const fields = fieldsOf()
     const values = initialValues(fields)

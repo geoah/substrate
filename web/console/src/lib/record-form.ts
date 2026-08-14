@@ -29,7 +29,7 @@
  *   sends `null` to delete the key; a merely-blank field is left untouched. */
 
 import type { SubstrateRecord, EnumValue, KindInfo } from "@/lib/api/types"
-import { recordPath, splitRecordPath } from "@/lib/record-path"
+import { coerceReferencePath, splitRecordPath } from "@/lib/record-path"
 import type { EditPath as DocumentPath } from "@/lib/record-yaml"
 import {
   TO_ANY,
@@ -378,14 +378,10 @@ export function toFieldValue(field: FormField, value: FormValue): FieldValue {
 function refValue(ref: RefValue): FieldValue {
   const id = ref.id.trim()
   if (!id) return {}
-  if (splitRecordPath(id)) return { value: id }
-  const kind = ref.kind.trim()
-  if (!kind) {
-    return {
-      error: `a reference to any kind needs a full "<kind>/<id>" path, not the bare id ${JSON.stringify(id)}`,
-    }
-  }
-  return { value: recordPath(kind, id) }
+  // The write path's own decision, mirrored once: whether this is a path, a
+  // short form the pin completes, or a value that reads two ways and is
+  // refused naming both.
+  return coerceReferencePath(ref.kind.trim(), id)
 }
 
 /** One pointer, seeded from its stored PATH. A stored value is always a full

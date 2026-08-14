@@ -20,7 +20,7 @@
 
 import { parseEnumValues, type EnumValue, type KindInfo } from "@/lib/api/types"
 import { temporalProperties } from "@/lib/definition"
-import { recordPath, splitRecordPath } from "@/lib/record-path"
+import { coerceReferencePath, recordPath } from "@/lib/record-path"
 
 /** The `kind:` pin a reference wears when it is pinned to no kind at all. */
 export const TO_ANY = "any"
@@ -487,20 +487,17 @@ export function checkItem(spec: PropSpec, value: unknown): string | undefined {
     return undefined
   }
 
-  // The substrate's own three refusals, verbatim (engine's coerceReference): a
-  // reference is the referent's record PATH, and a bare id is the authored
-  // short form only where the declaration pins the kind that completes it.
+  // The substrate's own refusals, through the one mirror of its coercion
+  // (`record-path.coerceReferencePath`): a reference is the referent's record
+  // PATH, a bare id is the authored short form only where the declaration pins
+  // the kind that completes it, and a value that reads two ways is refused
+  // naming both rather than resolved by precedence.
   if (spec.kind === "reference") {
     if (typeof value !== "string") {
       return 'a reference is a "<kind>/<id>" path string'
     }
-    const path = value.trim()
-    if (!path) return "a reference needs an id"
-    if (splitRecordPath(path)) return undefined
-    if (!spec.to || spec.to === TO_ANY) {
-      return `a reference to any kind needs a full "<kind>/<id>" path, not the bare id ${JSON.stringify(path)}`
-    }
-    return undefined
+    const pin = spec.to && spec.to !== TO_ANY ? spec.to : ""
+    return coerceReferencePath(pin, value.trim()).error
   }
 
   if (isBooleanKind(spec.kind)) {

@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest"
 
-import { recordPath, splitRecordPath } from "./record-path"
+import { coerceReferencePath, recordPath, splitRecordPath } from "./record-path"
 
 describe("splitRecordPath", () => {
   it("splits a qualified kind's path on the kind grammar, not a registry", () => {
@@ -53,5 +53,83 @@ describe("splitRecordPath", () => {
       const parts = splitRecordPath(path)
       expect(parts && recordPath(parts.kind, parts.id)).toBe(path)
     }
+  })
+})
+
+/** The console's half of the write path's own coercion
+ * (`engine.coerceReferencePath`). The cases are the ones the hardening added:
+ * a value that reads two ways is refused naming BOTH, an empty-segment shape
+ * names no record, and a slash-bearing value that does not parse as a path is
+ * still the ordinary short form, which is what keeps an identity spellable. */
+describe("coerceReferencePath", () => {
+  const FUNCTION = "core.substrate.reamde.dev/function"
+  const KIND = "core.substrate.reamde.dev/kind"
+
+  it("leaves a full path under its own pin alone", () => {
+    expect(
+      coerceReferencePath(
+        FUNCTION,
+        `${FUNCTION}/core.substrate.reamde.dev/graphql`
+      )
+    ).toEqual({ value: `${FUNCTION}/core.substrate.reamde.dev/graphql` })
+  })
+
+  it("completes a bare id from the pin", () => {
+    expect(
+      coerceReferencePath("core.substrate.reamde.dev/llmprovider", "claude")
+    ).toEqual({
+      value: "core.substrate.reamde.dev/llmprovider/claude",
+    })
+  })
+
+  it("keeps a slash-bearing SHORT FORM, because it parses as no path", () => {
+    // `core.substrate.reamde.dev/graphql` has a dotted first segment and
+    // nothing left after its kind, so it cannot be read as a path: it is the
+    // identity, and the pin completes it. This is what a tool entry writes.
+    expect(
+      coerceReferencePath(FUNCTION, "core.substrate.reamde.dev/graphql")
+    ).toEqual({ value: `${FUNCTION}/core.substrate.reamde.dev/graphql` })
+    expect(coerceReferencePath(KIND, "web.example.com/page")).toEqual({
+      value: `${KIND}/web.example.com/page`,
+    })
+  })
+
+  it("REFUSES a value that reads two ways, naming both readings", () => {
+    const problem = coerceReferencePath("p/target", "foo.bar/baz/qux")
+    expect(problem.value).toBeUndefined()
+    expect(problem.error).toContain("ambiguous")
+    // Both ends, so either can be the one to change.
+    expect(problem.error).toContain("foo.bar/baz")
+    expect(problem.error).toContain("p/target/foo.bar/baz/qux")
+  })
+
+  it("refuses an empty-segment shape, which names no record", () => {
+    // Neither parses as a path, so each is read as a short form, and a short
+    // form with a slash on an end is an id of nothing.
+    for (const bad of ["target/", "/x"]) {
+      expect(coerceReferencePath(FUNCTION, bad).value).toBeUndefined()
+      expect(coerceReferencePath(FUNCTION, bad).error).toMatch(
+        /has an empty segment/
+      )
+    }
+    // Under the pin it parses as, the empty half is in the ID.
+    expect(coerceReferencePath("a", "a//b").error).toMatch(/empty id segment/)
+    // Under any OTHER pin it is the ambiguous case, exactly as the engine
+    // reads it: a pointer at `a`, or an id the pin would complete.
+    expect(coerceReferencePath(FUNCTION, "a//b").error).toMatch(/ambiguous/)
+  })
+
+  it("unpinned, takes a full path and nothing else", () => {
+    expect(coerceReferencePath("", "note/abc")).toEqual({ value: "note/abc" })
+    // A kind identity leaves nothing for an id, so it names no record.
+    expect(coerceReferencePath("", "foo.bar/baz").error).toMatch(/is not one/)
+    expect(coerceReferencePath("", "abc").error).toMatch(/is not one/)
+    expect(coerceReferencePath("", "note//abc").error).toMatch(/empty id/)
+  })
+
+  it("says an empty value needs an id", () => {
+    expect(coerceReferencePath(FUNCTION, "").error).toBe(
+      "a reference needs an id"
+    )
   })
 })
