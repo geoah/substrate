@@ -1,12 +1,15 @@
 package engine
 
-// The declaration-planting seam, for the tests that have to stand a repository
-// up as an OLDER binary's projection left it: declaration rows in the dialect-1
-// shape, their authored content inside a `definition` blob with the projected
-// mirrors beside it. No live path writes that state — this binary's projection
-// writes the typed shape, and its write path REFUSES a `definition` property
-// because no core declaration declares one any more — so the seam writes through
-// the fold, exactly as the rung does.
+// The seams the vocabulary tests need and no public door offers, compiled into
+// the test binary alone.
+//
+// The declaration-planting pair stands a repository up as an OLDER binary's
+// projection left it: declaration rows in the dialect-1 shape, their authored
+// content inside a `definition` blob with the projected mirrors beside it. No
+// live path writes that state — this binary's projection writes the typed shape,
+// and its write path REFUSES a `definition` property because no core declaration
+// declares one any more — so the seam writes through the fold, exactly as the
+// rung does.
 
 import (
 	"context"
@@ -108,4 +111,26 @@ func (ds *dataset) DialectOneProps(kindIdent, id string, props map[string]any) m
 func asAnyList(v any) []any {
 	out, _ := v.([]any)
 	return out
+}
+
+// ApplyVocabularyWithRemoval admits upserts AND one removal as a single
+// admission unit. No door outside the engine does: /vocabulary/apply only
+// upserts, the generic delete only removes, and a bundle re-apply drops a
+// declaration only by leaving it out of a closure. It is the one shape that can
+// write a declaration row of a category the same batch stops declaring, which is
+// what the final dropped-kind guard is there for. removeShort is the manifest
+// short name ("kind"), as deleteVocabularyRecord builds it.
+func (ds *dataset) ApplyVocabularyWithRemoval(ctx context.Context, actor substrate.Actor, docs []map[string]any, removeShort, removeID, removeAuthority string) error {
+	parsed, err := parseVocabularyDocs(docs)
+	if err != nil {
+		return err
+	}
+	_, err = ds.applyVocabularyBatch(ctx, actor, vocabularyBatch{
+		docs: parsed,
+		deletes: []vocabulary.Document{{
+			Kind: removeShort, ID: removeID,
+			Data: map[string]any{"authority": removeAuthority},
+		}},
+	})
+	return err
 }

@@ -312,6 +312,24 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 				return err
 			}
 		}
+		// THE DROPPED-KIND GUARD AGAIN, with every write this transaction makes
+		// behind it. The count above is the transaction's opening reading, and
+		// both writes below it CREATE rows: `extra` puts a bundle's data
+		// documents against the still-live pre-commit registry (a widget row for
+		// a kind the same upgrade removes), and the projection writes declaration
+		// rows of the meta-kinds (a declaration of a category the same batch
+		// stops declaring). Either way the publish would leave a
+		// changelog-backed live row whose kind the registry it publishes cannot
+		// resolve, so the count that decides is the one taken LAST. It also
+		// covers whatever write is added to this transaction next.
+		final, err := droppedTypeGuards(t, st.droppedTypes)
+		if err != nil {
+			return err
+		}
+		if len(final) > 0 {
+			return fmt.Errorf("%w: this apply wrote rows of a kind it removes: %s",
+				substrate.ErrGuard, strings.Join(final, "; "))
+		}
 		return nil
 	})
 	if err != nil {
