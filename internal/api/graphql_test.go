@@ -216,6 +216,24 @@ func TestGraphQLNeedsAuth(t *testing.T) {
 	wantErrorCode(t, rec, http.StatusUnauthorized, codeAuth)
 }
 
+// The request's escape-hatch field is the GraphQL-over-HTTP spec's
+// `extensions` — a rename sweep once shipped it as `bundles`, which made the
+// strict decoder refuse every spec-compliant client that sent the real key.
+func TestGraphQLRequestExtensionsKeyIsSpelledExtensions(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+	rec := env.do(t, http.MethodPost, graphqlPath, tok, map[string]any{
+		"query": "{ __typename }", "extensions": map[string]any{"trace": true},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("spec `extensions` key refused: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = env.do(t, http.MethodPost, graphqlPath, tok, map[string]any{
+		"query": "{ __typename }", "bundles": map[string]any{},
+	})
+	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+}
+
 func TestGraphQLSchemaIsCachedPerRegistryFingerprint(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
