@@ -150,10 +150,15 @@ export function upgradableBundleCount(catalog: CatalogItem[]): number {
     .length
 }
 
-/** "v1alpha1 → v1alpha2", or just the target when the store held no version. */
+/** "v1alpha1 → v1alpha2", or just the one version when there is no motion to
+ * show: the store held none, or the AUTHORITY version did not move because
+ * what moved was a kind's own version or a kind the closure added. Both are
+ * legal upgrades (AGENTS.md), and "v1alpha1 → v1alpha1" would read as a bug. */
 export function upgradeMotion(upgrade: BundleUpgrade): string {
-  if (upgrade.from && upgrade.to) return `${upgrade.from} → ${upgrade.to}`
-  return upgrade.to ?? ""
+  if (upgrade.from && upgrade.to && upgrade.from !== upgrade.to) {
+    return `${upgrade.from} → ${upgrade.to}`
+  }
+  return upgrade.to ?? upgrade.from ?? ""
 }
 
 // ── requirements: what must be imported first ───────────────────────────────

@@ -97,6 +97,17 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 	for _, aname := range sortedKeys(byAuthority) {
 		gs, err := vocabulary.BuildAuthorities(byAuthority[aname], vocabulary.SourceInstalled)
 		if err != nil {
+			// A shipped closure that cannot even build is a blocker, not a
+			// failed READ: this preview is computed for every installed bundle
+			// on the catalog listing, and one malformed closure must not take
+			// the listing (and with it the console's whole Registry) down.
+			// Same posture as catalog.Load, which drops a broken directory
+			// with a warning rather than bricking the shipped set.
+			var ve *substrate.ValidationError
+			if errors.As(err, &ve) {
+				plan.Blockers = ve.Problems
+				return plan, nil
+			}
 			return plan, err
 		}
 		for _, g := range gs {
@@ -105,6 +116,14 @@ func (ds *dataset) PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[s
 			}
 			decls, err := authorityDeclarations(g)
 			if err != nil {
+				// Same posture as the build above: a declaration missing its
+				// version is the shipped closure's bug, reported, never a
+				// failed listing.
+				var ve *substrate.ValidationError
+				if errors.As(err, &ve) {
+					plan.Blockers = ve.Problems
+					return plan, nil
+				}
 				return plan, err
 			}
 			for _, d := range decls {

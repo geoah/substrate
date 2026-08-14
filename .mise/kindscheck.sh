@@ -27,6 +27,12 @@ if [ -z "$base_commit" ]; then
     base_commit="$(git merge-base HEAD "origin/${base_branch}")"
   elif git rev-parse --verify --quiet "${base_branch}" >/dev/null; then
     base_commit="$(git merge-base HEAD "${base_branch}")"
+  elif [ -n "${CI:-}" ]; then
+    # In CI this is the merge gate. A base it cannot resolve means the fetch
+    # above failed, and passing then would be a green job that checked
+    # nothing — the one outcome worse than a red one.
+    echo "kinds:check: cannot resolve base branch ${base_branch}; refusing to pass without checking" >&2
+    exit 1
   else
     echo "kinds:check: no base branch to diff against; skipping" >&2
     exit 0

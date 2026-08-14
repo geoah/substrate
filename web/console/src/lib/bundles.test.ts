@@ -284,6 +284,15 @@ describe("the upgrade preview helpers", () => {
     ).toBe("v1alpha1 → v1alpha2")
     expect(upgradeMotion({ available: true, to: "v1alpha2" })).toBe("v1alpha2")
   })
+
+  it("states one version when the authority did not move", () => {
+    // A kind's own bump, or a kind the closure ADDED, upgrades without the
+    // authority version moving — both legal. "v1alpha1 → v1alpha1" would read
+    // as a bug, so it collapses to the version itself.
+    expect(
+      upgradeMotion({ available: true, from: "v1alpha1", to: "v1alpha1" })
+    ).toBe("v1alpha1")
+  })
 })
 
 describe("presentAuthorities — what this repository already holds", () => {

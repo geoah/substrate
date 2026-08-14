@@ -114,6 +114,51 @@ func TestRemovedBundleDirectoryPasses(t *testing.T) {
 	}
 }
 
+const baseTriggers = `kind: core.substrate.reamde.dev/trigger
+metadata: {id: t.example.com/onthing}
+data:
+  properties:
+    callable: {kind: core.substrate.reamde.dev/function, id: t.example.com/f}
+    kinds: [t.example.com/thing]
+`
+
+func TestChangedDeliveryWiringNeedsAnAuthorityBump(t *testing.T) {
+	base := baseFiles()
+	base["t.example.com/triggers.yaml"] = baseTriggers
+	head := baseFiles()
+	head["t.example.com/triggers.yaml"] = strings.Replace(baseTriggers,
+		"    kinds: [t.example.com/thing]", "    kinds: [t.example.com/other]", 1)
+	got := diffTrees(writeTree(t, base), writeTree(t, head))
+	if len(got) != 1 || !strings.Contains(got[0], "delivery wiring") {
+		t.Fatalf("a changed trigger under an unmoved authority passes: %v", got)
+	}
+
+	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "v1alpha1", "v1alpha2", 1)
+	if got := diffTrees(writeTree(t, base), writeTree(t, head)); len(got) != 0 {
+		t.Fatalf("a bumped authority does not cover its wiring: %v", got)
+	}
+}
+
+func TestAddedAndRemovedWiringCountToo(t *testing.T) {
+	base := baseFiles()
+	head := baseFiles()
+	head["t.example.com/triggers.yaml"] = baseTriggers
+	if got := diffTrees(writeTree(t, base), writeTree(t, head)); len(got) != 1 {
+		t.Fatalf("added wiring under an unmoved authority passes: %v", got)
+	}
+	if got := diffTrees(writeTree(t, head), writeTree(t, base)); len(got) != 1 {
+		t.Fatalf("removed wiring under an unmoved authority passes: %v", got)
+	}
+}
+
+func TestUnchangedWiringPasses(t *testing.T) {
+	files := baseFiles()
+	files["t.example.com/triggers.yaml"] = baseTriggers
+	if got := diffTrees(writeTree(t, files), writeTree(t, files)); len(got) != 0 {
+		t.Fatalf("unchanged wiring violates: %v", got)
+	}
+}
+
 func TestVersionNeverMovesBackward(t *testing.T) {
 	head := baseFiles()
 	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "v1alpha1", "v1beta1", 1)

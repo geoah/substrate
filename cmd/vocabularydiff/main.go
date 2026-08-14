@@ -16,9 +16,13 @@
 //     must bump, so the whole-authority replace that prunes it reads as an
 //     upgrade. A directory deleted whole is a bundle leaving the catalog and
 //     needs nothing.
+//   - a DATA document changed, added or removed (triggers.yaml, the delivery
+//     wiring): the authority version must bump. Data documents carry no
+//     version of their own, and the install upserts them along with the
+//     closure — so without a bump the wiring change is one no repository is
+//     ever offered.
 //
-// Comment-only edits decode to identical data and pass free. Data documents
-// (triggers.yaml) are not declarations and are ignored.
+// Comment-only edits decode to identical data and pass free.
 //
 // Usage: vocabularydiff <base-kinds-dir> <head-kinds-dir>
 package main
@@ -87,10 +91,19 @@ type tree struct {
 	// dirs is the set of authority directories present, so a deletion can
 	// tell "declaration removed" from "bundle removed whole".
 	dirs map[string]bool
+	// dataDocs is each directory's delivery wiring (the non-declaration
+	// documents), keyed by directory then by document, so a wiring change
+	// can demand the authority bump that carries it to a repository.
+	dataDocs map[string]map[string]any
 }
 
 func loadTree(root string) (*tree, error) {
-	t := &tree{decls: map[string]decl{}, authorityVersion: map[string]string{}, dirs: map[string]bool{}}
+	t := &tree{
+		decls:            map[string]decl{},
+		authorityVersion: map[string]string{},
+		dirs:             map[string]bool{},
+		dataDocs:         map[string]map[string]any{},
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err
@@ -122,6 +135,7 @@ func loadTree(root string) (*tree, error) {
 }
 
 func (t *tree) loadFile(rel string, raw []byte) error {
+	dir := strings.SplitN(rel, string(filepath.Separator), 2)[0]
 	dec := yaml.NewDecoder(strings.NewReader(string(raw)))
 	for {
 		var m map[string]any
@@ -138,7 +152,16 @@ func (t *tree) loadFile(rel string, raw []byte) error {
 		ref, _ := m["kind"].(string)
 		refAuthority, name := vocabulary.SplitKindRef(ref)
 		if refAuthority != vocabulary.AuthorityCore || !vocabulary.VocabularyDocumentKind(name) {
-			continue // a data document (triggers.yaml), not a declaration
+			// A data document: the delivery wiring the install upserts beside
+			// the closure. It carries no version, so it is diffed WHOLE and
+			// held to its directory's authority version.
+			meta, _ := m["metadata"].(map[string]any)
+			id, _ := meta["id"].(string)
+			if t.dataDocs[dir] == nil {
+				t.dataDocs[dir] = map[string]any{}
+			}
+			t.dataDocs[dir][ref+"\x00"+id] = m["data"]
+			continue
 		}
 		meta, _ := m["metadata"].(map[string]any)
 		id, _ := meta["id"].(string)
@@ -209,6 +232,41 @@ func diffTrees(base, head *tree) []string {
 			out = append(out, fmt.Sprintf("%s: %s %s moved backward from %s to %s; a repository already at %s keeps it (never a downgrade), so the tree stops converging",
 				h.file, h.kind, h.id, bv, hv, bv))
 		}
+	}
+	return append(out, dataDocViolations(base, head)...)
+}
+
+// dataDocViolations holds a directory's DELIVERY WIRING to its authority
+// version. A trigger carries no version of its own and the install upserts it
+// with the closure, so a wiring change reaches a repository only as part of an
+// upgrade the authority version announces.
+func dataDocViolations(base, head *tree) []string {
+	var out []string
+	dirs := make([]string, 0, len(base.dataDocs))
+	for dir := range base.dataDocs {
+		dirs = append(dirs, dir)
+	}
+	for dir := range head.dataDocs {
+		if base.dataDocs[dir] == nil {
+			dirs = append(dirs, dir)
+		}
+	}
+	sort.Strings(dirs)
+	for _, dir := range dirs {
+		if !head.dirs[dir] {
+			continue // the bundle left the tree whole
+		}
+		if reflect.DeepEqual(base.dataDocs[dir], head.dataDocs[dir]) {
+			continue
+		}
+		// The directory IS the authority for the shipped tree (one authority
+		// per directory), so its bump is the one that carries the wiring.
+		bv, hv := base.authorityVersion[dir], head.authorityVersion[dir]
+		if hv == "" || vocabulary.CompareVersions(hv, bv) > 0 {
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s: the delivery wiring changed but authority %s stays at %s; bump the authority version, or no repository is ever offered the change",
+			dir, dir, bv))
 	}
 	return out
 }

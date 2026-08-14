@@ -22,6 +22,11 @@ const (
 	tasksAuthority = "tasks.substrate.reamde.dev"
 )
 
+// tasksRequires is what the tasks closure declares against: its assignee edge
+// lands on person, so people is imported first, exactly as the console would
+// have to.
+var tasksRequires = []string{"people.substrate.reamde.dev/people"}
+
 // movedTasksCatalog loads a catalog whose tasks closure is the shipped one
 // with each named file rewritten: binary N+1's tree, against a repository
 // binary N installed into.
@@ -68,9 +73,28 @@ func mustReplace(t *testing.T, doc, from, to string) string {
 	return strings.Replace(doc, from, to, 1)
 }
 
-func bumpTasksAuthority(t *testing.T, doc string) string {
+// shippedVersion is the tasks authority's version in the tree right now: the
+// tests bump PAST whatever it stands at, so a future bump of the shipped
+// closure never turns these into a puzzle.
+func shippedVersion(t *testing.T, c *catalog.Catalog) string {
 	t.Helper()
-	return mustReplace(t, doc, "version: v1alpha1", "version: v1alpha2")
+	b, ok := c.ByID(tasksBundleID)
+	if !ok {
+		t.Fatal("the shipped catalog no longer carries the tasks bundle")
+	}
+	if b.Version == "" {
+		t.Fatal("the shipped tasks authority declares no version")
+	}
+	return b.Version
+}
+
+// movedVersion is a version that outranks every spelling the tree could hold:
+// binary N+1, whatever N was.
+const movedVersion = "v99"
+
+func bumpTasksAuthority(t *testing.T, from, doc string) string {
+	t.Helper()
+	return mustReplace(t, doc, "version: "+from, "version: "+movedVersion)
 }
 
 func TestUpgradePreview(t *testing.T) {
@@ -87,7 +111,7 @@ func TestUpgradePreview(t *testing.T) {
 		t.Fatalf("an uninstalled bundle previews an upgrade: %+v", up)
 	}
 
-	importVocabulary(t, c, ds, tasksBundleID)
+	importVocabulary(t, c, ds, append(tasksRequires, tasksBundleID)...)
 
 	// Installed and current: the shipped closure moves nothing.
 	up, err = c.Upgrade(ctx, tasksBundleID, ds)
@@ -100,11 +124,12 @@ func TestUpgradePreview(t *testing.T) {
 
 	// Binary N+1 ships the authority a version ahead with a new optional
 	// property: an additive move, offered with no blockers.
+	shipped := shippedVersion(t, c)
 	moved := movedTasksCatalog(t, map[string]func(string) string{
-		"bundle.yaml": func(doc string) string { return bumpTasksAuthority(t, doc) },
+		"bundle.yaml": func(doc string) string { return bumpTasksAuthority(t, shipped, doc) },
 		"task.yaml": func(doc string) string {
 			return mustReplace(t, doc, "    status:",
-				"    priority:\n      type: string\n      description: how urgent this is\n    status:")
+				"    upgradeProbe:\n      type: string\n      description: a property this binary added\n    status:")
 		},
 	})
 	up, err = moved.Upgrade(ctx, tasksBundleID, ds)
@@ -114,8 +139,8 @@ func TestUpgradePreview(t *testing.T) {
 	if up == nil || !up.Available {
 		t.Fatalf("a moved closure previews no upgrade: %+v", up)
 	}
-	if up.From != "v1alpha1" || up.To != "v1alpha2" {
-		t.Errorf("authority motion reads %q -> %q, want v1alpha1 -> v1alpha2", up.From, up.To)
+	if up.From != shipped || up.To != movedVersion {
+		t.Errorf("authority motion reads %q -> %q, want %s -> %s", up.From, up.To, shipped, movedVersion)
 	}
 	if len(up.Blockers) != 0 {
 		t.Errorf("an additive upgrade carries blockers: %v", up.Blockers)
@@ -148,7 +173,7 @@ func TestUpgradePreviewReportsBlockers(t *testing.T) {
 	ds := newDataset(t)
 	c := loadCatalog(t)
 	ctx := context.Background()
-	importVocabulary(t, c, ds, tasksBundleID)
+	importVocabulary(t, c, ds, append(tasksRequires, tasksBundleID)...)
 
 	// A live row holding the very property binary N+1 drops.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
@@ -158,8 +183,9 @@ func TestUpgradePreviewReportsBlockers(t *testing.T) {
 		t.Fatalf("put the live task row: %v", err)
 	}
 
+	shipped := shippedVersion(t, c)
 	moved := movedTasksCatalog(t, map[string]func(string) string{
-		"bundle.yaml": func(doc string) string { return bumpTasksAuthority(t, doc) },
+		"bundle.yaml": func(doc string) string { return bumpTasksAuthority(t, shipped, doc) },
 		"task.yaml": func(doc string) string {
 			return mustReplace(t, doc,
 				"    url:\n      type: url\n      description: where this task lives outside the substrate\n", "")

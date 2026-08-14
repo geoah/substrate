@@ -33,12 +33,7 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, b := range h.catalog.Bundles() {
-			item, err := h.catalogItemFor(r.Context(), b, installed[b.ID])
-			if err != nil {
-				writeSubstrateError(w, err)
-				return
-			}
-			items = append(items, item)
+			items = append(items, h.catalogItemFor(r.Context(), b, installed[b.ID]))
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"catalog": items})
@@ -62,31 +57,30 @@ func (h *handler) getCatalogItem(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	item, err := h.catalogItemFor(r.Context(), b, installed[b.ID])
-	if err != nil {
-		writeSubstrateError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, item)
+	writeJSON(w, http.StatusOK, h.catalogItemFor(r.Context(), b, installed[b.ID]))
 }
 
 // catalogItemFor assembles one wire entry, asking the catalog for the upgrade
 // preview only where it can mean anything: an installed bundle. The preview is
 // attached only when it moves something, so an up-to-date bundle marshals
 // exactly as before.
-func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, installed bool) (catalogItem, error) {
+//
+// A preview that FAILS costs that entry its upgrade offer and nothing else.
+// The listing is what the console's Registry (and now its sidebar badge, on
+// every page) reads, so one unpreviewable closure must not blank it — the
+// same reason catalog.Load drops a broken directory instead of bricking the
+// shipped set. The offer is an extra; the listing is the promise.
+func (h *handler) catalogItemFor(ctx context.Context, b *catalog.Bundle, installed bool) catalogItem {
 	item := catalogItem{Bundle: b, Installed: installed}
 	if !installed {
-		return item, nil
+		return item
 	}
 	up, err := h.catalog.Upgrade(ctx, b.ID, DatasetFrom(ctx))
-	if err != nil {
-		return item, err
+	if err != nil || up == nil || !up.Available {
+		return item
 	}
-	if up != nil && up.Available {
-		item.Upgrade = up
-	}
-	return item, nil
+	item.Upgrade = up
+	return item
 }
 
 // postCatalogInstall applies a shipped bundle's closure into the caller's
