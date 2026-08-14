@@ -471,6 +471,14 @@ def main(input, host):
 	}); err == nil || !strings.Contains(err.Error(), "needs a diff") {
 		t.Fatalf("a diffless patch proposal: %v", err)
 	}
+	// And a delete carrying a diff is refused on PRESENCE, so an empty one is
+	// a body error here rather than a write the engine's admission parks on.
+	if _, _, err := ops.CallFunction(ctx, fn, map[string]any{
+		"id": "req-sdk-emptydel", "op": "delete", "target": task.ID,
+		"diff": map[string]any{},
+	}); err == nil || !strings.Contains(err.Error(), "proposes no values") {
+		t.Fatalf("a delete proposal carrying an empty diff: %v", err)
+	}
 }
 
 func TestSDKProposeGoRuntime(t *testing.T) {

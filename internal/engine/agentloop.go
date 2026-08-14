@@ -1055,6 +1055,13 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (s
 		if target == "" || targetKind == "" {
 			return toolError("propose delete needs kind + target — records are addressed by (kind, id)"), false
 		}
+		// A delete proposes no values. Dropping the model's diff silently would
+		// leave it believing a change it wrote is under review, so say so — on
+		// PRESENCE, not content, because an empty diff is a claim about the
+		// proposal too (and the engine's admission refuses it either way).
+		if raw, named := args["diff"]; named && raw != nil {
+			return toolError("propose delete proposes no values — drop the diff, or propose a patch"), false
+		}
 		ty, err := l.ds.resolveType(targetKind)
 		if err != nil {
 			return toolError(err.Error()), false

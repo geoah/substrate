@@ -511,7 +511,10 @@ class Effects:
         _need_kind("propose", target_kind)
         _need_id("propose", "targetId", target_id)
         if op == "delete":
-            if diff:
+            # Presence, not content: the engine's admission refuses ANY diff on a
+            # delete request, an empty one included, so staging {} here would only
+            # park the delivery later.
+            if diff is not None:
                 raise ValueError(
                     "effects.propose: op delete proposes no values — drop the diff or propose a patch")
         elif not diff:

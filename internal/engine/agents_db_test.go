@@ -1219,6 +1219,54 @@ func TestProposeRejectsMalformedDiffAtProposeTime(t *testing.T) {
 	}
 }
 
+func TestProposeDeleteRefusesADiff(t *testing.T) {
+	t.Parallel()
+	// A delete proposes no VALUES. The tool used to drop a supplied diff
+	// silently, leaving the model believing a change it wrote was under review;
+	// now it says so, and nothing lands — the same rule the engine's admission
+	// and the function SDK hold.
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: crewAuthority + "/widget", ID: "w-doomed", Properties: map[string]any{"name": "raw"},
+	}); err != nil {
+		t.Fatalf("put widget: %v", err)
+	}
+	fake.script("root",
+		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/widget","target":"w-doomed","diff":{"name":"why"},"rationale":"tidy"}`}}},
+		// An EMPTY diff is a claim about the proposal too: presence, not content.
+		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/widget","target":"w-doomed","diff":{},"rationale":"tidy"}`}}},
+		fakeTurn{calls: []fakeCall{{"propose", `{"op":"delete","kind":"crew.test.dev/widget","target":"w-doomed","rationale":"tidy"}`}}},
+		fakeTurn{content: "proposed the delete alone"},
+	)
+	res, err := ds.CallAgent(ctx, crewAuthority+"/classifier", "go")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	var refusals, ok int
+	for _, m := range threadMessages(t, ds, res.Thread) {
+		if m["role"] != "tool" {
+			continue
+		}
+		if m["ok"] == true {
+			ok++
+			continue
+		}
+		if !strings.Contains(fmt.Sprint(m["content"]), "proposes no values") {
+			t.Fatalf("a propose failed for another reason: %v", m["content"])
+		}
+		refusals++
+	}
+	if refusals != 2 || ok != 1 {
+		t.Fatalf("propose results: %d refused, %d ok — want 2 refused (a diff and an empty diff), 1 ok",
+			refusals, ok)
+	}
+	// Only the diffless delete landed.
+	if n := patchRequestCount(t, ds); n != 1 {
+		t.Fatalf("landed %d requests, want 1 (the diffless delete)", n)
+	}
+}
+
 func TestProposeCoercesBareDiffAndCreates(t *testing.T) {
 	t.Parallel()
 	// Issue 004 + 005: a BARE property map (a real model's shape) is coerced to

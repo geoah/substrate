@@ -787,7 +787,10 @@ func (e *Effects) Propose(p ProposeEffect) *Staged {
 		return e.fail(err)
 	}
 	if op == "delete" {
-		if len(p.Diff) > 0 {
+		// Presence, not content: the engine's admission refuses ANY diff on a
+		// delete request, an empty one included, so staging one here would only
+		// park the delivery later.
+		if p.Diff != nil {
 			return e.fail(fmt.Errorf("effects.propose: op delete proposes no values — drop the diff or propose a patch"))
 		}
 	} else if len(p.Diff) == 0 {

@@ -3,6 +3,7 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -230,6 +231,116 @@ func TestAPIProposalDiffAdmission(t *testing.T) {
 			},
 			names: "dueAt",
 		},
+		{
+			what: "a diff that is not an object",
+			in: substrate.PutInput{
+				Kind: requestKind, Edges: target,
+				Properties: map[string]any{"diff": "description: x"},
+			},
+			names: "the diff must be an object",
+		},
+		{
+			what: "a diff naming no property",
+			in: substrate.PutInput{
+				Kind: requestKind, Edges: target,
+				Properties: map[string]any{"diff": map[string]any{
+					"properties": map[string]any{}, "labels": map[string]any{"seen": true},
+				}},
+			},
+			names: "names no property to change",
+		},
+		{
+			what: "a delete carrying a diff",
+			in: substrate.PutInput{
+				Kind: requestKind, Edges: target,
+				Properties: map[string]any{
+					"op":   "delete",
+					"diff": map[string]any{"properties": map[string]any{"description": "why"}},
+				},
+			},
+			names: "op delete proposes no values",
+		},
+		{
+			// Presence, not content: an empty diff on a delete is still a claim
+			// about the proposal.
+			what: "a delete carrying an empty diff",
+			in: substrate.PutInput{
+				Kind: requestKind, Edges: target,
+				Properties: map[string]any{"op": "delete", "diff": map[string]any{}},
+			},
+			names: "op delete proposes no values",
+		},
+		{
+			what: "a delete naming several targets",
+			in: substrate.PutInput{
+				Kind: requestKind,
+				Edges: []substrate.EdgeInput{
+					{Rel: "target", To: substrate.EdgeRef{Kind: taskType, ID: task.ID}},
+					{Rel: "target", To: substrate.EdgeRef{Kind: taskType, ID: "t-other"}},
+				},
+				Properties: map[string]any{"op": "delete"},
+			},
+			names: "names ONE target",
+		},
+		{
+			// A create's target does not exist yet, so a target EDGE on one points
+			// at something else entirely.
+			what: "a create carrying a target edge",
+			in: substrate.PutInput{
+				Kind: requestKind, Edges: target,
+				Properties: map[string]any{
+					"op": "create", "targetKind": taskType, "targetId": "t-fresh",
+					"diff": map[string]any{"properties": map[string]any{"title": "new"}},
+				},
+			},
+			names: "never by a target edge",
+		},
+		{
+			// A create is create-if-absent: a precondition inside its diff would
+			// be admitted and then never enforced, so it is a patch key alone.
+			what: "a create diff naming ifVersion",
+			in: substrate.PutInput{
+				Kind: requestKind,
+				Properties: map[string]any{
+					"op": "create", "targetKind": taskType, "targetId": "t-precondition",
+					"diff": map[string]any{
+						"properties": map[string]any{"title": "guarded"}, "ifVersion": 0,
+					},
+				},
+			},
+			names: "unknown top-level key \"ifVersion\"",
+		},
+		{
+			// A TARGETLESS patch request is legal storage, but only as a diff:
+			// the shape holds even where no kind resolves to check the properties
+			// against.
+			what: "a targetless patch with an unknown envelope key",
+			in: substrate.PutInput{
+				Kind: requestKind,
+				Properties: map[string]any{"diff": map[string]any{
+					"properties": map[string]any{"description": "orphaned"}, "sideEffects": true,
+				}},
+			},
+			names: "unknown top-level key",
+		},
+		{
+			what: "a targetless patch whose envelope value is wrong-typed",
+			in: substrate.PutInput{
+				Kind: requestKind,
+				Properties: map[string]any{"diff": map[string]any{
+					"properties": map[string]any{"description": "orphaned"}, "labels": "seen",
+				}},
+			},
+			names: "the patch shape is invalid",
+		},
+		{
+			what: "a targetless patch naming no property",
+			in: substrate.PutInput{
+				Kind:       requestKind,
+				Properties: map[string]any{"diff": map[string]any{"properties": map[string]any{}}},
+			},
+			names: "names no property to change",
+		},
 	} {
 		if _, err := ds.Put(ctx, engram, c.in); err == nil {
 			t.Fatalf("%s: admitted", c.what)
@@ -256,6 +367,149 @@ func TestAPIProposalDiffAdmission(t *testing.T) {
 	}
 	if got := mustGet(t, ds, taskType, task.ID); got.Properties["description"] != "with a precondition" {
 		t.Fatalf("the patch did not land: %+v", got.Properties)
+	}
+}
+
+// A change request names ONE target. Two `target` entries in one write would
+// have the diff validated against the first kind and stored against the last —
+// the write loop keeps the last entry for a single-valued edge — which is how a
+// raw secret value would reach a stored request's json diff past the
+// sensitive-property check. Both doors refuse it, and nothing lands.
+func TestTwoTargetsSmuggleNothing(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+
+	// Two gauges: one where `apiKey` is an ordinary string (so a diff naming it
+	// validates), one where it is a SECRET (so a diff naming it must not be
+	// stored at all).
+	const gaugeAuthority = "gauge.example.com"
+	docs := []map[string]any{
+		vocabulary.AuthorityManifest(gaugeAuthority, ""),
+		vocabulary.KindManifest(gaugeAuthority, map[string]any{"singular": "safegauge", "plural": "safegauges"},
+			map[string]any{"properties": map[string]any{"apiKey": map[string]any{"type": "string"}}}),
+		vocabulary.KindManifest(gaugeAuthority, map[string]any{"singular": "secretgauge", "plural": "secretgauges"},
+			map[string]any{"properties": map[string]any{"apiKey": map[string]any{"type": "secret"}}}),
+	}
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+		t.Fatalf("install the gauge authority: %v", err)
+	}
+	safe := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: gaugeAuthority + "/safegauge", ID: "g-safe", Properties: map[string]any{"apiKey": "public"},
+	})
+	secret := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: gaugeAuthority + "/secretgauge", ID: "g-secret", Properties: map[string]any{"apiKey": "sk-stored"},
+	})
+
+	_, err := ds.Put(ctx, engram, substrate.PutInput{
+		Kind: requestKind, ID: "req-smuggle",
+		Properties: map[string]any{"diff": map[string]any{
+			"properties": map[string]any{"apiKey": "sk-smuggled"},
+		}},
+		Edges: []substrate.EdgeInput{
+			{Rel: "target", To: substrate.EdgeRef{Kind: safe.Kind, ID: safe.ID}},
+			{Rel: "target", To: substrate.EdgeRef{Kind: secret.Kind, ID: secret.ID}},
+		},
+	})
+	if err == nil {
+		t.Fatal("a request naming two targets was admitted")
+	}
+	wantErr(t, err, substrate.ErrValidation, "two targets")
+	if !strings.Contains(err.Error(), "names ONE target") {
+		t.Fatalf("refusal does not name the rule: %v", err)
+	}
+	if _, err := ds.Get(ctx, requestKind, "req-smuggle"); !errors.Is(err, substrate.ErrNotFound) {
+		t.Fatalf("the smuggling request landed: %v", err)
+	}
+
+	// The single-target write it was hiding behind is refused on its own terms:
+	// the secret gauge's apiKey may never sit in a request's diff.
+	if _, err := ds.Put(ctx, engram, substrate.PutInput{
+		Kind: requestKind, ID: "req-direct",
+		Properties: map[string]any{"diff": map[string]any{
+			"properties": map[string]any{"apiKey": "sk-smuggled"},
+		}},
+		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: secret.Kind, ID: secret.ID}}},
+	}); err == nil {
+		t.Fatal("a raw secret in a proposed diff was admitted")
+	} else if !strings.Contains(err.Error(), "sensitive") {
+		t.Fatalf("refusal does not name the secret: %v", err)
+	}
+}
+
+// A REPLAYED delivery re-proposes the same request: same id, same bare diff. The
+// stored diff is the wrapper form admission normalised it into, so the re-put is
+// canonicalized before the envelope guard sees it — an identical proposal is a
+// verified no-op, not an ErrForbidden park. This is the SDK's replay promise:
+// ids are the writer's, and a replay writes nothing new.
+func TestIdenticalReproposalIsANoOp(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, ops := newFnDataset(t, nil, pyFn("reproposer", map[string]any{}, []any{requestKind}, `
+def main(input, host):
+    host.effects.propose("req-replayed", "tasks.substrate.reamde.dev/task",
+                         input["args"]["target"], diff={"description": "same as ever"},
+                         rationale="steady")
+    return {}
+`))
+	task := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: taskType, ID: "t-replayed", Properties: map[string]any{"title": "draft"},
+	})
+	fn := fnAuthority + "/reproposer"
+
+	if _, _, err := ops.CallFunction(ctx, fn, map[string]any{"target": task.ID}); err != nil {
+		t.Fatalf("first delivery: %v", err)
+	}
+	first := mustGet(t, ds, requestKind, "req-replayed")
+
+	// The replay: the same body, the same staged effect, the same request id.
+	if _, _, err := ops.CallFunction(ctx, fn, map[string]any{"target": task.ID}); err != nil {
+		t.Fatalf("the replayed delivery parked: %v", err)
+	}
+	again := mustGet(t, ds, requestKind, "req-replayed")
+	if again.Version != first.Version {
+		t.Fatalf("the replay rewrote the request: version %d -> %d", first.Version, again.Version)
+	}
+	if !reflect.DeepEqual(again.Properties, first.Properties) {
+		t.Fatalf("the replay changed the envelope: %+v -> %+v", first.Properties, again.Properties)
+	}
+
+	// And the request is still the one an owner can accept.
+	if err := accept(t, ds, "req-replayed"); err != nil {
+		t.Fatalf("accept after replay: %v", err)
+	}
+	if got := mustGet(t, ds, taskType, task.ID); got.Properties["description"] != "same as ever" {
+		t.Fatalf("the replayed proposal did not apply: %+v", got.Properties)
+	}
+}
+
+// A targetless patch request stays legal storage — the target edge is not
+// required, and its accept annotates "no target" — but its diff is still held to
+// the wrapper SHAPE, and a bare one lands wrapped like any other.
+func TestTargetlessRequestKeepsItsShape(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+
+	req := mustPut(t, ds, engram, substrate.PutInput{
+		Kind: requestKind, Properties: map[string]any{"diff": map[string]any{"description": "orphaned"}},
+	})
+	diff, ok := req.Properties["diff"].(map[string]any)
+	if !ok {
+		t.Fatalf("stored diff is %T", req.Properties["diff"])
+	}
+	props, ok := diff["properties"].(map[string]any)
+	if !ok || props["description"] != "orphaned" {
+		t.Fatalf("a targetless bare diff did not land wrapped: %+v", diff)
+	}
+	// Accepting it still annotates rather than failing bare: nothing to patch.
+	if err := accept(t, ds, req.ID); err == nil {
+		t.Fatal("a targetless patch accepted green")
+	} else {
+		wantErr(t, err, substrate.ErrConflict, "targetless patch")
+	}
+	if after := mustGet(t, ds, requestKind, req.ID); after.Properties["decision"] != "proposed" ||
+		after.Annotations["substrate/conflict"] == nil {
+		t.Fatalf("targetless request should stay proposed + annotated: %+v", after.Properties)
 	}
 }
 

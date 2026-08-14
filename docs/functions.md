@@ -424,10 +424,13 @@ same request instead of a second one; `op` is `patch` (the default), `create` or
 `delete`; `target_kind`/`target_id` name the record the change is about — the
 existing target of a patch or delete, the record a create would mint; and `diff`
 carries the proposed values, wrapped under `properties` or as a plain property
-map the engine wraps. A proposing function names the **request** kind in its
-`emit` and nothing else: it is not writing the target, it is asking. The diff is
-validated against the target kind at admission, so a malformed proposal is a
-refused write the delivery parks on, never a request the owner cannot accept.
+map the engine wraps. A `delete` carries no diff at all, and passing one is
+refused rather than dropped. A proposing function names the **request** kind in
+its `emit` and nothing else: it is not writing the target, it is asking. The diff
+is validated against the target kind at admission, so a malformed proposal is a
+refused write the delivery parks on, never a request the owner cannot accept —
+and because the request id is the body's own, a replayed delivery re-proposes the
+same request as a verified no-op.
 
 **One mode per invocation.** A body **either** returns an explicit `effects`
 list **or** stages on the builder, never both. The two apply orders are
