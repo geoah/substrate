@@ -111,20 +111,44 @@ scale.
 
 ## Upgrading the binary
 
-Two safety rails matter when you roll a new image forward.
+**Snapshot the database before you deploy.** A repository's first open under a
+new binary may promote its stored
+[vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract),
+and the promotion this binary carries rewrites every declaration row the
+repository holds. That is the one step of an upgrade a rollback cannot undo, so
+the dump you take beforehand is the only way back.
 
-A binary too old for a repository's stored
-[vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)
-refuses to open it, and the API surfaces that refusal as `503 unavailable` with
-a `Retry-After`, never as an invalid token, so a store the binary cannot serve
-is diagnosable. Rolling back to the older binary, or forward to a newer one, is
-the fix.
+**A dialect promotion is one transaction, and it is one-way.** Each repository
+carries a monotonic dialect integer. When a binary's maximum is above the stored
+one, the first open of that repository runs the promotion and stamps the new
+number **inside the same transaction as the row rewrite**, indivisibly: a crash
+leaves the store wholly on the old dialect and the next open tries again, and a
+store can never hold new rows under an old stamp.
 
-[Quarantine](vocabulary.md#quarantine) covers the other direction: a binary
-that tightens a contract quarantines each installed bundle whose stored
-closure no longer admits, rather than bricking the repository, and
-re-installing the bundle (or a later open under a binary that relaxed the
-contract) clears the marker.
+**Downgrading after that open is impossible without a restore.** An older binary
+meeting the newer stamp refuses to open the repository. That is the named
+refusal, which the API surfaces as `503 unavailable` with a `Retry-After`, never
+as an invalid token, so a store the binary cannot serve is diagnosable rather
+than mysterious. That refusal is the *good* outcome: it exists because the older
+binary would otherwise misread the migrated rows. Rolling the image back is
+therefore not a fix; restoring the pre-upgrade dump is. Rolling *forward* to a
+binary whose maximum covers the stamp still is.
+
+**The promotion refuses rather than guesses.** It translates every declaration
+row this repository holds, and if one installed closure no longer parses under
+the new binary it fails the open, logging the authority and the reason, instead
+of migrating the rest: stamping a store with one un-migrated row would leave two
+encodings in it, and no reader could tell which one it was holding. The repair is
+to re-install that bundle (or open once under the binary that wrote it) before
+the new binary migrates the repository. A repository whose only trouble is a
+tightened contract is a different case, below.
+
+[Quarantine](vocabulary.md#quarantine) is that other case: a binary that tightens
+a contract quarantines each installed bundle whose stored closure no longer
+admits, rather than bricking the repository, and re-installing the bundle (or a
+later open under a binary that relaxed the contract) clears the marker.
+Quarantine is a state a migrated repository may reach, never one it may be
+migrated in.
 
 ## Backups
 

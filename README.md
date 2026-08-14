@@ -215,6 +215,11 @@ CI enforces the rule (`mise run kinds:check`): a PR that edits a declaration
 without moving its version, or removes one without bumping its authority, does
 not merge.
 
+A core declaration is also read by a generator: `internal/corekinds` and the
+console's `corekinds.ts` are produced from `kinds/` and checked in, so an edit
+under `kinds/core.substrate.reamde.dev/` is followed by `mise run kinds:gen`.
+CI enforces that too (`mise run kinds:gen:check`).
+
 ## Docs
 
 [`docs/`](docs/README.md) builds one thing — a to-do list — from registration
