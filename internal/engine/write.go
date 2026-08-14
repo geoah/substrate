@@ -588,7 +588,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		return nil, err
 	}
 	// A reference must name a known TYPE: coercion checked the
-	// shape, this resolves the referent type, refuses a `to:` mismatch, and
+	// shape, this resolves the referent type, refuses a pin mismatch, and
 	// rewrites the value canonical — before the row's property map is built,
 	// so the trigger-callable and every other stored reference lands as
 	// {authority, type, id}. The referent RECORD need not exist: it is a pointer.

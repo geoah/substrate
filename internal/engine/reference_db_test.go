@@ -45,12 +45,12 @@ func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 				"properties": map[string]any{
 					"note": map[string]any{"type": "string"},
 					"target": map[string]any{
-						"type": "reference", "to": firstClassAuthority + "/target",
+						"type": "reference", "kind": firstClassAuthority + "/target",
 						"inverse":            "pointers",
 						"inverseDescription": "the rows that name this target",
 					},
 					"alsoSeen": map[string]any{
-						"type": "reference", "to": firstClassAuthority + "/target",
+						"type": "reference", "kind": firstClassAuthority + "/target",
 						"repeated": true, "inverse": "seenBy",
 					},
 				},
@@ -63,7 +63,7 @@ func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 				"displayTemplate": "{target}",
 				"properties": map[string]any{
 					"target": map[string]any{
-						"type": "reference", "to": firstClassAuthority + "/target",
+						"type": "reference", "kind": firstClassAuthority + "/target",
 					},
 				},
 			}),
@@ -72,7 +72,7 @@ func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 			map[string]any{
 				"properties": map[string]any{
 					"targets": map[string]any{
-						"type": "reference", "to": firstClassAuthority + "/target",
+						"type": "reference", "kind": firstClassAuthority + "/target",
 						"repeated": true, "required": true,
 					},
 				},
@@ -82,7 +82,7 @@ func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 			map[string]any{
 				"properties": map[string]any{
 					"target": map[string]any{
-						"type": "reference", "to": firstClassAuthority + "/target",
+						"type": "reference", "kind": firstClassAuthority + "/target",
 						"required": true,
 					},
 				},

@@ -68,7 +68,7 @@ func (ds *dataset) Get(ctx context.Context, typ, id string) (*substrate.Record, 
 // mechanisms answer as one relationship —
 //
 //   - an EDGE row whose dst is this record, and
-//   - a REFERENCE property on some other kind whose `to:` pins this kind and
+//   - a REFERENCE property on some other kind whose `kind:` pins this kind and
 //     whose stored value names this id,
 //
 // — because which of the two a declaration uses is a storage choice, and a
@@ -77,7 +77,7 @@ func (ds *dataset) Get(ctx context.Context, typ, id string) (*substrate.Record, 
 // at once while a kind is mid-migration.
 //
 // NOT everything, and the gap is deliberate: an UNCONSTRAINED reference
-// (`to: any`, or none) names no target kind, so the registry cannot say it
+// (`kind: any`, or none) names no target kind, so the registry cannot say it
 // points here without reading every row of every kind that declares one. Those
 // are left out — of the page and of the total alike, so the two agree — rather
 // than turning a graph expansion into a table scan.
@@ -298,7 +298,7 @@ func (ds *dataset) incomingArms(
 	}
 
 	// One arm per reference property pinned at this kind. An unconstrained
-	// pointer (`to: any`, or none) names no target kind, so the registry cannot
+	// pointer (`kind: any`, or none) names no target kind, so the registry cannot
 	// say it points HERE without reading every row of every kind — those are
 	// left out rather than answered with a scan.
 	for _, k := range ds.registry().Kinds() {
@@ -861,7 +861,7 @@ func (ds *dataset) condProp(b *builder, types []*vocabulary.Kind, name string, c
 // here, because a pointer compared as text matches nothing at all.
 //
 // Distinct SHAPES and not the first declaration: two kinds may declare one
-// name with different `to:` targets, or one scalar and one repeated, and a
+// name with different `kind:` pins, or one scalar and one repeated, and a
 // probe built from whichever came first would answer for the other kind in the
 // wrong shape — completing a bare id with the wrong kind, or asking for a
 // scalar where a list is stored. One probe per shape, OR-ed, is what a filter
@@ -892,7 +892,7 @@ func (ds *dataset) referenceShapes(types []*vocabulary.Kind, name string) []*voc
 // array when the property is repeated (containment reaches inside an array, so
 // one shape answers "holds this reference" for both).
 //
-// A bare id is admitted exactly where a WRITE admits one — when `to:` pins a
+// A bare id is admitted exactly where a WRITE admits one — when `kind:` pins a
 // concrete kind, which then supplies what the value omits (validate.go
 // coerceReference). Unpinned, a bare id probes the id alone and matches
 // whatever kind holds it, which is the honest reading of an unconstrained

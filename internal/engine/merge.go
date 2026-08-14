@@ -237,7 +237,7 @@ func (t *txn) mergeRecord(winnerRef, loserRef eref) (*substrate.Record, error) {
 		Kind:       kindRecordMerge,
 		Properties: map[string]any{"moved": moved},
 		Edges: []substrate.EdgeInput{
-			// `winner`/`loser` are `to: any`, so the reference carries the
+			// `winner`/`loser` are `kind: any`, so the reference carries the
 			// type it names.
 			{Rel: "winner", To: substrate.EdgeRef{Kind: winner.Kind, ID: winnerID}},
 			{Rel: "loser", To: substrate.EdgeRef{Kind: loser.Kind, ID: loserID}},

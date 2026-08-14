@@ -11,7 +11,7 @@ import (
 // , the twin of validateBlobRefs: coercion checked the SHAPE and
 // left the value at most a {type, id} pair, and this registry-aware pass —
 // taken inside the write transaction — resolves the referent TYPE, refuses an
-// unknown one, refuses a `to:` mismatch, and rewrites the stored value to the
+// unknown one, refuses a pin mismatch, and rewrites the stored value to the
 // canonical {authority, type, id} triple. It does NOT require the referent RECORD
 // to exist: a reference is a typed POINTER, not a graph edge, so it may name a
 // row that is not present yet (a trigger's `callable` names a function the
@@ -125,7 +125,7 @@ func (t *txn) normalizeReferenceValue(p *vocabulary.Property, v any, where strin
 }
 
 // normalizeReference resolves one reference value's referent kind against the
-// registry, checks a `to:` constraint, and returns the canonical {kind, id}
+// registry, checks the declaration's `kind:` pin, and returns the canonical {kind, id}
 // pair — the record reference an edge target wears too. A bare local name
 // resolves here.
 func (t *txn) normalizeReference(p *vocabulary.Property, v any) (any, error) {

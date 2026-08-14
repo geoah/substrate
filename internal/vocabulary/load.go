@@ -1458,16 +1458,30 @@ var objectPropKeys = map[string]bool{
 	"displayName": true, "keyed": true, "keyPattern": true, "managed": true,
 }
 
-// referencePropKeys is a reference property's own key set: `to:`
-// pins the referent type (a full identity, a bare name, or `any`), and the
-// value is a {authority, type, id} triple — the string-family refinements
-// (pattern/min/max/values/fts/embed) never apply. `repeated: true` gives a
-// list of references.
+// referencePropKeys is a reference property's own key set: `kind:` pins WHICH
+// KIND's records the pointer names (a full identity, a bare name, or `any`),
+// and the string-family refinements (pattern/min/max/values/fts/embed) never
+// apply to a pointer. `repeated: true` gives a list of references, and a
+// reference is admitted inside an object or a keyed map like any other field.
+//
+// The pin is `kind:`, not `to:`, because the two words say different things.
+// `to:` is the EDGE's: the far end of a traversable relationship. A reference
+// property is data that NAMES A RECORD, and what a reader needs from the
+// declaration is which kind's records those are — that is the word a picker
+// keys on. A reference still spelling `to:` is refused by name
+// (deletedReferencePropKeys).
 var referencePropKeys = map[string]bool{
-	"type": true, "to": true, "repeated": true, "description": true,
+	"type": true, "kind": true, "repeated": true, "description": true,
 	"displayName": true, "required": true, "renamedFrom": true,
 	"inverse": true, "inverseDescription": true,
 	"keyed": true, "keyPattern": true, "managed": true,
+}
+
+// deletedReferencePropKeys are the reference declaration's retired keys, each
+// naming its replacement. There is one, and it is a rename rather than a
+// removal: the pin outlived the word.
+var deletedReferencePropKeys = map[string]string{
+	"to": "kind — `to:` is the EDGE's word; a reference property pins the kind whose records it names",
 }
 
 // fieldForbiddenKinds are the kinds an object field may not be, at any level:
@@ -1587,20 +1601,26 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 		sort.Strings(p.FieldOrder)
 		return p
 	}
-	// A reference property is a typed pointer: its own key set —
-	// it takes `to:` (the referent-type constraint) and never the string-family
-	// refinements (pattern/min/max/values/fts/embed have no meaning on a
-	// {authority, type, id} value). `to:` resolves from a bare name to a full
-	// identity in Finalize, like an edge's `to:`.
+	// A reference property is a typed pointer: its own key set — it takes
+	// `kind:` (which kind's records it names) and never the string-family
+	// refinements (pattern/min/max/values/fts/embed have no meaning on a record
+	// reference). The pin resolves from a bare name to a full identity in
+	// Finalize, exactly as an edge's `to:` does.
 	if kind == DatatypeReference {
+		for k := range d {
+			if replacement, gone := deletedReferencePropKeys[k]; gone {
+				l.errf("%s: key %q is deleted — %s", where, k, replacement)
+				return nil
+			}
+		}
 		l.checkKeys(where, d, referencePropKeys)
 		if !allowRefinement {
 			l.errf("%s: reference is a property type, not a base type to refine", where)
 			return nil
 		}
 		p.Datatype = DatatypeReference
-		if to := mstr(d, "to"); to != "" {
-			p.To = to
+		if pin := mstr(d, "kind"); pin != "" {
+			p.To = pin
 		}
 		p.Required = mbool(d, "required")
 		p.Inverse, p.InverseDescription = l.parseInverse(where, d)

@@ -345,7 +345,7 @@ func testTypes() []substrate.KindInfo {
 					"emails":  map[string]any{"kind": "[string]"},
 					// A reference property: the GraphQL Reference
 					// object renders the stored {authority, type, id} triple.
-					"manager": map[string]any{"type": "reference", "to": "any"},
+					"manager": map[string]any{"type": "reference", "kind": "any"},
 				},
 				"edges": map[string]any{"member_of": map[string]any{"to": "organization"}},
 			},

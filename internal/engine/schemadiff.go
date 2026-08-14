@@ -167,7 +167,7 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 					query: q, args: args,
 				})
 			}
-			// A reference that narrows its `to:` target (unconstrained → a type,
+			// A reference that narrows its `kind:` pin (unconstrained → a kind,
 			// or one type → another) strands stored references pointing elsewhere
 			//.
 			if curP.Datatype == vocabulary.DatatypeReference && refTargetNarrows(curP.To, candP.To) {
@@ -272,7 +272,7 @@ func droppedTypeGuards(q sqlReader, droppedTypes []string) ([]string, error) {
 	return guards, nil
 }
 
-// refTargetNarrows reports whether a reference's `to:` target moved to a
+// refTargetNarrows reports whether a reference's `kind:` pin moved to a
 // STRICTER constraint: an unconstrained target (empty or "any") pinned to a
 // type, or one type replaced by a different one. Widening (→ any) or an
 // unchanged target does not narrow.
@@ -391,7 +391,7 @@ func fieldPresence(ident string, path []fieldStep, key string) (string, []any) {
 //
 // The value must BE a canonical reference before its kind is compared. An
 // absent optional reference inside a present object is not a row pointing
-// elsewhere, and counting it as one refused the legal `to: any` → concrete
+// elsewhere, and counting it as one refused the legal `kind: any` → concrete
 // evolution for every row that simply left the field out.
 //
 // It reads `kind` and nothing else. The query used to reconstruct the referent

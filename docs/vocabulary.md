@@ -192,7 +192,7 @@ once. The narrowing diffs that refuse:
   and no stored value converts between them
 - removing an enum value a record still holds
 - removing a state a record still occupies
-- narrowing a `reference` property's `to:` target while records point outside
+- narrowing a `reference` property's `kind:` pin while records point outside
   the new one (unconstrained to a kind, or one kind to another; widening back
   to `any` narrows nothing)
 - tightening a keyed map's `keyPattern:` while records hold a key the new

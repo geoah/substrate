@@ -96,6 +96,6 @@ data:
           description: an authenticated wake endpoint
     callable:
       type: reference
-      to: any
+      kind: any
       description: the function or agent a matched delivery invokes ({kind,
         id})

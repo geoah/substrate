@@ -60,23 +60,23 @@ func dwProps() map[string]any {
 			"mode": dwEnum(),
 			"limits": map[string]any{"type": "object", "fields": map[string]any{
 				"depth": map[string]any{"type": "int"},
-				"ref":   map[string]any{"type": "reference", "to": "target"},
+				"ref":   map[string]any{"type": "reference", "kind": "target"},
 				"grade": dwEnum(),
 			}},
 		}},
 		"effects": map[string]any{"type": "int", "keyed": true, "keyPattern": "camel"},
 		"notes":   map[string]any{"type": "string", "keyed": true},
-		"pinned":  map[string]any{"type": "reference", "to": "target"},
+		"pinned":  map[string]any{"type": "reference", "kind": "target"},
 		"installs": map[string]any{
 			"type": "object", "keyed": true, "keyPattern": "kindRef",
 			"fields": map[string]any{
 				"version": map[string]any{"type": "string"},
-				"source":  map[string]any{"type": "reference", "to": "target"},
+				"source":  map[string]any{"type": "reference", "kind": "target"},
 				"channel": dwEnum(),
 			},
 		},
 		"tools": map[string]any{"type": "object", "repeated": true, "fields": map[string]any{
-			"callable": map[string]any{"type": "reference", "to": "target"},
+			"callable": map[string]any{"type": "reference", "kind": "target"},
 			"label":    map[string]any{"type": "string"},
 			"role":     dwEnum(),
 		}},
@@ -90,9 +90,9 @@ func dwProps() map[string]any {
 		// points elsewhere, and an absent optional reference points nowhere.
 		"loose": map[string]any{"type": "object", "fields": map[string]any{
 			"note": map[string]any{"type": "string"},
-			"ref":  map[string]any{"type": "reference", "to": "any"},
+			"ref":  map[string]any{"type": "reference", "kind": "any"},
 		}},
-		"keyedRefs": map[string]any{"type": "reference", "to": "any", "keyed": true},
+		"keyedRefs": map[string]any{"type": "reference", "kind": "any", "keyed": true},
 	}
 }
 
@@ -510,13 +510,13 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 		vocabulary.KindManifest(authority,
 			map[string]any{"singular": "holder", "plural": "holders"},
 			map[string]any{"properties": map[string]any{
-				"pinned": map[string]any{"type": "reference", "to": "target", "inverse": "holders"},
+				"pinned": map[string]any{"type": "reference", "kind": "target", "inverse": "holders"},
 				// The same inverse word, nested — a stored shape no earlier
 				// binary refused and this one must not either.
 				"tools": map[string]any{
 					"type": "object", "repeated": true,
 					"fields": map[string]any{
-						"callable": map[string]any{"type": "reference", "to": "target", "inverse": "holders"},
+						"callable": map[string]any{"type": "reference", "kind": "target", "inverse": "holders"},
 					},
 				},
 			}}),

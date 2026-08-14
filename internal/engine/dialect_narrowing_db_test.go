@@ -154,19 +154,19 @@ func dnCases() map[string]struct {
 		},
 		"reference inside a repeated object narrows": {
 			mutate: func(props map[string]any) {
-				props["tools"].(map[string]any)["fields"].(map[string]any)["callable"] = map[string]any{"type": "reference", "to": "other"}
+				props["tools"].(map[string]any)["fields"].(map[string]any)["callable"] = map[string]any{"type": "reference", "kind": "other"}
 			},
 			says: `object "tools" reference "callable" narrows its target to ` + dwAuthority + `/other`,
 		},
 		"reference inside a keyed map narrows": {
 			mutate: func(props map[string]any) {
-				props["installs"].(map[string]any)["fields"].(map[string]any)["source"] = map[string]any{"type": "reference", "to": "other"}
+				props["installs"].(map[string]any)["fields"].(map[string]any)["source"] = map[string]any{"type": "reference", "kind": "other"}
 			},
 			says: `object "installs" reference "source" narrows its target to ` + dwAuthority + `/other`,
 		},
 		"reference at level 3 narrows": {
 			mutate: func(props map[string]any) {
-				limitFields(props)["ref"] = map[string]any{"type": "reference", "to": "other"}
+				limitFields(props)["ref"] = map[string]any{"type": "reference", "kind": "other"}
 			},
 			says: `object "spec.limits" reference "ref" narrows its target to ` + dwAuthority + `/other`,
 		},
@@ -306,7 +306,7 @@ func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
 			t.Fatalf("restore the base declaration: %v", err)
 		}
 	}
-	toTarget := map[string]any{"type": "reference", "to": "target"}
+	toTarget := map[string]any{"type": "reference", "kind": "target"}
 
 	t.Run("absent optional nested reference does not block", func(t *testing.T) {
 		if err := narrow(t, func(props map[string]any) {
@@ -365,7 +365,7 @@ func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
 
 // keyedRefTo is the keyed reference declaration pinned to one kind.
 func keyedRefTo(kind string) map[string]any {
-	return map[string]any{"type": "reference", "to": kind, "keyed": true}
+	return map[string]any{"type": "reference", "kind": kind, "keyed": true}
 }
 
 // The guard counts the rows that actually hold the value at the path, not every

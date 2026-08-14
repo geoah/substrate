@@ -375,28 +375,35 @@ Like objects, keyed maps stay out of search and the filter grammar.
 value NAMES so a client can offer a picker instead of a text box. It is a
 marker and nothing else: no stored value changes and no validation is added
 (a declaration's own closure checks are what refuse an unknown name). Where a
-single record is meant, a `reference` with `to:` is the stronger declaration;
+single record is meant, a `reference` with a `kind:` pin is the stronger declaration;
 `refersTo` is for the selectors that stay plain strings, like `emit: [person]`.
 
 **References.** A `reference` is a typed pointer stored as a property value:
 the same `{kind, id}` pair an edge target wears, but data, not a graph edge.
-Reach for it where a manifest field needs to **name** another record, like a
+Reach for it where a declaration field needs to **name** another record, like a
 trigger's `callable`:
 
 ```yaml
 callable:
   type: reference
-  to: any
+  kind: any
 ```
 
-An optional `to:` pins the referent kind, exactly like an edge's `to:`;
-`to: any` (and an absent `to:`) leaves it unconstrained, and then the value
-must carry an explicit kind. A value is `{kind, id}`, and a bare id string is
-accepted only when `to:` pins a concrete kind. Validation checks the shape and
-that the referent **kind** exists; the referent **record** need not exist at write
-time, because a reference is a pointer, not an edge. `repeated: true` holds a
-list of references. The [console](console.md) renders a reference as a link
-to the referent's detail page.
+The **pin** is `kind:`, and it says which kind's records this property names —
+`kind: any` (and an absent pin) leaves it unconstrained, and then the value must
+carry an explicit kind. The word is `kind:` and not `to:` on purpose: `to:`
+belongs to the edge, where it names the far end of a traversable link, while a
+reference is data naming a record, and which kind's records it names is exactly
+what a client needs to offer a picker. A reference still spelling `to:` is
+refused naming the pin.
+
+A value is `{kind, id}`, and a bare id string is accepted only when the pin
+names a concrete kind. Validation checks the shape and that the referent
+**kind** exists; the referent **record** need not exist at write time, because a
+reference is a pointer, not an edge. `repeated: true` holds a list of
+references, and a reference is admitted inside an object or a keyed map at any
+declared depth. The [console](console.md) renders a reference as a link to the
+referent's detail page.
 
 A reference is not an edge. An edge is a traversable link with its own
 [incoming views](api.md#rest-resources) and its part in

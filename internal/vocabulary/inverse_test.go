@@ -59,7 +59,7 @@ func TestInverseIsCarriedByEdgesAndReferences(t *testing.T) {
   properties:
     seen:
       type: reference
-      to: thing
+      kind: thing
       inverse: seenBy
 `)})
 	p, _ := r.ByIdentity("a.example.com/pointer")
@@ -98,7 +98,7 @@ func TestInverseCollisionInsideOneAuthorityIsRefused(t *testing.T) {
   properties:
     seen:
       type: reference
-      to: thing
+      kind: thing
       inverse: related
 `)})
 	if err == nil {
@@ -140,7 +140,7 @@ data:
   properties:
     note:
       type: reference
-      to: shared.example.com/note
+      kind: shared.example.com/note
       inverse: mentions
 `
 	}
@@ -165,11 +165,11 @@ func TestInverseOnAnUnconstrainedPointerCannotCollide(t *testing.T) {
 	r := loadFixture(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  properties:
     one:
       type: reference
-      to: any
+      kind: any
       inverse: related
     two:
       type: reference
-      to: any
+      kind: any
       inverse: related
 `)})
 	p, _ := r.ByIdentity("a.example.com/pointer")
@@ -188,7 +188,7 @@ func TestOneNameIsOnePointer(t *testing.T) {
   properties:
     owner:
       type: reference
-      to: thing
+      kind: thing
 `)})
 	if err == nil {
 		t.Fatal("one name declared as both an edge and a property must be refused")

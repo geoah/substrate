@@ -511,7 +511,7 @@ var (
 		"renamedFrom")
 	objectKeys = keys("type", "fields", "repeated", "description", "displayName",
 		"keyed", "keyPattern", "managed")
-	referenceKeys = keys("type", "to", "repeated", "description", "displayName",
+	referenceKeys = keys("type", "kind", "repeated", "description", "displayName",
 		"required", "renamedFrom", "inverse", "inverseDescription", "keyed",
 		"keyPattern", "managed")
 	machineKeys     = keys("type", "states", "initial", "transitions", "description", "displayName")
@@ -640,7 +640,10 @@ func (r *reader) readProperty(where, name string, n *yaml.Node, depth int) *Prop
 		return p
 	case TypeReference:
 		r.checkKeys(where, d, referenceKeys)
-		p.To = d.str("to")
+		// `kind:` is the PIN, and `to:` is the edge's word: a reference still
+		// spelling it is refused by the key set above, which is this reader's
+		// whole answer to a spelling it does not understand.
+		p.To = d.str("kind")
 		p.Required = r.flag(where, d, "required")
 		p.RenamedFrom = d.str("renamedFrom")
 		p.Inverse, p.InverseDescription = d.str("inverse"), d.str("inverseDescription")

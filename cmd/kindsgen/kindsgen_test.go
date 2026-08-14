@@ -52,7 +52,7 @@ data:
       fields:
         kind:
           type: reference
-          to: any
+          kind: any
         window:
           type: object
           fields:

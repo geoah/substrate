@@ -159,12 +159,12 @@ func coerceObject(p *vocabulary.Property, v any) (any, error) {
 // coerceReference validates a reference value's SHAPE and normalizes it toward
 // the canonical {kind, id} pair — the same record reference an
 // edge target wears. Like a blob-ref, this is the PURE half: the existence
-// gate — the referent KIND must be known, and a `to:` constraint must match —
+// gate — the referent KIND must be known, and the `kind:` pin must match —
 // is taken inside the transaction (validateReferences). Here we only ensure
 // there is an id and a knowable kind:
 //
 //   - a {kind, id} object,
-//   - a bare id string, ONLY when `to:` pins a concrete kind (the kind comes
+//   - a bare id string, ONLY when `kind:` pins a concrete kind (the kind comes
 //     from the declaration, mirroring a single-target edge's shorthand).
 func coerceReference(p *vocabulary.Property, v any) (any, error) {
 	var kind, id string
@@ -180,7 +180,7 @@ func coerceReference(p *vocabulary.Property, v any) (any, error) {
 	if id == "" {
 		return nil, fmt.Errorf("a reference needs an id")
 	}
-	// A pinned concrete `to:` supplies the kind a bare value omits, exactly as
+	// A concrete `kind:` pin supplies the kind a bare value omits, exactly as
 	// a single-target edge's declaration supplies it.
 	if kind == "" && p.To != "" && p.To != vocabulary.ToAny {
 		kind = p.To

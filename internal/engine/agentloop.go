@@ -556,7 +556,7 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 		}
 		l.threadID = id
 		props := map[string]any{
-			// `agent` and `parent` are REFERENCES: a bare id, which each `to:`
+			// `agent` and `parent` are REFERENCES: a bare id, which each `kind:` pin
 			// resolves to the kind it pins, the same shorthand a single-target
 			// edge took.
 			"agent": l.ag.Identity(), "provider": l.provider.id, "model": l.model, "mode": l.in.mode,
@@ -686,7 +686,7 @@ func (l *agentLoop) putMessage(ctx context.Context, actor substrate.Actor, props
 	}
 	props["turn"] = l.turn
 	l.turn++
-	// The thread is a REFERENCE now: a bare id, which `to:` resolves, the same
+	// The thread is a REFERENCE now: a bare id, which the `kind:` pin resolves, the same
 	// shorthand a single-target edge took.
 	props[msgRelThread] = l.threadID
 	return l.putRow(ctx, actor, substrate.PutInput{

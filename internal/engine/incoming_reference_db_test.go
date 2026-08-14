@@ -34,7 +34,7 @@ func graphVocabulary(t *testing.T, ds substrate.Dataset) {
 			map[string]any{"singular": "spoke", "plural": "spokes"},
 			map[string]any{"properties": map[string]any{
 				"hub": map[string]any{
-					"type": "reference", "to": graphAuthority + "/hub", "inverse": "spokes",
+					"type": "reference", "kind": graphAuthority + "/hub", "inverse": "spokes",
 				},
 			}}),
 		vocabulary.KindManifest(graphAuthority,
@@ -47,7 +47,7 @@ func graphVocabulary(t *testing.T, ds substrate.Dataset) {
 		vocabulary.KindManifest(graphAuthority,
 			map[string]any{"singular": "loose", "plural": "looses"},
 			map[string]any{"properties": map[string]any{
-				"anything": map[string]any{"type": "reference", "to": "any"},
+				"anything": map[string]any{"type": "reference", "kind": "any"},
 			}}),
 	}
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {

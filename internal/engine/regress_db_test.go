@@ -108,7 +108,7 @@ func evoRefDocs(holderProps map[string]any) []map[string]any {
 
 func evoRefBaseProps() map[string]any {
 	return map[string]any{
-		"ref": map[string]any{"type": "reference", "to": "any"},
+		"ref": map[string]any{"type": "reference", "kind": "any"},
 		"spec": map[string]any{"type": "object", "fields": map[string]any{
 			"a": map[string]any{"type": "string"},
 			"b": map[string]any{"type": "int"},
@@ -143,7 +143,7 @@ func TestSchemaEvolutionRefusesReferenceAndObjectNarrowing(t *testing.T) {
 
 	t.Run("reference target narrowed", func(t *testing.T) {
 		props := evoRefBaseProps()
-		props["ref"] = map[string]any{"type": "reference", "to": "gadget"}
+		props["ref"] = map[string]any{"type": "reference", "kind": "gadget"}
 		wantNarrowingGuard(t, evoRefApply(t, ds, props),
 			`reference "ref" narrows its target to `+evoRefAuthority+`/gadget`, "1 live records")
 	})

@@ -186,21 +186,21 @@ func TestNestedReferenceFieldsResolveTheirTarget(t *testing.T) {
       type: object
       repeated: true
       fields:
-        callable: {type: reference, to: target}
+        callable: {type: reference, kind: target}
         note: {type: string}
     inputs:
       type: object
       keyed: true
       keyPattern: camel
       fields:
-        kind: {type: reference, to: target}
+        kind: {type: reference, kind: target}
     deep:
       type: object
       fields:
         l2:
           type: object
           fields:
-            l3: {type: object, fields: {ref: {type: reference, to: target}}}
+            l3: {type: object, fields: {ref: {type: reference, kind: target}}}
 `)
 	for _, path := range []struct {
 		label string
@@ -223,7 +223,7 @@ func TestNestedReferenceFieldsResolveTheirTarget(t *testing.T) {
 // the same refusal a top-level reference gets.
 func TestNestedReferenceTargetMustExist(t *testing.T) {
 	_, err := dialectLoad(t, `  properties:
-    tools: {type: object, fields: {callable: {type: reference, to: nosuchkind}}}
+    tools: {type: object, fields: {callable: {type: reference, kind: nosuchkind}}}
 `)
 	if err == nil {
 		t.Fatal("expected a load error")
@@ -240,19 +240,19 @@ func TestNestedReferenceTargetMustExist(t *testing.T) {
 // pointers still collide.
 func TestNestedReferenceInverseIsNotClaimed(t *testing.T) {
 	if _, err := dialectLoad(t, `  properties:
-    target: {type: reference, to: target, inverse: widgets}
+    target: {type: reference, kind: target, inverse: widgets}
     tools:
       type: object
       fields:
-        callable: {type: reference, to: target, inverse: widgets}
+        callable: {type: reference, kind: target, inverse: widgets}
 `); err != nil {
 		t.Fatalf("a nested inverse must keep loading beside a top-level claim: %v", err)
 	}
 	// Two of the kind's own pointers claiming one word on one target still
 	// refuse: that check predates this dialect and nothing about it moved.
 	_, err := dialectLoad(t, `  properties:
-    target: {type: reference, to: target, inverse: widgets}
-    alsoTarget: {type: reference, to: target, inverse: widgets}
+    target: {type: reference, kind: target, inverse: widgets}
+    alsoTarget: {type: reference, kind: target, inverse: widgets}
 `)
 	if err == nil {
 		t.Fatal("expected a load error")
