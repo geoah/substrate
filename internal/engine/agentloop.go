@@ -986,7 +986,9 @@ func (l *agentLoop) dispatchQuery(ctx context.Context, args map[string]any) (str
 // target-must-exist guard. The diff is validated and normalised
 // against the target type at PROPOSE time, so a malformed proposal
 // (a wrapper-less diff, an immutable or unknown key) is a tool error the model
-// sees and never reaches the inbox.
+// sees and never reaches the inbox. The check is kept HERE, ahead of the write,
+// only for that error: the write path runs the same normalizeDiff at admission
+// (admitRequestDiff), so every other door is held to it too.
 func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (string, bool) {
 	if !l.emitAllows(vocabulary.KindRecordPatchRequest) {
 		return toolError(vocabulary.KindRecordPatchRequest + " is not in the agent's effective emit allowlist"), false
