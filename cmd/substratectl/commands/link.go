@@ -43,8 +43,8 @@ func (a *app) linkCommand() *cobra.Command {
 		Long: `Add an outgoing edge {rel} from a source record to a target.
 
 The target is a bare id where the edge declaration pins a single target kind,
-or the qualified form kind.authority:id for a to:any edge. Edge properties are set
-with --prop key=value.`,
+or the qualified form <authority>/<name>:<id> for a to:any edge. Edge
+properties are set with --prop key=value.`,
 		Example: `  substratectl link tasks t9 project pr3
   substratectl link tasks t9 source messaging.substrate.reamde.dev/conversationmessage:m7
   substratectl link people 9f2k memberOf c3`,
@@ -82,7 +82,7 @@ with --prop key=value.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&authority, "authority", "g", "", "type authority for a bare plural")
+	cmd.Flags().StringVarP(&authority, "authority", "g", "", "kind authority for a bare plural")
 	cmd.Flags().StringArrayVar(&properties, "prop", nil, "edge property key=value (repeatable)")
 	return cmd
 }
@@ -94,7 +94,7 @@ func (a *app) unlinkCommand() *cobra.Command {
 		Short: "Remove an outgoing edge",
 		Long: `Remove an outgoing edge {rel} from a source record to a target.
 
-The target syntax matches ` + "`link`" + `: a bare id, or type.authority:id.`,
+The target syntax matches ` + "`link`" + `: a bare id, or <authority>/<name>:<id>.`,
 		Example: `  substratectl unlink tasks t9 project pr3
   substratectl unlink tasks t9 source messaging.substrate.reamde.dev/conversationmessage:m7`,
 		Args: cobra.ExactArgs(4),
@@ -120,7 +120,7 @@ The target syntax matches ` + "`link`" + `: a bare id, or type.authority:id.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&authority, "authority", "g", "", "type authority for a bare plural")
+	cmd.Flags().StringVarP(&authority, "authority", "g", "", "kind authority for a bare plural")
 	return cmd
 }
 

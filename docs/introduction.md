@@ -20,35 +20,28 @@ answer to "many semi-trusted programs cooperating over shared typed state":
 - behavior lives in **declarations** (kinds, states, mappings, functions),
   not in bespoke endpoints. The write API is seven generic mutations,
   forever: `put`, `patch`, `delete`, `link`, `unlink`, `merge`, `split`;
-- a closure of those declarations installs and uninstalls as one unit, an
+- a closure of those declarations installs and uninstalls as one unit, a
   **bundle**, which is how a provider integration or an automation reaches
   the data without a substrate code change.
 
+Kinds ship under the `substrate.reamde.dev` authority domain, and everywhere
+in these pages "substrate" means the service you run.
+
 Everything on these pages builds one running example: **a to-do list**.
 
-## Substrate and substrate
-
-Two words, used precisely. **Substrate** is the protocol, the service, and
-the implementation: the records, the API, the primitives these pages
-describe. **substrate** is the parent, the organization level above it. That
-split shows up in one visible place: kinds are published under the org's
-domain, `tasks.substrate.reamde.dev`, `people.substrate.reamde.dev`, while the product and
-protocol vocabulary, in the docs, the CLI (`substratectl`), and the service, is
-"substrate".
-
-## Seven words
+## The core terms
 
 Like Kubernetes, the whole system is rules about a handful of primitives.
 
-| Term           | Meaning                                                                                                                                                      |
+| Term           | What it is                                                                                                                                                   |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **User**       | A human principal: a username, a password, and a TOTP second factor. One hard-coded invite code admits one. A user owns exactly one repository.              |
-| **Repository** | Everything a user has: one append-only changelog, the records folded out of it, and the blobs and sealed secrets beside them. Nothing crosses from one to another. |
-| **Changelog**        | The repository's append-only, strictly sequential list of every change. It is the truth; the records are its fold, and replaying it rebuilds them.           |
+| **Repository** | Everything a user has: one append-only changelog, the records computed from it, and the blobs and sealed secrets beside them. Nothing crosses from one to another. |
+| **Changelog**        | The repository's append-only, strictly sequential list of every change. It is the source of truth: replaying it rebuilds the records ([data model](data-model.md)). |
 | **Record**     | One instance of a kind, and the only thing there is. Tasks, people, tokens, and kind declarations are all records. Its identity is the pair `(kind, id)`.    |
 | **Kind**       | What a record is: `task` when it is yours alone, `tasks.substrate.reamde.dev/task` when an authority publishes it. A kind declares its properties and its edges.        |
 | **Property**   | A named, typed value slot on a record: `title`, `dueAt`. Declared on the kind, validated on every write.                                                     |
-| **Edge**       | A named, directed relationship from one record to another, and the only way one record points at another. Declared on the kind it points from.               |
+| **Edge**       | A named, directed link from one record to another, and the only traversable link between records. Declared on the kind it points from.               |
 
 Two supporting words appear constantly. An **authority** is the DNS name that
 publishes a kind and decides who may change its declaration. An **actor** is
@@ -68,7 +61,7 @@ completeness are guarantees the substrate makes about itself — it is not
 evidence you can hand to someone who does not already trust the machine it
 runs on.
 
-## The map
+## Reading order
 
 The pages ahead, in reading order:
 

@@ -768,7 +768,7 @@ func (f *fakeSubstrate) handleTriggerStatus(w http.ResponseWriter, r *http.Reque
 }
 
 // handleTriggerRun is the synthesized single delivery — STRICT, like the real
-// server: a record is addressed by (type, id), so a body missing either half
+// server: a record is addressed by (kind, id), so a body missing either half
 // is a bad_request there and must be one here. A permissive fake is how substratectl
 // shipped an id-only body that 400d against every real substrate.
 func (f *fakeSubstrate) handleTriggerRun(w http.ResponseWriter, r *http.Request) {

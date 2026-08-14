@@ -39,6 +39,6 @@ tombstoned and hard deletion waits for its finalizers to be released.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&authority, "authority", "g", "", "type authority for a bare plural")
+	cmd.Flags().StringVarP(&authority, "authority", "g", "", "kind authority for a bare plural")
 	return cmd
 }

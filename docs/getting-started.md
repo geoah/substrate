@@ -8,15 +8,15 @@ You need a running substrate and its invite code.
 [Running a substrate](operations.md) covers standing one up; if somebody else
 runs yours, they hand you the address and the code.
 
-## The invite code is the only door
+## Registration needs an invite code
 
 One **invite code**, configured on the service, admits people. Registering
 with it creates a **user** and, in the same transaction, that user's one
 **repository**, seeded with the core vocabulary — `core.substrate.reamde.dev`
 alone. Everything else, including the task kinds used below, is a
-[vocabulary bundle you import](builtin-kinds.md). A substrate with no invite code
-configured is closed: `/register` answers `unsupported`, which is exactly the
-right state for a substrate that already has its user.
+[vocabulary bundle you import](builtin-kinds.md). With no invite code
+configured, registration is closed;
+[users, tokens, and actors](auth.md#the-invite-code) has the detail.
 
 Registration needs three things from you: a username, a password, and a TOTP
 second factor. All three are required, and the username is yours permanently.
@@ -24,10 +24,10 @@ second factor. All three are required, and the username is yours permanently.
 ## Register
 
 The [web console](console.md) serves a registration page at `/register`, and
-that is the easiest door. From a terminal, [substratectl](substratectl.md) does the same
+that is the easiest way in. From a terminal, [substratectl](substratectl.md) does the same
 thing:
 
-```
+```bash
 substratectl register --server https://substrate.example --username ada
 ```
 
@@ -39,41 +39,24 @@ the minted token as a context in `~/.config/substratectl/config.yaml`.
 
 Unattended, bring your own seed and skip the prompts:
 
-```
+```bash
 substratectl register --username ada --invite-code CODE \
     --totp-secret BASE32SEED --totp-code 123456 --password-stdin < password
 ```
 
-The two HTTP calls underneath, if you would rather drive them yourself. The
-first writes nothing:
-
-```http
-POST /register/enroll
-{"inviteCode": "…", "username": "ada"}
-
-→ 200 {"totpSecret": "JBSWY3DPEHPK3PXP",
-       "otpauthUri": "otpauth://totp/Substrate:ada?secret=…&issuer=Substrate"}
-```
-
-The second is the whole creation act, one transaction:
-
-```http
-POST /register
-{"inviteCode": "…", "username": "ada", "password": "…",
- "totpSecret": "JBSWY3DPEHPK3PXP", "totpCode": "123456", "label": "laptop"}
-
-→ 201 {"token": {"id": "…", "label": "laptop", "createdAt": "…"},
-       "secret": "substrate_tok_…"}
-```
-
-That `secret` is shown exactly once. The substrate keeps only its SHA-256, so
-a lost token is revoked and re-minted, never recovered.
+Underneath, registration is two HTTP calls, and only the second writes
+anything. The response carries the token secret, shown exactly once, and a
+recovery key exists either way: `substratectl register` generates the pair
+itself and saves the key for you, while a raw HTTP request that names no
+`recoveryPublicKey` gets a one-time server-minted `recoveryKey` back.
+[Users, tokens, and actors](auth.md) documents the wire, recovery fields
+included.
 
 ## Log in
 
 A login is both factors presented directly, and it mints a token record:
 
-```
+```bash
 substratectl login --server https://substrate.example --username ada
 ```
 
@@ -84,11 +67,8 @@ POST /login
 → 201 {"token": {…}, "secret": "substrate_tok_…"}
 ```
 
-There is no session object beside it. A session **is** a token record: the
-console holds one exactly like a script does, and logging out revokes it.
-Every request after this carries `Authorization: Bearer substrate_tok_…`, and the
-token is what says which repository the request is in — no address anywhere
-names it. [Users and tokens](auth.md) is the full picture.
+There is no session object beside it: a session **is** a token record, and
+[users, tokens, and actors](auth.md) is the full picture.
 
 ## Write your first record
 
@@ -98,7 +78,7 @@ and the collection exists. A catalog id is `{authority}/{name}`, so the slash in
 it is percent-encoded to stay one path segment. Tasks name an assignee, so
 `people` is admitted first — a bundle whose `requires:` is not met is refused:
 
-```
+```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/api/v1/core.substrate.reamde.dev/catalog/people.substrate.reamde.dev%2Fpeople/install
 
@@ -108,9 +88,10 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 substratectl get tasks                     # empty, but the collection is there
 ```
 
-The console does the same thing from the [Registry](console.md) page, and
-`substratectl apply -f bundle.yaml` applies a closure you hold as files —
-all three are the same admission.
+The console does the same thing from the [Registry](console.md#registry) page,
+and `substratectl apply -f bundle.yaml` applies a closure you hold as files.
+All three run the same install path and validation, which
+[vocabulary.md](vocabulary.md#admission) calls admission.
 
 Add a task. The collection path names the kind, so the body is only the
 properties:
@@ -141,17 +122,18 @@ data:
 Read it back, then complete it. A state change is a `patch`, and the
 declaration stamps `completedAt` for you:
 
-```
+```bash
 substratectl get tasks kq3v9x2m41pf -o yaml
 substratectl patch tasks kq3v9x2m41pf --state status=done
 ```
 
-## Watch it land
+## Watch the change stream
 
-Every committed write appended one entry to the repository's changelog. That changelog is
-the truth — the records you just read are its fold — and it streams:
+Every committed write appended one entry to the repository's changelog. That
+changelog is the truth (the records you just read are computed by replaying
+it), and it streams:
 
-```
+```bash
 substratectl watch
 ```
 
@@ -166,11 +148,12 @@ GET /api/v1/core.substrate.reamde.dev/changes?watch=1
 
 Without `from`, the stream opens at the current head and tails from there; the
 bookmark is the seq it opened at, and passing it back as `from` later resumes
-exactly where you stopped. Your repository's early seqs are its seed: the
-shipped vocabulary was written into the changelog as ordinary entries when the
-repository was created, which is why a first task lands well above 1.
+exactly where you stopped. Your repository's early sequence numbers are its
+initial vocabulary: the shipped declarations were written into the changelog
+as ordinary entries when the repository was created, which is why a first task
+lands well above 1.
 
-`actor` says which door the write came through. This request named none, so it
+`actor` names the client that made the write. This request named none, so it
 is `api`; the console sends `console` and `substratectl` sends `substratectl`.
 [The changelog and watch](changelog.md) is the whole contract, including how to
 resume without a gap.

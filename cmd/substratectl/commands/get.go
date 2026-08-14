@@ -81,7 +81,7 @@ states.`,
 		},
 	}
 	f := cmd.Flags()
-	f.StringVarP(&authority, "authority", "g", "", "type authority for a bare plural")
+	f.StringVarP(&authority, "authority", "g", "", "kind authority for a bare plural")
 	f.StringVarP(&output, "output", "o", "", "output format: table|wide|yaml|json (default table for lists, yaml for a single record)")
 	f.StringVar(&filter, "filter", "", `filter as JSON (substrate.Filter), e.g. '{"properties":{"prominence":{"eq":"known"}}}'`)
 	f.StringArrayVarP(&selector, "selector", "l", nil, "label selector, key=value (repeatable); bare key means present")

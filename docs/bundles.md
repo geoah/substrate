@@ -18,11 +18,11 @@ Two narrower words appear beside it, and neither is a synonym:
 
 A `bundle` document wears the ordinary envelope — `kind:`, `metadata:`,
 `data:`, and the server-owned `status:` — and declares the one **authority it
-owns**. An integration or capability bundle owns any legal authority — the
-shipped tree spells them `<name>.bundles.substrate.reamde.dev` by convention,
-but the loader does not require it; a vocabulary bundle owns a plain
-organization-style label like `people.substrate.reamde.dev`, and that ONE shape
-is checked, because it is what marks a vocabulary
+owns**. A bundle that ships behavior may own any legal authority. The shipped
+tree names them `<name>.bundles.substrate.reamde.dev` by convention, but the
+loader does not require that shape. A vocabulary bundle owns a plain
+organization-style label like `people.substrate.reamde.dev`, and that shape
+is the one the loader does check, because it is what marks a vocabulary
 [shipped](builtin-kinds.md) rather than installed. The authority's **first
 label** is the bundle's name — its `metadata.id` suffix, the actor an install
 writes under (`bundle:<name>`), and the prefix an installed kind's GraphQL name
@@ -69,11 +69,12 @@ often than a deliberate name.
 
 Two more fields matter, both covered below. `inputs:` declares the bundle's
 configuration needs by name, each naming a kind whose records satisfy it. No
-cardinality is enforced on such a kind: any number of records may exist, and
-the engine resolves ONE per input — the bound record (an edge the bind verb
-writes on the bundle's own row), else the record whose id is `default`, else
-the sole live record, else nothing, a first-class state the status reports
-per input rather than tie-breaking. An input with `inject: functions` crosses
+cardinality is enforced on such a kind: any number of records may exist. The
+engine resolves one record per input, in order: the bound record (an edge
+written by the bind verb on the bundle's own row); else the record whose id is
+`default`; else the sole live record of the kind; else nothing. An unresolved
+input is a first-class state the bundle's status reports per input; the engine
+never tie-breaks. An input with `inject: functions` crosses
 into the bundle's function invocations under its name; one without is read by
 a host facility alone (the OAuth client). A bundle that needs nothing
 declares no inputs, and nothing anywhere implies configuration. The second
@@ -108,22 +109,23 @@ ceremony; [vocabulary evolution](vocabulary.md#vocabulary-evolution-and-the-dial
 is the full contract a bundle author designs against. Accounts, triggers,
 and cursors persist by reference across upgrades.
 
-The upgrade has a read-only PREVIEW beside it: the catalog compares the
+The upgrade has a read-only **preview** beside it: the catalog compares the
 shipped closure's declaration versions against the stored ones (the same diff
 the boot upgrade runs for core, engine `PlanBundleUpgrade`) and attaches the
 result to the catalog read as `upgrade`, with the same refuse-breakage guard
 lines the install would refuse on as `blockers`. The console's Registry counts
 these on the sidebar badge, offers Upgrade where nothing blocks, and states
 the guard lines where something does; the button is the install verb,
-unchanged. A changed declaration therefore MUST ship a changed version, or no
+unchanged. A changed declaration therefore **must** ship a changed version, or no
 repository ever learns it moved; CI enforces that (`mise run kinds:check`,
 AGENTS.md).
 
 After that, three lifecycle verbs act on an installed bundle, each guarded
-by one dataset-wide fence so in-flight work drains first and nothing new admits
-after. An invocation tree takes the fence once at its root and holds it through
-its last effect, so a nested or cross-bundle call can neither begin after a
-verb has returned nor commit behind it.
+by one repository-wide lock: in-flight function and agent work finishes first,
+and no new work starts while the verb runs. A chain of nested calls acquires
+the lock once, at its root, and holds it until its last effect commits, so a
+nested or cross-bundle call can neither begin after the verb has returned nor
+commit behind it.
 
 - **disable** (reversible): the bundle's triggers stop delivering (cursors
   stand still, losing no position) and its functions and agents refuse to run on
@@ -152,21 +154,20 @@ verb has returned nor commit behind it.
   order is disable, then purge, then uninstall.
 
 An installed closure that stops admitting under a newer binary is
-**quarantined** rather than allowed to brick the repository. Repository open
-installs the maximal admissible subset, leaves the rest out of the live registry
-— so their kinds refuse writes and their callables do not run — and marks each
-with `quarantined: true` plus the admission error as `quarantineReason`. A
-quarantined bundle reports `installed: false`; re-installing it clears the
-marker, and uninstall still works on one, resolved straight from its stored
-rows. It is the same [quarantine](vocabulary.md#quarantine) the shipped vocabulary
-gets.
+[quarantined](vocabulary.md#quarantine), exactly as the shipped vocabulary is,
+rather than allowed to brick the repository. On a bundle that means its status
+reports `installed: false` beside the `quarantined`/`quarantineReason` pair;
+re-installing it clears the marker, and uninstall still works on one, resolved
+straight from its stored rows.
 
 Status is computed, never stored. `GET …/core.substrate.reamde.dev/bundles/status` answers
 every installed bundle and `…/core.substrate.reamde.dev/bundles/{id}/status` answers
 one: `{id, name, authority, installed, enabled, inputs, setup, accounts,
 functions, kinds, liveRecords}`, plus the quarantine pair when it applies.
-`inputs` is each declared input's resolution (`{name, kind, record?, via?}`,
-`via` one of `bound`/`default`/`sole`); `setup` lists what stands between the
+`inputs` is each declared input's resolution: `{name, kind, record?, via?}`,
+where `via` names the matching rule from
+[the resolution order above](#what-a-bundle-ships) (`bound`, `default` or
+`sole`). `setup` lists what stands between the
 bundle and every runtime path it ships (`{code, input?, kind?, record?,
 message}` — codes `missing`, `ambiguous`, `dangling`, `oauth-client`,
 `provider`), mirrors only refusals dispatch would actually make, and is
@@ -253,7 +254,7 @@ in the console.
 
 The flow itself is two endpoints. `POST …/core.substrate.reamde.dev/oauth/start` takes the
 account record's id as `record` and answers the consent URL as `url`; it is
-owner-tier only — the three human doors, never installed code — and refuses
+owner-tier only (the three interactive clients, never installed code) and refuses
 while the client input does not resolve. The state is HMAC-signed over
 the repository, the record, and a random nonce, expires in fifteen minutes, and
 is persisted beside a sealed PKCE verifier, so a captured state cannot replay:
@@ -325,11 +326,11 @@ inputs, no functions, no OAuth. Its entry carries `vocabulary: true`.
 
 The catalog is a read model over the bundle closures baked in, parsed once at
 boot: each entry carries `id`, `name`, `authority`, `description`, `version`,
-`inputs`, `requires`, `vocabulary`, the `integration` facet above, and
-`closure`, which previews the `kinds`, `functions`, `agents` and `mappings` it
-declares plus the `records` the install writes beside them (an extension's
-triggers, the llm example's provider rows), so the console can show what an
-install will add before it runs. Every one of those is a record: the
+`inputs`, `requires`, `vocabulary`, the curated `integration` and `example`
+facets, and `closure`, which previews the `kinds` (each with its description),
+`functions`, `agents` and `mappings` it declares plus the `records` the
+install writes beside them (a bundle's triggers, the llm example's provider
+rows), so the console can show what an install will add before it runs. Every one of those is a record: the
 declarations are records of the core meta-kinds, and `records` are ordinary
 rows the moment they land. A shipped directory carrying no bundle document is not an entry, and a
 malformed one is dropped with a logged warning rather than failing the whole
@@ -349,11 +350,12 @@ unknown id is a 404 `not_found`.
 Installing from the catalog is a thin wrapper over the ordinary apply, never a
 parallel path: `POST …/core.substrate.reamde.dev/catalog/{id}/install` applies the entry's
 closure exactly the way `substratectl apply -f bundle.yaml -f triggers.yaml` does —
-the declarations through the batch admission, the delivery wiring as ordinary
-records, both committing as one repository transaction — and it is idempotent,
-so a second install changes nothing. It is refused for any actor outside the
-three human doors (`api`, `console`, `substratectl`) with a 403, before the closure is
-touched: installing bundle code is a person's action. What lands is a copy —
+the declarations through the batch [admission](vocabulary.md#admission), the
+delivery wiring as ordinary records, both committing as one repository
+transaction — and it is idempotent, so a second install changes nothing. It is
+refused for any actor outside the three interactive clients (`api`, `console`,
+`substratectl`) with a 403, before the closure is touched: installing bundle
+code is a person's action. What lands is a copy —
 the bundle's own declarations, written into this repository's changelog under
 `bundle:<name>` — so the catalog is the source and the changelog is the truth, and
 nothing on the serving path reads the catalog again. The response is the
@@ -361,7 +363,7 @@ installed bundle's computed status. Uninstall, disable, enable, and purge
 are the lifecycle verbs above; the catalog does not duplicate them.
 
 The shipped bundles, one by one (what each declares, its functions, its
-triggers, and whether it is an integration or a capability bundle), are the
+triggers, and which facet it carries), are the
 [Bundles catalog](bundles-catalog.md).
 
 Next: [functions](functions.md), the callables a bundle ships, and the

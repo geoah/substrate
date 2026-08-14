@@ -6,10 +6,11 @@ own. What fires it is a separate [trigger](#triggers). When it runs it reads
 its input, computes, and returns a list of **effects** the engine applies
 through the ordinary write path under the function's own actor, plus an output
 value for whoever called it. Writes are never blocked: a function is a
-subscriber, not a gatekeeper. One reference, four ways in: a trigger delivery,
-another function's host call, the HTTP call API, or a manual per-trigger run.
+subscriber, not a gatekeeper. There is one reference per function and four
+ways to invoke it: a trigger delivery, another function's host call, the HTTP
+call API, or a manual per-trigger run.
 
-Functions ship inside an [bundle](bundles.md), beside the kinds they
+Functions ship inside a [bundle](bundles.md), beside the kinds they
 read and write. Here is one shaped like the URL harvester's, which turns a
 freshly minted `page` record into fetched markdown:
 
@@ -37,11 +38,10 @@ data:
         return {"output": {"page": page.get("id")}}
 ```
 
-Every manifest document is the same four keys. `kind:` names the core kind the
-document declares, `core.substrate.reamde.dev/function` here. `metadata.id` is the
-reference this declaration is known by, `<authority>/<name>` — the string a
-trigger, a host call and the call API all address it with. `data:` is the
-declaration itself. `status:` is server-set, and no author writes it.
+The manifest wears the ordinary four-key
+[envelope](data-model.md#the-envelope), and its `metadata.id` is the reference
+this declaration is known by, `<authority>/<name>`: the string a trigger, a
+host call and the call API all address it with.
 
 ## The manifest
 
@@ -88,7 +88,7 @@ may write those kinds and nothing else. `reads.kinds` is the host-read
 allowlist and `reads.budgets` its budget (defaults 16 calls / 500 rows, raised
 to at most 1000 calls / 10000 rows); a `reads:` block that declares no `kinds`
 is a load error. `call` is the host-call allowlist; every target must be a
-registered function. `network` is enforced as a BINARY gate: a function
+registered function. `network` is enforced as a **binary** gate: a function
 declaring none is denied IPv4 and IPv6 sockets by the sandbox, while the host
 patterns themselves are still only documentation (see [the sandbox](#the-sandbox)). `mutations` gates the `merge` and `split` effects, which are
 refused without it. Every entry in `emit`, `reads.kinds` and `call` is a full
@@ -440,7 +440,7 @@ data:
 
 `source` takes exactly one arm:
 
-- An **`record`** arm subscribes to the [changelog](changelog.md): the trigger owns
+- A **`record`** arm subscribes to the [changelog](changelog.md): the trigger owns
   a cursor and, for every committed change to a matched kind and op whose
   `when:` guard passes, delivers the callable the record's **current** state.
   Each entry in `kinds:` is a kind reference, `<authority>/*` for everything
@@ -471,7 +471,7 @@ is the function body.
 
 - **Idempotent by construction.** A function composes its own ids, `put`
   upserts, and identical writes are suppressed. Replaying a trigger over the
-  whole changelog is a no-op where it already ran. The dispatcher advances an
+  whole changelog is a no-op where it already ran. The dispatcher advances a
   record trigger's cursor in the same transaction as the effects, so
   substrate-side consequences are effectively-once; external consumers get an
   at-least-once floor, made safe by the same id composition.
@@ -496,7 +496,7 @@ repository.
 - `GET …/triggers/status` is the one collection-level verb: every trigger's
   kind, callable, cursor, head, lag, last fire and parked count in a single
   answer. There is no per-trigger `status`.
-- `POST …/triggers/{id}/replay` takes `{"from": seq}` and resets an
+- `POST …/triggers/{id}/replay` takes `{"from": seq}` and resets a
   record-sourced trigger's cursor for a retrospective run.
 - `POST …/triggers/{id}/run` takes `{"kind": …, "id": …}`, both required, and
   synthesizes one delivery of that record's current state (guard applied,

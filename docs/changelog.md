@@ -3,8 +3,8 @@
 Every committed write appends one entry to the repository's **changelog**, in the
 same transaction as the write itself. It is append-only, strictly sequential,
 and there is exactly one of it per repository: the source of truth, the change
-feed, the audit trail, and the input stream for anything that learns are all
-the same changelog. The [records](data-model.md) you read are its fold. Identical
+feed, the audit trail, and the input stream for triggers and integrations are
+all the same changelog. The [records](data-model.md) you read are its fold. Identical
 re-writes append nothing, so a re-sync leaves no wake.
 
 One entry, as the wire carries it, for the task created on the
@@ -30,9 +30,8 @@ resulting `states` when a transition moved one.
 
 Beneath that readable half, the stored payload also carries the write's
 **values**, which is what makes the changelog replayable rather than merely
-informative: `substratectl repository rebuild` clears the fold and replays the whole
-changelog through the same code a live write uses, reproducing the records bit for
-bit and appending nothing. A secret-typed value never reaches the changelog at
+informative: `substratectl repository rebuild` replays the changelog through
+the same fold code ([running a substrate](operations.md#operator-recovery)). A secret-typed value never reaches the changelog at
 all: the delta carries an opaque ref into the sealed store, the material lives
 there encrypted, and every read surface — REST, GraphQL, and this feed —
 renders the property `<redacted>`.
@@ -44,10 +43,9 @@ Two guarantees consumers may lean on:
   nothing. Gapless resume is a guarantee, not a convention, and it survives a
   restart because the counter is the repository's own `max(seq)`, never process
   state.
-- **Causality terminates.** Every delivery-authored entry records the seq that
-  caused it, always a strictly smaller number, so a causal chain is finite by
-  construction and the engine parks a chain that runs deeper than its cap (16)
-  rather than spinning. The link is stored, not published: a change on the wire
+- **Causal chains are finite.** Every delivery-authored entry records the seq
+  that caused it, always strictly smaller, so a chain cannot loop, and the
+  engine parks a chain deeper than its cap (16) rather than spinning. The link is stored, not published: a change on the wire
   carries `seq`, `ts`, `actor`, `op`, `kind`, `recordId`, and `payload`, and
   nothing else.
 
@@ -115,7 +113,7 @@ The ndjson framing is pinned so a client can parse a stream unambiguously:
 The changelog has a **horizon**: the oldest seq still resumable. Requesting `from=`
 a seq below the horizon is a `compacted` error (HTTP 410), so a consumer that
 has fallen too far behind is told plainly instead of silently missing rows, and
-its handler is one it MUST have: re-list, then resume the watch from the fresh
+its handler is one it **must** have: re-list, then resume the watch from the fresh
 head. The horizon is reported in [API discovery](api.md#discovery), and it is
 **0 today**: nothing prunes or compacts the changelog, so replaying any consumer from
 any seq, zero included, is possible. Retention is a deployment **policy**, not

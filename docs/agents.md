@@ -56,7 +56,7 @@ data:
   wherever it appears as a sub-agent.
 - **`prompt`** (required, at most 64 KiB): the row is the prompt store, and the
   changelog's full retention is its version history.
-- **`provider`** (required): a `core.substrate.reamde.dev/llmprovider` record id — WHERE
+- **`provider`** (required): a `core.substrate.reamde.dev/llmprovider` record id — **where**
   the completions are bought, resolved at dispatch and never at load.
 - **`model`** (required): the model id sent on every completion, a plain string
   the provider's endpoint understands — `anthropic/claude-opus-5` through the
@@ -121,7 +121,7 @@ Tool names are unique per agent.
   error otherwise. A get outside the allowlist answers like an absent id; list
   and search clamp to the remaining row budget; a blown budget is a tool error
   the model sees.
-- **`graphql`** is the whole-repository read: the SAME schema and resolvers
+- **`graphql`** is the whole-repository read: the **same** schema and resolvers
   the `/graphql` endpoint executes (`internal/gql`), run in-process against
   the loop's dataset under the agent's actor. Declaring it is the grant, and
   it grants reads only: the document is parsed first, and a mutation or
@@ -132,7 +132,7 @@ Tool names are unique per agent.
 - **`mutate`** executes GraphQL mutations (`put`, `patch`, `delete`, `link`,
   `unlink`) through the same resolvers, and requires a non-empty `emit:` (a
   load error otherwise). Every written kind is resolved and held to the
-  agent's EFFECTIVE emit before the write applies, so a sub-agent's ceiling
+  agent's **effective** emit before the write applies, so a sub-agent's ceiling
   narrows it like any other effect; `merge` and `split` refuse outright, as
   fusing identities is the owner's reviewed decision. Writes ride the full
   public path (kind guards, schema-record admission) under the agent's
@@ -190,10 +190,10 @@ tool-call audit, and the required `thread` it belongs to. Self-actor exclusion
 covers the transcript, so an agent's own trigger never redelivers its thread
 and message writes.
 
-`agent`, `parent` and `thread` are REFERENCES, not edges: a thread is the
+`agent`, `parent` and `thread` are **references**, not edges: a thread is the
 audit row of a run and has to keep naming the agent that ran it, and an edge
 would be deleted along with its target. Each declares its `inverse`, so the
-graph reads the same relationship from the other side — an agent's `threads`,
+graph reads the same link from the other side — an agent's `threads`,
 a thread's `messages` and its `subAgentThreads`.
 
 **Cost rolls up onto the root thread**: every loop on a chain adds to one
@@ -254,16 +254,17 @@ must carry its own `apiKey` or it refuses to resolve; on `anthropic` the row's
 key is required for the same reason, and on `azure` both are.
 
 **Nothing seeds a provider.** A fresh repository holds no `llmprovider` row at
-all: a row is where the wire, the endpoint and the KEY live, and a substrate
+all: a row is where the wire, the endpoint and the key live, and a substrate
 cannot invent a key — one shipped without it only postpones the failure to the
 first dispatch while looking configured. An agent naming a row that is not
 there refuses at dispatch and says which row it wanted.
 
-The shipped bundles' agents name `provider: default` by convention, so a
-repository that installs one wants a row at that id. The fastest way to get
-there is **Registry → Examples → the LLM example**, which installs two
-correctly-shaped keyless rows (`anthropic`, `openai`) plus an agent and a
-sub-agent to prove them; writing one by hand is the document below. There are
+The web and notes bundles' agents name `provider: default`, so a repository
+that installs either wants a row at that id, and no shipped bundle writes
+one. The LLM example (**Registry → Examples**) installs two correctly-shaped
+keyless rows at `anthropic` and `openai`, which its own agents name directly.
+Write a `default` row yourself, by hand as the document below or by copying
+one of those two. There are
 no `cheap`/`mid`/`strong` rows: a tier was a model id hiding behind a name, and
 the model is the agent's own word now.
 
@@ -334,7 +335,7 @@ leaves the box.
 
 The key is a property, so it is a record write like any other: **Data →
 llmproviders → the row → Edit**, put it in `apiKey`, apply. Because
-`apiKey` is secret-typed it reads back REDACTED — the field shows nothing of
+`apiKey` is secret-typed it reads back redacted — the field shows nothing of
 what is stored, writing it again replaces it, and that is also how a rotation
 is done. There is no separate credentials screen, and no way to read a stored
 key back out of the substrate.

@@ -20,7 +20,7 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 | **property** | A named, typed value on a record, declared by its kind. |
 | **property type** | A named refinement of a base type plus its validations, declared by an authority and reusable across its kinds. |
 | **trait** | A contract a kind implements: a set of properties a kind promises to declare, so unrelated kinds can be treated alike. |
-| **edge** | A named, directed, traversable link from one record to another — the only way one record points at another. Its name is its `rel`. |
+| **edge** | A named, directed, traversable link from one record to another — the only traversable link between records. Its name is its `rel`. |
 | **reference** | A `{kind, id}` pointer stored as an ordinary property value. Data, not a traversable edge. |
 
 ## Truth and derivation
