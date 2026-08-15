@@ -66,6 +66,10 @@ func liveContext(t *testing.T) context.Context {
 
 // liveWire is one real endpoint under test: the client, and the model to ask.
 // The cases below run once per entry, each skipping on its own missing key.
+//
+// Every client is wrapped in a liveMeter, so no case can reach a real endpoint
+// without the pass ledger booking it first — see livespend_test.go for the
+// ceilings that wrapping enforces.
 type liveWire struct {
 	name  string
 	build func(t *testing.T) (Client, string)
@@ -82,7 +86,7 @@ func liveWires() []liveWire {
 			if err != nil {
 				t.Fatalf("build openai client: %v", err)
 			}
-			return c, liveModel(liveOpenAIModelEnv, liveOpenAIModel)
+			return liveMeter{"openai", c}, liveModel(liveOpenAIModelEnv, liveOpenAIModel)
 		}},
 		{"anthropic", func(t *testing.T) (Client, string) {
 			t.Helper()
@@ -92,7 +96,7 @@ func liveWires() []liveWire {
 			if err != nil {
 				t.Fatalf("build anthropic client: %v", err)
 			}
-			return c, liveModel(liveAnthropicModelEnv, liveAnthropicModel)
+			return liveMeter{"anthropic", c}, liveModel(liveAnthropicModelEnv, liveAnthropicModel)
 		}},
 	}
 }
@@ -249,10 +253,11 @@ func TestLiveAnthropicConsecutiveUserTurns(t *testing.T) {
 	// merges them into one. Without the fold this is a 400, forever — which is
 	// why it is worth one live request.
 	key := liveKey(t, "ANTHROPIC_API_KEY")
-	client, err := New(WireAnthropic, Config{APIKey: key})
+	c, err := New(WireAnthropic, Config{APIKey: key})
 	if err != nil {
 		t.Fatalf("build anthropic client: %v", err)
 	}
+	client := liveMeter{"anthropic", c}
 	res, err := client.Complete(liveContext(t), Request{
 		Model:  liveModel(liveAnthropicModelEnv, liveAnthropicModel),
 		System: "Answer with exactly one word.",

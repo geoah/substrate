@@ -220,6 +220,25 @@ the smallest tool-calling model on each wire — `gpt-4.1-mini` and
 `claude-haiku-4-5`. A whole pass costs well under a cent. It is still real
 money, so it is not something to loop.
 
+A per-request cap cannot bound a pass, though — a case that loops, or a table
+that grows a wire, multiplies small requests into a real bill. So
+`internal/llm/livespend_test.go` keeps a **ledger for the whole pass**: every
+adapter client is wrapped in a meter, and two ceilings hold it.
+
+| Ceiling | Value | Enforced |
+| --- | ---: | --- |
+| requests per pass, all wires | 24 | **before** the call — the request that would cross is refused, not billed |
+| tokens per pass, prompt and completion | 20,000 | after the fact, because tokens are what the answer reports |
+
+The suite makes nine requests and burns a few thousand tokens, so both have
+room for a case being added and none for a loop. Raising either is a
+deliberate edit, which is the point. On the way out the ledger prints a
+per-provider table of what the pass actually bought.
+
+It covers the adapter half. The chain case lives in another package and cannot
+reach that ledger; what it spent is asserted on the thread rows it writes,
+which is the accounting that matters there.
+
 Either default can be re-pointed without touching the code, which is also how a
 key that lacks one of those models is made green:
 
@@ -241,6 +260,30 @@ So `mise run test` spends nothing even on a machine whose environment is full
 of keys — the live suite runs when you ask for it by name, and never as a side
 effect of running the tests.
 
+### In CI
+
+The same suite runs on a schedule, as the `llm live` workflow: Mondays at 07:00
+UTC and on `workflow_dispatch`. **Never on a pull request**, for three reasons
+that all point the same way — a fork's PR must not be able to spend the
+project's money, a provider outage must not redden somebody's merge for a
+reason absent from their diff, and a key reachable from `pull_request` is a key
+reachable by anyone who can open one.
+
+The job is one `mise run ci:llm`, like every job in the gate, and it lifts the
+ledger's per-provider table into the run summary so a week's spend is visible
+without reading the log. A failure opens **one** tracking issue labelled
+`llm-live` and comments on it every week it stays broken, rather than filing a
+fresh issue each Monday; the next green run closes it, so the issue's state is
+the suite's state.
+
+The keys are Actions secrets in a dedicated `llm-live` environment rather than
+repository secrets, so the environment's reviewers and branch restriction stand
+between an arbitrary dispatch and the keys. They are **dedicated CI keys**, and
+their real bound is set provider-side — an OpenAI project budget and an
+Anthropic workspace spend cap. That is the only guardrail that still holds when
+the guardrails have a bug in them, and it is why it lives in a provider console
+rather than in this repo.
+
 ## What CI runs
 
 Seven jobs, each one `mise run ci:<job>`, defined once in `.mise.toml` so the
@@ -256,8 +299,14 @@ pipeline is reproducible on a laptop:
 | console | `ci:console` | typecheck, lint, format, test, build |
 | image builds | `ci:image` | the image builds from a clean tree |
 
-CodeQL runs beside them in its own workflow, on a schedule as well as on
-changes, because its queries change even when the code does not.
+Seven, not eight: `ci:llm` exists and is deliberately not among them, because
+the PR pipeline spends nothing. See [the live tests](#in-ci) for where it does
+run.
+
+Two workflows run beside them rather than in the gate, for the same reason in
+two flavours — their answer changes when the tree does not. CodeQL runs on a
+schedule as well as on changes, because its queries change under us. The live
+provider suite runs weekly, because the providers do.
 
 Next: the [built-in kinds](builtin-kinds.md), the vocabulary a repository
 can import.
