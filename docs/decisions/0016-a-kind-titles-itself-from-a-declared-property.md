@@ -43,12 +43,11 @@ Waiting for #68 was the close option and lost on order: repositories accrete
 task and transcript records under the slot for as long as it takes, and every
 one of them is work for the backfill that #68 has to write anyway.
 
-`task` and `transcript` therefore declare `name` and render
-`{name|title}` (transcript falls through to its meeting). The `title`
-alternative is the legacy read, not a second spelling to write: records
-written before `name` existed hold their heading in the column, and rendering
-it keeps them titled instead of blanking them on their next write. It goes
-when the column does.
+`task` and `transcript` therefore declare `name` and render `{name|title}`.
+The `title` alternative is the legacy read, not a second spelling to write:
+records written before `name` existed hold their heading in the column, and
+rendering it keeps them titled instead of blanking them on their next write.
+It goes when the column does.
 
 ### Consequences
 
@@ -57,8 +56,10 @@ when the column does.
 - Good, because the freeze lands on kinds that already own their display text,
   so #68 changes how a template is spelled and not what each kind stores.
 - Bad, because the engine IGNORES a `title` written to a kind that has a
-  displayTemplate. The Linear task projection moves to `name` here; any client
-  that still writes a task title loses it silently, with no refusal.
+  displayTemplate. The Linear task projection moves to `name` here; a client
+  that still writes a task title writes nothing and is not told: an ordinary
+  put or patch reports success, and a change request whose diff is only
+  `title` proposes a change that applies nothing.
 - Bad, because records written before this hold their heading only in the
   column. They still display, but `filter.properties.name` does not find them
   until something rewrites them; the changelog backfill belongs to #68.
@@ -66,10 +67,11 @@ when the column does.
   alternation names the slot it retires, and 15 kinds (core's six and nine
   bundle mirrors) still title themselves from it.
 - Bad, because the alternation reads the column the render writes into, and
-  the column cannot say which of the two a value was: clearing `name` on a
+  the column cannot say which of the two a value was. Clearing `name` on a
   record that had one leaves the heading it last rendered, until a write sets
-  `name` again. Separate storage for an authored title is #68's, so this
-  stands until then, pinned by
+  `name` again, and an alternative AFTER `title` (a transcript reading its
+  meeting, say) is reachable only until the first render lands. Separate
+  storage for an authored title is #68's, so this stands until then, pinned by
   `TestClearingTheHeadingKeepsTheRenderedTitle`.
 
 ### Confirmation

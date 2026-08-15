@@ -20,12 +20,9 @@ data:
   # `title` is the LEGACY alternative, not a second spelling to write:
   # transcripts written before `name` existed hold their heading in the
   # built-in title column, and reading it keeps them titled instead of
-  # blanking them on their next write. It goes when that column does (#68).
-  # The column is also where the rendered title lands, so it cannot say which
-  # of the two a value was: CLEARING `name` leaves the heading it last
-  # rendered rather than falling through, until a write sets `name` again.
-  # A transcript that never had one falls through to the meeting.
-  displayTemplate: "{name|title|meeting}"
+  # blanking them on their next write. Decision record 0016 has what that
+  # costs; it goes when the column does (#68).
+  displayTemplate: "{name|title}"
   properties:
     # what the transcript is of, in one line: usually the meeting's own
     # title, copied by whatever produced the transcript.

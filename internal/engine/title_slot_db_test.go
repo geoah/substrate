@@ -10,12 +10,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-const tsAuthority = "titles.example.substrate.reamde.dev"
+const (
+	tsAuthority    = "titles.example.substrate.reamde.dev"
+	transcriptKind = "calendar.substrate.reamde.dev/transcript"
+)
 
 // The two shipped kinds this closed (issue 123): `task` and `transcript` used
 // to keep their heading in the built-in slot, and both now declare `name` and
@@ -26,55 +28,21 @@ func TestTaskAndTranscriptTitleThemselvesFromName(t *testing.T) {
 	_, ds := newDataset(t)
 
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "Buy milk"},
+		Kind: taskType, Properties: map[string]any{"name": "Buy milk"},
 	})
 	if task.Title != "Buy milk" || task.Properties["name"] != "Buy milk" {
 		t.Fatalf("a task titles itself from `name`: title %q, properties %v", task.Title, task.Properties)
 	}
 	transcript := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "calendar.substrate.reamde.dev/transcript", Properties: map[string]any{"name": "Standup"},
+		Kind: transcriptKind, Properties: map[string]any{"name": "Standup"},
 	})
 	if transcript.Title != "Standup" {
 		t.Fatalf("a transcript titles itself from `name`: %q", transcript.Title)
 	}
-	// A transcript with no name of its own falls through to the meeting. An
-	// event needs the calendar it sits in, and a calendar the account it
-	// synced through.
-	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
-		t.Fatalf("install the account type: %v", err)
-	}
-	account := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: enginetest.AccountType, ID: "gcal-account:george",
-		Properties: map[string]any{"provider": "gcal", "label": "Work"},
-	})
-	calendar := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "calendar", ID: "gcal-cal:primary", Properties: map[string]any{"name": "Primary"},
-		Edges: []substrate.EdgeInput{{
-			Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: account.ID},
-		}},
-	})
-	meeting := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "calendar.substrate.reamde.dev/calendarevent",
-		Properties: map[string]any{
-			"summary": "Rack layout review", "at": "2026-08-05T13:00:00Z",
-			"endsAt": "2026-08-05T13:30:00Z",
-		},
-		Edges: []substrate.EdgeInput{{Rel: "calendar", To: substrate.EdgeRef{ID: calendar.ID}}},
-	})
-	hung := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "calendar.substrate.reamde.dev/transcript",
-		Edges: []substrate.EdgeInput{{
-			Rel: "meeting",
-			To:  substrate.EdgeRef{Kind: meeting.Kind, ID: meeting.ID},
-		}},
-	})
-	if hung.Title != "Rack layout review" {
-		t.Fatalf("an unnamed transcript reads its meeting: %q", hung.Title)
-	}
 	// The write that used to work: a kind with a template derives its title,
 	// so the slot a writer fills is dropped on the way in.
 	written := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"title": "Buy milk"},
+		Kind: taskType, Properties: map[string]any{"title": "Buy milk"},
 	})
 	if written.Title != "" {
 		t.Fatalf("a written title on a templated kind is ignored, got %q", written.Title)
@@ -149,7 +117,7 @@ func TestClearingTheHeadingKeepsTheRenderedTitle(t *testing.T) {
 	_, ds := newDataset(t)
 
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "tasks.substrate.reamde.dev/task", ID: "t-headed",
+		Kind: taskType, ID: "t-headed",
 		Properties: map[string]any{"name": "Buy milk"},
 	})
 	cleared := mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{

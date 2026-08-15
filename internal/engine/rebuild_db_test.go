@@ -56,7 +56,10 @@ func writeSomeHistory(t *testing.T, ds substrate.Dataset) {
 	first := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "tasks.substrate.reamde.dev/task",
 		Properties: map[string]any{
-			"title":       "Ship the fold",
+			// The heading is `name`; the title column holds what the kind's
+			// displayTemplate renders from it, and `body` is the built-in
+			// column a writer still fills, so the history carries both.
+			"name":        "Ship the fold",
 			"body":        "the records table is a fold of the changelog",
 			"description": "carry the values, not just the names",
 			"dueAt":       due.Format(time.RFC3339),
@@ -94,7 +97,7 @@ func writeSomeHistory(t *testing.T, ds substrate.Dataset) {
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: third.Kind, ID: third.ID,
-		Properties: map[string]any{"title": "Collect me", "description": "restored"},
+		Properties: map[string]any{"name": "Collect me", "description": "restored"},
 	})
 	// And one that stays deleted.
 	if _, err := ds.Delete(ctx, owner, second.Kind, second.ID); err != nil {

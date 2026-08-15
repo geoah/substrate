@@ -229,26 +229,26 @@ func TestEveryKindDeclaresADisplayTemplate(t *testing.T) {
 		"web.bundles.substrate.reamde.dev/config":            true,
 		"web.bundles.substrate.reamde.dev/page":              true,
 	}
-	seen := map[string]bool{}
+	declared := map[string]bool{}
 	for _, d := range readTreeDocuments(t) {
 		if d.Kind != vocabulary.DocKind {
 			continue
 		}
+		declared[d.ID] = true
 		tmpl, has := d.Data["displayTemplate"].(string)
 		if has && tmpl != "" {
 			if onTheSlot[d.ID] {
-				t.Errorf("%s declares a displayTemplate now — drop it from the list this test holds", d.ID)
+				t.Errorf("%s declares a displayTemplate now: drop it from the list this test holds", d.ID)
 			}
 			continue
 		}
-		seen[d.ID] = true
 		if !onTheSlot[d.ID] {
-			t.Errorf("%s declares no displayTemplate, so its title is whatever a writer puts in the built-in slot — declare the heading as a property and render it (decision record 0016)", d.ID)
+			t.Errorf("%s declares no displayTemplate, so its title is whatever a writer puts in the built-in slot; declare the heading as a property and render it (decision record 0016)", d.ID)
 		}
 	}
 	for id := range onTheSlot {
-		if !seen[id] {
-			t.Errorf("%s is listed as titling itself from the built-in slot, but the tree has no such kind", id)
+		if !declared[id] {
+			t.Errorf("%s is listed as titling itself from the built-in slot, but the tree declares no such kind", id)
 		}
 	}
 }

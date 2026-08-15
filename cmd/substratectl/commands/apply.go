@@ -31,7 +31,7 @@ Every document wears the envelope — kind, metadata, data:
       owner/pinned: true
   data:
     properties:
-      title: Send rack layout to Alex
+      name: Send rack layout to Alex
       dueAt: 2026-08-08T00:00:00Z
       detail: "rack layout"
     edges:
