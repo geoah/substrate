@@ -1009,6 +1009,26 @@ func (ds *dataset) numericProp(name string) bool {
 	return found
 }
 
+// datetimeProp reports whether EVERY loaded kind that declares this property
+// declares it as an instant (datetime or date, the pair condJSON casts to
+// timestamptz), under numericProp's every-not-any rule: one kind holding text
+// at the same name would fail the cast for its rows, so a disagreement keeps
+// the text ordering.
+func (ds *dataset) datetimeProp(name string) bool {
+	found := false
+	for _, t := range ds.registry().Kinds() {
+		p, ok := t.Prop(name)
+		if !ok {
+			continue
+		}
+		if p.Repeated || (p.Datatype != vocabulary.DatatypeDatetime && p.Datatype != vocabulary.DatatypeDate) {
+			return false
+		}
+		found = true
+	}
+	return found
+}
+
 // stateProp reports whether name is a state property on any candidate type —
 // every loaded type when the query names none, the same way sensitiveProp asks.
 func (ds *dataset) stateProp(types []*vocabulary.Kind, name string) bool {
@@ -1242,6 +1262,17 @@ func (ds *dataset) orderExpr(property string) (string, error) {
 		// the same cast the FILTER already applies (condJSON) applies here.
 		if ds.numericProp(property) {
 			return `(props->>` + sqlLiteral(property) + `)::numeric`, nil
+		}
+		// An INSTANT sorts as an instant. validate.go normalizes a datetime to
+		// one UTC RFC 3339 layout, but RFC3339Nano trims trailing fractional
+		// zeros, so as text "09:00:00.5Z" sorts before "09:00:00Z" ('.' is
+		// 0x2E, 'Z' is 0x5A) while the half-second instant comes after.
+		// timestamptz is microsecond-grained: instants closer than that
+		// compare equal here, exactly as they already do in every range
+		// filter (condJSON casts the same way), and fall to the (kind, id)
+		// tiebreak, so the order stays strict and paging is unaffected.
+		if ds.datetimeProp(property) {
+			return `(props->>` + sqlLiteral(property) + `)::timestamptz`, nil
 		}
 		return `props->>` + sqlLiteral(property), nil
 	default:
