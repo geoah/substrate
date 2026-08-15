@@ -197,13 +197,13 @@ func New(cfg Config) http.Handler {
 }
 
 // isAPIPath reports whether a path addresses the API surface rather than the
-// console: everything under a versioned prefix. It matches on the segment
-// boundary, so a console route that merely STARTS with the letters (/apiary)
-// is still the SPA's. Discovery sits at /.well-known/substrate/server.json,
-// outside this surface entirely — a typo there falls through to the SPA
-// fallback exactly as a typo'd /healthz would.
+// console: the bare /api segment and everything under it. It matches on the
+// segment boundary, so a console route that merely STARTS with the letters
+// (/apiary) is still the SPA's. Discovery sits at
+// /.well-known/substrate/server.json, outside this surface entirely — a typo
+// there falls through to the SPA fallback exactly as a typo'd /healthz would.
 func isAPIPath(path string) bool {
-	return strings.HasPrefix(path, "/api/")
+	return path == "/api" || strings.HasPrefix(path, "/api/")
 }
 
 // mountResources builds the versioned resource tree under /api/v1.

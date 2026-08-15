@@ -34,6 +34,7 @@ func TestUnmatchedAPIPathsAreJSONNotFound(t *testing.T) {
 	tok := svc.token("geoah")
 
 	for _, path := range []string{
+		"/api",
 		"/api/nope",
 		"/api/v1/nope",
 		"/api/v1/nope",
