@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -763,8 +764,13 @@ func foldOpsOf(ch substrate.Change) ([]foldOp, error) {
 	if err != nil {
 		return nil, err
 	}
+	// UseNumber: scanChange hands the payload over with its numbers spelled as
+	// stored, and this second decode must not flatten them through float64 on
+	// the way into the effects' open maps (Set, Labels, Props, Value).
+	dec := json.NewDecoder(bytes.NewReader(encoded))
+	dec.UseNumber()
 	var ops []foldOp
-	if err := json.Unmarshal(encoded, &ops); err != nil {
+	if err := dec.Decode(&ops); err != nil {
 		return nil, fmt.Errorf("substrate/engine: seq %d carries an unreadable fold: %w", ch.Seq, err)
 	}
 	return ops, nil

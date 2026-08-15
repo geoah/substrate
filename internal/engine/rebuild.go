@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -192,8 +193,14 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 				_ = rows.Close()
 				return nil, err
 			}
+			// UseNumber: the snapshot is the containment instrument, and a
+			// decode through float64 would round an integer past 2^53 in BOTH
+			// snapshots, so a rebuild that rounded the stored value would
+			// compare equal to the fold it failed to reproduce.
+			dec := json.NewDecoder(bytes.NewReader(raw))
+			dec.UseNumber()
 			var v any
-			if err := json.Unmarshal(raw, &v); err != nil {
+			if err := dec.Decode(&v); err != nil {
 				_ = rows.Close()
 				return nil, err
 			}

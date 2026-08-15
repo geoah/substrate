@@ -940,6 +940,18 @@ func scalarString(v any) string {
 			return fmt.Sprintf("%d", int64(s))
 		}
 		return fmt.Sprintf("%g", s)
+	case json.Number:
+		// A replayed delta carries its numbers as json.Number (scanChange
+		// preserves the stored spelling), but the fts a rebuild writes must be
+		// the fts the live fold wrote from int64/float64 values, so a Number
+		// normalizes through the same formatting rather than printing verbatim.
+		if i, err := s.Int64(); err == nil {
+			return fmt.Sprintf("%d", i)
+		}
+		if f, err := s.Float64(); err == nil {
+			return scalarString(f)
+		}
+		return s.String()
 	default:
 		return fmt.Sprint(v)
 	}
