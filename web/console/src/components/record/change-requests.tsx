@@ -20,23 +20,26 @@ import { FilePenLineIcon } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { changeRequestsForTargetQueryOptions } from "@/lib/api/changerequests"
 import { changeOp } from "@/lib/changerequests"
-import { relativeTime } from "@/lib/format"
+import { recordTitle, relativeTime } from "@/lib/format"
 
 /** Enough to say "these, and how many more". The queue page is one click away
  * and is where a reader goes to work through them. */
 const TOP_N = 3
 
 export function TargetingRequests({ kind, id }: { kind: string; id: string }) {
-  const requests = useQuery({
-    ...changeRequestsForTargetQueryOptions({
+  // Passed straight through, NOT spread into an object literal: the spread
+  // widens `data` to `any` and takes every field access off the type checker's
+  // hands, which is exactly how a field that does not exist gets read.
+  const requests = useQuery(
+    changeRequestsForTargetQueryOptions({
       kind,
       id,
       decision: "proposed",
       // One more than shown, so "and N more" is answerable without a second
       // round trip or a bounded count walk.
       first: TOP_N + 1,
-    }),
-  })
+    })
+  )
 
   const rows = requests.data?.records ?? []
   // Silence is the common case and the right one: a record with nothing
@@ -67,7 +70,7 @@ export function TargetingRequests({ kind, id }: { kind: string; id: string }) {
               params={{ id: r.id }}
               className="truncate underline-offset-2 hover:underline"
             >
-              {r.title || r.id}
+              {recordTitle(r.properties) || r.id}
             </Link>
             <span
               className="ml-auto shrink-0 data text-muted-foreground"
