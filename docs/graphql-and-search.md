@@ -128,8 +128,9 @@ than pretending.
 
 There are two honest boundaries. There is no REST search endpoint: filtering is
 REST's job (`?filter=`), ranking is the GraphQL query's, and discovery says so
-rather than leaving a client to try a route: the `search` and `embeddings`
-features report `"surfaces": ["graphql"]`, and
+rather than leaving a client to try a route: the `search` feature reports
+`"surfaces": ["graphql"]` (and `embeddings`, listed only where an embedder is
+configured, reports the same), and
 [REST and GraphQL](api.md#rest-and-graphql) lists every other difference
 between the two surfaces. And the substrate does
 retrieval only: it returns typed records with scores, and anything generative

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -17,7 +18,7 @@ const changesPath = "/api/v1/core.substrate.reamde.dev/changes"
 
 func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 	svc := newFakeService()
-	h := New(Config{Service: svc, MaxDialect: 6})
+	h := New(Config{Service: svc, MaxDialect: 6, Embeddings: true})
 
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
 	req.RemoteAddr = "10.0.0.1:1234"
@@ -71,12 +72,11 @@ func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 }
 
 // Every feature says which surfaces serve it, because the two are not
-// equivalent: search and embeddings are the GraphQL query's alone, and a
-// client that read "stable" as "REST route exists" went looking for a route
-// that never shipped.
+// equivalent: search is the GraphQL query's alone, and a client that read
+// "stable" as "a REST route exists" went looking for one that never shipped.
 func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
 	svc := newFakeService()
-	h := New(Config{Service: svc})
+	h := New(Config{Service: svc, Embeddings: true})
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil))
@@ -92,21 +92,56 @@ func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
 		"embeddings": {surfaceGraphQL},
 		"agents":     {surfaceREST},
 	}
-	if len(doc.Features) != len(want) {
-		t.Fatalf("features = %+v, want %d entries", doc.Features, len(want))
-	}
+	seen := map[string]bool{}
 	for _, f := range doc.Features {
+		if seen[f.Name] {
+			t.Fatalf("feature %q listed twice", f.Name)
+		}
+		seen[f.Name] = true
 		if len(f.Surfaces) == 0 {
 			t.Fatalf("feature %q names no surface", f.Name)
+		}
+		if _, ok := want[f.Name]; !ok {
+			t.Fatalf("unknown feature %q: a new one has to declare its surfaces here", f.Name)
 		}
 		if !slices.Equal(f.Surfaces, want[f.Name]) {
 			t.Fatalf("feature %q surfaces = %v, want %v", f.Name, f.Surfaces, want[f.Name])
 		}
 	}
+	for name := range want {
+		if !seen[name] {
+			t.Fatalf("feature %q missing from discovery", name)
+		}
+	}
 }
 
-// The gql-only marker is a claim about the routes: a REST search path is a
-// 404 problem object, exactly like any other unknown API path.
+// The embeddings feature is the one this deployment may not have: without an
+// embedder the semantic arm refuses and nothing drains the embed queue, so
+// listing it would be the advertised-but-not-served bug again. `search` stays
+// listed, because it degrades to lexical.
+func TestDiscoveryOmitsEmbeddingsWithoutAnEmbedder(t *testing.T) {
+	h := New(Config{Service: newFakeService()})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil))
+	doc := decodeJSON[discoveryDoc](t, rec)
+
+	names := map[string]bool{}
+	for _, f := range doc.Features {
+		names[f.Name] = true
+	}
+	if names["embeddings"] {
+		t.Fatalf("embeddings listed with no embedder configured: %+v", doc.Features)
+	}
+	if !names["search"] {
+		t.Fatalf("search dropped with no embedder: %+v", doc.Features)
+	}
+}
+
+// The gql-only marker is a claim about the routes, so hold the routes to it:
+// a search path under /api/v1 is read as an ordinary collection ("unknown
+// collection"), which is what "there is no search route" looks like from
+// outside. The door that does rank is TestGraphQLSearch's.
 func TestSearchHasNoRESTRoute(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
@@ -114,6 +149,9 @@ func TestSearchHasNoRESTRoute(t *testing.T) {
 		rec := env.do(t, http.MethodGet, path+"?q=hello", tok, nil)
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("GET %s status = %d, body %s", path, rec.Code, rec.Body.String())
+		}
+		if body := rec.Body.String(); !strings.Contains(body, "unknown collection") {
+			t.Fatalf("GET %s = %s, want the generic collection 404", path, body)
 		}
 	}
 }

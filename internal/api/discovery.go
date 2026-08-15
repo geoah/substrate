@@ -105,11 +105,17 @@ type changelogInfo struct {
 	Horizon int64 `json:"horizon"`
 }
 
-// featureInfo names one capability, how stable it is, and WHICH surfaces
-// serve it. The two surfaces are not equivalent: REST is the frozen v1
-// contract, GraphQL is the per-repository projection over the same records
-// (decision 0022), so a feature only one of them serves has to say so here.
-// Surfaces is never empty.
+// featureInfo names one feature, how stable it is, and WHICH surfaces serve
+// it. The two surfaces are not equivalent: REST is the frozen v1 contract,
+// GraphQL is the per-repository projection over the same records (decision
+// 0022), so a feature only one of them serves has to say so here. Surfaces is
+// never empty.
+//
+// Surfaces are about the feature's OWN operations, never about its records: a
+// trigger and a blob manifest are ordinary records, readable through
+// `records`/`record` on both surfaces whatever this list says. What
+// `["rest"]` means is that the feature's verbs (a replay, an install, a
+// function call, a blob's bytes) have REST paths and no GraphQL field.
 type featureInfo struct {
 	Name      string   `json:"name"`
 	Stability string   `json:"stability"`
@@ -133,7 +139,7 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 			Note:       "binary maximum; the stored dialect is per-repository, in that repository's own vocabulary_dialect row, and is not served",
 		},
 		Changelog: changelogInfo{Horizon: retentionHorizon()},
-		Features:  features(),
+		Features:  features(h.embeddings),
 		Grammar: grammarInfo{
 			Kind:       "<authority>/<name> | <name>",
 			Record:     "<authority>/<kind>/<id> | <kind>/<id>",
@@ -156,30 +162,37 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, doc)
 }
 
-// features is the deployment's capability list. Everything the frozen core
+// features is the deployment's feature list. Everything the frozen core
 // serves is stable; the agent surface carries its declared stability
 // straight from the substrate marker, so "alpha" surfaces here
 // rather than being hard-coded.
 //
-// Each entry's surfaces are the doors that actually exist today. Search and
-// embeddings are the two the REST surface does not serve: REST filters
-// (`?filter=`), the GraphQL `search(q, mode, kinds, k)` query ranks, and
-// embeddings are reachable only as that query's semantic arm. The rest of
-// the operational verbs (triggers, functions, bundles, blobs, agents) hang
-// off REST paths and have no GraphQL field at all.
-func features() []featureInfo {
-	return []featureInfo{
+// Each entry's surfaces are the doors that actually exist today. Search is
+// the one the REST surface does not serve: REST filters (`?filter=`) and the
+// GraphQL `search(q, mode, kinds, k)` query ranks. Everything else here is a
+// set of REST verbs with no GraphQL field, except the changefeed, which both
+// surfaces read.
+//
+// embeddings is the one CONFIGURED feature: it is listed only where this
+// deployment has an embedder, because without one the semantic arm answers a
+// validation error and nothing drains the embed queue. `search` stays listed
+// either way — it degrades to lexical.
+func features(embeddings bool) []featureInfo {
+	out := []featureInfo{
 		{Name: "triggers", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
 		{Name: "functions", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
 		{Name: "bundles", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
 		{Name: "blobs", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
-		// The changefeed is the one feature both surfaces read: REST pages
-		// and tails it (/changes, /watch), GraphQL resumes it forward
+		// The changefeed is the one feature both surfaces read: REST pages it
+		// (`GET …/changes?before=`), resumes it forward (`?from=`) and tails
+		// it (`?watch=1`), GraphQL resumes it forward
 		// (`changelog(from, filter, first)`) but streams nothing, because
 		// there is no subscription.
 		{Name: "changefeed", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST, surfaceGraphQL}},
 		{Name: "search", Stability: substrate.StabilityStable, Surfaces: []string{surfaceGraphQL}},
-		{Name: "embeddings", Stability: substrate.StabilityStable, Surfaces: []string{surfaceGraphQL}},
-		{Name: substrate.FeatureAgents, Stability: substrate.AgentStability, Surfaces: []string{surfaceREST}},
 	}
+	if embeddings {
+		out = append(out, featureInfo{Name: "embeddings", Stability: substrate.StabilityStable, Surfaces: []string{surfaceGraphQL}})
+	}
+	return append(out, featureInfo{Name: substrate.FeatureAgents, Stability: substrate.AgentStability, Surfaces: []string{surfaceREST}})
 }

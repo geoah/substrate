@@ -299,6 +299,16 @@ The agent surface reports `alpha`, and `search` reports `graphql` alone:
  "registration": {"open": true, "totpRequired": true}}
 ```
 
+A feature's `surfaces` are the doors to its own operations, not to its
+records: a trigger and a blob manifest are ordinary records and read on both
+surfaces whatever the entry says, while `["rest"]` means the feature's verbs
+(a replay, an install, a function call, a blob's bytes) have REST paths and no
+GraphQL field. Two entries are conditional. `embeddings` is listed only where
+the deployment has an embedder configured, because without one nothing drains
+the embed queue and the semantic arm refuses; `search` stays listed either
+way, since it degrades to lexical. Every other entry is present on every
+deployment.
+
 `registration` is what the register door asks for, and whether it is even
 open. `registration.open` is `false` only on a deployment with no invite code
 configured — the register endpoints answer `unsupported` either way, this
@@ -346,13 +356,13 @@ rules](vocabulary.md#vocabulary-evolution-and-the-dialect-contract).
 The two also do not serve the same set. Discovery says which serves what
 (every `features` entry carries its `surfaces`), and this is the whole list:
 
-| Capability | REST | GraphQL |
-| ---------- | ---- | ------- |
-| Records: read, list, filter, and the seven mutations | yes | yes |
+| Operation | REST | GraphQL |
+| --------- | ---- | ------- |
+| Records of every kind: read, list, filter, and the seven mutations | yes | yes |
 | Ranked search, and its semantic (embedding) arm | no route | `search(q, mode, kinds, k)` |
 | Changelog, forward from a seq | `GET …/changes?from=` | `changelog(from, filter, first)` |
 | Changelog, newest-first backward page | `GET …/changes?before=` | no field |
-| The live tail | `GET …/changes?watch=1`, ndjson | no subscription |
+| The live tail | `?watch=1` on a collection or on `…/changes`, ndjson | no subscription |
 | One record's own history | `GET …/changes?recordKind=&recordId=` | `history(first)` on the record |
 | Reverse edges | `GET …/{id}/incoming` | no field |
 | Per-property provenance, `propertyMeta` | single-record reads only | single-record reads only |
@@ -360,10 +370,12 @@ The two also do not serve the same set. Discovery says which serves what
 
 Search is the deliberate one. **Filtering is REST's job** and **ranking is the
 GraphQL query's**: `?filter=` selects rows by predicate, `search` scores and
-orders them, and the two answer different questions. `propertyMeta` is the
-other: it is assembled per record, so a list never carries it on either
-surface. Both are listed here rather than left for a client to find out by
-trying, which is the rule: an asymmetry is written down or it is a bug
+orders them, and the two answer different questions. A client that needs
+ranking posts the `search` query to `POST /api/v1/graphql`; there is no other
+door. `propertyMeta` is the other asymmetry: it is assembled per record, so a
+list never carries it on either surface. Both are listed here rather than left
+for a client to find out by trying, which is the rule: an asymmetry is written
+down or it is a bug
 ([decision 0022](decisions/0022-rest-is-frozen-graphql-is-a-projection.md)).
 
 ## Actors

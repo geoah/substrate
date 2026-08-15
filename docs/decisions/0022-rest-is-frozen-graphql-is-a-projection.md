@@ -35,7 +35,12 @@ installed and a client reads them by introspection; only the structural half
 (the four reads, the seven mutations, `Record`'s own fields, the scalars)
 carries REST's additive promise. `featureInfo` gains `surfaces` (`rest`,
 `graphql`, or both), non-empty for every entry, and `search` and `embeddings`
-carry `graphql` alone.
+carry `graphql` alone. Surfaces describe a feature's own verbs, never its
+records: every kind's records read on both surfaces regardless. Two entries
+that were advertised unconditionally are now honest about what is served:
+`search` says which surface serves it, and `embeddings` is listed only where
+the deployment has an embedder configured, because without one nothing drains
+the embed queue and the semantic arm refuses.
 
 Adding a REST search route would freeze a ranking API at the moment its shape
 is least settled: hybrid scoring, the per-arm `lexical` and `semantic` scores
@@ -64,8 +69,10 @@ Dropping `search` from the feature list would lose the only honest answer to
 ### Confirmation
 
 `TestDiscoveryFeaturesNameTheirSurfaces` in `internal/api` pins the surface
-list for every feature and refuses an empty one; `TestSearchHasNoRESTRoute`
-pins the 404 the gql-only marker claims. The asymmetry table lives in
+list for every feature, refuses an empty one and fails on a feature it does
+not know; `TestSearchHasNoRESTRoute` pins the generic-collection 404 the
+gql-only marker claims, and `TestDiscoveryOmitsEmbeddingsWithoutAnEmbedder`
+pins the conditional entry. The asymmetry table lives in
 [the API page](../api.md#rest-and-graphql); nothing checks that it stays
 complete, so that half is held by review.
 
