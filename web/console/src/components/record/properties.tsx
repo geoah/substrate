@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/empty"
 import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
 import { kindByIdentity } from "@/lib/definition"
-import { shortDateTime } from "@/lib/format"
+import { cellValue, shortDateTime } from "@/lib/format"
 import { splitRecordPath } from "@/lib/record-path"
 import {
   REDACTED,
@@ -50,6 +50,17 @@ interface PropertyRow {
 
 function NotSet({ children = "not set" }: { children?: React.ReactNode }) {
   return <span className="text-muted-foreground/70">{children}</span>
+}
+
+/** A stored empty string. Absence says "not set"; this is a value somebody
+ * wrote, and hiding the difference would make this view disagree with the
+ * manifest. */
+function EmptyString() {
+  return (
+    <span className="data text-muted-foreground/70" title="an empty string">
+      ""
+    </span>
+  )
 }
 
 /** A paragraph-sized value: prose datatypes, and any string too long or too
@@ -160,9 +171,8 @@ function DeclaredValue({
   value: unknown
   kinds: KindInfo[]
 }) {
-  if (value === undefined || value === null || value === "") {
-    return <NotSet />
-  }
+  if (value === undefined || value === null) return <NotSet />
+  if (value === "") return <EmptyString />
   // The read serves a sealed value as its sentinel already; saying it in the
   // muted voice keeps a copied page from looking like it leaked something.
   if (spec.kind === "secret") {
@@ -195,7 +205,8 @@ function DeclaredValue({
 /** A value nobody declared: rendered off its own shape, since there is no
  * datatype to ask. */
 function LooseValue({ value }: { value: unknown }) {
-  if (value === undefined || value === null || value === "") return <NotSet />
+  if (value === undefined || value === null) return <NotSet />
+  if (value === "") return <EmptyString />
   if (typeof value === "object") return <JsonBlock value={value} />
   const text = String(value)
   if (typeof value === "string" && (text.includes("\n") || text.length > 120)) {
@@ -313,8 +324,24 @@ export function PropertiesRail({
               <span className="data text-xs">{rel}</span>
               <div className="flex min-w-0 flex-col gap-0.5 text-sm">
                 {(targets ?? []).map((target) => (
-                  <span key={`${target.kind} ${target.id}`} className="min-w-0">
+                  <span
+                    key={`${target.kind} ${target.id}`}
+                    className="flex min-w-0 items-baseline gap-2"
+                  >
                     <RecordPeek target={target} types={kinds} />
+                    {/* The EDGE's own properties ride the target on the wire;
+                        dropping them would hide data the manifest shows. */}
+                    {target.properties &&
+                      Object.keys(target.properties).length > 0 && (
+                        <span
+                          className="truncate data text-xs text-muted-foreground"
+                          title={JSON.stringify(target.properties)}
+                        >
+                          {Object.entries(target.properties)
+                            .map(([k, v]) => `${k}: ${cellValue(v)}`)
+                            .join(" · ")}
+                        </span>
+                      )}
                   </span>
                 ))}
               </div>

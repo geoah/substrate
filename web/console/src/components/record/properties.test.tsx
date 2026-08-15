@@ -211,6 +211,37 @@ describe("PropertiesRail", () => {
     expect(text).toContain("undeclared")
   })
 
+  it("tells a stored empty string from an absent value", () => {
+    const emptied: SubstrateRecord = {
+      ...record,
+      properties: { summary: "" },
+      edges: {},
+    }
+    const { container } = renderRail(emptied)
+    const text = container.textContent ?? ""
+    expect(text).toContain('""')
+    // notes is truly absent and still reads as such
+    expect(text).toContain("not set")
+  })
+
+  it("shows an edge's own properties beside its target", () => {
+    const withEdgeProps: SubstrateRecord = {
+      ...record,
+      edges: {
+        assignee: [
+          {
+            id: "p1",
+            kind: "people.substrate.reamde.dev/person",
+            title: "Ada",
+            properties: { role: "reviewer" },
+          },
+        ],
+      },
+    }
+    const { container } = renderRail(withEdgeProps)
+    expect(container.textContent).toContain("role: reviewer")
+  })
+
   it("lists edges with each target linked", () => {
     const { container } = renderRail()
     expect(container.textContent).toContain("assignee")
