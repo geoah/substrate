@@ -131,6 +131,13 @@ func (t *txn) rebuild(report *RebuildReport, verify bool) error {
 	if err := t.lockKey(changelogLockKey); err != nil {
 		return err
 	}
+	// Under that lock, the changelog dialect is read AGAIN rather than trusted
+	// from the open (changelogdialect.go): a replay is exactly the operation
+	// that must not run on a stale claim, and it refuses here, before the fold
+	// tables are cleared.
+	if err := t.refuseNewerChangelogDialect(); err != nil {
+		return err
+	}
 	// The chain check runs INSIDE this transaction, under this lock, over the
 	// exact bytes the replay below will fold (adversarial review, both
 	// passes: a verify on a separate connection blesses a moment, not the

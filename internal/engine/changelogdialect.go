@@ -74,13 +74,37 @@ func (ds *dataset) gateChangelogDialect(ctx context.Context) error {
 		return err
 	}
 	if stored > maxChangelogDialect {
-		return fmt.Errorf("%w: repository %s stores changelog dialect %d, this binary replays <= %d: upgrade the substrate",
-			ErrChangelogDialectNewer, ds.info.Name, stored, maxChangelogDialect)
+		return newerChangelogDialect(ds.info.Name, stored)
 	}
 	if stored == maxChangelogDialect {
 		return nil
 	}
 	return ds.stampChangelogDialect(ctx, maxChangelogDialect)
+}
+
+// refuseNewerChangelogDialect re-reads the stamp inside the caller's
+// transaction, for a replay that must not run on a stale reading. The open-time
+// gate cannot cover this on its own: a process holding an OPEN dataset never
+// runs it again, so a rebuild started after another process raised the stamp
+// would fold entries in a spelling this binary does not know. The deployment
+// is one writer process (#159), and this is the brace to that belt on the one
+// operation whose whole job is to interpret history.
+func (t *txn) refuseNewerChangelogDialect() error {
+	var stored int
+	switch err := t.row(`SELECT dialect FROM changelog_dialect`).Scan(&stored); {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil
+	case err != nil:
+		return fmt.Errorf("substrate/engine: read changelog dialect: %w", err)
+	case stored > maxChangelogDialect:
+		return newerChangelogDialect(t.ds.info.Name, stored)
+	}
+	return nil
+}
+
+func newerChangelogDialect(repository string, stored int) error {
+	return fmt.Errorf("%w: repository %s stores changelog dialect %d, this binary replays <= %d: upgrade the substrate",
+		ErrChangelogDialectNewer, repository, stored, maxChangelogDialect)
 }
 
 // storedChangelogDialect reads the repository's stamp; an absent row is 0, a

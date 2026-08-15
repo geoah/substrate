@@ -156,6 +156,58 @@ func TestChangelogDialectAdoptsAnUnstampedStore(t *testing.T) {
 	}
 }
 
+// TestRebuildRefusesANewerChangelogDialect covers the window the open-time gate
+// cannot see: a process holding an ALREADY OPEN dataset while another raises
+// the stamp. A rebuild is the operation whose whole job is to interpret
+// history, so it re-reads the stamp rather than trusting the open's.
+func TestRebuildRefusesANewerChangelogDialect(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	svc, dsn := newService(t)
+	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("create repository: %v", err)
+	}
+	// Opened and cached BEFORE the stamp moves: from here the gate in the open
+	// path never runs for this repository again in this process.
+	if _, err := svc.Dataset(ctx, "geoah"); err != nil {
+		t.Fatal(err)
+	}
+	rb := svc.(rebuilder)
+	if _, err := rb.RebuildRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("rebuild at the stamped dialect: %v", err)
+	}
+
+	db, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "geoah"), engine.RoleApp)
+	if err != nil {
+		t.Fatalf("open repository schema: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.ExecContext(ctx, `UPDATE changelog_dialect SET dialect = $1`,
+		engine.MaxChangelogDialect()+1); err != nil {
+		t.Fatalf("bump the stored changelog dialect: %v", err)
+	}
+
+	before := recordCount(t, db)
+	_, err = rb.RebuildRepository(ctx, "geoah")
+	if !errors.Is(err, engine.ErrChangelogDialectNewer) {
+		t.Fatalf("rebuild against a newer changelog dialect = %v", err)
+	}
+	// It refused BEFORE clearing the fold: a refusal that emptied the records
+	// table would be the outage the gate exists to avoid.
+	if got := recordCount(t, db); got != before {
+		t.Fatalf("the refused rebuild disturbed the fold: %d records, want %d", got, before)
+	}
+}
+
+func recordCount(t *testing.T, db *sql.DB) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRowContext(context.Background(), `SELECT count(*) FROM records`).Scan(&n); err != nil {
+		t.Fatalf("count records: %v", err)
+	}
+	return n
+}
+
 func storedChangelogDialect(t *testing.T, db *sql.DB) int {
 	t.Helper()
 	var d int

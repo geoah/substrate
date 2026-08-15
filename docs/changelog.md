@@ -153,6 +153,12 @@ rebuild`, the day the changelog had to be replayable. Both dialects are 1
 today, and the stored one is never on the wire: what
 [API discovery](api.md#discovery) reports is the binary's maximum.
 
+`repository rebuild` reads the stamp again, under the changelog lock and
+before it clears anything: a process that opened the repository before another
+raised the stamp would otherwise replay history in a spelling it does not
+know, and a replay is the one operation whose whole job is to interpret
+history.
+
 The stamp is about the BINARY that touched the repository, not about which
 entries it happened to write: a newer binary that opens a repository and
 appends nothing new still bars the older one. Downgrading after that open
