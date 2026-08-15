@@ -186,7 +186,7 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 	// user imports, so a fresh repository holds no authority but core and no
 	// kind outside it.
 	for _, id := range []string{
-		"people.substrate.reamde.dev/person", "tasks.substrate.reamde.dev/task", "media.substrate.reamde.dev/movie",
+		"people.substrate.reamde.dev/person", "tasks.substrate.reamde.dev/task",
 		"messaging.substrate.reamde.dev/conversation", "calendar.substrate.reamde.dev/calendarevent",
 	} {
 		if _, err := ds.KindByRef(ctx, id); err == nil {

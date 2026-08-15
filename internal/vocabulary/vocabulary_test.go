@@ -2342,20 +2342,19 @@ func TestShippedSchemaUsesBlockStyle(t *testing.T) {
 	}
 }
 
-// shippedVocabularyDirs are the five VOCABULARY bundles the binary ships and a
+// shippedVocabularyDirs are the four VOCABULARY bundles the binary ships and a
 // repository IMPORTS — the authorities the creation seed used to write and no
 // longer does.
 var shippedVocabularyDirs = []string{
 	"../../kinds/calendar.substrate.reamde.dev",
-	"../../kinds/media.substrate.reamde.dev",
 	"../../kinds/messaging.substrate.reamde.dev",
 	"../../kinds/people.substrate.reamde.dev",
 	"../../kinds/tasks.substrate.reamde.dev",
 }
 
 // The shipped vocabulary is no longer seeded, so its manifests are held to the
-// same bar where they now live: they admit TOGETHER (messaging, calendar and
-// media all point at people), they carry the shape a vocabulary bundle has —
+// same bar where they now live: they admit TOGETHER (messaging and calendar
+// point at people), they carry the shape a vocabulary bundle has —
 // a bare authority, no config type, no callables — and they stay SHIPPED
 // (`source: builtin`) even when built on an install path, which is what keeps
 // `Person` from becoming `People_Person` in GraphQL just because the delivery
@@ -2389,7 +2388,7 @@ func TestShippedVocabularyBundles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build the shipped vocabulary: %v", err)
 	}
-	// Into a repository that holds core and nothing else, all five at once —
+	// Into a repository that holds core and nothing else, all four at once —
 	// the import order a fresh repository actually faces.
 	r, err := vocabulary.LoadDir("../../kinds/core.substrate.reamde.dev")
 	if err != nil {
@@ -2400,7 +2399,6 @@ func TestShippedVocabularyBundles(t *testing.T) {
 	}
 	want := map[string]string{
 		"calendar.substrate.reamde.dev":  "calendar.substrate.reamde.dev/calendar",
-		"media.substrate.reamde.dev":     "media.substrate.reamde.dev/media",
 		"messaging.substrate.reamde.dev": "messaging.substrate.reamde.dev/messaging",
 		"people.substrate.reamde.dev":    "people.substrate.reamde.dev/people",
 		"tasks.substrate.reamde.dev":     "tasks.substrate.reamde.dev/tasks",
@@ -2430,17 +2428,11 @@ func TestShippedVocabularyBundles(t *testing.T) {
 	}
 	// Everything that maps onto people says so, so an import into a
 	// core-only repository is refused with a legible reason.
-	for _, name := range []string{"calendar.substrate.reamde.dev", "media.substrate.reamde.dev", "messaging.substrate.reamde.dev"} {
+	for _, name := range []string{"calendar.substrate.reamde.dev", "messaging.substrate.reamde.dev"} {
 		g, ok := r.AuthorityByName(name)
 		if !ok || !contains(g.Bundle.Requires, "people.substrate.reamde.dev") {
 			t.Errorf("%s does not require people.substrate.reamde.dev", name)
 		}
-	}
-	// The one shipped mapping: bookedition→book, link-only.
-	if m, ok := r.MappingFor("media.substrate.reamde.dev/bookedition"); !ok ||
-		m.To != "media.substrate.reamde.dev/book" || m.Edge != "work" ||
-		len(m.Match) != 0 || len(m.Map) != 0 {
-		t.Errorf("bookedition mapping = %+v", m)
 	}
 	// Person carries no structured name parts (owner ruling): the full name
 	// and the friendly one, nothing else name-shaped. Pronouns exist by a

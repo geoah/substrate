@@ -10,9 +10,12 @@
 # are not what they bound. Bundle-tier actors cannot write this kind at all:
 # a policy an agent could edit is a gate that agent could open.
 #
-# The judge half (judge/criteria/context/thresholds/mode) is DECLARED here so
-# the kind does not churn, and lands in the plan's phase 4: until then a
-# policy's judge is inert data.
+# The judge half (judge/criteria/context/autoAccept/autoRefuse/mode) is
+# DECLARED here so the kind does not churn, and lands in the plan's phase 4:
+# until then a policy's judge is inert data. ALPHA at v1, like the agent
+# vocabulary (core.yaml's marker, ruling A12): nothing runs these properties
+# yet, so they may change or leave without a v1 break. The selector/action
+# half is the stable contract.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: core.substrate.reamde.dev/recordpatchpolicy
@@ -55,7 +58,9 @@ data:
         or bounce
     # The judge, inert until the plan's phase 4: an agent (tool-less, its
     # structured verdict is its whole contract) the ENGINE runs over gated
-    # requests, deciding only between the thresholds below.
+    # requests, deciding only between the thresholds below. ALPHA at v1 with
+    # everything under it through `mode` — see the marker at the top of this
+    # file.
     judge:
       type: reference
       kind: core.substrate.reamde.dev/agent

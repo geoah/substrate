@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -258,7 +259,12 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	authority, err := ds.Get(ctx, "core.substrate.reamde.dev/authority", "media.substrate.reamde.dev")
+	// The shelf fixture brings the meta-model members the shipped vocabulary
+	// no longer carries: custom property types and a record mapping.
+	installShelf(t, ds)
+	const shelf = enginetest.ShelfAuthority
+
+	authority, err := ds.Get(ctx, "core.substrate.reamde.dev/authority", "people.substrate.reamde.dev")
 	if err != nil {
 		t.Fatalf("authority projection: %v", err)
 	}
@@ -300,7 +306,7 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 		t.Fatalf("the trait's variants are not the declared list: %v", capa.Properties)
 	}
 
-	dt, err := ds.Get(ctx, "core.substrate.reamde.dev/propertytype", "media.substrate.reamde.dev/asin")
+	dt, err := ds.Get(ctx, "core.substrate.reamde.dev/propertytype", shelf+"/asin")
 	if err != nil {
 		t.Fatalf("datatype projection: %v", err)
 	}
@@ -317,13 +323,13 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	// Mappings mirror like the rest of the meta-model: one
 	// record per loaded mapping, reachable through the ordinary collection
 	// machinery.
-	mp, err := ds.Get(ctx, "core.substrate.reamde.dev/recordmapping", "media.substrate.reamde.dev/bookeditionwork")
+	mp, err := ds.Get(ctx, "core.substrate.reamde.dev/recordmapping", shelf+"/bookeditionwork")
 	if err != nil {
 		t.Fatalf("mapping projection: %v", err)
 	}
 	if mp.Kind != "core.substrate.reamde.dev/recordmapping" ||
-		mp.Properties["from"] != vocabulary.RecordPath("core.substrate.reamde.dev/kind", "media.substrate.reamde.dev/bookedition") ||
-		mp.Properties["to"] != vocabulary.RecordPath("core.substrate.reamde.dev/kind", "media.substrate.reamde.dev/book") ||
+		mp.Properties["from"] != vocabulary.RecordPath("core.substrate.reamde.dev/kind", shelf+"/bookedition") ||
+		mp.Properties["to"] != vocabulary.RecordPath("core.substrate.reamde.dev/kind", shelf+"/book") ||
 		mp.Properties["edge"] != "work" {
 		t.Fatalf("mapping projection = %v", mp.Properties)
 	}
@@ -343,7 +349,7 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Records) != 1 || page.Records[0].ID != "media.substrate.reamde.dev/bookeditionwork" {
+	if len(page.Records) != 1 || page.Records[0].ID != shelf+"/bookeditionwork" {
 		t.Fatalf("mapping mirrors = %v", ids(page.Records))
 	}
 

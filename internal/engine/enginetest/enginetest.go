@@ -19,7 +19,7 @@
 //
 //   - ImportVocabulary / SeededRegistry stand in for the creation seed's lost
 //     half: repository creation seeds CORE ALONE now, and the shipped
-//     vocabulary (people, tasks, messaging, calendar, media) is a set of
+//     vocabulary (people, tasks, messaging, calendar) is a set of
 //     vocabulary bundles a repository imports.
 //
 // It imports only substrate and schema, so both engine and engine_test may
@@ -51,12 +51,12 @@ const CatalogDir = "../../kinds"
 
 // Vocabulary names the shipped VOCABULARY bundles — the authorities repository
 // creation used to seed and no longer does (a fresh repository holds core
-// alone). Order matters only in that people comes first: messaging, calendar
-// and media all declare against it.
-var Vocabulary = []string{"people", "tasks", "messaging", "calendar", "media"}
+// alone). Order matters only in that people comes first: messaging and
+// calendar declare against it.
+var Vocabulary = []string{"people", "tasks", "messaging", "calendar"}
 
 // ImportVocabulary imports shipped vocabulary bundles by their bare label
-// ("people", "media") through the ONE install path — the schema-apply batch
+// ("people", "calendar") through the ONE install path — the schema-apply batch
 // verb, under the bundle's own actor, exactly as a catalog install does. A test
 // that reads or writes `people.substrate.reamde.dev/person` calls this first, because the
 // creation seed no longer writes that vocabulary into the repository.
@@ -103,6 +103,82 @@ func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string
 		if err := importOne(name); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// ShelfAuthority is the fixture vocabulary InstallShelf brings: the shapes the
+// engine suite exercises that no shipped vocabulary carries any more (the
+// media bundle used to, until decision record 0015 held it out of the tree).
+// `book` is a mapping target, so its id is server-assigned and edges into it
+// resolve canonically; `bookedition` carries the refinement-typed asin/isbn
+// pair, an enum and the writer's own id; `description` is the one embeddable
+// property.
+const ShelfAuthority = "shelf.test.dev"
+
+// InstallShelf installs the shelf fixture vocabulary through the same batch
+// apply an import rides, under its own bundle actor. It requires people:
+// the author and narrator edges land on person.
+func InstallShelf(ctx context.Context, ds substrate.Dataset) error {
+	sa, ok := ds.(vocabularyApplier)
+	if !ok {
+		return errors.New("enginetest: dataset does not support ApplyVocabularyDocuments")
+	}
+	docs := []map[string]any{
+		vocabulary.AuthorityManifest(ShelfAuthority, 1),
+		{
+			"kind":     "core.substrate.reamde.dev/propertytype",
+			"metadata": map[string]any{"id": ShelfAuthority + "/asin"},
+			"data": map[string]any{
+				"authority":   ShelfAuthority,
+				"description": "Amazon's audiobook identifier",
+				"base":        "string",
+				"pattern":     "^B0[A-Z0-9]{8}$",
+			},
+		},
+		{
+			"kind":     "core.substrate.reamde.dev/propertytype",
+			"metadata": map[string]any{"id": ShelfAuthority + "/isbn"},
+			"data": map[string]any{
+				"authority":   ShelfAuthority,
+				"description": "ISBN-10 or ISBN-13, normalized and hyphen-free",
+				"base":        "string",
+				"pattern":     "^(97[89])?[0-9]{9}[0-9X]$",
+			},
+		},
+		vocabulary.KindManifest(ShelfAuthority,
+			map[string]any{"singular": "book", "plural": "books"},
+			map[string]any{
+				"properties": map[string]any{
+					"subtitle":    map[string]any{"type": "string"},
+					"description": map[string]any{"type": "markdown", "embed": true},
+				},
+				"edges": map[string]any{
+					"author": map[string]any{"to": "people.substrate.reamde.dev/person", "many": true},
+				},
+			}),
+		vocabulary.KindManifest(ShelfAuthority,
+			map[string]any{"singular": "bookedition", "plural": "bookeditions"},
+			map[string]any{
+				"properties": map[string]any{
+					"format":   map[string]any{"type": "enum", "values": []any{"print", "ebook", "audiobook"}},
+					"language": map[string]any{"type": "string"},
+					"asin":     map[string]any{"type": "asin"},
+					"isbn":     map[string]any{"type": "isbn"},
+					"mediaRef": map[string]any{"type": "url"},
+					"duration": map[string]any{"type": "duration"},
+				},
+				"edges": map[string]any{
+					"work":     map[string]any{"to": ShelfAuthority + "/book", "required": true},
+					"narrator": map[string]any{"to": "people.substrate.reamde.dev/person"},
+				},
+			}),
+		vocabulary.MappingManifest(ShelfAuthority, "bookeditionwork", map[string]any{
+			"from": ShelfAuthority + "/bookedition", "to": ShelfAuthority + "/book", "edge": "work",
+		}),
+	}
+	if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor("shelf"), docs); err != nil {
+		return fmt.Errorf("enginetest: install the shelf fixture: %w", err)
 	}
 	return nil
 }

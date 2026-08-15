@@ -254,7 +254,7 @@ func ValidBundleAuthority(authority string) bool {
 
 // ValidVocabularyAuthority reports whether an authority name is a legal owned
 // VOCABULARY authority: one bare lowercase label under the org domain —
-// "people.substrate.reamde.dev", "media.substrate.reamde.dev". This is the one
+// "people.substrate.reamde.dev", "tasks.substrate.reamde.dev". This is the one
 // authority shape the loader checks, because it is the one that grants: an
 // authority passing it is built `builtin`. Any extra label fails it
 // ("google.bundles" is not one label), so the two owned-authority shapes are

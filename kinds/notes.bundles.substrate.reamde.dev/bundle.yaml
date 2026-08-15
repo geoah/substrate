@@ -26,6 +26,11 @@
 # This bundle declares NO inputs. It once shipped a config kind, but nothing
 # ever read it (not a function body, not a prompt), and a knob no code reads
 # is a lie, so it is gone.
+#
+# OUT OF THE STABLE SET (decision record 0015): this bundle is a worked
+# example, not shipped vocabulary. Its declarations may change or leave
+# without an upgrade path, and installing it accepts that. Nothing outside
+# this directory declares against it.
 kind: core.substrate.reamde.dev/authority
 metadata:
   id: notes.bundles.substrate.reamde.dev

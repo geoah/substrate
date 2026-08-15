@@ -10,7 +10,10 @@ facet; LLM, notes, and the web harvester carry `example`, because they exist
 to be read; Firecrawl carries neither, adding callables behind an API key
 with no provider account. Each facet
 is the catalog's own curated flag, stated per bundle rather than inferred
-from the closure. Every integration syncs from the provider into the
+from the closure. An example sits outside the stable vocabulary set
+([decision record 0015](decisions/0015-unproven-kinds-stay-out-of-the-stable-set.md)):
+its declarations may change or leave without an upgrade path, and installing
+one accepts that. Every integration syncs from the provider into the
 repository; none writes back to the provider, and each ships a README stating
 its limits.
 

@@ -241,9 +241,10 @@ var taskDefinition = map[string]any{
 
 // fakeRegistry is a slice of a real repository's registry under the pinned naming
 // scheme: the substrate's own machinery in `core`, the shipped vocabulary
-// split across `people`/`messaging`/`calendar`/`tasks`/`media`, and two
-// installed connector authorities. Nothing shipped is an installed authority any more,
-// so `installed` here means a connector, always.
+// split across `people`/`messaging`/`calendar`/`tasks`, one invented `library`
+// vocabulary authority, and two installed connector authorities. Nothing
+// shipped is an installed authority any more, so `installed` here means a
+// connector, always.
 //
 // The two connector authorities are what make the ambiguity path real rather than
 // hypothetical: every connector installs a type named exactly `syncrun` in its
@@ -263,15 +264,15 @@ var fakeRegistry = []map[string]any{
 	builtin("calendarevent", "calendar.substrate.reamde.dev", "calendarevents"),
 	builtin("calendareventseries", "calendar.substrate.reamde.dev", "calendareventseries"),
 	typeRecord("task", "tasks.substrate.reamde.dev", "tasks", "builtin", taskDefinition),
-	// `media` is the largest shipped authority (eleven types); five of them here is
-	// enough to cover both plural shapes — `books`/`movies`/`podcasts`, whose
-	// plural is a word of its own, and `bookseries`/`tvseries`, whose plural is
-	// its singular.
-	builtin("book", "media.substrate.reamde.dev", "books"),
-	builtin("bookseries", "media.substrate.reamde.dev", "bookseries"),
-	builtin("movie", "media.substrate.reamde.dev", "movies"),
-	builtin("podcast", "media.substrate.reamde.dev", "podcasts"),
-	builtin("tvseries", "media.substrate.reamde.dev", "tvseries"),
+	// `library` is the fake's own vocabulary authority (nothing shipped by that
+	// name); its five types cover both plural shapes — `books`/`movies`/
+	// `podcasts`, whose plural is a word of its own, and `bookseries`/
+	// `tvseries`, whose plural is its singular.
+	builtin("book", "library.substrate.reamde.dev", "books"),
+	builtin("bookseries", "library.substrate.reamde.dev", "bookseries"),
+	builtin("movie", "library.substrate.reamde.dev", "movies"),
+	builtin("podcast", "library.substrate.reamde.dev", "podcasts"),
+	builtin("tvseries", "library.substrate.reamde.dev", "tvseries"),
 	installed("syncrun", "google.connectors.substrate.reamde.dev", "syncruns"),
 	installed("syncrun", "slack.connectors.substrate.reamde.dev", "syncruns"),
 }

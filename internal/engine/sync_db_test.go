@@ -152,6 +152,7 @@ func TestWriterKeyDeterminismAndRefinements(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
+	installShelf(t, ds)
 	work := mustPut(t, ds, owner, substrate.PutInput{Kind: "book", Properties: map[string]any{"title": "Piranesi"}})
 	toWork := []substrate.EdgeInput{{Rel: "work", To: substrate.EdgeRef{ID: work.ID}}}
 	editionID := extID("audible.asin", "B0123ABCDE")

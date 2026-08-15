@@ -45,6 +45,7 @@ func TestEmbedQueueDoesNotPublishStaleVectors(t *testing.T) {
 		t.Fatalf("open dataset: %v", err)
 	}
 	importVocabulary(t, ds)
+	installShelf(t, ds)
 
 	// v1: a book whose blurb is embeddable. Putting it enqueues the embed.
 	book := mustPut(t, ds, owner, substrate.PutInput{

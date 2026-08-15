@@ -162,9 +162,9 @@ arguments.
 
 The shipped vocabulary is split by subsystem, Kubernetes-style, each subsystem
 its own authority: `people.substrate.reamde.dev`, `messaging.substrate.reamde.dev`,
-`calendar.substrate.reamde.dev`, `tasks.substrate.reamde.dev`, `media.substrate.reamde.dev`, and the
-mneme-ported `health`, `fitness`, `routines`, `journal`, `places`, `food`,
-`commerce` and `memory` under the same domain — each a bundle you
+`calendar.substrate.reamde.dev`, `tasks.substrate.reamde.dev`, and the
+mneme-ported `health`, `fitness`, `routines`, `journal`, `places`, `food`
+and `commerce` under the same domain — each a bundle you
 **import** — and `core.substrate.reamde.dev` for the substrate's own machinery, which is the
 only one a new repository is seeded with. Authorities namespace names; they
 never partition the data: an edge crosses authorities as easily as it stays
@@ -440,14 +440,14 @@ both back, as `Content-Type` and a `Content-Disposition` filename.
 
 **Your own property types.** A custom property type is a **refinement** of a
 base type plus validations, declared as a `propertytype` manifest and local to
-its authority. The media authority defines one for ISBNs:
+its authority. A library authority would define one for ISBNs like this:
 
 ```yaml
 kind: core.substrate.reamde.dev/propertytype
 metadata:
-  id: media.substrate.reamde.dev/isbn
+  id: library.substrate.reamde.dev/isbn
 data:
-  authority: media.substrate.reamde.dev
+  authority: library.substrate.reamde.dev
   description: "ISBN-10 or ISBN-13, normalized and hyphen-free"
   base: string
   pattern: "^(97[89])?[0-9]{9}[0-9X]$"

@@ -11,6 +11,11 @@
 #
 # This file is the SCHEMA closure (the atomic install unit). The delivery
 # wiring lives beside it in triggers.yaml as ordinary data records.
+#
+# OUT OF THE STABLE SET (decision record 0015): this bundle is a worked
+# example, not shipped vocabulary. Its declarations may change or leave
+# without an upgrade path, and installing it accepts that. Nothing outside
+# this directory declares against it.
 # ---- the owned authority ------------------------------------------------------
 # Every schema manifest declares INTO core; the authority it describes is
 # metadata.id.

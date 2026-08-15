@@ -1,6 +1,11 @@
 # The LLM example: the provider rows a substrate needs before any agent can
 # run, and the agents that prove them.
 #
+# OUT OF THE STABLE SET (decision record 0015): this bundle is a worked
+# example, not shipped vocabulary. Its declarations may change or leave
+# without an upgrade path, and installing it accepts that. Nothing outside
+# this directory declares against it.
+#
 # NOTHING SEEDS A PROVIDER. A repository holds no `llmprovider` row until its
 # owner writes one, because a row is where the wire, the endpoint and the KEY
 # live — and a substrate cannot invent a key. A row shipped without one would

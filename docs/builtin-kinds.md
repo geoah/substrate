@@ -3,9 +3,8 @@
 Every repository is seeded at creation with **`core.substrate.reamde.dev` and nothing
 else** — the substrate's own machinery, including the delivery plumbing and the
 agent runtime's data. Everything else is a **vocabulary bundle you import**:
-people, tasks, messaging, calendar and media, and the mneme-ported health,
-fitness, routines, journal, places, food, commerce and memory. Each ships in
-the binary and
+people, tasks, messaging, calendar, and the mneme-ported health, fitness,
+routines, journal, places, food and commerce. Each ships in the binary and
 installs on request, exactly the way a [bundle](bundles.md) does, under the
 same `bundle:<name>` actor. So a brand-new repository has no `person` kind
 until you ask for one.
@@ -64,27 +63,7 @@ value says so and falls back to they/them.
 | `project` | What tasks group under: a name, a lifecycle, a summary.                       |
 | `tasklog` | The done-or-skipped mark against one occurrence of a recurring task.          |
 
-## media.substrate.reamde.dev — imported
-
-| Kind              | What it is                                                           |
-| ----------------- | -------------------------------------------------------------------- |
-| `book`            | The work: what an author wrote, independent of any edition you hold. |
-| `bookedition`     | One edition: the paperback on the shelf, the epub, the audiobook.    |
-| `bookseries`      | An ordered collection a book belongs to, in any format.              |
-| `movie`           | One film.                                                            |
-| `moviecollection` | A franchise, not a shelf.                                            |
-| `musicalbum`      | One album or release: the pressing you have.                         |
-| `musictrack`      | One track on an album: the recording itself.                         |
-| `podcast`         | One podcast feed.                                                    |
-| `podcastepisode`  | One episode; its point on the timeline is the publish date.          |
-| `tvseries`        | One television series.                                               |
-| `tvseason`        | One season of a series; season 0 is where specials go.               |
-| `tvepisode`       | One episode; its point on the timeline is the air date.              |
-
-Media ships the one built-in [record mapping](projection.md), `bookeditionwork`,
-which carries an edition's structure onto its work.
-
-Eight further vocabulary bundles are ported from mneme v4. The recurring
+Seven further vocabulary bundles are ported from mneme v4. The recurring
 kinds share one stance: a schedule stores an RFC 5545 RRULE the substrate
 never expands, an occurrence exists only when a log records it, and "missed"
 is computed from absence, never stored.
@@ -144,16 +123,6 @@ is computed from absence, never stored.
 | `order`     | One purchase; the lifecycle stamps `shippedAt` and `deliveredAt` itself. |
 | `orderitem` | One line inside an order; the order owns it.                           |
 | `currency`  | A property type: an ISO 4217 code, kept separate from the amount.      |
-
-## memory.substrate.reamde.dev — imported
-
-| Kind      | What it is                                                              |
-| --------- | ------------------------------------------------------------------------ |
-| `episode` | One remembered thing at one grain; moments roll up into daily, weekly and monthly summaries via `aggregates`. |
-
-Memory requires people: an episode's `people` edge lands on
-`people.substrate.reamde.dev/person`, and everything else it touches goes
-through the untyped `subjects` edge.
 
 ## core.substrate.reamde.dev
 

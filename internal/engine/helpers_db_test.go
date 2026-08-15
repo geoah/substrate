@@ -98,6 +98,16 @@ func importVocabulary(t *testing.T, ds substrate.Dataset, names ...string) {
 	}
 }
 
+// installShelf installs the shelf fixture vocabulary (enginetest.InstallShelf):
+// the shapes the suite exercises that no shipped vocabulary carries — a
+// mapping-target kind, the asin/isbn refinements, an embeddable property.
+func installShelf(t *testing.T, ds substrate.Dataset) {
+	t.Helper()
+	if err := enginetest.InstallShelf(context.Background(), ds); err != nil {
+		t.Fatalf("install the shelf fixture: %v", err)
+	}
+}
+
 // installShippedBundle installs one shipped EXTENSION bundle's closure — the
 // declaration rows a vocabulary bundle does not bring: the bundle document, its
 // functions and its agents.

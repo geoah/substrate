@@ -821,6 +821,7 @@ func TestClientIDIsACreateRule(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
+	installShelf(t, ds) // `book` is a mapping target: its id is server-assigned
 
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "book", ID: "book-i-named", Properties: map[string]any{"title": "Piranesi"},

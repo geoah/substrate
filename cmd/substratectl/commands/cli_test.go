@@ -581,11 +581,11 @@ func TestKindsTable(t *testing.T) {
 		"recordsplit           core.substrate.reamde.dev                recordsplits           1         builtin\n" +
 		"token                 core.substrate.reamde.dev                tokens                 1         builtin\n" +
 		"syncrun               google.connectors.substrate.reamde.dev   syncruns               1         installed\n" +
-		"book                  media.substrate.reamde.dev               books                  1         builtin\n" +
-		"bookseries            media.substrate.reamde.dev               bookseries             1         builtin\n" +
-		"movie                 media.substrate.reamde.dev               movies                 1         builtin\n" +
-		"podcast               media.substrate.reamde.dev               podcasts               1         builtin\n" +
-		"tvseries              media.substrate.reamde.dev               tvseries               1         builtin\n" +
+		"book                  library.substrate.reamde.dev             books                  1         builtin\n" +
+		"bookseries            library.substrate.reamde.dev             bookseries             1         builtin\n" +
+		"movie                 library.substrate.reamde.dev             movies                 1         builtin\n" +
+		"podcast               library.substrate.reamde.dev             podcasts               1         builtin\n" +
+		"tvseries              library.substrate.reamde.dev             tvseries               1         builtin\n" +
 		"conversationmessage   messaging.substrate.reamde.dev           conversationmessages   1         builtin\n" +
 		"organization          people.substrate.reamde.dev              organizations          1         builtin\n" +
 		"person                people.substrate.reamde.dev              people                 1         builtin\n" +
@@ -717,13 +717,13 @@ func TestGetBarePluralResolvesWhenUniqueAcrossGroups(t *testing.T) {
 		{"people", "/api/v1/people.substrate.reamde.dev/people"},
 		{"calendarevents", "/api/v1/calendar.substrate.reamde.dev/calendarevents"},
 		{"conversationmessages", "/api/v1/messaging.substrate.reamde.dev/conversationmessages"},
-		{"books", "/api/v1/media.substrate.reamde.dev/books"},
-		{"movies", "/api/v1/media.substrate.reamde.dev/movies"},
-		{"podcasts", "/api/v1/media.substrate.reamde.dev/podcasts"},
-		{"bookseries", "/api/v1/media.substrate.reamde.dev/bookseries"},
+		{"books", "/api/v1/library.substrate.reamde.dev/books"},
+		{"movies", "/api/v1/library.substrate.reamde.dev/movies"},
+		{"podcasts", "/api/v1/library.substrate.reamde.dev/podcasts"},
+		{"bookseries", "/api/v1/library.substrate.reamde.dev/bookseries"},
 		// The singular resolves too, so `get person` is not a usage error.
 		{"person", "/api/v1/people.substrate.reamde.dev/people"},
-		{"book", "/api/v1/media.substrate.reamde.dev/books"},
+		{"book", "/api/v1/library.substrate.reamde.dev/books"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.arg, func(t *testing.T) {
@@ -746,12 +746,12 @@ func TestGetBarePluralResolvesWhenUniqueAcrossGroups(t *testing.T) {
 // same string and must all address the same collection. A resolver that
 // appended an "s" or assumed plural != name would only be caught here.
 func TestGetPluralEqualToSingular(t *testing.T) {
-	for _, arg := range []string{"tvseries", "media.substrate.reamde.dev/tvseries"} {
+	for _, arg := range []string{"tvseries", "library.substrate.reamde.dev/tvseries"} {
 		t.Run(arg, func(t *testing.T) {
 			h := newHarness(t)
 			h.writeConfig()
 			_, _, _ = h.run("get", arg)
-			want := "GET /api/v1/media.substrate.reamde.dev/tvseries"
+			want := "GET /api/v1/library.substrate.reamde.dev/tvseries"
 			for _, req := range h.fake.requests {
 				if req == want {
 					return
@@ -821,22 +821,22 @@ func TestTypeRegistryIsReadWhole(t *testing.T) {
 	}
 	h.fake.extraTypes = extra
 
-	// `books` is shipped vocabulary, and the oldest end of the registry. The
-	// fake serves no media collection, so the read itself 404s — the
-	// assertion is that it RESOLVED and addressed that collection at all.
+	// `books` sits at the oldest end of the registry. The fake serves no
+	// library collection, so the read itself 404s — the assertion is that it
+	// RESOLVED and addressed that collection at all.
 	if _, _, err := h.run("get", "books"); err != nil && strings.Contains(err.Error(), "no type with plural") {
 		t.Fatalf("`get books` lost shipped vocabulary past the first page: %v", err)
 	}
 	var sawBooks bool
 	pages := 0
 	for _, req := range h.fake.requests {
-		sawBooks = sawBooks || req == "GET /api/v1/media.substrate.reamde.dev/books"
+		sawBooks = sawBooks || req == "GET /api/v1/library.substrate.reamde.dev/books"
 		if req == "GET "+typesPath {
 			pages++
 		}
 	}
 	if !sawBooks {
-		t.Fatalf("`get books` did not reach the media collection: %v", h.fake.requests)
+		t.Fatalf("`get books` did not reach the library collection: %v", h.fake.requests)
 	}
 	if pages < 2 {
 		t.Fatalf("the registry was read in %d request(s); a %d-row registry pages", pages, len(extra)+len(fakeRegistry))
