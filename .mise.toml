@@ -1,5 +1,13 @@
 [tools]
 go = "1.26.6"
+# Held to the Dockerfile's web stage by `lint:toolchain`: this is the node the
+# console is TESTED on, so it is the node the image builds it on.
+#
+# Not 26 yet. Node ships its own global `localStorage`, which on 26 throws
+# unless the process was given --localstorage-file; it shadows the one jsdom
+# installs, so dozens of the console's tests fail there before any of this
+# repo's code runs. Moving up means giving vitest a setup file that puts
+# jsdom's back, and that is its own change, not a base-image bump.
 node = "22.12.0"
 pnpm = "9.14.2"
 golangci-lint = "2.12.2"
@@ -165,8 +173,15 @@ run = "go test -count=1 -run '^TestLive' -v ./internal/llm/... ./internal/engine
 # eslint from `lint` would drag pnpm into the lint job and run it twice.
 
 [tasks.lint]
-description = "Every linter: Go, YAML, shell, Python and the docs"
-depends = ["lint:go", "lint:yaml", "lint:shell", "lint:python", "lint:docs"]
+description = "Every linter: Go, YAML, shell, Python, the docs and the toolchain pins"
+depends = [
+  "lint:go",
+  "lint:yaml",
+  "lint:shell",
+  "lint:python",
+  "lint:docs",
+  "lint:toolchain",
+]
 
 [tasks."lint:go"]
 description = "golangci-lint over the module"
@@ -202,6 +217,16 @@ description = "ruff over the runner's Python host"
 # function body is exec'd into: a syntax slip there takes out every Python
 # function at once, and no Go test compiles it. Config is .ruff.toml.
 run = "ruff check internal/runner/host.py"
+
+[tasks."lint:toolchain"]
+description = "The version pins written twice: .mise.toml against the Dockerfiles"
+# IN `lint`, unlike `kinds:check`, because it reads the FILES and not the diff:
+# the answer is the same on a laptop with no base branch as it is on a merge.
+#
+# Dependabot bumps a FROM line and cannot bump `.mise.toml`, so this is the
+# check that turns a base-image major into a named failure rather than a silent
+# split between what CI builds and what ships.
+run = ".mise/toolchaincheck.sh"
 
 [tasks."lint:docs"]
 description = "The docs, held: links and anchors (lychee), then the prose rules"
