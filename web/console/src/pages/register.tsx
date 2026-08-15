@@ -216,16 +216,18 @@ export function RegisterPage() {
         totpCode: normalized,
         label: "console",
       })
-      saveSession(minted.secret, name, minted.token.id)
       // The recovery identity and the signing seed arrive ONCE, on this
-      // response, and no later call can produce either: hold the reader here
-      // until they carry them off instead of navigating past the only
-      // showing.
-      if (minted.recoveryKey || minted.signingSeed) {
+      // response, and no later call can produce either: they land in state
+      // BEFORE the fallible session write, so a blocked localStorage cannot
+      // take the only showing with it, and the page holds the reader until
+      // they carry the keys off instead of navigating past them.
+      const holdKeys = Boolean(minted.recoveryKey || minted.signingSeed)
+      if (holdKeys) {
         setRecoveryKey(minted.recoveryKey ?? null)
         setSigningSeed(minted.signingSeed ?? null)
-        return
       }
+      saveSession(minted.secret, name, minted.token.id)
+      if (holdKeys) return
       await navigate({ to: "/", replace: true })
     } catch (err) {
       if (err instanceof ApiError && err.code === "auth") {
