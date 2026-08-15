@@ -28,9 +28,14 @@ import {
   changeOp,
   changeTarget,
   decisionOf,
+  deriveChangeRows,
+  proposedDiff,
   rationaleOf,
+  type ChangeRow,
   type Verdict,
 } from "@/lib/changerequests"
+import { kindsQueryOptions } from "@/lib/api/kinds"
+import { kindByIdentity, splitKind } from "@/lib/definition"
 import { cn } from "@/lib/utils"
 
 export function ProposalCard({ id }: { id: string }) {
@@ -50,6 +55,27 @@ export function ProposalCard({ id }: { id: string }) {
   const thread = useQuery({
     ...recordQueryOptions(CORE_AUTHORITY, "llmthreads", threadId),
     enabled: gated && Boolean(threadId),
+  })
+  // The card shows WHAT would change, not a link to find out: for a patch,
+  // the live target is read so every row renders before AND after.
+  const pendingOp = request.data ? (changeOp(request.data) ?? "patch") : "patch"
+  const pendingTarget = request.data ? changeTarget(request.data) : undefined
+  const registry = useQuery({
+    ...kindsQueryOptions,
+    enabled:
+      Boolean(request.data) && pendingOp === "patch" && Boolean(pendingTarget),
+  })
+  const targetKindInfo =
+    pendingTarget && registry.data
+      ? kindByIdentity(registry.data, pendingTarget.kind)
+      : undefined
+  const targetRecord = useQuery({
+    ...recordQueryOptions(
+      pendingTarget ? splitKind(pendingTarget.kind).authority : "",
+      targetKindInfo?.plural ?? "",
+      pendingTarget?.id ?? ""
+    ),
+    enabled: pendingOp === "patch" && Boolean(pendingTarget && targetKindInfo),
   })
 
   if (request.isPending) {
@@ -170,6 +196,14 @@ export function ProposalCard({ id }: { id: string }) {
           {rationale}
         </p>
       )}
+      {decision === "proposed" && (
+        <ChangePreview
+          record={record}
+          op={op}
+          targetLabel={targetLabel}
+          target={targetRecord.data}
+        />
+      )}
       {verdict && (
         <p className="text-xs [overflow-wrap:anywhere] text-muted-foreground">
           Judge: <span className="data">{verdict.verdict}</span>
@@ -245,6 +279,81 @@ export function ProposalCard({ id }: { id: string }) {
             </Button>
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+/** One value, rendered short: the card previews a change, it does not dump
+ * JSON. Long values truncate; the full diff stays one click away. */
+function short(value: unknown): string {
+  if (value === undefined) return ""
+  if (value === null) return "null"
+  const text = typeof value === "string" ? value : JSON.stringify(value)
+  return text.length > 80 ? text.slice(0, 77) + "…" : text
+}
+
+/** WHAT the accept would do, inline: per-property before → after for a
+ * patch, the values a create would mint, the one line a delete means. Shown
+ * while the request is PENDING — that is the moment of decision; a decided
+ * card keeps the outcome line, and the live rows would drift anyway. */
+function ChangePreview({
+  record,
+  op,
+  targetLabel,
+  target,
+}: {
+  record: SubstrateRecord
+  op: string
+  targetLabel?: string
+  target?: SubstrateRecord
+}) {
+  if (op === "delete") {
+    return (
+      <p className="text-xs text-destructive/80">
+        Deletes <span className="data">{targetLabel}</span> — the record is
+        tombstoned, not erased.
+      </p>
+    )
+  }
+  const diff = proposedDiff(record)
+  const rows = deriveChangeRows(
+    diff.properties,
+    op === "patch" ? target : undefined
+  )
+  if (rows.length === 0) return null
+  return (
+    <div className="flex flex-col gap-0.5 rounded-sm bg-background/60 p-1.5">
+      {rows.map((row) => (
+        <ChangeRowLine key={row.key} row={row} create={op === "create"} />
+      ))}
+    </div>
+  )
+}
+
+function ChangeRowLine({ row, create }: { row: ChangeRow; create: boolean }) {
+  return (
+    <div className="flex items-baseline gap-1.5 text-xs [overflow-wrap:anywhere]">
+      <span className="shrink-0 data text-muted-foreground">{row.key}</span>
+      {row.effect === "clear" ? (
+        <span className="text-destructive/80">
+          <s className="data">{short(row.before)}</s> cleared
+        </span>
+      ) : row.effect === "unchanged" ? (
+        <span className="text-muted-foreground">
+          <span className="data">{short(row.after)}</span> (already matches)
+        </span>
+      ) : row.effect === "set" ? (
+        <span>
+          <s className="data text-muted-foreground">{short(row.before)}</s>{" "}
+          <span className="data text-emerald-700 dark:text-emerald-400">
+            {short(row.after)}
+          </span>
+        </span>
+      ) : (
+        <span className="data text-emerald-700 dark:text-emerald-400">
+          {create ? short(row.after) : `+ ${short(row.after)}`}
+        </span>
       )}
     </div>
   )
