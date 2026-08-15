@@ -2,8 +2,7 @@
 #
 # Read by .github/workflows/pr-labels.yml. Only area/ is
 # decided here: type/ comes from the conventional-commit title a human
-# already writes, and a priority (p0/p1/p2) is a judgement nothing can glob
-# for.
+# already writes, and priority/ is a judgement nothing can glob for.
 #
 # A change can land in more than one area, and then it wears both. The engine
 # lives under internal/engine, so an agent change is a server change too;
