@@ -103,13 +103,13 @@ approve/deny everywhere. What exists is a seam (ADK's
 `before_tool_callback` and `RequireConfirmationProvider`, OpenAI's
 `needsApproval` predicate that fails closed on malformed arguments) where a
 policy or judge composes in, plus third-party confidence-escalation
-middleware. The `writepolicy` judge below is therefore a design, not a
+middleware. The `recordpatchpolicy` judge below is therefore a design, not a
 port; the fail-closed posture is the one thing everybody agrees on.
 
 The interactive harnesses (Claude Code, Codex CLI, Gemini CLI) agree on
 more than they differ:
 
-- **The question shape converges** on exactly what the ask kind declares:
+- **The question shape converges** on exactly what the interaction kind declares:
   an array of 1 to 4 questions, each a prompt with 2 to 4 options of
   `{label, description}` and a per-question multi-select flag (Claude
   Code's AskUserQuestion, Codex's `request_user_input`, Gemini's
@@ -145,18 +145,28 @@ pending TOOL CALL's result, because the call is still open on their stack.
 Here the resolution can arrive hours after the turn ended, so it re-enters
 as a durable row (the A2A/Jules shape), which PR #72 already chose.
 
-## The `ask` kind
+## The `llminteraction` kind
 
-One new core kind, `core.substrate.reamde.dev/ask` (plural `asks`): one
-record per BATCH of questions, because the user answers a batch as a unit
-and the thread resumes once, not once per question. There is no forking
-wizard: the questions are fixed at creation, mutually independent, and
-answered together.
+One new core kind, `core.substrate.reamde.dev/llminteraction` (plural
+`llminteractions`), named beside `llmthread`/`llmmessage` as the agent
+runtime's kinds are, and generic on purpose: today it carries a batch of
+questions, and a future interaction shape (a form, a file request) extends
+the same record rather than minting a sibling. One record per BATCH,
+because the user answers a batch as a unit and the thread resumes once, not
+once per question. There is no forking wizard: the questions are fixed at
+creation, mutually independent, and answered together.
+
+`questions` and `answers` are deliberately TWO properties rather than one
+merged list: they have different writers (the agent, then the user) and
+different freeze times (creation, then resolution), so the immutability
+guards stay whole-property checks instead of per-field diffs inside a
+repeated object. The question `id` is the join, and the card renders them
+as one form either way.
 
 ```yaml
-kind: core.substrate.reamde.dev/ask
+kind: core.substrate.reamde.dev/llminteraction
 properties:
-  thread:      # reference core/llmthread, required, inverse: asks — ENGINE-stamped
+  thread:      # reference core/llmthread, required, inverse: interactions — ENGINE-stamped
   questions:   # repeated object, the reviewed envelope, immutable after create
     fields:
       id:          # string: the agent's key for the question, echoed by its answer
@@ -220,12 +230,12 @@ did.
   answer to it. This keeps "what did the user authorize" a record, not an
   inference.
 
-### The `askuser` built-in
+### The `ask` built-in
 
 A fifth host function beside query/propose/graphql/mutate:
-`core.substrate.reamde.dev/askuser` (a distinct name from the kind, so one
+`core.substrate.reamde.dev/ask` (a distinct name from the kind, so one
 spelling never means two things in an error message). Arguments mirror the
-questions envelope. It requires `permissions.writes` to name the ask kind
+questions envelope. It requires `permissions.writes` to name the interaction kind
 (the same load-time rule propose has), lands the record with `thread`
 stamped by the loop, and returns `{"id": ...}`. The card teaches the model
 the contract: the answer arrives in a later turn; ask, then either continue
@@ -265,7 +275,7 @@ PR #72):
   UNIVERSAL envelope key is `event` (plus `changes` on the row): each
   event's shape is its kind's contract, and the request's existing
   `proposalDecision` shape (request, decision, op, target, version) is
-  grandfathered unchanged; asks add `askAnswered`/`askDismissed` carrying
+  grandfathered unchanged; asks add `interactionAnswered`/`interactionDismissed` carrying
   the answers verbatim, so the model reads them without a second query.
 - The deciding-`ifVersion` requirement (today hardcoded to the request
   kind) generalizes: a marker-carrying transition requires `ifVersion` on
@@ -315,14 +325,14 @@ picture:
   left waiting on a request that can no longer land.
 - The inbox treats pending asks and pending requests as one "needs you"
   surface, grouped by thread: both are records, so this is a query, not a
-  feature. A thread's open interactions are `asks(state: pending)` plus
+  feature. A thread's open interactions are `interactions(state: pending)` plus
   `proposals(decision: proposed)` through the reference inverses (issue
   #71).
 - The card and the review page keep resolving live state, never snapshots
   (the #72 rule), so the transcript and the inbox cannot disagree.
 - **The decision carries its own remedy** (the pattern every harness
   converged on): the gate card's accept can also offer "accept, and stop
-  gating writes like this", minting a `writepolicy` allow rule. The remedy
+  gating writes like this", minting a `recordpatchpolicy` allow rule. The remedy
   is server-PROPOSED and deliberately narrow: exactly this agent, this
   kind, this op, offered target-scoped first, never a wildcard, shown as
   the exact rule text in a second confirmation, and the minted rule carries
@@ -344,22 +354,21 @@ the owner set. It layers deterministically, narrowest authority first:
    `write`, `external`, `irreversible`) and optionally a confirmation floor
    (`always`: never auto-applied, whatever any policy or judge says).
    Floors only tighten.
-3. **The owner's rules** (new, `writepolicy` records): which agent writes
+3. **The owner's rules** (new, `recordpatchpolicy` records): which agent writes
    land, gate, or refuse.
 4. **The judge** (new, optional): an LLM deciding GATED requests between
    the owner's confidence thresholds, through the engine.
 
-### The `writepolicy` kind
+### The `recordpatchpolicy` kind
 
 Policy is records, so it is per-repository data the owner edits and the
-changelog versions, not configuration in a file. Two guards keep it from
-being fail-open data an agent can edit: bundle-tier writes to `writepolicy`
-refuse unconditionally (policy is the owner's hand alone, like a bundle's
-owner-gated records), and `policyevaluation` (below) is engine-written
-under the system-kind guard.
+changelog versions, not configuration in a file. One guard keeps it from
+being fail-open data an agent can edit: bundle-tier writes to
+`recordpatchpolicy` refuse unconditionally (policy is the owner's hand
+alone, like a bundle's owner-gated records).
 
 ```yaml
-kind: core.substrate.reamde.dev/writepolicy
+kind: core.substrate.reamde.dev/recordpatchpolicy
 properties:
   selector:      # object: which writes this policy speaks for
     fields:
@@ -369,6 +378,7 @@ properties:
   action:        # enum: allow | gate | refuse
   judge:         # reference core/agent: judges what this policy GATES; optional
   criteria:      # text: the owner's instructions to the judge, in prose
+  context:       # enum: envelope | thread — how much the judge sees; envelope is the default
   autoAccept:    # float 0..1: judge confidence at or above accepts the gated request
   autoRefuse:    # float 0..1: judge confidence at or above rejects it
   mode:          # enum: enforce | advise (advise: the judge recommends, never decides)
@@ -427,17 +437,20 @@ When a policy that gated a request (or a `propose` matching its selector)
 names a `judge`, the ENGINE runs the judge and the ENGINE decides; the
 judge only ever recommends. Order of operations, fail-closed at every gap:
 
-1. The engine reads the pending request at a version, writes a
-   `policyevaluation` in state `evaluating`, and invokes the judge agent
-   with a typed projection of exactly what a human reviewer reads: the
+1. The engine reads the pending request at a version and invokes the judge
+   agent with a typed projection of exactly what a human reviewer reads: the
    frozen envelope (op, target kind and id, the normalised diff, the now
    equally frozen rationale), the proposing agent's identity, and the
-   policy's `criteria`. The judge is TOOL-LESS and emits nothing: its whole
+   policy's `criteria`. How much context the judge gets is the OWNER's
+   dial, not the judge's: the default is that envelope and nothing else,
+   and a policy may widen it with `context: thread` (the proposing thread's
+   recent turns, delimited as data) where the domain needs it — wider
+   context is more signal AND more injection surface, so it is an explicit
+   choice per policy. The judge is TOOL-LESS and emits nothing: its whole
    contract is the structured reply
    `{verdict: accept|reject|escalate, confidence: 0..1, rationale}`.
    It never sees sealed values or secret-typed properties (a diff cannot
-   carry them anyway), and its inputs are delimited as data, because record
-   content is exactly where prompt injection lives.
+   carry them anyway).
 2. The engine routes, in `enforce` mode: `accept` at or above `autoAccept`
    accepts; `reject` at or above `autoRefuse` rejects with the rationale as
    the note; everything else, `escalate`, sub-threshold confidence,
@@ -463,36 +476,69 @@ Unset thresholds mean advise, whatever the mode says: conservative is the
 default, not an option.
 
 Confidence is a routing signal, not a probability: model-reported numbers
-are uncalibrated and drift across models and prompts. The evaluation record
-pins what produced each number (the judge agent's declaration version and
-model), thresholds stay the owner's data, and nothing above a declaration's
+are uncalibrated and drift across models and prompts. The verdict pins what
+produced each number (the judge agent's declaration version and model),
+thresholds stay the owner's data, and nothing above a declaration's
 `always` floor is ever model-decided.
 
-### The `policyevaluation` audit record
+### The audit lives on the records it concerns
 
-Every judge invocation writes one engine-owned `policyevaluation` record,
-failures included: the policy (id AND the changelog seq of its evaluated
-revision, because the policy record is mutable and the audit must not be),
-the judged request and the request version read, the judge agent, its
-declaration version and its thread (cost tallied like any run), verdict,
-confidence, rationale, and the outcome
-(`accepted`/`rejected`/`escalated`/`advised`/`error`). Corrections are new
-records, never rewrites; the system-kind guard keeps every other hand off
-the kind. "Why did this land without me" is always answerable from records
-alone.
+No separate audit kind. Every judge invocation, failures included, writes
+its verdict onto the REQUEST as an engine-owned annotation
+(`policy/verdict`: the policy id AND the changelog seq of its evaluated
+revision, because the policy record is mutable and the audit must not be;
+the request version read; verdict, confidence, rationale; the outcome,
+`accepted`/`rejected`/`escalated`/`advised`/`error`; and the judge's thread
+path). Three existing surfaces make that a complete audit with no new kind:
+the CHANGELOG already versions every annotation write immutably (a
+re-judged request's history holds both verdicts), the judge's THREAD is the
+full run record with its cost tallied, and a door-allowed write's changelog
+payload already names the policy that allowed it. "Why did this land
+without me" is always answerable from records alone, and nothing needs
+garbage collection because nothing was minted to expire.
 
 ### What policy is not
 
 - Not a widening: no verdict lands a write the emit ceiling or a
   declaration's floor refuses; those run first and policy runs inside them.
 - Not self-serviceable: the gated agent cannot decide its own gate, cannot
-  edit `writepolicy`, and cannot write the audit kind.
+  edit `recordpatchpolicy`, and cannot forge the verdict annotation (the
+  `policy/` namespace is the engine's, the way `substrate/conflict` already
+  is).
 - Not a second judge machinery: the arbiter-by-trigger pattern (an agent
   watching request creation) keeps working for people who want it; a
   policy's judge is the engine running the same shape of agent with
   thresholds, CAS and audit attached.
 - Not per-question routing for asks: asks are always the user's. A policy
   that answers questions FOR the user is an agent talking to itself.
+
+### The flow, end to end
+
+One worked example, so nobody reverse-engineers it from the sections above.
+The owner has one policy: selector `{kinds: [people/person], agents:
+[assistant]}`, action `gate`, a judge with `autoAccept: 0.9`, mode
+`enforce`.
+
+1. The assistant tries `mutate` on a person record. The emit ceiling admits
+   it (person is in its emit); the policy matches and says `gate`; the
+   write does NOT land. It converts into a `recordpatchrequest` (diff,
+   target, `targetVersion`, the thread, the policy id), and the tool result
+   tells the model "held for review as <id>". Had the agent used `propose`
+   instead, the request simply exists already and the door step never runs:
+   both roads meet at the same pending request.
+2. The engine sees a gated request under a judge-bearing policy and runs
+   the judge over the request's envelope. Verdict `accept` at 0.95: the
+   engine accepts under `policy:<id>`, the diff applies, the verdict lands
+   on the request as `policy/verdict`. Verdict at 0.7, or `escalate`, or
+   the judge fell over: the request stays PROPOSED, the verdict rides the
+   card as a recommendation, and the inbox shows it. The user decides.
+3. Whoever decided (judge or user), the decision transition writes the
+   `system` row into the proposing thread (verdict, target, new version)
+   and the thread resumes: the agent's next turn reacts to it, in the
+   transcript, where every reader sees it. The user is asked exactly when
+   the judge lacked either the verdict or the confidence to act, and never
+   learns about it from a side channel: the thread and the inbox are the
+   same records.
 
 ## Resolution delivery: at-least-once, and honest about it
 
@@ -552,7 +598,7 @@ Function bodies are one-shot: they return effects, the engine applies them.
 Two honest ways a function participates, neither built now:
 
 1. **Gated effects** (cheap): a function marks an effect `review: true`, or
-   a `writepolicy` matching function actors gates it. The effect becomes a
+   a `recordpatchpolicy` matching function actors gates it. The effect becomes a
    request; the function has already returned. Fits functions whose write
    IS the last step (most of them). No new runtime.
 2. **Ask-and-continue** (real design work): a function returns early with
@@ -634,7 +680,7 @@ ticket.
   re-propose), grouped by thread, newest first. Both are record queries.
 - **GraphQL**: no bespoke fields. Asks and requests reach consumers through
   the generic record surface today and through reference inverses
-  (`thread { asks, proposals, messages }`) once issue #71 lands, which this
+  (`thread { interactions, proposals, messages }`) once issue #71 lands, which this
   plan makes load-bearing.
 - **Streaming**: the live overlay gets one new `AgentEvent` kind, `ask`, so
   a running chat renders the form the moment the tool settles instead of on
@@ -651,17 +697,17 @@ Additive throughout; no narrowing, no data migration:
    self-agent exclusion and the per-thread resume budget; the settle-time
    re-check and the resolution sweep; the conflicted-accept notification.
 2. **Phase 2, asks**: the `ask` kind with its admission and guards, the
-   `askuser` built-in, engine-stamped `thread`, owner-only CAS'd answers,
+   `ask` built-in, engine-stamped `thread`, owner-only CAS'd answers,
    the console form card, the inbox growth. The llm example bundle grows an
    asking demo.
-3. **Phase 3, policy, static**: the `writepolicy` kind (owner-only), door
+3. **Phase 3, policy, static**: the `recordpatchpolicy` kind (owner-only), door
    evaluation with allow/gate/refuse and most-restrictive-wins, the gate
    conversion with deterministic request ids and the typed `gated` result,
    declaration-level effect class and confirmation floor on functions.
 4. **Phase 4, the judge**: engine-run judging with CAS and thresholds,
    enforce/advise, the policy-actor decision arm in `authorizeRequestOp`,
-   the engine-written `policyevaluation` kind, the remedy flow on the gate
-   card. Ships with a judged example in the llm bundle.
+   the engine-owned `policy/verdict` annotation, the remedy flow on the
+   gate card. Ships with a judged example in the llm bundle.
 5. **Ticketed beside**: sub-agent change aggregation (#70), the GraphQL
    thread surface (#71, load-bearing for the inbox), function escalation,
    workflows, compaction (which must never fold away turns that pending
