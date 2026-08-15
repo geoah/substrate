@@ -3,6 +3,8 @@ package engine_test
 import (
 	"context"
 	"encoding/json"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -161,6 +163,42 @@ func TestRebuildIsIdempotent(t *testing.T) {
 	}
 	if twice := foldOf(t, ds); string(once) != string(twice) {
 		t.Fatalf("rebuilding twice is not rebuilding once\n%s", firstDifference(once, twice))
+	}
+}
+
+// TestRebuildKeeps64BitIntegers: a delta value past 2^53 must refold exactly.
+// The live fold marshals the written int64 into the store and the entry's
+// payload alike; a replay that decodes that payload through float64 rounds
+// 2^53+1 to its even neighbor and folds a value the changelog never held.
+// An annotation is the vehicle because it carries arbitrary JSON unmodified:
+// a declared int property refuses the value at the door (asInt), and a label
+// flattens through coerceLabels' round trip before it ever reaches the fold.
+func TestRebuildKeeps64BitIntegers(t *testing.T) {
+	t.Parallel()
+	svc, ds := newDataset(t)
+	const big = int64(1<<53 + 1)
+	exact := strconv.FormatInt(big, 10)
+
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind:        "tasks.substrate.reamde.dev/task",
+		Properties:  map[string]any{"title": "Count past the mantissa"},
+		Annotations: map[string]any{"owner/count": big},
+	})
+
+	before := foldOf(t, ds)
+	if !strings.Contains(string(before), exact) {
+		t.Fatalf("the live fold does not hold %s: the value rounded before the rebuild could", exact)
+	}
+
+	if _, err := svc.(rebuilder).RebuildRepository(context.Background(), "geoah"); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	after := foldOf(t, ds)
+	if !strings.Contains(string(after), exact) {
+		t.Fatalf("the rebuilt fold rounded %s away\n%s", exact, firstDifference(before, after))
+	}
+	if string(before) != string(after) {
+		t.Fatalf("the rebuilt fold is not the fold\n%s", firstDifference(before, after))
 	}
 }
 
