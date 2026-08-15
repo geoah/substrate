@@ -59,6 +59,15 @@ func TestCanonicalJSONNormalizes(t *testing.T) {
 		`{}`:                      `{}`,
 		`{"n":9007199254740993}`:  `{"n":9.007199254740993E15}`,
 		`{"z":-0.0}`:              `{"z":0}`,
+		// Unicode: escape variants collapse to the value; distinct code
+		// points stay distinct; the escaping policy is encoding/json's one
+		// (HTML-significant characters escape, both ends alike).
+		`{"s":"caf\u00e9"}`: `{"s":"café"}`,
+		`{"s":"café"}`:      `{"s":"café"}`,
+		`{"s":"<"}`:         `{"s":"\u003c"}`,
+		// Postgres numeric's whole exponent domain fits; nothing rounds.
+		`{"e":1e130}`:  `{"e":1E130}`,
+		`{"e":1e-130}`: `{"e":1E-130}`,
 	}
 	for in, want := range cases {
 		got, err := canonicalJSON([]byte(in))

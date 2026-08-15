@@ -212,23 +212,43 @@ unit.`,
 }
 
 func (a *app) repositoryVerifyCommand() *cobra.Command {
-	var output string
+	var output, expectKey, expectHead string
+	var expectSignedFrom int64
 	cmd := &cobra.Command{
 		Use:   "verify <username>",
 		Short: "Walk a repository's changelog chain and check every hash and signature",
 		Long: `Recompute every changelog entry's chain hash from the stored bytes and check
-every signature the signing state requires. Read-only by construction: it
-never backfills, repairs or touches what it judges.
+every signature the signing state requires, in one read-only snapshot. It
+never backfills, repairs or touches the repository it judges (opening the
+engine still applies any pending schema migration, as every operator command
+does).
 
-The verified head (seq, hash) is the thing worth writing down elsewhere:
-comparing heads across time is what turns "internally consistent" into "the
-same history I saw yesterday". Chain epochs (backfill, reseal, signing
-activation) are listed so a remembered head that no longer matches can be
-explained — or not, which is the finding.
+Everything in the database can be rewritten by whoever holds the database, so
+a verify that trusts only the database proves internal consistency. The
+--expect flags are the difference: pass the (public key, signed-from) pair
+logged at activation and a previously reported head as seq:hash, and the
+comparison the scheme rests on becomes enforced instead of eyeballed. A
+pinned head is also the ONLY way to catch a truncated tail.
+
+Chain epochs (backfill, reseal, signing activation) are listed and checked so
+a head that legitimately moved is explained; run with a stale --expect-head
+after a reseal and the finding says to re-pin rather than crying tamper.
 
 Exits nonzero when anything does not verify.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			pins := engine.VerifyPins{PublicKey: expectKey, SignedFrom: expectSignedFrom}
+			if expectHead != "" {
+				seqStr, hash, ok := strings.Cut(expectHead, ":")
+				if !ok {
+					return fmt.Errorf("--expect-head wants seq:hash, got %q", expectHead)
+				}
+				seq, err := strconv.ParseInt(seqStr, 10, 64)
+				if err != nil || seq <= 0 || hash == "" {
+					return fmt.Errorf("--expect-head wants a positive seq and a hex hash, got %q", expectHead)
+				}
+				pins.HeadSeq, pins.HeadHash = seq, hash
+			}
 			svc, err := a.openEngineRead(cmd.Context())
 			if err != nil {
 				return err
@@ -236,9 +256,9 @@ Exits nonzero when anything does not verify.`,
 			defer func() { _ = svc.Close() }()
 			v, ok := svc.(verifier)
 			if !ok {
-				return seamMissing("VerifyRepository")
+				return seamMissing("VerifyRepositoryPinned")
 			}
-			report, err := v.VerifyRepository(cmd.Context(), args[0])
+			report, err := v.VerifyRepositoryPinned(cmd.Context(), args[0], pins)
 			if err != nil {
 				return err
 			}
@@ -289,6 +309,9 @@ Exits nonzero when anything does not verify.`,
 		},
 	}
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output format: text|json")
+	cmd.Flags().StringVar(&expectKey, "expect-public-key", "", "the hex public key logged at activation; a mismatch is a finding")
+	cmd.Flags().Int64Var(&expectSignedFrom, "expect-signed-from", 0, "the activation seq logged beside the key; a mismatch is a finding")
+	cmd.Flags().StringVar(&expectHead, "expect-head", "", "a previously reported head as seq:hash; a mismatch no epoch explains is a finding")
 	return cmd
 }
 

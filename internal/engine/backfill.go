@@ -4,22 +4,26 @@ package engine
 // hashes at the repository's FIRST OPEN under this binary, before it serves a
 // write — the same per-repository, lazy, idempotent shape as the shipped
 // vocabulary upgrade, and for the same reason: it leaves a repository nobody
-// opens untouched. Oldest-first, chunked into bounded transactions each under
-// the repository's changelog lock, resumable at the first NULL hash (hashed
-// rows are a prefix and NULLs a suffix BY CONSTRUCTION: the chain cannot be
-// computed out of order).
+// opens untouched.
+//
+// ONE TRANSACTION, deliberately (adversarial review #1): the epoch that says
+// "attested history begins at from_seq" must be exactly as durable as the
+// hashes it describes. A chunked backfill had two crash windows — hashes
+// without their epoch (backfilled rows indistinguishable from witnessed
+// ones), and a resumed run recording the resumption point as the beginning —
+// and both misstate provenance, which is the one thing the epoch exists to
+// state. The reads still page (a transaction holds pages fine); only the
+// COMMIT is whole.
 //
 // A backfilled hash attests forward from the moment of backfill, nothing
 // more: if history was already tampered with, the backfill notarizes the
-// tampered bytes. Because a backfilled hash is byte-identical to a
-// contemporaneous one, the backfill records a mandatory chain epoch (reason
-// `backfill`) naming where attested history begins; `verify` reports coverage
-// from that row rather than pretending the past was witnessed.
+// tampered bytes. `verify` reports coverage from the epoch rather than
+// pretending the past was witnessed.
 //
 // Deployment assumption, stated rather than engineered around: ONE writer
 // process per database. An old binary appending unhashed rows after a new
-// one backfilled would break the NULL-suffix invariant; the chunk's interior
-// NULL check catches that state and refuses rather than notarizing around it.
+// one backfilled would break the NULL-suffix invariant; the interior NULL
+// check catches that state and refuses rather than notarizing around it.
 
 import (
 	"context"
@@ -29,67 +33,12 @@ import (
 	"time"
 )
 
-// backfillBatch bounds one chunk: one transaction's worth of rows, so the
-// changelog lock is held in slices and the open logs progress between them.
+// backfillBatch bounds one page of reads inside the backfill transaction.
 const backfillBatch = 500
 
 func (ds *dataset) backfillChain(ctx context.Context) error {
-	var total, firstStamped int64
-	for {
-		stamped, first, err := ds.backfillChainChunk(ctx)
-		if err != nil {
-			return err
-		}
-		if firstStamped == 0 {
-			firstStamped = first
-		}
-		total += stamped
-		if total > 0 && stamped > 0 {
-			ds.svc.log.Info("substrate: chain backfill progressing",
-				"repository", ds.scope.Repository, "stamped", total)
-		}
-		if stamped < backfillBatch {
-			break
-		}
-	}
-	if total == 0 {
-		return nil
-	}
-	// The mandatory provenance mark: attested history begins here, and a
-	// verifier must be able to see that these hashes were minted at backfill
-	// time rather than at write time.
+	var total, first int64
 	err := ds.inRawTx(ctx, func(t *txn) error {
-		if err := t.lockKey(changelogLockKey); err != nil {
-			return err
-		}
-		head, headHash, err := t.chainHead()
-		if err != nil {
-			return err
-		}
-		if head == 0 {
-			return nil
-		}
-		ep := chainEpoch{
-			At: t.now, Reason: epochBackfill, FromSeq: firstStamped, NewHead: headHash,
-		}
-		if ds.signedFrom > 0 {
-			ep.PublicKey = []byte(ds.signPub)
-			ep.SignedFrom = ds.signedFrom
-		}
-		return t.recordEpoch(ep, ds.signKey)
-	})
-	if err != nil {
-		return err
-	}
-	ds.svc.log.Info("substrate: chain backfill complete",
-		"repository", ds.scope.Repository, "entries", total, "fromSeq", firstStamped)
-	return nil
-}
-
-// backfillChainChunk stamps up to one batch of unhashed entries in one
-// transaction. Returns how many it stamped and the first seq it touched.
-func (ds *dataset) backfillChainChunk(ctx context.Context) (stamped, first int64, err error) {
-	err = ds.inRawTx(ctx, func(t *txn) error {
 		if err := t.lockKey(changelogLockKey); err != nil {
 			return err
 		}
@@ -97,9 +46,10 @@ func (ds *dataset) backfillChainChunk(ctx context.Context) (stamped, first int64
 		if err := t.row(`SELECT coalesce(max(seq), 0) FROM changelog WHERE hash IS NOT NULL`).Scan(&hashedHead); err != nil {
 			return err
 		}
-		// The resumability invariant: hashed rows are a prefix. An interior
-		// NULL means somebody wrote around the chain (a second, older writer;
-		// a hand UPDATE), and stamping past it would notarize the damage.
+		// Hashed rows must be a prefix: the chain cannot be computed out of
+		// order. An interior NULL means somebody wrote around the chain (a
+		// second, older writer; a hand UPDATE), and stamping past it would
+		// notarize the damage.
 		var holes int64
 		if err := t.row(`SELECT count(*) FROM changelog WHERE seq <= $1 AND hash IS NULL`, hashedHead).Scan(&holes); err != nil {
 			return err
@@ -113,47 +63,75 @@ func (ds *dataset) backfillChainChunk(ctx context.Context) (stamped, first int64
 			if err := t.row(`SELECT hash FROM changelog WHERE seq = $1`, hashedHead).Scan(&raw); err != nil {
 				return err
 			}
+			if len(raw) != 32 {
+				return fmt.Errorf("substrate/engine: chain backfill: the hashed head (seq %d) carries a %d-byte hash", hashedHead, len(raw))
+			}
 			copy(prev[:], raw)
 		}
-		entries, err := t.chainPage(hashedHead, backfillBatch)
-		if err != nil {
-			return err
-		}
-		expected := hashedHead + 1
-		for _, e := range entries {
-			if e.Seq != expected {
-				return fmt.Errorf("substrate/engine: chain backfill refuses: seq %d follows %d — the sequence has a gap", e.Seq, expected-1)
-			}
-			expected++
-			h, err := entryHash(ds.scope.Repository, e, prev)
+		signing := ds.signing()
+		after, expected := hashedHead, hashedHead+1
+		for {
+			entries, err := t.chainPage(after, backfillBatch)
 			if err != nil {
 				return err
 			}
-			var sig []byte
-			if ds.signedFrom > 0 && e.Seq >= ds.signedFrom {
-				if ds.signKey == nil {
-					return fmt.Errorf("substrate/engine: chain backfill: signing is active from seq %d but the signing key is unavailable", ds.signedFrom)
+			if len(entries) == 0 {
+				break
+			}
+			for _, e := range entries {
+				if e.Seq != expected {
+					return fmt.Errorf("substrate/engine: chain backfill refuses: seq %d follows %d — the sequence has a gap", e.Seq, expected-1)
 				}
-				sig = ed25519.Sign(ds.signKey, h[:])
+				expected++
+				h, err := entryHash(ds.scope.Repository, e, prev)
+				if err != nil {
+					return err
+				}
+				var sig []byte
+				if signing.signedFrom > 0 && e.Seq >= signing.signedFrom {
+					if signing.key == nil {
+						return fmt.Errorf("substrate/engine: chain backfill: signing is active from seq %d but the signing key is unavailable", signing.signedFrom)
+					}
+					sig = ed25519.Sign(signing.key, h[:])
+				}
+				res, err := t.exec(`UPDATE changelog SET hash = $2, sig = $3 WHERE seq = $1`, e.Seq, h[:], sig)
+				if err != nil {
+					return err
+				}
+				if n, err := res.RowsAffected(); err != nil {
+					return err
+				} else if n != 1 {
+					return fmt.Errorf("substrate/engine: chain backfill: stamping seq %d touched %d rows", e.Seq, n)
+				}
+				if first == 0 {
+					first = e.Seq
+				}
+				total++
+				prev = h
+				after = e.Seq
 			}
-			res, err := t.exec(`UPDATE changelog SET hash = $2, sig = $3 WHERE seq = $1`, e.Seq, h[:], sig)
-			if err != nil {
-				return err
-			}
-			if n, err := res.RowsAffected(); err != nil {
-				return err
-			} else if n != 1 {
-				return fmt.Errorf("substrate/engine: chain backfill: stamping seq %d touched %d rows", e.Seq, n)
-			}
-			if first == 0 {
-				first = e.Seq
-			}
-			stamped++
-			prev = h
 		}
-		return nil
+		if total == 0 {
+			return nil
+		}
+		// The provenance mark, in the SAME commit as the hashes it explains.
+		ep := chainEpoch{
+			At: t.now, Reason: epochBackfill, FromSeq: first, NewHead: prev[:],
+		}
+		if signing.signedFrom > 0 {
+			ep.PublicKey = []byte(signing.public)
+			ep.SignedFrom = signing.signedFrom
+		}
+		return t.recordEpoch(ep, signing.key)
 	})
-	return stamped, first, err
+	if err != nil {
+		return err
+	}
+	if total > 0 {
+		ds.svc.log.Info("substrate: chain backfill complete",
+			"repository", ds.scope.Repository, "entries", total, "fromSeq", first)
+	}
+	return nil
 }
 
 // chainPage reads one page of entries AS THE CHAIN sees them: every preimage

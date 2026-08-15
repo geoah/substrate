@@ -79,7 +79,7 @@ func (s *service) ResealRepository(ctx context.Context, username string) (Reseal
 	// A reseal rewrites history and re-chains it (below); on a repository
 	// with signing active that re-chain must re-sign, so a host that cannot
 	// sign refuses the whole operation rather than stripping the guarantee.
-	if ds.signedFrom > 0 && ds.signKey == nil {
+	if st := ds.signing(); st.signedFrom > 0 && st.key == nil {
 		return ResealReport{}, fmt.Errorf("substrate/engine: reseal refuses: changelog signing is active for this repository but the signing key is unavailable — a reseal without it would strip signature validity from history")
 	}
 	report := ResealReport{Repository: repo.ID, Username: repo.Username}
@@ -126,6 +126,28 @@ func (t *txn) reseal(report *ResealReport) error {
 	if err := t.lockKey(changelogLockKey); err != nil {
 		return err
 	}
+	// VERIFY FIRST, inside this transaction, under this lock (adversarial
+	// review, both passes): a reseal re-chains — and on a signed repository
+	// RE-SIGNS — whatever bytes are stored, so run over tampered history it
+	// would launder the tampering into freshly valid hashes and signatures.
+	// It refuses instead. There is deliberately NO force path here: rebuild
+	// installs a fold you can rebuild again, but a reseal mints signatures,
+	// and the sanctioned way to re-attest bytes you have decided to accept
+	// is the backfill (wipe the hashes, reopen), which cannot forge a
+	// signature over the signed range.
+	signing := t.ds.signing()
+	var chainFinding string
+	if _, err := verifyChainCore(t.ctx, t.tx, t.ds.scope.Repository, signing.signedFrom, signing.public,
+		func(f string) {
+			if chainFinding == "" {
+				chainFinding = f
+			}
+		}); err != nil {
+		return err
+	}
+	if chainFinding != "" {
+		return fmt.Errorf("substrate/engine: reseal refuses: the chain does not verify (%s); a reseal over tampered history would notarize the tampering — run `repository verify`", chainFinding)
+	}
 	secretProps := map[string][]string{}
 	for _, ty := range t.ds.registry().Kinds() {
 		if names := secretPropNames(ty); len(names) > 0 {
@@ -168,11 +190,11 @@ func (t *txn) reseal(report *ResealReport) error {
 			At: t.now, Reason: epochReseal, FromSeq: minSeq,
 			OldHead: oldHead, NewHead: newHead,
 		}
-		if t.ds.signedFrom > 0 {
-			ep.PublicKey = []byte(t.ds.signPub)
-			ep.SignedFrom = t.ds.signedFrom
+		if signing.signedFrom > 0 {
+			ep.PublicKey = []byte(signing.public)
+			ep.SignedFrom = signing.signedFrom
 		}
-		if err := t.recordEpoch(ep, t.ds.signKey); err != nil {
+		if err := t.recordEpoch(ep, signing.key); err != nil {
 			return err
 		}
 	}
@@ -197,6 +219,7 @@ func (t *txn) rechainFrom(from int64) ([]byte, error) {
 	}
 	after := from - 1
 	head := prev
+	signing := t.ds.signing()
 	for {
 		entries, err := t.chainPage(after, rebuildBatch)
 		if err != nil {
@@ -211,11 +234,11 @@ func (t *txn) rechainFrom(from int64) ([]byte, error) {
 				return nil, err
 			}
 			var sig []byte
-			if t.ds.signedFrom > 0 && e.Seq >= t.ds.signedFrom {
-				if t.ds.signKey == nil {
-					return nil, fmt.Errorf("substrate/engine: rechain: signing is active from seq %d but the signing key is unavailable", t.ds.signedFrom)
+			if signing.signedFrom > 0 && e.Seq >= signing.signedFrom {
+				if signing.key == nil {
+					return nil, fmt.Errorf("substrate/engine: rechain: signing is active from seq %d but the signing key is unavailable", signing.signedFrom)
 				}
-				sig = ed25519.Sign(t.ds.signKey, h[:])
+				sig = ed25519.Sign(signing.key, h[:])
 			}
 			res, err := t.exec(`UPDATE changelog SET hash = $2, sig = $3 WHERE seq = $1`, e.Seq, h[:], sig)
 			if err != nil {

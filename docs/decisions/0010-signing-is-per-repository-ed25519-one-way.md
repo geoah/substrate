@@ -40,18 +40,24 @@ The rules that make it hold, each the answer to a specific attack:
   From that seq on, a missing or invalid signature is a verification failure
   and the engine refuses to append unsigned — otherwise
   `UPDATE changelog SET sig = NULL` is an undetectable downgrade, and so is
-  flipping the environment toggle. The toggle only ever activates.
+  flipping the environment toggle. The toggle only ever activates. A commit
+  whose dataset still believes signing is off RE-READS the durable mark
+  under the changelog lock (settleChain), so a second process activating
+  concurrently cannot slip an unsigned entry past a stale one.
 - **The seed refuses plain framing, both ways.** The DEK wrap falls back to
   plaintext on a keyless host; the signing seed must not (the signature
   exists precisely to resist a database-only attacker), so activation
   requires the credential key and the loader rejects plain framing and wrong
   lengths rather than falling back.
-- **The trust anchor is pinned outside.** Everything in the database — key
-  rows, signatures, epochs, `signed_from_seq` itself — is rewritable by
-  whoever holds the database. Activation therefore logs the
-  `(public key, signed_from_seq)` pair for out-of-band pinning, and the
-  activation epoch is signed. A dump alone proves internal consistency only,
-  and the docs say so.
+- **The trust anchor is pinned outside, and the pin is ENFORCEABLE.**
+  Everything in the database — key rows, signatures, epochs,
+  `signed_from_seq` itself — is rewritable by whoever holds the database.
+  Activation therefore logs the `(public key, signed_from_seq)` pair for
+  out-of-band pinning, the activation epoch is signed, and
+  `repository verify --expect-public-key/--expect-signed-from/--expect-head`
+  turns the pinned values into findings rather than an eyeball comparison.
+  A dump alone, unpinned, proves internal consistency only, and the docs
+  say so.
 
 ### Consequences
 
@@ -59,8 +65,9 @@ The rules that make it hold, each the answer to a specific attack:
   history requires the database AND the credential key, and whoever holds
   both is the host operator.
 - Bad, because a lost credential key STOPS WRITES on an activated repository
-  (by design: refusing beats quietly shedding the guarantee), and recovery is
-  an operator act that shows up as an epoch.
+  (by design: refusing beats quietly shedding the guarantee), and the only
+  recovery is restoring the key: no rotation or deactivation path exists
+  yet, which is a named revisit trigger below.
 - Bad, because signing is only as old as its activation: entries before
   `signed_from_seq` are chain-covered but unsigned, and verify reports
   coverage rather than pretending.
@@ -75,7 +82,8 @@ refuses to append and to reseal), and the repositories CHECK constraints
 ## More Information
 
 Replaces the plan `docs/plans/changelog-integrity.md`. Reader-facing threat
-model: [docs/changelog.md](../changelog.md#the-chain). Revisit if a second
-consumer of the public key appears (external anchoring, a checkpoint
-endpoint), which layers ON TOP of per-entry signatures rather than replacing
-them.
+model: [docs/changelog.md](../changelog.md#the-chain). Revisit when key
+rotation or a sanctioned deactivation is needed (both require an epoch kind
+this design does not yet define), or if a second consumer of the public key
+appears (external anchoring, a checkpoint endpoint), which layers ON TOP of
+per-entry signatures rather than replacing them.

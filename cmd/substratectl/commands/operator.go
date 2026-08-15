@@ -243,7 +243,7 @@ type resealer interface {
 }
 
 type verifier interface {
-	VerifyRepository(ctx context.Context, username string) (engine.VerifyReport, error)
+	VerifyRepositoryPinned(ctx context.Context, username string, pins engine.VerifyPins) (engine.VerifyReport, error)
 }
 
 // seamMissing is what an engine build without one of the operator seams gets:

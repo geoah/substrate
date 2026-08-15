@@ -468,13 +468,13 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		}
 	}
 	ds := &dataset{
-		svc:        s,
-		db:         db,
-		dek:        dek,
-		scope:      sc,
-		signKey:    signKey,
-		signPub:    signing.public,
-		signedFrom: signing.signedFrom,
+		svc:   s,
+		db:    db,
+		dek:   dek,
+		scope: sc,
+		signState: datasetSigning{
+			key: signKey, public: signing.public, signedFrom: signing.signedFrom,
+		},
 		// A dataset's registry starts EMPTY and is built from the repository's
 		// OWN rows: the embedded tree seeded them once, at
 		// creation, and has no standing here afterwards. Nothing re-projects
@@ -506,13 +506,19 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// Signing activation comes AFTER the backfill (the activation epoch needs
 	// a hashed head) and after the upgrade's own appends, so the durable
 	// boundary lands on a settled head.
-	if s.signingOn && ds.signedFrom == 0 {
+	if s.signingOn && ds.signing().signedFrom == 0 {
 		signing, key, err := s.adoptSigning(ctx, ds)
 		if err != nil {
 			_ = db.Close()
 			return nil, fmt.Errorf("substrate/engine: open repository %s: activate signing: %w", repo.Username, err)
 		}
-		ds.signedFrom, ds.signPub, ds.signKey = signing.signedFrom, signing.public, key
+		ds.setSigning(datasetSigning{key: key, public: signing.public, signedFrom: signing.signedFrom})
+	}
+	// A crash between activation's mark and its epoch leaves the attestation
+	// missing forever; the open is the sanctioned place to record it late.
+	if err := s.ensureActivationEpoch(ctx, ds); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("substrate/engine: open repository %s: activation epoch: %w", repo.Username, err)
 	}
 	// Bodies prepare at open exactly as they do at registration: Go builds
 	// hit the cache, python sources register into the shared host.

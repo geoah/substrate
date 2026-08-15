@@ -46,6 +46,59 @@ type signingState struct {
 	signedFrom int64
 }
 
+// datasetSigning is the signing state a dataset holds live: the unwrapped
+// key beside the durable facts.
+type datasetSigning struct {
+	key        ed25519.PrivateKey
+	public     ed25519.PublicKey
+	signedFrom int64
+}
+
+func (ds *dataset) signing() datasetSigning {
+	ds.mu.RLock()
+	defer ds.mu.RUnlock()
+	return ds.signState
+}
+
+func (ds *dataset) setSigning(st datasetSigning) {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
+	ds.signState = st
+}
+
+// refreshSigning re-reads the durable signing state and, when another
+// process has activated signing since this dataset opened, upgrades the
+// dataset in place. Called from settleChain UNDER the changelog lock, on the
+// one path a stale `signedFrom == 0` would otherwise let an unsigned entry
+// through (adversarial review #4: the activation CAS orders the activating
+// process, not a dataset another process already opened).
+func (ds *dataset) refreshSigning(ctx context.Context) (datasetSigning, error) {
+	st, err := ds.svc.loadSigningState(ctx, ds.scope.Repository)
+	if errors.Is(err, sql.ErrNoRows) {
+		// The creation window: the seed transaction commits BEFORE the
+		// control-plane row exists, and signing cannot be active on a
+		// repository that does not have a row yet.
+		return ds.signing(), nil
+	}
+	if err != nil {
+		return datasetSigning{}, err
+	}
+	if st.signedFrom == 0 {
+		return ds.signing(), nil
+	}
+	key, err := ds.svc.openSigningSeed(st.wrappedSeed)
+	if err != nil {
+		// The mark stands even where the key does not open: the caller
+		// refuses to append rather than appending unsigned.
+		live := datasetSigning{public: st.public, signedFrom: st.signedFrom}
+		ds.setSigning(live)
+		return live, nil
+	}
+	live := datasetSigning{key: key, public: st.public, signedFrom: st.signedFrom}
+	ds.setSigning(live)
+	return live, nil
+}
+
 // loadSigningState reads one repository's signing columns off the control
 // plane.
 func (s *service) loadSigningState(ctx context.Context, repoID string) (signingState, error) {
@@ -203,6 +256,51 @@ func (s *service) adoptSigning(ctx context.Context, ds *dataset) (signingState, 
 // errSigningRaced marks a lost activation CAS: somebody else's activation is
 // the one that stands.
 var errSigningRaced = errors.New("substrate/engine: signing activation raced")
+
+// ensureActivationEpoch repairs the activation crash window: the durable mark
+// (maint pool) and its epoch (scoped transaction) cannot share a transaction,
+// so a crash between them leaves an activated repository whose verification
+// would fail FOREVER on "no valid activation epoch", with nothing sanctioned
+// to record one after the fact (adversarial review). The open is that
+// sanctioned place: the key is in hand, so the late epoch is signed exactly
+// like a timely one. A keyless host leaves the state for verify to report.
+func (s *service) ensureActivationEpoch(ctx context.Context, ds *dataset) error {
+	st := ds.signing()
+	if st.signedFrom == 0 || st.key == nil {
+		return nil
+	}
+	return ds.inRawTx(ctx, func(t *txn) error {
+		if err := t.lockKey(changelogLockKey); err != nil {
+			return err
+		}
+		epochs, err := loadEpochs(t.ctx, t.tx, ds.scope.Repository, st.public)
+		if err != nil {
+			return err
+		}
+		valid := false
+		for _, ep := range epochs {
+			if ep.Reason == epochActivate && ep.Signed && ep.SigOK != nil && *ep.SigOK &&
+				ep.FromSeq == st.signedFrom && ep.SignedFrom == st.signedFrom {
+				valid = true
+			}
+		}
+		if valid {
+			return nil
+		}
+		_, headHash, err := t.chainHead()
+		if err != nil {
+			return err
+		}
+		ep := chainEpoch{
+			At: t.now, Reason: epochActivate, FromSeq: st.signedFrom,
+			OldHead: headHash, NewHead: headHash,
+			PublicKey: []byte(st.public), SignedFrom: st.signedFrom,
+		}
+		s.log.Warn("substrate: recording a LATE activation epoch — a crash interrupted the original activation between its mark and its attestation",
+			"repository", ds.scope.Repository, "signedFromSeq", st.signedFrom)
+		return t.recordEpoch(ep, st.key)
+	})
+}
 
 // inRawTx runs fn in a plain scoped transaction: no actor, no fold, no
 // changelog entry — the shape activation, backfill and verify bookkeeping

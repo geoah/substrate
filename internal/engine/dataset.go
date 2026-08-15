@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"crypto/ed25519"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -77,14 +76,14 @@ type dataset struct {
 	dek   []byte
 	watch *broadcaster
 
-	// The repository's changelog-signing state (signing.go), immutable for
-	// the dataset's lifetime: signedFrom is 0 until activation and never
-	// unset after; signKey is nil when signing is inactive OR the credential
+	// signState is the repository's changelog-signing state (signing.go),
+	// read through ds.signing(): signedFrom is 0 until activation and never
+	// unset after; key is nil when signing is inactive OR the credential
 	// key cannot open the seed — in the latter case every append refuses
-	// (settleChain) rather than shedding the guarantee.
-	signKey    ed25519.PrivateKey
-	signPub    ed25519.PublicKey
-	signedFrom int64
+	// (settleChain) rather than shedding the guarantee. Guarded by mu
+	// because a commit that discovers a CONCURRENT activation (another
+	// process's) upgrades it in place (settleChain).
+	signState datasetSigning
 
 	mu   sync.RWMutex
 	reg  *vocabulary.Registry

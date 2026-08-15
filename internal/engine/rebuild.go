@@ -100,16 +100,6 @@ func (s *service) rebuildRepository(ctx context.Context, username string, verify
 		return RebuildReport{}, err
 	}
 	report := RebuildReport{Repository: repo.ID, Username: repo.Username}
-	if verify {
-		vr, err := s.VerifyRepository(ctx, username)
-		if err != nil {
-			return report, err
-		}
-		if !vr.OK {
-			return report, fmt.Errorf("substrate/engine: rebuild refuses: the chain does not verify (%d finding(s), first: %s); run `repository verify`, and only rebuild --force-unverified once you understand what you would be installing",
-				len(vr.Findings), vr.Findings[0])
-		}
-	}
 	// Not inTx: a rebuild is not a write with an actor and must append no
 	// entry of its own. It replays what is already there.
 	tx, err := ds.db.BeginTx(ctx, nil)
@@ -120,7 +110,7 @@ func (s *service) rebuildRepository(ctx context.Context, username string, verify
 		ctx: ctx, ds: ds, tx: tx, actor: substrate.ActorSystem, tier: substrate.TierMachine,
 		now: nowUTC(), internal: true,
 	}
-	if err := t.rebuild(&report); err != nil {
+	if err := t.rebuild(&report, verify); err != nil {
 		_ = tx.Rollback()
 		return report, err
 	}
@@ -131,11 +121,30 @@ func (s *service) rebuildRepository(ctx context.Context, username string, verify
 	return report, nil
 }
 
-func (t *txn) rebuild(report *RebuildReport) error {
+func (t *txn) rebuild(report *RebuildReport, verify bool) error {
 	// The write path's own serialization: holding the changelog lock for the whole
 	// rebuild means no writer can append while the fold is missing.
 	if err := t.lockKey(changelogLockKey); err != nil {
 		return err
+	}
+	// The chain check runs INSIDE this transaction, under this lock, over the
+	// exact bytes the replay below will fold (adversarial review, both
+	// passes: a verify on a separate connection blesses a moment, not the
+	// bytes installed).
+	if verify {
+		signing := t.ds.signing()
+		var finding string
+		if _, err := verifyChainCore(t.ctx, t.tx, t.ds.scope.Repository, signing.signedFrom, signing.public,
+			func(f string) {
+				if finding == "" {
+					finding = f
+				}
+			}); err != nil {
+			return err
+		}
+		if finding != "" {
+			return fmt.Errorf("substrate/engine: rebuild refuses: the chain does not verify (%s); run `repository verify`, and only rebuild --force-unverified once you understand what you would be installing", finding)
+		}
 	}
 	for _, table := range foldTables {
 		if _, err := t.exec(`DELETE FROM ` + table); err != nil {

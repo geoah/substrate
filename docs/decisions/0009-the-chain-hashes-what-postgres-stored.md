@@ -29,8 +29,9 @@ Postgres upgrade, or lets two different stored texts hash identically.
 Chosen: hash the stored text, canonicalized in Go (sorted keys, one escaping
 policy, numbers reduced to a value-exact normal form: `1.5`, `1.50` and
 `15e-1` all canonicalize alike), because it is the only option whose two ends
-provably read the same bytes and whose durability rests on what Postgres
-guarantees (the VALUE of a `numeric`) rather than on how any version prints it.
+read from the same source (the jsonb column's own rendering) and whose
+durability rests on what Postgres guarantees (the VALUE of a `numeric`)
+rather than on how any version prints it.
 
 Hashing Go's bytes fails immediately: `jsonb` normalization means the verifier
 can never reproduce them. JCS fails on this store's actual contents:

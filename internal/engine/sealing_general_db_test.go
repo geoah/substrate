@@ -29,6 +29,14 @@ const (
 // same schema, so a test can read what the database actually stores.
 func newSealingDataset(t *testing.T) (substrate.Service, substrate.Dataset, *sql.DB) {
 	t.Helper()
+	svc, ds, db, _ := newSealingDatasetDSN(t)
+	return svc, ds, db
+}
+
+// newSealingDatasetDSN is newSealingDataset with the DSN kept, for the tests
+// that reopen the same store under a fresh service.
+func newSealingDatasetDSN(t *testing.T) (substrate.Service, substrate.Dataset, *sql.DB, string) {
+	t.Helper()
 	svc, dsn := newService(t, engine.WithCredentialKey("test-cred-key"))
 	ctx := context.Background()
 	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
@@ -43,7 +51,7 @@ func newSealingDataset(t *testing.T) (substrate.Service, substrate.Dataset, *sql
 		t.Fatalf("open raw db: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	return svc, ds, db
+	return svc, ds, db, dsn
 }
 
 func sgPutProvider(t *testing.T, ds substrate.Dataset, key string) *substrate.Record {
@@ -273,13 +281,17 @@ type resealer interface {
 func TestResealMovesLegacyValuesIntoTheStore(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds, db := newSealingDataset(t)
+	svc, ds, db, dsn := newSealingDatasetDSN(t)
 	sgPutProvider(t, ds, sgPlainKey)
 	ref := storedAPIKeyRef(t, db)
 
 	// Plant the pre-store layout: raw plaintext in the records fold and in
 	// every changelog delta, and no sealed row, exactly what an earlier
-	// release left behind.
+	// release left behind. An earlier release also predates the CHAIN, so
+	// the honest legacy state has no hashes either: wipe them and let the
+	// reopen's backfill notarize the planted bytes, exactly as a real
+	// upgrade would — reseal itself verifies first and refuses a chain that
+	// reads as tampered.
 	const legacy = "sk-legacy-99999"
 	if _, err := db.Exec(`UPDATE records SET props = jsonb_set(props, '{apiKey}', to_jsonb($1::text))
 		WHERE kind = $2 AND id = 'prov'`, legacy, sgProviderKind); err != nil {
@@ -291,6 +303,22 @@ func TestResealMovesLegacyValuesIntoTheStore(t *testing.T) {
 	}
 	if _, err := db.Exec(`DELETE FROM sealed WHERE ref = $1`, ref); err != nil {
 		t.Fatalf("drop the store row: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE changelog SET hash = NULL, sig = NULL`); err != nil {
+		t.Fatalf("wind the chain back: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM chain_epochs`); err != nil {
+		t.Fatalf("wind the epochs back: %v", err)
+	}
+	_ = svc.Close()
+	svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithCredentialKey("test-cred-key"))
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	t.Cleanup(func() { _ = svc.Close() })
+	if _, err := svc.Dataset(ctx, "geoah"); err != nil {
+		t.Fatalf("reopen dataset: %v", err)
 	}
 
 	report, err := svc.(resealer).ResealRepository(ctx, "geoah")

@@ -195,15 +195,19 @@ SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl user reset ada
   when it was created, the changelog head and entry count, live and tombstoned record
   counts, and the declaration versions per authority. It is the first thing to
   run when something looks wrong.
-- **`repository verify <username>`** walks the whole chain: it recomputes
-  every entry's hash from the stored bytes, checks every signature the signing
-  state requires, lists the chain epochs, and reports either the verified head
-  `(seq, hash)` or every finding by seq and name. Read-only by construction —
-  it never backfills or repairs. **Write the head down somewhere else**:
-  comparing heads across time is what turns "internally consistent" into "the
-  same history I saw yesterday", and it is the only way to catch a truncated
-  tail. Run it before and after a Postgres major upgrade, and on every
-  restored backup. Exits nonzero on any finding.
+- **`repository verify <username>`** walks the whole chain in one read-only
+  snapshot: it recomputes every entry's hash from the stored bytes, checks
+  every signature the signing state requires, checks the chain epochs, and
+  reports either the verified head `(seq, hash)` or every finding by seq and
+  name. It never backfills or repairs the repository it judges (opening the
+  engine still applies pending schema migrations, as every operator command
+  does), and run beside an in-flight first-open backfill it can report
+  transient unhashed entries — re-run once the open settles. **Write the
+  head down somewhere else and pass it back**: `--expect-head seq:hash`,
+  `--expect-public-key` and `--expect-signed-from` turn your out-of-band
+  knowledge into enforced findings, and a pinned head is the only way to
+  catch a truncated tail. Run it before and after a Postgres major upgrade,
+  and on every restored backup. Exits nonzero on any finding.
 - **`repository rebuild <username>`** replays the whole changelog into a fresh fold,
   in one transaction, under that repository's own lock. It reproduces the fold
   bit for bit and appends nothing, so it is safe to run on a healthy
@@ -221,11 +225,13 @@ SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl user reset ada
   changelog is append-only, so plaintext it already carries can be removed by
   nothing else. Values-only and idempotent, and it refuses until the server
   has opened the repository once under the upgraded binary. Because it is the
-  one sanctioned rewrite of history, it re-chains (and re-signs) every entry
-  from the first rewritten seq and records a `reseal` chain epoch naming the
-  old head and the new: a head you wrote down before a reseal will not match
-  after, and the epoch is what explains it. On a signed repository it refuses
-  without the signing key.
+  one sanctioned rewrite of history, it VERIFIES THE CHAIN FIRST and refuses
+  over history that does not check out (a reseal would otherwise launder
+  tampering into fresh hashes and signatures), then re-chains (and re-signs)
+  every entry from the first rewritten seq and records a `reseal` chain
+  epoch naming the old head and the new: a head you wrote down before a
+  reseal will not match after, and the epoch is what explains it. On a
+  signed repository it refuses without the signing key.
 - **`user reset <username>`** is the answer to a user who has lost both
   factors. It writes fresh sealed material and a new credential record and
   prints a fresh TOTP enrollment. The data is untouched; the account gets new

@@ -78,21 +78,32 @@ What this proves, honestly:
   access, who can rewrite an entry and re-chain everything after it: the
   chain needs no secret. It also cannot see a truncated tail by itself — only
   a **remembered head** can, which is why `verify` prints the head
-  `(seq, hash)` and the operations doc tells you to write it down.
-- **Signatures** raise the bar to "database access AND the credential key".
-  Whoever holds both is the host operator, and no in-database scheme defends
-  against the party who runs the database.
+  `(seq, hash)`, the operations doc tells you to write it down, and
+  `verify --expect-head seq:hash` turns the comparison into an enforced
+  finding instead of an eyeballed one.
+- **Signatures** raise the bar to "database access AND the credential key" —
+  PROVIDED the verifier is pinned: everything in the database, the public
+  key included, is rewritable by whoever holds the database, so an unpinned
+  verify proves internal consistency and a pinned one
+  (`--expect-public-key`, `--expect-signed-from`) proves it against what you
+  knew. Whoever holds both the database and the credential key is the host
+  operator, and no in-database scheme defends against the party who runs the
+  database.
 - The `hash` on the wire is a **receipt**, not a proof: the wire payload is
   redacted, so a consumer cannot recompute it. Checking a receipt means
-  comparing it against `repository verify` output.
+  handing it to `repository verify --expect-head`.
 
 Three events legitimately move or begin the chain, and each records a **chain
-epoch** the verifier lists: the **backfill** that stamps history written
-before the chain existed (at the repository's first open under a chain-aware
-binary), a **reseal**'s sanctioned rewrite (which re-chains and, when signing
-is on, re-signs everything after the first rewritten entry), and signing
-**activation**. A remembered head that stopped matching either matches an
-epoch's recorded old head, or it is a finding.
+epoch** the verifier CHECKS as well as lists: the **backfill** that stamps
+history written before the chain existed (at the repository's first open
+under a chain-aware binary, atomically with its hashes), a **reseal**'s
+sanctioned rewrite (which VERIFIES FIRST — a reseal over tampered history
+refuses rather than laundering it — then re-chains and, when signing is on,
+re-signs everything after the first rewritten entry), and signing
+**activation** (whose epoch must be signed and agree with the durable mark,
+or it is a finding). A pinned head that stopped matching either matches a
+reseal epoch's recorded old head — reported, so you re-pin — or it is a
+plain finding.
 
 ## Watching
 

@@ -27,11 +27,16 @@ alarms, or worse, real alarms get explained away.
 ## Decision Outcome
 
 Chosen: the repository-scoped `chain_epochs` table (migration 0005), rows
-written INSIDE the transaction that performs the transition, each carrying
-`(at, reason, from_seq, old_head, new_head)` plus the signing state, and
-signed when a key exists. A verifier lists them: a remembered head that
-matches an epoch's `old_head` is explained; one that matches nothing is a
-finding.
+written INSIDE the transaction that performs the transition — the backfill
+is ONE transaction for exactly this reason, so its epoch is as durable as
+its hashes — each carrying `(at, reason, from_seq, old_head, new_head)`
+plus the signing state, and signed when a key exists. The verifier CHECKS
+them, not merely lists them: an invalid epoch signature, an unsigned epoch
+claiming a transition inside signed history, and an activation epoch that
+is unsigned or disagrees with the durable mark are all findings. A pinned
+head (`repository verify --expect-head`) that matches a reseal epoch's
+`old_head` is explained-and-reported for re-pinning; one that matches
+nothing is a plain finding.
 
 The control-plane placement fails mechanically: reseal runs as one
 transaction on the RLS-bound application pool, which cannot reach a
@@ -53,22 +58,25 @@ silently claim to have witnessed history it only notarized.
 - Good, because the epoch lives in the user plane with the history it
   describes: erased with the repository, covered by RLS, recoverable with the
   same backup.
-- Bad, because the epoch is as rewritable as everything else in the database;
-  signing the rows helps only from activation on, and an unsigned epoch is a
-  statement, not a proof. The pinned head and key pair (0010) remain the
-  anchor.
+- Bad, because epoch DELETION is undetectable from the database alone (the
+  rows are not themselves chained); signing helps only from activation on,
+  and an unsigned pre-activation epoch is a statement, not a proof. The
+  pinned head and key pair (0010) remain the anchor.
 - Bad, because activation's control-plane mark and its epoch cannot share a
   transaction (two pools), so a crash between them leaves an activated
   repository with no activation epoch. Chosen order makes the GUARANTEE land
-  first; verify names the missing-epoch state explicitly.
+  first; the next open records the late epoch, signed
+  (`ensureActivationEpoch`), so the state repairs instead of failing
+  verification forever.
 
 ### Confirmation
 
 `TestChainBackfillStampsLegacyHistory` (the backfill epoch is present),
-`TestResealRechainsAndRecordsEpoch` (a hand rewrite is a finding, the
-sanctioned one verifies and records old and new head), and
-`TestChangelogSigningSignsAndDetectsRemoval` (the activation epoch is signed
-and verifies).
+`TestResealRefusesTamperThenRechainsLegacy` (a hand rewrite makes the reseal
+REFUSE — it verifies first, so it cannot launder tampering into fresh
+signatures — while the sanctioned rewrite verifies and records old and new
+head), and `TestChangelogSigningSignsAndDetectsRemoval` (the activation
+epoch is signed and verifies).
 
 ## More Information
 

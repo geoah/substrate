@@ -20,6 +20,7 @@ import (
 
 type chainVerifier interface {
 	VerifyRepository(ctx context.Context, username string) (engine.VerifyReport, error)
+	VerifyRepositoryPinned(ctx context.Context, username string, pins engine.VerifyPins) (engine.VerifyReport, error)
 }
 
 type forceRebuilder interface {
@@ -214,6 +215,26 @@ func TestChainTailTruncationIsTheDocumentedLimit(t *testing.T) {
 	if truncated.HeadHash != before.HeadHash {
 		t.Fatal("cutting the tail did not rewind the head to the earlier receipt")
 	}
+	// And PINNED, the same receipt turns the invisible truncation into a
+	// finding: this is the enforced version of "write the head down".
+	pinned, err := svc.(chainVerifier).VerifyRepositoryPinned(context.Background(), "geoah",
+		engine.VerifyPins{HeadSeq: after.Head, HeadHash: after.HeadHash})
+	if err != nil {
+		t.Fatalf("pinned verify: %v", err)
+	}
+	if pinned.OK || !findingContaining(pinned, "truncated") {
+		t.Fatalf("the pinned head did not catch the truncation: %+v", pinned.Findings)
+	}
+	// A pinned key on an unsigned repository is a mismatch too: pins hold
+	// whatever the caller knows.
+	keyed, err := svc.(chainVerifier).VerifyRepositoryPinned(context.Background(), "geoah",
+		engine.VerifyPins{PublicKey: "deadbeef"})
+	if err != nil {
+		t.Fatalf("pinned verify: %v", err)
+	}
+	if keyed.OK || !findingContaining(keyed, "public key") {
+		t.Fatalf("a pinned public key mismatch was not named: %+v", keyed.Findings)
+	}
 }
 
 func TestChainBackfillStampsLegacyHistory(t *testing.T) {
@@ -400,15 +421,16 @@ func TestSigningActivationIsOneWay(t *testing.T) {
 	}
 }
 
-func TestResealRechainsAndRecordsEpoch(t *testing.T) {
+func TestResealRefusesTamperThenRechainsLegacy(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, ds, db := newSealingDataset(t)
+	svc, ds, db, dsn := newSealingDatasetDSN(t)
 	sgPutProvider(t, ds, sgPlainKey)
 	ref := storedAPIKeyRef(t, db)
 
-	// Plant the pre-store layout (the same planting the reseal suite uses):
-	// this REWRITES history by hand, so the chain reads it as tampering...
+	// A hand rewrite of hashed history reads as tampering, and the reseal
+	// REFUSES rather than laundering it into fresh hashes (and, on a signed
+	// repository, fresh signatures).
 	const legacy = "sk-legacy-77777"
 	if _, err := db.Exec(`UPDATE changelog SET payload = replace(payload::text, $1, $2)::jsonb
 		WHERE payload::text LIKE '%' || $1 || '%'`, ref, legacy); err != nil {
@@ -425,17 +447,39 @@ func TestResealRechainsAndRecordsEpoch(t *testing.T) {
 	if planted.OK {
 		t.Fatal("hand-rewritten history verified; the chain saw nothing")
 	}
+	if _, err := svc.(resealer).ResealRepository(ctx, "geoah"); err == nil ||
+		!strings.Contains(err.Error(), "reseal refuses") {
+		t.Fatalf("a reseal over tampered history did not refuse: %v", err)
+	}
 
-	// ...and the reseal, the one sanctioned rewrite, re-chains what it
-	// rewrote and records the epoch that explains the moved head.
-	report, err := svc.(resealer).ResealRepository(ctx, "geoah")
+	// The honest legacy state predates the chain: no hashes at all. The
+	// backfill notarizes the planted bytes at the next open, and only THEN
+	// does the reseal — the one sanctioned rewrite — re-chain what it
+	// rewrites and record the epoch that explains the moved head.
+	if _, err := db.Exec(`UPDATE changelog SET hash = NULL, sig = NULL`); err != nil {
+		t.Fatalf("wind the chain back: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM chain_epochs`); err != nil {
+		t.Fatalf("wind the epochs back: %v", err)
+	}
+	_ = svc.Close()
+	svc2, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithCredentialKey("test-cred-key"))
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	t.Cleanup(func() { _ = svc2.Close() })
+	if _, err := svc2.Dataset(ctx, "geoah"); err != nil {
+		t.Fatalf("reopen dataset: %v", err)
+	}
+	report, err := svc2.(resealer).ResealRepository(ctx, "geoah")
 	if err != nil {
 		t.Fatalf("reseal: %v", err)
 	}
 	if report.Entries == 0 {
 		t.Fatalf("the reseal rewrote nothing: %+v", report)
 	}
-	after := mustVerify(t, svc, "geoah")
+	after := mustVerify(t, svc2, "geoah")
 	if !after.OK {
 		t.Fatalf("the resealed chain does not verify: %+v", after.Findings)
 	}

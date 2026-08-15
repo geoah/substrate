@@ -12,11 +12,16 @@ ALTER TABLE changelog
     ADD CONSTRAINT changelog_hash_len CHECK (hash IS NULL OR octet_length(hash) = 32),
     ADD CONSTRAINT changelog_sig_len CHECK (sig IS NULL OR octet_length(sig) = 64),
     -- A signature signs the hash, so it cannot exist without one.
-    ADD CONSTRAINT changelog_sig_needs_hash CHECK (sig IS NULL OR hash IS NOT NULL),
-    -- The cause is always an earlier entry (docs/changelog.md promises it);
-    -- pinning it here also keeps zero out, so the preimage's NULL/value
-    -- distinction (chain.go frameOptionalInt64) never meets a stored zero.
-    ADD CONSTRAINT changelog_caused_by_prior CHECK (caused_by IS NULL OR (caused_by >= 1 AND caused_by < seq));
+    ADD CONSTRAINT changelog_sig_needs_hash CHECK (sig IS NULL OR hash IS NOT NULL);
+-- The cause is always an earlier entry (docs/changelog.md promises it);
+-- pinning it here also keeps zero out, so the preimage's NULL/value
+-- distinction (chain.go frameOptionalInt64) never meets a stored zero.
+-- NOT VALID on purpose: it binds every row written from here on without
+-- scanning (or failing the boot over) history an older release wrote — a
+-- historical violation is `repository verify`'s to report, not the
+-- migration's to brick the server over.
+ALTER TABLE changelog
+    ADD CONSTRAINT changelog_caused_by_prior CHECK (caused_by IS NULL OR (caused_by >= 1 AND caused_by < seq)) NOT VALID;
 
 -- chain_epochs records every sanctioned transition of a repository's chain:
 -- the backfill that started attested history, a reseal's rewrite (which
@@ -31,12 +36,17 @@ CREATE TABLE IF NOT EXISTS chain_epochs (
     repository text        NOT NULL DEFAULT current_setting('substrate.repository'),
     at         timestamptz NOT NULL,
     reason     text        NOT NULL CHECK (reason IN ('backfill', 'reseal', 'activate')),
-    from_seq   bigint      NOT NULL,
+    from_seq   bigint      NOT NULL CHECK (from_seq >= 1),
     old_head   bytea       CHECK (old_head IS NULL OR octet_length(old_head) = 32),
     new_head   bytea       CHECK (new_head IS NULL OR octet_length(new_head) = 32),
     public_key bytea       CHECK (public_key IS NULL OR octet_length(public_key) = 32),
-    signed_from bigint,
-    sig        bytea       CHECK (sig IS NULL OR octet_length(sig) = 64)
+    signed_from bigint     CHECK (signed_from IS NULL OR signed_from >= 1),
+    sig        bytea       CHECK (sig IS NULL OR octet_length(sig) = 64),
+    -- An activation is signed by construction (it mints the key it signs
+    -- with), so a bare `activate` row is a forgery the store itself refuses.
+    CONSTRAINT chain_epochs_activate_whole CHECK (
+        reason <> 'activate'
+        OR (public_key IS NOT NULL AND signed_from IS NOT NULL AND sig IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS chain_epochs_repo ON chain_epochs (repository, id);
 
@@ -54,8 +64,11 @@ DECLARE
     sch text := current_schema();
     seqname text := pg_get_serial_sequence(format('%I.chain_epochs', current_schema()), 'id');
 BEGIN
+    -- The application role INSERTS and SELECTS epochs and nothing else: an
+    -- epoch is transition evidence, and the role that writes user data must
+    -- not be able to rewrite or erase it. Erasure runs on the maint pool.
     IF to_regrole('substrate_app') IS NOT NULL THEN
-        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %I.chain_epochs TO substrate_app', sch);
+        EXECUTE format('GRANT SELECT, INSERT ON TABLE %I.chain_epochs TO substrate_app', sch);
         EXECUTE format('GRANT USAGE, SELECT ON SEQUENCE %s TO substrate_app', seqname);
     END IF;
     IF to_regrole('substrate_maint') IS NOT NULL THEN

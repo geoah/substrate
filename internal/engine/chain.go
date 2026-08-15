@@ -262,6 +262,9 @@ func canonicalNumber(lex string) (string, error) {
 	}
 	var exp int64
 	if hasExp {
+		// 32-bit on purpose: Postgres numeric tops out around 1e131072, so a
+		// larger exponent cannot come out of the jsonb column this reads —
+		// refusing it is a finding, never a rounding.
 		v, err := strconv.ParseInt(strings.TrimPrefix(expPart, "+"), 10, 32)
 		if err != nil {
 			return "", fmt.Errorf("number %q: exponent: %w", lex, err)
@@ -327,6 +330,17 @@ func (t *txn) settleChain() error {
 		}
 		copy(prev[:], stored)
 	}
+	// A dataset that believes signing is off re-checks the durable mark here,
+	// under the changelog lock: another process may have activated since this
+	// dataset opened, and the guarantee is "no unsigned entry at or after the
+	// mark", not "no unsigned entry this process knew to sign".
+	signing := t.ds.signing()
+	if signing.signedFrom == 0 {
+		var err error
+		if signing, err = t.ds.refreshSigning(t.ctx); err != nil {
+			return fmt.Errorf("substrate/engine: chain: re-read the signing state: %w", err)
+		}
+	}
 	repo := t.ds.scope.Repository
 	for i := range t.pending {
 		e := t.pending[i]
@@ -335,14 +349,14 @@ func (t *txn) settleChain() error {
 			return err
 		}
 		var sig []byte
-		if t.ds.signedFrom > 0 && e.Seq >= t.ds.signedFrom {
-			if t.ds.signKey == nil {
+		if signing.signedFrom > 0 && e.Seq >= signing.signedFrom {
+			if signing.key == nil {
 				// Activation is one-way: a host that cannot sign refuses the
 				// write rather than quietly appending an entry the guarantee
 				// no longer covers.
-				return fmt.Errorf("substrate/engine: changelog signing is active from seq %d but the signing key is unavailable (is SUBSTRATE_CREDENTIAL_KEY set?); refusing to append unsigned", t.ds.signedFrom)
+				return fmt.Errorf("substrate/engine: changelog signing is active from seq %d but the signing key is unavailable (is SUBSTRATE_CREDENTIAL_KEY set?); refusing to append unsigned", signing.signedFrom)
 			}
-			sig = ed25519.Sign(t.ds.signKey, h[:])
+			sig = ed25519.Sign(signing.key, h[:])
 		}
 		res, err := t.exec(`UPDATE changelog SET hash = $2, sig = $3 WHERE seq = $1`, e.Seq, h[:], sig)
 		if err != nil {
