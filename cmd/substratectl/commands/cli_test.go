@@ -573,24 +573,24 @@ func TestKindsTable(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	out, _ := h.mustRun("kinds")
-	want := "NAME                  AUTHORITY                                PLURAL                 VERSION    SOURCE\n" +
-		"calendarevent         calendar.substrate.reamde.dev            calendarevents         v1alpha1   builtin\n" +
-		"calendareventseries   calendar.substrate.reamde.dev            calendareventseries    v1alpha1   builtin\n" +
-		"kind                  core.substrate.reamde.dev                kinds                  v1alpha1   builtin\n" +
-		"recordmerge           core.substrate.reamde.dev                recordmerges           v1alpha1   builtin\n" +
-		"recordsplit           core.substrate.reamde.dev                recordsplits           v1alpha1   builtin\n" +
-		"token                 core.substrate.reamde.dev                tokens                 v1alpha1   builtin\n" +
-		"syncrun               google.connectors.substrate.reamde.dev   syncruns               v1alpha1   installed\n" +
-		"book                  media.substrate.reamde.dev               books                  v1alpha1   builtin\n" +
-		"bookseries            media.substrate.reamde.dev               bookseries             v1alpha1   builtin\n" +
-		"movie                 media.substrate.reamde.dev               movies                 v1alpha1   builtin\n" +
-		"podcast               media.substrate.reamde.dev               podcasts               v1alpha1   builtin\n" +
-		"tvseries              media.substrate.reamde.dev               tvseries               v1alpha1   builtin\n" +
-		"conversationmessage   messaging.substrate.reamde.dev           conversationmessages   v1alpha1   builtin\n" +
-		"organization          people.substrate.reamde.dev              organizations          v1alpha1   builtin\n" +
-		"person                people.substrate.reamde.dev              people                 v1alpha1   builtin\n" +
-		"syncrun               slack.connectors.substrate.reamde.dev    syncruns               v1alpha1   installed\n" +
-		"task                  tasks.substrate.reamde.dev               tasks                  v1alpha1   builtin\n"
+	want := "NAME                  AUTHORITY                                PLURAL                 VERSION   SOURCE\n" +
+		"calendarevent         calendar.substrate.reamde.dev            calendarevents         1         builtin\n" +
+		"calendareventseries   calendar.substrate.reamde.dev            calendareventseries    1         builtin\n" +
+		"kind                  core.substrate.reamde.dev                kinds                  1         builtin\n" +
+		"recordmerge           core.substrate.reamde.dev                recordmerges           1         builtin\n" +
+		"recordsplit           core.substrate.reamde.dev                recordsplits           1         builtin\n" +
+		"token                 core.substrate.reamde.dev                tokens                 1         builtin\n" +
+		"syncrun               google.connectors.substrate.reamde.dev   syncruns               1         installed\n" +
+		"book                  media.substrate.reamde.dev               books                  1         builtin\n" +
+		"bookseries            media.substrate.reamde.dev               bookseries             1         builtin\n" +
+		"movie                 media.substrate.reamde.dev               movies                 1         builtin\n" +
+		"podcast               media.substrate.reamde.dev               podcasts               1         builtin\n" +
+		"tvseries              media.substrate.reamde.dev               tvseries               1         builtin\n" +
+		"conversationmessage   messaging.substrate.reamde.dev           conversationmessages   1         builtin\n" +
+		"organization          people.substrate.reamde.dev              organizations          1         builtin\n" +
+		"person                people.substrate.reamde.dev              people                 1         builtin\n" +
+		"syncrun               slack.connectors.substrate.reamde.dev    syncruns               1         installed\n" +
+		"task                  tasks.substrate.reamde.dev               tasks                  1         builtin\n"
 	if out != want {
 		t.Fatalf("kinds table:\ngot:\n%s\nwant:\n%s", out, want)
 	}
@@ -885,9 +885,6 @@ func TestGetSingleYAMLRoundTripsThroughApply(t *testing.T) {
 	// the id is metadata.id.
 	if d.Kind != "tasks.substrate.reamde.dev/task" {
 		t.Fatalf("envelope kind = %q", d.Kind)
-	}
-	if strings.Contains(out, "v1alpha1") {
-		t.Errorf("the version left the envelope:\n%s", out)
 	}
 	if d.Metadata.ID != "t9" {
 		t.Fatalf("metadata.id = %q", d.Metadata.ID)
@@ -1345,7 +1342,7 @@ func TestApplyCarriesSchemaDocuments(t *testing.T) {
 metadata:
   id: widgets.example.substrate.reamde.dev
 data:
-  version: v1alpha1
+  version: 1
 ---
 kind: core.substrate.reamde.dev/kind
 metadata:

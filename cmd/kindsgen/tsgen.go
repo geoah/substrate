@@ -33,7 +33,7 @@ func generateTS(p *plan, source string) []byte {
 	b.WriteString("export type Dynamic = unknown\n\n")
 	tsComment(b, "One declared move of a machine. It carries no guard — anyone may perform any declared move — and the stamps are the properties the move writes.", "")
 	b.WriteString("export interface StateTransition<S extends string = string> {\n")
-	b.WriteString("  from: S\n  to: S\n  stamps?: Record<string, string>\n  onEnter?: string\n}\n")
+	b.WriteString("  from: S\n  to: S\n  stamps?: Record<string, string>\n  onEnter?: string\n  notifies?: string\n}\n")
 
 	for _, k := range p.Kinds {
 		for _, s := range k.Structs {
@@ -209,6 +209,9 @@ func tsState(b *bytes.Buffer, s *statePlan) {
 		}
 		if t.OnEnter != "" {
 			move = append(move, tsPair{Key: "onEnter", Value: tsLiteral(t.OnEnter)})
+		}
+		if t.Notifies != "" {
+			move = append(move, tsPair{Key: "notifies", Value: tsLiteral(t.Notifies)})
 		}
 		transitions = append(transitions, move)
 	}

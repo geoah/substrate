@@ -9,7 +9,7 @@ import (
 
 const baseBundle = `kind: core.substrate.reamde.dev/authority
 metadata: {id: t.example.com}
-data: {version: v1alpha1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata: {id: t.example.com/t}
@@ -78,7 +78,7 @@ func TestChangedKindNeedsABump(t *testing.T) {
 
 	// The kind's own version bump admits the same change.
 	head["t.example.com/thing.yaml"] = strings.Replace(head["t.example.com/thing.yaml"],
-		"  authority: t.example.com", "  authority: t.example.com\n  version: v1alpha2", 1)
+		"  authority: t.example.com", "  authority: t.example.com\n  version: 2", 1)
 	if got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head)); len(got) != 0 {
 		t.Fatalf("a bumped kind still violates: %v", got)
 	}
@@ -88,7 +88,7 @@ func TestAuthorityBumpCoversItsDeclarations(t *testing.T) {
 	head := baseFiles()
 	head["t.example.com/thing.yaml"] = strings.Replace(baseThing,
 		"    label: {type: string}", "    label: {type: string}\n    extra: {type: string}", 1)
-	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "v1alpha1", "v1alpha2", 1)
+	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "version: 1", "version: 2", 1)
 	if got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head)); len(got) != 0 {
 		t.Fatalf("an authority bump does not cover its kinds: %v", got)
 	}
@@ -102,7 +102,7 @@ func TestRemovedDeclarationNeedsAnAuthorityBump(t *testing.T) {
 		t.Fatalf("a pruned declaration under an unmoved authority passes: %v", got)
 	}
 
-	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "v1alpha1", "v1alpha2", 1)
+	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "version: 1", "version: 2", 1)
 	if got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head)); len(got) != 0 {
 		t.Fatalf("a pruned declaration under a bumped authority violates: %v", got)
 	}
@@ -133,7 +133,7 @@ func TestChangedDeliveryWiringNeedsAnAuthorityBump(t *testing.T) {
 		t.Fatalf("a changed trigger under an unmoved authority passes: %v", got)
 	}
 
-	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "v1alpha1", "v1alpha2", 1)
+	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "version: 1", "version: 2", 1)
 	if got := diffTrees(writeTree(t, base), writeTree(t, head)); len(got) != 0 {
 		t.Fatalf("a bumped authority does not cover its wiring: %v", got)
 	}
@@ -161,7 +161,7 @@ func TestUnchangedWiringPasses(t *testing.T) {
 
 func TestVersionNeverMovesBackward(t *testing.T) {
 	head := baseFiles()
-	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "v1alpha1", "v1beta1", 1)
+	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle, "version: 1", "version: 2", 1)
 	got := diffTrees(writeTree(t, head), writeTree(t, baseFiles()))
 	if len(got) == 0 {
 		t.Fatal("a downgraded tree passes")

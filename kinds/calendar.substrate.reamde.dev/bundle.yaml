@@ -19,7 +19,7 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: calendar.substrate.reamde.dev
 data:
-  version: v1alpha1
+  version: 1
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A VOCABULARY bundle (see people.substrate.reamde.dev): kinds only, imported from the

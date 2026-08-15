@@ -92,7 +92,7 @@ const personType: KindInfo = {
   identity: "people.substrate.reamde.dev/person",
   name: "person",
   authority: "people.substrate.reamde.dev",
-  version: "",
+  version: 0,
   plural: "people",
   source: "installed",
   definition: {

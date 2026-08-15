@@ -186,14 +186,14 @@ func preHostKindsDir(t *testing.T) string {
 		}
 		body := string(raw)
 		if e.Name() == "function.yaml" {
-			body = strings.Replace(body, "  version: v1alpha7\n", "  version: v1alpha4\n", 1)
+			body = strings.Replace(body, "  version: 9\n", "  version: 4\n", 1)
 			body = strings.Replace(body, "        - go\n        - host\n", "        - go\n", 1)
 			body = strings.Replace(body,
 				"      fts: false\n      description: the inline body, on an inline runtime\n",
 				"      fts: false\n      required: true\n      description: the inline body\n", 1)
 			// The rewrite is a fixture, so it says so when the declaration moves out
 			// from under it instead of silently testing today's tree twice.
-			for _, want := range []string{"version: v1alpha4", "required: true"} {
+			for _, want := range []string{"version: 4", "required: true"} {
 				if !strings.Contains(body, want) {
 					t.Fatalf("the pre-host function.yaml rewrite missed %q", want)
 				}
@@ -404,7 +404,7 @@ func TestTriggerWarnsWhenTheOutputIsDiscarded(t *testing.T) {
 	var logs syncBuffer
 	ds := openInternalDataset(t, WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest("pure.test.dev", ""),
+		vocabulary.AuthorityManifest("pure.test.dev", 0),
 		vocabulary.KindManifest("pure.test.dev", map[string]any{"singular": "gizmo", "plural": "gizmos"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		// One writes, one cannot: the pair is what makes the warning a signal.

@@ -10,13 +10,13 @@
 # The console is web/console (React + Vite + shadcn/ui + Tailwind), a
 # self-contained app with only an `@`→src alias — no workspace package to
 # stage. dist/ is arch-independent; build it once on the native arch, never qemu.
-FROM --platform=$BUILDPLATFORM node:26-alpine AS web
+# The major here is held to .mise.toml's node pin by `lint:toolchain`, because
+# this stage must build the console on the node the console is TESTED on. It
+# briefly ran on 26, which builds a dist fine but is a node the test suite has
+# never passed under (node's own global localStorage shadows jsdom's).
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /web/console
-# Node 25 dropped corepack from the distribution, so node:26-alpine does not
-# ship one. It is installed from npm rather than replaced by a `pnpm@x` install
-# so that web/console/package.json's `packageManager` stays the one place the
-# pnpm version is pinned.
-RUN npm install --global corepack@latest && corepack enable
+RUN corepack enable
 COPY web/console/package.json web/console/pnpm-lock.yaml* web/console/pnpm-workspace.yaml* ./
 RUN corepack prepare --activate && pnpm install --frozen-lockfile
 COPY web/console/ ./
@@ -27,12 +27,24 @@ RUN pnpm build
 # never emulates the Go toolchain.
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 ARG TARGETOS TARGETARCH
+# What this image will call itself when asked (discovery's `server.version`).
+# It has to be handed in: .dockerignore drops .git, so the toolchain records
+# no version of its own here and an unstamped build reports "dev". That is the
+# right answer for a bare `docker build` and the wrong one for anything
+# published, so `mise run image:push` passes both and the `latest` workflow
+# does too. Never a default that names a version: an image that lies about
+# which build it is costs more than one that says "dev".
+ARG VERSION=""
+ARG COMMIT=""
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags="-s -w" -o /out/substrate ./cmd/substrated
+    go build -trimpath -ldflags="-s -w \
+      -X github.com/geoah/substrate/internal/build.version=${VERSION} \
+      -X github.com/geoah/substrate/internal/build.commit=${COMMIT}" \
+      -o /out/substrate ./cmd/substrated
 
 # ---- go toolchain for the runtime (TARGET arch) -------------------------
 # Pulled at the target platform (no BUILDPLATFORM override) so the toolchain

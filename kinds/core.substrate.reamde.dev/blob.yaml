@@ -15,12 +15,12 @@ data:
     — while the bytes themselves live in the store behind /blobs. The digest
     is the id, so identical bytes always mint the same blob, and a blobref
     property elsewhere points at one.
-  # v1alpha2 added `name`. Both it and `mimeType` are DESCRIPTIVE and optional:
+  # version 2 added `name`. Both it and `mimeType` are DESCRIPTIVE and optional:
   # the digest is the identity, so neither is part of dedup, and a second
   # upload of the same bytes under a different name gets the first one back.
-  # v1alpha3: the declaration gained a `description` — the bump is what
-  # carries it into repositories that already stored the v1alpha2 one.
-  version: v1alpha3
+  # version 3: the declaration gained a `description` — the bump is what
+  # carries it into repositories that already stored the version 2 one.
+  version: 3
   names:
     singular: blob
     plural: blobs

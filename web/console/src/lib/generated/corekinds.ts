@@ -50,6 +50,7 @@ export interface StateTransition<S extends string = string> {
   to: S
   stamps?: Record<string, string>
   onEnter?: string
+  notifies?: string
 }
 
 /** Actor is core.substrate.reamde.dev/actor.
@@ -60,10 +61,10 @@ export interface StateTransition<S extends string = string> {
  * like `function:<name>` are minted at dispatch.
  */
 export interface Actor {
-  /** This declaration's version. Managed: the server stamps it, so render it
-   * read-only.
+  /** This declaration's incremental version, maintained by the engine. Managed:
+   * the server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** The authority that declares this actor. */
   authority?: string
   /** Builtin for shipped authorities, installed for connector authorities.
@@ -104,10 +105,10 @@ export const actorTierValues: ActorTier[] = ["owner", "bundle", "machine"]
  * its version history.
  */
 export interface Agent {
-  /** This declaration's version. Managed: the server stamps it, so render it
-   * read-only.
+  /** This declaration's incremental version, maintained by the engine. Managed:
+   * the server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** The authority that declares it. */
   authority?: string
   /** The model-facing tool card — what this agent is for as a sub-agent. */
@@ -136,6 +137,8 @@ export interface Agent {
   permissions?: AgentPermissions
   /** Only callable by other agents; withheld from the chat surface. */
   subagentOnly?: boolean
+  /** Whether a resolution resumes this agent's thread; absent means always. */
+  resume?: AgentResume
 }
 
 /** The properties Agent's declaration marks required. A form refuses to submit
@@ -149,6 +152,14 @@ export const agentRequired: string[] = [
   "prompt",
   "provider",
 ]
+
+/** AgentResume is a declared enum: the admissible set, in declaration order.
+ *
+ * whether a resolution resumes this agent's thread; absent means always
+ */
+export type AgentResume = "always" | "never"
+
+export const agentResumeValues: AgentResume[] = ["always", "never"]
 
 /** AgentParams is one value of the `params` object declared on
  * core.substrate.reamde.dev/agent.
@@ -252,10 +263,10 @@ export interface AgentPermissionsReadsBudgets {
  * admits.
  */
 export interface Authority {
-  /** The declared maturity statement, v1alpha1 unless said otherwise. Managed:
-   * the server stamps it, so render it read-only.
+  /** The closure's incremental version, maintained by the engine. Managed: the
+   * server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** The actors declared under this authority. Managed: the server stamps it,
    * so render it read-only.
    */
@@ -340,10 +351,10 @@ export const blobStatusTransitions: StateTransition<BlobStatus>[] = [
  * own: disabled, uninstalled, purging.
  */
 export interface Bundle {
-  /** This declaration's version. Managed: the server stamps it, so render it
-   * read-only.
+  /** This declaration's incremental version, maintained by the engine. Managed:
+   * the server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** The authority the bundle owns; its first label is the bundle's name. */
   authority?: string
   /** What the bundle is for, read above its card. */
@@ -468,14 +479,20 @@ export interface Credential {
  * registry this row rebuilds into.
  */
 export interface Function {
-  /** This declaration's version. Managed: the server stamps it, so render it
-   * read-only.
+  /** This declaration's incremental version, maintained by the engine. Managed:
+   * the server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** The authority that declares it. */
   authority?: string
   /** The model-facing tool card — what this function does. */
   description?: string
+  /** The author's declared effect class, read by the policy door. */
+  effect?: FunctionEffect
+  /** Always means the body's effects are never auto-applied, whatever any
+   * policy or judge says; absent means policy.
+   */
+  confirmation?: FunctionConfirmation
   /** The language the inline body is written in, or host for a built-in. */
   runtime?: FunctionRuntime
   /** The inline body, on an inline runtime. */
@@ -500,6 +517,32 @@ export const functionRequired: string[] = [
   "authority",
   "description",
   "runtime",
+]
+
+/** FunctionEffect is a declared enum: the admissible set, in declaration order.
+ *
+ * the author's declared effect class, read by the policy door
+ */
+export type FunctionEffect = "read" | "write" | "external" | "irreversible"
+
+export const functionEffectValues: FunctionEffect[] = [
+  "read",
+  "write",
+  "external",
+  "irreversible",
+]
+
+/** FunctionConfirmation is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * always means the body's effects are never auto-applied, whatever any policy
+ * or judge says; absent means policy
+ */
+export type FunctionConfirmation = "policy" | "always"
+
+export const functionConfirmationValues: FunctionConfirmation[] = [
+  "policy",
+  "always",
 ]
 
 /** FunctionRuntime is a declared enum: the admissible set, in declaration
@@ -670,10 +713,10 @@ export interface FunctionPermissionsReadsBudgets {
  * against.
  */
 export interface Kind {
-  /** This declaration's version. Managed: the server stamps it, so render it
-   * read-only.
+  /** This declaration's incremental version, maintained by the engine. Managed:
+   * the server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** Builtin for seeded kinds, installed for bundle ones. Managed: the server
    * stamps it, so render it read-only.
    */
@@ -763,6 +806,112 @@ export interface KindEdges {
   inverseDescription?: string
 }
 
+/** LLMInteraction is core.substrate.reamde.dev/llminteraction.
+ *
+ * One batch of questions an agent asked the user, waiting in the thread it
+ * came from: answering (or dismissing) it is one reviewed transition, which
+ * reports back into the thread and resumes the agent.
+ */
+export interface LLMInteraction {
+  /** The thread whose ask call created this interaction. Points at
+   * core.substrate.reamde.dev/llmthread.
+   */
+  thread?: ReferencePath
+  /** The batch, fixed at creation; at most 8 questions. */
+  questions?: LLMInteractionQuestions[]
+  /** The user's selections, written by the answering transition. */
+  answers?: LLMInteractionAnswers[]
+  /** Pending until the user answers or dismisses; either way the thread hears
+   * it. A state moves by transition, never by assignment.
+   */
+  state?: LLMInteractionState
+  /** Stamped by a transition, not written by hand: render it read-only. */
+  resolvedAt?: string
+}
+
+/** The properties LLMInteraction's declaration marks required. A form refuses
+ * to submit without them; the server does not, so nothing here is a guarantee
+ * about a record that arrives.
+ */
+export const llmInteractionRequired: string[] = ["thread"]
+
+/** LLMInteractionState is the state of the `state` machine.
+ *
+ * A state is not a stored property value: it lives in the record's own state
+ * column and moves by transition. The declared moves are below; nothing else
+ * gates one, since a transition carries no guard.
+ *
+ * pending until the user answers or dismisses; either way the thread hears it
+ */
+export type LLMInteractionState = "pending" | "answered" | "dismissed"
+
+export const llmInteractionStateValues: LLMInteractionState[] = [
+  "pending",
+  "answered",
+  "dismissed",
+]
+
+/** The state a creation is born into. */
+export const llmInteractionStateInitial: LLMInteractionState = "pending"
+
+export const llmInteractionStateTransitions: StateTransition<LLMInteractionState>[] =
+  [
+    {
+      from: "pending",
+      to: "answered",
+      stamps: { resolvedAt: "now" },
+      notifies: "thread",
+    },
+    {
+      from: "pending",
+      to: "dismissed",
+      stamps: { resolvedAt: "now" },
+      notifies: "thread",
+    },
+  ]
+
+/** LLMInteractionQuestions is one value of the `questions` object declared on
+ * core.substrate.reamde.dev/llminteraction.
+ *
+ * the batch, fixed at creation; at most 8 questions
+ */
+export interface LLMInteractionQuestions {
+  /** The agent's key for the question, echoed by its answer. */
+  id?: string
+  /** The question itself, rendered as untrusted content. */
+  prompt?: string
+  /** The offered answers; at most 32, values unique. */
+  options?: LLMInteractionQuestionsOptions[]
+  /** Many-of-many; absent means exactly one. */
+  multi?: boolean
+}
+
+/** LLMInteractionQuestionsOptions is one value of the `questions.options`
+ * object declared on core.substrate.reamde.dev/llminteraction.
+ *
+ * the offered answers; at most 32, values unique
+ */
+export interface LLMInteractionQuestionsOptions {
+  /** What an answer selects. */
+  value?: string
+  /** What the user reads; the value renders otherwise. */
+  label?: string
+  /** What picking it means. */
+  description?: string
+}
+
+/** LLMInteractionAnswers is one value of the `answers` object declared on
+ * core.substrate.reamde.dev/llminteraction.
+ *
+ * the user's selections, written by the answering transition
+ */
+export interface LLMInteractionAnswers {
+  /** The question id this answers. */
+  question?: string
+  /** The chosen option values. */
+  selected?: string[]
+}
+
 /** LLMMessage is core.substrate.reamde.dev/llmmessage.
  *
  * One turn of an agent thread — the transcript and the tool-call audit,
@@ -771,7 +920,7 @@ export interface KindEdges {
  * dispatched call's result.
  */
 export interface LLMMessage {
-  /** User, assistant or tool. */
+  /** User, assistant, tool or system. */
   role?: string
   /** The turn's text; a tool row's result payload. */
   content?: string
@@ -785,6 +934,8 @@ export interface LLMMessage {
   tool?: string
   /** Whether the dispatch a tool row answers for succeeded. */
   ok?: boolean
+  /** The changelog entries this turn's dispatch wrote, stamped by the engine. */
+  changes?: LLMMessageChanges[]
   /** The thread this turn belongs to. Points at
    * core.substrate.reamde.dev/llmthread.
    */
@@ -809,6 +960,22 @@ export interface LLMMessageToolCalls {
   name?: string
   /** The call's arguments, as the provider wrote them. */
   arguments?: string
+}
+
+/** LLMMessageChanges is one value of the `changes` object declared on
+ * core.substrate.reamde.dev/llmmessage.
+ *
+ * the changelog entries this turn's dispatch wrote, stamped by the engine
+ */
+export interface LLMMessageChanges {
+  /** The changelog seq of the entry, which addresses its delta. */
+  seq?: number
+  /** The entry's op — put, patch, delete, link or unlink. */
+  op?: string
+  /** The written record's kind. */
+  kind?: string
+  /** The written record's id. */
+  id?: string
 }
 
 /** LLMProvider is core.substrate.reamde.dev/llmprovider.
@@ -967,10 +1134,10 @@ export const llmThreadRequired: string[] = ["agent"]
  * every property that wants it.
  */
 export interface PropertyType {
-  /** This declaration's version. Managed: the server stamps it, so render it
-   * read-only.
+  /** This declaration's incremental version, maintained by the engine. Managed:
+   * the server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** Builtin for seeded refinements, installed for bundle ones. Managed: the
    * server stamps it, so render it read-only.
    */
@@ -1084,10 +1251,10 @@ export const propertyTypeValuesRequired: string[] = ["value"]
  * per source kind, declared by the authority that owns that kind.
  */
 export interface RecordMapping {
-  /** This declaration's version. Managed: the server stamps it, so render it
-   * read-only.
+  /** This declaration's incremental version, maintained by the engine. Managed:
+   * the server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** Builtin for seeded mappings, installed for bundle ones. Managed: the
    * server stamps it, so render it read-only.
    */
@@ -1250,6 +1417,93 @@ export const recordMergeRequestDecisionTransitions: StateTransition<RecordMergeR
     { from: "proposed", to: "rejected", stamps: { decidedAt: "now" } },
   ]
 
+/** RecordPatchPolicy is core.substrate.reamde.dev/recordpatchpolicy.
+ *
+ * One rule for agent writes: which kinds, ops and agents it speaks for, and
+ * whether their writes land, gate into recordpatchrequests, or refuse. The
+ * most restrictive matching policy wins; no match means the write lands.
+ */
+export interface RecordPatchPolicy {
+  /** The writes this policy speaks for; empty lists match all. */
+  selector?: RecordPatchPolicySelector
+  /** What a matched write does — land, convert into a request, or bounce. */
+  action?: RecordPatchPolicyAction
+  /** The agent that judges what this policy gates; absent means the owner
+   * decides everything. Points at core.substrate.reamde.dev/agent.
+   */
+  judge?: ReferencePath
+  /** The owner's instructions to the judge, in prose. */
+  criteria?: string
+  /** How much the judge reads — the frozen envelope alone (default), or the
+   * proposing thread's recent turns beside it.
+   */
+  context?: RecordPatchPolicyContext
+  /** Judge confidence at or above accepts the gated request; absent means the
+   * judge never accepts.
+   */
+  autoAccept?: number
+  /** Judge confidence at or above rejects it; absent means the judge never
+   * rejects.
+   */
+  autoRefuse?: number
+  /** Enforce decides within the thresholds; advise only ever recommends. */
+  mode?: RecordPatchPolicyMode
+  /** A disabled policy matches nothing. */
+  disabled?: boolean
+}
+
+/** RecordPatchPolicyAction is a declared enum: the admissible set, in
+ * declaration order.
+ *
+ * what a matched write does — land, convert into a request, or bounce
+ */
+export type RecordPatchPolicyAction = "allow" | "gate" | "refuse"
+
+export const recordPatchPolicyActionValues: RecordPatchPolicyAction[] = [
+  "allow",
+  "gate",
+  "refuse",
+]
+
+/** RecordPatchPolicyContext is a declared enum: the admissible set, in
+ * declaration order.
+ *
+ * how much the judge reads — the frozen envelope alone (default), or the
+ * proposing thread's recent turns beside it
+ */
+export type RecordPatchPolicyContext = "envelope" | "thread"
+
+export const recordPatchPolicyContextValues: RecordPatchPolicyContext[] = [
+  "envelope",
+  "thread",
+]
+
+/** RecordPatchPolicyMode is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * enforce decides within the thresholds; advise only ever recommends
+ */
+export type RecordPatchPolicyMode = "enforce" | "advise"
+
+export const recordPatchPolicyModeValues: RecordPatchPolicyMode[] = [
+  "enforce",
+  "advise",
+]
+
+/** RecordPatchPolicySelector is one value of the `selector` object declared on
+ * core.substrate.reamde.dev/recordpatchpolicy.
+ *
+ * the writes this policy speaks for; empty lists match all
+ */
+export interface RecordPatchPolicySelector {
+  /** Kind references; empty means every kind. */
+  kinds?: string[]
+  /** Put, patch or delete; empty means all three. */
+  ops?: string[]
+  /** Agent identities; empty means every agent. */
+  agents?: string[]
+}
+
 /** RecordPatchRequest is core.substrate.reamde.dev/recordpatchrequest.
  *
  * A proposed change to the graph, waiting for the owner: patch an existing
@@ -1273,6 +1527,16 @@ export interface RecordPatchRequest {
   diff?: Dynamic
   /** Why the writer proposes this change. */
   rationale?: string
+  /** The policy whose gate converted this write, where one did. Points at
+   * core.substrate.reamde.dev/recordpatchpolicy.
+   */
+  policy?: ReferencePath
+  /** The governing policy record's version at conversion. */
+  policyRevision?: number
+  /** The thread whose propose call created this request. Points at
+   * core.substrate.reamde.dev/llmthread.
+   */
+  thread?: ReferencePath
   /** Proposed until somebody decides; accepting is what applies the change. A
    * state moves by transition, never by assignment.
    */
@@ -1321,8 +1585,14 @@ export const recordPatchRequestDecisionTransitions: StateTransition<RecordPatchR
       to: "accepted",
       stamps: { decidedAt: "now" },
       onEnter: "applyDiff",
+      notifies: "thread",
     },
-    { from: "proposed", to: "rejected", stamps: { decidedAt: "now" } },
+    {
+      from: "proposed",
+      to: "rejected",
+      stamps: { decidedAt: "now" },
+      notifies: "thread",
+    },
   ]
 
 /** RecordSplit is core.substrate.reamde.dev/recordsplit.
@@ -1461,10 +1731,10 @@ export interface Token {
  * what the kind is called.
  */
 export interface Trait {
-  /** This declaration's version. Managed: the server stamps it, so render it
-   * read-only.
+  /** This declaration's incremental version, maintained by the engine. Managed:
+   * the server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** Builtin for seeded traits, installed for bundle ones. Managed: the server
    * stamps it, so render it read-only.
    */

@@ -303,6 +303,10 @@ type agentLoop struct {
 
 	threadID string
 	turn     int // next message ordinal on the thread
+	// openedAt marks when this invocation loaded (or minted) its thread: a
+	// resolution row landing AFTER it was not in the replayed history, so the
+	// settle-time re-check knows what this run could not have consumed.
+	openedAt time.Time
 
 	// emit is the EFFECTIVE emit set: the agent's own, intersected with the
 	// inherited ceiling on sub-agent invocations. Every write gate in the
@@ -312,6 +316,18 @@ type agentLoop struct {
 
 	defs   []llm.Tool
 	byName map[string]agentTool
+
+	// gateOrdinal counts the writes the policy door GATED across this
+	// invocation: it rides the request-id derivation, so two gated writes in
+	// one tool call convert to two requests while a retried delivery
+	// reproduces both ids.
+	gateOrdinal int
+	// dispatchChanges collects the changelog entries the CURRENT tool dispatch
+	// committed (a mutate's writes, a propose's request row, a function tool's
+	// applied effects) — reset per call, stamped onto the tool's llmmessage row
+	// as `changes`. Sub-agent dispatches deliberately collect nothing here:
+	// the child's own rows carry the child's writes.
+	dispatchChanges []changeEntry
 
 	// own counters (the thread row's); the tally aggregates across the chain
 	turns      int
@@ -420,6 +436,7 @@ loop:
 		for _, tc := range calls {
 			var out string
 			var ok bool
+			l.dispatchChanges = nil
 			if l.toolCalls >= l.ag.Budgets.MaxToolCalls {
 				// The v4 lesson: refuse with a synthetic result the model
 				// SEES, so it can land a final reply instead of a silent
@@ -438,9 +455,17 @@ loop:
 			// `ok` is stored, not inferred: a replayed transcript otherwise has
 			// to sniff the failure envelope out of the payload, and a
 			// successful result carrying an `error` key would counterfeit it.
-			if err := l.putMessage(ctx, l.actor, map[string]any{
+			toolProps := map[string]any{
 				"role": "tool", "content": out, "toolCallId": tc.ID, "tool": tc.Name, "ok": ok,
-			}); err != nil {
+			}
+			// The dispatch's committed writes, as changelog addresses: what a
+			// reader resolves instead of parsing the payload. Only committed
+			// entries land here (inTx flushes the sink after commit), so a
+			// failed call stamps nothing.
+			if len(l.dispatchChanges) > 0 {
+				toolProps["changes"] = changeProps(l.dispatchChanges)
+			}
+			if err := l.putMessage(ctx, l.actor, toolProps); err != nil {
 				return nil, err
 			}
 			messages = append(messages, llm.Message{
@@ -458,6 +483,11 @@ loop:
 	if err := l.settle(ctx, status, reason, reply); err != nil {
 		return nil, err
 	}
+	// The settle-time re-check: a resolution that landed MID-turn lost the
+	// lease to this very run, so its resume was dropped. The rows are right
+	// there — pick them up with a fresh continuation instead of waiting for
+	// the sweep (agentdecision.go).
+	l.recheckResolutions(ctx)
 	res := &substrate.AgentResult{
 		Reply: reply, Thread: l.threadID, Status: status, Reason: reason,
 		Turns: l.turns, ToolCalls: l.toolCalls,
@@ -536,6 +566,7 @@ func (l *agentLoop) toolEvent(kind string, tc llm.ToolCall, ok *bool, out string
 // whose row lands before the first completion. The system prompt is not a
 // message: it rides llm.Request.System, and each wire places it.
 func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
+	l.openedAt = nowUTC()
 	var messages []llm.Message
 	if l.in.threadID != "" {
 		// The lease FIRST: a second active turn is rejected before anything
@@ -572,15 +603,43 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 			return nil, err
 		}
 	}
-	userActor := l.in.userActor
-	if userActor == "" {
-		userActor = l.actor
+	// A decision resume continues with NO new user turn: the system row the
+	// decision wrote is already the thread's last message, replayed above.
+	if l.in.user != "" {
+		userActor := l.in.userActor
+		if userActor == "" {
+			userActor = l.actor
+		}
+		if err := l.putMessage(ctx, userActor, map[string]any{"role": "user", "content": l.in.user}); err != nil {
+			return nil, err
+		}
+		messages = append(messages, llm.Message{Role: llm.RoleUser, Content: l.in.user})
 	}
-	if err := l.putMessage(ctx, userActor, map[string]any{"role": "user", "content": l.in.user}); err != nil {
-		return nil, err
-	}
-	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: l.in.user})
 	return messages, nil
+}
+
+// recheckResolutions spawns a continuation when a system row landed after
+// this run opened its thread: the run's history could not have contained it,
+// and its resume lost the lease to this run. The continuation goes through
+// the same admission every resume does (budget, opt-out), so a settled
+// thread with nothing new stays settled.
+func (l *agentLoop) recheckResolutions(ctx context.Context) {
+	probe, err := json.Marshal(map[string]any{
+		msgRelThread: vocabulary.RecordPath(typeThread, l.threadID),
+		"role":       msgRoleSystem,
+	})
+	if err != nil {
+		return
+	}
+	var n int
+	if err := l.ds.db.QueryRowContext(ctx, `
+		SELECT count(*) FROM records
+		WHERE kind = $1 AND deleted_at IS NULL AND props @> $2::jsonb
+		  AND created_at > $3`,
+		typeMessage, string(probe), l.openedAt).Scan(&n); err != nil || n == 0 {
+		return
+	}
+	l.ds.resumeNotifiedThread(l.threadID, "")
 }
 
 // agentLeaseSlack pads the turn lease past the loop deadline, so only a
@@ -673,6 +732,14 @@ func (l *agentLoop) loadHistory(ctx context.Context) ([]llm.Message, int, error)
 		case "assistant":
 			if content != "" && props["toolCalls"] == nil {
 				out = append(out, llm.Message{Role: llm.RoleAssistant, Content: content})
+			}
+		case msgRoleSystem:
+			// The substrate's own turn (a proposal decision) replays as USER
+			// content: no wire admits a mid-thread system role on the messages
+			// array — the system slot is the agent's prompt — and the content
+			// is a self-describing JSON envelope either way.
+			if content != "" {
+				out = append(out, llm.Message{Role: llm.RoleUser, Content: content})
 			}
 		}
 	}
@@ -844,6 +911,8 @@ func (l *agentLoop) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool
 		return l.dispatchGraphQL(ctx, args)
 	case tool.builtin == vocabulary.AgentToolMutate:
 		return l.dispatchMutate(ctx, args)
+	case tool.builtin == vocabulary.AgentToolAsk:
+		return l.dispatchAsk(ctx, args)
 	case tool.sub != nil:
 		return l.dispatchSubAgent(ctx, tool.sub, args)
 	default:
@@ -1095,8 +1164,13 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (s
 	if err != nil {
 		return toolError(err.Error()), false
 	}
+	// The proposing thread rides the request: it is where the decision
+	// reports back and what it resumes (agentdecision.go). Stamped HERE, by
+	// the loop — a human's or a function's request carries none.
+	props[msgRelThread] = l.threadID
 	err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
 		t.causedBy = l.in.causedBy
+		t.changeSink = &l.dispatchChanges
 		_, err := t.put(substrate.PutInput{
 			Kind: vocabulary.KindRecordPatchRequest, ID: id, Properties: props, Edges: edges,
 		})
@@ -1106,6 +1180,26 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (s
 		return toolError(err.Error()), false
 	}
 	l.in.tally.effects["propose"]++
+	// A voluntary proposal a judge-bearing GATE policy matches is judged
+	// too: the owner asked for a judge on exactly these writes, and a
+	// propose is the same want through the polite door.
+	proposeOp := policyOpPatch
+	switch op {
+	case opCreate:
+		proposeOp = policyOpPut
+	case opDelete:
+		proposeOp = policyOpDelete
+	}
+	if targetKind, ok := props["targetKind"].(string); ok || len(edges) > 0 {
+		kindForPolicy := targetKind
+		if kindForPolicy == "" && len(edges) > 0 {
+			kindForPolicy = edges[0].To.Kind
+		}
+		if verdict, rule, perr := l.ds.policyVerdict(ctx, kindForPolicy, proposeOp, l.ag.Identity()); perr == nil &&
+			verdict == policyGate {
+			l.ds.maybeJudge(id, rule)
+		}
+	}
 	return toolJSON(map[string]any{"id": id}), true
 }
 
@@ -1157,10 +1251,69 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 				ef.Action, ef.ID, ef.Type, l.ag.Identity())), false
 		}
 	}
+	// The policy door, per write effect, plus the declaration's own floor
+	// (`confirmation: always` gates whatever any policy says). Effects are
+	// all-or-nothing, so ONE gated or refused effect holds the whole batch:
+	// half-applying around a gate would lie about what the function did. The
+	// gated effect's request is materialized before the refusal, and the
+	// message names it.
+	for i, ef := range effects {
+		var op string
+		switch ef.Action {
+		case effectPut:
+			op = policyOpPut
+		case "patch":
+			op = policyOpPatch
+		case "delete":
+			op = policyOpDelete
+		default:
+			continue
+		}
+		ty, err := l.ds.resolveType(ef.Type)
+		if err != nil {
+			return toolError(err.Error()), false
+		}
+		verdict, rule, err := l.ds.policyVerdict(ctx, ty.Identity, op, l.ag.Identity())
+		if err != nil {
+			return toolError(err.Error()), false
+		}
+		policyID, policyVersion := "", int64(0)
+		if rule != nil {
+			policyID, policyVersion = rule.id, rule.version
+		}
+		if verdict == policyAllow && fn.Confirmation == vocabulary.FunctionConfirmAlways &&
+			ty.Identity != vocabulary.KindRecordPatchRequest {
+			// The author's floor: this function's writes are never
+			// auto-applied, whatever the owner's policies say.
+			verdict, policyID, policyVersion = policyGate, "", 0
+		}
+		switch verdict {
+		case policyRefuse:
+			return toolError(fmt.Sprintf("policy %s refuses %s %s for agent %s — nothing applied",
+				policyID, op, ty.Identity, l.ag.Identity())), false
+		case policyGate:
+			l.gateOrdinal++
+			gw := &gatedWrite{
+				op: op, kind: ty, id: ef.ID, props: ef.Properties, ifVersion: ef.IfVersion,
+				key:      fmt.Sprintf("%s/effect/%d/gate/%d", key, i, l.gateOrdinal),
+				policyID: policyID, policyVersion: policyVersion,
+				thread: l.threadID,
+			}
+			requestID, gerr := l.ds.convertToRequest(ctx, l.actor, l.in.causedBy, &l.dispatchChanges, gw)
+			if gerr != nil {
+				return toolError(gerr.Error()), false
+			}
+			l.in.tally.effects["gate"]++
+			l.ds.maybeJudge(requestID, rule)
+			return toolError(heldForReview(requestID, fmt.Sprintf(
+				"effect %s %s is held and the batch did not apply — effects are all-or-nothing", op, ty.Identity)).Error()), false
+		}
+	}
 	if len(effects) > 0 {
 		err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
 			t.causedBy = l.in.causedBy
 			t.setEffectEmit(l.emit)
+			t.changeSink = &l.dispatchChanges
 			if err := t.lockEffectTargets(effects); err != nil {
 				return err
 			}

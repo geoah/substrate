@@ -11,10 +11,9 @@ package corekinds
 // from, and carries the quarantine mark set when a stored closure no longer
 // admits.
 type Authority struct {
-	// Version is the declared maturity statement, v1alpha1 unless said
-	// otherwise. Managed: the engine stamps it, so a supplied value does not
-	// decide it.
-	Version *string
+	// Version is the closure's incremental version, maintained by the engine.
+	// Managed: the engine stamps it, so a supplied value does not decide it.
+	Version *int64
 
 	// Actors is the actors declared under this authority. Managed: the engine
 	// stamps it, so a supplied value does not decide it.
@@ -104,7 +103,7 @@ func decodeAuthority(d *decoder, path string, v any) (Authority, bool) {
 		switch key {
 		case "version":
 			p := at(path, "version")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := d.integer(p, props[key], Bounds{}); ok {
 				out.Version = &e
 			}
 		case "actors":

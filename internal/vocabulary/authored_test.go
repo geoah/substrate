@@ -21,7 +21,7 @@ import (
 const authoredStream = `
 kind: core.substrate.reamde.dev/authority
 metadata: {id: a.example.com}
-data: {version: v1alpha1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/propertytype
 metadata: {id: a.example.com/grade}

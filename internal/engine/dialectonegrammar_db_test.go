@@ -164,7 +164,7 @@ func TestDialectOnePropertyTypeValuesMigrateLabeled(t *testing.T) {
 	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
 		Name: "shades", Authority: shades,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(shades, ""),
+			vocabulary.AuthorityManifest(shades, 0),
 			vocabulary.ActorManifest(shades, vocabulary.AuthorityActor(shades)),
 			{
 				"kind":     kindPropertyType,

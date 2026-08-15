@@ -10,9 +10,10 @@ package corekinds
 // `substratectl` are the doors a human write comes through, and machine hands
 // like `function:<name>` are minted at dispatch.
 type Actor struct {
-	// Version is this declaration's version. Managed: the engine stamps it, so
-	// a supplied value does not decide it.
-	Version *string
+	// Version is this declaration's incremental version, maintained by the
+	// engine. Managed: the engine stamps it, so a supplied value does not
+	// decide it.
+	Version *int64
 
 	// Authority is the authority that declares this actor.
 	Authority *string
@@ -139,7 +140,7 @@ func decodeActor(d *decoder, path string, v any) (Actor, bool) {
 		switch key {
 		case "version":
 			p := at(path, "version")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := d.integer(p, props[key], Bounds{}); ok {
 				out.Version = &e
 			}
 		case "authority":

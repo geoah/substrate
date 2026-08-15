@@ -8,7 +8,7 @@ function kindInfo(overrides: Partial<KindInfo>): KindInfo {
     identity: "people.substrate.reamde.dev/person",
     name: "person",
     authority: "people.substrate.reamde.dev",
-    version: "",
+    version: 0,
     plural: "persons",
     source: "builtin",
     ...overrides,
@@ -41,7 +41,7 @@ describe("normalizeKinds", () => {
         identity: "people.substrate.reamde.dev/person",
         name: "person",
         authority: "people.substrate.reamde.dev",
-        version: "",
+        version: 0,
         plural: "persons",
         source: "builtin",
         description: "One human, one record.",
@@ -91,6 +91,20 @@ describe("normalizeKinds", () => {
 
   it("skips rows without an id", () => {
     expect(normalizeKinds({ records: [{ properties: {} }] })).toEqual([])
+  })
+
+  it("reads the declaration version as a number: 0 when absent or not numeric", () => {
+    const read = (version?: unknown) =>
+      normalizeKinds({
+        records: [
+          { id: "tasks.substrate.reamde.dev/task", properties: { version } },
+        ],
+      })[0]?.version
+    expect(read(3)).toBe(3)
+    expect(read("3")).toBe(3)
+    expect(read(undefined)).toBe(0)
+    // A pre-rename declaration still holding a string version reads as absent.
+    expect(read("v1alpha1")).toBe(0)
   })
 })
 

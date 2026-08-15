@@ -201,7 +201,7 @@ func (ds *dataset) rungValidators(candidate *vocabulary.Registry, want map[strin
 	if err != nil {
 		return nil, err
 	}
-	stored := map[string]string{}
+	stored := map[string]int64{}
 	for _, decls := range want {
 		for _, d := range decls {
 			if d.typ == kindKind {
@@ -226,7 +226,7 @@ func (ds *dataset) rungValidators(candidate *vocabulary.Registry, want map[strin
 
 // shippedDeclarationVersions is the version the embedded tree declares for each
 // meta-kind — what the boot upgrade compares a stored declaration against.
-func (ds *dataset) shippedDeclarationVersions() (map[string]string, error) {
+func (ds *dataset) shippedDeclarationVersions() (map[string]int64, error) {
 	core, ok := ds.svc.base.AuthorityByName(vocabulary.AuthorityCore)
 	if !ok {
 		return nil, fmt.Errorf("substrate/engine: the binary ships no %s authority", vocabulary.AuthorityCore)
@@ -235,7 +235,7 @@ func (ds *dataset) shippedDeclarationVersions() (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := map[string]string{}
+	out := map[string]int64{}
 	for _, d := range decls {
 		if d.typ == kindKind {
 			out[d.id] = d.version()

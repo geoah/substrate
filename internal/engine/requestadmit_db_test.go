@@ -385,7 +385,7 @@ func TestTwoTargetsSmuggleNothing(t *testing.T) {
 	// stored at all).
 	const gaugeAuthority = "gauge.example.com"
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(gaugeAuthority, ""),
+		vocabulary.AuthorityManifest(gaugeAuthority, 0),
 		vocabulary.KindManifest(gaugeAuthority, map[string]any{"singular": "safegauge", "plural": "safegauges"},
 			map[string]any{"properties": map[string]any{"apiKey": map[string]any{"type": "string"}}}),
 		vocabulary.KindManifest(gaugeAuthority, map[string]any{"singular": "secretgauge", "plural": "secretgauges"},

@@ -10,15 +10,23 @@ package corekinds
 // write admits it, the commit activates it, and the dispatcher reads the
 // registry this row rebuilds into.
 type Function struct {
-	// Version is this declaration's version. Managed: the engine stamps it, so
-	// a supplied value does not decide it.
-	Version *string
+	// Version is this declaration's incremental version, maintained by the
+	// engine. Managed: the engine stamps it, so a supplied value does not
+	// decide it.
+	Version *int64
 
 	// Authority is the authority that declares it.
 	Authority *string
 
 	// Description is the model-facing tool card — what this function does.
 	Description *string
+
+	// Effect is the author's declared effect class, read by the policy door.
+	Effect *FunctionEffect
+
+	// Confirmation is always means the body's effects are never auto-applied,
+	// whatever any policy or judge says; absent means policy.
+	Confirmation *FunctionConfirmation
 
 	// Runtime is the language the inline body is written in, or host for a
 	// built-in.
@@ -40,6 +48,44 @@ type Function struct {
 	// a grant out and what it covers is refused.
 	Permissions *FunctionPermissions
 }
+
+// FunctionEffect is a declared enum: the admissible set, in declaration order.
+//
+// the author's declared effect class, read by the policy door
+type FunctionEffect string
+
+const (
+	FunctionEffectRead         FunctionEffect = "read"
+	FunctionEffectWrite        FunctionEffect = "write"
+	FunctionEffectExternal     FunctionEffect = "external"
+	FunctionEffectIrreversible FunctionEffect = "irreversible"
+)
+
+// FunctionEffectValues are the declared values in declaration order, which is
+// render order.
+var FunctionEffectValues = []string{"read", "write", "external", "irreversible"}
+
+// Valid reports whether v is one of the declared values.
+func (v FunctionEffect) Valid() bool { return Declared(FunctionEffectValues, string(v)) }
+
+// FunctionConfirmation is a declared enum: the admissible set, in declaration
+// order.
+//
+// always means the body's effects are never auto-applied, whatever any policy
+// or judge says; absent means policy
+type FunctionConfirmation string
+
+const (
+	FunctionConfirmationPolicy FunctionConfirmation = "policy"
+	FunctionConfirmationAlways FunctionConfirmation = "always"
+)
+
+// FunctionConfirmationValues are the declared values in declaration order,
+// which is render order.
+var FunctionConfirmationValues = []string{"policy", "always"}
+
+// Valid reports whether v is one of the declared values.
+func (v FunctionConfirmation) Valid() bool { return Declared(FunctionConfirmationValues, string(v)) }
 
 // FunctionRuntime is a declared enum: the admissible set, in declaration
 // order.
@@ -64,7 +110,7 @@ func (v FunctionRuntime) Valid() bool { return Declared(FunctionRuntimeValues, s
 // core.substrate.reamde.dev/function declares, sorted. A key outside it is
 // refused by Decode, which is what replaces a hand-kept list of admitted keys
 // in Go.
-var FunctionKeys = []string{"arguments", "authority", "description", "permissions", "returns", "runtime", "source", "timeoutMs", "version"}
+var FunctionKeys = []string{"arguments", "authority", "confirmation", "description", "effect", "permissions", "returns", "runtime", "source", "timeoutMs", "version"}
 
 // DecodeFunction decodes a properties map into Function, refusing what the
 // declaration cannot hold: an undeclared key, a value of the wrong type, an
@@ -110,6 +156,24 @@ func (v *Function) Missing() []string {
 	return out
 }
 
+// decodeFunctionEffect decodes a declared FunctionEffect value.
+func decodeFunctionEffect(d *decoder, path string, v any) (FunctionEffect, bool) {
+	s, ok := d.text(path, v, FunctionEffectValues, nil)
+	if !ok {
+		return "", false
+	}
+	return FunctionEffect(s), true
+}
+
+// decodeFunctionConfirmation decodes a declared FunctionConfirmation value.
+func decodeFunctionConfirmation(d *decoder, path string, v any) (FunctionConfirmation, bool) {
+	s, ok := d.text(path, v, FunctionConfirmationValues, nil)
+	if !ok {
+		return "", false
+	}
+	return FunctionConfirmation(s), true
+}
+
 // decodeFunctionRuntime decodes a declared FunctionRuntime value.
 func decodeFunctionRuntime(d *decoder, path string, v any) (FunctionRuntime, bool) {
 	s, ok := d.text(path, v, FunctionRuntimeValues, nil)
@@ -135,7 +199,7 @@ func decodeFunction(d *decoder, path string, v any) (Function, bool) {
 		switch key {
 		case "version":
 			p := at(path, "version")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := d.integer(p, props[key], Bounds{}); ok {
 				out.Version = &e
 			}
 		case "authority":
@@ -147,6 +211,16 @@ func decodeFunction(d *decoder, path string, v any) (Function, bool) {
 			p := at(path, "description")
 			if e, ok := d.text(p, props[key], nil, nil); ok {
 				out.Description = &e
+			}
+		case "effect":
+			p := at(path, "effect")
+			if e, ok := decodeFunctionEffect(d, p, props[key]); ok {
+				out.Effect = &e
+			}
+		case "confirmation":
+			p := at(path, "confirmation")
+			if e, ok := decodeFunctionConfirmation(d, p, props[key]); ok {
+				out.Confirmation = &e
 			}
 		case "runtime":
 			p := at(path, "runtime")
@@ -214,6 +288,12 @@ func (v *Function) Encode() map[string]any {
 	}
 	if v.Description != nil {
 		out["description"] = *v.Description
+	}
+	if v.Effect != nil {
+		out["effect"] = string(*v.Effect)
+	}
+	if v.Confirmation != nil {
+		out["confirmation"] = string(*v.Confirmation)
 	}
 	if v.Runtime != nil {
 		out["runtime"] = string(*v.Runtime)

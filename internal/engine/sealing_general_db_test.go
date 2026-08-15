@@ -209,7 +209,7 @@ func TestDigestRedactsWithoutIndirection(t *testing.T) {
 	_, ds, db := newSealingDataset(t)
 	const auth = "digests.example.substrate.reamde.dev"
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(auth, ""),
+		vocabulary.AuthorityManifest(auth, 0),
 		vocabulary.KindManifest(auth,
 			map[string]any{"singular": "artifact", "plural": "artifacts"},
 			map[string]any{"properties": map[string]any{
@@ -252,7 +252,7 @@ func TestDisplayTemplateRefusesSensitiveProps(t *testing.T) {
 	_, ds, _ := newSealingDataset(t)
 	const auth = "leaky.example.substrate.reamde.dev"
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(auth, ""),
+		vocabulary.AuthorityManifest(auth, 0),
 		vocabulary.KindManifest(auth,
 			map[string]any{"singular": "leak", "plural": "leaks"},
 			map[string]any{

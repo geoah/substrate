@@ -43,8 +43,8 @@ func TestCatalogListsShippedBundle(t *testing.T) {
 	if b.Authority != "web.bundles.substrate.reamde.dev" {
 		t.Errorf("authority = %q", b.Authority)
 	}
-	if b.Version != "v1alpha5" {
-		t.Errorf("version = %q, want v1alpha5", b.Version)
+	if b.Version != 5 {
+		t.Errorf("version = %d, want 5", b.Version)
 	}
 	if _, ok := b.Inputs["connector"]; !ok {
 		t.Errorf("inputs = %v, want a connector input", b.Inputs)
@@ -92,18 +92,18 @@ func TestCatalogDetailEnumeratesTheClosure(t *testing.T) {
 }
 
 // A bundle's DATA records are half of what installing it does, and the llm
-// example is the case that proves it: its whole closure is three agents, and
-// the two keyless llmprovider rows it writes are the things the reader is then
-// told to go and key. A preview that named only the declarations showed that
-// bundle as "three agents and nothing else", which is what it looked like on
+// example is the case that proves it: its closure is agents, and the two
+// keyless llmprovider rows it writes are the things the reader is then told
+// to go and key. A preview that named only the declarations showed that
+// bundle as "six agents and nothing else", which is what it looked like on
 // the Registry page.
 func TestCatalogPreviewsTheRecordsAnInstallWrites(t *testing.T) {
 	b, ok := realCatalog(t).ByID("llm.examples.substrate.reamde.dev/llm")
 	if !ok {
 		t.Fatal("llm bundle missing")
 	}
-	if got := len(b.Closure.Agents); got != 3 {
-		t.Errorf("agents = %d, want 3 (%v)", got, b.Closure.Agents)
+	if got := len(b.Closure.Agents); got != 6 {
+		t.Errorf("agents = %d, want 6 (%v)", got, b.Closure.Agents)
 	}
 	want := map[string]bool{"anthropic": true, "openai": true}
 	got := map[string]bool{}

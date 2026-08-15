@@ -138,6 +138,8 @@ type StateTransition struct {
 	To      string
 	Stamps  map[string]string
 	OnEnter string
+	// Notifies is the thread-reference property the move reports into.
+	Notifies string
 }
 
 // Bounds is a declared numeric range, each half present only where the

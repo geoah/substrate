@@ -19,32 +19,36 @@ data:
     a function by a trigger, the call API or another agent. The row IS the
     prompt store, so changing what an agent does is a record write and the
     changelog is its version history.
-  # v1alpha2: the display template dropped the authority. A declaration's
+  # version 2: the display template dropped the authority. A declaration's
   # identity is `<authority>/<name>` and the dotted composite it used to render
   # names nothing — the bump is what carries the new template into repositories
   # that already stored the old one.
-  # v1alpha3: the declaration gained a `description` — the bump is what
-  # carries it into repositories that already stored the v1alpha2 one.
-  # v1alpha4: the `llm` reference split into `provider` + `model` — an agent
+  # version 3: the declaration gained a `description` — the bump is what
+  # carries it into repositories that already stored the version 2 one.
+  # version 4: the `llm` reference split into `provider` + `model` — an agent
   # names WHERE it buys completions and WHAT model it wants, separately.
-  # v1alpha5: the declaration gained `subagentOnly`, the chat-surface
+  # version 5: the declaration gained `subagentOnly`, the chat-surface
   # withholding (an llm-as-judge exists to be called by other agents); the
-  # bump carries the column into repositories that stored the v1alpha4 shape.
-  # v1alpha6: TYPED. `definition` and the `functions`/`subagents` mirrors are
+  # bump carries the column into repositories that stored the version 4 shape.
+  # version 6: TYPED. `definition` and the `functions`/`subagents` mirrors are
   # gone; the manifest's own keys (params, tools, budgets and the grants) are
   # properties, and `name` left with them (a declaration's local name is its
   # id's last segment, which is what `{localName}` renders).
-  # v1alpha7: the `builtin` field left `tools`. The four built-ins are function
+  # version 7: the `builtin` field left `tools`. The four built-ins are function
   # records now (`runtime: host`), so an entry names one under `function:` like
   # any other function and the union has ONE arm. Dropping a field is a
   # narrowing, and this one is safe because dialect 2 has never shipped in a
   # release: no store outside our own development instances holds a row with the
   # field, and the dialect rung rewrites the ones that do.
-  # v1alpha8: `emit` and `reads` became one `permissions` object, and `emit` is
+  # version 8: `emit` and `reads` became one `permissions` object, and `emit` is
   # `writes` inside it: the same grouping a function's five grants took, and
-  # safe for the same reason v1alpha7 was. A tool entry's `callable` field
+  # safe for the same reason version 7 was. A tool entry's `callable` field
   # became `function` in the same bump, since an entry admits nothing else.
-  version: v1alpha9
+  # version 10: the declaration's own `version` became an incremental
+  # integer, maintained by the engine.
+  # version 11: `resume` — whether a resolution on the agent's thread-borne
+  # records continues the thread (docs/plans/thread-interactions.md).
+  version: 11
   names:
     singular: agent
     plural: agents
@@ -55,9 +59,10 @@ data:
     # diffs a repository's shipped vocabulary against, so it is written on
     # every declaration row — by the engine, which is what `managed` says.
     version:
-      type: string
+      type: int
       managed: true
-      description: this declaration's version
+      description: this declaration's incremental version, maintained by the
+        engine
     # NOT a reference, and the reason is identity: an authority is what this
     # declaration IS part of, not a record it points at. Pinning it made the
     # stored row spell it as a path while the manifest spelled the name, so one
@@ -202,3 +207,14 @@ data:
     subagentOnly:
       type: bool
       description: only callable by other agents; withheld from the chat surface
+    # A resolution on this agent's thread-borne records (a decided proposal,
+    # an answered interaction) writes the system row either way; `resume` says
+    # whether it also CONTINUES the thread. A resume is a paid agent turn, so
+    # the declaration owns the knob; absent means always (issue 69).
+    resume:
+      type: enum
+      values:
+        - always
+        - never
+      description: whether a resolution resumes this agent's thread; absent
+        means always

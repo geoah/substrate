@@ -41,7 +41,7 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: tasks.substrate.reamde.dev
 data:
-  version: v1alpha1
+  version: 1
 ```
 
 Each declarable kind has a collection under `core.substrate.reamde.dev`, the plural of
@@ -74,10 +74,11 @@ auditable in the [changelog](changelog.md):
   difference as explicit entries under the actor `substrate`: one transaction
   per repository, convergent and idempotent, so an unchanged tree writes
   nothing at all. Only same-or-newer wins, never a downgrade and never a
-  prune, and a repository nobody opens is never touched. Version ordering is
-  `v1alpha1` before `v1beta1` before `v1` before `v2`, with a string
-  fallback. An authority whose stored rows belong to somebody else here is
-  skipped whole: the upgrade never seizes a name it does not already own.
+  prune, and a repository nobody opens is never touched. A version is an
+  incremental integer, ordered as plain integers; 0 is the absent version
+  and orders below everything. An authority whose stored rows belong to
+  somebody else here is skipped whole: the upgrade never seizes a name it
+  does not already own.
 - **An install, which is a copy.** Installing a bundle writes that
   bundle's manifests into the repository's changelog under `bundle:<name>`
   ([Bundles](bundles.md)). The shipped catalog is a source, never an
@@ -86,7 +87,12 @@ auditable in the [changelog](changelog.md):
 Install and apply are one path. `POST …/core.substrate.reamde.dev/vocabulary/apply` with
 `{"documents": […]}` is the batch verb, the same closure an install applies,
 and where `substratectl apply` routes any vocabulary documents it is given. A generic
-PUT, PATCH, or DELETE of a vocabulary record is a batch of one.
+PUT, PATCH, or DELETE of a vocabulary record is a batch of one. On every one
+of these doors the engine maintains the `version` itself: an incoming value is
+honored only when it moves past the stored one, a changed definition lands at
+stored+1, an unchanged one keeps its stored version, and a changed or deleted
+declaration that cannot carry a version of its own (a trait, a function)
+moves its authority's forward instead, so nobody bumps by hand.
 
 **The authority chokepoint** decides who may write a declaration, which is
 what an authority is for. Shipped vocabulary, an authority whose stored rows

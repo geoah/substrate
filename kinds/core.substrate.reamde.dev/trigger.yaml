@@ -23,7 +23,7 @@ data:
     — bound to the one function or agent it invokes. The trigger owns its
     cursor, so enabling, replay, parking and manual runs are all verbs on
     this row.
-  # `source` is typed as of core's v1alpha3 — the discriminator plus one object
+  # `source` is typed as of core's version 3 — the discriminator plus one object
   # field per arm, where it was a json blob. No version of its own: this kind
   # takes the authority's, and the authority bumped for the typed core.
   names:

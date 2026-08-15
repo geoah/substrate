@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -328,7 +329,23 @@ func groupByAuthority(kinds []declaredKind) []authorityGroup {
 	}
 	out := make([]authorityGroup, 0, len(byAuthority))
 	for _, g := range byAuthority {
-		sort.Strings(g.versions)
+		// Versions are incremental integers, so the honest order is numeric;
+		// the non-numeric labels (a legacy spelling, "(unversioned)") sort
+		// after the numbers, lexically among themselves.
+		sort.Slice(g.versions, func(i, j int) bool {
+			vi, ei := strconv.ParseInt(g.versions[i], 10, 64)
+			vj, ej := strconv.ParseInt(g.versions[j], 10, 64)
+			switch {
+			case ei == nil && ej == nil:
+				return vi < vj
+			case ei == nil:
+				return true
+			case ej == nil:
+				return false
+			default:
+				return g.versions[i] < g.versions[j]
+			}
+		})
 		out = append(out, *g)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].authority < out[j].authority })

@@ -309,7 +309,7 @@ function Facts({ kind }: { kind: KindInfo }) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-6 pt-4 text-xs text-muted-foreground">
       <span className="data text-foreground/80">{kind.identity}</span>
-      {kind.version && <span>version {kind.version}</span>}
+      {kind.version ? <span>version {kind.version}</span> : null}
       <span>{kind.source}</span>
     </div>
   )

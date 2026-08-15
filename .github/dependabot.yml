@@ -21,10 +21,15 @@ updates:
       day: monday
     open-pull-requests-limit: 5
     commit-message:
-      # release-please reads these titles off main, so a title it cannot parse
-      # is a release that does not happen. `chore` keeps a dependency bump out
-      # of the release notes; a security fix is retitled by hand to `fix`.
+      # The version is folded from these titles on merge, so a title nothing
+      # can parse is a release that does not happen. `chore` keeps a
+      # dependency bump out of both the version and the release notes; a
+      # security fix is retitled by hand to `fix`, which releases it.
       prefix: chore
+    # Named, so dependabot stops inventing its own (`dependencies`, plus one
+    # per ecosystem) beside the set .github/labels.yml holds. The Go module is
+    # the server and the CLI both, so no area/ fits it.
+    labels: [type/dependencies]
     groups:
       go-minor-and-patch:
         applies-to: version-updates
@@ -42,6 +47,7 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: chore
+    labels: [type/dependencies, area/console]
     groups:
       console-minor-and-patch:
         applies-to: version-updates
@@ -66,8 +72,18 @@ updates:
       day: monday
     commit-message:
       prefix: ci
+    labels: [type/dependencies, area/ci]
     groups:
+      # Minor and patch only, like the two ecosystems above. A major arrives on
+      # its own instead, because an action's major IS the breaking change (the
+      # Node 20 to Node 24 runner move, an input that no longer exists), and
+      # grouped it takes nine innocent bumps hostage while it is reviewed.
       actions:
+        applies-to: version-updates
+        update-types: [minor, patch]
+        patterns: ["*"]
+      actions-security:
+        applies-to: security-updates
         patterns: ["*"]
 
   # ---- The images the build stands on -------------------------------------
@@ -79,6 +95,16 @@ updates:
       day: monday
     commit-message:
       prefix: chore
+    labels: [type/dependencies, area/ci]
     groups:
+      # Minor and patch only, for the reason the actions group is: a base image
+      # major is a different distribution, not a refresh. Node 22 to 26 dropped
+      # corepack from the tarball and Alpine 3.21 to 3.24 moves python3 by two
+      # minors, and neither is something to read past on the way to a patch.
       base-images:
+        applies-to: version-updates
+        update-types: [minor, patch]
+        patterns: ["*"]
+      base-images-security:
+        applies-to: security-updates
         patterns: ["*"]

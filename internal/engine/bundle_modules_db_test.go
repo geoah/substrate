@@ -35,7 +35,7 @@ def main(input, host):
 		installs = append(installs, meta["id"].(string))
 	}
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(mbAuthority, ""),
+		vocabulary.AuthorityManifest(mbAuthority, 0),
 		vocabulary.ActorManifest(mbAuthority, vocabulary.AuthorityActor(mbAuthority)),
 		vocabulary.BundleManifest(mbAuthority, map[string]any{
 			"description": "the mail bundle",

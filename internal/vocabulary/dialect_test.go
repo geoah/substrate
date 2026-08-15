@@ -21,7 +21,7 @@ import (
 
 const dialectHead = `kind: core.substrate.reamde.dev/authority
 metadata: {id: w.example.com}
-data: {version: v1alpha1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/kind
 metadata: {id: w.example.com/target}

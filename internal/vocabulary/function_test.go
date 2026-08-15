@@ -15,7 +15,7 @@ func fnAuthority(fnData string) string {
 metadata:
   id: fn.example.com
 data:
-  version: v1alpha1
+  version: 1
 ---
 kind: core.substrate.reamde.dev/kind
 metadata:

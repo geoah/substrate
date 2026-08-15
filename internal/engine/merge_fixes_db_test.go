@@ -216,7 +216,7 @@ func TestMergeSplitRestoresPairInternalEdge(t *testing.T) {
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, enginetest.Manifest{
 		Name: "peers", Authority: authority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, "v1alpha1"),
+			vocabulary.AuthorityManifest(authority, 1),
 			vocabulary.ActorManifest(authority, "connector:peers"),
 			vocabulary.KindManifest(authority,
 				map[string]any{"singular": "node", "plural": "nodes"},

@@ -204,7 +204,7 @@ const (
 func typeRecord(name, authority, plural, source string, definition map[string]any) map[string]any {
 	properties := map[string]any{
 		"name": name, "authority": authority, "plural": plural,
-		"version": "v1alpha1", "source": source,
+		"version": 1, "source": source,
 	}
 	if definition != nil {
 		properties["definition"] = definition

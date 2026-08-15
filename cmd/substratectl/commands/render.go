@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -96,8 +97,12 @@ func printKindsTable(w io.Writer, types []substrate.KindInfo) error {
 	tw := newTable(w)
 	fmt.Fprintln(tw, "NAME\tAUTHORITY\tPLURAL\tVERSION\tSOURCE")
 	for _, ti := range types {
+		version := "-"
+		if ti.Version > 0 {
+			version = strconv.FormatInt(ti.Version, 10)
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
-			dash(ti.Name), dash(ti.Authority), dash(pluralOf(ti)), dash(ti.Version), dash(ti.Source))
+			dash(ti.Name), dash(ti.Authority), dash(pluralOf(ti)), version, dash(ti.Source))
 	}
 	return tw.Flush()
 }

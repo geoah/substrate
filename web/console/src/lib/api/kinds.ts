@@ -38,7 +38,9 @@ function kindFromRecord(item: Record<string, unknown>): KindInfo | undefined {
     identity,
     name: String(names.singular ?? properties.name ?? name),
     authority: String(properties.authority ?? authority),
-    version: String(properties.version ?? ""),
+    // The declaration version is an incremental int64; 0 (absent) covers a
+    // declaration written before the server versioned them.
+    version: Number(properties.version) || 0,
     plural: String(names.plural ?? properties.plural ?? name),
     source: String(properties.source ?? "builtin"),
     // A STRING or nothing — this renders as prose, and `String()` would turn a

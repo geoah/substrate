@@ -217,7 +217,7 @@ func TestSchemaRowsStoreNoSourceYAML(t *testing.T) {
 	// An installed authority's rows store none either.
 	const authority = "srcless.example.substrate.reamde.dev"
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(authority, ""),
+		vocabulary.AuthorityManifest(authority, 0),
 		vocabulary.KindManifest(authority,
 			map[string]any{"singular": "widget", "plural": "widgets"},
 			map[string]any{"properties": map[string]any{
@@ -265,7 +265,7 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	if authority.Kind != "core.substrate.reamde.dev/authority" {
 		t.Fatalf("authority projection type = %q", authority.Kind)
 	}
-	if authority.Properties["version"] != "v1alpha1" || authority.Properties["source"] != "builtin" {
+	if v, _ := vocabulary.VersionValue(authority.Properties["version"]); v != 1 || authority.Properties["source"] != "builtin" {
 		t.Fatalf("authority projection = %v", authority.Properties)
 	}
 	// A vocabulary authority declares no actors of its own; core's three are the

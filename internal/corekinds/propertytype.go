@@ -11,9 +11,10 @@ package corekinds
 // declares it may use it — so a shape is stated once instead of repeated on
 // every property that wants it.
 type PropertyType struct {
-	// Version is this declaration's version. Managed: the engine stamps it, so
-	// a supplied value does not decide it.
-	Version *string
+	// Version is this declaration's incremental version, maintained by the
+	// engine. Managed: the engine stamps it, so a supplied value does not
+	// decide it.
+	Version *int64
 
 	// Source is builtin for seeded refinements, installed for bundle ones.
 	// Managed: the engine stamps it, so a supplied value does not decide it.
@@ -176,7 +177,7 @@ func decodePropertyType(d *decoder, path string, v any) (PropertyType, bool) {
 		switch key {
 		case "version":
 			p := at(path, "version")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := d.integer(p, props[key], Bounds{}); ok {
 				out.Version = &e
 			}
 		case "source":

@@ -43,15 +43,15 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: google.bundles.substrate.reamde.dev
 data:
-  # v1alpha2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
+  # version 2: THE TYPED CORE SWEEP. Declarations in this closure moved to the
   # declared spellings — whichever of them they used: a tool entry naming its arm,
   # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
-  # v1alpha3: the grants group under one `permissions:` object, and the permission
+  # version 3: the grants group under one `permissions:` object, and the permission
   # to write is `writes:` inside it. This closure's functions and agents
   # follow core's declaration.
-  version: v1alpha4
+  version: 4
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the

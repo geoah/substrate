@@ -11,6 +11,19 @@ data:
     record, create one, or delete one. A learner or an app writes it, accepting
     the decision applies it, and the envelope is frozen once proposed so nobody
     can swap what was reviewed.
+  # The declaration carried no version of its own before this, inheriting the
+  # authority's (6 at the time) — and an unbumped edit is a no-op to the
+  # upgrade, so this key is what carries the change into repositories that
+  # already hold the row.
+  # version 7: `thread` — the proposing thread, stamped by the agent loop's
+  # propose built-in, which is where a decision reports back.
+  # version 8: the decision transitions carry `notifies: thread` — the
+  # declared marker that replaced the engine's hardcoded write-back
+  # (docs/plans/thread-interactions.md), behavior identical.
+  # version 9: `policy` and `policyRevision` — stamped by the engine when the
+  # policy door converts a held write into this request; frozen with the
+  # envelope, because the audit must not be reworded under a pending request.
+  version: 9
   names:
     singular: recordpatchrequest
     plural: recordpatchrequests
@@ -62,6 +75,29 @@ data:
     rationale:
       type: string
       description: why the writer proposes this change
+    # Stamped by the ENGINE when the policy door gated a write into this
+    # request; absent on requests an agent proposed on purpose or a human
+    # wrote. The revision pins WHICH text of the mutable policy record
+    # governed, because the audit must not drift with later edits.
+    policy:
+      type: reference
+      kind: core.substrate.reamde.dev/recordpatchpolicy
+      description: the policy whose gate converted this write, where one did
+    policyRevision:
+      type: int
+      description: the governing policy record's version at conversion
+    # Stamped by the agent loop when the propose built-in lands the request:
+    # the thread whose tool call proposed it. The decision writes a `system`
+    # llmmessage back into that thread and resumes it, so the proposing agent
+    # hears the verdict without a trigger. Absent on requests a human or a
+    # function proposed — those have no thread to report to.
+    thread:
+      type: reference
+      kind: core.substrate.reamde.dev/llmthread
+      inverse: proposals
+      inverseDescription: the change requests this thread's propose calls
+        landed
+      description: the thread whose propose call created this request
     # accepting is what applies the change: the transition runs `applyDiff`,
     # which branches on `op` — a patch checks the diff against `targetVersion`
     # and fails the transition if the target moved underneath it, a create
@@ -76,13 +112,18 @@ data:
         - rejected
       initial: proposed
       transitions:
+        # `notifies: thread` is the one resolution primitive: the transition
+        # writes the decision's `system` message into the thread the named
+        # reference points at, and the engine schedules the resume.
         - from: proposed
           to: accepted
           onEnter: applyDiff
+          notifies: thread
           stamps:
             decidedAt: now
         - from: proposed
           to: rejected
+          notifies: thread
           stamps:
             decidedAt: now
   edges:

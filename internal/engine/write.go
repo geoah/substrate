@@ -80,7 +80,17 @@ func (e *diffConflict) Unwrap() error { return e.err }
 // the generic API, where no ceiling applies; a non-nil one is bundle dispatch,
 // and an EMPTY set inside it means the actor may emit nothing (the distinction
 // effEmitSet keeps).
-type effectCeiling struct{ emit []string }
+type effectCeiling struct {
+	emit []string
+	// changes, when set, collects the committed changelog entries of every
+	// transaction the ceiling stamps — the agent mutate tool's per-dispatch
+	// record of what it wrote, stamped onto the tool's llmmessage row.
+	changes *[]changeEntry
+	// policyDecision marks the engine's own judge-driven decision on a
+	// policy-gated request (judge.go decideAsPolicy): the one bundle-tier
+	// hand the gated guard admits.
+	policyDecision bool
+}
 
 // stamp marks the transaction as bundle dispatch under this ceiling.
 func (c *effectCeiling) stamp(t *txn) {
@@ -88,6 +98,18 @@ func (c *effectCeiling) stamp(t *txn) {
 		return
 	}
 	t.setEffectEmit(c.emit)
+	t.changeSink = c.changes
+	t.policyDecision = c.policyDecision
+}
+
+// stampChanges attaches ONLY the change collector: the door for Link/Unlink,
+// which deliberately carry no emit ceiling (an edge write drives no state
+// machine) but whose entries a dispatch still records.
+func (c *effectCeiling) stampChanges(t *txn) {
+	if c == nil {
+		return
+	}
+	t.changeSink = c.changes
 }
 
 func (ds *dataset) Put(ctx context.Context, actor substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
@@ -426,8 +448,17 @@ func (ds *dataset) patchWith(ctx context.Context, actor substrate.Actor, typ, id
 			if _, err := t.putAnnotation(dc.edit, annApplyConflict, note); err != nil {
 				return err
 			}
-			return t.appendChange(actor, substrate.OpPatch, dc.edit.ID, row.Kind,
-				map[string]any{"conflict": note})
+			if err := t.appendChange(actor, substrate.OpPatch, dc.edit.ID, row.Kind,
+				map[string]any{"conflict": note}); err != nil {
+				return err
+			}
+			// The proposing thread hears the conflict too: without this row,
+			// an agent told "held for review" waits forever on a request that
+			// can no longer land as reviewed (agentdecision.go).
+			if row.Kind == vocabulary.KindRecordPatchRequest {
+				return t.recordProposalConflict(row, dc.err.Error())
+			}
+			return nil
 		}); aerr != nil {
 			return nil, aerr
 		}
@@ -486,17 +517,34 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 			return nil, err
 		}
 	}
-	// Deciding a change request is optimistic on the REQUEST's own version: a
-	// reviewer accepts/rejects the envelope it read, so a concurrent change to
-	// the request cannot slip under the decision. The requirement holds for
-	// the human/owner decision path; an bundle actor's atomic effect
-	// carries no read-then-decide window and is bounded instead by the emit
-	// ceiling at acceptance.
-	if ty.Identity == vocabulary.KindRecordPatchRequest {
-		if _, deciding := states[propDecision]; deciding && in.IfVersion == nil &&
-			t.tier != substrate.TierBundle {
-			return nil, fmt.Errorf("%w: deciding a change request must carry ifVersion — the request version you reviewed, so a concurrent change cannot slip under your decision",
-				substrate.ErrConflict)
+	// Resolving a NOTIFYING machine is optimistic on the record's own
+	// version: a reviewer resolves the envelope they read, so a concurrent
+	// change cannot slip under the resolution. Generalized from the request
+	// kind's hardcoded rule, keyed on the marker (a machine with a
+	// `notifies:` transition). The requirement holds for the human/owner
+	// path; a bundle actor's atomic effect carries no read-then-decide
+	// window and is bounded instead by the emit ceiling at acceptance.
+	for name := range states {
+		if m, ok := ty.Machines[name]; ok && machineNotifies(m) &&
+			in.IfVersion == nil && t.tier != substrate.TierBundle {
+			return nil, fmt.Errorf("%w: resolving %s must carry ifVersion — the version you reviewed, so a concurrent change cannot slip under your resolution",
+				substrate.ErrConflict, name)
+		}
+	}
+	// A bundle-tier actor never decides a POLICY-GATED request: the door held
+	// that write for the owner, and the policy's own judge path is the
+	// engine's (t.policyDecision), not a tool's. Deciding one's own gate is
+	// no gate — and this is the guard that makes the policy layer real. A
+	// VOLUNTARY proposal is different on purpose: a bundle actor whose emit
+	// covers the target may accept its own request, because it could have
+	// written the target directly and nothing escalates (the ceiling test's
+	// documented contract, core_db_test.go).
+	if ty.Identity == vocabulary.KindRecordPatchRequest && t.tier == substrate.TierBundle {
+		if _, deciding := states[propDecision]; deciding && !t.policyDecision {
+			if _, gated := existing.Props["policy"]; gated {
+				return nil, fmt.Errorf("%w: a policy gated this request — its judge or the owner decides it, never installed code",
+					substrate.ErrForbidden)
+			}
 		}
 	}
 	if err := checkCAS(existing, in.IfVersion); err != nil {
@@ -540,6 +588,10 @@ func isTransitionOnly(in substrate.PatchInput, rest map[string]any, hot hotProps
 func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	create := sp.existing == nil
 	row := sp.existing
+	// Everything this write appends to the changelog from here on — its own
+	// entry AND the entries a decision's applyDiff nests — is what a decided
+	// change request reports back to its proposing thread.
+	entriesMark := len(t.entries)
 	// What the record was, before this write mutates the loaded row in place.
 	// The changelog entry carries the DELTA between this and what the write produces
 	// (fold.go), values and all, which is what makes the changelog replayable.
@@ -561,6 +613,21 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 				return nil, err
 			}
 			if err := guardImmutableEnvelope(sp); err != nil {
+				return nil, err
+			}
+		}
+	}
+	// An interaction earns the same treatment (interactions.go): the batch
+	// contract is judged at the creating write, the envelope is frozen, the
+	// answers ride the answering transition alone, and only the owner's hand
+	// resolves.
+	if sp.ty.Identity == vocabulary.KindLLMInteraction {
+		if create {
+			if err := t.admitInteraction(sp); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := t.guardInteraction(sp); err != nil {
 				return nil, err
 			}
 		}
@@ -615,6 +682,9 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// State properties: creations are born in the declared initial state;
 	// transitions belong to patch.
 	var pendingDiff, pendingMerge bool
+	// notify is set when this patch performed a transition declared with
+	// `notifies:` — what the marked thread is told below.
+	var notify *resolutionNote
 	if create {
 		for _, name := range sortedKeys(sp.ty.Machines) {
 			m := sp.ty.Machines[name]
@@ -662,6 +732,9 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 				pendingDiff = true
 			case onEnterApplyMerge:
 				pendingMerge = true
+			}
+			if tr.Notifies != "" {
+				notify = &resolutionNote{prop: tr.Notifies, machine: name, state: target}
 			}
 		}
 	}
@@ -1035,7 +1108,29 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			return nil, err
 		}
 	}
+	// A resolved record reports back to the thread its marker names: a
+	// `system` llmmessage carrying the kind's envelope and the entries this
+	// resolution wrote (the record's own patch, and whatever the
+	// transition's onEnter applied), and — after commit — the thread resumes
+	// so the agent hears it. Ordered after applyEditDiff, so an accept that
+	// rolls back reports nothing.
+	if notify != nil && sp.op == substrate.OpPatch {
+		if err := t.recordResolution(sp.ty, row, notify, t.entries[entriesMark:]); err != nil {
+			return nil, err
+		}
+	}
 	return t.record(row, sp.ty)
+}
+
+// machineNotifies reports whether any of a machine's transitions carries the
+// `notifies:` marker — the machines whose resolutions demand ifVersion.
+func machineNotifies(m *vocabulary.Machine) bool {
+	for _, tr := range m.Transitions {
+		if tr.Notifies != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // The two declared transition effects (schema/load.go onEnterActions).
@@ -1417,7 +1512,7 @@ func (t *txn) canonicalizeResubmittedDiff(sp *applySpec) error {
 // guarded in the edge loop, where the write's resolved target can be compared to
 // the current one (a re-sync of the same target is fine; a swap is not).
 func guardImmutableEnvelope(sp *applySpec) error {
-	for _, name := range []string{"op", "targetKind", "targetId", "diff"} {
+	for _, name := range []string{"op", "targetKind", "targetId", "diff", "policy", "policyRevision", msgRelThread} {
 		next, named := sp.props[name]
 		if !named {
 			continue
@@ -2318,7 +2413,15 @@ func (t *txn) softDelete(ref eref) (*substrate.Record, error) {
 }
 
 func (ds *dataset) Link(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef, props map[string]any) error {
+	return ds.linkBounded(ctx, actor, srcType, src, rel, to, props, nil)
+}
+
+// linkBounded is Link with an optional ceiling, of which only the change
+// collector applies: an edge write drives no state machine, so the emit set
+// stays out on purpose.
+func (ds *dataset) linkBounded(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef, props map[string]any, ceiling *effectCeiling) error {
 	return ds.inTx(ctx, actor, false, func(t *txn) error {
+		ceiling.stampChanges(t)
 		ty, err := t.ds.resolveType(srcType)
 		if err != nil {
 			return err
@@ -2408,7 +2511,14 @@ func (t *txn) link(rel string, src eref, to substrate.EdgeRef, props map[string]
 }
 
 func (ds *dataset) Unlink(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef) error {
+	return ds.unlinkBounded(ctx, actor, srcType, src, rel, to, nil)
+}
+
+// unlinkBounded is Unlink with an optional ceiling — the change collector
+// alone, exactly as linkBounded.
+func (ds *dataset) unlinkBounded(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef, ceiling *effectCeiling) error {
 	return ds.inTx(ctx, actor, false, func(t *txn) error {
+		ceiling.stampChanges(t)
 		ty, err := t.ds.resolveType(srcType)
 		if err != nil {
 			return err

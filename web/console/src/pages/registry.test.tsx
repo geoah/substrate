@@ -62,7 +62,7 @@ function bundle(over: Partial<CatalogBundle>): CatalogBundle {
     name: "x",
     authority: "x.bundles.substrate.reamde.dev",
     description: "",
-    version: "v1",
+    version: 1,
     closure: {},
     installed: false,
     ...over,
@@ -77,7 +77,7 @@ const PEOPLE = bundle({
   name: "people",
   authority: "people.substrate.reamde.dev",
   description: "The shipped vocabulary for humans.",
-  version: "v1alpha1",
+  version: 1,
   vocabulary: true,
   closure: {
     kinds: [
@@ -121,7 +121,7 @@ const CORE_KIND: KindInfo = {
   identity: "core.substrate.reamde.dev/bundle",
   name: "bundle",
   authority: "core.substrate.reamde.dev",
-  version: "v1",
+  version: 1,
   plural: "bundles",
   source: "builtin",
 }
@@ -130,7 +130,7 @@ const PERSON_KIND: KindInfo = {
   identity: "people.substrate.reamde.dev/person",
   name: "person",
   authority: "people.substrate.reamde.dev",
-  version: "v1alpha1",
+  version: 1,
   plural: "persons",
   source: "builtin",
 }
@@ -423,14 +423,14 @@ describe("RegistryPage", () => {
       installed: true,
       upgrade: {
         available: true,
-        from: "v1alpha1",
-        to: "v1alpha2",
+        from: 1,
+        to: 2,
         changes: [
           {
             kind: "kind",
             id: "people.substrate.reamde.dev/person",
-            from: "v1alpha1",
-            to: "v1alpha2",
+            from: 1,
+            to: 2,
           },
         ],
       },
@@ -440,9 +440,7 @@ describe("RegistryPage", () => {
       serve({ statuses: [peopleStatus()], catalog: [MOVED, GOOGLE] })
       renderPage(<RegistryPage />)
       const people = await rowOf("people")
-      expect(
-        within(people).getByText("update v1alpha1 → v1alpha2")
-      ).toBeTruthy()
+      expect(within(people).getByText("update 1 → 2")).toBeTruthy()
       fireEvent.click(within(people).getByRole("button", { name: /Upgrade/ }))
       await waitFor(() => {
         expect(
@@ -503,7 +501,7 @@ describe("RegistryPage", () => {
       expect(
         within(people).queryByRole("button", { name: /Upgrade/ })
       ).toBeNull()
-      expect(within(people).queryByText(/update v1/)).toBeNull()
+      expect(within(people).queryByText(/update 1/)).toBeNull()
     })
   })
 })

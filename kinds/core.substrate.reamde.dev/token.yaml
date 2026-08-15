@@ -9,17 +9,17 @@ data:
     mint, and an optional expiry. A token has full access to its repository
     — sessions are these records, login mints one, and revoking one is an
     ordinary record delete.
-  # v1alpha2 dropped `lastUsedAt`: authentication stamped it, so every token in
+  # version 2 dropped `lastUsedAt`: authentication stamped it, so every token in
   # use wrote a changelog entry a minute and buried the user's own history
   # under the substrate's access log. Authentication is a READ now.
-  # v1alpha3: the declaration gained a `description` — the bump is what
-  # carries it into repositories that already stored the v1alpha2 one.
-  # v1alpha4: `hash` re-typed secret -> digest. It was never material (the
+  # version 3: the declaration gained a `description` — the bump is what
+  # carries it into repositories that already stored the version 2 one.
+  # version 4: `hash` re-typed secret -> digest. It was never material (the
   # secret itself is shown once at mint and only its SHA-256 is stored), and
   # auth matches it by SQL containment on every request, which the sealed
   # store indirection every `secret` now gets would break. A digest stays
   # redacted on the wire.
-  version: v1alpha4
+  version: 4
   names:
     singular: token
     plural: tokens

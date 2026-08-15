@@ -68,7 +68,7 @@ function bundle(over: Partial<CatalogBundle>): CatalogBundle {
     name: "x",
     authority: "x.bundles.substrate.reamde.dev",
     description: "",
-    version: "v1",
+    version: 1,
     closure: {},
     installed: true,
     ...over,
@@ -80,7 +80,7 @@ const PEOPLE = bundle({
   name: "people",
   authority: "people.substrate.reamde.dev",
   description: "The shipped vocabulary for humans.",
-  version: "v1alpha1",
+  version: 1,
   vocabulary: true,
   closure: { kinds: ["people.substrate.reamde.dev/person"] },
 })
@@ -112,7 +112,7 @@ function kind(over: Partial<KindInfo>): KindInfo {
     identity: "people.substrate.reamde.dev/person",
     name: "person",
     authority: "people.substrate.reamde.dev",
-    version: "v1alpha1",
+    version: 1,
     plural: "persons",
     source: "builtin",
     ...over,
@@ -224,7 +224,7 @@ describe("BundleDetailPage", () => {
       renderPage(<BundleDetailPage />)
       await screen.findByText("people")
       expect(screen.getByText("Vocabulary")).toBeTruthy()
-      expect(screen.getByText("· v1alpha1")).toBeTruthy()
+      expect(screen.getByText("· 1")).toBeTruthy()
       expect(
         screen.getByText("The shipped vocabulary for humans.")
       ).toBeTruthy()

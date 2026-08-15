@@ -36,6 +36,17 @@ type RecordPatchRequest struct {
 	// Rationale is why the writer proposes this change.
 	Rationale *string
 
+	// Policy is the policy whose gate converted this write, where one did.
+	// Points at core.substrate.reamde.dev/recordpatchpolicy.
+	Policy *ReferencePath
+
+	// PolicyRevision is the governing policy record's version at conversion.
+	PolicyRevision *int64
+
+	// Thread is the thread whose propose call created this request. Points at
+	// core.substrate.reamde.dev/llmthread.
+	Thread *ReferencePath
+
 	// Decision is proposed until somebody decides; accepting is what applies
 	// the change. A state is NOT stored in properties: it lives in the
 	// record's own state column and moves by transition. See
@@ -95,8 +106,8 @@ const RecordPatchRequestDecisionInitial = RecordPatchRequestDecisionProposed
 // order. A move absent from this table is not performable: nothing else gates
 // one, since a transition carries no guard.
 var RecordPatchRequestDecisionTransitions = []StateTransition{
-	{From: "proposed", To: "accepted", Stamps: map[string]string{"decidedAt": "now"}, OnEnter: "applyDiff"},
-	{From: "proposed", To: "rejected", Stamps: map[string]string{"decidedAt": "now"}},
+	{From: "proposed", To: "accepted", Stamps: map[string]string{"decidedAt": "now"}, OnEnter: "applyDiff", Notifies: "thread"},
+	{From: "proposed", To: "rejected", Stamps: map[string]string{"decidedAt": "now"}, Notifies: "thread"},
 }
 
 // Valid reports whether v is one of the declared states.
@@ -119,7 +130,7 @@ func RecordPatchRequestDecisionCanMove(from, to RecordPatchRequestDecision) bool
 // core.substrate.reamde.dev/recordpatchrequest declares, sorted. A key outside
 // it is refused by Decode, which is what replaces a hand-kept list of admitted
 // keys in Go.
-var RecordPatchRequestKeys = []string{"decidedAt", "decision", "diff", "op", "rationale", "targetId", "targetKind", "targetVersion"}
+var RecordPatchRequestKeys = []string{"decidedAt", "decision", "diff", "op", "policy", "policyRevision", "rationale", "targetId", "targetKind", "targetVersion", "thread"}
 
 // DecodeRecordPatchRequest decodes a properties map into RecordPatchRequest,
 // refusing what the declaration cannot hold: an undeclared key, a value of the
@@ -203,6 +214,21 @@ func decodeRecordPatchRequest(d *decoder, path string, v any) (RecordPatchReques
 			if e, ok := d.text(p, props[key], nil, nil); ok {
 				out.Rationale = &e
 			}
+		case "policy":
+			p := at(path, "policy")
+			if e, ok := d.reference(p, props[key], "core.substrate.reamde.dev/recordpatchpolicy"); ok {
+				out.Policy = &e
+			}
+		case "policyRevision":
+			p := at(path, "policyRevision")
+			if e, ok := d.integer(p, props[key], Bounds{}); ok {
+				out.PolicyRevision = &e
+			}
+		case "thread":
+			p := at(path, "thread")
+			if e, ok := d.reference(p, props[key], "core.substrate.reamde.dev/llmthread"); ok {
+				out.Thread = &e
+			}
 		case "decision":
 			p := at(path, "decision")
 			if e, ok := decodeRecordPatchRequestDecision(d, p, props[key]); ok {
@@ -246,6 +272,15 @@ func (v *RecordPatchRequest) Encode() map[string]any {
 	}
 	if v.Rationale != nil {
 		out["rationale"] = *v.Rationale
+	}
+	if v.Policy != nil {
+		out["policy"] = string(*v.Policy)
+	}
+	if v.PolicyRevision != nil {
+		out["policyRevision"] = *v.PolicyRevision
+	}
+	if v.Thread != nil {
+		out["thread"] = string(*v.Thread)
 	}
 	if v.Decision != nil {
 		out["decision"] = string(*v.Decision)

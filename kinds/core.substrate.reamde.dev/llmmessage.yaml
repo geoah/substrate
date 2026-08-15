@@ -3,7 +3,9 @@
 # system prompts are on the agent row and are not persisted per thread; a
 # `user` row is the envelope (triggered runs) or the human's message (chat);
 # an `assistant` row carries prose and/or its tool calls; a `tool` row is one
-# dispatched call's result, keyed back by toolCallId.
+# dispatched call's result, keyed back by toolCallId; a `system` row is the
+# substrate's own turn (a proposal decision), written by the engine and
+# replayed to the model as context.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: core.substrate.reamde.dev/llmmessage
@@ -14,15 +16,19 @@ data:
     written by the loop as it runs. A user turn is the envelope or the human's
     message, an assistant turn its prose and tool calls, a tool turn one dispatched
     call's result.
-  # v1alpha3: `thread` became a REFERENCE and tool rows gained `ok`. The
+  # version 3: `thread` became a REFERENCE and tool rows gained `ok`. The
   # declaration carried no version of its own before this, inheriting the
   # authority's — and an unbumped edit is a no-op to the upgrade, so this key
   # is what carries the change into repositories that already hold the row.
-  # v1alpha4: `toolCalls` is typed — a repeated {id, name, arguments} object
+  # version 4: `toolCalls` is typed — a repeated {id, name, arguments} object
   # instead of a json blob; the arguments stay the verbatim wire string.
-  # v1alpha5: the thread pointer pins with `kind:`, the reference property's
+  # version 5: the thread pointer pins with `kind:`, the reference property's
   # own word; `to:` stays the edge's.
-  version: v1alpha5
+  # version 6: rows carry `changes` — the changelog entries their dispatch
+  # wrote, stamped by the engine — and `system` joins the roles: the
+  # substrate's own turns (a proposal decision), so a reader of the thread
+  # needs nothing but the rows to see what happened.
+  version: 6
   names:
     singular: llmmessage
     plural: llmmessages
@@ -30,7 +36,7 @@ data:
   properties:
     role:
       type: string
-      description: user, assistant or tool
+      description: user, assistant, tool or system
     content:
       type: text
       description: the turn's text; a tool row's result payload
@@ -64,6 +70,31 @@ data:
     ok:
       type: bool
       description: whether the dispatch a tool row answers for succeeded
+    # Stamped by the ENGINE, never authored by the model: the changelog
+    # entries a tool row's dispatch wrote (a mutate's writes, a propose's
+    # request row, a function tool's applied effects), or the entries a
+    # decision wrote on a system row. The seq addresses the delta in the
+    # changelog; kind and id address the record it moved — so any reader of
+    # the thread can show WHAT changed without parsing tool payloads.
+    changes:
+      type: object
+      repeated: true
+      description: the changelog entries this turn's dispatch wrote, stamped
+        by the engine
+      fields:
+        seq:
+          type: int
+          description: the changelog seq of the entry, which addresses its
+            delta
+        op:
+          type: string
+          description: the entry's op — put, patch, delete, link or unlink
+        kind:
+          type: string
+          description: the written record's kind
+        id:
+          type: string
+          description: the written record's id
     thread:
       type: reference
       kind: core.substrate.reamde.dev/llmthread

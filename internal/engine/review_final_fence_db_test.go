@@ -201,7 +201,7 @@ def main(input, host):
 `,
 	})
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(tbAuthority, ""),
+		vocabulary.AuthorityManifest(tbAuthority, 0),
 		vocabulary.BundleManifest(tbAuthority, map[string]any{
 			"description": "the tool bundle",
 			"installs":    []any{tbAuthority + "/tbconfig", tbAuthority + "/writer"},
@@ -224,7 +224,7 @@ def main(input, host):
 		"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
-		vocabulary.AuthorityManifest(uAuthority, ""), user,
+		vocabulary.AuthorityManifest(uAuthority, 0), user,
 	}); err != nil {
 		t.Fatalf("install user agent: %v", err)
 	}
@@ -289,7 +289,7 @@ def main(input, host):
 `,
 	})
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(cbAuthority, ""),
+		vocabulary.AuthorityManifest(cbAuthority, 0),
 		vocabulary.BundleManifest(cbAuthority, map[string]any{
 			"description": "the caller bundle",
 			"installs":    []any{cbAuthority + "/cbconfig", cbAuthority + "/caller"},

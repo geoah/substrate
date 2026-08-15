@@ -336,7 +336,7 @@ func testTypes() []substrate.KindInfo {
 	return []substrate.KindInfo{
 		{
 			Identity: "people.substrate.reamde.dev/person", Name: "person", Authority: "people.substrate.reamde.dev",
-			Version: "v1alpha1", Plural: "people", Source: "builtin",
+			Version: 1, Plural: "people", Source: "builtin",
 			Definition: map[string]any{
 				"plural": "people",
 				"properties": map[string]any{
@@ -352,7 +352,7 @@ func testTypes() []substrate.KindInfo {
 		},
 		{
 			Identity: "tasks.substrate.reamde.dev/task", Name: "task", Authority: "tasks.substrate.reamde.dev",
-			Version: "v1alpha1", Plural: "tasks", Source: "builtin",
+			Version: 1, Plural: "tasks", Source: "builtin",
 			Definition: map[string]any{
 				"plural": "tasks",
 				"traits": []any{"temporal(point: due_at)"},
@@ -371,7 +371,7 @@ func testTypes() []substrate.KindInfo {
 		{
 			Identity: "messaging.substrate.reamde.dev/conversationmessage", Name: "conversationmessage",
 			Authority: "messaging.substrate.reamde.dev",
-			Version:   "v1alpha1", Plural: "conversationmessages", Source: "builtin",
+			Version:   1, Plural: "conversationmessages", Source: "builtin",
 			Definition: map[string]any{
 				"plural":     "conversationmessages",
 				"traits":     []any{"temporal(point)"},
@@ -381,7 +381,7 @@ func testTypes() []substrate.KindInfo {
 		{
 			Identity: "media.substrate.reamde.dev/book", Name: "book",
 			Authority: "media.substrate.reamde.dev",
-			Version:   "v1alpha1", Plural: "books", Source: "builtin",
+			Version:   1, Plural: "books", Source: "builtin",
 			Definition: map[string]any{
 				"plural": "books",
 				"properties": map[string]any{
@@ -392,7 +392,7 @@ func testTypes() []substrate.KindInfo {
 		},
 		{
 			Identity: "core.substrate.reamde.dev/repository", Name: "repository", Authority: coreAuthority,
-			Version: "v1alpha1", Plural: "repositories", Source: "builtin",
+			Version: 1, Plural: "repositories", Source: "builtin",
 			Definition: map[string]any{
 				"plural":     "repositories",
 				"properties": map[string]any{"name": map[string]any{"type": "string"}},
@@ -400,7 +400,7 @@ func testTypes() []substrate.KindInfo {
 		},
 		{
 			Identity: "core.substrate.reamde.dev/connector", Name: "connector", Authority: coreAuthority,
-			Version: "v1alpha1", Plural: "connectors", Source: "builtin",
+			Version: 1, Plural: "connectors", Source: "builtin",
 			Definition: map[string]any{
 				"plural":     "connectors",
 				"properties": map[string]any{"name": map[string]any{"type": "string"}},
@@ -408,7 +408,7 @@ func testTypes() []substrate.KindInfo {
 		},
 		{
 			Identity: "core.substrate.reamde.dev/token", Name: "token", Authority: coreAuthority,
-			Version: "v1alpha1", Plural: "tokens", Source: "builtin",
+			Version: 1, Plural: "tokens", Source: "builtin",
 			Definition: map[string]any{
 				"plural":     "tokens",
 				"properties": map[string]any{"name": map[string]any{"type": "string"}},

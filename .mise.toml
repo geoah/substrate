@@ -1,5 +1,13 @@
 [tools]
 go = "1.26.6"
+# Held to the Dockerfile's web stage by `lint:toolchain`: this is the node the
+# console is TESTED on, so it is the node the image builds it on.
+#
+# Not 26 yet. Node ships its own global `localStorage`, which on 26 throws
+# unless the process was given --localstorage-file; it shadows the one jsdom
+# installs, so dozens of the console's tests fail there before any of this
+# repo's code runs. Moving up means giving vitest a setup file that puts
+# jsdom's back, and that is its own change, not a base-image bump.
 node = "22.12.0"
 pnpm = "9.14.2"
 golangci-lint = "2.12.2"
@@ -17,6 +25,11 @@ yamllint = "1.37.1"
 # multi-arch image, and attaches everything to the GitHub release. The release
 # workflow runs `mise run release`, so a release is reproducible from a laptop.
 goreleaser = "2.17.1"
+# The version calculator: it reads the conventional commits since the last tag
+# and says what the next tag is. That is the whole of the version decision.
+# The `version` workflow tags main with exactly this, so `mise run version:next`
+# on a laptop answers what the next merge will release, before it releases it.
+svu = "3.4.1"
 # uv is the connector runtime: a Python function body carrying a PEP 723
 # `# /// script` block is executed through `uv run`, which provisions its
 # declared dependencies. The runner shells out to it, so it must be on PATH.
@@ -89,7 +102,12 @@ run = """
 
 [tasks."test:short"]
 description = "go test -short ./... — skips every suite that needs a database"
-run = "go test -short ./..."
+# -count=1, here and on every test task below: the test cache is for a
+# developer's inner loop, not for a gate. Every flag these tasks use is in
+# Go's cacheable set, so without it a run can answer "(cached)" and rerun
+# nothing, which once kept a real failure invisible locally until CI,
+# cacheless, caught it.
+run = "go test -count=1 -short ./..."
 
 [tasks."test:db"]
 description = "The suites that want a database: a pgvector container, or SUBSTRATE_TEST_DATABASE_URL"
@@ -105,7 +123,7 @@ description = "The suites that want a database: a pgvector container, or SUBSTRA
 # -skip '^TestLive': the live set BUYS COMPLETIONS. It skips itself without
 # keys, but a dev box has keys in its environment — so the default suite
 # excludes it by name and `test:llm` selects it by the same name.
-run = "go test -p 1 -skip '^TestLive' ./internal/engine/... ./internal/catalog/... ./internal/testenv/..."
+run = "go test -count=1 -p 1 -skip '^TestLive' ./internal/engine/... ./internal/catalog/... ./internal/testenv/..."
 
 [tasks."test:race"]
 description = "The short suite under the race detector"
@@ -115,7 +133,7 @@ description = "The short suite under the race detector"
 # cheap gate that catches the runner's process reaping, the API's handlers and
 # the LLM wires. Run `go test -race ./internal/engine/...` by hand when you
 # have touched the engine's goroutines.
-run = "go test -race -short ./..."
+run = "go test -count=1 -race -short ./..."
 
 [tasks."test:coverage"]
 description = "The whole suite with a coverage profile -> coverage.out"
@@ -128,8 +146,8 @@ description = "The whole suite with a coverage profile -> coverage.out"
 # profiles are concatenated: a profile is a `mode:` line then one line per
 # block, so keeping the first line and dropping the other's is the whole merge.
 run = [
-  "go test -short -covermode=atomic -coverprofile=coverage.short.out ./...",
-  "go test -p 1 -skip '^TestLive' -covermode=atomic -coverprofile=coverage.db.out ./internal/engine/... ./internal/catalog/... ./internal/testenv/...",
+  "go test -count=1 -short -covermode=atomic -coverprofile=coverage.short.out ./...",
+  "go test -count=1 -p 1 -skip '^TestLive' -covermode=atomic -coverprofile=coverage.db.out ./internal/engine/... ./internal/catalog/... ./internal/testenv/...",
   """
     { cat coverage.short.out; tail -n +2 coverage.db.out; } >coverage.out
     rm -f coverage.short.out coverage.db.out
@@ -165,8 +183,15 @@ run = "go test -count=1 -run '^TestLive' -v ./internal/llm/... ./internal/engine
 # eslint from `lint` would drag pnpm into the lint job and run it twice.
 
 [tasks.lint]
-description = "Every linter: Go, YAML, shell, Python and the docs"
-depends = ["lint:go", "lint:yaml", "lint:shell", "lint:python", "lint:docs"]
+description = "Every linter: Go, YAML, shell, Python, the docs and the toolchain pins"
+depends = [
+  "lint:go",
+  "lint:yaml",
+  "lint:shell",
+  "lint:python",
+  "lint:docs",
+  "lint:toolchain",
+]
 
 [tasks."lint:go"]
 description = "golangci-lint over the module"
@@ -202,6 +227,16 @@ description = "ruff over the runner's Python host"
 # function body is exec'd into: a syntax slip there takes out every Python
 # function at once, and no Go test compiles it. Config is .ruff.toml.
 run = "ruff check internal/runner/host.py"
+
+[tasks."lint:toolchain"]
+description = "The version pins written twice: .mise.toml against the Dockerfiles"
+# IN `lint`, unlike `kinds:check`, because it reads the FILES and not the diff:
+# the answer is the same on a laptop with no base branch as it is on a merge.
+#
+# Dependabot bumps a FROM line and cannot bump `.mise.toml`, so this is the
+# check that turns a base-image major into a named failure rather than a silent
+# split between what CI builds and what ships.
+run = ".mise/toolchaincheck.sh"
 
 [tasks."lint:docs"]
 description = "The docs, held: links and anchors (lychee), then the prose rules"
@@ -483,10 +518,21 @@ description = "Build multi-arch and push. TAG=<tag> (default: dev)"
 # Two callers: a person pushing a one-off, and the `latest` workflow pushing
 # the tip of main. Releases do NOT come through here — they go through
 # goreleaser (`release` below), which versions from the git tag.
+#
+# The build args are what makes the pushed image able to say which build it
+# is: .dockerignore drops .git, so the toolchain inside the build records
+# nothing and only what is handed in survives (internal/build). `git describe`
+# is the honest name for something that is NOT a release, because
+# `v0.2.0-4-g1a2b3c4` reads as four commits past v0.2.0; `--always` keeps it a
+# bare sha in a checkout with no tags at all, so nothing here fails for want
+# of a version.
 run = '''
     set -e
     docker buildx build --platform linux/amd64,linux/arm64 \
-      --provenance=false --sbom=false -t "$IMAGE:${TAG:-dev}" --push .
+      --provenance=false --sbom=false \
+      --build-arg "VERSION=$(git describe --tags --always --dirty)" \
+      --build-arg "COMMIT=$(git rev-parse HEAD)" \
+      -t "$IMAGE:${TAG:-dev}" --push .
     '''
 
 [tasks."image:latest"]
@@ -497,8 +543,27 @@ run = "TAG=latest mise run image:push"
 # Release
 # =============================================================================
 #
-# release-please turns conventional commits on main into a version bump and a
-# tag; the tag runs `release` below. Nothing here needs a hand-written version.
+# A release is a merge to main. The `version` workflow reads the conventional
+# commits since the last tag, tags the commit with what they add up to, and
+# runs `release` below against that tag. Nothing is versioned by hand and no
+# release is a decision somebody makes separately from merging.
+
+[tasks."version:current"]
+description = "The version main last released"
+run = "svu current"
+
+[tasks."version:next"]
+description = "The version the commits since that tag add up to"
+# --v0 is the whole of the pre-1.0 policy: while the current version is 0.x a
+# breaking change bumps the MINOR, because 0.x is where breaking changes are
+# expected and burning majors on them says nothing. It stops applying by
+# itself the moment this repository reaches 1.0.0, so there is no edit here to
+# remember and no second place that holds the same rule.
+#
+# Prints the current version unchanged when nothing since the tag calls for a
+# bump (docs:, chore:, ci:, refactor:), which is how the workflow knows there
+# is nothing to release.
+run = "svu next --v0"
 
 [tasks."release:check"]
 description = "Validate .goreleaser.yaml"

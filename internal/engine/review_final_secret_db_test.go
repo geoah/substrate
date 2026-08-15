@@ -44,7 +44,7 @@ def main(input, host):
 `,
 	})
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(secretToolAuthority, ""),
+		vocabulary.AuthorityManifest(secretToolAuthority, 0),
 		vocabulary.BundleManifest(secretToolAuthority, map[string]any{
 			"description": "the secret tool bundle",
 			"inputs": map[string]any{
@@ -79,7 +79,7 @@ def main(input, host):
 		"permissions": map[string]any{"writes": []any{secretToolAuthority + "/snote"}},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
-		vocabulary.AuthorityManifest(agAuthority, ""), user,
+		vocabulary.AuthorityManifest(agAuthority, 0), user,
 	}); err != nil {
 		t.Fatalf("install leaker agent: %v", err)
 	}

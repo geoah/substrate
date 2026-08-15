@@ -23,7 +23,7 @@ import (
 func inverseFixture(authority, pointerBody string) string {
 	return `kind: core.substrate.reamde.dev/authority
 metadata: {id: ` + authority + `}
-data: {version: v1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/kind
 metadata: {id: ` + authority + `/thing}
@@ -119,7 +119,7 @@ func TestInverseCollisionAcrossAuthoritiesIsLegal(t *testing.T) {
 	// install that came after.
 	shared := `kind: core.substrate.reamde.dev/authority
 metadata: {id: shared.example.com}
-data: {version: v1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/kind
 metadata: {id: shared.example.com/note}
@@ -130,7 +130,7 @@ data:
 	pointerAt := func(authority, name string) string {
 		return `kind: core.substrate.reamde.dev/authority
 metadata: {id: ` + authority + `}
-data: {version: v1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/kind
 metadata: {id: ` + authority + `/` + name + `}

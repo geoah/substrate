@@ -10,9 +10,10 @@ package corekinds
 // authorities, and host behavior keys on the trait a kind binds rather than on
 // what the kind is called.
 type Trait struct {
-	// Version is this declaration's version. Managed: the engine stamps it, so
-	// a supplied value does not decide it.
-	Version *string
+	// Version is this declaration's incremental version, maintained by the
+	// engine. Managed: the engine stamps it, so a supplied value does not
+	// decide it.
+	Version *int64
 
 	// Source is builtin for seeded traits, installed for bundle ones. Managed:
 	// the engine stamps it, so a supplied value does not decide it.
@@ -118,7 +119,7 @@ func decodeTrait(d *decoder, path string, v any) (Trait, bool) {
 		switch key {
 		case "version":
 			p := at(path, "version")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := d.integer(p, props[key], Bounds{}); ok {
 				out.Version = &e
 			}
 		case "source":

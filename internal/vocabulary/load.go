@@ -21,10 +21,6 @@ const (
 	SourceInstalled = "installed"
 )
 
-// DefaultVersion is the version a authority manifest gets when it declares
-// none.
-const DefaultVersion = "v1alpha1"
-
 var reCapBinding = regexp.MustCompile(`^([a-z][a-zA-Z0-9]*)(?:\(\s*([a-z][a-zA-Z0-9]*)\s*(?::\s*([a-zA-Z0-9,\s]*))?\s*\))?$`)
 
 // LoadFS parses every .yaml document under fsys into one registry. The unit
@@ -304,8 +300,8 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 	l.authority = g
 
 	l.checkKeys("authority "+name, gd.authority.Data, authorityDataKeys)
-	g.Version = mstr(gd.authority.Data, "version")
-	if g.Version == "" {
+	g.Version = l.parseVersion("authority "+name, gd.authority.Data)
+	if g.Version == 0 {
 		g.Version = DefaultVersion
 	}
 
@@ -757,7 +753,7 @@ func (l *loader) parseType(doc Document) *Kind {
 		Definition:  d,
 		SourceYAML:  doc.Source,
 	}
-	if v := mstr(d, "version"); v != "" {
+	if v := l.parseVersion(where, d); v != 0 {
 		t.Version = v
 	}
 	t.Plural = mstr(names, "plural")
@@ -1331,7 +1327,7 @@ var machineKeys = map[string]bool{
 }
 
 var transitionKeys = map[string]bool{
-	"from": true, "to": true, "stamps": true, "onEnter": true,
+	"from": true, "to": true, "stamps": true, "onEnter": true, "notifies": true,
 }
 
 // onEnterActions are the declared effects a transition may name.
@@ -1375,9 +1371,10 @@ func (l *loader) parseMachine(where, name string, d map[string]any) *Machine {
 		td := asMap(tv)
 		l.checkKeys(fmt.Sprintf("%s.transitions[%d]", where, i), td, transitionKeys)
 		tr := &Transition{
-			From:    mstr(td, "from"),
-			To:      mstr(td, "to"),
-			OnEnter: mstr(td, "onEnter"),
+			From:     mstr(td, "from"),
+			To:       mstr(td, "to"),
+			OnEnter:  mstr(td, "onEnter"),
+			Notifies: mstr(td, "notifies"),
 		}
 		if !m.HasState(tr.From) || !m.HasState(tr.To) {
 			l.errf("%s.transitions[%d]: %q → %q references an undeclared state", where, i, tr.From, tr.To)
@@ -2100,6 +2097,32 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 			}
 			p.To = resolved.Identity
 		}
+		// A `notifies:` transition reports into a thread, so the marker must
+		// name a reference property PINNED to core's llmthread — and, until
+		// the resume bounds have earned wider trust, only core's own kinds
+		// carry it (docs/plans/thread-interactions.md): a bundle kind minting
+		// resume-on-transition would be an unbounded paid-compute trigger.
+		machineNames := make([]string, 0, len(t.Machines))
+		for mn := range t.Machines {
+			machineNames = append(machineNames, mn)
+		}
+		sort.Strings(machineNames)
+		for _, mn := range machineNames {
+			for i, tr := range t.Machines[mn].Transitions {
+				if tr.Notifies == "" {
+					continue
+				}
+				at := fmt.Sprintf("%s: data.properties.%s.transitions[%d].notifies", where, mn, i)
+				if t.Authority != "core.substrate.reamde.dev" {
+					problems = append(problems, fmt.Sprintf("%s: only core kinds may notify a thread in this build", at))
+					continue
+				}
+				p, ok := t.Prop(tr.Notifies)
+				if !ok || p.Datatype != DatatypeReference || p.To != KindLLMThread {
+					problems = append(problems, fmt.Sprintf("%s: %q must be a reference property pinned to %s", at, tr.Notifies, KindLLMThread))
+				}
+			}
+		}
 	}
 	problems = append(problems, r.checkAuthorityInverses(g)...)
 	// Mappings, once the authority's edge targets are resolved identities: the
@@ -2183,6 +2206,27 @@ func asMap(v any) map[string]any {
 	default:
 		return map[string]any{}
 	}
+}
+
+// parseVersion reads a document's own `version` out of its data: an
+// incremental integer of at least 1, or 0 when the document carries none.
+// Anything else is a problem, and a string gets the pointed message — the
+// retired `v1alpha3` spelling must refuse loudly, not order silently.
+func (l *loader) parseVersion(where string, d map[string]any) int64 {
+	raw, ok := d["version"]
+	if !ok || raw == nil {
+		return 0
+	}
+	if _, isString := raw.(string); isString {
+		l.errf("%s: data.version is an incremental integer now (v1alpha3 became 3), not %q", where, raw)
+		return 0
+	}
+	v, ok := VersionValue(raw)
+	if !ok || v < 1 {
+		l.errf("%s: data.version must be an integer of at least 1, not %v", where, raw)
+		return 0
+	}
+	return v
 }
 
 func mstr(m map[string]any, k string) string {

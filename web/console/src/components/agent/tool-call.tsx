@@ -6,9 +6,11 @@
  * stream while the run is in flight and from the `llmmessage` rows afterwards,
  * so nothing disappears when the stream ends. */
 
-import { Link } from "@tanstack/react-router"
-import { ChevronRightIcon, FilePenLineIcon, WrenchIcon } from "lucide-react"
+import { ChevronRightIcon, WrenchIcon } from "lucide-react"
 
+import { ChangesList } from "@/components/agent/changes"
+import { InteractionCard } from "@/components/agent/interaction-card"
+import { ProposalCard } from "@/components/agent/proposal-card"
 import { CodeBlock } from "@/components/code-block"
 import {
   Collapsible,
@@ -16,7 +18,11 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { Spinner } from "@/components/ui/spinner"
-import { proposedRequestId, type ToolCallView } from "@/lib/api/transcript"
+import {
+  interactionIdOf,
+  requestIdOf,
+  type ToolCallView,
+} from "@/lib/api/transcript"
 import { prettyJSON } from "@/lib/code"
 import { cn } from "@/lib/utils"
 
@@ -54,8 +60,20 @@ export function ToolCallCard({ call }: { call: ToolCallView }) {
   const isRunning = running(call)
   const failed = call.ok === false
   // A propose lands a row in the review queue and nothing else: the change is
-  // NOT applied until somebody decides it, so the card carries the way there.
-  const proposed = proposedRequestId(call)
+  // NOT applied until somebody decides it, so the card carries the proposal
+  // itself — live state, accept/reject and the way to the full review.
+  const proposed = requestIdOf(call)
+  // An ask's interaction renders as the form card, the same live-state rule.
+  const asked = interactionIdOf(call)
+  // The dispatch's other writes (a mutate's records, a function's effects):
+  // the interaction and request rows already render as their cards, so they
+  // are not chips.
+  const changes = (call.changes ?? []).filter(
+    (c) => c.id !== proposed && c.id !== asked
+  )
+  // A failed call that LANDED a request was not a failure: the policy door
+  // held the write for review, and the chip says so instead of crying red.
+  const held = failed && proposed !== undefined
   return (
     <Collapsible className="group/tool rounded-md border bg-muted/40">
       <CollapsibleTrigger
@@ -72,24 +90,23 @@ export function ToolCallCard({ call }: { call: ToolCallView }) {
           <span
             className={cn(
               "shrink-0 data",
-              failed ? "text-destructive" : "text-muted-foreground"
+              held
+                ? "text-amber-600"
+                : failed
+                  ? "text-destructive"
+                  : "text-muted-foreground"
             )}
           >
-            {failed ? "failed" : "ok"}
+            {held ? "held" : failed ? "failed" : "ok"}
           </span>
         )}
         <ChevronRightIcon className="ml-auto size-3 shrink-0 text-muted-foreground transition-transform group-data-open/tool:rotate-90" />
       </CollapsibleTrigger>
-      {proposed && (
+      {proposed && <ProposalCard id={proposed} />}
+      {asked && <InteractionCard id={asked} />}
+      {changes.length > 0 && (
         <div className="border-t px-2 py-1.5">
-          <Link
-            to="/change-requests/$id"
-            params={{ id: proposed }}
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-4 hover:underline"
-          >
-            <FilePenLineIcon className="size-3 shrink-0" />
-            Review the proposed change
-          </Link>
+          <ChangesList changes={changes} />
         </div>
       )}
       <CollapsibleContent>

@@ -403,6 +403,13 @@ type Transition struct {
 	To      string
 	Stamps  map[string]string
 	OnEnter string
+	// Notifies names the reference property (pinned to core's llmthread)
+	// whose thread this transition reports into: the engine writes the
+	// resolution's `system` message there and schedules the resume, the one
+	// primitive under proposal decisions and interaction answers alike
+	// (docs/plans/thread-interactions.md). Empty for the ordinary transition
+	// that reports nowhere.
+	Notifies string
 }
 
 // Machine is a state property's machine — the entire behavioral seam. Its
@@ -495,7 +502,7 @@ type Kind struct {
 	Authority string
 	Identity  string
 	Plural    string
-	Version   string
+	Version   int64
 	Source    string // "builtin" | "installed"
 	// Description is what this kind is for, in the author's own words: it
 	// heads the kind's page in the console, so it says what the thing is and
@@ -653,7 +660,7 @@ func upperFirst(s string) string {
 // those documents were declared.
 type Authority struct {
 	Name    string
-	Version string
+	Version int64
 	Source  string
 	Actors  []string
 	// ActorTiers is each declared actor's manager tier — an explicit

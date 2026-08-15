@@ -167,3 +167,30 @@ data:
   permissions:
     writes:
       - core.substrate.reamde.dev/recordpatchrequest
+---
+# ---- ask: the soft interaction --------------------------------------------------
+# Lands ONE llminteraction — a batch of questions the user answers as a unit —
+# with `thread` stamped by the loop. The answer arrives in a LATER turn as a
+# system row (the answering transition notifies the thread and resumes it), so
+# the card teaches the model the contract: ask, then continue other work or
+# end the turn; never poll for the answer.
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: core.substrate.reamde.dev/ask
+data:
+  authority: core.substrate.reamde.dev
+  description: >-
+    Ask the user a batch of questions (at most 8; each yes/no, pick-one, or
+    pick-many with at most 32 options). The answer does NOT come back from
+    this call: it arrives in a later turn once the user responds, so ask and
+    then continue or finish — never poll. Question ids key the answers.
+  runtime: host
+  arguments:
+    - name: questions
+      type: json
+      required: true
+      description: 'a list of {id, prompt, options?: [{value, label?, description?}],
+        multi?: bool}; omit options for a yes/no question'
+  permissions:
+    writes:
+      - core.substrate.reamde.dev/llminteraction

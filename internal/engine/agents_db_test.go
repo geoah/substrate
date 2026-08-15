@@ -180,7 +180,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	fake := newFakeLLM(t)
-	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm"} {
+	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm", "stoicllm", "selfllm", "askllm", "medllm", "burnllm", "vjudgellm"} {
 		model := strings.TrimSuffix(id, "llm")
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: typeProvider, ID: id,
@@ -202,7 +202,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 		return vocabulary.AgentManifest(crewAuthority, name, data)
 	}
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(crewAuthority, ""),
+		vocabulary.AuthorityManifest(crewAuthority, 0),
 		vocabulary.KindManifest(crewAuthority, map[string]any{"singular": "widget", "plural": "widgets"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		vocabulary.FunctionManifest(crewAuthority, "annotate", map[string]any{
@@ -254,6 +254,68 @@ def main(input, host):
 			},
 		}),
 		agent("scribe", map[string]any{"provider": "subllm", "model": "sub"}),
+		// stoic proposes but never resumes: the resolution row lands, the
+		// continuation is withheld — the declaration's own cost knob.
+		agent("stoic", map[string]any{
+			"provider": "stoicllm", "model": "stoic",
+			"resume": "never",
+			"tools":  []any{map[string]any{"function": vocabulary.HostFunctionPropose}},
+			"permissions": map[string]any{
+				"writes": []any{vocabulary.KindRecordPatchRequest},
+			},
+		}),
+		// poller asks the user: the soft interaction's fixture.
+		agent("poller", map[string]any{
+			"provider": "askllm", "model": "askm",
+			"tools": []any{map[string]any{"function": vocabulary.HostFunctionAsk}},
+			"permissions": map[string]any{
+				"writes": []any{vocabulary.KindLLMInteraction},
+			},
+		}),
+		// meddler holds mutate over interactions AND the policy kind: the
+		// owner-only rules' foil, twice.
+		agent("meddler", map[string]any{
+			"provider": "medllm", "model": "med",
+			"tools": []any{map[string]any{"function": vocabulary.HostFunctionMutate}},
+			"permissions": map[string]any{
+				"writes": []any{vocabulary.KindLLMInteraction, vocabulary.KindRecordPatchPolicy},
+			},
+		}),
+		// verdictor is a JUDGE: tool-less on purpose (judge.go refuses a judge
+		// with hands), its whole contract the structured verdict reply.
+		agent("verdictor", map[string]any{
+			"provider": "vjudgellm", "model": "vjudge",
+		}),
+		// burn carries the author's floor: its effects are never auto-applied.
+		vocabulary.FunctionManifest(crewAuthority, "burn", map[string]any{
+			"description":  "writes one task, but its author demands review first",
+			"runtime":      vocabulary.RuntimePython,
+			"confirmation": "always",
+			"permissions":  map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+			"source": `
+def main(input, host):
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+                         "id": "t-burned", "properties": {"title": "burned"}}],
+            "output": {"ok": True}}
+`,
+		}),
+		agent("burner", map[string]any{
+			"provider": "burnllm", "model": "burn",
+			"tools":       []any{map[string]any{"function": crewAuthority + "/burn"}},
+			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+		}),
+		// selfjudge can both propose and decide: the self-exclusion pair — a
+		// thread's own agent resolving something never wakes that thread.
+		agent("selfjudge", map[string]any{
+			"provider": "selfllm", "model": "self",
+			"tools": []any{
+				map[string]any{"function": vocabulary.HostFunctionPropose},
+				map[string]any{"function": vocabulary.HostFunctionMutate},
+			},
+			"permissions": map[string]any{
+				"writes": []any{vocabulary.KindRecordPatchRequest, crewAuthority + "/widget"},
+			},
+		}),
 		agent("rogue", map[string]any{
 			"provider": "roguellm", "model": "rogue",
 			"tools": []any{map[string]any{"function": crewAuthority + "/annotate"}},
@@ -735,7 +797,7 @@ func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 		"description": "greets", "prompt": "You greet.", "provider": "greetllm", "model": "greet",
 	})
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(abAuthority, ""),
+		vocabulary.AuthorityManifest(abAuthority, 0),
 		vocabulary.BundleManifest(abAuthority, map[string]any{
 			"description": "the agent bundle",
 			"installs":    []any{abAuthority + "/abconfig", abAuthority + "/greeter"},
@@ -756,7 +818,7 @@ func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 		"provider": "callerllm", "model": "caller", "agents": []any{abAuthority + "/greeter"},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
-		vocabulary.AuthorityManifest(hostAuthority, ""), caller,
+		vocabulary.AuthorityManifest(hostAuthority, 0), caller,
 	}); err != nil {
 		t.Fatalf("install caller agent: %v", err)
 	}
@@ -1380,7 +1442,7 @@ func TestProposeDiffValidation(t *testing.T) {
 	// object property with declared fields, and no edges.
 	const gaugeAuthority = "gauge.example.com"
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(gaugeAuthority, ""),
+		vocabulary.AuthorityManifest(gaugeAuthority, 0),
 		vocabulary.KindManifest(gaugeAuthority, map[string]any{"singular": "gauge", "plural": "gauges"},
 			map[string]any{"properties": map[string]any{
 				"model":  map[string]any{"type": "string"},

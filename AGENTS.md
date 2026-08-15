@@ -32,8 +32,8 @@ mise run test           # the whole Go suite, in its two halves
 mise run test:short     # skips every suite that wants a database
 mise run test:race      # the short suite under the race detector
 mise run test:coverage  # both halves, with a profile -> coverage.out
-mise run lint           # every linter: Go, YAML, shell, Python, the docs
-mise run lint:go        # one of them; lint:yaml/:shell/:python/:docs are the rest
+mise run lint           # every linter: Go, YAML, shell, Python, the docs, the pins
+mise run lint:go        # one of them; :yaml/:shell/:python/:docs/:toolchain are the rest
 mise run audit          # the vulnerability scans: govulncheck and pnpm audit
 mise run fmt            # every formatter, in place: gofumpt/goimports and yamlfmt
 mise run fmt:check      # the same, as a check — what CI runs
@@ -42,7 +42,7 @@ mise run ci             # every CI job, locally. The whole pipeline.
 ```
 
 **A bare task name is every check of its kind**, and a suffix narrows it to
-one language: `lint` is all five linters, `lint:go` is one of them; `fmt`
+one language: `lint` is all six linters, `lint:go` is one of them; `fmt`
 writes Go and YAML, `fmt:yaml` writes one; `fmt:check` is the pair as a check.
 Nothing is reachable only through the aggregate. The console is not one of
 those suffixes — it is a second toolchain with its own family (`console:lint`,
@@ -230,11 +230,14 @@ Do not half-do it.
   `records`, so a live write and `RebuildRepository` cannot drift. Anything
   that writes `records` directly is wrong.
 - **A changed declaration ships a changed version.** Every document under
-  `kinds/` projects with a `version` (a kind's own `data.version` where it
-  pins one, else its authority's, Kubernetes-style `v1alpha1`). The boot
+  `kinds/` projects with a `version`, an incremental integer (a kind's own
+  `data.version` where it pins one, else its authority's, else 1). The boot
   upgrade, the catalog's upgrade preview and the console's upgrade offer all
   key on it, so editing a declaration without bumping is an upgrade no
-  repository ever receives. Bump the kind's own version for a one-kind change,
+  repository ever receives. Through the API the engine maintains the version
+  itself (a changed definition lands at stored+1), so hand-bumping is only
+  for this tree, where the boot upgrade needs one total order across
+  binaries. Bump the kind's own version for a one-kind change,
   the authority's (in its `bundle.yaml`) for a closure-wide one, and the
   authority's when a declaration is removed, so the prune reads as an upgrade.
   Additive changes (new kind, new optional property, new enum value, new
@@ -255,13 +258,16 @@ Do not half-do it.
 - **Every commit title is a conventional commit** —
   `type(scope): what changed`, with `!` before the colon for a break. The
   types in use here are `feat`, `fix`, `docs`, `refactor`, `test`, `chore`,
-  `ci`. This is not style: release-please reads these titles off `main` to
-  decide the version and write `CHANGELOG.md`, so a title it cannot parse is a
-  release that does not happen. A PR title is one too — the merge is a squash,
-  so the PR title IS the commit release-please reads.
+  `ci`. This is not style: **the title is the release**. A merge to `main`
+  that passes CI is folded into a version by these titles (`fix:` the patch,
+  `feat:` the minor, `!` the major, or the minor below 1.0.0), and that
+  version is tagged, built and published without anybody deciding to. A title
+  nothing can parse is a release that does not happen. A PR title is one too:
+  the merge is a squash, so the PR title IS the commit that gets read.
+  `mise run version:next` says what main would release right now.
 - Keep `mise run lint` and `mise run fmt:check` at zero. Both are aggregates,
-  and the `lint` job runs both: `lint` is Go, YAML, shell, Python and the
-  docs, `fmt:check` is Go and YAML. The console has its own pair
+  and the `lint` job runs both: `lint` is Go, YAML, shell, Python, the docs
+  and the toolchain pins, `fmt:check` is Go and YAML. The console has its own pair
   (`console:lint`, `console:fmt:check`) inside `ci:console`.
 - **`lint:docs` is the one docs linter**, and it holds two halves. What the
   pages point at: every Markdown link and `#anchor` resolves against the tree,
@@ -272,3 +278,10 @@ Do not half-do it.
   example, a `mise run` name that no longer exists, and a page
   `docs/README.md` does not list. A mechanical docs rule worth enforcing goes
   in that script, so there is one place to run and one place to add to.
+- **A decision that outlives its argument gets a record.**
+  [docs/decisions/](docs/decisions/README.md) is one short, dated page per
+  choice, frozen once accepted and superseded rather than edited. The bar is
+  all three of hard to reverse, shapes what other code may do, and reasoning
+  not already written down; everything else is a commit. Read the index before
+  proposing design work, so an option already rejected is not proposed again.
+  A rule here may link its record.

@@ -49,7 +49,7 @@ func installSecretCRD(t *testing.T, ds substrate.Dataset) string {
 	if err := enginetest.Install(context.Background(), ds, substrate.ActorSystem, enginetest.Manifest{
 		Name: "google.gmail", Authority: authority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, "v1alpha1"),
+			vocabulary.AuthorityManifest(authority, 1),
 			vocabulary.ActorManifest(authority, "connector:gmail"),
 			vocabulary.KindManifest(authority,
 				map[string]any{"singular": "accountconfig", "plural": "accountconfigs"},

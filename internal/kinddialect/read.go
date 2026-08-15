@@ -50,8 +50,8 @@ type Kind struct {
 	Name      string // names.singular
 	Plural    string
 	// Version is the EFFECTIVE version: the kind's own `data.version` where it
-	// pins one, else its authority's.
-	Version         string
+	// pins one, else its authority's. Zero is the absent version.
+	Version         int64
 	Description     string
 	DisplayTemplate string
 	// Props are the declared properties in AUTHORED order: generated output
@@ -137,6 +137,9 @@ type Transition struct {
 	From    string
 	To      string
 	OnEnter string
+	// Notifies names the llmthread-pinned reference property this transition
+	// reports into; empty for the ordinary transition.
+	Notifies string
 	// Stamps are the stamped property names in sorted order, each mapped to the
 	// declared stamp value ("now" is the only one defined).
 	Stamps []Stamp
@@ -188,11 +191,11 @@ func ReadFS(fsys fs.FS) ([]*Kind, error) {
 	r.checkOtherDocuments(out)
 	// The EFFECTIVE version, defaulted exactly as the loader defaults it: a
 	// kind's own `data.version` where it pins one, else the authority's, else
-	// v1alpha1. The boot upgrade keys on this answer, so a reader that reported
+	// 1. The boot upgrade keys on this answer, so a reader that reported
 	// the authored value would disagree with the loader on every kind that pins
 	// nothing.
 	for _, k := range out {
-		if k.Version == "" {
+		if k.Version == 0 {
 			k.Version = r.authorityVersion
 		}
 	}
@@ -205,7 +208,7 @@ func ReadFS(fsys fs.FS) ([]*Kind, error) {
 
 // DefaultVersion is the version a declaration projects with when neither it nor
 // its authority pins one. It mirrors vocabulary.DefaultVersion.
-const DefaultVersion = "v1alpha1"
+const DefaultVersion int64 = 1
 
 // reader collects every refusal before reporting, so one run names every
 // declaration a generator would have to be told about rather than the first.
@@ -213,7 +216,7 @@ type reader struct {
 	problems []string
 	// authorityVersion is the authority document's `data.version`, which every
 	// kind that pins none projects with.
-	authorityVersion string
+	authorityVersion int64
 	// others are the documents in this directory that are NOT kind
 	// declarations, by their envelope's kind reference and the file it sat in.
 	// They are judged once the declared kinds are known: a data record of a
@@ -339,9 +342,28 @@ func (r *reader) readAuthorityVersion(where string, doc *mapping) {
 		r.errf("%s: an authority document carries data", where)
 		return
 	}
-	if v := data.str("version"); v != "" {
+	if v := r.readVersion(where, data); v != 0 {
 		r.authorityVersion = v
 	}
+}
+
+// readVersion reads a document's own `data.version`: an incremental integer
+// of at least 1, or 0 when the document carries none. A string is refused
+// with the pointed message, exactly as the loader refuses it — the two
+// readers agreeing is what keeps the generated types honest.
+func (r *reader) readVersion(where string, data *mapping) int64 {
+	n := data.at("version")
+	if n == nil {
+		return 0
+	}
+	s, ok := scalar(n)
+	if ok {
+		if v, err := strconv.ParseInt(s, 10, 64); err == nil && v >= 1 {
+			return v
+		}
+	}
+	r.errf("%s: data.version is an incremental integer now (v1alpha3 became 3), not %q", where, s)
+	return 0
 }
 
 // checkOtherDocuments judges the documents this reader did not generate from. A
@@ -426,11 +448,11 @@ func (r *reader) readKind(file string, doc *mapping) *Kind {
 		File:            file,
 		Ref:             meta.str("id"),
 		Authority:       data.str("authority"),
-		Version:         data.str("version"),
 		Description:     data.str("description"),
 		DisplayTemplate: data.str("displayTemplate"),
 	}
 	where := file + ": " + k.Ref
+	k.Version = r.readVersion(where, data)
 	r.checkKeys(where+".data", data, kindDataKeys)
 	names, _ := asMapping(data.at("names"))
 	if names == nil {
@@ -514,7 +536,7 @@ var (
 		"required", "renamedFrom", "inverse", "inverseDescription", "keyed",
 		"keyPattern", "managed")
 	machineKeys    = keys("type", "states", "initial", "transitions", "description", "displayName")
-	transitionKeys = keys("from", "to", "stamps", "onEnter")
+	transitionKeys = keys("from", "to", "stamps", "onEnter", "notifies")
 	keyPatterns    = keys("camel", "kindRef")
 	writerRoles    = keys("oauth", "connector", "owner")
 )
@@ -700,7 +722,7 @@ func (r *reader) readMachine(where string, d *mapping) *Machine {
 			continue
 		}
 		r.checkKeys(fmt.Sprintf("%s.transitions[%d]", where, i), td, transitionKeys)
-		t := Transition{From: td.str("from"), To: td.str("to"), OnEnter: td.str("onEnter")}
+		t := Transition{From: td.str("from"), To: td.str("to"), OnEnter: td.str("onEnter"), Notifies: td.str("notifies")}
 		if stamps, _ := asMapping(td.at("stamps")); stamps != nil {
 			names := append([]string(nil), stamps.keys...)
 			sort.Strings(names)

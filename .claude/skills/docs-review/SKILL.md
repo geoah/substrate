@@ -73,6 +73,10 @@ actually does; never "fixed" by guessing.
 - Do not add filler ("In this section we will..."), summaries of what a page
   just said, or content the index already carries.
 - Do not edit `CLAUDE.md`: it is a symlink to `AGENTS.md`; edit `AGENTS.md`.
+- Do not touch `docs/decisions/`. A decision record is history, not the system
+  as built, so it is held to neither the vocabulary nor the code as they stand
+  today; the `adr` skill owns it, and a record whose decision was reversed is
+  superseded rather than corrected.
 
 Finish by running `mise run lint:docs` once more and reporting: files changed,
 findings fixed by category, and any claim you could not verify against the

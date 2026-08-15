@@ -93,7 +93,7 @@ func TestReadersAgree(t *testing.T) {
 		// otherwise. The boot upgrade keys on it, so the two readers agreeing on
 		// the authored value alone would not be agreement.
 		if read.Version != declared.Version {
-			t.Errorf("%s: version %q, loader %q", declared.Identity, read.Version, declared.Version)
+			t.Errorf("%s: version %d, loader %d", declared.Identity, read.Version, declared.Version)
 		}
 		if read.DisplayTemplate != declared.DisplayTemplate {
 			t.Errorf("%s: displayTemplate %q, loader %q",
@@ -274,6 +274,7 @@ var generatedKeys = map[string][]string{
 	"credential":         corekinds.CredentialKeys,
 	"function":           corekinds.FunctionKeys,
 	"kind":               corekinds.KindKeys,
+	"llminteraction":     corekinds.LLMInteractionKeys,
 	"llmmessage":         corekinds.LLMMessageKeys,
 	"llmprovider":        corekinds.LLMProviderKeys,
 	"llmthread":          corekinds.LLMThreadKeys,
@@ -281,6 +282,7 @@ var generatedKeys = map[string][]string{
 	"recordmapping":      corekinds.RecordMappingKeys,
 	"recordmerge":        corekinds.RecordMergeKeys,
 	"recordmergerequest": corekinds.RecordMergeRequestKeys,
+	"recordpatchpolicy":  corekinds.RecordPatchPolicyKeys,
 	"recordpatchrequest": corekinds.RecordPatchRequestKeys,
 	"recordsplit":        corekinds.RecordSplitKeys,
 	"recoverykey":        corekinds.RecoveryKeyKeys,

@@ -22,7 +22,7 @@ const agentKind: KindInfo = {
   identity: "crew.test.dev/agent",
   name: "agent",
   authority: "crew.test.dev",
-  version: "",
+  version: 0,
   plural: "agents",
   source: "builtin",
   definition: {
@@ -91,7 +91,7 @@ describe("templateYAML", () => {
       identity: "core.substrate.reamde.dev/kind",
       name: "kind",
       authority: "core.substrate.reamde.dev",
-      version: "",
+      version: 0,
       plural: "kinds",
       source: "builtin",
       definition: {
@@ -211,7 +211,7 @@ describe("validateApplyDoc: the declaration id", () => {
     identity: "core.substrate.reamde.dev/agent",
     name: "agent",
     authority: "core.substrate.reamde.dev",
-    version: "",
+    version: 0,
     plural: "agents",
     source: "builtin",
     definition: { properties: { model: { type: "string" } } },
@@ -263,6 +263,18 @@ data:
   })
 })
 
+/** The agent kind with an engine-stamped property beside the declared ones:
+ * what the managed filter keys off in both the seed and the put. */
+const stampedAgentKind: KindInfo = {
+  ...agentKind,
+  definition: {
+    properties: {
+      ...(agentKind.definition!.properties as Record<string, unknown>),
+      version: { type: "int", managed: true },
+    },
+  },
+}
+
 describe("applyManifestYAML (edit seed)", () => {
   const record: SubstrateRecord = {
     id: "contactssync.google",
@@ -310,6 +322,19 @@ describe("applyManifestYAML (edit seed)", () => {
     )
     expect(errs).toHaveLength(0)
   })
+
+  it("drops the kind's MANAGED properties from the seed; without the kind it fails open", () => {
+    const stamped: SubstrateRecord = {
+      ...record,
+      properties: { ...record.properties, version: 7 },
+    }
+    const seeded = parse(applyManifestYAML(stamped, stampedAgentKind))
+    expect(seeded.data.properties).not.toHaveProperty("version")
+    expect(seeded.data.properties.prompt).toBe("sync my contacts")
+    // No kind, no declaration to key off: the properties pass through whole.
+    const blind = parse(applyManifestYAML(stamped))
+    expect(blind.data.properties.version).toBe(7)
+  })
 })
 
 describe("toPutInput", () => {
@@ -347,6 +372,20 @@ describe("toPutInput", () => {
     expect(input.id).toBeUndefined()
     expect(input.properties).toEqual({ a: 1 })
   })
+
+  it("never sends a MANAGED property, however it got into the document", () => {
+    const doc = {
+      metadata: { id: "e1" },
+      // A hand-typed version: the engine stamps this one and refuses a write
+      // that disagrees, so the lens must not put it on the wire.
+      data: { properties: { prompt: "hi", enabled: true, version: 99 } },
+    }
+    const input = toPutInput(doc, stampedAgentKind)
+    expect(input.properties).not.toHaveProperty("version")
+    expect(input.properties).toMatchObject({ prompt: "hi", enabled: true })
+    // Without the kind the declaration is unknown: fail open, send as typed.
+    expect(toPutInput(doc).properties).toHaveProperty("version", 99)
+  })
 })
 
 /** The kind whose datatypes the editor has to be honest about, and the state
@@ -355,7 +394,7 @@ const taskKind: KindInfo = {
   identity: "tasks.substrate.reamde.dev/task",
   name: "task",
   authority: "tasks.substrate.reamde.dev",
-  version: "",
+  version: 0,
   plural: "tasks",
   source: "installed",
   definition: {

@@ -1468,7 +1468,9 @@ export function BundleDetailPage() {
               <span className="data">{bundle.authority}</span>
               <ArrowUpRightIcon className="size-3" />
             </Link>
-            {item?.version && <span className="data">· {item.version}</span>}
+            {item?.version ? (
+              <span className="data">· {item.version}</span>
+            ) : null}
           </p>
           {item?.description && (
             <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
