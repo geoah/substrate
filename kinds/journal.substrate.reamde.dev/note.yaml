@@ -9,6 +9,10 @@ data:
     anything acts on it: an instruction is an order to act on and close, standing
     context is never done, and an idea asks for nothing. Handling stamps its
     time, so nothing has to remember to.
+  # The declaration inherited the authority's version before this pin.
+  # version 2: `handledAt` is a declared property (datetime). The handled
+  # transitions stamped it as an undeclared string before.
+  version: 2
   names:
     singular: note
     plural: notes
@@ -61,6 +65,11 @@ data:
             handledAt: now
         - from: handled
           to: open
+    # Stamped by the handled transitions above. Not managed: an importer
+    # creating a note already handled supplies its own time.
+    handledAt:
+      type: datetime
+      description: when the note was handled, stamped by the transition
     agentResponse:
       type: string
       description: the one-line receipt an agent leaves after acting on it

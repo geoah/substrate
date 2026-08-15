@@ -214,7 +214,10 @@ type Property struct {
 	// at every level until a consumer arrives (§15).
 	Fields     map[string]*Property
 	FieldOrder []string
-	// Implicit marks properties declared indirectly (machine stamps).
+	// Implicit marks a synthesized property: a machine-stamp target the
+	// document does not declare. The loader keeps synthesizing these so
+	// declarations stored before targets were declarable keep parsing; the
+	// shipped tree declares every target.
 	Implicit bool
 	// Managed marks a property the ENGINE stamps: `version`, `source`, the
 	// quarantine fields, the bundle lifecycle bools. It is the declaration of

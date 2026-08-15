@@ -220,6 +220,22 @@ data:
   traits: [temporal(range)]
   properties:
     notes: {type: text}
+---
+# a DECLARED stamp target: the author spells the property the transition writes
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: vocab.example.com/shipment
+data:
+  authority: vocab.example.com
+  names: {singular: shipment, plural: shipments}
+  properties:
+    sentAt: {type: datetime, managed: true}
+    dispatch:
+      type: state
+      states: [packed, sent]
+      initial: packed
+      transitions:
+        - {from: packed, to: sent, stamps: {sentAt: now}}
 `
 
 // --- the loader ----------------------------------------------------------
@@ -290,9 +306,18 @@ func TestLoadManifestStream(t *testing.T) {
 	if len(task.Indices) != 1 || task.Indices[0][0] != "status" {
 		t.Fatalf("task indices = %v", task.Indices)
 	}
-	// Stamp targets are implicitly declared datetime properties.
+	// An UNDECLARED stamp target is synthesized as an implicit datetime
+	// property: stored declarations that predate declarable targets must keep
+	// parsing at open.
 	if p, ok := task.Prop("doneAt"); !ok || p.Datatype != vocabulary.DatatypeDatetime || !p.Implicit {
 		t.Fatalf("stamp target doneAt = %+v", p)
+	}
+	// A DECLARED stamp target keeps its declaration: the authored property,
+	// not a synthesized one, so `managed` and the description survive.
+	shipment, _ := r.ByIdentity("vocab.example.com/shipment")
+	if p, ok := shipment.Prop("sentAt"); !ok || p.Datatype != vocabulary.DatatypeDatetime ||
+		p.Implicit || !p.Managed {
+		t.Fatalf("declared stamp target sentAt = %+v", p)
 	}
 
 	// Actors are their own manifests now, one document each.
@@ -1920,9 +1945,16 @@ data:
 		"bad stamp": typ(`  names: {singular: contact, plural: contacts}
   properties: {m: {type: state, states: [a, b], transitions: [{from: a, to: b, stamps: {x: yesterday}}]}}
 `),
-		"stamp collides with a property": typ(`  names: {singular: contact, plural: contacts}
+		// A declared stamp target must hold what the engine writes into it: a
+		// single datetime.
+		"stamp target declared as a string": typ(`  names: {singular: contact, plural: contacts}
   properties:
     doneAt: {type: string}
+    m: {type: state, states: [a, b], transitions: [{from: a, to: b, stamps: {doneAt: now}}]}
+`),
+		"stamp target declared repeated": typ(`  names: {singular: contact, plural: contacts}
+  properties:
+    doneAt: {type: datetime, repeated: true}
     m: {type: state, states: [a, b], transitions: [{from: a, to: b, stamps: {doneAt: now}}]}
 `),
 		"unknown machine key": typ(`  names: {singular: contact, plural: contacts}

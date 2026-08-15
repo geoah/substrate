@@ -785,15 +785,20 @@ func (l *loader) parseType(doc Document) *Kind {
 		}
 		t.Machines[pname] = p.Machine
 	}
-	// Stamp targets are implicitly declared datetime properties, and a stamp
-	// may not collide with one the author wrote: two declarations of one name
-	// mean one of them is silently ignored.
+	// A stamp target is a stored property, and the author may say so: a
+	// declared target must be a single-valued datetime, because that is what
+	// the engine writes into it. One left undeclared is still synthesized as
+	// an implicit datetime property, NOT refused: stored declarations written
+	// before targets were declarable must keep parsing at open, or the
+	// repository holding them cannot be opened to upgrade them. The shipped
+	// tree itself declares every target (cmd/kindsgen refuses an undeclared
+	// one).
 	for _, pname := range sortedKeys(mapOfAny(t.Machines)) {
 		for _, tr := range t.Machines[pname].Transitions {
 			for _, stamp := range sortedKeys(mapOfAny(tr.Stamps)) {
 				if existing, ok := t.Props[stamp]; ok {
-					if !existing.Implicit {
-						l.errf("%s: data.properties.%s: stamp %q collides with a declared property",
+					if !existing.Implicit && (existing.Datatype != DatatypeDatetime || existing.Repeated) {
+						l.errf("%s: data.properties.%s: stamp target %q must be a single-valued datetime property",
 							where, pname, stamp)
 					}
 					continue

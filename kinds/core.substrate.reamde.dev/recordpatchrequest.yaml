@@ -23,7 +23,10 @@ data:
   # version 9: `policy` and `policyRevision` — stamped by the engine when the
   # policy door converts a held write into this request; frozen with the
   # envelope, because the audit must not be reworded under a pending request.
-  version: 9
+  # version 10: `decidedAt` is a declared property (datetime, managed). The
+  # decision transitions stamped it as an undeclared string before, invisible
+  # to the declaration and untyped in the filter grammar.
+  version: 10
   names:
     singular: recordpatchrequest
     plural: recordpatchrequests
@@ -98,6 +101,13 @@ data:
       inverseDescription: the change requests this thread's propose calls
         landed
       description: the thread whose propose call created this request
+    # Stamped by the decision transitions below; managed because nothing else
+    # writes it: the envelope is frozen once proposed, and the decision is
+    # the one move it ever makes.
+    decidedAt:
+      type: datetime
+      managed: true
+      description: when the decision was made, stamped by the transition
     # accepting is what applies the change: the transition runs `applyDiff`,
     # which branches on `op` — a patch checks the diff against `targetVersion`
     # and fails the transition if the target moved underneath it, a create

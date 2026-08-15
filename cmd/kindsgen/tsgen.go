@@ -107,9 +107,6 @@ func tsFieldDoc(f *fieldPlan) string {
 	if f.Class == classState {
 		parts = append(parts, "A state moves by transition, never by assignment.")
 	}
-	if f.Decl.Implicit {
-		parts = append(parts, "Stamped by a transition, not written by hand: render it read-only.")
-	}
 	if f.Decl.Managed {
 		parts = append(parts, "Managed: the server stamps it, so render it read-only.")
 	}
