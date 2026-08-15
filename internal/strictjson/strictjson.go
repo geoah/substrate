@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -43,6 +44,37 @@ func DecodeBytes(raw []byte, v any, useNumber bool) error {
 		return errors.New("unexpected trailing data after the JSON value")
 	}
 	return nil
+}
+
+// Keys is the exact set of top-level json keys this decoder accepts for v,
+// sorted: the same set exactKeyCheck holds an input to. A refusal that names
+// them is the only grammar an opaque JSON argument has, because on the GraphQL side
+// `filter` is a JSON scalar, so introspection shows a caller nothing and a
+// bare `unknown field "at"` reads as "the server cannot do this" rather than
+// "you spelled it wrong".
+func Keys(v any) []string {
+	t := reflect.TypeOf(v)
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t == nil {
+		return nil
+	}
+	for t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+		t = t.Elem()
+		for t.Kind() == reflect.Pointer {
+			t = t.Elem()
+		}
+	}
+	if t.Kind() != reflect.Struct {
+		return nil
+	}
+	out := make([]string, 0, t.NumField())
+	for k := range allowedKeys(t) {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // exactKeyCheck refuses a top-level key that is not an EXACT-case json tag of
