@@ -61,7 +61,7 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn,
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"),
 			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 		if err != nil {
 			t.Fatalf("open: %v", err)

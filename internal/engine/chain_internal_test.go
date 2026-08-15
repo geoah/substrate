@@ -89,7 +89,8 @@ func TestCanonicalJSONNormalizes(t *testing.T) {
 func TestEntryHashPreimageInjective(t *testing.T) {
 	ts := time.Date(2026, 8, 15, 10, 0, 0, 123456000, time.UTC)
 	base := chainEntry{
-		Seq: 7, TS: ts, Actor: "api", Op: "put", RecordID: "r1", Kind: "task",
+		Seq: 7, TS: ts, Actor: "api", Principal: principalPlaceholder,
+		Op: "put", RecordID: "r1", Kind: "task",
 		PayloadText: []byte(`{"a":1}`),
 	}
 	h0, err := entryHash("repo1", base, zeroHash)
@@ -107,8 +108,7 @@ func TestEntryHashPreimageInjective(t *testing.T) {
 		func(e *chainEntry) { e.Seq = 8 },
 		func(e *chainEntry) { e.TS = ts.Add(time.Microsecond) },
 		func(e *chainEntry) { e.Actor = "console" },
-		func(e *chainEntry) { e.Principal = ""; e.PrincipalOK = true }, // NULL vs stored empty
-		func(e *chainEntry) { e.Principal = "tok1"; e.PrincipalOK = true },
+		func(e *chainEntry) { e.Principal = "tok1" },
 		func(e *chainEntry) { e.Op = "patch" },
 		func(e *chainEntry) { e.RecordID = "r2" },
 		func(e *chainEntry) { e.Kind = "note" },

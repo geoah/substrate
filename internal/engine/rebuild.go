@@ -145,6 +145,16 @@ func (t *txn) rebuild(report *RebuildReport, verify bool) error {
 		if finding != "" {
 			return fmt.Errorf("substrate/engine: rebuild refuses: the chain does not verify (%s); run `repository verify`, and only rebuild --force-unverified once you understand what you would be installing", finding)
 		}
+		// Signing is mandatory; a repository that never activated has hashes
+		// but no signature guarantee at all. The insecure switch is the one
+		// door that accepts folding it anyway, complaining (#175).
+		if signing.signedFrom == 0 {
+			if !t.ds.svc.insecureInvalidSigs {
+				return fmt.Errorf("substrate/engine: rebuild refuses: changelog signing has never activated on this repository, so no signature vouches for the history this would install; open it under a credential key first, or rebuild under SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES (local testing only)")
+			}
+			t.ds.svc.log.Warn("substrate: INSECURE — rebuilding from a chain with no signature guarantee (signing never activated)",
+				"repository", t.ds.scope.Repository)
+		}
 	}
 	for _, table := range foldTables {
 		if _, err := t.exec(`DELETE FROM ` + table); err != nil {

@@ -10,12 +10,14 @@ package engine
 // (public key, signed_from_seq) pair logged at activation and pinned outside
 // the database, plus remembered heads.
 //
-// Activation is DURABLE and ONE-WAY. The environment toggle
-// (SUBSTRATE_CHANGELOG_SIGNING) only selects whether a repository activates
-// at its next open; it never deactivates. Once signed_from_seq is set, an
-// entry at or after it without a valid signature is a verification failure,
-// and the engine refuses to append unsigned — a lost credential key stops
-// writes rather than silently shedding the guarantee.
+// Signing is MANDATORY: every repository activates at its first open under a
+// keyed host, and a keyless host refuses the open unless
+// SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES accepts running unsigned with
+// placeholder signatures (engine.go, openRepository). Activation is DURABLE
+// and ONE-WAY: once signed_from_seq is set, an entry at or after it without a
+// valid signature is a verification failure, and the engine refuses to append
+// unsigned — a lost credential key stops writes rather than silently shedding
+// the guarantee, and no switch weakens an activated repository.
 //
 // The key rules are STRICTER than the DEK's, deliberately: the DEK wrap
 // falls back to plain framing on a keyless host, which is fatal here — the
@@ -151,32 +153,44 @@ func (s *service) openSigningSeed(wrapped []byte) (ed25519.PrivateKey, error) {
 	return ed25519.NewKeyFromSeed(seed), nil
 }
 
-// adoptSigning activates signing for one repository: mint a seed, seal it
-// (never plain), set signed_from_seq to the NEXT seq compare-and-swap on
-// NULL, and record a signed activation epoch. The loser of a concurrent
-// activation re-reads the winner's state.
+// mintSigningSeed mints one repository signing seed and seals it under the
+// credential key (never plain). It refuses on a keyless host: the seed would
+// store in the clear beside the signatures it mints.
+func (s *service) mintSigningSeed() (wrapped []byte, key ed25519.PrivateKey, err error) {
+	if len(s.credKey) == 0 {
+		return nil, nil, errors.New("substrate/engine: activating changelog signing without SUBSTRATE_CREDENTIAL_KEY would store the signing seed in the clear beside the signatures it mints; set the credential key first")
+	}
+	seed := make([]byte, ed25519.SeedSize)
+	if _, err := rand.Read(seed); err != nil {
+		return nil, nil, err
+	}
+	aead, err := s.credentialAEAD()
+	if err != nil {
+		return nil, nil, err
+	}
+	if wrapped, err = sealWith(aead, seed); err != nil {
+		return nil, nil, err
+	}
+	return wrapped, ed25519.NewKeyFromSeed(seed), nil
+}
+
+// adoptSigning activates signing for one EXISTING repository (a store
+// upgraded from a pre-signing release, or one born keyless under the
+// insecure switch): mint a seed, seal it (never plain), set signed_from_seq
+// to the NEXT seq compare-and-swap on NULL, and record a signed activation
+// epoch. A brand-new repository does not come through here — creation signs
+// from seq 1 (createSeededRepository). The loser of a concurrent activation
+// re-reads the winner's state.
 //
 // The log line below is the PIN: the (public key, signed_from_seq) pair is
 // what an operator writes down outside the database, because everything in
 // the database — key rows, signatures, epochs — is rewritable by whoever
 // holds it, and the pinned pair is what catches that.
 func (s *service) adoptSigning(ctx context.Context, ds *dataset) (signingState, ed25519.PrivateKey, error) {
-	if len(s.credKey) == 0 {
-		return signingState{}, nil, errors.New("substrate/engine: SUBSTRATE_CHANGELOG_SIGNING without SUBSTRATE_CREDENTIAL_KEY would store the signing seed in the clear beside the signatures it mints; set the credential key first")
-	}
-	seed := make([]byte, ed25519.SeedSize)
-	if _, err := rand.Read(seed); err != nil {
-		return signingState{}, nil, err
-	}
-	aead, err := s.credentialAEAD()
+	wrapped, key, err := s.mintSigningSeed()
 	if err != nil {
 		return signingState{}, nil, err
 	}
-	wrapped, err := sealWith(aead, seed)
-	if err != nil {
-		return signingState{}, nil, err
-	}
-	key := ed25519.NewKeyFromSeed(seed)
 	public := key.Public().(ed25519.PublicKey)
 
 	// The activation boundary is the seq AFTER the current head, read under

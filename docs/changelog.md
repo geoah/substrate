@@ -61,15 +61,29 @@ same bytes later — with the payload's numbers canonicalized by VALUE, so how a
 Postgres version happens to render a number can never strand a historical
 hash.
 
-A repository can additionally **sign** every entry: with
-`SUBSTRATE_CHANGELOG_SIGNING` set, each repository mints an Ed25519 key at its
-next open (sealed under `SUBSTRATE_CREDENTIAL_KEY`) and every entry from that
-seq on carries a signature over its hash. Activation is durable and one-way:
-from the activation seq forward, a missing or invalid signature is a
-verification failure, and a host that cannot sign refuses to append rather
-than quietly shedding the guarantee. The activation moment logs the
-`(public key, signed_from_seq)` pair — pin it outside the database; it is
-what a verifier ultimately trusts.
+Every repository also **signs** every entry — signing is mandatory. Each
+repository mints its own Ed25519 key at its first open (sealed under
+`SUBSTRATE_CREDENTIAL_KEY`, which the server refuses to boot without): a
+brand-new repository is signed from seq 1, and a store upgraded from an
+earlier release activates on its first open after the backfill. Activation is
+durable and one-way: from the activation seq forward, a placeholder or
+invalid signature is a verification failure, and a host that cannot sign
+refuses to append rather than quietly shedding the guarantee. The activation
+moment logs the `(public key, signed_from_seq)` pair — pin it outside the
+database; it is what a verifier ultimately trusts.
+
+Two placeholder values exist, and both are hashed like any other value, so
+neither can be edited later without breaking the chain. Entries written
+before signing existed keep the **all-zero signature** forever — an
+append-only log cannot be signed after the fact, so `verify` counts them
+(`placeholderSigs`) below the activation seq and names them as findings at or
+after it. Every entry's **principal** (the verified token id behind the
+write) is the string `invalid` until the API threads it. A keyless host may
+run ONLY under `SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES=true`, never
+activates signing, writes placeholder signatures on everything, and `verify`
+names that state as a finding. The placeholders and the switch are pre-v1
+scaffolding, tracked to be removed before v1
+([#175](https://github.com/geoah/substrate/issues/175)).
 
 What this proves, honestly:
 

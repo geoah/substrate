@@ -466,7 +466,7 @@ func linearOpenDataset(t *testing.T, client *http.Client) (*service, *dataset) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	svc, err := Open(ctx, dsn,
-		WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		WithCredentialKey("test-cred-key"), WithKindsDir("../../kinds/core.substrate.reamde.dev"),
 		WithOAuth("test-state-key", "https://substrate.example/api/v1/core.substrate.reamde.dev/oauth/callback", client),
 		WithCredentialKey("test-cred-key"))
 	if err != nil {

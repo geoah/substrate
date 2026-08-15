@@ -47,6 +47,10 @@ func newService(t *testing.T, opts ...engine.Option) (substrate.Service, string)
 	dsn := testdb.NewSchema(t)
 	all := []engine.Option{
 		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		// Signing is mandatory, so the suite runs the keyed shape by
+		// default. A test that is ABOUT the keyless host overrides with
+		// WithCredentialKey("") and WithInsecureAllowInvalidSignatures().
+		engine.WithCredentialKey("test-cred-key"),
 	}
 	all = append(all, opts...)
 	svc, err := engine.Open(context.Background(), dsn, all...)

@@ -30,9 +30,17 @@ services:
       # the user and their repository; UNSET closes registration, which is the
       # right state once the box has its user.
       SUBSTRATE_INVITE_CODE: ${SUBSTRATE_INVITE_CODE:-let-me-in}
-      # Seals stored provider tokens at rest. Unset means plaintext and a
-      # warning at boot — fine on a laptop, never on a real deployment.
+      # Seals stored provider tokens at rest AND the changelog signing seed:
+      # signing is mandatory, so a real deployment sets this and removes the
+      # insecure switch below. Any string works; losing it stops writes.
       SUBSTRATE_CREDENTIAL_KEY: ${SUBSTRATE_CREDENTIAL_KEY:-}
+      # The out-of-the-box default runs UNSIGNED, loudly: entries carry
+      # placeholder signatures and `repository verify` names the state. A
+      # baked-in default key would be worse — publicly known, so it certifies
+      # nothing, and key rotation is not built, so replacing it later stops
+      # writes. Set the key above, drop this, and the next open activates
+      # signing for every repository.
+      SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES: ${SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES:-true}
       # The host's OpenAI-compatible gateway. This is the ONLY thing that backs
       # embeddings: unset, the embed queue never drains and hybrid search
       # degrades to lexical. It is deployment configuration, not a record,

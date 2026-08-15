@@ -304,11 +304,14 @@ func TestResealMovesLegacyValuesIntoTheStore(t *testing.T) {
 	if _, err := db.Exec(`DELETE FROM sealed WHERE ref = $1`, ref); err != nil {
 		t.Fatalf("drop the store row: %v", err)
 	}
-	if _, err := db.Exec(`UPDATE changelog SET hash = NULL, sig = NULL`); err != nil {
+	if _, err := db.Exec(`UPDATE changelog SET hash = NULL, sig = decode(repeat('00', 64), 'hex')`); err != nil {
 		t.Fatalf("wind the chain back: %v", err)
 	}
 	if _, err := db.Exec(`DELETE FROM chain_epochs`); err != nil {
 		t.Fatalf("wind the epochs back: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE repositories SET signing_key = NULL, signing_public = NULL, signed_from_seq = NULL`); err != nil {
+		t.Fatalf("wind the signing state back: %v", err)
 	}
 	_ = svc.Close()
 	svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),

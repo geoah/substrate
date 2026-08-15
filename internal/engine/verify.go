@@ -50,18 +50,22 @@ type VerifyPins struct {
 
 // VerifyReport is what one verification saw.
 type VerifyReport struct {
-	Repository string        `json:"repository"`
-	Username   string        `json:"username"`
-	Entries    int64         `json:"entries"`
-	Head       int64         `json:"head"`
-	HeadHash   string        `json:"headHash,omitempty"`
-	SignedFrom int64         `json:"signedFrom,omitempty"`
-	PublicKey  string        `json:"publicKey,omitempty"`
-	Epochs     []EpochInfo   `json:"epochs,omitempty"`
-	Findings   []string      `json:"findings,omitempty"`
-	Truncated  bool          `json:"truncated,omitempty"`
-	OK         bool          `json:"ok"`
-	Took       time.Duration `json:"took"`
+	Repository string `json:"repository"`
+	Username   string `json:"username"`
+	Entries    int64  `json:"entries"`
+	Head       int64  `json:"head"`
+	HeadHash   string `json:"headHash,omitempty"`
+	SignedFrom int64  `json:"signedFrom,omitempty"`
+	PublicKey  string `json:"publicKey,omitempty"`
+	// PlaceholderSigs counts entries below SignedFrom carrying the all-zero
+	// placeholder signature: history written before signing, which nothing
+	// sanctioned can sign after the fact (#175).
+	PlaceholderSigs int64         `json:"placeholderSigs,omitempty"`
+	Epochs          []EpochInfo   `json:"epochs,omitempty"`
+	Findings        []string      `json:"findings,omitempty"`
+	Truncated       bool          `json:"truncated,omitempty"`
+	OK              bool          `json:"ok"`
+	Took            time.Duration `json:"took"`
 }
 
 // EpochInfo is one chain epoch as the report renders it.
@@ -129,10 +133,18 @@ func (s *service) VerifyRepositoryPinned(ctx context.Context, username string, p
 		return report, err
 	}
 	report.Entries, report.Head = res.entries, res.head
+	report.PlaceholderSigs = res.placeholderSigs
 	if res.headHash != nil {
 		report.HeadHash = hex.EncodeToString(res.headHash)
 	}
 
+	// Signing is mandatory; a repository with no activation mark has only
+	// ever run on a keyless host under the insecure switch, and every one of
+	// its entries carries the placeholder. Named as a finding: the complaint
+	// the switch lets an operator live with (#175).
+	if signing.signedFrom == 0 && res.entries > 0 {
+		found("changelog signing has never activated on this repository — signing is mandatory, and every entry carries a placeholder signature (SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES, local testing only)")
+	}
 	if signing.signedFrom > 0 && len(signing.public) == 0 {
 		found("signing is active but the repository stores no public key")
 	}
@@ -192,6 +204,9 @@ type chainWalkResult struct {
 	entries  int64
 	head     int64
 	headHash []byte
+	// placeholderSigs counts entries below signed_from_seq carrying the
+	// all-zero placeholder: history from before signing, permanent (#175).
+	placeholderSigs int64
 	// pinnedSeq/pinnedHash carry the one extra hash a caller asked about.
 	pinnedSeq  int64
 	pinnedHash string
@@ -262,13 +277,18 @@ func verifyChainCorePinned(ctx context.Context, db dbx, repository string, signe
 
 			mustSign := signedFrom > 0 && row.entry.Seq >= signedFrom
 			switch {
-			case row.sig == nil && mustSign:
-				found(fmt.Sprintf("seq %d: no signature, but signing is active from seq %d", row.entry.Seq, signedFrom))
-			case row.sig != nil && len(row.sig) != ed25519.SignatureSize:
+			case len(row.sig) != ed25519.SignatureSize:
 				found(fmt.Sprintf("seq %d: signature is %d bytes, want %d", row.entry.Seq, len(row.sig), ed25519.SignatureSize))
-			case row.sig != nil && len(public) == 0:
+			case isPlaceholderSig(row.sig) && mustSign:
+				found(fmt.Sprintf("seq %d: placeholder (all-zero) signature, but signing is active from seq %d", row.entry.Seq, signedFrom))
+			case isPlaceholderSig(row.sig):
+				// The permanent state of history written before signing
+				// activated: counted for the report, never a per-row finding,
+				// because nothing sanctioned can sign the past (#175).
+				res.placeholderSigs++
+			case len(public) == 0:
 				found(fmt.Sprintf("seq %d: a signature with no public key on the repository", row.entry.Seq))
-			case row.sig != nil && !ed25519.Verify(public, row.hash, row.sig):
+			case !ed25519.Verify(public, row.hash, row.sig):
 				found(fmt.Sprintf("seq %d: signature does not verify against the repository's public key", row.entry.Seq))
 			}
 		}
@@ -349,14 +369,12 @@ func scanChainPageWithMarks(ctx context.Context, db dbx, after int64, limit int)
 	for rows.Next() {
 		var r chainRow
 		var ts time.Time
-		var principal sql.NullString
 		var causedBy sql.NullInt64
-		if err := rows.Scan(&r.entry.Seq, &ts, &r.entry.Actor, &principal, &r.entry.Op, &r.entry.RecordID,
+		if err := rows.Scan(&r.entry.Seq, &ts, &r.entry.Actor, &r.entry.Principal, &r.entry.Op, &r.entry.RecordID,
 			&r.entry.Kind, &r.entry.PayloadText, &causedBy, &r.hash, &r.sig); err != nil {
 			return nil, err
 		}
 		r.entry.TS = ts.UTC()
-		r.entry.Principal, r.entry.PrincipalOK = principal.String, principal.Valid
 		r.entry.CausedBy, r.entry.CausedByOK = causedBy.Int64, causedBy.Valid
 		out = append(out, r)
 	}

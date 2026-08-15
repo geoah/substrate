@@ -51,17 +51,17 @@ type chainEntry struct {
 	Seq   int64
 	TS    time.Time
 	Actor string
-	// Principal is the verified token id behind the write, NULL on every
-	// entry until the API threads it (#102). It is hashed from birth so
-	// stamping it later is not a preimage change, and so a stored principal
-	// can never be edited without breaking the chain.
-	Principal   string
-	PrincipalOK bool
-	Op          string
-	RecordID    string
-	Kind        string
-	CausedBy    int64
-	CausedByOK  bool
+	// Principal is the verified token id behind the write —
+	// principalPlaceholder on every entry until the API threads it (#102).
+	// NOT NULL and hashed from birth, so stamping the real id later is not a
+	// preimage change, and a stored principal can never be edited without
+	// breaking the chain.
+	Principal  string
+	Op         string
+	RecordID   string
+	Kind       string
+	CausedBy   int64
+	CausedByOK bool
 	// PayloadText is the jsonb column's own rendering (payload::text), never
 	// the bytes Go sent.
 	PayloadText []byte
@@ -79,9 +79,7 @@ func entryHash(repository string, e chainEntry, prev [32]byte) ([32]byte, error)
 	frameInt64(&buf, e.Seq)
 	frameBytes(&buf, []byte(e.TS.UTC().Format(tsCanonical)))
 	frameBytes(&buf, []byte(e.Actor))
-	// The same presence byte caused_by gets: NULL and the empty string must
-	// not collide.
-	frameOptionalString(&buf, e.Principal, e.PrincipalOK)
+	frameBytes(&buf, []byte(e.Principal))
 	frameBytes(&buf, []byte(e.Op))
 	frameBytes(&buf, []byte(e.RecordID))
 	frameBytes(&buf, []byte(e.Kind))
@@ -152,15 +150,6 @@ func frameOptionalInt64(buf *bytes.Buffer, v int64, ok bool) {
 	}
 	buf.WriteByte(1)
 	frameInt64(buf, v)
-}
-
-func frameOptionalString(buf *bytes.Buffer, s string, ok bool) {
-	if !ok {
-		buf.WriteByte(0)
-		return
-	}
-	buf.WriteByte(1)
-	frameBytes(buf, []byte(s))
 }
 
 func frameOptionalBytes(buf *bytes.Buffer, b []byte) {
@@ -328,6 +317,22 @@ func canonicalNumber(lex string) (string, error) {
 // zeroHash is the chain's genesis link.
 var zeroHash [32]byte
 
+// The placeholders. sig and principal are NOT NULL, and history that predates
+// them carries a value that says so: the all-zero signature (an append-only
+// log cannot be signed after the fact) and the principal 'invalid' (the token
+// id was never stored; #102 stamps real ones). Both are hashed like any
+// value, so neither can be edited without breaking the chain. Pre-v1
+// scaffolding, tracked in #175.
+var sigPlaceholder = make([]byte, ed25519.SignatureSize)
+
+const principalPlaceholder = "invalid"
+
+// isPlaceholderSig reports the all-zero placeholder: the one signature value
+// that means "not signed" rather than "signed wrong".
+func isPlaceholderSig(sig []byte) bool {
+	return len(sig) == ed25519.SignatureSize && bytes.Equal(sig, sigPlaceholder)
+}
+
 // settleChain stamps the hash — and, when signing is active, the signature —
 // of every entry this transaction appended, in seq order, chaining from the
 // last committed entry's hash. It runs at commit (inTx), after settleFold
@@ -366,7 +371,10 @@ func (t *txn) settleChain() error {
 		if err != nil {
 			return err
 		}
-		var sig []byte
+		// The placeholder stands only where signing never activated (a
+		// keyless host under the insecure switch); an activated repository
+		// signs or refuses.
+		sig := sigPlaceholder
 		if signing.signedFrom > 0 && e.Seq >= signing.signedFrom {
 			if signing.key == nil {
 				// Activation is one-way: a host that cannot sign refuses the

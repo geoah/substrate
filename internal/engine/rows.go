@@ -307,23 +307,25 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 	// hashes what a verifier will read later, never the bytes that went in.
 	var seq int64
 	var stored []byte
+	// The INSERT carries the sig placeholder (settleChain overwrites it with
+	// the real signature in this same transaction) and the principal
+	// placeholder (#102 threads the verified token id). The pending entry
+	// and the row must agree on every hashed field, so when #102 stamps the
+	// token id it stamps both sides of this append.
 	if err := t.row(`
-		INSERT INTO changelog (seq, ts, actor, op, record_id, kind, payload, caused_by)
-		VALUES ((SELECT coalesce(max(seq), 0) + 1 FROM changelog), $1, $2, $3, $4, $5, $6::jsonb, $7)
+		INSERT INTO changelog (seq, ts, actor, principal, op, record_id, kind, payload, caused_by, sig)
+		VALUES ((SELECT coalesce(max(seq), 0) + 1 FROM changelog), $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
 		RETURNING seq, payload::text`,
-		t.now, string(actor), string(op), recordID, typ, raw, causedBy).Scan(&seq, &stored); err != nil {
+		t.now, string(actor), principalPlaceholder, string(op), recordID, typ, raw, causedBy, sigPlaceholder).Scan(&seq, &stored); err != nil {
 		return err
 	}
 	if seq > t.maxSeq {
 		t.maxSeq = seq
 	}
 	t.entries = append(t.entries, changeEntry{seq: seq, op: op, kind: typ, id: recordID})
-	// Principal stays absent here exactly as the INSERT leaves the column
-	// NULL: the pending entry and the row must agree on every hashed field,
-	// so when #102 stamps the token id it stamps both sides of this append.
 	t.pending = append(t.pending, chainEntry{
-		Seq: seq, TS: t.now, Actor: string(actor), Op: string(op),
-		RecordID: recordID, Kind: typ,
+		Seq: seq, TS: t.now, Actor: string(actor), Principal: principalPlaceholder,
+		Op: string(op), RecordID: recordID, Kind: typ,
 		CausedBy: causedBy.Int64, CausedByOK: causedBy.Valid,
 		PayloadText: stored,
 	})

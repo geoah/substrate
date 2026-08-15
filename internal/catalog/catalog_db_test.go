@@ -53,6 +53,7 @@ func newDataset(t *testing.T) substrate.Dataset {
 	dsn := testdb.NewSchema(t)
 	svc, err := engine.Open(context.Background(), dsn,
 		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithCredentialKey("test-cred-key"),
 	)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)

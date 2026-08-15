@@ -1,25 +1,36 @@
 -- Changelog integrity: every entry carries a SHA-256 hash chaining to the
--- previous entry's (chain.go), and optionally an Ed25519 signature over that
--- hash (signing.go). Both are stamped by the writing transaction; NULL hash
--- marks a pre-chain entry awaiting the first-open backfill and nothing else.
+-- previous entry's (chain.go) and an Ed25519 signature over that hash
+-- (signing.go). Both are stamped by the writing transaction; NULL hash marks
+-- a pre-chain entry awaiting the first-open backfill and nothing else.
 -- The length CHECKs exist because the application role holds UPDATE on this
 -- table: a malformed value must be impossible to store, so the verifier only
 -- ever reasons about well-formed bytes.
--- principal is the verified token id behind the write — attribution the door
--- resolved, unlike the caller-asserted actor. Nothing stamps it yet (#102);
--- it exists now because the chain hashes it from birth (chain.go): reserving
--- the preimage slot before any hash is minted is what lets #102 land without
--- a domain fork, and a later UPDATE to it is a verification failure, not a
--- backfill opportunity.
+--
+-- sig and principal are NOT NULL, and history written before them gets a
+-- PLACEHOLDER, not an absence: the all-zero signature (an append-only log
+-- cannot be signed after the fact; entries before signed_from_seq keep it
+-- forever) and the principal 'invalid' (the token id was discarded before it
+-- was ever stored, #102). Both placeholders are hashed like any value, so
+-- neither can be edited later without breaking the chain. The DEFAULTs exist
+-- only to stamp the rows this migration finds, and are dropped: the write
+-- path supplies both explicitly. Pre-v1 scaffolding, tracked in #175.
+-- principal itself is the verified token id behind the write — attribution
+-- the door resolved, unlike the caller-asserted actor. Nothing stamps a real
+-- one yet (#102); the column exists now because the chain hashes it from
+-- birth, which is what lets #102 land without a preimage fork.
 ALTER TABLE changelog
     ADD COLUMN IF NOT EXISTS hash bytea,
-    ADD COLUMN IF NOT EXISTS sig  bytea,
-    ADD COLUMN IF NOT EXISTS principal text;
+    ADD COLUMN IF NOT EXISTS sig bytea NOT NULL DEFAULT decode(repeat('00', 64), 'hex'),
+    ADD COLUMN IF NOT EXISTS principal text NOT NULL DEFAULT 'invalid';
+ALTER TABLE changelog
+    ALTER COLUMN sig DROP DEFAULT,
+    ALTER COLUMN principal DROP DEFAULT;
 ALTER TABLE changelog
     ADD CONSTRAINT changelog_hash_len CHECK (hash IS NULL OR octet_length(hash) = 32),
-    ADD CONSTRAINT changelog_sig_len CHECK (sig IS NULL OR octet_length(sig) = 64),
-    -- A signature signs the hash, so it cannot exist without one.
-    ADD CONSTRAINT changelog_sig_needs_hash CHECK (sig IS NULL OR hash IS NOT NULL);
+    ADD CONSTRAINT changelog_sig_len CHECK (octet_length(sig) = 64),
+    -- A real signature signs the hash, so it cannot exist without one; only
+    -- the all-zero placeholder may sit on an unhashed (pre-backfill) row.
+    ADD CONSTRAINT changelog_sig_needs_hash CHECK (hash IS NOT NULL OR sig = decode(repeat('00', 64), 'hex'));
 -- The cause is always an earlier entry (docs/changelog.md promises it);
 -- pinning it here also keeps zero out, so the preimage's NULL/value
 -- distinction (chain.go frameOptionalInt64) never meets a stored zero.

@@ -34,16 +34,27 @@ is already negligible (~30µs per entry) and add a second artifact to store and
 reason about. Client-held keys reverse the model's "no user-managed keys"
 stance and were out of scope by design.
 
+Signing is MANDATORY, not opt-in: every repository activates at its first
+open under a keyed host — a brand-new repository (empty changelog) before its
+seed appends, so it is signed from seq 1; an upgraded store after the
+backfill, on a settled head. A keyless host refuses to boot; the one
+exception is `SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES`, under which a
+keyless host runs without activating, stamps the all-zero placeholder
+signature (`sig` is NOT NULL), and `repository verify` names the state as a
+finding. The placeholder and the switch are pre-v1 scaffolding
+([#175](https://github.com/geoah/substrate/issues/175)).
+
 The rules that make it hold, each the answer to a specific attack:
 
 - **Activation is durable and one-way** (`repositories.signed_from_seq`).
-  From that seq on, a missing or invalid signature is a verification failure
-  and the engine refuses to append unsigned — otherwise
-  `UPDATE changelog SET sig = NULL` is an undetectable downgrade, and so is
-  flipping the environment toggle. The toggle only ever activates. A commit
-  whose dataset still believes signing is off RE-READS the durable mark
-  under the changelog lock (settleChain), so a second process activating
-  concurrently cannot slip an unsigned entry past a stale one.
+  From that seq on, a placeholder or invalid signature is a verification
+  failure and the engine refuses to append unsigned — otherwise writing the
+  all-zero placeholder over a signature is an undetectable downgrade, and so
+  is running the host keyless. The insecure switch never weakens an
+  activated repository. A commit whose dataset still believes signing is off
+  RE-READS the durable mark under the changelog lock (settleChain), so a
+  second process activating concurrently cannot slip an unsigned entry past
+  a stale one.
 - **The seed refuses plain framing, both ways.** The DEK wrap falls back to
   plaintext on a keyless host; the signing seed must not (the signature
   exists precisely to resist a database-only attacker), so activation
@@ -74,10 +85,12 @@ The rules that make it hold, each the answer to a specific attack:
 
 ### Confirmation
 
-`TestChangelogSigningSignsAndDetectsRemoval` (removal is named),
-`TestSigningActivationIsOneWay` (the toggle cannot deactivate; a keyless host
-refuses to append and to reseal), and the repositories CHECK constraints
-(migration 0005) that keep key, public key and activation mark whole.
+`TestChangelogSigningSignsAndDetectsRemoval` (a fresh repository is signed
+from seq 1; stripping a signature to the placeholder is named),
+`TestSigningActivationIsOneWay` (a keyless host cannot deactivate an
+activated repository: appends and reseals refuse), and the repositories
+CHECK constraints (migration 0005) that keep key, public key and activation
+mark whole.
 
 ## More Information
 

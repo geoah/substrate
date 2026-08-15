@@ -99,10 +99,18 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string) (substrate.
 	// The engine logs its boot at info; an operator command's output is its
 	// own report, so only warnings and worse reach stderr.
 	log := slog.New(slog.NewTextHandler(a.errOut, &slog.HandlerOptions{Level: slog.LevelWarn}))
-	svc, err := engine.Open(ctx, dsn,
+	opts := []engine.Option{
 		engine.WithRegistry(vocabulary.NewRegistry()),
 		engine.WithCredentialKey(credKey),
-		engine.WithLogger(log))
+		engine.WithLogger(log),
+	}
+	// The operator hat honors the same insecure switch as the server: a
+	// rebuild against a keyless local substrate must be able to open the
+	// repository the server itself runs unsigned.
+	if os.Getenv("SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES") == "true" {
+		opts = append(opts, engine.WithInsecureAllowInvalidSignatures())
+	}
+	svc, err := engine.Open(ctx, dsn, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("open the substrate database: %w", err)
 	}

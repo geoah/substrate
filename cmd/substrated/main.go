@@ -108,13 +108,18 @@ func run() error {
 		slog.Warn("SUBSTRATE_INSECURE_DISABLE_TOTP is set: the second factor is NOT verified — local development only")
 		opts = append(opts, engine.WithInsecureDisableTOTP())
 	}
-	if cfg.ChangelogSigning {
-		if cfg.CredentialKey == "" {
-			// Refused here, before anything opens: activating signing with the
-			// seed stored in the clear would certify nothing.
-			return errors.New("SUBSTRATE_CHANGELOG_SIGNING needs SUBSTRATE_CREDENTIAL_KEY: the signing seed seals under it")
+	// Changelog signing is mandatory and the seed seals under the credential
+	// key, so a keyless host is refused here, before anything opens — except
+	// under the loud local-testing switch, which runs unsigned with
+	// placeholder signatures that `repository verify` names.
+	if cfg.CredentialKey == "" {
+		if !cfg.InsecureAllowInvalidSignatures {
+			return errors.New("changelog signing is mandatory and needs SUBSTRATE_CREDENTIAL_KEY (the signing seed seals under it); for local testing only, SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES=true runs unsigned with placeholder signatures")
 		}
-		opts = append(opts, engine.WithChangelogSigning())
+		slog.Warn("SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES is set and there is no credential key: changelog entries carry PLACEHOLDER signatures that certify nothing — local testing only")
+	}
+	if cfg.InsecureAllowInvalidSignatures {
+		opts = append(opts, engine.WithInsecureAllowInvalidSignatures())
 	}
 	svc, err := engine.Open(ctx, cfg.DatabaseURL, opts...)
 	if err != nil {

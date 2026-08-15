@@ -36,8 +36,8 @@ boot.
 | `LOG_LEVEL`                    | `info`                                 | `debug`, `info`, `warn`, `error`.                                                                         |
 | `WEB_DIR`                      | —                                      | The built console, served at `/`. Empty disables static serving.                                          |
 | `SUBSTRATE_INVITE_CODE`        | — (unset: registration is off)         | The one way in. See below.                                                                                  |
-| `SUBSTRATE_CREDENTIAL_KEY`     | —                                      | Seals the sealed store, which holds every secret-typed property's material (AES-256-GCM). Unset stores payloads unsealed, with a boot warning; `repository reseal` upgrades once it is set. |
-| `SUBSTRATE_CHANGELOG_SIGNING`  | `false`                                | Activates per-repository changelog signing at each repository's next open: an Ed25519 key sealed under the credential key signs every entry's chain hash from that seq on. **Activation is one-way** — unsetting this stops nothing; an activated repository refuses to append unsigned. Needs `SUBSTRATE_CREDENTIAL_KEY`. See [the chain](changelog.md#the-chain). |
+| `SUBSTRATE_CREDENTIAL_KEY`     | —                                      | Seals the sealed store, which holds every secret-typed property's material (AES-256-GCM), and the per-repository changelog signing seeds. Signing is mandatory, so a host without it refuses to boot (the insecure switch below is the local-testing exception); `repository reseal` upgrades unsealed payloads once it is set. |
+| `SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES` | `false`                 | **Local testing only.** Changelog signing is mandatory (an Ed25519 key per repository, sealed under the credential key, signs every entry's chain hash), so a host without `SUBSTRATE_CREDENTIAL_KEY` refuses to boot. This switch lets a keyless host run anyway: signing never activates, every entry carries the all-zero placeholder signature, and `repository verify` names the state as a finding. It does NOT weaken an activated repository — **activation is one-way**, and an activated repository whose key cannot open refuses to append regardless. Pre-v1 scaffolding ([#175](https://github.com/geoah/substrate/issues/175)). See [the chain](changelog.md#the-chain). |
 | `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                             | **Local development only.** Stops verifying the second factor, so a password is the whole credential: see [the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally). Boots with a warning, and `GET /.well-known/substrate/server.json` says so. |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. Unset mints a random key per boot, with a warning: flows in progress break on restart. |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers.                                                        |
@@ -199,7 +199,11 @@ SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl user reset ada
   snapshot: it recomputes every entry's hash from the stored bytes, checks
   every signature the signing state requires, checks the chain epochs, and
   reports either the verified head `(seq, hash)` or every finding by seq and
-  name. It never backfills or repairs the repository it judges (opening the
+  name. Entries below the activation seq carry the all-zero placeholder
+  signature (history from before signing, which nothing sanctioned can sign
+  after the fact); verify counts those in one line rather than naming each,
+  while a placeholder at or after the activation seq, and a repository that
+  never activated at all, are findings. It never backfills or repairs the repository it judges (opening the
   engine still applies pending schema migrations, as every operator command
   does), and run beside an in-flight first-open backfill it can report
   transient unhashed entries — re-run once the open settles. **Write the

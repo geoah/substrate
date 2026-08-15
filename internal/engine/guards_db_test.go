@@ -15,12 +15,16 @@ import (
 
 // newDatasetWithDB provisions a repository and also hands back a raw connection to
 // its schema, for assertions about what is actually stored under a redaction.
-func newDatasetWithDB(t *testing.T) (substrate.Dataset, *sql.DB, string) {
+func newDatasetWithDB(t *testing.T, opts ...engine.Option) (substrate.Dataset, *sql.DB, string) {
 	t.Helper()
 	dsn := testdb.NewSchema(t)
 	ctx := context.Background()
-	svc, err := engine.Open(ctx, dsn,
-		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+	all := []engine.Option{
+		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithCredentialKey("test-cred-key"),
+	}
+	all = append(all, opts...)
+	svc, err := engine.Open(ctx, dsn, all...)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
@@ -128,7 +132,10 @@ func TestResyncIsSilentUnderAnyActor(t *testing.T) {
 func TestSecretRoundTripLeavesStoredValue(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	ds, raw, dsn := newDatasetWithDB(t)
+	// Explicitly KEYLESS: this test is about the plain-marked DEK framing a
+	// keyless host writes, which mandatory signing otherwise refuses to run.
+	ds, raw, dsn := newDatasetWithDB(t,
+		engine.WithCredentialKey(""), engine.WithInsecureAllowInvalidSignatures())
 	ty := installSecretCRD(t, ds)
 
 	cfg := mustPut(t, ds, gmail, substrate.PutInput{

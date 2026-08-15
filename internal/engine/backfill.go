@@ -87,7 +87,10 @@ func (ds *dataset) backfillChain(ctx context.Context) error {
 				if err != nil {
 					return err
 				}
-				var sig []byte
+				// Below signed_from_seq the placeholder is the permanent
+				// truth: backfilled history was never witnessed, and an
+				// after-the-fact signature would say otherwise.
+				sig := sigPlaceholder
 				if signing.signedFrom > 0 && e.Seq >= signing.signedFrom {
 					if signing.key == nil {
 						return fmt.Errorf("substrate/engine: chain backfill: signing is active from seq %d but the signing key is unavailable", signing.signedFrom)
@@ -149,13 +152,11 @@ func (t *txn) chainPage(after int64, limit int) ([]chainEntry, error) {
 	for rows.Next() {
 		var e chainEntry
 		var ts time.Time
-		var principal sql.NullString
 		var causedBy sql.NullInt64
-		if err := rows.Scan(&e.Seq, &ts, &e.Actor, &principal, &e.Op, &e.RecordID, &e.Kind, &e.PayloadText, &causedBy); err != nil {
+		if err := rows.Scan(&e.Seq, &ts, &e.Actor, &e.Principal, &e.Op, &e.RecordID, &e.Kind, &e.PayloadText, &causedBy); err != nil {
 			return nil, err
 		}
 		e.TS = ts.UTC()
-		e.Principal, e.PrincipalOK = principal.String, principal.Valid
 		e.CausedBy, e.CausedByOK = causedBy.Int64, causedBy.Valid
 		out = append(out, e)
 	}

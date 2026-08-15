@@ -102,7 +102,7 @@ func TestTypedDeclarationRungTranslatesEveryStoredDeclaration(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -267,7 +267,7 @@ func TestTypedDeclarationRungTranslatesRetiredToolSpellings(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -365,7 +365,7 @@ func TestTypedDeclarationRungMigratesOnlyTheUntypedRows(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -433,7 +433,7 @@ func TestTypedDeclarationRungRebuildsIdentically(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -558,7 +558,7 @@ func TestTypedDeclarationRungRefusesADowngrade(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -665,7 +665,7 @@ func TestBootUpgradeDeliversTheTypedFlip(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -733,7 +733,7 @@ func TestTypedDeclarationRungRefusesAnUntranslatableRow(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -818,7 +818,7 @@ func TestTypedDialectRefusesANullBlobProperty(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -873,7 +873,7 @@ func TestTypedDialectRefusesAnInterimGrantRow(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -932,7 +932,7 @@ func TestTypedDeclarationRungHoldsRowsToTheRepositorysOwnDeclarations(t *testing
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
@@ -1016,7 +1016,7 @@ func TestRungCanonicalizesLegacyTriggerCallables(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
 		}
