@@ -797,7 +797,8 @@ func (l *loader) parseType(doc Document) *Kind {
 		for _, tr := range t.Machines[pname].Transitions {
 			for _, stamp := range sortedKeys(mapOfAny(tr.Stamps)) {
 				if existing, ok := t.Props[stamp]; ok {
-					if !existing.Implicit && (existing.Datatype != DatatypeDatetime || existing.Repeated) {
+					if !existing.Implicit &&
+						(existing.Datatype != DatatypeDatetime || existing.Repeated || existing.Keyed) {
 						l.errf("%s: data.properties.%s: stamp target %q must be a single-valued datetime property",
 							where, pname, stamp)
 					}

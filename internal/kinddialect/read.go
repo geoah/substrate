@@ -497,7 +497,7 @@ func (r *reader) checkStampProperties(where string, k *Kind) {
 					r.errf("%s: stamp %q has no declared property behind it: declare it (type: datetime)", where, s.Property)
 					continue
 				}
-				if target.Datatype != TypeDatetime || target.Repeated {
+				if target.Datatype != TypeDatetime || target.Repeated || target.Keyed {
 					r.errf("%s: stamp target %q must be a single-valued datetime property", where, s.Property)
 				}
 			}

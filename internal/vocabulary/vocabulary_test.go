@@ -1957,6 +1957,11 @@ data:
     doneAt: {type: datetime, repeated: true}
     m: {type: state, states: [a, b], transitions: [{from: a, to: b, stamps: {doneAt: now}}]}
 `),
+		"stamp target declared keyed": typ(`  names: {singular: contact, plural: contacts}
+  properties:
+    doneAt: {type: datetime, keyed: true}
+    m: {type: state, states: [a, b], transitions: [{from: a, to: b, stamps: {doneAt: now}}]}
+`),
 		"unknown machine key": typ(`  names: {singular: contact, plural: contacts}
   properties: {m: {type: state, states: [a], guards: []}}
 `),
