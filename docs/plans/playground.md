@@ -152,18 +152,23 @@ since later stops read what earlier ones created.
    (`advise-note-edits`), so the card stays pending with the judge's
    recommendation printed for you. Decide it yourself.
 
-7. **Refusal and the floor.** Still with notekeeper: *"Delete the gift
-   ideas note."* Two different walls, both honest in the transcript: a
-   mutate delete refuses outright (`refuse-note-deletes` names itself),
-   and the `shredder` tool comes back HELD instead — its declaration says
-   `confirmation: always`, so the effect became a request no policy can
-   wave through. Accept that request and the note tombstones.
+7. **Refusal outranks everything.** Still with notekeeper: *"Delete the
+   gift-ideas note; if mutate is refused, try the shredder too."* BOTH
+   paths refuse, each naming `refuse-note-deletes` in the transcript —
+   including the shredder, whose author demanded review
+   (`confirmation: always`), because composition is most-restrictive-wins
+   and the owner's refuse beats the author's gate. Nothing pends; the
+   note stands.
 
-8. **The policy door is the owner's.** Data → recordpatchpolicies: the
-   three rules as ordinary records you can edit — flip `gate-tasks` to
-   `mode: advise`, chat with taskbot again, and the same write now waits
-   for you with a recommendation. No agent can do what you just did: the
-   kind refuses installed code by name.
+8. **The policy door is the owner's, live.** Data → recordpatchpolicies:
+   the three rules as ordinary records only you can edit. Set `disabled:
+   true` on `refuse-note-deletes`, ask notekeeper to shred the note again,
+   and NOW the shredder comes back HELD — the author's floor caught it,
+   and a delete request waits for you. Accept it and the note tombstones.
+   Then flip `gate-tasks` to `mode: advise` and chat with taskbot again:
+   the same write now waits for you with a recommendation instead of
+   deciding itself. No agent can do any of this editing: the policy kind
+   refuses installed code by name.
 
 9. **Everything is rows.** Changelog: the whole session as deltas — the
    gated request's put, the judge's audit write under the `substrate`

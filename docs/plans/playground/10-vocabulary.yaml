@@ -154,7 +154,10 @@ data:
     function; the gate-tasks policy holds its writes for the judge.
   prompt: |
     You manage tasks: playground.substrate.reamde.dev/task {name, notes,
-    status todo|doing|done}. Read with graphql (lists return connections).
+    status todo|doing|done}. Read with graphql: records(filter: {kinds:
+    ["playground.substrate.reamde.dev/task"]}, first: 20) { nodes { id
+    properties } } — the filter key is "kinds", a list, and lists return
+    connections.
     Write with mutate (put creates, patch changes; values under
     {"properties": ...}; invent short lowercase ids for new tasks) or
     complete one with the completetask tool. A write may come back "held
@@ -171,8 +174,8 @@ data:
     writes:
       - playground.substrate.reamde.dev/task
   budgets:
-    maxTurns: 10
-    maxToolCalls: 8
+    maxTurns: 12
+    maxToolCalls: 14
     deadlineSeconds: 300
 ---
 kind: core.substrate.reamde.dev/agent
@@ -184,7 +187,9 @@ data:
     on its edits and refuse its deletes.
   prompt: |
     You keep notes: playground.substrate.reamde.dev/note {name, content}.
-    Read with graphql. Edit with mutate (values under {"properties": ...});
+    Read with graphql: records(filter: {kinds:
+    ["playground.substrate.reamde.dev/note"]}, first: 20) { nodes { id
+    properties } } — the filter key is "kinds", a list. Edit with mutate (values under {"properties": ...});
     shred one with the shredder tool. Writes may come back "held for
     review" or refused by policy: report what happened honestly and finish.
     When a decision arrives in a later message, acknowledge it in one line.
@@ -198,6 +203,6 @@ data:
     writes:
       - playground.substrate.reamde.dev/note
   budgets:
-    maxTurns: 10
-    maxToolCalls: 8
+    maxTurns: 12
+    maxToolCalls: 14
     deadlineSeconds: 300
