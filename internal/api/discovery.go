@@ -25,8 +25,10 @@ type discoveryDoc struct {
 	// STORED dialect is not on the wire anywhere: it lives in each
 	// repository's own `vocabulary_dialect` row, and this endpoint opens none.
 	Vocabulary vocabularyInfo `json:"vocabulary"`
-	// Changelog carries the retention horizon: the oldest resumable seq
-	// (0 today; ruling A4).
+	// Changelog carries the retention horizon (the oldest resumable seq, 0
+	// today; ruling A4) and the binary's max changelog dialect. The stored
+	// changelog dialect is per-repository too, in that repository's own
+	// `changelog_dialect` row, and this endpoint opens none.
 	Changelog changelogInfo `json:"changelog"`
 	// Features is the capability list a client reads instead of feature-probing.
 	Features []featureInfo `json:"features"`
@@ -103,6 +105,10 @@ type vocabularyInfo struct {
 
 type changelogInfo struct {
 	Horizon int64 `json:"horizon"`
+	// MaxDialect is the newest spelling of changelog entries this binary can
+	// replay. A repository whose entries are written above it refuses to open,
+	// which a client sees as `503 unavailable` on every request it carries.
+	MaxDialect int `json:"maxDialect"`
 }
 
 type featureInfo struct {
@@ -119,7 +125,7 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 			MaxDialect: h.maxDialect,
 			Note:       "binary maximum; the stored dialect is per-repository, in that repository's own vocabulary_dialect row, and is not served",
 		},
-		Changelog: changelogInfo{Horizon: retentionHorizon()},
+		Changelog: changelogInfo{Horizon: retentionHorizon(), MaxDialect: h.maxChangelog},
 		Features:  features(),
 		Grammar: grammarInfo{
 			Kind:       "<authority>/<name> | <name>",

@@ -143,6 +143,16 @@ binary would otherwise misread the migrated rows. Rolling the image back is
 therefore not a fix; restoring the pre-upgrade dump is. Rolling *forward* to a
 binary whose maximum covers the stamp still is.
 
+**The changelog carries a dialect of its own, and it refuses the same way.**
+Beside the vocabulary stamp each repository carries a
+[changelog dialect](changelog.md#the-dialect-a-changelog-is-written-in): what a
+binary must understand to replay its entries. It is stamped when the repository
+is created and at every open, before the binary appends anything, so an older
+binary meeting a newer stamp refuses the open instead of serving a history it
+could not rebuild. Nothing is rewritten and there is no promotion step: a
+changelog is append-only, so old entries keep the spelling they were written
+in.
+
 **The promotion refuses rather than guesses.** It translates every declaration
 row this repository holds, and if one installed closure no longer parses under
 the new binary it fails the open, logging the authority and the reason, instead

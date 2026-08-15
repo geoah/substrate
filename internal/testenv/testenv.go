@@ -108,10 +108,11 @@ func Start(t *testing.T, opts ...Option) *Env {
 		t.Fatalf("testenv: load catalog: %v", err)
 	}
 	handler := api.New(api.Config{
-		Service:    svc,
-		Catalog:    cat,
-		InviteCode: InviteCode,
-		MaxDialect: engine.MaxSchemaDialect(),
+		Service:             svc,
+		Catalog:             cat,
+		InviteCode:          InviteCode,
+		MaxDialect:          engine.MaxSchemaDialect(),
+		MaxChangelogDialect: engine.MaxChangelogDialect(),
 	})
 
 	// A real listener on a kernel-assigned port: two tests in one binary must

@@ -43,6 +43,9 @@ import (
 //     half-finished oauth flow or drain has no meaning in the changelog at all.
 //   - vocabulary_dialect, vocabulary_promotions — the STORE SHAPE's ledger, about the
 //     tables rather than about their contents.
+//   - changelog_dialect — what dialect the entries being replayed are written
+//     in (changelogdialect.go). A replay does not rewrite an entry, so it
+//     cannot change the answer.
 //   - repositories — the control plane, one row per user.
 
 // RebuildReport is what one rebuild did.

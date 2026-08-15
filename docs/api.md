@@ -268,12 +268,14 @@ a domain is a substrate at all before it speaks the rest of the contract, the
 same way `/.well-known/openid-configuration` works for an OIDC issuer. It
 reports: the served API versions; the server build; the binary's maximum
 [vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract);
-the [changelog horizon](changelog.md#frames-and-the-horizon); the reference
+the [changelog horizon](changelog.md#frames-and-the-horizon) and the binary's
+maximum [changelog dialect](changelog.md#the-dialect-a-changelog-is-written-in);
+the reference
 grammar this deployment speaks; the authentication endpoints beside the
 versioned API (`/register`, `/login`, `/tokens`, `/password`, `/totp`); what
-registration asks for and whether it is open at all; and a feature list. (A
-repository's own stored dialect never appears on the wire; a binary too old
-for a store refuses to open it, which surfaces as `unavailable`.) That
+registration asks for and whether it is open at all; and a feature list. (Both
+stored dialects are per-repository and never appear on the wire; a binary too
+old for a store refuses to open it, which surfaces as `unavailable`.) That
 feature list is what replaces probing for 501s: each entry names a feature
 and its stability, and the agent surface reports `alpha`:
 
@@ -281,7 +283,7 @@ and its stability, and the agent surface reports `alpha`:
 {"versions": [{"name": "v1", "status": "served"}],
  "server": {"version": "…", "build": "…"},
  "vocabulary": {"maxDialect": 2, "note": "…"},
- "changelog": {"horizon": 0},
+ "changelog": {"horizon": 0, "maxDialect": 1},
  "features": [{"name": "triggers", "stability": "stable"},
               {"name": "agents", "stability": "alpha"}],
  "grammar": {"kind": "<authority>/<name> | <name>",

@@ -42,7 +42,7 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 | ---- | ---------- |
 | **vocabulary** | Everything declarable, held as ordinary records: authorities, kinds, property types, traits, recordmappings, functions, agents, bundles and actors. Applied through `POST /{core}/vocabulary/apply`. |
 | **registry** | The live, in-memory vocabulary a repository rebuilds from its own stored declarations when it opens. |
-| **dialect** | A monotonic integer stamped on each repository naming the shape its stored declarations speak. A binary older than the stamp refuses to open it. |
+| **dialect** | A monotonic integer stamped on each repository naming a shape it speaks. A binary older than the stamp refuses to open the repository. There are two, stamped and refused the same way: the **vocabulary dialect** over its stored declarations, and the **changelog dialect** over the entries in its changelog. |
 | **managed** | A declared property the ENGINE stamps (`managed: true`): a declaration's `version`, its `source`, the quarantine marks, a bundle's lifecycle bools, and the decision stamps `decidedAt` and `resolvedAt`. A write may echo the stored value, but a different one is refused rather than dropped, and a client renders it read-only. The one exception is a declaration's `version`, which the engine resolves itself: an incoming value is honored only when it moves past the stored one, and anything else (absent, echoed, lower) is stamped server-side. Not projection's *managed properties*, which is the ownership rule over a record's values. |
 
 ## Installed things

@@ -134,6 +134,31 @@ or it is a finding). A pinned head that stopped matching either matches a
 reseal epoch's recorded old head — reported, so you re-pin — or it is a
 plain finding.
 
+## The dialect a changelog is written in
+
+Each repository carries a **changelog dialect**: a monotonic integer naming the
+ops and fold effects a binary must understand to replay its entries. The
+binary stamps it in the transaction that creates the repository, and at every
+open before it appends anything, so the stamp is never behind the entries the
+stamping binary wrote. A binary whose maximum is below the stored one refuses
+to open that repository, with the named error "the changelog speaks a newer
+dialect than this binary can replay"; the API surfaces the refusal as `503
+repository temporarily unavailable`, never as an invalid token, exactly like
+the [vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)
+that governs stored declaration rows.
+
+The refusal is the point. Without it an old binary opens a store it cannot
+replay, serves it for weeks, and fails only when somebody runs `repository
+rebuild`, the day the changelog had to be replayable. Both dialects are 1
+today, and the stored one is never on the wire: what
+[API discovery](api.md#discovery) reports is the binary's maximum.
+
+The stamp is about the BINARY that touched the repository, not about which
+entries it happened to write: a newer binary that opens a repository and
+appends nothing new still bars the older one. Downgrading after that open
+means restoring a dump, the same as for a vocabulary promotion
+([upgrading the binary](operations.md#upgrading-the-binary)).
+
 ## Watching
 
 Any collection, and the changelog itself, streams with `?watch=1`:

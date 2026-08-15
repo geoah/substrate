@@ -493,14 +493,19 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		watch: newBroadcaster(),
 		info:  repo.info(),
 	}
-	// The stored rows speak one DIALECT: the gate in dialect.go refuses a
-	// store newer than this binary with a named error and stamps an older one,
-	// before anything reads declaration rows back. Then the whole vocabulary
+	// A repository speaks two DIALECTS, and each has a gate that refuses a
+	// store this binary cannot serve, with a named error, before anything
+	// reads it: changelogdialect.go for the entries, dialect.go for the stored
+	// declaration rows (which it also promotes). Then the whole vocabulary
 	// rebuilds FROM the rows, and only then does the shipped-vocabulary
 	// upgrade append what a newer binary added (seed.go).
 	for _, step := range []func(context.Context) error{
-		// The chain backfill runs FIRST: every later step that writes appends
-		// entries, and an append needs a hashed head to chain from.
+		// The changelog gate runs FIRST, ahead of every step that writes: the
+		// stamp it takes is this binary's claim that it can replay what the
+		// steps below are about to append to.
+		ds.gateChangelogDialect,
+		// The chain backfill runs before the rest: every later step that writes
+		// appends entries, and an append needs a hashed head to chain from.
 		ds.backfillChain,
 		ds.promoteSchemaDialect,
 		ds.loadStoredVocabulary,
@@ -693,6 +698,15 @@ func (s *service) createSeededRepository(ctx context.Context, name string, extra
 	// while the auth material the caller writes carries the substrate's, so
 	// the changelog says which is which.
 	if err := seedDS.inTx(ctx, substrate.ActorSeed, true, func(t *txn) error {
+		// The changelog dialect, in the same transaction as the first entries
+		// written in it (changelogdialect.go). Creation never runs the open
+		// path, so a repository whose seed this binary wrote would otherwise
+		// carry entries no stamp claims until somebody opened it, and an
+		// older binary opening it first would adopt a history it cannot
+		// replay.
+		if err := t.stampChangelogDialect(maxChangelogDialect); err != nil {
+			return err
+		}
 		// The birth activation epoch, in the same transaction as the entries
 		// it covers: signed from seq 1, over an empty chain (no heads).
 		if repo.SignedFrom > 0 {

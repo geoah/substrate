@@ -328,7 +328,7 @@ var repositoryScopedTables = []string{
 	"property_offers", "changelog", "chain_epochs", "embeddings", "embed_queue",
 	"trigger_cursors", "trigger_failures", "trigger_schedule", "sealed",
 	"oauth_flows", "paged_cursors", "blobs", "vocabulary_dialect",
-	"vocabulary_promotions",
+	"vocabulary_promotions", "changelog_dialect",
 }
 
 func (s *service) repositoryByUsername(ctx context.Context, username string) (Repository, error) {
