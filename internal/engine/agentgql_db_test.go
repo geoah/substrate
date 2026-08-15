@@ -244,7 +244,7 @@ func TestAgentMutateDecidesRequestsWithinEmit(t *testing.T) {
 		t.Fatal(err)
 	}
 	task, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: taskKind, ID: "t-guarded", Properties: map[string]any{"title": "not the agent's"},
+		Kind: taskKind, ID: "t-guarded", Properties: map[string]any{"name": "not the agent's"},
 	})
 	if err != nil {
 		t.Fatal(err)

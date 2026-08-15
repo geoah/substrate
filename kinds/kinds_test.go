@@ -200,6 +200,59 @@ func TestManagedPropertiesAreNotDocumentKeys(t *testing.T) {
 	}
 }
 
+// A KIND TITLES ITSELF (decision record 0016). The `title` every record
+// carries is one untyped column the engine derives from the kind's
+// displayTemplate; a kind without one stores whatever a writer sent there
+// instead, which is a heading with no type, no description and no per-kind
+// filter. The kinds below still do that, each waiting on the work that gives
+// it a template, and the list is here so a NEW kind cannot quietly join them:
+// a kind that ships without a displayTemplate fails this test, and one that
+// gains a template has to leave the list.
+func TestEveryKindDeclaresADisplayTemplate(t *testing.T) {
+	// core's six want composed templates (issue 51); the nine bundle mirrors
+	// carry the provider's own title and move with the built-in slot's
+	// retirement (issue 68).
+	onTheSlot := map[string]bool{
+		"core.substrate.reamde.dev/recordmerge":              true,
+		"core.substrate.reamde.dev/recordmergerequest":       true,
+		"core.substrate.reamde.dev/recordpatchrequest":       true,
+		"core.substrate.reamde.dev/recordsplit":              true,
+		"core.substrate.reamde.dev/run":                      true,
+		"core.substrate.reamde.dev/trigger":                  true,
+		"firecrawl.bundles.substrate.reamde.dev/webdocument": true,
+		"github.bundles.substrate.reamde.dev/issue":          true,
+		"github.bundles.substrate.reamde.dev/pullrequest":    true,
+		"linear.bundles.substrate.reamde.dev/issue":          true,
+		"notes.bundles.substrate.reamde.dev/note":            true,
+		"notion.bundles.substrate.reamde.dev/database":       true,
+		"notion.bundles.substrate.reamde.dev/page":           true,
+		"web.bundles.substrate.reamde.dev/config":            true,
+		"web.bundles.substrate.reamde.dev/page":              true,
+	}
+	seen := map[string]bool{}
+	for _, d := range readTreeDocuments(t) {
+		if d.Kind != vocabulary.DocKind {
+			continue
+		}
+		tmpl, has := d.Data["displayTemplate"].(string)
+		if has && tmpl != "" {
+			if onTheSlot[d.ID] {
+				t.Errorf("%s declares a displayTemplate now — drop it from the list this test holds", d.ID)
+			}
+			continue
+		}
+		seen[d.ID] = true
+		if !onTheSlot[d.ID] {
+			t.Errorf("%s declares no displayTemplate, so its title is whatever a writer puts in the built-in slot — declare the heading as a property and render it (decision record 0016)", d.ID)
+		}
+	}
+	for id := range onTheSlot {
+		if !seen[id] {
+			t.Errorf("%s is listed as titling itself from the built-in slot, but the tree has no such kind", id)
+		}
+	}
+}
+
 // readTreeDocuments parses every DECLARATION document in the tree.
 func readTreeDocuments(t *testing.T) []vocabulary.Document {
 	t.Helper()

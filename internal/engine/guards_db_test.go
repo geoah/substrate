@@ -296,7 +296,7 @@ func TestApplyDiffChecksTargetVersion(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"title": "Draft the memo"}})
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "Draft the memo"}})
 	req := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{

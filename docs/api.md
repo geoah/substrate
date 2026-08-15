@@ -71,10 +71,10 @@ path):
 
 ```http
 POST /api/v1/tasks.substrate.reamde.dev/tasks
-{"properties": {"title": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
+{"properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
 → 201 {"id": "kq3v9x2m41pf", "kind": "tasks.substrate.reamde.dev/task",
-       "properties": {"title": "Buy milk", "status": "open",
+       "properties": {"name": "Buy milk", "title": "Buy milk", "status": "open",
                       "dueAt": "2026-08-13T09:00:00Z"},
        "version": 1, "createdAt": "2026-08-04T10:00:00Z",
        "updatedAt": "2026-08-04T10:00:00Z"}

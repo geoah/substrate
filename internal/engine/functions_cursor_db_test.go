@@ -106,7 +106,7 @@ def main(input, host):
     env = input["envelope"]
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
                          "id": "t-" + env["change"]["id"],
-                         "properties": {"title": env["record"]["properties"]["name"]}}]}
+                         "properties": {"name": env["record"]["properties"]["name"]}}]}
 `,
 			}),
 		},

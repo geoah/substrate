@@ -125,7 +125,7 @@ func TestPagedDrainBudgetSpansRetries(t *testing.T) {
 def main(input, host):
     page = input.get("resume") or 0
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "p-%d" % page, "properties": {"title": "x"}}],
+                         "id": "p-%d" % page, "properties": {"name": "x"}}],
             "more": {"cursor": page + 1}}
 `
 	ds, triggerID := openPagedDataset(t, "pagedbudget.test.dev", source)

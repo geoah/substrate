@@ -29,7 +29,7 @@ def main(input, host):
     title = input["args"]["title"]
     tid = "call-" + title.replace(" ", "-")
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": tid, "properties": {"title": title}}],
+                         "id": tid, "properties": {"name": title}}],
             "output": {"id": tid}}
 `)
 }
@@ -94,9 +94,9 @@ def main(input, host):
 `)
 	}
 	ownOK := `{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-               "id": "own-" + e["id"], "properties": {"title": "own " + out["id"]}}`
+               "id": "own-" + e["id"], "properties": {"name": "own " + out["id"]}}`
 	ownBroken := `{"action": "patch", "kind": "tasks.substrate.reamde.dev/task",
-                   "id": "missing-" + e["id"], "properties": {"title": "x"}}`
+                   "id": "missing-" + e["id"], "properties": {"name": "x"}}`
 
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{
@@ -162,7 +162,7 @@ func TestFailedCalleeLeavesNoDescendantEffects(t *testing.T) {
 	leaf := pyFn("leaf", map[string]any{}, []any{taskType}, `
 def main(input, host):
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "c-effect", "properties": {"title": "from c"}}]}
+                         "id": "c-effect", "properties": {"name": "from c"}}]}
 `)
 	mid := func(name, after string) map[string]any {
 		return pyFn(name, map[string]any{
@@ -187,7 +187,7 @@ def main(input, host):
     except Exception:
         pass
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "a-" + mid, "properties": {"title": "a survived " + mid}}]}
+                         "id": "a-" + mid, "properties": {"name": "a survived " + mid}}]}
 `)
 	ds, ops := newFnDataset(t, nil,
 		leaf,
@@ -220,7 +220,7 @@ func TestDeclaredOutputRefusesNil(t *testing.T) {
 	silent := pyFn("silent", map[string]any{"returns": shaped}, []any{taskType}, `
 def main(input, host):
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "silent-effect", "properties": {"title": "x"}}]}
+                         "id": "silent-effect", "properties": {"name": "x"}}]}
 `)
 	nuller := pyFn("nuller", map[string]any{"returns": shaped}, []any{taskType}, `
 def main(input, host):

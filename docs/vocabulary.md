@@ -133,7 +133,13 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
 - **Reserved property names.** `title`, `body`, `at`, `endsAt`, `dueAt` are
   the five properties every record already carries, each with its own storage
   column; redeclaring one is a load error naming the built-in. The temporal
-  three arrive through the `temporal` trait.
+  three arrive through the `temporal` trait. The built-in `title` is not a
+  kind's display storage either: a kind that has a heading declares its own
+  property for it (`name`, `summary`, `subject`) and renders the title with a
+  `displayTemplate`, which is what the engine writes into the column. On a
+  kind that declares one, a written `title` is IGNORED rather than refused, so
+  a writer that means the heading writes the declared property
+  ([decision record 0016](decisions/0016-a-kind-titles-itself-from-a-declared-property.md)).
 - **Unknown keys anywhere in `data` are refused**, so a typo cannot be
   silently ignored.
 - **Mapping constraints**: at most one `recordmapping` per `from` kind; its

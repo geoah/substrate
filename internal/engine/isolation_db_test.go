@@ -60,7 +60,7 @@ func twoRepositories(t *testing.T) pair {
 		importVocabulary(t, ds, "tasks")
 		mustPut(t, ds, owner, substrate.PutInput{
 			Kind: "task", ID: "shared-id",
-			Properties: map[string]any{"title": name + " only"},
+			Properties: map[string]any{"name": name + " only"},
 		})
 	}
 	return p
@@ -305,7 +305,7 @@ func TestAdvisoryLocksArePerRepository(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		_, err := beta.Put(ctx, owner, substrate.PutInput{
-			Kind: "task", Properties: map[string]any{"title": "while alpha's changelog is locked"},
+			Kind: "task", Properties: map[string]any{"name": "while alpha's changelog is locked"},
 		})
 		done <- err
 	}()

@@ -28,7 +28,7 @@ func upgradedRepository(t *testing.T) (*service, string, *sql.DB, string) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
-		Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"title": "old world"},
+		Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "old world"},
 	}); err != nil {
 		t.Fatalf("put: %v", err)
 	}

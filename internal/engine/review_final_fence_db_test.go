@@ -196,7 +196,7 @@ func installToolBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 		"source": `
 def main(input, host):
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "t-tool", "properties": {"title": "written"}}],
+                         "id": "t-tool", "properties": {"name": "written"}}],
             "output": {"ok": True}}
 `,
 	})

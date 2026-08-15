@@ -99,23 +99,25 @@ properties:
 ```http
 POST /api/v1/tasks.substrate.reamde.dev/tasks
 Authorization: Bearer substrate_tok_…
-{"properties": {"title": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
+{"properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
 → 201 {"id": "kq3v9x2m41pf", "kind": "tasks.substrate.reamde.dev/task",
-       "properties": {"title": "Buy milk", "status": "open",
+       "properties": {"name": "Buy milk", "title": "Buy milk", "status": "open",
                       "dueAt": "2026-08-13T09:00:00Z"},
        "version": 1,
        "createdAt": "2026-08-12T10:00:00Z", "updatedAt": "2026-08-12T10:00:00Z"}
 ```
 
-The server assigned the id and the `status` state started at its declared
-`initial` value. The same write as a file `substratectl apply` takes:
+The server assigned the id, the `status` state started at its declared
+`initial` value, and `title` came back without being written: the task kind
+[derives it](vocabulary.md#admission) from `name`. The same write as a file
+`substratectl apply` takes:
 
 ```yaml
 kind: tasks.substrate.reamde.dev/task
 data:
   properties:
-    title: Buy milk
+    name: Buy milk
     dueAt: 2026-08-13T09:00:00Z
 ```
 
@@ -143,7 +145,7 @@ GET /api/v1/core.substrate.reamde.dev/changes?watch=1
 {"bookmark": 412}
 {"seq": 413, "ts": "2026-08-12T10:00:00.183742Z", "actor": "api", "op": "put",
  "kind": "tasks.substrate.reamde.dev/task", "recordId": "kq3v9x2m41pf",
- "payload": {"created": true, "properties": ["title", "dueAt"]}}
+ "payload": {"created": true, "properties": ["name", "dueAt"]}}
 ```
 
 Without `from`, the stream opens at the current head and tails from there; the

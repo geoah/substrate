@@ -79,7 +79,7 @@ metadata:
     owner/starred: true
 data:
   properties:
-    title: Buy milk
+    name: Buy milk
     description: the oat kind
     status: open                  # a state property, see Validation below
     dueAt: 2026-08-13T09:00:00Z

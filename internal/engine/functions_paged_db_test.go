@@ -70,7 +70,7 @@ def main(input, host):
     page = input.get("resume") or 0
     depth = input.get("causalDepth", 0)
     effects = [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                "id": "p-%%d" %% page, "properties": {"title": str(depth)}}]
+                "id": "p-%%d" %% page, "properties": {"name": str(depth)}}]
     if page < %d - 1:
         return {"effects": effects, "more": {"cursor": page + 1}}
     return {"effects": effects}
@@ -138,7 +138,7 @@ func TestPagedDrainMaxPagesCap(t *testing.T) {
 def main(input, host):
     page = input.get("resume") or 0
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "p-%d" % page, "properties": {"title": "x"}}],
+                         "id": "p-%d" % page, "properties": {"name": "x"}}],
             "more": {"cursor": page + 1}}
 `
 	ds, triggerID := openPagedDataset(t, "pagedcap.test.dev", source)
@@ -256,7 +256,7 @@ def main(input, host):
     env = input["envelope"]
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
                          "id": "t-" + env["change"]["id"],
-                         "properties": {"title": env["record"]["properties"]["name"]}}]}
+                         "properties": {"name": env["record"]["properties"]["name"]}}]}
 `
 	ds, triggerID := openPagedDataset(t, "pagedplain.test.dev", source)
 	ctx := context.Background()
@@ -300,10 +300,10 @@ def main(input, host):
     page = input.get("resume") or 0
     if page == 0:
         host.effects.put("tasks.substrate.reamde.dev/task", "pcas",
-                         properties={"title": "a"}, if_version=0)
+                         properties={"name": "a"}, if_version=0)
         return {"more": host.page.more(1)}
     host.effects.patch("tasks.substrate.reamde.dev/task", "pcas",
-                       properties={"title": "b"}, if_version=0)
+                       properties={"name": "b"}, if_version=0)
     return {}
 `
 	ds, triggerID := openPagedDataset(t, "pagedcas.test.dev", source)

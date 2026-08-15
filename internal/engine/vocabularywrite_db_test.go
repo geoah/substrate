@@ -204,7 +204,7 @@ func TestSchemaApplySwapsFunctionsLive(t *testing.T) {
 def main(input, host):
     c = input["envelope"]["change"]
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "t-" + c["id"], "properties": {"title": "` + title + `"}}]}
+                         "id": "t-" + c["id"], "properties": {"name": "` + title + `"}}]}
 `,
 		}
 	}
@@ -291,7 +291,7 @@ func TestSchemaWritesSerializeDataWritesFlow(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			_, err := ds.Put(ctx, owner, substrate.PutInput{
-				Kind: "task", Properties: map[string]any{"title": fmt.Sprintf("t%d", i)},
+				Kind: "task", Properties: map[string]any{"name": fmt.Sprintf("t%d", i)},
 			})
 			if err != nil {
 				errs <- fmt.Errorf("data write %d: %w", i, err)
@@ -894,7 +894,7 @@ func TestTriggerOutlivesItsCallable(t *testing.T) {
 def main(input, host):
     c = input["envelope"]["change"]
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "t-" + c["id"], "properties": {"title": "mirrored"}}]}
+                         "id": "t-" + c["id"], "properties": {"name": "mirrored"}}]}
 `,
 	}
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{

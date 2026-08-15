@@ -80,10 +80,10 @@ func TestChainEveryEntryHashedAndVerifies(t *testing.T) {
 	ctx := context.Background()
 	task := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       "tasks.substrate.reamde.dev/task",
-		Properties: map[string]any{"title": "Ship it"},
+		Properties: map[string]any{"name": "Ship it"},
 	})
 	mustPatch(t, ds, owner, "tasks.substrate.reamde.dev/task", task.ID, substrate.PatchInput{
-		Properties: map[string]any{"title": "Ship it now"},
+		Properties: map[string]any{"name": "Ship it now"},
 	})
 	if _, err := ds.Delete(ctx, owner, "tasks.substrate.reamde.dev/task", task.ID); err != nil {
 		t.Fatalf("delete: %v", err)
@@ -117,8 +117,8 @@ func TestChainEveryEntryHashedAndVerifies(t *testing.T) {
 func TestChainNamesEveryTamper(t *testing.T) {
 	t.Parallel()
 	svc, ds, dsn := newChainDataset(t)
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"title": "a"}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"title": "b"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "a"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "b"}})
 	db := rawDB(t, dsn)
 
 	var mid int64
@@ -168,8 +168,8 @@ func TestChainNamesEveryTamper(t *testing.T) {
 func TestChainDeletionReadsAsGapAndRebuildRefuses(t *testing.T) {
 	t.Parallel()
 	svc, ds, dsn := newChainDataset(t)
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"title": "a"}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"title": "b"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "a"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "b"}})
 	db := rawDB(t, dsn)
 	var mid int64
 	if err := db.QueryRow(`SELECT max(seq) - 1 FROM changelog`).Scan(&mid); err != nil {
@@ -199,9 +199,9 @@ func TestChainDeletionReadsAsGapAndRebuildRefuses(t *testing.T) {
 func TestChainTailTruncationIsTheDocumentedLimit(t *testing.T) {
 	t.Parallel()
 	svc, ds, dsn := newChainDataset(t)
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"title": "a"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "a"}})
 	before := mustVerify(t, svc, "geoah")
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"title": "b"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "b"}})
 	after := mustVerify(t, svc, "geoah")
 	db := rawDB(t, dsn)
 	if _, err := db.Exec(`DELETE FROM changelog WHERE seq = (SELECT max(seq) FROM changelog)`); err != nil {
@@ -246,7 +246,7 @@ func TestChainBackfillStampsLegacyHistory(t *testing.T) {
 	t.Parallel()
 	_, ds, dsn := newChainDataset(t)
 	ctx := context.Background()
-	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"title": "old world"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "old world"}})
 	db := rawDB(t, dsn)
 	// Wind the chain back: a store written before the chain (and before
 	// signing) existed — placeholder signatures, no signing state at all.
@@ -317,7 +317,7 @@ func TestChangelogSigningSignsAndDetectsRemoval(t *testing.T) {
 	svc, ds, dsn := newChainDataset(t)
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       "tasks.substrate.reamde.dev/task",
-		Properties: map[string]any{"title": "signed"},
+		Properties: map[string]any{"name": "signed"},
 	})
 
 	report := mustVerify(t, svc, "geoah")
@@ -379,7 +379,7 @@ func TestSigningActivationIsOneWay(t *testing.T) {
 	ctx := context.Background()
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       "tasks.substrate.reamde.dev/task",
-		Properties: map[string]any{"title": "before signing"},
+		Properties: map[string]any{"name": "before signing"},
 	})
 	// A keyless repository is the state verify complains about by name.
 	unsigned := mustVerify(t, svc, "geoah")
@@ -401,7 +401,7 @@ func TestSigningActivationIsOneWay(t *testing.T) {
 	}
 	mustPut(t, ds3, owner, substrate.PutInput{
 		Kind:       "tasks.substrate.reamde.dev/task",
-		Properties: map[string]any{"title": "now signed"},
+		Properties: map[string]any{"name": "now signed"},
 	})
 	db := rawDB(t, dsn)
 	var sig []byte
@@ -426,7 +426,7 @@ func TestSigningActivationIsOneWay(t *testing.T) {
 	}
 	if _, err := ds4.Put(ctx, owner, substrate.PutInput{
 		Kind:       "tasks.substrate.reamde.dev/task",
-		Properties: map[string]any{"title": "must refuse"},
+		Properties: map[string]any{"name": "must refuse"},
 	}); err == nil ||
 		!strings.Contains(err.Error(), "signing key is unavailable") {
 		t.Fatalf("a keyless host appended to a signed repository: %v", err)

@@ -66,11 +66,11 @@ func writeSomeHistory(t *testing.T, ds substrate.Dataset) {
 	})
 	second := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       "tasks.substrate.reamde.dev/task",
-		Properties: map[string]any{"title": "Rebuild the repository", "description": "replay every entry"},
+		Properties: map[string]any{"name": "Rebuild the repository", "description": "replay every entry"},
 	})
 	third := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       "tasks.substrate.reamde.dev/task",
-		Properties: map[string]any{"title": "Collect me", "description": "and then go"},
+		Properties: map[string]any{"name": "Collect me", "description": "and then go"},
 	})
 
 	// A property changes, one is removed, a label lands, an annotation lands.
@@ -182,7 +182,7 @@ func TestRebuildKeeps64BitIntegers(t *testing.T) {
 
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind:        "tasks.substrate.reamde.dev/task",
-		Properties:  map[string]any{"title": "Count past the mantissa"},
+		Properties:  map[string]any{"name": "Count past the mantissa"},
 		Annotations: map[string]any{"owner/count": big},
 	})
 
@@ -212,7 +212,7 @@ func TestLogEntryCarriesValues(t *testing.T) {
 	before := maxSeq(t, ds)
 	e := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       "tasks.substrate.reamde.dev/task",
-		Properties: map[string]any{"title": "Carry the values", "description": "a delta, with values"},
+		Properties: map[string]any{"name": "Carry the values", "description": "a delta, with values"},
 	})
 
 	var entry substrate.Change
