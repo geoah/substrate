@@ -3,10 +3,10 @@
 # and anything not named here is deleted, so an edit in the UI is drift the
 # next run reverts.
 #
-# Three prefixes and no more: type/ is what it is (the issue forms assign
+# Two prefixes and a bare tier: type/ is what it is (the issue forms assign
 # these, and dependabot assigns type/dependencies), area/ is where it lands
 # (labeler.yml assigns these on a pull request, from the paths it touches),
-# priority/ is when. GitHub's built-in close reasons carry
+# and p0/p1/p2 is when. GitHub's built-in close reasons carry
 # duplicate/invalid/wontfix.
 
 # ---- type: assigned by the issue forms ------------------------------------
@@ -49,13 +49,13 @@
   description: the build, the toolchain, the workflows
 
 # ---- priority: when --------------------------------------------------------
-- name: priority/urgent
+- name: p0
   color: fca5a5
   description: drop other work; this blocks people now
-- name: priority/soon
+- name: p1
   color: fed7aa
   description: the next batch of work
-- name: priority/backlog
+- name: p2
   color: fef08a
   description: real, and it can wait
 
