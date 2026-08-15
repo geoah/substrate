@@ -14,7 +14,7 @@
 # this stage must build the console on the node the console is TESTED on. It
 # briefly ran on 26, which builds a dist fine but is a node the test suite has
 # never passed under (node's own global localStorage shadows jsdom's).
-FROM --platform=$BUILDPLATFORM node:22-alpine AS web
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web
 WORKDIR /web/console
 RUN corepack enable
 COPY web/console/package.json web/console/pnpm-lock.yaml* web/console/pnpm-workspace.yaml* ./
