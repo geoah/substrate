@@ -62,18 +62,18 @@ data:
     # the transition, so nothing has to remember to set it.
     status:
       type: state
-      description: "proposed waits for the owner; open until done or dropped"
+      description: "proposed waits for the owner; open until done or abandoned"
       states:
         - proposed
         - open
         - done
-        - dropped
+        - abandoned
       initial: open
       transitions:
         - from: proposed
           to: open
         - from: proposed
-          to: dropped
+          to: abandoned
         - from: open
           to: done
           stamps:

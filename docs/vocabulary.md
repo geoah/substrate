@@ -215,7 +215,7 @@ Widening diffs (a new kind, a new optional property, a new enum value, a new
 state or transition, removing `required:`) always admit. The guard counts, it
 never blanket-refuses the class: removing an enum value no record holds
 admits, and dropping a property admits once every record has nulled it. As a
-minimal example, re-applying the task kind with `dropped` removed refuses
+minimal example, re-applying the task kind with `abandoned` removed refuses
 while one task still sits in it:
 
 ```yaml
