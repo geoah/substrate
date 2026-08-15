@@ -804,7 +804,63 @@ export interface KindEdges {
   inverse?: string
   /** What the inverse means, from the target's side. */
   inverseDescription?: string
+  /** Clients should stop offering this link. */
+  deprecated?: boolean
+  /** The values an edge row of this rel may carry. */
+  properties?: Record<string, KindEdgesProperties>
 }
+
+/** KindEdgesProperties is one value of the `edges.properties` object declared
+ * on core.substrate.reamde.dev/kind.
+ *
+ * the values an edge row of this rel may carry
+ */
+export interface KindEdgesProperties {
+  /** The datatype, or an authority-local refinement of one. */
+  type?: string
+  /** What the value means. */
+  description?: string
+  /** The human label a client renders instead of the name. */
+  displayName?: string
+  /** An edge written without it is refused. */
+  required?: boolean
+  /** Clients should stop offering this value. */
+  deprecated?: boolean
+  /** The regular expression a value matches. */
+  pattern?: string
+  /** The lowest admitted number. */
+  min?: number
+  /** The highest admitted number. */
+  max?: number
+  /** The admitted values, in render order. */
+  values?: KindEdgesPropertiesValues[]
+}
+
+/** The properties KindEdgesProperties's declaration marks required. A form
+ * refuses to submit without them; the server does not, so nothing here is a
+ * guarantee about a record that arrives.
+ */
+export const kindEdgesPropertiesRequired: string[] = ["type"]
+
+/** KindEdgesPropertiesValues is one value of the `edges.properties.values`
+ * object declared on core.substrate.reamde.dev/kind.
+ *
+ * the admitted values, in render order
+ */
+export interface KindEdgesPropertiesValues {
+  /** The stored value. */
+  value?: string
+  /** The human label a client renders beside it. */
+  label?: string
+  /** Clients should stop offering this value. */
+  deprecated?: boolean
+}
+
+/** The properties KindEdgesPropertiesValues's declaration marks required. A
+ * form refuses to submit without them; the server does not, so nothing here is
+ * a guarantee about a record that arrives.
+ */
+export const kindEdgesPropertiesValuesRequired: string[] = ["value"]
 
 /** LLMInteraction is core.substrate.reamde.dev/llminteraction.
  *
@@ -1310,6 +1366,8 @@ export interface PropertyTypeValues {
   value?: string
   /** The human label a client renders beside it. */
   label?: string
+  /** Clients should stop offering this value. */
+  deprecated?: boolean
 }
 
 /** The properties PropertyTypeValues's declaration marks required. A form

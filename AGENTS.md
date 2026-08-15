@@ -260,7 +260,8 @@ before the grammar widens.
   Additive changes (new kind, new optional property, new enum value, new
   state) upgrade cleanly; narrowings (drop, retype, remove a value, add
   `required`) are refused while live records hold the old shape, so prefer
-  add-and-deprecate. CI runs `mise run kinds:check` and refuses the merge
+  add-and-deprecate. `deprecated: true` is the marker, on a property, an
+  edge or one enum value. CI runs `mise run kinds:check` and refuses the merge
   otherwise.
 - **A kind titles itself from a property it declares.** The built-in `title`
   every record carries is derived storage, never a kind's input: a kind with a
@@ -268,6 +269,15 @@ before the grammar widens.
   the title with a `displayTemplate`. A written `title` is ignored on any kind
   that declares one, so a writer that means the heading writes the property
   ([0016](docs/decisions/0016-a-kind-titles-itself-from-a-declared-property.md)).
+- **A dialect key is reserved by name, never tolerated by prefix.** A
+  declaration's key set is closed, so an unknown key quarantines the authority
+  and adding one is an upgrade of every binary that reads the closure. New
+  keys therefore land inert and validated, in batches, and there is no `x-`
+  escape hatch
+  ([0020](docs/decisions/0020-dialect-keys-are-reserved-not-tolerated.md)).
+  `unique`, `deprecated`, `edges.<rel>.properties` and `renamedFrom` are
+  reserved today: stored, refused where they could not be honored, and acted
+  on by nothing.
 - **The console mirrors the wire by hand, and a golden file holds it to it.**
   `web/console/src/lib/api/types.ts` is written to match the structs in
   `internal/substrate`; nothing generates it. `wire.golden.json` is where the

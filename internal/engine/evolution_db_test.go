@@ -261,6 +261,135 @@ func TestSchemaEvolutionStringToEnumFollowsTheValues(t *testing.T) {
 	})
 }
 
+// The reserved keys of issue 110 travel the same road renamedFrom does: through
+// admission, into the stored declaration row, and back out of it when a later
+// write rebuilds the candidate registry from rows. The edge block is the one
+// that could not be taken on faith: core's own `kind` declaration types
+// `edges` field by field, so a row carrying an undeclared one is refused.
+func TestSchemaEvolutionReservedKeysRoundTrip(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	props := evoBaseProps()
+	props["serial"] = map[string]any{"type": "string", "unique": true}
+	props["note"] = map[string]any{"type": "string", "deprecated": true}
+	props["level"] = map[string]any{"type": "enum", "values": []any{
+		"low", map[string]any{"value": "high", "deprecated": true},
+	}}
+	edges := map[string]any{
+		"author": map[string]any{
+			"to": "any", "properties": map[string]any{
+				"order": map[string]any{"type": "int"},
+				"since": map[string]any{"type": "datetime", "deprecated": true},
+				"role": map[string]any{"type": "enum", "values": []any{
+					map[string]any{"value": "writer"},
+					map[string]any{"value": "editor"},
+				}},
+			},
+		},
+		"predecessor": map[string]any{"to": "any", "deprecated": true},
+	}
+	apply := func() error {
+		_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+			vocabulary.AuthorityManifest(evoAuthority, 0),
+			vocabulary.KindManifest(evoAuthority,
+				map[string]any{"singular": "gizmo", "plural": "gizmos"},
+				map[string]any{"properties": props, "edges": edges}),
+		})
+		return err
+	}
+	if err := apply(); err != nil {
+		t.Fatalf("the reserved keys must be admitted: %v", err)
+	}
+
+	assertStored := func(when string) {
+		t.Helper()
+		ty, err := ds.Get(ctx, "core.substrate.reamde.dev/kind", evoAuthority+"/gizmo")
+		if err != nil {
+			t.Fatalf("%s: read stored type: %v", when, err)
+		}
+		stored, _ := ty.Properties["properties"].(map[string]any)
+		serial, _ := stored["serial"].(map[string]any)
+		if got, _ := serial["unique"].(bool); !got {
+			t.Errorf("%s: stored unique = %v", when, serial["unique"])
+		}
+		note, _ := stored["note"].(map[string]any)
+		if got, _ := note["deprecated"].(bool); !got {
+			t.Errorf("%s: stored deprecated = %v", when, note["deprecated"])
+		}
+		level, _ := stored["level"].(map[string]any)
+		values, _ := level["values"].([]any)
+		if len(values) != 2 {
+			t.Fatalf("%s: stored enum values = %v", when, level["values"])
+		}
+		high, _ := values[1].(map[string]any)
+		if got, _ := high["deprecated"].(bool); !got {
+			t.Errorf("%s: stored enum value deprecated = %v", when, values[1])
+		}
+		se, _ := ty.Properties["edges"].(map[string]any)
+		author, _ := se["author"].(map[string]any)
+		edgeProps, _ := author["properties"].(map[string]any)
+		order, _ := edgeProps["order"].(map[string]any)
+		if got, _ := order["type"].(string); got != "int" {
+			t.Errorf("%s: stored edge property = %v", when, edgeProps["order"])
+		}
+		role, _ := edgeProps["role"].(map[string]any)
+		roleValues, _ := role["values"].([]any)
+		if len(roleValues) != 2 {
+			t.Fatalf("%s: stored edge enum values = %v", when, role["values"])
+		}
+		writer, _ := roleValues[0].(map[string]any)
+		if got, _ := writer["value"].(string); got != "writer" {
+			t.Errorf("%s: stored edge enum value = %v", when, roleValues[0])
+		}
+		pre, _ := se["predecessor"].(map[string]any)
+		if got, _ := pre["deprecated"].(bool); !got {
+			t.Errorf("%s: stored edge deprecated = %v", when, pre["deprecated"])
+		}
+	}
+	assertStored("after apply")
+
+	version := func(when string) int64 {
+		t.Helper()
+		ty, err := ds.Get(ctx, "core.substrate.reamde.dev/kind", evoAuthority+"/gizmo")
+		if err != nil {
+			t.Fatalf("%s: read stored type: %v", when, err)
+		}
+		v, _ := vocabulary.VersionValue(ty.Properties["version"])
+		return v
+	}
+	first := version("after apply")
+
+	// Applying the SAME document again is not a change. It would be one if the
+	// loader rewrote any part of the block on its way into the row, because the
+	// bump compares the authored document against the stored one: the version
+	// would climb on every apply and every repository would see an upgrade that
+	// changed nothing.
+	if err := apply(); err != nil {
+		t.Fatalf("re-apply of the identical document: %v", err)
+	}
+	if got := version("after an identical re-apply"); got != first {
+		t.Fatalf("an identical re-apply bumped the version %d → %d", first, got)
+	}
+
+	// Nothing enforces `unique` yet, and a repository that believed otherwise
+	// would be storing rows it cannot keep: two records, one serial.
+	for _, id := range []string{"one", "two"} {
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: evoAuthority + "/gizmo", ID: id,
+			Properties: map[string]any{"serial": "SN-1"},
+		})
+	}
+
+	// A later write rebuilds the candidate FROM the stored rows, so every
+	// reserved key has to survive rowDocument and re-admission.
+	props["extra"] = map[string]any{"type": "string"}
+	if err := apply(); err != nil {
+		t.Fatalf("re-apply over the stored reserved keys: %v", err)
+	}
+	assertStored("after rebuild from rows")
+}
+
 func TestSchemaEvolutionRenamedFromRoundTrips(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

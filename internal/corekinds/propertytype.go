@@ -287,6 +287,9 @@ type PropertyTypeValues struct {
 
 	// Label is the human label a client renders beside it.
 	Label *string
+
+	// Deprecated is clients should stop offering this value.
+	Deprecated *bool
 }
 
 // PropertyTypeValuesRequired names the properties the declaration marks
@@ -331,6 +334,11 @@ func decodePropertyTypeValues(d *decoder, path string, v any) (PropertyTypeValue
 			if e, ok := d.text(p, props[key], nil, nil); ok {
 				out.Label = &e
 			}
+		case "deprecated":
+			p := at(path, "deprecated")
+			if e, ok := d.flag(p, props[key]); ok {
+				out.Deprecated = &e
+			}
 		default:
 			d.unknown(at(path, key), "core.substrate.reamde.dev/propertytype")
 		}
@@ -352,6 +360,9 @@ func (v *PropertyTypeValues) Encode() map[string]any {
 	}
 	if v.Label != nil {
 		out["label"] = *v.Label
+	}
+	if v.Deprecated != nil {
+		out["deprecated"] = *v.Deprecated
 	}
 	return out
 }

@@ -173,6 +173,25 @@ type Property struct {
 	// definition change, refused by admission while live rows lack the
 	// property.
 	Required bool
+	// Unique is the RESERVED single-value uniqueness marker: at most one live
+	// record of the kind may carry any given value. Admitted, validated and
+	// stored, but NOT ENFORCED: no index exists and no write is refused for a
+	// duplicate today. It is reserved so the day enforcement arrives (a
+	// narrowing-style count of violating rows plus a partial unique index beside
+	// ensureIndices) the key is already in the dialect every binary reads.
+	// Loader-validated: a single value only (never a list or a map), never on a
+	// datatype whose values do not compare (uniqueForbiddenKinds), and never on
+	// an object's field, where the constraint would name a position inside a
+	// value rather than a property.
+	Unique bool
+	// Deprecated is the RESERVED add-and-deprecate marker: this declaration
+	// still validates and still stores, and a client should stop offering it:
+	// a picker greys it out, a form drops it below the live ones, a tool card
+	// leaves it out of what it suggests writing. Admitted and stored; nothing
+	// server-side reads it, so a write of a deprecated property is an ordinary
+	// write. A deprecated property may not also be `required:`, which would tell
+	// a form to stop offering a value it refuses to submit without.
+	Deprecated bool
 	// RenamedFrom is the RESERVED declared-evolution key (ticket 003, ruling
 	// A3): the previous name of this property, admitted and stored so the
 	// manifest dialect has room for a one-time rewrite, but NOT yet acted on —
@@ -332,6 +351,11 @@ func (p *Property) CheckKey(key string) error {
 type EnumValue struct {
 	Value string
 	Label string
+	// Deprecated is the RESERVED add-and-deprecate marker on one admissible
+	// value: still admitted on writes, still held by every record that carries
+	// it, and no longer offered by a picker. Removing a value live records hold
+	// is the narrowing this exists to avoid.
+	Deprecated bool
 }
 
 // UnmarshalYAML admits BOTH declared forms, so a stored closure whose enum was
@@ -348,13 +372,14 @@ func (e *EnumValue) UnmarshalYAML(node *yaml.Node) error {
 		return nil
 	}
 	var m struct {
-		Value string `yaml:"value"`
-		Label string `yaml:"label"`
+		Value      string `yaml:"value"`
+		Label      string `yaml:"label"`
+		Deprecated bool   `yaml:"deprecated"`
 	}
 	if err := node.Decode(&m); err != nil {
 		return err
 	}
-	e.Value, e.Label = m.Value, m.Label
+	e.Value, e.Label, e.Deprecated = m.Value, m.Label, m.Deprecated
 	return nil
 }
 
@@ -404,6 +429,25 @@ type Edge struct {
 	// is one rule, and it is written there.
 	Inverse            string
 	InverseDescription string
+	// Deprecated is the RESERVED add-and-deprecate marker, the same one a
+	// property carries: the edge still resolves and still stores, and a client
+	// should stop offering it. A deprecated edge may not also be `required:`.
+	Deprecated bool
+	// Props are the RESERVED declaration of what an edge ROW of this rel may
+	// carry (`edges.<rel>.properties`), keyed by property name, with PropOrder
+	// holding the sorted names. Admitted, validated and stored, but NOT ACTED
+	// ON: the write path still takes whatever props an edge write carries and
+	// validates none of them (issue 111), so declaring the block changes no
+	// write today.
+	//
+	// An edge property is a FLAT SINGLE VALUE: one scalar, enum or refinement,
+	// never a list, a map, an object, a machine or a pointer
+	// (edgePropForbiddenKinds). That is what keeps the block declarable in
+	// core's own `kind` declaration, where the recursion a property block
+	// admits could not be typed; anything an edge cannot hold under that rule
+	// is a record wearing a link's clothes.
+	Props     map[string]*Property
+	PropOrder []string
 }
 
 // Transition is one legal machine move. It carries no guard: anyone may

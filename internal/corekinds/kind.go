@@ -427,6 +427,13 @@ type KindEdges struct {
 
 	// InverseDescription is what the inverse means, from the target's side.
 	InverseDescription *string
+
+	// Deprecated is clients should stop offering this link.
+	Deprecated *bool
+
+	// Properties is the values an edge row of this rel may carry. Its keys
+	// hold to the camel contract.
+	Properties map[string]KindEdgesProperties
 }
 
 // decodeKindEdges decodes one KindEdges value at path.
@@ -478,6 +485,25 @@ func decodeKindEdges(d *decoder, path string, v any) (KindEdges, bool) {
 			if e, ok := d.text(p, props[key], nil, nil); ok {
 				out.InverseDescription = &e
 			}
+		case "deprecated":
+			p := at(path, "deprecated")
+			if e, ok := d.flag(p, props[key]); ok {
+				out.Deprecated = &e
+			}
+		case "properties":
+			p := at(path, "properties")
+			if entries, isMap := d.mapping(p, props[key]); isMap {
+				values := make(map[string]KindEdgesProperties, len(entries))
+				for _, mk := range sortedKeys(entries) {
+					if entries[mk] == nil || !d.key(p, mk, "camel") {
+						continue
+					}
+					if e, ok := decodeKindEdgesProperties(d, at(p, mk), entries[mk]); ok {
+						values[mk] = e
+					}
+				}
+				out.Properties = values
+			}
 		default:
 			d.unknown(at(path, key), "core.substrate.reamde.dev/kind")
 		}
@@ -514,6 +540,272 @@ func (v *KindEdges) Encode() map[string]any {
 	}
 	if v.InverseDescription != nil {
 		out["inverseDescription"] = *v.InverseDescription
+	}
+	if v.Deprecated != nil {
+		out["deprecated"] = *v.Deprecated
+	}
+	if v.Properties != nil {
+		values := make(map[string]any, len(v.Properties))
+		for key, item := range v.Properties {
+			values[key] = item.Encode()
+		}
+		out["properties"] = values
+	}
+	return out
+}
+
+// KindEdgesProperties is one value of the `edges.properties` object declared
+// on core.substrate.reamde.dev/kind.
+//
+// the values an edge row of this rel may carry
+type KindEdgesProperties struct {
+	// Type is the datatype, or an authority-local refinement of one.
+	Type *string
+
+	// Description is what the value means.
+	Description *string
+
+	// DisplayName is the human label a client renders instead of the name.
+	DisplayName *string
+
+	// Required is an edge written without it is refused.
+	Required *bool
+
+	// Deprecated is clients should stop offering this value.
+	Deprecated *bool
+
+	// Pattern is the regular expression a value matches.
+	Pattern *string
+
+	// Min is the lowest admitted number.
+	Min *float64
+
+	// Max is the highest admitted number.
+	Max *float64
+
+	// Values is the admitted values, in render order.
+	Values []KindEdgesPropertiesValues
+}
+
+// KindEdgesPropertiesRequired names the properties the declaration marks
+// `required:`, sorted. It is a FORM-LEVEL contract: the write path does not
+// enforce it, so Decode admits a value that leaves one absent and this is what
+// a client checks before it submits one.
+var KindEdgesPropertiesRequired = []string{"type"}
+
+// Missing names the required properties this value leaves absent, in
+// declaration order. Empty means every declared requirement is answered —
+// not that the value is admissible, which is the substrate's answer and not a
+// type's.
+func (v *KindEdgesProperties) Missing() []string {
+	var out []string
+	if v.Type == nil {
+		out = append(out, "type")
+	}
+	return out
+}
+
+// decodeKindEdgesProperties decodes one KindEdgesProperties value at path.
+func decodeKindEdgesProperties(d *decoder, path string, v any) (KindEdgesProperties, bool) {
+	props, mapped := d.mapping(path, v)
+	if !mapped {
+		return KindEdgesProperties{}, false
+	}
+	var out KindEdgesProperties
+	for _, key := range sortedKeys(props) {
+		// A null is this dialect's delete marker, never a value: it decodes as
+		// absence, and Properties never writes one.
+		if props[key] == nil {
+			continue
+		}
+		switch key {
+		case "type":
+			p := at(path, "type")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Type = &e
+			}
+		case "description":
+			p := at(path, "description")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Description = &e
+			}
+		case "displayName":
+			p := at(path, "displayName")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.DisplayName = &e
+			}
+		case "required":
+			p := at(path, "required")
+			if e, ok := d.flag(p, props[key]); ok {
+				out.Required = &e
+			}
+		case "deprecated":
+			p := at(path, "deprecated")
+			if e, ok := d.flag(p, props[key]); ok {
+				out.Deprecated = &e
+			}
+		case "pattern":
+			p := at(path, "pattern")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Pattern = &e
+			}
+		case "min":
+			p := at(path, "min")
+			if e, ok := d.number(p, props[key], Bounds{}); ok {
+				out.Min = &e
+			}
+		case "max":
+			p := at(path, "max")
+			if e, ok := d.number(p, props[key], Bounds{}); ok {
+				out.Max = &e
+			}
+		case "values":
+			p := at(path, "values")
+			if items, listed := d.list(p, props[key]); listed {
+				list := make([]KindEdgesPropertiesValues, 0, len(items))
+				for i, item := range items {
+					if e, ok := decodeKindEdgesPropertiesValues(d, index(p, i), item); ok {
+						list = append(list, e)
+					}
+				}
+				out.Values = list
+			}
+		default:
+			d.unknown(at(path, key), "core.substrate.reamde.dev/kind")
+		}
+	}
+	return out, true
+}
+
+// Encode is KindEdgesProperties as the properties map holds it, and
+// decodeKindEdgesProperties's exact inverse: a nil pointer, a nil slice and a
+// nil map each omit their key, so absence survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *KindEdgesProperties) Encode() map[string]any {
+	out := map[string]any{}
+	if v.Type != nil {
+		out["type"] = *v.Type
+	}
+	if v.Description != nil {
+		out["description"] = *v.Description
+	}
+	if v.DisplayName != nil {
+		out["displayName"] = *v.DisplayName
+	}
+	if v.Required != nil {
+		out["required"] = *v.Required
+	}
+	if v.Deprecated != nil {
+		out["deprecated"] = *v.Deprecated
+	}
+	if v.Pattern != nil {
+		out["pattern"] = *v.Pattern
+	}
+	if v.Min != nil {
+		out["min"] = *v.Min
+	}
+	if v.Max != nil {
+		out["max"] = *v.Max
+	}
+	if v.Values != nil {
+		items := make([]any, 0, len(v.Values))
+		for i := range v.Values {
+			items = append(items, v.Values[i].Encode())
+		}
+		out["values"] = items
+	}
+	return out
+}
+
+// KindEdgesPropertiesValues is one value of the `edges.properties.values`
+// object declared on core.substrate.reamde.dev/kind.
+//
+// the admitted values, in render order
+type KindEdgesPropertiesValues struct {
+	// Value is the stored value.
+	Value *string
+
+	// Label is the human label a client renders beside it.
+	Label *string
+
+	// Deprecated is clients should stop offering this value.
+	Deprecated *bool
+}
+
+// KindEdgesPropertiesValuesRequired names the properties the declaration marks
+// `required:`, sorted. It is a FORM-LEVEL contract: the write path does not
+// enforce it, so Decode admits a value that leaves one absent and this is what
+// a client checks before it submits one.
+var KindEdgesPropertiesValuesRequired = []string{"value"}
+
+// Missing names the required properties this value leaves absent, in
+// declaration order. Empty means every declared requirement is answered —
+// not that the value is admissible, which is the substrate's answer and not a
+// type's.
+func (v *KindEdgesPropertiesValues) Missing() []string {
+	var out []string
+	if v.Value == nil {
+		out = append(out, "value")
+	}
+	return out
+}
+
+// decodeKindEdgesPropertiesValues decodes one KindEdgesPropertiesValues value at path.
+func decodeKindEdgesPropertiesValues(d *decoder, path string, v any) (KindEdgesPropertiesValues, bool) {
+	props, mapped := d.mapping(path, v)
+	if !mapped {
+		return KindEdgesPropertiesValues{}, false
+	}
+	var out KindEdgesPropertiesValues
+	for _, key := range sortedKeys(props) {
+		// A null is this dialect's delete marker, never a value: it decodes as
+		// absence, and Properties never writes one.
+		if props[key] == nil {
+			continue
+		}
+		switch key {
+		case "value":
+			p := at(path, "value")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Value = &e
+			}
+		case "label":
+			p := at(path, "label")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Label = &e
+			}
+		case "deprecated":
+			p := at(path, "deprecated")
+			if e, ok := d.flag(p, props[key]); ok {
+				out.Deprecated = &e
+			}
+		default:
+			d.unknown(at(path, key), "core.substrate.reamde.dev/kind")
+		}
+	}
+	return out, true
+}
+
+// Encode is KindEdgesPropertiesValues as the properties map holds it, and
+// decodeKindEdgesPropertiesValues's exact inverse: a nil pointer, a nil slice
+// and a nil map each omit their key, so absence survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *KindEdgesPropertiesValues) Encode() map[string]any {
+	out := map[string]any{}
+	if v.Value != nil {
+		out["value"] = *v.Value
+	}
+	if v.Label != nil {
+		out["label"] = *v.Label
+	}
+	if v.Deprecated != nil {
+		out["deprecated"] = *v.Deprecated
 	}
 	return out
 }
