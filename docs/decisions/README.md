@@ -140,3 +140,9 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | ---------------------------------------------- | --------------------------------------------- | -------- |
 | [0001](0001-record-decisions-in-the-repo.md)   | Record decisions in the repo                  | accepted |
 | [0002](0002-declaration-versions-are-integers.md) | Declaration versions are integers the API maintains | accepted |
+| [0003](0003-notifies-is-the-one-resolution-primitive.md) | A transition's notifies marker is the one resolution primitive | accepted |
+| [0004](0004-asks-are-records-the-owner-resolves.md) | Asks are batch records only the owner resolves | accepted |
+| [0005](0005-the-policy-door-is-deterministic-and-the-judge-recommends.md) | The policy door is deterministic; the judge only ever recommends | accepted |
+| [0006](0006-voluntary-proposals-stay-self-acceptable.md) | Voluntary proposals stay self-acceptable; only gated requests refuse bundle decisions | accepted |
+| [0007](0007-the-audit-lives-on-the-records-it-concerns.md) | The audit lives on the records it concerns, not in an audit kind | accepted |
+| [0008](0008-keep-the-loop-do-not-adopt-adk-go.md) | Keep the agent loop; do not adopt ADK for Go | accepted |
