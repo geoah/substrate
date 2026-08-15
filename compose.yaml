@@ -39,6 +39,13 @@ services:
       # Seals stored provider tokens at rest. Unset means plaintext and a
       # warning at boot — fine on a laptop, never on a real deployment.
       SUBSTRATE_CREDENTIAL_KEY: ${SUBSTRATE_CREDENTIAL_KEY:-}
+      # The one redirect URI every OAuth provider app registers. Unset, the
+      # host OAuth facility refuses to start a flow, so no connector bundle
+      # can connect an account.
+      SUBSTRATE_OAUTH_CALLBACK_URL: ${SUBSTRATE_OAUTH_CALLBACK_URL:-}
+      # Signs OAuth flow state. Unset mints a random key per boot, with a
+      # warning: consent flows in flight break on every restart.
+      SUBSTRATE_OAUTH_STATE_KEY: ${SUBSTRATE_OAUTH_STATE_KEY:-}
       # The host's OpenAI-compatible gateway. This is the ONLY thing that backs
       # embeddings: unset, the embed queue never drains and hybrid search
       # degrades to lexical. It is deployment configuration, not a record,
