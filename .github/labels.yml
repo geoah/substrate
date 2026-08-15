@@ -9,46 +9,46 @@
 
 # ---- type: assigned by the issue forms ------------------------------------
 - name: type/bug
-  color: d73a4a
+  color: fecaca
   description: something behaves differently from what the code or the docs
     say
 - name: type/feature
-  color: a2eeef
+  color: bfdbfe
   description: something that should exist, or should work differently
 - name: type/question
-  color: d876e3
+  color: e9d5ff
   description: something the docs did not answer
 
 # ---- area: where it lands --------------------------------------------------
 - name: area/server
-  color: 4c2fa8
+  color: ddd6fe
   description: "the server: API, engine, changelog"
 - name: area/console
-  color: 6f42c1
+  color: ddd6fe
   description: the web console
 - name: area/cli
-  color: 9061e0
+  color: ddd6fe
   description: substratectl, both hats
 - name: area/vocabulary
-  color: 5319e7
+  color: ddd6fe
   description: "the vocabulary system: datatypes, the declaration dialect,
     the loader"
 - name: area/agent
-  color: 7057ff
+  color: ddd6fe
   description: "the agent runtime: threads, tools, decisions"
 - name: area/docs
-  color: 0075ca
+  color: ddd6fe
   description: the pages under docs/, and the README
 
 # ---- priority: when --------------------------------------------------------
 - name: priority/urgent
-  color: b60205
+  color: fca5a5
   description: drop other work; this blocks people now
 - name: priority/soon
-  color: d93f0b
+  color: fed7aa
   description: the next batch of work
 - name: priority/backlog
-  color: fbca04
+  color: fef08a
   description: real, and it can wait
 
 # ---- contributor signals: GitHub keys on these exact names -----------------
