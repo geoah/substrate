@@ -2,9 +2,8 @@ package api
 
 import (
 	"net/http"
-	"runtime/debug"
-	"sync"
 
+	"github.com/geoah/substrate/internal/build"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -89,6 +88,9 @@ type apiVersionInfo struct {
 	ReplacedBy string `json:"replacedBy,omitempty"`
 }
 
+// serverInfo names the running build. Both fields come from internal/build,
+// which is where a release stamps them; neither is configurable, and a
+// deployment that reports "dev" was not cut from one.
 type serverInfo struct {
 	Version string `json:"version"`
 	Build   string `json:"build,omitempty"`
@@ -110,10 +112,9 @@ type featureInfo struct {
 
 // getDiscovery serves GET /.well-known/substrate/server.json. No auth, no DB.
 func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
-	version, build := serverBuild()
 	doc := discoveryDoc{
 		Versions: []apiVersionInfo{{Name: APIVersion, Status: "served"}},
-		Server:   serverInfo{Version: version, Build: build},
+		Server:   serverInfo{Version: build.Version(), Build: build.Commit()},
 		Vocabulary: vocabularyInfo{
 			MaxDialect: h.maxDialect,
 			Note:       "binary maximum; the stored dialect is per-repository, in that repository's own vocabulary_dialect row, and is not served",
@@ -157,32 +158,4 @@ func features() []featureInfo {
 		{Name: "embeddings", Stability: substrate.StabilityStable},
 		{Name: substrate.FeatureAgents, Stability: substrate.AgentStability},
 	}
-}
-
-var buildOnce struct {
-	sync.Once
-	version string
-	build   string
-}
-
-// serverBuild reads the module version and VCS revision the binary was built
-// from; both fall back to "dev" for a plain `go run`/`go test`.
-func serverBuild() (version, build string) {
-	buildOnce.Do(func() {
-		buildOnce.version = "dev"
-		buildOnce.build = ""
-		info, ok := debug.ReadBuildInfo()
-		if !ok {
-			return
-		}
-		if info.Main.Version != "" && info.Main.Version != "(devel)" {
-			buildOnce.version = info.Main.Version
-		}
-		for _, s := range info.Settings {
-			if s.Key == "vcs.revision" {
-				buildOnce.build = s.Value
-			}
-		}
-	})
-	return buildOnce.version, buildOnce.build
 }

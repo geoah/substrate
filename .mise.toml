@@ -25,6 +25,11 @@ yamllint = "1.37.1"
 # multi-arch image, and attaches everything to the GitHub release. The release
 # workflow runs `mise run release`, so a release is reproducible from a laptop.
 goreleaser = "2.17.1"
+# The version calculator: it reads the conventional commits since the last tag
+# and says what the next tag is. That is the whole of the version decision.
+# The `version` workflow tags main with exactly this, so `mise run version:next`
+# on a laptop answers what the next merge will release, before it releases it.
+svu = "3.4.1"
 # uv is the connector runtime: a Python function body carrying a PEP 723
 # `# /// script` block is executed through `uv run`, which provisions its
 # declared dependencies. The runner shells out to it, so it must be on PATH.
@@ -513,10 +518,21 @@ description = "Build multi-arch and push. TAG=<tag> (default: dev)"
 # Two callers: a person pushing a one-off, and the `latest` workflow pushing
 # the tip of main. Releases do NOT come through here — they go through
 # goreleaser (`release` below), which versions from the git tag.
+#
+# The build args are what makes the pushed image able to say which build it
+# is: .dockerignore drops .git, so the toolchain inside the build records
+# nothing and only what is handed in survives (internal/build). `git describe`
+# is the honest name for something that is NOT a release, because
+# `v0.2.0-4-g1a2b3c4` reads as four commits past v0.2.0; `--always` keeps it a
+# bare sha in a checkout with no tags at all, so nothing here fails for want
+# of a version.
 run = '''
     set -e
     docker buildx build --platform linux/amd64,linux/arm64 \
-      --provenance=false --sbom=false -t "$IMAGE:${TAG:-dev}" --push .
+      --provenance=false --sbom=false \
+      --build-arg "VERSION=$(git describe --tags --always --dirty)" \
+      --build-arg "COMMIT=$(git rev-parse HEAD)" \
+      -t "$IMAGE:${TAG:-dev}" --push .
     '''
 
 [tasks."image:latest"]
@@ -527,8 +543,27 @@ run = "TAG=latest mise run image:push"
 # Release
 # =============================================================================
 #
-# release-please turns conventional commits on main into a version bump and a
-# tag; the tag runs `release` below. Nothing here needs a hand-written version.
+# A release is a merge to main. The `version` workflow reads the conventional
+# commits since the last tag, tags the commit with what they add up to, and
+# runs `release` below against that tag. Nothing is versioned by hand and no
+# release is a decision somebody makes separately from merging.
+
+[tasks."version:current"]
+description = "The version main last released"
+run = "svu current"
+
+[tasks."version:next"]
+description = "The version the commits since that tag add up to"
+# --v0 is the whole of the pre-1.0 policy: while the current version is 0.x a
+# breaking change bumps the MINOR, because 0.x is where breaking changes are
+# expected and burning majors on them says nothing. It stops applying by
+# itself the moment this repository reaches 1.0.0, so there is no edit here to
+# remember and no second place that holds the same rule.
+#
+# Prints the current version unchanged when nothing since the tag calls for a
+# bump (docs:, chore:, ci:, refactor:), which is how the workflow knows there
+# is nothing to release.
+run = "svu next --v0"
 
 [tasks."release:check"]
 description = "Validate .goreleaser.yaml"

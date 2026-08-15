@@ -1,8 +1,9 @@
 # Releasing substrate: the CLI for every platform, and one multi-arch image.
 #
-# Versions come from the git tag, which release-please writes from conventional
-# commits — so `feat:` bumps the minor, `fix:` the patch, and a `!` or a
-# BREAKING CHANGE footer the major. Nothing here needs editing to cut a release.
+# Versions come from the git tag, which .github/workflows/version.yml writes
+# from the conventional commits on main: `feat:` bumps the minor, `fix:` the
+# patch, and a `!` or a BREAKING CHANGE footer the major (the minor, below
+# 1.0.0). Nothing here needs editing to cut a release.
 #
 # Run it locally exactly as CI does:
 #
@@ -19,10 +20,17 @@ before:
     - mise run console:build
 
 builds:
-  # The CLI is the artifact people download; the server is the artifact the
-  # image wraps. They learn their version DIFFERENTLY, and each one's build
-  # below says how: the CLI is handed it by the linker, the server reads it off
-  # the build itself, which is what discovery reports.
+  # Both binaries learn their version the SAME way: the linker writes it into
+  # internal/build, which `substratectl version` prints and which discovery
+  # serves as `server.version`. The symbol path is a string to the linker, so
+  # a typo (or a rename of that package) is a flag it silently drops and a
+  # release that reports "dev". internal/build's own test holds these two
+  # files to the symbols they stamp.
+  #
+  # {{ .Tag }} rather than {{ .Version }}: the tag is how the release is
+  # spelled everywhere else a person will compare it against (git, the
+  # releases page, and the fallback internal/build reads out of the build info
+  # when nothing stamped it), and one spelling is worth more than a dropped v.
   - id: substratectl
     binary: substratectl
     main: ./cmd/substratectl
@@ -33,7 +41,8 @@ builds:
     goarch: [amd64, arm64]
     flags: [-trimpath]
     ldflags:
-      - -s -w -X main.version={{ .Version }} -X main.commit={{ .FullCommit
+      - -s -w -X github.com/geoah/substrate/internal/build.version={{ .Tag
+        }} -X github.com/geoah/substrate/internal/build.commit={{ .FullCommit
         }}
 
   - id: substrated
@@ -43,14 +52,15 @@ builds:
     goos: [linux]
     goarch: [amd64, arm64]
     flags: [-trimpath]
-    # NO -X here, unlike the CLI above. cmd/substrated declares no `version`
-    # or `commit` variable to write into: discovery reports what
-    # debug.ReadBuildInfo() carries (internal/api/discovery.go), and Go stamps
-    # that from the repository itself — Main.Version from the tag being built,
-    # vcs.revision from the commit. Injecting symbols that do not exist is
-    # silently dropped by the linker, so this looked configured for as long as
-    # it was here and did nothing.
-    ldflags: [-s -w]
+    # The same stamp as the CLI, and the server needs it MORE. The release
+    # binary is built here, in a whole repository, where Go would record the
+    # tag on its own; but this binary is then copied into an image by
+    # Dockerfile.release, and an operator asking a running deployment which
+    # version it is gets this string back.
+    ldflags:
+      - -s -w -X github.com/geoah/substrate/internal/build.version={{ .Tag
+        }} -X github.com/geoah/substrate/internal/build.commit={{ .FullCommit
+        }}
 
 archives:
   # Only the CLI is worth downloading on its own — the server ships as an image.
@@ -100,10 +110,33 @@ dockers_v2:
       org.opencontainers.image.revision: "{{ .FullCommit }}"
 
 changelog:
-  # release-please writes the release notes from the same commits; a second
-  # generated list underneath them would only disagree.
-  disable: true
+  # The release notes ARE the changelog: there is no release pull request
+  # accumulating one into a file any more, so this is where the commits since
+  # the last tag are read back to a person. Grouped, because an ungrouped list
+  # buries the two lines somebody is looking for under the housekeeping.
+  use: git
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]\.\-]+\))??!?:.+$'
+      order: 0
+    - title: Fixes
+      regexp: '^.*?fix(\([[:word:]\.\-]+\))??!?:.+$'
+      order: 1
+    - title: Everything else
+      order: 99
+  filters:
+    exclude:
+      # Never a reason to read the release: they change nothing that ships.
+      # No closing paren on the last one, because dependabot writes both
+      # `chore(deps)` and `chore(deps-dev)` and both are the same non-news.
+      - "^docs:"
+      - "^test:"
+      - "^chore\\(deps"
 
 release:
   prerelease: auto
-  mode: append
+  # No `mode: append`. That was for a release somebody else had already
+  # created and written the body of; goreleaser now creates it, so appending
+  # would only mean a re-run stacking a second copy of the notes under the
+  # first.

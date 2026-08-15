@@ -258,10 +258,13 @@ Do not half-do it.
 - **Every commit title is a conventional commit** —
   `type(scope): what changed`, with `!` before the colon for a break. The
   types in use here are `feat`, `fix`, `docs`, `refactor`, `test`, `chore`,
-  `ci`. This is not style: release-please reads these titles off `main` to
-  decide the version and write `CHANGELOG.md`, so a title it cannot parse is a
-  release that does not happen. A PR title is one too — the merge is a squash,
-  so the PR title IS the commit release-please reads.
+  `ci`. This is not style: **the title is the release**. A merge to `main`
+  that passes CI is folded into a version by these titles (`fix:` the patch,
+  `feat:` the minor, `!` the major, or the minor below 1.0.0), and that
+  version is tagged, built and published without anybody deciding to. A title
+  nothing can parse is a release that does not happen. A PR title is one too:
+  the merge is a squash, so the PR title IS the commit that gets read.
+  `mise run version:next` says what main would release right now.
 - Keep `mise run lint` and `mise run fmt:check` at zero. Both are aggregates,
   and the `lint` job runs both: `lint` is Go, YAML, shell, Python, the docs
   and the toolchain pins, `fmt:check` is Go and YAML. The console has its own pair

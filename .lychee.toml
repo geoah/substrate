@@ -16,7 +16,6 @@ exclude_path = [
   "web/console/dist",
   ".dev",
   "bin",
-  "CHANGELOG.md",
   # Its one link is `/substrate.svg`, which Vite resolves from
   # web/console/public at build time. A checker with no root directory reads
   # that as the filesystem root, and pointing one at the repo root would only

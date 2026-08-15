@@ -27,12 +27,24 @@ RUN pnpm build
 # never emulates the Go toolchain.
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 ARG TARGETOS TARGETARCH
+# What this image will call itself when asked (discovery's `server.version`).
+# It has to be handed in: .dockerignore drops .git, so the toolchain records
+# no version of its own here and an unstamped build reports "dev". That is the
+# right answer for a bare `docker build` and the wrong one for anything
+# published, so `mise run image:push` passes both and the `latest` workflow
+# does too. Never a default that names a version: an image that lies about
+# which build it is costs more than one that says "dev".
+ARG VERSION=""
+ARG COMMIT=""
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags="-s -w" -o /out/substrate ./cmd/substrated
+    go build -trimpath -ldflags="-s -w \
+      -X github.com/geoah/substrate/internal/build.version=${VERSION} \
+      -X github.com/geoah/substrate/internal/build.commit=${COMMIT}" \
+      -o /out/substrate ./cmd/substrated
 
 # ---- go toolchain for the runtime (TARGET arch) -------------------------
 # Pulled at the target platform (no BUILDPLATFORM override) so the toolchain

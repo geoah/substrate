@@ -21,9 +21,10 @@ updates:
       day: monday
     open-pull-requests-limit: 5
     commit-message:
-      # release-please reads these titles off main, so a title it cannot parse
-      # is a release that does not happen. `chore` keeps a dependency bump out
-      # of the release notes; a security fix is retitled by hand to `fix`.
+      # The version is folded from these titles on merge, so a title nothing
+      # can parse is a release that does not happen. `chore` keeps a
+      # dependency bump out of both the version and the release notes; a
+      # security fix is retitled by hand to `fix`, which releases it.
       prefix: chore
     # Named, so dependabot stops inventing its own (`dependencies`, plus one
     # per ecosystem) beside the set .github/labels.yml holds. The Go module is

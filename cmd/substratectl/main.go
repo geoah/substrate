@@ -4,11 +4,9 @@ import (
 	"os"
 
 	"github.com/geoah/substrate/cmd/substratectl/commands"
+	"github.com/geoah/substrate/internal/build"
 )
 
-// version is set via -ldflags at build time.
-var version = "dev"
-
 func main() {
-	os.Exit(commands.Execute(version))
+	os.Exit(commands.Execute(build.Version()))
 }

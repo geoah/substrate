@@ -1,9 +1,9 @@
-<!-- The title is the commit. This repository squash-merges, and release-please
-     reads the merged title off main to decide the next version and write
-     CHANGELOG.md, so a title it cannot parse is a release that does not
-     happen. Conventional commits: `type(scope): what changed`, with `!` before
-     the colon for a break. Types in use: feat, fix, docs, refactor, test,
-     chore, ci. -->
+<!-- The title is the commit, and the commit is the release. This repository
+     squash-merges; merging a green `feat:` or `fix:` tags main and publishes
+     it, titled by this line. So a title nothing can parse is a release that
+     does not happen. Conventional commits:
+     `type(scope): what changed`, with `!` before the colon for a break. Types
+     in use: feat, fix, docs, refactor, test, chore, ci. -->
 
 ## What this changes
 
