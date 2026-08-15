@@ -48,14 +48,20 @@ const tsCanonical = "2006-01-02T15:04:05.000000Z07:00"
 // chainEntry is one changelog row as the preimage sees it: every hashed
 // column, with the payload as the STORED text.
 type chainEntry struct {
-	Seq        int64
-	TS         time.Time
-	Actor      string
-	Op         string
-	RecordID   string
-	Kind       string
-	CausedBy   int64
-	CausedByOK bool
+	Seq   int64
+	TS    time.Time
+	Actor string
+	// Principal is the verified token id behind the write, NULL on every
+	// entry until the API threads it (#102). It is hashed from birth so
+	// stamping it later is not a preimage change, and so a stored principal
+	// can never be edited without breaking the chain.
+	Principal   string
+	PrincipalOK bool
+	Op          string
+	RecordID    string
+	Kind        string
+	CausedBy    int64
+	CausedByOK  bool
 	// PayloadText is the jsonb column's own rendering (payload::text), never
 	// the bytes Go sent.
 	PayloadText []byte
@@ -73,6 +79,9 @@ func entryHash(repository string, e chainEntry, prev [32]byte) ([32]byte, error)
 	frameInt64(&buf, e.Seq)
 	frameBytes(&buf, []byte(e.TS.UTC().Format(tsCanonical)))
 	frameBytes(&buf, []byte(e.Actor))
+	// The same presence byte caused_by gets: NULL and the empty string must
+	// not collide.
+	frameOptionalString(&buf, e.Principal, e.PrincipalOK)
 	frameBytes(&buf, []byte(e.Op))
 	frameBytes(&buf, []byte(e.RecordID))
 	frameBytes(&buf, []byte(e.Kind))
@@ -143,6 +152,15 @@ func frameOptionalInt64(buf *bytes.Buffer, v int64, ok bool) {
 	}
 	buf.WriteByte(1)
 	frameInt64(buf, v)
+}
+
+func frameOptionalString(buf *bytes.Buffer, s string, ok bool) {
+	if !ok {
+		buf.WriteByte(0)
+		return
+	}
+	buf.WriteByte(1)
+	frameBytes(buf, []byte(s))
 }
 
 func frameOptionalBytes(buf *bytes.Buffer, b []byte) {

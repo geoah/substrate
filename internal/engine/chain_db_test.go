@@ -128,8 +128,11 @@ func TestChainNamesEveryTamper(t *testing.T) {
 	for name, tamper := range map[string]string{
 		"payload": `UPDATE changelog SET payload = jsonb_set(payload, '{forged}', 'true') WHERE seq = $1`,
 		"actor":   `UPDATE changelog SET actor = 'console' WHERE seq = $1`,
-		"op":      `UPDATE changelog SET op = 'patch' WHERE seq = $1`,
-		"ts":      `UPDATE changelog SET ts = ts + interval '1 second' WHERE seq = $1`,
+		// The column nothing stamps yet (#102): NULL is hashed, so writing
+		// any principal after the fact is a named tamper, not a backfill.
+		"principal": `UPDATE changelog SET principal = 'tok-forged' WHERE seq = $1`,
+		"op":        `UPDATE changelog SET op = 'patch' WHERE seq = $1`,
+		"ts":        `UPDATE changelog SET ts = ts + interval '1 second' WHERE seq = $1`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			var before []byte
@@ -148,8 +151,10 @@ func TestChainNamesEveryTamper(t *testing.T) {
 			if report.OK || !findingContaining(report, "hash mismatch") {
 				t.Fatalf("a %s tamper at seq %d was not named: %+v", name, mid, report.Findings)
 			}
-			// Put it back so the subtests stay independent.
-			if _, err := db.Exec(`UPDATE changelog SET payload = $2::jsonb, ts = $3::timestamptz, actor = $4, op = $5 WHERE seq = $1`,
+			// Put it back so the subtests stay independent. principal is
+			// NULL on every entry until #102 stamps it, so NULL is the
+			// restore.
+			if _, err := db.Exec(`UPDATE changelog SET payload = $2::jsonb, ts = $3::timestamptz, actor = $4, op = $5, principal = NULL WHERE seq = $1`,
 				mid, before, tsBefore, actorBefore, opBefore); err != nil {
 				t.Fatalf("restore: %v", err)
 			}

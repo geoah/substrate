@@ -318,6 +318,9 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 		t.maxSeq = seq
 	}
 	t.entries = append(t.entries, changeEntry{seq: seq, op: op, kind: typ, id: recordID})
+	// Principal stays absent here exactly as the INSERT leaves the column
+	// NULL: the pending entry and the row must agree on every hashed field,
+	// so when #102 stamps the token id it stamps both sides of this append.
 	t.pending = append(t.pending, chainEntry{
 		Seq: seq, TS: t.now, Actor: string(actor), Op: string(op),
 		RecordID: recordID, Kind: typ,

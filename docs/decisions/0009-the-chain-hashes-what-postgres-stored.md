@@ -47,9 +47,12 @@ own operator, and the entries stay the truth, so a tree can be computed later.
 
 The preimage is length-framed with a domain tag (`substrate/changelog/v1`),
 carries the repository id (a cross-repository splice fails even where seqs
-line up) and a presence byte on `caused_by` (NULL and zero must not collide),
-and hashes are stamped at settle time, after `settleFold` has merged a
-transaction's late effects into its last entry's payload.
+line up) and presence bytes on `caused_by` (NULL and zero must not collide)
+and `principal` (the verified token id, NULL on every entry until the API
+stamps it in issue #102; it is hashed from birth so stamping it later is not
+a domain fork, and a stored principal cannot be edited without breaking the
+chain), and hashes are stamped at settle time, after `settleFold` has merged
+a transaction's late effects into its last entry's payload.
 
 ### Consequences
 

@@ -107,6 +107,8 @@ func TestEntryHashPreimageInjective(t *testing.T) {
 		func(e *chainEntry) { e.Seq = 8 },
 		func(e *chainEntry) { e.TS = ts.Add(time.Microsecond) },
 		func(e *chainEntry) { e.Actor = "console" },
+		func(e *chainEntry) { e.Principal = ""; e.PrincipalOK = true }, // NULL vs stored empty
+		func(e *chainEntry) { e.Principal = "tok1"; e.PrincipalOK = true },
 		func(e *chainEntry) { e.Op = "patch" },
 		func(e *chainEntry) { e.RecordID = "r2" },
 		func(e *chainEntry) { e.Kind = "note" },

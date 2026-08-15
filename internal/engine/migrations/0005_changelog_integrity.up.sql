@@ -5,9 +5,16 @@
 -- The length CHECKs exist because the application role holds UPDATE on this
 -- table: a malformed value must be impossible to store, so the verifier only
 -- ever reasons about well-formed bytes.
+-- principal is the verified token id behind the write — attribution the door
+-- resolved, unlike the caller-asserted actor. Nothing stamps it yet (#102);
+-- it exists now because the chain hashes it from birth (chain.go): reserving
+-- the preimage slot before any hash is minted is what lets #102 land without
+-- a domain fork, and a later UPDATE to it is a verification failure, not a
+-- backfill opportunity.
 ALTER TABLE changelog
     ADD COLUMN IF NOT EXISTS hash bytea,
-    ADD COLUMN IF NOT EXISTS sig  bytea;
+    ADD COLUMN IF NOT EXISTS sig  bytea,
+    ADD COLUMN IF NOT EXISTS principal text;
 ALTER TABLE changelog
     ADD CONSTRAINT changelog_hash_len CHECK (hash IS NULL OR octet_length(hash) = 32),
     ADD CONSTRAINT changelog_sig_len CHECK (sig IS NULL OR octet_length(sig) = 64),

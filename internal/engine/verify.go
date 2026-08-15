@@ -339,7 +339,7 @@ type chainRow struct {
 // signature, over any pool.
 func scanChainPageWithMarks(ctx context.Context, db dbx, after int64, limit int) ([]chainRow, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT seq, ts, actor, op, record_id, kind, payload::text, caused_by, hash, sig FROM changelog
+		SELECT seq, ts, actor, principal, op, record_id, kind, payload::text, caused_by, hash, sig FROM changelog
 		WHERE seq > $1 ORDER BY seq LIMIT $2`, after, limit)
 	if err != nil {
 		return nil, err
@@ -349,12 +349,14 @@ func scanChainPageWithMarks(ctx context.Context, db dbx, after int64, limit int)
 	for rows.Next() {
 		var r chainRow
 		var ts time.Time
+		var principal sql.NullString
 		var causedBy sql.NullInt64
-		if err := rows.Scan(&r.entry.Seq, &ts, &r.entry.Actor, &r.entry.Op, &r.entry.RecordID,
+		if err := rows.Scan(&r.entry.Seq, &ts, &r.entry.Actor, &principal, &r.entry.Op, &r.entry.RecordID,
 			&r.entry.Kind, &r.entry.PayloadText, &causedBy, &r.hash, &r.sig); err != nil {
 			return nil, err
 		}
 		r.entry.TS = ts.UTC()
+		r.entry.Principal, r.entry.PrincipalOK = principal.String, principal.Valid
 		r.entry.CausedBy, r.entry.CausedByOK = causedBy.Int64, causedBy.Valid
 		out = append(out, r)
 	}

@@ -139,7 +139,7 @@ func (ds *dataset) backfillChain(ctx context.Context) error {
 // columns have their own readers (verify).
 func (t *txn) chainPage(after int64, limit int) ([]chainEntry, error) {
 	rows, err := t.query(`
-		SELECT seq, ts, actor, op, record_id, kind, payload::text, caused_by FROM changelog
+		SELECT seq, ts, actor, principal, op, record_id, kind, payload::text, caused_by FROM changelog
 		WHERE seq > $1 ORDER BY seq LIMIT $2`, after, limit)
 	if err != nil {
 		return nil, err
@@ -149,11 +149,13 @@ func (t *txn) chainPage(after int64, limit int) ([]chainEntry, error) {
 	for rows.Next() {
 		var e chainEntry
 		var ts time.Time
+		var principal sql.NullString
 		var causedBy sql.NullInt64
-		if err := rows.Scan(&e.Seq, &ts, &e.Actor, &e.Op, &e.RecordID, &e.Kind, &e.PayloadText, &causedBy); err != nil {
+		if err := rows.Scan(&e.Seq, &ts, &e.Actor, &principal, &e.Op, &e.RecordID, &e.Kind, &e.PayloadText, &causedBy); err != nil {
 			return nil, err
 		}
 		e.TS = ts.UTC()
+		e.Principal, e.PrincipalOK = principal.String, principal.Valid
 		e.CausedBy, e.CausedByOK = causedBy.Int64, causedBy.Valid
 		out = append(out, e)
 	}
