@@ -10,7 +10,7 @@
 # change travels in, AND the runtime the substrate itself maintains: the
 # delivery plumbing (`trigger` + `run`) and the agent loop's data
 # (`llmprovider` + `llmthread` + `llmmessage`). The vocabulary authorities (people, messaging,
-# calendar, tasks, media) are what would exist if you kept your data in a
+# calendar, tasks) are what would exist if you kept your data in a
 # shoebox — they ship as importable vocabulary bundles under their own
 # kinds/<authority>/ directories, not here. Nothing else decides the placement.
 #
@@ -33,7 +33,8 @@
 # ALPHA at v1: the agent kind, the llmprovider/llmthread/llmmessage vocabulary and the
 # /agents chat+call wire are explicitly ALPHA and UNFROZEN (ruling A12). They
 # may change or be superseded without a v1 wire break the
-# Agents section.
+# Agents section. recordpatchpolicy's judge half carries the same marker, in
+# its own file.
 kind: core.substrate.reamde.dev/authority
 metadata:
   id: core.substrate.reamde.dev

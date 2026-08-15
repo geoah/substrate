@@ -1084,16 +1084,19 @@ func TestHotMapTargets(t *testing.T) {
 			vocabulary.AuthorityManifest(authority, 1),
 			vocabulary.ActorManifest(authority, "connector:library"),
 			vocabulary.KindManifest(authority,
+				map[string]any{"singular": "work", "plural": "works"},
+				map[string]any{"properties": map[string]any{"subtitle": map[string]any{"type": "string"}}}),
+			vocabulary.KindManifest(authority,
 				map[string]any{"singular": "libraryrow", "plural": "libraryrows"},
 				map[string]any{
 					"traits":     []any{"temporal(point)"},
 					"properties": map[string]any{"subtitle": map[string]any{"type": "string"}},
 					"edges": map[string]any{
-						"work": map[string]any{"to": "media.substrate.reamde.dev/book", "required": true},
+						"work": map[string]any{"to": authority + "/work", "required": true},
 					},
 				}),
-			vocabulary.MappingManifest(authority, "libraryrowbook", map[string]any{
-				"from": authority + "/libraryrow", "to": "media.substrate.reamde.dev/book", "edge": "work",
+			vocabulary.MappingManifest(authority, "libraryrowwork", map[string]any{
+				"from": authority + "/libraryrow", "to": authority + "/work", "edge": "work",
 				"map": map[string]any{
 					"title":    map[string]any{"path": "title"},
 					"body":     map[string]any{"path": "body"},

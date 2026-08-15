@@ -177,11 +177,11 @@ func shippedTypes(t *testing.T) map[string]shippedType {
 	t.Helper()
 	// The shipped vocabulary lives in TWO places since the seed shrank to
 	// core: the seeded tree, and the VOCABULARY bundles a repository imports
-	// (people, tasks, media, messaging, calendar). Help examples name kinds
+	// (people, tasks, messaging, calendar). Help examples name kinds
 	// from both, so both are read.
 	base := filepath.Join("..", "..", "..")
 	roots := []string{filepath.Join(base, "kinds", "core.substrate.reamde.dev")}
-	for _, a := range []string{"calendar", "media", "messaging", "people", "tasks"} {
+	for _, a := range []string{"calendar", "messaging", "people", "tasks"} {
 		roots = append(roots, filepath.Join(base, "kinds", a+".substrate.reamde.dev"))
 	}
 	out := map[string]shippedType{}

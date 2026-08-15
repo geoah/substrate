@@ -8,7 +8,7 @@
 // TWO KINDS OF ENTRY, one install path. A BUNDLE owns any authority that is not
 // a bare org-domain label (`google.bundles.substrate.reamde.dev`), configures
 // through its declared inputs and may ship callables. A VOCABULARY bundle owns a bare authority
-// (`people.substrate.reamde.dev`, `media.substrate.reamde.dev`) and ships kinds and nothing else —
+// (`people.substrate.reamde.dev`, `tasks.substrate.reamde.dev`) and ships kinds and nothing else —
 // it is the substrate's own vocabulary, which repository creation no longer
 // seeds: a fresh repository holds core alone and imports the rest from here.
 // A closure that declares ONTO another authority names it in `requires:`, and
@@ -147,7 +147,9 @@ type ShippedRecord struct {
 // exampleFacets curates the `example` facet — the bundles the console groups
 // under Examples. They are ordinary bundles: installable, uninstallable, and
 // no different at runtime from any other. The facet only says what they are
-// FOR.
+// FOR — and it marks the one part of the shipped set OUTSIDE the stable
+// vocabulary (decision record 0015): an example's declarations may change or
+// leave without an upgrade path.
 var exampleFacets = map[string]bool{
 	// The two provider rows a substrate needs before an agent can run, plus an
 	// agent chain to prove them.

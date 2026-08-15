@@ -382,8 +382,8 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
-			Identity: "media.substrate.reamde.dev/book", Name: "book",
-			Authority: "media.substrate.reamde.dev",
+			Identity: "library.substrate.reamde.dev/book", Name: "book",
+			Authority: "library.substrate.reamde.dev",
 			Version:   1, Plural: "books", Source: "builtin",
 			Definition: map[string]any{
 				"plural": "books",

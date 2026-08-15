@@ -118,9 +118,11 @@ func TestTypedDeclarationRungTranslatesEveryStoredDeclaration(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A repository with a row of EVERY schema kind: the vocabulary bundles bring
-	// kinds, traits, property types and mappings; a bundle closure brings the
-	// bundle document, its functions and its agents.
+	// kinds and traits; the shelf fixture brings the property types and a
+	// mapping; a bundle closure brings the bundle document, its functions and
+	// its agents.
 	importVocabulary(t, ds)
+	installShelf(t, ds)
 	// web brings functions and agents; github brings a mapping with rules, which
 	// is the keyed container the translation has to keep as a container.
 	installShippedBundle(t, ds, "web")

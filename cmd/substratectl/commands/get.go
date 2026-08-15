@@ -33,9 +33,9 @@ func (a *app) getCommand() *cobra.Command {
 The plural may be qualified ("people.substrate.reamde.dev/people") — which is resolved
 without a round trip — or bare ("people"), which is resolved against the kind
 registry and errors when several authorities declare it. The shipped vocabulary is
-split across several authorities (people, messaging, calendar, tasks, media), so a
-bare plural is only unambiguous while one authority declares it: "books" and
-"movies" are media's alone and resolve, but every bundle installs a
+split across several authorities (people, messaging, calendar, tasks), so a
+bare plural is only unambiguous while one authority declares it: "tasks" is
+tasks' alone and resolves, but every bundle installs a
 "config", so "configs" always needs qualifying (or -g to name the authority).
 
 -o yaml writes each record as a manifest — authority, kind, metadata, data and the

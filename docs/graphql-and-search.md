@@ -113,7 +113,7 @@ two arms:
   out with `fts: false`; secret-typed properties never index.
 - **Semantic**, strictly opt-in per property with `embed: true` (the shipped
   vocabulary opts in long prose: message and mail bodies, task and event
-  descriptions, transcripts, and media summaries). Opted-in text is chunked into overlapping windows
+  descriptions, and transcripts). Opted-in text is chunked into overlapping windows
   and embedded **asynchronously** after commit, off a queue, so writes never
   wait on an embedding call. Vectors live in Postgres (pgvector) beside
   everything else, and the embedding model is deployment configuration, not

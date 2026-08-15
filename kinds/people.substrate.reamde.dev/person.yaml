@@ -53,8 +53,8 @@ data:
       type: string
       description: free text, never an enum; empty means unknown, use they/them
     # no `author` here: a role (author, narrator, attendee) is a property of
-    # the RELATION, per this bundle's own rule, and the media authority
-    # already carries it as an edge.
+    # the RELATION, per this bundle's own rule, so the authority that owns the
+    # work carries it as an edge into `person`.
     relationship:
       type: enum
       description: how this person relates to the owner

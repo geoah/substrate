@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/engine"
+	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -265,11 +266,17 @@ func writeAMergeablePair(t *testing.T, ds substrate.Dataset) mergedPair {
 	t.Helper()
 	ctx := context.Background()
 
+	// The shelf fixture: a `book` kind whose records merge, and a
+	// `bookedition` kind whose `work` edge names the loser so the merge has an
+	// edge outside the pair to re-point.
+	installShelf(t, ds)
+	const shelf = enginetest.ShelfAuthority
+
 	author := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "Ada Lovelace"},
 	})
 	winner := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:        "media.substrate.reamde.dev/book",
+		Kind:        shelf + "/book",
 		Properties:  map[string]any{"title": "Notes on the Engine", "subtitle": "a winner"},
 		Labels:      map[string]any{"owner/shelf": "analytical"},
 		Annotations: map[string]any{"owner/note": "the winner's own"},
@@ -278,7 +285,7 @@ func writeAMergeablePair(t *testing.T, ds substrate.Dataset) mergedPair {
 		},
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "media.substrate.reamde.dev/book",
+		Kind: shelf + "/book",
 		// `description` is the winner's gap: its manager row migrates.
 		Properties:  map[string]any{"title": "Notes on the Engine", "description": "the loser's own"},
 		Labels:      map[string]any{"owner/format": "octavo"},
@@ -286,7 +293,7 @@ func writeAMergeablePair(t *testing.T, ds substrate.Dataset) mergedPair {
 	})
 	// An earlier merge, so the loser carries a trail the second one flattens.
 	older := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "media.substrate.reamde.dev/book", Properties: map[string]any{"title": "Notes on the Engine"},
+		Kind: shelf + "/book", Properties: map[string]any{"title": "Notes on the Engine"},
 	})
 	if _, err := ds.Merge(ctx, owner, loser.Kind, loser.ID, older.ID); err != nil {
 		t.Fatalf("the first merge: %v", err)
@@ -294,7 +301,7 @@ func writeAMergeablePair(t *testing.T, ds substrate.Dataset) mergedPair {
 	// A source record whose SUBJECT edge names the loser: the merge re-points
 	// it at the winner, and it is why the resync's scope is more than the pair.
 	edition := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       "media.substrate.reamde.dev/bookedition",
+		Kind:       shelf + "/bookedition",
 		Properties: map[string]any{"format": "print", "language": "en"},
 		Edges: []substrate.EdgeInput{
 			{Rel: "work", To: substrate.EdgeRef{Kind: loser.Kind, ID: loser.ID}},
