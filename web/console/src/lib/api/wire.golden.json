@@ -1,4 +1,14 @@
 {
+  "Change": [
+    "seq",
+    "ts",
+    "actor",
+    "op",
+    "recordId",
+    "kind",
+    "payload",
+    "hash"
+  ],
   "EdgeInput": [
     "rel",
     "to",

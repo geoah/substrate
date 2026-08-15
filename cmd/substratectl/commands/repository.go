@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -30,7 +31,8 @@ func (a *app) repositoryCommand() *cobra.Command {
 		Aliases: []string{"repositories", "repo"},
 	}
 	cmd.AddCommand(a.repositoryListCommand(), a.repositoryInspectCommand(),
-		a.repositoryRebuildCommand(), a.repositoryResealCommand())
+		a.repositoryRebuildCommand(), a.repositoryResealCommand(),
+		a.repositoryVerifyCommand())
 	return cmd
 }
 
@@ -149,7 +151,8 @@ This command only reads.`,
 }
 
 func (a *app) repositoryRebuildCommand() *cobra.Command {
-	return &cobra.Command{
+	var forceUnverified bool
+	cmd := &cobra.Command{
 		Use:     "rebuild <username>",
 		Short:   "Replay a repository's changelog into a fresh fold",
 		Aliases: []string{"rebuild-repository"},
@@ -159,6 +162,11 @@ The changelog is the truth and the records table is a fold of it, so this is the
 containment test made runnable. It holds the repository's write lock for the
 duration and runs as ONE transaction: a rebuild either replaces the fold or
 leaves it exactly as it was.
+
+The chain is verified FIRST: a changelog whose hashes (or signatures) do not
+check out refuses to become the live fold. --force-unverified rebuilds anyway
+and says so in the report; run 'repository verify' first to see what it would
+be installing.
 
 Blobs and sealed material are SIDE STORES: their bytes were never in the changelog
 and are re-linked, not regenerated. A backup is changelog + blobs + sealed as one
@@ -170,11 +178,20 @@ unit.`,
 				return err
 			}
 			defer func() { _ = svc.Close() }()
-			r, ok := svc.(rebuilder)
-			if !ok {
-				return seamMissing("RebuildRepository")
+			var report engine.RebuildReport
+			if forceUnverified {
+				r, ok := svc.(forceRebuilder)
+				if !ok {
+					return seamMissing("RebuildRepositoryUnverified")
+				}
+				report, err = r.RebuildRepositoryUnverified(cmd.Context(), args[0])
+			} else {
+				r, ok := svc.(rebuilder)
+				if !ok {
+					return seamMissing("RebuildRepository")
+				}
+				report, err = r.RebuildRepository(cmd.Context(), args[0])
 			}
-			report, err := r.RebuildRepository(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
@@ -183,9 +200,122 @@ unit.`,
 			fmt.Fprintf(a.out, "  replayed: %d entries to head %d\n", report.Entries, report.Head)
 			fmt.Fprintf(a.out, "  records:  %d\n", report.Records)
 			fmt.Fprintf(a.out, "  took:     %s\n", report.Took.Round(time.Millisecond))
+			if report.Unverified {
+				fmt.Fprintf(a.out, "  WARNING:  the fold is built from UNVERIFIED history (--force-unverified)\n")
+			}
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&forceUnverified, "force-unverified", false,
+		"rebuild even when the chain does not verify: the fold is then built from unverified history")
+	return cmd
+}
+
+func (a *app) repositoryVerifyCommand() *cobra.Command {
+	var output, expectKey, expectHead string
+	var expectSignedFrom int64
+	cmd := &cobra.Command{
+		Use:   "verify <username>",
+		Short: "Walk a repository's changelog chain and check every hash and signature",
+		Long: `Recompute every changelog entry's chain hash from the stored bytes and check
+every signature the signing state requires, in one read-only snapshot. It
+never backfills, repairs or touches the repository it judges (opening the
+engine still applies any pending schema migration, as every operator command
+does).
+
+Everything in the database can be rewritten by whoever holds the database, so
+a verify that trusts only the database proves internal consistency. The
+--expect flags are the difference: pass the (public key, signed-from) pair
+logged at activation and a previously reported head as seq:hash, and the
+comparison the scheme rests on becomes enforced instead of eyeballed. A
+pinned head is also the ONLY way to catch a truncated tail.
+
+Chain epochs (backfill, reseal, signing activation) are listed and checked so
+a head that legitimately moved is explained; run with a stale --expect-head
+after a reseal and the finding says to re-pin rather than crying tamper.
+
+Exits nonzero when anything does not verify.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pins := engine.VerifyPins{PublicKey: expectKey, SignedFrom: expectSignedFrom}
+			if expectHead != "" {
+				seqStr, hash, ok := strings.Cut(expectHead, ":")
+				if !ok {
+					return fmt.Errorf("--expect-head wants seq:hash, got %q", expectHead)
+				}
+				seq, err := strconv.ParseInt(seqStr, 10, 64)
+				if err != nil || seq <= 0 || hash == "" {
+					return fmt.Errorf("--expect-head wants a positive seq and a hex hash, got %q", expectHead)
+				}
+				pins.HeadSeq, pins.HeadHash = seq, hash
+			}
+			svc, err := a.openEngineRead(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer func() { _ = svc.Close() }()
+			v, ok := svc.(verifier)
+			if !ok {
+				return seamMissing("VerifyRepositoryPinned")
+			}
+			report, err := v.VerifyRepositoryPinned(cmd.Context(), args[0], pins)
+			if err != nil {
+				return err
+			}
+			if output == "json" {
+				if err := printJSON(a.out, report); err != nil {
+					return err
+				}
+			} else {
+				fmt.Fprintf(a.out, "repository %s\n", report.Username)
+				fmt.Fprintf(a.out, "  id:       %s\n", report.Repository)
+				fmt.Fprintf(a.out, "  entries:  %d, head %d\n", report.Entries, report.Head)
+				if report.HeadHash != "" {
+					fmt.Fprintf(a.out, "  head hash: %s\n", report.HeadHash)
+				}
+				if report.SignedFrom > 0 {
+					fmt.Fprintf(a.out, "  signed:   from seq %d, public key %s\n", report.SignedFrom, report.PublicKey)
+				} else {
+					fmt.Fprintln(a.out, "  signed:   no (signing has not been activated)")
+				}
+				if report.PlaceholderSigs > 0 {
+					fmt.Fprintf(a.out, "  placeholder signatures: %d entries below the activation seq — history from before signing, permanently unattested\n", report.PlaceholderSigs)
+				}
+				for _, ep := range report.Epochs {
+					line := fmt.Sprintf("  epoch:    %s at %s, from seq %d", ep.Reason, ep.At.Format(time.RFC3339), ep.FromSeq)
+					if ep.Signed {
+						switch {
+						case ep.SigOK == nil:
+							line += " (signed)"
+						case *ep.SigOK:
+							line += " (signed, verifies)"
+						default:
+							line += " (signed, DOES NOT VERIFY)"
+						}
+					}
+					fmt.Fprintln(a.out, line)
+				}
+				for _, f := range report.Findings {
+					fmt.Fprintf(a.out, "  FINDING:  %s\n", f)
+				}
+				if report.Truncated {
+					fmt.Fprintln(a.out, "  ... more findings truncated")
+				}
+				if report.OK {
+					fmt.Fprintf(a.out, "  verified in %s\n", report.Took.Round(time.Millisecond))
+				}
+			}
+			if !report.OK {
+				return fmt.Errorf("repository %s does not verify: %d finding(s)", report.Username, len(report.Findings))
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output format: text|json")
+	cmd.Flags().StringVar(&expectKey, "expect-public-key", "", "the hex public key logged at activation; a mismatch is a finding")
+	cmd.Flags().Int64Var(&expectSignedFrom, "expect-signed-from", 0, "the activation seq logged beside the key; a mismatch is a finding")
+	cmd.Flags().StringVar(&expectHead, "expect-head", "", "a previously reported head as seq:hash; a mismatch no epoch explains is a finding")
+	return cmd
 }
 
 func (a *app) repositoryResealCommand() *cobra.Command {

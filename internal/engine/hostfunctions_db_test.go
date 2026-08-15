@@ -115,7 +115,7 @@ func TestBootUpgradeDeliversTheHostFunctions(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	openWith := func(dir string) substrate.Service {
-		svc, err := Open(ctx, dsn, WithKindsDir(dir))
+		svc, err := Open(ctx, dsn, WithCredentialKey("test-cred-key"), WithKindsDir(dir))
 		if err != nil {
 			t.Fatalf("open with %s: %v", dir, err)
 		}

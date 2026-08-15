@@ -189,12 +189,26 @@ func (t *txn) settleFold() error {
 	if err != nil {
 		return err
 	}
-	_, err = t.exec(`
+	// RETURNING payload::text replaces the pending chain entry's payload with
+	// the merged one AS STORED: the hash stamped at settleChain must cover
+	// what this update just made the entry say.
+	var stored []byte
+	if err := t.row(`
 		UPDATE changelog
 		SET payload = jsonb_set(payload, '{`+foldPayloadKey+`}',
 			coalesce(payload->'`+foldPayloadKey+`', '[]'::jsonb) || $2::jsonb)
-		WHERE seq = $1`, t.maxSeq, raw)
-	return err
+		WHERE seq = $1
+		RETURNING payload::text`, t.maxSeq, raw).Scan(&stored); err != nil {
+		return err
+	}
+	if n := len(t.pending); n == 0 || t.pending[n-1].Seq != t.maxSeq {
+		// Only the transaction's LAST appended entry may take late effects; a
+		// settle that would touch anything else is a bug in a write path, and
+		// it rolls back rather than committing a hash over the wrong bytes.
+		return fmt.Errorf("substrate/engine: settleFold touched seq %d, which is not this transaction's last appended entry", t.maxSeq)
+	}
+	t.pending[len(t.pending)-1].PayloadText = stored
+	return nil
 }
 
 // foldOne applies ONE effect to the fold tables. This is the fold: a live

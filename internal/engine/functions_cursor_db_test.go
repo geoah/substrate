@@ -131,7 +131,10 @@ func openInternalDataset(t *testing.T, opts ...Option) *dataset {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	svc, err := Open(ctx, dsn,
-		append([]Option{WithKindsDir("../../kinds/core.substrate.reamde.dev")}, opts...)...)
+		append([]Option{
+			WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+			WithCredentialKey("test-cred-key"),
+		}, opts...)...)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}

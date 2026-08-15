@@ -104,7 +104,7 @@ func seededRepository(t *testing.T) (dsn string) {
 func openMoved(t *testing.T, dsn, tree string) error {
 	t.Helper()
 	bumpGroupVersion(t, tree, coreAuthority, "99")
-	svc, err := engine.Open(context.Background(), dsn, engine.WithKindsDir(tree))
+	svc, err := engine.Open(context.Background(), dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir(tree))
 	if err != nil {
 		return err
 	}
@@ -139,7 +139,7 @@ func TestBootUpgradeRefusesANarrowingWithLiveRows(t *testing.T) {
 func stillSpeaksTheOldShape(t *testing.T, dsn string) {
 	t.Helper()
 	ctx := context.Background()
-	svc, err := engine.Open(ctx, dsn, engine.WithKindsDir(shippedTree(t)))
+	svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir(shippedTree(t)))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestBootUpgradeRefusesAnEdgeBecomingARequiredReference(t *testing.T) {
 	patchShipped(t, coreKind(before, "llmmessage.yaml"), func(string) string {
 		return oldLLMMessage
 	})
-	svc, err := engine.Open(ctx, dsn, engine.WithKindsDir(before))
+	svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir(before))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestBootUpgradeRefusesAnEdgeBecomingARequiredReference(t *testing.T) {
 	// bump needed: llmmessage pins its own version here and the stored
 	// declaration carries the authority's older one, so the upgrade already
 	// wants to run.
-	svc2, err := engine.Open(ctx, dsn, engine.WithKindsDir(shippedTree(t)))
+	svc2, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir(shippedTree(t)))
 	if err != nil {
 		t.Fatalf("open under the new tree: %v", err)
 	}

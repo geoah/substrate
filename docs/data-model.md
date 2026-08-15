@@ -33,8 +33,11 @@ commit-visibility order **is** sequence order and a consumer resuming from a
 remembered seq misses nothing. Nothing prunes or compacts today.
 [The changelog and watch](changelog.md) is the consumer's side of this.
 
-The changelog is unsigned: no hashes, no chain, no signatures. It is trusted
-storage, not evidence.
+Every entry carries a SHA-256 hash chaining to the previous entry's, and
+every repository signs every entry with its own Ed25519 key: an in-place
+edit, a reorder or a splice breaks the chain at the first touched seq, and
+`repository verify` names it. [The chain](changelog.md#the-chain) says
+exactly what that does and does not prove.
 
 ## Records and identity
 

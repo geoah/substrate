@@ -24,6 +24,7 @@ import { describe, expect, it } from "vitest"
 
 import golden from "./wire.golden.json"
 import type {
+  Change,
   EdgeInput,
   EdgeRef,
   EdgeTarget,
@@ -97,6 +98,19 @@ const putInput: Keys<PutInput> = {
   ifVersion: true,
 }
 
+/** ChangeRow extends this with `triggers`, which is the feed's decoration,
+ * not the entry: the golden holds the entry alone. */
+const change: Keys<Change> = {
+  seq: true,
+  ts: true,
+  actor: true,
+  op: true,
+  recordId: true,
+  kind: true,
+  payload: true,
+  hash: true,
+}
+
 const mirrors: Record<string, Record<string, true>> = {
   SubstrateRecord: substrateRecord,
   EdgeTarget: edgeTarget,
@@ -105,6 +119,7 @@ const mirrors: Record<string, Record<string, true>> = {
   PropertyMeta: propertyMeta,
   PropertyAlternative: propertyAlternative,
   PutInput: putInput,
+  Change: change,
 }
 
 describe("wire types mirror the Go structs", () => {

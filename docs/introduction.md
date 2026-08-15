@@ -56,10 +56,12 @@ cross-repository read, no cross-repository watch, no cross-repository search.
 The isolation is enforced by Postgres row level security keyed on the
 authenticated token's repository, not by discipline in the query layer.
 
-The changelog is unsigned. It is trusted storage, and its ordering and its
-completeness are guarantees the substrate makes about itself — it is not
-evidence you can hand to someone who does not already trust the machine it
-runs on.
+The changelog carries its own tamper evidence: every entry is hash-chained to
+the one before it, and every repository signs every entry with its own key
+([the chain](changelog.md#the-chain)). What that buys, honestly: an
+edit, reorder or splice is detectable and named by seq; it is still not
+evidence against the operator of the machine it runs on, who holds the
+database and the keys alike.
 
 ## Reading order
 

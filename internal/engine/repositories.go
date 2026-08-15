@@ -24,6 +24,13 @@ type Repository struct {
 	// DEK is the repository's data-encryption key, WRAPPED under the host
 	// credential key. Nil marks a pre-DEK repository; open adopts one.
 	DEK []byte
+	// The signing state a keyed creation is born with: the Ed25519 seed
+	// wrapped under the host credential key, its public key, and the seq the
+	// guarantee covers from (1 at birth). All zero on a keyless (insecure)
+	// creation; the open activates later, exactly as for an upgraded store.
+	SigningKey    []byte
+	SigningPublic []byte
+	SignedFrom    int64
 }
 
 // scope is the repository's query scope.
@@ -185,9 +192,16 @@ func (s *service) assertAppPoolPrincipal(ctx context.Context) error {
 // registration loses on, and losing it costs the loser nothing but the rows
 // it erases on the way out.
 func (s *service) insertRepositoryRow(ctx context.Context, r *Repository) error {
+	// The repositories_signing_whole CHECK holds the three columns together:
+	// all set (a keyed birth) or all NULL (a keyless insecure one).
+	var signKey, signPublic, signedFrom any
+	if r.SignedFrom > 0 {
+		signKey, signPublic, signedFrom = r.SigningKey, r.SigningPublic, r.SignedFrom
+	}
 	err := s.maint.QueryRowContext(ctx, `
-		INSERT INTO repositories (id, username, dek) VALUES ($1, $2, $3)
-		RETURNING created_at`, r.ID, r.Username, r.DEK).Scan(&r.CreatedAt)
+		INSERT INTO repositories (id, username, dek, signing_key, signing_public, signed_from_seq)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING created_at`, r.ID, r.Username, r.DEK, signKey, signPublic, signedFrom).Scan(&r.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: create repository %q: %w", r.Username, err)
 	}
@@ -306,11 +320,12 @@ func (s *service) sweepOrphans(ctx context.Context) error {
 }
 
 // repositoryScopedTables is every table carrying a `repository` column — the
-// same list migration 0001 puts row level security on. A rollback that missed
-// one would leave rows nothing can ever reach again.
+// same set the migrations put row level security on (0001, plus chain_epochs
+// in 0005). A rollback that missed one would leave rows nothing can ever
+// reach again.
 var repositoryScopedTables = []string{
 	"records", "edges", "former_ids", "annotations", "property_managers",
-	"property_offers", "changelog", "embeddings", "embed_queue",
+	"property_offers", "changelog", "chain_epochs", "embeddings", "embed_queue",
 	"trigger_cursors", "trigger_failures", "trigger_schedule", "sealed",
 	"oauth_flows", "paged_cursors", "blobs", "vocabulary_dialect",
 	"vocabulary_promotions",

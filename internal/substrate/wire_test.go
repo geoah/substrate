@@ -42,6 +42,7 @@ var wireTypes = map[string]any{
 	"PropertyMeta":        PropertyMeta{},
 	"PropertyAlternative": PropertyAlternative{},
 	"PutInput":            PutInput{},
+	"Change":              Change{},
 }
 
 // jsonFields lists the wire names a struct serializes, in declaration order. A

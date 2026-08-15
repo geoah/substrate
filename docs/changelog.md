@@ -17,7 +17,8 @@ One entry, as the wire carries it, for the task created on the
  "op": "put",
  "kind": "tasks.substrate.reamde.dev/task",
  "recordId": "kq3v9x2m41pf",
- "payload": {"created": true, "properties": ["title", "dueAt"]}}
+ "payload": {"created": true, "properties": ["title", "dueAt"]},
+ "hash": "5f0c…64 hex chars…9a1d"}
 ```
 
 `actor` names what wrote ([the actor domain](api.md#actors) is closed and
@@ -46,8 +47,77 @@ Two guarantees consumers may lean on:
 - **Causal chains are finite.** Every delivery-authored entry records the seq
   that caused it, always strictly smaller, so a chain cannot loop, and the
   engine parks a chain deeper than its cap (16) rather than spinning. The link is stored, not published: a change on the wire
-  carries `seq`, `ts`, `actor`, `op`, `kind`, `recordId`, and `payload`, and
-  nothing else.
+  carries `seq`, `ts`, `actor`, `op`, `kind`, `recordId`, `payload`, and the
+  entry's `hash` (below), and nothing else.
+
+## The chain
+
+Every entry carries a SHA-256 **hash** over its own stored content and the
+previous entry's hash, stamped by the writing transaction. An in-place edit, a
+reorder, an insert or a splice of one repository's history into another breaks
+the chain at the first touched seq, and `substratectl repository verify` names
+it. The hash covers what Postgres stored — the verifier recomputes it from the
+same bytes later — with the payload's numbers canonicalized by VALUE, so how a
+Postgres version happens to render a number can never strand a historical
+hash.
+
+Every repository also **signs** every entry — signing is mandatory. Each
+repository mints its own Ed25519 key at its first open (sealed under
+`SUBSTRATE_CREDENTIAL_KEY`, which the server refuses to boot without): a
+brand-new repository is signed from seq 1, and a store upgraded from an
+earlier release activates on its first open after the backfill. Activation is
+durable and one-way: from the activation seq forward, a placeholder or
+invalid signature is a verification failure, and a host that cannot sign
+refuses to append rather than quietly shedding the guarantee. The activation
+moment logs the `(public key, signed_from_seq)` pair — pin it outside the
+database; it is what a verifier ultimately trusts.
+
+Two placeholder values exist, and both are hashed like any other value, so
+neither can be edited later without breaking the chain. Entries written
+before signing existed keep the **all-zero signature** forever — an
+append-only log cannot be signed after the fact, so `verify` counts them
+(`placeholderSigs`) below the activation seq and names them as findings at or
+after it. Every entry's **principal** (the verified token id behind the
+write) is the string `invalid` until the API threads it. A keyless host may
+run ONLY under `SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES=true`, never
+activates signing, writes placeholder signatures on everything, and `verify`
+names that state as a finding. The placeholders and the switch are pre-v1
+scaffolding, tracked to be removed before v1
+([#175](https://github.com/geoah/substrate/issues/175)).
+
+What this proves, honestly:
+
+- **The hash chain alone** catches accidental corruption, a botched restore,
+  and casual tampering. It does not stop an attacker with full database write
+  access, who can rewrite an entry and re-chain everything after it: the
+  chain needs no secret. It also cannot see a truncated tail by itself — only
+  a **remembered head** can, which is why `verify` prints the head
+  `(seq, hash)`, the operations doc tells you to write it down, and
+  `verify --expect-head seq:hash` turns the comparison into an enforced
+  finding instead of an eyeballed one.
+- **Signatures** raise the bar to "database access AND the credential key" —
+  PROVIDED the verifier is pinned: everything in the database, the public
+  key included, is rewritable by whoever holds the database, so an unpinned
+  verify proves internal consistency and a pinned one
+  (`--expect-public-key`, `--expect-signed-from`) proves it against what you
+  knew. Whoever holds both the database and the credential key is the host
+  operator, and no in-database scheme defends against the party who runs the
+  database.
+- The `hash` on the wire is a **receipt**, not a proof: the wire payload is
+  redacted, so a consumer cannot recompute it. Checking a receipt means
+  handing it to `repository verify --expect-head`.
+
+Three events legitimately move or begin the chain, and each records a **chain
+epoch** the verifier CHECKS as well as lists: the **backfill** that stamps
+history written before the chain existed (at the repository's first open
+under a chain-aware binary, atomically with its hashes), a **reseal**'s
+sanctioned rewrite (which VERIFIES FIRST — a reseal over tampered history
+refuses rather than laundering it — then re-chains and, when signing is on,
+re-signs everything after the first rewritten entry), and signing
+**activation** (whose epoch must be signed and agree with the durable mark,
+or it is a finding). A pinned head that stopped matching either matches a
+reseal epoch's recorded old head — reported, so you re-pin — or it is a
+plain finding.
 
 ## Watching
 

@@ -153,11 +153,8 @@ export interface ChangeTrigger {
   error?: string
 }
 
-/** One row of the cross-collection change feed. The payload's `properties` key
- * names what moved without its values; the values ride with the write's
- * recorded EFFECTS, which the console reads through `changeEffects`
- * (lib/changelog.ts) — never raw, and never by the payload key's own name. */
-export interface ChangeRow {
+/** One changelog entry as the server serializes it (`substrate.Change`). */
+export interface Change {
   seq: number
   ts: string
   actor: string
@@ -166,6 +163,17 @@ export interface ChangeRow {
   /** The changed record's kind reference. */
   kind: string
   payload?: Record<string, unknown>
+  /** The entry's chain hash, hex: a receipt checkable against the operator's
+   * `repository verify` output. Absent only on an entry written before the
+   * chain existed and not yet backfilled. */
+  hash?: string
+}
+
+/** One row of the cross-collection change feed. The payload's `properties` key
+ * names what moved without its values; the values ride with the write's
+ * recorded EFFECTS, which the console reads through `changeEffects`
+ * (lib/changelog.ts) — never raw, and never by the payload key's own name. */
+export interface ChangeRow extends Change {
   triggers?: ChangeTrigger[]
 }
 

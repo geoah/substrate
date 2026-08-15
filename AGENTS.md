@@ -8,10 +8,11 @@ facility plus bundle functions.
 **The model, in one paragraph.** One invite code admits people. Registering
 creates a **user** — username, password and TOTP, all three — and that user's
 one **repository**. Everything the user has lives in it: an append-only,
-strictly sequential, unsigned **changelog** is the truth and the **records** table is
+strictly sequential, hash-chained and server-signed **changelog**
+is the truth and the **records** table is
 its fold. Tokens and the login credential are themselves records, and a token
 has full access to its repository. There are no tenants, no identities, no
-keys, no signatures, no sharing, no scopes and no roles.
+user-managed keys, no sharing, no scopes and no roles.
 
 There is no written contract document. There was one — 3000 lines that
 declared six absent documents its superior, described a tree that no longer
@@ -101,6 +102,16 @@ code. A change to the door is tested under
 `mise run dev:totp`, where the factor is enforced, and NEVER by setting the
 variable outside this tree.
 
+**The dev substrate signs.** Changelog signing is mandatory and the signing
+seed seals under `SUBSTRATE_CREDENTIAL_KEY`, so the dev tasks mint a key once
+into `.dev/credential.key` and every start reuses it; `dev:wipe` removes it
+with the database. An operator command that needs the key (`repository
+reseal`) reads the same file — `dev:status` prints the export line. The
+keyless escape hatch (`SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES=true`,
+placeholder signatures, named by `repository verify`) is pre-v1 scaffolding
+([#175](https://github.com/geoah/substrate/issues/175)) and compose's
+out-of-the-box default, never this tree's dev default.
+
 **Run the engine suite on its own.** `internal/engine`'s `*_db_test.go` files
 each start a pgvector testcontainer, and they starve under a full-tree parallel
 run — `go test ./...` can fail there while `go test ./internal/engine/...` passes
@@ -135,6 +146,7 @@ bin/substratectl watch                       # resumable change stream
 
 # the operator's hat — a DSN, no HTTP
 bin/substratectl --dsn "$DATABASE_URL" repository list
+bin/substratectl --dsn "$DATABASE_URL" repository verify <username>  # walk the changelog chain: every hash, every signature
 bin/substratectl --dsn "$DATABASE_URL" repository rebuild <username>
 bin/substratectl --dsn "$DATABASE_URL" repository reseal <username>  # migrate legacy secrets into the sealed store; needs SUBSTRATE_CREDENTIAL_KEY
 bin/substratectl --dsn "$DATABASE_URL" user reset <username>   # needs SUBSTRATE_CREDENTIAL_KEY

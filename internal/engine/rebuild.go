@@ -53,6 +53,10 @@ type RebuildReport struct {
 	Head       int64         `json:"head"`
 	Records    int64         `json:"records"`
 	Took       time.Duration `json:"took"`
+	// Unverified marks a fold built from history the chain refused
+	// (RebuildRepositoryUnverified): installed on explicit demand, and the
+	// report says so rather than letting it read as clean.
+	Unverified bool `json:"unverified,omitempty"`
 }
 
 // foldTables are cleared and replayed, in this order: a purge effect walks the
@@ -69,7 +73,24 @@ const rebuildBatch = 500
 // into it. The repository's own advisory lock is held for the duration, so no
 // write can interleave, and the whole rebuild is ONE transaction: a rebuild
 // either replaces the fold or leaves it exactly as it was.
+//
+// THE CHAIN IS VERIFIED FIRST, before anything is cleared: tampered history
+// refuses to become the live fold. The explicit escape hatch is
+// RebuildRepositoryUnverified, a distinct method on purpose.
 func (s *service) RebuildRepository(ctx context.Context, username string) (RebuildReport, error) {
+	return s.rebuildRepository(ctx, username, true)
+}
+
+// RebuildRepositoryUnverified rebuilds from history the chain may refuse.
+// What it installs is exactly as trustworthy as the bytes in the table, which
+// is the thing the caller is choosing to accept; the report carries the mark.
+func (s *service) RebuildRepositoryUnverified(ctx context.Context, username string) (RebuildReport, error) {
+	report, err := s.rebuildRepository(ctx, username, false)
+	report.Unverified = true
+	return report, err
+}
+
+func (s *service) rebuildRepository(ctx context.Context, username string, verify bool) (RebuildReport, error) {
 	started := time.Now()
 	repo, err := s.repositoryByUsername(ctx, username)
 	if err != nil {
@@ -90,7 +111,7 @@ func (s *service) RebuildRepository(ctx context.Context, username string) (Rebui
 		ctx: ctx, ds: ds, tx: tx, actor: substrate.ActorSystem, tier: substrate.TierMachine,
 		now: nowUTC(), internal: true,
 	}
-	if err := t.rebuild(&report); err != nil {
+	if err := t.rebuild(&report, verify); err != nil {
 		_ = tx.Rollback()
 		return report, err
 	}
@@ -101,11 +122,40 @@ func (s *service) RebuildRepository(ctx context.Context, username string) (Rebui
 	return report, nil
 }
 
-func (t *txn) rebuild(report *RebuildReport) error {
+func (t *txn) rebuild(report *RebuildReport, verify bool) error {
 	// The write path's own serialization: holding the changelog lock for the whole
 	// rebuild means no writer can append while the fold is missing.
 	if err := t.lockKey(changelogLockKey); err != nil {
 		return err
+	}
+	// The chain check runs INSIDE this transaction, under this lock, over the
+	// exact bytes the replay below will fold (adversarial review, both
+	// passes: a verify on a separate connection blesses a moment, not the
+	// bytes installed).
+	if verify {
+		signing := t.ds.signing()
+		var finding string
+		if _, err := verifyChainCore(t.ctx, t.tx, t.ds.scope.Repository, signing.signedFrom, signing.public,
+			func(f string) {
+				if finding == "" {
+					finding = f
+				}
+			}); err != nil {
+			return err
+		}
+		if finding != "" {
+			return fmt.Errorf("substrate/engine: rebuild refuses: the chain does not verify (%s); run `repository verify`, and only rebuild --force-unverified once you understand what you would be installing", finding)
+		}
+		// Signing is mandatory; a repository that never activated has hashes
+		// but no signature guarantee at all. The insecure switch is the one
+		// door that accepts folding it anyway, complaining (#175).
+		if signing.signedFrom == 0 {
+			if !t.ds.svc.insecureInvalidSigs {
+				return fmt.Errorf("substrate/engine: rebuild refuses: changelog signing has never activated on this repository, so no signature vouches for the history this would install; open it under a credential key first, or rebuild under SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES (local testing only)")
+			}
+			t.ds.svc.log.Warn("substrate: INSECURE — rebuilding from a chain with no signature guarantee (signing never activated)",
+				"repository", t.ds.scope.Repository)
+		}
 	}
 	for _, table := range foldTables {
 		if _, err := t.exec(`DELETE FROM ` + table); err != nil {
@@ -140,7 +190,7 @@ func (t *txn) rebuild(report *RebuildReport) error {
 // changelogPage reads one page of the changelog in seq order.
 func (t *txn) changelogPage(after int64) ([]substrate.Change, error) {
 	rows, err := t.query(`
-		SELECT seq, ts, actor, op, record_id, kind, payload FROM changelog
+		SELECT seq, ts, actor, op, record_id, kind, payload, hash FROM changelog
 		WHERE seq > $1 ORDER BY seq LIMIT $2`, after, rebuildBatch)
 	if err != nil {
 		return nil, err

@@ -95,7 +95,9 @@ func Start(t *testing.T, opts ...Option) *Env {
 	// The SEED authority alone, exactly as substrated boots: a fresh
 	// repository holds core and nothing else, and a test that wants more
 	// installs it the way a user would.
-	svc, err := engine.Open(ctx, dsn, engine.WithKindsFS(kinds.Seed()))
+	svc, err := engine.Open(ctx, dsn, engine.WithKindsFS(kinds.Seed()),
+		// Signing is mandatory; the live-API env runs the keyed shape.
+		engine.WithCredentialKey("test-cred-key"))
 	if err != nil {
 		t.Fatalf("testenv: open engine: %v", err)
 	}

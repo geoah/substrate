@@ -128,7 +128,7 @@ func TestDialectOneTraitVariantNameRefusesTheOpenByName(t *testing.T) {
 	windBackDialect(t, ds.db)
 	closeSvc()
 
-	svc, err := Open(ctx, dsn, WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+	svc, err := Open(ctx, dsn, WithCredentialKey("test-cred-key"), WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 	if err != nil {
 		t.Fatalf("open the service: %v", err)
 	}

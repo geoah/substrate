@@ -39,6 +39,23 @@ readonly INVITE="${SUBSTRATE_INVITE_CODE:-let-me-in}"
 # change to the door gets tested.
 # Not readonly: `dev:totp` is this same substrate with the factor put back.
 DISABLE_TOTP="${SUBSTRATE_INSECURE_DISABLE_TOTP:-true}"
+# Changelog signing is mandatory and the signing seed seals under the
+# credential key, so the dev substrate mints a key once and keeps it beside
+# the state it belongs to: `dev:wipe` removes both together. An operator
+# command against this substrate reads the same file (dev:status prints the
+# path). The env var wins where a shell already carries one.
+readonly CREDFILE="${STATE}/credential.key"
+cred_key() {
+	if [ -n "${SUBSTRATE_CREDENTIAL_KEY:-}" ]; then
+		echo "$SUBSTRATE_CREDENTIAL_KEY"
+		return
+	fi
+	mkdir -p "$STATE"
+	if [ ! -f "$CREDFILE" ]; then
+		head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$CREDFILE"
+	fi
+	cat "$CREDFILE"
+}
 # Built by `mise run console:build`. Absent means the server serves no console
 # at / — the API is still whole, and `mise run console:dev` proxies to it.
 readonly WEB_DIR="web/console/dist"
@@ -188,6 +205,7 @@ server_start() {
 		"PORT=${PORT}" \
 		"SUBSTRATE_INVITE_CODE=${INVITE}" \
 		"SUBSTRATE_INSECURE_DISABLE_TOTP=${DISABLE_TOTP}" \
+		"SUBSTRATE_CREDENTIAL_KEY=$(cred_key)" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
 		"${web[@]}" \
 		"${llm_vars[@]}" \
@@ -247,6 +265,7 @@ cmd_run() {
 		"PORT=${PORT}" \
 		"SUBSTRATE_INVITE_CODE=${INVITE}" \
 		"SUBSTRATE_INSECURE_DISABLE_TOTP=${DISABLE_TOTP}" \
+		"SUBSTRATE_CREDENTIAL_KEY=$(cred_key)" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
 		"${web[@]}" \
 		"${llm_vars[@]}" \
@@ -313,6 +332,9 @@ cmd_status() {
 		echo "console:   built (served at /)"
 	else
 		echo "console:   not built (mise run console:build)"
+	fi
+	if [ -f "$CREDFILE" ]; then
+		echo "credential key: ${CREDFILE} (export SUBSTRATE_CREDENTIAL_KEY=\$(cat ${CREDFILE}) for operator commands)"
 	fi
 }
 

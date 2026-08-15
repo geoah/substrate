@@ -36,9 +36,17 @@ services:
       # With :- an operator could never close the door from the environment,
       # because empty would fall back to the known default.
       SUBSTRATE_INVITE_CODE: ${SUBSTRATE_INVITE_CODE-let-me-in}
-      # Seals stored provider tokens at rest. Unset means plaintext and a
-      # warning at boot — fine on a laptop, never on a real deployment.
+      # Seals stored provider tokens at rest AND the changelog signing seed:
+      # signing is mandatory, so a real deployment sets this and removes the
+      # insecure switch below. Any string works; losing it stops writes.
       SUBSTRATE_CREDENTIAL_KEY: ${SUBSTRATE_CREDENTIAL_KEY:-}
+      # The out-of-the-box default runs UNSIGNED, loudly: entries carry
+      # placeholder signatures and `repository verify` names the state. A
+      # baked-in default key would be worse — publicly known, so it certifies
+      # nothing, and key rotation is not built, so replacing it later stops
+      # writes. Set the key above, drop this, and the next open activates
+      # signing for every repository.
+      SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES: ${SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES:-true}
       # The one redirect URI every OAuth provider app registers. Unset, the
       # host OAuth facility refuses to start a flow, so no connector bundle
       # can connect an account.

@@ -76,6 +76,15 @@ type dataset struct {
 	dek   []byte
 	watch *broadcaster
 
+	// signState is the repository's changelog-signing state (signing.go),
+	// read through ds.signing(): signedFrom is 0 until activation and never
+	// unset after; key is nil when signing is inactive OR the credential
+	// key cannot open the seed — in the latter case every append refuses
+	// (settleChain) rather than shedding the guarantee. Guarded by mu
+	// because a commit that discovers a CONCURRENT activation (another
+	// process's) upgrades it in place (settleChain).
+	signState datasetSigning
+
 	mu   sync.RWMutex
 	reg  *vocabulary.Registry
 	info substrate.RepositoryInfo
@@ -249,6 +258,11 @@ type txn struct {
 	// thread's reader resolves the delta from the changelog instead of
 	// parsing tool payloads.
 	entries []changeEntry
+	// pending is the same appends as the CHAIN sees them: every preimage
+	// field, with the payload text AS POSTGRES STORED IT (appendChange's
+	// RETURNING). settleChain drains it at commit, after settleFold has made
+	// the last payload final.
+	pending []chainEntry
 	// changeSink, when set, receives this transaction's entries AFTER COMMIT
 	// (inTx) — the agent loop's per-dispatch collector. After commit, so a
 	// rolled-back write stamps nothing.
@@ -319,6 +333,13 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 		return err
 	}
 	if err := t.settleFold(); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	// After settleFold: the last entry's payload is final only once the
+	// transaction's late effects have merged into it, and the hash covers the
+	// payload as stored.
+	if err := t.settleChain(); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
