@@ -721,22 +721,21 @@ func (t *txn) split(mergeID string) (*substrate.Record, error) {
 	// still name the migrated actor, tier AND principal, because a row
 	// somebody has since claimed records a write the split must not erase.
 	// A merge record written before the principal was recorded carries no
-	// such key, and matches on the pair it does carry.
+	// such key, and the empty string is the right match for it: migration
+	// 0006 stamped exactly that on every row it found, so a row that names
+	// anything else was written by a token after the upgrade.
 	for _, m := range mapsOf(moved["managers"]) {
 		property, _ := m["property"].(string)
 		actor, _ := m["actor"].(string)
 		tier, _ := m["tier"].(string)
+		principal, _ := m["principal"].(string)
 		if property == "" || actor == "" || tier == "" {
 			continue
 		}
-		var principal sql.NullString
-		if p, ok := m["principal"].(string); ok {
-			principal = sql.NullString{String: p, Valid: true}
-		}
 		if _, err := t.exec(`
 			DELETE FROM property_managers
-			WHERE record_kind = $1 AND record_id = $2 AND property = $3 AND actor = $4 AND tier = $5
-			  AND ($6::text IS NULL OR principal = $6)`,
+			WHERE record_kind = $1 AND record_id = $2 AND property = $3
+			  AND actor = $4 AND tier = $5 AND principal = $6`,
 			winnerRef.Kind, winnerID, property, actor, tier, principal); err != nil {
 			return nil, err
 		}
