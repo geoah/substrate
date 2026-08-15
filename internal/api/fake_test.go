@@ -307,10 +307,13 @@ type fakeDataset struct {
 	signals  chan int64
 
 	// recorded inputs
-	lastQuery          substrate.Query
-	lastPut            substrate.PutInput
-	lastPatch          substrate.PatchInput
-	lastActor          substrate.Actor
+	lastQuery substrate.Query
+	lastPut   substrate.PutInput
+	lastPatch substrate.PatchInput
+	lastActor substrate.Actor
+	// lastPrincipal is what the engine reads off the write's context: the
+	// token id the door resolved, never anything the caller sent.
+	lastPrincipal      string
 	lastSearch         substrate.SearchInput
 	lastVocabularyDocs []map[string]any
 	lastDeleteType     string
@@ -454,13 +457,14 @@ func (d *fakeDataset) put(e *substrate.Record) {
 	})
 }
 
-func (d *fakeDataset) Put(_ context.Context, actor substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
+func (d *fakeDataset) Put(ctx context.Context, actor substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err := d.fail("Put"); err != nil {
 		return nil, err
 	}
 	d.lastPut, d.lastActor = in, actor
+	d.lastPrincipal = substrate.PrincipalFrom(ctx)
 	id := in.ID
 	if id == "" {
 		id = fmt.Sprintf("ent%d", len(d.records)+1)

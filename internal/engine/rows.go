@@ -308,15 +308,15 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 	var seq int64
 	var stored []byte
 	// The INSERT carries the sig placeholder (settleChain overwrites it with
-	// the real signature in this same transaction) and the principal
-	// placeholder (#102 threads the verified token id). The pending entry
-	// and the row must agree on every hashed field, so when #102 stamps the
-	// token id it stamps both sides of this append.
+	// the real signature in this same transaction) and the transaction's
+	// principal — the token id the door verified, empty where no token stands
+	// behind the write. The pending entry and the row must agree on every
+	// hashed field, so both sides of this append stamp the same principal.
 	if err := t.row(`
 		INSERT INTO changelog (seq, ts, actor, principal, op, record_id, kind, payload, caused_by, sig)
 		VALUES ((SELECT coalesce(max(seq), 0) + 1 FROM changelog), $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
 		RETURNING seq, payload::text`,
-		t.now, string(actor), principalPlaceholder, string(op), recordID, typ, raw, causedBy, sigPlaceholder).Scan(&seq, &stored); err != nil {
+		t.now, string(actor), t.principal, string(op), recordID, typ, raw, causedBy, sigPlaceholder).Scan(&seq, &stored); err != nil {
 		return err
 	}
 	if seq > t.maxSeq {
@@ -324,7 +324,7 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 	}
 	t.entries = append(t.entries, changeEntry{seq: seq, op: op, kind: typ, id: recordID})
 	t.pending = append(t.pending, chainEntry{
-		Seq: seq, TS: t.now, Actor: string(actor), Principal: principalPlaceholder,
+		Seq: seq, TS: t.now, Actor: string(actor), Principal: t.principal,
 		Op: string(op), RecordID: recordID, Kind: typ,
 		CausedBy: causedBy.Int64, CausedByOK: causedBy.Valid,
 		PayloadText: stored,
@@ -602,7 +602,8 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 // --- property managers ---
 //
 // The ledger records which actor last had a change ACCEPTED on each property,
-// and at which TIER that write stood (primitives README §6). It is
+// at which TIER that write stood (primitives README §6), and which PRINCIPAL
+// — the token id the door verified — stood behind it. It is
 // attribution on every direct write, and it is load-bearing:
 // mapping recompute yields to any manager row above the machine tier, which
 // is how a hand edit — the owner's or a function's — survives a sync,
@@ -611,12 +612,25 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 
 // actorTier resolves an actor's manager tier from DATA, never from the
 // actor's spelling: the three human DOORS — api, console, substratectl
-// — are the owner tier; the engine's own actor is machine; every actor the registry answers
+// — are the owner tier; the engine's own actor is machine; every actor the
+// registry answers
 // for carries its declared tier — authority-declared connector/bundle actors
 // default machine, a registered function's or agent's own actor is
-// bundle; any OTHER actor — a minted token's client — holds like the
-// owner, the decided default recorded as data on the token at mint
-// (MintToken). Direct writes read their tier off the transaction (txn.tier,
+// bundle.
+//
+// An actor the registry does not answer for splits two ways. A RESERVED name
+// (the `substrate` namespace, `bundle:`, `connector:`, `function:`) is one of
+// the substrate's own writing hands, which a request may never claim
+// (api/auth.go) — an undeclared one is a hand whose declaration is gone, a
+// facility like `substrate.oauth`, or a dispatch mid-uninstall, and none of
+// those is the owner's edit, so it holds at the machine tier and recompute
+// may replace it. Anything else is a name a REQUEST asserted at the door, and
+// a token has full access to its repository: that write stands exactly where
+// the token stands, the owner tier, whatever door name it chose. Nothing here
+// escalates — the same caller can send `api` — and the entry's principal
+// records which token it was.
+//
+// Direct writes read their tier off the transaction (txn.tier,
 // set once at inTx and set to bundle explicitly by function/agent
 // dispatch); recompute's own rows are always machine, whatever actor they
 // credit (mapping.go). This function is also the facility seams'
@@ -625,11 +639,16 @@ func (ds *dataset) actorTier(actor substrate.Actor) substrate.Tier {
 	switch {
 	case substrate.HumanActors[actor]:
 		return substrate.TierOwner
+	// The engine's own hand is resolved before the registry, so a declaration
+	// cannot move it: `tier:` is data an installed bundle writes.
 	case actor == substrate.ActorSystem:
 		return substrate.TierMachine
 	}
 	if tier, ok := ds.registry().ActorTier(string(actor)); ok {
 		return tier
+	}
+	if substrate.ReservedActor(actor) {
+		return substrate.TierMachine
 	}
 	return substrate.TierOwner
 }
@@ -638,6 +657,10 @@ func (t *txn) setManager(ref eref, property string, actor substrate.Actor, tier 
 	_, err := t.fold(foldOp{
 		Kind: foldManager, Ref: ref.Kind, ID: ref.ID,
 		Property: property, Actor: string(actor), Tier: string(tier),
+		// The effect carries the principal so a replay reproduces the row
+		// without reading the entry around it — the fold describes what the
+		// write did, in full.
+		Principal: t.principal,
 	})
 	return err
 }
@@ -650,7 +673,7 @@ func (t *txn) deleteManager(ref eref, property string) error {
 	return err
 }
 
-func (t *txn) applyManager(ref eref, property string, actor substrate.Actor, tier substrate.Tier) (bool, error) {
+func (t *txn) applyManager(ref eref, property string, actor substrate.Actor, tier substrate.Tier, principal string) (bool, error) {
 	if actor == "" {
 		res, err := t.exec(`DELETE FROM property_managers WHERE record_kind = $1 AND record_id = $2 AND property = $3`,
 			ref.Kind, ref.ID, property)
@@ -660,14 +683,19 @@ func (t *txn) applyManager(ref eref, property string, actor substrate.Actor, tie
 		n, err := res.RowsAffected()
 		return n > 0, err
 	}
+	// A different principal is a different write, so it moves the row: the
+	// ledger names the token behind the last accepted change, not merely the
+	// door it came through.
 	res, err := t.exec(`
-		INSERT INTO property_managers (record_kind, record_id, property, actor, tier, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO property_managers (record_kind, record_id, property, actor, tier, principal, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (repository, record_kind, record_id, property) DO UPDATE SET
-			actor = EXCLUDED.actor, tier = EXCLUDED.tier, updated_at = EXCLUDED.updated_at
-		WHERE property_managers.actor IS DISTINCT FROM EXCLUDED.actor
-		   OR property_managers.tier  IS DISTINCT FROM EXCLUDED.tier`,
-		ref.Kind, ref.ID, property, string(actor), string(tier), t.now)
+			actor = EXCLUDED.actor, tier = EXCLUDED.tier,
+			principal = EXCLUDED.principal, updated_at = EXCLUDED.updated_at
+		WHERE property_managers.actor     IS DISTINCT FROM EXCLUDED.actor
+		   OR property_managers.tier      IS DISTINCT FROM EXCLUDED.tier
+		   OR property_managers.principal IS DISTINCT FROM EXCLUDED.principal`,
+		ref.Kind, ref.ID, property, string(actor), string(tier), principal, t.now)
 	if err != nil {
 		return false, err
 	}

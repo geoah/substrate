@@ -51,11 +51,12 @@ type chainEntry struct {
 	Seq   int64
 	TS    time.Time
 	Actor string
-	// Principal is the verified token id behind the write —
-	// principalPlaceholder on every entry until the API threads it (#102).
-	// NOT NULL and hashed from birth, so stamping the real id later is not a
-	// preimage change, and a stored principal can never be edited without
-	// breaking the chain.
+	// Principal is the verified token id behind the write — what the door
+	// resolved, beside the actor the caller asserted. Empty where no token
+	// stood behind the entry (the boot upgrade, a background worker,
+	// registration and login), and principalPlaceholder on the history
+	// written before #102 stamped real ones. NOT NULL and hashed from birth,
+	// so a stored principal can never be edited without breaking the chain.
 	Principal  string
 	Op         string
 	RecordID   string
@@ -320,9 +321,13 @@ var zeroHash [32]byte
 // The placeholders. sig and principal are NOT NULL, and history that predates
 // them carries a value that says so: the all-zero signature (an append-only
 // log cannot be signed after the fact) and the principal 'invalid' (the token
-// id was never stored; #102 stamps real ones). Both are hashed like any
+// id was discarded before it was ever stored). Both are hashed like any
 // value, so neither can be edited without breaking the chain. Pre-v1
 // scaffolding, tracked in #175.
+//
+// principalPlaceholder is now MIGRATION 0005's value alone: no write path
+// stamps it, and an entry written since #102 carries the door's token id or,
+// where no token stood behind it, the empty string.
 var sigPlaceholder = make([]byte, ed25519.SignatureSize)
 
 const principalPlaceholder = "invalid"
