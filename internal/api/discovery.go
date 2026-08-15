@@ -105,10 +105,23 @@ type changelogInfo struct {
 	Horizon int64 `json:"horizon"`
 }
 
+// featureInfo names one capability, how stable it is, and WHICH surfaces
+// serve it. The two surfaces are not equivalent: REST is the frozen v1
+// contract, GraphQL is the per-repository projection over the same records
+// (decision 0022), so a feature only one of them serves has to say so here.
+// Surfaces is never empty.
 type featureInfo struct {
-	Name      string `json:"name"`
-	Stability string `json:"stability"`
+	Name      string   `json:"name"`
+	Stability string   `json:"stability"`
+	Surfaces  []string `json:"surfaces"`
 }
+
+// The request surfaces a feature can be served on. A client reads them off
+// discovery instead of trying a route to see whether it exists.
+const (
+	surfaceREST    = "rest"
+	surfaceGraphQL = "graphql"
+)
 
 // getDiscovery serves GET /.well-known/substrate/server.json. No auth, no DB.
 func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
@@ -147,15 +160,26 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 // serves is stable; the agent surface carries its declared stability
 // straight from the substrate marker, so "alpha" surfaces here
 // rather than being hard-coded.
+//
+// Each entry's surfaces are the doors that actually exist today. Search and
+// embeddings are the two the REST surface does not serve: REST filters
+// (`?filter=`), the GraphQL `search(q, mode, kinds, k)` query ranks, and
+// embeddings are reachable only as that query's semantic arm. The rest of
+// the operational verbs (triggers, functions, bundles, blobs, agents) hang
+// off REST paths and have no GraphQL field at all.
 func features() []featureInfo {
 	return []featureInfo{
-		{Name: "triggers", Stability: substrate.StabilityStable},
-		{Name: "functions", Stability: substrate.StabilityStable},
-		{Name: "bundles", Stability: substrate.StabilityStable},
-		{Name: "blobs", Stability: substrate.StabilityStable},
-		{Name: "changefeed", Stability: substrate.StabilityStable},
-		{Name: "search", Stability: substrate.StabilityStable},
-		{Name: "embeddings", Stability: substrate.StabilityStable},
-		{Name: substrate.FeatureAgents, Stability: substrate.AgentStability},
+		{Name: "triggers", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
+		{Name: "functions", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
+		{Name: "bundles", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
+		{Name: "blobs", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
+		// The changefeed is the one feature both surfaces read: REST pages
+		// and tails it (/changes, /watch), GraphQL resumes it forward
+		// (`changelog(from, filter, first)`) but streams nothing, because
+		// there is no subscription.
+		{Name: "changefeed", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST, surfaceGraphQL}},
+		{Name: "search", Stability: substrate.StabilityStable, Surfaces: []string{surfaceGraphQL}},
+		{Name: "embeddings", Stability: substrate.StabilityStable, Surfaces: []string{surfaceGraphQL}},
+		{Name: substrate.FeatureAgents, Stability: substrate.AgentStability, Surfaces: []string{surfaceREST}},
 	}
 }

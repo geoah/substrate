@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -66,6 +67,54 @@ func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 	}
 	if version := doc.Server.Version; version == "" {
 		t.Fatalf("server version missing")
+	}
+}
+
+// Every feature says which surfaces serve it, because the two are not
+// equivalent: search and embeddings are the GraphQL query's alone, and a
+// client that read "stable" as "REST route exists" went looking for a route
+// that never shipped.
+func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
+	svc := newFakeService()
+	h := New(Config{Service: svc})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil))
+	doc := decodeJSON[discoveryDoc](t, rec)
+
+	want := map[string][]string{
+		"triggers":   {surfaceREST},
+		"functions":  {surfaceREST},
+		"bundles":    {surfaceREST},
+		"blobs":      {surfaceREST},
+		"changefeed": {surfaceREST, surfaceGraphQL},
+		"search":     {surfaceGraphQL},
+		"embeddings": {surfaceGraphQL},
+		"agents":     {surfaceREST},
+	}
+	if len(doc.Features) != len(want) {
+		t.Fatalf("features = %+v, want %d entries", doc.Features, len(want))
+	}
+	for _, f := range doc.Features {
+		if len(f.Surfaces) == 0 {
+			t.Fatalf("feature %q names no surface", f.Name)
+		}
+		if !slices.Equal(f.Surfaces, want[f.Name]) {
+			t.Fatalf("feature %q surfaces = %v, want %v", f.Name, f.Surfaces, want[f.Name])
+		}
+	}
+}
+
+// The gql-only marker is a claim about the routes: a REST search path is a
+// 404 problem object, exactly like any other unknown API path.
+func TestSearchHasNoRESTRoute(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+	for _, path := range []string{"/api/v1/search", "/api/v1/core.substrate.reamde.dev/search"} {
+		rec := env.do(t, http.MethodGet, path+"?q=hello", tok, nil)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("GET %s status = %d, body %s", path, rec.Code, rec.Body.String())
+		}
 	}
 }
 

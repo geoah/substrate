@@ -168,5 +168,6 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0018](0018-reseal-rewrites-history-values-in-place.md) | Reseal rewrites history's values in place, so entry bytes are not identity | accepted |
 | [0019](0019-a-lifecycle-is-a-state-machine-only-where-the-substrate-owns-it.md) | A lifecycle is a state machine only where the substrate owns it | accepted |
 | [0020](0020-dialect-keys-are-reserved-not-tolerated.md) | Dialect keys are reserved by name; there is no tolerated `x-` namespace | accepted |
+| [0022](0022-rest-is-frozen-graphql-is-a-projection.md) | REST is the frozen v1 contract; GraphQL is a derived projection | accepted |
 | [0023](0023-a-sealed-payload-is-bound-to-its-address.md) | A sealed payload is bound to the address it was written at | proposed |
 | [0024](0024-the-credential-key-is-key-material-not-a-passphrase.md) | `SUBSTRATE_CREDENTIAL_KEY` is key material, not a passphrase | proposed |
