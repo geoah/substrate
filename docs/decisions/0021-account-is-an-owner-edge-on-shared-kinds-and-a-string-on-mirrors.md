@@ -51,7 +51,8 @@ records when a connection goes away.
 
 So the rule, stated once: an `account` EDGE is `ownerRef: true` and never
 `required: true`; an `account` PROPERTY is a string carrying the account
-record's id, and nothing depends on it.
+record's id, which a sync body reads as provenance and the engine never
+follows.
 
 ### Consequences
 

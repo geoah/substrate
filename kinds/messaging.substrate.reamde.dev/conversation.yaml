@@ -9,6 +9,10 @@ data:
     disagree about the boundaries and messages do not. A synced conversation
     hangs off the account it came through; one written by hand carries no
     account. Either way it names the people taking part.
+  # The declaration inherited the authority's version before this pin.
+  # version 2: the `account` edge is no longer `required` (issue 124), so a
+  # conversation can be authored without a provider behind it.
+  version: 2
   names:
     singular: conversation
     plural: conversations

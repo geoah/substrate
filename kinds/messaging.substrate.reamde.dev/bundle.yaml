@@ -21,10 +21,7 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: messaging.substrate.reamde.dev
 data:
-  # version 2: `conversation.account` and `emailthread.account` are no longer
-  # required edges (issue 124), so both kinds can be authored without a
-  # provider behind them.
-  version: 2
+  version: 1
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A VOCABULARY bundle (see people.substrate.reamde.dev): kinds only, imported from the

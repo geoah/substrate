@@ -8,6 +8,10 @@ data:
     One mail thread: its subject and everyone on it, plus the account it synced
     through where a connector brought it in. Messages point here, so the thread
     is what a reader lists and the messages are what they open.
+  # The declaration inherited the authority's version before this pin.
+  # version 2: the `account` edge is no longer `required` (issue 124), so a
+  # thread can be authored without a provider behind it.
+  version: 2
   names:
     singular: emailthread
     plural: emailthreads

@@ -11,8 +11,8 @@ const gcBatch = 200
 
 // RunGC performs one owner-reference mark-and-collect sweep: tombstoned
 // records with no remaining finalizers are hard-deleted, and every record
-// whose required owner_ref target went with them is tombstoned so the next
-// pass collects it. Iterates to a fixpoint within the sweep.
+// whose owner_ref target went with them is tombstoned so the next pass
+// collects it. Iterates to a fixpoint within the sweep.
 func (ds *dataset) RunGC(ctx context.Context) (int, error) {
 	collected := 0
 	for {
@@ -90,8 +90,10 @@ func (ds *dataset) gcPass(ctx context.Context) (int, error) {
 	return n, nil
 }
 
-// cascadeOwned tombstones every live record whose required owner_ref edge
-// pointed at the record about to be hard-deleted.
+// cascadeOwned tombstones every live record whose owner_ref edge pointed at
+// the record about to be hard-deleted. The edge decides, not `required`: an
+// optional owner edge that IS set owns its record exactly as a required one
+// does, and a record that never set it has no owner to be collected by.
 func (t *txn) cascadeOwned(owner eref) error {
 	rows, err := t.query(`
 		SELECT e.rel, e.src, x.kind FROM edges e JOIN records x ON x.kind = e.src_kind AND x.id = e.src

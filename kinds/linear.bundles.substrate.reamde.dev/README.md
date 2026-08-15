@@ -169,27 +169,24 @@ writes `providerId` back onto the rows it touches:
 substratectl bundle disable linear.bundles.substrate.reamde.dev/linear
 ```
 
-Then take the old key off every live `user`, `team` and `issue`, either by
-deleting the mirrors (the guard counts live rows only) or by nulling the
-property on each:
+Null the old key on every live `user`, `team` and `issue`, then apply the
+closure and start the bundle again:
 
 ```sh
 substratectl patch issues <id> --authority linear.bundles.substrate.reamde.dev \
   -p '{"properties":{"providerId":null}}'
-```
-
-Apply the closure and start the bundle again:
-
-```sh
 substratectl apply -f bundle.yaml -f triggers.yaml
 substratectl bundle enable linear.bundles.substrate.reamde.dev/linear
 ```
 
-A cleared row stays without a provider key until Linear touches its issue
-again, because the sync is incremental off `lastSyncedAt` and only re-fetches
-what changed. Null `lastSyncedAt` on the account to make the next run re-read
-its whole `backfillDepth` window, which is also what rebuilds mirrors deleted
-above.
+A cleared row then has no provider key until Linear touches its issue again,
+because the sync reads incrementally from `lastSyncedAt` and that property is
+`writer: connector`, so nothing outside the bundle can wind it back. Deleting
+the mirrors instead does not help: a put-if-absent treats a tombstoned row as
+existing, so the mint is a no-op until the collector has swept it. A
+repository that wants every mirror rebuilt runs the destructive path in its
+documented order, disable then purge, then reconnects the account: the first
+backfill writes the new keys from scratch.
 
 ## Deliberately out of scope (for now)
 
