@@ -45,23 +45,14 @@ type opField struct {
 	Value   string `json:"value"`
 }
 
-// saveRecoveryTo1Password tries the automatic save: present `op`, signed in,
-// item created. False means the caller prints the identity instead; the
-// reason lands on stderr so a signed-out `op` is diagnosable.
-func (a *app) saveRecoveryTo1Password(ctx context.Context, server, username, identity, recipient string) bool {
+// saveItemTo1Password tries an automatic save: present `op`, signed in, item
+// created. False means the caller prints the secret instead; the reason lands
+// on stderr so a signed-out `op` is diagnosable. `what` names the secret in
+// both outcomes.
+func (a *app) saveItemTo1Password(ctx context.Context, what string, item opItem) bool {
 	opPath, err := exec.LookPath("op")
 	if err != nil {
 		return false
-	}
-	item := opItem{
-		Title:    fmt.Sprintf("substrate recovery key (%s @ %s)", username, server),
-		Category: "PASSWORD",
-		Fields: []opField{
-			{ID: "password", Type: "CONCEALED", Purpose: "PASSWORD", Value: identity},
-			{Label: "recipient", Type: "STRING", Value: recipient},
-			{Label: "server", Type: "STRING", Value: server},
-			{Label: "username", Type: "STRING", Value: username},
-		},
 	}
 	raw, err := json.Marshal(item)
 	if err != nil {
@@ -72,12 +63,26 @@ func (a *app) saveRecoveryTo1Password(ctx context.Context, server, username, ide
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(a.errOut, "1password: could not save the recovery key (%v): %s\n",
-			err, bytes.TrimSpace(stderr.Bytes()))
+		fmt.Fprintf(a.errOut, "1password: could not save the %s (%v): %s\n",
+			what, err, bytes.TrimSpace(stderr.Bytes()))
 		return false
 	}
-	fmt.Fprintf(a.out, "  recovery key: saved to 1Password as %q\n", item.Title)
+	fmt.Fprintf(a.out, "  %s: saved to 1Password as %q\n", what, item.Title)
 	return true
+}
+
+// saveRecoveryTo1Password is the recovery key's automatic save.
+func (a *app) saveRecoveryTo1Password(ctx context.Context, server, username, identity, recipient string) bool {
+	return a.saveItemTo1Password(ctx, "recovery key", opItem{
+		Title:    fmt.Sprintf("substrate recovery key (%s @ %s)", username, server),
+		Category: "PASSWORD",
+		Fields: []opField{
+			{ID: "password", Type: "CONCEALED", Purpose: "PASSWORD", Value: identity},
+			{Label: "recipient", Type: "STRING", Value: recipient},
+			{Label: "server", Type: "STRING", Value: server},
+			{Label: "username", Type: "STRING", Value: username},
+		},
+	})
 }
 
 // printRecoveryKey is the fallback ceremony: shown once, kept by the reader.

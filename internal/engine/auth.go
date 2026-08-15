@@ -24,6 +24,7 @@ package engine
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -354,7 +355,7 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 	if label == "" {
 		label = "login"
 	}
-	if _, err := s.createSeededRepository(ctx, in.Username, func(t *txn) error {
+	_, signKey, err := s.createSeededRepository(ctx, in.Username, func(t *txn) error {
 		// Fresh account: no prior credential to compare against, so no CAS.
 		if err := t.writeCredential(credentialWrite{
 			username: in.Username, passwordHash: hash,
@@ -368,8 +369,18 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 		var terr error
 		out.Token, out.Secret, terr = t.mintToken(label, nil)
 		return terr
-	}); err != nil {
+	})
+	if err != nil {
 		return zero, err
+	}
+	// The signing seed's one disclosure: the server keeps its only copy
+	// sealed under the credential key and remains the only signer — this is
+	// the user's safekeeping copy, never retrievable again (a lost credential
+	// key otherwise stops writes with nothing to recover from). Nil under the
+	// insecure keyless switch, which signs nothing.
+	if signKey != nil {
+		out.SigningSeed = hex.EncodeToString(signKey.Seed())
+		out.SigningPublicKey = hex.EncodeToString(signKey.Public().(ed25519.PublicKey))
 	}
 	return out, nil
 }

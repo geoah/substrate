@@ -170,6 +170,7 @@ username and a password make the user.`,
 			fmt.Fprintf(a.out, "  token:   %s (%s)\n", dash(res.Token.Label), dash(res.Token.ID))
 			fmt.Fprintf(a.out, "  context: %s -> %s\n", contextName, a.configPath)
 			a.handOverRecoveryKey(cmd.Context(), server, username, recoveryIdentity, res.RecoveryPublicKey)
+			a.handOverSigningSeed(cmd.Context(), server, username, res.SigningSeed, res.SigningPublicKey)
 			return nil
 		},
 	}

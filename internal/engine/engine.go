@@ -569,7 +569,7 @@ func (s *service) Dataset(ctx context.Context, username string) (substrate.Datas
 // Registration (auth.go) is what calls it — a repository created any other
 // way has no credential and therefore no way in.
 func (s *service) CreateRepository(ctx context.Context, name string) (substrate.RepositoryInfo, error) {
-	repo, err := s.createSeededRepository(ctx, name, nil)
+	repo, _, err := s.createSeededRepository(ctx, name, nil)
 	if err != nil {
 		return substrate.RepositoryInfo{}, err
 	}
@@ -594,29 +594,33 @@ func (s *service) CreateRepository(ctx context.Context, name string) (substrate.
 // on the way out; a failure at the row itself does the same. There is no order
 // in which a HALF-CREATED USER can be observed: the user exists exactly when
 // the row does, and by then the repository is complete.
-func (s *service) createSeededRepository(ctx context.Context, name string, extra func(*txn) error) (Repository, error) {
+//
+// The returned key is the repository's freshly minted signing key (nil on a
+// keyless insecure creation). It exists nowhere unsealed but here:
+// registration is the one caller that hands its seed to the user, once.
+func (s *service) createSeededRepository(ctx context.Context, name string, extra func(*txn) error) (Repository, ed25519.PrivateKey, error) {
 	var zero Repository
 	if !vocabulary.ValidRepositoryName(name) {
-		return zero, fmt.Errorf("%w: username %q must match [a-z][a-z0-9]{1,29}", substrate.ErrValidation, name)
+		return zero, nil, fmt.Errorf("%w: username %q must match [a-z][a-z0-9]{1,29}", substrate.ErrValidation, name)
 	}
 	// A cheap early no: the unique index below is the authority, and it is
 	// what a race actually loses on.
 	if _, err := s.repositoryByUsername(ctx, name); err == nil {
-		return zero, fmt.Errorf("%w: user %q already exists", substrate.ErrValidation, name)
+		return zero, nil, fmt.Errorf("%w: user %q already exists", substrate.ErrValidation, name)
 	} else if !errors.Is(err, substrate.ErrNotFound) {
-		return zero, err
+		return zero, nil, err
 	}
 	id, err := newID()
 	if err != nil {
-		return zero, err
+		return zero, nil, err
 	}
 	// The id is minted BEFORE anything is written under it, so it is checked
 	// before anything is written under it too: rows land in a scope, and a
 	// scope that already belongs to somebody would be somebody else's data.
 	if _, err := s.repositoryByID(ctx, id); err == nil {
-		return zero, fmt.Errorf("substrate/engine: minted a repository id that already exists")
+		return zero, nil, fmt.Errorf("substrate/engine: minted a repository id that already exists")
 	} else if !errors.Is(err, substrate.ErrNotFound) {
-		return zero, err
+		return zero, nil, err
 	}
 	repo := Repository{ID: id, Username: name}
 	// The DEK is born with the repository: the seed transaction below already
@@ -625,10 +629,10 @@ func (s *service) createSeededRepository(ctx context.Context, name string, extra
 	// under the host key at the commit point.
 	dek, err := newDEK()
 	if err != nil {
-		return zero, err
+		return zero, nil, err
 	}
 	if repo.DEK, err = s.wrapDEK(dek); err != nil {
-		return zero, err
+		return zero, nil, err
 	}
 
 	// Signing is born WITH the repository, not activated after it: the seed
@@ -643,7 +647,7 @@ func (s *service) createSeededRepository(ctx context.Context, name string, extra
 	case len(s.credKey) > 0:
 		wrapped, key, err := s.mintSigningSeed()
 		if err != nil {
-			return zero, err
+			return zero, nil, err
 		}
 		signKey = key
 		repo.SigningKey = wrapped
@@ -653,16 +657,16 @@ func (s *service) createSeededRepository(ctx context.Context, name string, extra
 		s.log.Warn("substrate: INSECURE — creating a repository with changelog signing OFF (no credential key); its entries carry placeholder signatures that certify nothing",
 			"repository", repo.ID, "username", name)
 	default:
-		return zero, fmt.Errorf("substrate/engine: create repository %s: changelog signing is mandatory and needs SUBSTRATE_CREDENTIAL_KEY (the signing seed seals under it); SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES=true runs unsigned, for local testing only", name)
+		return zero, nil, fmt.Errorf("substrate/engine: create repository %s: changelog signing is mandatory and needs SUBSTRATE_CREDENTIAL_KEY (the signing seed seals under it); SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES=true runs unsigned, for local testing only", name)
 	}
 
 	db, err := openScoped(s.dsn, repo.scope(), s.appRole)
 	if err != nil {
-		return zero, err
+		return zero, nil, err
 	}
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
-		return zero, fmt.Errorf("substrate/engine: create repository %s: %w", name, err)
+		return zero, nil, fmt.Errorf("substrate/engine: create repository %s: %w", name, err)
 	}
 	db.SetMaxOpenConns(8)
 	// The creation dataset carries the BINARY's registry — the seed has to
@@ -676,13 +680,13 @@ func (s *service) createSeededRepository(ctx context.Context, name string, extra
 			key: signKey, public: repo.SigningPublic, signedFrom: repo.SignedFrom,
 		},
 	}
-	fail := func(err error) (Repository, error) {
+	fail := func(err error) (Repository, ed25519.PrivateKey, error) {
 		seedDS.close()
 		if cerr := s.eraseRepository(ctx, repo.ID); cerr != nil {
 			s.log.Error("substrate: could not erase a half-made repository; the boot sweep will reclaim it",
 				"repository", repo.ID, "error", cerr)
 		}
-		return zero, err
+		return zero, nil, err
 	}
 	// ONE transaction: the seed, the self-description, and the caller's part.
 	// The seed's entries carry `bundle:core` — the shipped tree's own hand —
@@ -732,7 +736,7 @@ func (s *service) createSeededRepository(ctx context.Context, name string, extra
 				s.log.Error("substrate: could not erase after a forced post-seed failure",
 					"repository", repo.ID, "error", cerr)
 			}
-			return zero, err
+			return zero, nil, err
 		}
 	}
 
@@ -741,7 +745,7 @@ func (s *service) createSeededRepository(ctx context.Context, name string, extra
 			s.log.Error("substrate: could not erase after a control-plane insert failure; the boot sweep will reclaim it",
 				"repository", repo.ID, "error", cerr)
 		}
-		return zero, err
+		return zero, nil, err
 	}
 	if repo.SignedFrom > 0 {
 		// The same PIN adoptSigning logs: the (public key, signed-from) pair
@@ -751,7 +755,7 @@ func (s *service) createSeededRepository(ctx context.Context, name string, extra
 			"publicKey", hex.EncodeToString(repo.SigningPublic),
 			"signedFromSeq", repo.SignedFrom)
 	}
-	return repo, nil
+	return repo, signKey, nil
 }
 
 var b32 = base32.StdEncoding.WithPadding(base32.NoPadding)
