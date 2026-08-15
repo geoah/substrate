@@ -78,7 +78,7 @@ function optionOf(record: SubstrateRecord): RecordOption {
   const props = record.properties ?? {}
   return {
     value: record.id,
-    title: recordTitle(props) || stringProp(props, "name") || "",
+    title: recordTitle(record) || stringProp(props, "name") || "",
     description: stringProp(props, "description") ?? "",
   }
 }

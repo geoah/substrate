@@ -587,7 +587,7 @@ export function GraphRail({
   return (
     <div className="min-w-0 px-4 py-2">
       <p className="pb-1 text-xs text-muted-foreground">
-        {recordTitle(record.properties) || record.id} —{" "}
+        {recordTitle(record) || record.id} —{" "}
         {cellValue(splitKind(record.kind).name)}
       </p>
       <GraphNode

@@ -39,6 +39,7 @@
     "kind",
     "canonicalId",
     "formerIds",
+    "title",
     "properties",
     "labels",
     "annotations",

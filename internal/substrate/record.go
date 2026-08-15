@@ -5,10 +5,13 @@ import "time"
 // Record is the wire shape of one stored record. Annotations and Edges are
 // populated only when requested (list calls omit them by default).
 //
-// EVERYTHING AUTHORED IS A PROPERTY: `title`, `body` and the
-// temporal properties read back inside Properties beside the declared ones,
-// so the JSON shows one map. The Go fields below carry the same values for
-// callers that hold an Record in-process, and are not serialized.
+// EVERYTHING AUTHORED IS A PROPERTY: `body` and the temporal properties read
+// back inside Properties beside the declared ones, so the JSON shows one map.
+// The Go fields below carry the same values for callers that hold a Record
+// in-process, and are not serialized.
+//
+// `title` is the ONE exception, and it is why it sits at the top level — see
+// Title.
 type Record struct {
 	ID string `json:"id"`
 	// Kind is the record's kind REFERENCE: "calendar.substrate.reamde.dev/calendarevent"
@@ -22,7 +25,19 @@ type Record struct {
 	// server-set. A former id is this record's own discarded name.
 	FormerIDs []string `json:"formerIds,omitempty"`
 
-	Title string `json:"-"`
+	// Title is the record's DISPLAY title: what a row, a chip or a page header
+	// calls this record. It is at the top level and not in Properties because
+	// for most kinds it is not a property at all — a kind with a
+	// `displayTemplate` derives it, and the derived value used to be injected
+	// into the property map, where it sat indistinguishable from a declared
+	// one and OVERWROTE a kind that declared `title` itself.
+	//
+	// A kind with NO displayTemplate is the other case: there `title` is the
+	// built-in authored slot, it is written through `properties.title` like
+	// any other property, and it reads back in Properties as well as here.
+	// Same value, two honest meanings — the property is what was authored, and
+	// this is what to render.
+	Title string `json:"title,omitempty"`
 	Body  string `json:"-"`
 
 	// Trait-backed hot columns (RFC 3339). Which of these a type uses

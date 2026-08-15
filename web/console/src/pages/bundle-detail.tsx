@@ -593,7 +593,7 @@ function InputCard({
               >
                 <div className="min-w-0">
                   <span className="truncate text-sm">
-                    {recordTitle(record.properties) || record.id}
+                    {recordTitle(record) || record.id}
                   </span>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span className="data">{record.id}</span>
@@ -662,7 +662,7 @@ function InputCard({
           title={
             editing === "new"
               ? `Create ${kind.name}`
-              : `Edit ${recordTitle(editing.properties) || kind.name}`
+              : `Edit ${recordTitle(editing) || kind.name}`
           }
           description={
             <>
@@ -851,7 +851,7 @@ function AccountRow({
         toast.add({
           type: "success",
           title: "Account connected",
-          description: recordTitle(account.properties) || account.id,
+          description: recordTitle(account) || account.id,
         })
         void queryClient.invalidateQueries({ queryKey: ["trait", "records"] })
       } else {
@@ -867,13 +867,16 @@ function AccountRow({
     }
     window.addEventListener("message", onMessage)
     return () => window.removeEventListener("message", onMessage)
-  }, [awaitingReturn, account.id, account.properties, queryClient])
+    // `account` whole, not `account.id` plus `account.properties`: the toast
+    // reads the record's display title, which is a top-level field now rather
+    // than something in the property map.
+  }, [awaitingReturn, account, queryClient])
 
   return (
     <div className="flex items-center justify-between gap-3 border-b px-4 py-2.5 last:border-0">
       <div className="min-w-0">
         <div className="truncate font-medium">
-          {recordTitle(account.properties) || account.id}
+          {recordTitle(account) || account.id}
         </div>
         <div className="flex items-center gap-2 text-xs">
           <span
@@ -932,7 +935,7 @@ function AccountRow({
             <DialogHeader>
               <DialogTitle>
                 {connected ? "Reconnect" : "Connect"}{" "}
-                {recordTitle(account.properties) || "this account"}?
+                {recordTitle(account) || "this account"}?
               </DialogTitle>
               <DialogDescription>
                 This opens the provider's consent screen in a new tab. On
@@ -967,7 +970,7 @@ function AccountRow({
           record={account}
           open={editing}
           onOpenChange={setEditing}
-          title={`Edit ${recordTitle(account.properties) || type.name}`}
+          title={`Edit ${recordTitle(account) || type.name}`}
           description="Change which data this account syncs, the cadence and the backfill depth. Token state is host-managed and not editable here."
         />
       )}

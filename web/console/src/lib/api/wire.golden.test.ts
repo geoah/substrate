@@ -41,6 +41,7 @@ const substrateRecord: Keys<SubstrateRecord> = {
   kind: true,
   canonicalId: true,
   formerIds: true,
+  title: true,
   properties: true,
   labels: true,
   annotations: true,

@@ -59,8 +59,8 @@ func TestMeetingScenario(t *testing.T) {
 			{Rel: "organizer", To: substrate.EdgeRef{ID: george.ID}},
 		},
 	})
-	if event.Properties["title"] != "Standup" {
-		t.Fatalf("title = %v", event.Properties["title"])
+	if event.Title != "Standup" {
+		t.Fatalf("title = %q", event.Title)
 	}
 	if len(event.Edges["attendees"]) != 2 {
 		t.Fatalf("attendees = %+v", event.Edges["attendees"])

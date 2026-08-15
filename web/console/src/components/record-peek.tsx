@@ -137,9 +137,7 @@ function PeekBody({
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <span className="truncate font-semibold">
-        {record.data
-          ? recordTitle(record.data.properties) || id
-          : fallbackTitle}
+        {record.data ? recordTitle(record.data) || id : fallbackTitle}
       </span>
       <span className="truncate data text-muted-foreground" title={path}>
         {path}

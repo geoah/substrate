@@ -212,9 +212,14 @@ func TestWriterControlledIDRoundTrip(t *testing.T) {
 	if name, _ := got.Properties["name"].(map[string]any); name["displayName"] != "Alex" {
 		t.Fatalf("object property round trip = %v", got.Properties["name"])
 	}
-	// The displayTemplate reads one level into the object property.
-	if got.Properties["title"] != "Alex" {
-		t.Fatalf("{name.displayName} did not derive the title: %v", got.Properties["title"])
+	// The displayTemplate reads one level into the object property, and the
+	// derived title rides at the top level — never in the property map, where
+	// nobody wrote it (#47).
+	if got.Title != "Alex" {
+		t.Fatalf("{name.displayName} did not derive the title: %q", got.Title)
+	}
+	if _, ok := got.Properties["title"]; ok {
+		t.Fatalf("a derived title leaked into the property map: %v", got.Properties["title"])
 	}
 	// The same key is the same record — that IS idempotency.
 	before := maxSeq(t, ds)

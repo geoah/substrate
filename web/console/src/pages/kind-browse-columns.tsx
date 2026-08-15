@@ -148,13 +148,13 @@ export function buildColumns(
   // title — always first, always sortable, never hidden (the row's identity).
   columns.push({
     id: "title",
-    accessorFn: (e) => recordTitle(e.properties),
+    accessorFn: (e) => recordTitle(e),
     enableHiding: false,
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="title" />
     ),
     cell: ({ row }) => {
-      const title = recordTitle(row.original.properties)
+      const title = recordTitle(row.original)
       return title ? (
         <span className="block truncate font-medium" title={title}>
           {title}

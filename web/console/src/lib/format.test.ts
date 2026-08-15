@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   cellValue,
+  recordTitle,
   referenceCell,
   referenceID,
   shortDate,
@@ -80,5 +81,30 @@ describe("referenceID / referenceCell", () => {
     // cellValue is datatype-blind, so it must leave a URL (and any other
     // slashed string) whole rather than reading it as a path.
     expect(cellValue("https://example.com/x")).toBe("https://example.com/x")
+  })
+})
+
+describe("recordTitle", () => {
+  it("reads the top-level display title, not a property (#47)", () => {
+    // A kind with a displayTemplate DERIVES its title, so the value is not in
+    // the property map at all. Reading `properties.title` found nothing for
+    // exactly the kinds with the nicest titles.
+    expect(
+      recordTitle({ title: "Ada: the Analytical Engine", properties: {} })
+    ).toBe("Ada: the Analytical Engine")
+  })
+
+  it("is empty when the record has no title, so callers fall back to the id", () => {
+    expect(recordTitle({ properties: { name: "Ada" } })).toBe("")
+    expect(recordTitle({ properties: {} })).toBe("")
+  })
+
+  it("ignores a property called title", () => {
+    // The built-in slot reads back in BOTH places, so this is not a conflict
+    // today — but the display field is the one to render, and reading the map
+    // would be wrong the moment a kind may declare its own `title`.
+    expect(
+      recordTitle({ title: "shown", properties: { title: "authored" } })
+    ).toBe("shown")
   })
 })

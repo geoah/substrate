@@ -33,8 +33,8 @@ func TestPutCreatesAndSuppressesNoops(t *testing.T) {
 		ID:         "gmail:george@acme.com",
 		Properties: map[string]any{"provider": "gmail", "label": "Work", "status": "ok"},
 	})
-	if acc.Properties["title"] != "Work" {
-		t.Fatalf("displayTemplate should derive the title, got %v", acc.Properties["title"])
+	if acc.Title != "Work" {
+		t.Fatalf("displayTemplate should derive the title, got %q", acc.Title)
 	}
 	if acc.Version != 1 {
 		t.Fatalf("new record version = %d", acc.Version)

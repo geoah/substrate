@@ -60,7 +60,7 @@ export interface EdgeTarget {
 }
 
 /** One record as every read serves it (`substrate.Record`). Everything authored
- * lives in `properties` (title/state included); `propertyMeta` arrives only on
+ * lives in `properties` (state included); `propertyMeta` arrives only on
  * a single-record read.
  *
  * NAME NOTE: the server calls this `Record`; TypeScript already owns that name
@@ -74,6 +74,12 @@ export interface SubstrateRecord {
   /** Present only when the id the read was addressed by was not the canonical
    * one (the record came back through a merge trail). */
   canonicalId?: string
+  /** The DISPLAY title: what to call this record in a row, a chip or a header.
+   * Top-level and not a property, because for a kind with a `displayTemplate`
+   * it is derived rather than authored — it used to be injected into
+   * `properties`, where it overwrote a kind that declared `title` itself.
+   * Read it through `recordTitle`, never `properties.title`. */
+  title?: string
   properties: Record<string, unknown>
   labels: Record<string, unknown>
   annotations?: Record<string, unknown>

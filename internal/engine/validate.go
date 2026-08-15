@@ -804,7 +804,17 @@ func recordOf(ty *vocabulary.Kind, row *erow) *substrate.Record {
 	for name, state := range row.States {
 		e.Properties[name] = state
 	}
-	if row.Title != "" {
+	// The display title rides at the TOP LEVEL (substrate.Record.Title), not in
+	// the property map. It is injected here as a property only when it is one:
+	// a kind with no `displayTemplate` uses the built-in title slot, which is
+	// authored through `properties.title` and has to read back there or
+	// `get -o yaml | apply -f` would drop it.
+	//
+	// A kind WITH a template derives its title, so injecting it would put a
+	// value nobody wrote into the property map — and, for a kind that declares
+	// a property called `title`, silently overwrite the declared one. That is
+	// the collision this projection used to have.
+	if row.Title != "" && ty.Template == nil {
 		e.Properties[substrate.PropTitle] = row.Title
 	}
 	if row.Body != "" {

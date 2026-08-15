@@ -115,7 +115,7 @@ export function RecordPage() {
   }
 
   const e = record.data
-  const title = recordTitle(e.properties) || e.id
+  const title = recordTitle(e) || e.id
   const states = kindInfo
     ? stateProperties(kindInfo).filter(
         (p) => typeof e.properties[p.name] === "string"

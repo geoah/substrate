@@ -476,8 +476,11 @@ func (d *fakeDataset) Put(_ context.Context, actor substrate.Actor, in substrate
 	if e.Properties == nil {
 		e.Properties = map[string]any{}
 	}
-	// Everything authored is a property: title arrives in the map like the
-	// rest.
+	// The fake declares no displayTemplate, so every record here is the
+	// built-in-slot case: `title` is authored through the property map, and it
+	// reads back both there and on the top-level display field. The engine's
+	// other case — a template DERIVING the title, which is then not a property
+	// at all — has no fake to mirror, since the fake resolves no templates.
 	if title, ok := e.Properties[substrate.PropTitle].(string); ok {
 		e.Title = title
 	}

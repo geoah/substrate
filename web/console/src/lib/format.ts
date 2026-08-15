@@ -122,11 +122,19 @@ export function cellValue(value: unknown): string {
   return String(value)
 }
 
-/** The row's display name: the title property when a source set one, else
- * nothing — the caller falls back to the id in the data voice. */
-export function recordTitle(properties: Record<string, unknown>): string {
-  const title = properties.title
-  return typeof title === "string" ? title : ""
+/** The row's display name, else nothing — the caller falls back to the id in
+ * the data voice.
+ *
+ * It takes the RECORD, not its properties. The display title is a top-level
+ * wire field: a kind with a `displayTemplate` derives it, so it is not a
+ * property, and reading `properties.title` would find nothing for exactly the
+ * kinds that have the nicest titles. Taking the record is also what makes the
+ * old call impossible to write by accident. */
+export function recordTitle(record: {
+  title?: string
+  properties?: Record<string, unknown>
+}): string {
+  return typeof record.title === "string" ? record.title : ""
 }
 
 /** Initials for an actor chip: `people.google.connectors.substrate.reamde.dev` → `PG`,
