@@ -94,6 +94,10 @@ describe("the tool card", () => {
     // The live state off the resolved row: op and decision.
     expect(screen.getByText("proposed")).toBeTruthy()
     expect(screen.getByText("tidy")).toBeTruthy()
+    // The change itself renders INLINE: the property and its proposed value,
+    // not just a link to go find out.
+    expect(screen.getByText("name")).toBeTruthy()
+    expect(screen.getByText(/better/)).toBeTruthy()
     expect(screen.getByText("Accept")).toBeTruthy()
     expect(screen.getByText("Reject")).toBeTruthy()
     const link = reviewLink(container)
