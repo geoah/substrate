@@ -36,9 +36,10 @@ ignored on the way in; emptying the file aborts.`,
 			if err != nil {
 				return err
 			}
-			// The buffer is the same document `get -o yaml` shows —
-			// status.properties included; status is ignored on the way back in.
-			before, err := marshalDocument(recordDocument(e, meta))
+			// The buffer is the same document `get -o yaml` shows, which for a
+			// declaration is its authored shape and not the record projection;
+			// status.properties included, status ignored on the way back in.
+			before, err := marshalDocument(documentOf(e, meta))
 			if err != nil {
 				return err
 			}
@@ -54,14 +55,27 @@ ignored on the way in; emptying the file aborts.`,
 			if err := yaml.Unmarshal(after, &node); err != nil {
 				return fmt.Errorf("parse the edited document: %w", err)
 			}
-			d, err := nodeDocument(unwrapNode(&node), "the edited document")
+			body := unwrapNode(&node)
+			fmt.Fprint(a.out, diffLines(string(before), string(after)))
+			// The buffer splits the same two planes `apply -f` does, and on the
+			// same test: rendering a declaration in its authored shape and then
+			// putting it back through the RECORD verb would write the authored
+			// keys on as properties, which is a worse answer than the refusal
+			// the nested shape used to earn.
+			if isSchemaDocument(body) {
+				var raw map[string]any
+				if err := body.Decode(&raw); err != nil {
+					return fmt.Errorf("parse the edited document: %w", err)
+				}
+				return a.applySchemaDocuments(ctx, cl, []map[string]any{raw})
+			}
+			d, err := nodeDocument(body, "the edited document")
 			if err != nil {
 				return err
 			}
 			if d.Metadata.ID == "" {
 				d.Metadata.ID = e.ID
 			}
-			fmt.Fprint(a.out, diffLines(string(before), string(after)))
 			return a.applyDocument(ctx, cl, d)
 		},
 	}

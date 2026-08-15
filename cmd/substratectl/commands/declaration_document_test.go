@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // declarationRow is one kind declaration as the collection API hands it back:
@@ -24,7 +25,7 @@ func declarationRow() *substrate.Record {
 		UpdatedAt: at,
 		Properties: map[string]any{
 			"authority":       "mine.example.com",
-			"version":         "v1alpha1",
+			"version":         int64(3),
 			"displayTemplate": "{label}",
 			"names":           map[string]any{"singular": "widget", "plural": "widgets"},
 			"properties": map[string]any{
@@ -98,6 +99,40 @@ func TestDeclarationDropsEveryKeyTheWriterRefuses(t *testing.T) {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("dropped an authored key (%s):\n%s", want, b)
 		}
+	}
+}
+
+// The round trip itself: what `get -o yaml` writes, `apply -f` reads back as a
+// declaration. The rendered bytes take the schema-document branch of
+// readDocuments (so they ride /vocabulary/apply, not the record verb) and parse
+// as a declaration whose authority is the authored one — the exact read that
+// was empty when the keys sat one level too deep.
+func TestDeclarationOutputParsesBackAsADeclaration(t *testing.T) {
+	b, err := marshalDocument(documentOf(declarationRow(), nil))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var node yaml.Node
+	if err := yaml.Unmarshal(b, &node); err != nil {
+		t.Fatalf("parse: %v\n%s", err, b)
+	}
+	body := unwrapNode(&node)
+	if !isSchemaDocument(body) {
+		t.Fatalf("apply would route this to the record verb:\n%s", b)
+	}
+	var raw map[string]any
+	if err := body.Decode(&raw); err != nil {
+		t.Fatalf("decode: %v\n%s", err, b)
+	}
+	d, err := vocabulary.DocumentFromMap(raw)
+	if err != nil {
+		t.Fatalf("the writer refuses its own reader's output: %v\n%s", err, b)
+	}
+	if got := d.DeclaredAuthority(); got != "mine.example.com" {
+		t.Fatalf("data.authority reads back as %q:\n%s", got, b)
+	}
+	if v, _ := vocabulary.VersionValue(d.Data["version"]); v != 3 {
+		t.Fatalf("data.version reads back as %v:\n%s", d.Data["version"], b)
 	}
 }
 
