@@ -126,7 +126,7 @@ function propertySizing(prop: DeclaredProperty): PropertySizing {
   if (prop.kind === "state") return { width: 120 }
   if (prop.kind === "bool") return { width: 80 }
   if (prop.kind === "datetime" || prop.kind === "date") return { width: 150 }
-  if (prop.kind === "int" || prop.kind === "float") {
+  if (prop.kind === "int" || prop.kind === "float" || prop.kind === "decimal") {
     return { size: { min: 90, max: 140, weight: 0.5 } }
   }
   if (prop.kind === "email" || prop.kind === "url" || prop.kind === "phone") {

@@ -146,3 +146,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0006](0006-voluntary-proposals-stay-self-acceptable.md) | Voluntary proposals stay self-acceptable; only gated requests refuse bundle decisions | accepted |
 | [0007](0007-the-audit-lives-on-the-records-it-concerns.md) | The audit lives on the records it concerns, not in an audit kind | accepted |
 | [0008](0008-keep-the-loop-do-not-adopt-adk-go.md) | Keep the agent loop; do not adopt ADK for Go | accepted |
+| [0012](0012-numbers-are-exact-or-refused.md)   | Numbers are exact or refused: string-carried decimal, safe-integer int, one stored duration grammar | accepted |

@@ -21,7 +21,8 @@ data:
       min: 1
       description: how many of it the line covers
     unitPrice:
-      type: float
+      type: decimal
+      min: 0
       description: what one cost, in the order's currency
     productURL:
       type: url

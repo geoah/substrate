@@ -340,11 +340,11 @@ type LLMProviderPricing struct {
 	// Model is the model id as sent to this provider.
 	Model *string
 
-	// InputPer1M is USD per 1M input tokens.
-	InputPer1M *float64
+	// InputPer1M is USD per 1M input tokens, exact digits as a string.
+	InputPer1M *string
 
-	// OutputPer1M is USD per 1M output tokens.
-	OutputPer1M *float64
+	// OutputPer1M is USD per 1M output tokens, exact digits as a string.
+	OutputPer1M *string
 }
 
 // decodeLLMProviderPricing decodes one LLMProviderPricing value at path.
@@ -368,12 +368,12 @@ func decodeLLMProviderPricing(d *decoder, path string, v any) (LLMProviderPricin
 			}
 		case "inputPer1M":
 			p := at(path, "inputPer1M")
-			if e, ok := d.number(p, props[key], Bounds{Min: bound(0)}); ok {
+			if e, ok := d.text(p, props[key], nil, nil); ok {
 				out.InputPer1M = &e
 			}
 		case "outputPer1M":
 			p := at(path, "outputPer1M")
-			if e, ok := d.number(p, props[key], Bounds{Min: bound(0)}); ok {
+			if e, ok := d.text(p, props[key], nil, nil); ok {
 				out.OutputPer1M = &e
 			}
 		default:

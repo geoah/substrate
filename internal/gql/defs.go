@@ -128,6 +128,10 @@ func (b *schemaBuilder) propertyType(def map[string]any, prop string) graphql.Ou
 		elem = longScalar
 	case "float", "number":
 		elem = graphql.Float
+	case "decimal":
+		// The stored value IS the exact digit string; Float would round it,
+		// which is the one thing the datatype exists to refuse.
+		elem = graphql.String
 	case "bool", "boolean":
 		elem = graphql.Boolean
 	case "datetime":

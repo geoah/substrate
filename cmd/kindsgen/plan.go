@@ -219,7 +219,9 @@ func planFields(k *kindPlan, s *structPlan, props []*kinddialect.Property) error
 		case kinddialect.TypeString, kinddialect.TypeText, kinddialect.TypeMarkdown,
 			kinddialect.TypeEmail, kinddialect.TypeURL, kinddialect.TypePhone,
 			kinddialect.TypeTimezone, kinddialect.TypeRecurrence, kinddialect.TypeDate,
-			kinddialect.TypeDuration:
+			kinddialect.TypeDuration, kinddialect.TypeDecimal:
+			// decimal rides here on purpose: its value IS a string (the exact
+			// digits), so the generated shape is the stored shape.
 			f.Class, f.GoElem, f.TSElem = classText, "string", "string"
 		case kinddialect.TypeDatetime:
 			f.Class, f.GoElem, f.TSElem = classDatetime, "string", "string"

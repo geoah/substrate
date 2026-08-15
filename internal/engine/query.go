@@ -999,7 +999,9 @@ func (ds *dataset) numericProp(name string) bool {
 		if !ok {
 			continue
 		}
-		if p.Repeated || (p.Datatype != vocabulary.DatatypeInt && p.Datatype != vocabulary.DatatypeFloat) {
+		numeric := p.Datatype == vocabulary.DatatypeInt || p.Datatype == vocabulary.DatatypeFloat ||
+			p.Datatype == vocabulary.DatatypeDecimal
+		if p.Repeated || !numeric {
 			return false
 		}
 		found = true
@@ -1105,10 +1107,33 @@ func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Dat
 	}
 	cast := func(v any) (any, error) { return fmt.Sprint(v), nil }
 	typedExpr := func() string { return textExpr() }
+	// argCast is appended to the bound comparison value's placeholder, for the
+	// one kind whose Go value (a string of exact digits) does not name its SQL
+	// type by itself.
+	argCast := ""
 	switch kind {
 	case vocabulary.DatatypeInt, vocabulary.DatatypeFloat:
 		typedExpr = func() string { return `(` + textExpr() + `)::numeric` }
 		cast = func(v any) (any, error) { return asFloat(v) }
+	case vocabulary.DatatypeDecimal:
+		// The bound rides as its exact digits, cast in SQL, so a filter over
+		// money never takes the float64 detour the datatype exists to refuse.
+		typedExpr = func() string { return `(` + textExpr() + `)::numeric` }
+		argCast = `::numeric`
+		cast = func(v any) (any, error) {
+			if s, ok := v.(string); ok {
+				c, err := canonicalDecimal(s)
+				if err != nil {
+					return nil, fmt.Errorf("%w: %s: %w", substrate.ErrValidation, key, err)
+				}
+				return c, nil
+			}
+			f, err := asFloat(v)
+			if err != nil {
+				return nil, fmt.Errorf("%w: %s: %w", substrate.ErrValidation, key, err)
+			}
+			return strconv.FormatFloat(f, 'f', -1, 64), nil
+		}
 	case vocabulary.DatatypeDatetime, vocabulary.DatatypeDate:
 		typedExpr = func() string { return `(` + textExpr() + `)::timestamptz` }
 		cast = func(v any) (any, error) {
@@ -1138,7 +1163,7 @@ func condJSON(b *builder, col, key string, c substrate.Cond, kind vocabulary.Dat
 		if err != nil {
 			return err
 		}
-		b.add(typedExpr() + " " + x.op + " " + b.arg(v))
+		b.add(typedExpr() + " " + x.op + " " + b.arg(v) + argCast)
 	}
 	if len(c.In) > 0 {
 		vals := make([]string, 0, len(c.In))

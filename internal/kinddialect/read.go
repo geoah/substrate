@@ -550,6 +550,7 @@ const (
 	TypeMarkdown   = "markdown"
 	TypeInt        = "int"
 	TypeFloat      = "float"
+	TypeDecimal    = "decimal"
 	TypeBool       = "bool"
 	TypeDatetime   = "datetime"
 	TypeDate       = "date"
@@ -570,7 +571,7 @@ const (
 )
 
 var datatypes = keys(TypeString, TypeText, TypeMarkdown, TypeInt, TypeFloat,
-	TypeBool, TypeDatetime, TypeDate, TypeDuration, TypeEmail, TypeURL,
+	TypeDecimal, TypeBool, TypeDatetime, TypeDate, TypeDuration, TypeEmail, TypeURL,
 	TypePhone, TypeTimezone, TypeRecurrence, TypeEnum, TypeJSON, TypeSecret,
 	TypeDigest, TypeBlobRef, TypeState, TypeObject, TypeReference)
 
