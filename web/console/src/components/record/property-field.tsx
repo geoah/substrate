@@ -85,6 +85,13 @@ export interface PropertyFieldProps {
   labelAction?: React.ReactNode
   /** Distinguishes ids when two forms are mounted at once. */
   idPrefix?: string
+  /** Values worth OFFERING for a free-text property, where something on the
+   * screen knows them and the declaration cannot. Rendered as a datalist,
+   * which is suggestion and never constraint: typing something not in the
+   * list stays legal, and a stored value the list does not carry is left
+   * exactly as it is. An enum is the other thing — that is a select, because
+   * there the declaration really does close the set. */
+  suggestions?: string[]
 }
 
 export function PropertyField({
@@ -98,6 +105,7 @@ export function PropertyField({
   derivedNote,
   labelAction,
   idPrefix = "f",
+  suggestions,
 }: PropertyFieldProps) {
   const id = `${idPrefix}-${field.name}`
   // A cleared field (`null`) and an untouched blank one both render empty; what
@@ -431,12 +439,18 @@ export function PropertyField({
       : field.spec.kind === "date"
         ? "date"
         : field.inputType
+  // Never on a secret: a datalist is a visible dropdown, and a suggestion
+  // list on a write-only field would be the one place the console showed
+  // material it promises never to show.
+  const offered = !isSecret && suggestions?.length ? suggestions : undefined
+  const listID = offered ? `${id}-suggestions` : undefined
   return (
     <Field>
       {label}
       <Input
         id={id}
         type={inputType}
+        list={listID}
         autoComplete={isSecret ? "off" : undefined}
         className="data"
         aria-invalid={Boolean(error)}
@@ -450,6 +464,13 @@ export function PropertyField({
         value={text}
         onChange={(e) => onChange(e.target.value)}
       />
+      {offered && (
+        <datalist id={listID}>
+          {offered.map((v) => (
+            <option key={v} value={v} />
+          ))}
+        </datalist>
+      )}
       {help(
         isSecret && mode === "patch"
           ? "Sealed. Leave blank to keep the stored value."

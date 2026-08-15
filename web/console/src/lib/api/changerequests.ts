@@ -65,6 +65,42 @@ export function changeRequestsQueryOptions(opts: {
   })
 }
 
+/** The requests TARGETING one record, newest first.
+ *
+ * The pointer only ever existed from the request's side: a reader on a record
+ * page could not tell that three proposals were waiting to change it (#54.3).
+ * This is the reverse read — the `target` edge, filtered by the record it
+ * points at.
+ *
+ * `toKind` is not optional dressing. Identity is the (kind, id) pair, so two
+ * kinds may hold the same id, and an unnarrowed reverse read would show a
+ * different record's proposals on this page.
+ *
+ * A CREATE request is deliberately absent: it names its target in
+ * `targetKind`/`targetId` rather than through an edge, because the record does
+ * not exist yet — so there is no record page for it to appear on. */
+export function changeRequestsForTargetQueryOptions(opts: {
+  kind: string
+  id: string
+  decision?: Decision | Decision[]
+  first: number
+  after?: string
+}) {
+  const base = decisionFilter(opts.decision) ?? {}
+  return recordsQueryOptions({
+    authority: CORE_AUTHORITY,
+    plural: CR_PLURAL,
+    first: opts.first,
+    after: opts.after,
+    filter: {
+      ...base,
+      edge: { rel: "target", to: opts.id, toKind: opts.kind },
+    },
+    orderBy: "updatedAt:desc",
+    withEdges: true,
+  })
+}
+
 export function changeRequestCountQueryOptions(
   decision?: Decision | Decision[]
 ) {
