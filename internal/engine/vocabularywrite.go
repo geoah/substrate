@@ -689,9 +689,12 @@ func minusVersionKey(data map[string]any) map[string]any {
 }
 
 // docWithVersion is the document with its data.version set, on a COPY of the
-// data map — the original may be a catalog-cached closure document.
+// data map — the original may be a catalog-cached closure document. The hint
+// is the map's half alone: length arithmetic in an allocation size is what
+// CodeQL flags as overflowable, and the one extra key grows it organically
+// (same ruling as declarationReplacement).
 func docWithVersion(d vocabulary.Document, v int64) vocabulary.Document {
-	data := make(map[string]any, len(d.Data)+1)
+	data := make(map[string]any, len(d.Data))
 	for k, val := range d.Data {
 		data[k] = val
 	}
