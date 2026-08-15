@@ -180,7 +180,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	fake := newFakeLLM(t)
-	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm", "stoicllm", "selfllm", "askllm", "medllm", "burnllm"} {
+	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm", "stoicllm", "selfllm", "askllm", "medllm", "burnllm", "vjudgellm"} {
 		model := strings.TrimSuffix(id, "llm")
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: typeProvider, ID: id,
@@ -280,6 +280,11 @@ def main(input, host):
 			"permissions": map[string]any{
 				"writes": []any{vocabulary.KindLLMInteraction, vocabulary.KindRecordPatchPolicy},
 			},
+		}),
+		// verdictor is a JUDGE: tool-less on purpose (judge.go refuses a judge
+		// with hands), its whole contract the structured verdict reply.
+		agent("verdictor", map[string]any{
+			"provider": "vjudgellm", "model": "vjudge",
 		}),
 		// burn carries the author's floor: its effects are never auto-applied.
 		vocabulary.FunctionManifest(crewAuthority, "burn", map[string]any{

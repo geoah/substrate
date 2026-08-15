@@ -86,6 +86,10 @@ type effectCeiling struct {
 	// transaction the ceiling stamps — the agent mutate tool's per-dispatch
 	// record of what it wrote, stamped onto the tool's llmmessage row.
 	changes *[]changeEntry
+	// policyDecision marks the engine's own judge-driven decision on a
+	// policy-gated request (judge.go decideAsPolicy): the one bundle-tier
+	// hand the gated guard admits.
+	policyDecision bool
 }
 
 // stamp marks the transaction as bundle dispatch under this ceiling.
@@ -95,6 +99,7 @@ func (c *effectCeiling) stamp(t *txn) {
 	}
 	t.setEffectEmit(c.emit)
 	t.changeSink = c.changes
+	t.policyDecision = c.policyDecision
 }
 
 // stampChanges attaches ONLY the change collector: the door for Link/Unlink,
