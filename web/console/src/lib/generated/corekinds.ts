@@ -487,6 +487,12 @@ export interface Function {
   authority?: string
   /** The model-facing tool card — what this function does. */
   description?: string
+  /** The author's declared effect class, read by the policy door. */
+  effect?: FunctionEffect
+  /** Always means the body's effects are never auto-applied, whatever any
+   * policy or judge says; absent means policy.
+   */
+  confirmation?: FunctionConfirmation
   /** The language the inline body is written in, or host for a built-in. */
   runtime?: FunctionRuntime
   /** The inline body, on an inline runtime. */
@@ -511,6 +517,32 @@ export const functionRequired: string[] = [
   "authority",
   "description",
   "runtime",
+]
+
+/** FunctionEffect is a declared enum: the admissible set, in declaration order.
+ *
+ * the author's declared effect class, read by the policy door
+ */
+export type FunctionEffect = "read" | "write" | "external" | "irreversible"
+
+export const functionEffectValues: FunctionEffect[] = [
+  "read",
+  "write",
+  "external",
+  "irreversible",
+]
+
+/** FunctionConfirmation is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * always means the body's effects are never auto-applied, whatever any policy
+ * or judge says; absent means policy
+ */
+export type FunctionConfirmation = "policy" | "always"
+
+export const functionConfirmationValues: FunctionConfirmation[] = [
+  "policy",
+  "always",
 ]
 
 /** FunctionRuntime is a declared enum: the admissible set, in declaration
@@ -1385,6 +1417,93 @@ export const recordMergeRequestDecisionTransitions: StateTransition<RecordMergeR
     { from: "proposed", to: "rejected", stamps: { decidedAt: "now" } },
   ]
 
+/** RecordPatchPolicy is core.substrate.reamde.dev/recordpatchpolicy.
+ *
+ * One rule for agent writes: which kinds, ops and agents it speaks for, and
+ * whether their writes land, gate into recordpatchrequests, or refuse. The
+ * most restrictive matching policy wins; no match means the write lands.
+ */
+export interface RecordPatchPolicy {
+  /** The writes this policy speaks for; empty lists match all. */
+  selector?: RecordPatchPolicySelector
+  /** What a matched write does — land, convert into a request, or bounce. */
+  action?: RecordPatchPolicyAction
+  /** The agent that judges what this policy gates; absent means the owner
+   * decides everything. Points at core.substrate.reamde.dev/agent.
+   */
+  judge?: ReferencePath
+  /** The owner's instructions to the judge, in prose. */
+  criteria?: string
+  /** How much the judge reads — the frozen envelope alone (default), or the
+   * proposing thread's recent turns beside it.
+   */
+  context?: RecordPatchPolicyContext
+  /** Judge confidence at or above accepts the gated request; absent means the
+   * judge never accepts.
+   */
+  autoAccept?: number
+  /** Judge confidence at or above rejects it; absent means the judge never
+   * rejects.
+   */
+  autoRefuse?: number
+  /** Enforce decides within the thresholds; advise only ever recommends. */
+  mode?: RecordPatchPolicyMode
+  /** A disabled policy matches nothing. */
+  disabled?: boolean
+}
+
+/** RecordPatchPolicyAction is a declared enum: the admissible set, in
+ * declaration order.
+ *
+ * what a matched write does — land, convert into a request, or bounce
+ */
+export type RecordPatchPolicyAction = "allow" | "gate" | "refuse"
+
+export const recordPatchPolicyActionValues: RecordPatchPolicyAction[] = [
+  "allow",
+  "gate",
+  "refuse",
+]
+
+/** RecordPatchPolicyContext is a declared enum: the admissible set, in
+ * declaration order.
+ *
+ * how much the judge reads — the frozen envelope alone (default), or the
+ * proposing thread's recent turns beside it
+ */
+export type RecordPatchPolicyContext = "envelope" | "thread"
+
+export const recordPatchPolicyContextValues: RecordPatchPolicyContext[] = [
+  "envelope",
+  "thread",
+]
+
+/** RecordPatchPolicyMode is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * enforce decides within the thresholds; advise only ever recommends
+ */
+export type RecordPatchPolicyMode = "enforce" | "advise"
+
+export const recordPatchPolicyModeValues: RecordPatchPolicyMode[] = [
+  "enforce",
+  "advise",
+]
+
+/** RecordPatchPolicySelector is one value of the `selector` object declared on
+ * core.substrate.reamde.dev/recordpatchpolicy.
+ *
+ * the writes this policy speaks for; empty lists match all
+ */
+export interface RecordPatchPolicySelector {
+  /** Kind references; empty means every kind. */
+  kinds?: string[]
+  /** Put, patch or delete; empty means all three. */
+  ops?: string[]
+  /** Agent identities; empty means every agent. */
+  agents?: string[]
+}
+
 /** RecordPatchRequest is core.substrate.reamde.dev/recordpatchrequest.
  *
  * A proposed change to the graph, waiting for the owner: patch an existing
@@ -1408,6 +1527,12 @@ export interface RecordPatchRequest {
   diff?: Dynamic
   /** Why the writer proposes this change. */
   rationale?: string
+  /** The policy whose gate converted this write, where one did. Points at
+   * core.substrate.reamde.dev/recordpatchpolicy.
+   */
+  policy?: ReferencePath
+  /** The governing policy record's version at conversion. */
+  policyRevision?: number
   /** The thread whose propose call created this request. Points at
    * core.substrate.reamde.dev/llmthread.
    */

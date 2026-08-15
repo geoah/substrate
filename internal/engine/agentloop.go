@@ -317,6 +317,11 @@ type agentLoop struct {
 	defs   []llm.Tool
 	byName map[string]agentTool
 
+	// gateOrdinal counts the writes the policy door GATED across this
+	// invocation: it rides the request-id derivation, so two gated writes in
+	// one tool call convert to two requests while a retried delivery
+	// reproduces both ids.
+	gateOrdinal int
 	// dispatchChanges collects the changelog entries the CURRENT tool dispatch
 	// committed (a mutate's writes, a propose's request row, a function tool's
 	// applied effects) — reset per call, stamped onto the tool's llmmessage row
@@ -1224,6 +1229,63 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 		if !l.emitAllows(ef.Type) {
 			return toolError(fmt.Sprintf("effect %s %s: %s is not in agent %s's effective emit allowlist — nothing applied",
 				ef.Action, ef.ID, ef.Type, l.ag.Identity())), false
+		}
+	}
+	// The policy door, per write effect, plus the declaration's own floor
+	// (`confirmation: always` gates whatever any policy says). Effects are
+	// all-or-nothing, so ONE gated or refused effect holds the whole batch:
+	// half-applying around a gate would lie about what the function did. The
+	// gated effect's request is materialized before the refusal, and the
+	// message names it.
+	for i, ef := range effects {
+		var op string
+		switch ef.Action {
+		case effectPut:
+			op = policyOpPut
+		case "patch":
+			op = policyOpPatch
+		case "delete":
+			op = policyOpDelete
+		default:
+			continue
+		}
+		ty, err := l.ds.resolveType(ef.Type)
+		if err != nil {
+			return toolError(err.Error()), false
+		}
+		verdict, rule, err := l.ds.policyVerdict(ctx, ty.Identity, op, l.ag.Identity())
+		if err != nil {
+			return toolError(err.Error()), false
+		}
+		policyID, policyVersion := "", int64(0)
+		if rule != nil {
+			policyID, policyVersion = rule.id, rule.version
+		}
+		if verdict == policyAllow && fn.Confirmation == vocabulary.FunctionConfirmAlways &&
+			ty.Identity != vocabulary.KindRecordPatchRequest {
+			// The author's floor: this function's writes are never
+			// auto-applied, whatever the owner's policies say.
+			verdict, policyID, policyVersion = policyGate, "", 0
+		}
+		switch verdict {
+		case policyRefuse:
+			return toolError(fmt.Sprintf("policy %s refuses %s %s for agent %s — nothing applied",
+				policyID, op, ty.Identity, l.ag.Identity())), false
+		case policyGate:
+			l.gateOrdinal++
+			gw := &gatedWrite{
+				op: op, kind: ty, id: ef.ID, props: ef.Properties, ifVersion: ef.IfVersion,
+				key:      fmt.Sprintf("%s/effect/%d/gate/%d", key, i, l.gateOrdinal),
+				policyID: policyID, policyVersion: policyVersion,
+				thread: l.threadID,
+			}
+			requestID, gerr := l.ds.convertToRequest(ctx, l.actor, l.in.causedBy, &l.dispatchChanges, gw)
+			if gerr != nil {
+				return toolError(gerr.Error()), false
+			}
+			l.in.tally.effects["gate"]++
+			return toolError(heldForReview(requestID, fmt.Sprintf(
+				"effect %s %s is held and the batch did not apply — effects are all-or-nothing", op, ty.Identity)).Error()), false
 		}
 	}
 	if len(effects) > 0 {

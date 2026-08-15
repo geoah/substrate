@@ -180,7 +180,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	fake := newFakeLLM(t)
-	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm", "stoicllm", "selfllm", "askllm", "medllm"} {
+	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm", "stoicllm", "selfllm", "askllm", "medllm", "burnllm"} {
 		model := strings.TrimSuffix(id, "llm")
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: typeProvider, ID: id,
@@ -272,13 +272,32 @@ def main(input, host):
 				"writes": []any{vocabulary.KindLLMInteraction},
 			},
 		}),
-		// meddler holds mutate over interactions: the owner-only rule's foil.
+		// meddler holds mutate over interactions AND the policy kind: the
+		// owner-only rules' foil, twice.
 		agent("meddler", map[string]any{
 			"provider": "medllm", "model": "med",
 			"tools": []any{map[string]any{"function": vocabulary.HostFunctionMutate}},
 			"permissions": map[string]any{
-				"writes": []any{vocabulary.KindLLMInteraction},
+				"writes": []any{vocabulary.KindLLMInteraction, vocabulary.KindRecordPatchPolicy},
 			},
+		}),
+		// burn carries the author's floor: its effects are never auto-applied.
+		vocabulary.FunctionManifest(crewAuthority, "burn", map[string]any{
+			"description":  "writes one task, but its author demands review first",
+			"runtime":      vocabulary.RuntimePython,
+			"confirmation": "always",
+			"permissions":  map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
+			"source": `
+def main(input, host):
+    return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
+                         "id": "t-burned", "properties": {"title": "burned"}}],
+            "output": {"ok": True}}
+`,
+		}),
+		agent("burner", map[string]any{
+			"provider": "burnllm", "model": "burn",
+			"tools":       []any{map[string]any{"function": crewAuthority + "/burn"}},
+			"permissions": map[string]any{"writes": []any{"tasks.substrate.reamde.dev/task"}},
 		}),
 		// selfjudge can both propose and decide: the self-exclusion pair — a
 		// thread's own agent resolving something never wakes that thread.

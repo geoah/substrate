@@ -59,7 +59,9 @@ data:
   # version 7: the decision loop's asks — the llminteraction kind and the
   # `ask` host function (docs/plans/thread-interactions.md phase 2); this
   # bump is what carries the NEW declarations into repositories already open.
-  version: 7
+  # version 8: the policy door — the recordpatchpolicy kind (phase 3); the
+  # bump carries it like version 7 carried the interaction.
+  version: 8
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands

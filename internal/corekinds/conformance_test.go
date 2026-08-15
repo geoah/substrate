@@ -282,6 +282,7 @@ var generatedKeys = map[string][]string{
 	"recordmapping":      corekinds.RecordMappingKeys,
 	"recordmerge":        corekinds.RecordMergeKeys,
 	"recordmergerequest": corekinds.RecordMergeRequestKeys,
+	"recordpatchpolicy":  corekinds.RecordPatchPolicyKeys,
 	"recordpatchrequest": corekinds.RecordPatchRequestKeys,
 	"recordsplit":        corekinds.RecordSplitKeys,
 	"recoverykey":        corekinds.RecoveryKeyKeys,

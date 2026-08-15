@@ -49,6 +49,16 @@ var functionRuntimes = map[string]bool{
 // function records — seeded, browsable, pickable as agent tools by reference —
 // and these constants are what the dispatch switch and the grant checks key on.
 const (
+	// The declared effect classes and confirmation floors
+	// (docs/plans/thread-interactions.md): the author's objective facts the
+	// policy layer reads.
+	FunctionEffectRead         = "read"
+	FunctionEffectWrite        = "write"
+	FunctionEffectExternal     = "external"
+	FunctionEffectIrreversible = "irreversible"
+	FunctionConfirmPolicy      = "policy"
+	FunctionConfirmAlways      = "always"
+
 	HostFunctionQuery   = AuthorityCore + "/query"
 	HostFunctionPropose = AuthorityCore + "/propose"
 	HostFunctionGraphQL = AuthorityCore + "/graphql"
@@ -90,6 +100,14 @@ type Function struct {
 	// Description is model-facing and REQUIRED: the function is its own tool
 	// card.
 	Description string
+	// Effect is the author's declared effect class — read, write, external or
+	// irreversible — an objective fact the policy layer reads, never a grant.
+	Effect string
+	// Confirmation is the declared floor: "always" means the function's
+	// effects are NEVER auto-applied, whatever any policy or judge says;
+	// "policy" (and absent) leaves the owner's policies to decide. Floors
+	// only tighten.
+	Confirmation string
 	// Runtime names the body's language; Source is the inline body itself.
 	// Python's entrypoint is `main(input, host)`; Go's is
 	// `Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error)`.
@@ -535,6 +553,10 @@ var functionDataKeys = map[string]bool{
 	// The IO shapes are `data`'s own; the grant is ONE key beside them, holding
 	// the five of functionPermissionKeys.
 	"arguments": true, "returns": true, "permissions": true,
+	// The author's OBJECTIVE facts for the policy layer
+	// (docs/plans/thread-interactions.md): what class of effect the body has,
+	// and a confirmation floor no policy or judge loosens.
+	"effect": true, "confirmation": true,
 }
 
 // deletedFunctionKeys are the removed keys, each naming what replaced it: the
@@ -602,6 +624,20 @@ func (l *loader) parseFunction(d Document) *Function {
 	fn.Runtime = mstr(d.Data, "runtime")
 	if !functionRuntimes[fn.Runtime] {
 		l.errf("%s: data.runtime: %q — one of %s", where, fn.Runtime, strings.Join(FunctionRuntimes, ", "))
+		return nil
+	}
+	fn.Effect = mstr(d.Data, "effect")
+	switch fn.Effect {
+	case "", FunctionEffectRead, FunctionEffectWrite, FunctionEffectExternal, FunctionEffectIrreversible:
+	default:
+		l.errf("%s: data.effect: %q — read, write, external or irreversible", where, fn.Effect)
+		return nil
+	}
+	fn.Confirmation = mstr(d.Data, "confirmation")
+	switch fn.Confirmation {
+	case "", FunctionConfirmPolicy, FunctionConfirmAlways:
+	default:
+		l.errf("%s: data.confirmation: %q — \"policy\" (the default) or \"always\"", where, fn.Confirmation)
 		return nil
 	}
 	if !l.parseFunctionBody(where, d.Data, fn) {

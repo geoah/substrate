@@ -14,6 +14,7 @@ import (
 
 	"github.com/geoah/substrate/internal/gql"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The graphql and mutate built-ins: the SAME schema and resolvers the API's
@@ -155,17 +156,56 @@ func (m *agentMutateDataset) ceiling() *effectCeiling {
 	return &effectCeiling{emit: m.loop.emit, changes: &m.loop.dispatchChanges}
 }
 
-// allow resolves the written kind and holds it to the effective emit set.
-func (m *agentMutateDataset) allow(kindRef, verb string) error {
+// allow resolves the written kind and holds it to the effective emit set —
+// and keeps every bundle hand off the policy kind, because a policy an agent
+// could edit is a gate that agent could open.
+func (m *agentMutateDataset) allow(kindRef, verb string) (*vocabulary.Kind, error) {
 	ty, err := m.loop.ds.resolveType(kindRef)
+	if err != nil {
+		return nil, err
+	}
+	if ty.Identity == vocabulary.KindRecordPatchPolicy {
+		return nil, fmt.Errorf("%w: %s is the owner's hand alone — installed code never writes the door's own rules",
+			substrate.ErrForbidden, ty.Identity)
+	}
+	if !m.loop.emitAllows(ty.Identity) {
+		return nil, fmt.Errorf("%w: %s %s: %s is not in agent %s's effective emit allowlist, nothing applied",
+			substrate.ErrForbidden, verb, kindRef, ty.Identity, m.loop.ag.Identity())
+	}
+	return ty, nil
+}
+
+// door runs the policy layer for one write this dataset is about to apply:
+// allow proceeds, refuse errors, gate converts the write into a request and
+// answers ErrGated naming it. Deterministic — no model call sits here.
+func (m *agentMutateDataset) door(ctx context.Context, ty *vocabulary.Kind, op, id string, props map[string]any, ifVersion *int64) error {
+	l := m.loop
+	verdict, rule, err := l.ds.policyVerdict(ctx, ty.Identity, op, l.ag.Identity())
 	if err != nil {
 		return err
 	}
-	if !m.loop.emitAllows(ty.Identity) {
-		return fmt.Errorf("%w: %s %s: %s is not in agent %s's effective emit allowlist, nothing applied",
-			substrate.ErrForbidden, verb, kindRef, ty.Identity, m.loop.ag.Identity())
+	switch verdict {
+	case policyRefuse:
+		return fmt.Errorf("%w: policy %s refuses %s %s for agent %s",
+			substrate.ErrForbidden, rule.id, op, ty.Identity, l.ag.Identity())
+	case policyGate:
+		l.gateOrdinal++
+		gw := &gatedWrite{
+			op: op, kind: ty, id: id, props: props, ifVersion: ifVersion,
+			key:      fmt.Sprintf("%s/agent/%s/%d/gate/%d", l.in.delivery, l.ag.Identity(), l.toolCalls, l.gateOrdinal),
+			policyID: rule.id, policyVersion: rule.version,
+			thread: l.threadID,
+		}
+		requestID, err := l.ds.convertToRequest(ctx, l.actor, l.in.causedBy, &l.dispatchChanges, gw)
+		if err != nil {
+			return err
+		}
+		l.in.tally.effects["gate"]++
+		return heldForReview(requestID, fmt.Sprintf("policy %s gates %s %s for agent %s",
+			rule.id, op, ty.Identity, l.ag.Identity()))
+	default:
+		return nil
 	}
-	return nil
 }
 
 func (m *agentMutateDataset) tally(action string) {
@@ -173,7 +213,11 @@ func (m *agentMutateDataset) tally(action string) {
 }
 
 func (m *agentMutateDataset) Put(ctx context.Context, actor substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
-	if err := m.allow(in.Kind, "put"); err != nil {
+	ty, err := m.allow(in.Kind, "put")
+	if err != nil {
+		return nil, err
+	}
+	if err := m.door(ctx, ty, policyOpPut, in.ID, in.Properties, in.IfVersion); err != nil {
 		return nil, err
 	}
 	e, err := m.loop.ds.putBounded(ctx, actor, in, m.ceiling())
@@ -184,7 +228,11 @@ func (m *agentMutateDataset) Put(ctx context.Context, actor substrate.Actor, in 
 }
 
 func (m *agentMutateDataset) Patch(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput) (*substrate.Record, error) {
-	if err := m.allow(typ, "patch"); err != nil {
+	ty, err := m.allow(typ, "patch")
+	if err != nil {
+		return nil, err
+	}
+	if err := m.door(ctx, ty, policyOpPatch, id, in.Properties, in.IfVersion); err != nil {
 		return nil, err
 	}
 	e, err := m.loop.ds.patchBounded(ctx, actor, typ, id, in, m.ceiling())
@@ -195,7 +243,11 @@ func (m *agentMutateDataset) Patch(ctx context.Context, actor substrate.Actor, t
 }
 
 func (m *agentMutateDataset) Delete(ctx context.Context, actor substrate.Actor, typ, id string) (*substrate.Record, error) {
-	if err := m.allow(typ, "delete"); err != nil {
+	ty, err := m.allow(typ, "delete")
+	if err != nil {
+		return nil, err
+	}
+	if err := m.door(ctx, ty, policyOpDelete, id, nil, nil); err != nil {
 		return nil, err
 	}
 	e, err := m.loop.ds.deleteBounded(ctx, actor, typ, id, m.ceiling())
@@ -210,7 +262,7 @@ func (m *agentMutateDataset) Delete(ctx context.Context, actor substrate.Actor, 
 // because an edge write drives no state machine: only a patch can enter the
 // accepted state whose transition materializes a change request.
 func (m *agentMutateDataset) Link(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef, props map[string]any) error {
-	if err := m.allow(srcType, "link"); err != nil {
+	if _, err := m.allow(srcType, "link"); err != nil {
 		return err
 	}
 	if err := m.loop.ds.linkBounded(ctx, actor, srcType, src, rel, to, props, m.ceiling()); err != nil {
@@ -221,7 +273,7 @@ func (m *agentMutateDataset) Link(ctx context.Context, actor substrate.Actor, sr
 }
 
 func (m *agentMutateDataset) Unlink(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef) error {
-	if err := m.allow(srcType, "unlink"); err != nil {
+	if _, err := m.allow(srcType, "unlink"); err != nil {
 		return err
 	}
 	if err := m.loop.ds.unlinkBounded(ctx, actor, srcType, src, rel, to, m.ceiling()); err != nil {

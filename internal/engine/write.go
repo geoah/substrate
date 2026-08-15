@@ -526,6 +526,22 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 				substrate.ErrConflict, name)
 		}
 	}
+	// A bundle-tier actor never decides a POLICY-GATED request: the door held
+	// that write for the owner, and the policy's own judge path is the
+	// engine's (t.policyDecision), not a tool's. Deciding one's own gate is
+	// no gate — and this is the guard that makes the policy layer real. A
+	// VOLUNTARY proposal is different on purpose: a bundle actor whose emit
+	// covers the target may accept its own request, because it could have
+	// written the target directly and nothing escalates (the ceiling test's
+	// documented contract, core_db_test.go).
+	if ty.Identity == vocabulary.KindRecordPatchRequest && t.tier == substrate.TierBundle {
+		if _, deciding := states[propDecision]; deciding && !t.policyDecision {
+			if _, gated := existing.Props["policy"]; gated {
+				return nil, fmt.Errorf("%w: a policy gated this request — its judge or the owner decides it, never installed code",
+					substrate.ErrForbidden)
+			}
+		}
+	}
 	if err := checkCAS(existing, in.IfVersion); err != nil {
 		return nil, err
 	}
@@ -1491,7 +1507,7 @@ func (t *txn) canonicalizeResubmittedDiff(sp *applySpec) error {
 // guarded in the edge loop, where the write's resolved target can be compared to
 // the current one (a re-sync of the same target is fine; a swap is not).
 func guardImmutableEnvelope(sp *applySpec) error {
-	for _, name := range []string{"op", "targetKind", "targetId", "diff"} {
+	for _, name := range []string{"op", "targetKind", "targetId", "diff", "policy", "policyRevision", msgRelThread} {
 		next, named := sp.props[name]
 		if !named {
 			continue

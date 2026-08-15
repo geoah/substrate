@@ -13,7 +13,10 @@ var (
 	ErrGuard      = errors.New("substrate: operation not allowed here")
 	ErrValidation = errors.New("substrate: validation failed")
 	ErrForbidden  = errors.New("substrate: forbidden") // e.g. foreign label namespace, system type write
-	ErrAuth       = errors.New("substrate: authentication failed")
+	// ErrGated marks a write a policy HELD rather than refused: it converted
+	// into a recordpatchrequest awaiting review, and the message names it.
+	ErrGated = errors.New("substrate: held for review")
+	ErrAuth  = errors.New("substrate: authentication failed")
 )
 
 // ValidationError carries per-field detail for the UI's YAML editor.
