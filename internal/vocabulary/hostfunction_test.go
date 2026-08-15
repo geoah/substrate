@@ -43,7 +43,7 @@ func hostFn(data string) string {
 metadata:
   id: hf.example.com
 data:
-  version: v1alpha1
+  version: 1
 ---
 kind: core.substrate.reamde.dev/kind
 metadata:
@@ -169,7 +169,7 @@ func TestBareNameSkipsHostFunctions(t *testing.T) {
 metadata:
   id: own.example.com
 data:
-  version: v1alpha1
+  version: 1
 ---
 kind: core.substrate.reamde.dev/function
 metadata:

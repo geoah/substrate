@@ -31,7 +31,7 @@ func googleManifest() enginetest.Manifest {
 	return enginetest.Manifest{
 		Name: "google.people", Authority: googleAuthority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(googleAuthority, "v1alpha1"),
+			vocabulary.AuthorityManifest(googleAuthority, 1),
 			vocabulary.ActorManifest(googleAuthority, string(people)),
 			vocabulary.KindManifest(googleAuthority,
 				map[string]any{"singular": "contact", "plural": "contacts"},
@@ -76,7 +76,7 @@ func slackManifest() enginetest.Manifest {
 	return enginetest.Manifest{
 		Name: "slack", Authority: slackAuthority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(slackAuthority, "v1alpha1"),
+			vocabulary.AuthorityManifest(slackAuthority, 1),
 			vocabulary.ActorManifest(slackAuthority, string(slack)),
 			vocabulary.KindManifest(slackAuthority,
 				map[string]any{"singular": "slackuser", "plural": "slackusers"},
@@ -617,7 +617,7 @@ func TestStatesAreNeverRecomputed(t *testing.T) {
 	m := enginetest.Manifest{
 		Name: "promoter", Authority: authority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, "v1alpha1"),
+			vocabulary.AuthorityManifest(authority, 1),
 			vocabulary.ActorManifest(authority, "connector:promoter"),
 			vocabulary.KindManifest(authority,
 				map[string]any{"singular": "promoterrow", "plural": "promoterrows"},
@@ -1027,7 +1027,7 @@ func TestObjectPropertyValidation(t *testing.T) {
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, enginetest.Manifest{
 		Name: "nested", Authority: authority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, "v1alpha1"),
+			vocabulary.AuthorityManifest(authority, 1),
 			vocabulary.ActorManifest(authority, "connector:nested"),
 			vocabulary.KindManifest(authority,
 				map[string]any{"singular": "row", "plural": "rows"},
@@ -1046,7 +1046,7 @@ func TestObjectPropertyValidation(t *testing.T) {
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, enginetest.Manifest{
 		Name: "toodeep", Authority: deep,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(deep, "v1alpha1"),
+			vocabulary.AuthorityManifest(deep, 1),
 			vocabulary.ActorManifest(deep, "connector:toodeep"),
 			vocabulary.KindManifest(deep,
 				map[string]any{"singular": "row", "plural": "rows"},
@@ -1081,7 +1081,7 @@ func TestHotMapTargets(t *testing.T) {
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, enginetest.Manifest{
 		Name: "library", Authority: authority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, "v1alpha1"),
+			vocabulary.AuthorityManifest(authority, 1),
 			vocabulary.ActorManifest(authority, "connector:library"),
 			vocabulary.KindManifest(authority,
 				map[string]any{"singular": "libraryrow", "plural": "libraryrows"},

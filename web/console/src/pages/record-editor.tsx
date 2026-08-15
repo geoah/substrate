@@ -138,7 +138,7 @@ function RecordEditor({
 
   const seed =
     mode === "edit" && record.data
-      ? applyManifestYAML(record.data)
+      ? applyManifestYAML(record.data, kindInfo)
       : templateYAML(kindInfo)
 
   return (

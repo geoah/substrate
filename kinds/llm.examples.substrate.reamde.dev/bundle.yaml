@@ -34,17 +34,17 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: llm.examples.substrate.reamde.dev
 data:
-  # v1alpha3: THE TYPED CORE SWEEP. Declarations in this closure moved to the
+  # version 3: THE TYPED CORE SWEEP. Declarations in this closure moved to the
   # declared spellings — whichever of them they used: a tool entry naming its arm,
   # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
-  # v1alpha4: the built-ins are function records, so `substrate`'s tool entries
+  # version 4: the built-ins are function records, so `substrate`'s tool entries
   # name them under `function:` like any other function.
-  # v1alpha5: the grants group under one `permissions:` object, and the permission
+  # version 5: the grants group under one `permissions:` object, and the permission
   # to write is `writes:` inside it. This closure's functions and agents
   # follow core's declaration.
-  version: v1alpha5
+  version: 5
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata:

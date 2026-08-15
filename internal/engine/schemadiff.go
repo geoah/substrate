@@ -50,6 +50,12 @@ const countPropQuery = `SELECT count(*) FROM records WHERE kind = $1 AND deleted
 // countMissingPropQuery counts live rows of a type NOT carrying the property.
 const countMissingPropQuery = `SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL AND NOT props ? $2`
 
+// countNonIntPropQuery counts live rows whose value for a property is not an
+// integral number — the rows a scalar retype to `int` actually strands.
+const countNonIntPropQuery = `SELECT count(*) FROM records
+	WHERE kind = $1 AND deleted_at IS NULL AND props ? $2
+	AND (jsonb_typeof(props->$2) <> 'number' OR (props->>$2)::numeric <> floor((props->>$2)::numeric))`
+
 // countStateQuery counts live rows holding any state for a machine.
 const countStateQuery = `SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL AND states ? $2`
 
@@ -149,6 +155,21 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 			// is a scalar, and no stored value converts between them.
 			if curP.Datatype != candP.Datatype || curP.Repeated != candP.Repeated || curP.Keyed != candP.Keyed {
 				from, to := kindShape(curP), kindShape(candP)
+				// A scalar retype to `int` strands only the rows whose stored
+				// value is not already an integral number: a backfill can
+				// rewrite the values first and the declaration then follows
+				// them (the declaration-version migration is the one that
+				// needed this). Every other flip keeps the presence count —
+				// nothing converts a list into a map or a string into a bool.
+				if candP.Datatype == vocabulary.DatatypeInt &&
+					!curP.Repeated && !curP.Keyed && !candP.Repeated && !candP.Keyed {
+					out = append(out, narrowing{
+						format: fmt.Sprintf("type %s: property %q changes kind %s → %s while %%d live records hold values that are not integers — migrate them first",
+							ident, pname, from, to),
+						query: countNonIntPropQuery, args: []any{ident, pname},
+					})
+					continue
+				}
 				out = append(out, narrowing{
 					format: fmt.Sprintf("type %s: property %q changes kind %s → %s while %%d live records hold values of the old kind — migrate them first",
 						ident, pname, from, to),

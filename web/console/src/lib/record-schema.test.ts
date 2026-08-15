@@ -23,7 +23,7 @@ const agentKind: KindInfo = {
   identity: "core.substrate.reamde.dev/agent",
   name: "agent",
   authority: "core.substrate.reamde.dev",
-  version: "",
+  version: 0,
   plural: "agents",
   source: "builtin",
   definition: {
@@ -55,7 +55,7 @@ const wideKind: KindInfo = {
   identity: "core.substrate.reamde.dev/wide",
   name: "wide",
   authority: "core.substrate.reamde.dev",
-  version: "",
+  version: 0,
   plural: "wides",
   source: "builtin",
   definition: {

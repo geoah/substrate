@@ -18,7 +18,7 @@ func TestDecodeTypeInfoTypedRow(t *testing.T) {
 		"version": 3,
 		"properties": {
 			"authority": "core.substrate.reamde.dev",
-			"version": "v1alpha6",
+			"version": 6,
 			"names": {"singular": "agent", "plural": "agents"},
 			"description": "one declared agent"
 		}
@@ -36,8 +36,8 @@ func TestDecodeTypeInfoTypedRow(t *testing.T) {
 	if ti.Plural != "agents" {
 		t.Errorf("plural = %q", ti.Plural)
 	}
-	if ti.Version != "v1alpha6" {
-		t.Errorf("version = %q", ti.Version)
+	if ti.Version != 6 {
+		t.Errorf("version = %d", ti.Version)
 	}
 	if ti.Description != "one declared agent" {
 		t.Errorf("description = %q", ti.Description)

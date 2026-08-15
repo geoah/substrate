@@ -98,7 +98,7 @@ const evoRefAuthority = "evoref.example.substrate.reamde.dev"
 // checks.
 func evoRefDocs(holderProps map[string]any) []map[string]any {
 	return []map[string]any{
-		vocabulary.AuthorityManifest(evoRefAuthority, ""),
+		vocabulary.AuthorityManifest(evoRefAuthority, 0),
 		vocabulary.KindManifest(evoRefAuthority, map[string]any{"singular": "widget", "plural": "widgets"}, map[string]any{}),
 		vocabulary.KindManifest(evoRefAuthority, map[string]any{"singular": "gadget", "plural": "gadgets"}, map[string]any{}),
 		vocabulary.KindManifest(evoRefAuthority, map[string]any{"singular": "holder", "plural": "holders"},

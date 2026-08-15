@@ -246,7 +246,7 @@ func installPagedSecretBundle(t *testing.T, ds *dataset) string {
 	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
 		Name: "pagedsecret", Authority: pagedSecretAuthority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(pagedSecretAuthority, ""),
+			vocabulary.AuthorityManifest(pagedSecretAuthority, 0),
 			vocabulary.ActorManifest(pagedSecretAuthority, vocabulary.AuthorityActor(pagedSecretAuthority)),
 			vocabulary.BundleManifest(pagedSecretAuthority, map[string]any{
 				"description": "the paged secret bundle",

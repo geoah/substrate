@@ -90,7 +90,7 @@ func trigOn(fn string, record map[string]any) enginetest.Trigger {
 // types, the functions under test and their default triggers.
 func fnConnector(triggers []enginetest.Trigger, fns ...map[string]any) enginetest.Manifest {
 	manifests := []map[string]any{
-		vocabulary.AuthorityManifest(fnAuthority, ""),
+		vocabulary.AuthorityManifest(fnAuthority, 0),
 		vocabulary.ActorManifest(fnAuthority, vocabulary.AuthorityActor(fnAuthority)),
 		vocabulary.KindManifest(fnAuthority, map[string]any{"singular": "widget", "plural": "widgets"}, map[string]any{
 			// Only `name` indexes: the scenario knobs must not pollute the
@@ -151,7 +151,7 @@ func TestPrepareBatchCountCap(t *testing.T) {
 	_, ds := newDataset(t)
 	sa := applier(t, ds)
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(fnAuthority, ""),
+		vocabulary.AuthorityManifest(fnAuthority, 0),
 		vocabulary.ActorManifest(fnAuthority, vocabulary.AuthorityActor(fnAuthority)),
 		vocabulary.KindManifest(fnAuthority, map[string]any{"singular": "widget", "plural": "widgets"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),

@@ -26,7 +26,7 @@ const graphAuthority = "graph.example.substrate.reamde.dev"
 func graphVocabulary(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(graphAuthority, ""),
+		vocabulary.AuthorityManifest(graphAuthority, 0),
 		vocabulary.KindManifest(graphAuthority,
 			map[string]any{"singular": "hub", "plural": "hubs"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),

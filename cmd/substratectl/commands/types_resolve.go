@@ -85,9 +85,10 @@ func (c *client) fetchTypePage(ctx context.Context, q url.Values) ([]json.RawMes
 }
 
 func decodeTypeInfo(raw json.RawMessage) (substrate.KindInfo, bool) {
-	// "version" is a string in the bare-TypeInfo shape but the numeric CAS
-	// version in the record shape (whose declared version rides in properties),
-	// so it cannot decode into a typed field.
+	// "version" is the declared version in the bare-TypeInfo shape but the
+	// CAS version in the record shape (whose declared version rides in
+	// properties) — both numbers now, still two different numbers, so it
+	// cannot decode into a typed field.
 	var r struct {
 		Identity    string         `json:"identity"`
 		ID          string         `json:"id"`
@@ -103,7 +104,6 @@ func decodeTypeInfo(raw json.RawMessage) (substrate.KindInfo, bool) {
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return substrate.KindInfo{}, false
 	}
-	version, _ := r.Version.(string)
 	definition := r.Definition
 	if definition == nil {
 		definition, _ = r.Properties["definition"].(map[string]any)
@@ -116,11 +116,18 @@ func decodeTypeInfo(raw json.RawMessage) (substrate.KindInfo, bool) {
 	}
 	description, _ := definition["description"].(string)
 	names, _ := definition["names"].(map[string]any)
+	// The record shape's own `version` is the CAS counter; its DECLARED
+	// version rides in properties. The bare-TypeInfo shape has no
+	// properties, so its `version` field is the declared one.
+	declaredVersion, ok := vocabulary.VersionValue(r.Properties["version"])
+	if !ok || declaredVersion == 0 {
+		declaredVersion, _ = vocabulary.VersionValue(r.Version)
+	}
 	ti := substrate.KindInfo{
 		Identity:    r.Identity,
 		Name:        firstNonEmpty(r.Name, propString(names, "singular"), propString(r.Properties, "name")),
 		Authority:   firstNonEmpty(r.Authority, propString(r.Properties, "authority")),
-		Version:     firstNonEmpty(version, propString(r.Properties, "version")),
+		Version:     declaredVersion,
 		Plural:      firstNonEmpty(r.Plural, propString(names, "plural"), propString(r.Properties, "plural")),
 		Source:      firstNonEmpty(r.Source, propString(r.Properties, "source")),
 		Description: firstNonEmpty(r.Description, description),

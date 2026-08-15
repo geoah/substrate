@@ -21,7 +21,7 @@ func TestOrderByAnIntPropertySortsNumerically(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(orderAuthority, ""),
+		vocabulary.AuthorityManifest(orderAuthority, 0),
 		vocabulary.KindManifest(orderAuthority,
 			map[string]any{"singular": "step", "plural": "steps"},
 			map[string]any{"properties": map[string]any{
@@ -71,7 +71,7 @@ func TestOrderByAStringPropertyStaysTextual(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(orderAuthority, ""),
+		vocabulary.AuthorityManifest(orderAuthority, 0),
 		vocabulary.KindManifest(orderAuthority,
 			map[string]any{"singular": "step", "plural": "steps"},
 			map[string]any{"properties": map[string]any{

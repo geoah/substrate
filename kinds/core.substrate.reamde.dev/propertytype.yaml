@@ -9,16 +9,18 @@ data:
     range or a value set (`isbn`, `asin`). Authority-local — only the authority
     that declares it may use it — so a shape is stated once instead of repeated
     on every property that wants it.
-  # v1alpha2: the display template dropped the authority. A declaration's
+  # version 2: the display template dropped the authority. A declaration's
   # identity is `<authority>/<name>` and the dotted composite it used to render
   # names nothing — the bump is what carries the new template into repositories
   # that already stored the old one.
-  # v1alpha3: the declaration gained a `description` — the bump is what
-  # carries it into repositories that already stored the v1alpha2 one.
-  # v1alpha4: TYPED. `definition` and `name` are gone; the refinement — the
+  # version 3: the declaration gained a `description` — the bump is what
+  # carries it into repositories that already stored the version 2 one.
+  # version 4: TYPED. `definition` and `name` are gone; the refinement — the
   # base, the pattern, the range and the value set — is properties, and the base
   # is the closed set of built-in datatypes rather than free text.
-  version: v1alpha5
+  # version 6: the declaration's own `version` became an incremental
+  # integer, maintained by the engine.
+  version: 6
   names:
     singular: propertytype
     plural: propertytypes
@@ -27,9 +29,10 @@ data:
   displayTemplate: "{localName}"
   properties:
     version:
-      type: string
+      type: int
       managed: true
-      description: this declaration's version
+      description: this declaration's incremental version, maintained by the
+        engine
     source:
       type: enum
       values:

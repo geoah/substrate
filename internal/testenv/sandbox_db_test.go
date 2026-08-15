@@ -24,7 +24,7 @@ const probeAuthority = "probe.bundles.substrate.reamde.dev"
 func probeBundle(fns ...probeFn) []string {
 	installs := []string{probeAuthority + "/note"}
 	docs := []string{
-		"kind: core.substrate.reamde.dev/authority\nmetadata: {id: " + probeAuthority + "}\ndata:\n  version: v1alpha1\n",
+		"kind: core.substrate.reamde.dev/authority\nmetadata: {id: " + probeAuthority + "}\ndata:\n  version: 1\n",
 	}
 	// No inputs: these probes read no configuration, so the bundle declares
 	// none and nothing anywhere implies any.

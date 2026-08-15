@@ -9,7 +9,7 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: food.substrate.reamde.dev
 data:
-  version: v1alpha1
+  version: 1
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.

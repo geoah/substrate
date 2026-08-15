@@ -217,7 +217,7 @@ func TestCatalogListReturnsShippedBundles(t *testing.T) {
 			ID        string `json:"id"`
 			Name      string `json:"name"`
 			Authority string `json:"authority"`
-			Version   string `json:"version"`
+			Version   int64  `json:"version"`
 			Installed bool   `json:"installed"`
 		} `json:"catalog"`
 	}](t, rec)
@@ -225,7 +225,7 @@ func TestCatalogListReturnsShippedBundles(t *testing.T) {
 	for _, item := range body.Catalog {
 		if item.ID == webBundleID {
 			found = true
-			if item.Name != "web" || item.Authority != "web.bundles.substrate.reamde.dev" || item.Version != "v1alpha5" {
+			if item.Name != "web" || item.Authority != "web.bundles.substrate.reamde.dev" || item.Version != 5 {
 				t.Errorf("web entry fields = %+v", item)
 			}
 			if item.Installed {

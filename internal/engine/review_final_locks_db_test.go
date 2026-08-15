@@ -133,7 +133,7 @@ func installContactSource(t *testing.T, ds *dataset) {
 	if err := enginetest.Install(context.Background(), ds, substrate.ActorSystem, enginetest.Manifest{
 		Name: "csrc", Authority: csrcAuthority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(csrcAuthority, "v1alpha1"),
+			vocabulary.AuthorityManifest(csrcAuthority, 1),
 			vocabulary.ActorManifest(csrcAuthority, vocabulary.AuthorityActor(csrcAuthority)),
 			vocabulary.KindManifest(csrcAuthority,
 				map[string]any{"singular": "contact", "plural": "contacts"},

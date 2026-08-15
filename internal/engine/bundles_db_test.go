@@ -139,7 +139,7 @@ func mbDocs(installs []string, members ...map[string]any) []map[string]any {
 		list = append(list, id)
 	}
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(mbAuthority, ""),
+		vocabulary.AuthorityManifest(mbAuthority, 0),
 		vocabulary.ActorManifest(mbAuthority, vocabulary.AuthorityActor(mbAuthority)),
 		vocabulary.BundleManifest(mbAuthority, map[string]any{
 			"description": "the mail bundle",
@@ -315,7 +315,7 @@ func TestBundleInstallClosureRefusals(t *testing.T) {
 
 	// A bundle-suffixed authority without a bundle document.
 	headless := []map[string]any{
-		vocabulary.AuthorityManifest(mbAuthority, ""),
+		vocabulary.AuthorityManifest(mbAuthority, 0),
 		vocabulary.ActorManifest(mbAuthority, vocabulary.AuthorityActor(mbAuthority)),
 		mbMessageTypeDoc(),
 	}

@@ -126,7 +126,7 @@ function kindInfo(name: string, authority: string): KindInfo {
     identity: `${authority}/${name}`,
     name,
     authority,
-    version: "",
+    version: 0,
     plural: `${name}s`,
     source: "schema",
   }

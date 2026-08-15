@@ -15,7 +15,7 @@ func agAuthority(agData string) string {
 metadata:
   id: ag.example.com
 data:
-  version: v1alpha1
+  version: 1
 ---
 kind: core.substrate.reamde.dev/kind
 metadata:
@@ -71,7 +71,7 @@ const coreHostStub = `kind: core.substrate.reamde.dev/authority
 metadata:
   id: core.substrate.reamde.dev
 data:
-  version: v1alpha1
+  version: 1
 ---
 kind: core.substrate.reamde.dev/kind
 metadata:

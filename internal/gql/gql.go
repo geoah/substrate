@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"sort"
+	"strconv"
 	"sync"
 
 	"github.com/graphql-go/graphql"
@@ -93,7 +94,7 @@ func RegistryKey(types []substrate.KindInfo) string {
 		// record path activates on commit — not on the next type add/remove.
 		// json.Marshal sorts map keys, so equal definitions hash equal.
 		def, _ := json.Marshal(t.Definition)
-		ids = append(ids, t.Identity+"@"+t.Version+"@"+t.Plural+"@"+string(def))
+		ids = append(ids, t.Identity+"@"+strconv.FormatInt(t.Version, 10)+"@"+t.Plural+"@"+string(def))
 	}
 	sort.Strings(ids)
 	sum := sha256.New()

@@ -17,9 +17,9 @@ data:
   # under the authority, and where its declarations came from.
   properties:
     version:
-      type: string
+      type: int
       managed: true
-      description: the declared maturity statement, v1alpha1 unless said otherwise
+      description: the closure's incremental version, maintained by the engine
     # The authority's actors are read off the actor documents it declares, so
     # the engine writes this list; nothing authors it on the header itself.
     actors:

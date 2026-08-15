@@ -26,7 +26,7 @@ const llmprovider: KindInfo = {
   identity: "core.substrate.reamde.dev/llmprovider",
   name: "llmprovider",
   authority: "core.substrate.reamde.dev",
-  version: "",
+  version: 0,
   plural: "llmproviders",
   source: "builtin",
   definition: {
@@ -283,7 +283,7 @@ const mappingKind: KindInfo = {
   identity: "crew.test.dev/mapping",
   name: "mapping",
   authority: "crew.test.dev",
-  version: "",
+  version: 0,
   plural: "mappings",
   source: "installed",
   definition: {
@@ -313,7 +313,7 @@ const agentKind: KindInfo = {
   identity: "core.substrate.reamde.dev/agent",
   name: "agent",
   authority: "core.substrate.reamde.dev",
-  version: "",
+  version: 0,
   plural: "agents",
   source: "builtin",
   definition: {
@@ -380,7 +380,7 @@ function registryKind(identity: string, plural: string): KindInfo {
     identity,
     name: identity.split("/")[1],
     authority: identity.split("/")[0],
-    version: "",
+    version: 0,
     plural,
     source: "builtin",
     description: "",

@@ -87,7 +87,7 @@ type tree struct {
 	decls map[string]decl
 	// authorityVersion is the authority document's data.version, defaulted
 	// exactly as the loader defaults it.
-	authorityVersion map[string]string
+	authorityVersion map[string]int64
 	// dirs is the set of authority directories present, so a deletion can
 	// tell "declaration removed" from "bundle removed whole".
 	dirs map[string]bool
@@ -100,7 +100,7 @@ type tree struct {
 func loadTree(root string) (*tree, error) {
 	t := &tree{
 		decls:            map[string]decl{},
-		authorityVersion: map[string]string{},
+		authorityVersion: map[string]int64{},
 		dirs:             map[string]bool{},
 		dataDocs:         map[string]map[string]any{},
 	}
@@ -172,8 +172,8 @@ func (t *tree) loadFile(rel string, raw []byte) error {
 		authority, _ := data["authority"].(string)
 		if name == vocabulary.DocAuthority {
 			authority = id
-			version, _ := data["version"].(string)
-			if version == "" {
+			version, _ := vocabulary.VersionValue(data["version"])
+			if version == 0 {
 				version = vocabulary.DefaultVersion
 			}
 			t.authorityVersion[id] = version
@@ -186,9 +186,9 @@ func (t *tree) loadFile(rel string, raw []byte) error {
 // effectiveVersion is the version a declaration would project with: a kind's
 // own data.version where it declares one, else its authority's, exactly as
 // the engine's projection defaults it (authorityDeclarations).
-func (t *tree) effectiveVersion(d decl) string {
+func (t *tree) effectiveVersion(d decl) int64 {
 	if d.kind == vocabulary.DocKind || d.kind == vocabulary.DocAuthority {
-		if v, _ := d.data["version"].(string); v != "" {
+		if v, _ := vocabulary.VersionValue(d.data["version"]); v != 0 {
 			return v
 		}
 	}
@@ -214,10 +214,10 @@ func diffTrees(base, head *tree) []string {
 				continue // the bundle left the tree whole
 			}
 			bv, hv := base.authorityVersion[b.authority], head.authorityVersion[b.authority]
-			if hv == "" || vocabulary.CompareVersions(hv, bv) > 0 {
+			if hv == 0 || vocabulary.CompareVersions(hv, bv) > 0 {
 				continue // the prune rides an authority bump (or the authority left too)
 			}
-			out = append(out, fmt.Sprintf("%s: %s %s was removed but authority %s stays at %s; bump the authority version so the prune is an upgrade",
+			out = append(out, fmt.Sprintf("%s: %s %s was removed but authority %s stays at %d; bump the authority version so the prune is an upgrade",
 				b.file, b.kind, b.id, b.authority, bv))
 			continue
 		}
@@ -225,11 +225,11 @@ func diffTrees(base, head *tree) []string {
 		switch {
 		case !reflect.DeepEqual(minusVersion(b.data), minusVersion(h.data)):
 			if vocabulary.CompareVersions(hv, bv) <= 0 {
-				out = append(out, fmt.Sprintf("%s: %s %s changed but its version stays at %s; bump it past %s",
+				out = append(out, fmt.Sprintf("%s: %s %s changed but its version stays at %d; bump it past %d",
 					h.file, h.kind, h.id, hv, bv))
 			}
 		case vocabulary.CompareVersions(hv, bv) < 0:
-			out = append(out, fmt.Sprintf("%s: %s %s moved backward from %s to %s; a repository already at %s keeps it (never a downgrade), so the tree stops converging",
+			out = append(out, fmt.Sprintf("%s: %s %s moved backward from %d to %d; a repository already at %d keeps it (never a downgrade), so the tree stops converging",
 				h.file, h.kind, h.id, bv, hv, bv))
 		}
 	}
@@ -262,10 +262,10 @@ func dataDocViolations(base, head *tree) []string {
 		// The directory IS the authority for the shipped tree (one authority
 		// per directory), so its bump is the one that carries the wiring.
 		bv, hv := base.authorityVersion[dir], head.authorityVersion[dir]
-		if hv == "" || vocabulary.CompareVersions(hv, bv) > 0 {
+		if hv == 0 || vocabulary.CompareVersions(hv, bv) > 0 {
 			continue
 		}
-		out = append(out, fmt.Sprintf("%s: the delivery wiring changed but authority %s stays at %s; bump the authority version, or no repository is ever offered the change",
+		out = append(out, fmt.Sprintf("%s: the delivery wiring changed but authority %s stays at %d; bump the authority version, or no repository is ever offered the change",
 			dir, dir, bv))
 	}
 	return out

@@ -141,12 +141,39 @@ export function templateYAML(kind: KindInfo): string {
   return templateDoc(kind).toString(STRINGIFY)
 }
 
+/** Drop the properties the kind declares `managed:`, the engine's stamps
+ * (the declaration version above all), which it refuses a write that
+ * disagrees with, so neither the edit seed nor the put may carry one. The
+ * same source of truth as `templateDoc` and the form lens
+ * (`record-form.toFieldValue`). Without the kind the declaration is unknown,
+ * so the properties pass through untouched: this lens edits every record,
+ * and guessing would drop somebody's data. */
+function withoutManaged(
+  props: Record<string, unknown>,
+  kind?: KindInfo
+): Record<string, unknown> {
+  if (!kind) return props
+  const managed = new Set(
+    propSpecs(kind)
+      .filter((spec) => spec.managed)
+      .map((spec) => spec.name)
+  )
+  if (!managed.size) return props
+  const out: Record<string, unknown> = {}
+  for (const [name, value] of Object.entries(props)) {
+    if (!managed.has(name)) out[name] = value
+  }
+  return out
+}
+
 /** The EDIT seed: the record's apply-able envelope — the manifest view's shape
- * without the server-owned `status` block. Order-preserving so the yaml
- * serializes what the read served. Labels ride in `metadata`; edge references
- * travel whole as `{kind, id}`. */
+ * without the server-owned `status` block, and (when the kind is known)
+ * without the managed properties a hand edit must not carry.
+ * Order-preserving so the yaml serializes what the read served. Labels ride
+ * in `metadata`; edge references travel whole as `{kind, id}`. */
 export function applyManifestOf(
-  record: SubstrateRecord
+  record: SubstrateRecord,
+  kind?: KindInfo
 ): Record<string, unknown> {
   const metadata: Record<string, unknown> = { id: record.id }
   if (Object.keys(record.labels ?? {}).length) metadata.labels = record.labels
@@ -155,8 +182,9 @@ export function applyManifestOf(
   }
 
   const data: Record<string, unknown> = {}
-  if (Object.keys(record.properties ?? {}).length) {
-    data.properties = record.properties
+  const properties = withoutManaged(record.properties ?? {}, kind)
+  if (Object.keys(properties).length) {
+    data.properties = properties
   }
   const edges = Object.entries(record.edges ?? {}).flatMap(([rel, targets]) =>
     (targets ?? []).map((t) => {
@@ -173,8 +201,11 @@ export function applyManifestOf(
   return doc
 }
 
-export function applyManifestYAML(record: SubstrateRecord): string {
-  return new Document(applyManifestOf(record)).toString(STRINGIFY)
+export function applyManifestYAML(
+  record: SubstrateRecord,
+  kind?: KindInfo
+): string {
+  return new Document(applyManifestOf(record, kind)).toString(STRINGIFY)
 }
 
 // ── parse + validate ─────────────────────────────────────────────────────────
@@ -691,8 +722,10 @@ export function toPutInput(doc: ApplyDoc, kind?: KindInfo): PutInput {
   }
   const data = doc.data ?? {}
   if (data.properties && typeof data.properties === "object") {
+    // Managed properties never reach the wire from this lens: a hand-typed
+    // version would disagree with the engine's stamp and the write refused.
     out.properties = pruneBlanks(
-      data.properties as Record<string, unknown>,
+      withoutManaged(data.properties as Record<string, unknown>, kind),
       kind
     )
   }

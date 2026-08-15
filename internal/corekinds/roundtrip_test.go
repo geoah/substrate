@@ -99,14 +99,14 @@ func TestRoundTripEmpty(t *testing.T) {
 // repeated scalars, repeated objects, a nested object, and json.
 func TestRoundTripPopulated(t *testing.T) {
 	roundTrip(t, "actor", &corekinds.Actor{
-		Version:   str("v1alpha1"),
+		Version:   i64(1),
 		Authority: str("core.substrate.reamde.dev"),
 		Source:    ptr(corekinds.ActorSourceBuiltin),
 		Tier:      ptr(corekinds.ActorTierOwner),
 	}, corekinds.DecodeActor)
 
 	roundTrip(t, "agent", &corekinds.Agent{
-		Version:   str("v1alpha8"),
+		Version:   i64(8),
 		Authority: str("core.substrate.reamde.dev"),
 		Prompt:    str("be useful"),
 		Provider:  refPath("core.substrate.reamde.dev/llmprovider/default"),
@@ -130,7 +130,7 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodeAgent)
 
 	roundTrip(t, "authority", &corekinds.Authority{
-		Version:          str("v1alpha2"),
+		Version:          i64(2),
 		Actors:           []string{"function:tasks"},
 		Source:           ptr(corekinds.AuthoritySourceInstalled),
 		Quarantined:      boolean(false),
@@ -147,7 +147,7 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodeBlob)
 
 	roundTrip(t, "bundle", &corekinds.Bundle{
-		Version:   str("v1alpha1"),
+		Version:   i64(1),
 		Authority: str("tasks.bundles.substrate.reamde.dev"),
 		Inputs: map[string]corekinds.BundleInputs{
 			"connector": {
@@ -173,7 +173,7 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodeCredential)
 
 	roundTrip(t, "function", &corekinds.Function{
-		Version:   str("v1alpha1"),
+		Version:   i64(1),
 		Authority: str("firecrawl.substrate.reamde.dev"),
 		Runtime:   ptr(corekinds.FunctionRuntimePython),
 		Source:    str("def main(input, host):\n    return {}\n"),
@@ -192,7 +192,7 @@ func TestRoundTripPopulated(t *testing.T) {
 
 	roundTrip(t, "kind", &corekinds.Kind{
 		Authority: str("tasks.substrate.reamde.dev"),
-		Version:   str("v1alpha1"),
+		Version:   i64(1),
 		Source:    ptr(corekinds.KindSourceInstalled),
 		Names:     &corekinds.KindNames{Singular: str("task"), Plural: str("tasks")},
 		// The declaration OF a declaration: every container the property dialect
@@ -258,7 +258,7 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodeLLMThread)
 
 	roundTrip(t, "propertytype", &corekinds.PropertyType{
-		Version:   str("v1alpha1"),
+		Version:   i64(1),
 		Authority: str("shopping.substrate.reamde.dev"),
 		Base:      ptr(corekinds.PropertyTypeBaseString),
 		Pattern:   str("^[A-Z0-9]{10}$"),
@@ -266,7 +266,7 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodePropertyType)
 
 	roundTrip(t, "recordmapping", &corekinds.RecordMapping{
-		Version:   str("v1alpha1"),
+		Version:   i64(1),
 		Authority: str("mail.substrate.reamde.dev"),
 		From:      refPath("core.substrate.reamde.dev/kind/mail.substrate.reamde.dev/message"),
 		To:        refPath("core.substrate.reamde.dev/kind/mail.substrate.reamde.dev/thread"),
@@ -336,7 +336,7 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodeToken)
 
 	roundTrip(t, "trait", &corekinds.Trait{
-		Version:    str("v1alpha1"),
+		Version:    i64(1),
 		Authority:  str("core.substrate.reamde.dev"),
 		Properties: map[string]string{"tokenRef": "secret"},
 		OneOf: []corekinds.TraitOneOf{

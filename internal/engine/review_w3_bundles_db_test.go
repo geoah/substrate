@@ -635,7 +635,7 @@ func TestW3MergeEffectBundleGuard(t *testing.T) {
 	ds, ops := installMailBundle(t)
 	const toolAuthority = "wtool.test.dev"
 	mergerDocs := []map[string]any{
-		vocabulary.AuthorityManifest(toolAuthority, ""),
+		vocabulary.AuthorityManifest(toolAuthority, 0),
 		vocabulary.ActorManifest(toolAuthority, vocabulary.AuthorityActor(toolAuthority)),
 		vocabulary.FunctionManifest(toolAuthority, "merger", map[string]any{
 			"description": "merges two mail accounts",
@@ -870,7 +870,7 @@ func TestW3BundledAgentUpgradeGuard(t *testing.T) {
 		"provider": "default", "model": "claude-opus-5",
 	})
 	withAgent := []map[string]any{
-		vocabulary.AuthorityManifest(wagAuthority, ""),
+		vocabulary.AuthorityManifest(wagAuthority, 0),
 		vocabulary.BundleManifest(wagAuthority, map[string]any{
 			"description": "the agent bundle",
 			"installs":    []any{wagAuthority + "/wagconfig", wagAuthority + "/helper"},
@@ -892,7 +892,7 @@ func TestW3BundledAgentUpgradeGuard(t *testing.T) {
 
 	// The upgrade drops the agent while the trigger references it: refused.
 	withoutAgent := []map[string]any{
-		vocabulary.AuthorityManifest(wagAuthority, ""),
+		vocabulary.AuthorityManifest(wagAuthority, 0),
 		vocabulary.BundleManifest(wagAuthority, map[string]any{
 			"description": "the agent bundle",
 			"installs":    []any{wagAuthority + "/wagconfig"},

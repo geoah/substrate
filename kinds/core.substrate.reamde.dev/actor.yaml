@@ -22,9 +22,10 @@ data:
     # boot-time upgrade diffs a repository's shipped vocabulary against, so
     # it is written on every projected declaration row.
     version:
-      type: string
+      type: int
       managed: true
-      description: this declaration's version
+      description: this declaration's incremental version, maintained by the
+        engine
     # the authority whose manifests declared this actor — what the registry
     # rebuild reads to put the actor back under its authority.
     # NOT a reference, and the reason is identity: an authority is what this

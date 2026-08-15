@@ -28,9 +28,10 @@ data:
     # diffs a repository's shipped vocabulary against, so the engine writes it
     # on every declaration row, which is what `managed` says.
     version:
-      type: string
+      type: int
       managed: true
-      description: this declaration's version
+      description: this declaration's incremental version, maintained by the
+        engine
     # NOT a reference, and the reason is identity: an authority is what this
     # declaration IS part of, not a record it points at. Pinning it made the
     # stored row spell it as a path while the manifest spelled the name, so one

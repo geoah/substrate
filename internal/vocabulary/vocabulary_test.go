@@ -33,7 +33,7 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: core.example.com
 data:
-  version: v1alpha1
+  version: 1
 ---
 kind: core.substrate.reamde.dev/actor
 metadata:
@@ -76,7 +76,7 @@ const vocabDocs = `kind: core.substrate.reamde.dev/authority
 metadata:
   id: vocab.example.com
 data:
-  version: v1alpha1
+  version: 1
 ---
 # the connector-style actor whose authority maps onto contact: the machine tier
 kind: core.substrate.reamde.dev/actor
@@ -234,8 +234,8 @@ func TestLoadManifestStream(t *testing.T) {
 	if book.Plural != "books" || book.Name != "book" || book.Authority != "vocab.example.com" {
 		t.Fatalf("book = %+v", book)
 	}
-	if book.Version != "v1alpha1" {
-		t.Fatalf("version = %q (the authority's, unless the type overrides it)", book.Version)
+	if book.Version != 1 {
+		t.Fatalf("version = %d (the authority's, unless the type overrides it)", book.Version)
 	}
 	// Edges: in-authority short name, and a cross-authority one.
 	if got := book.Edges["author"].To; got != "vocab.example.com/contact" {
@@ -335,7 +335,7 @@ func TestLoadManifestStream(t *testing.T) {
 func TestEnumValueLabels(t *testing.T) {
 	const src = `kind: core.substrate.reamde.dev/authority
 metadata: {id: vocab.example.com}
-data: {version: v1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/kind
 metadata: {id: vocab.example.com/account}
@@ -423,7 +423,7 @@ func TestDescriptions(t *testing.T) {
 metadata:
   id: d.example.com
 data:
-  version: v1alpha1
+  version: 1
 ---
 kind: core.substrate.reamde.dev/kind
 metadata:
@@ -514,7 +514,7 @@ func TestKindDescription(t *testing.T) {
 metadata:
   id: d.example.com
 data:
-  version: v1alpha1
+  version: 1
 ---
 kind: core.substrate.reamde.dev/kind
 metadata:
@@ -607,7 +607,7 @@ func TestSourceYAMLIsTheDocument(t *testing.T) {
 		`metadata:`,
 		`  id: core.example.com`,
 		`data:`,
-		`  version: v1alpha1`,
+		`  version: 1`,
 	}, "\n")
 	if g.SourceYAML != wantAuthority {
 		t.Fatalf("authority source:\n%s\nwant:\n%s", g.SourceYAML, wantAuthority)
@@ -692,7 +692,7 @@ func gmailManifest() vocabulary.Manifest {
 		Name:      "google.gmail",
 		Authority: authority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, "v1alpha1"),
+			vocabulary.AuthorityManifest(authority, 1),
 			vocabulary.ActorManifest(authority, "connector:gmail"),
 			vocabulary.KindManifest(authority,
 				map[string]any{"singular": "cursor", "plural": "cursors"},
@@ -711,7 +711,7 @@ func TestEdgeTargetResolutionRules(t *testing.T) {
 	authority := func(name string) string {
 		return `kind: core.substrate.reamde.dev/authority
 metadata: {id: ` + name + `}
-data: {version: v1}
+data: {version: 1}
 `
 	}
 	typ := func(authority, name, data string) string {
@@ -822,7 +822,7 @@ func TestReferencePropertyType(t *testing.T) {
 	authority := func(name string) string {
 		return `kind: core.substrate.reamde.dev/authority
 metadata: {id: ` + name + `}
-data: {version: v1}
+data: {version: 1}
 `
 	}
 	typ := func(g, name, data string) string {
@@ -904,7 +904,7 @@ func TestCapabilityResolutionRules(t *testing.T) {
 	capAuthority := func(authority string) string {
 		return `kind: core.substrate.reamde.dev/authority
 metadata: {id: ` + authority + `}
-data: {version: v1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/trait
 metadata: {id: ` + authority + `/ranked}
@@ -916,7 +916,7 @@ data:
 	binder := func(props string) string {
 		return `kind: core.substrate.reamde.dev/authority
 metadata: {id: a.example.com}
-data: {version: v1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/kind
 metadata: {id: a.example.com/thing}
@@ -972,7 +972,7 @@ func TestUnknownCapabilityRejected(t *testing.T) {
 	g, err := vocabulary.ParseManifest(vocabulary.Manifest{
 		Name: "x", Authority: authority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, "v1"),
+			vocabulary.AuthorityManifest(authority, 1),
 			vocabulary.KindManifest(authority,
 				map[string]any{"singular": "thing", "plural": "things"},
 				map[string]any{"traits": []any{"nosuchcapability"}}),
@@ -1001,7 +1001,7 @@ func TestInstalledGroupBindsLoadedCapability(t *testing.T) {
 		g, err := vocabulary.ParseManifest(vocabulary.Manifest{
 			Name: "media", Authority: authority,
 			Manifests: []map[string]any{
-				vocabulary.AuthorityManifest(authority, "v1"),
+				vocabulary.AuthorityManifest(authority, 1),
 				vocabulary.KindManifest(authority,
 					map[string]any{"singular": "clip", "plural": "clips"},
 					map[string]any{
@@ -1084,7 +1084,7 @@ func TestInstalledMapping(t *testing.T) {
 		g, err := vocabulary.ParseManifest(vocabulary.Manifest{
 			Name: "slack", Authority: authority,
 			Manifests: []map[string]any{
-				vocabulary.AuthorityManifest(authority, "v1"),
+				vocabulary.AuthorityManifest(authority, 1),
 				vocabulary.ActorManifest(authority, "connector:slack"),
 				vocabulary.KindManifest(authority,
 					map[string]any{"singular": "slackuser", "plural": "slackusers"},
@@ -1154,7 +1154,7 @@ func TestInstalledMapping(t *testing.T) {
 	g, err := vocabulary.ParseManifest(vocabulary.Manifest{
 		Name: "bad", Authority: "bad.connectors.example.com",
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest("bad.connectors.example.com", "v1"),
+			vocabulary.AuthorityManifest("bad.connectors.example.com", 1),
 			vocabulary.KindManifest("bad.connectors.example.com",
 				map[string]any{"singular": "user", "plural": "users"},
 				map[string]any{"edges": map[string]any{
@@ -1185,11 +1185,11 @@ func TestManifestShapeRejected(t *testing.T) {
 			vocabulary.KindManifest(authority, map[string]any{"singular": "thing", "plural": "things"}, nil),
 		}},
 		"two authorities": {Name: "x", Authority: authority, Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, "v1"),
-			vocabulary.AuthorityManifest("y.connectors.example.com", "v1"),
+			vocabulary.AuthorityManifest(authority, 1),
+			vocabulary.AuthorityManifest("y.connectors.example.com", 1),
 		}},
 		"authority mismatch": {Name: "x", Authority: authority, Manifests: []map[string]any{
-			vocabulary.AuthorityManifest("y.connectors.example.com", "v1"),
+			vocabulary.AuthorityManifest("y.connectors.example.com", 1),
 		}},
 		"empty": {Name: "x", Authority: authority},
 	} {
@@ -1234,7 +1234,7 @@ func TestResolveAmbiguity(t *testing.T) {
 	g, err := vocabulary.ParseManifest(vocabulary.Manifest{
 		Name: "dup", Authority: authority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, "v1"),
+			vocabulary.AuthorityManifest(authority, 1),
 			vocabulary.KindManifest(authority, map[string]any{"singular": "contact", "plural": "contacts"}, nil),
 		},
 	})
@@ -1400,7 +1400,7 @@ func TestParsePath(t *testing.T) {
 func TestMappingRules(t *testing.T) {
 	head := `kind: core.substrate.reamde.dev/authority
 metadata: {id: x.example.com}
-data: {version: v1alpha1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/kind
 metadata: {id: x.example.com/person}
@@ -1654,7 +1654,7 @@ func TestTemplateTokensValidate(t *testing.T) {
 	typ := func(template string) string {
 		return `kind: core.substrate.reamde.dev/authority
 metadata: {id: x.example.com}
-data: {version: v1alpha1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/kind
 metadata: {id: x.example.com/card}
@@ -1747,7 +1747,7 @@ func (r testResolver) Edge(rel, prop string) string {
 func TestManifestValidationRejected(t *testing.T) {
 	const head = `kind: core.substrate.reamde.dev/authority
 metadata: {id: x.example.com}
-data: {version: v1}
+data: {version: 1}
 ---
 `
 	typ := func(data string) string {
@@ -1849,7 +1849,7 @@ data:
 `,
 		"duplicate authority": head + `kind: core.substrate.reamde.dev/authority
 metadata: {id: x.example.com}
-data: {version: v1}
+data: {version: 1}
 `,
 		"duplicate actor": head + `kind: core.substrate.reamde.dev/actor
 metadata: {id: owner}
@@ -1861,7 +1861,7 @@ data: {authority: x.example.com}
 `,
 		"bad authority name": `kind: core.substrate.reamde.dev/authority
 metadata: {id: Vocab}
-data: {version: v1}
+data: {version: 1}
 `,
 		"snake actor": head + `kind: core.substrate.reamde.dev/actor
 metadata: {id: my_actor}
@@ -2108,7 +2108,7 @@ data:
 `),
 		"old one_of": `kind: core.substrate.reamde.dev/authority
 metadata: {id: x.example.com}
-data: {version: v1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/trait
 metadata: {id: x.example.com/ranked}
@@ -2448,7 +2448,7 @@ func TestRenamedFromReserved(t *testing.T) {
 	mk := func(props string) fstest.MapFS {
 		return fstest.MapFS{"g.yaml": &fstest.MapFile{Data: []byte(`kind: core.substrate.reamde.dev/authority
 metadata: {id: g.example.com}
-data: {version: v1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/kind
 metadata: {id: g.example.com/thing}

@@ -59,7 +59,7 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: media.substrate.reamde.dev
 data:
-  version: v1alpha1
+  version: 1
 ---
 # Amazon's audiobook identifier, as it is printed on an Audible edition
 kind: core.substrate.reamde.dev/propertytype

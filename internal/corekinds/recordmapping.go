@@ -10,9 +10,10 @@ package corekinds
 // edge points at, so a Google contact keeps a person up to date. One mapping
 // per source kind, declared by the authority that owns that kind.
 type RecordMapping struct {
-	// Version is this declaration's version. Managed: the engine stamps it, so
-	// a supplied value does not decide it.
-	Version *string
+	// Version is this declaration's incremental version, maintained by the
+	// engine. Managed: the engine stamps it, so a supplied value does not
+	// decide it.
+	Version *int64
 
 	// Source is builtin for seeded mappings, installed for bundle ones.
 	// Managed: the engine stamps it, so a supplied value does not decide it.
@@ -139,7 +140,7 @@ func decodeRecordMapping(d *decoder, path string, v any) (RecordMapping, bool) {
 		switch key {
 		case "version":
 			p := at(path, "version")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := d.integer(p, props[key], Bounds{}); ok {
 				out.Version = &e
 			}
 		case "source":

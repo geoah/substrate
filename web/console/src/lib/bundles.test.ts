@@ -59,7 +59,7 @@ function catalog(over: Partial<CatalogItem> = {}): CatalogItem {
     name: "google",
     authority: "google.bundles.substrate.reamde.dev",
     description: "Connects a Google account.",
-    version: "v1",
+    version: 1,
     inputs: {
       client: { kind: "google.bundles.substrate.reamde.dev/config" },
     },
@@ -75,7 +75,7 @@ function kindInfo(over: Partial<KindInfo> = {}): KindInfo {
     identity: "people.substrate.reamde.dev/person",
     name: "person",
     authority: "people.substrate.reamde.dev",
-    version: "",
+    version: 0,
     plural: "persons",
     source: "builtin",
     ...over,
@@ -263,7 +263,7 @@ describe("filterBundles", () => {
           id: "b.bundles.substrate.reamde.dev/b",
           name: "b",
           installed: true,
-          upgrade: { available: true, from: "v1alpha1", to: "v1alpha2" },
+          upgrade: { available: true, from: 1, to: 2 },
         }),
       ]
     )
@@ -281,7 +281,7 @@ describe("the upgrade preview helpers", () => {
         catalog({
           id: "b",
           installed: true,
-          upgrade: { available: true, to: "v1alpha2" },
+          upgrade: { available: true, to: 2 },
         }),
         // Not installed: nothing to upgrade, whatever the preview would say.
         catalog({ id: "c", installed: false }),
@@ -289,7 +289,7 @@ describe("the upgrade preview helpers", () => {
         catalog({
           id: "d",
           installed: true,
-          upgrade: { available: true, to: "v2", blockers: ["live rows"] },
+          upgrade: { available: true, to: 2, blockers: ["live rows"] },
         }),
       ])
     ).toBe(2)
@@ -297,30 +297,27 @@ describe("the upgrade preview helpers", () => {
 
   it("blocked means available AND the server named blockers", () => {
     expect(upgradeBlocked({ upgrade: undefined })).toBe(false)
-    expect(upgradeBlocked({ upgrade: { available: true, to: "v2" } })).toBe(
-      false
-    )
+    expect(upgradeBlocked({ upgrade: { available: true, to: 2 } })).toBe(false)
     expect(
       upgradeBlocked({
-        upgrade: { available: true, to: "v2", blockers: ["a guard line"] },
+        upgrade: { available: true, to: 2, blockers: ["a guard line"] },
       })
     ).toBe(true)
   })
 
   it("renders the version motion, tolerating a store with no version", () => {
-    expect(
-      upgradeMotion({ available: true, from: "v1alpha1", to: "v1alpha2" })
-    ).toBe("v1alpha1 → v1alpha2")
-    expect(upgradeMotion({ available: true, to: "v1alpha2" })).toBe("v1alpha2")
+    expect(upgradeMotion({ available: true, from: 1, to: 2 })).toBe("1 → 2")
+    expect(upgradeMotion({ available: true, to: 2 })).toBe("2")
+    // 0 is the wire's absent (omitempty), so it reads exactly like undefined.
+    expect(upgradeMotion({ available: true, from: 0, to: 2 })).toBe("2")
+    expect(upgradeMotion({ available: true, from: 0, to: 0 })).toBe("")
   })
 
   it("states one version when the authority did not move", () => {
     // A kind's own bump, or a kind the closure ADDED, upgrades without the
-    // authority version moving — both legal. "v1alpha1 → v1alpha1" would read
-    // as a bug, so it collapses to the version itself.
-    expect(
-      upgradeMotion({ available: true, from: "v1alpha1", to: "v1alpha1" })
-    ).toBe("v1alpha1")
+    // authority version moving — both legal. "3 → 3" would read as a bug, so
+    // it collapses to the version itself.
+    expect(upgradeMotion({ available: true, from: 1, to: 1 })).toBe("1")
   })
 })
 

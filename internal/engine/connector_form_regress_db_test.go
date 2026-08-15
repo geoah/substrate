@@ -24,7 +24,7 @@ func TestConnectorFormDisplayNameAndEnumSurviveTypeRead(t *testing.T) {
 	sa := applier(t, ds)
 
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, ""),
+		vocabulary.AuthorityManifest(swAuthority, 0),
 		swTypeDoc("gizmo", "gizmos", map[string]any{
 			"cadence": map[string]any{
 				"type":        "enum",

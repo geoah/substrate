@@ -461,7 +461,7 @@ func TestFunctionGrantRefusals(t *testing.T) {
 
 const mapHead = `kind: core.substrate.reamde.dev/authority
 metadata: {id: m.example.com}
-data: {version: v1alpha1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/kind
 metadata: {id: m.example.com/person}
@@ -582,7 +582,7 @@ func TestMappingRuleRefusals(t *testing.T) {
 func traitDocs(oneOf string) string {
 	return `kind: core.substrate.reamde.dev/authority
 metadata: {id: c.example.com}
-data: {version: v1alpha1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/trait
 metadata: {id: c.example.com/temporal}
@@ -709,7 +709,7 @@ func TestTraitVariantListRefusals(t *testing.T) {
 func TestBareListSpellingsAreRefused(t *testing.T) {
 	const indexDoc = `kind: core.substrate.reamde.dev/authority
 metadata: {id: i.example.com}
-data: {version: v1alpha1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/kind
 metadata: {id: i.example.com/widget}
@@ -723,7 +723,7 @@ data:
 `
 	const scopesDoc = `kind: core.substrate.reamde.dev/authority
 metadata: {id: s.bundles.example.com}
-data: {version: v1alpha1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/trait
 metadata: {id: s.bundles.example.com/oauth2}
@@ -789,7 +789,7 @@ data:
 func TestRetiredRowSpellingsAreNamed(t *testing.T) {
 	const kindDoc = `kind: core.substrate.reamde.dev/authority
 metadata: {id: p.example.com}
-data: {version: v1alpha1}
+data: {version: 1}
 ---
 kind: core.substrate.reamde.dev/kind
 metadata: {id: p.example.com/widget}

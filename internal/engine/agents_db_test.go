@@ -202,7 +202,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 		return vocabulary.AgentManifest(crewAuthority, name, data)
 	}
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(crewAuthority, ""),
+		vocabulary.AuthorityManifest(crewAuthority, 0),
 		vocabulary.KindManifest(crewAuthority, map[string]any{"singular": "widget", "plural": "widgets"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		vocabulary.FunctionManifest(crewAuthority, "annotate", map[string]any{
@@ -735,7 +735,7 @@ func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 		"description": "greets", "prompt": "You greet.", "provider": "greetllm", "model": "greet",
 	})
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(abAuthority, ""),
+		vocabulary.AuthorityManifest(abAuthority, 0),
 		vocabulary.BundleManifest(abAuthority, map[string]any{
 			"description": "the agent bundle",
 			"installs":    []any{abAuthority + "/abconfig", abAuthority + "/greeter"},
@@ -756,7 +756,7 @@ func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 		"provider": "callerllm", "model": "caller", "agents": []any{abAuthority + "/greeter"},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
-		vocabulary.AuthorityManifest(hostAuthority, ""), caller,
+		vocabulary.AuthorityManifest(hostAuthority, 0), caller,
 	}); err != nil {
 		t.Fatalf("install caller agent: %v", err)
 	}
@@ -1380,7 +1380,7 @@ func TestProposeDiffValidation(t *testing.T) {
 	// object property with declared fields, and no edges.
 	const gaugeAuthority = "gauge.example.com"
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(gaugeAuthority, ""),
+		vocabulary.AuthorityManifest(gaugeAuthority, 0),
 		vocabulary.KindManifest(gaugeAuthority, map[string]any{"singular": "gauge", "plural": "gauges"},
 			map[string]any{"properties": map[string]any{
 				"model":  map[string]any{"type": "string"},

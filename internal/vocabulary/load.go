@@ -21,10 +21,6 @@ const (
 	SourceInstalled = "installed"
 )
 
-// DefaultVersion is the version a authority manifest gets when it declares
-// none.
-const DefaultVersion = "v1alpha1"
-
 var reCapBinding = regexp.MustCompile(`^([a-z][a-zA-Z0-9]*)(?:\(\s*([a-z][a-zA-Z0-9]*)\s*(?::\s*([a-zA-Z0-9,\s]*))?\s*\))?$`)
 
 // LoadFS parses every .yaml document under fsys into one registry. The unit
@@ -304,8 +300,8 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 	l.authority = g
 
 	l.checkKeys("authority "+name, gd.authority.Data, authorityDataKeys)
-	g.Version = mstr(gd.authority.Data, "version")
-	if g.Version == "" {
+	g.Version = l.parseVersion("authority "+name, gd.authority.Data)
+	if g.Version == 0 {
 		g.Version = DefaultVersion
 	}
 
@@ -757,7 +753,7 @@ func (l *loader) parseType(doc Document) *Kind {
 		Definition:  d,
 		SourceYAML:  doc.Source,
 	}
-	if v := mstr(d, "version"); v != "" {
+	if v := l.parseVersion(where, d); v != 0 {
 		t.Version = v
 	}
 	t.Plural = mstr(names, "plural")
@@ -2183,6 +2179,27 @@ func asMap(v any) map[string]any {
 	default:
 		return map[string]any{}
 	}
+}
+
+// parseVersion reads a document's own `version` out of its data: an
+// incremental integer of at least 1, or 0 when the document carries none.
+// Anything else is a problem, and a string gets the pointed message — the
+// retired `v1alpha3` spelling must refuse loudly, not order silently.
+func (l *loader) parseVersion(where string, d map[string]any) int64 {
+	raw, ok := d["version"]
+	if !ok || raw == nil {
+		return 0
+	}
+	if _, isString := raw.(string); isString {
+		l.errf("%s: data.version is an incremental integer now (v1alpha3 became 3), not %q", where, raw)
+		return 0
+	}
+	v, ok := VersionValue(raw)
+	if !ok || v < 1 {
+		l.errf("%s: data.version must be an integer of at least 1, not %v", where, raw)
+		return 0
+	}
+	return v
 }
 
 func mstr(m map[string]any, k string) string {
