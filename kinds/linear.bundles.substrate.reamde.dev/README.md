@@ -154,6 +154,43 @@ shipped here):
    grant, sets `tokenStatus: connected`, and the on-connect trigger fires the
    first backfill.
 
+## Upgrading to version 7
+
+Version 7 renames each mirror's provider key: `user.providerId` is `userId`,
+`team.providerId` is `teamId`, `issue.providerId` is `issueId`. A dropped
+property is a narrowing, so a repository whose live mirror rows still carry
+`providerId` refuses the whole closure with a guard error naming the count.
+
+Stop the bundle first. The hourly schedule and the projection trigger keep
+running otherwise, and one version-6 sync between the clearing and the apply
+writes `providerId` back onto the rows it touches:
+
+```sh
+substratectl bundle disable linear.bundles.substrate.reamde.dev/linear
+```
+
+Then take the old key off every live `user`, `team` and `issue`, either by
+deleting the mirrors (the guard counts live rows only) or by nulling the
+property on each:
+
+```sh
+substratectl patch issues <id> --authority linear.bundles.substrate.reamde.dev \
+  -p '{"properties":{"providerId":null}}'
+```
+
+Apply the closure and start the bundle again:
+
+```sh
+substratectl apply -f bundle.yaml -f triggers.yaml
+substratectl bundle enable linear.bundles.substrate.reamde.dev/linear
+```
+
+A cleared row stays without a provider key until Linear touches its issue
+again, because the sync is incremental off `lastSyncedAt` and only re-fetches
+what changed. Null `lastSyncedAt` on the account to make the next run re-read
+its whole `backfillDepth` window, which is also what rebuilds mirrors deleted
+above.
+
 ## Deliberately out of scope (for now)
 
 - **No writeback** — completing/reopening tasks never touches Linear
