@@ -698,7 +698,7 @@ func TestDeclarationWritesRefuseWhatTheEngineOwns(t *testing.T) {
 		Kind: "core.substrate.reamde.dev/trait", ID: swAuthority + "/spanned",
 		Properties: map[string]any{
 			"authority": swAuthority, "properties": traitRow.Properties["properties"],
-			"version": "v9alpha1",
+			"version": 99,
 		},
 	})
 	wantErr(t, err, substrate.ErrValidation, "managed version mismatch")

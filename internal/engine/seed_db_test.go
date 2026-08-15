@@ -212,7 +212,7 @@ func TestSeedIsWrittenAtCreation(t *testing.T) {
 		if err != nil {
 			t.Fatalf("declaration %s %s: %v", ref.typ, ref.id, err)
 		}
-		if v, _ := row.Properties["version"].(string); v == "" {
+		if v, _ := vocabulary.VersionValue(row.Properties["version"]); v < 1 {
 			t.Fatalf("declaration %s %s carries no version", ref.typ, ref.id)
 		}
 	}
@@ -496,7 +496,7 @@ func TestBootUpgradeNeverDowngrades(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	tree := shippedTree(t)
 	addShippedType(t, tree, "core.substrate.reamde.dev", "widget", "widgets")
-	bumpGroupVersion(t, tree, "core.substrate.reamde.dev", "v2")
+	bumpGroupVersion(t, tree, "core.substrate.reamde.dev", "7")
 
 	svc1 := openTree(t, dsn, tree)
 	if _, err := svc1.CreateRepository(ctx, "geoah"); err != nil {
@@ -525,7 +525,7 @@ func TestBootUpgradeNeverDowngrades(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if authority.Properties["version"] != "v2" {
+	if v, _ := vocabulary.VersionValue(authority.Properties["version"]); v != 7 {
 		t.Fatalf("the stored version was downgraded to %v", authority.Properties["version"])
 	}
 	// The kind the older tree does not ship is still the repository's: nothing
@@ -547,7 +547,7 @@ func TestDeclarationAuthority(t *testing.T) {
 		{
 			"kind":     "core.substrate.reamde.dev/authority",
 			"metadata": map[string]any{"id": "mine.example.com"},
-			"data":     map[string]any{"version": "v1"},
+			"data":     map[string]any{"version": 1},
 		},
 		{
 			"kind":     "core.substrate.reamde.dev/kind",
