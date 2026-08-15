@@ -1,12 +1,13 @@
 # Plan: thread interactions: asks, gates, and policy
 
-Status: design hardened through two adversarial reviews (an independent Codex
-pass on the same brief, then a Codex review and a code-grounded subagent
-review of the draft; their surviving findings are integrated and the
-discarded ones recorded). This is a plan, not a contract: the code that lands
-is the contract, and every shape here is a sketch the implementer holds to
-the house rules (one short description sentence, versions bumped, live
-words).
+Status: IMPLEMENTED (PRs #78, #80, #81, #83), after two adversarial reviews
+whose surviving findings are integrated below. The binding choices live as
+decision records 0003 through 0008 in
+[docs/decisions](../decisions/README.md), which correct this text in one
+place: the blanket self-decision rule below narrowed to policy-gated
+requests (decision 0006), because a voluntary proposal's self-accept within
+the emit ceiling escalates nothing and was already a documented contract.
+This is a plan, not a contract: the code that landed is the contract.
 
 ## What this is
 
