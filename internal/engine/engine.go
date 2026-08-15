@@ -500,9 +500,10 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// rebuilds FROM the rows, and only then does the shipped-vocabulary
 	// upgrade append what a newer binary added (seed.go).
 	for _, step := range []func(context.Context) error{
-		// The changelog gate runs FIRST, ahead of every step that writes: the
-		// stamp it takes is this binary's claim that it can replay what the
-		// steps below are about to append to.
+		// The changelog gate runs FIRST, ahead of every step that writes: a
+		// binary that cannot replay this history must not extend it either.
+		// It only reads; the claim is written by the first transaction that
+		// appends (changelogdialect.go).
 		ds.gateChangelogDialect,
 		// The chain backfill runs before the rest: every later step that writes
 		// appends entries, and an append needs a hashed head to chain from.
@@ -698,15 +699,6 @@ func (s *service) createSeededRepository(ctx context.Context, name string, extra
 	// while the auth material the caller writes carries the substrate's, so
 	// the changelog says which is which.
 	if err := seedDS.inTx(ctx, substrate.ActorSeed, true, func(t *txn) error {
-		// The changelog dialect, in the same transaction as the first entries
-		// written in it (changelogdialect.go). Creation never runs the open
-		// path, so a repository whose seed this binary wrote would otherwise
-		// carry entries no stamp claims until somebody opened it, and an
-		// older binary opening it first would adopt a history it cannot
-		// replay.
-		if err := t.stampChangelogDialect(maxChangelogDialect); err != nil {
-			return err
-		}
 		// The birth activation epoch, in the same transaction as the entries
 		// it covers: signed from seq 1, over an empty chain (no heads).
 		if repo.SignedFrom > 0 {

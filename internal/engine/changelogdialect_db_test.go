@@ -1,9 +1,10 @@
 package engine_test
 
-// The changelog dialect gate: a repository's first open stamps the dialect its
-// entries are written in, and a binary that cannot replay a stored changelog
-// refuses the open, before it appends anything of its own, and as a service
-// condition rather than an auth failure.
+// The changelog dialect gate: the transaction that appends a repository's
+// first entries claims the dialect they are written in, and a binary that
+// cannot replay a stored changelog refuses the open, before it appends
+// anything of its own, and as a service condition rather than an auth
+// failure.
 
 import (
 	"context"
@@ -39,9 +40,9 @@ func TestChangelogDialectGate(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 
-	// Registration wrote the repository's first entries, so the stamp is
-	// already there: creation never runs the open path, and history with no
-	// claim over it is exactly what this gate exists to prevent.
+	// Registration appended the repository's first entries, so their claim
+	// committed with them: history no stamp covers is exactly what this gate
+	// exists to prevent.
 	if got := storedChangelogDialect(t, db); got != engine.MaxChangelogDialect() {
 		t.Fatalf("stamped changelog dialect = %d, want %d", got, engine.MaxChangelogDialect())
 	}
@@ -107,7 +108,7 @@ func TestChangelogDialectGate(t *testing.T) {
 // TestChangelogDialectAdoptsAnUnstampedStore covers the store every existing
 // repository is on the day this ships: a changelog written before anything
 // stamped one. It is dialect 1 by construction (no binary that could write
-// anything else has run), so the first open adopts it rather than refusing.
+// anything else has run), so it opens, and the next write claims it.
 func TestChangelogDialectAdoptsAnUnstampedStore(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -148,12 +149,32 @@ func TestChangelogDialectAdoptsAnUnstampedStore(t *testing.T) {
 
 	svc2 := open()
 	defer func() { _ = svc2.Close() }()
-	if _, err := svc2.Dataset(ctx, "geoah"); err != nil {
+	ds, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
 		t.Fatalf("an unstamped changelog must open: %v", err)
+	}
+	// The open claimed nothing: it may never append, and a claim over history
+	// this binary did not write is what bars a rollback for no reason.
+	if n := changelogDialectRows(t, db); n != 0 {
+		t.Fatalf("the open stamped a dialect it had not written to: %d rows", n)
+	}
+	// The first append is the claim, and it commits with the entry.
+	if _, _, err := ds.MintToken(ctx, "test", nil); err != nil {
+		t.Fatalf("mint a token: %v", err)
 	}
 	if got := storedChangelogDialect(t, db); got != engine.MaxChangelogDialect() {
 		t.Fatalf("stamped changelog dialect = %d, want %d", got, engine.MaxChangelogDialect())
 	}
+}
+
+func changelogDialectRows(t *testing.T, db *sql.DB) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRowContext(context.Background(),
+		`SELECT count(*) FROM changelog_dialect`).Scan(&n); err != nil {
+		t.Fatalf("count changelog_dialect rows: %v", err)
+	}
+	return n
 }
 
 // TestRebuildRefusesANewerChangelogDialect covers the window the open-time gate

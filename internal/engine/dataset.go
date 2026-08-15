@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -75,6 +76,13 @@ type dataset struct {
 	// record holds it wrapped to the user's age recipient.
 	dek   []byte
 	watch *broadcaster
+
+	// changelogStamped remembers that this repository's changelog dialect is
+	// COMMITTED at this binary's maximum, so the stamp rides the first
+	// appending transaction and no later one (changelogdialect.go). It is set
+	// after that transaction commits, never before: a rolled-back stamp that
+	// left this true would let a later append land with nothing claiming it.
+	changelogStamped atomic.Bool
 
 	// signState is the repository's changelog-signing state (signing.go),
 	// read through ds.signing(): signedFrom is 0 until activation and never

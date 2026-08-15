@@ -137,32 +137,32 @@ plain finding.
 ## The dialect a changelog is written in
 
 Each repository carries a **changelog dialect**: a monotonic integer naming the
-ops and fold effects a binary must understand to replay its entries. The
-binary stamps it in the transaction that creates the repository, and at every
-open before it appends anything, so the stamp is never behind the entries the
-stamping binary wrote. A binary whose maximum is below the stored one refuses
-to open that repository, with the named error "the changelog speaks a newer
-dialect than this binary can replay"; the API surfaces the refusal as `503
-repository temporarily unavailable`, never as an invalid token, exactly like
-the [vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)
-that governs stored declaration rows.
+ops and fold effects a binary must understand to replay its entries. The claim
+rides the append: the first transaction a binary appends with writes the stamp
+alongside its entries, so the stamp covers every entry and no store is barred
+over entries nobody wrote. Opening only reads it, and a binary whose maximum is
+below the stored one refuses to open that repository, with the named error "the
+changelog speaks a newer dialect than this binary can replay". A request
+carrying a token then gets `503 repository temporarily unavailable` rather than
+an invalid-token 401, exactly like the
+[vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)
+that governs stored declaration rows; sign-in, which opens the repository to
+mint a token, fails as an internal error.
 
 The refusal is the point. Without it an old binary opens a store it cannot
 replay, serves it for weeks, and fails only when somebody runs `repository
-rebuild`, the day the changelog had to be replayable. Both dialects are 1
-today, and the stored one is never on the wire: what
+rebuild`, the day the changelog had to be replayable. The changelog dialect is
+1 today, and a repository's stored dialect is never on the wire: what
 [API discovery](api.md#discovery) reports is the binary's maximum.
 
-`repository rebuild` reads the stamp again, under the changelog lock and
-before it clears anything: a process that opened the repository before another
-raised the stamp would otherwise replay history in a spelling it does not
-know, and a replay is the one operation whose whole job is to interpret
-history.
+`repository rebuild` and `repository reseal` read the stamp again, under the
+changelog lock and before they touch anything: one replays every entry and the
+other rewrites their payloads, and a process that opened the repository before
+another raised the stamp would be interpreting entries in a spelling it does
+not know.
 
-The stamp is about the BINARY that touched the repository, not about which
-entries it happened to write: a newer binary that opens a repository and
-appends nothing new still bars the older one. Downgrading after that open
-means restoring a dump, the same as for a vocabulary promotion
+A repository written by a newer binary cannot be served by an older one again:
+downgrading means restoring a dump, the same as for a vocabulary promotion
 ([upgrading the binary](operations.md#upgrading-the-binary)).
 
 ## Watching

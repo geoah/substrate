@@ -13,20 +13,13 @@ package engine
 // and the refusal surfaces on the day somebody rebuilds, the one day they
 // needed the changelog to be replayable.
 //
-// THE STAMP IS TAKEN BEFORE ANYTHING WRITES: in the transaction that creates
-// the repository, and at every open ahead of the steps that append. That
-// ordering is the whole guarantee. The stamp is at least the dialect of every
-// entry in the history, because no binary writes an entry into a repository it
-// has not first claimed it can replay, and a stamp that lagged its writer
-// would promise a replayability the store does not have.
-//
-// The cost is deliberate and worth naming: once a newer binary opens a
-// repository, an older one refuses it even if not one new-spelling entry was
-// ever appended. The alternative, raising the stamp only when an entry
-// actually uses the new spelling, makes the refusal depend on which entries
-// happen to have been written, so a downgrade is safe until the moment it
-// silently is not. Refusing on the binary that touched it is the reading an
-// operator can act on.
+// THE STAMP RIDES THE APPEND. Opening READS the stamp and refuses a newer one;
+// the stamp itself is written by the first transaction this binary appends to
+// the changelog (settleChain), in that transaction, so it is exactly as
+// durable as the first entry it claims. The invariant is then tight in both
+// directions: no entry exists that the stamp does not cover, and no store is
+// barred over entries nobody wrote. An open that fails halfway, the case an
+// operator rolls the image back for, leaves the stamp alone.
 //
 // THE LADDER HAS ONE RUNG. Dialect 1 is the changelog as it stands: the ops in
 // substrate.Change and the fold effects in fold.go. A change that teaches the
@@ -51,8 +44,8 @@ import (
 var ErrChangelogDialectNewer = errors.New("substrate/engine: the changelog speaks a newer dialect than this binary can replay")
 
 // maxChangelogDialect is the newest changelog dialect this binary can replay.
-// A fresh repository is stamped here when it is created; a repository stored
-// above it refuses to open.
+// It is what this binary stamps when it appends; a repository stored above it
+// refuses to open.
 const maxChangelogDialect = 1
 
 // MaxChangelogDialect is the newest changelog dialect this binary can replay,
@@ -61,13 +54,13 @@ const maxChangelogDialect = 1
 // engine's tables.
 func MaxChangelogDialect() int { return maxChangelogDialect }
 
-// gateChangelogDialect runs the gate at repository open: refuse a changelog
-// this binary cannot replay, and stamp an unstamped or older one.
+// gateChangelogDialect runs the gate at repository open, and it only READS:
+// refuse a changelog this binary cannot replay, write nothing. An open has no
+// business claiming history it may never add to, and an open that fails after
+// this step must leave the store exactly as an older binary would find it.
 //
 // There is no advisory lock and no promotion step, unlike the vocabulary
-// ladder: nothing rewrites history, so the whole gate is one read and one
-// upsert, and two processes opening the same repository at once both stamp the
-// same number through the same GREATEST.
+// ladder: nothing rewrites history, so the gate is one query.
 func (ds *dataset) gateChangelogDialect(ctx context.Context) error {
 	stored, err := ds.storedChangelogDialect(ctx)
 	if err != nil {
@@ -76,10 +69,13 @@ func (ds *dataset) gateChangelogDialect(ctx context.Context) error {
 	if stored > maxChangelogDialect {
 		return newerChangelogDialect(ds.info.Name, stored)
 	}
+	// A store already at this binary's maximum needs no stamp from it, which
+	// is the common case: remember that, so the first append does not run the
+	// upsert for a claim already on the row.
 	if stored == maxChangelogDialect {
-		return nil
+		ds.changelogStamped.Store(true)
 	}
-	return ds.stampChangelogDialect(ctx, maxChangelogDialect)
+	return nil
 }
 
 // refuseNewerChangelogDialect re-reads the stamp inside the caller's
@@ -129,20 +125,19 @@ const changelogDialectStamp = `
 	ON CONFLICT (repository) DO UPDATE
 	SET dialect = GREATEST(changelog_dialect.dialect, EXCLUDED.dialect), updated_at = now()`
 
-func (ds *dataset) stampChangelogDialect(ctx context.Context, dialect int) error {
-	if _, err := ds.db.ExecContext(ctx, changelogDialectStamp, dialect); err != nil {
-		return fmt.Errorf("substrate/engine: stamp changelog dialect %d: %w", dialect, err)
+// stampChangelogDialect claims the dialect from inside a transaction that is
+// APPENDING (settleChain calls it, so creation's seed and every later write
+// run through the same place). The claim is written by the transaction that
+// writes the entries, so it commits with them or not at all, and the dataset
+// only remembers it AFTER that commit: a flag set on a rolled-back stamp would
+// let the next append land with nothing claiming it.
+func (t *txn) stampChangelogDialect() error {
+	if t.ds.changelogStamped.Load() {
+		return nil
 	}
-	return nil
-}
-
-// stampChangelogDialect stamps inside the caller's transaction: creation writes
-// a repository's first entries (the seed) without ever going through the open
-// path, so the claim about their dialect is written by the same transaction
-// that writes them, and a seed that rolls back takes its stamp with it.
-func (t *txn) stampChangelogDialect(dialect int) error {
-	if _, err := t.exec(changelogDialectStamp, dialect); err != nil {
-		return fmt.Errorf("substrate/engine: stamp changelog dialect %d: %w", dialect, err)
+	if _, err := t.exec(changelogDialectStamp, maxChangelogDialect); err != nil {
+		return fmt.Errorf("substrate/engine: stamp changelog dialect %d: %w", maxChangelogDialect, err)
 	}
+	t.afterCommit = append(t.afterCommit, func() { t.ds.changelogStamped.Store(true) })
 	return nil
 }

@@ -342,6 +342,12 @@ func (t *txn) settleChain() error {
 	if len(t.pending) == 0 {
 		return nil
 	}
+	// This transaction is appending, so it is the one that claims the dialect
+	// its entries are written in (changelogdialect.go): the claim commits with
+	// them, and a transaction that rolls back claims nothing.
+	if err := t.stampChangelogDialect(); err != nil {
+		return err
+	}
 	prev := zeroHash
 	if first := t.pending[0].Seq; first > 1 {
 		var stored []byte

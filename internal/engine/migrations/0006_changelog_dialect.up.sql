@@ -6,6 +6,10 @@
 -- a repository's changelog refuses the open instead of serving it until
 -- somebody runs a rebuild and discovers the entry it cannot fold.
 --
+-- The row is written by the transaction that appends the entries it claims,
+-- never by an open on its own: a claim over history a binary has not written
+-- would bar an older binary for nothing.
+--
 -- There is no promotions ledger beside it, because there are no promotions.
 -- The vocabulary ladder rewrites stored rows step by step and records each
 -- step; a changelog is append-only and its old entries keep their old
