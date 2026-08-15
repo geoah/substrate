@@ -55,11 +55,6 @@ func (d Document) DeclaredAuthority() string {
 	return mstr(d.Data, "authority")
 }
 
-// RenderDocument marshals a manifest map back to YAML — the derived source
-// for a document that arrived on the wire (deterministic: yaml.v3 sorts map
-// keys), exported for the callers that rebuild documents from record rows.
-func RenderDocument(raw map[string]any) string { return renderDocument(raw) }
-
 var envelopeKeys = map[string]bool{
 	"kind": true, "metadata": true, "data": true,
 	// status is server-set and ignored on input, so `get -o yaml` output is
@@ -139,21 +134,6 @@ func DocumentFromMap(raw map[string]any) (Document, error) {
 		return Document{}, validationError(problems)
 	}
 	return doc, nil
-}
-
-// Select picks a payload's documents of one type, envelope-parsed. Malformed
-// documents are skipped: this is a reader's convenience — the loader is what
-// refuses them.
-func Select(docs []map[string]any, typ string) []Document {
-	var out []Document
-	for _, raw := range docs {
-		d, err := DocumentFromMap(raw)
-		if err != nil || d.Kind != typ {
-			continue
-		}
-		out = append(out, d)
-	}
-	return out
 }
 
 func documentFrom(raw map[string]any, text string) (Document, []string) {

@@ -146,16 +146,6 @@ type Stamp struct {
 	Value    string
 }
 
-// Field returns the named field of an object property.
-func (p *Property) Field(name string) (*Property, bool) {
-	for _, f := range p.Fields {
-		if f.Name == name {
-			return f, true
-		}
-	}
-	return nil, false
-}
-
 // ReadDir reads every kind document in an authority DIRECTORY.
 func ReadDir(dir string) ([]*Kind, error) { return ReadFS(os.DirFS(dir)) }
 

@@ -108,6 +108,54 @@ func TestRemovedDeclarationNeedsAnAuthorityBump(t *testing.T) {
 	}
 }
 
+const freshKind = `kind: core.substrate.reamde.dev/kind
+metadata: {id: t.example.com/fresh}
+data:
+  authority: t.example.com
+  names: {singular: fresh, plural: freshes}
+`
+
+func TestAddedDeclarationNeedsNoBump(t *testing.T) {
+	// DELIBERATE, and the asymmetry with removal and with wiring is the whole
+	// point — this passes free while TestRemovedDeclarationNeedsAnAuthorityBump
+	// and TestAddedAndRemovedWiringCountToo both demand a bump.
+	//
+	// The rule those two enforce is "no repository is ever offered the change".
+	// It does not apply here: both upgrade paths carry an added declaration on
+	// its ABSENCE, not on a version. seed.go's boot upgrade writes the
+	// authority when any declaration `!exists`, and PlanBundleUpgrade lists the
+	// same declaration as a change with no `from` and sets Available. Delivery
+	// wiring has no such arm, which is exactly why it needs the bump and this
+	// does not.
+	//
+	// The console renders the resulting version-less move on purpose too
+	// (upgradeMotion in web/console/src/lib/bundles.ts). Demanding a bump here
+	// would be a rule the machinery does not need, so what this pins is that
+	// the diff stays quiet — the check has been read as a bug twice.
+	head := baseFiles()
+	head["t.example.com/fresh.yaml"] = freshKind
+	if got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head)); len(got) != 0 {
+		t.Fatalf("an added declaration demands a bump it does not need: %v", got)
+	}
+}
+
+func TestAddedDeclarationInInstallsStillNeedsTheBundleBump(t *testing.T) {
+	// The other half of the pair: listing the new kind in `installs` CHANGES
+	// the bundle declaration, and that is an ordinary changed declaration. So
+	// an addition that touches the bundle document is caught after all — by
+	// the rule that was always there, naming the document that actually
+	// changed.
+	head := baseFiles()
+	head["t.example.com/fresh.yaml"] = freshKind
+	head["t.example.com/bundle.yaml"] = strings.Replace(baseBundle,
+		"installs: [t.example.com/thing, t.example.com/other]",
+		"installs: [t.example.com/thing, t.example.com/other, t.example.com/fresh]", 1)
+	got := diffTrees(writeTree(t, baseFiles()), writeTree(t, head))
+	if len(got) != 1 || !strings.Contains(got[0], "bundle t.example.com/t") {
+		t.Fatalf("a changed installs list under an unmoved version passes: %v", got)
+	}
+}
+
 func TestRemovedBundleDirectoryPasses(t *testing.T) {
 	if got := diffTrees(writeTree(t, baseFiles()), writeTree(t, map[string]string{})); len(got) != 0 {
 		t.Fatalf("a bundle leaving the tree whole violates: %v", got)

@@ -584,17 +584,6 @@ func (t *Kind) applyCapability(b TraitBinding) {
 	}
 }
 
-// OwnerRefEdges lists the declared edges whose target owns this record.
-func (t *Kind) OwnerRefEdges() []*Edge {
-	var out []*Edge
-	for _, name := range t.EdgeOrder {
-		if e := t.Edges[name]; e.OwnerRef {
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
 // Interfaces lists the GraphQL-style interface names this type implements:
 // one per bound trait, one per declared machine.
 func (t *Kind) Interfaces() []string {
