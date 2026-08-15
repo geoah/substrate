@@ -17,6 +17,8 @@ data:
   traits:
     - temporal(point)
   properties:
+    # `taken` is a decision, not drift: the other occurrence logs say `done`,
+    # but a dose is taken, and the domain word is kept on purpose.
     status:
       type: state
       description: "taken or skipped; correcting a mis-tap flips it back"

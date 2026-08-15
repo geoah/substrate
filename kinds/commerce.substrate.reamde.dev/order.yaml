@@ -27,6 +27,9 @@ data:
     vendor:
       type: string
       description: who sold it
+    # `canceled` is a decision, not drift: task and project say `abandoned`,
+    # but either party cancels an order (abandoning is only the buyer's),
+    # and the domain word is kept on purpose.
     status:
       type: state
       description: "placed until it ships, shipped until it lands; stamps

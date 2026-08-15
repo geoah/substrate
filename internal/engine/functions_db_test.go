@@ -528,7 +528,7 @@ func TestTriggerTransitionViaPatch(t *testing.T) {
 	t.Parallel()
 	// A patch effect naming a state value is a transition and obeys the
 	// machine: open → done is declared (and stamps completedAt), done →
-	// dropped is not and parks.
+	// abandoned is not and parks.
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("closer", map[string]any{
 			"kinds": []any{widgetType}, "ops": []any{"update"},
@@ -559,7 +559,7 @@ def main(input, host):
 
 	// The illegal transition is a normal per-effect error: retried, parked,
 	// the task untouched.
-	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"want": "dropped"}})
+	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"want": "abandoned"}})
 	process(t, ops)
 	if got := mustGet(t, ds, taskType, "t-"+w.ID); got.Properties["status"] != "done" {
 		t.Fatalf("illegal transition applied: %v", got.Properties["status"])

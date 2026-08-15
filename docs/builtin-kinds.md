@@ -62,7 +62,7 @@ value says so and falls back to they/them.
 | --------- | ---------------------------------------------------------------------------- |
 | `task`    | Something to do, with priority and an optional repeat rule seeded off `dueAt`. |
 | `project` | What tasks group under: a name, a lifecycle, a summary.                       |
-| `tasklog` | The completed-or-skipped mark against one occurrence of a recurring task.     |
+| `tasklog` | The done-or-skipped mark against one occurrence of a recurring task.          |
 
 ## media.substrate.reamde.dev — imported
 
