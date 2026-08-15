@@ -1,0 +1,105 @@
+# The version, from the commits, on every green merge to main.
+#
+# `fix:` bumps the patch, `feat:` the minor, and a `!` or a BREAKING CHANGE
+# footer the major, except below 1.0.0 where a break bumps the minor
+# (.mise.toml's `version:next` holds that policy, and `mise run version:next`
+# answers it on a laptop). Anything else (docs:, refactor:, chore:, ci:) adds
+# up to no bump, so this tags nothing and nothing is released. That is not a
+# release being withheld: there is no version to give it.
+#
+# There is no release pull request and nothing to approve. A merge that
+# carries a feature or a fix IS the release, and the tag it lands on is what
+# every artifact is stamped and named with.
+#
+# It hangs off ci rather than off the push, because the alternative is
+# publishing a version of a tree nobody has run the suite over. Two pushes in
+# a row cancel the first ci run (that workflow's concurrency), so the release
+# lands on the later commit and carries both, which is the right answer and
+# not a skipped release.
+name: version
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  # The same fold, run by hand, for a main that is releasable and has no green
+  # ci run to hang off (a red job retried into oblivion, a workflow somebody
+  # skipped). It computes and tags exactly as the automatic path does, so it
+  # cannot re-publish a tag that already exists: that is release.yml's own
+  # dispatch, which takes the tag to build.
+  workflow_dispatch:
+
+concurrency:
+  # ONE, for the whole repository, and never cancelled: this job pushes a tag,
+  # and two of them racing would compute the same next version from the same
+  # last tag and one would fail to push it.
+  group: version
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    name: tag
+    # Both halves are load-bearing. `conclusion == 'success'` is the gate this
+    # workflow exists for; `event == 'push'` is because ci runs on pull
+    # requests too and those runs arrive here as well. The trigger's branch
+    # filter reads the HEAD branch, and a fork's pull request from its own
+    # `main` matches it.
+    if: >-
+      github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event
+      == 'push' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # To push the tag. Nothing else here writes.
+      contents: write
+    outputs:
+      tag: ${{ steps.next.outputs.tag }}
+      tagged: ${{ steps.next.outputs.tagged }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Every tag and every commit since: the version IS a fold over them.
+          fetch-depth: 0
+          # The commit ci went green on, not whatever main points at now. A
+          # merge that landed while the suite was running is a different tree,
+          # and it will get its own run.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          experimental: true
+      - id: next
+        run: |
+          set -euo pipefail
+          current="$(mise run version:current)"
+          next="$(mise run version:next)"
+          if [ "$next" = "$current" ]; then
+            echo "nothing since $current bumps the version; not tagging" >&2
+            echo "tagged=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Annotated, so the tag carries an author and a date of its own and
+          # `git describe` on any checkout finds it.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$next" -m "$next"
+          git push origin "$next"
+          echo "tagged $next" >&2
+          echo "tag=$next" >>"$GITHUB_OUTPUT"
+          echo "tagged=true" >>"$GITHUB_OUTPUT"
+
+  # Called rather than left to the tag: a tag pushed with GITHUB_TOKEN starts
+  # no workflow of its own, so an `on: push: tags` release would never fire for
+  # a tag this job pushed.
+  publish:
+    needs: tag
+    if: needs.tag.outputs.tagged == 'true'
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
