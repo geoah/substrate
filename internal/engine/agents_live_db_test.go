@@ -71,11 +71,11 @@ func TestLiveAgentChainAcrossWires(t *testing.T) {
 	}{
 		{"liveopenai", map[string]any{
 			"wire": "openai", "baseURL": "https://api.openai.com/v1", "apiKey": openaiKey,
-		}, []any{map[string]any{"model": openaiModel, "inputPer1M": 0.4, "outputPer1M": 1.6}}},
+		}, []any{map[string]any{"model": openaiModel, "inputPer1M": "0.4", "outputPer1M": "1.6"}}},
 		{"liveanthropic", map[string]any{
 			// No baseURL: the anthropic wire has its own endpoint.
 			"wire": "anthropic", "apiKey": anthropicKey,
-		}, []any{map[string]any{"model": anthropicModel, "inputPer1M": 1.0, "outputPer1M": 5.0}}},
+		}, []any{map[string]any{"model": anthropicModel, "inputPer1M": "1", "outputPer1M": "5"}}},
 	} {
 		p.props["pricing"] = p.pricing
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{

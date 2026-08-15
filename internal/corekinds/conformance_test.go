@@ -145,11 +145,11 @@ func compareProps(t *testing.T, where string, declared map[string]*vocabulary.Pr
 			t.Errorf("%s: labels differ: reader description=%q displayName=%q, loader description=%q displayName=%q",
 				at, r.Description, r.DisplayName, d.Description, d.DisplayName)
 		}
-		// Implicit is the property no `properties:` block declares: a transition's
-		// stamp target. It is stored like any other, so a reader that missed one
-		// would generate a type that refuses a value the ENGINE wrote.
-		if r.Implicit != d.Implicit {
-			t.Errorf("%s: implicit %v, loader %v", at, r.Implicit, d.Implicit)
+		// The tree declares every stamp target (the reader refuses an
+		// undeclared one), so the loader must not have synthesized a property
+		// the reader cannot see.
+		if d.Implicit {
+			t.Errorf("%s: the loader synthesized this property; declare the stamp target in the document", at)
 		}
 		if r.RenamedFrom != d.RenamedFrom {
 			t.Errorf("%s: renamedFrom %q, loader %q", at, r.RenamedFrom, d.RenamedFrom)

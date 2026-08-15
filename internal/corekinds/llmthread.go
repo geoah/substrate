@@ -25,11 +25,11 @@ type LLMThread struct {
 	// Model is the model id the run sent.
 	Model *string
 
-	// Mode is trigger, schedule, webhook, manual, call, subagent or chat.
-	Mode *string
+	// Mode is how the run was invoked.
+	Mode *LLMThreadMode
 
-	// Status is running, then ok, overbudget or error.
-	Status *string
+	// Status is running, then settled to ok, overbudget or error.
+	Status *LLMThreadStatus
 
 	// Reason is which budget ended an overbudget run, or the error.
 	Reason *string
@@ -72,6 +72,49 @@ type LLMThread struct {
 	// core.substrate.reamde.dev/llmthread.
 	Parent *ReferencePath
 }
+
+// LLMThreadMode is a declared enum: the admissible set, in declaration order.
+//
+// how the run was invoked
+type LLMThreadMode string
+
+const (
+	LLMThreadModeTrigger  LLMThreadMode = "trigger"
+	LLMThreadModeSchedule LLMThreadMode = "schedule"
+	LLMThreadModeWebhook  LLMThreadMode = "webhook"
+	LLMThreadModeManual   LLMThreadMode = "manual"
+	LLMThreadModeCall     LLMThreadMode = "call"
+	LLMThreadModeSubagent LLMThreadMode = "subagent"
+	LLMThreadModeChat     LLMThreadMode = "chat"
+	LLMThreadModeJudge    LLMThreadMode = "judge"
+)
+
+// LLMThreadModeValues are the declared values in declaration order, which is
+// render order.
+var LLMThreadModeValues = []string{"trigger", "schedule", "webhook", "manual", "call", "subagent", "chat", "judge"}
+
+// Valid reports whether v is one of the declared values.
+func (v LLMThreadMode) Valid() bool { return Declared(LLMThreadModeValues, string(v)) }
+
+// LLMThreadStatus is a declared enum: the admissible set, in declaration
+// order.
+//
+// running, then settled to ok, overbudget or error
+type LLMThreadStatus string
+
+const (
+	LLMThreadStatusRunning    LLMThreadStatus = "running"
+	LLMThreadStatusOk         LLMThreadStatus = "ok"
+	LLMThreadStatusOverbudget LLMThreadStatus = "overbudget"
+	LLMThreadStatusError      LLMThreadStatus = "error"
+)
+
+// LLMThreadStatusValues are the declared values in declaration order, which is
+// render order.
+var LLMThreadStatusValues = []string{"running", "ok", "overbudget", "error"}
+
+// Valid reports whether v is one of the declared values.
+func (v LLMThreadStatus) Valid() bool { return Declared(LLMThreadStatusValues, string(v)) }
 
 // LLMThreadKeys is the admitted key set: every property
 // core.substrate.reamde.dev/llmthread declares, sorted. A key outside it is
@@ -117,6 +160,24 @@ func (v *LLMThread) Missing() []string {
 	return out
 }
 
+// decodeLLMThreadMode decodes a declared LLMThreadMode value.
+func decodeLLMThreadMode(d *decoder, path string, v any) (LLMThreadMode, bool) {
+	s, ok := d.text(path, v, LLMThreadModeValues, nil)
+	if !ok {
+		return "", false
+	}
+	return LLMThreadMode(s), true
+}
+
+// decodeLLMThreadStatus decodes a declared LLMThreadStatus value.
+func decodeLLMThreadStatus(d *decoder, path string, v any) (LLMThreadStatus, bool) {
+	s, ok := d.text(path, v, LLMThreadStatusValues, nil)
+	if !ok {
+		return "", false
+	}
+	return LLMThreadStatus(s), true
+}
+
 // decodeLLMThread decodes one LLMThread value at path.
 func decodeLLMThread(d *decoder, path string, v any) (LLMThread, bool) {
 	props, mapped := d.mapping(path, v)
@@ -148,12 +209,12 @@ func decodeLLMThread(d *decoder, path string, v any) (LLMThread, bool) {
 			}
 		case "mode":
 			p := at(path, "mode")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := decodeLLMThreadMode(d, p, props[key]); ok {
 				out.Mode = &e
 			}
 		case "status":
 			p := at(path, "status")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := decodeLLMThreadStatus(d, p, props[key]); ok {
 				out.Status = &e
 			}
 		case "reason":
@@ -242,10 +303,10 @@ func (v *LLMThread) Encode() map[string]any {
 		out["model"] = *v.Model
 	}
 	if v.Mode != nil {
-		out["mode"] = *v.Mode
+		out["mode"] = string(*v.Mode)
 	}
 	if v.Status != nil {
-		out["status"] = *v.Status
+		out["status"] = string(*v.Status)
 	}
 	if v.Reason != nil {
 		out["reason"] = *v.Reason

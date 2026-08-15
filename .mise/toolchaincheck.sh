@@ -87,8 +87,8 @@ check_pin go golang
 
 # --- pnpm, pinned in two places for two different readers ----------------
 #
-# mise installs it for a laptop and for CI; `packageManager` is what corepack
-# activates inside the image's web stage. A disagreement means the console is
+# mise installs it for a laptop and for CI; `packageManager` is what the image's
+# pinned corepack activates in its web stage. A disagreement means the console is
 # resolved by one pnpm here and a different one in the image, off the same
 # lockfile.
 pnpm_pin="$(mise_pin pnpm)"

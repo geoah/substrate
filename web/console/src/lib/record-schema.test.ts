@@ -69,6 +69,7 @@ const wideKind: KindInfo = {
       zone: { type: "timezone" },
       calls: { type: "int", min: 1, max: 10 },
       ratio: { type: "float" },
+      price: { type: "decimal", min: 0 },
       headers: { type: "json" },
       callable: { type: "reference", kind: "any" },
       owner: { type: "reference", kind: "core.substrate.reamde.dev/actor" },
@@ -139,6 +140,9 @@ describe("controlFor", () => {
     expect(controlFor(spec(wideKind, "callable"))).toBe("reference")
     expect(controlFor(spec(wideKind, "headers"))).toBe("json")
     expect(controlFor(spec(wideKind, "calls"))).toBe("number")
+    // A decimal is a STRING of exact digits: a number control would round it
+    // through the float64 the datatype exists to refuse.
+    expect(controlFor(spec(wideKind, "price"))).toBe("text")
     expect(controlFor(spec(wideKind, "seenAt"))).toBe("datetime")
     expect(controlFor(spec(wideKind, "baseURL"))).toBe("text")
     expect(controlFor(spec(agentKind, "model"))).toBe("select")
@@ -164,7 +168,8 @@ describe("exampleFor", () => {
   it("shows a worked value per datatype, so a blank create is not a blank page", () => {
     expect(exampleFor(spec(wideKind, "seenAt"))).toBe("2026-01-31T09:00:00Z")
     expect(exampleFor(spec(wideKind, "baseURL"))).toBe("https://example.com")
-    expect(exampleFor(spec(wideKind, "every"))).toBe("47m12s")
+    expect(exampleFor(spec(wideKind, "every"))).toBe("PT47M12S")
+    expect(exampleFor(spec(wideKind, "price"))).toBe("19.99")
     // An enum's example is one of its own admitted values, never invented.
     expect(exampleFor(spec(agentKind, "model"))).toBe("opus")
   })
@@ -176,7 +181,11 @@ describe("checkValue", () => {
       checkValue(spec(wideKind, "seenAt"), "2026-01-31T09:00:00Z")
     ).toBeUndefined()
     expect(checkValue(spec(wideKind, "born"), "2026-01-31")).toBeUndefined()
-    expect(checkValue(spec(wideKind, "every"), "47m12s")).toBeUndefined()
+    // ISO 8601 is the one duration grammar, minus years and months.
+    expect(checkValue(spec(wideKind, "every"), "PT47M12S")).toBeUndefined()
+    expect(checkValue(spec(wideKind, "every"), "P2DT3H")).toBeUndefined()
+    expect(checkValue(spec(wideKind, "price"), "19.99")).toBeUndefined()
+    expect(checkValue(spec(wideKind, "price"), "0.00")).toBeUndefined()
     expect(
       checkValue(spec(wideKind, "mailbox"), "a@example.com")
     ).toBeUndefined()
@@ -203,6 +212,15 @@ describe("checkValue", () => {
       /civil date/
     )
     expect(checkValue(spec(wideKind, "every"), "soon")).toMatch(/duration/)
+    // A bare P names no duration, years have no fixed length, and Go's own
+    // syntax is the retired spelling.
+    expect(checkValue(spec(wideKind, "every"), "P")).toMatch(/duration/)
+    expect(checkValue(spec(wideKind, "every"), "P1Y")).toMatch(/duration/)
+    expect(checkValue(spec(wideKind, "every"), "47m12s")).toMatch(/ISO 8601/)
+    // A decimal is a string of digits: a JSON number rode float64 to get here.
+    expect(checkValue(spec(wideKind, "price"), 19.99)).toMatch(/string/)
+    expect(checkValue(spec(wideKind, "price"), "1.9e2")).toMatch(/decimal/)
+    expect(checkValue(spec(wideKind, "price"), "-0.01")).toMatch(/>= 0/)
     expect(checkValue(spec(wideKind, "mailbox"), "nobody")).toMatch(/mailbox/)
     expect(checkValue(spec(wideKind, "baseURL"), "example.com")).toMatch(
       /absolute URL/

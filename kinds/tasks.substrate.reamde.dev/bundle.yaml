@@ -19,7 +19,11 @@ data:
   # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
-  version: 2
+  #
+  # version 3: the settled state vocabulary (decision record 0013). The task's
+  # `dropped` is `abandoned`, matching project, and the tasklog's `completed`
+  # is `done`, matching the task's own terminal state.
+  version: 3
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A VOCABULARY bundle (see people.substrate.reamde.dev): kinds only, imported from the

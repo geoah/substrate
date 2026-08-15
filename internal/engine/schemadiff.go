@@ -170,6 +170,20 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 					})
 					continue
 				}
+				// A string retype to `enum` strands only the rows whose stored
+				// value is outside the declared set, for the same reason: a set
+				// the engine already held its writes to (a run's status, a
+				// thread's mode) can be declared after the fact, the values
+				// leading and the declaration following them.
+				if stringToEnum(curP, candP) {
+					q, args := valuesOutsidePath(ident, containerPath(nil, curP, pname), candP.ValueStrings())
+					out = append(out, narrowing{
+						format: fmt.Sprintf("type %s: property %q changes kind %s → %s while %%d live records hold a value outside %s; rewrite them first",
+							ident, pname, from, to, quotedList(candP.ValueStrings())),
+						query: q, args: args,
+					})
+					continue
+				}
 				out = append(out, narrowing{
 					format: fmt.Sprintf("type %s: property %q changes kind %s → %s while %%d live records hold values of the old kind — migrate them first",
 						ident, pname, from, to),
@@ -444,6 +458,26 @@ func valuesAtPath(ident string, path []fieldStep, values []string) (string, []an
 	})
 }
 
+// valuesOutsidePath counts the live rows holding a value OUTSIDE the given set
+// at the path: the rows a string retyped to enum actually strands. The
+// complement of valuesAtPath, over the same container walk, so a repeated
+// string is checked element by element and a keyed one value by value. A
+// stored non-string is outside any set and counts too.
+func valuesOutsidePath(ident string, path []fieldStep, values []string) (string, []any) {
+	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
+		return fmt.Sprintf("NOT (%s::jsonb @> %s)", a.add(jsonArray(values)), expr)
+	})
+}
+
+// stringToEnum reports the one datatype flip the guards count by VALUE rather
+// than by presence: a plain string becoming an enum in the same container.
+// Every other flip changes what a stored value IS; this one only closes the
+// set it may come from.
+func stringToEnum(cur, cand *vocabulary.Property) bool {
+	return cur.Datatype == vocabulary.DatatypeString && cand.Datatype == vocabulary.DatatypeEnum &&
+		cur.Repeated == cand.Repeated && cur.Keyed == cand.Keyed
+}
+
 // keysOutsidePattern counts the live rows whose keyed map at the path holds a
 // key the CANDIDATE contract refuses — not every row that holds a map. The
 // pattern is the loader's own grammar, handed over by vocabulary.KeyPatternRegexp
@@ -489,6 +523,17 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 			continue
 		}
 		if curF.Datatype != candF.Datatype || curF.Repeated != candF.Repeated || curF.Keyed != candF.Keyed {
+			// The string-to-enum tolerance a property gets, at depth: only the
+			// rows holding a value outside the declared set are stranded.
+			if stringToEnum(curF, candF) {
+				q, args := valuesOutsidePath(ident, containerPath(path, curF, fname), candF.ValueStrings())
+				out = append(out, narrowing{
+					format: fmt.Sprintf("type %s: object %q field %q changes kind %s → %s while %%d live records hold a value outside %s; rewrite them first",
+						ident, label, fname, kindShape(curF), kindShape(candF), quotedList(candF.ValueStrings())),
+					query: q, args: args,
+				})
+				continue
+			}
 			q, args := fieldPresence(ident, path, fname)
 			out = append(out, narrowing{
 				format: fmt.Sprintf("type %s: object %q field %q changes kind %s → %s while %%d live records hold the old kind — migrate them first",

@@ -9,6 +9,10 @@ data:
     and delivered. A transition stamps shippedAt or deliveredAt by itself;
     an importer creating a record already shipped supplies its own times.
     What was in the box lives on its orderitems.
+  # The declaration inherited the authority's version before this pin.
+  # version 4: `shippedAt` and `deliveredAt` are declared properties
+  # (datetime). The transitions stamped them as undeclared strings before.
+  version: 4
   names:
     singular: order
     plural: orders
@@ -27,6 +31,9 @@ data:
     vendor:
       type: string
       description: who sold it
+    # `canceled` is a decision, not drift: task and project say `abandoned`,
+    # but either party cancels an order (abandoning is only the buyer's),
+    # and the domain word is kept on purpose.
     status:
       type: state
       description: "placed until it ships, shipped until it lands; stamps
@@ -53,8 +60,17 @@ data:
           to: canceled
         - from: delivered
           to: returned
+    # Stamped by the transitions above. Not managed: an importer creating a
+    # record already shipped supplies its own times, as the description says.
+    shippedAt:
+      type: datetime
+      description: when it shipped, stamped by the transition
+    deliveredAt:
+      type: datetime
+      description: when it landed, stamped by the transition
     totalAmount:
-      type: float
+      type: decimal
+      min: 0
       description: the order total, in the currency beside it
     currency:
       type: currency

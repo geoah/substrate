@@ -369,6 +369,52 @@ func TestAgentQueryBuiltinByReference(t *testing.T) {
 	}
 }
 
+// A MIS-SHAPED FILTER IS REFUSED, NOT DROPPED. `query` decoded its filter
+// leniently, so a model that wrote a predicate straight onto the filter
+// (`{"at": {"gte": …}}` instead of nesting it under `properties`) had the key
+// silently discarded and got the WHOLE collection back as if it had asked for
+// it — a wrong answer with no sign anything went wrong. The strict decode the
+// GraphQL doors already used refuses it, and names the keys so the model can
+// correct itself in the next turn.
+func TestAgentQueryRefusesAnUnknownFilterKey(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	for _, id := range []string{"w-mon", "w-tue"} {
+		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: crewAuthority + "/widget", ID: id, Properties: map[string]any{"name": id},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fake.script("lib",
+		fakeTurn{calls: []fakeCall{{"query", gqlToolArgs(t, map[string]any{
+			"kind":   crewAuthority + "/widget",
+			"filter": map[string]any{"at": map[string]any{"gte": "2026-08-15T00:00:00Z"}},
+		})}}},
+		fakeTurn{content: "asked wrong"},
+	)
+	res, err := ds.CallAgent(ctx, crewAuthority+"/librarian", "what is on the shelf today")
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	tool := lastToolMessage(t, ds, res.Thread)
+	if tool["ok"] == true {
+		t.Fatalf("the dropped predicate answered as a success: %v", tool["content"])
+	}
+	content, _ := tool["content"].(string)
+	if strings.Contains(content, "w-mon") {
+		t.Fatalf("the filter was dropped and the collection answered anyway: %s", content)
+	}
+	// The content is the JSON tool result, so the quotes around the key
+	// arrive escaped.
+	for _, want := range []string{`unknown field \"at\"`, "properties"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("the refusal does not mention %q: %s", want, content)
+		}
+	}
+}
+
 // A PURE FUNCTION IS A TOOL. It declares no emit, writes nothing and returns an
 // output the model reads — the shape `emit:` being required used to forbid.
 func TestAgentPureFunctionTool(t *testing.T) {

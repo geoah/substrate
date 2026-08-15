@@ -15,6 +15,11 @@ data:
     settles: what fired, what ran, what it applied, and why it parked. Parked
     runs are kept until their failure is retried away; the rest are pruned
     to the newest few per trigger.
+  # version 10: `mode` and `status` become enums, the engine's own closed sets
+  # (functions.go holds every run row to them). The first own pin lands above
+  # the authority's version 9, which this declaration projected with until
+  # now.
+  version: 10
   names:
     singular: run
     plural: runs
@@ -30,8 +35,13 @@ data:
       type: string
       description: the callable that ran, as its actor spells it — `function:<name>`
     mode:
-      type: string
-      description: trigger, schedule, webhook or manual
+      type: enum
+      values:
+        - trigger
+        - schedule
+        - webhook
+        - manual
+      description: how the delivery fired
     seq:
       type: int
       description: the changelog seq delivered, for record-sourced runs
@@ -42,7 +52,11 @@ data:
       type: string
       description: the delivered record's id, for record-sourced runs
     status:
-      type: string
+      type: enum
+      values:
+        - ok
+        - skipped
+        - parked
       description: ok (effects applied or nothing to do), skipped (the when
         guard said no), or parked (retried out; a trigger_failures row holds
         the retry handle)

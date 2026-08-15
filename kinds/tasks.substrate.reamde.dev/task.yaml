@@ -9,6 +9,10 @@ data:
     issue, or proposed by an agent. Status carries the whole lifecycle — a
     proposal waits for the owner, an open task is due, and completing it stamps
     the time by itself.
+  # The declaration inherited the authority's version before this pin.
+  # version 3: `completedAt` is a declared property (datetime). The done
+  # transition stamped it as an undeclared string before.
+  version: 3
   names:
     singular: task
     plural: tasks
@@ -62,24 +66,29 @@ data:
     # the transition, so nothing has to remember to set it.
     status:
       type: state
-      description: "proposed waits for the owner; open until done or dropped"
+      description: "proposed waits for the owner; open until done or abandoned"
       states:
         - proposed
         - open
         - done
-        - dropped
+        - abandoned
       initial: open
       transitions:
         - from: proposed
           to: open
         - from: proposed
-          to: dropped
+          to: abandoned
         - from: open
           to: done
           stamps:
             completedAt: now
         - from: done
           to: open
+    # Stamped by the done transition above. Not managed: an importer creating
+    # a task already done supplies its own time.
+    completedAt:
+      type: datetime
+      description: when the task was done, stamped by the transition
   edges:
     project:
       to: project

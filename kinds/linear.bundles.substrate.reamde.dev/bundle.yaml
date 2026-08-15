@@ -39,7 +39,10 @@ data:
   # version 3: the grants group under one `permissions:` object, and the permission
   # to write is `writes:` inside it. This closure's functions and agents
   # follow core's declaration.
-  version: 4
+  # version 5: the task machine's `dropped` state is `abandoned` (decision
+  # record 0013); taskprojection's source says so where it explains what it
+  # never touches.
+  version: 5
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -981,7 +984,7 @@ data:
             # pre-stamp row) counts as unchanged — except where adopting
             # cannot undo anything (a local task not yet done). Only
             # open<->done transitions exist on the task machine; a proposed
-            # or dropped task is the owner's and is never touched.
+            # or abandoned task is the owner's and is never touched.
             local = tprops.get("status") or "open"
             moved = bool(baseline) and _fold(baseline) != upstream
             adoptable = local in ("open", "done")

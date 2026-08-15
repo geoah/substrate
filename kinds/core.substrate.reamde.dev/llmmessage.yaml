@@ -28,15 +28,24 @@ data:
   # wrote, stamped by the engine — and `system` joins the roles: the
   # substrate's own turns (a proposal decision), so a reader of the thread
   # needs nothing but the rows to see what happened.
-  version: 6
+  # version 7: `role` and `changes.op` become enums. `op` declares every op
+  # the effect applier can stamp, merge and split included (effects.go), not
+  # just the five the prose named: a stamped op outside the declared set
+  # would refuse the loop's own message write.
+  version: 7
   names:
     singular: llmmessage
     plural: llmmessages
   displayTemplate: "{role} #{turn}"
   properties:
     role:
-      type: string
-      description: user, assistant, tool or system
+      type: enum
+      values:
+        - user
+        - assistant
+        - tool
+        - system
+      description: whose turn the row is, following the chat wire
     content:
       type: text
       description: the turn's text; a tool row's result payload
@@ -87,8 +96,16 @@ data:
           description: the changelog seq of the entry, which addresses its
             delta
         op:
-          type: string
-          description: the entry's op — put, patch, delete, link or unlink
+          type: enum
+          values:
+            - put
+            - patch
+            - delete
+            - link
+            - unlink
+            - merge
+            - split
+          description: the changelog op the entry landed as
         kind:
           type: string
           description: the written record's kind

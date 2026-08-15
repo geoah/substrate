@@ -1646,7 +1646,12 @@ func scanChange(rows *sql.Rows) (substrate.Change, error) {
 	c.Op = substrate.Op(op)
 	c.TS = c.TS.UTC()
 	if len(raw) > 0 {
-		_ = json.Unmarshal(raw, &c.Payload)
+		// Number-preserving, not a plain Unmarshal: the payload is the fold's
+		// replay input, and float64 would round an integer past 2^53, so a
+		// rebuild would fold a value the changelog never held.
+		if payload, err := decodeNumberPreserving(raw); err == nil {
+			c.Payload = payload
+		}
 	}
 	if len(hash) > 0 {
 		c.Hash = hex.EncodeToString(hash)

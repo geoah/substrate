@@ -108,11 +108,6 @@ type Property struct {
 	Machine *Machine
 	// Depth is the level this property sits at: a kind's own property is 1.
 	Depth int
-	// Implicit marks a property no `properties:` block declares: a transition's
-	// stamp target, which the loader declares for the author as a datetime. It is
-	// a stored property like any other — a reader that skipped it would generate a
-	// type that refuses a row the engine itself wrote.
-	Implicit bool
 }
 
 // EnumValue is one admissible enum value and the optional human label a client
@@ -475,48 +470,38 @@ func (r *reader) readKind(file string, doc *mapping) *Kind {
 			k.Props = append(k.Props, p)
 		}
 	}
-	r.addStampProperties(where, k)
+	r.checkStampProperties(where, k)
 	return k
 }
 
-// addStampProperties declares what a transition's stamps declare for the
-// author: an implicit datetime property per stamp target, appended in sorted
-// order. The loader does exactly this (a stamp is a stored property with its own
-// column-less slot in properties), so a reader that stopped at the authored
-// block would generate a type that refuses `decidedAt` — a value the engine
-// itself stamps.
-func (r *reader) addStampProperties(where string, k *Kind) {
+// checkStampProperties holds every transition stamp to a declared target. A
+// stamp writes a stored property, so the properties block must declare it as a
+// single-valued datetime; a type generated past an undeclared one would refuse
+// a value the engine itself writes. The vocabulary loader still synthesizes a
+// property for an undeclared target, because stored declarations that predate
+// the rule must keep parsing at open; this reader reads only the shipped tree,
+// which has no such rows, so here the requirement is absolute.
+func (r *reader) checkStampProperties(where string, k *Kind) {
 	declared := map[string]*Property{}
 	for _, p := range k.Props {
 		declared[p.Name] = p
 	}
-	var stamped []string
 	for _, p := range k.Props {
 		if p.Machine == nil {
 			continue
 		}
 		for _, t := range p.Machine.Transitions {
 			for _, s := range t.Stamps {
-				if existing, ok := declared[s.Property]; ok {
-					if !existing.Implicit {
-						r.errf("%s: stamp %q collides with a declared property", where, s.Property)
-					}
+				target, ok := declared[s.Property]
+				if !ok {
+					r.errf("%s: stamp %q has no declared property behind it: declare it (type: datetime)", where, s.Property)
 					continue
 				}
-				implicit := &Property{
-					Name:     s.Property,
-					Datatype: TypeDatetime,
-					Depth:    1,
-					Implicit: true,
+				if target.Datatype != TypeDatetime || target.Repeated || target.Keyed {
+					r.errf("%s: stamp target %q must be a single-valued datetime property", where, s.Property)
 				}
-				declared[s.Property] = implicit
-				stamped = append(stamped, s.Property)
 			}
 		}
-	}
-	sort.Strings(stamped)
-	for _, name := range stamped {
-		k.Props = append(k.Props, declared[name])
 	}
 }
 
@@ -550,6 +535,7 @@ const (
 	TypeMarkdown   = "markdown"
 	TypeInt        = "int"
 	TypeFloat      = "float"
+	TypeDecimal    = "decimal"
 	TypeBool       = "bool"
 	TypeDatetime   = "datetime"
 	TypeDate       = "date"
@@ -570,7 +556,7 @@ const (
 )
 
 var datatypes = keys(TypeString, TypeText, TypeMarkdown, TypeInt, TypeFloat,
-	TypeBool, TypeDatetime, TypeDate, TypeDuration, TypeEmail, TypeURL,
+	TypeDecimal, TypeBool, TypeDatetime, TypeDate, TypeDuration, TypeEmail, TypeURL,
 	TypePhone, TypeTimezone, TypeRecurrence, TypeEnum, TypeJSON, TypeSecret,
 	TypeDigest, TypeBlobRef, TypeState, TypeObject, TypeReference)
 

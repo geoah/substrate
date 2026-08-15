@@ -61,7 +61,11 @@ data:
   # bump is what carries the NEW declarations into repositories already open.
   # version 8: the policy door — the recordpatchpolicy kind (phase 3); the
   # bump carries it like version 7 carried the interaction.
-  version: 8
+  # version 9: the `graphql` host function's card spells the filter grammar and
+  # the inline-fragment rule. A tool card is what an LLM reads before it writes
+  # a query, so an omission there is a capability the model reports as absent:
+  # one told a user the substrate could not filter by date.
+  version: 9
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands

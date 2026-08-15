@@ -72,6 +72,7 @@ const (
 	PropertyTypeBaseMarkdown   PropertyTypeBase = "markdown"
 	PropertyTypeBaseInt        PropertyTypeBase = "int"
 	PropertyTypeBaseFloat      PropertyTypeBase = "float"
+	PropertyTypeBaseDecimal    PropertyTypeBase = "decimal"
 	PropertyTypeBaseBool       PropertyTypeBase = "bool"
 	PropertyTypeBaseDatetime   PropertyTypeBase = "datetime"
 	PropertyTypeBaseDate       PropertyTypeBase = "date"
@@ -91,7 +92,7 @@ const (
 
 // PropertyTypeBaseValues are the declared values in declaration order, which
 // is render order.
-var PropertyTypeBaseValues = []string{"string", "text", "markdown", "int", "float", "bool", "datetime", "date", "duration", "email", "url", "phone", "timezone", "recurrence", "enum", "json", "secret", "digest", "state", "blobref"}
+var PropertyTypeBaseValues = []string{"string", "text", "markdown", "int", "float", "decimal", "bool", "datetime", "date", "duration", "email", "url", "phone", "timezone", "recurrence", "enum", "json", "secret", "digest", "state", "blobref"}
 
 // Valid reports whether v is one of the declared values.
 func (v PropertyTypeBase) Valid() bool { return Declared(PropertyTypeBaseValues, string(v)) }

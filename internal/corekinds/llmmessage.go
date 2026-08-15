@@ -11,8 +11,8 @@ package corekinds
 // message, an assistant turn its prose and tool calls, a tool turn one
 // dispatched call's result.
 type LLMMessage struct {
-	// Role is user, assistant, tool or system.
-	Role *string
+	// Role is whose turn the row is, following the chat wire.
+	Role *LLMMessageRole
 
 	// Content is the turn's text; a tool row's result payload.
 	Content *string
@@ -40,6 +40,25 @@ type LLMMessage struct {
 	// core.substrate.reamde.dev/llmthread.
 	Thread *ReferencePath
 }
+
+// LLMMessageRole is a declared enum: the admissible set, in declaration order.
+//
+// whose turn the row is, following the chat wire
+type LLMMessageRole string
+
+const (
+	LLMMessageRoleUser      LLMMessageRole = "user"
+	LLMMessageRoleAssistant LLMMessageRole = "assistant"
+	LLMMessageRoleTool      LLMMessageRole = "tool"
+	LLMMessageRoleSystem    LLMMessageRole = "system"
+)
+
+// LLMMessageRoleValues are the declared values in declaration order, which is
+// render order.
+var LLMMessageRoleValues = []string{"user", "assistant", "tool", "system"}
+
+// Valid reports whether v is one of the declared values.
+func (v LLMMessageRole) Valid() bool { return Declared(LLMMessageRoleValues, string(v)) }
 
 // LLMMessageKeys is the admitted key set: every property
 // core.substrate.reamde.dev/llmmessage declares, sorted. A key outside it is
@@ -85,6 +104,15 @@ func (v *LLMMessage) Missing() []string {
 	return out
 }
 
+// decodeLLMMessageRole decodes a declared LLMMessageRole value.
+func decodeLLMMessageRole(d *decoder, path string, v any) (LLMMessageRole, bool) {
+	s, ok := d.text(path, v, LLMMessageRoleValues, nil)
+	if !ok {
+		return "", false
+	}
+	return LLMMessageRole(s), true
+}
+
 // decodeLLMMessage decodes one LLMMessage value at path.
 func decodeLLMMessage(d *decoder, path string, v any) (LLMMessage, bool) {
 	props, mapped := d.mapping(path, v)
@@ -101,7 +129,7 @@ func decodeLLMMessage(d *decoder, path string, v any) (LLMMessage, bool) {
 		switch key {
 		case "role":
 			p := at(path, "role")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := decodeLLMMessageRole(d, p, props[key]); ok {
 				out.Role = &e
 			}
 		case "content":
@@ -173,7 +201,7 @@ func decodeLLMMessage(d *decoder, path string, v any) (LLMMessage, bool) {
 func (v *LLMMessage) Encode() map[string]any {
 	out := map[string]any{}
 	if v.Role != nil {
-		out["role"] = *v.Role
+		out["role"] = string(*v.Role)
 	}
 	if v.Content != nil {
 		out["content"] = *v.Content
@@ -290,14 +318,46 @@ type LLMMessageChanges struct {
 	// Seq is the changelog seq of the entry, which addresses its delta.
 	Seq *int64
 
-	// Op is the entry's op — put, patch, delete, link or unlink.
-	Op *string
+	// Op is the changelog op the entry landed as.
+	Op *LLMMessageChangesOp
 
 	// Kind is the written record's kind.
 	Kind *string
 
 	// Id is the written record's id.
 	Id *string
+}
+
+// LLMMessageChangesOp is a declared enum: the admissible set, in declaration
+// order.
+//
+// the changelog op the entry landed as
+type LLMMessageChangesOp string
+
+const (
+	LLMMessageChangesOpPut    LLMMessageChangesOp = "put"
+	LLMMessageChangesOpPatch  LLMMessageChangesOp = "patch"
+	LLMMessageChangesOpDelete LLMMessageChangesOp = "delete"
+	LLMMessageChangesOpLink   LLMMessageChangesOp = "link"
+	LLMMessageChangesOpUnlink LLMMessageChangesOp = "unlink"
+	LLMMessageChangesOpMerge  LLMMessageChangesOp = "merge"
+	LLMMessageChangesOpSplit  LLMMessageChangesOp = "split"
+)
+
+// LLMMessageChangesOpValues are the declared values in declaration order,
+// which is render order.
+var LLMMessageChangesOpValues = []string{"put", "patch", "delete", "link", "unlink", "merge", "split"}
+
+// Valid reports whether v is one of the declared values.
+func (v LLMMessageChangesOp) Valid() bool { return Declared(LLMMessageChangesOpValues, string(v)) }
+
+// decodeLLMMessageChangesOp decodes a declared LLMMessageChangesOp value.
+func decodeLLMMessageChangesOp(d *decoder, path string, v any) (LLMMessageChangesOp, bool) {
+	s, ok := d.text(path, v, LLMMessageChangesOpValues, nil)
+	if !ok {
+		return "", false
+	}
+	return LLMMessageChangesOp(s), true
 }
 
 // decodeLLMMessageChanges decodes one LLMMessageChanges value at path.
@@ -321,7 +381,7 @@ func decodeLLMMessageChanges(d *decoder, path string, v any) (LLMMessageChanges,
 			}
 		case "op":
 			p := at(path, "op")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := decodeLLMMessageChangesOp(d, p, props[key]); ok {
 				out.Op = &e
 			}
 		case "kind":
@@ -354,7 +414,7 @@ func (v *LLMMessageChanges) Encode() map[string]any {
 		out["seq"] = *v.Seq
 	}
 	if v.Op != nil {
-		out["op"] = *v.Op
+		out["op"] = string(*v.Op)
 	}
 	if v.Kind != nil {
 		out["kind"] = *v.Kind

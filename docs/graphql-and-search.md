@@ -18,7 +18,12 @@ query ($f: JSON) {
 ```
 
 `records(filter, orderBy, first, after)` is the list query, and `kinds` is
-where a filter narrows by kind, on both `records` and the changelog. `cursor`
+where a filter narrows by kind, on both `records` and the changelog. The
+arguments carry that grammar in their **descriptions**, so a client with only
+introspection to read (an agent holding the `graphql` tool) gets the accepted
+keys, the condition operators and a worked date range without leaving the
+endpoint; a filter key the grammar does not have is a `validation` error that
+names the keys it does. `cursor`
 is the same opaque keyset token REST returns (pass it back as `after`), and
 `head` is the changelog head seq at the snapshot, for a gapless handoff to
 `watch`. There is no `total`: a keyset walk counts nothing, so the page tells

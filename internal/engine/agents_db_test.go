@@ -190,7 +190,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 				"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-" + id,
 				// pricing is a repeated object: one row per model, keyed by
 				// the `model` field.
-				"pricing": []any{map[string]any{"model": model, "inputPer1M": 1.0, "outputPer1M": 5.0}},
+				"pricing": []any{map[string]any{"model": model, "inputPer1M": "1", "outputPer1M": "5"}},
 			},
 		}); err != nil {
 			t.Fatalf("put llmprovider row %s: %v", id, err)

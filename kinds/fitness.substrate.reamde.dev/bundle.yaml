@@ -11,7 +11,10 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: fitness.substrate.reamde.dev
 data:
-  version: 1
+  # version 2: the settled state vocabulary (decision record 0013). The
+  # workoutlog's `completed` is `done`, the one success word for the
+  # occurrence logs.
+  version: 2
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.

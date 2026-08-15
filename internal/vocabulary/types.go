@@ -22,11 +22,18 @@ import (
 type Datatype string
 
 const (
-	DatatypeString     Datatype = "string"
-	DatatypeText       Datatype = "text"
-	DatatypeMarkdown   Datatype = "markdown"
-	DatatypeInt        Datatype = "int"
-	DatatypeFloat      Datatype = "float"
+	DatatypeString   Datatype = "string"
+	DatatypeText     Datatype = "text"
+	DatatypeMarkdown Datatype = "markdown"
+	DatatypeInt      Datatype = "int"
+	DatatypeFloat    Datatype = "float"
+	// DatatypeDecimal is an EXACT decimal number, carried as a string
+	// ("19.99") on every wire and stored as a canonical decimal string. Money
+	// is the reason it exists: every JSON door in and out of storage rides
+	// float64, so a bare number may arrive already rounded, and the engine
+	// refuses one rather than store the rounding. Filters and ordering compare
+	// it numerically (::numeric), not as text.
+	DatatypeDecimal    Datatype = "decimal"
 	DatatypeBool       Datatype = "bool"
 	DatatypeDatetime   Datatype = "datetime"
 	DatatypeDate       Datatype = "date"
@@ -96,7 +103,7 @@ const ToAny = "any"
 
 var builtinKinds = map[Datatype]bool{
 	DatatypeString: true, DatatypeText: true, DatatypeMarkdown: true, DatatypeInt: true,
-	DatatypeFloat: true, DatatypeBool: true, DatatypeDatetime: true, DatatypeDate: true,
+	DatatypeFloat: true, DatatypeDecimal: true, DatatypeBool: true, DatatypeDatetime: true, DatatypeDate: true,
 	DatatypeDuration: true, DatatypeEmail: true, DatatypeURL: true, DatatypePhone: true,
 	DatatypeTimezone: true, DatatypeRecurrence: true, DatatypeEnum: true,
 	DatatypeJSON: true, DatatypeSecret: true, DatatypeDigest: true,
@@ -207,7 +214,10 @@ type Property struct {
 	// at every level until a consumer arrives (§15).
 	Fields     map[string]*Property
 	FieldOrder []string
-	// Implicit marks properties declared indirectly (machine stamps).
+	// Implicit marks a synthesized property: a machine-stamp target the
+	// document does not declare. The loader keeps synthesizing these so
+	// declarations stored before targets were declarable keep parsing; the
+	// shipped tree declares every target.
 	Implicit bool
 	// Managed marks a property the ENGINE stamps: `version`, `source`, the
 	// quarantine fields, the bundle lifecycle bools. It is the declaration of

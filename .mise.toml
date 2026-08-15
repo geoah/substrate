@@ -2,13 +2,7 @@
 go = "1.26.6"
 # Held to the Dockerfile's web stage by `lint:toolchain`: this is the node the
 # console is TESTED on, so it is the node the image builds it on.
-#
-# Not 26 yet. Node ships its own global `localStorage`, which on 26 throws
-# unless the process was given --localstorage-file; it shadows the one jsdom
-# installs, so dozens of the console's tests fail there before any of this
-# repo's code runs. Moving up means giving vitest a setup file that puts
-# jsdom's back, and that is its own change, not a base-image bump.
-node = "22.12.0"
+node = "26.2.0"
 pnpm = "9.14.2"
 golangci-lint = "2.12.2"
 # The YAML formatter. The vocabulary IS YAML — `kinds/` is the contract as

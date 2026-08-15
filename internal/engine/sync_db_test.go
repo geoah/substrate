@@ -161,7 +161,7 @@ func TestWriterKeyDeterminismAndRefinements(t *testing.T) {
 		Properties: map[string]any{
 			"title": "Piranesi", "asin": "B0123ABCDE", "isbn": "9781635575637",
 			"format": "audiobook", "mediaRef": "https://example.com/a.m4b",
-			"duration": "6h47m12s",
+			"duration": "PT6H47M12S",
 		},
 		Edges: toWork,
 	})

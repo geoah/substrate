@@ -57,7 +57,9 @@ data:
   # as llminteractions the owner answers, and the answer resumes the thread.
   # version 8: `substrateJudge`, the tool-less verdict agent a
   # recordpatchpolicy names — the policy layer's example.
-  version: 8
+  # version 9: the example providers quote their prices, following
+  # llmprovider's pricing fields from float to decimal.
+  version: 9
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata:
