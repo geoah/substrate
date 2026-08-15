@@ -146,3 +146,6 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0006](0006-voluntary-proposals-stay-self-acceptable.md) | Voluntary proposals stay self-acceptable; only gated requests refuse bundle decisions | accepted |
 | [0007](0007-the-audit-lives-on-the-records-it-concerns.md) | The audit lives on the records it concerns, not in an audit kind | accepted |
 | [0008](0008-keep-the-loop-do-not-adopt-adk-go.md) | Keep the agent loop; do not adopt ADK for Go | accepted |
+| [0009](0009-the-changelog-is-one-writers-total-order.md) | The changelog is one writer's total order per repository | accepted |
+| [0010](0010-reseal-may-rewrite-values-so-entries-are-never-content-addressed.md) | Reseal may rewrite history's values, so entries are never content-addressed | accepted |
+| [0011](0011-a-lifecycle-is-a-state-machine-only-where-the-substrate-owns-it.md) | A lifecycle is a state machine only where the substrate owns it | accepted |
