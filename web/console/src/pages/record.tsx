@@ -26,6 +26,7 @@ import { parseAsStringLiteral, useQueryState } from "nuqs"
 import { ActivityRail } from "@/components/record/activity"
 import { GraphRail } from "@/components/record/graph"
 import { PropertiesRail } from "@/components/record/properties"
+import { TargetingRequests } from "@/components/record/change-requests"
 import { ProvenanceRail } from "@/components/record/provenance"
 import { YamlView } from "@/components/record/yaml-view"
 import { StateBadge } from "@/components/state-badge"
@@ -169,6 +170,8 @@ export function RecordPage() {
           </Button>
         </div>
       </div>
+
+      <TargetingRequests kind={e.kind} id={e.id} />
 
       <Tabs
         value={tab}

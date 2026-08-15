@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "fmt": "prettier --write .",
     "fmt:check": "prettier --check .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b --force",
     "preview": "vite preview",
     "test": "vitest run"
   },

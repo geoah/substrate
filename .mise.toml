@@ -472,7 +472,20 @@ depends = ["console:install"]
 run = "pnpm test"
 
 [tasks."console:typecheck"]
-description = "tsc --noEmit"
+description = "tsc -b --force — the whole console, actually checked"
+# `-b --force`, and BOTH halves matter.
+#
+# tsconfig.json is solution-style: `"files": []` and two project references.
+# Against that, a plain `tsc --noEmit` compiles NOTHING — it reads the empty
+# file list, finds no work, and exits 0. This task passed on a tree with type
+# errors in it for exactly that reason, which is the worst thing a gate can do.
+# `-b` is what follows the references to tsconfig.app.json and
+# tsconfig.node.json.
+#
+# `--force` because `-b` is incremental and, with `noEmit` set on both
+# projects, its up-to-date check does not reliably notice a changed source: the
+# build was skipped and the same errors went unreported. A gate that answers
+# from a cache is the same no-op wearing a different hat.
 dir = "web/console"
 depends = ["console:install"]
 run = "pnpm typecheck"

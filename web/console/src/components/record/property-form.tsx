@@ -17,6 +17,7 @@
  * the same question asked while the answer is one field away. */
 
 import { useMemo, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { AlertTriangleIcon } from "lucide-react"
 
 import { PropertyField } from "@/components/record/property-field"
@@ -48,6 +49,15 @@ import {
   isDeclarationKind,
 } from "@/lib/declarations"
 import { checkValue, emptyContainer, systemSpecs } from "@/lib/record-schema"
+import {
+  MODEL_PROPERTY,
+  PROVIDER_PROPERTY,
+  pricedModels,
+} from "@/lib/model-suggestions"
+import { recordQueryOptions } from "@/lib/api/records"
+import { kindByIdentity } from "@/lib/definition"
+import { splitKind } from "@/lib/api/http"
+import { splitRecordPath } from "@/lib/record-path"
 import {
   canSetIn,
   deleteIn,
@@ -106,6 +116,30 @@ export function PropertyForm({
       checkValue(field.spec, properties?.[field.name])
     if (problem) errors[field.name] = problem
   }
+
+  // The models the CHOSEN provider prices, offered on the model field (#54.1).
+  // The provider is a sibling property on the same document, so the list
+  // follows the picker: change the provider and the suggestions change with
+  // it. Free text stays legal throughout — a datalist suggests, it does not
+  // constrain — so a model the provider does not price is still typeable, and
+  // an existing unlisted value is left exactly as it is.
+  const providerPath =
+    fields.some((f) => f.name === MODEL_PROPERTY) &&
+    typeof values[PROVIDER_PROPERTY] === "string"
+      ? splitRecordPath(values[PROVIDER_PROPERTY])
+      : undefined
+  const providerKind = providerPath
+    ? kindByIdentity(kinds, providerPath.kind)
+    : undefined
+  const providerRecord = useQuery({
+    ...recordQueryOptions(
+      providerKind ? splitKind(providerKind.identity).authority : "",
+      providerKind?.plural ?? "",
+      providerPath?.id ?? ""
+    ),
+    enabled: Boolean(providerKind && providerPath?.id),
+  })
+  const modelSuggestions = pricedModels(providerRecord.data)
 
   function emit(next: string) {
     setEmitted(next)
@@ -263,6 +297,9 @@ export function PropertyForm({
             error={errors[field.name]}
             kinds={kinds}
             self={record?.id}
+            suggestions={
+              field.name === MODEL_PROPERTY ? modelSuggestions : undefined
+            }
             derivedNote={
               derivesAuthority && field.name === AUTHORITY_PROPERTY
                 ? "Derived from the record id: the label in front of its slash."
