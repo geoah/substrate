@@ -28,7 +28,11 @@ import (
 )
 
 const (
-	gcInterval       = 5 * time.Minute
+	gcInterval = 5 * time.Minute
+	// resumeInterval is the resolution sweep's cadence: the recovery path for
+	// resumes a restart or a lost lease dropped, so a slow tick suffices —
+	// the common case is delivered by the resolving transaction itself.
+	resumeInterval   = 2 * time.Minute
 	embedInterval    = time.Minute
 	embedBatch       = 64
 	triggersInterval = 5 * time.Second
@@ -132,6 +136,7 @@ func run() error {
 	}
 	start(gcInterval, func(ctx context.Context) { sweepGC(ctx, svc) })
 	start(oauthInterval, func(ctx context.Context) { maintainOAuth(ctx, svc) })
+	start(resumeInterval, func(ctx context.Context) { sweepResolutions(ctx, svc) })
 	start(triggersInterval, func(ctx context.Context) { dispatchTriggers(ctx, svc) })
 	if embedder != nil {
 		start(embedInterval, func(ctx context.Context) { drainEmbeds(ctx, svc, embedder) })
@@ -238,6 +243,30 @@ func sweepGC(ctx context.Context, svc substrate.Service) {
 		}
 		if n > 0 {
 			slog.Info("gc sweep", "repository", ds.Repository().Name, "collected", n)
+		}
+	}
+}
+
+// resolutionSweeper is the engine's resume-recovery seam: settled threads
+// whose newest resolution row postdates their settlement get their dropped
+// continuation back (engine/agentdecision.go SweepResolutions).
+type resolutionSweeper interface {
+	SweepResolutions(ctx context.Context) (int, error)
+}
+
+func sweepResolutions(ctx context.Context, svc substrate.Service) {
+	for _, ds := range repositoryDatasets(ctx, svc) {
+		rs, ok := ds.(resolutionSweeper)
+		if !ok {
+			continue
+		}
+		n, err := rs.SweepResolutions(ctx)
+		if err != nil {
+			slog.Error("resolution sweep", "repository", ds.Repository().Name, "error", err)
+			continue
+		}
+		if n > 0 {
+			slog.Info("resolution sweep", "repository", ds.Repository().Name, "resumed", n)
 		}
 	}
 }

@@ -46,7 +46,9 @@ data:
   # became `function` in the same bump, since an entry admits nothing else.
   # version 10: the declaration's own `version` became an incremental
   # integer, maintained by the engine.
-  version: 10
+  # version 11: `resume` — whether a resolution on the agent's thread-borne
+  # records continues the thread (docs/plans/thread-interactions.md).
+  version: 11
   names:
     singular: agent
     plural: agents
@@ -205,3 +207,14 @@ data:
     subagentOnly:
       type: bool
       description: only callable by other agents; withheld from the chat surface
+    # A resolution on this agent's thread-borne records (a decided proposal,
+    # an answered interaction) writes the system row either way; `resume` says
+    # whether it also CONTINUES the thread. A resume is a paid agent turn, so
+    # the declaration owns the knob; absent means always (issue 69).
+    resume:
+      type: enum
+      values:
+        - always
+        - never
+      description: whether a resolution resumes this agent's thread; absent
+        means always

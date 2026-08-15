@@ -17,7 +17,10 @@ data:
   # already hold the row.
   # version 7: `thread` — the proposing thread, stamped by the agent loop's
   # propose built-in, which is where a decision reports back.
-  version: 7
+  # version 8: the decision transitions carry `notifies: thread` — the
+  # declared marker that replaced the engine's hardcoded write-back
+  # (docs/plans/thread-interactions.md), behavior identical.
+  version: 8
   names:
     singular: recordpatchrequest
     plural: recordpatchrequests
@@ -95,13 +98,18 @@ data:
         - rejected
       initial: proposed
       transitions:
+        # `notifies: thread` is the one resolution primitive: the transition
+        # writes the decision's `system` message into the thread the named
+        # reference points at, and the engine schedules the resume.
         - from: proposed
           to: accepted
           onEnter: applyDiff
+          notifies: thread
           stamps:
             decidedAt: now
         - from: proposed
           to: rejected
+          notifies: thread
           stamps:
             decidedAt: now
   edges:

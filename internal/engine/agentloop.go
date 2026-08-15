@@ -303,6 +303,10 @@ type agentLoop struct {
 
 	threadID string
 	turn     int // next message ordinal on the thread
+	// openedAt marks when this invocation loaded (or minted) its thread: a
+	// resolution row landing AFTER it was not in the replayed history, so the
+	// settle-time re-check knows what this run could not have consumed.
+	openedAt time.Time
 
 	// emit is the EFFECTIVE emit set: the agent's own, intersected with the
 	// inherited ceiling on sub-agent invocations. Every write gate in the
@@ -474,6 +478,11 @@ loop:
 	if err := l.settle(ctx, status, reason, reply); err != nil {
 		return nil, err
 	}
+	// The settle-time re-check: a resolution that landed MID-turn lost the
+	// lease to this very run, so its resume was dropped. The rows are right
+	// there — pick them up with a fresh continuation instead of waiting for
+	// the sweep (agentdecision.go).
+	l.recheckResolutions(ctx)
 	res := &substrate.AgentResult{
 		Reply: reply, Thread: l.threadID, Status: status, Reason: reason,
 		Turns: l.turns, ToolCalls: l.toolCalls,
@@ -552,6 +561,7 @@ func (l *agentLoop) toolEvent(kind string, tc llm.ToolCall, ok *bool, out string
 // whose row lands before the first completion. The system prompt is not a
 // message: it rides llm.Request.System, and each wire places it.
 func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
+	l.openedAt = nowUTC()
 	var messages []llm.Message
 	if l.in.threadID != "" {
 		// The lease FIRST: a second active turn is rejected before anything
@@ -601,6 +611,30 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 		messages = append(messages, llm.Message{Role: llm.RoleUser, Content: l.in.user})
 	}
 	return messages, nil
+}
+
+// recheckResolutions spawns a continuation when a system row landed after
+// this run opened its thread: the run's history could not have contained it,
+// and its resume lost the lease to this run. The continuation goes through
+// the same admission every resume does (budget, opt-out), so a settled
+// thread with nothing new stays settled.
+func (l *agentLoop) recheckResolutions(ctx context.Context) {
+	probe, err := json.Marshal(map[string]any{
+		msgRelThread: vocabulary.RecordPath(typeThread, l.threadID),
+		"role":       msgRoleSystem,
+	})
+	if err != nil {
+		return
+	}
+	var n int
+	if err := l.ds.db.QueryRowContext(ctx, `
+		SELECT count(*) FROM records
+		WHERE kind = $1 AND deleted_at IS NULL AND props @> $2::jsonb
+		  AND created_at > $3`,
+		typeMessage, string(probe), l.openedAt).Scan(&n); err != nil || n == 0 {
+		return
+	}
+	l.ds.resumeNotifiedThread(l.threadID, "")
 }
 
 // agentLeaseSlack pads the turn lease past the loop deadline, so only a

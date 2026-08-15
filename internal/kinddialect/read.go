@@ -137,6 +137,9 @@ type Transition struct {
 	From    string
 	To      string
 	OnEnter string
+	// Notifies names the llmthread-pinned reference property this transition
+	// reports into; empty for the ordinary transition.
+	Notifies string
 	// Stamps are the stamped property names in sorted order, each mapped to the
 	// declared stamp value ("now" is the only one defined).
 	Stamps []Stamp
@@ -533,7 +536,7 @@ var (
 		"required", "renamedFrom", "inverse", "inverseDescription", "keyed",
 		"keyPattern", "managed")
 	machineKeys    = keys("type", "states", "initial", "transitions", "description", "displayName")
-	transitionKeys = keys("from", "to", "stamps", "onEnter")
+	transitionKeys = keys("from", "to", "stamps", "onEnter", "notifies")
 	keyPatterns    = keys("camel", "kindRef")
 	writerRoles    = keys("oauth", "connector", "owner")
 )
@@ -719,7 +722,7 @@ func (r *reader) readMachine(where string, d *mapping) *Machine {
 			continue
 		}
 		r.checkKeys(fmt.Sprintf("%s.transitions[%d]", where, i), td, transitionKeys)
-		t := Transition{From: td.str("from"), To: td.str("to"), OnEnter: td.str("onEnter")}
+		t := Transition{From: td.str("from"), To: td.str("to"), OnEnter: td.str("onEnter"), Notifies: td.str("notifies")}
 		if stamps, _ := asMapping(td.at("stamps")); stamps != nil {
 			names := append([]string(nil), stamps.keys...)
 			sort.Strings(names)
