@@ -9,6 +9,7 @@
 import { ChevronRightIcon, WrenchIcon } from "lucide-react"
 
 import { ChangesList } from "@/components/agent/changes"
+import { InteractionCard } from "@/components/agent/interaction-card"
 import { ProposalCard } from "@/components/agent/proposal-card"
 import { CodeBlock } from "@/components/code-block"
 import {
@@ -17,7 +18,11 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { Spinner } from "@/components/ui/spinner"
-import { requestIdOf, type ToolCallView } from "@/lib/api/transcript"
+import {
+  interactionIdOf,
+  requestIdOf,
+  type ToolCallView,
+} from "@/lib/api/transcript"
 import { prettyJSON } from "@/lib/code"
 import { cn } from "@/lib/utils"
 
@@ -58,9 +63,14 @@ export function ToolCallCard({ call }: { call: ToolCallView }) {
   // NOT applied until somebody decides it, so the card carries the proposal
   // itself — live state, accept/reject and the way to the full review.
   const proposed = requestIdOf(call)
+  // An ask's interaction renders as the form card, the same live-state rule.
+  const asked = interactionIdOf(call)
   // The dispatch's other writes (a mutate's records, a function's effects):
-  // the request row already renders as the proposal card, so it is not a chip.
-  const changes = (call.changes ?? []).filter((c) => c.id !== proposed)
+  // the interaction and request rows already render as their cards, so they
+  // are not chips.
+  const changes = (call.changes ?? []).filter(
+    (c) => c.id !== proposed && c.id !== asked
+  )
   return (
     <Collapsible className="group/tool rounded-md border bg-muted/40">
       <CollapsibleTrigger
@@ -86,6 +96,7 @@ export function ToolCallCard({ call }: { call: ToolCallView }) {
         <ChevronRightIcon className="ml-auto size-3 shrink-0 text-muted-foreground transition-transform group-data-open/tool:rotate-90" />
       </CollapsibleTrigger>
       {proposed && <ProposalCard id={proposed} />}
+      {asked && <InteractionCard id={asked} />}
       {changes.length > 0 && (
         <div className="border-t px-2 py-1.5">
           <ChangesList changes={changes} />

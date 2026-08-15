@@ -85,6 +85,19 @@ func (t *txn) resolutionEnvelope(ty *vocabulary.Kind, rec *erow, note *resolutio
 	if ty.Identity == vocabulary.KindRecordPatchRequest && note.machine == propDecision {
 		return t.proposalDecisionEnvelope(rec, note.state)
 	}
+	if ty.Identity == vocabulary.KindLLMInteraction && note.machine == propInteractionState {
+		env := map[string]any{
+			"event":       "interactionDismissed",
+			"interaction": vocabulary.RecordPath(ty.Identity, rec.ID),
+		}
+		if note.state == interactionAnswered {
+			// The answers ride the envelope verbatim, so the model reads them
+			// without a second query.
+			env["event"] = "interactionAnswered"
+			env["answers"] = rec.Props["answers"]
+		}
+		return env, nil
+	}
 	return map[string]any{
 		"event":   "recordResolved",
 		"record":  vocabulary.RecordPath(ty.Identity, rec.ID),

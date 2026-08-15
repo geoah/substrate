@@ -180,7 +180,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	fake := newFakeLLM(t)
-	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm", "stoicllm", "selfllm"} {
+	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm", "stoicllm", "selfllm", "askllm", "medllm"} {
 		model := strings.TrimSuffix(id, "llm")
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: typeProvider, ID: id,
@@ -262,6 +262,22 @@ def main(input, host):
 			"tools":  []any{map[string]any{"function": vocabulary.HostFunctionPropose}},
 			"permissions": map[string]any{
 				"writes": []any{vocabulary.KindRecordPatchRequest},
+			},
+		}),
+		// poller asks the user: the soft interaction's fixture.
+		agent("poller", map[string]any{
+			"provider": "askllm", "model": "askm",
+			"tools": []any{map[string]any{"function": vocabulary.HostFunctionAsk}},
+			"permissions": map[string]any{
+				"writes": []any{vocabulary.KindLLMInteraction},
+			},
+		}),
+		// meddler holds mutate over interactions: the owner-only rule's foil.
+		agent("meddler", map[string]any{
+			"provider": "medllm", "model": "med",
+			"tools": []any{map[string]any{"function": vocabulary.HostFunctionMutate}},
+			"permissions": map[string]any{
+				"writes": []any{vocabulary.KindLLMInteraction},
 			},
 		}),
 		// selfjudge can both propose and decide: the self-exclusion pair — a

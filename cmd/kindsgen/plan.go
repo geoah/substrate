@@ -140,6 +140,7 @@ var goNames = map[string]string{
 	"credential":         "Credential",
 	"function":           "Function",
 	"kind":               "Kind",
+	"llminteraction":     "LLMInteraction",
 	"llmmessage":         "LLMMessage",
 	"llmprovider":        "LLMProvider",
 	"llmthread":          "LLMThread",

@@ -774,6 +774,112 @@ export interface KindEdges {
   inverseDescription?: string
 }
 
+/** LLMInteraction is core.substrate.reamde.dev/llminteraction.
+ *
+ * One batch of questions an agent asked the user, waiting in the thread it
+ * came from: answering (or dismissing) it is one reviewed transition, which
+ * reports back into the thread and resumes the agent.
+ */
+export interface LLMInteraction {
+  /** The thread whose ask call created this interaction. Points at
+   * core.substrate.reamde.dev/llmthread.
+   */
+  thread?: ReferencePath
+  /** The batch, fixed at creation; at most 8 questions. */
+  questions?: LLMInteractionQuestions[]
+  /** The user's selections, written by the answering transition. */
+  answers?: LLMInteractionAnswers[]
+  /** Pending until the user answers or dismisses; either way the thread hears
+   * it. A state moves by transition, never by assignment.
+   */
+  state?: LLMInteractionState
+  /** Stamped by a transition, not written by hand: render it read-only. */
+  resolvedAt?: string
+}
+
+/** The properties LLMInteraction's declaration marks required. A form refuses
+ * to submit without them; the server does not, so nothing here is a guarantee
+ * about a record that arrives.
+ */
+export const llmInteractionRequired: string[] = ["thread"]
+
+/** LLMInteractionState is the state of the `state` machine.
+ *
+ * A state is not a stored property value: it lives in the record's own state
+ * column and moves by transition. The declared moves are below; nothing else
+ * gates one, since a transition carries no guard.
+ *
+ * pending until the user answers or dismisses; either way the thread hears it
+ */
+export type LLMInteractionState = "pending" | "answered" | "dismissed"
+
+export const llmInteractionStateValues: LLMInteractionState[] = [
+  "pending",
+  "answered",
+  "dismissed",
+]
+
+/** The state a creation is born into. */
+export const llmInteractionStateInitial: LLMInteractionState = "pending"
+
+export const llmInteractionStateTransitions: StateTransition<LLMInteractionState>[] =
+  [
+    {
+      from: "pending",
+      to: "answered",
+      stamps: { resolvedAt: "now" },
+      notifies: "thread",
+    },
+    {
+      from: "pending",
+      to: "dismissed",
+      stamps: { resolvedAt: "now" },
+      notifies: "thread",
+    },
+  ]
+
+/** LLMInteractionQuestions is one value of the `questions` object declared on
+ * core.substrate.reamde.dev/llminteraction.
+ *
+ * the batch, fixed at creation; at most 8 questions
+ */
+export interface LLMInteractionQuestions {
+  /** The agent's key for the question, echoed by its answer. */
+  id?: string
+  /** The question itself, rendered as untrusted content. */
+  prompt?: string
+  /** The offered answers; at most 32, values unique. */
+  options?: LLMInteractionQuestionsOptions[]
+  /** Many-of-many; absent means exactly one. */
+  multi?: boolean
+}
+
+/** LLMInteractionQuestionsOptions is one value of the `questions.options`
+ * object declared on core.substrate.reamde.dev/llminteraction.
+ *
+ * the offered answers; at most 32, values unique
+ */
+export interface LLMInteractionQuestionsOptions {
+  /** What an answer selects. */
+  value?: string
+  /** What the user reads; the value renders otherwise. */
+  label?: string
+  /** What picking it means. */
+  description?: string
+}
+
+/** LLMInteractionAnswers is one value of the `answers` object declared on
+ * core.substrate.reamde.dev/llminteraction.
+ *
+ * the user's selections, written by the answering transition
+ */
+export interface LLMInteractionAnswers {
+  /** The question id this answers. */
+  question?: string
+  /** The chosen option values. */
+  selected?: string[]
+}
+
 /** LLMMessage is core.substrate.reamde.dev/llmmessage.
  *
  * One turn of an agent thread — the transcript and the tool-call audit,

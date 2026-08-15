@@ -56,7 +56,10 @@ data:
   # version 6: every declaration's `version` became an incremental integer,
   # maintained by the engine; the kind, authority, actor and bundle meta-kinds
   # retype it, and this bump carries them.
-  version: 6
+  # version 7: the decision loop's asks — the llminteraction kind and the
+  # `ask` host function (docs/plans/thread-interactions.md phase 2); this
+  # bump is what carries the NEW declarations into repositories already open.
+  version: 7
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands
