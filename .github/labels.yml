@@ -6,7 +6,7 @@
 # Three prefixes and no more: type/ is what it is (the issue forms assign
 # these, and dependabot assigns type/dependencies), area/ is where it lands
 # (labeler.yml assigns these on a pull request, from the paths it touches),
-# priority/ is when. GitHub's built-in close reasons carry
+# priority/ is when (p0/p1/p2). GitHub's built-in close reasons carry
 # duplicate/invalid/wontfix.
 
 # ---- type: assigned by the issue forms ------------------------------------
@@ -49,13 +49,13 @@
   description: the build, the toolchain, the workflows
 
 # ---- priority: when --------------------------------------------------------
-- name: priority/urgent
+- name: priority/p0
   color: fca5a5
   description: drop other work; this blocks people now
-- name: priority/soon
+- name: priority/p1
   color: fed7aa
   description: the next batch of work
-- name: priority/backlog
+- name: priority/p2
   color: fef08a
   description: real, and it can wait
 
