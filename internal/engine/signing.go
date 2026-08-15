@@ -291,10 +291,15 @@ func (s *service) ensureActivationEpoch(ctx context.Context, ds *dataset) error 
 		if err != nil {
 			return err
 		}
+		activateRows := 0
 		valid := false
 		publicHex := hex.EncodeToString(st.public)
 		for _, ep := range epochs {
-			if ep.Reason == epochActivate && ep.Signed && ep.SigOK != nil && *ep.SigOK &&
+			if ep.Reason != epochActivate {
+				continue
+			}
+			activateRows++
+			if ep.Signed && ep.SigOK != nil && *ep.SigOK &&
 				ep.PublicKey == publicHex &&
 				ep.FromSeq == st.signedFrom && ep.SignedFrom == st.signedFrom {
 				valid = true
@@ -303,13 +308,32 @@ func (s *service) ensureActivationEpoch(ctx context.Context, ds *dataset) error 
 		if valid {
 			return nil
 		}
-		_, headHash, err := t.chainHead()
-		if err != nil {
-			return err
+		// The crash window this repairs has NO activation epoch at all. An
+		// activate row that exists but disagrees with the durable mark is not
+		// a crash, it is what a moved mark or a planted row looks like —
+		// recording a fresh signed epoch here would notarize it (adversarial
+		// review, third pass). Leave it for verify to name.
+		if activateRows > 0 {
+			s.log.Error("substrate: an activation epoch exists but does not match the durable mark — NOT repairing; run `repository verify`",
+				"repository", ds.scope.Repository, "signedFromSeq", st.signedFrom)
+			return nil
+		}
+		// The late epoch signs the BOUNDARY — the hash at signed_from_seq - 1,
+		// the same head a timely activation signed — never the current head:
+		// signing whatever the database holds now would launder a rewrite of
+		// the placeholder prefix into a fresh attestation.
+		var boundary []byte
+		if st.signedFrom > 1 {
+			if err := t.row(`SELECT hash FROM changelog WHERE seq = $1`, st.signedFrom-1).Scan(&boundary); err != nil {
+				return fmt.Errorf("substrate/engine: late activation epoch: read the boundary hash at seq %d: %w", st.signedFrom-1, err)
+			}
+			if len(boundary) != 32 {
+				return fmt.Errorf("substrate/engine: late activation epoch: seq %d carries no hash; refusing to attest an unhashed boundary", st.signedFrom-1)
+			}
 		}
 		ep := chainEpoch{
 			At: t.now, Reason: epochActivate, FromSeq: st.signedFrom,
-			OldHead: headHash, NewHead: headHash,
+			OldHead: boundary, NewHead: boundary,
 			PublicKey: []byte(st.public), SignedFrom: st.signedFrom,
 		}
 		s.log.Warn("substrate: recording a LATE activation epoch — a crash interrupted the original activation between its mark and its attestation",

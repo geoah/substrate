@@ -111,4 +111,10 @@ ALTER TABLE repositories
         CHECK (signing_public IS NULL OR octet_length(signing_public) = 32),
     ADD CONSTRAINT repositories_signing_whole
         CHECK ((signing_key IS NULL) = (signing_public IS NULL)
-           AND (signing_key IS NULL) = (signed_from_seq IS NULL));
+           AND (signing_key IS NULL) = (signed_from_seq IS NULL)),
+    -- Zero and negative are the two spellings loadSigningState would read as
+    -- "inactive": a mark that exists must cover something. (A mark moved
+    -- beyond the head is verify's to name — a table CHECK cannot see the
+    -- changelog.)
+    ADD CONSTRAINT repositories_signed_from_positive
+        CHECK (signed_from_seq IS NULL OR signed_from_seq >= 1);

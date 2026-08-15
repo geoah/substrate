@@ -148,12 +148,17 @@ func (s *service) VerifyRepositoryPinned(ctx context.Context, username string, p
 	if signing.signedFrom > 0 && len(signing.public) == 0 {
 		found("signing is active but the repository stores no public key")
 	}
+	// A mark beyond the head+1 covers nothing and can only have been written
+	// around the engine: every sanctioned activation is head+1 at its moment.
+	if signing.signedFrom > res.head+1 {
+		found(fmt.Sprintf("the activation mark (seq %d) is beyond the head (%d) — signing has been deferred by hand", signing.signedFrom, res.head))
+	}
 	epochs, err := loadEpochs(ctx, tx, repo.ID, signing.public)
 	if err != nil {
 		return report, err
 	}
 	report.Epochs = epochs
-	verifyEpochs(epochs, signing, found)
+	verifyEpochs(epochs, signing, res.boundaryHash, found)
 
 	// The pins: the caller's out-of-band knowledge, enforced.
 	if pins.PublicKey != "" && pins.PublicKey != report.PublicKey {
@@ -207,6 +212,9 @@ type chainWalkResult struct {
 	// placeholderSigs counts entries below signed_from_seq carrying the
 	// all-zero placeholder: history from before signing, permanent (#175).
 	placeholderSigs int64
+	// boundaryHash is the stored hash at signed_from_seq - 1 — what the
+	// activation epoch's heads must equal; empty when signed_from_seq <= 1.
+	boundaryHash string
 	// pinnedSeq/pinnedHash carry the one extra hash a caller asked about.
 	pinnedSeq  int64
 	pinnedHash string
@@ -274,6 +282,13 @@ func verifyChainCorePinned(ctx context.Context, db dbx, repository string, signe
 			if pinSeq > 0 && row.entry.Seq == pinSeq {
 				res.pinnedHash = hex.EncodeToString(row.hash)
 			}
+			// The activation boundary: the hash the signed activation epoch
+			// recorded as its head, held against the chain below (adversarial
+			// review, third pass: without this, placeholder history rewrites
+			// under an intact epoch).
+			if signedFrom > 1 && row.entry.Seq == signedFrom-1 {
+				res.boundaryHash = hex.EncodeToString(row.hash)
+			}
 
 			mustSign := signedFrom > 0 && row.entry.Seq >= signedFrom
 			switch {
@@ -308,10 +323,21 @@ func verifyChainCorePinned(ctx context.Context, db dbx, repository string, signe
 // detectable only through a pinned head or receipt: epochs are statements,
 // and the signed activation epoch plus the pins are what make the
 // statements checkable.
-func verifyEpochs(epochs []EpochInfo, signing signingState, found func(string)) {
+func verifyEpochs(epochs []EpochInfo, signing signingState, boundaryHash string, found func(string)) {
 	publicHex := ""
 	if len(signing.public) > 0 {
 		publicHex = hex.EncodeToString(signing.public)
+	}
+	// A reseal that rewrites below the activation boundary legitimately moves
+	// the hash the activation epoch signed. Only a SIGNED reseal epoch
+	// excuses the mismatch: minting one takes the repository's key, which is
+	// exactly the line between a reseal and a forgery.
+	resealedBelowBoundary := false
+	for _, ep := range epochs {
+		if ep.Reason == epochReseal && ep.Signed && ep.SigOK != nil && *ep.SigOK &&
+			signing.signedFrom > 1 && ep.FromSeq <= signing.signedFrom-1 {
+			resealedBelowBoundary = true
+		}
 	}
 	activatedAt := -1
 	for i, ep := range epochs {
@@ -328,6 +354,12 @@ func verifyEpochs(epochs []EpochInfo, signing signingState, found func(string)) 
 			found(fmt.Sprintf("epoch (activate, from seq %d): names a different public key than the repository holds", ep.FromSeq))
 		case ep.SignedFrom != signing.signedFrom || ep.FromSeq != signing.signedFrom:
 			found(fmt.Sprintf("epoch (activate, from seq %d, signed from %d): disagrees with the repository's activation mark (%d)", ep.FromSeq, ep.SignedFrom, signing.signedFrom))
+		case (ep.NewHead != boundaryHash || ep.OldHead != boundaryHash) && !resealedBelowBoundary:
+			// The one anchor the signature reaches BELOW the activation seq:
+			// the epoch signed the head it activated over, so a placeholder
+			// prefix rewritten and re-chained under an intact epoch stops
+			// matching here (adversarial review, third pass).
+			found(fmt.Sprintf("epoch (activate, from seq %d): its signed head does not match the chain at seq %d — placeholder history has been rewritten", ep.FromSeq, ep.FromSeq-1))
 		default:
 			if activatedAt < 0 {
 				activatedAt = i
