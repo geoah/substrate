@@ -235,7 +235,7 @@ func TestRoundTripPopulated(t *testing.T) {
 		},
 		Defaults: &corekinds.LLMProviderDefaults{Temperature: f64(0.2), MaxTokens: i64(2048)},
 		Pricing: []corekinds.LLMProviderPricing{
-			{Model: str("gpt-5"), InputPer1M: f64(1.25), OutputPer1M: f64(10)},
+			{Model: str("gpt-5"), InputPer1M: str("1.25"), OutputPer1M: str("10")},
 		},
 	}, corekinds.DecodeLLMProvider)
 

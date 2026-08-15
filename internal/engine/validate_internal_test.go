@@ -103,22 +103,25 @@ func TestCoerceDecimalIsExact(t *testing.T) {
 	}
 }
 
-// The duration contract: two authored grammars, Go's and ISO 8601's (minus
-// years and months, which have no fixed length), ONE stored form, which is
-// Go-canonical, so readers see a single grammar whatever was written.
-func TestCoerceDurationTakesBothGrammars(t *testing.T) {
+// The duration contract: ISO 8601 is the ONE grammar, in and out. Years and
+// months are refused (no fixed length), Go's own syntax is refused (a second
+// grammar for the same word), and the stored form is a deterministic ISO
+// decomposition, so every value has exactly one spelling.
+func TestCoerceDurationIsISO8601Only(t *testing.T) {
 	p := &vocabulary.Property{Name: "for", Datatype: vocabulary.DatatypeDuration}
 	for in, want := range map[string]string{
-		"47m12s":   "47m12s",
-		"90m":      "1h30m0s",
-		"PT47M12S": "47m12s",
-		"PT1M":     "1m0s", // a time-part M is minutes
-		"P1DT12H":  "36h0m0s",
-		"P2W":      "336h0m0s",
-		"P1W2DT3H": "219h0m0s",
-		"PT0.5H":   "30m0s",
-		"-PT30M":   "-30m0s",
-		"PT0S":     "0s",
+		"PT47M12S": "PT47M12S",
+		"PT1M":     "PT1M", // a time-part M is minutes
+		"PT90M":    "PT1H30M",
+		"PT36H":    "P1DT12H",
+		"P1DT12H":  "P1DT12H",
+		"P1D":      "P1D",
+		"P2W":      "P14D",
+		"P1W2DT3H": "P9DT3H",
+		"PT0.5H":   "PT30M",
+		"PT1.5S":   "PT1.5S",
+		"-PT30M":   "-PT30M",
+		"PT0S":     "PT0S",
 	} {
 		got, err := coerceScalar(p, in)
 		if err != nil {
@@ -131,10 +134,13 @@ func TestCoerceDurationTakesBothGrammars(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"P1Y", "no fixed length"},
 		{"P3M", "no fixed length"},
-		{"P", "expected a duration"},
-		{"PT", "expected a duration"},
-		{"3d", "expected a duration"}, // Go's grammar has no days; ISO spells them P3D
-		{"soon", "expected a duration"},
+		{"P", "expected an ISO 8601 duration"},
+		{"PT", "expected an ISO 8601 duration"},
+		// Go's grammar is the retired spelling, refused so "duration" keeps
+		// meaning one thing.
+		{"47m12s", "expected an ISO 8601 duration"},
+		{"3d", "expected an ISO 8601 duration"},
+		{"soon", "expected an ISO 8601 duration"},
 		{"P999999999999999999W", "overflows"},
 	} {
 		if _, err := coerceScalar(p, tc.in); err == nil || !strings.Contains(err.Error(), tc.want) {

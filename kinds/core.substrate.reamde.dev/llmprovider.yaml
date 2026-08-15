@@ -29,7 +29,11 @@ data:
   # repositories that already stored the version 2 declaration — and what makes
   # the upgrade guard speak up there, naming the rows that still hold the old
   # shape instead of leaving the kind quietly behind.
-  version: 3
+  # version 4: pricing moved from float to decimal, the exact string-carried
+  # number, taken now rather than after stored rows make the retype a
+  # migration. A repository whose provider rows still hold float prices keeps
+  # version 3, loudly, until the rows are rewritten.
+  version: 4
   names:
     singular: llmprovider
     plural: llmproviders
@@ -105,10 +109,10 @@ data:
           type: string
           description: the model id as sent to this provider
         inputPer1M:
-          type: float
+          type: decimal
           min: 0
-          description: USD per 1M input tokens
+          description: USD per 1M input tokens, exact digits as a string
         outputPer1M:
-          type: float
+          type: decimal
           min: 0
-          description: USD per 1M output tokens
+          description: USD per 1M output tokens, exact digits as a string

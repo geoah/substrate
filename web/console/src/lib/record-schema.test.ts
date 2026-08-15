@@ -168,7 +168,7 @@ describe("exampleFor", () => {
   it("shows a worked value per datatype, so a blank create is not a blank page", () => {
     expect(exampleFor(spec(wideKind, "seenAt"))).toBe("2026-01-31T09:00:00Z")
     expect(exampleFor(spec(wideKind, "baseURL"))).toBe("https://example.com")
-    expect(exampleFor(spec(wideKind, "every"))).toBe("47m12s")
+    expect(exampleFor(spec(wideKind, "every"))).toBe("PT47M12S")
     expect(exampleFor(spec(wideKind, "price"))).toBe("19.99")
     // An enum's example is one of its own admitted values, never invented.
     expect(exampleFor(spec(agentKind, "model"))).toBe("opus")
@@ -181,8 +181,7 @@ describe("checkValue", () => {
       checkValue(spec(wideKind, "seenAt"), "2026-01-31T09:00:00Z")
     ).toBeUndefined()
     expect(checkValue(spec(wideKind, "born"), "2026-01-31")).toBeUndefined()
-    expect(checkValue(spec(wideKind, "every"), "47m12s")).toBeUndefined()
-    // The second duration grammar: ISO 8601, minus years and months.
+    // ISO 8601 is the one duration grammar, minus years and months.
     expect(checkValue(spec(wideKind, "every"), "PT47M12S")).toBeUndefined()
     expect(checkValue(spec(wideKind, "every"), "P2DT3H")).toBeUndefined()
     expect(checkValue(spec(wideKind, "price"), "19.99")).toBeUndefined()
@@ -213,9 +212,11 @@ describe("checkValue", () => {
       /civil date/
     )
     expect(checkValue(spec(wideKind, "every"), "soon")).toMatch(/duration/)
-    // A bare P names no duration, and years have no fixed length.
+    // A bare P names no duration, years have no fixed length, and Go's own
+    // syntax is the retired spelling.
     expect(checkValue(spec(wideKind, "every"), "P")).toMatch(/duration/)
     expect(checkValue(spec(wideKind, "every"), "P1Y")).toMatch(/duration/)
+    expect(checkValue(spec(wideKind, "every"), "47m12s")).toMatch(/ISO 8601/)
     // A decimal is a string of digits: a JSON number rode float64 to get here.
     expect(checkValue(spec(wideKind, "price"), 19.99)).toMatch(/string/)
     expect(checkValue(spec(wideKind, "price"), "1.9e2")).toMatch(/decimal/)

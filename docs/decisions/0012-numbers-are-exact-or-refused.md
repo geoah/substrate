@@ -43,22 +43,31 @@ rather than rounds). 2^53 itself is out: 2^53+1 arrives AS 2^53, so a
 boundary value cannot prove it was not corrupted. A bigger count is a
 `decimal`.
 
-`duration` accepts two authored grammars, Go's (`47m12s`) and ISO 8601's
-(`PT47M12S`, `P2DT3H`, `P1W`), and stores ONE form, Go-canonical, the same
-shape `parseTime` already set (several accepted spellings, one stored one).
-ISO years and months are refused by name: neither has a fixed length, and a
-duration here is exact time (a day is exactly 24h, a week 168h).
+`duration` is ISO 8601, the ONE grammar in and out (per review on #161: Go's
+own `47m12s` syntax is refused, not accepted beside it, because two grammars
+for one word is how "duration" stops meaning anything). Accepted: weeks, days
+and a time part (`PT47M12S`, `P2DT3H`, `P1W`); stored: one deterministic
+decomposition into days and a time part (`PT36H` stores as `P1DT12H`, `P2W`
+as `P14D`). ISO years and months are refused by name: neither has a fixed
+length, and a duration here is exact time (a day is exactly 24h, a week
+168h).
 
 Commerce moved its two money properties to `decimal` in the same change
-(authority version 3). A repository already holding float rows keeps the
-version 2 declarations, loudly, until the rows are migrated: the boot upgrade
-refuses the retype rather than the repository.
+(authority version 3), and `llmprovider`'s pricing fields moved with them
+(kind version 4, per the same review: break it now rather than after rows
+accumulate). A repository already holding float rows keeps the old
+declarations, loudly, until the rows are migrated: the boot upgrade refuses
+the retype rather than the repository.
 
 ### Consequences
 
 - Good, because money and big counts can never be silently rounded, and the
   refusal messages say what to write instead.
-- Good, because a stored duration reads as one grammar whatever was authored.
+- Good, because a stored duration reads as one grammar and one spelling
+  whatever was authored.
+- Bad, because Go-syntax durations already stored anywhere (dev databases,
+  scripts) are refused on their next write: the retired spelling must be
+  rewritten by hand.
 - Bad, because a decimal is unreadable to arithmetic without parsing: GraphQL
   serves it as a String, function code must parse it, and `min`/`max` bounds
   (declared as floats) compare through big.Rat.
@@ -71,15 +80,16 @@ refuses the retype rather than the repository.
 ### Confirmation
 
 `TestCoerceIntIsASafeInteger`, `TestCoerceDecimalIsExact` and
-`TestCoerceDurationTakesBothGrammars` (internal/engine/validate_internal_test.go)
+`TestCoerceDurationIsISO8601Only` (internal/engine/validate_internal_test.go)
 hold the three contracts; `TestOrderAndFilterByADecimalPropertyCompareNumerically`
 (internal/engine/order_numeric_db_test.go) holds the `::numeric` comparison
 path against Postgres.
 
 ## More Information
 
-The host-LLM pricing on `llmprovider` (`inputPer1M`/`outputPer1M`) is still
-float: retyping core kinds would refuse the boot upgrade on every live
-deployment that configured a provider. Revisit when a migration verb exists
-(the vocabulary-migrations plan) or if provider pricing ever feeds arithmetic
-that must be exact.
+The `llmprovider` pricing retype means a live deployment whose provider rows
+hold float prices keeps the version 3 declaration until those rows are
+rewritten (quote the two numbers), and its cost stamps keep working meanwhile:
+the loop's price read takes the decimal string and tolerates a legacy float.
+The cost stamp itself stays float math on purpose; it is an estimate, not a
+ledger.

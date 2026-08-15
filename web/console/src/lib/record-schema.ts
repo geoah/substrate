@@ -358,7 +358,7 @@ export function exampleFor(spec: PropSpec): string | undefined {
     case "date":
       return "2026-01-31"
     case "duration":
-      return "47m12s"
+      return "PT47M12S"
     case "decimal":
       return "19.99"
     case "email":
@@ -418,10 +418,9 @@ export function seedValue(spec: PropSpec): unknown {
 const DATETIME =
   /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/
 const CIVIL_DATE = /^\d{4}-\d{2}-\d{2}$/
-/** Go's duration grammar (`time.ParseDuration`): `47m12s`, `1.5h`, `-3ms`. */
-const DURATION = /^[-+]?(\d+(\.\d*)?(ns|us|µs|μs|ms|s|m|h))+$/
-/** ISO 8601's duration, minus years and months (neither has a fixed length):
- * `PT47M12S`, `P2DT3H`, `P1W`. The server normalizes both grammars to Go's. */
+/** ISO 8601's duration, THE one grammar, minus years and months (neither has
+ * a fixed length): `PT47M12S`, `P2DT3H`, `P1W`. Go's own syntax (`47m12s`) is
+ * refused; the server stores a canonical ISO decomposition. */
 const ISO_DURATION =
   /^-?P(?=.)(\d+W)?(\d+D)?(T(?=.)(\d+(\.\d+)?H)?(\d+(\.\d+)?M)?(\d+(\.\d+)?S)?)?$/
 /** An exact decimal: an optional sign, digits, an optional fraction. A string,
@@ -565,8 +564,8 @@ export function checkItem(spec: PropSpec, value: unknown): string | undefined {
       }
       break
     case "duration":
-      if (!DURATION.test(s) && !ISO_DURATION.test(s)) {
-        return "expected a duration like 47m12s or PT47M12S"
+      if (!ISO_DURATION.test(s)) {
+        return "expected an ISO 8601 duration like PT47M12S"
       }
       break
     case "decimal": {

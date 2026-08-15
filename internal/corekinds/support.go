@@ -31,7 +31,7 @@
 //     container.
 //   - What it does NOT check: the SEMANTICS of the string family. An absolute
 //     URL, an RFC 5322 mailbox, an E.164 phone number, an IANA time zone, an
-//     RRULE, a civil date, a Go duration — engine coerceProps refuses each of
+//     RRULE, a civil date, an ISO 8601 duration — engine coerceProps refuses each of
 //     those on the way IN, and every stored value has already been through it.
 //     Repeating the checks here would be a second grammar to keep in step, and
 //     the one place they could differ is a row admitted by an older binary,

@@ -313,11 +313,11 @@ func coerceScalar(p *vocabulary.Property, v any) (any, error) {
 			return nil, fmt.Errorf("expected a civil date (2006-01-02)")
 		}
 	case vocabulary.DatatypeDuration:
-		d, err := parseDuration(s)
+		d, err := parseISODuration(s)
 		if err != nil {
 			return nil, err
 		}
-		s = d.String()
+		s = formatISODuration(d)
 	case vocabulary.DatatypeEmail:
 		if _, err := mail.ParseAddress(s); err != nil {
 			return nil, fmt.Errorf("expected an RFC 5322 mailbox")
@@ -544,28 +544,15 @@ var reISODuration = regexp.MustCompile(
 // time-part M is minutes and stays legal), so the refusal can say why.
 var reISOCalendar = regexp.MustCompile(`^-?P[^T]*\d+[YM]`)
 
-var errDurationGrammar = fmt.Errorf("expected a duration: 47m12s (Go syntax) or PT47M12S / P2DT3H (ISO 8601)")
+var errDurationGrammar = fmt.Errorf("expected an ISO 8601 duration (PT47M12S, P2DT3H, P1W)")
 
-// parseDuration reads either grammar a duration is authored in, Go's
-// ("47m12s") or ISO 8601's ("PT47M12S", "P2DT3H"), and the caller stores the
-// SAME canonical Go form for both, so readers see one grammar whatever the
-// author wrote. This is parseTime's shape: several accepted spellings, one
-// stored one.
-func parseDuration(s string) (time.Duration, error) {
-	if d, err := time.ParseDuration(s); err == nil {
-		return d, nil
-	}
-	if strings.HasPrefix(strings.TrimPrefix(s, "-"), "P") {
-		return parseISODuration(s)
-	}
-	return 0, errDurationGrammar
-}
-
-// parseISODuration reads the ISO form by translating it into Go's grammar and
-// letting time.ParseDuration do the arithmetic (its parser sums repeated
-// units, so weeks and days become hour terms). Years and months are refused
-// BY NAME: neither has a fixed length, and a duration here is exact time: a
-// day is exactly 24h and a week exactly 168h.
+// parseISODuration reads a duration. ISO 8601 is the ONE grammar, in and out:
+// Go's own syntax ("47m12s") is refused, because two grammars for one word is
+// how "duration" stops meaning anything. The parse translates into Go's
+// grammar internally and lets time.ParseDuration do the arithmetic (its
+// parser sums repeated units, so weeks and days become hour terms). Years and
+// months are refused BY NAME: neither has a fixed length, and a duration here
+// is exact time: a day is exactly 24h and a week exactly 168h.
 func parseISODuration(s string) (time.Duration, error) {
 	m := reISODuration.FindStringSubmatch(s)
 	if m == nil {
@@ -606,6 +593,45 @@ func parseISODuration(s string) (time.Duration, error) {
 		return 0, fmt.Errorf("the duration overflows what one can hold (about 292 years)")
 	}
 	return d, nil
+}
+
+// formatISODuration renders the ONE stored spelling of a duration: days (each
+// exactly 24h), then a time part, zero components omitted, "PT0S" for zero.
+// Deterministic decomposition is what makes it canonical: every value has
+// exactly one stored form, however it was authored ("PT36H" stores as
+// "P1DT12H", "P2W" as "P14D").
+func formatISODuration(d time.Duration) string {
+	var b strings.Builder
+	if d < 0 {
+		b.WriteString("-")
+		d = -d
+	}
+	b.WriteString("P")
+	days := d / (24 * time.Hour)
+	d -= days * 24 * time.Hour
+	if days > 0 {
+		fmt.Fprintf(&b, "%dD", days)
+	}
+	h := d / time.Hour
+	m := (d % time.Hour) / time.Minute
+	s := (d % time.Minute) / time.Second
+	ns := d % time.Second
+	if h > 0 || m > 0 || s > 0 || ns > 0 || days == 0 {
+		b.WriteString("T")
+		if h > 0 {
+			fmt.Fprintf(&b, "%dH", h)
+		}
+		if m > 0 {
+			fmt.Fprintf(&b, "%dM", m)
+		}
+		if ns > 0 {
+			frac := strings.TrimRight(fmt.Sprintf("%09d", ns), "0")
+			fmt.Fprintf(&b, "%d.%sS", s, frac)
+		} else if s > 0 || (h == 0 && m == 0 && days == 0) {
+			fmt.Fprintf(&b, "%dS", s)
+		}
+	}
+	return b.String()
 }
 
 func jsonRoundTrip(v any) (any, error) {

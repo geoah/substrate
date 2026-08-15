@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -179,8 +180,8 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 		if model == "" {
 			continue
 		}
-		in, _ := anyFloat(entry["inputPer1M"])
-		out, _ := anyFloat(entry["outputPer1M"])
+		in, _ := priceFloat(entry["inputPer1M"])
+		out, _ := priceFloat(entry["outputPer1M"])
 		pc.pricing[model] = modelPrice{inPer1M: in, outPer1M: out}
 	}
 
@@ -277,6 +278,19 @@ func anyFloat(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// priceFloat reads a stored price. The declaration is `decimal` (a string of
+// exact digits), and the cost STAMP this feeds is float math by design — an
+// estimate, not a ledger. A bare number is still read: a repository the
+// upgrade guard held at version 3 keeps float rows, and its costs should not
+// silently become zero.
+func priceFloat(v any) (float64, bool) {
+	if s, ok := v.(string); ok {
+		f, err := strconv.ParseFloat(s, 64)
+		return f, err == nil
+	}
+	return anyFloat(v)
 }
 
 // agentTool is one dispatchable tool: a sub-agent, or a function — and on a

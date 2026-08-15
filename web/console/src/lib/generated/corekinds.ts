@@ -1063,10 +1063,10 @@ export interface LLMProviderDefaults {
 export interface LLMProviderPricing {
   /** The model id as sent to this provider. */
   model?: string
-  /** USD per 1M input tokens. */
-  inputPer1M?: number
-  /** USD per 1M output tokens. */
-  outputPer1M?: number
+  /** USD per 1M input tokens, exact digits as a string. */
+  inputPer1M?: string
+  /** USD per 1M output tokens, exact digits as a string. */
+  outputPer1M?: string
 }
 
 /** LLMThread is core.substrate.reamde.dev/llmthread.
