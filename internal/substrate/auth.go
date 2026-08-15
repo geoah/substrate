@@ -20,7 +20,7 @@ func WithPrincipal(ctx context.Context, tokenID string) context.Context {
 }
 
 // PrincipalFrom returns the authenticated token id, empty when no token stands
-// behind the write: the boot upgrade, a background worker, and the
+// behind the write: the seed, the boot upgrade, a background worker, and the
 // unauthenticated doors (register, login) write without one.
 func PrincipalFrom(ctx context.Context) string {
 	id, _ := ctx.Value(principalKey{}).(string)

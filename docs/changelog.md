@@ -30,7 +30,8 @@ cannot be edited without breaking the chain, and it is not a secret: it is a
 token record's id, which the repository's own reader can already list. It has
 no field of its own on the wire; a write's recorded effects name it beside
 each property manager they set. A write no token stands behind — the seed, the
-boot upgrade, a sync worker — carries an empty principal. `op` is the mutation
+boot upgrade, a background worker, registration and login — carries an empty
+principal. `op` is the mutation
 that made the row (`put`, `patch`, `delete`,
 `link`, `unlink`, `merge`, `split`, plus the engine's own housekeeping), and
 `kind` plus `recordId` are the record's full identity. The readable half of

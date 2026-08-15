@@ -5,8 +5,9 @@
 -- these rows from the effects the entries carry.
 --
 -- Empty is the one spelling for "no principal on this row": no token stood
--- behind the write (the boot upgrade, a sync worker, registration), or the
--- row predates this column. The changelog keeps the two apart -- it is
+-- behind the write (the seed, the boot upgrade, a background worker,
+-- registration and login), or the row predates this column. The changelog
+-- keeps the two apart -- it is
 -- history and cannot be rewritten, so its pre-#102 entries keep the
 -- 'invalid' placeholder forever -- while a fold row is replaced wholesale by
 -- the next replay, and one "unknown" is enough for it. The DEFAULT exists

@@ -611,12 +611,11 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 // overwrites anything.
 
 // actorTier resolves an actor's manager tier from DATA, never from the
-// actor's spelling: the three human DOORS — api, console, substratectl
-// — are the owner tier; the engine's own actor is machine; every actor the
-// registry answers
-// for carries its declared tier — authority-declared connector/bundle actors
-// default machine, a registered function's or agent's own actor is
-// bundle.
+// actor's spelling: the three human DOORS — api, console, substratectl — are
+// the owner tier; the engine's own actor is machine; and every actor the
+// registry answers for carries its declared tier — authority-declared
+// connector/bundle actors default machine, a registered function's or agent's
+// own actor is bundle.
 //
 // An actor the registry does not answer for splits two ways. A RESERVED name
 // (the `substrate` namespace, `bundle:`, `connector:`, `function:`) is one of
@@ -628,7 +627,10 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 // a token has full access to its repository: that write stands exactly where
 // the token stands, the owner tier, whatever door name it chose. Nothing here
 // escalates — the same caller can send `api` — and the entry's principal
-// records which token it was.
+// records which token it was. The split is FORWARD-ONLY: a manager row an
+// undeclared reserved actor already holds at the owner tier keeps it, here
+// and through a rebuild, because the fold replays the tier the write
+// recorded, not the tier this function would resolve today.
 //
 // Direct writes read their tier off the transaction (txn.tier,
 // set once at inTx and set to bundle explicitly by function/agent

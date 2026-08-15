@@ -253,9 +253,12 @@ type txn struct {
 	// principal is the token id the door verified for the request this
 	// transaction serves (substrate.PrincipalFrom), stamped on every
 	// changelog entry it appends and every manager row it lands. Empty when
-	// no token stands behind the write — the boot upgrade, a background
-	// worker, registration and login — and never taken from the caller: the
-	// actor is asserted, the principal is resolved.
+	// no token stands behind the write — the seed, the boot upgrade, a
+	// background worker, registration and login — and never taken from the
+	// caller: the actor is asserted, the principal is resolved. A dispatch a
+	// request triggered inherits that request's principal, which is what it
+	// says: the token that CAUSED the write, never a credential the connector
+	// or function holds.
 	principal string
 	now       time.Time
 	maxSeq    int64
