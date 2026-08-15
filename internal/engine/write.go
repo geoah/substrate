@@ -80,7 +80,13 @@ func (e *diffConflict) Unwrap() error { return e.err }
 // the generic API, where no ceiling applies; a non-nil one is bundle dispatch,
 // and an EMPTY set inside it means the actor may emit nothing (the distinction
 // effEmitSet keeps).
-type effectCeiling struct{ emit []string }
+type effectCeiling struct {
+	emit []string
+	// changes, when set, collects the committed changelog entries of every
+	// transaction the ceiling stamps — the agent mutate tool's per-dispatch
+	// record of what it wrote, stamped onto the tool's llmmessage row.
+	changes *[]changeEntry
+}
 
 // stamp marks the transaction as bundle dispatch under this ceiling.
 func (c *effectCeiling) stamp(t *txn) {
@@ -88,6 +94,17 @@ func (c *effectCeiling) stamp(t *txn) {
 		return
 	}
 	t.setEffectEmit(c.emit)
+	t.changeSink = c.changes
+}
+
+// stampChanges attaches ONLY the change collector: the door for Link/Unlink,
+// which deliberately carry no emit ceiling (an edge write drives no state
+// machine) but whose entries a dispatch still records.
+func (c *effectCeiling) stampChanges(t *txn) {
+	if c == nil {
+		return
+	}
+	t.changeSink = c.changes
 }
 
 func (ds *dataset) Put(ctx context.Context, actor substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
@@ -540,6 +557,10 @@ func isTransitionOnly(in substrate.PatchInput, rest map[string]any, hot hotProps
 func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	create := sp.existing == nil
 	row := sp.existing
+	// Everything this write appends to the changelog from here on — its own
+	// entry AND the entries a decision's applyDiff nests — is what a decided
+	// change request reports back to its proposing thread.
+	entriesMark := len(t.entries)
 	// What the record was, before this write mutates the loaded row in place.
 	// The changelog entry carries the DELTA between this and what the write produces
 	// (fold.go), values and all, which is what makes the changelog replayable.
@@ -615,6 +636,9 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// State properties: creations are born in the declared initial state;
 	// transitions belong to patch.
 	var pendingDiff, pendingMerge bool
+	// decided is the verdict when this patch is a change request's decision
+	// transition — what the proposing thread is told below.
+	var decided string
 	if create {
 		for _, name := range sortedKeys(sp.ty.Machines) {
 			m := sp.ty.Machines[name]
@@ -662,6 +686,9 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 				pendingDiff = true
 			case onEnterApplyMerge:
 				pendingMerge = true
+			}
+			if sp.ty.Identity == vocabulary.KindRecordPatchRequest && name == propDecision {
+				decided = target
 			}
 		}
 	}
@@ -1032,6 +1059,16 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	}
 	if pendingMerge && sp.op == substrate.OpPatch {
 		if err := t.applyMergeRequest(row); err != nil {
+			return nil, err
+		}
+	}
+	// A decided change request reports back to the thread that proposed it: a
+	// `system` llmmessage carrying the verdict and the entries this decision
+	// wrote (the request's own patch, and the accept's apply), and — after
+	// commit — the thread resumes so the agent hears it. Ordered after
+	// applyEditDiff, so an accept that rolls back reports nothing.
+	if decided != "" && sp.op == substrate.OpPatch {
+		if err := t.recordProposalDecision(row, decided, t.entries[entriesMark:]); err != nil {
 			return nil, err
 		}
 	}
@@ -2318,7 +2355,15 @@ func (t *txn) softDelete(ref eref) (*substrate.Record, error) {
 }
 
 func (ds *dataset) Link(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef, props map[string]any) error {
+	return ds.linkBounded(ctx, actor, srcType, src, rel, to, props, nil)
+}
+
+// linkBounded is Link with an optional ceiling, of which only the change
+// collector applies: an edge write drives no state machine, so the emit set
+// stays out on purpose.
+func (ds *dataset) linkBounded(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef, props map[string]any, ceiling *effectCeiling) error {
 	return ds.inTx(ctx, actor, false, func(t *txn) error {
+		ceiling.stampChanges(t)
 		ty, err := t.ds.resolveType(srcType)
 		if err != nil {
 			return err
@@ -2408,7 +2453,14 @@ func (t *txn) link(rel string, src eref, to substrate.EdgeRef, props map[string]
 }
 
 func (ds *dataset) Unlink(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef) error {
+	return ds.unlinkBounded(ctx, actor, srcType, src, rel, to, nil)
+}
+
+// unlinkBounded is Unlink with an optional ceiling — the change collector
+// alone, exactly as linkBounded.
+func (ds *dataset) unlinkBounded(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef, ceiling *effectCeiling) error {
 	return ds.inTx(ctx, actor, false, func(t *txn) error {
+		ceiling.stampChanges(t)
 		ty, err := t.ds.resolveType(srcType)
 		if err != nil {
 			return err

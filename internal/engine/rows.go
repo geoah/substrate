@@ -251,6 +251,28 @@ func nonNilStrings(ss []string) []string {
 // gapless counter rather than a shared one with holes.
 const changelogLockKey = "changelog"
 
+// changeEntry is one appended changelog row's ADDRESS: the seq addresses the
+// delta, kind and id address the record it moved. It is what an llmmessage's
+// `changes` property stores per entry, so it carries no payload.
+type changeEntry struct {
+	seq  int64
+	op   substrate.Op
+	kind string
+	id   string
+}
+
+// changeProps renders entries as the llmmessage `changes` property stores
+// them (kinds/core.substrate.reamde.dev/llmmessage.yaml).
+func changeProps(entries []changeEntry) []any {
+	out := make([]any, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, map[string]any{
+			"seq": e.seq, "op": string(e.op), "kind": e.kind, "id": e.id,
+		})
+	}
+	return out
+}
+
 func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ string, payload map[string]any) error {
 	// The entry takes the effects the transaction folded since the previous
 	// one: the payload IS the delta, and a rebuild replays it (fold.go). A
@@ -291,6 +313,7 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 	if seq > t.maxSeq {
 		t.maxSeq = seq
 	}
+	t.entries = append(t.entries, changeEntry{seq: seq, op: op, kind: typ, id: recordID})
 	return nil
 }
 

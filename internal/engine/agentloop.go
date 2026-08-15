@@ -313,6 +313,13 @@ type agentLoop struct {
 	defs   []llm.Tool
 	byName map[string]agentTool
 
+	// dispatchChanges collects the changelog entries the CURRENT tool dispatch
+	// committed (a mutate's writes, a propose's request row, a function tool's
+	// applied effects) — reset per call, stamped onto the tool's llmmessage row
+	// as `changes`. Sub-agent dispatches deliberately collect nothing here:
+	// the child's own rows carry the child's writes.
+	dispatchChanges []changeEntry
+
 	// own counters (the thread row's); the tally aggregates across the chain
 	turns      int
 	toolCalls  int
@@ -420,6 +427,7 @@ loop:
 		for _, tc := range calls {
 			var out string
 			var ok bool
+			l.dispatchChanges = nil
 			if l.toolCalls >= l.ag.Budgets.MaxToolCalls {
 				// The v4 lesson: refuse with a synthetic result the model
 				// SEES, so it can land a final reply instead of a silent
@@ -438,9 +446,17 @@ loop:
 			// `ok` is stored, not inferred: a replayed transcript otherwise has
 			// to sniff the failure envelope out of the payload, and a
 			// successful result carrying an `error` key would counterfeit it.
-			if err := l.putMessage(ctx, l.actor, map[string]any{
+			toolProps := map[string]any{
 				"role": "tool", "content": out, "toolCallId": tc.ID, "tool": tc.Name, "ok": ok,
-			}); err != nil {
+			}
+			// The dispatch's committed writes, as changelog addresses: what a
+			// reader resolves instead of parsing the payload. Only committed
+			// entries land here (inTx flushes the sink after commit), so a
+			// failed call stamps nothing.
+			if len(l.dispatchChanges) > 0 {
+				toolProps["changes"] = changeProps(l.dispatchChanges)
+			}
+			if err := l.putMessage(ctx, l.actor, toolProps); err != nil {
 				return nil, err
 			}
 			messages = append(messages, llm.Message{
@@ -572,14 +588,18 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 			return nil, err
 		}
 	}
-	userActor := l.in.userActor
-	if userActor == "" {
-		userActor = l.actor
+	// A decision resume continues with NO new user turn: the system row the
+	// decision wrote is already the thread's last message, replayed above.
+	if l.in.user != "" {
+		userActor := l.in.userActor
+		if userActor == "" {
+			userActor = l.actor
+		}
+		if err := l.putMessage(ctx, userActor, map[string]any{"role": "user", "content": l.in.user}); err != nil {
+			return nil, err
+		}
+		messages = append(messages, llm.Message{Role: llm.RoleUser, Content: l.in.user})
 	}
-	if err := l.putMessage(ctx, userActor, map[string]any{"role": "user", "content": l.in.user}); err != nil {
-		return nil, err
-	}
-	messages = append(messages, llm.Message{Role: llm.RoleUser, Content: l.in.user})
 	return messages, nil
 }
 
@@ -673,6 +693,14 @@ func (l *agentLoop) loadHistory(ctx context.Context) ([]llm.Message, int, error)
 		case "assistant":
 			if content != "" && props["toolCalls"] == nil {
 				out = append(out, llm.Message{Role: llm.RoleAssistant, Content: content})
+			}
+		case msgRoleSystem:
+			// The substrate's own turn (a proposal decision) replays as USER
+			// content: no wire admits a mid-thread system role on the messages
+			// array — the system slot is the agent's prompt — and the content
+			// is a self-describing JSON envelope either way.
+			if content != "" {
+				out = append(out, llm.Message{Role: llm.RoleUser, Content: content})
 			}
 		}
 	}
@@ -1095,8 +1123,13 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (s
 	if err != nil {
 		return toolError(err.Error()), false
 	}
+	// The proposing thread rides the request: it is where the decision
+	// reports back and what it resumes (agentdecision.go). Stamped HERE, by
+	// the loop — a human's or a function's request carries none.
+	props[msgRelThread] = l.threadID
 	err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
 		t.causedBy = l.in.causedBy
+		t.changeSink = &l.dispatchChanges
 		_, err := t.put(substrate.PutInput{
 			Kind: vocabulary.KindRecordPatchRequest, ID: id, Properties: props, Edges: edges,
 		})
@@ -1161,6 +1194,7 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 		err = l.ds.inTx(ctx, l.actor, false, func(t *txn) error {
 			t.causedBy = l.in.causedBy
 			t.setEffectEmit(l.emit)
+			t.changeSink = &l.dispatchChanges
 			if err := t.lockEffectTargets(effects); err != nil {
 				return err
 			}

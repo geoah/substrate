@@ -6,9 +6,10 @@
  * stream while the run is in flight and from the `llmmessage` rows afterwards,
  * so nothing disappears when the stream ends. */
 
-import { Link } from "@tanstack/react-router"
-import { ChevronRightIcon, FilePenLineIcon, WrenchIcon } from "lucide-react"
+import { ChevronRightIcon, WrenchIcon } from "lucide-react"
 
+import { ChangesList } from "@/components/agent/changes"
+import { ProposalCard } from "@/components/agent/proposal-card"
 import { CodeBlock } from "@/components/code-block"
 import {
   Collapsible,
@@ -16,7 +17,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { Spinner } from "@/components/ui/spinner"
-import { proposedRequestId, type ToolCallView } from "@/lib/api/transcript"
+import { requestIdOf, type ToolCallView } from "@/lib/api/transcript"
 import { prettyJSON } from "@/lib/code"
 import { cn } from "@/lib/utils"
 
@@ -54,8 +55,12 @@ export function ToolCallCard({ call }: { call: ToolCallView }) {
   const isRunning = running(call)
   const failed = call.ok === false
   // A propose lands a row in the review queue and nothing else: the change is
-  // NOT applied until somebody decides it, so the card carries the way there.
-  const proposed = proposedRequestId(call)
+  // NOT applied until somebody decides it, so the card carries the proposal
+  // itself — live state, accept/reject and the way to the full review.
+  const proposed = requestIdOf(call)
+  // The dispatch's other writes (a mutate's records, a function's effects):
+  // the request row already renders as the proposal card, so it is not a chip.
+  const changes = (call.changes ?? []).filter((c) => c.id !== proposed)
   return (
     <Collapsible className="group/tool rounded-md border bg-muted/40">
       <CollapsibleTrigger
@@ -80,16 +85,10 @@ export function ToolCallCard({ call }: { call: ToolCallView }) {
         )}
         <ChevronRightIcon className="ml-auto size-3 shrink-0 text-muted-foreground transition-transform group-data-open/tool:rotate-90" />
       </CollapsibleTrigger>
-      {proposed && (
+      {proposed && <ProposalCard id={proposed} />}
+      {changes.length > 0 && (
         <div className="border-t px-2 py-1.5">
-          <Link
-            to="/change-requests/$id"
-            params={{ id: proposed }}
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-4 hover:underline"
-          >
-            <FilePenLineIcon className="size-3 shrink-0" />
-            Review the proposed change
-          </Link>
+          <ChangesList changes={changes} />
         </div>
       )}
       <CollapsibleContent>
