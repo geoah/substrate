@@ -504,7 +504,12 @@ func (t *txn) moveManagers(loserRef, winnerRef eref) ([]map[string]any, error) {
 			winnerRef.Kind, winnerRef.ID, m.property, m.actor, m.tier, m.principal, m.updatedAt); err != nil {
 			return nil, err
 		}
-		out = append(out, map[string]any{"property": m.property, "actor": m.actor, "tier": m.tier})
+		// The principal travels with the actor and the tier: a later write by
+		// another token moves the row without moving either of those, and the
+		// split must be able to tell that row from the one it migrated.
+		out = append(out, map[string]any{
+			"property": m.property, "actor": m.actor, "tier": m.tier, "principal": m.principal,
+		})
 	}
 	return out, nil
 }
@@ -713,8 +718,10 @@ func (t *txn) split(mergeID string) (*substrate.Record, error) {
 		}
 	}
 	// The manager rows the merge migrated go back too — only where they
-	// still name the migrated actor AND tier, because a row the owner has
-	// since claimed records a write the split must not erase.
+	// still name the migrated actor, tier AND principal, because a row
+	// somebody has since claimed records a write the split must not erase.
+	// A merge record written before the principal was recorded carries no
+	// such key, and matches on the pair it does carry.
 	for _, m := range mapsOf(moved["managers"]) {
 		property, _ := m["property"].(string)
 		actor, _ := m["actor"].(string)
@@ -722,10 +729,15 @@ func (t *txn) split(mergeID string) (*substrate.Record, error) {
 		if property == "" || actor == "" || tier == "" {
 			continue
 		}
+		var principal sql.NullString
+		if p, ok := m["principal"].(string); ok {
+			principal = sql.NullString{String: p, Valid: true}
+		}
 		if _, err := t.exec(`
 			DELETE FROM property_managers
-			WHERE record_kind = $1 AND record_id = $2 AND property = $3 AND actor = $4 AND tier = $5`,
-			winnerRef.Kind, winnerID, property, actor, tier); err != nil {
+			WHERE record_kind = $1 AND record_id = $2 AND property = $3 AND actor = $4 AND tier = $5
+			  AND ($6::text IS NULL OR principal = $6)`,
+			winnerRef.Kind, winnerID, property, actor, tier, principal); err != nil {
 			return nil, err
 		}
 	}

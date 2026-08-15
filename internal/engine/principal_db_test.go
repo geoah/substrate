@@ -122,6 +122,55 @@ func TestPrincipalIsEmptyWhereNoTokenWrote(t *testing.T) {
 	}
 }
 
+// A split puts back exactly what its merge moved. A manager row another token
+// has written since names the same actor and tier and a DIFFERENT principal,
+// and that row records a write the split must not erase.
+func TestSplitKeepsAManagerRowAnotherTokenWroteSince(t *testing.T) {
+	t.Parallel()
+	_, ds, dsn := newChainDataset(t)
+	first := substrate.WithPrincipal(context.Background(), "tok_first")
+
+	winner, err := ds.Put(first, owner, substrate.PutInput{
+		Kind: principalTask, Properties: map[string]any{"title": "Winner"},
+	})
+	if err != nil {
+		t.Fatalf("put winner: %v", err)
+	}
+	loser, err := ds.Put(substrate.WithPrincipal(context.Background(), "tok_second"), owner, substrate.PutInput{
+		Kind: principalTask, Properties: map[string]any{"title": "Loser", "url": "https://example.com/1"},
+	})
+	if err != nil {
+		t.Fatalf("put loser: %v", err)
+	}
+	merge, err := ds.Merge(first, owner, principalTask, winner.ID, loser.ID)
+	if err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+
+	// A third token rewrites the migrated property under the same actor: the
+	// manager row now stands on tok_third.
+	third := substrate.WithPrincipal(context.Background(), "tok_third")
+	if _, err := ds.Patch(third, owner, principalTask, winner.ID, substrate.PatchInput{
+		Properties: map[string]any{"url": "https://example.com/2"},
+	}); err != nil {
+		t.Fatalf("patch url: %v", err)
+	}
+
+	if _, err := ds.Split(first, owner, merge.ID); err != nil {
+		t.Fatalf("split: %v", err)
+	}
+	var principal string
+	err = rawDB(t, dsn).QueryRow(`
+		SELECT principal FROM property_managers
+		WHERE record_kind = $1 AND record_id = $2 AND property = 'url'`, winner.Kind, winner.ID).Scan(&principal)
+	if err != nil {
+		t.Fatalf("the split erased a manager row tok_third wrote after the merge: %v", err)
+	}
+	if principal != "tok_third" {
+		t.Fatalf("the url manager names %q, want tok_third", principal)
+	}
+}
+
 // The manager ledger is a fold of the changelog, principal included: replaying
 // the history has to put the same token back on every row, through the
 // per-property effect and through the merge's resync snapshot alike.
