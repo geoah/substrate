@@ -30,9 +30,12 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-substrate}?sslmode=disable
       # The one door into a fresh substrate. Registering with this code creates
-      # the user and their repository; UNSET closes registration, which is the
-      # right state once the box has its user.
-      SUBSTRATE_INVITE_CODE: ${SUBSTRATE_INVITE_CODE:-let-me-in}
+      # the user and their repository. The dash (not :-) is deliberate: unset
+      # keeps the laptop default, but set-and-EMPTY passes through as empty,
+      # which closes registration — the right state once the box has its user.
+      # With :- an operator could never close the door from the environment,
+      # because empty would fall back to the known default.
+      SUBSTRATE_INVITE_CODE: ${SUBSTRATE_INVITE_CODE-let-me-in}
       # Seals stored provider tokens at rest. Unset means plaintext and a
       # warning at boot — fine on a laptop, never on a real deployment.
       SUBSTRATE_CREDENTIAL_KEY: ${SUBSTRATE_CREDENTIAL_KEY:-}
