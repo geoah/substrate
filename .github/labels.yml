@@ -3,10 +3,11 @@
 # and anything not named here is deleted, so an edit in the UI is drift the
 # next run reverts.
 #
-# Three prefixes and no more: type/ is what it is (the issue forms assign
-# these, and dependabot assigns type/dependencies), area/ is where it lands
-# (labeler.yml assigns these on a pull request, from the paths it touches),
-# priority/ is when (p0/p1/p2). GitHub's built-in close reasons carry
+# Every label is prefixed, and there are four prefixes: type/ is what it is
+# (the issue forms assign these, and dependabot assigns type/dependencies),
+# area/ is where it lands (labeler.yml assigns these on a pull request, from
+# the paths it touches), priority/ is when (p0/p1/p2), system/ is who filed it
+# rather than anything about the work. GitHub's built-in close reasons carry
 # duplicate/invalid/wontfix.
 
 # ---- type: assigned by the issue forms ------------------------------------
@@ -59,10 +60,7 @@
   color: fef08a
   description: real, and it can wait
 
-# ---- contributor signals: GitHub keys on these exact names -----------------
-- name: good first issue
-  color: 7057ff
-  description: Good for newcomers
-- name: help wanted
-  color: "008672"
-  description: Extra attention is needed
+# ---- system: who filed it, not what it is ----------------------------------
+- name: system/agent
+  color: c7d2fe
+  description: filed by the agent as a plan follow-up
