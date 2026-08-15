@@ -136,6 +136,7 @@ bin/substratectl watch                       # resumable change stream
 
 # the operator's hat — a DSN, no HTTP
 bin/substratectl --dsn "$DATABASE_URL" repository list
+bin/substratectl --dsn "$DATABASE_URL" repository verify <username>  # walk the changelog chain: every hash, every signature
 bin/substratectl --dsn "$DATABASE_URL" repository rebuild <username>
 bin/substratectl --dsn "$DATABASE_URL" repository reseal <username>  # migrate legacy secrets into the sealed store; needs SUBSTRATE_CREDENTIAL_KEY
 bin/substratectl --dsn "$DATABASE_URL" user reset <username>   # needs SUBSTRATE_CREDENTIAL_KEY
