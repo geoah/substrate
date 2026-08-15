@@ -18,7 +18,8 @@ const graphqlPath = "/api/v1/graphql"
 type gqlResponse struct {
 	Data   map[string]any `json:"data"`
 	Errors []struct {
-		Message string `json:"message"`
+		Message    string         `json:"message"`
+		Extensions map[string]any `json:"extensions"`
 	} `json:"errors"`
 }
 
@@ -223,6 +224,101 @@ func TestGraphQLRecordsUsesTheJSONFilter(t *testing.T) {
 	}
 	if len(ds.lastQuery.OrderBy) != 1 || !ds.lastQuery.OrderBy[0].Desc {
 		t.Fatalf("orderBy did not reach the dataset: %+v", ds.lastQuery.OrderBy)
+	}
+}
+
+// `filter` is a JSON scalar, so its DESCRIPTION is the whole grammar a client
+// that has only introspection can read. A tester's agent, holding the
+// `graphql` tool and nothing else, guessed the shape, got a bare unknown-field
+// refusal, and told its user the substrate "rejects date-field filtering" —
+// which it never did. The description carries the date range that works.
+func TestGraphQLFilterArgumentDescribesItsGrammar(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+	res := env.gql(t, tok, `{ __type(name: "Query") { fields { name args { name description } } } }`, nil)
+
+	args := map[string]string{}
+	typ, _ := res.Data["__type"].(map[string]any)
+	fields, _ := typ["fields"].([]any)
+	for _, f := range fields {
+		fm, _ := f.(map[string]any)
+		if fm["name"] != "records" {
+			continue
+		}
+		list, _ := fm["args"].([]any)
+		for _, a := range list {
+			am, _ := a.(map[string]any)
+			name, _ := am["name"].(string)
+			args[name], _ = am["description"].(string)
+		}
+	}
+	for _, name := range []string{"filter", "orderBy", "first", "after"} {
+		if args[name] == "" {
+			t.Fatalf("records(%s) is introspectable but undescribed: %v", name, args)
+		}
+	}
+	// The grammar's three load-bearing parts: where a kind goes, where a
+	// predicate goes, and that a timestamp is a comparable instant.
+	for _, want := range []string{"kinds", "properties", "gte", "RFC3339", "at"} {
+		if !strings.Contains(args["filter"], want) {
+			t.Fatalf("filter description does not mention %q: %s", want, args["filter"])
+		}
+	}
+	if !strings.Contains(args["orderBy"], "property") {
+		t.Fatalf("orderBy description does not name its key: %s", args["orderBy"])
+	}
+}
+
+// The day-agenda query the filter description hands a caller, run: the
+// example is executed rather than asserted about, so a description that stops
+// working is a failing test and not a client's afternoon.
+func TestGraphQLDayRangeFilterReachesTheDataset(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+	ds := env.svc.datasets["geoah"]
+	env.gql(t, tok, `{
+		records(filter: {kinds: ["tasks.substrate.reamde.dev/task"],
+		                 properties: {at: {gte: "2026-08-15T00:00:00Z", lt: "2026-08-16T00:00:00Z"}}},
+		        orderBy: [{property: "at"}]) { nodes { id } }
+	}`, nil)
+
+	at, ok := ds.lastQuery.Filter.Properties["at"]
+	if !ok {
+		t.Fatalf("the range predicate did not reach the dataset: %+v", ds.lastQuery.Filter)
+	}
+	if at.Gte != "2026-08-15T00:00:00Z" || at.Lt != "2026-08-16T00:00:00Z" {
+		t.Fatalf("bounds = %+v", at)
+	}
+	if len(ds.lastQuery.OrderBy) != 1 || ds.lastQuery.OrderBy[0].Property != "at" {
+		t.Fatalf("orderBy = %+v", ds.lastQuery.OrderBy)
+	}
+}
+
+// A mis-spelled filter key is the CALLER's error, and the refusal has to say
+// so twice over: classified `validation` rather than `internal` (a server that
+// reports itself broken is a server a client stops trying), and naming the
+// keys the argument does take.
+func TestGraphQLBadFilterIsAValidationErrorNamingTheKeys(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+	rec := env.do(t, http.MethodPost, graphqlPath, tok, map[string]any{
+		"query": `query ($f: JSON) { records(filter: $f) { nodes { id } } }`,
+		// The shape an agent guesses for a day agenda: the predicate written
+		// straight onto the filter instead of under `properties`.
+		"variables": map[string]any{"f": map[string]any{"at": map[string]any{"gte": "2026-08-15T00:00:00Z"}}},
+	})
+	wantStatus(t, rec, http.StatusOK)
+	out := decodeJSON[gqlResponse](t, rec)
+	if len(out.Errors) != 1 {
+		t.Fatalf("errors = %+v", out.Errors)
+	}
+	if code, _ := out.Errors[0].Extensions["code"].(string); code != codeValidation {
+		t.Fatalf("a caller's misspelling is not the server's fault: code = %q (%+v)", code, out.Errors[0])
+	}
+	for _, want := range []string{`unknown field "at"`, "properties", "kinds"} {
+		if !strings.Contains(out.Errors[0].Message, want) {
+			t.Fatalf("refusal does not mention %q: %s", want, out.Errors[0].Message)
+		}
 	}
 }
 

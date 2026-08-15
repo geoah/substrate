@@ -43,7 +43,10 @@ data:
       description: "a kind reference: with id reads one record, alone lists"
     - name: filter
       type: json
-      description: substrate filter for the list
+      description: >-
+        the list filter: {ids, implements, properties, labels, edge, deleted};
+        properties maps a name to a condition (eq, in, prefix, gt, gte, lt,
+        lte, contains, exists), timestamps RFC3339
     - name: first
       type: float
       description: max rows to return
@@ -73,14 +76,18 @@ data:
   authority: core.substrate.reamde.dev
   description: >-
     Run a read-only GraphQL query against the repository. The schema is introspectable
-    (__schema / __type): every kind is a GraphQL type with its declared properties.
-    Roots: record(kind, id) for one record; records(filter, orderBy, first,
-    after) to list (a connection, so descend through nodes { ... }); search(q,
-    kinds, k) for hybrid lexical+semantic lookup that tolerates near-matches;
-    changelog(from, filter, first) for history. Do not guess field names:
-    introspect when unsure, and batch related lookups into one query. Mutations
-    and subscriptions are rejected. Responses over 64KB are refused; narrow
-    the query.
+    (__schema / __type), arguments included. Roots: record(kind, id) for one
+    record; records(filter, orderBy, first, after) to list (a connection,
+    so descend through nodes { ... }); search(q, kinds, k) for hybrid lexical+semantic
+    lookup; changelog(from, filter, first) for history. A filter is {kinds,
+    ids, implements, properties, labels, edge, deleted}; properties maps a
+    name to a condition (eq, in, prefix, gt, gte, lt, lte, contains, exists),
+    timestamps RFC3339, so a day is properties: {at: {gte: "2026-08-15T00:00:00Z",
+    lt: "2026-08-16T00:00:00Z"}}. `nodes` is the Record interface: a kind's
+    own properties need an inline fragment, nodes { id ... on Calendarevent
+    { summary } }. Do not guess field names: introspect when unsure, and batch
+    related lookups into one query. Mutations and subscriptions are rejected.
+    Responses over 64KB are refused; narrow the query.
   runtime: host
   arguments:
     - name: query

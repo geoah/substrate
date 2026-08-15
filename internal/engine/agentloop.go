@@ -10,6 +10,7 @@ import (
 
 	"github.com/geoah/substrate/internal/llm"
 	"github.com/geoah/substrate/internal/runner"
+	"github.com/geoah/substrate/internal/strictjson"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -1040,8 +1041,14 @@ func (ds *dataset) runQueryTool(ctx context.Context, scope queryScope, args map[
 	if raw, ok := args["filter"].(map[string]any); ok {
 		buf, _ := json.Marshal(raw)
 		var f substrate.Filter
-		if err := json.Unmarshal(buf, &f); err != nil {
-			return toolError("filter: " + err.Error()), false, 0
+		// The SAME strict decode the other two doors use. A plain Unmarshal
+		// dropped a key it did not know, so a model that guessed the shape —
+		// `{"at": {"gte": …}}` instead of `{"properties": {"at": …}}` — got
+		// the whole collection back as if it had asked for it, and answered
+		// from it. A refusal naming the keys is the only honest answer.
+		if err := strictjson.DecodeBytes(buf, &f, false); err != nil {
+			return toolError(fmt.Sprintf("filter: %v. filter takes %s",
+				err, strings.Join(strictjson.Keys(substrate.Filter{}), ", "))), false, 0
 		}
 		f.Kinds = []string{ty.Identity}
 		q.Filter = f

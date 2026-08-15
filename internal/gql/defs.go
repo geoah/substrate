@@ -2,6 +2,7 @@ package gql
 
 import (
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 	"unicode"
@@ -9,6 +10,7 @@ import (
 	"github.com/graphql-go/graphql"
 
 	"github.com/geoah/substrate/internal/strictjson"
+	"github.com/geoah/substrate/internal/substrate"
 )
 
 // WHAT THIS READS. `KindInfo.Definition` is the kind's DECLARATION as the loader
@@ -205,6 +207,17 @@ func titleCase(s string) string {
 	r := []rune(s)
 	r[0] = unicode.ToUpper(r[0])
 	return string(r)
+}
+
+// argError is how a rejected JSON argument comes back: a VALIDATION error (the
+// caller's spelling, not the server's fault) carrying the keys the argument
+// accepts. Both halves were wrong before. `filter: unknown field "at"`
+// classified as `internal` told a caller the server had broken, and the
+// message named no grammar to correct itself against, so a mis-shaped date
+// filter reached a user as "this server rejects date-field filtering".
+func argError(arg string, dst any, err error) error {
+	return fmt.Errorf("%w: %s: %w. %s takes %s", substrate.ErrValidation, arg, err,
+		arg, strings.Join(strictjson.Keys(dst), ", "))
 }
 
 // remarshal moves a JSON-scalar argument (a GraphQL filter/orderBy/put/patch

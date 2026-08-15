@@ -14,6 +14,7 @@ import (
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
 
+	"github.com/geoah/substrate/internal/strictjson"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -537,11 +538,46 @@ func (b *schemaBuilder) resolveType(p graphql.ResolveTypeParams) *graphql.Object
 
 // ---- root types ---------------------------------------------------------
 
+// The JSON arguments carry their grammar in their DESCRIPTION, because the
+// scalar cannot carry it in its type: `filter` is deliberately a JSON scalar
+// (see the note at the top of this file), so introspection shows a caller the
+// word "JSON" and nothing else. A client with only introspection to read (an
+// agent holding the `graphql` tool) then guesses the shape, and a guess that
+// comes back as a bare `unknown field "at"` reads as a missing FEATURE rather
+// than a misspelling: one reported the substrate could not filter by date at
+// all, which it has always been able to do.
+//
+// The key lists are computed from the contract structs, so a field added to
+// substrate.Filter appears here without anybody remembering to write it down.
+var (
+	filterArgDescription = "Narrows the list. Keys: " + strings.Join(strictjson.Keys(substrate.Filter{}), ", ") +
+		". `properties` and `labels` map a name to one condition object (" +
+		strings.Join(strictjson.Keys(substrate.Cond{}), ", ") +
+		"); timestamps are RFC3339 strings, compared as instants. A kind with the " +
+		"temporal trait carries `at` and `endsAt` (tasks: `dueAt`) as filterable, " +
+		"orderable properties, so one day's events are " +
+		`{"kinds": ["calendar.substrate.reamde.dev/calendarevent"], ` +
+		`"properties": {"at": {"gte": "2026-08-15T00:00:00Z", "lt": "2026-08-16T00:00:00Z"}}}.`
+
+	orderByArgDescription = "Sort keys, applied in order: [{" + strings.Join(strictjson.Keys(substrate.Order{}), ", ") +
+		"}]. `property` is a declared property, a temporal property (at, endsAt, dueAt), " +
+		"createdAt or updatedAt, always camelCase: the snake spelling is refused naming " +
+		"its replacement. Default: createdAt, newest first."
+
+	changeFilterArgDescription = "Narrows the changelog walk. Keys: " +
+		strings.Join(strictjson.Keys(substrate.ChangeFilter{}), ", ") + "."
+)
+
 func (b *schemaBuilder) queryType() *graphql.Object {
 	connection := graphql.NewObject(graphql.ObjectConfig{
 		Name: "RecordConnection",
 		Fields: graphql.Fields{
-			"nodes":  &graphql.Field{Type: graphql.NewList(b.recordIF)},
+			"nodes": &graphql.Field{
+				Type: graphql.NewList(b.recordIF),
+				Description: "The page's records, as the Record interface: id, kind, title and the " +
+					"other shared fields read directly, and a kind's own properties need an " +
+					`inline fragment, nodes { id ... on Calendarevent { summary at } }.`,
+			},
 			"cursor": &graphql.Field{Type: graphql.String},
 			// No `total`: the keyset walk never counts the matching set, and a
 			// field that answered 0 for "unknown" is a wrong count, not a
@@ -585,12 +621,13 @@ func (b *schemaBuilder) queryType() *graphql.Object {
 				Resolve: resolveRecord,
 			},
 			"records": &graphql.Field{
-				Type: connection,
+				Type:        connection,
+				Description: "The one generic list query: every kind, one grammar, keyset-paged.",
 				Args: graphql.FieldConfigArgument{
-					"filter":  &graphql.ArgumentConfig{Type: jsonScalar},
-					"orderBy": &graphql.ArgumentConfig{Type: jsonScalar},
-					"first":   &graphql.ArgumentConfig{Type: graphql.Int},
-					"after":   &graphql.ArgumentConfig{Type: graphql.String},
+					"filter":  &graphql.ArgumentConfig{Type: jsonScalar, Description: filterArgDescription},
+					"orderBy": &graphql.ArgumentConfig{Type: jsonScalar, Description: orderByArgDescription},
+					"first":   &graphql.ArgumentConfig{Type: graphql.Int, Description: "Page size: default 50, max 500."},
+					"after":   &graphql.ArgumentConfig{Type: graphql.String, Description: "The `cursor` a previous page returned. Opaque: never parse it."},
 				},
 				Resolve: resolveRecords,
 			},
@@ -609,9 +646,9 @@ func (b *schemaBuilder) queryType() *graphql.Object {
 				Args: graphql.FieldConfigArgument{
 					// `from` is a transparent resume seq, not an
 					// opaque cursor: the walk reads changes with seq > from.
-					"from":   &graphql.ArgumentConfig{Type: longScalar},
-					"filter": &graphql.ArgumentConfig{Type: jsonScalar},
-					"first":  &graphql.ArgumentConfig{Type: graphql.Int},
+					"from":   &graphql.ArgumentConfig{Type: longScalar, Description: "Resume seq: the walk reads changes with seq > from."},
+					"filter": &graphql.ArgumentConfig{Type: jsonScalar, Description: changeFilterArgDescription},
+					"first":  &graphql.ArgumentConfig{Type: graphql.Int, Description: "Page size: default 100."},
 				},
 				Resolve: resolveChangelog,
 			},
@@ -915,10 +952,10 @@ func resolveRecords(p graphql.ResolveParams) (any, error) {
 	}
 	var q substrate.Query
 	if err := remarshal(p.Args["filter"], &q.Filter); err != nil {
-		return nil, fmt.Errorf("filter: %w", err)
+		return nil, argError("filter", substrate.Filter{}, err)
 	}
 	if err := remarshal(p.Args["orderBy"], &q.OrderBy); err != nil {
-		return nil, fmt.Errorf("orderBy: %w", err)
+		return nil, argError("orderBy", substrate.Order{}, err)
 	}
 	q.First, _ = p.Args["first"].(int)
 	q.After, _ = p.Args["after"].(string)
@@ -962,7 +999,7 @@ func resolveChangelog(p graphql.ResolveParams) (any, error) {
 	}
 	var f substrate.ChangeFilter
 	if err := remarshal(p.Args["filter"], &f); err != nil {
-		return nil, fmt.Errorf("filter: %w", err)
+		return nil, argError("filter", substrate.ChangeFilter{}, err)
 	}
 	from, _ := argInt64(p.Args, "from")
 	first, _ := p.Args["first"].(int)
