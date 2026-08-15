@@ -46,6 +46,24 @@ export function getTokenId(): string | null {
   }
 }
 
+// The writes below store the token secret in localStorage AS CLEAR TEXT, and
+// CodeQL names each one (js/clear-text-storage-of-sensitive-data). That is
+// the design, not an oversight:
+//
+//   - The secret IS the session. The console holds a bearer token like every
+//     other client; there is no cookie and no server-side session to keep it
+//     in instead, and it has to survive a reload somewhere.
+//   - Encrypting it here would be theater. The page's own script would need
+//     the key, on the same origin, so anything that can read localStorage
+//     (same-origin script, an XSS foothold, a person at this keyboard) could
+//     read the key beside the ciphertext. That is obfuscation, not
+//     protection, and it would still be flagged as the secret it is.
+//
+// What actually bounds the exposure: the stored value is one REVOCABLE token
+// record (the tokens page lists it, logout deletes it, expiry is enforced
+// server-side at authenticate), scoped to one repository, and never the
+// password, which is not stored anywhere. A 401 drops it (sessionExpired).
+
 /** Store just the secret — the login probe path, before the username/id are
  * known, and the tests. `saveSession` is the full write. */
 export function setToken(token: string): void {
@@ -53,7 +71,8 @@ export function setToken(token: string): void {
 }
 
 /** The full sign-in write: the secret, the username, and the held token's id,
- * as a mint (login/register/token) hands them back. */
+ * as a mint (login/register/token) hands them back. Clear text on purpose;
+ * the block above setToken says why. */
 export function saveSession(
   secret: string,
   username: string,
