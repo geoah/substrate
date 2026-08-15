@@ -23,6 +23,12 @@ const (
 	vectorDim = 1536
 )
 
+// The shape internal/api's discovery asserts at runtime (embedderOps). The
+// packages cannot reference each other, so this pins the signature here: a
+// rename would otherwise leave discovery silently reporting no embeddings on
+// every deployment.
+var _ interface{ EmbeddingsEnabled() bool } = (*service)(nil)
+
 // EmbeddingsEnabled reports whether an embedder was wired in (WithEmbedder).
 // Without one the semantic arm below refuses and nothing drains the embed
 // queue, so discovery reads this seam instead of advertising a feature this

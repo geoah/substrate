@@ -338,8 +338,8 @@ machinery.
 
 ## REST and GraphQL
 
-The two surfaces are not two spellings of one contract, and the difference
-decides what a client may hard-code.
+The two surfaces make different promises, and the difference decides what a
+client may hard-code.
 
 **REST is the frozen v1 contract.** Its routes, request and response shapes,
 error codes and headers are fixed under `/api/v1` and widen only by addition,

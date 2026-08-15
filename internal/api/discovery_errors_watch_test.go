@@ -16,6 +16,20 @@ const changesPath = "/api/v1/core.substrate.reamde.dev/changes"
 
 // --- A1: discovery + versioning + the deprecation channel ---------------
 
+// wantFeatureSurfaces is the whole feature list as it stands, with the
+// surfaces each entry claims. Both discovery tests read it, so a new feature
+// is declared once and neither test can drift from the other.
+var wantFeatureSurfaces = map[string][]string{
+	"triggers":   {surfaceREST},
+	"functions":  {surfaceREST},
+	"bundles":    {surfaceREST},
+	"blobs":      {surfaceREST},
+	"changefeed": {surfaceREST, surfaceGraphQL},
+	"search":     {surfaceGraphQL},
+	"embeddings": {surfaceGraphQL},
+	"agents":     {surfaceREST},
+}
+
 func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 	svc := newFakeService()
 	svc.embeddings = true
@@ -62,7 +76,10 @@ func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 	if stab[substrate.FeatureAgents] != substrate.AgentStability || stab["agents"] != "alpha" {
 		t.Fatalf("agents feature = %q, want alpha", stab["agents"])
 	}
-	for _, want := range []string{"triggers", "functions", "bundles", "blobs", "changefeed", "search", "embeddings"} {
+	for want := range wantFeatureSurfaces {
+		if want == substrate.FeatureAgents {
+			continue
+		}
 		if stab[want] != substrate.StabilityStable {
 			t.Fatalf("feature %q stability = %q, want stable", want, stab[want])
 		}
@@ -84,16 +101,7 @@ func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil))
 	doc := decodeJSON[discoveryDoc](t, rec)
 
-	want := map[string][]string{
-		"triggers":   {surfaceREST},
-		"functions":  {surfaceREST},
-		"bundles":    {surfaceREST},
-		"blobs":      {surfaceREST},
-		"changefeed": {surfaceREST, surfaceGraphQL},
-		"search":     {surfaceGraphQL},
-		"embeddings": {surfaceGraphQL},
-		"agents":     {surfaceREST},
-	}
+	want := wantFeatureSurfaces
 	seen := map[string]bool{}
 	for _, f := range doc.Features {
 		if seen[f.Name] {

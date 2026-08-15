@@ -2,13 +2,14 @@ package api
 
 import (
 	"net/http"
+	"slices"
 
 	"github.com/geoah/substrate/internal/build"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
 // Discovery: GET /.well-known/substrate/server.json answers what this
-// deployment serves so a client adapts to capability presence WITHOUT
+// deployment serves so a client adapts to what is present WITHOUT
 // probing for 501s. It is unversioned, unauthenticated, and touches no
 // repository — the same class of endpoint as /healthz — and its well-known
 // path is what lets an outside system tell whether a domain is a substrate
@@ -28,7 +29,7 @@ type discoveryDoc struct {
 	// Changelog carries the retention horizon: the oldest resumable seq
 	// (0 today; ruling A4).
 	Changelog changelogInfo `json:"changelog"`
-	// Features is the capability list a client reads instead of feature-probing.
+	// Features is the feature list a client reads instead of feature-probing.
 	Features []featureInfo `json:"features"`
 	// Grammar is how this deployment spells a kind and a record reference —
 	// the one thing a client must agree with the substrate about before it can
@@ -129,6 +130,10 @@ const (
 	surfaceGraphQL = "graphql"
 )
 
+// featureEmbeddings is the one entry a deployment may not carry, so it has a
+// name both the roster and the drop below can hold.
+const featureEmbeddings = "embeddings"
+
 // embedderOps is the service's embedder seam, asserted at runtime like
 // changeFeedOps: substrate.Service stays frozen, and discovery asks the
 // service itself rather than carrying a second copy of the wiring that a
@@ -205,9 +210,11 @@ func features(embeddings bool) []featureInfo {
 		// there is no subscription.
 		{Name: "changefeed", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST, surfaceGraphQL}},
 		{Name: "search", Stability: substrate.StabilityStable, Surfaces: []string{surfaceGraphQL}},
+		{Name: featureEmbeddings, Stability: substrate.StabilityStable, Surfaces: []string{surfaceGraphQL}},
+		{Name: substrate.FeatureAgents, Stability: substrate.AgentStability, Surfaces: []string{surfaceREST}},
 	}
-	if embeddings {
-		out = append(out, featureInfo{Name: "embeddings", Stability: substrate.StabilityStable, Surfaces: []string{surfaceGraphQL}})
+	if !embeddings {
+		out = slices.DeleteFunc(out, func(f featureInfo) bool { return f.Name == featureEmbeddings })
 	}
-	return append(out, featureInfo{Name: substrate.FeatureAgents, Stability: substrate.AgentStability, Surfaces: []string{surfaceREST}})
+	return out
 }

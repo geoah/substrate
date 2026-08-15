@@ -37,10 +37,10 @@ carries REST's additive promise. `featureInfo` gains `surfaces` (`rest`,
 `graphql`, or both), non-empty for every entry, and `search` and `embeddings`
 carry `graphql` alone. Surfaces describe a feature's own verbs, never its
 records: every kind's records read on both surfaces regardless. Two entries
-that were advertised unconditionally are now honest about what is served:
-`search` says which surface serves it, and `embeddings` is listed only where
-the deployment has an embedder configured, because without one nothing drains
-the embed queue and the semantic arm refuses.
+change what they claim. `search` names the surface that serves it, and
+`embeddings` is listed only where the deployment has an embedder configured,
+because without one nothing drains the embed queue and the semantic arm
+refuses.
 
 Adding a REST search route would freeze a ranking API at the moment its shape
 is least settled: hybrid scoring, the per-arm `lexical` and `semantic` scores
