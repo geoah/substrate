@@ -106,9 +106,10 @@ write onward. Renaming an actor never changes write semantics.
 
 Beside the actor and the tier, a manager row records the **principal** of the
 write that set it: the token id the door resolved, where the actor is only
-what the caller claimed. It is stored, not published — the manager on the
-wire is the actor — and the [changelog](changelog.md) entry carries the same
-value.
+what the caller claimed. The manager and tier a read reports are the actor and
+its standing; the principal is in the store and on the
+[changelog](changelog.md) entry that wrote it, which is where "which token
+last wrote this property" is answered.
 
 Mapping recompute runs whenever a source record changes, and per mapped
 property it follows three rules:

@@ -25,11 +25,13 @@ One entry, as the wire carries it, for the task created on the
 flat) and is the caller's own claim; the entry also stores a **principal**
 beside it, the id of the token the door resolved from the bearer secret,
 which no caller can name. Two tokens writing as `api` are one actor and two
-principals. The principal is stored and hashed, not published: it stays out of
-the wire shape below, and `substratectl repository verify` walks it with the
-rest of the entry. A write no token stands behind — the seed, the boot
-upgrade, a sync worker — carries an empty principal. `op` is the mutation that
-made the row (`put`, `patch`, `delete`,
+principals. It is hashed with the rest of the entry, so a stored principal
+cannot be edited without breaking the chain, and it is not a secret: it is a
+token record's id, which the repository's own reader can already list. It has
+no field of its own on the wire; a write's recorded effects name it beside
+each property manager they set. A write no token stands behind — the seed, the
+boot upgrade, a sync worker — carries an empty principal. `op` is the mutation
+that made the row (`put`, `patch`, `delete`,
 `link`, `unlink`, `merge`, `split`, plus the engine's own housekeeping), and
 `kind` plus `recordId` are the record's full identity. The readable half of
 `payload` names what changed rather than repeating it: `created` on first
