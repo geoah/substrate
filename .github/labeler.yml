@@ -1,0 +1,67 @@
+# Which area/ labels a pull request wears, from the paths it touches.
+#
+# Read by .github/workflows/pr-labels.yml. Only area/ is
+# decided here: type/ comes from the conventional-commit title a human
+# already writes, and priority/ is a judgement nothing can glob for.
+#
+# A change can land in more than one area, and then it wears both. The engine
+# lives under internal/engine, so an agent change is a server change too;
+# that is true, not a bug in the globs.
+
+area/server:
+  - changed-files:
+      - any-glob-to-any-file:
+          - internal/api/**
+          - internal/engine/**
+          - internal/gql/**
+          - internal/substrate/**
+          - internal/catalog/**
+          - internal/embed/**
+          - internal/runner/**
+          - internal/sandbox/**
+          - internal/oauthflow/**
+          - internal/config/**
+          - cmd/substrated/**
+
+area/agent:
+  - changed-files:
+      - any-glob-to-any-file:
+          - internal/engine/agent*
+          - internal/llm/**
+
+area/vocabulary:
+  - changed-files:
+      - any-glob-to-any-file:
+          - kinds/**
+          - internal/vocabulary/**
+          - internal/kinddialect/**
+          - internal/corekinds/**
+          - cmd/kindsgen/**
+          - cmd/vocabularydiff/**
+
+area/cli:
+  - changed-files:
+      - any-glob-to-any-file:
+          - cmd/substratectl/**
+
+area/console:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/console/**
+
+area/docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docs/**
+          - README.md
+          - CONTRIBUTING.md
+
+area/ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
+          - .mise/**
+          - mise.toml
+          - Dockerfile
+          - docker-compose*.yml
+          - .golangci.yml
