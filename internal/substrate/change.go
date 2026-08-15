@@ -28,6 +28,12 @@ type Change struct {
 	RecordID string         `json:"recordId"`
 	Kind     string         `json:"kind"`
 	Payload  map[string]any `json:"payload,omitempty"`
+	// Hash is the entry's chain hash, hex — a receipt a consumer can write
+	// down and later check against `repository verify` output. It is NOT
+	// independently recomputable from this wire shape: the payload here is
+	// redacted, and the hash covers what is stored. Absent only on an entry
+	// written before the chain existed and not yet backfilled.
+	Hash string `json:"hash,omitempty"`
 }
 
 // ChangeFilter narrows a changelog read or watch.

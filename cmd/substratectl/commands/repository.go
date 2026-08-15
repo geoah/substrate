@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -30,7 +31,8 @@ func (a *app) repositoryCommand() *cobra.Command {
 		Aliases: []string{"repositories", "repo"},
 	}
 	cmd.AddCommand(a.repositoryListCommand(), a.repositoryInspectCommand(),
-		a.repositoryRebuildCommand(), a.repositoryResealCommand())
+		a.repositoryRebuildCommand(), a.repositoryResealCommand(),
+		a.repositoryVerifyCommand())
 	return cmd
 }
 
@@ -149,7 +151,8 @@ This command only reads.`,
 }
 
 func (a *app) repositoryRebuildCommand() *cobra.Command {
-	return &cobra.Command{
+	var forceUnverified bool
+	cmd := &cobra.Command{
 		Use:     "rebuild <username>",
 		Short:   "Replay a repository's changelog into a fresh fold",
 		Aliases: []string{"rebuild-repository"},
@@ -159,6 +162,11 @@ The changelog is the truth and the records table is a fold of it, so this is the
 containment test made runnable. It holds the repository's write lock for the
 duration and runs as ONE transaction: a rebuild either replaces the fold or
 leaves it exactly as it was.
+
+The chain is verified FIRST: a changelog whose hashes (or signatures) do not
+check out refuses to become the live fold. --force-unverified rebuilds anyway
+and says so in the report; run 'repository verify' first to see what it would
+be installing.
 
 Blobs and sealed material are SIDE STORES: their bytes were never in the changelog
 and are re-linked, not regenerated. A backup is changelog + blobs + sealed as one
@@ -170,11 +178,20 @@ unit.`,
 				return err
 			}
 			defer func() { _ = svc.Close() }()
-			r, ok := svc.(rebuilder)
-			if !ok {
-				return seamMissing("RebuildRepository")
+			var report engine.RebuildReport
+			if forceUnverified {
+				r, ok := svc.(forceRebuilder)
+				if !ok {
+					return seamMissing("RebuildRepositoryUnverified")
+				}
+				report, err = r.RebuildRepositoryUnverified(cmd.Context(), args[0])
+			} else {
+				r, ok := svc.(rebuilder)
+				if !ok {
+					return seamMissing("RebuildRepository")
+				}
+				report, err = r.RebuildRepository(cmd.Context(), args[0])
 			}
-			report, err := r.RebuildRepository(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
@@ -183,9 +200,96 @@ unit.`,
 			fmt.Fprintf(a.out, "  replayed: %d entries to head %d\n", report.Entries, report.Head)
 			fmt.Fprintf(a.out, "  records:  %d\n", report.Records)
 			fmt.Fprintf(a.out, "  took:     %s\n", report.Took.Round(time.Millisecond))
+			if report.Unverified {
+				fmt.Fprintf(a.out, "  WARNING:  the fold is built from UNVERIFIED history (--force-unverified)\n")
+			}
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&forceUnverified, "force-unverified", false,
+		"rebuild even when the chain does not verify: the fold is then built from unverified history")
+	return cmd
+}
+
+func (a *app) repositoryVerifyCommand() *cobra.Command {
+	var output string
+	cmd := &cobra.Command{
+		Use:   "verify <username>",
+		Short: "Walk a repository's changelog chain and check every hash and signature",
+		Long: `Recompute every changelog entry's chain hash from the stored bytes and check
+every signature the signing state requires. Read-only by construction: it
+never backfills, repairs or touches what it judges.
+
+The verified head (seq, hash) is the thing worth writing down elsewhere:
+comparing heads across time is what turns "internally consistent" into "the
+same history I saw yesterday". Chain epochs (backfill, reseal, signing
+activation) are listed so a remembered head that no longer matches can be
+explained — or not, which is the finding.
+
+Exits nonzero when anything does not verify.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			svc, err := a.openEngineRead(cmd.Context())
+			if err != nil {
+				return err
+			}
+			defer func() { _ = svc.Close() }()
+			v, ok := svc.(verifier)
+			if !ok {
+				return seamMissing("VerifyRepository")
+			}
+			report, err := v.VerifyRepository(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			if output == "json" {
+				if err := printJSON(a.out, report); err != nil {
+					return err
+				}
+			} else {
+				fmt.Fprintf(a.out, "repository %s\n", report.Username)
+				fmt.Fprintf(a.out, "  id:       %s\n", report.Repository)
+				fmt.Fprintf(a.out, "  entries:  %d, head %d\n", report.Entries, report.Head)
+				if report.HeadHash != "" {
+					fmt.Fprintf(a.out, "  head hash: %s\n", report.HeadHash)
+				}
+				if report.SignedFrom > 0 {
+					fmt.Fprintf(a.out, "  signed:   from seq %d, public key %s\n", report.SignedFrom, report.PublicKey)
+				} else {
+					fmt.Fprintln(a.out, "  signed:   no (signing has not been activated)")
+				}
+				for _, ep := range report.Epochs {
+					line := fmt.Sprintf("  epoch:    %s at %s, from seq %d", ep.Reason, ep.At.Format(time.RFC3339), ep.FromSeq)
+					if ep.Signed {
+						switch {
+						case ep.SigOK == nil:
+							line += " (signed)"
+						case *ep.SigOK:
+							line += " (signed, verifies)"
+						default:
+							line += " (signed, DOES NOT VERIFY)"
+						}
+					}
+					fmt.Fprintln(a.out, line)
+				}
+				for _, f := range report.Findings {
+					fmt.Fprintf(a.out, "  FINDING:  %s\n", f)
+				}
+				if report.Truncated {
+					fmt.Fprintln(a.out, "  ... more findings truncated")
+				}
+				if report.OK {
+					fmt.Fprintf(a.out, "  verified in %s\n", report.Took.Round(time.Millisecond))
+				}
+			}
+			if !report.OK {
+				return fmt.Errorf("repository %s does not verify: %d finding(s)", report.Username, len(report.Findings))
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output format: text|json")
+	return cmd
 }
 
 func (a *app) repositoryResealCommand() *cobra.Command {

@@ -108,6 +108,14 @@ func run() error {
 		slog.Warn("SUBSTRATE_INSECURE_DISABLE_TOTP is set: the second factor is NOT verified — local development only")
 		opts = append(opts, engine.WithInsecureDisableTOTP())
 	}
+	if cfg.ChangelogSigning {
+		if cfg.CredentialKey == "" {
+			// Refused here, before anything opens: activating signing with the
+			// seed stored in the clear would certify nothing.
+			return errors.New("SUBSTRATE_CHANGELOG_SIGNING needs SUBSTRATE_CREDENTIAL_KEY: the signing seed seals under it")
+		}
+		opts = append(opts, engine.WithChangelogSigning())
+	}
 	svc, err := engine.Open(ctx, cfg.DatabaseURL, opts...)
 	if err != nil {
 		return err

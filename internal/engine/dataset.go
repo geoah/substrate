@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"crypto/ed25519"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -75,6 +76,15 @@ type dataset struct {
 	// record holds it wrapped to the user's age recipient.
 	dek   []byte
 	watch *broadcaster
+
+	// The repository's changelog-signing state (signing.go), immutable for
+	// the dataset's lifetime: signedFrom is 0 until activation and never
+	// unset after; signKey is nil when signing is inactive OR the credential
+	// key cannot open the seed — in the latter case every append refuses
+	// (settleChain) rather than shedding the guarantee.
+	signKey    ed25519.PrivateKey
+	signPub    ed25519.PublicKey
+	signedFrom int64
 
 	mu   sync.RWMutex
 	reg  *vocabulary.Registry
@@ -249,6 +259,11 @@ type txn struct {
 	// thread's reader resolves the delta from the changelog instead of
 	// parsing tool payloads.
 	entries []changeEntry
+	// pending is the same appends as the CHAIN sees them: every preimage
+	// field, with the payload text AS POSTGRES STORED IT (appendChange's
+	// RETURNING). settleChain drains it at commit, after settleFold has made
+	// the last payload final.
+	pending []chainEntry
 	// changeSink, when set, receives this transaction's entries AFTER COMMIT
 	// (inTx) — the agent loop's per-dispatch collector. After commit, so a
 	// rolled-back write stamps nothing.
@@ -319,6 +334,13 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 		return err
 	}
 	if err := t.settleFold(); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	// After settleFold: the last entry's payload is final only once the
+	// transaction's late effects have merged into it, and the hash covers the
+	// payload as stored.
+	if err := t.settleChain(); err != nil {
 		_ = tx.Rollback()
 		return err
 	}

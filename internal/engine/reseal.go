@@ -20,6 +20,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -74,6 +75,12 @@ func (s *service) ResealRepository(ctx context.Context, username string) (Reseal
 	if ty, err := ds.resolveType(kindToken); err != nil || ty == nil ||
 		ty.Props["hash"] == nil || ty.Props["hash"].Datatype != vocabulary.DatatypeDigest {
 		return ResealReport{}, fmt.Errorf("substrate/engine: this repository's stored vocabulary still types token.hash as secret; start the server once under the upgraded binary (the boot-time vocabulary upgrade carries the re-type), then reseal")
+	}
+	// A reseal rewrites history and re-chains it (below); on a repository
+	// with signing active that re-chain must re-sign, so a host that cannot
+	// sign refuses the whole operation rather than stripping the guarantee.
+	if ds.signedFrom > 0 && ds.signKey == nil {
+		return ResealReport{}, fmt.Errorf("substrate/engine: reseal refuses: changelog signing is active for this repository but the signing key is unavailable — a reseal without it would strip signature validity from history")
 	}
 	report := ResealReport{Repository: repo.ID, Username: repo.Username}
 	// Not inTx: a reseal is not a write with an actor and appends no entry.
@@ -139,10 +146,91 @@ func (t *txn) reseal(report *ResealReport) error {
 			return err
 		}
 	}
-	if err := t.resealChangelog(report, secretProps, current); err != nil {
+	// The head hash BEFORE the rewrite: the epoch's old_head, which is what
+	// lets a verifier holding a pre-reseal receipt see "sanctioned rewrite"
+	// instead of "tampering".
+	_, oldHead, err := t.chainHead()
+	if err != nil {
 		return err
 	}
+	minSeq, err := t.resealChangelog(report, secretProps, current)
+	if err != nil {
+		return err
+	}
+	if minSeq > 0 {
+		// Every hash from the first rewritten entry to the head moves: the
+		// rewritten payloads directly, everything after them through `prev`.
+		newHead, err := t.rechainFrom(minSeq)
+		if err != nil {
+			return err
+		}
+		ep := chainEpoch{
+			At: t.now, Reason: epochReseal, FromSeq: minSeq,
+			OldHead: oldHead, NewHead: newHead,
+		}
+		if t.ds.signedFrom > 0 {
+			ep.PublicKey = []byte(t.ds.signPub)
+			ep.SignedFrom = t.ds.signedFrom
+		}
+		if err := t.recordEpoch(ep, t.ds.signKey); err != nil {
+			return err
+		}
+	}
 	return t.resealSealedStore(report)
+}
+
+// rechainFrom recomputes every entry hash from `from` to the head — the
+// reseal's second half. Signatures re-mint where the signing state requires
+// them and clear where it does not: an old signature over a moved hash would
+// only ever read as tampering.
+func (t *txn) rechainFrom(from int64) ([]byte, error) {
+	prev := zeroHash
+	if from > 1 {
+		var raw []byte
+		if err := t.row(`SELECT hash FROM changelog WHERE seq = $1`, from-1).Scan(&raw); err != nil {
+			return nil, fmt.Errorf("substrate/engine: rechain: read the hash at seq %d: %w", from-1, err)
+		}
+		if len(raw) != 32 {
+			return nil, fmt.Errorf("substrate/engine: rechain: seq %d has no hash to chain from", from-1)
+		}
+		copy(prev[:], raw)
+	}
+	after := from - 1
+	head := prev
+	for {
+		entries, err := t.chainPage(after, rebuildBatch)
+		if err != nil {
+			return nil, err
+		}
+		if len(entries) == 0 {
+			break
+		}
+		for _, e := range entries {
+			h, err := entryHash(t.ds.scope.Repository, e, prev)
+			if err != nil {
+				return nil, err
+			}
+			var sig []byte
+			if t.ds.signedFrom > 0 && e.Seq >= t.ds.signedFrom {
+				if t.ds.signKey == nil {
+					return nil, fmt.Errorf("substrate/engine: rechain: signing is active from seq %d but the signing key is unavailable", t.ds.signedFrom)
+				}
+				sig = ed25519.Sign(t.ds.signKey, h[:])
+			}
+			res, err := t.exec(`UPDATE changelog SET hash = $2, sig = $3 WHERE seq = $1`, e.Seq, h[:], sig)
+			if err != nil {
+				return nil, err
+			}
+			if n, err := res.RowsAffected(); err != nil {
+				return nil, err
+			} else if n != 1 {
+				return nil, fmt.Errorf("substrate/engine: rechain: stamping seq %d touched %d rows", e.Seq, n)
+			}
+			prev, head = h, h
+			after = e.Seq
+		}
+	}
+	return head[:], nil
 }
 
 // resealRecords moves one kind's legacy values into the store and fills the
@@ -235,8 +323,9 @@ func (t *txn) migrateSecretValue(owner eref, stored string) (string, error) {
 
 // resealChangelog re-points every historical secret value at the record's
 // current ref, one page at a time with the page's rewrites flushed before
-// the next page loads, so memory stays bounded by the batch.
-func (t *txn) resealChangelog(report *ResealReport, secretProps map[string][]string, current map[currentRefKey]string) error {
+// the next page loads, so memory stays bounded by the batch. It returns the
+// FIRST rewritten seq (0 when nothing moved): where the re-chain starts.
+func (t *txn) resealChangelog(report *ResealReport, secretProps map[string][]string, current map[currentRefKey]string) (int64, error) {
 	isSecret := func(kind, prop string) bool {
 		for _, name := range secretProps[kind] {
 			if name == prop {
@@ -245,7 +334,7 @@ func (t *txn) resealChangelog(report *ResealReport, secretProps map[string][]str
 		}
 		return false
 	}
-	var after int64
+	var after, minSeq int64
 	for {
 		type pending struct {
 			seq     int64
@@ -256,7 +345,7 @@ func (t *txn) resealChangelog(report *ResealReport, secretProps map[string][]str
 			SELECT seq, payload FROM changelog
 			WHERE seq > $1 ORDER BY seq LIMIT $2`, after, rebuildBatch)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		n := 0
 		for rows.Next() {
@@ -264,7 +353,7 @@ func (t *txn) resealChangelog(report *ResealReport, secretProps map[string][]str
 			var raw []byte
 			if err := rows.Scan(&seq, &raw); err != nil {
 				_ = rows.Close()
-				return err
+				return 0, err
 			}
 			n++
 			after = seq
@@ -274,7 +363,7 @@ func (t *txn) resealChangelog(report *ResealReport, secretProps map[string][]str
 			payload, err := decodeNumberPreserving(raw)
 			if err != nil {
 				_ = rows.Close()
-				return fmt.Errorf("substrate/engine: reseal changelog seq %d: %w", seq, err)
+				return 0, fmt.Errorf("substrate/engine: reseal changelog seq %d: %w", seq, err)
 			}
 			changed := false
 			forEachRecordDeltaSet(payload, func(kindRef, recordID string, set map[string]any) {
@@ -299,24 +388,27 @@ func (t *txn) resealChangelog(report *ResealReport, secretProps map[string][]str
 			out, err := json.Marshal(payload)
 			if err != nil {
 				_ = rows.Close()
-				return err
+				return 0, err
 			}
 			updates = append(updates, pending{seq: seq, payload: out})
 		}
 		if err := rows.Err(); err != nil {
 			_ = rows.Close()
-			return err
+			return 0, err
 		}
 		_ = rows.Close()
 		for _, u := range updates {
 			if _, err := t.exec(`UPDATE changelog SET payload = $1 WHERE seq = $2`,
 				u.payload, u.seq); err != nil {
-				return err
+				return 0, err
+			}
+			if minSeq == 0 || u.seq < minSeq {
+				minSeq = u.seq
 			}
 			report.Entries++
 		}
 		if n < rebuildBatch {
-			return nil
+			return minSeq, nil
 		}
 	}
 }

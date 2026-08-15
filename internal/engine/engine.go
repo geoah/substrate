@@ -11,6 +11,7 @@ package engine
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
@@ -45,6 +46,10 @@ type options struct {
 	oauthHTTP  *http.Client
 	credKey    string
 	log        *slog.Logger
+	// changelogSigning activates per-repository changelog signing at each
+	// repository's next open (WithChangelogSigning). Activation is one-way;
+	// this toggle never deactivates (signing.go).
+	changelogSigning bool
 	// insecureAllowSuperuser downgrades the fail-closed role check to a warning
 	// (WithInsecureAllowSuperuser). Dev/test only; never the production default.
 	insecureAllowSuperuser bool
@@ -98,6 +103,14 @@ func WithOAuth(stateKey, callbackURL string, hc *http.Client) Option {
 // warning.
 func WithCredentialKey(key string) Option { return func(o *options) { o.credKey = key } }
 
+// WithChangelogSigning activates per-repository changelog signing: each
+// repository mints an Ed25519 key at its next open (sealed under the
+// credential key, which must be configured) and every entry from that seq on
+// carries a signature over its chain hash. ACTIVATION IS ONE-WAY: removing
+// this option stops nothing — an activated repository refuses to append
+// unsigned rather than shedding the guarantee (signing.go).
+func WithChangelogSigning() Option { return func(o *options) { o.changelogSigning = true } }
+
 // WithInsecureAllowSuperuser DOWNGRADES the fail-closed role check to a loud
 // warning: when the two bound roles are absent or misconfigured, Open proceeds
 // with the pools running as the DSN's own user instead of refusing to boot. It
@@ -149,6 +162,9 @@ type service struct {
 	oauth *oauthflow.Client
 	// credKey seals the sealed store (AES-256-GCM); empty stores plain.
 	credKey []byte
+	// signingOn asks each repository to activate changelog signing at its
+	// next open. It never deactivates one (signing.go).
+	signingOn bool
 	// totpDisabled stops verifying the second factor (WithInsecureDisableTOTP):
 	// the password is then the whole credential. Dev only.
 	totpDisabled bool
@@ -221,6 +237,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		llmBaseURL:   o.llmBaseURL,
 		llmAPIKey:    o.llmAPIKey,
 		credKey:      deriveCredentialKey(o.credKey),
+		signingOn:    o.changelogSigning,
 		totpDisabled: o.insecureDisableTOTP,
 		log:          o.log,
 		gqlSchemas:   gql.NewCache(),
@@ -432,11 +449,32 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 			return nil, fmt.Errorf("substrate/engine: open repository %s: adopt DEK: %w", repo.Username, err)
 		}
 	}
+	// The signing state loads BEFORE the ladder: the backfill signs what the
+	// durable mark already covers. A key that cannot open (a keyless host
+	// facing an activated repository) leaves reads working and makes every
+	// append refuse (settleChain), loudly, rather than failing the open.
+	signing, err := s.loadSigningState(ctx, repo.ID)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("substrate/engine: open repository %s: signing state: %w", repo.Username, err)
+	}
+	var signKey ed25519.PrivateKey
+	if signing.signedFrom > 0 {
+		signKey, err = s.openSigningSeed(signing.wrappedSeed)
+		if err != nil {
+			s.log.Error("substrate: changelog signing is ACTIVE for this repository but the key cannot open — every write will refuse until the credential key is restored",
+				"repository", repo.ID, "error", err)
+			signKey = nil
+		}
+	}
 	ds := &dataset{
-		svc:   s,
-		db:    db,
-		dek:   dek,
-		scope: sc,
+		svc:        s,
+		db:         db,
+		dek:        dek,
+		scope:      sc,
+		signKey:    signKey,
+		signPub:    signing.public,
+		signedFrom: signing.signedFrom,
 		// A dataset's registry starts EMPTY and is built from the repository's
 		// OWN rows: the embedded tree seeded them once, at
 		// creation, and has no standing here afterwards. Nothing re-projects
@@ -452,6 +490,9 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 	// rebuilds FROM the rows, and only then does the shipped-vocabulary
 	// upgrade append what a newer binary added (seed.go).
 	for _, step := range []func(context.Context) error{
+		// The chain backfill runs FIRST: every later step that writes appends
+		// entries, and an append needs a hashed head to chain from.
+		ds.backfillChain,
 		ds.promoteSchemaDialect,
 		ds.loadStoredVocabulary,
 		ds.upgradeShippedVocabulary,
@@ -461,6 +502,17 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 			_ = db.Close()
 			return nil, err
 		}
+	}
+	// Signing activation comes AFTER the backfill (the activation epoch needs
+	// a hashed head) and after the upgrade's own appends, so the durable
+	// boundary lands on a settled head.
+	if s.signingOn && ds.signedFrom == 0 {
+		signing, key, err := s.adoptSigning(ctx, ds)
+		if err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("substrate/engine: open repository %s: activate signing: %w", repo.Username, err)
+		}
+		ds.signedFrom, ds.signPub, ds.signKey = signing.signedFrom, signing.public, key
 	}
 	// Bodies prepare at open exactly as they do at registration: Go builds
 	// hit the cache, python sources register into the shared host.

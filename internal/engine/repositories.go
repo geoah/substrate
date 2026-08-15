@@ -306,11 +306,12 @@ func (s *service) sweepOrphans(ctx context.Context) error {
 }
 
 // repositoryScopedTables is every table carrying a `repository` column — the
-// same list migration 0001 puts row level security on. A rollback that missed
-// one would leave rows nothing can ever reach again.
+// same set the migrations put row level security on (0001, plus chain_epochs
+// in 0005). A rollback that missed one would leave rows nothing can ever
+// reach again.
 var repositoryScopedTables = []string{
 	"records", "edges", "former_ids", "annotations", "property_managers",
-	"property_offers", "changelog", "embeddings", "embed_queue",
+	"property_offers", "changelog", "chain_epochs", "embeddings", "embed_queue",
 	"trigger_cursors", "trigger_failures", "trigger_schedule", "sealed",
 	"oauth_flows", "paged_cursors", "blobs", "vocabulary_dialect",
 	"vocabulary_promotions",

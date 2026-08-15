@@ -39,6 +39,12 @@ type Config struct {
 	// CredentialKey seals the credential store (AES-256-GCM, derived from
 	// any string). Unset stores provider tokens unsealed, with a boot warning.
 	CredentialKey string `envconfig:"SUBSTRATE_CREDENTIAL_KEY" default:""`
+	// ChangelogSigning activates per-repository changelog signing at each
+	// repository's next open: an Ed25519 key sealed under the credential key
+	// (which must be set) signs every entry's chain hash from that seq on.
+	// ACTIVATION IS ONE-WAY — unsetting this stops nothing; an activated
+	// repository refuses to append unsigned rather than shed the guarantee.
+	ChangelogSigning bool `envconfig:"SUBSTRATE_CHANGELOG_SIGNING" default:"false"`
 	// ConsoleURL is the console origin the OAuth callback return-page posts its
 	// completion message to and falls back to redirecting into. The scheme+host
 	// is the postMessage targetOrigin; the full base is the fallback redirect

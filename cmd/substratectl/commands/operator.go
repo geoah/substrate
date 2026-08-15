@@ -231,8 +231,19 @@ type rebuilder interface {
 	RebuildRepository(ctx context.Context, username string) (engine.RebuildReport, error)
 }
 
+// forceRebuilder is the escape hatch's OWN seam: rebuilding from history the
+// chain refuses is a distinct act, so it is a distinct method rather than a
+// flag the ordinary path could trip over.
+type forceRebuilder interface {
+	RebuildRepositoryUnverified(ctx context.Context, username string) (engine.RebuildReport, error)
+}
+
 type resealer interface {
 	ResealRepository(ctx context.Context, username string) (engine.ResealReport, error)
+}
+
+type verifier interface {
+	VerifyRepository(ctx context.Context, username string) (engine.VerifyReport, error)
 }
 
 // seamMissing is what an engine build without one of the operator seams gets:

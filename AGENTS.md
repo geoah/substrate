@@ -8,10 +8,11 @@ facility plus bundle functions.
 **The model, in one paragraph.** One invite code admits people. Registering
 creates a **user** — username, password and TOTP, all three — and that user's
 one **repository**. Everything the user has lives in it: an append-only,
-strictly sequential, unsigned **changelog** is the truth and the **records** table is
+strictly sequential, hash-chained (and optionally server-signed) **changelog**
+is the truth and the **records** table is
 its fold. Tokens and the login credential are themselves records, and a token
 has full access to its repository. There are no tenants, no identities, no
-keys, no signatures, no sharing, no scopes and no roles.
+user-managed keys, no sharing, no scopes and no roles.
 
 There is no written contract document. There was one — 3000 lines that
 declared six absent documents its superior, described a tree that no longer

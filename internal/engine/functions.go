@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1444,7 +1445,7 @@ func (ds *dataset) WakeTrigger(ctx context.Context, id string) (int, error) {
 // its full (type, id) identity.
 func (ds *dataset) latestChangeOf(ctx context.Context, typ, recordID string) (substrate.Change, error) {
 	return ds.oneChange(ctx, `
-		SELECT seq, ts, actor, op, record_id, kind, payload FROM changelog
+		SELECT seq, ts, actor, op, record_id, kind, payload, hash FROM changelog
 		WHERE kind = $1 AND record_id = $2 ORDER BY seq DESC LIMIT 1`,
 		fmt.Sprintf("record %s has no changes", recordID), typ, recordID)
 }
@@ -1610,7 +1611,7 @@ func (ds *dataset) retryFire(ctx context.Context, tr *trigger, fid string) (int,
 // changeAt reads one changelog row by seq.
 func (ds *dataset) changeAt(ctx context.Context, seq int64) (substrate.Change, error) {
 	return ds.oneChange(ctx, `
-		SELECT seq, ts, actor, op, record_id, kind, payload FROM changelog
+		SELECT seq, ts, actor, op, record_id, kind, payload, hash FROM changelog
 		WHERE seq = $1`,
 		fmt.Sprintf("changelog seq %d", seq), seq)
 }
@@ -1633,12 +1634,12 @@ func (ds *dataset) oneChange(ctx context.Context, query, missing string, args ..
 	return ch, rows.Err()
 }
 
-// scanChange reads one changelog row from a query over the seven columns.
+// scanChange reads one changelog row from a query over the eight columns.
 func scanChange(rows *sql.Rows) (substrate.Change, error) {
 	var c substrate.Change
 	var actor, op string
-	var raw []byte
-	if err := rows.Scan(&c.Seq, &c.TS, &actor, &op, &c.RecordID, &c.Kind, &raw); err != nil {
+	var raw, hash []byte
+	if err := rows.Scan(&c.Seq, &c.TS, &actor, &op, &c.RecordID, &c.Kind, &raw, &hash); err != nil {
 		return c, err
 	}
 	c.Actor = substrate.Actor(actor)
@@ -1646,6 +1647,9 @@ func scanChange(rows *sql.Rows) (substrate.Change, error) {
 	c.TS = c.TS.UTC()
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &c.Payload)
+	}
+	if len(hash) > 0 {
+		c.Hash = hex.EncodeToString(hash)
 	}
 	return c, nil
 }

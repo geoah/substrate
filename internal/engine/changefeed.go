@@ -103,7 +103,7 @@ func (ds *dataset) queryChanges(ctx context.Context, b *builder, order string, l
 		limit = 100
 	}
 	rows, err := ds.db.QueryContext(ctx, `
-		SELECT seq, ts, actor, op, record_id, kind, payload FROM changelog
+		SELECT seq, ts, actor, op, record_id, kind, payload, hash FROM changelog
 		WHERE `+strings.Join(b.where, " AND ")+`
 		ORDER BY `+order+` LIMIT `+b.arg(limit), b.args...)
 	if err != nil {

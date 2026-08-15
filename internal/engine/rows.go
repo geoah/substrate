@@ -302,18 +302,28 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 	if t.causedBy > 0 {
 		causedBy = sql.NullInt64{Int64: t.causedBy, Valid: true}
 	}
+	// RETURNING payload::text hands back the payload AS STORED: jsonb
+	// re-renders what Go sent (key order, number lexemes), and the chain
+	// hashes what a verifier will read later, never the bytes that went in.
 	var seq int64
+	var stored []byte
 	if err := t.row(`
 		INSERT INTO changelog (seq, ts, actor, op, record_id, kind, payload, caused_by)
 		VALUES ((SELECT coalesce(max(seq), 0) + 1 FROM changelog), $1, $2, $3, $4, $5, $6::jsonb, $7)
-		RETURNING seq`,
-		t.now, string(actor), string(op), recordID, typ, raw, causedBy).Scan(&seq); err != nil {
+		RETURNING seq, payload::text`,
+		t.now, string(actor), string(op), recordID, typ, raw, causedBy).Scan(&seq, &stored); err != nil {
 		return err
 	}
 	if seq > t.maxSeq {
 		t.maxSeq = seq
 	}
 	t.entries = append(t.entries, changeEntry{seq: seq, op: op, kind: typ, id: recordID})
+	t.pending = append(t.pending, chainEntry{
+		Seq: seq, TS: t.now, Actor: string(actor), Op: string(op),
+		RecordID: recordID, Kind: typ,
+		CausedBy: causedBy.Int64, CausedByOK: causedBy.Valid,
+		PayloadText: stored,
+	})
 	return nil
 }
 

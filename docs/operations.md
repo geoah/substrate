@@ -37,6 +37,7 @@ boot.
 | `WEB_DIR`                      | —                                      | The built console, served at `/`. Empty disables static serving.                                          |
 | `SUBSTRATE_INVITE_CODE`        | — (unset: registration is off)         | The one way in. See below.                                                                                  |
 | `SUBSTRATE_CREDENTIAL_KEY`     | —                                      | Seals the sealed store, which holds every secret-typed property's material (AES-256-GCM). Unset stores payloads unsealed, with a boot warning; `repository reseal` upgrades once it is set. |
+| `SUBSTRATE_CHANGELOG_SIGNING`  | `false`                                | Activates per-repository changelog signing at each repository's next open: an Ed25519 key sealed under the credential key signs every entry's chain hash from that seq on. **Activation is one-way** — unsetting this stops nothing; an activated repository refuses to append unsigned. Needs `SUBSTRATE_CREDENTIAL_KEY`. See [the chain](changelog.md#the-chain). |
 | `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                             | **Local development only.** Stops verifying the second factor, so a password is the whole credential: see [the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally). Boots with a warning, and `GET /.well-known/substrate/server.json` says so. |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. Unset mints a random key per boot, with a warning: flows in progress break on restart. |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers.                                                        |
@@ -91,6 +92,12 @@ on the box, through the DSN.
 - Each repository is opened the first time something touches it. Opening
   rebuilds its kind registry **from its own stored declaration records** —
   nothing on the serving path reads the binary's embedded tree.
+- **The chain backfill runs first**: a repository whose changelog predates
+  entry hashes gets them at its first open, oldest-first in bounded chunks,
+  before anything else writes, and the backfill records a `backfill` chain
+  epoch naming where attested history begins
+  ([the chain](changelog.md#the-chain)). A large history takes proportional
+  time, once, and the open logs progress.
 - **Shipped vocabulary is upgraded, per repository, in one transaction**: the
   first open under a new binary appends the version diff to that repository's
   changelog under the `substrate` actor
@@ -107,7 +114,9 @@ row-level-security-bound pool a request uses.
 
 Keep it to **one replica**. The watch signal and the trigger dispatcher are
 in-process, and two dispatchers would serialize on compare-and-swap rather than
-scale.
+scale. The chain leans on the same shape: one writer process per database, so
+an older binary can never append unhashed entries behind a newer one's back
+(`repository verify` reports exactly that state if it ever happens).
 
 ## Upgrading the binary
 
@@ -175,6 +184,7 @@ before touching anything without one.
 ```
 DATABASE_URL=… substratectl repository list
 DATABASE_URL=… substratectl repository inspect ada
+DATABASE_URL=… substratectl repository verify ada
 DATABASE_URL=… substratectl repository rebuild ada
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl repository reseal ada
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl user reset ada
@@ -185,10 +195,22 @@ SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl user reset ada
   when it was created, the changelog head and entry count, live and tombstoned record
   counts, and the declaration versions per authority. It is the first thing to
   run when something looks wrong.
+- **`repository verify <username>`** walks the whole chain: it recomputes
+  every entry's hash from the stored bytes, checks every signature the signing
+  state requires, lists the chain epochs, and reports either the verified head
+  `(seq, hash)` or every finding by seq and name. Read-only by construction —
+  it never backfills or repairs. **Write the head down somewhere else**:
+  comparing heads across time is what turns "internally consistent" into "the
+  same history I saw yesterday", and it is the only way to catch a truncated
+  tail. Run it before and after a Postgres major upgrade, and on every
+  restored backup. Exits nonzero on any finding.
 - **`repository rebuild <username>`** replays the whole changelog into a fresh fold,
   in one transaction, under that repository's own lock. It reproduces the fold
   bit for bit and appends nothing, so it is safe to run on a healthy
-  repository. It does not touch blobs or sealed rows — those were never in the
+  repository. **It verifies the chain first** and refuses to install history
+  that does not check out; `--force-unverified` overrides that, says so in its
+  output, and is for the day you have decided the bytes are what you have.
+  It does not touch blobs or sealed rows — those were never in the
   changelog — and it leaves runtime state (trigger cursors, OAuth flows) alone,
   because a cursor is a consumer's position in the changelog, not a fold of it.
 - **`repository reseal <username>`** moves every legacy secret value into
@@ -196,9 +218,14 @@ SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl user reset ada
   payloads at the refs; it also upgrades sealed-store payloads written while
   the server ran without `SUBSTRATE_CREDENTIAL_KEY`. Run it once after
   upgrading past the release that moved secrets into the store: the
-  changelog is immutable, so plaintext it already carries can be removed by
+  changelog is append-only, so plaintext it already carries can be removed by
   nothing else. Values-only and idempotent, and it refuses until the server
-  has opened the repository once under the upgraded binary.
+  has opened the repository once under the upgraded binary. Because it is the
+  one sanctioned rewrite of history, it re-chains (and re-signs) every entry
+  from the first rewritten seq and records a `reseal` chain epoch naming the
+  old head and the new: a head you wrote down before a reseal will not match
+  after, and the epoch is what explains it. On a signed repository it refuses
+  without the signing key.
 - **`user reset <username>`** is the answer to a user who has lost both
   factors. It writes fresh sealed material and a new credential record and
   prints a fresh TOTP enrollment. The data is untouched; the account gets new
@@ -216,8 +243,10 @@ not bind a superuser and an operator DSN usually is one — without that,
 
 No sharing, no second user reading your repository, no cross-repository query.
 No erasure, compaction, or retention policy: the changelog keeps everything, and the
-horizon stays 0. The changelog is unsigned — trusted storage, not evidence. Each of
-those is a deliberate absence, not an oversight.
+horizon stays 0. The chain and its signatures are tamper EVIDENCE, not tamper
+proofing, and never evidence against the host operator, who holds the database
+and the credential key alike ([what the chain proves](changelog.md#the-chain)).
+Each of those is a deliberate absence, not an oversight.
 
 Next: [the live tests](testing.md), the one suite that talks to real LLM
 providers.

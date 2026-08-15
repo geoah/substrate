@@ -52,6 +52,10 @@ type RebuildReport struct {
 	Head       int64         `json:"head"`
 	Records    int64         `json:"records"`
 	Took       time.Duration `json:"took"`
+	// Unverified marks a fold built from history the chain refused
+	// (RebuildRepositoryUnverified): installed on explicit demand, and the
+	// report says so rather than letting it read as clean.
+	Unverified bool `json:"unverified,omitempty"`
 }
 
 // foldTables are cleared and replayed, in this order: a purge effect walks the
@@ -68,7 +72,24 @@ const rebuildBatch = 500
 // into it. The repository's own advisory lock is held for the duration, so no
 // write can interleave, and the whole rebuild is ONE transaction: a rebuild
 // either replaces the fold or leaves it exactly as it was.
+//
+// THE CHAIN IS VERIFIED FIRST, before anything is cleared: tampered history
+// refuses to become the live fold. The explicit escape hatch is
+// RebuildRepositoryUnverified, a distinct method on purpose.
 func (s *service) RebuildRepository(ctx context.Context, username string) (RebuildReport, error) {
+	return s.rebuildRepository(ctx, username, true)
+}
+
+// RebuildRepositoryUnverified rebuilds from history the chain may refuse.
+// What it installs is exactly as trustworthy as the bytes in the table, which
+// is the thing the caller is choosing to accept; the report carries the mark.
+func (s *service) RebuildRepositoryUnverified(ctx context.Context, username string) (RebuildReport, error) {
+	report, err := s.rebuildRepository(ctx, username, false)
+	report.Unverified = true
+	return report, err
+}
+
+func (s *service) rebuildRepository(ctx context.Context, username string, verify bool) (RebuildReport, error) {
 	started := time.Now()
 	repo, err := s.repositoryByUsername(ctx, username)
 	if err != nil {
@@ -79,6 +100,16 @@ func (s *service) RebuildRepository(ctx context.Context, username string) (Rebui
 		return RebuildReport{}, err
 	}
 	report := RebuildReport{Repository: repo.ID, Username: repo.Username}
+	if verify {
+		vr, err := s.VerifyRepository(ctx, username)
+		if err != nil {
+			return report, err
+		}
+		if !vr.OK {
+			return report, fmt.Errorf("substrate/engine: rebuild refuses: the chain does not verify (%d finding(s), first: %s); run `repository verify`, and only rebuild --force-unverified once you understand what you would be installing",
+				len(vr.Findings), vr.Findings[0])
+		}
+	}
 	// Not inTx: a rebuild is not a write with an actor and must append no
 	// entry of its own. It replays what is already there.
 	tx, err := ds.db.BeginTx(ctx, nil)
@@ -139,7 +170,7 @@ func (t *txn) rebuild(report *RebuildReport) error {
 // changelogPage reads one page of the changelog in seq order.
 func (t *txn) changelogPage(after int64) ([]substrate.Change, error) {
 	rows, err := t.query(`
-		SELECT seq, ts, actor, op, record_id, kind, payload FROM changelog
+		SELECT seq, ts, actor, op, record_id, kind, payload, hash FROM changelog
 		WHERE seq > $1 ORDER BY seq LIMIT $2`, after, rebuildBatch)
 	if err != nil {
 		return nil, err
