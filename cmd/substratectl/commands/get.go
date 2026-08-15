@@ -102,7 +102,7 @@ func (a *app) getOne(ctx context.Context, cl *client, col collection, id, output
 	// read, so its presence is the whole signal.
 	//
 	// The note goes to stderr, so every output format keeps its shape — a yaml
-	// document still applies back unchanged (`recordDocument` renders the
+	// document still applies back unchanged (`documentOf` renders the
 	// envelope's fields, and this is not one of them), a table is still a
 	// table, and `substratectl get … | …` is not what changed. It is a note and
 	// not an error: the read succeeded, and the record below is the right one.
@@ -113,14 +113,14 @@ func (a *app) getOne(ctx context.Context, cl *client, col collection, id, output
 	case "", "yaml":
 		// A single read is the one place `propertyMeta` is on the wire, so it
 		// is the one place `status.properties` is in the document.
-		b, err := marshalDocument(recordDocument(e, meta))
+		b, err := marshalDocument(documentOf(e, meta))
 		if err != nil {
 			return err
 		}
 		_, err = a.out.Write(b)
 		return err
 	case "json":
-		return printJSON(a.out, recordDocument(e, meta))
+		return printJSON(a.out, documentOf(e, meta))
 	case "table":
 		return printRecordTable(a.out, []*substrate.Record{e}, false, a.now(), a.statesFor(ctx, col))
 	case "wide":
@@ -150,9 +150,9 @@ func (a *app) printRecords(ctx context.Context, col collection, page *recordPage
 	case "json":
 		// The JSON of a --- separated stream is the array of its manifests;
 		// the cursor still goes to stderr, as it does for yaml.
-		docs := make([]*document, 0, len(page.Records))
+		docs := make([]any, 0, len(page.Records))
 		for _, e := range page.Records {
-			docs = append(docs, recordDocument(e, nil))
+			docs = append(docs, documentOf(e, nil))
 		}
 		if err := printJSON(a.out, docs); err != nil {
 			return err

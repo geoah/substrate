@@ -1858,17 +1858,6 @@ func (r *Registry) Finalize() error {
 	return nil
 }
 
-// Validate reports whether an authority WOULD install, without installing it: the
-// same resolution and projection checks Install runs, against a throwaway
-// clone. Re-registering a connector whose manifest changed must fail at the
-// registration that changed it — storing a manifest that only fails at the
-// next repository-open turns a 200 into a boot that never completes.
-func (r *Registry) Validate(g *Authority) error {
-	probe := r.Clone()
-	probe.remove(g.Name)
-	return probe.Install(g)
-}
-
 // Install adds an already-parsed authority and resolves it, bumping the version
 // counter the GraphQL layer caches against.
 func (r *Registry) Install(g *Authority) error {

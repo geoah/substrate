@@ -120,7 +120,7 @@ func printDocuments(w io.Writer, records []*substrate.Record) error {
 			fmt.Fprintln(w, "---")
 		}
 		// Lists never carry propertyMeta, so there is no status.properties here.
-		b, err := marshalDocument(recordDocument(e, nil))
+		b, err := marshalDocument(documentOf(e, nil))
 		if err != nil {
 			return err
 		}

@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // edgeRefDoc is an edge target: {kind, id} — a record reference. Bare {id} is
@@ -173,6 +174,87 @@ func recordDocument(e *substrate.Record, meta map[string]statusProperty) *docume
 	return d
 }
 
+// --- declarations ---
+
+// declarationDocument is a VOCABULARY declaration in the shape its author
+// writes: the same four-key envelope, but `data` holds the declaration's own
+// keys — `authority`, `names`, `properties`, `version` — directly.
+//
+// A declaration is two things at once, and that is the whole difficulty. It is
+// a RECORD, so it reads back through the ordinary collection API and arrives
+// here as a substrate.Record whose Properties map holds those keys. It is also
+// the INPUT to /vocabulary/apply, which takes the authored shape. Rendering it
+// as an ordinary record nests every key one level too deep under
+// `data.properties`, and `apply -f` of that output is refused for a missing
+// `data.authority` — a read whose output the writer will not take.
+type declarationDocument struct {
+	Kind     string          `yaml:"kind" json:"kind"`
+	Metadata documentMeta    `yaml:"metadata" json:"metadata"`
+	Data     map[string]any  `yaml:"data" json:"data"`
+	Status   *documentStatus `yaml:"status,omitempty" json:"status,omitempty"`
+}
+
+// documentOf renders a stored record for output: a declaration in its authored
+// shape, everything else as an ordinary record. This is the one place that
+// choice is made, so `get -o yaml`, the `---` stream and `-o json` cannot
+// disagree about it.
+func documentOf(e *substrate.Record, meta map[string]statusProperty) any {
+	if short, ok := declarationKindOf(e.Kind); ok {
+		return declarationDocumentOf(short, e, meta)
+	}
+	return recordDocument(e, meta)
+}
+
+// declarationKindOf reports whether a kind reference names one of the core
+// meta-kinds, and which. It is the same test `apply` uses to route a document
+// to /vocabulary/apply, so the reader and the writer agree on what a
+// declaration is by construction.
+func declarationKindOf(kind string) (string, bool) {
+	authority, name := vocabulary.SplitKindRef(kind)
+	if authority != vocabulary.AuthorityCore || !vocabulary.VocabularyDocumentKind(name) {
+		return "", false
+	}
+	return name, true
+}
+
+// declarationDocumentOf renders one declaration row as its authored document.
+//
+// `data` is a WHITELIST, not the property map with a few keys removed. A
+// declaration ROW carries more than its document does — the engine stamps an
+// origin and a version, quarantine marks, the bundle lifecycle bools, and the
+// record projection adds the derived display title on top — and every one of
+// those is refused by /vocabulary/apply as an unknown key. Subtracting the
+// ones known today would leave the next stamped property to break the round
+// trip silently, so the set that admits is the set that renders:
+// vocabulary.DeclarationDataKeys, which exists for exactly this and says so.
+func declarationDocumentOf(short string, e *substrate.Record, meta map[string]statusProperty) *declarationDocument {
+	admitted := vocabulary.DeclarationDataKeys(short)
+	data := map[string]any{}
+	for k, v := range normalizeMap(e.Properties) {
+		if admitted[k] {
+			data[k] = v
+		}
+	}
+	return &declarationDocument{
+		Kind: e.Kind,
+		Metadata: documentMeta{
+			ID:          e.ID,
+			Labels:      normalizeMap(e.Labels),
+			Annotations: normalizeMap(e.Annotations),
+		},
+		Data: data,
+		Status: &documentStatus{
+			Version:    e.Version,
+			CreatedAt:  e.CreatedAt,
+			UpdatedAt:  e.UpdatedAt,
+			DeletedAt:  e.DeletedAt,
+			Finalizers: e.Finalizers,
+			FormerIDs:  e.FormerIDs,
+			Properties: normalizeMeta(meta),
+		},
+	}
+}
+
 // --- numbers ---
 //
 // A property map is `map[string]any`, so every number in one arrives untyped.
@@ -248,8 +330,10 @@ func normalizeMeta(meta map[string]statusProperty) map[string]statusProperty {
 }
 
 // marshalDocument renders one manifest at the two-space indent the format's
-// examples are written in.
-func marshalDocument(d *document) ([]byte, error) {
+// examples are written in. It takes `any` because a declaration renders
+// through declarationDocument, whose `data` is the authored map rather than
+// the record document's properties/edges pair.
+func marshalDocument(d any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)

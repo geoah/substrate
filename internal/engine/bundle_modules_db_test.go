@@ -117,3 +117,64 @@ func TestBundleSharedModuleImportable(t *testing.T) {
 		t.Fatal("a shared module became a record")
 	}
 }
+
+// A MODULE-ONLY change re-prepares the bodies that import it.
+//
+// "Bodies prepare at registration" is the contract: every function the batch
+// adds or changes must compile or register NOW, and the first failure fails
+// the whole batch as an admission error. The skip that implements "unchanged,
+// already prepared" used to compare runtime and source alone — a narrower
+// identity than the one being warmed, because runner.Spec.Key() hashes the
+// body, its bundle's shared modules AND the enforced capability envelope.
+//
+// So a bundle that edited only its library changed no function's source, every
+// body skipped preparation, and a module that cannot load reached activation:
+// the installer saw a clean install and the FIRST DELIVERY parked instead.
+// That is exactly the failure the prepare phase exists to move forward.
+func TestModuleOnlyChangeStillPreparesTheBodiesThatImportIt(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	sa := applier(t, ds)
+
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, mbModuleDocs(goodModules())); err != nil {
+		t.Fatalf("install bundle with modules: %v", err)
+	}
+
+	// Every function source is byte-identical to the installed one; only the
+	// module moved, and it no longer parses. The importing body cannot
+	// register against it, so admission must refuse the batch.
+	broken := map[string]any{"connkit.py": "def greet(who:\n    return 'hi ' + who\n"}
+	_, err := sa.ApplyVocabularyDocuments(ctx, owner, mbModuleDocs(broken))
+	if err == nil {
+		t.Fatal("a module-only change that breaks an importing body was admitted — " +
+			"the bodies skipped preparation and the first delivery will park")
+	}
+	if !strings.Contains(err.Error(), "failed to prepare") {
+		t.Fatalf("refused, but not by the prepare phase: %v", err)
+	}
+
+	// The refusal left the install alone: the old module is still what the
+	// function imports, because preparation happens BEFORE the transaction.
+	fops := ds.(fnOps)
+	out, _, err := fops.CallFunction(ctx, mbImpFn, map[string]any{})
+	if err != nil {
+		t.Fatalf("call after the refused batch: %v", err)
+	}
+	if m, ok := out.(map[string]any); !ok || m["greeting"] != "hi mail" {
+		t.Fatalf("the refused batch disturbed the installed module: %v", out)
+	}
+
+	// And a module-only change that DOES load lands, body untouched.
+	fixed := map[string]any{"connkit.py": "def greet(who):\n    return 'hey ' + who\n"}
+	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, mbModuleDocs(fixed)); err != nil {
+		t.Fatalf("a valid module-only change was refused: %v", err)
+	}
+	out, _, err = fops.CallFunction(ctx, mbImpFn, map[string]any{})
+	if err != nil {
+		t.Fatalf("call after the module-only change: %v", err)
+	}
+	if m, ok := out.(map[string]any); !ok || m["greeting"] != "hey mail" {
+		t.Fatalf("the module-only change did not reach the body: %v", out)
+	}
+}

@@ -245,9 +245,24 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		for _, fname := range cand.FunctionOrder {
 			f := cand.Functions[fname]
 			if cur != nil {
+				// "Already prepared" has to mean the same thing the RUNNER
+				// means by it, which is Spec.Key(): repository, function and a
+				// content hash over the body, its bundle's shared modules and
+				// the capability envelope the sandbox applies at process
+				// start. Comparing runtime and source alone was a narrower
+				// identity than the one being warmed, so anything else that
+				// re-keys an installation skipped preparation and reached
+				// activation cold — a module-only bundle edit most obviously,
+				// but a `permissions.network` withdrawal on unchanged source
+				// too, which Spec.contentHash exists to catch.
+				//
+				// Each spec is built against ITS OWN registry: the stored
+				// modules come from `current`, the shipped ones from
+				// `candidate`, so a bundle that changed only its library is a
+				// different key on the two sides and the body prepares.
 				if prev := cur.Functions[fname]; prev != nil &&
-					prev.Runtime == f.Runtime && prev.Source == f.Source {
-					continue // unchanged body, already prepared
+					ds.runnerSpecIn(prev, current).Key() == ds.runnerSpecIn(f, candidate).Key() {
+					continue // unchanged installation, already prepared
 				}
 			}
 			prepare = append(prepare, f)
