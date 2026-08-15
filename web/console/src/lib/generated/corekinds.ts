@@ -920,8 +920,8 @@ export interface LLMInteractionAnswers {
  * dispatched call's result.
  */
 export interface LLMMessage {
-  /** User, assistant, tool or system. */
-  role?: string
+  /** Whose turn the row is, following the chat wire. */
+  role?: LLMMessageRole
   /** The turn's text; a tool row's result payload. */
   content?: string
   /** The loop iteration this row belongs to, for ordering. */
@@ -948,6 +948,19 @@ export interface LLMMessage {
  */
 export const llmMessageRequired: string[] = ["thread"]
 
+/** LLMMessageRole is a declared enum: the admissible set, in declaration order.
+ *
+ * whose turn the row is, following the chat wire
+ */
+export type LLMMessageRole = "user" | "assistant" | "tool" | "system"
+
+export const llmMessageRoleValues: LLMMessageRole[] = [
+  "user",
+  "assistant",
+  "tool",
+  "system",
+]
+
 /** LLMMessageToolCalls is one value of the `toolCalls` object declared on
  * core.substrate.reamde.dev/llmmessage.
  *
@@ -970,13 +983,31 @@ export interface LLMMessageToolCalls {
 export interface LLMMessageChanges {
   /** The changelog seq of the entry, which addresses its delta. */
   seq?: number
-  /** The entry's op — put, patch, delete, link or unlink. */
-  op?: string
+  /** The changelog op the entry landed as. */
+  op?: LLMMessageChangesOp
   /** The written record's kind. */
   kind?: string
   /** The written record's id. */
   id?: string
 }
+
+/** LLMMessageChangesOp is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * the changelog op the entry landed as
+ */
+export type LLMMessageChangesOp =
+  "put" | "patch" | "delete" | "link" | "unlink" | "merge" | "split"
+
+export const llmMessageChangesOpValues: LLMMessageChangesOp[] = [
+  "put",
+  "patch",
+  "delete",
+  "link",
+  "unlink",
+  "merge",
+  "split",
+]
 
 /** LLMProvider is core.substrate.reamde.dev/llmprovider.
  *
@@ -1083,10 +1114,10 @@ export interface LLMThread {
   provider?: string
   /** The model id the run sent. */
   model?: string
-  /** Trigger, schedule, webhook, manual, call, subagent or chat. */
-  mode?: string
-  /** Running, then ok, overbudget or error. */
-  status?: string
+  /** How the run was invoked. */
+  mode?: LLMThreadMode
+  /** Running, then settled to ok, overbudget or error. */
+  status?: LLMThreadStatus
   /** Which budget ended an overbudget run, or the error. */
   reason?: string
   /** How many sub-agent hops sit above this thread (0 = root). */
@@ -1125,6 +1156,45 @@ export interface LLMThread {
  * about a record that arrives.
  */
 export const llmThreadRequired: string[] = ["agent"]
+
+/** LLMThreadMode is a declared enum: the admissible set, in declaration order.
+ *
+ * how the run was invoked
+ */
+export type LLMThreadMode =
+  | "trigger"
+  | "schedule"
+  | "webhook"
+  | "manual"
+  | "call"
+  | "subagent"
+  | "chat"
+  | "judge"
+
+export const llmThreadModeValues: LLMThreadMode[] = [
+  "trigger",
+  "schedule",
+  "webhook",
+  "manual",
+  "call",
+  "subagent",
+  "chat",
+  "judge",
+]
+
+/** LLMThreadStatus is a declared enum: the admissible set, in declaration
+ * order.
+ *
+ * running, then settled to ok, overbudget or error
+ */
+export type LLMThreadStatus = "running" | "ok" | "overbudget" | "error"
+
+export const llmThreadStatusValues: LLMThreadStatus[] = [
+  "running",
+  "ok",
+  "overbudget",
+  "error",
+]
 
 /** PropertyType is core.substrate.reamde.dev/propertytype.
  *
@@ -1681,8 +1751,8 @@ export interface Run {
   trigger?: string
   /** The callable that ran, as its actor spells it — `function:<name>`. */
   callable?: string
-  /** Trigger, schedule, webhook or manual. */
-  mode?: string
+  /** How the delivery fired. */
+  mode?: RunMode
   /** The changelog seq delivered, for record-sourced runs. */
   seq?: number
   /** The stable fire id, for schedule and webhook runs. */
@@ -1692,7 +1762,7 @@ export interface Run {
   /** Ok (effects applied or nothing to do), skipped (the when guard said no),
    * or parked (retried out; a trigger_failures row holds the retry handle).
    */
-  status?: string
+  status?: RunStatus
   /** How many attempts the delivery burned. */
   attempt?: number
   /** When the attempt began. */
@@ -1708,6 +1778,28 @@ export interface Run {
    */
   pages?: number
 }
+
+/** RunMode is a declared enum: the admissible set, in declaration order.
+ *
+ * how the delivery fired
+ */
+export type RunMode = "trigger" | "schedule" | "webhook" | "manual"
+
+export const runModeValues: RunMode[] = [
+  "trigger",
+  "schedule",
+  "webhook",
+  "manual",
+]
+
+/** RunStatus is a declared enum: the admissible set, in declaration order.
+ *
+ * ok (effects applied or nothing to do), skipped (the when guard said no), or
+ * parked (retried out; a trigger_failures row holds the retry handle)
+ */
+export type RunStatus = "ok" | "skipped" | "parked"
+
+export const runStatusValues: RunStatus[] = ["ok", "skipped", "parked"]
 
 /** Token is core.substrate.reamde.dev/token.
  *
