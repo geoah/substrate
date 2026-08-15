@@ -213,7 +213,7 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodeKind)
 
 	roundTrip(t, "llmmessage", &corekinds.LLMMessage{
-		Role:       str("assistant"),
+		Role:       ptr(corekinds.LLMMessageRoleAssistant),
 		Content:    str("done"),
 		Turn:       i64(3),
 		ToolCalls:  []corekinds.LLMMessageToolCalls{{Id: str("c1"), Name: str("query"), Arguments: str("{}")}},
@@ -243,8 +243,8 @@ func TestRoundTripPopulated(t *testing.T) {
 		Agent:            refPath("core.substrate.reamde.dev/agent/core.substrate.reamde.dev/assistant"),
 		Provider:         str("default"),
 		Model:            str("gpt-5"),
-		Mode:             str("chat"),
-		Status:           str("succeeded"),
+		Mode:             ptr(corekinds.LLMThreadModeChat),
+		Status:           ptr(corekinds.LLMThreadStatusOk),
 		AgentDepth:       i64(0),
 		Turns:            i64(4),
 		ToolCalls:        i64(2),
@@ -317,11 +317,11 @@ func TestRoundTripPopulated(t *testing.T) {
 	roundTrip(t, "run", &corekinds.Run{
 		Trigger:    str("core.substrate.reamde.dev/nightly"),
 		Callable:   str("function:sync"),
-		Mode:       str("schedule"),
+		Mode:       ptr(corekinds.RunModeSchedule),
 		Seq:        i64(12),
 		FireId:     str("f-1"),
 		Record:     str("tasks.substrate.reamde.dev/task/t-1"),
-		Status:     str("succeeded"),
+		Status:     ptr(corekinds.RunStatusOk),
 		Attempt:    i64(1),
 		StartedAt:  str(testInstant),
 		FinishedAt: str("2026-08-14T09:41:03Z"),

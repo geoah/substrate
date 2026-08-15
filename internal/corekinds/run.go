@@ -21,8 +21,8 @@ type Run struct {
 	// `function:<name>`.
 	Callable *string
 
-	// Mode is trigger, schedule, webhook or manual.
-	Mode *string
+	// Mode is how the delivery fired.
+	Mode *RunMode
 
 	// Seq is the changelog seq delivered, for record-sourced runs.
 	Seq *int64
@@ -36,7 +36,7 @@ type Run struct {
 	// Status is ok (effects applied or nothing to do), skipped (the when guard
 	// said no), or parked (retried out; a trigger_failures row holds the retry
 	// handle).
-	Status *string
+	Status *RunStatus
 
 	// Attempt is how many attempts the delivery burned.
 	Attempt *int64
@@ -57,6 +57,44 @@ type Run struct {
 	// single-shot body, the durable per-chain progress lives in paged_cursors.
 	Pages *int64
 }
+
+// RunMode is a declared enum: the admissible set, in declaration order.
+//
+// how the delivery fired
+type RunMode string
+
+const (
+	RunModeTrigger  RunMode = "trigger"
+	RunModeSchedule RunMode = "schedule"
+	RunModeWebhook  RunMode = "webhook"
+	RunModeManual   RunMode = "manual"
+)
+
+// RunModeValues are the declared values in declaration order, which is render
+// order.
+var RunModeValues = []string{"trigger", "schedule", "webhook", "manual"}
+
+// Valid reports whether v is one of the declared values.
+func (v RunMode) Valid() bool { return Declared(RunModeValues, string(v)) }
+
+// RunStatus is a declared enum: the admissible set, in declaration order.
+//
+// ok (effects applied or nothing to do), skipped (the when guard said no), or
+// parked (retried out; a trigger_failures row holds the retry handle)
+type RunStatus string
+
+const (
+	RunStatusOk      RunStatus = "ok"
+	RunStatusSkipped RunStatus = "skipped"
+	RunStatusParked  RunStatus = "parked"
+)
+
+// RunStatusValues are the declared values in declaration order, which is
+// render order.
+var RunStatusValues = []string{"ok", "skipped", "parked"}
+
+// Valid reports whether v is one of the declared values.
+func (v RunStatus) Valid() bool { return Declared(RunStatusValues, string(v)) }
 
 // RunKeys is the admitted key set: every property
 // core.substrate.reamde.dev/run declares, sorted. A key outside it is refused
@@ -80,6 +118,24 @@ func DecodeRun(props map[string]any) (*Run, []Problem) {
 		return nil, d.problems
 	}
 	return &out, nil
+}
+
+// decodeRunMode decodes a declared RunMode value.
+func decodeRunMode(d *decoder, path string, v any) (RunMode, bool) {
+	s, ok := d.text(path, v, RunModeValues, nil)
+	if !ok {
+		return "", false
+	}
+	return RunMode(s), true
+}
+
+// decodeRunStatus decodes a declared RunStatus value.
+func decodeRunStatus(d *decoder, path string, v any) (RunStatus, bool) {
+	s, ok := d.text(path, v, RunStatusValues, nil)
+	if !ok {
+		return "", false
+	}
+	return RunStatus(s), true
 }
 
 // decodeRun decodes one Run value at path.
@@ -108,7 +164,7 @@ func decodeRun(d *decoder, path string, v any) (Run, bool) {
 			}
 		case "mode":
 			p := at(path, "mode")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := decodeRunMode(d, p, props[key]); ok {
 				out.Mode = &e
 			}
 		case "seq":
@@ -128,7 +184,7 @@ func decodeRun(d *decoder, path string, v any) (Run, bool) {
 			}
 		case "status":
 			p := at(path, "status")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := decodeRunStatus(d, p, props[key]); ok {
 				out.Status = &e
 			}
 		case "attempt":
@@ -193,7 +249,7 @@ func (v *Run) Encode() map[string]any {
 		out["callable"] = *v.Callable
 	}
 	if v.Mode != nil {
-		out["mode"] = *v.Mode
+		out["mode"] = string(*v.Mode)
 	}
 	if v.Seq != nil {
 		out["seq"] = *v.Seq
@@ -205,7 +261,7 @@ func (v *Run) Encode() map[string]any {
 		out["record"] = *v.Record
 	}
 	if v.Status != nil {
-		out["status"] = *v.Status
+		out["status"] = string(*v.Status)
 	}
 	if v.Attempt != nil {
 		out["attempt"] = *v.Attempt
