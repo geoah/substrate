@@ -1,4 +1,4 @@
-name: Feature or change
+name: Feature
 description: Something that should exist, or should work differently
 labels: [enhancement]
 body:
@@ -7,26 +7,8 @@ body:
     attributes:
       label: The problem
       description: >-
-        What you were trying to do, and where the substrate got in the way.
-        Start here rather than at the solution: the shape of the answer usually
-        follows from the shape of the problem, and this project has a small
-        vocabulary it is trying to keep small.
+        What you were trying to do, where the substrate got in the way, and
+        what you have in mind, if anything. Start at the problem rather than
+        the solution: the shape of the answer usually follows from it.
     validations:
       required: true
-
-  - type: textarea
-    id: shape
-    attributes:
-      label: What you have in mind
-      description: >-
-        Optional. If it touches the model (a kind, a trait, an edge, a verb),
-        sketch the envelope or the call.
-      render: yaml
-
-  - type: textarea
-    id: alternatives
-    attributes:
-      label: What you tried instead
-      description: >-
-        A bundle, a function, a projection, a client-side workaround. Something
-        that can already be done with what is here is worth knowing about.

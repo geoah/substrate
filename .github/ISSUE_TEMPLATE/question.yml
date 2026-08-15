@@ -1,0 +1,11 @@
+name: Question
+description: Something the docs did not answer
+labels: [question]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: The question
+      description: What you want to know, and what you already tried or read.
+    validations:
+      required: true
