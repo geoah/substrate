@@ -1,0 +1,36 @@
+# The labels, from the file.
+#
+# .github/labels.yml is the whole set, and this sync holds the repository to
+# it: create what is missing, update what drifted, delete what the file does
+# not name. A pull request touching the file gets a dry run; the write only
+# happens from main, so the file on main IS the label set.
+name: labels
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/labels.yml
+      - .github/workflows/labels.yml
+  pull_request:
+    paths:
+      - .github/labels.yml
+      - .github/workflows/labels.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: crazy-max/ghaction-github-labeler@548a7c3603594ec17c819e1239f281a3b801ab4d # v6.0.0
+        with:
+          yaml-file: .github/labels.yml
+          dry-run: ${{ github.event_name == 'pull_request' }}

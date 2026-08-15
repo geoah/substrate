@@ -1,0 +1,83 @@
+# The labels, as a file. labels.yml (the workflow) syncs the repository to
+# exactly this set: anything missing is created, anything drifted is updated,
+# and anything not named here is deleted, so an edit in the UI is drift the
+# next run reverts.
+#
+# Three prefixes and no more: type/ is what the issue is (the issue forms
+# assign these), area/ is where it lands, priority/ is when. GitHub's
+# built-in close reasons carry duplicate/invalid/wontfix.
+
+# ---- type: assigned by the issue forms ------------------------------------
+- name: type/bug
+  color: fecaca
+  description: something behaves differently from what the code or the docs
+    say
+- name: type/feature
+  color: bfdbfe
+  description: something that should exist, or should work differently
+- name: type/question
+  color: e9d5ff
+  description: something the docs did not answer
+
+# ---- area: where it lands --------------------------------------------------
+- name: area/server
+  color: ddd6fe
+  description: "the server: API, engine, changelog"
+- name: area/console
+  color: ddd6fe
+  description: the web console
+- name: area/cli
+  color: ddd6fe
+  description: substratectl, both hats
+- name: area/vocabulary
+  color: ddd6fe
+  description: "the vocabulary system: datatypes, the declaration dialect,
+    the loader"
+- name: area/agent
+  color: ddd6fe
+  description: "the agent runtime: threads, tools, decisions"
+- name: area/docs
+  color: ddd6fe
+  description: the pages under docs/, and the README
+
+# ---- priority: when --------------------------------------------------------
+- name: priority/urgent
+  color: fca5a5
+  description: drop other work; this blocks people now
+- name: priority/soon
+  color: fed7aa
+  description: the next batch of work
+- name: priority/backlog
+  color: fef08a
+  description: real, and it can wait
+
+# ---- contributor signals: GitHub keys on these exact names -----------------
+- name: good first issue
+  color: 7057ff
+  description: Good for newcomers
+- name: help wanted
+  color: "008672"
+  description: Extra attention is needed
+
+# ---- the bots' labels: dependabot and release-please expect these ----------
+- name: dependencies
+  color: 0366d6
+  description: Pull requests that update a dependency file
+- name: go
+  color: 16e2e2
+  description: Pull requests that update go code
+- name: javascript
+  color: "168700"
+  description: Pull requests that update javascript code
+- name: docker
+  color: 21ceff
+  description: Pull requests that update docker code
+- name: github_actions
+  color: "000000"
+  description: Pull requests that update GitHub Actions code
+- name: "autorelease: pending"
+  color: ededed
+  description: ""
+- name: "autorelease: tagged"
+  color: ededed
+  description: ""
