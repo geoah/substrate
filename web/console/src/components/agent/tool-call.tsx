@@ -71,6 +71,9 @@ export function ToolCallCard({ call }: { call: ToolCallView }) {
   const changes = (call.changes ?? []).filter(
     (c) => c.id !== proposed && c.id !== asked
   )
+  // A failed call that LANDED a request was not a failure: the policy door
+  // held the write for review, and the chip says so instead of crying red.
+  const held = failed && proposed !== undefined
   return (
     <Collapsible className="group/tool rounded-md border bg-muted/40">
       <CollapsibleTrigger
@@ -87,10 +90,14 @@ export function ToolCallCard({ call }: { call: ToolCallView }) {
           <span
             className={cn(
               "shrink-0 data",
-              failed ? "text-destructive" : "text-muted-foreground"
+              held
+                ? "text-amber-600"
+                : failed
+                  ? "text-destructive"
+                  : "text-muted-foreground"
             )}
           >
-            {failed ? "failed" : "ok"}
+            {held ? "held" : failed ? "failed" : "ok"}
           </span>
         )}
         <ChevronRightIcon className="ml-auto size-3 shrink-0 text-muted-foreground transition-transform group-data-open/tool:rotate-90" />

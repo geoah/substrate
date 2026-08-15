@@ -36,7 +36,10 @@ data:
   # dialect rung rewrites the ones that do.
   # version 8: the declaration's own `version` became an incremental
   # integer, maintained by the engine.
-  version: 8
+  # version 9: `effect` and `confirmation` — the author's objective facts for
+  # the policy door (docs/plans/thread-interactions.md phase 3): what class
+  # of effect the body has, and a floor no policy or judge loosens.
+  version: 9
   names:
     singular: function
     plural: functions
@@ -69,6 +72,26 @@ data:
     # installed authority, since nothing can hand the engine a body). The four
     # host functions core ships are the agent built-ins — query, propose,
     # graphql, mutate — and their declarations are their whole cards.
+    # The author's OBJECTIVE facts for the policy door
+    # (docs/plans/thread-interactions.md): what class of effect the body has,
+    # and a floor no policy or judge loosens. Facts, never grants — the grant
+    # stays `permissions`.
+    effect:
+      type: enum
+      values:
+        - read
+        - write
+        - external
+        - irreversible
+      description: the author's declared effect class, read by the policy
+        door
+    confirmation:
+      type: enum
+      values:
+        - policy
+        - always
+      description: always means the body's effects are never auto-applied,
+        whatever any policy or judge says; absent means policy
     runtime:
       type: enum
       values:

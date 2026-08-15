@@ -75,6 +75,9 @@ const KindLLMThread = "core.substrate.reamde.dev/llmthread"
 // KindLLMInteraction is the batch-of-questions kind the `ask` built-in emits.
 const KindLLMInteraction = "core.substrate.reamde.dev/llminteraction"
 
+// KindRecordPatchPolicy is the owner's door rules for agent writes.
+const KindRecordPatchPolicy = "core.substrate.reamde.dev/recordpatchpolicy"
+
 // The declared `resume:` values: whether a resolution resumes the agent's
 // thread. Absent means always.
 const (

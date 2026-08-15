@@ -252,7 +252,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 
 	// --- binary N+1: the core authority gains a kind and a version.
 	addShippedType(t, tree, "core.substrate.reamde.dev", "widget", "widgets")
-	bumpGroupVersion(t, tree, "core.substrate.reamde.dev", "7")
+	bumpGroupVersion(t, tree, "core.substrate.reamde.dev", "99")
 
 	svc2 := openTree(t, dsn, tree)
 	ds2, err := svc2.Dataset(ctx, "opened")
@@ -285,7 +285,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := vocabulary.VersionValue(authority.Properties["version"]); v != 7 {
+	if v, _ := vocabulary.VersionValue(authority.Properties["version"]); v != 99 {
 		t.Fatalf("the stored authority version = %v", authority.Properties["version"])
 	}
 	// Untouched authorities stayed untouched: the diff is per authority, not a re-assert.
@@ -496,7 +496,7 @@ func TestBootUpgradeNeverDowngrades(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 	tree := shippedTree(t)
 	addShippedType(t, tree, "core.substrate.reamde.dev", "widget", "widgets")
-	bumpGroupVersion(t, tree, "core.substrate.reamde.dev", "7")
+	bumpGroupVersion(t, tree, "core.substrate.reamde.dev", "99")
 
 	svc1 := openTree(t, dsn, tree)
 	if _, err := svc1.CreateRepository(ctx, "geoah"); err != nil {
@@ -525,7 +525,7 @@ func TestBootUpgradeNeverDowngrades(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := vocabulary.VersionValue(authority.Properties["version"]); v != 7 {
+	if v, _ := vocabulary.VersionValue(authority.Properties["version"]); v != 99 {
 		t.Fatalf("the stored version was downgraded to %v", authority.Properties["version"])
 	}
 	// The kind the older tree does not ship is still the repository's: nothing

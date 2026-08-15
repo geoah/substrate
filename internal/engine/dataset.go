@@ -261,6 +261,10 @@ type txn struct {
 	// writer allowed to stamp an interaction's thread reference
 	// (interactions.go admitInteraction).
 	interactionThread bool
+	// policyDecision marks the ENGINE's own judge-driven decision on a
+	// policy-gated request (phase 4): the one bundle-tier hand the gated
+	// guard admits.
+	policyDecision bool
 	// folded holds the fold effects this transaction has applied and not yet
 	// written into an entry (fold.go). appendChange drains it, so every entry
 	// carries the delta — with values — that a rebuild replays.

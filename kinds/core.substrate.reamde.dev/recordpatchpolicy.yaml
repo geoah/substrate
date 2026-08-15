@@ -1,0 +1,95 @@
+# the owner's rules for the space between an agent wanting a write and the
+# write landing (docs/plans/thread-interactions.md). A policy speaks for the
+# writes its selector matches, strictly INSIDE the emit ceiling: allow lands
+# them, refuse bounces them, gate converts them into recordpatchrequests the
+# owner (or, within thresholds, the policy's judge) decides. When several
+# policies match one write, the most restrictive action wins — refuse over
+# gate over allow, the composition every harness trains people on — and no
+# match means today's behavior, the write landing. Policies never run for
+# owner or machine writes: a human's hand and the substrate's own machinery
+# are not what they bound. Bundle-tier actors cannot write this kind at all:
+# a policy an agent could edit is a gate that agent could open.
+#
+# The judge half (judge/criteria/context/thresholds/mode) is DECLARED here so
+# the kind does not churn, and lands in the plan's phase 4: until then a
+# policy's judge is inert data.
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: core.substrate.reamde.dev/recordpatchpolicy
+data:
+  authority: core.substrate.reamde.dev
+  description: >-
+    One rule for agent writes: which kinds, ops and agents it speaks for,
+    and whether their writes land, gate into recordpatchrequests, or refuse.
+    The most restrictive matching policy wins; no match means the write lands.
+  names:
+    singular: recordpatchpolicy
+    plural: recordpatchpolicies
+  displayTemplate: "{action}: {localName}"
+  properties:
+    # Which writes this policy speaks for. Empty lists match everything of
+    # their dimension, so `{}` with action gate is "gate every agent write".
+    selector:
+      type: object
+      description: the writes this policy speaks for; empty lists match all
+      fields:
+        kinds:
+          type: string
+          repeated: true
+          description: kind references; empty means every kind
+        ops:
+          type: string
+          repeated: true
+          description: put, patch or delete; empty means all three
+        agents:
+          type: string
+          repeated: true
+          description: agent identities; empty means every agent
+    action:
+      type: enum
+      values:
+        - allow
+        - gate
+        - refuse
+      description: what a matched write does — land, convert into a request,
+        or bounce
+    # The judge, inert until the plan's phase 4: an agent (tool-less, its
+    # structured verdict is its whole contract) the ENGINE runs over gated
+    # requests, deciding only between the thresholds below.
+    judge:
+      type: reference
+      kind: core.substrate.reamde.dev/agent
+      description: the agent that judges what this policy gates; absent means
+        the owner decides everything
+    criteria:
+      type: text
+      description: the owner's instructions to the judge, in prose
+    context:
+      type: enum
+      values:
+        - envelope
+        - thread
+      description: how much the judge reads — the frozen envelope alone (default),
+        or the proposing thread's recent turns beside it
+    autoAccept:
+      type: float
+      min: 0
+      max: 1
+      description: judge confidence at or above accepts the gated request;
+        absent means the judge never accepts
+    autoRefuse:
+      type: float
+      min: 0
+      max: 1
+      description: judge confidence at or above rejects it; absent means the
+        judge never rejects
+    mode:
+      type: enum
+      values:
+        - enforce
+        - advise
+      description: enforce decides within the thresholds; advise only ever
+        recommends
+    disabled:
+      type: bool
+      description: a disabled policy matches nothing

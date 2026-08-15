@@ -20,7 +20,10 @@ data:
   # version 8: the decision transitions carry `notifies: thread` — the
   # declared marker that replaced the engine's hardcoded write-back
   # (docs/plans/thread-interactions.md), behavior identical.
-  version: 8
+  # version 9: `policy` and `policyRevision` — stamped by the engine when the
+  # policy door converts a held write into this request; frozen with the
+  # envelope, because the audit must not be reworded under a pending request.
+  version: 9
   names:
     singular: recordpatchrequest
     plural: recordpatchrequests
@@ -72,6 +75,17 @@ data:
     rationale:
       type: string
       description: why the writer proposes this change
+    # Stamped by the ENGINE when the policy door gated a write into this
+    # request; absent on requests an agent proposed on purpose or a human
+    # wrote. The revision pins WHICH text of the mutable policy record
+    # governed, because the audit must not drift with later edits.
+    policy:
+      type: reference
+      kind: core.substrate.reamde.dev/recordpatchpolicy
+      description: the policy whose gate converted this write, where one did
+    policyRevision:
+      type: int
+      description: the governing policy record's version at conversion
     # Stamped by the agent loop when the propose built-in lands the request:
     # the thread whose tool call proposed it. The decision writes a `system`
     # llmmessage back into that thread and resumes it, so the proposing agent

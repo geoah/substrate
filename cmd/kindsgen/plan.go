@@ -148,6 +148,7 @@ var goNames = map[string]string{
 	"recordmapping":      "RecordMapping",
 	"recordmerge":        "RecordMerge",
 	"recordmergerequest": "RecordMergeRequest",
+	"recordpatchpolicy":  "RecordPatchPolicy",
 	"recordpatchrequest": "RecordPatchRequest",
 	"recordsplit":        "RecordSplit",
 	"recoverykey":        "RecoveryKey",

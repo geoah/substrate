@@ -23,6 +23,7 @@ const (
 	codeGuard       = "guard"        // 403
 	codeNotFound    = "not_found"    // 404
 	codeForbidden   = "forbidden"    // 403
+	codeGated       = "gated"        // 409: the write became a pending request
 	codeAuth        = "auth"         // 401
 	codeRateLimited = "rate_limited" // 429 (+ Retry-After)
 	codeBadRequest  = "bad_request"  // 400
@@ -97,6 +98,11 @@ func problemFor(err error) (int, errorPayload) {
 		return http.StatusUnprocessableEntity, errorPayload{Code: codeValidation, Message: err.Error()}
 	case errors.Is(err, substrate.ErrNotFound):
 		return http.StatusNotFound, errorPayload{Code: codeNotFound, Message: err.Error()}
+	case errors.Is(err, substrate.ErrGated):
+		// Held, not failed: the write became a recordpatchrequest awaiting
+		// review, and the message names it. 409 because the caller's write
+		// did not land as asked.
+		return http.StatusConflict, errorPayload{Code: codeGated, Message: err.Error()}
 	case errors.Is(err, substrate.ErrConflict):
 		return http.StatusConflict, errorPayload{Code: codeConflict, Message: err.Error()}
 	case errors.Is(err, substrate.ErrGuard):
