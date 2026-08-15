@@ -821,12 +821,14 @@ export interface LLMInteraction {
   questions?: LLMInteractionQuestions[]
   /** The user's selections, written by the answering transition. */
   answers?: LLMInteractionAnswers[]
+  /** When the batch was answered or dismissed, stamped by the transition.
+   * Managed: the server stamps it, so render it read-only.
+   */
+  resolvedAt?: string
   /** Pending until the user answers or dismisses; either way the thread hears
    * it. A state moves by transition, never by assignment.
    */
   state?: LLMInteractionState
-  /** Stamped by a transition, not written by hand: render it read-only. */
-  resolvedAt?: string
 }
 
 /** The properties LLMInteraction's declaration marks required. A form refuses
@@ -1380,12 +1382,14 @@ export interface RecordMergeRequest {
    * declare: narrow it where you read it.
    */
   evidence?: Dynamic
+  /** When the decision was made, stamped by the transition. Managed: the server
+   * stamps it, so render it read-only.
+   */
+  decidedAt?: string
   /** Proposed until somebody decides; accepting is what performs the merge. A
    * state moves by transition, never by assignment.
    */
   decision?: RecordMergeRequestDecision
-  /** Stamped by a transition, not written by hand: render it read-only. */
-  decidedAt?: string
 }
 
 /** RecordMergeRequestDecision is the state of the `decision` machine.
@@ -1539,12 +1543,14 @@ export interface RecordPatchRequest {
    * core.substrate.reamde.dev/llmthread.
    */
   thread?: ReferencePath
+  /** When the decision was made, stamped by the transition. Managed: the server
+   * stamps it, so render it read-only.
+   */
+  decidedAt?: string
   /** Proposed until somebody decides; accepting is what applies the change. A
    * state moves by transition, never by assignment.
    */
   decision?: RecordPatchRequestDecision
-  /** Stamped by a transition, not written by hand: render it read-only. */
-  decidedAt?: string
 }
 
 /** RecordPatchRequestOp is a declared enum: the admissible set, in declaration

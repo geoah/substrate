@@ -9,6 +9,10 @@ data:
     or an app writes one and accepting the decision is what performs the merge;
     the row is also the rejection memory, since an existing request suppresses
     re-suggesting the pair.
+  # The declaration inherited the authority's version before this pin.
+  # version 10: `decidedAt` is a declared property (datetime, managed). The
+  # decision transitions stamped it as an undeclared string before.
+  version: 10
   names:
     singular: recordmergerequest
     plural: recordmergerequests
@@ -26,6 +30,12 @@ data:
     evidence:
       type: json
       description: the signals that matched and their scores
+    # Stamped by the decision transitions below; managed because nothing else
+    # writes it.
+    decidedAt:
+      type: datetime
+      managed: true
+      description: when the decision was made, stamped by the transition
     # accepting is what performs the merge: the transition runs `applyMerge`,
     # which re-runs Merge's own guards in the same transaction — a stale
     # request (already merged, deleted, type mismatch) fails the transition

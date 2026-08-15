@@ -16,6 +16,10 @@ data:
     One batch of questions an agent asked the user, waiting in the thread
     it came from: answering (or dismissing) it is one reviewed transition,
     which reports back into the thread and resumes the agent.
+  # The declaration inherited the authority's version before this pin.
+  # version 10: `resolvedAt` is a declared property (datetime, managed). The
+  # answer and dismiss transitions stamped it as an undeclared string before.
+  version: 10
   names:
     singular: llminteraction
     plural: llminteractions
@@ -81,6 +85,13 @@ data:
           type: string
           repeated: true
           description: the chosen option values
+    # Stamped by the resolving transitions below; managed because nothing
+    # else writes it: the record is frozen once resolved.
+    resolvedAt:
+      type: datetime
+      managed: true
+      description: when the batch was answered or dismissed, stamped by the
+        transition
     # Answering and dismissing are the OWNER's transitions (a bundle actor is
     # refused: asks are always the user's) and require ifVersion at every
     # tier. `dismissed` is the user declining the whole batch — the agent is

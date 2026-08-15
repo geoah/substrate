@@ -47,16 +47,15 @@ type RecordPatchRequest struct {
 	// core.substrate.reamde.dev/llmthread.
 	Thread *ReferencePath
 
+	// DecidedAt is when the decision was made, stamped by the transition.
+	// Managed: the engine stamps it, so a supplied value does not decide it.
+	DecidedAt *string
+
 	// Decision is proposed until somebody decides; accepting is what applies
 	// the change. A state is NOT stored in properties: it lives in the
 	// record's own state column and moves by transition. See
 	// RecordPatchRequestDecision.
 	Decision *RecordPatchRequestDecision
-
-	// DecidedAt is declared by a transition's stamp rather than by the
-	// properties block: the engine writes it when the move it stamps is
-	// performed.
-	DecidedAt *string
 }
 
 // RecordPatchRequestOp is a declared enum: the admissible set, in declaration
@@ -229,15 +228,15 @@ func decodeRecordPatchRequest(d *decoder, path string, v any) (RecordPatchReques
 			if e, ok := d.reference(p, props[key], "core.substrate.reamde.dev/llmthread"); ok {
 				out.Thread = &e
 			}
-		case "decision":
-			p := at(path, "decision")
-			if e, ok := decodeRecordPatchRequestDecision(d, p, props[key]); ok {
-				out.Decision = &e
-			}
 		case "decidedAt":
 			p := at(path, "decidedAt")
 			if e, ok := d.instant(p, props[key]); ok {
 				out.DecidedAt = &e
+			}
+		case "decision":
+			p := at(path, "decision")
+			if e, ok := decodeRecordPatchRequestDecision(d, p, props[key]); ok {
+				out.Decision = &e
 			}
 		default:
 			d.unknown(at(path, key), "core.substrate.reamde.dev/recordpatchrequest")
@@ -282,11 +281,11 @@ func (v *RecordPatchRequest) Encode() map[string]any {
 	if v.Thread != nil {
 		out["thread"] = string(*v.Thread)
 	}
-	if v.Decision != nil {
-		out["decision"] = string(*v.Decision)
-	}
 	if v.DecidedAt != nil {
 		out["decidedAt"] = *v.DecidedAt
+	}
+	if v.Decision != nil {
+		out["decision"] = string(*v.Decision)
 	}
 	return out
 }

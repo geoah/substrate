@@ -143,8 +143,10 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
   path type-checks against both declared kinds at load, so a disagreement
   fails on the manifest that caused it, never on the first sync that hits it.
 - **States**: `type: state` requires `states` and `transitions`; `initial` is
-  a single declared state; every `from`/`to` is a declared state; stamps
-  auto-declare their datetime properties. Transitions carry no guard.
+  a single declared state; every `from`/`to` is a declared state. A stamp
+  target declared in `properties` must be a single-valued `datetime`; one
+  left undeclared is auto-declared as that, so declarations written before
+  targets were declarable keep loading. Transitions carry no guard.
 - **Enum values are an ordered list**, each entry either a bare value
   (`values: [off, hourly, daily]`) or a `{value, label}` mapping. Declaration
   order is render order, and validation reads the value alone.

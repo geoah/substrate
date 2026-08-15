@@ -24,16 +24,16 @@ type LLMInteraction struct {
 	// Answers is the user's selections, written by the answering transition.
 	Answers []LLMInteractionAnswers
 
+	// ResolvedAt is when the batch was answered or dismissed, stamped by the
+	// transition. Managed: the engine stamps it, so a supplied value does not
+	// decide it.
+	ResolvedAt *string
+
 	// State is pending until the user answers or dismisses; either way the
 	// thread hears it. A state is NOT stored in properties: it lives in the
 	// record's own state column and moves by transition. See
 	// LLMInteractionState.
 	State *LLMInteractionState
-
-	// ResolvedAt is declared by a transition's stamp rather than by the
-	// properties block: the engine writes it when the move it stamps is
-	// performed.
-	ResolvedAt *string
 }
 
 // LLMInteractionState is the state of the `state` machine.
@@ -175,15 +175,15 @@ func decodeLLMInteraction(d *decoder, path string, v any) (LLMInteraction, bool)
 				}
 				out.Answers = list
 			}
-		case "state":
-			p := at(path, "state")
-			if e, ok := decodeLLMInteractionState(d, p, props[key]); ok {
-				out.State = &e
-			}
 		case "resolvedAt":
 			p := at(path, "resolvedAt")
 			if e, ok := d.instant(p, props[key]); ok {
 				out.ResolvedAt = &e
+			}
+		case "state":
+			p := at(path, "state")
+			if e, ok := decodeLLMInteractionState(d, p, props[key]); ok {
+				out.State = &e
 			}
 		default:
 			d.unknown(at(path, key), "core.substrate.reamde.dev/llminteraction")
@@ -218,11 +218,11 @@ func (v *LLMInteraction) Encode() map[string]any {
 		}
 		out["answers"] = items
 	}
-	if v.State != nil {
-		out["state"] = string(*v.State)
-	}
 	if v.ResolvedAt != nil {
 		out["resolvedAt"] = *v.ResolvedAt
+	}
+	if v.State != nil {
+		out["state"] = string(*v.State)
 	}
 	return out
 }

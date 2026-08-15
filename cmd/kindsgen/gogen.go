@@ -141,9 +141,6 @@ func fieldDoc(f *fieldPlan) string {
 	if f.Class == classState {
 		parts = append(parts, "A state is NOT stored in properties: it lives in the record's own state column and moves by transition. See "+f.State.Name+".")
 	}
-	if f.Decl.Implicit {
-		parts = append(parts, "declared by a transition's stamp rather than by the properties block: the engine writes it when the move it stamps is performed.")
-	}
 	if f.Decl.Managed {
 		parts = append(parts, "Managed: the engine stamps it, so a supplied value does not decide it.")
 	}

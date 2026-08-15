@@ -10,6 +10,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -93,6 +94,22 @@ func shippedVersion(t *testing.T, c *catalog.Catalog) int64 {
 // binary N+1, whatever N was.
 const movedVersion = int64(99)
 
+// taskPin is the task kind's own version pin: the one `version:` key at the
+// data level of task.yaml.
+var taskPin = regexp.MustCompile(`(?m)^  version: \d+$`)
+
+// bumpTaskPin moves the task kind's own version pin to movedVersion. The kind
+// pins its version (a one-kind change bumps the kind, not the closure), so a
+// moved closure that edits the task declaration moves the pin with it, exactly
+// as the tree would.
+func bumpTaskPin(t *testing.T, doc string) string {
+	t.Helper()
+	if !taskPin.MatchString(doc) {
+		t.Fatal("shipped task.yaml no longer pins its own version")
+	}
+	return taskPin.ReplaceAllString(doc, "  version: "+strconv.FormatInt(movedVersion, 10))
+}
+
 func bumpTasksAuthority(t *testing.T, from int64, doc string) string {
 	t.Helper()
 	return mustReplace(t, doc,
@@ -131,6 +148,9 @@ func TestUpgradePreview(t *testing.T) {
 	moved := movedTasksCatalog(t, map[string]func(string) string{
 		"bundle.yaml": func(doc string) string { return bumpTasksAuthority(t, shipped, doc) },
 		"task.yaml": func(doc string) string {
+			// The kind pins its own version, so the authority bump alone
+			// would not move it: the pin moves with the change.
+			doc = bumpTaskPin(t, doc)
 			return mustReplace(t, doc, "    status:",
 				"    upgradeProbe:\n      type: string\n      description: a property this binary added\n    status:")
 		},
@@ -190,6 +210,7 @@ func TestUpgradePreviewReportsBlockers(t *testing.T) {
 	moved := movedTasksCatalog(t, map[string]func(string) string{
 		"bundle.yaml": func(doc string) string { return bumpTasksAuthority(t, shipped, doc) },
 		"task.yaml": func(doc string) string {
+			doc = bumpTaskPin(t, doc)
 			return mustReplace(t, doc,
 				"    url:\n      type: url\n      description: where this task lives outside the substrate\n", "")
 		},
