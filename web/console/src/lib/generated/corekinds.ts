@@ -1187,6 +1187,7 @@ export type PropertyTypeBase =
   | "markdown"
   | "int"
   | "float"
+  | "decimal"
   | "bool"
   | "datetime"
   | "date"
@@ -1209,6 +1210,7 @@ export const propertyTypeBaseValues: PropertyTypeBase[] = [
   "markdown",
   "int",
   "float",
+  "decimal",
   "bool",
   "datetime",
   "date",

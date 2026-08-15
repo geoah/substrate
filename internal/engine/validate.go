@@ -3,9 +3,12 @@ package engine
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"math/big"
 	"net/mail"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -273,17 +276,16 @@ func coerceScalar(p *vocabulary.Property, v any) (any, error) {
 		}
 		return b, nil
 	case vocabulary.DatatypeInt:
-		f, err := asFloat(v)
+		n, err := asInt(v)
 		if err != nil {
 			return nil, err
 		}
-		if f != float64(int64(f)) {
-			return nil, fmt.Errorf("expected an integer")
-		}
-		if err := checkRange(p, f); err != nil {
+		if err := checkRange(p, float64(n)); err != nil {
 			return nil, err
 		}
-		return int64(f), nil
+		return n, nil
+	case vocabulary.DatatypeDecimal:
+		return coerceDecimal(p, v)
 	case vocabulary.DatatypeFloat:
 		f, err := asFloat(v)
 		if err != nil {
@@ -311,9 +313,9 @@ func coerceScalar(p *vocabulary.Property, v any) (any, error) {
 			return nil, fmt.Errorf("expected a civil date (2006-01-02)")
 		}
 	case vocabulary.DatatypeDuration:
-		d, err := time.ParseDuration(s)
+		d, err := parseDuration(s)
 		if err != nil {
-			return nil, fmt.Errorf("expected a duration like 47m12s")
+			return nil, err
 		}
 		s = d.String()
 	case vocabulary.DatatypeEmail:
@@ -376,6 +378,126 @@ func checkRange(p *vocabulary.Property, f float64) error {
 	return nil
 }
 
+// maxSafeInt is the largest integer every JSON door carries exactly. The REST
+// body decode (strictjson without UseNumber) and the jsonb read-back (rows.go)
+// both ride float64, whose mantissa holds 53 bits, so an int past this bound
+// would corrupt silently on its next trip even where THIS parse saw it
+// exactly. 2^53 itself is excluded: 2^53+1 arrives AS 2^53, so a value at the
+// boundary cannot prove it was not corrupted on the way in.
+const maxSafeInt = 1<<53 - 1
+
+// asInt reads an integer exactly, the bound enforced on every input shape so
+// the contract does not depend on which door the value came through. A
+// json.Number is read by its own spelling, so an oversized one is REFUSED
+// rather than rounded into range by the float conversion.
+func asInt(v any) (int64, error) {
+	switch n := v.(type) {
+	case int:
+		return boundedInt(int64(n))
+	case int64:
+		return boundedInt(n)
+	case json.Number:
+		if i, err := n.Int64(); err == nil {
+			return boundedInt(i)
+		}
+		f, err := n.Float64()
+		if err != nil {
+			return 0, fmt.Errorf("expected an integer")
+		}
+		return intFromFloat(f)
+	case float64:
+		return intFromFloat(n)
+	case float32:
+		return intFromFloat(float64(n))
+	default:
+		return 0, fmt.Errorf("expected a number")
+	}
+}
+
+func boundedInt(n int64) (int64, error) {
+	if n > maxSafeInt || n < -maxSafeInt {
+		return 0, fmt.Errorf("an int is a safe integer (|value| <= %d): a bigger count only survives the float64 doors as a decimal string", int64(maxSafeInt))
+	}
+	return n, nil
+}
+
+func intFromFloat(f float64) (int64, error) {
+	// Bound before the integrality check: past the bound int64(f) is not
+	// exact, and the bound is the real refusal anyway.
+	if f > maxSafeInt || f < -maxSafeInt {
+		return boundedInt(maxSafeInt + 1)
+	}
+	if f != float64(int64(f)) {
+		return 0, fmt.Errorf("expected an integer")
+	}
+	return int64(f), nil
+}
+
+var reDecimal = regexp.MustCompile(`^[+-]?[0-9]+(\.[0-9]+)?$`)
+
+// reDecimalExponent spots scientific notation, so its refusal can say what to
+// write instead of the generic grammar line.
+var reDecimalExponent = regexp.MustCompile(`^[+-]?[0-9]*\.?[0-9]+[eE][+-]?[0-9]+$`)
+
+// coerceDecimal admits an exact decimal: a STRING of digits, refused as a bare
+// JSON number because a number rides float64 through every door and may
+// arrive already rounded, which is the whole reason the datatype exists. The
+// stored form is canonical (no '+', no leading zeros, no negative zero) but
+// the SCALE is data: "19.90" stays "19.90".
+func coerceDecimal(p *vocabulary.Property, v any) (any, error) {
+	s, ok := v.(string)
+	if !ok {
+		return nil, fmt.Errorf(`a decimal is written as a string ("19.99"): a bare JSON number rides float64 and may already be rounded`)
+	}
+	c, err := canonicalDecimal(s)
+	if err != nil {
+		return nil, err
+	}
+	if p.Min != nil || p.Max != nil {
+		r, _ := new(big.Rat).SetString(c)
+		if p.Min != nil {
+			if min := new(big.Rat).SetFloat64(*p.Min); min != nil && r.Cmp(min) < 0 {
+				return nil, fmt.Errorf("must be >= %v", *p.Min)
+			}
+		}
+		if p.Max != nil {
+			if max := new(big.Rat).SetFloat64(*p.Max); max != nil && r.Cmp(max) > 0 {
+				return nil, fmt.Errorf("must be <= %v", *p.Max)
+			}
+		}
+	}
+	return c, nil
+}
+
+// canonicalDecimal holds one authored decimal to the grammar (an optional
+// sign, digits, an optional fraction, and nothing else) and answers the
+// canonical spelling. No exponent: the datatype is the exact digits, and
+// "1.999e1" admits a second spelling for every value.
+func canonicalDecimal(s string) (string, error) {
+	if !reDecimal.MatchString(s) {
+		if reDecimalExponent.MatchString(s) {
+			return "", fmt.Errorf("a decimal writes its digits out, without an exponent")
+		}
+		return "", fmt.Errorf(`expected a decimal ("19.99"): an optional sign, digits, an optional fraction`)
+	}
+	neg := strings.HasPrefix(s, "-")
+	s = strings.TrimLeft(s, "+-")
+	intPart, frac, _ := strings.Cut(s, ".")
+	intPart = strings.TrimLeft(intPart, "0")
+	if intPart == "" {
+		intPart = "0"
+	}
+	out := intPart
+	if frac != "" {
+		out += "." + frac
+	}
+	// "-0.00" is zero: the sign drops so equal values store one spelling.
+	if neg && strings.Trim(out, "0.") != "" {
+		out = "-" + out
+	}
+	return out, nil
+}
+
 func asFloat(v any) (float64, error) {
 	switch n := v.(type) {
 	case int:
@@ -411,6 +533,79 @@ func parseTime(s string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("expected an RFC 3339 instant")
+}
+
+// reISODuration is ISO 8601's duration, MINUS years and months: weeks, days,
+// and a time part, each component optional, fractions only on the time part.
+var reISODuration = regexp.MustCompile(
+	`^-?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$`)
+
+// reISOCalendar spots a year or a month in an ISO duration's DATE part (a
+// time-part M is minutes and stays legal), so the refusal can say why.
+var reISOCalendar = regexp.MustCompile(`^-?P[^T]*\d+[YM]`)
+
+var errDurationGrammar = fmt.Errorf("expected a duration: 47m12s (Go syntax) or PT47M12S / P2DT3H (ISO 8601)")
+
+// parseDuration reads either grammar a duration is authored in, Go's
+// ("47m12s") or ISO 8601's ("PT47M12S", "P2DT3H"), and the caller stores the
+// SAME canonical Go form for both, so readers see one grammar whatever the
+// author wrote. This is parseTime's shape: several accepted spellings, one
+// stored one.
+func parseDuration(s string) (time.Duration, error) {
+	if d, err := time.ParseDuration(s); err == nil {
+		return d, nil
+	}
+	if strings.HasPrefix(strings.TrimPrefix(s, "-"), "P") {
+		return parseISODuration(s)
+	}
+	return 0, errDurationGrammar
+}
+
+// parseISODuration reads the ISO form by translating it into Go's grammar and
+// letting time.ParseDuration do the arithmetic (its parser sums repeated
+// units, so weeks and days become hour terms). Years and months are refused
+// BY NAME: neither has a fixed length, and a duration here is exact time: a
+// day is exactly 24h and a week exactly 168h.
+func parseISODuration(s string) (time.Duration, error) {
+	m := reISODuration.FindStringSubmatch(s)
+	if m == nil {
+		if reISOCalendar.MatchString(s) {
+			return 0, fmt.Errorf("years and months have no fixed length: spell the duration in weeks, days and a time part (P2DT3H)")
+		}
+		return 0, errDurationGrammar
+	}
+	if m[1] == "" && m[2] == "" && m[3] == "" && m[4] == "" && m[5] == "" {
+		return 0, errDurationGrammar
+	}
+	var b strings.Builder
+	if strings.HasPrefix(s, "-") {
+		b.WriteString("-")
+	}
+	for _, part := range []struct {
+		digits string
+		hours  int64
+	}{{m[1], 7 * 24}, {m[2], 24}} {
+		if part.digits == "" {
+			continue
+		}
+		n, err := strconv.ParseInt(part.digits, 10, 64)
+		if err != nil || n > math.MaxInt64/part.hours {
+			return 0, fmt.Errorf("the duration overflows what one can hold (about 292 years)")
+		}
+		fmt.Fprintf(&b, "%dh", n*part.hours)
+	}
+	for _, part := range []struct{ digits, unit string }{
+		{m[3], "h"}, {m[4], "m"}, {m[5], "s"},
+	} {
+		if part.digits != "" {
+			b.WriteString(part.digits + part.unit)
+		}
+	}
+	d, err := time.ParseDuration(b.String())
+	if err != nil {
+		return 0, fmt.Errorf("the duration overflows what one can hold (about 292 years)")
+	}
+	return d, nil
 }
 
 func jsonRoundTrip(v any) (any, error) {

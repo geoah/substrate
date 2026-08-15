@@ -263,10 +263,11 @@ written identically.
 | `string`           | short, single-line                                          |
 | `text`             | long-form prose                                             |
 | `markdown`         | `text` renderers treat as Markdown                          |
-| `int`, `float`     | numbers, optional `min`/`max`                               |
+| `int`, `float`     | numbers, optional `min`/`max`; an `int` is a safe integer, refused past 2^53 - 1 in magnitude because JSON rides float64 |
+| `decimal`          | an exact decimal, written as a string (`"19.99"`); a bare JSON number is refused because it may already be rounded |
 | `bool`             | true/false                                                  |
 | `datetime`, `date` | RFC 3339 instants / civil dates                             |
-| `duration`         | e.g. `47m12s`                                               |
+| `duration`         | Go syntax (`47m12s`) or ISO 8601 without years/months (`PT47M12S`, `P2DT3H`); both store Go-canonical |
 | `email`            | refined `string`, RFC 5322 mailbox                          |
 | `url`              | refined `string`, absolute URL                              |
 | `phone`            | refined `string`, E.164 normalized                          |

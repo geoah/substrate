@@ -114,6 +114,8 @@ export type Control =
   | "referenceList"
   | "keyedMap"
 
+// `decimal` is NOT here: its value is a string of exact digits, and a number
+// control would coerce it through the float64 rounding the datatype refuses.
 const NUMERIC = new Set([
   "int",
   "integer",
@@ -124,7 +126,6 @@ const NUMERIC = new Set([
   "float",
   "float64",
   "double",
-  "decimal",
 ])
 const BOOLEAN = new Set(["bool", "boolean"])
 const OBJECT = new Set(["json", "object", "map"])
@@ -358,6 +359,8 @@ export function exampleFor(spec: PropSpec): string | undefined {
       return "2026-01-31"
     case "duration":
       return "47m12s"
+    case "decimal":
+      return "19.99"
     case "email":
       return "someone@example.com"
     case "url":
@@ -403,6 +406,8 @@ export function seedValue(spec: PropSpec): unknown {
   if (spec.kind === "state") return spec.initial ?? spec.states?.[0] ?? ""
   if (isBooleanKind(spec.kind)) return false
   if (isNumericKind(spec.kind)) return 0
+  // A decimal's zero is spelled, not numbered: the value is a string of digits.
+  if (spec.kind === "decimal") return "0"
   if (isObjectKind(spec.kind)) return {}
   return ""
 }
@@ -415,6 +420,14 @@ const DATETIME =
 const CIVIL_DATE = /^\d{4}-\d{2}-\d{2}$/
 /** Go's duration grammar (`time.ParseDuration`): `47m12s`, `1.5h`, `-3ms`. */
 const DURATION = /^[-+]?(\d+(\.\d*)?(ns|us|µs|μs|ms|s|m|h))+$/
+/** ISO 8601's duration, minus years and months (neither has a fixed length):
+ * `PT47M12S`, `P2DT3H`, `P1W`. The server normalizes both grammars to Go's. */
+const ISO_DURATION =
+  /^-?P(?=.)(\d+W)?(\d+D)?(T(?=.)(\d+(\.\d+)?H)?(\d+(\.\d+)?M)?(\d+(\.\d+)?S)?)?$/
+/** An exact decimal: an optional sign, digits, an optional fraction. A string,
+ * never a JSON number, because a number rides float64 and may already be
+ * rounded. */
+const DECIMAL = /^[+-]?\d+(\.\d+)?$/
 const E164 = /^\+[1-9]\d{1,14}$/
 const SHA256 = /^[0-9a-f]{64}$/
 const BLOB_REF = /^blob-sha256-[0-9a-f]{64}$/
@@ -552,8 +565,23 @@ export function checkItem(spec: PropSpec, value: unknown): string | undefined {
       }
       break
     case "duration":
-      if (!DURATION.test(s)) return "expected a duration like 47m12s"
+      if (!DURATION.test(s) && !ISO_DURATION.test(s)) {
+        return "expected a duration like 47m12s or PT47M12S"
+      }
       break
+    case "decimal": {
+      if (!DECIMAL.test(s)) {
+        return 'expected a decimal ("19.99"): an optional sign, digits, an optional fraction'
+      }
+      // The bound check may round through a float; the value itself never
+      // does, and the server holds the exact line.
+      const n = Number(s)
+      if (spec.min !== undefined && n < spec.min)
+        return `must be >= ${spec.min}`
+      if (spec.max !== undefined && n > spec.max)
+        return `must be <= ${spec.max}`
+      break
+    }
     case "email":
       if (!/^[^@\s]+@[^@\s]+$/.test(s.replace(/^.*<|>$/g, ""))) {
         return "expected a mailbox (someone@example.com)"

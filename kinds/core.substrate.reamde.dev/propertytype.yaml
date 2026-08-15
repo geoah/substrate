@@ -20,7 +20,9 @@ data:
   # is the closed set of built-in datatypes rather than free text.
   # version 6: the declaration's own `version` became an incremental
   # integer, maintained by the engine.
-  version: 6
+  # version 7: the base set gained `decimal`, the exact string-carried
+  # number. Additive, so live refinements are untouched.
+  version: 7
   names:
     singular: propertytype
     plural: propertytypes
@@ -64,6 +66,7 @@ data:
         - markdown
         - int
         - float
+        - decimal
         - bool
         - datetime
         - date

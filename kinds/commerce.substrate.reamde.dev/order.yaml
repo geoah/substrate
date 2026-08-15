@@ -54,7 +54,8 @@ data:
         - from: delivered
           to: returned
     totalAmount:
-      type: float
+      type: decimal
+      min: 0
       description: the order total, in the currency beside it
     currency:
       type: currency
