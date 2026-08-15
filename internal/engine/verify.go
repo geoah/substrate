@@ -157,16 +157,25 @@ func (s *service) VerifyRepositoryPinned(ctx context.Context, username string, p
 		case got == "":
 			found(fmt.Sprintf("pinned head seq %d carries no hash", pins.HeadSeq))
 		case got != pins.HeadHash:
+			// A reseal epoch can EXPLAIN the moved pin, but only an
+			// AUTHENTICATED one: on a signed repository an unsigned reseal
+			// row is exactly the forgery an attacker would plant to bless a
+			// rewrite (confirmation review), and a reseal that started after
+			// the pinned seq could not have moved it.
 			explained := false
 			for _, ep := range epochs {
-				if ep.Reason == epochReseal && ep.OldHead == pins.HeadHash {
-					explained = true
+				if ep.Reason != epochReseal || ep.OldHead != pins.HeadHash || ep.FromSeq > pins.HeadSeq {
+					continue
 				}
+				if signing.signedFrom > 0 && (!ep.Signed || ep.SigOK == nil || !*ep.SigOK) {
+					continue
+				}
+				explained = true
 			}
 			if explained {
 				// A sanctioned rewrite: the epoch names the old head the pin
 				// remembers. Reported for the operator to re-pin, not a
-				// failure.
+				// silent pass.
 				found(fmt.Sprintf("pinned head at seq %d matches a reseal epoch's old head: history was resealed since the pin; re-pin from this report", pins.HeadSeq))
 			} else {
 				found(fmt.Sprintf("pinned head at seq %d does not match the stored hash and no epoch explains it", pins.HeadSeq))
@@ -272,25 +281,22 @@ func verifyChainCorePinned(ctx context.Context, db dbx, repository string, signe
 // epoch is a finding; when signing is active, the activation epoch must
 // exist, be signed by the repository's key, and agree with the durable mark
 // — an unsigned or disagreeing `activate` row is exactly what a forgery
-// looks like. Epoch DELETION remains detectable only through a pinned head
-// or receipt: epochs are statements, and the signed activation epoch plus
-// the pins are what make the statements checkable.
+// looks like — and every epoch RECORDED AFTER the valid activation must be
+// signed, because the engine holds the key whenever it writes one from that
+// moment on (confirmation review: gating on from_seq instead let an unsigned
+// row claim an early from_seq and skip the check). Epoch DELETION remains
+// detectable only through a pinned head or receipt: epochs are statements,
+// and the signed activation epoch plus the pins are what make the
+// statements checkable.
 func verifyEpochs(epochs []EpochInfo, signing signingState, found func(string)) {
 	publicHex := ""
 	if len(signing.public) > 0 {
 		publicHex = hex.EncodeToString(signing.public)
 	}
-	activated := false
-	for _, ep := range epochs {
+	activatedAt := -1
+	for i, ep := range epochs {
 		if ep.SigOK != nil && !*ep.SigOK {
 			found(fmt.Sprintf("epoch (%s, from seq %d): signature does not verify", ep.Reason, ep.FromSeq))
-		}
-		// On a signed repository, a transition that touches the signed range
-		// is signed by construction (the engine holds the key whenever it
-		// writes one), so an unsigned epoch claiming to explain signed
-		// history is exactly what a forged explanation looks like.
-		if signing.signedFrom > 0 && ep.FromSeq >= signing.signedFrom && !ep.Signed {
-			found(fmt.Sprintf("epoch (%s, from seq %d): unsigned, but it claims a transition inside signed history", ep.Reason, ep.FromSeq))
 		}
 		if ep.Reason != epochActivate {
 			continue
@@ -303,11 +309,22 @@ func verifyEpochs(epochs []EpochInfo, signing signingState, found func(string)) 
 		case ep.SignedFrom != signing.signedFrom || ep.FromSeq != signing.signedFrom:
 			found(fmt.Sprintf("epoch (activate, from seq %d, signed from %d): disagrees with the repository's activation mark (%d)", ep.FromSeq, ep.SignedFrom, signing.signedFrom))
 		default:
-			activated = true
+			if activatedAt < 0 {
+				activatedAt = i
+			}
 		}
 	}
-	if signing.signedFrom > 0 && !activated {
+	if signing.signedFrom == 0 {
+		return
+	}
+	if activatedAt < 0 {
 		found(fmt.Sprintf("signing is active from seq %d but no valid activation epoch is recorded", signing.signedFrom))
+		return
+	}
+	for _, ep := range epochs[activatedAt+1:] {
+		if !ep.Signed || ep.SigOK == nil || !*ep.SigOK {
+			found(fmt.Sprintf("epoch (%s, from seq %d): recorded after activation but not signed by the repository's key", ep.Reason, ep.FromSeq))
+		}
 	}
 }
 

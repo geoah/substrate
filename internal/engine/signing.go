@@ -278,8 +278,10 @@ func (s *service) ensureActivationEpoch(ctx context.Context, ds *dataset) error 
 			return err
 		}
 		valid := false
+		publicHex := hex.EncodeToString(st.public)
 		for _, ep := range epochs {
 			if ep.Reason == epochActivate && ep.Signed && ep.SigOK != nil && *ep.SigOK &&
+				ep.PublicKey == publicHex &&
 				ep.FromSeq == st.signedFrom && ep.SignedFrom == st.signedFrom {
 				valid = true
 			}
