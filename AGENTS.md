@@ -275,3 +275,10 @@ Do not half-do it.
   example, a `mise run` name that no longer exists, and a page
   `docs/README.md` does not list. A mechanical docs rule worth enforcing goes
   in that script, so there is one place to run and one place to add to.
+- **A decision that outlives its argument gets a record.**
+  [docs/decisions/](docs/decisions/README.md) is one short, dated page per
+  choice, frozen once accepted and superseded rather than edited. The bar is
+  all three of hard to reverse, shapes what other code may do, and reasoning
+  not already written down; everything else is a commit. Read the index before
+  proposing design work, so an option already rejected is not proposed again.
+  A rule here may link its record.
