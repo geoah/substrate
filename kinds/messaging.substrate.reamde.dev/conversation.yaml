@@ -6,8 +6,9 @@ data:
   authority: messaging.substrate.reamde.dev
   description: >-
     A DM, a group chat or a channel — one kind over all three, because platforms
-    disagree about the boundaries and messages do not. It hangs off the account
-    it synced through and names the people taking part.
+    disagree about the boundaries and messages do not. A synced conversation
+    hangs off the account it came through; one written by hand carries no
+    account. Either way it names the people taking part.
   names:
     singular: conversation
     plural: conversations
@@ -44,11 +45,14 @@ data:
       type: bool
       description: the platform's pinned flag, as synced
   edges:
+    # An owner edge, never required (decision 0016): the edge is what a
+    # disconnect cascades along, and requiring it would leave this kind
+    # writable only by a connector.
     account:
       to: any
-      required: true
       ownerRef: true
-      description: the accountconfig record this conversation synced through
+      description: the accountconfig record this conversation synced through,
+        absent on a conversation written by hand
     participants:
       to: person
       many: true

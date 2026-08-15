@@ -1,13 +1,18 @@
-# one provider calendar
+# one calendar, synced or written by hand
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: calendar.substrate.reamde.dev/calendar
 data:
   authority: calendar.substrate.reamde.dev
   description: >-
-    One provider calendar: the container its events and series live in. It
-    hangs off the account record it synced through, so disconnecting that
-    account takes the calendar and everything under it along.
+    One calendar: the container its events and series live in. A synced calendar
+    hangs off the account record it came through, so disconnecting that account
+    takes the calendar and everything under it along; a calendar somebody
+    wrote by hand carries no account and stays.
+  # The declaration inherited the authority's version before this pin.
+  # version 2: the `account` edge is no longer `required` (issue 124), so a
+  # calendar can be authored without a provider behind it.
+  version: 2
   names:
     singular: calendar
     plural: calendars
@@ -20,8 +25,12 @@ data:
       type: timezone
       description: the calendar's default timezone
   edges:
+    # An owner edge, never required (decision 0016): the edge is what a
+    # disconnect cascades along, and requiring it would leave this kind
+    # writable only by a connector. A calendar with no account is nobody's
+    # to collect.
     account:
       to: any
-      required: true
       ownerRef: true
-      description: the accountconfig record this calendar synced through
+      description: the accountconfig record this calendar synced through,
+        absent on a calendar written by hand

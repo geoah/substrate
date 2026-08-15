@@ -5,9 +5,9 @@ metadata:
 data:
   authority: messaging.substrate.reamde.dev
   description: >-
-    One mail thread: its subject, the account it synced through, and everyone
-    on it. Messages point here, so the thread is what a reader lists and the
-    messages are what they open.
+    One mail thread: its subject and everyone on it, plus the account it synced
+    through where a connector brought it in. Messages point here, so the thread
+    is what a reader lists and the messages are what they open.
   names:
     singular: emailthread
     plural: emailthreads
@@ -21,11 +21,14 @@ data:
       type: string
       description: the thread's subject
   edges:
+    # An owner edge, never required (decision 0016): the edge is what a
+    # disconnect cascades along, and requiring it would leave this kind
+    # writable only by a connector.
     account:
       to: any
-      required: true
       ownerRef: true
-      description: the accountconfig record this thread synced through
+      description: the accountconfig record this thread synced through, absent
+        on a thread written by hand
     participants:
       to: person
       many: true

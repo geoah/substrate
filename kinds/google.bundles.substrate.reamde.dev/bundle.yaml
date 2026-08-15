@@ -17,12 +17,14 @@
 # MIRRORED in Google's own shape inside this authority, and the sync ALSO emits the
 # core vocabulary row for the same logical object (emailthread, emailmessage,
 # calendar.substrate.reamde.dev/calendar, calendarevent) under the SAME derived id, with
-# its required edges supplied explicitly. Recordmappings resolve PEOPLE and
-# nothing else: an `emailaddress` record per address seen, mapped onto
+# its edges supplied explicitly, the `account` owner edge included, so a
+# disconnect collects everything this sync wrote. Recordmappings resolve PEOPLE
+# and nothing else: an `emailaddress` record per address seen, mapped onto
 # `person`, which the core rows then reference one hop away. A mapping cannot
-# target emailmessage/emailthread/calendarevent at all — those types are
-# externally named and carry required edges a mapping's shell mint cannot fill
-# (ticket 041 has the three engine blocks written down).
+# target emailmessage/emailthread/calendarevent at all: a mapping target's ids
+# are server-assigned and these are named by the sync, and the mail and event
+# rows carry required edges a mapping's shell mint cannot fill (ticket 041 has
+# the three engine blocks written down).
 #
 # Install:  substratectl apply -f bundle.yaml -f triggers.yaml
 # Configure: create a config record — ONLY the Google OAuth client id +

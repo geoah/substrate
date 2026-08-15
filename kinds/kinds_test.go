@@ -157,6 +157,53 @@ func TestTheTreeIsAuthoredInTheDeclaredSpelling(t *testing.T) {
 	}
 }
 
+// ONE MEANING PER SPELLING OF `account` (decision record 0016). A shared kind
+// says `account` as an EDGE, because the edge is what a disconnect cascades
+// along: `ownerRef: true`, and never `required: true`, which would leave the
+// kind writable only by a connector. A mirror kind says `account` as a string
+// PROPERTY carrying the account record's id: provenance, nothing owns anything.
+// Declaring both on one kind would be two answers to the same question.
+//
+// The versions are what make this worth a test rather than a review note: an
+// edge retyped to a property (or the reverse) over live records is a narrowing
+// the boot upgrade refuses, so the spelling is settled once and held here.
+func TestAccountIsAnOwnerEdgeOrAProvenanceString(t *testing.T) {
+	seenProps, seenEdges := 0, 0
+	for _, d := range readTreeDocuments(t) {
+		if d.Kind != vocabulary.DocKind {
+			continue
+		}
+		props := asMapping(d.Data["properties"])
+		edges := asMapping(d.Data["edges"])
+		prop, hasProp := props["account"]
+		edge, hasEdge := edges["account"]
+		if hasProp && hasEdge {
+			t.Errorf("kind %s declares `account` as both a property and an edge: one spelling per kind", d.ID)
+		}
+		if hasProp {
+			seenProps++
+			if ty, _ := asMapping(prop)["type"].(string); ty != "string" {
+				t.Errorf("kind %s: the `account` property is %q: a mirror carries the account record's id as a string", d.ID, ty)
+			}
+		}
+		if hasEdge {
+			seenEdges++
+			e := asMapping(edge)
+			if req, _ := e["required"].(bool); req {
+				t.Errorf("kind %s: the `account` edge is required: a record nobody synced has no account to point at", d.ID)
+			}
+			if owner, _ := e["ownerRef"].(bool); !owner {
+				t.Errorf("kind %s: the `account` edge is not ownerRef: nothing would collect the record when its connection goes", d.ID)
+			}
+		}
+	}
+	// A walk that reached neither spelling proves nothing, and would keep
+	// passing if `properties`/`edges` moved under the document.
+	if seenProps == 0 || seenEdges == 0 {
+		t.Fatalf("walked the tree and found %d account properties, %d account edges, want both", seenProps, seenEdges)
+	}
+}
+
 // THE TWO STATEMENTS ABOUT WHO OWNS A PROPERTY AGREE. A declaration row carries
 // what its document declares plus what the ENGINE stamps, and each half is said
 // once: the loader's admitted `data` keys (vocabulary.DeclarationDataKeys) are the

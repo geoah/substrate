@@ -302,6 +302,37 @@ func TestFinalizersAndOwnerRefGC(t *testing.T) {
 	}
 }
 
+// The cascade above is what the `account` edge is FOR, and the edge is
+// optional (decision record 0016): a calendar, a conversation and a mail
+// thread nobody synced carry no account, and the substrate takes them. A
+// required edge made these three kinds writable only by a connector, which is
+// what issue 124 reported.
+func TestSharedKindsAreAuthorableWithoutAnAccount(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+	for _, in := range []substrate.PutInput{
+		{Kind: "calendar", ID: "hand-1", Properties: map[string]any{"name": "Home", "timezone": "Europe/London"}},
+		{Kind: "conversation", ID: "hand-2", Properties: map[string]any{"kind": "group", "name": "Book club"}},
+		{Kind: "emailthread", ID: "hand-3", Properties: map[string]any{"subject": "Dinner on Friday"}},
+	} {
+		row := mustPut(t, ds, owner, in)
+		if len(row.Edges) != 0 {
+			t.Fatalf("%s %s came back carrying edges: %v", in.Kind, in.ID, row.Edges)
+		}
+	}
+	// An event under the hand-authored calendar: the container edge is still
+	// required, so this proves the whole chain is authorable, not just its head.
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "calendarevent", ID: "hand-4",
+		Properties: map[string]any{
+			"summary": "Dinner",
+			"at":      "2026-08-20T18:00:00Z",
+			"endsAt":  "2026-08-20T20:00:00Z",
+		},
+		Edges: []substrate.EdgeInput{{Rel: "calendar", To: substrate.EdgeRef{ID: "hand-1"}}},
+	})
+}
+
 func TestLinkUnlink(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

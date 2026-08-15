@@ -138,10 +138,11 @@ whichever stream finishes stamps them.
 
 **Mirrors plus direct core emission.** Provider records are mirrored in
 Google's own shape, and the sync functions also emit the core row for the same
-logical object under the same derived id, with its required edges filled in.
-The mappings resolve people and nothing else, because a mapping mints shells
-that carry no edges and so could never satisfy the required `thread`, `account`
-and `calendar` edges the core mail and calendar kinds declare. The
+logical object under the same derived id, with its edges filled in, the
+`account` owner edge included: that edge is what makes a disconnect collect
+the synced rows. The mappings resolve people and nothing else, because a mapping
+mints shells that carry no edges and so could never satisfy the required
+`thread` and `calendar` edges the core mail and calendar kinds declare. The
 `emailaddress` record is the bridge: the core rows reference it, and the
 engine's one-hop resolution lands the stored edge on the person its mapping
 resolved.
