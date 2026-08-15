@@ -129,6 +129,20 @@ const (
 	surfaceGraphQL = "graphql"
 )
 
+// embedderOps is the service's embedder seam, asserted at runtime like
+// changeFeedOps: substrate.Service stays frozen, and discovery asks the
+// service itself rather than carrying a second copy of the wiring that a
+// host could forget to set. A service without the seam reports no
+// embeddings, which is the safe answer.
+type embedderOps interface {
+	EmbeddingsEnabled() bool
+}
+
+func (h *handler) embeddingsEnabled() bool {
+	ops, ok := h.svc.(embedderOps)
+	return ok && ops.EmbeddingsEnabled()
+}
+
 // getDiscovery serves GET /.well-known/substrate/server.json. No auth, no DB.
 func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 	doc := discoveryDoc{
@@ -139,7 +153,7 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 			Note:       "binary maximum; the stored dialect is per-repository, in that repository's own vocabulary_dialect row, and is not served",
 		},
 		Changelog: changelogInfo{Horizon: retentionHorizon()},
-		Features:  features(h.embeddings),
+		Features:  features(h.embeddingsEnabled()),
 		Grammar: grammarInfo{
 			Kind:       "<authority>/<name> | <name>",
 			Record:     "<authority>/<kind>/<id> | <kind>/<id>",
@@ -167,16 +181,17 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 // straight from the substrate marker, so "alpha" surfaces here
 // rather than being hard-coded.
 //
-// Each entry's surfaces are the doors that actually exist today. Search is
-// the one the REST surface does not serve: REST filters (`?filter=`) and the
-// GraphQL `search(q, mode, kinds, k)` query ranks. Everything else here is a
-// set of REST verbs with no GraphQL field, except the changefeed, which both
-// surfaces read.
+// Each entry's surfaces are the doors that actually exist today. Search and
+// embeddings are the two the REST surface does not serve: REST filters
+// (`?filter=`), the GraphQL `search(q, mode, kinds, k)` query ranks, and
+// embeddings reach a caller only as that query's semantic arm. The
+// changefeed is read on both. Everything else is a set of REST verbs with no
+// GraphQL field.
 //
-// embeddings is the one CONFIGURED feature: it is listed only where this
+// embeddings is also the one CONFIGURED feature: it is listed only where this
 // deployment has an embedder, because without one the semantic arm answers a
 // validation error and nothing drains the embed queue. `search` stays listed
-// either way — it degrades to lexical.
+// either way, because it degrades to lexical.
 func features(embeddings bool) []featureInfo {
 	out := []featureInfo{
 		{Name: "triggers", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},

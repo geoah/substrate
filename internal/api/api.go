@@ -64,11 +64,6 @@ type Config struct {
 	// checks. It changes no verification: refusing is the service's job either
 	// way.
 	TOTPDisabled bool
-	// Embeddings says this deployment has an embedder configured, which is
-	// what the semantic search arm and the embed queue both need. Discovery
-	// lists the `embeddings` feature only when it is true, so a client is
-	// never told a deployment vectorizes when nothing drains the queue.
-	Embeddings bool
 	// Now is an optional clock seam for the auth rate limiter.
 	Now func() time.Time
 	// AuthInterval is the minimum spacing between unauthenticated auth
@@ -86,7 +81,6 @@ type handler struct {
 	catalog      *catalog.Catalog
 	consoleURL   string
 	maxDialect   int
-	embeddings   bool
 
 	// schemas is the GraphQL schema cache, one entry per repository, rebuilt
 	// on registry-fingerprint changes (internal/gql owns the key and builder).
@@ -112,7 +106,6 @@ func New(cfg Config) http.Handler {
 		catalog:      cfg.Catalog,
 		consoleURL:   strings.TrimRight(cfg.ConsoleURL, "/"),
 		maxDialect:   cfg.MaxDialect,
-		embeddings:   cfg.Embeddings,
 		schemas:      gql.NewCache(),
 	}
 

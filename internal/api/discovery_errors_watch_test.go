@@ -18,7 +18,8 @@ const changesPath = "/api/v1/core.substrate.reamde.dev/changes"
 
 func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 	svc := newFakeService()
-	h := New(Config{Service: svc, MaxDialect: 6, Embeddings: true})
+	svc.embeddings = true
+	h := New(Config{Service: svc, MaxDialect: 6})
 
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
 	req.RemoteAddr = "10.0.0.1:1234"
@@ -76,7 +77,8 @@ func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 // "stable" as "a REST route exists" went looking for one that never shipped.
 func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
 	svc := newFakeService()
-	h := New(Config{Service: svc, Embeddings: true})
+	svc.embeddings = true
+	h := New(Config{Service: svc})
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil))
@@ -147,9 +149,7 @@ func TestSearchHasNoRESTRoute(t *testing.T) {
 	tok := env.svc.token("geoah")
 	for _, path := range []string{"/api/v1/search", "/api/v1/core.substrate.reamde.dev/search"} {
 		rec := env.do(t, http.MethodGet, path+"?q=hello", tok, nil)
-		if rec.Code != http.StatusNotFound {
-			t.Fatalf("GET %s status = %d, body %s", path, rec.Code, rec.Body.String())
-		}
+		wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 		if body := rec.Body.String(); !strings.Contains(body, "unknown collection") {
 			t.Fatalf("GET %s = %s, want the generic collection 404", path, body)
 		}

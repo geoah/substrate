@@ -23,6 +23,13 @@ const (
 	vectorDim = 1536
 )
 
+// EmbeddingsEnabled reports whether an embedder was wired in (WithEmbedder).
+// Without one the semantic arm below refuses and nothing drains the embed
+// queue, so discovery reads this seam instead of advertising a feature this
+// deployment does not serve. It opens no repository: the answer is the
+// binary's configuration, not any repository's state.
+func (s *service) EmbeddingsEnabled() bool { return s.embedder != nil }
+
 func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]substrate.Hit, error) {
 	q := strings.TrimSpace(in.Q)
 	if q == "" {

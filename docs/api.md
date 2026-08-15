@@ -2,7 +2,8 @@
 
 The substrate serves one set of operations for everything: four reads
 (`record`, `records`, `search`, `changelog`) plus a watch stream, and seven
-mutations. A new kind never adds an
+mutations. REST serves all of them but `search`, which is the GraphQL query's
+alone. A new kind never adds an
 endpoint: the REST path pattern is the same routes for every authority, and the
 [GraphQL](graphql-and-search.md) schema is generated from the loaded kinds.
 This page is the REST surface, the filter grammar, pagination, the mutations,
@@ -303,11 +304,13 @@ A feature's `surfaces` are the doors to its own operations, not to its
 records: a trigger and a blob manifest are ordinary records and read on both
 surfaces whatever the entry says, while `["rest"]` means the feature's verbs
 (a replay, an install, a function call, a blob's bytes) have REST paths and no
-GraphQL field. Two entries are conditional. `embeddings` is listed only where
-the deployment has an embedder configured, because without one nothing drains
-the embed queue and the semantic arm refuses; `search` stays listed either
-way, since it degrades to lexical. Every other entry is present on every
-deployment.
+GraphQL field. One entry is conditional: `embeddings` is listed only where the
+deployment has an embedder configured, because without one nothing drains the
+embed queue and the semantic arm refuses. `search` stays listed either way,
+since it degrades to lexical, and every other entry is present on every
+deployment. The example above is abridged; the full list is `triggers`,
+`functions`, `bundles`, `blobs`, `changefeed`, `search`, `embeddings` and
+`agents`.
 
 `registration` is what the register door asks for, and whether it is even
 open. `registration.open` is `false` only on a deployment with no invite code

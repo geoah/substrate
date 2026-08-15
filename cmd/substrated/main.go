@@ -182,9 +182,6 @@ func run() error {
 		InviteCode:   cfg.InviteCode,
 		TOTPDisabled: cfg.InsecureDisableTOTP,
 		MaxDialect:   engine.MaxSchemaDialect(),
-		// The same embedder the engine and the queue drainer got: discovery
-		// lists `embeddings` only where one is configured.
-		Embeddings: embedder != nil,
 	})
 	httpSrv := &http.Server{
 		Addr:              ":" + cfg.Port,

@@ -61,7 +61,7 @@ Dropping `search` from the feature list would lose the only honest answer to
 - Bad, because a REST-only client (curl, a shell script, an HTTP-only runtime)
   cannot search at all and has to speak GraphQL for it.
 - Bad, because two surfaces with different promises is more contract to hold:
-  every capability added from here on has to answer where it is served, and
+  every feature added from here on has to answer where it is served, and
   the asymmetry list in `docs/api.md` is maintained by hand.
 - Bad, because `surfaces` lands in a document that is additive-only, so a
   value that turns out wrong is expensive to correct.
