@@ -151,3 +151,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0011](0011-chain-transitions-are-repository-scoped-epochs.md) | Sanctioned chain transitions are recorded as repository-scoped chain epochs | accepted |
 | [0012](0012-numbers-are-exact-or-refused.md)   | Numbers are exact or refused: string-carried decimal, safe-integer int, one stored duration grammar | accepted |
 | [0013](0013-state-machines-say-done-and-abandoned.md) | State machines say `done` and `abandoned`; a domain word survives only by decision | accepted |
+| [0014](0014-authorities-widen-only-outside-the-id-alphabet.md) | Authorities may widen only with characters the id alphabet excludes | accepted |

@@ -220,9 +220,14 @@ reference splits on its one slash. The authority is one path segment in
 
 `substrate.reamde.dev` is a **placeholder**. Moving kind identity to URLs (so
 anyone can publish kinds from a git repo without owning DNS) is real design
-work — routing needs a separator convention, references split on the last slash
-instead of the first, the group validator widens — and it has not happened.
-Do not half-do it.
+work and it has not happened. Do not half-do it. Its character budget is
+reserved
+([0014](docs/decisions/0014-authorities-widen-only-outside-the-id-alphabet.md)):
+the record id alphabet is frozen and never gains `%`, an authority widens
+only with characters the id alphabet excludes and never gains a raw `/`, and
+first-label keying (the GraphQL prefix, the `bundle:` and `connector:`
+actors, bundle-name uniqueness) moves to the full authority or a hash of it
+before the grammar widens.
 
 ## House rules
 
