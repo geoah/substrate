@@ -57,8 +57,9 @@ type Bundle struct {
 	// Description is the bundle document's description.
 	Description string `json:"description"`
 	// Version is the bundle authority's authority version (the closure's
-	// version; a per-bundle semver is future — ticket 011).
-	Version string `json:"version"`
+	// version; a per-bundle semver is future — ticket 011). Zero means the
+	// closure declares none.
+	Version int64 `json:"version"`
 	// Inputs are the bundle's declared configuration needs, verbatim from
 	// the manifest: input name → {kind, inject?, description?}. A bundle
 	// with no needs carries none, and the console previews nothing.
@@ -292,7 +293,7 @@ func decodeDocs(raw []byte) ([]map[string]any, error) {
 // the directory carries no bundle document.
 func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 	b := &Bundle{}
-	var version string
+	var version int64
 	found := false
 	for _, d := range docs {
 		authority, typ := vocabulary.SplitKindRef(mstr(d, "kind"))
@@ -321,7 +322,7 @@ func bundleFromDocs(docs []map[string]any) (*Bundle, error) {
 			}
 			b.Vocabulary = vocabulary.ValidVocabularyAuthority(b.Authority)
 		case vocabulary.DocAuthority:
-			if v := mstr(data, "version"); v != "" {
+			if v := mversion(data, "version"); v > 0 {
 				version = v
 			}
 		case vocabulary.DocKind:
@@ -463,6 +464,18 @@ func mstr(m any, key string) string {
 	}
 	s, _ := mm[key].(string)
 	return s
+}
+
+// mversion reads a declaration version: an integer (0 when absent or not
+// one), through the one reader (vocabulary.VersionValue) so a closure and
+// the engine cannot disagree about what a version is.
+func mversion(m any, key string) int64 {
+	mm, ok := m.(map[string]any)
+	if !ok {
+		return 0
+	}
+	v, _ := vocabulary.VersionValue(mm[key])
+	return v
 }
 
 func mslice(m any, key string) []any {

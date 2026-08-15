@@ -52,7 +52,7 @@ func installVaultBundle(t *testing.T) substrate.Dataset {
 		return vocabulary.FunctionManifest(vAuthority, name, data)
 	}
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(vAuthority, ""),
+		vocabulary.AuthorityManifest(vAuthority, 0),
 		vocabulary.BundleManifest(vAuthority, map[string]any{
 			"description": "the vault bundle",
 			"inputs": map[string]any{

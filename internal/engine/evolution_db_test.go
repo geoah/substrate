@@ -40,7 +40,7 @@ func evoTypeDoc(props map[string]any) map[string]any {
 func evoApply(t *testing.T, ds substrate.Dataset, props map[string]any) error {
 	t.Helper()
 	_, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, []map[string]any{
-		vocabulary.AuthorityManifest(evoAuthority, ""),
+		vocabulary.AuthorityManifest(evoAuthority, 0),
 		evoTypeDoc(props),
 	})
 	return err

@@ -60,10 +60,10 @@ export interface StateTransition<S extends string = string> {
  * like `function:<name>` are minted at dispatch.
  */
 export interface Actor {
-  /** This declaration's version. Managed: the server stamps it, so render it
-   * read-only.
+  /** This declaration's incremental version, maintained by the engine. Managed:
+   * the server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** The authority that declares this actor. */
   authority?: string
   /** Builtin for shipped authorities, installed for connector authorities.
@@ -104,10 +104,10 @@ export const actorTierValues: ActorTier[] = ["owner", "bundle", "machine"]
  * its version history.
  */
 export interface Agent {
-  /** This declaration's version. Managed: the server stamps it, so render it
-   * read-only.
+  /** This declaration's incremental version, maintained by the engine. Managed:
+   * the server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** The authority that declares it. */
   authority?: string
   /** The model-facing tool card — what this agent is for as a sub-agent. */
@@ -252,10 +252,10 @@ export interface AgentPermissionsReadsBudgets {
  * admits.
  */
 export interface Authority {
-  /** The declared maturity statement, v1alpha1 unless said otherwise. Managed:
-   * the server stamps it, so render it read-only.
+  /** The closure's incremental version, maintained by the engine. Managed: the
+   * server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** The actors declared under this authority. Managed: the server stamps it,
    * so render it read-only.
    */
@@ -340,10 +340,10 @@ export const blobStatusTransitions: StateTransition<BlobStatus>[] = [
  * own: disabled, uninstalled, purging.
  */
 export interface Bundle {
-  /** This declaration's version. Managed: the server stamps it, so render it
-   * read-only.
+  /** This declaration's incremental version, maintained by the engine. Managed:
+   * the server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** The authority the bundle owns; its first label is the bundle's name. */
   authority?: string
   /** What the bundle is for, read above its card. */
@@ -468,10 +468,10 @@ export interface Credential {
  * registry this row rebuilds into.
  */
 export interface Function {
-  /** This declaration's version. Managed: the server stamps it, so render it
-   * read-only.
+  /** This declaration's incremental version, maintained by the engine. Managed:
+   * the server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** The authority that declares it. */
   authority?: string
   /** The model-facing tool card — what this function does. */
@@ -670,10 +670,10 @@ export interface FunctionPermissionsReadsBudgets {
  * against.
  */
 export interface Kind {
-  /** This declaration's version. Managed: the server stamps it, so render it
-   * read-only.
+  /** This declaration's incremental version, maintained by the engine. Managed:
+   * the server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** Builtin for seeded kinds, installed for bundle ones. Managed: the server
    * stamps it, so render it read-only.
    */
@@ -967,10 +967,10 @@ export const llmThreadRequired: string[] = ["agent"]
  * every property that wants it.
  */
 export interface PropertyType {
-  /** This declaration's version. Managed: the server stamps it, so render it
-   * read-only.
+  /** This declaration's incremental version, maintained by the engine. Managed:
+   * the server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** Builtin for seeded refinements, installed for bundle ones. Managed: the
    * server stamps it, so render it read-only.
    */
@@ -1084,10 +1084,10 @@ export const propertyTypeValuesRequired: string[] = ["value"]
  * per source kind, declared by the authority that owns that kind.
  */
 export interface RecordMapping {
-  /** This declaration's version. Managed: the server stamps it, so render it
-   * read-only.
+  /** This declaration's incremental version, maintained by the engine. Managed:
+   * the server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** Builtin for seeded mappings, installed for bundle ones. Managed: the
    * server stamps it, so render it read-only.
    */
@@ -1461,10 +1461,10 @@ export interface Token {
  * what the kind is called.
  */
 export interface Trait {
-  /** This declaration's version. Managed: the server stamps it, so render it
-   * read-only.
+  /** This declaration's incremental version, maintained by the engine. Managed:
+   * the server stamps it, so render it read-only.
    */
-  version?: string
+  version?: number
   /** Builtin for seeded traits, installed for bundle ones. Managed: the server
    * stamps it, so render it read-only.
    */

@@ -25,7 +25,7 @@ const dwAuthority = "dialect.example.substrate.reamde.dev"
 // property per widening.
 func dwDocs(holderProps map[string]any) []map[string]any {
 	return []map[string]any{
-		vocabulary.AuthorityManifest(dwAuthority, ""),
+		vocabulary.AuthorityManifest(dwAuthority, 0),
 		vocabulary.KindManifest(dwAuthority,
 			map[string]any{"singular": "target", "plural": "targets"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
@@ -332,7 +332,7 @@ func TestDerivedTitleTokens(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(dtAuthority, ""),
+		vocabulary.AuthorityManifest(dtAuthority, 0),
 		vocabulary.KindManifest(dtAuthority,
 			map[string]any{"singular": "leaf", "plural": "leaves"},
 			map[string]any{"displayTemplate": "{localName}"}),
@@ -457,7 +457,7 @@ func TestLLMThreadTitleFollowsItsAgent(t *testing.T) {
 		t.Fatalf("put the llmprovider row: %v", err)
 	}
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(authority, ""),
+		vocabulary.AuthorityManifest(authority, 0),
 		vocabulary.AgentManifest(authority, "scribe", map[string]any{
 			"description": "writes things down",
 			"prompt":      "You write things down.",
@@ -499,7 +499,7 @@ func TestStoredNestedReferenceDeclarationSurvivesAReopen(t *testing.T) {
 	}
 	const authority = "stored.example.substrate.reamde.dev"
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(authority, ""),
+		vocabulary.AuthorityManifest(authority, 0),
 		vocabulary.KindManifest(authority,
 			map[string]any{"singular": "target", "plural": "targets"}, map[string]any{}),
 		vocabulary.KindManifest(authority,

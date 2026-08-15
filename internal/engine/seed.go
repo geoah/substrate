@@ -252,14 +252,14 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 // storedDeclaration is one stored declaration as the version diff sees it:
 // its version, and its declaring authority (the authority row's own id).
 type storedDeclaration struct {
-	version   string
+	version   int64
 	authority string
 }
 
 // storedDeclarations reads every stored declaration's version and authority,
-// keyed exactly as authorityDeclarations keys it. A row without a version
-// reads as the empty version, which compares below everything — so a
-// declaration written before versions were mandatory upgrades on the next
+// keyed exactly as authorityDeclarations keys it. A row without a version —
+// or one still holding a spelling the 0004 backfill somehow missed — reads
+// as version 0, which compares below everything, so it upgrades on the next
 // open rather than sticking.
 func (ds *dataset) storedDeclarations(ctx context.Context) (map[string]storedDeclaration, error) {
 	args := make([]any, 0, len(vocabularyKindRefs)+1)
@@ -285,9 +285,21 @@ func (ds *dataset) storedDeclarations(ctx context.Context) (map[string]storedDec
 		if err := rows.Scan(&typ, &id, &version, &authority); err != nil {
 			return nil, err
 		}
-		out[typ+"\x00"+id] = storedDeclaration{version: version, authority: authority}
+		out[typ+"\x00"+id] = storedDeclaration{version: storedVersion(version), authority: authority}
 	}
 	return out, rows.Err()
+}
+
+// storedVersion parses the text a jsonb `props->>'version'` extraction hands
+// back. Every row this binary writes holds a JSON number; anything else is
+// the absent version 0, older than everything, so the row upgrades instead
+// of sticking.
+func storedVersion(s string) int64 {
+	v, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || v < 0 {
+		return 0
+	}
+	return v
 }
 
 // Version ordering lives with the vocabulary (vocabulary.CompareVersions):

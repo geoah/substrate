@@ -15,7 +15,7 @@ const refAuthority = "refs.example.substrate.reamde.dev"
 // an unconstrained one, and a repeated one.
 func refDocs() []map[string]any {
 	return []map[string]any{
-		vocabulary.AuthorityManifest(refAuthority, ""),
+		vocabulary.AuthorityManifest(refAuthority, 0),
 		vocabulary.KindManifest(refAuthority,
 			map[string]any{"singular": "widget", "plural": "widgets"},
 			map[string]any{}),

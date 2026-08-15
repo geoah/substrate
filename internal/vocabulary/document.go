@@ -293,8 +293,8 @@ func splitLines(data []byte) []string {
 // AuthorityManifest renders a authority document. Connector registration
 // installs an authority at runtime, so the payload it POSTs is built in code
 // (REGISTRATION.md RG2) with these three constructors.
-func AuthorityManifest(authority, version string) map[string]any {
-	if version == "" {
+func AuthorityManifest(authority string, version int64) map[string]any {
+	if version == 0 {
 		version = DefaultVersion
 	}
 	return map[string]any{

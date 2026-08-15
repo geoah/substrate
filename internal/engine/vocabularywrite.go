@@ -27,6 +27,7 @@ package engine
 // authorizeDeclarationWrite.
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -437,6 +438,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	if err != nil {
 		return nil, err
 	}
+	resolveDeclarationVersions(&b, existing)
 	merged := map[string]vocabulary.Document{}
 	for k, d := range existing {
 		if replaced[d.DeclaredAuthority()] {
@@ -532,6 +534,170 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// with the count. Additive changes pass through untouched (schemadiff.go).
 		narrowings: classifyNarrowings(current, candidate, touched),
 	}, nil
+}
+
+// resolveDeclarationVersions is where THE API MAINTAINS THE VERSION: nobody
+// bumps by hand (issue #48). An incoming declaration's version is honored
+// when it moves PAST the stored one — the shipped tree and bundle closures
+// pin versions, and those upgrades ride through untouched. Everything else
+// (absent, an echo of the stored value, or lower) resolves here: a changed
+// definition lands at stored+1, an unchanged one keeps the stored version,
+// and a new declaration rides its authority's (the loader's cascade).
+//
+// A declaration that cannot carry a version of its own — a trait, a
+// function, everything but a kind — moves its AUTHORITY forward instead when
+// it changes, since an authority's version is a statement about the closure
+// it ships; a delete moves it too, so the prune reads as an upgrade.
+//
+// Documents are stamped COPY-ON-WRITE: a bundle's closure documents are the
+// catalog's cached maps, shared across repositories, and the resolution must
+// not write into them.
+func resolveDeclarationVersions(b *vocabularyBatch, existing map[string]vocabulary.Document) {
+	storedVersionOf := func(kind, id string) int64 {
+		v, _ := vocabulary.VersionValue(existing[kind+"\x00"+id].Data["version"])
+		return v
+	}
+
+	// Which authorities must move: a changed or deleted declaration with no
+	// version of its own to move. (A NEW declaration needs none — it lands
+	// whatever its version says.)
+	needsBump := map[string]bool{}
+	for _, d := range b.docs {
+		if d.Kind == vocabulary.DocKind || d.Kind == vocabulary.DocAuthority {
+			continue
+		}
+		if stored, has := existing[docKey(d)]; has && !declarationDataEqual(d.Data, stored.Data) {
+			needsBump[d.DeclaredAuthority()] = true
+		}
+	}
+	for _, d := range b.deletes {
+		needsBump[d.DeclaredAuthority()] = true
+	}
+
+	// The authorities first: they are the kinds' cascade fallback below.
+	authorityVersion := map[string]int64{}
+	seenAuthority := map[string]bool{}
+	for i, d := range b.docs {
+		if d.Kind != vocabulary.DocAuthority {
+			continue
+		}
+		seenAuthority[d.ID] = true
+		stored := storedVersionOf(vocabulary.DocAuthority, d.ID)
+		explicit, _ := vocabulary.VersionValue(d.Data["version"])
+		v := explicit
+		switch {
+		case explicit > stored:
+			// An explicit move forward is honored as written.
+		case needsBump[d.ID]:
+			v = stored + 1
+		default:
+			v = stored
+		}
+		if v == 0 {
+			// A brand-new authority declaring nothing: the loader defaults it.
+			authorityVersion[d.ID] = vocabulary.DefaultVersion
+			continue
+		}
+		if v != explicit {
+			b.docs[i] = docWithVersion(d, v)
+		}
+		authorityVersion[d.ID] = v
+	}
+	// An authority that must move but is not in the batch: bring it in, at
+	// stored+1, so the bump lands with the change that demands it. (A fresh
+	// authority has nothing stored to move past; its own document is
+	// mandatory in that batch and was handled above.)
+	for _, g := range sortedKeys(needsBump) {
+		if seenAuthority[g] {
+			continue
+		}
+		stored := storedVersionOf(vocabulary.DocAuthority, g)
+		if stored == 0 {
+			continue
+		}
+		b.docs = append(b.docs, vocabulary.Document{
+			Kind: vocabulary.DocAuthority, ID: g,
+			Data: map[string]any{"version": stored + 1},
+		})
+		authorityVersion[g] = stored + 1
+	}
+
+	// The kinds: each against its own stored row, with the authority's
+	// version as the effective fallback exactly as the loader cascades it.
+	cascade := func(g string) int64 {
+		if v, ok := authorityVersion[g]; ok {
+			return v
+		}
+		if v := storedVersionOf(vocabulary.DocAuthority, g); v != 0 {
+			return v
+		}
+		return vocabulary.DefaultVersion
+	}
+	for i, d := range b.docs {
+		if d.Kind != vocabulary.DocKind {
+			continue
+		}
+		stored, has := existing[docKey(d)]
+		if !has {
+			continue // a new kind rides the cascade
+		}
+		storedV, _ := vocabulary.VersionValue(stored.Data["version"])
+		explicit, _ := vocabulary.VersionValue(d.Data["version"])
+		if explicit > storedV {
+			continue // an explicit move forward is honored as written
+		}
+		effective := explicit
+		if effective == 0 {
+			effective = cascade(d.DeclaredAuthority())
+		}
+		if effective > storedV {
+			continue // the authority's own move carries it (the boot/bundle ride)
+		}
+		v := storedV
+		if !declarationDataEqual(d.Data, stored.Data) {
+			v = storedV + 1
+		}
+		if v != explicit && v > 0 {
+			b.docs[i] = docWithVersion(d, v)
+		}
+	}
+}
+
+// declarationDataEqual compares two declaration data maps minus the version
+// key — the version is the statement ABOUT the change, not part of it.
+// json.Marshal sorts map keys and renders an integral float and an int the
+// same, so a YAML-decoded document and a jsonb read-back compare honestly.
+// Anything unmarshalable counts as changed; the loader will say why.
+func declarationDataEqual(a, b map[string]any) bool {
+	ja, errA := json.Marshal(minusVersionKey(a))
+	jb, errB := json.Marshal(minusVersionKey(b))
+	if errA != nil || errB != nil {
+		return false
+	}
+	return bytes.Equal(ja, jb)
+}
+
+func minusVersionKey(data map[string]any) map[string]any {
+	out := make(map[string]any, len(data))
+	for k, v := range data {
+		if k == propDeclarationVersion {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// docWithVersion is the document with its data.version set, on a COPY of the
+// data map — the original may be a catalog-cached closure document.
+func docWithVersion(d vocabulary.Document, v int64) vocabulary.Document {
+	data := make(map[string]any, len(d.Data)+1)
+	for k, val := range d.Data {
+		data[k] = val
+	}
+	data[propDeclarationVersion] = v
+	d.Data = data
+	return d
 }
 
 // checkSchemaCAS verifies each document's ifVersion against the stored row,
@@ -649,8 +815,9 @@ type declaration struct {
 func (d declaration) key() string { return d.typ + "\x00" + d.id }
 
 // version reads the declaration's own version off its projected properties.
-func (d declaration) version() string {
-	v, _ := d.props["version"].(string)
+// Zero is the absent version, ordering below everything.
+func (d declaration) version() int64 {
+	v, _ := vocabulary.VersionValue(d.props["version"])
 	return v
 }
 
@@ -790,10 +957,10 @@ func authorityDeclarations(g *vocabulary.Authority) ([]declaration, error) {
 				props[k] = nil
 			}
 		}
-		if v, ok := props[propDeclarationVersion].(string); !ok || v == "" {
+		if v, _ := vocabulary.VersionValue(props[propDeclarationVersion]); v < 1 {
 			props[propDeclarationVersion] = g.Version
 		}
-		if v, _ := props[propDeclarationVersion].(string); v == "" {
+		if v, _ := vocabulary.VersionValue(props[propDeclarationVersion]); v < 1 {
 			// The version is MANDATORY: it is what a boot-time upgrade diffs
 			// against, so a declaration without one could never converge.
 			missing = append(missing, short+" "+id)
@@ -1158,7 +1325,7 @@ func rowDocument(id, typeIdent string, props map[string]any, dialectOne bool) (v
 	switch short {
 	case vocabulary.DocAuthority:
 		data := map[string]any{}
-		if v, _ := props["version"].(string); v != "" {
+		if v, _ := vocabulary.VersionValue(props["version"]); v > 0 {
 			data["version"] = v
 		}
 		d.Data = data
@@ -1643,8 +1810,8 @@ func documentFromProps(short, id string, props map[string]any) (vocabulary.Docum
 	switch short {
 	case vocabulary.DocAuthority:
 		data := map[string]any{}
-		if v, ok := props["version"]; ok && v != nil {
-			data["version"] = fmt.Sprint(v)
+		if v, ok := vocabulary.VersionValue(props["version"]); ok && v > 0 {
+			data["version"] = v
 		}
 		d.Data = data
 	case kindActorLocal:

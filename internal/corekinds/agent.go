@@ -10,9 +10,10 @@ package corekinds
 // store, so changing what an agent does is a record write and the changelog is
 // its version history.
 type Agent struct {
-	// Version is this declaration's version. Managed: the engine stamps it, so
-	// a supplied value does not decide it.
-	Version *string
+	// Version is this declaration's incremental version, maintained by the
+	// engine. Managed: the engine stamps it, so a supplied value does not
+	// decide it.
+	Version *int64
 
 	// Authority is the authority that declares it.
 	Authority *string
@@ -126,7 +127,7 @@ func decodeAgent(d *decoder, path string, v any) (Agent, bool) {
 		switch key {
 		case "version":
 			p := at(path, "version")
-			if e, ok := d.text(p, props[key], nil, nil); ok {
+			if e, ok := d.integer(p, props[key], Bounds{}); ok {
 				out.Version = &e
 			}
 		case "authority":

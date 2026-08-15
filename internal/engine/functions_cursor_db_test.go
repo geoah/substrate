@@ -93,7 +93,7 @@ func openCursorDataset(t *testing.T) *dataset {
 	if err := enginetest.Install(ctx, d, substrate.ActorAPI, enginetest.Manifest{
 		Name: "widgets", Authority: authority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(authority, ""),
+			vocabulary.AuthorityManifest(authority, 0),
 			vocabulary.ActorManifest(authority, vocabulary.AuthorityActor(authority)),
 			vocabulary.KindManifest(authority, map[string]any{"singular": "widget", "plural": "widgets"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),

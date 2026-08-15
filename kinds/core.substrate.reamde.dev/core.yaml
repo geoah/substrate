@@ -40,20 +40,23 @@ metadata:
 data:
   # a maturity statement, not a routing key: no envelope carries a version.
   #
-  # v1alpha2: every kind in this authority gained a `description` — what the
+  # version 2: every kind in this authority gained a `description` — what the
   # thing is and what writes it, read above its collection. A declaration
   # takes this version unless it pins its own, and the bump is what carries
   # the new text into repositories that already stored the old declarations.
   #
-  # v1alpha3: THE TYPED CORE. Every declaration kind lost its `definition`
+  # version 3: THE TYPED CORE. Every declaration kind lost its `definition`
   # blob and its projected mirrors — the manifest's own keys are properties now
   # — and `name` left with them, since a declaration's local name is its id's
   # last segment. The declarations that pin their own version bumped it too;
   # this carries the rest.
-  # v1alpha4: the grants group under one `permissions:` object, and `emit`
+  # version 4: the grants group under one `permissions:` object, and `emit`
   # is `writes` inside it. The function and agent kinds pin their own bump;
   # this one carries the `propose` host function's rewritten grant.
-  version: v1alpha5
+  # version 6: every declaration's `version` became an incremental integer,
+  # maintained by the engine; the kind, authority, actor and bundle meta-kinds
+  # retype it, and this bump carries them.
+  version: 6
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands

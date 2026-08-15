@@ -53,7 +53,7 @@ func newRaceDataset(t *testing.T) *dataset {
 	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
 		Name: "race", Authority: raceAuthority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(raceAuthority, ""),
+			vocabulary.AuthorityManifest(raceAuthority, 0),
 			vocabulary.ActorManifest(raceAuthority, vocabulary.AuthorityActor(raceAuthority)),
 			vocabulary.KindManifest(raceAuthority, map[string]any{"singular": "widget", "plural": "widgets"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
@@ -308,7 +308,7 @@ func TestSchemaApplyRejectsUnpreparableBody(t *testing.T) {
 		return enginetest.Manifest{
 			Name: "broken", Authority: badAuthority,
 			Manifests: []map[string]any{
-				vocabulary.AuthorityManifest(badAuthority, ""),
+				vocabulary.AuthorityManifest(badAuthority, 0),
 				vocabulary.ActorManifest(badAuthority, vocabulary.AuthorityActor(badAuthority)),
 				vocabulary.FunctionManifest(badAuthority, "mangle", map[string]any{
 					"description": "a body that must compile at registration",

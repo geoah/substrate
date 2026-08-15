@@ -507,11 +507,11 @@ function BundleDisclosure({
       <dl className="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 gap-y-1.5">
         <Line label="authority">
           <span className="data text-muted-foreground">{row.authority}</span>
-          {catalog?.version && (
+          {catalog?.version ? (
             <span className="data text-muted-foreground">
               · {catalog.version}
             </span>
-          )}
+          ) : null}
         </Line>
         {row.upgrade?.available && (
           <Line label="upgrade">

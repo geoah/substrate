@@ -417,10 +417,11 @@ func (b *schemaBuilder) buildObjects() error {
 		for _, p := range declaredProperties(t.Definition) {
 			fname := camelCase(p)
 			// A declared property may collide with an Record interface
-			// field (core.substrate.reamde.dev/type declares "version": a String,
-			// while Record.version is the Int! CAS counter). Identical
-			// String fields (title, body) defer to the interface column;
-			// incompatible ones get a Prop suffix.
+			// field (core.substrate.reamde.dev/kind declares "version": the
+			// declaration's own version, while Record.version is the CAS
+			// counter — two different numbers). Identical String fields
+			// (title, body) defer to the interface column; everything else
+			// gets a Prop suffix, because same type does not mean same value.
 			if _, reserved := fields[fname]; reserved {
 				if fname == "title" || fname == "body" {
 					continue

@@ -74,7 +74,7 @@ func w2Manifest(withTrigger bool) enginetest.Manifest {
 	m := enginetest.Manifest{
 		Name: "widgets", Authority: w2Group,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(w2Group, ""),
+			vocabulary.AuthorityManifest(w2Group, 0),
 			vocabulary.ActorManifest(w2Group, vocabulary.AuthorityActor(w2Group)),
 			vocabulary.KindManifest(w2Group, map[string]any{"singular": "widget", "plural": "widgets"},
 				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),

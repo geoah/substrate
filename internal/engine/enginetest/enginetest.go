@@ -296,7 +296,7 @@ func AccountManifest() Manifest {
 			{
 				"kind":     "core.substrate.reamde.dev/authority",
 				"metadata": map[string]any{"id": AccountAuthority},
-				"data":     map[string]any{"version": "v1"},
+				"data":     map[string]any{"version": 1},
 			},
 			{
 				"kind":     "core.substrate.reamde.dev/kind",

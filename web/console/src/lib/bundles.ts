@@ -145,15 +145,20 @@ export function upgradableBundleCount(catalog: CatalogItem[]): number {
     .length
 }
 
-/** "v1alpha1 → v1alpha2", or just the one version when there is no motion to
- * show: the store held none, or the AUTHORITY version did not move because
- * what moved was a kind's own version or a kind the closure added. Both are
- * legal upgrades (AGENTS.md), and "v1alpha1 → v1alpha1" would read as a bug. */
+/** "2 → 3", or just the one version when there is no motion to show: the
+ * store held none, or the AUTHORITY version did not move because what moved
+ * was a kind's own version or a kind the closure added. Both are legal
+ * upgrades (AGENTS.md), and "3 → 3" would read as a bug. Versions are
+ * incremental integers; 0 and undefined both mean absent, because the wire
+ * omits a zero. */
 export function upgradeMotion(upgrade: BundleUpgrade): string {
-  if (upgrade.from && upgrade.to && upgrade.from !== upgrade.to) {
-    return `${upgrade.from} → ${upgrade.to}`
+  const from = upgrade.from || undefined
+  const to = upgrade.to || undefined
+  if (from !== undefined && to !== undefined && from !== to) {
+    return `${from} → ${to}`
   }
-  return upgrade.to ?? upgrade.from ?? ""
+  const one = to ?? from
+  return one === undefined ? "" : String(one)
 }
 
 // ── requirements: what must be imported first ───────────────────────────────

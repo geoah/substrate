@@ -57,9 +57,10 @@ type BundleUpgrade struct {
 	// re-install prunes).
 	Available bool `json:"available"`
 	// From and To are the stored and shipped versions of the bundle's owned
-	// authority. From is empty when the stored authority row carries none.
-	From string `json:"from,omitempty"`
-	To   string `json:"to,omitempty"`
+	// authority. Zero is the absent version: From is 0 (and omitted) when the
+	// stored authority row carries none.
+	From int64 `json:"from,omitempty"`
+	To   int64 `json:"to,omitempty"`
 	// Changes lists each declaration the upgrade would move.
 	Changes []BundleUpgradeChange `json:"changes,omitempty"`
 	// Blockers are the refuse-breakage guard lines the install verb would
@@ -74,12 +75,12 @@ type BundleUpgradeChange struct {
 	Kind string `json:"kind"`
 	// ID is the declaration's record id.
 	ID string `json:"id"`
-	// From is the stored version; empty when this repository lacks the
+	// From is the stored version; 0 (omitted) when this repository lacks the
 	// declaration.
-	From string `json:"from,omitempty"`
-	// To is the shipped version; empty when the closure stopped shipping the
-	// declaration and the upgrade would prune it.
-	To string `json:"to,omitempty"`
+	From int64 `json:"from,omitempty"`
+	// To is the shipped version; 0 (omitted) when the closure stopped
+	// shipping the declaration and the upgrade would prune it.
+	To int64 `json:"to,omitempty"`
 }
 
 // InputStatus is one declared input's resolution.

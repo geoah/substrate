@@ -103,7 +103,7 @@ func seededRepository(t *testing.T) (dsn string) {
 // and returns what the upgrade said.
 func openMoved(t *testing.T, dsn, tree string) error {
 	t.Helper()
-	bumpGroupVersion(t, tree, coreAuthority, "v1alpha99")
+	bumpGroupVersion(t, tree, coreAuthority, "99")
 	svc, err := engine.Open(context.Background(), dsn, engine.WithKindsDir(tree))
 	if err != nil {
 		return err
@@ -182,7 +182,7 @@ func TestBootUpgradeIgnoresAKindItDoesNotRewrite(t *testing.T) {
 	// touched authority, rather than the ones actually being rewritten, would
 	// refuse this boot over a change nobody is making.
 	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
-		return pinVersion(t, narrowName(t, doc), "v1alpha1")
+		return pinVersion(t, narrowName(t, doc), "1")
 	})
 	if err := openMoved(t, dsn, tree); err != nil {
 		t.Fatalf("a kind the upgrade will not rewrite must not refuse the boot: %v", err)
@@ -265,8 +265,9 @@ func TestBootUpgradeRefusesAnEdgeBecomingARequiredReference(t *testing.T) {
 	_ = svc.Close()
 
 	// Boot under THIS tree, exactly as deploying this branch would. No version
-	// bump needed: llmmessage pins v1alpha3 here and the stored declaration
-	// carries the authority's older one, so the upgrade already wants to run.
+	// bump needed: llmmessage pins its own version here and the stored
+	// declaration carries the authority's older one, so the upgrade already
+	// wants to run.
 	svc2, err := engine.Open(ctx, dsn, engine.WithKindsDir(shippedTree(t)))
 	if err != nil {
 		t.Fatalf("open under the new tree: %v", err)

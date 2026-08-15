@@ -89,7 +89,7 @@ func TestLiveAgentChainAcrossWires(t *testing.T) {
 	// as prescriptive as it gets: the test is about the wiring, so the model
 	// is given no room to be creative about the procedure.
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(crewAuthority, ""),
+		vocabulary.AuthorityManifest(crewAuthority, 0),
 		vocabulary.FunctionManifest(crewAuthority, "add", map[string]any{
 			"description": "Adds two integers. Always use this for arithmetic.",
 			"runtime":     vocabulary.RuntimePython,
@@ -195,8 +195,9 @@ def main(input, host):
 		child["__id"], typeThread).Scan(&parent); err != nil {
 		t.Fatalf("the child's parent: %v", err)
 	}
-	if parent != root["__id"] {
-		t.Fatalf("child parent points at %q, root is %q", parent, root["__id"])
+	// The parent is a reference: one flat "<kind>/<id>" path.
+	if want := vocabulary.RecordPath(typeThread, root["__id"].(string)); parent != want {
+		t.Fatalf("child parent points at %q, want %q", parent, want)
 	}
 	childTokens := intProp(child, "totalTokens")
 	if childTokens <= 0 {

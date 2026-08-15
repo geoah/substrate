@@ -838,7 +838,7 @@ func TestDeclarationBlobRowIsRefusedOutsideTheRung(t *testing.T) {
 	props := map[string]any{
 		"authority":         "x.example.com",
 		propDeclarationBlob: map[string]any{"authority": "x.example.com", "description": "does a thing"},
-		"version":           "v1alpha1",
+		"version":           1,
 	}
 	if _, _, err := rowDocument("x.example.com/fn", kindFunction, props, typedRows); err == nil {
 		t.Fatal("a definition-bearing row was read as a declaration")
@@ -883,7 +883,7 @@ func TestDeclarationBlobIsRefusedByPresence(t *testing.T) {
 		},
 		"a blob on an authority row": {
 			kindAuthority,
-			map[string]any{"version": "v1alpha1", propDeclarationBlob: map[string]any{"version": "v1alpha1"}},
+			map[string]any{"version": 1, propDeclarationBlob: map[string]any{"version": "v1alpha1"}},
 			"carries a `definition` property",
 		},
 		"a blob on an actor row": {

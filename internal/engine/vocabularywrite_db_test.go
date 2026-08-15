@@ -51,7 +51,7 @@ func TestSchemaApplyBatchAllOrNone(t *testing.T) {
 	before := maxSeq(t, ds)
 
 	_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, ""),
+		vocabulary.AuthorityManifest(swAuthority, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 		swTypeDoc("gadget", "gadgets", map[string]any{"weird": map[string]any{"type": "nosuchkind"}}),
 	})
@@ -119,7 +119,7 @@ func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 	before := maxSeq(t, ds)
 
 	ents, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, ""),
+		vocabulary.AuthorityManifest(swAuthority, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 	})
 	if err != nil {
@@ -209,7 +209,7 @@ def main(input, host):
 		}
 	}
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, ""),
+		vocabulary.AuthorityManifest(swAuthority, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 		vocabulary.FunctionManifest(swAuthority, "mirror", fnData("v1")),
 	}); err != nil {
@@ -265,7 +265,7 @@ func TestSchemaWritesSerializeDataWritesFlow(t *testing.T) {
 	sa := applier(t, ds)
 
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, ""),
+		vocabulary.AuthorityManifest(swAuthority, 0),
 	}); err != nil {
 		t.Fatalf("apply authority: %v", err)
 	}
@@ -321,7 +321,7 @@ func TestSchemaDeleteRefusesWithInstances(t *testing.T) {
 	sa := applier(t, ds)
 
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, ""),
+		vocabulary.AuthorityManifest(swAuthority, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -391,7 +391,7 @@ func TestProjectionStoresTheAuthoredDeclaration(t *testing.T) {
 	_, ds := newDataset(t)
 
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, ""),
+		vocabulary.AuthorityManifest(swAuthority, 0),
 		{
 			"kind":     vocabulary.CoreKind(vocabulary.DocPropertyType),
 			"metadata": map[string]any{"id": swAuthority + "/grade"},
@@ -468,7 +468,7 @@ func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 	}
 	// No `version:` on the declaration — the authority's is what the row gets.
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, "v1alpha3"),
+		vocabulary.AuthorityManifest(swAuthority, 3),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -480,12 +480,12 @@ func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 	if _, stamped := before.Definition["version"]; stamped {
 		t.Fatalf("the rendered declaration carries the engine's version: %v", before.Definition)
 	}
-	if before.Version != "v1alpha3" {
+	if before.Version != 3 {
 		t.Fatalf("the stamped version is not on the KindInfo: %+v", before)
 	}
 	// The ROW carries it, because a boot upgrade diffs on it.
 	row := mustGet(t, ds, "core.substrate.reamde.dev/kind", swAuthority+"/widget")
-	if row.Properties["version"] != "v1alpha3" {
+	if v, _ := vocabulary.VersionValue(row.Properties["version"]); v != 3 {
 		t.Fatalf("the row carries no stamped version: %v", row.Properties)
 	}
 	_ = svc.Close()
@@ -504,14 +504,14 @@ func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 		t.Fatalf("the declaration moved across a restart:\n before %#v\n after  %#v",
 			before.Definition, after.Definition)
 	}
-	if after.Version != "v1alpha3" {
+	if after.Version != 3 {
 		t.Fatalf("the version did not survive the reload: %+v", after)
 	}
 	// A declaration that PINS its own version keeps reading it off KindInfo.
 	if _, err := applier(t, ds2).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 		vocabulary.KindManifest(swAuthority,
 			map[string]any{"singular": "gadget", "plural": "gadgets"},
-			map[string]any{"version": "v2alpha1", "properties": map[string]any{"name": map[string]any{"type": "string"}}}),
+			map[string]any{"version": 21, "properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 	}); err != nil {
 		t.Fatalf("apply the pinned declaration: %v", err)
 	}
@@ -519,7 +519,7 @@ func TestKindInfoDefinitionSurvivesAReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read the pinned kind: %v", err)
 	}
-	if pinned.Version != "v2alpha1" {
+	if pinned.Version != 21 {
 		t.Fatalf("the pinned version is not on the KindInfo: %+v", pinned)
 	}
 }
@@ -534,7 +534,7 @@ func TestGenericWritesRouteThroughAdmission(t *testing.T) {
 	sa := applier(t, ds)
 
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, ""),
+		vocabulary.AuthorityManifest(swAuthority, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -639,7 +639,7 @@ func TestDeclarationWritesRefuseWhatTheEngineOwns(t *testing.T) {
 	_, ds := newDataset(t)
 	sa := applier(t, ds)
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, ""),
+		vocabulary.AuthorityManifest(swAuthority, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -762,7 +762,7 @@ func TestDeclarationWritesNameTheDeletedSpellings(t *testing.T) {
 	const agentKind = "core.substrate.reamde.dev/agent"
 	fnID, agentID := swAuthority+"/mirror", swAuthority+"/thinker"
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, ""),
+		vocabulary.AuthorityManifest(swAuthority, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 		vocabulary.FunctionManifest(swAuthority, "mirror", map[string]any{
 			"authority": swAuthority, "description": "mirrors widgets", "runtime": vocabulary.RuntimePython,
@@ -898,7 +898,7 @@ def main(input, host):
 `,
 	}
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, ""),
+		vocabulary.AuthorityManifest(swAuthority, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 		vocabulary.FunctionManifest(swAuthority, "mirror", fnData),
 	}); err != nil {
@@ -962,7 +962,7 @@ func TestBuiltinActorRowsRefuseRedeclaration(t *testing.T) {
 	sa := applier(t, ds)
 
 	if _, err := sa.ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, ""),
+		vocabulary.AuthorityManifest(swAuthority, 0),
 	}); err != nil {
 		t.Fatalf("apply authority: %v", err)
 	}
@@ -1028,11 +1028,11 @@ func TestOpenNeverPrunesShippedRows(t *testing.T) {
 	for _, row := range []struct{ id, typ, props string }{
 		{
 			"ghost.substrate.reamde.dev", "core.substrate.reamde.dev/authority",
-			`{"name": "ghost.substrate.reamde.dev", "version": "v1alpha1", "source": "builtin", "actors": []}`,
+			`{"name": "ghost.substrate.reamde.dev", "version": 1, "source": "builtin", "actors": []}`,
 		},
 		{
 			"ghost.substrate.reamde.dev/color", "core.substrate.reamde.dev/propertytype",
-			`{"name": "color", "authority": "ghost.substrate.reamde.dev", "base": "string", "version": "v1alpha1", "definition": {"authority": "ghost.substrate.reamde.dev", "base": "string"}}`,
+			`{"name": "color", "authority": "ghost.substrate.reamde.dev", "base": "string", "version": 1, "definition": {"authority": "ghost.substrate.reamde.dev", "base": "string"}}`,
 		},
 	} {
 		if _, err := raw.ExecContext(ctx, `
@@ -1096,7 +1096,7 @@ func TestCandidateResolutionIsTheProjectionsAlone(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
-		vocabulary.AuthorityManifest(swAuthority, ""),
+		vocabulary.AuthorityManifest(swAuthority, 0),
 		swTypeDoc("widget", "widgets", map[string]any{"name": map[string]any{"type": "string"}}),
 	}); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -1125,7 +1125,7 @@ func TestCandidateResolutionIsTheProjectionsAlone(t *testing.T) {
 		if !ok {
 			t.Fatal("dataset does not implement the closure-install seam")
 		}
-		closure := []map[string]any{vocabulary.AuthorityManifest(swInstallAuthority, "")}
+		closure := []map[string]any{vocabulary.AuthorityManifest(swInstallAuthority, 0)}
 
 		_, err := inst.InstallBundleClosure(ctx, owner, closure, []substrate.PutInput{{
 			Kind: swAuthority + "/widget", ID: "from-install",
@@ -1172,7 +1172,7 @@ func dkDocs(members ...map[string]any) []map[string]any {
 		installs = append(installs, meta["id"])
 	}
 	return append([]map[string]any{
-		vocabulary.AuthorityManifest(dkAuthority, ""),
+		vocabulary.AuthorityManifest(dkAuthority, 0),
 		vocabulary.ActorManifest(dkAuthority, vocabulary.AuthorityActor(dkAuthority)),
 		vocabulary.BundleManifest(dkAuthority, map[string]any{
 			"description": "the drop-kind bundle",
@@ -1274,7 +1274,7 @@ func TestVocabularyApplyRefusesADeclarationRowOfTheMetaKindItRemoves(t *testing.
 	// One batch: a property type declared into a new authority (its row's kind is
 	// the meta-kind), and core's declaration of that meta-kind removed.
 	err = rm.ApplyVocabularyWithRemoval(ctx, substrate.ActorSystem, []map[string]any{
-		vocabulary.AuthorityManifest("mine.example.com", ""),
+		vocabulary.AuthorityManifest("mine.example.com", 0),
 		{
 			"kind":     metaKind,
 			"metadata": map[string]any{"id": "mine.example.com/color"},

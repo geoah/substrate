@@ -10,6 +10,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -76,13 +77,13 @@ func mustReplace(t *testing.T, doc, from, to string) string {
 // shippedVersion is the tasks authority's version in the tree right now: the
 // tests bump PAST whatever it stands at, so a future bump of the shipped
 // closure never turns these into a puzzle.
-func shippedVersion(t *testing.T, c *catalog.Catalog) string {
+func shippedVersion(t *testing.T, c *catalog.Catalog) int64 {
 	t.Helper()
 	b, ok := c.ByID(tasksBundleID)
 	if !ok {
 		t.Fatal("the shipped catalog no longer carries the tasks bundle")
 	}
-	if b.Version == "" {
+	if b.Version == 0 {
 		t.Fatal("the shipped tasks authority declares no version")
 	}
 	return b.Version
@@ -90,11 +91,13 @@ func shippedVersion(t *testing.T, c *catalog.Catalog) string {
 
 // movedVersion is a version that outranks every spelling the tree could hold:
 // binary N+1, whatever N was.
-const movedVersion = "v99"
+const movedVersion = int64(99)
 
-func bumpTasksAuthority(t *testing.T, from, doc string) string {
+func bumpTasksAuthority(t *testing.T, from int64, doc string) string {
 	t.Helper()
-	return mustReplace(t, doc, "version: "+from, "version: "+movedVersion)
+	return mustReplace(t, doc,
+		"version: "+strconv.FormatInt(from, 10),
+		"version: "+strconv.FormatInt(movedVersion, 10))
 }
 
 func TestUpgradePreview(t *testing.T) {
@@ -140,7 +143,7 @@ func TestUpgradePreview(t *testing.T) {
 		t.Fatalf("a moved closure previews no upgrade: %+v", up)
 	}
 	if up.From != shipped || up.To != movedVersion {
-		t.Errorf("authority motion reads %q -> %q, want %s -> %s", up.From, up.To, shipped, movedVersion)
+		t.Errorf("authority motion reads %d -> %d, want %d -> %d", up.From, up.To, shipped, movedVersion)
 	}
 	if len(up.Blockers) != 0 {
 		t.Errorf("an additive upgrade carries blockers: %v", up.Blockers)

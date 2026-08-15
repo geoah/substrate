@@ -27,9 +27,10 @@ data:
   # the rows and the boot upgrade lands.
   properties:
     version:
-      type: string
+      type: int
       managed: true
-      description: this declaration's version
+      description: this declaration's incremental version, maintained by the
+        engine
     source:
       type: enum
       values:

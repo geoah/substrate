@@ -5,9 +5,12 @@ type KindInfo struct {
 	Identity  string `json:"identity"` // "<authority>/<name>"
 	Name      string `json:"name"`
 	Authority string `json:"authority"`
-	Version   string `json:"version"`
-	Plural    string `json:"plural"`
-	Source    string `json:"source"` // "builtin" | "installed"
+	// Version is the declaration's incremental version, server-maintained:
+	// 1 for a first declaration, +1 per change (or whatever higher number an
+	// explicit apply pinned).
+	Version int64  `json:"version"`
+	Plural  string `json:"plural"`
+	Source  string `json:"source"` // "builtin" | "installed"
 	// Description is what the kind is for, as its declaration says it: the
 	// line a reader gets above the collection, empty when undeclared.
 	Description string `json:"description"`

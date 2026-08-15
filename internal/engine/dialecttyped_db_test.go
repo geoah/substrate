@@ -290,7 +290,7 @@ func TestTypedDeclarationRungTranslatesRetiredToolSpellings(t *testing.T) {
 		return vocabulary.AgentManifest(authority, name, data)
 	}
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
-		vocabulary.AuthorityManifest(authority, ""),
+		vocabulary.AuthorityManifest(authority, 0),
 		vocabulary.KindManifest(authority, map[string]any{"singular": "gizmo", "plural": "gizmos"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
 		agent("bare", map[string]any{
@@ -687,7 +687,7 @@ func TestBootUpgradeDeliversTheTypedFlip(t *testing.T) {
 	for k, v := range row.Properties {
 		old[k] = v
 	}
-	old["version"] = "v1alpha2"
+	old["version"] = 2
 	old["properties"] = map[string]any{
 		"name":      map[string]any{"type": "string"},
 		"authority": map[string]any{"type": "string"},
@@ -718,7 +718,7 @@ func TestBootUpgradeDeliversTheTypedFlip(t *testing.T) {
 	if _, typed := declared["names"]; !typed {
 		t.Fatalf("the stored kind declaration did not move to the typed one: %v", declared)
 	}
-	if v, _ := upgraded.Properties["version"].(string); v == "v1alpha2" {
+	if v, _ := vocabulary.VersionValue(upgraded.Properties["version"]); v == 2 {
 		t.Fatalf("the declaration is still at the planted version: %v", upgraded.Properties)
 	}
 }
@@ -968,7 +968,7 @@ func TestTypedDeclarationRungHoldsRowsToTheRepositorysOwnDeclarations(t *testing
 	}
 	newer["lifecycle"] = map[string]any{"type": "string", "managed": true}
 	ahead["properties"] = newer
-	ahead["version"] = "v1alpha99"
+	ahead["version"] = 99
 	if err := p.PlantDeclarationRow(ctx, "core.substrate.reamde.dev/kind", "core.substrate.reamde.dev/kind", ahead); err != nil {
 		t.Fatalf("plant the newer kind declaration: %v", err)
 	}
@@ -999,8 +999,8 @@ func TestTypedDeclarationRungHoldsRowsToTheRepositorysOwnDeclarations(t *testing
 		t.Fatalf("the newer binary's stamped property did not survive: %v", migrated.Properties)
 	}
 	stillAhead := mustGet(t, ds2, "core.substrate.reamde.dev/kind", "core.substrate.reamde.dev/kind")
-	if v, _ := stillAhead.Properties["version"].(string); v != "v1alpha99" {
-		t.Fatalf("the newer stored declaration was downgraded to %q", v)
+	if v, _ := vocabulary.VersionValue(stillAhead.Properties["version"]); v != 99 {
+		t.Fatalf("the newer stored declaration was downgraded to %d", v)
 	}
 }
 

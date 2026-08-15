@@ -17,24 +17,26 @@ data:
     invoked by a trigger or called directly. The declaration IS the record
     — a write admits it, the commit activates it, and the dispatcher reads
     the registry this row rebuilds into.
-  # v1alpha2: the display template dropped the authority. A declaration's
+  # version 2: the display template dropped the authority. A declaration's
   # identity is `<authority>/<name>` and the dotted composite it used to render
   # names nothing — the bump is what carries the new template into repositories
   # that already stored the old one.
-  # v1alpha3: the declaration gained a `description` — the bump is what
-  # carries it into repositories that already stored the v1alpha2 one.
-  # v1alpha4: TYPED. `definition` and `name` are gone; the runtime, the body,
+  # version 3: the declaration gained a `description` — the bump is what
+  # carries it into repositories that already stored the version 2 one.
+  # version 4: TYPED. `definition` and `name` are gone; the runtime, the body,
   # the flat argument lists and the five capability keys are properties.
-  # v1alpha5: `runtime: host` joined the enum and `source` stopped being
+  # version 5: `runtime: host` joined the enum and `source` stopped being
   # required — a host function's body IS the engine, so its declaration is a
   # card and nothing else. The bump is what admits the four host function rows
-  # core now ships into a repository that stored the v1alpha4 enum.
-  # v1alpha6: the five grant keys became one `permissions` object, and `emit`
+  # core now ships into a repository that stored the version 4 enum.
+  # version 6: the five grant keys became one `permissions` object, and `emit`
   # is `writes` inside it. Dropping five properties is a narrowing, and this
   # one is safe because dialect 2 has never shipped in a release: no store
   # outside our own development instances holds a row with them, and the
   # dialect rung rewrites the ones that do.
-  version: v1alpha7
+  # version 8: the declaration's own `version` became an incremental
+  # integer, maintained by the engine.
+  version: 8
   names:
     singular: function
     plural: functions
@@ -45,9 +47,10 @@ data:
     # diffs a repository's shipped vocabulary against, so the engine writes it
     # on every declaration row, which is what `managed` says.
     version:
-      type: string
+      type: int
       managed: true
-      description: this declaration's version
+      description: this declaration's incremental version, maintained by the
+        engine
     # NOT a reference, and the reason is identity: an authority is what this
     # declaration IS part of, not a record it points at. Pinning it made the
     # stored row spell it as a path while the manifest spelled the name, so one

@@ -38,7 +38,7 @@ const llmprovider: KindInfo = {
   identity: "core.substrate.reamde.dev/llmprovider",
   name: "llmprovider",
   authority: "core.substrate.reamde.dev",
-  version: "1",
+  version: 1,
   plural: "llmproviders",
   source: "builtin",
   definition: {
@@ -73,7 +73,7 @@ const account: KindInfo = {
   identity: "core.substrate.reamde.dev/account",
   name: "account",
   authority: "core.substrate.reamde.dev",
-  version: "1",
+  version: 1,
   plural: "accounts",
   source: "builtin",
 }

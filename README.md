@@ -201,15 +201,19 @@ talks to real LLM providers; it skips itself without keys, and
 
 ## Changing a kind
 
-Every declaration under `kinds/` carries a `version` (Kubernetes-style:
-`v1alpha1`, `v1beta2`, `v1`), either its own `data.version` on a kind or the
-authority's in `bundle.yaml`. That version is the entire upgrade signal: a
-repository picks up a changed declaration only when its version moved, at boot
-for core and through the console's Registry for installed bundles. So the rule
-is one sentence: **change a declaration's `data`, bump its version.** Adding a
-property or an enum value is a bump; removing or retyping one is a breaking
-change the server refuses while live records hold the old shape, so keep the
-old property and add a new one instead.
+Every declaration under `kinds/` carries a `version`, an incremental integer
+(1, 2, 3, ...), either its own `data.version` on a kind or the authority's in
+`bundle.yaml`. That version is the entire upgrade signal: a repository picks
+up a changed declaration only when its version moved, at boot for core and
+through the console's Registry for installed bundles. Through the API nobody
+bumps by hand: `/vocabulary/apply` honors an incoming version only when it
+moves past the stored one, lands a changed definition at stored+1, and keeps
+an unchanged one where it was. The shipped tree still pins versions
+explicitly, because the boot upgrade needs one total order across binaries,
+so the rule here is one sentence: **change a declaration's `data`, bump its
+version.** Adding a property or an enum value is a bump; removing or retyping
+one is a breaking change the server refuses while live records hold the old
+shape, so keep the old property and add a new one instead.
 
 CI enforces the rule (`mise run kinds:check`): a PR that edits a declaration
 without moving its version, or removes one without bumping its authority, does

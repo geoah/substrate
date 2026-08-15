@@ -27,7 +27,7 @@ const firstClassAuthority = "firstclass.example.substrate.reamde.dev"
 func firstClassVocabulary(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(firstClassAuthority, ""),
+		vocabulary.AuthorityManifest(firstClassAuthority, 0),
 		vocabulary.KindManifest(firstClassAuthority,
 			map[string]any{"singular": "target", "plural": "targets"},
 			map[string]any{

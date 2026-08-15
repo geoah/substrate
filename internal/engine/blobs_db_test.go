@@ -40,7 +40,7 @@ func blobDocDocs(prop string, repeated bool) []map[string]any {
 		pdef["repeated"] = true
 	}
 	return []map[string]any{
-		vocabulary.AuthorityManifest(blobAuthority, ""),
+		vocabulary.AuthorityManifest(blobAuthority, 0),
 		vocabulary.KindManifest(blobAuthority,
 			map[string]any{"singular": "doc", "plural": "docs"},
 			map[string]any{"properties": map[string]any{prop: pdef}}),

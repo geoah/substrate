@@ -93,7 +93,7 @@ func TestReadersAgree(t *testing.T) {
 		// otherwise. The boot upgrade keys on it, so the two readers agreeing on
 		// the authored value alone would not be agreement.
 		if read.Version != declared.Version {
-			t.Errorf("%s: version %q, loader %q", declared.Identity, read.Version, declared.Version)
+			t.Errorf("%s: version %d, loader %d", declared.Identity, read.Version, declared.Version)
 		}
 		if read.DisplayTemplate != declared.DisplayTemplate {
 			t.Errorf("%s: displayTemplate %q, loader %q",

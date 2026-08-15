@@ -274,7 +274,9 @@ export interface KindInfo {
   name: string
   /** Who publishes the kind; empty for a repository-local one. */
   authority: string
-  version: string
+  /** The declaration's incremental version, server-maintained: every accepted
+   * change to the declaration bumps it. 0 means no version is stored. */
+  version: number
   /** The collection segment. */
   plural: string
   /** `builtin` for vocabulary the substrate ships, `installed` for kinds a
@@ -361,11 +363,12 @@ export interface BundleUpgradeChange {
   kind: string
   /** The declaration's record id. */
   id: string
-  /** The stored version; absent when this repository lacks the declaration. */
-  from?: string
+  /** The stored version; absent (0 is omitted on the wire) when this
+   * repository lacks the declaration. */
+  from?: number
   /** The shipped version; absent when the closure stopped shipping the
    * declaration and the upgrade prunes it. */
-  to?: string
+  to?: number
 }
 
 /** What re-importing a bundle's shipped closure would do here
@@ -374,9 +377,10 @@ export interface BundleUpgradeChange {
  * verb; this is its preview. */
 export interface BundleUpgrade {
   available: boolean
-  /** Stored and shipped versions of the bundle's owned authority. */
-  from?: string
-  to?: string
+  /** Stored and shipped versions of the bundle's owned authority; absent
+   * (0 is omitted on the wire) where none is stored. */
+  from?: number
+  to?: number
   changes?: BundleUpgradeChange[]
   /** The refuse-breakage guard lines the import would refuse on, with live
    * row counts. Non-empty means the upgrade is BLOCKED: the console shows the
@@ -394,7 +398,8 @@ export interface CatalogBundle {
   /** The authority the bundle owns. */
   authority: string
   description: string
-  version: string
+  /** The owned authority's incremental declaration version. */
+  version: number
   /** The declared inputs, input name keyed. A bundle with no needs omits it. */
   inputs?: Record<string, CatalogInput>
   closure: BundleClosure

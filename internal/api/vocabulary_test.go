@@ -40,7 +40,7 @@ func TestSchemaApplyEndpoint(t *testing.T) {
 			{
 				"kind":     coreAuthority + "/authority",
 				"metadata": map[string]any{"id": "widgets.example.substrate.reamde.dev"},
-				"data":     map[string]any{"version": "v1alpha1"},
+				"data":     map[string]any{"version": 1},
 			},
 		},
 	})

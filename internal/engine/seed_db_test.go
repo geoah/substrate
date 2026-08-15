@@ -16,6 +16,7 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/vocabulary"
 	"github.com/geoah/substrate/kinds"
 )
 
@@ -251,7 +252,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 
 	// --- binary N+1: the core authority gains a kind and a version.
 	addShippedType(t, tree, "core.substrate.reamde.dev", "widget", "widgets")
-	bumpGroupVersion(t, tree, "core.substrate.reamde.dev", "v1beta1")
+	bumpGroupVersion(t, tree, "core.substrate.reamde.dev", "7")
 
 	svc2 := openTree(t, dsn, tree)
 	ds2, err := svc2.Dataset(ctx, "opened")
@@ -284,7 +285,7 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if authority.Properties["version"] != "v1beta1" {
+	if v, _ := vocabulary.VersionValue(authority.Properties["version"]); v != 7 {
 		t.Fatalf("the stored authority version = %v", authority.Properties["version"])
 	}
 	// Untouched authorities stayed untouched: the diff is per authority, not a re-assert.
@@ -352,7 +353,7 @@ const kindDecl = "core.substrate.reamde.dev/kind"
 // projection never wrote it, and that declaration at `version` — ahead of the
 // tree's, so the boot upgrade keeps it. Every other declaration keeps the
 // version the tree ships, so the upgrade leaves those alone too.
-func plantKindDeclarationsWithout(t *testing.T, ds substrate.Dataset, prop, version string) {
+func plantKindDeclarationsWithout(t *testing.T, ds substrate.Dataset, prop string, version int64) {
 	t.Helper()
 	p := planter(t, ds)
 	rows := declarationRows(t, ds)[kindDecl]
@@ -433,7 +434,7 @@ func TestBootUpgradeHoldsRowsToADeclarationItKeeps(t *testing.T) {
 	// The repository as a binary AHEAD of this one left it: its `kind` declaration
 	// stops declaring `description` and stands at a version the tree cannot touch,
 	// and its projection wrote no `description` on any declaration row.
-	plantKindDeclarationsWithout(t, ds1, "description", "v1alpha99")
+	plantKindDeclarationsWithout(t, ds1, "description", 99)
 	// …and ONE sibling declaration with its version deleted, which compares below
 	// every version, so the upgrade has something to write into core at all. The
 	// row it would project carries `description`.
@@ -482,8 +483,8 @@ func TestBootUpgradeHoldsRowsToADeclarationItKeeps(t *testing.T) {
 		`SELECT props->>'version' FROM records WHERE kind = $1 AND id = $1`, kindDecl).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != "v1alpha99" {
-		t.Fatalf("the stored declaration version = %q, want v1alpha99", version)
+	if version != "99" {
+		t.Fatalf("the stored declaration version = %q, want 99", version)
 	}
 }
 

@@ -230,11 +230,14 @@ Do not half-do it.
   `records`, so a live write and `RebuildRepository` cannot drift. Anything
   that writes `records` directly is wrong.
 - **A changed declaration ships a changed version.** Every document under
-  `kinds/` projects with a `version` (a kind's own `data.version` where it
-  pins one, else its authority's, Kubernetes-style `v1alpha1`). The boot
+  `kinds/` projects with a `version`, an incremental integer (a kind's own
+  `data.version` where it pins one, else its authority's, else 1). The boot
   upgrade, the catalog's upgrade preview and the console's upgrade offer all
   key on it, so editing a declaration without bumping is an upgrade no
-  repository ever receives. Bump the kind's own version for a one-kind change,
+  repository ever receives. Through the API the engine maintains the version
+  itself (a changed definition lands at stored+1), so hand-bumping is only
+  for this tree, where the boot upgrade needs one total order across
+  binaries. Bump the kind's own version for a one-kind change,
   the authority's (in its `bundle.yaml`) for a closure-wide one, and the
   authority's when a declaration is removed, so the prune reads as an upgrade.
   Additive changes (new kind, new optional property, new enum value, new

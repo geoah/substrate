@@ -401,7 +401,7 @@ provider works is a throwaway of your own authority:
 kind: core.substrate.reamde.dev/authority
 metadata: {id: smoke.example.com}
 data:
-  version: v1alpha1
+  version: 1
 ---
 kind: core.substrate.reamde.dev/agent
 metadata: {id: smoke.example.com/echo}

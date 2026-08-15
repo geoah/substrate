@@ -27,7 +27,7 @@ const pathAuthority = "paths.example.substrate.reamde.dev"
 // has four segments and the id half carries its own slash.
 func pathDocs() []map[string]any {
 	return []map[string]any{
-		vocabulary.AuthorityManifest(pathAuthority, ""),
+		vocabulary.AuthorityManifest(pathAuthority, 0),
 		vocabulary.KindManifest(pathAuthority,
 			map[string]any{"singular": "target", "plural": "targets"},
 			map[string]any{}),

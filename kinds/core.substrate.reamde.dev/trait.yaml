@@ -9,16 +9,18 @@ data:
     a kind binds — `temporal`, `accountconfig`, `oauth2`. Traits resolve across
     authorities, and host behavior keys on the trait a kind binds rather than
     on what the kind is called.
-  # v1alpha2: the display template dropped the authority. A declaration's
+  # version 2: the display template dropped the authority. A declaration's
   # identity is `<authority>/<name>` and the dotted composite it used to render
   # names nothing — the bump is what carries the new template into repositories
   # that already stored the old one.
-  # v1alpha3: the declaration gained a `description` — the bump is what
-  # carries it into repositories that already stored the v1alpha2 one.
-  # v1alpha4: TYPED. `definition` and `name` are gone; the properties and the
+  # version 3: the declaration gained a `description` — the bump is what
+  # carries it into repositories that already stored the version 2 one.
+  # version 4: TYPED. `definition` and `name` are gone; the properties and the
   # variants are properties, and `oneOf` is the variant LIST — a map of maps is
   # not declarable, so the map form went with the blob.
-  version: v1alpha5
+  # version 6: the declaration's own `version` became an incremental
+  # integer, maintained by the engine.
+  version: 6
   names:
     singular: trait
     plural: traits
@@ -27,9 +29,10 @@ data:
   displayTemplate: "{localName}"
   properties:
     version:
-      type: string
+      type: int
       managed: true
-      description: this declaration's version
+      description: this declaration's incremental version, maintained by the
+        engine
     source:
       type: enum
       values:

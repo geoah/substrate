@@ -23,7 +23,7 @@ metadata:
 data:
   authority: core.substrate.reamde.dev
   description: a synthetic declaration exercising the wider dialect
-  version: v1alpha1
+  version: 1
   names:
     singular: blob
     plural: blobs

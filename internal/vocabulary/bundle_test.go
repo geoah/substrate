@@ -15,7 +15,7 @@ func bnAuthority(authority string) string {
 metadata:
   id: ` + authority + `
 data:
-  version: v1alpha1
+  version: 1
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata:

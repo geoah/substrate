@@ -30,7 +30,7 @@ const (
 // its stored definition into a shape the loader refuses.
 func lqDocs() []map[string]any {
 	return []map[string]any{
-		vocabulary.AuthorityManifest(lqAuthority, ""),
+		vocabulary.AuthorityManifest(lqAuthority, 0),
 		vocabulary.ActorManifest(lqAuthority, vocabulary.AuthorityActor(lqAuthority)),
 		vocabulary.BundleManifest(lqAuthority, map[string]any{
 			"description": "a bundle carrying one agent",

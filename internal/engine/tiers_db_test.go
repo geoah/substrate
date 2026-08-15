@@ -69,7 +69,7 @@ func newTierDataset(t *testing.T) *dataset {
 	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, enginetest.Manifest{
 		Name: "tiers", Authority: tierAuthority,
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest(tierAuthority, ""),
+			vocabulary.AuthorityManifest(tierAuthority, 0),
 			vocabulary.ActorManifest(tierAuthority, string(tierSync)),
 			actorManifestTier(tierAuthority, string(tierFixer), "bundle"),
 			vocabulary.KindManifest(tierAuthority, map[string]any{"singular": "profile", "plural": "profiles"},
@@ -284,7 +284,7 @@ func TestActorTierValidated(t *testing.T) {
 	err := enginetest.Install(context.Background(), ds, substrate.ActorAPI, enginetest.Manifest{
 		Name: "badtier", Authority: "badtier.test.dev",
 		Manifests: []map[string]any{
-			vocabulary.AuthorityManifest("badtier.test.dev", ""),
+			vocabulary.AuthorityManifest("badtier.test.dev", 0),
 			actorManifestTier("badtier.test.dev", "connector:helper", "superuser"),
 		},
 	})
