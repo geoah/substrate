@@ -2,9 +2,9 @@ package engine_test
 
 // A KIND TITLES ITSELF from a property it declares (decision record 0016).
 // The built-in `title` column is what a displayTemplate RENDERS INTO, never
-// what a kind stores, and these two tests hold the two halves of that: the
-// shipped kinds that moved onto a declared heading, and the alternation that
-// carries the records written before they had one.
+// what a kind stores. These tests hold the shipped kinds that moved onto a
+// declared heading, the alternation that carries the records written before
+// they had one, and what that alternation costs.
 
 import (
 	"context"
@@ -136,5 +136,35 @@ func TestLegacyTitlesSurviveADisplayTemplate(t *testing.T) {
 	})
 	if named.Title != "new heading" || named.Properties["name"] != "new heading" {
 		t.Fatalf("`name` did not take over the title: %q, %v", named.Title, named.Properties)
+	}
+}
+
+// The cost of reading the column the render writes into, pinned rather than
+// discovered: the alternative cannot tell a title a writer authored from one
+// it derived a moment ago, so CLEARING the heading leaves what was last
+// rendered. Setting `name` again is the way back. It goes with the column
+// (issue 68), which is where an authored title gets storage of its own.
+func TestClearingTheHeadingKeepsTheRenderedTitle(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+
+	task := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "tasks.substrate.reamde.dev/task", ID: "t-headed",
+		Properties: map[string]any{"name": "Buy milk"},
+	})
+	cleared := mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{
+		Properties: map[string]any{"name": nil},
+	})
+	if _, still := cleared.Properties["name"]; still {
+		t.Fatalf("the heading did not clear: %v", cleared.Properties)
+	}
+	if cleared.Title != "Buy milk" {
+		t.Fatalf("the rendered title after clearing `name` = %q, want the stale \"Buy milk\"", cleared.Title)
+	}
+	renamed := mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{
+		Properties: map[string]any{"name": "Buy oat milk"},
+	})
+	if renamed.Title != "Buy oat milk" {
+		t.Fatalf("a new heading did not take: %q", renamed.Title)
 	}
 }

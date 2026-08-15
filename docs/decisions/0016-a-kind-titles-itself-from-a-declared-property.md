@@ -65,6 +65,12 @@ when the column does.
 - Bad, because the rule ships with its own exception in the tree: the
   alternation names the slot it retires, and 15 kinds (core's six and nine
   bundle mirrors) still title themselves from it.
+- Bad, because the alternation reads the column the render writes into, and
+  the column cannot say which of the two a value was: clearing `name` on a
+  record that had one leaves the heading it last rendered, until a write sets
+  `name` again. Separate storage for an authored title is #68's, so this
+  stands until then, pinned by
+  `TestClearingTheHeadingKeepsTheRenderedTitle`.
 
 ### Confirmation
 
