@@ -50,6 +50,7 @@ export interface StateTransition<S extends string = string> {
   to: S
   stamps?: Record<string, string>
   onEnter?: string
+  notifies?: string
 }
 
 /** Actor is core.substrate.reamde.dev/actor.
@@ -136,6 +137,8 @@ export interface Agent {
   permissions?: AgentPermissions
   /** Only callable by other agents; withheld from the chat surface. */
   subagentOnly?: boolean
+  /** Whether a resolution resumes this agent's thread; absent means always. */
+  resume?: AgentResume
 }
 
 /** The properties Agent's declaration marks required. A form refuses to submit
@@ -149,6 +152,14 @@ export const agentRequired: string[] = [
   "prompt",
   "provider",
 ]
+
+/** AgentResume is a declared enum: the admissible set, in declaration order.
+ *
+ * whether a resolution resumes this agent's thread; absent means always
+ */
+export type AgentResume = "always" | "never"
+
+export const agentResumeValues: AgentResume[] = ["always", "never"]
 
 /** AgentParams is one value of the `params` object declared on
  * core.substrate.reamde.dev/agent.
@@ -1343,8 +1354,14 @@ export const recordPatchRequestDecisionTransitions: StateTransition<RecordPatchR
       to: "accepted",
       stamps: { decidedAt: "now" },
       onEnter: "applyDiff",
+      notifies: "thread",
     },
-    { from: "proposed", to: "rejected", stamps: { decidedAt: "now" } },
+    {
+      from: "proposed",
+      to: "rejected",
+      stamps: { decidedAt: "now" },
+      notifies: "thread",
+    },
   ]
 
 /** RecordSplit is core.substrate.reamde.dev/recordsplit.

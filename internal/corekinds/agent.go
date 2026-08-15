@@ -53,13 +53,34 @@ type Agent struct {
 	// SubagentOnly is only callable by other agents; withheld from the chat
 	// surface.
 	SubagentOnly *bool
+
+	// Resume is whether a resolution resumes this agent's thread; absent means
+	// always.
+	Resume *AgentResume
 }
+
+// AgentResume is a declared enum: the admissible set, in declaration order.
+//
+// whether a resolution resumes this agent's thread; absent means always
+type AgentResume string
+
+const (
+	AgentResumeAlways AgentResume = "always"
+	AgentResumeNever  AgentResume = "never"
+)
+
+// AgentResumeValues are the declared values in declaration order, which is
+// render order.
+var AgentResumeValues = []string{"always", "never"}
+
+// Valid reports whether v is one of the declared values.
+func (v AgentResume) Valid() bool { return Declared(AgentResumeValues, string(v)) }
 
 // AgentKeys is the admitted key set: every property
 // core.substrate.reamde.dev/agent declares, sorted. A key outside it is
 // refused by Decode, which is what replaces a hand-kept list of admitted keys
 // in Go.
-var AgentKeys = []string{"agents", "authority", "budgets", "description", "model", "params", "permissions", "prompt", "provider", "subagentOnly", "tools", "version"}
+var AgentKeys = []string{"agents", "authority", "budgets", "description", "model", "params", "permissions", "prompt", "provider", "resume", "subagentOnly", "tools", "version"}
 
 // DecodeAgent decodes a properties map into Agent, refusing what the
 // declaration cannot hold: an undeclared key, a value of the wrong type, an
@@ -109,6 +130,15 @@ func (v *Agent) Missing() []string {
 		out = append(out, "model")
 	}
 	return out
+}
+
+// decodeAgentResume decodes a declared AgentResume value.
+func decodeAgentResume(d *decoder, path string, v any) (AgentResume, bool) {
+	s, ok := d.text(path, v, AgentResumeValues, nil)
+	if !ok {
+		return "", false
+	}
+	return AgentResume(s), true
 }
 
 // decodeAgent decodes one Agent value at path.
@@ -197,6 +227,11 @@ func decodeAgent(d *decoder, path string, v any) (Agent, bool) {
 			if e, ok := d.flag(p, props[key]); ok {
 				out.SubagentOnly = &e
 			}
+		case "resume":
+			p := at(path, "resume")
+			if e, ok := decodeAgentResume(d, p, props[key]); ok {
+				out.Resume = &e
+			}
 		default:
 			d.unknown(at(path, key), "core.substrate.reamde.dev/agent")
 		}
@@ -256,6 +291,9 @@ func (v *Agent) Encode() map[string]any {
 	}
 	if v.SubagentOnly != nil {
 		out["subagentOnly"] = *v.SubagentOnly
+	}
+	if v.Resume != nil {
+		out["resume"] = string(*v.Resume)
 	}
 	return out
 }

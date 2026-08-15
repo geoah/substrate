@@ -1327,7 +1327,7 @@ var machineKeys = map[string]bool{
 }
 
 var transitionKeys = map[string]bool{
-	"from": true, "to": true, "stamps": true, "onEnter": true,
+	"from": true, "to": true, "stamps": true, "onEnter": true, "notifies": true,
 }
 
 // onEnterActions are the declared effects a transition may name.
@@ -1371,9 +1371,10 @@ func (l *loader) parseMachine(where, name string, d map[string]any) *Machine {
 		td := asMap(tv)
 		l.checkKeys(fmt.Sprintf("%s.transitions[%d]", where, i), td, transitionKeys)
 		tr := &Transition{
-			From:    mstr(td, "from"),
-			To:      mstr(td, "to"),
-			OnEnter: mstr(td, "onEnter"),
+			From:     mstr(td, "from"),
+			To:       mstr(td, "to"),
+			OnEnter:  mstr(td, "onEnter"),
+			Notifies: mstr(td, "notifies"),
 		}
 		if !m.HasState(tr.From) || !m.HasState(tr.To) {
 			l.errf("%s.transitions[%d]: %q → %q references an undeclared state", where, i, tr.From, tr.To)
@@ -2095,6 +2096,32 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 				continue
 			}
 			p.To = resolved.Identity
+		}
+		// A `notifies:` transition reports into a thread, so the marker must
+		// name a reference property PINNED to core's llmthread — and, until
+		// the resume bounds have earned wider trust, only core's own kinds
+		// carry it (docs/plans/thread-interactions.md): a bundle kind minting
+		// resume-on-transition would be an unbounded paid-compute trigger.
+		machineNames := make([]string, 0, len(t.Machines))
+		for mn := range t.Machines {
+			machineNames = append(machineNames, mn)
+		}
+		sort.Strings(machineNames)
+		for _, mn := range machineNames {
+			for i, tr := range t.Machines[mn].Transitions {
+				if tr.Notifies == "" {
+					continue
+				}
+				at := fmt.Sprintf("%s: data.properties.%s.transitions[%d].notifies", where, mn, i)
+				if t.Authority != "core.substrate.reamde.dev" {
+					problems = append(problems, fmt.Sprintf("%s: only core kinds may notify a thread in this build", at))
+					continue
+				}
+				p, ok := t.Prop(tr.Notifies)
+				if !ok || p.Datatype != DatatypeReference || p.To != KindLLMThread {
+					problems = append(problems, fmt.Sprintf("%s: %q must be a reference property pinned to %s", at, tr.Notifies, KindLLMThread))
+				}
+			}
 		}
 	}
 	problems = append(problems, r.checkAuthorityInverses(g)...)

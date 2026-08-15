@@ -403,6 +403,13 @@ type Transition struct {
 	To      string
 	Stamps  map[string]string
 	OnEnter string
+	// Notifies names the reference property (pinned to core's llmthread)
+	// whose thread this transition reports into: the engine writes the
+	// resolution's `system` message there and schedules the resume, the one
+	// primitive under proposal decisions and interaction answers alike
+	// (docs/plans/thread-interactions.md). Empty for the ordinary transition
+	// that reports nowhere.
+	Notifies string
 }
 
 // Machine is a state property's machine — the entire behavioral seam. Its

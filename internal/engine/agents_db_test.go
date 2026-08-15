@@ -180,7 +180,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 	ctx := context.Background()
 	ds := openInternalDataset(t)
 	fake := newFakeLLM(t)
-	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm"} {
+	for _, id := range []string{"rootllm", "subllm", "roguellm", "chainllm", "budgetllm", "chatllm", "wardenllm", "minionllm", "keepllm", "gqlllm", "mutllm", "judgellm", "justicellm", "arbiterllm", "libllm", "purellm", "stoicllm", "selfllm"} {
 		model := strings.TrimSuffix(id, "llm")
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: typeProvider, ID: id,
@@ -254,6 +254,28 @@ def main(input, host):
 			},
 		}),
 		agent("scribe", map[string]any{"provider": "subllm", "model": "sub"}),
+		// stoic proposes but never resumes: the resolution row lands, the
+		// continuation is withheld — the declaration's own cost knob.
+		agent("stoic", map[string]any{
+			"provider": "stoicllm", "model": "stoic",
+			"resume": "never",
+			"tools":  []any{map[string]any{"function": vocabulary.HostFunctionPropose}},
+			"permissions": map[string]any{
+				"writes": []any{vocabulary.KindRecordPatchRequest},
+			},
+		}),
+		// selfjudge can both propose and decide: the self-exclusion pair — a
+		// thread's own agent resolving something never wakes that thread.
+		agent("selfjudge", map[string]any{
+			"provider": "selfllm", "model": "self",
+			"tools": []any{
+				map[string]any{"function": vocabulary.HostFunctionPropose},
+				map[string]any{"function": vocabulary.HostFunctionMutate},
+			},
+			"permissions": map[string]any{
+				"writes": []any{vocabulary.KindRecordPatchRequest, crewAuthority + "/widget"},
+			},
+		}),
 		agent("rogue", map[string]any{
 			"provider": "roguellm", "model": "rogue",
 			"tools": []any{map[string]any{"function": crewAuthority + "/annotate"}},

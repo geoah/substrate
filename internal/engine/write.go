@@ -443,8 +443,17 @@ func (ds *dataset) patchWith(ctx context.Context, actor substrate.Actor, typ, id
 			if _, err := t.putAnnotation(dc.edit, annApplyConflict, note); err != nil {
 				return err
 			}
-			return t.appendChange(actor, substrate.OpPatch, dc.edit.ID, row.Kind,
-				map[string]any{"conflict": note})
+			if err := t.appendChange(actor, substrate.OpPatch, dc.edit.ID, row.Kind,
+				map[string]any{"conflict": note}); err != nil {
+				return err
+			}
+			// The proposing thread hears the conflict too: without this row,
+			// an agent told "held for review" waits forever on a request that
+			// can no longer land as reviewed (agentdecision.go).
+			if row.Kind == vocabulary.KindRecordPatchRequest {
+				return t.recordProposalConflict(row, dc.err.Error())
+			}
+			return nil
 		}); aerr != nil {
 			return nil, aerr
 		}
@@ -503,17 +512,18 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 			return nil, err
 		}
 	}
-	// Deciding a change request is optimistic on the REQUEST's own version: a
-	// reviewer accepts/rejects the envelope it read, so a concurrent change to
-	// the request cannot slip under the decision. The requirement holds for
-	// the human/owner decision path; an bundle actor's atomic effect
-	// carries no read-then-decide window and is bounded instead by the emit
-	// ceiling at acceptance.
-	if ty.Identity == vocabulary.KindRecordPatchRequest {
-		if _, deciding := states[propDecision]; deciding && in.IfVersion == nil &&
-			t.tier != substrate.TierBundle {
-			return nil, fmt.Errorf("%w: deciding a change request must carry ifVersion — the request version you reviewed, so a concurrent change cannot slip under your decision",
-				substrate.ErrConflict)
+	// Resolving a NOTIFYING machine is optimistic on the record's own
+	// version: a reviewer resolves the envelope they read, so a concurrent
+	// change cannot slip under the resolution. Generalized from the request
+	// kind's hardcoded rule, keyed on the marker (a machine with a
+	// `notifies:` transition). The requirement holds for the human/owner
+	// path; a bundle actor's atomic effect carries no read-then-decide
+	// window and is bounded instead by the emit ceiling at acceptance.
+	for name := range states {
+		if m, ok := ty.Machines[name]; ok && machineNotifies(m) &&
+			in.IfVersion == nil && t.tier != substrate.TierBundle {
+			return nil, fmt.Errorf("%w: resolving %s must carry ifVersion — the version you reviewed, so a concurrent change cannot slip under your resolution",
+				substrate.ErrConflict, name)
 		}
 	}
 	if err := checkCAS(existing, in.IfVersion); err != nil {
@@ -636,9 +646,9 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// State properties: creations are born in the declared initial state;
 	// transitions belong to patch.
 	var pendingDiff, pendingMerge bool
-	// decided is the verdict when this patch is a change request's decision
-	// transition — what the proposing thread is told below.
-	var decided string
+	// notify is set when this patch performed a transition declared with
+	// `notifies:` — what the marked thread is told below.
+	var notify *resolutionNote
 	if create {
 		for _, name := range sortedKeys(sp.ty.Machines) {
 			m := sp.ty.Machines[name]
@@ -687,8 +697,8 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			case onEnterApplyMerge:
 				pendingMerge = true
 			}
-			if sp.ty.Identity == vocabulary.KindRecordPatchRequest && name == propDecision {
-				decided = target
+			if tr.Notifies != "" {
+				notify = &resolutionNote{prop: tr.Notifies, machine: name, state: target}
 			}
 		}
 	}
@@ -1062,17 +1072,29 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			return nil, err
 		}
 	}
-	// A decided change request reports back to the thread that proposed it: a
-	// `system` llmmessage carrying the verdict and the entries this decision
-	// wrote (the request's own patch, and the accept's apply), and — after
-	// commit — the thread resumes so the agent hears it. Ordered after
-	// applyEditDiff, so an accept that rolls back reports nothing.
-	if decided != "" && sp.op == substrate.OpPatch {
-		if err := t.recordProposalDecision(row, decided, t.entries[entriesMark:]); err != nil {
+	// A resolved record reports back to the thread its marker names: a
+	// `system` llmmessage carrying the kind's envelope and the entries this
+	// resolution wrote (the record's own patch, and whatever the
+	// transition's onEnter applied), and — after commit — the thread resumes
+	// so the agent hears it. Ordered after applyEditDiff, so an accept that
+	// rolls back reports nothing.
+	if notify != nil && sp.op == substrate.OpPatch {
+		if err := t.recordResolution(sp.ty, row, notify, t.entries[entriesMark:]); err != nil {
 			return nil, err
 		}
 	}
 	return t.record(row, sp.ty)
+}
+
+// machineNotifies reports whether any of a machine's transitions carries the
+// `notifies:` marker — the machines whose resolutions demand ifVersion.
+func machineNotifies(m *vocabulary.Machine) bool {
+	for _, tr := range m.Transitions {
+		if tr.Notifies != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // The two declared transition effects (schema/load.go onEnterActions).

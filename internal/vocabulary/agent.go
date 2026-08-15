@@ -67,6 +67,16 @@ var AgentParamKeys = []string{AgentParamMaxTokens, AgentParamTemperature}
 // `*request` vocabulary the built-in speaks in this build.
 const KindRecordPatchRequest = "core.substrate.reamde.dev/recordpatchrequest"
 
+// KindLLMThread is the thread kind a `notifies:` transition reports into.
+const KindLLMThread = "core.substrate.reamde.dev/llmthread"
+
+// The declared `resume:` values: whether a resolution resumes the agent's
+// thread. Absent means always.
+const (
+	AgentResumeAlways = "always"
+	AgentResumeNever  = "never"
+)
+
 // The budget bounds. Depth is the sub-agent chain cap — a separate counter
 // from causal depth, hard-capped at 3.
 const (
@@ -119,6 +129,12 @@ type Agent struct {
 	// else still dispatches it: sub-agent calls (the point, an llm-as-judge
 	// exists to be called by other agents), the call API, and triggers.
 	SubagentOnly bool
+	// Resume says whether a resolution on this agent's thread-borne records
+	// (a decided proposal, an answered interaction) RESUMES the thread —
+	// "never" records the resolution row and stops there; "always" (and
+	// absent, today's behavior) continues the thread. A resume is a paid
+	// agent turn, so this is the declaration's own cost knob (issue #69).
+	Resume string
 
 	// Definition is the declaration's own data map, exactly as authored — what
 	// the row stores as its properties.
@@ -186,7 +202,7 @@ var agentDataKeys = map[string]bool{
 	"authority": true, "description": true, "prompt": true,
 	"provider": true, "model": true, "params": true,
 	"tools": true, "agents": true, "budgets": true, "permissions": true,
-	"subagentOnly": true,
+	"subagentOnly": true, "resume": true,
 }
 
 // deletedAgentKeys are the removed keys, each naming what replaced it. An
@@ -299,6 +315,11 @@ func (l *loader) parseAgent(d Document) *Agent {
 		return nil
 	}
 	a.SubagentOnly = mbool(d.Data, "subagentOnly")
+	a.Resume = mstr(d.Data, "resume")
+	if a.Resume != "" && a.Resume != AgentResumeAlways && a.Resume != AgentResumeNever {
+		l.errf("%s: data.resume: %q — \"always\" or \"never\" (absent means always)", where, a.Resume)
+		return nil
+	}
 	if !l.parseAgentParams(where, d.Data, a) {
 		return nil
 	}

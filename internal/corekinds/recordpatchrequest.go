@@ -99,8 +99,8 @@ const RecordPatchRequestDecisionInitial = RecordPatchRequestDecisionProposed
 // order. A move absent from this table is not performable: nothing else gates
 // one, since a transition carries no guard.
 var RecordPatchRequestDecisionTransitions = []StateTransition{
-	{From: "proposed", To: "accepted", Stamps: map[string]string{"decidedAt": "now"}, OnEnter: "applyDiff"},
-	{From: "proposed", To: "rejected", Stamps: map[string]string{"decidedAt": "now"}},
+	{From: "proposed", To: "accepted", Stamps: map[string]string{"decidedAt": "now"}, OnEnter: "applyDiff", Notifies: "thread"},
+	{From: "proposed", To: "rejected", Stamps: map[string]string{"decidedAt": "now"}, Notifies: "thread"},
 }
 
 // Valid reports whether v is one of the declared states.

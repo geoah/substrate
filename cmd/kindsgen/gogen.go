@@ -237,6 +237,9 @@ func emitState(b *bytes.Buffer, s *statePlan) {
 		if t.OnEnter != "" {
 			fmt.Fprintf(b, ", OnEnter: %q", t.OnEnter)
 		}
+		if t.Notifies != "" {
+			fmt.Fprintf(b, ", Notifies: %q", t.Notifies)
+		}
 		b.WriteString("},\n")
 	}
 	b.WriteString("}\n\n")
