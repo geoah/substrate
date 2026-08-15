@@ -4,7 +4,15 @@
 
 import { describe, expect, it } from "vitest"
 
-import { proposedRequestId, toolOK, transcriptOf } from "./transcript"
+import {
+  decisionNoticeOf,
+  proposedRequestId,
+  requestIdOf,
+  toolOK,
+  transcriptOf,
+  type ToolCallView,
+  type TurnView,
+} from "./transcript"
 import type { SubstrateRecord } from "./types"
 
 let seq = 0
@@ -191,5 +199,156 @@ describe("proposedRequestId", () => {
     ).toBeUndefined()
     expect(proposedRequestId(settled({ output: "landed" }))).toBeUndefined()
     expect(proposedRequestId(settled({ output: "{oops" }))).toBeUndefined()
+  })
+})
+
+describe("system turns and engine-stamped changes", () => {
+  const stamp = (seq: number, op: string, kind: string, id: string) => ({
+    seq,
+    op,
+    kind,
+    id,
+  })
+
+  it("gives a system row its own turn, carrying its changes", () => {
+    const turns = transcriptOf([
+      row({ role: "user", content: "hi", turn: 0 }),
+      row({
+        role: "system",
+        content: '{"event":"proposalDecision","decision":"accepted"}',
+        turn: 1,
+        changes: [
+          stamp(
+            7,
+            "patch",
+            "core.substrate.reamde.dev/recordpatchrequest",
+            "r1"
+          ),
+          stamp(8, "patch", "people.substrate.reamde.dev/person", "p1"),
+        ],
+      }),
+    ])
+    expect(turns.map((t) => t.role)).toEqual(["user", "system"])
+    expect(turns[1].changes).toHaveLength(2)
+    expect(turns[1].changes?.[1]).toMatchObject({ seq: 8, id: "p1" })
+  })
+
+  it("attaches a tool row's changes to the call it settles", () => {
+    const turns = transcriptOf([
+      row({
+        role: "assistant",
+        toolCalls: [call("c1", "mutate", "{}")],
+        turn: 0,
+      }),
+      row({
+        role: "tool",
+        content: "{}",
+        toolCallId: "c1",
+        tool: "mutate",
+        ok: true,
+        turn: 1,
+        changes: [stamp(3, "put", "crew.test.dev/widget", "w1")],
+      }),
+    ])
+    expect(turns[0].tools[0].changes).toEqual([
+      { seq: 3, op: "put", kind: "crew.test.dev/widget", id: "w1" },
+    ])
+  })
+
+  it("drops malformed change entries rather than throwing", () => {
+    const turns = transcriptOf([
+      row({
+        role: "system",
+        content: "x",
+        turn: 0,
+        changes: [{ seq: "nope" }, "junk", stamp(1, "put", "a.dev/b", "c")],
+      }),
+    ])
+    expect(turns[0].changes).toEqual([
+      { seq: 1, op: "put", kind: "a.dev/b", id: "c" },
+    ])
+  })
+})
+
+describe("requestIdOf", () => {
+  const settled = (over: Partial<ToolCallView>): ToolCallView => ({
+    id: "c1",
+    name: "propose",
+    arguments: "{}",
+    output: '{"id":"abcdefghijkl"}',
+    ok: true,
+    ...over,
+  })
+
+  it("prefers the engine-stamped request entry over the payload sniff", () => {
+    const found = requestIdOf(
+      settled({
+        name: "file",
+        output: "created it",
+        changes: [
+          {
+            seq: 4,
+            op: "put",
+            kind: "core.substrate.reamde.dev/recordpatchrequest",
+            id: "r-stamped",
+          },
+        ],
+      })
+    )
+    expect(found).toBe("r-stamped")
+  })
+
+  it("falls back to the payload sniff on rows without a stamp", () => {
+    expect(requestIdOf(settled({}))).toBe("abcdefghijkl")
+  })
+
+  it("does not read another kind's stamp as a proposal", () => {
+    const found = requestIdOf(
+      settled({
+        name: "mutate",
+        output: "{}",
+        changes: [
+          { seq: 4, op: "put", kind: "crew.test.dev/widget", id: "w1" },
+        ],
+      })
+    )
+    expect(found).toBeUndefined()
+  })
+})
+
+describe("decisionNoticeOf", () => {
+  const system = (content: string): TurnView => ({
+    key: "k",
+    role: "system",
+    content,
+    tools: [],
+  })
+
+  it("decodes the engine's decision envelope", () => {
+    const notice = decisionNoticeOf(
+      system(
+        JSON.stringify({
+          event: "proposalDecision",
+          request: "core.substrate.reamde.dev/recordpatchrequest/r1",
+          decision: "accepted",
+          op: "patch",
+          target: "people.substrate.reamde.dev/person/p1",
+          version: 4,
+        })
+      )
+    )
+    expect(notice).toEqual({
+      requestId: "r1",
+      decision: "accepted",
+      op: "patch",
+      target: "people.substrate.reamde.dev/person/p1",
+      version: 4,
+      deleted: undefined,
+    })
+  })
+
+  it("says nothing about a system row that is not a decision", () => {
+    expect(decisionNoticeOf(system("plain text"))).toBeUndefined()
+    expect(decisionNoticeOf(system('{"event":"other"}'))).toBeUndefined()
   })
 })

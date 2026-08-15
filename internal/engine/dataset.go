@@ -243,6 +243,20 @@ type txn struct {
 	tier   substrate.Tier
 	now    time.Time
 	maxSeq int64
+	// entries records every changelog row this transaction appended, in
+	// order: the (seq, op, kind, id) address, never the payload. Slices of it
+	// stamp llmmessage rows with what a dispatch wrote (`changes`), so a
+	// thread's reader resolves the delta from the changelog instead of
+	// parsing tool payloads.
+	entries []changeEntry
+	// changeSink, when set, receives this transaction's entries AFTER COMMIT
+	// (inTx) — the agent loop's per-dispatch collector. After commit, so a
+	// rolled-back write stamps nothing.
+	changeSink *[]changeEntry
+	// afterCommit runs once the transaction has committed, in order — the
+	// decision's thread resume, which must never run inside the transaction
+	// that recorded it.
+	afterCommit []func()
 	// folded holds the fold effects this transaction has applied and not yet
 	// written into an entry (fold.go). appendChange drains it, so every entry
 	// carries the delta — with values — that a rebuild replays.
@@ -305,6 +319,12 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 	}
 	if t.maxSeq > 0 {
 		ds.watch.signal(t.maxSeq)
+	}
+	if t.changeSink != nil && len(t.entries) > 0 {
+		*t.changeSink = append(*t.changeSink, t.entries...)
+	}
+	for _, fn := range t.afterCommit {
+		fn()
 	}
 	return nil
 }

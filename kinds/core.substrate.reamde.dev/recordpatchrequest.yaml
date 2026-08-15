@@ -11,6 +11,13 @@ data:
     record, create one, or delete one. A learner or an app writes it, accepting
     the decision applies it, and the envelope is frozen once proposed so nobody
     can swap what was reviewed.
+  # The declaration carried no version of its own before this, inheriting the
+  # authority's (6 at the time) — and an unbumped edit is a no-op to the
+  # upgrade, so this key is what carries the change into repositories that
+  # already hold the row.
+  # version 7: `thread` — the proposing thread, stamped by the agent loop's
+  # propose built-in, which is where a decision reports back.
+  version: 7
   names:
     singular: recordpatchrequest
     plural: recordpatchrequests
@@ -62,6 +69,18 @@ data:
     rationale:
       type: string
       description: why the writer proposes this change
+    # Stamped by the agent loop when the propose built-in lands the request:
+    # the thread whose tool call proposed it. The decision writes a `system`
+    # llmmessage back into that thread and resumes it, so the proposing agent
+    # hears the verdict without a trigger. Absent on requests a human or a
+    # function proposed — those have no thread to report to.
+    thread:
+      type: reference
+      kind: core.substrate.reamde.dev/llmthread
+      inverse: proposals
+      inverseDescription: the change requests this thread's propose calls
+        landed
+      description: the thread whose propose call created this request
     # accepting is what applies the change: the transition runs `applyDiff`,
     # which branches on `op` — a patch checks the diff against `targetVersion`
     # and fails the transition if the target moved underneath it, a create

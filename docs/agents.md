@@ -178,7 +178,9 @@ entry could name only a function.
   wrapper is required or a bare property map is coerced into it, and every
   property must be writable on the target kind — so a malformed proposal (a
   wrapper-less diff, an immutable or unknown key) is a tool error the model
-  sees, never a bad request reaching the owner's inbox.
+  sees, never a bad request reaching the owner's inbox. The loop stamps the
+  proposing `thread` onto the request, which is where the decision reports
+  back (below).
 - **A function tool** runs through the same runner invoke a host call uses, its
   declared [arguments and returns](functions.md#arguments-and-returns) enforced,
   and its compiled argument schema is the card the model is shown. Its effects
@@ -190,6 +192,35 @@ Applied effects land in their own transaction under the agent's actor, each row
 recording the triggering seq as its cause. Creation and deletion still flow
 through the reviewed request: `propose` emits the request, and accepting it is
 the write.
+
+**Every dispatch's committed writes ride the tool row.** The engine stamps
+`changes` onto the tool's `llmmessage` — one `{seq, op, kind, id}` entry per
+changelog row the dispatch committed, whether a `mutate` mutation, a
+`propose`'s request row, or a function tool's applied effects — so any reader
+of the thread (the console, GraphQL) resolves WHAT changed from the changelog
+instead of parsing tool payloads. A rolled-back dispatch stamps nothing, and a
+sub-agent call stamps nothing on the parent: the child thread's own rows carry
+the child's writes.
+
+## The decision loop
+
+A request an agent's `propose` landed knows its thread, so the decision
+reports back instead of vanishing into the inbox. When anybody decides it —
+the owner in the console, a judge agent through `mutate` — the deciding
+transaction also writes one `system` message into the proposing thread: the
+content is a JSON envelope (`event: "proposalDecision"`, the request's record
+path, the verdict, the target and — on an accepted patch or create — the
+target's new version), and its `changes` carry the decision's own changelog
+entries (the request's patch, and the accept's apply). Decision and report
+land together or not at all.
+
+After commit the thread **resumes**: a continuation with no new user turn, in
+which the replayed system row is what the model reacts to — on the wire it
+travels as user content, since the system slot belongs to the agent's prompt.
+Resume is always-on, best-effort and in-process: a thread that is mid-turn
+refuses the lease and picks the decision up on its next continuation, and a
+request no thread proposed (a human's, a function's) reports and resumes
+nothing.
 
 ## Sub-agents, budgets, and the emit ceiling
 
@@ -216,10 +247,11 @@ is written as the loop runs under the agent's actor, carrying `agent`,
 `provider`, `model`, `mode`, `status` (`running` then
 `ok`/`overbudget`/`error`), `agentDepth`, the tallies (`turns`, `toolCalls`,
 the token counts, `costUSD`), and
-`startedAt`/`finishedAt`. A `message` carries role, content, turn, the
-tool-call audit, and the required `thread` it belongs to. Self-actor exclusion
-covers the transcript, so an agent's own trigger never redelivers its thread
-and message writes.
+`startedAt`/`finishedAt`. A `message` carries role (`user`, `assistant`,
+`tool`, or the engine-written `system`), content, turn, the tool-call audit,
+the engine-stamped `changes`, and the required `thread` it belongs to.
+Self-actor exclusion covers the transcript, so an agent's own trigger never
+redelivers its thread and message writes.
 
 `agent`, `parent` and `thread` are **references**, not edges: a thread is the
 audit row of a run and has to keep naming the agent that ran it, and an edge

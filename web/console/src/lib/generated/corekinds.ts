@@ -771,7 +771,7 @@ export interface KindEdges {
  * dispatched call's result.
  */
 export interface LLMMessage {
-  /** User, assistant or tool. */
+  /** User, assistant, tool or system. */
   role?: string
   /** The turn's text; a tool row's result payload. */
   content?: string
@@ -785,6 +785,8 @@ export interface LLMMessage {
   tool?: string
   /** Whether the dispatch a tool row answers for succeeded. */
   ok?: boolean
+  /** The changelog entries this turn's dispatch wrote, stamped by the engine. */
+  changes?: LLMMessageChanges[]
   /** The thread this turn belongs to. Points at
    * core.substrate.reamde.dev/llmthread.
    */
@@ -809,6 +811,22 @@ export interface LLMMessageToolCalls {
   name?: string
   /** The call's arguments, as the provider wrote them. */
   arguments?: string
+}
+
+/** LLMMessageChanges is one value of the `changes` object declared on
+ * core.substrate.reamde.dev/llmmessage.
+ *
+ * the changelog entries this turn's dispatch wrote, stamped by the engine
+ */
+export interface LLMMessageChanges {
+  /** The changelog seq of the entry, which addresses its delta. */
+  seq?: number
+  /** The entry's op — put, patch, delete, link or unlink. */
+  op?: string
+  /** The written record's kind. */
+  kind?: string
+  /** The written record's id. */
+  id?: string
 }
 
 /** LLMProvider is core.substrate.reamde.dev/llmprovider.
@@ -1273,6 +1291,10 @@ export interface RecordPatchRequest {
   diff?: Dynamic
   /** Why the writer proposes this change. */
   rationale?: string
+  /** The thread whose propose call created this request. Points at
+   * core.substrate.reamde.dev/llmthread.
+   */
+  thread?: ReferencePath
   /** Proposed until somebody decides; accepting is what applies the change. A
    * state moves by transition, never by assignment.
    */

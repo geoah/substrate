@@ -152,7 +152,7 @@ type agentMutateDataset struct {
 // without it, so an unstamped accept would refuse while rejecting the same
 // request succeeded.
 func (m *agentMutateDataset) ceiling() *effectCeiling {
-	return &effectCeiling{emit: m.loop.emit}
+	return &effectCeiling{emit: m.loop.emit, changes: &m.loop.dispatchChanges}
 }
 
 // allow resolves the written kind and holds it to the effective emit set.
@@ -213,7 +213,7 @@ func (m *agentMutateDataset) Link(ctx context.Context, actor substrate.Actor, sr
 	if err := m.allow(srcType, "link"); err != nil {
 		return err
 	}
-	if err := m.Dataset.Link(ctx, actor, srcType, src, rel, to, props); err != nil {
+	if err := m.loop.ds.linkBounded(ctx, actor, srcType, src, rel, to, props, m.ceiling()); err != nil {
 		return err
 	}
 	m.tally("link")
@@ -224,7 +224,7 @@ func (m *agentMutateDataset) Unlink(ctx context.Context, actor substrate.Actor, 
 	if err := m.allow(srcType, "unlink"); err != nil {
 		return err
 	}
-	if err := m.Dataset.Unlink(ctx, actor, srcType, src, rel, to); err != nil {
+	if err := m.loop.ds.unlinkBounded(ctx, actor, srcType, src, rel, to, m.ceiling()); err != nil {
 		return err
 	}
 	m.tally("unlink")

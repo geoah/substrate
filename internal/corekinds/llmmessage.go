@@ -11,7 +11,7 @@ package corekinds
 // message, an assistant turn its prose and tool calls, a tool turn one
 // dispatched call's result.
 type LLMMessage struct {
-	// Role is user, assistant or tool.
+	// Role is user, assistant, tool or system.
 	Role *string
 
 	// Content is the turn's text; a tool row's result payload.
@@ -32,6 +32,10 @@ type LLMMessage struct {
 	// Ok is whether the dispatch a tool row answers for succeeded.
 	Ok *bool
 
+	// Changes is the changelog entries this turn's dispatch wrote, stamped by
+	// the engine.
+	Changes []LLMMessageChanges
+
 	// Thread is the thread this turn belongs to. Points at
 	// core.substrate.reamde.dev/llmthread.
 	Thread *ReferencePath
@@ -41,7 +45,7 @@ type LLMMessage struct {
 // core.substrate.reamde.dev/llmmessage declares, sorted. A key outside it is
 // refused by Decode, which is what replaces a hand-kept list of admitted keys
 // in Go.
-var LLMMessageKeys = []string{"content", "ok", "role", "thread", "tool", "toolCallId", "toolCalls", "turn"}
+var LLMMessageKeys = []string{"changes", "content", "ok", "role", "thread", "tool", "toolCallId", "toolCalls", "turn"}
 
 // DecodeLLMMessage decodes a properties map into LLMMessage, refusing what the
 // declaration cannot hold: an undeclared key, a value of the wrong type, an
@@ -136,6 +140,17 @@ func decodeLLMMessage(d *decoder, path string, v any) (LLMMessage, bool) {
 			if e, ok := d.flag(p, props[key]); ok {
 				out.Ok = &e
 			}
+		case "changes":
+			p := at(path, "changes")
+			if items, listed := d.list(p, props[key]); listed {
+				list := make([]LLMMessageChanges, 0, len(items))
+				for i, item := range items {
+					if e, ok := decodeLLMMessageChanges(d, index(p, i), item); ok {
+						list = append(list, e)
+					}
+				}
+				out.Changes = list
+			}
 		case "thread":
 			p := at(path, "thread")
 			if e, ok := d.reference(p, props[key], "core.substrate.reamde.dev/llmthread"); ok {
@@ -181,6 +196,13 @@ func (v *LLMMessage) Encode() map[string]any {
 	}
 	if v.Ok != nil {
 		out["ok"] = *v.Ok
+	}
+	if v.Changes != nil {
+		items := make([]any, 0, len(v.Changes))
+		for i := range v.Changes {
+			items = append(items, v.Changes[i].Encode())
+		}
+		out["changes"] = items
 	}
 	if v.Thread != nil {
 		out["thread"] = string(*v.Thread)
@@ -256,6 +278,89 @@ func (v *LLMMessageToolCalls) Encode() map[string]any {
 	}
 	if v.Arguments != nil {
 		out["arguments"] = *v.Arguments
+	}
+	return out
+}
+
+// LLMMessageChanges is one value of the `changes` object declared on
+// core.substrate.reamde.dev/llmmessage.
+//
+// the changelog entries this turn's dispatch wrote, stamped by the engine
+type LLMMessageChanges struct {
+	// Seq is the changelog seq of the entry, which addresses its delta.
+	Seq *int64
+
+	// Op is the entry's op — put, patch, delete, link or unlink.
+	Op *string
+
+	// Kind is the written record's kind.
+	Kind *string
+
+	// Id is the written record's id.
+	Id *string
+}
+
+// decodeLLMMessageChanges decodes one LLMMessageChanges value at path.
+func decodeLLMMessageChanges(d *decoder, path string, v any) (LLMMessageChanges, bool) {
+	props, mapped := d.mapping(path, v)
+	if !mapped {
+		return LLMMessageChanges{}, false
+	}
+	var out LLMMessageChanges
+	for _, key := range sortedKeys(props) {
+		// A null is this dialect's delete marker, never a value: it decodes as
+		// absence, and Properties never writes one.
+		if props[key] == nil {
+			continue
+		}
+		switch key {
+		case "seq":
+			p := at(path, "seq")
+			if e, ok := d.integer(p, props[key], Bounds{}); ok {
+				out.Seq = &e
+			}
+		case "op":
+			p := at(path, "op")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Op = &e
+			}
+		case "kind":
+			p := at(path, "kind")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Kind = &e
+			}
+		case "id":
+			p := at(path, "id")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.Id = &e
+			}
+		default:
+			d.unknown(at(path, key), "core.substrate.reamde.dev/llmmessage")
+		}
+	}
+	return out, true
+}
+
+// Encode is LLMMessageChanges as the properties map holds it, and
+// decodeLLMMessageChanges's exact inverse: a nil pointer, a nil slice and a
+// nil map each omit their key, so absence survives the round trip.
+//
+// It is NOT called Properties: a declaration may declare a property of that
+// name (core's `kind` does), and a field and a method cannot share one.
+// Decode/Encode is the pair the rest of the generator already names.
+func (v *LLMMessageChanges) Encode() map[string]any {
+	out := map[string]any{}
+	if v.Seq != nil {
+		out["seq"] = *v.Seq
+	}
+	if v.Op != nil {
+		out["op"] = *v.Op
+	}
+	if v.Kind != nil {
+		out["kind"] = *v.Kind
+	}
+	if v.Id != nil {
+		out["id"] = *v.Id
 	}
 	return out
 }
