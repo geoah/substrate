@@ -1,6 +1,6 @@
 name: Question
 description: Something the docs did not answer
-labels: [question]
+labels: [type/question]
 body:
   - type: textarea
     id: question

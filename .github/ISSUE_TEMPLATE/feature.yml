@@ -1,6 +1,6 @@
 name: Feature
 description: Something that should exist, or should work differently
-labels: [enhancement]
+labels: [type/feature]
 body:
   - type: textarea
     id: problem

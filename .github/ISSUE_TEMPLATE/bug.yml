@@ -1,7 +1,7 @@
 name: Bug
 description: Something behaves differently from what the code or the docs
   say
-labels: [bug]
+labels: [type/bug]
 body:
   - type: textarea
     id: what
