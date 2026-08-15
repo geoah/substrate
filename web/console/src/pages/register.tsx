@@ -68,10 +68,18 @@ function CopyBlock({ value, label }: { value: string; label: string }) {
   )
 }
 
-/** The recovery key, once: a selectable field with the copy affordance
- * beside it. A named input rather than a display block, so a password
- * manager that captures submitted fields has something to take. */
-function RecoveryKeyField({ value }: { value: string }) {
+/** A key shown once for the reader to carry off: a selectable field with the
+ * copy affordance beside it. A named input rather than a display block, so a
+ * password manager that captures submitted fields has something to take. */
+function KeepKeyField({
+  id,
+  label,
+  value,
+}: {
+  id: string
+  label: string
+  value: string
+}) {
   const [copied, setCopied] = useState(false)
   async function copy() {
     if (!navigator.clipboard?.writeText) return
@@ -86,8 +94,8 @@ function RecoveryKeyField({ value }: { value: string }) {
   return (
     <div className="flex items-center gap-2">
       <Input
-        id="recovery-key"
-        name="recovery-key"
+        id={id}
+        name={id}
         className="min-w-0 flex-1 data"
         readOnly
         autoComplete="off"
@@ -98,7 +106,7 @@ function RecoveryKeyField({ value }: { value: string }) {
         type="button"
         variant="outline"
         size="icon-sm"
-        aria-label="Copy recovery key"
+        aria-label={`Copy ${label}`}
         onClick={copy}
       >
         {copied ? <CheckIcon /> : <CopyIcon />}
@@ -129,6 +137,7 @@ export function RegisterPage() {
   const [confirm, setConfirm] = useState("")
   const [code, setCode] = useState("")
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null)
+  const [signingSeed, setSigningSeed] = useState<string | null>(null)
   const [enrolled, setEnrolled] = useState<TOTPEnrollment | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setBusy] = useState(false)
@@ -207,14 +216,18 @@ export function RegisterPage() {
         totpCode: normalized,
         label: "console",
       })
-      saveSession(minted.secret, name, minted.token.id)
-      // The recovery identity arrives ONCE, on this response, and the
-      // substrate never stores it: hold the reader here until they carry it
-      // off instead of navigating past the only showing.
-      if (minted.recoveryKey) {
-        setRecoveryKey(minted.recoveryKey)
-        return
+      // The recovery identity and the signing seed arrive ONCE, on this
+      // response, and no later call can produce either: they land in state
+      // BEFORE the fallible session write, so a blocked localStorage cannot
+      // take the only showing with it, and the page holds the reader until
+      // they carry the keys off instead of navigating past them.
+      const holdKeys = Boolean(minted.recoveryKey || minted.signingSeed)
+      if (holdKeys) {
+        setRecoveryKey(minted.recoveryKey ?? null)
+        setSigningSeed(minted.signingSeed ?? null)
       }
+      saveSession(minted.secret, name, minted.token.id)
+      if (holdKeys) return
       await navigate({ to: "/", replace: true })
     } catch (err) {
       if (err instanceof ApiError && err.code === "auth") {
@@ -241,15 +254,13 @@ export function RegisterPage() {
           </div>
           <span className="text-lg font-semibold">substrate</span>
         </div>
-        {recoveryKey !== null && (
+        {(recoveryKey !== null || signingSeed !== null) && (
           <Card>
             <CardHeader>
-              <CardTitle>Your recovery key</CardTitle>
+              <CardTitle>Your keys</CardTitle>
               <CardDescription>
-                Shown once, never stored by the substrate. Put it in your
-                password manager now: with it, a backup of your repository is
-                recoverable on any substrate; without it, only this
-                server&rsquo;s own key can read your secrets.
+                Shown once, never shown again. Put them in your password manager
+                now.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
@@ -260,19 +271,50 @@ export function RegisterPage() {
                 }}
               >
                 <FieldGroup>
+                  {recoveryKey !== null && (
+                    <Field>
+                      <FieldLabel htmlFor="recovery-key">
+                        Recovery key
+                      </FieldLabel>
+                      <KeepKeyField
+                        id="recovery-key"
+                        label="recovery key"
+                        value={recoveryKey}
+                      />
+                      <FieldDescription>
+                        Never stored by the substrate. With it, a backup of your
+                        repository is recoverable on any substrate; without it,
+                        only this server&rsquo;s own key can read your secrets.
+                      </FieldDescription>
+                    </Field>
+                  )}
+                  {signingSeed !== null && (
+                    <Field>
+                      <FieldLabel htmlFor="signing-seed">
+                        Signing key
+                      </FieldLabel>
+                      <KeepKeyField
+                        id="signing-seed"
+                        label="signing key"
+                        value={signingSeed}
+                      />
+                      <FieldDescription>
+                        The Ed25519 seed your repository signs its changelog
+                        with. The server keeps only a sealed copy and remains
+                        the only signer; this copy lets you verify the
+                        signatures yourself.
+                      </FieldDescription>
+                    </Field>
+                  )}
                   <Field>
-                    <FieldLabel htmlFor="recovery-key">Recovery key</FieldLabel>
-                    <RecoveryKeyField value={recoveryKey} />
-                  </Field>
-                  <Field>
-                    <Button type="submit">I saved it — continue</Button>
+                    <Button type="submit">I saved them — continue</Button>
                   </Field>
                 </FieldGroup>
               </form>
             </CardContent>
           </Card>
         )}
-        {recoveryKey === null && (
+        {recoveryKey === null && signingSeed === null && (
           <Card>
             <CardHeader>
               <CardTitle>Register</CardTitle>

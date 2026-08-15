@@ -48,12 +48,18 @@ type registerRequest struct {
 }
 
 // registerResponse is the one response that may carry a server-minted
-// recovery identity, shown exactly once like the token secret beside it.
+// recovery identity and the repository's signing seed, each shown exactly
+// once like the token secret beside them.
 type registerResponse struct {
 	Token             substrate.TokenInfo `json:"token"`
 	Secret            string              `json:"secret"`
 	RecoveryKey       string              `json:"recoveryKey,omitempty"`
 	RecoveryPublicKey string              `json:"recoveryPublicKey,omitempty"`
+	// SigningSeed is the repository's Ed25519 changelog-signing seed (hex),
+	// disclosed here and never again: the server keeps its only copy sealed
+	// and remains the only signer. SigningPublicKey is the matching pin.
+	SigningSeed      string `json:"signingSeed,omitempty"`
+	SigningPublicKey string `json:"signingPublicKey,omitempty"`
 }
 
 type loginRequest struct {
@@ -210,6 +216,7 @@ func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, registerResponse{
 		Token: res.Token, Secret: res.Secret,
 		RecoveryKey: res.RecoveryKey, RecoveryPublicKey: res.RecoveryPublicKey,
+		SigningSeed: res.SigningSeed, SigningPublicKey: res.SigningPublicKey,
 	})
 }
 

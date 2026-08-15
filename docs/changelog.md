@@ -72,6 +72,21 @@ refuses to append rather than quietly shedding the guarantee. The activation
 moment logs the `(public key, signed_from_seq)` pair — pin it outside the
 database; it is what a verifier ultimately trusts.
 
+Registration hands the repository's signing seed to the user exactly once:
+the registration response carries it in hex beside the recovery key,
+`substratectl register` offers it the same 1Password save, and the console
+shows it once. This is disclosure, not client-side signing
+([decision 0010](decisions/0010-signing-is-per-repository-ed25519-one-way.md)
+keeps the server the only signer): the server's own copy stays sealed under
+the credential key, and no later call can produce the seed again. Holding it,
+the user can derive the public key and check the signatures on a dump or a
+backup with no server involved. The copy also widens who can sign: the seed
+plus database write access forges history exactly as the credential key
+does, so it belongs in a password manager, guarded like the recovery key
+beside it. A possible follow-up, not built: an operator
+path that re-seals a user-provided seed after a lost credential key, which
+today stops writes with no recovery.
+
 Two placeholder values exist, and both are hashed like any other value, so
 neither can be edited later without breaking the chain. Entries written
 before signing existed keep the **all-zero signature** forever — an

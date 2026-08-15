@@ -154,6 +154,45 @@ describe("RegisterPage", () => {
     })
   })
 
+  it("holds the reader on the recovery key and signing seed, shown once", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, ENROLLMENT))
+    render(<RegisterPage />)
+    await enroll()
+
+    const seed = "ab".repeat(32)
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(201, {
+        ...MINT,
+        recoveryKey: "AGE-SECRET-KEY-1TEST",
+        recoveryPublicKey: "age1test",
+        signingSeed: seed,
+        signingPublicKey: "cd".repeat(32),
+      })
+    )
+    fireEvent.change(screen.getByLabelText("One-time code"), {
+      target: { value: "123456" },
+    })
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create my repository" })
+    )
+
+    // Logged in, but NOT navigated: both keys arrive only on this response,
+    // and the page holds the reader until they carry them off.
+    await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
+    const recovery = (await screen.findByLabelText(
+      "Recovery key"
+    )) as HTMLInputElement
+    expect(recovery.value).toBe("AGE-SECRET-KEY-1TEST")
+    const signing = screen.getByLabelText("Signing key") as HTMLInputElement
+    expect(signing.value).toBe(seed)
+    expect(navigate).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole("button", { name: /I saved them/ }))
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({ to: "/", replace: true })
+    )
+  })
+
   it("registers in ONE step where no second factor is verified", async () => {
     policy.totpRequired = false
     fetchMock.mockResolvedValue(jsonResponse(201, MINT))

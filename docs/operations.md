@@ -241,6 +241,14 @@ SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl user reset ada
   prints a fresh TOTP enrollment. The data is untouched; the account gets new
   keys. There is no self-serve recovery, deliberately.
 
+The signing seed has one copy outside the database: registration hands it to
+the user, once ([the chain](changelog.md#the-chain)). With it the user can
+derive the public key and verify a backup's signatures with no server, and
+feed `verify --expect-public-key` from their own record of it. It does not
+soften the credential-key rule: a lost credential key still stops writes on an
+activated repository, and no path consumes a user-provided seed today (an
+operator re-seal from that copy is a possible follow-up, not built).
+
 Two rules keep operator commands honest, and they explain the output: the CLI
 opens the engine with an empty registry, so an operator command can never
 overwrite a repository's stored vocabulary with the declarations compiled into

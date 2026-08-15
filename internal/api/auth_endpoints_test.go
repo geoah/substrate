@@ -37,9 +37,14 @@ func TestRegisterThenLogin(t *testing.T) {
 		"label": "console",
 	})
 	wantStatus(t, rec, http.StatusCreated)
-	out := decodeJSON[tokenResponse](t, rec)
+	out := decodeJSON[registerResponse](t, rec)
 	if out.Secret == "" || out.Token.Label != "console" {
 		t.Fatalf("registration response = %+v", out)
+	}
+	// The signing seed rides this one response and no other.
+	if out.SigningSeed != strings.Repeat("ab", 32) ||
+		out.SigningPublicKey != strings.Repeat("cd", 32) {
+		t.Fatalf("registration did not carry the signing seed: %+v", out)
 	}
 
 	// The token registration handed back is an ordinary bearer.
@@ -53,6 +58,9 @@ func TestRegisterThenLogin(t *testing.T) {
 	wantStatus(t, rec, http.StatusCreated)
 	if login := decodeJSON[tokenResponse](t, rec); login.Secret == out.Secret {
 		t.Fatal("login handed back the registration's secret")
+	}
+	if strings.Contains(rec.Body.String(), "signingSeed") {
+		t.Fatal("login carried a signing seed; registration is its only showing")
 	}
 }
 

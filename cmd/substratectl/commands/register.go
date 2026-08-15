@@ -164,12 +164,19 @@ username and a password make the user.`,
 				Token: res.Secret, TokenID: res.Token.ID,
 			})
 			if err := a.saveConfig(cfg); err != nil {
+				// The registration LANDED: the one-time keys must not die
+				// with a failed config write, so they are handed over before
+				// the error surfaces.
+				fmt.Fprintln(a.errOut, "registered, but the token could not be stored; keep the keys below:")
+				a.handOverRecoveryKey(cmd.Context(), server, username, recoveryIdentity, res.RecoveryPublicKey)
+				a.handOverSigningSeed(cmd.Context(), server, username, res.SigningSeed, res.SigningPublicKey)
 				return err
 			}
 			fmt.Fprintf(a.out, "registered %s on %s\n", username, server)
 			fmt.Fprintf(a.out, "  token:   %s (%s)\n", dash(res.Token.Label), dash(res.Token.ID))
 			fmt.Fprintf(a.out, "  context: %s -> %s\n", contextName, a.configPath)
 			a.handOverRecoveryKey(cmd.Context(), server, username, recoveryIdentity, res.RecoveryPublicKey)
+			a.handOverSigningSeed(cmd.Context(), server, username, res.SigningSeed, res.SigningPublicKey)
 			return nil
 		},
 	}
