@@ -667,6 +667,11 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	if err := t.guardBlobWrite(sp); err != nil {
 		return nil, err
 	}
+	// A managed property is the engine's to write, on a data kind exactly as
+	// on a declaration row (checkDeclarationWrite).
+	if err := t.checkManagedProps(sp); err != nil {
+		return nil, err
+	}
 
 	take := func(name string, cur any, had bool, next any) bool {
 		if next == nil {
@@ -1276,6 +1281,35 @@ func (t *txn) checkPropertyOwnership(ty *vocabulary.Kind, accepted []string) err
 			return fmt.Errorf("%w: %s.%s is written by the %q role, not %s",
 				substrate.ErrForbidden, ty.Identity, name, p.Writer, t.actor)
 		}
+	}
+	return nil
+}
+
+// checkManagedProps holds a SUPPLIED managed property to the value the row
+// already holds, the same answer the declaration door gives
+// (checkDeclarationWrite): absent is fine, since the engine stamps it; an
+// echo EQUAL to the stored value is fine, so `get -o yaml | apply -f` still
+// round-trips; anything else is refused. The engine's own stamps never pass
+// through here (a transition writes row.Props directly), and an internal
+// write is the engine's hand, so it bypasses like the other internal gates.
+func (t *txn) checkManagedProps(sp *applySpec) error {
+	if t.internal {
+		return nil
+	}
+	for _, name := range sortedKeys(sp.props) {
+		p, ok := sp.ty.Prop(name)
+		if !ok || !p.Managed {
+			continue
+		}
+		var held any
+		if sp.existing != nil {
+			held = sp.existing.Props[name]
+		}
+		if jsonEqual(held, sp.props[name]) {
+			continue
+		}
+		return fmt.Errorf("%w: %s.%s: the engine stamps it; drop it or send the stored value",
+			substrate.ErrValidation, sp.ty.Identity, name)
 	}
 	return nil
 }

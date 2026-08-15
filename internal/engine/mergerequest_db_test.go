@@ -101,6 +101,62 @@ func TestMergeRequestRejectStamps(t *testing.T) {
 	}
 }
 
+// decidedAt is declared `managed`: the decision transition writes it, a
+// client's own value is refused, and the round-trip echo of the stored value
+// still applies — the same contract checkDeclarationWrite holds declaration
+// rows to.
+func TestManagedStampIsEngineWritten(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+	ctx := context.Background()
+
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "A"}})
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "B"}})
+
+	// A creating write may not supply the stamp.
+	_, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: requestType, ID: "forged-create",
+		Properties: map[string]any{"decidedAt": "2020-01-01T00:00:00Z"},
+		Edges: []substrate.EdgeInput{
+			{Rel: "winner", To: substrate.EdgeRef{Kind: "people.substrate.reamde.dev/person", ID: a.ID}},
+			{Rel: "loser", To: substrate.EdgeRef{Kind: "people.substrate.reamde.dev/person", ID: b.ID}},
+		},
+	})
+	wantErr(t, err, substrate.ErrValidation, "creating with a forged decidedAt")
+
+	req := mergeRequest(t, ds, "dupe-"+a.ID+"-"+b.ID, a.ID, b.ID)
+
+	// Neither may a patch, before or after the decision.
+	_, err = ds.Patch(ctx, owner, requestType, req.ID, substrate.PatchInput{
+		Properties: map[string]any{"decidedAt": "2020-01-01T00:00:00Z"},
+	})
+	wantErr(t, err, substrate.ErrValidation, "patching decidedAt onto an undecided request")
+
+	rejected, err := decide(ds, req.ID, "rejected")
+	if err != nil {
+		t.Fatalf("reject: %v", err)
+	}
+	stamped, _ := rejected.Properties["decidedAt"].(string)
+	if stamped == "" {
+		t.Fatal("decidedAt not stamped")
+	}
+	_, err = ds.Patch(ctx, owner, requestType, req.ID, substrate.PatchInput{
+		Properties: map[string]any{"decidedAt": "2020-01-01T00:00:00Z"},
+	})
+	wantErr(t, err, substrate.ErrValidation, "rewriting a stamped decidedAt")
+
+	// The echo of the stored value is fine: get | apply round-trips.
+	echoed, err := ds.Patch(ctx, owner, requestType, req.ID, substrate.PatchInput{
+		Properties: map[string]any{"decidedAt": stamped, "rationale": "still one person"},
+	})
+	if err != nil {
+		t.Fatalf("echoing the stored stamp: %v", err)
+	}
+	if echoed.Properties["decidedAt"] != stamped {
+		t.Fatalf("echo moved the stamp: %v", echoed.Properties["decidedAt"])
+	}
+}
+
 func TestMergeRequestStaleFailsWholeAndAnnotates(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
