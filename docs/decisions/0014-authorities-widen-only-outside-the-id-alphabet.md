@@ -30,10 +30,11 @@ stays future work
 
 ## Decision Outcome
 
-Chosen: reserve the boundary and change no code. The rule in one line:
-characters inside the id alphabet are data wherever they appear, forever;
-structure may only ever be spelled with characters that alphabet excludes.
-Three reservations follow.
+Chosen: reserve the boundary and change no code. The rule in one line: the
+id alphabet never gains a character, and any new separator (structure the
+grammar does not have today) may only be spelled with characters that
+alphabet excludes. `/` keeps its two existing jobs, authority from name and
+kind from id, and never gains a third. Three reservations follow.
 
 **The record id alphabet is frozen, and it never gains `%`.** The alphabet
 stays exactly `reID` (naming.go): an alphanumeric first character, then
