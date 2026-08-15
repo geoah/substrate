@@ -216,13 +216,13 @@ data:
         - proposed
         - open
         - done
-        - dropped
+        - abandoned
       initial: open
       transitions:
         - from: proposed
           to: open
         - from: proposed
-          to: dropped
+          to: abandoned
         - from: open
           to: done
           stamps:
