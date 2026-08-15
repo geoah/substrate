@@ -1180,6 +1180,26 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (s
 		return toolError(err.Error()), false
 	}
 	l.in.tally.effects["propose"]++
+	// A voluntary proposal a judge-bearing GATE policy matches is judged
+	// too: the owner asked for a judge on exactly these writes, and a
+	// propose is the same want through the polite door.
+	proposeOp := policyOpPatch
+	switch op {
+	case opCreate:
+		proposeOp = policyOpPut
+	case opDelete:
+		proposeOp = policyOpDelete
+	}
+	if targetKind, ok := props["targetKind"].(string); ok || len(edges) > 0 {
+		kindForPolicy := targetKind
+		if kindForPolicy == "" && len(edges) > 0 {
+			kindForPolicy = edges[0].To.Kind
+		}
+		if verdict, rule, perr := l.ds.policyVerdict(ctx, kindForPolicy, proposeOp, l.ag.Identity()); perr == nil &&
+			verdict == policyGate {
+			l.ds.maybeJudge(id, rule)
+		}
+	}
 	return toolJSON(map[string]any{"id": id}), true
 }
 
@@ -1284,6 +1304,7 @@ func (l *agentLoop) dispatchFunction(ctx context.Context, fn *vocabulary.Functio
 				return toolError(gerr.Error()), false
 			}
 			l.in.tally.effects["gate"]++
+			l.ds.maybeJudge(requestID, rule)
 			return toolError(heldForReview(requestID, fmt.Sprintf(
 				"effect %s %s is held and the batch did not apply — effects are all-or-nothing", op, ty.Identity)).Error()), false
 		}

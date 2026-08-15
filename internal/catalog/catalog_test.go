@@ -95,15 +95,15 @@ func TestCatalogDetailEnumeratesTheClosure(t *testing.T) {
 // example is the case that proves it: its closure is agents, and the two
 // keyless llmprovider rows it writes are the things the reader is then told
 // to go and key. A preview that named only the declarations showed that
-// bundle as "five agents and nothing else", which is what it looked like on
+// bundle as "six agents and nothing else", which is what it looked like on
 // the Registry page.
 func TestCatalogPreviewsTheRecordsAnInstallWrites(t *testing.T) {
 	b, ok := realCatalog(t).ByID("llm.examples.substrate.reamde.dev/llm")
 	if !ok {
 		t.Fatal("llm bundle missing")
 	}
-	if got := len(b.Closure.Agents); got != 5 {
-		t.Errorf("agents = %d, want 5 (%v)", got, b.Closure.Agents)
+	if got := len(b.Closure.Agents); got != 6 {
+		t.Errorf("agents = %d, want 6 (%v)", got, b.Closure.Agents)
 	}
 	want := map[string]bool{"anthropic": true, "openai": true}
 	got := map[string]bool{}

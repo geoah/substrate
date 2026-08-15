@@ -201,6 +201,7 @@ func (m *agentMutateDataset) door(ctx context.Context, ty *vocabulary.Kind, op, 
 			return err
 		}
 		l.in.tally.effects["gate"]++
+		l.ds.maybeJudge(requestID, rule)
 		return heldForReview(requestID, fmt.Sprintf("policy %s gates %s %s for agent %s",
 			rule.id, op, ty.Identity, l.ag.Identity()))
 	default:

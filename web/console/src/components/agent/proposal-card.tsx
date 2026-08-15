@@ -21,6 +21,9 @@ import {
   changeRequestQueryOptions,
   submitDecision,
 } from "@/lib/api/changerequests"
+import { CORE_AUTHORITY } from "@/lib/api/http"
+import { putRecord, recordQueryOptions } from "@/lib/api/records"
+import type { SubstrateRecord } from "@/lib/api/types"
 import {
   changeOp,
   changeTarget,
@@ -35,6 +38,19 @@ export function ProposalCard({ id }: { id: string }) {
   const request = useQuery(changeRequestQueryOptions(id))
   const [submitting, setSubmitting] = useState<Verdict | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [remedyOpen, setRemedyOpen] = useState(false)
+  // The remedy needs the proposer's identity, which lives on the thread the
+  // request points at; fetched lazily, only for gated pending requests.
+  const threadPath =
+    typeof request.data?.properties.thread === "string"
+      ? request.data.properties.thread
+      : ""
+  const threadId = threadPath.slice(threadPath.lastIndexOf("/") + 1)
+  const gated = typeof request.data?.properties.policy === "string"
+  const thread = useQuery({
+    ...recordQueryOptions(CORE_AUTHORITY, "llmthreads", threadId),
+    enabled: gated && Boolean(threadId),
+  })
 
   if (request.isPending) {
     return (
@@ -59,9 +75,53 @@ export function ProposalCard({ id }: { id: string }) {
   const op = changeOp(record) ?? "patch"
   const target = changeTarget(record)
   const rationale = rationaleOf(record)
+  const verdict = judgeVerdictOf(record)
   const targetLabel = target
     ? `${target.kind.split("/").pop()}/${target.id}`
     : undefined
+
+  // The remedy, server-shaped and deliberately narrow: exactly this agent,
+  // this kind, this op — never a wildcard, provenance on the minted rule —
+  // shown verbatim behind its own confirmation before anything lands.
+  const proposerPath =
+    typeof thread.data?.properties.agent === "string"
+      ? thread.data.properties.agent
+      : ""
+  const proposer = proposerPath.slice(proposerPath.lastIndexOf("/") + 1)
+  const remedyRule =
+    gated && proposer && target
+      ? {
+          selector: {
+            kinds: [target.kind],
+            ops: [op === "create" ? "put" : op],
+            agents: [proposer],
+          },
+          action: "allow",
+        }
+      : undefined
+
+  async function acceptAndAllow() {
+    if (!remedyRule) return
+    setSubmitting("accepted")
+    setError(null)
+    try {
+      await putRecord(CORE_AUTHORITY, "recordpatchpolicies", `allow-${id}`, {
+        properties: remedyRule,
+        annotations: {
+          "owner/provenance": `minted from the gate card of recordpatchrequest ${id}`,
+        },
+      })
+      await submitDecision(id, "accepted", record.version)
+      await client.invalidateQueries()
+      setTimeout(() => void client.invalidateQueries(), 4000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      void client.invalidateQueries()
+    } finally {
+      setSubmitting(null)
+      setRemedyOpen(false)
+    }
+  }
 
   async function decide(verdict: Verdict) {
     setSubmitting(verdict)
@@ -110,6 +170,24 @@ export function ProposalCard({ id }: { id: string }) {
           {rationale}
         </p>
       )}
+      {verdict && (
+        <p className="text-xs [overflow-wrap:anywhere] text-muted-foreground">
+          Judge: <span className="data">{verdict.verdict}</span>
+          {typeof verdict.confidence === "number" && (
+            <>
+              {" "}
+              at <span className="data">{verdict.confidence.toFixed(2)}</span>
+            </>
+          )}
+          {verdict.outcome && (
+            <>
+              {" "}
+              (<span className="data">{verdict.outcome}</span>)
+            </>
+          )}
+          {verdict.rationale && <> — {verdict.rationale}</>}
+        </p>
+      )}
       {error && <p className="text-xs text-destructive">{error}</p>}
       <div className="flex items-center gap-2">
         {decision === "proposed" && (
@@ -134,10 +212,64 @@ export function ProposalCard({ id }: { id: string }) {
             </Button>
           </>
         )}
+        {decision === "proposed" && remedyRule && (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={submitting !== null}
+            onClick={() => setRemedyOpen((v) => !v)}
+          >
+            Accept + always allow
+          </Button>
+        )}
         <ReviewLink id={id} />
       </div>
+      {remedyOpen && remedyRule && (
+        <div className="flex flex-col gap-1.5 rounded-sm border bg-background/60 p-2">
+          <p className="text-xs text-muted-foreground">
+            Accepting this way also mints ONE standing rule, exactly this narrow
+            — every future diff of this class lands without review:
+          </p>
+          <pre className="overflow-x-auto rounded-sm bg-muted/40 p-1.5 data text-[0.7rem]">
+            {JSON.stringify(remedyRule, null, 2)}
+          </pre>
+          <div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={submitting !== null}
+              onClick={() => void acceptAndAllow()}
+            >
+              {submitting === "accepted" && <Spinner className="size-3" />}
+              Mint the rule and accept
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
+}
+
+/** The engine-owned policy/verdict audit, read tolerantly for the card. */
+function judgeVerdictOf(record: SubstrateRecord):
+  | {
+      verdict?: string
+      confidence?: number
+      outcome?: string
+      rationale?: string
+    }
+  | undefined {
+  const raw = record.annotations?.["policy/verdict"]
+  if (typeof raw !== "object" || raw === null) return undefined
+  const a = raw as Record<string, unknown>
+  const out = {
+    verdict: typeof a.verdict === "string" ? a.verdict : undefined,
+    confidence: typeof a.confidence === "number" ? a.confidence : undefined,
+    outcome: typeof a.outcome === "string" ? a.outcome : undefined,
+    rationale: typeof a.rationale === "string" ? a.rationale : undefined,
+  }
+  if (!out.verdict && !out.outcome) return undefined
+  return out
 }
 
 function ReviewLink({ id }: { id: string }) {
