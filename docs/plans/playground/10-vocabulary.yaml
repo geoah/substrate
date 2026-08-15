@@ -1,0 +1,203 @@
+# The playground authority: two everyday kinds, two functions, three agents.
+kind: core.substrate.reamde.dev/authority
+metadata:
+  id: playground.substrate.reamde.dev
+data:
+  version: 1
+---
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: playground.substrate.reamde.dev/task
+data:
+  authority: playground.substrate.reamde.dev
+  description: One thing to do, with a name, notes, and a three-state life.
+  names:
+    singular: task
+    plural: tasks
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: what the task is
+    notes:
+      type: text
+      description: anything worth remembering about it
+    status:
+      type: state
+      description: todo until somebody moves it
+      states:
+        - todo
+        - doing
+        - done
+      initial: todo
+      transitions:
+        - from: todo
+          to: doing
+        - from: doing
+          to: done
+        - from: todo
+          to: done
+        - from: doing
+          to: todo
+---
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: playground.substrate.reamde.dev/note
+data:
+  authority: playground.substrate.reamde.dev
+  description: A short written thing worth keeping.
+  names:
+    singular: note
+    plural: notes
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      required: true
+      description: what the note is called
+    content:
+      type: text
+      description: the note itself
+---
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: playground.substrate.reamde.dev/completetask
+data:
+  authority: playground.substrate.reamde.dev
+  description: Marks one task done by id.
+  runtime: python
+  effect: write
+  arguments:
+    - name: id
+      type: string
+      required: true
+      description: the task to complete
+  permissions:
+    writes:
+      - playground.substrate.reamde.dev/task
+  source: |
+    def main(input, host):
+        tid = input["args"]["id"]
+        return {"effects": [{"action": "patch", "kind": "playground.substrate.reamde.dev/task",
+                             "id": tid, "properties": {"status": "done"}}],
+                "output": {"completed": tid}}
+---
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: playground.substrate.reamde.dev/shredder
+data:
+  authority: playground.substrate.reamde.dev
+  description: Deletes one note by id. Its author demands review first, always.
+  runtime: python
+  effect: irreversible
+  confirmation: always
+  arguments:
+    - name: id
+      type: string
+      required: true
+      description: the note to shred
+  permissions:
+    writes:
+      - playground.substrate.reamde.dev/note
+  source: |
+    def main(input, host):
+        nid = input["args"]["id"]
+        return {"effects": [{"action": "delete", "kind": "playground.substrate.reamde.dev/note",
+                             "id": nid}],
+                "output": {"shredded": nid}}
+---
+kind: core.substrate.reamde.dev/agent
+metadata:
+  id: playground.substrate.reamde.dev/planner
+data:
+  authority: playground.substrate.reamde.dev
+  description: Plans tasks and notes with you; asks when unsure, proposes
+    every change for your review, writes nothing directly.
+  prompt: |
+    You help the owner plan tasks and notes. Read everything through the
+    graphql tool (introspectable; lists return connections, descend through
+    nodes). Tasks are playground.substrate.reamde.dev/task {name, notes,
+    status todo|doing|done}; notes are playground.substrate.reamde.dev/note
+    {name, content}.
+
+    When the request is ambiguous, use the ask tool ONCE with every question
+    you need (ids key the answers; omit options for yes/no). The answers
+    arrive in a later message (event interactionAnswered); ask, then finish
+    your turn.
+
+    Every change is one propose call with the full kind reference; the diff
+    wraps values under "properties". A proposal is not applied when the call
+    returns: say what you proposed and stop. When a decision arrives (event
+    proposalDecision), acknowledge it in one line.
+  provider: anthropic
+  model: claude-sonnet-5
+  tools:
+    - function: core.substrate.reamde.dev/graphql
+    - function: core.substrate.reamde.dev/propose
+    - function: core.substrate.reamde.dev/ask
+  permissions:
+    writes:
+      - core.substrate.reamde.dev/recordpatchrequest
+      - core.substrate.reamde.dev/llminteraction
+  budgets:
+    maxTurns: 12
+    maxToolCalls: 10
+    deadlineSeconds: 300
+---
+kind: core.substrate.reamde.dev/agent
+metadata:
+  id: playground.substrate.reamde.dev/taskbot
+data:
+  authority: playground.substrate.reamde.dev
+  description: Manages tasks directly through mutate and the completetask
+    function; the gate-tasks policy holds its writes for the judge.
+  prompt: |
+    You manage tasks: playground.substrate.reamde.dev/task {name, notes,
+    status todo|doing|done}. Read with graphql (lists return connections).
+    Write with mutate (put creates, patch changes; values under
+    {"properties": ...}; invent short lowercase ids for new tasks) or
+    complete one with the completetask tool. A write may come back "held
+    for review": that is normal, a policy routed it to a judge; say so and
+    finish. When the decision arrives in a later message, acknowledge it in
+    one line.
+  provider: anthropic
+  model: claude-sonnet-5
+  tools:
+    - function: core.substrate.reamde.dev/graphql
+    - function: core.substrate.reamde.dev/mutate
+    - function: playground.substrate.reamde.dev/completetask
+  permissions:
+    writes:
+      - playground.substrate.reamde.dev/task
+  budgets:
+    maxTurns: 10
+    maxToolCalls: 8
+    deadlineSeconds: 300
+---
+kind: core.substrate.reamde.dev/agent
+metadata:
+  id: playground.substrate.reamde.dev/notekeeper
+data:
+  authority: playground.substrate.reamde.dev
+  description: Keeps notes through mutate and the shredder; policies advise
+    on its edits and refuse its deletes.
+  prompt: |
+    You keep notes: playground.substrate.reamde.dev/note {name, content}.
+    Read with graphql. Edit with mutate (values under {"properties": ...});
+    shred one with the shredder tool. Writes may come back "held for
+    review" or refused by policy: report what happened honestly and finish.
+    When a decision arrives in a later message, acknowledge it in one line.
+  provider: anthropic
+  model: claude-sonnet-5
+  tools:
+    - function: core.substrate.reamde.dev/graphql
+    - function: core.substrate.reamde.dev/mutate
+    - function: playground.substrate.reamde.dev/shredder
+  permissions:
+    writes:
+      - playground.substrate.reamde.dev/note
+  budgets:
+    maxTurns: 10
+    maxToolCalls: 8
+    deadlineSeconds: 300

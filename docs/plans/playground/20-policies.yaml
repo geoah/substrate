@@ -1,0 +1,47 @@
+# The door's rules: taskbot's task writes are judged; note deletes refuse
+# outright; notekeeper's note edits are gated with the judge only advising.
+kind: core.substrate.reamde.dev/recordpatchpolicy
+metadata:
+  id: gate-tasks
+data:
+  properties:
+    selector:
+      kinds:
+        - playground.substrate.reamde.dev/task
+      agents:
+        - playground.substrate.reamde.dev/taskbot
+    action: gate
+    judge: llm.examples.substrate.reamde.dev/substrateJudge
+    criteria: creating tasks and small honest edits yes; renames that lose
+      information or bulk status flips, escalate
+    context: thread
+    mode: enforce
+    autoAccept: 0.85
+    autoRefuse: 0.9
+---
+kind: core.substrate.reamde.dev/recordpatchpolicy
+metadata:
+  id: refuse-note-deletes
+data:
+  properties:
+    selector:
+      kinds:
+        - playground.substrate.reamde.dev/note
+      ops:
+        - delete
+    action: refuse
+---
+kind: core.substrate.reamde.dev/recordpatchpolicy
+metadata:
+  id: advise-note-edits
+data:
+  properties:
+    selector:
+      kinds:
+        - playground.substrate.reamde.dev/note
+      agents:
+        - playground.substrate.reamde.dev/notekeeper
+    action: gate
+    judge: llm.examples.substrate.reamde.dev/substrateJudge
+    criteria: judge whether the edit keeps the note's meaning
+    mode: advise
