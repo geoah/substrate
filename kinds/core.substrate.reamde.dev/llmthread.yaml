@@ -31,7 +31,10 @@ data:
   # renders the referent's own title, which is agent's `{localName}`.
   # version 7: the agent and parent pointers pin with `kind:`, the reference
   # property's own word; `to:` stays the edge's.
-  version: 7
+  # version 8: `mode` and `status` become enums, the loop's own closed sets
+  # (agentloop.go). `judge` joins mode: the loop already mints it (judge.go),
+  # the old prose just never named it.
+  version: 8
   names:
     singular: llmthread
     plural: llmthreads
@@ -61,11 +64,25 @@ data:
       type: string
       description: the model id the run sent
     mode:
-      type: string
-      description: trigger, schedule, webhook, manual, call, subagent or chat
+      type: enum
+      values:
+        - trigger
+        - schedule
+        - webhook
+        - manual
+        - call
+        - subagent
+        - chat
+        - judge
+      description: how the run was invoked
     status:
-      type: string
-      description: running, then ok, overbudget or error
+      type: enum
+      values:
+        - running
+        - ok
+        - overbudget
+        - error
+      description: running, then settled to ok, overbudget or error
     reason:
       type: string
       description: which budget ended an overbudget run, or the error

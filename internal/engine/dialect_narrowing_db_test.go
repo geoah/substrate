@@ -171,6 +171,23 @@ func dnCases() map[string]struct {
 			},
 			says: `object "spec.limits" reference "ref" narrows its target to ` + dwAuthority + `/other`,
 		},
+		// A string retyped to enum counts by VALUE: the held value is outside
+		// the declared set here, so both arms refuse; without rows the same
+		// diffs admit, which is the string→enum path's whole point.
+		"string retyped to enum missing the held value": {
+			mutate: func(props map[string]any) {
+				props["plain"] = map[string]any{"type": "enum", "values": []any{"other"}}
+			},
+			says: `property "plain" changes kind string → enum while`,
+		},
+		"keyed string field retyped to enum missing the held value": {
+			mutate: func(props map[string]any) {
+				specFields(props)["tags"] = map[string]any{
+					"type": "enum", "values": []any{"blue"}, "keyed": true,
+				}
+			},
+			says: `object "spec" field "tags" changes kind keyed string → keyed enum while`,
+		},
 		// An enum value removed, once per container an enum can sit in. The keyed
 		// one is the case a containment test on the whole map could never see.
 		"scalar enum value removed": {

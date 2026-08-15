@@ -99,6 +99,13 @@ func TestSchemaEvolutionNarrowingRefused(t *testing.T) {
 			`property "size" changes kind string → int`, "1 live records")
 	})
 
+	t.Run("string retyped to enum missing the held value", func(t *testing.T) {
+		props := evoBaseProps()
+		props["size"] = map[string]any{"type": "enum", "values": []any{"small"}}
+		wantNarrowingGuard(t, evoApply(t, ds, props),
+			`property "size" changes kind string → enum`, `a value outside "small"`, "1 live records")
+	})
+
 	t.Run("repeated flip is a kind change", func(t *testing.T) {
 		props := evoBaseProps()
 		props["size"] = map[string]any{"type": "string", "repeated": true}
@@ -215,6 +222,43 @@ func TestSchemaEvolutionAdditiveAdmits(t *testing.T) {
 	if err := evoApply(t, ds, props); err != nil {
 		t.Fatalf("dropping a property no live row carries must admit: %v", err)
 	}
+}
+
+// A string property retyped to enum follows the VALUES, not the presence: it
+// lands when every stored value is in the declared set (the runtime kinds'
+// status/mode/role sets were engine-held long before they were declared),
+// refuses naming the count when one is not, and once landed the set refuses
+// at the write.
+func TestSchemaEvolutionStringToEnumFollowsTheValues(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	if err := evoApply(t, ds, evoBaseProps()); err != nil {
+		t.Fatalf("install base type: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind:       evoAuthority + "/gizmo",
+		Properties: map[string]any{"size": "big"},
+	})
+
+	// The set covers every stored value: the retype lands.
+	props := evoBaseProps()
+	props["size"] = map[string]any{"type": "enum", "values": []any{"big", "small"}}
+	if err := evoApply(t, ds, props); err != nil {
+		t.Fatalf("a string → enum retype every stored value satisfies must admit: %v", err)
+	}
+
+	// The payoff: the closed set now refuses at the write.
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind:       evoAuthority + "/gizmo",
+		Properties: map[string]any{"size": "huge"},
+	}); err == nil {
+		t.Fatal("a value outside the declared enum set must refuse at the write")
+	}
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind:       evoAuthority + "/gizmo",
+		Properties: map[string]any{"size": "small"},
+	})
 }
 
 func TestSchemaEvolutionRenamedFromRoundTrips(t *testing.T) {
