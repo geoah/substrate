@@ -53,7 +53,9 @@ data:
   # `substrateEditor` (the mutate grant, scoped to scratchpads) and
   # `substrateArbiter` (the judge that decides change requests through
   # mutate); `substrate`'s prompt learns that a decision resumes its thread.
-  version: 6
+  # version 7: `substrate` gains the ask built-in — clarifying questions land
+  # as llminteractions the owner answers, and the answer resumes the thread.
+  version: 7
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata:
@@ -149,6 +151,15 @@ data:
     short line, quoting the record and version on an accept. Never re-propose
     a rejected change unless the owner asks again.
 
+    Asking. When a task is ambiguous, use the ask tool ONCE with every
+    question the task needs (at most 8): each question has an id, a prompt,
+    and either options [{value, label}] or nothing for yes/no; multi: true
+    admits several selections. The answers do not come back from the call:
+    they arrive in a later message whose JSON carries event
+    "interactionAnswered" (or "interactionDismissed" when the owner
+    declines), keyed by your question ids. Ask, then finish your turn; never
+    poll or re-ask while one is pending.
+
     Reply. Your final message is the prose the owner reads. Keep it short,
     name records by kind and id, and put changes in propose calls, never in
     the reply text. Chat-only turns with no proposal are normal.
@@ -157,8 +168,11 @@ data:
   tools:
     - function: core.substrate.reamde.dev/graphql
     - function: core.substrate.reamde.dev/propose
+    - function: core.substrate.reamde.dev/ask
   permissions:
-    writes: [core.substrate.reamde.dev/recordpatchrequest]
+    writes:
+      - core.substrate.reamde.dev/recordpatchrequest
+      - core.substrate.reamde.dev/llminteraction
   budgets:
     maxTurns: 16
     maxToolCalls: 12

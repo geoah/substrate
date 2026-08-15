@@ -90,6 +90,17 @@ const PROPOSE_TOOL = "propose"
 /** The change-request kind, as a `changes` stamp spells it. */
 const REQUEST_KIND = "core.substrate.reamde.dev/recordpatchrequest"
 
+/** The interaction kind — a batch of questions the `ask` built-in landed. */
+const INTERACTION_KIND = "core.substrate.reamde.dev/llminteraction"
+
+/** The interaction a settled ask landed, from the engine-stamped changes. */
+export function interactionIdOf(call: ToolCallView): string | undefined {
+  const stamped = (call.changes ?? []).find(
+    (c) => c.kind === INTERACTION_KIND && c.op === "put"
+  )
+  return stamped?.id
+}
+
 /** The engine-stamped `changes` of a row, or undefined where none rode it.
  * Read tolerantly: the property is engine-written, but the fold is pure and
  * a malformed entry must drop rather than throw. */
@@ -266,6 +277,53 @@ export interface DecisionNotice {
   /** The target's version after an accepted patch or create. */
   version?: number
   deleted?: boolean
+}
+
+/** A system turn's interaction resolution, decoded — how the transcript says
+ * "the questions were answered" without rendering raw JSON. */
+export interface InteractionNotice {
+  interactionId: string
+  event: "interactionAnswered" | "interactionDismissed"
+  answers?: { question: string; selected: string[] }[]
+}
+
+export function interactionNoticeOf(
+  turn: TurnView
+): InteractionNotice | undefined {
+  if (turn.role !== "system" || !turn.content.trim().startsWith("{"))
+    return undefined
+  try {
+    const parsed: unknown = JSON.parse(turn.content)
+    if (typeof parsed !== "object" || parsed === null) return undefined
+    const env = parsed as Record<string, unknown>
+    if (
+      env.event !== "interactionAnswered" &&
+      env.event !== "interactionDismissed"
+    )
+      return undefined
+    const path = str(env.interaction)
+    const interactionId = path.slice(path.lastIndexOf("/") + 1)
+    if (!interactionId) return undefined
+    const answers: InteractionNotice["answers"] = []
+    if (Array.isArray(env.answers)) {
+      for (const item of env.answers) {
+        if (typeof item !== "object" || item === null) continue
+        const a = item as Record<string, unknown>
+        const question = str(a.question)
+        const selected = Array.isArray(a.selected)
+          ? a.selected.filter((v): v is string => typeof v === "string")
+          : []
+        if (question) answers.push({ question, selected })
+      }
+    }
+    return {
+      interactionId,
+      event: env.event,
+      answers: answers.length ? answers : undefined,
+    }
+  } catch {
+    return undefined
+  }
 }
 
 export function decisionNoticeOf(turn: TurnView): DecisionNotice | undefined {

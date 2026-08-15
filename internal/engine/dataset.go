@@ -257,6 +257,10 @@ type txn struct {
 	// decision's thread resume, which must never run inside the transaction
 	// that recorded it.
 	afterCommit []func()
+	// interactionThread marks the agent loop's own ask dispatch: the ONE
+	// writer allowed to stamp an interaction's thread reference
+	// (interactions.go admitInteraction).
+	interactionThread bool
 	// folded holds the fold effects this transaction has applied and not yet
 	// written into an entry (fold.go). appendChange drains it, so every entry
 	// carries the delta — with values — that a rebuild replays.

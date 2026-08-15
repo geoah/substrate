@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest"
 
 import {
   decisionNoticeOf,
+  interactionIdOf,
+  interactionNoticeOf,
   proposedRequestId,
   requestIdOf,
   toolOK,
@@ -350,5 +352,66 @@ describe("decisionNoticeOf", () => {
   it("says nothing about a system row that is not a decision", () => {
     expect(decisionNoticeOf(system("plain text"))).toBeUndefined()
     expect(decisionNoticeOf(system('{"event":"other"}'))).toBeUndefined()
+  })
+})
+
+describe("interactions", () => {
+  it("names the interaction a settled ask landed, from the stamp", () => {
+    const call: ToolCallView = {
+      id: "c1",
+      name: "ask",
+      arguments: "{}",
+      output: '{"id":"iabcdefghijk"}',
+      ok: true,
+      changes: [
+        {
+          seq: 9,
+          op: "put",
+          kind: "core.substrate.reamde.dev/llminteraction",
+          id: "iabcdefghijk",
+        },
+      ],
+    }
+    expect(interactionIdOf(call)).toBe("iabcdefghijk")
+    expect(requestIdOf(call)).toBeUndefined()
+  })
+
+  it("decodes the answered envelope, answers and all", () => {
+    const notice = interactionNoticeOf({
+      key: "k",
+      role: "system",
+      tools: [],
+      content: JSON.stringify({
+        event: "interactionAnswered",
+        interaction: "core.substrate.reamde.dev/llminteraction/iabcdefghijk",
+        answers: [{ question: "color", selected: ["red"] }],
+      }),
+    })
+    expect(notice).toEqual({
+      interactionId: "iabcdefghijk",
+      event: "interactionAnswered",
+      answers: [{ question: "color", selected: ["red"] }],
+    })
+  })
+
+  it("decodes a dismissal, and ignores other system rows", () => {
+    const dismissed = interactionNoticeOf({
+      key: "k",
+      role: "system",
+      tools: [],
+      content: JSON.stringify({
+        event: "interactionDismissed",
+        interaction: "core.substrate.reamde.dev/llminteraction/iabcdefghijk",
+      }),
+    })
+    expect(dismissed?.event).toBe("interactionDismissed")
+    expect(
+      interactionNoticeOf({
+        key: "k",
+        role: "system",
+        tools: [],
+        content: '{"event":"proposalDecision"}',
+      })
+    ).toBeUndefined()
   })
 })

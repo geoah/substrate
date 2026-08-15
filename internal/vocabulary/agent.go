@@ -36,6 +36,7 @@ const (
 	AgentToolPropose = "propose"
 	AgentToolGraphQL = "graphql"
 	AgentToolMutate  = "mutate"
+	AgentToolAsk     = "ask"
 )
 
 // agentBuiltinByIdentity maps a host function's IDENTITY onto the built-in the
@@ -49,6 +50,7 @@ var agentBuiltinByIdentity = map[string]string{
 	HostFunctionPropose: AgentToolPropose,
 	HostFunctionGraphQL: AgentToolGraphQL,
 	HostFunctionMutate:  AgentToolMutate,
+	HostFunctionAsk:     AgentToolAsk,
 }
 
 // The request params an agent may name in `params:`. The set is closed on
@@ -69,6 +71,9 @@ const KindRecordPatchRequest = "core.substrate.reamde.dev/recordpatchrequest"
 
 // KindLLMThread is the thread kind a `notifies:` transition reports into.
 const KindLLMThread = "core.substrate.reamde.dev/llmthread"
+
+// KindLLMInteraction is the batch-of-questions kind the `ask` built-in emits.
+const KindLLMInteraction = "core.substrate.reamde.dev/llminteraction"
 
 // The declared `resume:` values: whether a resolution resumes the agent's
 // thread. Absent means always.
@@ -390,6 +395,11 @@ func (l *loader) parseAgent(d Document) *Agent {
 		case AgentToolMutate:
 			if len(a.Emit) == 0 {
 				l.errf("%s: data.tools: mutate needs data.permissions.writes, which names the kinds the agent may create or change", where)
+				return nil
+			}
+		case AgentToolAsk:
+			if !a.EmitAllows(KindLLMInteraction) {
+				l.errf("%s: data.tools: ask needs %s in data.permissions.writes, which names the interaction kind the agent may create", where, KindLLMInteraction)
 				return nil
 			}
 		}

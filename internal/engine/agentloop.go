@@ -906,6 +906,8 @@ func (l *agentLoop) dispatch(ctx context.Context, tc llm.ToolCall) (string, bool
 		return l.dispatchGraphQL(ctx, args)
 	case tool.builtin == vocabulary.AgentToolMutate:
 		return l.dispatchMutate(ctx, args)
+	case tool.builtin == vocabulary.AgentToolAsk:
+		return l.dispatchAsk(ctx, args)
 	case tool.sub != nil:
 		return l.dispatchSubAgent(ctx, tool.sub, args)
 	default:

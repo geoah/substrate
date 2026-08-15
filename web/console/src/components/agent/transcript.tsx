@@ -11,7 +11,11 @@ import { CheckCircle2Icon, XCircleIcon } from "lucide-react"
 
 import { ChangesList } from "@/components/agent/changes"
 import { ToolCallCard } from "@/components/agent/tool-call"
-import { decisionNoticeOf, type TurnView } from "@/lib/api/transcript"
+import {
+  decisionNoticeOf,
+  interactionNoticeOf,
+  type TurnView,
+} from "@/lib/api/transcript"
 import { cn } from "@/lib/utils"
 
 /** The substrate's own turn: a decision notice rendered as an event line, or
@@ -19,10 +23,37 @@ import { cn } from "@/lib/utils"
  * labelled `system` so nothing in a thread is ever silently dropped. */
 function SystemTurn({ turn }: { turn: TurnView }) {
   const notice = decisionNoticeOf(turn)
+  const interaction = interactionNoticeOf(turn)
   return (
     <div className="flex flex-col items-center gap-1.5">
       <div className="flex max-w-[85%] flex-col gap-1.5 rounded-md border border-dashed bg-muted/30 px-3 py-2">
-        {notice ? (
+        {interaction ? (
+          <div className="flex flex-col gap-1 text-xs">
+            <div className="flex items-center gap-1.5">
+              {interaction.event === "interactionAnswered" ? (
+                <CheckCircle2Icon className="size-3.5 shrink-0 text-emerald-600" />
+              ) : (
+                <XCircleIcon className="size-3.5 shrink-0 text-muted-foreground" />
+              )}
+              <span>
+                Questions{" "}
+                {interaction.event === "interactionAnswered"
+                  ? "answered"
+                  : "dismissed"}
+              </span>
+            </div>
+            {interaction.answers && (
+              <ul className="flex flex-col gap-0.5 pl-5">
+                {interaction.answers.map((a) => (
+                  <li key={a.question} className="[overflow-wrap:anywhere]">
+                    <span className="data">{a.question}</span>:{" "}
+                    <span className="data">{a.selected.join(", ")}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : notice ? (
           <div className="flex items-center gap-1.5 text-xs">
             {notice.decision === "accepted" ? (
               <CheckCircle2Icon className="size-3.5 shrink-0 text-emerald-600" />

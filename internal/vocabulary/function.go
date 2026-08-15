@@ -53,6 +53,7 @@ const (
 	HostFunctionPropose = AuthorityCore + "/propose"
 	HostFunctionGraphQL = AuthorityCore + "/graphql"
 	HostFunctionMutate  = AuthorityCore + "/mutate"
+	HostFunctionAsk     = AuthorityCore + "/ask"
 )
 
 // The capability-gated identity mutations (`permissions.mutations`). The

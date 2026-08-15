@@ -596,6 +596,21 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			}
 		}
 	}
+	// An interaction earns the same treatment (interactions.go): the batch
+	// contract is judged at the creating write, the envelope is frozen, the
+	// answers ride the answering transition alone, and only the owner's hand
+	// resolves.
+	if sp.ty.Identity == vocabulary.KindLLMInteraction {
+		if create {
+			if err := t.admitInteraction(sp); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := t.guardInteraction(sp); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if create {
 		row = &erow{
 			ID: sp.id, Kind: sp.ty.Identity, States: map[string]string{},

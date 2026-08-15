@@ -274,6 +274,7 @@ var generatedKeys = map[string][]string{
 	"credential":         corekinds.CredentialKeys,
 	"function":           corekinds.FunctionKeys,
 	"kind":               corekinds.KindKeys,
+	"llminteraction":     corekinds.LLMInteractionKeys,
 	"llmmessage":         corekinds.LLMMessageKeys,
 	"llmprovider":        corekinds.LLMProviderKeys,
 	"llmthread":          corekinds.LLMThreadKeys,
