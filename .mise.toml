@@ -177,13 +177,14 @@ run = "go test -count=1 -run '^TestLive' -v ./internal/llm/... ./internal/engine
 # eslint from `lint` would drag pnpm into the lint job and run it twice.
 
 [tasks.lint]
-description = "Every linter: Go, YAML, shell, Python, the docs and the toolchain pins"
+description = "Every linter: Go, YAML, shell, Python, the docs, the migrations and the toolchain pins"
 depends = [
   "lint:go",
   "lint:yaml",
   "lint:shell",
   "lint:python",
   "lint:docs",
+  "lint:migrations",
   "lint:toolchain",
 ]
 
@@ -221,6 +222,18 @@ description = "ruff over the runner's Python host"
 # function body is exec'd into: a syntax slip there takes out every Python
 # function at once, and no Go test compiles it. Config is .ruff.toml.
 run = "ruff check internal/runner/host.py"
+
+[tasks."lint:migrations"]
+description = "The shape of internal/engine/migrations: naming, numbering, no gaps"
+# IN `lint`, unlike `frozen:check`, because it reads the FILES and not the
+# diff: the answer is the same on a laptop with no base branch as it is on a
+# merge.
+#
+# The runner parses a version off the filename and ignores anything not ending
+# `.up.sql`, so a misnamed migration is not an error at boot, it is a step that
+# silently never runs. Two files claiming one version is worse: which schema a
+# database ends up with is then decided by directory order.
+run = ".mise/migrationscheck.sh"
 
 [tasks."lint:toolchain"]
 description = "The version pins written twice: .mise.toml against the Dockerfiles"
@@ -265,6 +278,13 @@ exit $status
 [tasks."kinds:check"]
 description = "Refuse a kinds/ change that does not bump a declaration version"
 run = ".mise/kindscheck.sh"
+
+# `frozen:check` is the same shape as `kinds:check` and not in `lint` for the
+# same reason: it reads the diff. What it holds is the pair of things this tree
+# writes once, a landed migration and an accepted decision record.
+[tasks."frozen:check"]
+description = "Refuse an edit to a landed migration or an accepted decision record"
+run = ".mise/frozencheck.sh"
 
 # =============================================================================
 # Audit
@@ -581,11 +601,12 @@ run = "goreleaser release --clean"
 # here; the workflow needs no edit.
 
 [tasks."ci:lint"]
-description = "CI job `lint` — formatting, the linters, the release config, and the kinds/ guards"
+description = "CI job `lint` — formatting, the linters, the release config, and the diff guards"
 # `kinds:gen:check` sits beside `kinds:check` because both hold kinds/ to
 # something: one that a changed declaration bumped its version, the other that
-# the generated types are the ones the declarations produce.
-depends = ["fmt:check", "lint", "release:check", "kinds:check", "kinds:gen:check"]
+# the generated types are the ones the declarations produce. `frozen:check` is
+# the third diff guard, over the files this tree writes once.
+depends = ["fmt:check", "lint", "release:check", "kinds:check", "kinds:gen:check", "frozen:check"]
 
 [tasks."ci:cross"]
 description = "CI job `cross` — the cross-compile check, on a runner of its own"

@@ -289,9 +289,21 @@ before the grammar widens.
   the merge is a squash, so the PR title IS the commit that gets read.
   `mise run version:next` says what main would release right now.
 - Keep `mise run lint` and `mise run fmt:check` at zero. Both are aggregates,
-  and the `lint` job runs both: `lint` is Go, YAML, shell, Python, the docs
-  and the toolchain pins, `fmt:check` is Go and YAML. The console has its own pair
+  and the `lint` job runs both: `lint` is Go, YAML, shell, Python, the docs,
+  the migrations and the toolchain pins, `fmt:check` is Go and YAML. The console has its own pair
   (`console:lint`, `console:fmt:check`) inside `ci:console`.
+- **A landed migration is never edited.** `internal/engine/migrations/` is
+  append-only: the runner records each file's sha256 as it applies it and
+  refuses a database whose recorded hash no longer matches, so editing a merged
+  migration changes nobody's schema and locks every database that ran the old
+  text out of every later binary. Add the next number instead, and make it
+  idempotent where it may meet a schema that already has the change.
+  `mise run frozen:check` refuses the edit, the delete and the rename;
+  `mise run lint:migrations` holds the naming and numbering, because a file the
+  runner cannot parse is a step that silently never runs. The one sanctioned
+  exception, a migration corrected before it landed, is `supersededSHA256` in
+  `internal/engine/migrate.go` together with the later migration that closes
+  the gap.
 - **`lint:docs` is the one docs linter**, and it holds two halves. What the
   pages point at: every Markdown link and `#anchor` resolves against the tree,
   offline, so renaming a doc or a heading means fixing what points at it, and
@@ -303,7 +315,9 @@ before the grammar widens.
   in that script, so there is one place to run and one place to add to.
 - **A decision that outlives its argument gets a record.**
   [docs/decisions/](docs/decisions/README.md) is one short, dated page per
-  choice, frozen once accepted and superseded rather than edited. The bar is
+  choice, frozen once accepted and superseded rather than edited, which
+  `mise run frozen:check` holds: an accepted record's body may not change,
+  while its `status:` and `superseded-by:` still may. The bar is
   all three of hard to reverse, shapes what other code may do, and reasoning
   not already written down; everything else is a commit. Read the index before
   proposing design work, so an option already rejected is not proposed again.
