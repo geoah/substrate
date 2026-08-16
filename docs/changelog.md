@@ -22,7 +22,17 @@ One entry, as the wire carries it, for the task created on the
 ```
 
 `actor` names what wrote ([the actor domain](api.md#actors) is closed and
-flat), `op` is the mutation that made the row (`put`, `patch`, `delete`,
+flat) and is the caller's own claim; the entry also stores a **principal**
+beside it, the id of the token the door resolved from the bearer secret,
+which no caller can name. Two tokens writing as `api` are one actor and two
+principals. It is hashed with the rest of the entry, so a stored principal
+cannot be edited without breaking the chain, and it is not a secret: it is a
+token record's id, which the repository's own reader can already list. It has
+no field of its own on the wire; a write's recorded effects name it beside
+each property manager they set. A write no token stands behind — the seed, the
+boot upgrade, a background worker, registration and login — carries an empty
+principal. `op` is the mutation
+that made the row (`put`, `patch`, `delete`,
 `link`, `unlink`, `merge`, `split`, plus the engine's own housekeeping), and
 `kind` plus `recordId` are the record's full identity. The readable half of
 `payload` names what changed rather than repeating it: `created` on first
@@ -92,8 +102,8 @@ neither can be edited later without breaking the chain. Entries written
 before signing existed keep the **all-zero signature** forever — an
 append-only log cannot be signed after the fact, so `verify` counts them
 (`placeholderSigs`) below the activation seq and names them as findings at or
-after it. Every entry's **principal** (the verified token id behind the
-write) is the string `invalid` until the API threads it. A keyless host may
+after it. Entries written before the door threaded the **principal** keep the
+string `invalid`, which no write path stamps any more. A keyless host may
 run ONLY under `SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES=true`, never
 activates signing, writes placeholder signatures on everything, and `verify`
 names that state as a finding. The placeholders and the switch are pre-v1

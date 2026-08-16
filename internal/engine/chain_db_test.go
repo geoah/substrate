@@ -128,8 +128,9 @@ func TestChainNamesEveryTamper(t *testing.T) {
 	for name, tamper := range map[string]string{
 		"payload": `UPDATE changelog SET payload = jsonb_set(payload, '{forged}', 'true') WHERE seq = $1`,
 		"actor":   `UPDATE changelog SET actor = 'console' WHERE seq = $1`,
-		// The column nothing stamps yet (#102): NULL is hashed, so writing
-		// any principal after the fact is a named tamper, not a backfill.
+		// The principal is hashed like every other column, so rewriting the
+		// token an entry names is a tamper the verifier catches — which is
+		// what makes the stamped attribution worth anything.
 		"principal": `UPDATE changelog SET principal = 'tok-forged' WHERE seq = $1`,
 		"op":        `UPDATE changelog SET op = 'patch' WHERE seq = $1`,
 		"ts":        `UPDATE changelog SET ts = ts + interval '1 second' WHERE seq = $1`,
@@ -139,9 +140,9 @@ func TestChainNamesEveryTamper(t *testing.T) {
 			if err := db.QueryRow(`SELECT payload::text FROM changelog WHERE seq = $1`, mid).Scan(&before); err != nil {
 				t.Fatalf("snapshot: %v", err)
 			}
-			var tsBefore, actorBefore, opBefore string
-			if err := db.QueryRow(`SELECT ts::text, actor, op FROM changelog WHERE seq = $1`, mid).
-				Scan(&tsBefore, &actorBefore, &opBefore); err != nil {
+			var tsBefore, actorBefore, opBefore, principalBefore string
+			if err := db.QueryRow(`SELECT ts::text, actor, op, principal FROM changelog WHERE seq = $1`, mid).
+				Scan(&tsBefore, &actorBefore, &opBefore, &principalBefore); err != nil {
 				t.Fatalf("snapshot: %v", err)
 			}
 			if _, err := db.Exec(tamper, mid); err != nil {
@@ -151,11 +152,10 @@ func TestChainNamesEveryTamper(t *testing.T) {
 			if report.OK || !findingContaining(report, "hash mismatch") {
 				t.Fatalf("a %s tamper at seq %d was not named: %+v", name, mid, report.Findings)
 			}
-			// Put it back so the subtests stay independent. principal is
-			// the placeholder on every entry until #102 stamps real ones,
-			// so the placeholder is the restore.
-			if _, err := db.Exec(`UPDATE changelog SET payload = $2::jsonb, ts = $3::timestamptz, actor = $4, op = $5, principal = 'invalid' WHERE seq = $1`,
-				mid, before, tsBefore, actorBefore, opBefore); err != nil {
+			// Put it back so the subtests stay independent — every hashed
+			// column to exactly the value the entry was written with.
+			if _, err := db.Exec(`UPDATE changelog SET payload = $2::jsonb, ts = $3::timestamptz, actor = $4, op = $5, principal = $6 WHERE seq = $1`,
+				mid, before, tsBefore, actorBefore, opBefore, principalBefore); err != nil {
 				t.Fatalf("restore: %v", err)
 			}
 			if report := mustVerify(t, svc, "geoah"); !report.OK {

@@ -346,7 +346,10 @@ Attribution is load-bearing three ways:
 
 - **Provenance**: every accepted write records its actor as the property's
   manager ([managed properties](projection.md#managed-properties)), and every
-  [changelog row](changelog.md) names who wrote.
+  [changelog row](changelog.md) names who wrote. Because the actor is the
+  caller's own claim, both also record the **principal** the server resolved:
+  the id of the token the request authenticated with, which the header cannot
+  touch.
 - **Yield**: mapping recompute yields to any manager outside the machine tier,
   which is how a hand edit survives a sync.
 - **Self-exclusion**: a [function](functions.md) never sees writes carrying

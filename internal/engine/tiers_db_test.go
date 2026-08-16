@@ -212,11 +212,12 @@ func TestExtensionWriteIsAVisiblePin(t *testing.T) {
 }
 
 // The tier is DATA on the actor record, never the actor's spelling (ticket
-// 002): an UNDECLARED actor spelled like installed code holds like the owner
-// — the minted-token default — and renaming a declared actor cannot change
+// 002): an UNDECLARED actor a request could have asserted holds where the
+// token stands, the owner tier, and renaming a declared actor cannot change
 // write semantics, because nothing derives from the name. The declared
 // `tier: bundle` actor above (nothing in its name says bundle) is the
-// other half of the assertion, pinned here side by side.
+// other half of the assertion, pinned here side by side. The one thing the
+// name decides is RESERVED or not, and that is the next test.
 func TestTierIsActorDataNotSpelling(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
@@ -270,6 +271,41 @@ func TestTierIsActorDataNotSpelling(t *testing.T) {
 	p = tierGet(t, ds, pid)
 	if p.Properties["name"] != "Fresher Name" {
 		t.Fatalf("a machine-tier hold blocked recompute: %v", p.Properties["name"])
+	}
+}
+
+// An undeclared RESERVED actor is the one undeclared name that does not hold
+// like the owner (#102). `connector:`, `function:`, `bundle:` and the
+// `substrate` namespace are the substrate's own writing hands, refused at the
+// door, so an undeclared one is a hand whose declaration is gone or a
+// facility like `substrate.oauth` — never the owner's edit. It holds at the
+// machine tier, and recompute replaces it.
+func TestUndeclaredReservedActorHoldsAtTheMachineTier(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("db test")
+	}
+	ds := newTierDataset(t)
+	ctx := context.Background()
+
+	tierSyncRecord(t, ds, "rec-1", "Synced Name", "ada@example.com")
+	pid := tierProfileOf(t, ds, "rec-1")
+
+	// No authority declares this connector: nothing in the registry answers
+	// for it, and the name is reserved.
+	gone := substrate.Actor(substrate.ConnectorActorPrefix + "gone")
+	if _, err := ds.Patch(ctx, gone, typeTierProfile, pid, substrate.PatchInput{
+		Properties: map[string]any{"name": "Gone Name"},
+	}); err != nil {
+		t.Fatalf("undeclared connector patch: %v", err)
+	}
+	p := tierGet(t, ds, pid)
+	wantMeta(t, p, "name", string(gone), substrate.TierMachine)
+
+	tierSyncRecord(t, ds, "rec-1", "Fresher Name", "ada@example.com")
+	p = tierGet(t, ds, pid)
+	if p.Properties["name"] != "Fresher Name" {
+		t.Fatalf("an undeclared connector pinned a mapped property against recompute: %v", p.Properties["name"])
 	}
 }
 

@@ -18,13 +18,20 @@ const (
 	ctxKeyPeer
 )
 
-// actorHeader names the attribution the caller writes as; it must belong to
-// the token's actor set.
+// actorHeader names the door the caller writes as. A token carries no actor
+// set — it has full access to its repository — so the header is checked
+// against one rule only: the substrate's own writing hands are refused
+// (substrate.ReservedActor, authenticate below).
 const actorHeader = "X-Substrate-Actor"
 
+// withRequestAuth binds the request's authenticated write context. The actor
+// is what the caller ASSERTED; the principal beside it is the token id this
+// door RESOLVED, and the engine stamps that on every changelog entry the
+// request appends, so attribution survives the caller's choice of actor name.
 func withRequestAuth(ctx context.Context, ds substrate.Dataset, tok substrate.TokenInfo, actor substrate.Actor) context.Context {
 	ctx = context.WithValue(ctx, ctxKeyDataset, ds)
 	ctx = context.WithValue(ctx, ctxKeyToken, tok)
+	ctx = substrate.WithPrincipal(ctx, tok.ID)
 	return context.WithValue(ctx, ctxKeyActor, actor)
 }
 

@@ -470,7 +470,7 @@ func (t *txn) repoint(src eref, rel string, target eref) error {
 // attribution with them.
 func (t *txn) moveManagers(loserRef, winnerRef eref) ([]map[string]any, error) {
 	rows, err := t.query(`
-		SELECT l.property, l.actor, l.tier, l.updated_at FROM property_managers l
+		SELECT l.property, l.actor, l.tier, l.principal, l.updated_at FROM property_managers l
 		WHERE l.record_kind = $1 AND l.record_id = $2 AND NOT EXISTS (
 			SELECT 1 FROM property_managers w
 			WHERE w.record_kind = $1 AND w.record_id = $3 AND w.property = l.property)
@@ -479,13 +479,13 @@ func (t *txn) moveManagers(loserRef, winnerRef eref) ([]map[string]any, error) {
 		return nil, err
 	}
 	type mrow struct {
-		property, actor, tier string
-		updatedAt             time.Time
+		property, actor, tier, principal string
+		updatedAt                        time.Time
 	}
 	var migrate []mrow
 	for rows.Next() {
 		var m mrow
-		if err := rows.Scan(&m.property, &m.actor, &m.tier, &m.updatedAt); err != nil {
+		if err := rows.Scan(&m.property, &m.actor, &m.tier, &m.principal, &m.updatedAt); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
@@ -499,12 +499,17 @@ func (t *txn) moveManagers(loserRef, winnerRef eref) ([]map[string]any, error) {
 	var out []map[string]any
 	for _, m := range migrate {
 		if _, err := t.exec(`
-			INSERT INTO property_managers (record_kind, record_id, property, actor, tier, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (repository, record_kind, record_id, property) DO NOTHING`,
-			winnerRef.Kind, winnerRef.ID, m.property, m.actor, m.tier, m.updatedAt); err != nil {
+			INSERT INTO property_managers (record_kind, record_id, property, actor, tier, principal, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (repository, record_kind, record_id, property) DO NOTHING`,
+			winnerRef.Kind, winnerRef.ID, m.property, m.actor, m.tier, m.principal, m.updatedAt); err != nil {
 			return nil, err
 		}
-		out = append(out, map[string]any{"property": m.property, "actor": m.actor, "tier": m.tier})
+		// The principal travels with the actor and the tier: a later write by
+		// another token moves the row without moving either of those, and the
+		// split must be able to tell that row from the one it migrated.
+		out = append(out, map[string]any{
+			"property": m.property, "actor": m.actor, "tier": m.tier, "principal": m.principal,
+		})
 	}
 	return out, nil
 }
@@ -713,19 +718,25 @@ func (t *txn) split(mergeID string) (*substrate.Record, error) {
 		}
 	}
 	// The manager rows the merge migrated go back too — only where they
-	// still name the migrated actor AND tier, because a row the owner has
-	// since claimed records a write the split must not erase.
+	// still name the migrated actor, tier AND principal, because a row
+	// somebody has since claimed records a write the split must not erase.
+	// A merge record written before the principal was recorded carries no
+	// such key, and the empty string is the right match for it: migration
+	// 0006 stamped exactly that on every row it found, so a row that names
+	// anything else was written by a token after the upgrade.
 	for _, m := range mapsOf(moved["managers"]) {
 		property, _ := m["property"].(string)
 		actor, _ := m["actor"].(string)
 		tier, _ := m["tier"].(string)
+		principal, _ := m["principal"].(string)
 		if property == "" || actor == "" || tier == "" {
 			continue
 		}
 		if _, err := t.exec(`
 			DELETE FROM property_managers
-			WHERE record_kind = $1 AND record_id = $2 AND property = $3 AND actor = $4 AND tier = $5`,
-			winnerRef.Kind, winnerID, property, actor, tier); err != nil {
+			WHERE record_kind = $1 AND record_id = $2 AND property = $3
+			  AND actor = $4 AND tier = $5 AND principal = $6`,
+			winnerRef.Kind, winnerID, property, actor, tier, principal); err != nil {
 			return nil, err
 		}
 	}

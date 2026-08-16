@@ -89,7 +89,7 @@ func TestCanonicalJSONNormalizes(t *testing.T) {
 func TestEntryHashPreimageInjective(t *testing.T) {
 	ts := time.Date(2026, 8, 15, 10, 0, 0, 123456000, time.UTC)
 	base := chainEntry{
-		Seq: 7, TS: ts, Actor: "api", Principal: principalPlaceholder,
+		Seq: 7, TS: ts, Actor: "api", Principal: "tok_7",
 		Op: "put", RecordID: "r1", Kind: "task",
 		PayloadText: []byte(`{"a":1}`),
 	}

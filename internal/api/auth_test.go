@@ -42,6 +42,38 @@ func TestActorDefaultsToOwnerAndHeaderNamesTheWriter(t *testing.T) {
 	}
 }
 
+// The actor is asserted, the PRINCIPAL is resolved: whatever door a caller
+// names, the write carries the id of the token the bearer secret resolved to,
+// and the engine stamps that on the changelog entry (#102). Two tokens of the
+// same repository writing under the same actor are therefore still told
+// apart.
+func TestWriteCarriesTheResolvedTokenID(t *testing.T) {
+	env := newTestEnv(t)
+	first := env.svc.token("geoah")
+	second := env.svc.token("geoah")
+	ds := env.svc.datasets["geoah"]
+
+	rec := env.do(t, http.MethodPost, "/api/v1/people.substrate.reamde.dev/people", first,
+		map[string]any{"properties": map[string]any{"name": "Ada"}})
+	wantStatus(t, rec, http.StatusCreated)
+	if ds.lastPrincipal != env.svc.tokens[first].info.ID {
+		t.Fatalf("principal = %q, want the first token's id %q", ds.lastPrincipal, env.svc.tokens[first].info.ID)
+	}
+
+	// A different token, the same asserted actor: the principal moves, the
+	// actor does not.
+	rec = env.do(t, http.MethodPost, "/api/v1/people.substrate.reamde.dev/people", second,
+		map[string]any{"properties": map[string]any{"name": "Grace"}},
+		actorHeader, string(substrate.ActorConsole))
+	wantStatus(t, rec, http.StatusCreated)
+	if ds.lastActor != substrate.ActorConsole {
+		t.Fatalf("actor = %q, want console", ds.lastActor)
+	}
+	if ds.lastPrincipal != env.svc.tokens[second].info.ID {
+		t.Fatalf("principal = %q, want the second token's id %q", ds.lastPrincipal, env.svc.tokens[second].info.ID)
+	}
+}
+
 // The one refusal on that header: the host's own namespace. Those actor names
 // are decided by NAME EQUALITY at write time — `substrate.oauth` is the only
 // hand that may write a connected account's credential ref — so a request

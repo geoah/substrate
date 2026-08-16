@@ -1,6 +1,31 @@
 package substrate
 
-import "time"
+import (
+	"context"
+	"time"
+)
+
+// The PRINCIPAL is the token id the door resolved from the bearer secret —
+// what the substrate verified, beside the actor the caller merely asserted.
+// It rides the context because a write path already carries one everywhere
+// and because a caller must not be able to name it: the only writer is
+// `withRequestAuth` (internal/api), from the TokenInfo `Authenticate`
+// returned, and the only reader is the engine's transaction, which stamps it
+// on the changelog entry and on every manager row the write lands.
+type principalKey struct{}
+
+// WithPrincipal binds the authenticated token id to ctx.
+func WithPrincipal(ctx context.Context, tokenID string) context.Context {
+	return context.WithValue(ctx, principalKey{}, tokenID)
+}
+
+// PrincipalFrom returns the authenticated token id, empty when no token stands
+// behind the write: the seed, the boot upgrade, a background worker, and the
+// unauthenticated doors (register, login) write without one.
+func PrincipalFrom(ctx context.Context) string {
+	id, _ := ctx.Value(principalKey{}).(string)
+	return id
+}
 
 // TokenInfo is a token RECORD's metadata — never the secret, which is shown
 // exactly once at mint and stored only as a SHA-256. A token has full access

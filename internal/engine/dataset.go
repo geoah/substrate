@@ -249,9 +249,21 @@ type txn struct {
 	// actor's DATA (actorTier), and set to bundle EXPLICITLY by
 	// function/agent dispatch (setEffectEmit) — never inferred from the
 	// actor's spelling.
-	tier   substrate.Tier
-	now    time.Time
-	maxSeq int64
+	tier substrate.Tier
+	// principal is the token id the door verified for the request this
+	// transaction serves (substrate.PrincipalFrom), stamped on every
+	// changelog entry it appends and every manager row it lands. Empty when
+	// no token stands behind the write — the seed, the boot upgrade, a
+	// background worker, registration and login — and never taken from the
+	// caller: the actor is asserted, the principal is resolved. It follows
+	// the CONTEXT and nothing else, so a dispatch that runs on the request's
+	// own context (an agent chat, a synchronous call) carries the token that
+	// caused it, while one the trigger pass fires later runs on the server's
+	// ticker context (ProcessTriggers) and carries none. The changelog's
+	// caused_by is what links that entry back to the write behind it.
+	principal string
+	now       time.Time
+	maxSeq    int64
 	// entries records every changelog row this transaction appended, in
 	// order: the (seq, op, kind, id) address, never the payload. Slices of it
 	// stamp llmmessage rows with what a dispatch wrote (`changes`), so a
@@ -327,7 +339,10 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 	if err != nil {
 		return err
 	}
-	t := &txn{ctx: ctx, ds: ds, tx: tx, actor: actor, tier: ds.actorTier(actor), now: nowUTC(), internal: internal}
+	t := &txn{
+		ctx: ctx, ds: ds, tx: tx, actor: actor, tier: ds.actorTier(actor),
+		principal: substrate.PrincipalFrom(ctx), now: nowUTC(), internal: internal,
+	}
 	if err := fn(t); err != nil {
 		_ = tx.Rollback()
 		return err

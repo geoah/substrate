@@ -82,20 +82,34 @@ recompute. There are three:
 - **bundle**: installed code. Every write a [function](functions.md) or
   [agent](agents.md) makes through its dispatch holds here.
 - **owner**: you. The three interactive clients (`api`, `console`,
-  `substratectl`) are declared at this tier, and so is any actor no
-  declaration knows. The moment you type a name into the console, you are the
+  `substratectl`) are declared at this tier, and so is any other name a
+  request may assert. The moment you type a name into the console, you are the
   manager of `name`.
 
 **The tier is an explicit attribute of the write context, never an inference
 from the actor's spelling.** A declared actor may carry
 `tier: owner|bundle|machine` on its [actor document](api.md#actors)
-(machine is the default for an authority-declared actor), function and agent
-dispatch stamps the bundle tier on its own writes, and an actor no data
-places anywhere defaults to the owner tier: a stranger's client holds like
-you, never like the machinery. The governing tier is resolved from the live
+(machine is the default for an authority-declared actor), and function and
+agent dispatch stamps the bundle tier on its own writes. An actor no
+declaration knows falls one of two ways. A name a request may assert holds at
+the owner tier: a token has full access to its repository, so a stranger's
+client holds like you, never like the machinery, and it gains nothing by
+picking an unusual name (it could send `api` instead). A
+[reserved](api.md#actors) name — the `substrate` namespace, `bundle:`,
+`connector:`, `function:` — is one of the substrate's own writing hands, which
+a request may never claim, so an undeclared one (a connector whose bundle is
+gone, a facility like `substrate.oauth`) holds at the machine tier and
+recompute replaces it. The governing tier is resolved from the live
 declaration on every write, never frozen at mint, so re-declaring an actor at
 a different tier changes what already-minted tokens may do from their next
 write onward. Renaming an actor never changes write semantics.
+
+Beside the actor and the tier, a manager row records the **principal** of the
+write that set it: the token id the door resolved, where the actor is only
+what the caller claimed. The manager and tier a read reports are the actor and
+its standing; the principal is in the store and on the
+[changelog](changelog.md) entry that wrote it, which is where "which token
+last wrote this property" is answered.
 
 Mapping recompute runs whenever a source record changes, and per mapped
 property it follows three rules:
