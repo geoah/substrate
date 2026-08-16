@@ -5,8 +5,8 @@ instead: an id becomes one path segment, so a record path splits from the
 right with no marker and no registry (the last segment is the id, the
 second-to-last the kind name, the rest the authority). Identifiers are
 literally URLs, on every surface at once. The costs: a declaration's id can
-no longer be its kind reference (minted ids, or the reference re-spelled
-without slashes), a record that embeds its own publisher spells it inside
+no longer be its kind reference (it is minted, and the identity moves to a
+declared property), a record that embeds its own publisher spells it inside
 the one segment or in a declared property, and every stored path whose id
 spans segments (every declaration, every published function) misparses
 under the new rule (one-segment ids parse the same either way), so this is
@@ -26,5 +26,5 @@ URL of the publisher    github.com/geoah/vocab
 kind reference          github.com/geoah/vocab/note        (name is the last segment)
 a record's path         github.com/geoah/vocab/note/n1     (id is exactly one segment)
 REST                    GET /api/v1/github.com/geoah/vocab/notes/n1
-a declaration's id      minted (k7f2q9x4) or re-spelled: github.com:geoah:vocab:note
+a declaration's id      minted (k7f2q9x4); the identity lives in a declared property
 ```

@@ -19,6 +19,6 @@ to decide what a kind reference looks like.
 ```
 today                   tasks.substrate.reamde.dev/task/t1     (kind, then id)
 id-only                 t1                                     (unique in the whole repository)
-a declaration           github.com:geoah:vocab:note            (the publisher makes it unique)
+a declaration           k7f2q9x4 (minted; the declared identity makes it unique)
 GraphQL                 { record(id: "t1") { title } }         (kind found by lookup)
 ```

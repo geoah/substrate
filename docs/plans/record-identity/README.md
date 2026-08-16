@@ -1,4 +1,4 @@
-# Record identity: thirteen paths to URL-shaped authorities
+# Record identity: ten paths to URL-shaped authorities
 
 [Issue #194](https://github.com/geoah/substrate/issues/194) asks whether an
 authority may contain path segments. This directory is not a decision: it is
@@ -31,21 +31,36 @@ slash, and a kind name carries neither. The wants: publish kinds from a URL
 nobody owns DNS for (`github.com/geoah/vocab`), and group one domain by
 path instead of by subdomain.
 
+## Rejected up front: escape spellings
+
+Three drafted proposals respelled the URL's slashes as a different string
+inside the stored authority: percent-encoding (`github.com%2Fgeoah%2Fvocab`),
+a reserved marker (`github.com!geoah!vocab`), and a hyphen escape
+(`github.com--geoah--vocab`). All three are removed and stay rejected as a
+family: the stored identifier is not the URL, so every surface that shows
+or imports one owes a bidirectional mapping forever; the escape character
+or sequence is spent for all time (Go's proxy already spends `!` on case,
+Bazel had to migrate an ecosystem off its first marker `~`); a pasted
+real-slash URL is undetectable and keeps its old-grammar meaning; and the
+respelling answers neither want, it only re-letters the sprawl. Any future
+proposal that replaces `/` with another string is this family and inherits
+this rejection.
+
 ## The first constraint: the split
 
 One flat string holding several slash-bearing, variable-length parts cannot
 be split by inspection. Every path does one of four things: keep slashes
-out of authorities (1, 2, 3's inside spelling, 8, 9, 10, 11, 13), keep
-slashes out of ids (4), mark the boundary with something other than a lone
-`/` (3's boundary spelling, 12), or stop composing or stop inspecting (5,
-6, 7). GraphQL constrains nothing: kind and id travel as two separate
-string arguments, so every proposal works over GraphQL unchanged. REST
-constrains more than first claimed: spellings that keep the authority one
-segment route on today's fixed-arity router unchanged; 4 and 12 need a new
-variable-depth router first, after which a record address parses
-registry-free (4's list-vs-get still asks the registry); 5 and 6 leave a
-raw wire path ambiguous from both ends (authorities and ids both carrying
-slashes), so they encode or ask the registry.
+out of authorities (1, 9, 10, 11, 13), keep slashes out of ids (4), mark
+the authority's end with something other than a lone `/` (12), or stop
+composing or stop inspecting (5, 6, 7). GraphQL constrains nothing: kind
+and id travel as two separate string arguments, so every proposal works
+over GraphQL unchanged. REST constrains more than first claimed: spellings
+that keep the authority one segment route on today's fixed-arity router
+unchanged; 4 and 12 need a new variable-depth router first, after which a
+record address parses registry-free (4's list-vs-get still asks the
+registry); 5 and 6 leave a raw wire path ambiguous from both ends
+(authorities and ids both carrying slashes), so they encode or ask the
+registry.
 
 ## The second constraint: names move
 
@@ -58,11 +73,11 @@ hijackable through expired maintainer domains), and Deno, the ecosystem
 that bet hardest on URL-as-identity, built JSR to retreat from it. Systems
 that kept name-first identity retrofitted an indirection: Go's checksum
 database, npm and JSR provenance attestations, AT Protocol's DID behind
-every handle. Proposals 2 through 6, 8 and 12 bake the lease into the
-freezer in different spellings; 1 has the same disease slower (a dotted
-authority is also a rented domain); 9 dates the claim, 11 moves it to one
-registry, 13 stores a stable key and makes the URL a replaceable alias, and
-10 has nothing to churn.
+every handle. Proposals 4, 5, 6 and 12 bake the lease into the freezer in
+different shapes; 1 has the same disease slower (a dotted authority is also
+a rented domain); 9 dates the claim, 11 moves it to one registry, 13 stores
+a stable key and makes the URL a replaceable alias, and 10 has nothing to
+churn.
 
 ## Shared by every URL-shaped path
 
@@ -85,21 +100,18 @@ registry, 13 stores a stable key and makes the URL a replaceable alias, and
 
 ## The proposals, side by side
 
-Spellings (the string changes, the model does not):
+Grammar (the string or its split changes):
 
 | # | Proposal | A record's stored reference | Split needs | Stored data today | Name churn |
 |---|----------|-----------------------------|-------------|-------------------|------------|
 | [1](1-dotted-authorities.md) | Reaffirm dotted authorities | `tasks.substrate.reamde.dev/task/t1` | nothing new | untouched | unanswered |
-| [2](2-percent-encoded-authorities.md) | Percent-encoded slashes | `github.com%2Fgeoah%2Fvocab/note/n1` | nothing new | untouched | unanswered |
-| [3](3-marker-authorities.md) | A reserved marker (`!`) | `github.com!geoah!vocab/note/n1` | one spent character | untouched | unanswered |
-| [8](8-hyphen-escaped-authorities.md) | Hyphen-escaped slashes | `github.com--geoah--vocab/note/n1` | nothing new | untouched | unanswered |
+| [4](4-slash-free-ids.md) | Raw URLs, one-segment ids | `github.com/geoah/vocab/note/n1` | right-side split | breaks: wipe or re-sign | unanswered |
 | [12](12-double-slash-separator.md) | A `//` boundary | `github.com/geoah/vocab//note/n1` | a banned sequence | one-time `//` audit | unanswered |
 
-Shapes (the model changes):
+Shapes (the reference model changes):
 
 | # | Proposal | A record's stored reference | Split needs | Stored data today | Name churn |
 |---|----------|-----------------------------|-------------|-------------------|------------|
-| [4](4-slash-free-ids.md) | Raw URLs, one-segment ids | `github.com/geoah/vocab/note/n1` | right-side split | breaks: wipe or re-sign | unanswered |
 | [5](5-structured-references.md) | Structured references | `{"kind": "github.com/geoah/vocab/note", "id": "n1"}` | nothing (no composing) | reference values migrate | unanswered |
 | [6](6-registry-split.md) | Split against the registry | `github.com/geoah/vocab/note/n1` | the registry, forever | untouched | unanswered |
 | [7](7-id-only-references.md) | Id-only references | `n1` | uniqueness, not parsing | reference values migrate | unanswered |
@@ -117,28 +129,16 @@ Trust (the want is answered outside the grammar):
 
 **1. Dotted (status quo).** Pro: zero work, zero risk; the grammar
 Kubernetes groups, AT Protocol NSIDs, Maven groupIds and Java packages all
-chose and kept. Con: both wants unmet; publishing requires DNS; the
-subdomain sprawl is permanent; a rented domain is still mutable identity.
-
-**2. Percent-encoded.** Pro: split unchanged; exact round trip for any URL;
-already reserved by 0014. Con: unreadable at rest; double-encoding on the
-wire forever (npm's `@scope%2Fname` is this, observed in production for one
-embedded slash); declarations need minted ids; purl needed years of spec
-issues to pin down when encoding applies.
-
-**3. Marker (`!`).** Pro: split unchanged (inside spelling); no stored byte
-changes; routes raw over today's REST. Con: repeals 0014's frozen id
-alphabet by name; the stored form is not the URL; `!` is spent forever and
-Go's proxy already spends it to mean something else; bash history-expands
-it; Bazel shows a marker can be spent wrong and cost an ecosystem
-migration.
+chose and kept. Con: both wants unmet; publishing means picking a DNS name
+nothing verifies; the subdomain sprawl is permanent; a rented domain is
+still mutable identity.
 
 **4. Slash-free ids.** Pro: identifiers are literally URLs on every
 surface; registry-free split; AT Protocol ships exactly this shape
 (`at://authority/collection/rkey`, no `/` in record keys), as does
 Kubernetes (every name one segment). Con: the only path that breaks stored
 data, and the break is cryptographic (a re-mint re-signs history under the
-current key); declaration ids change shape; a record's embedded publisher
+current key); declaration ids become minted; a record's embedded publisher
 needs a new home; REST list-vs-get needs the registry.
 
 **5. Structured references.** Pro: the composition problem ceases to exist;
@@ -165,12 +165,6 @@ per kind; forward references become uncheckable; AT Protocol kept the
 collection segment even though DID plus key would suffice, because typed
 references are what keep stored data auditable.
 
-**8. Hyphen-escaped.** Pro: the only URL spelling where nothing widens at
-all: every validator, SDK regex, the Postgres pattern and the split are
-untouched, and declaration ids stay kind references. Con: the stored form
-is the least readable of the spellings after 2; the `--`/`-0` escape is one
-more authoring rule; name churn unanswered like every other spelling.
-
 **9. URL provenance.** Pro: both wants met with zero grammar work; the
 proof (a well-known file naming the authority, as Go vanity imports do) is
 dated and re-checkable; composes with every other proposal. Con: identity
@@ -190,12 +184,12 @@ claim, not a domain. Con: somebody runs the registry; it becomes a trust
 root and the system's first global namespace; the substrate today has no
 central anything, and this adds one.
 
-**12. `//` boundary.** Pro: every real URL spellable raw, no character
-spent, splits by inspection (only the first `//` is structure, so
-declaration ids stay kind references); Bazel proves the shape at scale.
-Con: a sequence ban 0014's character rule does not cover; a one-time audit
-confirms `//` is unclaimed in stored ids; the split changes in every
-grammar copy, and REST needs a variable-depth router.
+**12. `//` boundary.** Pro: the URL stays verbatim in the identifier, no
+character respelled, and it splits by inspection (only the first `//` is
+structure, so declaration ids stay kind references); Bazel proves the shape
+at scale. Con: a sequence ban 0014's character rule does not cover; a
+one-time audit confirms `//` is unclaimed in stored ids; the split changes
+in every grammar copy, and REST needs a variable-depth router.
 
 **13. Minted keys, verified aliases.** Pro: the only proposal that answers
 name churn outright; history stores a stable key, so renames, transfers,
@@ -208,9 +202,9 @@ point and exactly the cost.
 
 ## Getting to an ADR
 
-The lanes compose: a spelling (1, 2, 3, 8, 12), a shape (4, 5, 6, 7), and a
+The lanes compose: a grammar (1, 4, 12), a reference shape (5, 6, 7), and a
 trust answer (9, 10, 11, 13) are mostly independent choices, and plausible
-bundles include 1+9 (smallest), 8+9, 4+13 (most literal URLs with the
+bundles include 1+9 (smallest), 12+9, 4+13 (the most literal URLs with the
 strongest identity), or 1+11. Whatever is chosen becomes a decision record
 that supersedes or extends 0014, inherits the shared obligations above, and
 answers four questions every proposal must answer: what a declaration's id

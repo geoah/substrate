@@ -1,7 +1,7 @@
 # Proposal 13: minted publisher keys, verified URL aliases
 
-Everything proposals 2 through 6 spell differently, this proposal refuses
-to store: a URL is a lease (GitHub namespaces are recyclable and repojacked
+What every URL-storing path keeps, this proposal refuses to store: a URL
+is a lease (GitHub namespaces are recyclable and repojacked
 at scale, domains expire and resell, accounts rename), and an append-only
 hash-chained changelog freezes whatever the lease meant at write time. So a
 publisher's identity is a minted, opaque, collision-proof key (a hash of
