@@ -26,6 +26,22 @@ type migration struct {
 	SHA256  string
 }
 
+// supersededSHA256 lists, per version, the hashes a migration's file carried
+// on an unmerged branch before it landed. A database an in-development build
+// migrated recorded one of those, and this binary's file no longer hashes to
+// it.
+//
+// A hash belongs here only once a LATER migration brings the schema it left
+// up to what the file now says, and the comment beside it names that
+// migration. Without the catch-up, accepting the hash accepts a schema that
+// is genuinely different.
+var supersededSHA256 = map[int][]string{
+	// ff9bfff, PR #89's branch: the landed 0005 exactly, but for the
+	// repositories_signed_from_positive CHECK added before the merge. 0007
+	// adds that constraint to whatever lacks it.
+	5: {"63fd9e709feefca7bd5ab040d268988d8f6f24c740f0384759f125f7f8adcc40"},
+}
+
 // migrate applies every pending migration to the schema the DSN's
 // search_path pins, atomically per migration. Idempotent.
 //
@@ -61,12 +77,13 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	// Every recorded hash is checked before anything is applied: a pending
+	// migration must not land on a schema this binary has already refused.
+	if err := checkRecorded(migrations, applied); err != nil {
+		return err
+	}
 	for _, m := range migrations {
-		if sum, ok := applied[m.Version]; ok {
-			if sum != "" && sum != m.SHA256 {
-				return fmt.Errorf("substrate/engine: migration %d (%s) hash mismatch — recorded %s, file %s; add a new migration instead of editing a landed one",
-					m.Version, m.Name, sum, m.SHA256)
-			}
+		if _, ok := applied[m.Version]; ok {
 			continue
 		}
 		if err := applyMigration(ctx, conn, m); err != nil {
@@ -74,6 +91,43 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+// checkRecorded compares what the database recorded against what this binary
+// embeds, and names EVERY divergence rather than the first: a tree behind by
+// several edited migrations otherwise learns about them one boot at a time.
+func checkRecorded(migrations []migration, applied map[int]string) error {
+	var drift []string
+	for _, m := range migrations {
+		sum, ok := applied[m.Version]
+		if !ok || sum == "" || sum == m.SHA256 {
+			continue
+		}
+		if superseded(m.Version, sum) {
+			continue
+		}
+		drift = append(drift, fmt.Sprintf("  %d (%s): recorded %s, file %s", m.Version, m.Name, sum, m.SHA256))
+	}
+	if len(drift) == 0 {
+		return nil
+	}
+	return fmt.Errorf(`substrate/engine: %d migration(s) this database applied are not the ones this binary carries. `+
+		`The recorded hash is the file that actually ran, so it differs when the database was migrated by a build `+
+		`whose migration has changed since, in practice a build from a branch that was still editing it. `+
+		`Nothing pending is applied, because a new migration must not land on a schema its predecessors did not build. `+
+		`A development database is thrown away with mise run dev:wipe, and anything else is restored from a dump a `+
+		`matching binary wrote. A migration corrected before it landed is accepted instead by naming its old hash in `+
+		`supersededSHA256, together with the later migration that closes the gap. What diverges:`+"\n%s",
+		len(drift), strings.Join(drift, "\n"))
+}
+
+func superseded(version int, sum string) bool {
+	for _, known := range supersededSHA256[version] {
+		if known == sum {
+			return true
+		}
+	}
+	return false
 }
 
 func appliedMigrations(ctx context.Context, conn *sql.Conn) (map[int]string, error) {
