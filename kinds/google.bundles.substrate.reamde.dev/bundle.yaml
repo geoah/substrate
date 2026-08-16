@@ -1386,9 +1386,9 @@ data:
     text:
       type: text
       displayName: Text
-      description: the message body, bounded — text/plain when the message
+      description: "the message body, bounded: text/plain when the message
         carries one, else the text/html part flattened to markdown, links
-        kept as [label](url)
+        kept as [label](url)"
     # The header objects keep `address` as a plain string, not the `email`
     # kind: a mirror records what the header SAID, malformed or not. The
     # validated, canonical copy is the emailaddress record.
@@ -1579,7 +1579,7 @@ data:
     # HTML_BREAK is where a line ends. `head` is NOT in the skip set: its end
     # tag is optional and HTMLParser does not synthesize one, so muting on it
     # would swallow the whole letter. `<body>` clears the mute for the same
-    # reason — an unclosed `<title>` must not take the message with it.
+    # reason: an unclosed `<title>` must not take the message with it.
     HTML_SKIP = ("script", "style", "title")
     HTML_BREAK = ("address", "article", "blockquote", "br", "div", "footer",
                   "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "ol",
@@ -1587,7 +1587,7 @@ data:
     HTML_SPACE = ("td", "th")  # cells sit on one line, not welded together
     # An inline `data:` URI is the one thing that makes a mail megabytes and
     # it is never prose, so its payload is cut before the parser reads any of
-    # it — an embedded photo in the first tag must not eat the whole budget
+    # it. An embedded photo in the first tag must not eat the whole budget
     # below and leave the letter under it unread. The URI is SHORTENED in
     # place rather than removed, so the same pattern serves an attribute, a
     # css `url(...)` and an unquoted value without knowing which it is in.
@@ -1833,7 +1833,7 @@ data:
 
         def handle_startendtag(self, tag, attrs):
             # `<br/>` and `<img/>` never reach handle_endtag, and a
-            # self-closing `<a/>` owes no target — so start-tag handling
+            # self-closing `<a/>` owes no target, so start-tag handling
             # alone, with the link popped straight back off.
             self.handle_starttag(tag, attrs)
             if tag in HTML_SKIP:
@@ -1873,7 +1873,7 @@ data:
             elif not label or label == href:
                 self.parts.append(href)
             elif len(label) > MAX_LABEL:
-                # Not a phrase — a block, or an `</a>` nobody wrote. The
+                # Not a phrase, but a block or an `</a>` nobody wrote. The
                 # target rides after the words instead of wrapping them: a
                 # span this long is unreadable, and escaping the markdown
                 # already inside it doubles the label at every nesting level.
@@ -1897,7 +1897,7 @@ data:
         def text(self):
             # Mail html is indented and newline-wrapped for the renderer, so
             # every run of layout whitespace collapses and only the breaks
-            # the tags asked for survive — at most one blank line between.
+            # the tags asked for survive, at most one blank line between.
             lines, blanks = [], 0
             for line in "".join(self.parts).split("\n"):
                 line = " ".join(line.split())

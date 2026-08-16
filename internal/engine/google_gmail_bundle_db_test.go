@@ -411,7 +411,7 @@ func gmailMessage(id, thread, subject, from, to, internalDate, body string) map[
 }
 
 // gmailHTMLMessage builds a messages.get payload whose ONLY body part is
-// text/html — the shape a marketing mail arrives in, and the one the body's
+// text/html: the shape a marketing mail arrives in, and the one the body's
 // flattener has to turn into markdown.
 func gmailHTMLMessage(id, thread, subject, from, to, internalDate, body string) map[string]any {
 	msg := gmailMessage(id, thread, subject, from, to, internalDate, "")
