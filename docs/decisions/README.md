@@ -157,4 +157,3 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0017](0017-the-changelog-is-one-writers-total-order.md) | The changelog is one writer's total order per repository | accepted |
 | [0018](0018-reseal-rewrites-history-values-in-place.md) | Reseal rewrites history's values in place, so entry bytes are not identity | accepted |
 | [0019](0019-a-lifecycle-is-a-state-machine-only-where-the-substrate-owns-it.md) | A lifecycle is a state machine only where the substrate owns it | accepted |
-| [0020](0020-authorities-embed-path-segments-spelled-with-a-bang.md) | An authority spells its path segments with `!` | proposed |
