@@ -205,6 +205,16 @@ One provider page, or one hydrate batch of 25 `messages.get`, per invocation.
   try/except, so a looser pattern does not skip one header — it rolls the
   page's transaction back and parks the drain deterministically on every
   retry. Quoted local parts are refused rather than risked.
+- **An html-only body is flattened to markdown, links kept.** `text` prefers
+  the `text/plain` part; where a message has none, the `text/html` part goes
+  through `html.parser` and an `<a href>` comes out as `[label](url)`, because
+  core's `emailmessage.text` is a markdown property and a tag-strip left a mail
+  whose visible words are "click here" with nothing to follow. `<script>` and
+  `<style>` contents are dropped, block tags become line breaks, images are
+  dropped rather than written as `![alt](src)` (a mailing has more tracking
+  pixels than pictures), and the html is read up to 200,000 characters against
+  an 8,000-character body cap. Malformed markup that makes the parser raise
+  falls back to the old tag-strip for that one message.
 - **Person edges are capped at 200 per message and per thread.** Every edge
   target is locked in the page's one transaction, and a 1,000-recipient list
   across a 25-message hydrate batch is 25,000 of them. The mirror keeps the

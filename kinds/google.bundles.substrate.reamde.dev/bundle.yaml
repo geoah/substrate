@@ -51,7 +51,9 @@ data:
   # version 3: the grants group under one `permissions:` object, and the permission
   # to write is `writes:` inside it. This closure's functions and agents
   # follow core's declaration.
-  version: 4
+  # version 5: gmailsync flattens an html-only body to markdown instead of
+  # stripping its tags, so a message whose only body is html keeps its links.
+  version: 5
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -1384,8 +1386,9 @@ data:
     text:
       type: text
       displayName: Text
-      description: the message body, text/plain preferred and text/html stripped,
-        bounded
+      description: the message body, bounded — text/plain when the message
+        carries one, else the text/html part flattened to markdown, links
+        kept as [label](url)
     # The header objects keep `address` as a plain string, not the `email`
     # kind: a mirror records what the header SAID, malformed or not. The
     # validated, canonical copy is the emailaddress record.
@@ -1524,6 +1527,8 @@ data:
     import urllib.request
     import uuid
     from email.utils import getaddresses
+    from html import unescape as _unescape
+    from html.parser import HTMLParser
 
     AUTHORITY = "google.bundles.substrate.reamde.dev"
     ACCOUNT_TYPE = AUTHORITY + "/account"
@@ -1570,6 +1575,18 @@ data:
         r"^" + _ATEXT + r"(?:\." + _ATEXT + r")*@"
         + _LABEL + r"(?:\." + _LABEL + r")+$")
     _RE_TAG = re.compile(r"<[^>]+>")
+    # The html flattener's tag sets. HTML_SKIP is content that is not prose;
+    # HTML_BREAK is where a line ends.
+    HTML_SKIP = ("script", "style", "head", "title")
+    HTML_BREAK = ("address", "article", "blockquote", "br", "div", "footer",
+                  "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "ol",
+                  "p", "pre", "section", "table", "tr", "ul")
+    HTML_SPACE = ("td", "th")  # cells sit on one line, not welded together
+    # Marketing mail carries hundreds of KiB of layout tables and inline
+    # data: URIs, and HTMLParser is pure python. Past this the flattener is
+    # reading markup that could not reach an 8,000-character body anyway,
+    # and 25 of them share one 30s invocation.
+    HTML_MAX = 200000
 
 
     class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -1758,16 +1775,117 @@ data:
             _walk(child, plain, html)
 
 
+    class _Flatten(HTMLParser):
+        """Gmail's text/html alternative, flattened into the markdown the
+        `text` property declares. An `<a href>` becomes `[label](url)`: the
+        target is the content of a mail whose visible words are "click here",
+        and a tag-strip that dropped it left the reader nothing to follow.
+        Every other tag is a line break or nothing, as before."""
+
+        def __init__(self):
+            HTMLParser.__init__(self, convert_charrefs=True)
+            self.parts = []
+            self._muted = 0
+            self._links = []  # (href, index into parts) per open <a>
+
+        def handle_starttag(self, tag, attrs):
+            if tag in HTML_SKIP:
+                self._muted += 1
+            elif tag in HTML_BREAK:
+                self.parts.append("\n")
+            elif tag == "li":
+                self.parts.append("\n- ")
+            elif tag == "a":
+                href = ""
+                for name, value in attrs:
+                    if name == "href":
+                        href = (value or "").strip()
+                self._links.append((href, len(self.parts)))
+
+        def handle_startendtag(self, tag, attrs):
+            # `<br/>` and `<img/>` never reach handle_endtag, and a
+            # self-closing `<a/>` owes no target — so start-tag handling
+            # alone, with the link popped straight back off.
+            self.handle_starttag(tag, attrs)
+            if tag in HTML_SKIP:
+                self._muted -= 1
+            elif tag == "a":
+                self._close_link()
+
+        def handle_endtag(self, tag):
+            if tag in HTML_SKIP:
+                self._muted = max(0, self._muted - 1)
+            elif tag == "a":
+                self._close_link()
+            elif tag in HTML_BREAK:
+                self.parts.append("\n")
+            elif tag in HTML_SPACE:
+                self.parts.append(" ")
+
+        def handle_data(self, data):
+            if not self._muted:
+                self.parts.append(data)
+
+        def _close_link(self):
+            if not self._links:
+                return
+            href, mark = self._links.pop()
+            label = " ".join("".join(self.parts[mark:]).split())
+            del self.parts[mark:]
+            if not href or href.lower().startswith("javascript:"):
+                self.parts.append(label)
+            elif not label or label == href:
+                self.parts.append(href)
+            else:
+                # A `]` in the label would end the markdown span early.
+                self.parts.append("[%s](%s)"
+                                  % (label.replace("]", "\\]"), href))
+
+        def close(self):
+            HTMLParser.close(self)
+            while self._links:  # an unclosed <a> still owes its target
+                self._close_link()
+
+        def text(self):
+            # Mail html is indented and newline-wrapped for the renderer, so
+            # every run of layout whitespace collapses and only the breaks
+            # the tags asked for survive — at most one blank line between.
+            lines, blanks = [], 0
+            for line in "".join(self.parts).split("\n"):
+                line = " ".join(line.split())
+                if line:
+                    blanks = 0
+                else:
+                    blanks += 1
+                    if blanks > 1:
+                        continue
+                lines.append(line)
+            return "\n".join(lines).strip()
+
+
+    def _flatten(source):
+        if len(source) > HTML_MAX:
+            # cut at a tag boundary, so the tail is never a half-open tag
+            source = source[:HTML_MAX].rsplit("<", 1)[0]
+        parser = _Flatten()
+        try:
+            parser.feed(source)
+            parser.close()
+            return parser.text()
+        except Exception:
+            # Somebody's malformed mail must not park the drain: fall back to
+            # the tag-strip, which cannot fail, and lose the links on that
+            # one message rather than the page.
+            return _unescape(_RE_TAG.sub(" ", source))
+
+
     def _text(payload):
         plain, html = [], []
         _walk(payload or {}, plain, html)
         if plain:
             body = "\n".join(plain)
         elif html:
-            body = _RE_TAG.sub(" ", "\n".join(html))
-            for record, ch in (("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"),
-                               ("&gt;", ">"), ("&quot;", '"')):
-                body = body.replace(record, ch)
+            body = _flatten("\n".join(html))
         else:
             body = ""
         return body.strip()[:TEXT_MAX]

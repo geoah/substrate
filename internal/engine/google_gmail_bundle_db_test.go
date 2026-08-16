@@ -410,6 +410,21 @@ func gmailMessage(id, thread, subject, from, to, internalDate, body string) map[
 	}
 }
 
+// gmailHTMLMessage builds a messages.get payload whose ONLY body part is
+// text/html — the shape a marketing mail arrives in, and the one the body's
+// flattener has to turn into markdown.
+func gmailHTMLMessage(id, thread, subject, from, to, internalDate, body string) map[string]any {
+	msg := gmailMessage(id, thread, subject, from, to, internalDate, "")
+	payload := msg["payload"].(map[string]any)
+	payload["mimeType"] = "multipart/alternative"
+	delete(payload, "body")
+	payload["parts"] = []any{map[string]any{
+		"mimeType": "text/html",
+		"body":     map[string]any{"data": b64url(body), "size": len(body)},
+	}}
+	return msg
+}
+
 func b64url(s string) string {
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 	var out strings.Builder
@@ -675,6 +690,17 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 	fake.msgs["m2"] = gmailMessage("m2", "t-m1", "Re: Rack layout",
 		"Ada <ada@example.com>", "alice@example.com",
 		googleMillisAgo(24*time.Hour), "looks good")
+	// An html-only message, in a thread of its own so the newest-wins
+	// assertions on t-m1 keep their subject.
+	fake.listed = append(fake.listed, "m3")
+	fake.msgs["m3"] = gmailHTMLMessage("m3", "t-m3", "Datacenter tour",
+		"Bob <bob@example.com>", "ada@example.com",
+		googleMillisAgo(72*time.Hour),
+		`<html><head><style>a{color:red}</style></head><body>`+
+			`<p>Book a slot&nbsp;now: <a href="https://example.com/tour?a=1&amp;b=2">`+
+			`click here</a>.</p>`+
+			`<ul><li><a href="https://example.com/map">the map</a></li></ul>`+
+			`</body></html>`)
 	fake.start(t)
 
 	ds := openInternalDataset(t)
@@ -703,6 +729,27 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 	raw := fmt.Sprint(mirror.Properties["raw"])
 	if strings.Contains(raw, b64url("the cold aisle plan")) {
 		t.Fatalf("raw still carries the inline body bytes: %s", raw)
+	}
+
+	// An html-only body reaches `text` as markdown with its hrefs intact:
+	// core's emailmessage.text is a markdown property, and a reader given
+	// "click here" without the target has nothing to click (#188).
+	htmlID := substratefn.ExternalID("gmail-message", "acct-step", "m3")
+	htmlMirror, err := ds.Get(ctx, googleMessageType, htmlID)
+	if err != nil {
+		t.Fatalf("html-only message did not sync: %v", err)
+	}
+	wantText := "Book a slot now: [click here](https://example.com/tour?a=1&b=2).\n\n" +
+		"- [the map](https://example.com/map)"
+	if got := fmt.Sprint(htmlMirror.Properties["text"]); got != wantText {
+		t.Fatalf("html body flattened to %q, want %q", got, wantText)
+	}
+	htmlCore, err := ds.Get(ctx, coreMessageType, htmlID)
+	if err != nil {
+		t.Fatalf("core row for the html-only message did not sync: %v", err)
+	}
+	if got := fmt.Sprint(htmlCore.Properties["text"]); got != wantText {
+		t.Fatalf("core text = %q, want %q", got, wantText)
 	}
 
 	// The CORE row rides the same id, a different type — and its required
