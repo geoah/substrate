@@ -91,6 +91,32 @@ rename, P0 item 9), the stability vocabulary (add `beta` or redefine
    as an agent-shaped route. #71 (GraphQL reference inverses) stops being an
    agent problem and becomes what it is: a gap in the general query surface.
 
+6. **`required` means required, and `default` is applied at write.** The
+   vocabulary is a contract the server keeps, not documentation clients
+   interpret: every other part of the system (the narrowing guards, the fold,
+   the GraphQL projection, the policy door) already treats it that way, and a
+   decorative `required` was the odd one out. 107 property declarations use
+   `required` today and only links enforce it; 14 declare a `default` that
+   nothing applies. Four consequences to write into the ADR:
+
+   - **The record must satisfy the rule after the write**, not "the patch must
+     carry the property". A patch that leaves a required property present is
+     fine; one that would clear it is refused.
+   - **A default materializes into the stored value and into the changelog
+     delta at write time.** It is never filled in at read, because a value
+     that exists only on the way out is derived data and the fold stops being
+     the truth. Changing a default later therefore does not change any
+     existing record, which is the correct behavior.
+   - **Adding `required` to an existing property stays refused** while live
+     records lack a value, exactly as `schemadiff` refuses it now. A default
+     does not rescue it, because defaults do not backfill. That is the
+     add-and-deprecate path working as intended; bulk backfill stays with the
+     deferred migration verbs.
+   - **Enforcement cannot turn on while violators exist.** Before it ships,
+     scan for records that violate their kind's `required`, and check the
+     provider mirror kinds for properties the provider does not always send,
+     which would start refusing syncs.
+
 ## The v1 API surface, after reduction
 
 The aim is the smallest surface that can be frozen. Everything below is one
