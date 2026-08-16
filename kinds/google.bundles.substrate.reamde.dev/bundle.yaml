@@ -1576,8 +1576,11 @@ data:
         + _LABEL + r"(?:\." + _LABEL + r")+$")
     _RE_TAG = re.compile(r"<[^>]+>")
     # The html flattener's tag sets. HTML_SKIP is content that is not prose;
-    # HTML_BREAK is where a line ends.
-    HTML_SKIP = ("script", "style", "head", "title")
+    # HTML_BREAK is where a line ends. `head` is NOT in the skip set: its end
+    # tag is optional and HTMLParser does not synthesize one, so muting on it
+    # would swallow the whole letter. `<body>` clears the mute for the same
+    # reason — an unclosed `<title>` must not take the message with it.
+    HTML_SKIP = ("script", "style", "title")
     HTML_BREAK = ("address", "article", "blockquote", "br", "div", "footer",
                   "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "ol",
                   "p", "pre", "section", "table", "tr", "ul")
@@ -1588,7 +1591,7 @@ data:
     # below and leave the letter under it unread. The URI is SHORTENED in
     # place rather than removed, so the same pattern serves an attribute, a
     # css `url(...)` and an unquoted value without knowing which it is in.
-    _RE_DATA_URI = re.compile(r"""data:[^\s"'<>)]{100,}""")
+    _RE_DATA_URI = re.compile(r"""data:[^\s"'<>)]{100,}""", re.IGNORECASE)
     # A destination with a `)`, a `<` or a space in it ends the markdown span
     # early, so it goes in CommonMark's angle-bracket form instead.
     _RE_URL_UNSAFE = re.compile(r"[\s()<>]")
@@ -1804,6 +1807,8 @@ data:
         def handle_starttag(self, tag, attrs):
             if tag in HTML_SKIP:
                 self._muted += 1
+            elif tag == "body":
+                self._muted = 0
             elif tag in HTML_BREAK:
                 self.parts.append("\n")
             elif tag in HTML_SPACE:
@@ -1858,9 +1863,12 @@ data:
                 if _RE_URL_UNSAFE.search(href):
                     href = ("<" + href.replace("<", "%3C").replace(">", "%3E")
                             + ">")
-                # A `]` in the label ends the span early, the same way.
-                self.parts.append("[%s](%s)"
-                                  % (label.replace("]", "\\]"), href))
+                # A bracket in the label opens or ends the span early, the
+                # same way. The backslash goes first, or it escapes the
+                # escapes.
+                for ch in ("\\", "[", "]"):
+                    label = label.replace(ch, "\\" + ch)
+                self.parts.append("[%s](%s)" % (label, href))
 
         def close(self):
             HTMLParser.close(self)
@@ -1898,12 +1906,17 @@ data:
                 if parser.chars > TEXT_MAX * 4:
                     break
             parser.close()
-            return parser.text()
+            text = parser.text()
+            if text:
+                return text
         except Exception:
-            # Somebody's malformed mail must not park the drain: fall back to
-            # the tag-strip, which cannot fail, and lose the links on that
-            # one message rather than the page.
-            return _unescape(_RE_TAG.sub(" ", source))
+            pass
+        # Nothing came out, or the parser raised on somebody's malformed
+        # mail: the tag-strip cannot do either, so a message whose markup
+        # swallowed its own body (an unclosed `<title>` takes the rest of the
+        # document with it) still reads, minus its links. One mail's markup
+        # never parks the drain.
+        return _unescape(_RE_TAG.sub(" ", source))
 
 
     def _text(payload):
