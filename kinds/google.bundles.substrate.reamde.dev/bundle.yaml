@@ -1609,7 +1609,7 @@ data:
     # before `data:` disqualifies the match, so prose reading
     # `metadata:0123...` keeps every character it had.
     _RE_DATA_URI = re.compile(
-        r"""(?<![\w.-])(data:(?:[\w.+-]+/[\w.+-]*|;?base64,))[^\s"'<>)]{100,}""",
+        r"""(?<![\w.-])(data:(?:[\w.+-]+/|;?base64,))[^\s"'<>)]{100,}""",
         re.IGNORECASE)
     # Outlook's conditional blocks are comments, and they are most of the
     # markup in a templated mail. HTMLParser skips their CONTENT but still
@@ -1625,11 +1625,12 @@ data:
     # browser does in TEXT, but a browser leaves it alone in an ATTRIBUTE, so
     # `?a=1&copy=1` would otherwise reach the reader as `?a=1(c)=1` and point
     # somewhere else. Only the terminated form is a reference here.
-    # `(?<![\w-])` so `data-href="..."`, which templates put BEFORE the real
-    # one, is not mistaken for it.
-    _RE_HREF = re.compile(
-        r"""(?<![\w-])href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""",
-        re.IGNORECASE)
+    # One attribute at a time, because a SEARCH for `href=` finds the one
+    # inside `data-href="..."` or inside `title="see href=http://phish"`,
+    # which templates and phishing mail respectively put before the real one.
+    # A quoted value is consumed whole here, so it can hide nothing.
+    _RE_ATTR = re.compile(
+        r"""([\w:.-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?""")
     _RE_CHARREF = re.compile(r"&[#\w]{1,32};")
     # The work ceiling, not an output one: HTMLParser is pure python and a
     # megabyte of text-free tag soup costs the better part of a second, which
@@ -1835,6 +1836,22 @@ data:
             _walk(child, plain, html)
 
 
+    def _href_of(tag_text):
+        """The anchor's own href, off the RAW start tag. HTMLParser unescapes
+        an attribute the way a browser unescapes text, so its parsed value
+        turns `?a=1&copy=1` into `?a=1(c)=1` and points somewhere else; here
+        only a terminated `&...;` is a reference."""
+        for attr in _RE_ATTR.finditer(tag_text):
+            if attr.group(1).lower() != "href":
+                continue
+            for value in attr.groups()[1:]:
+                if value is not None:
+                    return _RE_CHARREF.sub(
+                        lambda m: _unescape(m.group(0)), value).strip()
+            return ""
+        return ""
+
+
     class _Flatten(HTMLParser):
         """Gmail's text/html alternative, flattened into the markdown core's
         `emailmessage.text` declares. An `<a href>` becomes `[label](url)`:
@@ -1863,16 +1880,7 @@ data:
                 return
             if tag == "a":
                 self._close_link()
-                href = ""
-                found = _RE_HREF.search(self.get_starttag_text() or "")
-                if found:
-                    raw = next(g for g in found.groups() if g is not None)
-                    href = _RE_CHARREF.sub(
-                        lambda m: _unescape(m.group(0)), raw).strip()
-                elif attrs:  # a tag the parser handed over without its text
-                    for name, value in attrs:
-                        if name == "href":
-                            href = (value or "").strip()
+                href = _href_of(self.get_starttag_text() or "")
                 # A url wraps across lines in the source of a real mail, and
                 # a destination holds no whitespace in either markdown form.
                 # Browsers drop the tab and the line break; the space is the
@@ -1949,15 +1957,17 @@ data:
                 # The indentation between `<li>` and its content carries the
                 # newline that would strand the marker. Dropping it here
                 # keeps every index in `parts` valid, which the open link's
-                # mark depends on.
+                # mark depends on. It arrives either as its own event or as
+                # the head of the text, so both go.
                 if not data.strip():
                     return
+                data = data.lstrip()
                 self._bullet = False
             self.parts.append(data)
             # The collapsed length, not the raw one: 64 KiB of indentation
             # between two tags is not a body, and counting it as one would
             # stop the read before the letter arrived.
-            self.chars += len(" ".join(data.split()))
+            self.chars += len(_squash(data))
             if self._link is not None and not self._link[2] and data.strip():
                 self._link[2] = True
 
@@ -1972,7 +1982,7 @@ data:
             href, mark, _ = self._link
             self._link = None
             raw = "".join(self.parts[mark:])
-            label = " ".join(raw.split())
+            label = _squash(raw)
             del self.parts[mark:]
             # The space just inside the tag is the one between two words:
             # `Visit<a> our site </a>for` must not read as `Visitour sitefor`.
@@ -2013,6 +2023,13 @@ data:
             return _collapse("".join(self.parts))
 
 
+    def _squash(text):
+        # The collapse rule, in one place: the feed's character budget, a
+        # link label and every output line have to agree on what a run of
+        # whitespace is worth, or the budget stops measuring the output.
+        return " ".join(text.split())
+
+
     def _collapse(text):
         # Mail html is indented and newline-wrapped for the renderer, so every
         # run of layout whitespace collapses and only the breaks the tags
@@ -2021,7 +2038,7 @@ data:
         # page of layout markup is a page of them.
         lines, blank = [], False
         for line in text.split("\n"):
-            line = " ".join(line.split())
+            line = _squash(line)
             if not line:
                 if blank:
                     continue
@@ -2033,8 +2050,11 @@ data:
 
 
     def _flatten(source, host, mid):
-        source = _RE_DATA_URI.sub(r"\1", _RE_COMMENT.sub(
-            " ", source[:HTML_SOURCE_MAX]))
+        source = source[:HTML_SOURCE_MAX]
+        # The cuts feed the PARSER only. The tag-strip below reads the source
+        # as it arrived, so a `<!--` inside a script string, which the comment
+        # cut cannot see is quoted, takes the parse down but not the letter.
+        markup = _RE_DATA_URI.sub(r"\1", _RE_COMMENT.sub(" ", source))
         parser = _Flatten()
         text, failure, read = "", "", 0
         try:
@@ -2043,9 +2063,9 @@ data:
             # chunk boundary can eat a link or a paragraph. Four times the
             # property's cap, because collapsing layout whitespace shortens
             # what was read and the body must still be able to fill it.
-            for cut in range(0, min(len(source), HTML_MAX), HTML_CHUNK):
-                parser.feed(source[cut:cut + HTML_CHUNK])
-                read = min(cut + HTML_CHUNK, len(source))
+            for cut in range(0, min(len(markup), HTML_MAX), HTML_CHUNK):
+                parser.feed(markup[cut:cut + HTML_CHUNK])
+                read = min(cut + HTML_CHUNK, len(markup))
                 if parser.chars > TEXT_MAX * 4:
                     break
             parser.close()
@@ -2053,16 +2073,15 @@ data:
         except Exception as exc:  # a parser defect must not park the drain
             failure = repr(exc)
         # A parse that reached the END of the source is the body, however
-        # short: a two-line mail is a two-line mail. One that ran out of
-        # budget and came back with a preheader may have stopped in front of
-        # the letter, so the tag-strip, which reads all of it, gets to say.
-        if text and (read >= len(source) or len(text) >= MIN_BODY):
+        # short: a two-line mail is a two-line mail.
+        if text and read >= len(markup):
             return text
         stripped = _collapse(
             _unescape(_RE_TAG.sub(" ", source)).replace("\xa0", " "))
         if text and len(stripped) <= len(text) + MIN_BODY:
-            # ...and it found nothing behind the ceiling, so the parse stands
-            # and the letter keeps the links the strip would have dropped.
+            # The parse ran out of budget, but the strip, which reads all of
+            # the source, found nothing waiting behind the ceiling: the parse
+            # stands and keeps the links the strip would have dropped.
             return text
         # The fallback SAYS it ran, because a body that quietly lost its
         # links is how this bug went unseen. Not for a message that has no
@@ -2098,19 +2117,23 @@ data:
             return body
         # The cap is a character count and the flattened body is markdown, so
         # the cut can land inside a `[label](url)` and store half a
-        # destination. Back off to before the span rather than keep it.
-        opened = body.rfind("[")
+        # destination. The last `](` is where the last span this wrote turns
+        # into its target: if that one closes, nothing is dangling, and a `[`
+        # anywhere else is the sender's own bracket, not a link.
+        shut = body.rfind("](")
+        if shut < 0:
+            return body
+        destination = body[shut + 2:]
+        # The angle form ends at `>)`, and only there: an ordinary `)` inside
+        # it is part of the url, which is why it is wearing the angles.
+        ender = ">)" if destination.startswith("<") else ")"
+        if ender in destination:
+            return body
+        opened = body.rfind("[", 0, shut + 1)
         while opened > 0 and body[opened - 1] == "\\":
             opened = body.rfind("[", 0, opened)  # an escaped one in a label
         if opened > 0:
-            tail = body[opened:]
-            shut = tail.find("](")
-            # The angle form ends at `>)`, and only there: an ordinary `)`
-            # inside it is part of the url, which is why it wears the angles.
-            destination = tail[shut + 2:] if shut >= 0 else ""
-            ender = ">)" if destination.startswith("<") else ")"
-            if shut < 0 or ender not in destination:
-                body = body[:opened].rstrip()
+            body = body[:opened].rstrip()
         return body
 
 
