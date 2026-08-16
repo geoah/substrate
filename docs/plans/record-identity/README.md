@@ -1,4 +1,4 @@
-# Record identity: seven paths to URL-shaped authorities
+# Record identity: six paths to URL-shaped authorities
 
 [Issue #194](https://github.com/geoah/substrate/issues/194) asks whether an
 authority may contain path segments. This directory is not a decision: it is
@@ -39,6 +39,10 @@ a slash, and a kind name carries neither.
   served over HTTPS (ACME's DNS-01 and HTTP-01 are the two shapes). The
   installer checks the proof and records what was checked and when. An
   unverifiable authority is not installable.
+- **Names stay human-readable.** An authority and a kind name are read and
+  written by people; neither may be a content hash or a minted opaque
+  string. Hashes stay where they belong: pins, digests and verification,
+  never the name.
 - **Breakage is accepted.** Existing installations and repositories may be
   reset for this change. Stored-data compatibility still prices a proposal;
   it no longer gates one.
@@ -59,11 +63,19 @@ a slash, and a kind name carries neither.
   otherwise per-repository; the registry becomes a trust root and an
   availability dependency for every name claim.
 - **Content-addressed kinds** (the authority is a hash of the declaration):
-  unforgeable and unsquattable, but unverifiable in the required sense
-  (there is no DNS entry or well-known file behind a hash), and identity
-  changes with every edit, so the upgrade model needs a lineage name on
-  top, which reintroduces the naming problem. Still the right primitive for
-  pinning and verify, as OCI digests and go.sum show.
+  fails the readability requirement (a hash is not a name) and the
+  verifiability requirement (there is no DNS entry or well-known file
+  behind a hash), and identity changes with every edit, so the upgrade
+  model needs a lineage name on top, which reintroduces the naming problem.
+  Still the right primitive for pinning and verify, as OCI digests and
+  go.sum show.
+- **Minted publisher keys with verified aliases** (AT Protocol's
+  DID-and-handle split): the one design that answers name churn outright,
+  because history stores a stable opaque key and the URL is a replaceable,
+  verified alias. Rejected by the readability requirement: the stored
+  authority would be a minted key, and an authority is read by people. Its
+  lesson survives below: a proof is dated, and churn after the proof is a
+  risk every surviving path accepts.
 - **The unverified status quo** (reaffirm dotted authorities, change
   nothing): fails the verifiability requirement by definition. The dotted
   grammar survives only as proposal 9, which adds the proof.
@@ -72,16 +84,16 @@ a slash, and a kind name carries neither.
 
 One flat string holding several slash-bearing, variable-length parts cannot
 be split by inspection. Every surviving path does one of four things: keep
-slashes out of authorities (9, 13), keep slashes out of ids (4), mark the
+slashes out of authorities (9), keep slashes out of ids (4), mark the
 authority's end with something other than a lone `/` (12), or stop
 composing or stop inspecting (5, 6, 7). GraphQL constrains nothing: kind
 and id travel as two separate string arguments, so every proposal works
-over GraphQL unchanged. REST constrains more than first claimed: 9 and 13
-route on today's fixed-arity router unchanged; 4 and 12 need a new
-variable-depth router first, after which a record address parses
-registry-free (4's list-vs-get still asks the registry); 5 and 6 leave a
-raw wire path ambiguous from both ends (authorities and ids both carrying
-slashes), so they encode or ask the registry.
+over GraphQL unchanged. REST constrains more than first claimed: 9 routes
+on today's fixed-arity router unchanged; 4 and 12 need a new variable-depth
+router first, after which a record address parses registry-free (4's
+list-vs-get still asks the registry); 5 and 6 leave a raw wire path
+ambiguous from both ends (authorities and ids both carrying slashes), so
+they encode or ask the registry.
 
 ## The second constraint: names move
 
@@ -91,14 +103,12 @@ millions of exposed repos; GitHub's retirement mitigation has been bypassed
 four times; VulnCheck found 15,000 repojackable Go module repos), domains
 expire and resell (the `ctx` and `phpass` hijacks; 8,494 npm packages
 hijackable through expired maintainer domains), and Deno, the ecosystem
-that bet hardest on URL-as-identity, built JSR to retreat from it. Systems
-that kept name-first identity retrofitted an indirection: Go's checksum
-database, npm and JSR provenance attestations, AT Protocol's DID behind
-every handle. Verification narrows this but does not close it: a proof is
-a dated fact, and the domain or repo can change hands after it. Proposals
-4, 5, 6, 9 and 12 store the verified name and live with that; 13 stores a
-stable key and makes the name a replaceable alias, the only outright
-answer.
+that bet hardest on URL-as-identity, built JSR to retreat from it.
+Verification narrows this but does not close it: a proof is a dated fact,
+and the domain or repo can change hands after it. With minted keys rejected
+for readability, every surviving path stores the verified, human-readable
+name and accepts that residual risk; the ADR must say what a repository
+does when a claim goes stale (re-verify on upgrade, quarantine, or nothing).
 
 ## Shared by every path
 
@@ -110,8 +120,10 @@ answer.
 - The first-label keyings move first: the GraphQL type prefix (every
   `github.com/...` kind would be `Github_...` today), the `bundle:<name>`
   actor and bundle-name uniqueness, the `connector:<label>` actor, and a
-  callable's actor being its bare local name. Each moves to a hash of the
-  full authority or a declared, collision-checked name.
+  callable's actor being its bare local name. Where people read the result
+  (the GraphQL prefix), it moves to a declared, collision-checked name; a
+  hash of the full authority is admissible only where machines alone read
+  it (actor keys).
 - The grammar copies widen together: the Go validators, the console, both
   function SDKs, the generated decoders, the keyed-map pattern shipped to
   Postgres, and the `kinds/` embed glob.
@@ -129,25 +141,19 @@ answer.
 
 Grammar (what the identifier looks like):
 
-| # | Proposal | A record's stored reference | Split needs | Verification | Name churn |
-|---|----------|-----------------------------|-------------|--------------|------------|
-| [9](9-verified-dotted-authorities.md) | Verified dotted authorities | `vocab.geoah.dev/note/n1` | nothing new | DNS record or well-known file at the domain | dated proof |
-| [4](4-slash-free-ids.md) | Raw URLs, one-segment ids | `github.com/geoah/vocab/note/n1` | right-side split | well-known file at the URL | dated proof |
-| [12](12-double-slash-separator.md) | A `//` boundary | `github.com/geoah/vocab//note/n1` | a banned sequence | well-known file at the URL | dated proof |
+| # | Proposal | A record's stored reference | Split needs | Verification |
+|---|----------|-----------------------------|-------------|--------------|
+| [9](9-verified-dotted-authorities.md) | Verified dotted authorities | `vocab.geoah.dev/note/n1` | nothing new | DNS record or well-known file at the domain |
+| [4](4-slash-free-ids.md) | Raw URLs, one-segment ids | `github.com/geoah/vocab/note/n1` | right-side split | well-known file at the URL |
+| [12](12-double-slash-separator.md) | A `//` boundary | `github.com/geoah/vocab//note/n1` | a banned sequence | well-known file at the URL |
 
 Shapes (how a reference is stored; each composes with a grammar):
 
-| # | Proposal | A record's stored reference | Split needs | Verification | Name churn |
-|---|----------|-----------------------------|-------------|--------------|------------|
-| [5](5-structured-references.md) | Structured references | `{"kind": "github.com/geoah/vocab/note", "id": "n1"}` | nothing (no composing) | per its grammar lane | per lane |
-| [6](6-registry-split.md) | Split against the registry | `github.com/geoah/vocab/note/n1` | the registry, forever | per its grammar lane | per lane |
-| [7](7-id-only-references.md) | Id-only references | `n1` | uniqueness, not parsing | per its grammar lane | per lane |
-
-Trust (identity survives the name):
-
-| # | Proposal | A record's stored reference | Split needs | Verification | Name churn |
-|---|----------|-----------------------------|-------------|--------------|------------|
-| [13](13-minted-publisher-keys.md) | Minted keys, verified aliases | `pk7f2q9x4kd3.pub/note/n1` | nothing new | alias proven, key stored | answered: alias replaceable |
+| # | Proposal | A record's stored reference | Split needs | Verification |
+|---|----------|-----------------------------|-------------|--------------|
+| [5](5-structured-references.md) | Structured references | `{"kind": "github.com/geoah/vocab/note", "id": "n1"}` | nothing (no composing) | per its grammar lane |
+| [6](6-registry-split.md) | Split against the registry | `github.com/geoah/vocab/note/n1` | the registry, forever | per its grammar lane |
+| [7](7-id-only-references.md) | Id-only references | `n1` | uniqueness, not parsing | per its grammar lane |
 
 ## Pros and cons
 
@@ -196,27 +202,17 @@ at scale. Con: a sequence ban 0014's character rule does not cover; a
 one-time audit confirms `//` is unclaimed in stored ids; the split changes
 in every grammar copy, and REST needs a variable-depth router.
 
-**13. Minted keys, verified aliases.** Pro: the only proposal that answers
-name churn outright; history stores a stable key, so renames, transfers,
-expiry and homoglyphs cannot rewrite or orphan it; the alias claim is
-verified by exactly the required mechanism; AT Protocol, Go's sumdb and
-npm/JSR provenance all converged here after shipping name-first. Con: the
-biggest model change of the set: a publisher record and a verification flow
-become part of the substrate; every human-readable display is a lookup; the
-readable name stops being the identity, which is exactly the point and
-exactly the cost.
-
 ## Getting to an ADR
 
-The lanes compose: a grammar (9, 4, 12), optionally a reference shape (5,
-6, 7), and optionally the trust indirection (13). Plausible bundles: 9
-alone (smallest), 4+13 (the most literal URLs with the strongest identity),
-12 alone (verbatim URLs with composed references intact). Whatever is
-chosen becomes a decision record that supersedes or extends 0014, inherits
-the shared obligations above, and answers four questions: what a
-declaration's id looks like, where a record's own publisher lives, what
-happens to a stored reference whose kind is later removed, and what happens
-when the URL stops meaning its publisher after its proof was recorded.
+The lanes compose: a grammar (9, 4, 12) and optionally a reference shape
+(5, 6, 7). Plausible bundles: 9 alone (smallest), 4 alone (the most literal
+URLs, at the cost of minted declaration ids), 12 alone (verbatim URLs with
+composed references intact). Whatever is chosen becomes a decision record
+that supersedes or extends 0014, inherits the shared obligations above, and
+answers four questions: what a declaration's id looks like, where a
+record's own publisher lives, what happens to a stored reference whose kind
+is later removed, and what a repository does when an authority's proof goes
+stale.
 
 ## Prior art, in one place
 
