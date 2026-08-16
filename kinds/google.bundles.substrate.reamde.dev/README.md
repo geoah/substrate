@@ -215,9 +215,11 @@ One provider page, or one hydrate batch of 25 `messages.get`, per invocation.
   pixels than pictures). The read is bounded twice: an inline `data:` URI is
   shortened before the parser sees it, and the html is fed in chunks that
   stop as soon as there is enough text for the 8,000-character body, with a
-  1,000,000-character ceiling for markup that never produces any. Malformed
-  markup that makes the parser raise falls back to the old tag-strip for that
-  one message.
+  1,000,000-character ceiling for markup that never produces any. An anchor
+  ends at its enclosing block, so a missing `</a>` cannot pull the rest of
+  the letter into one link label. Markup that makes the parser raise, or that
+  swallows its own body (an unclosed `<title>` takes the document with it),
+  falls back to the old tag-strip for that one message.
 - **Person edges are capped at 200 per message and per thread.** Every edge
   target is locked in the page's one transaction, and a 1,000-recipient list
   across a 25-message hydrate batch is 25,000 of them. The mirror keeps the

@@ -702,6 +702,8 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 			`click here</a>.</p>`+
 			`<ul><li><a href="https://example.com/map?to=(dc)">the map</a></li></ul>`+
 			`<table><tr><td>Rack A<td>Rack B</tr></table>`+
+			`<p>PS: <a href="https://example.com/ps">read this</p>`+
+			`<p>and the sign-off</p>`+
 			`</body></html>`)
 	fake.start(t)
 
@@ -736,17 +738,19 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 	// An html-only body reaches `text` as markdown with its hrefs intact:
 	// core's emailmessage.text is a markdown property, and a reader given
 	// "click here" without the target has nothing to click (#188). The same
-	// fixture holds three hazards the flattener has to survive: a 600 KB
+	// fixture holds four hazards the flattener has to survive: a 600 KB
 	// inline data: URI ahead of every word of prose, a table whose cells omit
-	// their optional end tags, and a url whose `)` would end a plain markdown
-	// destination early.
+	// their optional end tags, a url whose `)` would end a plain markdown
+	// destination early, and an `<a>` with no `</a>`, which must end at its
+	// paragraph rather than swallowing the sign-off into the link.
 	htmlID := substratefn.ExternalID("gmail-message", "acct-step", "m3")
 	htmlMirror, err := ds.Get(ctx, googleMessageType, htmlID)
 	if err != nil {
 		t.Fatalf("html-only message did not sync: %v", err)
 	}
 	wantText := "Book a slot now: [click here](https://example.com/tour?a=1&b=2).\n\n" +
-		"- [the map](<https://example.com/map?to=(dc)>)\n\nRack A Rack B"
+		"- [the map](<https://example.com/map?to=(dc)>)\n\nRack A Rack B\n\n" +
+		"PS: [read this](https://example.com/ps)\n\nand the sign-off"
 	if got := fmt.Sprint(htmlMirror.Properties["text"]); got != wantText {
 		t.Fatalf("html body flattened to %q, want %q", got, wantText)
 	}

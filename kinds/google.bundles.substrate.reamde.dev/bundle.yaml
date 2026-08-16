@@ -1602,6 +1602,11 @@ data:
     # body (below).
     HTML_MAX = 1000000
     HTML_CHUNK = 65536
+    # Anchors do not nest legally, so the stack only deepens on mail that
+    # forgot its `</a>`, and every level re-reads the label built under it.
+    # Past this an anchor is text.
+    MAX_OPEN_LINKS = 16
+    MAX_LABEL = 500  # a link label is a phrase; see _close_link
 
 
     class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -1818,6 +1823,8 @@ data:
             elif tag == "li":
                 self.parts.append("\n- ")
             elif tag == "a":
+                if len(self._links) >= MAX_OPEN_LINKS:
+                    return  # its text still reads, it just carries no target
                 href = ""
                 for name, value in attrs:
                     if name == "href":
@@ -1840,6 +1847,12 @@ data:
             elif tag == "a":
                 self._close_link()
             elif tag in HTML_BREAK:
+                # A block that ends closes the anchors opened inside it. An
+                # `</a>` a sender forgot would otherwise take the rest of the
+                # letter into one link label; the price is that an anchor
+                # wrapping two blocks links only the first.
+                while self._links:
+                    self._close_link()
                 self.parts.append("\n")
             elif tag in HTML_SPACE:
                 self.parts.append(" ")
@@ -1859,6 +1872,12 @@ data:
                 self.parts.append(label)
             elif not label or label == href:
                 self.parts.append(href)
+            elif len(label) > MAX_LABEL:
+                # Not a phrase — a block, or an `</a>` nobody wrote. The
+                # target rides after the words instead of wrapping them: a
+                # span this long is unreadable, and escaping the markdown
+                # already inside it doubles the label at every nesting level.
+                self.parts.append("%s (%s)" % (label, href))
             else:
                 if _RE_URL_UNSAFE.search(href):
                     href = ("<" + href.replace("<", "%3C").replace(">", "%3E")
