@@ -1585,6 +1585,10 @@ data:
                   "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "ol",
                   "p", "pre", "section", "table", "tr", "ul")
     HTML_SPACE = ("td", "th")  # cells sit on one line, not welded together
+    # What ends an anchor that a sender left open. `br` is deliberately not
+    # one: a button label written across two lines is still one link.
+    HTML_STRUCTURE = (tuple(t for t in HTML_BREAK if t != "br")
+                      + HTML_SPACE + ("li",))
     # An inline `data:` URI is the one thing that makes a mail megabytes and
     # it is never prose, so its payload is cut before the parser reads any of
     # it. An embedded photo in the first tag must not eat the whole budget
@@ -1835,12 +1839,15 @@ data:
                     href = href.replace(ws, "")
                 self._link = [href.replace(" ", "%20"), len(self.parts), False]
                 return
-            # A block that OPENS ends an anchor that already has its words:
-            # `<p><a href=…>linked<p>sign-off` is a missing `</a>`, and the
-            # sign-off is not part of the link. An anchor still empty stays
-            # open, because `<a href=…><div>Buy now</div></a>` is one link
-            # around a block and mail is full of them.
-            if self._link is not None and self._link[2]:
+            # A structure that opens ends an anchor that already has its
+            # words: `<p><a href=…>linked<p>sign-off` is a missing `</a>` and
+            # the sign-off is not part of the link, the same way `<li>…<li>`
+            # is a second bullet. An anchor still empty stays open, because
+            # `<a href=…><div>Buy now</div></a>` is one link around a block
+            # and mail is full of them. An INLINE tag never closes one:
+            # `<a href=…>Click <b>here</b></a>` is one label.
+            if (tag in HTML_STRUCTURE
+                    and self._link is not None and self._link[2]):
                 self._close_link()
             if tag == "li":
                 self.parts.append("\n- ")
@@ -1871,7 +1878,7 @@ data:
                 return
             if self._muted:
                 return
-            if tag == "a" or tag == "li" or tag in HTML_SPACE or tag in HTML_BREAK:
+            if tag == "a" or tag in HTML_STRUCTURE:
                 # An `</a>` a sender forgot would take the rest of the letter
                 # into one link label, so every structure that ends closes the
                 # anchor inside it. The price is that an anchor wrapping two

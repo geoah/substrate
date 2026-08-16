@@ -708,7 +708,7 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 		`<html><head><style>a{color:red}</style></head><body>`+
 			`<img src="data:image/png;base64,`+strings.Repeat("A", 600)+`">`+
 			`<p>Book a slot&nbsp;now: <a href="https://example.com/tour?a=1&amp;b=2">`+
-			`click here</a>.</p>`+
+			`click <strong>here</strong></a>.</p>`+
 			`<ul><li><a href="https://example.com/map?to=(dc)">the map</a></li>`+
 			`<li><a href="https://example.com/dir">directions<li>parking</ul>`+
 			`<table><tr><td>Rack A<td>Rack B</tr></table>`+
@@ -751,9 +751,10 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 	// every hazard the flattener has to survive at once: a whitespace
 	// text/plain part that must not stand in for the body, an inline data:
 	// URI, a table whose cells omit their optional end tags, a url whose `)`
-	// would end a plain markdown destination early, and two `<a>` tags with
-	// no `</a>`, which must end at the paragraph and the list item rather
-	// than swallowing what follows into the link.
+	// would end a plain markdown destination early, an inline `<strong>`
+	// inside a label, which must not cut the label short, and two `<a>` tags
+	// with no `</a>`, which must end at the paragraph and the list item
+	// rather than swallowing what follows into the link.
 	htmlID := substratefn.ExternalID("gmail-message", "acct-step", "m3")
 	htmlMirror, err := ds.Get(ctx, googleMessageType, htmlID)
 	if err != nil {
