@@ -588,7 +588,10 @@ data:
   `when:` guard passes, delivers the callable the record's **current** state.
   Each entry in `kinds:` is a kind reference, `<authority>/*` for everything
   one authority publishes, or `*` for everything; those three spellings are
-  the whole glob grammar. `ops:` omitted means all three. Optional
+  the whole glob grammar. `ops:` omitted means all three, and its three words
+  are change classes rather than write verbs: a `put` that created the row is
+  a `create`, a `put` over a live row is an `update`
+  ([change verbs](changelog.md#change-verbs)). Optional
   `coalesce: true` keeps only the latest matched change per record in a batch.
 - A **`schedule`** arm fires the callable on an RRULE `recurrence` (with a
   `timezone` and optional `startsAt`), with no changelog entry underneath and no

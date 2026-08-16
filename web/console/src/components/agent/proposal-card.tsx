@@ -109,6 +109,13 @@ export function ProposalCard({ id }: { id: string }) {
   // The remedy, server-shaped and deliberately narrow: exactly this agent,
   // this kind, this op — never a wildcard, provenance on the minted rule —
   // shown verbatim behind its own confirmation before anything lands.
+  //
+  // THE REQUEST'S OP IS NOT THE SELECTOR'S. A selector matches the verb the
+  // agent called (put/patch/delete); the request records what accepting would
+  // do, and convertToRequest maps BOTH put and patch onto create (target not
+  // live) or patch (target live), keeping no record of which. So a request
+  // that reads create or patch is remedied by naming both verbs; only delete
+  // maps one to one. See docs/changelog.md#change-verbs.
   const proposerPath =
     typeof thread.data?.properties.agent === "string"
       ? thread.data.properties.agent
@@ -119,7 +126,7 @@ export function ProposalCard({ id }: { id: string }) {
       ? {
           selector: {
             kinds: [target.kind],
-            ops: [op === "create" ? "put" : op],
+            ops: op === "delete" ? ["delete"] : ["put", "patch"],
             agents: [proposer],
           },
           action: "allow",

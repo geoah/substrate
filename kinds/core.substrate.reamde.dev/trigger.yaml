@@ -59,6 +59,13 @@ data:
               repeated: true
               description: the kinds watched, each a reference, `<authority>/*`
                 or `*`
+            # A CHANGE CLASS, not a write verb: what happened to the record,
+            # whatever op the writer called. runner.OpOf folds the changelog
+            # onto these three. A put whose payload says `created` is a create,
+            # delete and gc are deletes, and every other op (patch, link,
+            # unlink, merge, split, a restoring put) is an update. So a policy
+            # selector matching the same write spells it `put` or `patch`;
+            # docs/changelog.md#change-verbs holds the mapping.
             ops:
               type: enum
               repeated: true
@@ -66,7 +73,9 @@ data:
                 - create
                 - update
                 - delete
-              description: which changes deliver; absent is all three
+              description: 'which changes deliver, as change classes rather
+                than write verbs: create, update or delete; absent is all
+                three'
             when:
               type: string
               description: the CEL guard over change/record/repository

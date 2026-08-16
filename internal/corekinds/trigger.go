@@ -228,7 +228,8 @@ type TriggerSourceRecord struct {
 	// Kinds is the kinds watched, each a reference, `<authority>/*` or `*`.
 	Kinds []string
 
-	// Ops is which changes deliver; absent is all three.
+	// Ops is which changes deliver, as change classes rather than write verbs:
+	// create, update or delete; absent is all three.
 	Ops []TriggerSourceRecordOps
 
 	// When is the CEL guard over change/record/repository.
@@ -241,7 +242,8 @@ type TriggerSourceRecord struct {
 // TriggerSourceRecordOps is a declared enum: the admissible set, in
 // declaration order.
 //
-// which changes deliver; absent is all three
+// which changes deliver, as change classes rather than write verbs: create,
+// update or delete; absent is all three
 type TriggerSourceRecordOps string
 
 const (

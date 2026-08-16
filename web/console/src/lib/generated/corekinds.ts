@@ -985,7 +985,7 @@ export interface LLMMessageToolCalls {
 export interface LLMMessageChanges {
   /** The changelog seq of the entry, which addresses its delta. */
   seq?: number
-  /** The changelog op the entry landed as. */
+  /** The changelog op the entry landed as, verbatim. */
   op?: LLMMessageChangesOp
   /** The written record's kind. */
   kind?: string
@@ -996,7 +996,7 @@ export interface LLMMessageChanges {
 /** LLMMessageChangesOp is a declared enum: the admissible set, in declaration
  * order.
  *
- * the changelog op the entry landed as
+ * the changelog op the entry landed as, verbatim
  */
 export type LLMMessageChangesOp =
   "put" | "patch" | "delete" | "link" | "unlink" | "merge" | "split"
@@ -1574,11 +1574,26 @@ export const recordPatchPolicyModeValues: RecordPatchPolicyMode[] = [
 export interface RecordPatchPolicySelector {
   /** Kind references; empty means every kind. */
   kinds?: string[]
-  /** Put, patch or delete; empty means all three. */
-  ops?: string[]
+  /** The write verb matched: put, patch or delete, the three policy evaluates
+   * (link, unlink, merge and split are outside it), never a trigger's
+   * create/update/delete; empty means all three.
+   */
+  ops?: RecordPatchPolicySelectorOps[]
   /** Agent identities; empty means every agent. */
   agents?: string[]
 }
+
+/** RecordPatchPolicySelectorOps is a declared enum: the admissible set, in
+ * declaration order.
+ *
+ * the write verb matched: put, patch or delete, the three policy evaluates
+ * (link, unlink, merge and split are outside it), never a trigger's
+ * create/update/delete; empty means all three
+ */
+export type RecordPatchPolicySelectorOps = "put" | "patch" | "delete"
+
+export const recordPatchPolicySelectorOpsValues: RecordPatchPolicySelectorOps[] =
+  ["put", "patch", "delete"]
 
 /** RecordPatchRequest is core.substrate.reamde.dev/recordpatchrequest.
  *
@@ -1588,7 +1603,10 @@ export interface RecordPatchPolicySelector {
  * can swap what was reviewed.
  */
 export interface RecordPatchRequest {
-  /** The change verb — patch (default when absent), create, or delete. */
+  /** What the accept does: patch an existing target (the default when absent),
+   * create the named record, or delete it. A gated put or patch arrives here
+   * as create unless the target is live.
+   */
   op?: RecordPatchRequestOp
   /** Op create: the full type identity of the record to mint. */
   targetKind?: string
@@ -1626,7 +1644,9 @@ export interface RecordPatchRequest {
 /** RecordPatchRequestOp is a declared enum: the admissible set, in declaration
  * order.
  *
- * the change verb — patch (default when absent), create, or delete
+ * what the accept does: patch an existing target (the default when absent),
+ * create the named record, or delete it. A gated put or patch arrives here as
+ * create unless the target is live
  */
 export type RecordPatchRequestOp = "create" | "patch" | "delete"
 
@@ -1938,7 +1958,9 @@ export const triggerSourceKindValues: TriggerSourceKind[] = [
 export interface TriggerSourceRecord {
   /** The kinds watched, each a reference, `<authority>/*` or `*`. */
   kinds?: string[]
-  /** Which changes deliver; absent is all three. */
+  /** Which changes deliver, as change classes rather than write verbs: create,
+   * update or delete; absent is all three.
+   */
   ops?: TriggerSourceRecordOps[]
   /** The CEL guard over change/record/repository. */
   when?: string
@@ -1949,7 +1971,8 @@ export interface TriggerSourceRecord {
 /** TriggerSourceRecordOps is a declared enum: the admissible set, in
  * declaration order.
  *
- * which changes deliver; absent is all three
+ * which changes deliver, as change classes rather than write verbs: create,
+ * update or delete; absent is all three
  */
 export type TriggerSourceRecordOps = "create" | "update" | "delete"
 

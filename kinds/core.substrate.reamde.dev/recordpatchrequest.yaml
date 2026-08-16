@@ -26,7 +26,10 @@ data:
   # version 10: `decidedAt` is a declared property (datetime, managed). The
   # decision transitions stamped it as an undeclared string before, invisible
   # to the declaration and untyped in the filter grammar.
-  version: 10
+  # version 11: `op`'s description says what the accept does and how a policy
+  # selector's `put` or `patch` becomes create or patch here, so a reader of a
+  # gated request can write the selector that matches it.
+  version: 11
   names:
     singular: recordpatchrequest
     plural: recordpatchrequests
@@ -49,14 +52,25 @@ data:
     # the change verb: patch (change an existing target), create (mint a new
     # record), or delete (tombstone one). ABSENT means patch — an existing
     # request stores no `op`, so back-compat is by omission.
+    #
+    # THE WORD IS NOT THE POLICY SELECTOR'S. A gate matches the write verb the
+    # agent called (`put`, `patch`, `delete`) and then resolves it against the
+    # target: for `put` and `patch` alike a target that is not LIVE (absent or
+    # tombstoned) converts to `create` and a live one to `patch` (policy.go
+    # convertToRequest), so a selector naming either verb is what produces a
+    # request reading `op: create`. `create` here also is not a trigger's `create`: this one
+    # mints a record and CONFLICTS on a divergent collision, where `put`
+    # overwrites. docs/changelog.md#change-verbs holds the three vocabularies
+    # side by side.
     op:
       type: enum
       values:
         - create
         - patch
         - delete
-      description: the change verb — patch (default when absent), create,
-        or delete
+      description: 'what the accept does: patch an existing target (the default
+        when absent), create the named record, or delete it. A gated put or
+        patch arrives here as create unless the target is live'
     # create only: the full type identity and the stable id of the record the
     # accept mints (create-if-absent, idempotent on replay).
     targetKind:

@@ -50,6 +50,54 @@ Two guarantees consumers may lean on:
   carries `seq`, `ts`, `actor`, `op`, `kind`, `recordId`, `payload`, and the
   entry's `hash` (below), and nothing else.
 
+## Change verbs
+
+`op` above is the changelog's own word for a write. Three other properties name
+the same act in their own vocabulary, and a reader who assumes they agree
+writes a rule that matches nothing. Here is one act across all four:
+
+| The act                       | Changelog `op`                                     | `recordpatchpolicy.selector.ops` | `recordpatchrequest.op` | `trigger.source.record.ops` |
+| ----------------------------- | -------------------------------------------------- | -------------------------------- | ----------------------- | --------------------------- |
+| a record comes into existence | `put`, with `created: true` in the payload         | `put`, `patch`                   | `create`                | `create`                    |
+| an existing record changes    | `put`, `patch`, `link`, `unlink`, `merge`, `split` | `put`, `patch`                   | `patch`                 | `update`                    |
+| a record goes away            | `delete`, and `gc` on the collector's pass         | `delete`                         | `delete`                | `delete`                    |
+
+Merge and split are the two rows the table cannot hold. A merge tombstones the
+loser under the winner's single `merge` entry, so `OpOf` reads that entry as an
+`update` on the winner and no trigger delivers a delete class for the loser
+(reads of the loser's id forward to the winner, so nothing is lost). An accepted
+split reverses it, restoring the loser under one `split` entry, again read as an
+`update`, so a record can return to existence with no create class delivered.
+
+Each column answers a different question.
+
+- **The changelog says what landed.** `llmmessage.changes.op`, the ops an agent
+  turn's dispatch wrote, is this column verbatim except `gc`, which is the
+  collector's own pass and not any dispatch's write.
+- **A policy selector says what the agent called**: the verb behind the write,
+  matched before anything looks at the target. Three routes reach it, a `mutate`
+  tool call, a function tool's write effect (one gated effect holds the whole
+  batch) and a `propose` carrying a `create`, `patch` or `delete`, which is
+  matched as the `put`, `patch` or `delete` it stands for and consults the
+  policy's judge only. Policy evaluation only ever sees those three verbs, so an
+  agent's `link` and `unlink`, and a function effect's `merge` and `split`, are
+  bounded by the emit ceiling alone and no selector matches them.
+- **A request's `op` says what accepting will do.** The gate resolves the verb
+  against the target as it converts the write, and it resolves `put` and
+  `patch` the same way: with no live target the request reads `op: create` and
+  names the record by `targetKind` and `targetId`, and with one it reads
+  `op: patch` and carries the `target` edge. So a selector matching either verb
+  can produce `op: create` on the request it gates, and gating `patch` is not
+  edit-only review. A selector written `ops: [create]` is refused.
+- **A trigger says what happened to the record**, whatever verb the writer
+  used. A `put` that created the row is a `create`, a `put` over a live row is
+  an `update`, and every op that is neither a create nor a delete is an
+  `update`.
+
+The request's `create` is not the changelog's `put`: accepting one mints the
+record when the id is free and conflicts when a record that does not match the
+proposal already holds it, where a `put` overwrites.
+
 ## The chain
 
 Every entry carries a SHA-256 **hash** over its own stored content and the

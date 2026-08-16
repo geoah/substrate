@@ -66,7 +66,15 @@ data:
   # the inline-fragment rule. A tool card is what an LLM reads before it writes
   # a query, so an omission there is a capability the model reports as absent:
   # one told a user the substrate could not filter by date.
-  version: 9
+  # version 10: the change verbs are held apart on the properties that carry
+  # them. `recordpatchpolicy.selector.ops` becomes an enum of put/patch/delete,
+  # so a selector spelled with a trigger's `create` is refused instead of
+  # silently matching nothing, and it, `trigger.source.record.ops` and the
+  # propose card's `op` each say which of the three vocabularies they speak
+  # (docs/changelog.md#change-verbs). The bump carries those three, none of
+  # which pins a version of its own; recordpatchrequest and llmmessage say the
+  # same thing under their own pins.
+  version: 10
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands

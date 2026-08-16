@@ -337,7 +337,10 @@ re-validated against the version it was computed on. It carries an `op`,
 `create`, `patch` (the default), or `delete`, so a reviewed write can mint a
 new record, edit an existing one, or tombstone one. A create names its target
 by `targetKind` and `targetId`, because the record does not exist yet; a patch
-and a delete carry the `target` edge. The agent
+and a delete carry the `target` edge. These are the request's own words: the
+policy selector that gated the write spells the same act `put` or `patch`, and
+a trigger watching it spells it `create` or `update`
+([change verbs](changelog.md#change-verbs)). The agent
 [`propose` tool](agents.md) emits exactly this request rather than writing the
 target directly, which is how a semi-trusted agent contributes a dangerous
 verb through review instead of on its own authority.

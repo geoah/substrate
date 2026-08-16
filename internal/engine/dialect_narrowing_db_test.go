@@ -188,6 +188,17 @@ func dnCases() map[string]struct {
 			},
 			says: `object "spec" field "tags" changes kind keyed string → keyed enum while`,
 		},
+		// The shape recordpatchpolicy's `selector.ops` took when the door's
+		// three verbs were declared after the fact: a repeated string field,
+		// closed to the set the engine already matched against.
+		"repeated string field retyped to enum missing the held value": {
+			mutate: func(props map[string]any) {
+				props["grant"].(map[string]any)["fields"].(map[string]any)["scopes"] = map[string]any{
+					"type": "enum", "values": []any{"write"}, "repeated": true,
+				}
+			},
+			says: `object "grant" field "scopes" changes kind repeated string → repeated enum while`,
+		},
 		// An enum value removed, once per container an enum can sit in. The keyed
 		// one is the case a containment test on the whole map could never see.
 		"scalar enum value removed": {
@@ -301,7 +312,10 @@ func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
 		Kind: dwAuthority + "/holder", ID: "conforms",
 		Properties: map[string]any{
 			// The object is present and its optional reference is not.
-			"loose":     map[string]any{"note": "no pointer here"},
+			"loose": map[string]any{"note": "no pointer here"},
+			// The same shape one level over: `grant` is present and its
+			// repeated `scopes` is not.
+			"grant":     map[string]any{"subject": "ada"},
 			"keyedRefs": map[string]any{"primary": target},
 			"notes":     map[string]any{"greeting": "hei"},
 		},
@@ -331,6 +345,23 @@ func TestNarrowingAdmitsWhatTheDataAlreadySatisfies(t *testing.T) {
 			props["loose"].(map[string]any)["fields"].(map[string]any)["ref"] = toTarget
 		}); err != nil {
 			t.Fatalf("a row whose optional reference is absent points nowhere: %v", err)
+		}
+		restore(t)
+	})
+
+	// AN ABSENT LIST HOLDS NO VALUE. The container walk used to box a missing
+	// repeated field as `[null]`, which the complement predicate read as a
+	// value outside the declared set: a string→enum retype then refused every
+	// row that simply left the field out, which for recordpatchpolicy's
+	// `selector.ops` is the "empty means all three" spelling the kind
+	// documents.
+	t.Run("an absent repeated field does not block a string to enum retype", func(t *testing.T) {
+		if err := narrow(t, func(props map[string]any) {
+			props["grant"].(map[string]any)["fields"].(map[string]any)["scopes"] = map[string]any{
+				"type": "enum", "values": []any{"write"}, "repeated": true,
+			}
+		}); err != nil {
+			t.Fatalf("a row whose repeated field is absent holds nothing outside the set: %v", err)
 		}
 		restore(t)
 	})
