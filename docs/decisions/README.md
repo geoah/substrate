@@ -154,3 +154,6 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0014](0014-authorities-widen-only-outside-the-id-alphabet.md) | Authorities may widen only with characters the id alphabet excludes | accepted |
 | [0015](0015-unproven-kinds-stay-out-of-the-stable-set.md) | Unproven kinds stay out of the stable vocabulary set | accepted |
 | [0016](0016-a-kind-titles-itself-from-a-declared-property.md) | A kind titles itself from a declared property, never the built-in slot | accepted |
+| [0017](0017-the-changelog-is-one-writers-total-order.md) | The changelog is one writer's total order per repository | accepted |
+| [0018](0018-reseal-rewrites-history-values-in-place.md) | Reseal rewrites history's values in place, so entry bytes are not identity | accepted |
+| [0019](0019-a-lifecycle-is-a-state-machine-only-where-the-substrate-owns-it.md) | A lifecycle is a state machine only where the substrate owns it | accepted |
