@@ -212,9 +212,11 @@ One provider page, or one hydrate batch of 25 `messages.get`, per invocation.
   whose visible words are "click here" with nothing to follow. `<script>` and
   `<style>` contents are dropped, block tags become line breaks, images are
   dropped rather than written as `![alt](src)` (a mailing has more tracking
-  pixels than pictures), and the html is read up to 200,000 characters against
-  an 8,000-character body cap. Malformed markup that makes the parser raise
-  falls back to the old tag-strip for that one message.
+  pixels than pictures). Inline `data:` URIs are cut before anything else,
+  then the html is read up to 500,000 characters against an 8,000-character
+  body cap: the parser is pure python and 25 messages share one 30s
+  invocation. Malformed markup that makes the parser raise falls back to the
+  old tag-strip for that one message.
 - **Person edges are capped at 200 per message and per thread.** Every edge
   target is locked in the page's one transaction, and a 1,000-recipient list
   across a 25-message hydrate batch is 25,000 of them. The mirror keeps the

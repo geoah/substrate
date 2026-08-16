@@ -1582,11 +1582,17 @@ data:
                   "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "ol",
                   "p", "pre", "section", "table", "tr", "ul")
     HTML_SPACE = ("td", "th")  # cells sit on one line, not welded together
-    # Marketing mail carries hundreds of KiB of layout tables and inline
-    # data: URIs, and HTMLParser is pure python. Past this the flattener is
-    # reading markup that could not reach an 8,000-character body anyway,
-    # and 25 of them share one 30s invocation.
-    HTML_MAX = 200000
+    # An inline `data:` URI is the one thing that makes a mail megabytes and
+    # it is never prose, so it is dropped BEFORE the size cap below: an
+    # embedded photo in the first tag must not push the letter under it past
+    # the cut.
+    _RE_DATA_URI = re.compile(r"""=\s*(?:"data:[^"]*"|'data:[^']*')""",
+                              re.IGNORECASE)
+    # HTMLParser is pure python (~8 MB/s) and 25 messages share one 30s
+    # invocation, so the markup a message contributes is bounded. Half a
+    # megabyte of tags with the data URIs already gone is far more than an
+    # 8,000-character body can come out of.
+    HTML_MAX = 500000
 
 
     class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -1793,6 +1799,10 @@ data:
                 self._muted += 1
             elif tag in HTML_BREAK:
                 self.parts.append("\n")
+            elif tag in HTML_SPACE:
+                # on the START tag too: `<td>A<td>B` is valid html, and its
+                # cells would otherwise weld into `AB`
+                self.parts.append(" ")
             elif tag == "li":
                 self.parts.append("\n- ")
             elif tag == "a":
@@ -1864,6 +1874,7 @@ data:
 
 
     def _flatten(source):
+        source = _RE_DATA_URI.sub('=""', source)
         if len(source) > HTML_MAX:
             # cut at a tag boundary, so the tail is never a half-open tag
             source = source[:HTML_MAX].rsplit("<", 1)[0]
