@@ -37,6 +37,58 @@ scaffolding (~18k lines: the `kinds:gen` pipeline, the dialect-1 rung, the
 insecure signing switch, the seed disclosure), and spend the remaining effort
 on the P0 list below.
 
+## Decisions taken while reviewing (2026-08-16)
+
+Settled in discussion after the reports landed. Each needs an ADR before it
+is built; they are recorded here so the reasoning is not lost.
+
+1. **Actors stay engine-derived, never registered or self-declared.** A
+   bundle or function cannot name its own actor: the string drives the policy
+   door and trigger echo suppression, so it must be verified, and registration
+   only moves the collision to install time. Derive from the full identity:
+   `bundle:<authority>` and `function:<authority>:<name>`, with the colon as
+   the separator because the slash is reserved by the `<actor>/<name>`
+   metadata-key grammar. Retire `connector:` as a second spelling of
+   `bundle:`. Kubernetes composes `system:serviceaccount:<ns>:<name>` the same
+   way and for the same reason; its self-declared `managedFields` manager is
+   the counter-example that proves the rule, because nothing security-critical
+   reads it. (P0 item 8)
+2. **Drop plurals.** A kind's plural is a second name for a name that already
+   exists, unique per authority and frozen at release. Removing it makes the
+   URL and the reference value the same string, which they are not today
+   (`.../people/abc` versus `people.substrate.reamde.dev/person/abc`).
+   atproto's collection segment is the NSID itself for the same reason.
+3. **The path grammar changes once, not three times.** The verb separator,
+   the plural removal and the repository-local dispatch all break the same
+   URLs; they land as one ADR and one migration. Target shape:
+   `/api/v1/{authority}/{name}/{id}` for records, a reserved segment for
+   verbs, so that a verb added after v1 can never steal an id. (P0 item 7)
+4. **Delete the direct function call route.** `POST
+   .../functions/{name}/call` has one consumer in the tree
+   (`substratectl function call`), writes no run record, re-runs effects on
+   retry, and drops the function's own logs. `triggers/{id}/run` already
+   gives function authors a debug path through the real delivery machinery,
+   with a run record. Functions exist to react to records.
+
+Also filed: [#194](https://github.com/geoah/substrate/issues/194), whether an
+authority may ever contain path segments (raw `/`), as research rather than
+release work.
+
+Still open, and needed before the freeze: `required`/`default` (enforce or
+rename, P0 item 9), the stability vocabulary (add `beta` or redefine
+`stable`, P0 item 15), and the verb audit below.
+
+**The verb audit.** Decision 3 shrinks by first removing verbs that are
+records or state transitions in disguise: `recordmerges`/`recordsplits` are
+themselves shipped core kinds (which is why their collections are
+unreachable); `bundles/{id}/disable|enable|uninstall|purge` are lifecycle
+transitions on a record the substrate owns, which ADR 0019 says should be a
+state machine; `bundles/status` and `triggers/status` are computed state,
+which the envelope's server-owned `status` key already carries. What is
+irreducibly a verb: invocation, `POST /graphql`, `vocabulary/apply` (the
+transaction boundary), blob bytes, `changes`, `catalog`, trait queries and
+the OAuth pair.
+
 ## The P0 list
 
 What must land before giving this to people, grouped so each group is one
