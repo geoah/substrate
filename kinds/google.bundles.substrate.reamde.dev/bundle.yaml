@@ -1617,6 +1617,14 @@ data:
     # A destination with a `)`, a `<` or a space in it ends the markdown span
     # early, so it goes in CommonMark's angle-bracket form instead.
     _RE_URL_UNSAFE = re.compile(r"[\s()<>]")
+    # The href comes off the RAW start tag, not off HTMLParser's parsed
+    # attributes: the parser unescapes `&copy` (no semicolon) the way a
+    # browser does in TEXT, but a browser leaves it alone in an ATTRIBUTE, so
+    # `?a=1&copy=1` would otherwise reach the reader as `?a=1(c)=1` and point
+    # somewhere else. Only the terminated form is a reference here.
+    _RE_HREF = re.compile(
+        r"""href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""", re.IGNORECASE)
+    _RE_CHARREF = re.compile(r"&[#\w]{1,32};")
     # The work ceiling, not an output one: HTMLParser is pure python and a
     # megabyte of text-free tag soup costs ~0.2s, which 25 messages of it
     # keep well inside one 30s invocation. It binds only on markup that never
@@ -1847,9 +1855,15 @@ data:
             if tag == "a":
                 self._close_link()
                 href = ""
-                for name, value in attrs:
-                    if name == "href":
-                        href = (value or "").strip()
+                found = _RE_HREF.search(self.get_starttag_text() or "")
+                if found:
+                    raw = next(g for g in found.groups() if g is not None)
+                    href = _RE_CHARREF.sub(
+                        lambda m: _unescape(m.group(0)), raw).strip()
+                elif attrs:  # a tag the parser handed over without its text
+                    for name, value in attrs:
+                        if name == "href":
+                            href = (value or "").strip()
                 # A url wraps across lines in the source of a real mail, and
                 # a destination holds no whitespace in either markdown form.
                 # Browsers drop the tab and the line break; the space is the
@@ -2066,6 +2080,8 @@ data:
         # can land inside a `[label](url)` and store half a destination. Back
         # off to before the span rather than keep the bracket junk.
         opened = body.rfind("[")
+        while opened > 0 and body[opened - 1] == "\\":
+            opened = body.rfind("[", 0, opened)  # an escaped one in a label
         if opened > 0 and ")" not in body[opened:]:
             body = body[:opened]
         return body.rstrip()
