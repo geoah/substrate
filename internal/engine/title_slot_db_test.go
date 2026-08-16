@@ -59,7 +59,7 @@ func TestTaskAndTranscriptTitleThemselvesFromName(t *testing.T) {
 func TestLegacyTitlesSurviveADisplayTemplate(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, ds := newDataset(t)
+	svc, ds := newDataset(t)
 
 	memoNames := map[string]any{"singular": "memo", "plural": "memos"}
 	before := []map[string]any{
@@ -106,6 +106,26 @@ func TestLegacyTitlesSurviveADisplayTemplate(t *testing.T) {
 	})
 	if named.Title != "new heading" || named.Properties["name"] != "new heading" {
 		t.Fatalf("`name` did not take over the title: %q, %v", named.Title, named.Properties)
+	}
+
+	// And through the truth: the fold replays the titles the changelog
+	// carries, so a rebuild under the NEW declaration reproduces both the
+	// legacy row and the renamed one rather than re-rendering them.
+	legacy := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: tsAuthority + "/memo", ID: "m2", Properties: map[string]any{"note": "untouched"},
+	})
+	if legacy.Title != "" {
+		t.Fatalf("a row written after the template with no heading has no title: %q", legacy.Title)
+	}
+	rb, ok := svc.(rebuilder)
+	if !ok {
+		t.Fatal("the service cannot rebuild a repository")
+	}
+	if _, err := rb.RebuildRepository(ctx, "geoah"); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	if got := mustGet(t, ds, tsAuthority+"/memo", "m1"); got.Title != "new heading" {
+		t.Fatalf("the rebuild lost the title: %q", got.Title)
 	}
 }
 

@@ -44,7 +44,11 @@ data:
   # never touches.
   # version 6: taskprojection writes the issue's title to the task's declared
   # `name` property. The task's heading left the built-in title slot (#123),
-  # which a kind with a displayTemplate no longer stores.
+  # which a kind with a displayTemplate no longer stores. THIS UPGRADE NEEDS
+  # tasks.substrate.reamde.dev AT VERSION 4 FIRST: `requires:` names the
+  # authority and not a version of it, so upgrading this closure against a
+  # task kind that still declares no `name` parks every issue delivery on an
+  # undeclared property.
   version: 6
 ---
 # ---- the bundle document: the install unit --------------------------------
