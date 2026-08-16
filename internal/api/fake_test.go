@@ -49,7 +49,7 @@ type fakeService struct {
 	embeddings bool
 }
 
-// EmbeddingsEnabled is the discovery seam (api/discovery.go's embedderOps).
+// EmbeddingsEnabled is the discovery seam (substrate.EmbeddingsReporter).
 func (s *fakeService) EmbeddingsEnabled() bool { return s.embeddings }
 
 type fakeToken struct {

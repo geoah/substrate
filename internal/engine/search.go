@@ -23,11 +23,10 @@ const (
 	vectorDim = 1536
 )
 
-// The shape internal/api's discovery asserts at runtime (embedderOps). The
-// packages cannot reference each other, so this pins the signature here: a
-// rename would otherwise leave discovery silently reporting no embeddings on
-// every deployment.
-var _ interface{ EmbeddingsEnabled() bool } = (*service)(nil)
+// The seam discovery asserts at runtime. Naming the shared symbol is what
+// keeps the two sides together: without it a rename in internal/api would
+// leave every deployment quietly reporting no embeddings.
+var _ substrate.EmbeddingsReporter = (*service)(nil)
 
 // EmbeddingsEnabled reports whether an embedder was wired in (WithEmbedder).
 // Without one the semantic arm below refuses and nothing drains the embed

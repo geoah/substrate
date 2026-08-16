@@ -48,8 +48,8 @@ and the `prominence` demotion are all pre-v1, and a frozen route pins the hit
 shape plus the `mode` and `k` semantics into an additive-only surface.
 Filtering answers "which rows match" and REST already serves it (`?filter=`);
 ranking answers "which rows are best" and the GraphQL query serves that.
-Dropping `search` from the feature list would lose the only honest answer to
-"does this deployment search at all".
+Dropping `search` from the feature list would leave a client no way to tell
+whether a deployment searches at all.
 
 ### Consequences
 
@@ -58,8 +58,8 @@ Dropping `search` from the feature list would lose the only honest answer to
 - Good, because search's shape stays free to change under an introspectable
   schema until a REST route is worth freezing, and adding one later is
   additive.
-- Bad, because a REST-only client (curl, a shell script, an HTTP-only runtime)
-  cannot search at all and has to speak GraphQL for it.
+- Bad, because a REST-only client (curl, a shell script) cannot search at all
+  and has to speak GraphQL for it.
 - Bad, because two surfaces with different promises is more contract to hold:
   every feature added from here on has to answer where it is served, and
   the asymmetry list in `docs/api.md` is maintained by hand.
@@ -72,12 +72,15 @@ Dropping `search` from the feature list would lose the only honest answer to
 list for every feature, refuses an empty one and fails on a feature it does
 not know; `TestSearchHasNoRESTRoute` pins the generic-collection 404 the
 gql-only marker claims, and `TestDiscoveryOmitsEmbeddingsWithoutAnEmbedder`
-pins the conditional entry. The asymmetry table lives in
+pins the conditional entry. The embedder seam is one shared symbol,
+`substrate.EmbeddingsReporter`, asserted at runtime by the API and pinned at
+compile time by the engine, so a rename breaks the build rather than the
+advertisement. The asymmetry table lives in
 [the API page](../api.md#rest-and-graphql); nothing checks that it stays
 complete, so that half is held by review.
 
 ## More Information
 
 Revisit when a REST client needs retrieval without GraphQL, or when the hit
-shape settles enough that freezing `/search` costs nothing. Either is an
-additive change to the surfaces list, not a reversal of this record.
+shape settles enough that freezing `/search` costs nothing. Either one is an
+additive change to the surfaces list, and this record stands.

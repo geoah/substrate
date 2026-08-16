@@ -134,17 +134,12 @@ const (
 // name both the roster and the drop below can hold.
 const featureEmbeddings = "embeddings"
 
-// embedderOps is the service's embedder seam, asserted at runtime like
-// changeFeedOps: substrate.Service stays frozen, and discovery asks the
-// service itself rather than carrying a second copy of the wiring that a
-// host could forget to set. A service without the seam reports no
-// embeddings, which is the safe answer.
-type embedderOps interface {
-	EmbeddingsEnabled() bool
-}
-
+// embeddingsEnabled asks the service whether it has an embedder, through
+// substrate.EmbeddingsReporter: the seam is asserted at runtime like
+// changeFeedOps, so Service stays frozen and discovery carries no second copy
+// of a wiring a host could forget to set.
 func (h *handler) embeddingsEnabled() bool {
-	ops, ok := h.svc.(embedderOps)
+	ops, ok := h.svc.(substrate.EmbeddingsReporter)
 	return ok && ops.EmbeddingsEnabled()
 }
 
