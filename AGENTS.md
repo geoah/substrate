@@ -262,6 +262,12 @@ before the grammar widens.
   `required`) are refused while live records hold the old shape, so prefer
   add-and-deprecate. CI runs `mise run kinds:check` and refuses the merge
   otherwise.
+- **A kind titles itself from a property it declares.** The built-in `title`
+  every record carries is derived storage, never a kind's input: a kind with a
+  heading declares its own property (`name`, `summary`, `subject`) and renders
+  the title with a `displayTemplate`. A written `title` is ignored on any kind
+  that declares one, so a writer that means the heading writes the property
+  ([0016](docs/decisions/0016-a-kind-titles-itself-from-a-declared-property.md)).
 - **The console mirrors the wire by hand, and a golden file holds it to it.**
   `web/console/src/lib/api/types.ts` is written to match the structs in
   `internal/substrate`; nothing generates it. `wire.golden.json` is where the

@@ -54,7 +54,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 	host.Logf("mirroring %s", c.ID)
 	return &substratefn.Result{Effects: []substratefn.Effect{{
 		Action: "put", Kind: "tasks.substrate.reamde.dev/task", ID: "t-" + c.ID,
-		Properties: map[string]any{"title": name},
+		Properties: map[string]any{"name": name},
 	}}}, nil
 }
 `))
@@ -102,7 +102,7 @@ def main(input, host):
     else:
         return {}
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "t-" + e["id"], "properties": {"title": title}}]}
+                         "id": "t-" + e["id"], "properties": {"name": title}}]}
 `
 
 func readerFn(name string, tweak func(map[string]any)) map[string]any {
@@ -226,7 +226,7 @@ const mintSource = `
 def main(input, host):
     c = input["envelope"]["change"]
     return {"effects": [{"action": "put", "ifAbsent": True, "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "mint-" + c["id"], "properties": {"title": "pending"}}]}
+                         "id": "mint-" + c["id"], "properties": {"name": "pending"}}]}
 `
 
 func TestTriggerEffectPutIfAbsent(t *testing.T) {
@@ -245,7 +245,7 @@ func TestTriggerEffectPutIfAbsent(t *testing.T) {
 		t.Fatalf("minted title: %q", got.Title)
 	}
 	// A later stage takes the task over.
-	mustPatch(t, ds, owner, taskType, "mint-"+w.ID, substrate.PatchInput{Properties: map[string]any{"title": "owned downstream"}})
+	mustPatch(t, ds, owner, taskType, "mint-"+w.ID, substrate.PatchInput{Properties: map[string]any{"name": "owned downstream"}})
 
 	// Re-mention: the widget changes again, the mint re-fires, the task is
 	// untouched and nothing lands in the changelog under the function.
@@ -284,7 +284,7 @@ func TestTriggerEffectResolvesFormerID(t *testing.T) {
 	process(t, ops)
 
 	// The owner merges the function's task away into their own.
-	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"title": "the real task"}})
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "the real task"}})
 	if _, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, "t-"+w.ID); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -361,8 +361,8 @@ func TestTriggerEffectMergeSplitNeedGrant(t *testing.T) {
 		})},
 		pyFn("ungranted", map[string]any{}, []any{taskType}, fuserSource))
 
-	a := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"title": "a"}})
-	b := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"title": "b"}})
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "a"}})
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "b"}})
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType})
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{
 		"op": "merge", "winner": a.ID, "loser": b.ID,
@@ -389,8 +389,8 @@ func TestTriggerEffectMergeAndSplit(t *testing.T) {
 		}, []any{taskType}, fuserSource))
 	ctx := context.Background()
 
-	a := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"title": "a"}})
-	b := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"title": "b"}})
+	a := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "a"}})
+	b := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "b"}})
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType})
 
 	// Merge by effect: the loser tombstones and its id resolves to the winner.

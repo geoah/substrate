@@ -25,7 +25,7 @@ def main(input, host):
     a = input["args"]
     tid = host.ids.external("prov", a["account"], a["ext"])
     host.effects.put("tasks.substrate.reamde.dev/task", tid,
-                     properties={"title": a["title"]}, if_absent=True)
+                     properties={"name": a["title"]}, if_absent=True)
     return {"output": {"id": tid}}
 `))
 	ctx := context.Background()
@@ -77,7 +77,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 	id := host.IDs.External("prov", a["account"].(string), a["ext"].(string))
 	host.Effects.Put(substratefn.PutEffect{
 		Kind: "tasks.substrate.reamde.dev/task", ID: id,
-		Properties: map[string]any{"title": a["title"]},
+		Properties: map[string]any{"name": a["title"]},
 		IfAbsent:   true,
 	})
 	return &substratefn.Result{Output: map[string]any{"id": id}}, nil
@@ -113,9 +113,9 @@ func TestSDKBuilderMixedModeRejected(t *testing.T) {
 	ds, ops := newFnDataset(t, nil, pyFn("bothways", map[string]any{}, []any{taskType}, `
 def main(input, host):
     k = input["args"]["k"]
-    host.effects.put("tasks.substrate.reamde.dev/task", "staged-" + k, properties={"title": "staged"})
+    host.effects.put("tasks.substrate.reamde.dev/task", "staged-" + k, properties={"name": "staged"})
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "returned-" + k, "properties": {"title": "returned"}}]}
+                         "id": "returned-" + k, "properties": {"name": "returned"}}]}
 `))
 	ctx := context.Background()
 	_, _, err := ops.CallFunction(ctx, fnAuthority+"/bothways", map[string]any{"k": "1"})
@@ -138,12 +138,12 @@ func TestSDKBuilderStagedHandleReturnDoesNotKillHost(t *testing.T) {
 	ds, ops := newFnDataset(t, nil,
 		pyFn("badreturn", map[string]any{}, []any{taskType}, `
 def main(input, host):
-    h = host.effects.put("tasks.substrate.reamde.dev/task", "x", properties={"title": "t"})
+    h = host.effects.put("tasks.substrate.reamde.dev/task", "x", properties={"name": "t"})
     return {"effects": [h]}  # a StagedEffect handle is not serializable
 `),
 		pyFn("goodafter", map[string]any{}, []any{taskType}, `
 def main(input, host):
-    host.effects.put("tasks.substrate.reamde.dev/task", "survivor", properties={"title": "ok"})
+    host.effects.put("tasks.substrate.reamde.dev/task", "survivor", properties={"name": "ok"})
     return {}
 `))
 	ctx := context.Background()
@@ -167,7 +167,7 @@ func TestSDKBuilderStagesSnapshot(t *testing.T) {
 def main(input, host):
     props = {}
     for i in range(3):
-        props["title"] = "t%d" % i
+        props["name"] = "t%d" % i
         host.effects.put("tasks.substrate.reamde.dev/task", "snap-%d" % i, properties=props)
     return {}
 `))
@@ -191,11 +191,11 @@ func TestSDKBuilderIfVersionSentinel(t *testing.T) {
 def main(input, host):
     mode = input["args"]["mode"]
     if mode == "omitted":
-        host.effects.put("tasks.substrate.reamde.dev/task", "v-omitted", properties={"title": "t"})
+        host.effects.put("tasks.substrate.reamde.dev/task", "v-omitted", properties={"name": "t"})
     elif mode == "none":
-        host.effects.put("tasks.substrate.reamde.dev/task", "v-none", properties={"title": "t"}, if_version=None)
+        host.effects.put("tasks.substrate.reamde.dev/task", "v-none", properties={"name": "t"}, if_version=None)
     elif mode == "zero":
-        host.effects.put("tasks.substrate.reamde.dev/task", "v-zero", properties={"title": "t"}, if_version=0)
+        host.effects.put("tasks.substrate.reamde.dev/task", "v-zero", properties={"name": "t"}, if_version=0)
     return {}
 `))
 	ctx := context.Background()
@@ -233,7 +233,7 @@ func TestSDKBuilderLocalValidation(t *testing.T) {
 	_, ops := newFnDataset(t, nil,
 		pyFn("badid", map[string]any{}, []any{taskType}, `
 def main(input, host):
-    host.effects.put("tasks.substrate.reamde.dev/task", "people 123", properties={"title": "t"})
+    host.effects.put("tasks.substrate.reamde.dev/task", "people 123", properties={"name": "t"})
     return {}
 `),
 		pyFn("selfmerge", map[string]any{"permissions": map[string]any{"mutations": []any{"merge"}}},
@@ -282,7 +282,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 	}
 	host.Effects.Patch(substratefn.PatchEffect{
 		Kind: "tasks.substrate.reamde.dev/task", ID: id,
-		Properties: map[string]any{"title": "guarded"},
+		Properties: map[string]any{"name": "guarded"},
 		IfVersion:  substratefn.Version(e.Version),
 	})
 	return &substratefn.Result{Output: map[string]any{"version": e.Version}}, nil
@@ -290,7 +290,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 `))
 	ctx := context.Background()
 	fn := fnAuthority + "/goguard"
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"title": "v"}})
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "v"}})
 
 	// The typed read's version feeds a matching guarded patch — it applies.
 	if _, _, err := ops.CallFunction(ctx, fn, map[string]any{"id": task.ID}); err != nil {
@@ -303,7 +303,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 	// Concurrently advance the row, then re-run: the body reads the FRESH
 	// version, so a second guarded patch also applies (proving it read the real
 	// int64 version, not a rounded/zero one that would conflict or clobber).
-	if _, err := ds.Patch(ctx, owner, task.Kind, task.ID, substrate.PatchInput{Properties: map[string]any{"title": "moved"}}); err != nil {
+	if _, err := ds.Patch(ctx, owner, task.Kind, task.ID, substrate.PatchInput{Properties: map[string]any{"name": "moved"}}); err != nil {
 		t.Fatalf("owner patch: %v", err)
 	}
 	if _, _, err := ops.CallFunction(ctx, fn, map[string]any{"id": task.ID}); err != nil {
@@ -338,13 +338,13 @@ def main(input, host):
 		return err
 	}
 
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"title": "v"}})
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "v"}})
 	v1 := task.Version
 
 	// A patch effect with the MATCHING version applies and advances the version.
 	if err := call(map[string]any{
 		"action": "patch", "id": task.ID,
-		"ifVersion": v1, "properties": map[string]any{"title": "patched"},
+		"ifVersion": v1, "properties": map[string]any{"name": "patched"},
 	}); err != nil {
 		t.Fatalf("matching-version patch: %v", err)
 	}
@@ -360,7 +360,7 @@ def main(input, host):
 	// The SAME (now stale) version conflicts, and nothing lands.
 	if err := call(map[string]any{
 		"action": "patch", "id": task.ID,
-		"ifVersion": v1, "properties": map[string]any{"title": "stale"},
+		"ifVersion": v1, "properties": map[string]any{"name": "stale"},
 	}); !errors.Is(err, substrate.ErrConflict) {
 		t.Fatalf("stale-version patch: want ErrConflict, got %v", err)
 	}
@@ -371,7 +371,7 @@ def main(input, host):
 	// A put effect (upsert) honors ifVersion the same way.
 	if err := call(map[string]any{
 		"action": "put", "id": task.ID,
-		"ifVersion": v2, "properties": map[string]any{"title": "reput"},
+		"ifVersion": v2, "properties": map[string]any{"name": "reput"},
 	}); err != nil {
 		t.Fatalf("matching-version put: %v", err)
 	}
@@ -380,7 +380,7 @@ def main(input, host):
 	}
 	if err := call(map[string]any{
 		"action": "put", "id": task.ID,
-		"ifVersion": v2, "properties": map[string]any{"title": "reput2"},
+		"ifVersion": v2, "properties": map[string]any{"name": "reput2"},
 	}); !errors.Is(err, substrate.ErrConflict) {
 		t.Fatalf("stale-version put: want ErrConflict, got %v", err)
 	}
@@ -405,7 +405,7 @@ def main(input, host):
 	fn := fnAuthority + "/proposer"
 
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: taskType, ID: "t-proposed", Properties: map[string]any{"title": "draft"},
+		Kind: taskType, ID: "t-proposed", Properties: map[string]any{"name": "draft"},
 	})
 
 	// A patch proposal: the request carries the target edge, the diff and the
@@ -437,7 +437,7 @@ def main(input, host):
 	// record is born only once somebody agrees.
 	if _, _, err := ops.CallFunction(ctx, fn, map[string]any{
 		"id": "req-sdk-create", "op": "create", "target": "t-minted",
-		"diff": map[string]any{"title": "Follow up"},
+		"diff": map[string]any{"name": "Follow up"},
 	}); err != nil {
 		t.Fatalf("propose create: %v", err)
 	}
@@ -447,7 +447,7 @@ def main(input, host):
 	if err := accept(t, ds, "req-sdk-create"); err != nil {
 		t.Fatalf("accept the proposed create: %v", err)
 	}
-	if got := mustGet(t, ds, taskType, "t-minted"); got.Properties["title"] != "Follow up" {
+	if got := mustGet(t, ds, taskType, "t-minted"); got.Properties["name"] != "Follow up" {
 		t.Fatalf("the accepted create did not mint: %+v", got.Properties)
 	}
 
@@ -501,7 +501,7 @@ func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, e
 `))
 	ctx := context.Background()
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: taskType, ID: "t-go-proposed", Properties: map[string]any{"title": "draft"},
+		Kind: taskType, ID: "t-go-proposed", Properties: map[string]any{"name": "draft"},
 	})
 	if _, _, err := ops.CallFunction(ctx, fnAuthority+"/goproposer", map[string]any{"target": task.ID}); err != nil {
 		t.Fatalf("call: %v", err)

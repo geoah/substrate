@@ -135,17 +135,17 @@ func TestVersionCAS(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"title": "Ship it"}})
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "Ship it"}})
 
 	if _, err := ds.Patch(ctx, owner, task.Kind, task.ID, substrate.PatchInput{
-		Properties: map[string]any{"title": "Ship it now"}, IfVersion: ptr(int64(99)),
+		Properties: map[string]any{"name": "Ship it now"}, IfVersion: ptr(int64(99)),
 	}); err == nil {
 		t.Fatal("expected a CAS conflict")
 	} else {
 		wantErr(t, err, substrate.ErrConflict, "stale ifVersion")
 	}
 	ok := mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{
-		Properties: map[string]any{"title": "Ship it now"}, IfVersion: ptr(task.Version),
+		Properties: map[string]any{"name": "Ship it now"}, IfVersion: ptr(task.Version),
 	})
 	if ok.Version != task.Version+1 || ok.Title != "Ship it now" {
 		t.Fatalf("CAS patch = %+v", ok)
@@ -202,7 +202,7 @@ func TestMetadataNamespaces(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"title": "t"}})
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "t"}})
 
 	if _, err := ds.Patch(ctx, engram, task.Kind, task.ID, substrate.PatchInput{
 		Labels: map[string]any{"owner/pinned": true},
@@ -244,18 +244,18 @@ func TestMachineInitialAndTransitions(t *testing.T) {
 	// ONE initial state, whoever writes; a creation may NAME any declared
 	// state.
 	proposed := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "task", Properties: map[string]any{"title": "Send rack layout", "status": "proposed"},
+		Kind: "task", Properties: map[string]any{"name": "Send rack layout", "status": "proposed"},
 	})
 	if proposed.Properties["status"] != "proposed" {
 		t.Fatalf("named state at birth = %v", proposed.Properties)
 	}
-	ownerTask := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"title": "Mine"}})
+	ownerTask := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "Mine"}})
 	if ownerTask.Properties["status"] != "open" {
 		t.Fatalf("declared initial = %v", ownerTask.Properties)
 	}
 	// Only a DECLARED state, though.
 	if _, err := ds.Put(ctx, engram, substrate.PutInput{
-		Kind: "task", Properties: map[string]any{"title": "x", "status": "nosuch"},
+		Kind: "task", Properties: map[string]any{"name": "x", "status": "nosuch"},
 	}); err == nil {
 		t.Fatal("expected a validation error")
 	} else {
@@ -292,7 +292,7 @@ func TestMutationRequestApplyDiff(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"title": "Draft the memo"}})
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "Draft the memo"}})
 	req := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
@@ -386,7 +386,7 @@ func TestAcceptedNoOpDiffFailsTransition(t *testing.T) {
 	_, ds := newDataset(t)
 
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "task", Properties: map[string]any{"title": "Draft", "description": "already here"},
+		Kind: "task", Properties: map[string]any{"name": "Draft", "description": "already here"},
 	})
 
 	// A wrapper-less diff names `description` at the top level. Admission wraps
@@ -411,7 +411,7 @@ func TestAcceptedNoOpDiffFailsTransition(t *testing.T) {
 	// A well-formed diff that re-asserts the stored value applies no change. Its
 	// own target, because the accept above moved the first one.
 	settled := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "task", Properties: map[string]any{"title": "Settled", "description": "already here"},
+		Kind: "task", Properties: map[string]any{"name": "Settled", "description": "already here"},
 	})
 	noop := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
@@ -448,7 +448,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 			"targetKind": "tasks.substrate.reamde.dev/task",
 			"targetId":   targetID,
 			"rationale":  "the transcript asks for a follow-up",
-			"diff":       map[string]any{"properties": map[string]any{"title": "Follow up with Dana", "description": "before Friday"}},
+			"diff":       map[string]any{"properties": map[string]any{"name": "Follow up with Dana", "description": "before Friday"}},
 		},
 	})
 	// The target does not exist yet.
@@ -462,7 +462,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 		t.Fatalf("create request not accepted: %+v", accepted.Properties)
 	}
 	minted := mustGet(t, ds, "tasks.substrate.reamde.dev/task", targetID)
-	if minted.Properties["title"] != "Follow up with Dana" || minted.Properties["description"] != "before Friday" {
+	if minted.Properties["name"] != "Follow up with Dana" || minted.Properties["description"] != "before Friday" {
 		t.Fatalf("minted record wrong: %+v", minted.Properties)
 	}
 	// It is a real task, born in the initial state.
@@ -479,7 +479,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 			"op":         "create",
 			"targetKind": "tasks.substrate.reamde.dev/task",
 			"targetId":   targetID,
-			"diff":       map[string]any{"properties": map[string]any{"title": "Follow up with Dana", "description": "before Friday"}},
+			"diff":       map[string]any{"properties": map[string]any{"name": "Follow up with Dana", "description": "before Friday"}},
 		},
 	})
 	if _, err := ds.Patch(ctx, owner, replay.Kind, replay.ID, substrate.PatchInput{
@@ -487,7 +487,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("same-shape replay accept errored instead of no-op: %v", err)
 	}
-	if again := mustGet(t, ds, "tasks.substrate.reamde.dev/task", targetID); again.Properties["title"] != "Follow up with Dana" {
+	if again := mustGet(t, ds, "tasks.substrate.reamde.dev/task", targetID); again.Properties["name"] != "Follow up with Dana" {
 		t.Fatalf("same-shape replay changed the record: %+v", again.Properties)
 	}
 
@@ -501,7 +501,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 			"op":         "create",
 			"targetKind": "tasks.substrate.reamde.dev/task",
 			"targetId":   targetID,
-			"diff":       map[string]any{"properties": map[string]any{"title": "SHOULD NOT WIN"}},
+			"diff":       map[string]any{"properties": map[string]any{"name": "SHOULD NOT WIN"}},
 		},
 	})
 	if _, err := ds.Patch(ctx, owner, diverge.Kind, diverge.ID, substrate.PatchInput{
@@ -511,7 +511,7 @@ func TestChangeRequestCreateMints(t *testing.T) {
 	} else {
 		wantErr(t, err, substrate.ErrConflict, "divergent create collision")
 	}
-	if again := mustGet(t, ds, "tasks.substrate.reamde.dev/task", targetID); again.Properties["title"] != "Follow up with Dana" {
+	if again := mustGet(t, ds, "tasks.substrate.reamde.dev/task", targetID); again.Properties["name"] != "Follow up with Dana" {
 		t.Fatalf("divergent replay reset the record: %+v", again.Properties)
 	}
 	if after := mustGet(t, ds, diverge.Kind, diverge.ID); after.Properties["decision"] != "proposed" ||
@@ -536,7 +536,7 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"op": "create", "targetKind": "tasks.substrate.reamde.dev/task", "targetId": "occupied-1",
-			"diff": map[string]any{"properties": map[string]any{"title": "a task"}},
+			"diff": map[string]any{"properties": map[string]any{"name": "a task"}},
 		},
 	})
 	if _, err := ds.Patch(ctx, owner, otherType.Kind, otherType.ID, substrate.PatchInput{
@@ -544,7 +544,7 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("a create beside another type's id should land: %v", err)
 	}
-	if got := mustGet(t, ds, "tasks.substrate.reamde.dev/task", "occupied-1"); got.Properties["title"] != "a task" {
+	if got := mustGet(t, ds, "tasks.substrate.reamde.dev/task", "occupied-1"); got.Properties["name"] != "a task" {
 		t.Fatalf("per-type create did not mint: %+v", got.Properties)
 	}
 	if got := mustGet(t, ds, proj.Kind, proj.ID); got.Properties["name"] != "a project" {
@@ -552,7 +552,7 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 	}
 
 	// A tombstoned row at the id: a create neither resurrects nor overwrites.
-	live := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", ID: "gone-1", Properties: map[string]any{"title": "was here"}})
+	live := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", ID: "gone-1", Properties: map[string]any{"name": "was here"}})
 	if _, err := ds.Delete(ctx, owner, live.Kind, live.ID); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
@@ -560,7 +560,7 @@ func TestChangeRequestCreateDivergence(t *testing.T) {
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"op": "create", "targetKind": "tasks.substrate.reamde.dev/task", "targetId": "gone-1",
-			"diff": map[string]any{"properties": map[string]any{"title": "was here"}},
+			"diff": map[string]any{"properties": map[string]any{"name": "was here"}},
 		},
 	})
 	if _, err := ds.Patch(ctx, owner, tomb.Kind, tomb.ID, substrate.PatchInput{
@@ -582,7 +582,7 @@ func TestChangeRequestDeleteTombstones(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"title": "throwaway"}})
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "throwaway"}})
 	req := mustPut(t, ds, engram, substrate.PutInput{
 		Kind:       "recordpatchrequest",
 		Properties: map[string]any{"op": "delete", "rationale": "duplicate"},
@@ -883,6 +883,9 @@ func TestLinkUnlinkRefuseSystemTypes(t *testing.T) {
 }
 
 // A null DELETES, on the column-backed properties exactly as on the rest.
+// `body` and `dueAt` are the column-backed pair a task still authors: its
+// `title` is rendered from `name` (decision record 0016), and what a null
+// leaves behind there is TestClearingTheHeadingKeepsTheRenderedTitle's.
 func TestNullClearsEveryProperty(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
@@ -890,7 +893,7 @@ func TestNullClearsEveryProperty(t *testing.T) {
 	task := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "task",
 		Properties: map[string]any{
-			"title": "Ship it", "body": "the long version",
+			"name": "Ship it", "body": "the long version",
 			"dueAt": "2026-08-08T00:00:00Z", "description": "notes",
 		},
 	})
@@ -899,10 +902,10 @@ func TestNullClearsEveryProperty(t *testing.T) {
 	}
 	cleared := mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{
 		Properties: map[string]any{
-			"title": nil, "body": nil, "dueAt": nil, "description": nil,
+			"name": nil, "body": nil, "dueAt": nil, "description": nil,
 		},
 	})
-	for _, name := range []string{"title", "body", "dueAt", "description"} {
+	for _, name := range []string{"name", "body", "dueAt", "description"} {
 		if v, still := cleared.Properties[name]; still {
 			t.Fatalf("%s survived a null: %v", name, v)
 		}
@@ -913,7 +916,7 @@ func TestNullClearsEveryProperty(t *testing.T) {
 	// And clearing again is a no-op.
 	before := maxSeq(t, ds)
 	mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{
-		Properties: map[string]any{"title": nil, "dueAt": nil},
+		Properties: map[string]any{"name": nil, "dueAt": nil},
 	})
 	if rows := changesSince(t, ds, before); len(rows) != 0 {
 		t.Fatalf("clearing an already-clear property wrote %d rows", len(rows))
@@ -935,7 +938,7 @@ def main(input, host):
         {"action": "put", "kind": "core.substrate.reamde.dev/recordpatchrequest", "id": rid,
          "properties": {"op": "create", "targetKind": "tasks.substrate.reamde.dev/task",
                         "targetId": "%s-" + c["id"],
-                        "diff": {"properties": {"title": "smuggled"}}}},
+                        "diff": {"properties": {"name": "smuggled"}}}},
         {"action": "patch", "kind": "core.substrate.reamde.dev/recordpatchrequest", "id": rid,
          "properties": {"decision": "accepted"}}
     ]}
@@ -1009,7 +1012,7 @@ func TestAcceptFailuresAnnotateConflict(t *testing.T) {
 		Properties: map[string]any{
 			"op": "create", "targetKind": "tasks.substrate.reamde.dev/task", "targetId": "orphan-task",
 			"diff": map[string]any{
-				"properties": map[string]any{"title": "needs a project"},
+				"properties": map[string]any{"name": "needs a project"},
 				"edges":      []any{map[string]any{"rel": "project", "to": map[string]any{"id": "ghost-project"}}},
 			},
 		},

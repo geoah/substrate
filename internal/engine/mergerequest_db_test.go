@@ -200,7 +200,7 @@ func TestMergeRequestRefusesDifferentTypes(t *testing.T) {
 	_, ds := newDataset(t)
 
 	person := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "A"}})
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"title": "t"}})
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "t"}})
 	req := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: requestType,
 		ID:   "req-cross",

@@ -310,7 +310,7 @@ func TestRekeySameIDAcrossTypes(t *testing.T) {
 		Kind: "person", ID: shared, Properties: map[string]any{"name": "Pat"},
 	})
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "task", ID: shared, Properties: map[string]any{"title": "file taxes"},
+		Kind: "task", ID: shared, Properties: map[string]any{"name": "file taxes"},
 	})
 	if person.ID != shared || task.ID != shared {
 		t.Fatalf("both puts should keep the shared id: %s / %s", person.ID, task.ID)
@@ -372,7 +372,7 @@ func TestRekeyFormerIDTrailIsPerType(t *testing.T) {
 	// Another type may use the loser's id as its OWN key: the trail is the
 	// person type's, not the repository's.
 	tk, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "task", ID: loser.ID, Properties: map[string]any{"title": "unrelated"},
+		Kind: "task", ID: loser.ID, Properties: map[string]any{"name": "unrelated"},
 	})
 	if err != nil {
 		t.Fatalf("a task may wear a person's former id: %v", err)

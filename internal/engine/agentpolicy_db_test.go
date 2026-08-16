@@ -308,7 +308,7 @@ func TestConfirmationFloorGatesFunctionEffects(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("accept: %v", err)
 	}
-	if got, err := ds.Get(ctx, taskKind, "t-burned"); err != nil || got.Properties["title"] != "burned" {
+	if got, err := ds.Get(ctx, taskKind, "t-burned"); err != nil || got.Properties["name"] != "burned" {
 		t.Fatalf("the accepted effect did not land: %+v %v", got, err)
 	}
 }

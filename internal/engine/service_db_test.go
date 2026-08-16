@@ -170,7 +170,7 @@ func TestRepositoryDatasetIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	importVocabulary(t, a, "tasks")
-	task := mustPut(t, a, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"title": "alpha only"}})
+	task := mustPut(t, a, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "alpha only"}})
 	if _, err := b.Get(ctx, task.Kind, task.ID); err == nil {
 		t.Fatal("datasets must be isolated")
 	}
@@ -375,7 +375,7 @@ func TestWatchSignal(t *testing.T) {
 	_, ds := newDataset(t)
 	ch := ds.WatchSignal(ctx)
 
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"title": "watch me"}})
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "watch me"}})
 	select {
 	case seq := <-ch:
 		if seq <= 0 {
@@ -410,7 +410,7 @@ func TestChangesFilters(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	task := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: "task", Properties: map[string]any{"title": "t", "status": "proposed"},
+		Kind: "task", Properties: map[string]any{"name": "t", "status": "proposed"},
 	})
 	mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{Properties: map[string]any{"status": "open"}})
 

@@ -214,7 +214,7 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 def main(input, host):
     tid = input["args"]["id"]
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": tid, "properties": {"title": "annotated"}}],
+                         "id": tid, "properties": {"name": "annotated"}}],
             "output": {"ok": True}}
 `,
 		}),
@@ -238,7 +238,7 @@ def main(input, host):
 def main(input, host):
     key = input["idempotencyKey"]
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "t-idem", "properties": {"title": key}}],
+                         "id": "t-idem", "properties": {"name": key}}],
             "output": {"key": key}}
 `,
 		}),
@@ -295,7 +295,7 @@ def main(input, host):
 			"source": `
 def main(input, host):
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "t-burned", "properties": {"title": "burned"}}],
+                         "id": "t-burned", "properties": {"name": "burned"}}],
             "output": {"ok": True}}
 `,
 		}),

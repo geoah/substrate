@@ -46,7 +46,7 @@ func TestWatchResumesGaplesslyAcrossARestart(t *testing.T) {
 	importVocabulary(t, ds1, "tasks")
 	mustPut(t, ds1, owner, substrate.PutInput{
 		Kind:       "tasks.substrate.reamde.dev/task",
-		Properties: map[string]any{"title": "before the restart"},
+		Properties: map[string]any{"name": "before the restart"},
 	})
 	// What a consumer remembers: the last seq it saw.
 	cursor := maxSeq(t, ds1)
@@ -61,11 +61,11 @@ func TestWatchResumesGaplesslyAcrossARestart(t *testing.T) {
 	t.Cleanup(func() { _ = svc2.Close() })
 	mustPut(t, ds2, owner, substrate.PutInput{
 		Kind:       "tasks.substrate.reamde.dev/task",
-		Properties: map[string]any{"title": "after the restart"},
+		Properties: map[string]any{"name": "after the restart"},
 	})
 	mustPut(t, ds2, owner, substrate.PutInput{
 		Kind:       "tasks.substrate.reamde.dev/task",
-		Properties: map[string]any{"title": "and one more"},
+		Properties: map[string]any{"name": "and one more"},
 	})
 
 	rows := changesSince(t, ds2, cursor)

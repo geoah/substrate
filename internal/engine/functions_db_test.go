@@ -228,7 +228,7 @@ def main(input, host):
     env = input["envelope"]
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
                          "id": "t-" + env["change"]["id"],
-                         "properties": {"title": env["record"]["properties"]["name"]}}]}
+                         "properties": {"name": env["record"]["properties"]["name"]}}]}
 `
 
 func TestTriggerSourceMatchingAndGlob(t *testing.T) {
@@ -244,13 +244,13 @@ func TestTriggerSourceMatchingAndGlob(t *testing.T) {
 def main(input, host):
     c = input["envelope"]["change"]
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "e-" + c["id"], "properties": {"title": c["kind"]}}]}
+                         "id": "e-" + c["id"], "properties": {"name": c["kind"]}}]}
 `),
 		pyFn("glob", map[string]any{}, []any{taskType}, `
 def main(input, host):
     c = input["envelope"]["change"]
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "g-" + c["id"], "properties": {"title": c["kind"] + "/" + c["op"]}}]}
+                         "id": "g-" + c["id"], "properties": {"name": c["kind"] + "/" + c["op"]}}]}
 `),
 	)
 	ctx := context.Background()
@@ -362,7 +362,7 @@ def main(input, host):
                          "id": c["id"], "properties": {"description": "seen-" + str(c["seq"])}}]}
 `))
 
-	task := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"title": "t"}})
+	task := mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, Properties: map[string]any{"name": "t"}})
 	process(t, ops)
 	marked := mustGet(t, ds, task.Kind, task.ID)
 	desc, _ := marked.Properties["description"].(string)
@@ -394,7 +394,7 @@ func TestTriggerCoalescingAndSerialOrder(t *testing.T) {
 def main(input, host):
     c = input["envelope"]["change"]
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "%s-" + c["id"], "properties": {"title": "seen-" + str(c["seq"])}}]}
+                         "id": "%s-" + c["id"], "properties": {"name": "seen-" + str(c["seq"])}}]}
 `, prefix)
 	}
 	ds, ops := newFnDataset(t,
@@ -544,7 +544,7 @@ def main(input, host):
 	ctx := context.Background()
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "w"}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, ID: "t-" + w.ID, Properties: map[string]any{"title": "w"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, ID: "t-" + w.ID, Properties: map[string]any{"name": "w"}})
 	process(t, ops)
 
 	mustPatch(t, ds, fnActor, w.Kind, w.ID, substrate.PatchInput{Properties: map[string]any{"want": "done"}})
@@ -616,8 +616,8 @@ func TestTriggerEffectsAndCursorAreOneTransaction(t *testing.T) {
 def main(input, host):
     c = input["envelope"]["change"]
     return {"effects": [
-        {"action": "put", "kind": "tasks.substrate.reamde.dev/task", "id": "ok-" + c["id"], "properties": {"title": "half"}},
-        {"action": "patch", "kind": "tasks.substrate.reamde.dev/task", "id": "missing-" + c["id"], "properties": {"title": "x"}},
+        {"action": "put", "kind": "tasks.substrate.reamde.dev/task", "id": "ok-" + c["id"], "properties": {"name": "half"}},
+        {"action": "patch", "kind": "tasks.substrate.reamde.dev/task", "id": "missing-" + c["id"], "properties": {"name": "x"}},
     ]}
 `))
 	ctx := context.Background()
@@ -751,7 +751,7 @@ def main(input, host):
 	ctx := context.Background()
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, ID: "t-" + w.ID, Properties: map[string]any{"title": "w"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, ID: "t-" + w.ID, Properties: map[string]any{"name": "w"}})
 	process(t, ops)
 
 	if _, err := ds.Delete(ctx, fnActor, w.Kind, w.ID); err != nil {
@@ -785,7 +785,7 @@ def main(input, host):
 	ctx := context.Background()
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "w"}})
-	mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, ID: "t-" + w.ID, Properties: map[string]any{"title": "w"}})
+	mustPut(t, ds, owner, substrate.PutInput{Kind: taskType, ID: "t-" + w.ID, Properties: map[string]any{"name": "w"}})
 	process(t, ops)
 
 	// First delivery moves open → done and stamps completedAt.
@@ -962,7 +962,7 @@ func TestTriggerDispatchIsPerRepository(t *testing.T) {
 def main(input, host):
     c = input["envelope"]["change"]
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
-                         "id": "m-" + c["id"], "properties": {"title": input["envelope"]["repository"]["owner"]}}]}
+                         "id": "m-" + c["id"], "properties": {"name": input["envelope"]["repository"]["owner"]}}]}
 `)))
 		if err != nil {
 			t.Fatalf("install into %s: %v", username, err)

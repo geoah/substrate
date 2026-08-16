@@ -42,7 +42,14 @@ data:
   # version 5: the task machine's `dropped` state is `abandoned` (decision
   # record 0013); taskprojection's source says so where it explains what it
   # never touches.
-  version: 5
+  # version 6: taskprojection writes the issue's title to the task's declared
+  # `name` property. The task's heading left the built-in title slot (#123),
+  # which a kind with a displayTemplate no longer stores. THIS UPGRADE NEEDS
+  # tasks.substrate.reamde.dev AT VERSION 4 FIRST: `requires:` names the
+  # authority and not a version of it, so upgrading this closure against a
+  # task kind that still declares no `name` parks every issue delivery on an
+  # undeclared property.
+  version: 6
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -963,7 +970,9 @@ data:
             # Mint only tasks that are still open upstream: backfilling a task
             # that was already done in Linear would create noise, not work.
             if upstream == "open" and title:
-                tprops = {"title": title}
+                # The issue's own heading rides the mirror's built-in title
+                # slot; the task's is its declared `name` (#123).
+                tprops = {"name": title}
                 if url:
                     tprops["url"] = url
                 host.effects.put(TASK_TYPE, task_id, properties=tprops,
@@ -971,9 +980,11 @@ data:
         else:
             tprops = task.get("properties") or {}
             desired = {}
-            # Linear-owned identity keys: diff, and patch only what moved.
-            if title and tprops.get("title") != title:
-                desired["title"] = title
+            # Linear-owned identity keys: diff, and patch only what moved. A
+            # task minted before `name` was declared answers nothing here, so
+            # the first redelivery is also its backfill.
+            if title and tprops.get("name") != title:
+                desired["name"] = title
             if url and tprops.get("url") != url:
                 desired["url"] = url
             # STATUS IS THE SHARP EDGE (the v4 policy): it moves only when

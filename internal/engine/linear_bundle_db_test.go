@@ -679,13 +679,17 @@ func TestLinearBundleFakeSyncJointOwnership(t *testing.T) {
 		t.Fatalf("issue assignee edge = %+v, want person %s", ae, personID)
 	}
 
-	// The projection minted both tasks open, titled off the issues.
+	// The projection minted both tasks open, headed off the issues: the
+	// issue's title lands on the task's DECLARED `name`, which is what the
+	// task kind renders its title from (decision record 0016).
 	taskA := linearGet(t, ds, linearTaskType, taskAID)
 	if taskA.Kind != linearTaskType {
 		t.Fatalf("task A is a %s, want %s", taskA.Kind, linearTaskType)
 	}
-	if taskA.Properties["status"] != "open" || taskA.Title != "Fix the flux capacitor" {
-		t.Fatalf("task A wrong: status=%v title=%q", taskA.Properties["status"], taskA.Title)
+	if taskA.Properties["status"] != "open" || taskA.Properties["name"] != "Fix the flux capacitor" ||
+		taskA.Title != "Fix the flux capacitor" {
+		t.Fatalf("task A wrong: status=%v name=%v title=%q",
+			taskA.Properties["status"], taskA.Properties["name"], taskA.Title)
 	}
 	if linearGet(t, ds, linearTaskType, taskBID).Properties["status"] != "open" {
 		t.Fatal("task B did not mint open")

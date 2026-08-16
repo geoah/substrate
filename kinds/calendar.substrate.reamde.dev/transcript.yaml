@@ -8,16 +8,27 @@ data:
     A meeting's transcript, pointed at the occurrence that actually happened
     and the people who spoke. The text is embedded, so what was said in a
     meeting is searchable alongside everything else rather than only scrollable.
+  # The declaration inherited the authority's version before this pin.
+  # version 2: `name` is the heading, declared. A transcript used to hold it
+  # in the built-in title slot, which is not a kind's storage (#123).
+  version: 2
   names:
     singular: transcript
     plural: transcripts
   traits:
     - temporal(range)
-  # no displayTemplate and no `name` property: a transcript has a real
-  # title and the writer's title stands (`title` is a property every record
-  # already carries; a template here would shadow the stored one and blank
-  # every transcript written without the new property on the next re-fold).
+  # `title` is the LEGACY alternative, not a second spelling to write:
+  # transcripts written before `name` existed hold their heading in the
+  # built-in title column, and reading it keeps them titled instead of
+  # blanking them on their next write. Decision record 0016 has what that
+  # costs; it goes when the column does (#68).
+  displayTemplate: "{name|title}"
   properties:
+    # what the transcript is of, in one line: usually the meeting's own
+    # title, copied by whatever produced the transcript.
+    name:
+      type: string
+      description: the transcript's heading, one line
     # a plain string rather than an enum: transcript tools appear faster
     # than any fixed list would keep up with.
     source:

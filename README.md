@@ -58,7 +58,7 @@ cat <<'EOF' | bin/substratectl apply -f -
 kind: tasks.substrate.reamde.dev/task
 data:
   properties:
-    title: Buy milk
+    name: Buy milk
     dueAt: 2026-08-13T09:00:00Z
 EOF
 

@@ -153,3 +153,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0013](0013-state-machines-say-done-and-abandoned.md) | State machines say `done` and `abandoned`; a domain word survives only by decision | accepted |
 | [0014](0014-authorities-widen-only-outside-the-id-alphabet.md) | Authorities may widen only with characters the id alphabet excludes | accepted |
 | [0015](0015-unproven-kinds-stay-out-of-the-stable-set.md) | Unproven kinds stay out of the stable vocabulary set | accepted |
+| [0016](0016-a-kind-titles-itself-from-a-declared-property.md) | A kind titles itself from a declared property, never the built-in slot | accepted |

@@ -219,7 +219,7 @@ func TestCallFunctionOnHostFunctions(t *testing.T) {
 	importVocabulary(t, ds, "tasks")
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: "tasks.substrate.reamde.dev/task", ID: "t-1",
-		Properties: map[string]any{"title": "written by hand"},
+		Properties: map[string]any{"name": "written by hand"},
 	}); err != nil {
 		t.Fatal(err)
 	}

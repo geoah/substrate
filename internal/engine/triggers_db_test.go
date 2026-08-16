@@ -60,7 +60,7 @@ def main(input, host):
     fire = input["envelope"]["fire"]
     return {"effects": [{"action": "put", "kind": "tasks.substrate.reamde.dev/task",
                          "id": "fire-" + fire["id"],
-                         "properties": {"title": input["mode"] + " " + fire["at"]}}]}
+                         "properties": {"name": input["mode"] + " " + fire["at"]}}]}
 `,
 		}),
 	}); err != nil {

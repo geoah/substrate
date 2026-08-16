@@ -136,7 +136,7 @@ func TestUnparseableStoredAgentQuarantinesInsteadOfBricking(t *testing.T) {
 	}
 	mustPut(t, ds2, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
 	// …and so is the shipped vocabulary.
-	mustPut(t, ds2, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"title": "still alive"}})
+	mustPut(t, ds2, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "still alive"}})
 
 	// (b) Re-applying the corrected manifest clears the quarantine — the same
 	// path an admission-quarantined closure clears through.

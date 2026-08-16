@@ -17,7 +17,7 @@ One entry, as the wire carries it, for the task created on the
  "op": "put",
  "kind": "tasks.substrate.reamde.dev/task",
  "recordId": "kq3v9x2m41pf",
- "payload": {"created": true, "properties": ["title", "dueAt"]},
+ "payload": {"created": true, "properties": ["name", "dueAt"]},
  "hash": "5f0c…64 hex chars…9a1d"}
 ```
 

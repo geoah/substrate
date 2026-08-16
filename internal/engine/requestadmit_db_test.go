@@ -72,7 +72,7 @@ def main(input, host):
 
 	for _, id := range []string{"t-wrapped", "t-bare"} {
 		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: taskType, ID: id, Properties: map[string]any{"title": "draft"},
+			Kind: taskType, ID: id, Properties: map[string]any{"name": "draft"},
 		})
 	}
 	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, ID: "w-1", Properties: map[string]any{"name": "w"}})
@@ -138,7 +138,7 @@ def main(input, host):
 		pyFn("badcreate", map[string]any{}, []any{requestKind}, badCreate))
 
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: taskType, ID: "t-victim", Properties: map[string]any{"title": "untouched"},
+		Kind: taskType, ID: "t-victim", Properties: map[string]any{"name": "untouched"},
 	})
 	mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, ID: "w-1", Properties: map[string]any{"name": "w"}})
 	process(t, ops)
@@ -161,7 +161,7 @@ def main(input, host):
 			t.Fatalf("%s: the malformed request landed: %v", c.fn, err)
 		}
 	}
-	if got := mustGet(t, ds, taskType, "t-victim"); got.Properties["title"] != "untouched" {
+	if got := mustGet(t, ds, taskType, "t-victim"); got.Properties["name"] != "untouched" {
 		t.Fatalf("the target moved: %+v", got.Properties)
 	}
 }
@@ -175,7 +175,7 @@ func TestAPIProposalDiffAdmission(t *testing.T) {
 	_, ds := newDataset(t)
 
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: taskType, Properties: map[string]any{"title": "draft"},
+		Kind: taskType, Properties: map[string]any{"name": "draft"},
 	})
 	target := []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: taskType, ID: task.ID}}}
 
@@ -290,7 +290,7 @@ func TestAPIProposalDiffAdmission(t *testing.T) {
 				Kind: requestKind, Edges: target,
 				Properties: map[string]any{
 					"op": "create", "targetKind": taskType, "targetId": "t-fresh",
-					"diff": map[string]any{"properties": map[string]any{"title": "new"}},
+					"diff": map[string]any{"properties": map[string]any{"name": "new"}},
 				},
 			},
 			names: "never by a target edge",
@@ -304,7 +304,7 @@ func TestAPIProposalDiffAdmission(t *testing.T) {
 				Properties: map[string]any{
 					"op": "create", "targetKind": taskType, "targetId": "t-precondition",
 					"diff": map[string]any{
-						"properties": map[string]any{"title": "guarded"}, "ifVersion": 0,
+						"properties": map[string]any{"name": "guarded"}, "ifVersion": 0,
 					},
 				},
 			},
@@ -453,7 +453,7 @@ def main(input, host):
     return {}
 `))
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: taskType, ID: "t-replayed", Properties: map[string]any{"title": "draft"},
+		Kind: taskType, ID: "t-replayed", Properties: map[string]any{"name": "draft"},
 	})
 	fn := fnAuthority + "/reproposer"
 
@@ -523,7 +523,7 @@ func TestStoredMalformedRequestStillFailsAtAccept(t *testing.T) {
 	ds, raw, _ := newDatasetWithDB(t)
 
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: taskType, Properties: map[string]any{"title": "draft", "description": "as it was"},
+		Kind: taskType, Properties: map[string]any{"name": "draft", "description": "as it was"},
 	})
 	req := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: requestKind,

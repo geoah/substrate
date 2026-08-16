@@ -1233,7 +1233,7 @@ func TestUndeclaredNullDeletes(t *testing.T) {
 	_, ds := newDataset(t)
 	ctx := context.Background()
 	task := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "task", Properties: map[string]any{"title": "t"},
+		Kind: "task", Properties: map[string]any{"name": "t"},
 	})
 	if _, err := ds.Patch(ctx, owner, task.Kind, task.ID, substrate.PatchInput{
 		Properties: map[string]any{"neverDeclared": "x"},
