@@ -130,6 +130,16 @@ record that says what it said in 2026 is doing its job.
    `superseded-by:` without being superseded.
 6. An index row whose status disagrees with the record's frontmatter.
 
+`mise run frozen:check` holds the one rule the files alone cannot show, because
+it is about what CHANGED: the body of an accepted record, everything below the
+frontmatter, may not be rewritten. A record that gets edited as opinion moves
+stops being evidence of what was decided and why, and superseding it is how the
+corpus says so. The frontmatter is deliberately outside the comparison, so
+marking a record superseded edits `status:` and `superseded-by:` and trips
+nothing. It reads the diff against the base branch rather than the files, which
+is why it sits beside `kinds:check` in the `lint` job instead of inside
+`lint:docs`.
+
 Not held, on purpose: whether the record is under two pages, whether the
 options were seriously considered, and whether Confirmation names a real test.
 Those are a reviewer's, which is where `docscheck.sh` already draws its line.
