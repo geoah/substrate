@@ -40,12 +40,14 @@ func TestTaskAndTranscriptTitleThemselvesFromName(t *testing.T) {
 		t.Fatalf("a transcript titles itself from `name`: %q", transcript.Title)
 	}
 	// The write that used to work: a kind with a template derives its title,
-	// so the slot a writer fills is dropped on the way in.
-	written := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: taskType, Properties: map[string]any{"title": "Buy milk"},
-	})
-	if written.Title != "" {
-		t.Fatalf("a written title on a templated kind is ignored, got %q", written.Title)
+	// so the slot a writer fills is dropped on the way in, on both kinds.
+	for _, kind := range []string{taskType, transcriptKind} {
+		written := mustPut(t, ds, owner, substrate.PutInput{
+			Kind: kind, Properties: map[string]any{"title": "Buy milk"},
+		})
+		if written.Title != "" {
+			t.Fatalf("%s: a written title is ignored, got %q", kind, written.Title)
+		}
 	}
 }
 

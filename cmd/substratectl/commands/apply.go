@@ -47,10 +47,13 @@ is PUT at that id; without one it is POSTed to the collection. The
 ` + "`status`" + ` block written by ` + "`substratectl get -o yaml`" + ` is ignored, so
 get output is directly apply-able.
 
-Everything authored is a property: ` + "`title`" + `, ` + "`body`" + ` and the
-temporal properties sit in ` + "`data.properties`" + ` beside the declared ones,
-and so does a state's current value — which apply cannot move: a transition is
-` + "`substratectl patch --state <name>=<state>`" + `.
+Everything authored is a property: ` + "`body`" + ` and the temporal
+properties sit in ` + "`data.properties`" + ` beside the declared ones, and so
+does a state's current value — which apply cannot move: a transition is
+` + "`substratectl patch --state <name>=<state>`" + `. So does
+` + "`title`" + `, on a kind that stores one; a kind declaring a
+` + "`displayTemplate`" + ` renders its title instead (` + "`task`" + ` from
+` + "`name`" + `, above) and drops a written one.
 
 An edge target is ` + "`{authority, type, id}`" + `; bare ` + "`{id}`" + ` is the
 shorthand on a single-target edge. ` + "`metadata.ifVersion`" + ` refuses the

@@ -883,6 +883,9 @@ func TestLinkUnlinkRefuseSystemTypes(t *testing.T) {
 }
 
 // A null DELETES, on the column-backed properties exactly as on the rest.
+// `body` and `dueAt` are the column-backed pair a task still authors: its
+// `title` is rendered from `name` (decision record 0016), and what a null
+// leaves behind there is TestClearingTheHeadingKeepsTheRenderedTitle's.
 func TestNullClearsEveryProperty(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
@@ -890,7 +893,7 @@ func TestNullClearsEveryProperty(t *testing.T) {
 	task := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "task",
 		Properties: map[string]any{
-			"title": "Ship it", "body": "the long version",
+			"name": "Ship it", "body": "the long version",
 			"dueAt": "2026-08-08T00:00:00Z", "description": "notes",
 		},
 	})
@@ -899,10 +902,10 @@ func TestNullClearsEveryProperty(t *testing.T) {
 	}
 	cleared := mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{
 		Properties: map[string]any{
-			"title": nil, "body": nil, "dueAt": nil, "description": nil,
+			"name": nil, "body": nil, "dueAt": nil, "description": nil,
 		},
 	})
-	for _, name := range []string{"title", "body", "dueAt", "description"} {
+	for _, name := range []string{"name", "body", "dueAt", "description"} {
 		if v, still := cleared.Properties[name]; still {
 			t.Fatalf("%s survived a null: %v", name, v)
 		}
@@ -913,7 +916,7 @@ func TestNullClearsEveryProperty(t *testing.T) {
 	// And clearing again is a no-op.
 	before := maxSeq(t, ds)
 	mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{
-		Properties: map[string]any{"title": nil, "dueAt": nil},
+		Properties: map[string]any{"name": nil, "dueAt": nil},
 	})
 	if rows := changesSince(t, ds, before); len(rows) != 0 {
 		t.Fatalf("clearing an already-clear property wrote %d rows", len(rows))

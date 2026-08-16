@@ -99,8 +99,11 @@ Three rules make the envelope predictable:
 - **`kind` is the record's kind reference**, and it is the only place the kind
   appears. Nothing splits it into parts.
 - **`data` carries two keys and no others**, `properties` and `edges`.
-  Everything authored, `title` and the temporal properties included, lives in
-  `data.properties`, so nothing needs a reserved list to name a property.
+  Everything authored, the built-in `body` and the temporal properties
+  included, lives in `data.properties`, so nothing needs a reserved list to
+  name a property. (`title` sits there too, on a kind that does not derive it
+  from a [`displayTemplate`](vocabulary.md#admission); `task` derives it from
+  `name`, which is why the example above writes that.)
 - **`status` is server-set and ignored on input**, so a document you read,
   edit, and re-apply means exactly what it looks like: the block you carried
   along is dropped rather than fought over.
