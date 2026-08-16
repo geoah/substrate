@@ -18,14 +18,24 @@ package engine
 // the changelog (settleChain), in that transaction, so it is exactly as
 // durable as the first entry it claims. The invariant is then tight in both
 // directions: no entry exists that the stamp does not cover, and no store is
-// barred over entries nobody wrote. An open that fails halfway, the case an
-// operator rolls the image back for, leaves the stamp alone.
+// barred over entries nobody wrote. An open that fails before it appends, the
+// case an operator rolls the image back for, leaves the stamp alone; an open
+// whose vocabulary upgrade committed has already written entries, and barring
+// the older binary from those is the gate working.
+//
+// The stamp is the WRITER's maximum, not a minimum derived from the entries.
+// A second rung could derive one (an entry's ops and effects say what a
+// replayer needs), and the stamped column is what makes that refinement
+// possible later without guessing at unstamped history.
 //
 // THE LADDER HAS ONE RUNG. Dialect 1 is the changelog as it stands: the ops in
 // substrate.Change and the fold effects in fold.go. A change that teaches the
 // writer a spelling an older binary's fold would refuse or misread (a new fold
 // effect kind, a new op, a payload shape an old decoder reads differently)
-// bumps maxChangelogDialect in the same commit.
+// bumps maxChangelogDialect in the same commit, and
+// changelogdialect_internal_test.go is what makes the first two say so: it
+// reads the declared ops and effect kinds and fails on any the rung does not
+// list.
 
 import (
 	"context"
@@ -62,7 +72,7 @@ func MaxChangelogDialect() int { return maxChangelogDialect }
 // There is no advisory lock and no promotion step, unlike the vocabulary
 // ladder: nothing rewrites history, so the gate is one query.
 func (ds *dataset) gateChangelogDialect(ctx context.Context) error {
-	stored, err := ds.storedChangelogDialect(ctx)
+	stored, err := readChangelogDialect(ctx, ds.db)
 	if err != nil {
 		return err
 	}
@@ -86,13 +96,11 @@ func (ds *dataset) gateChangelogDialect(ctx context.Context) error {
 // is one writer process (#159), and this is the brace to that belt on the one
 // operation whose whole job is to interpret history.
 func (t *txn) refuseNewerChangelogDialect() error {
-	var stored int
-	switch err := t.row(`SELECT dialect FROM changelog_dialect`).Scan(&stored); {
-	case errors.Is(err, sql.ErrNoRows):
-		return nil
-	case err != nil:
-		return fmt.Errorf("substrate/engine: read changelog dialect: %w", err)
-	case stored > maxChangelogDialect:
+	stored, err := readChangelogDialect(t.ctx, t.tx)
+	if err != nil {
+		return err
+	}
+	if stored > maxChangelogDialect {
 		return newerChangelogDialect(t.ds.info.Name, stored)
 	}
 	return nil
@@ -103,11 +111,11 @@ func newerChangelogDialect(repository string, stored int) error {
 		ErrChangelogDialectNewer, repository, stored, maxChangelogDialect)
 }
 
-// storedChangelogDialect reads the repository's stamp; an absent row is 0, a
-// changelog no binary has claimed yet.
-func (ds *dataset) storedChangelogDialect(ctx context.Context) (int, error) {
+// readChangelogDialect reads the repository's stamp through a pool or a
+// transaction; an absent row is 0, a changelog no binary has claimed yet.
+func readChangelogDialect(ctx context.Context, q dbx) (int, error) {
 	var d int
-	err := ds.db.QueryRowContext(ctx, `SELECT dialect FROM changelog_dialect`).Scan(&d)
+	err := q.QueryRowContext(ctx, `SELECT dialect FROM changelog_dialect`).Scan(&d)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}
@@ -117,9 +125,9 @@ func (ds *dataset) storedChangelogDialect(ctx context.Context) (int, error) {
 	return d, nil
 }
 
-// changelogDialectStamp is the upsert both stampers run. It only ever moves up
-// (GREATEST), so an older binary racing a newer one can never wind the
-// changelog's claim back to a number the history has already outgrown.
+// changelogDialectStamp only ever moves the claim up (GREATEST), so an older
+// binary racing a newer one can never wind the changelog's claim back to a
+// number the history has already outgrown.
 const changelogDialectStamp = `
 	INSERT INTO changelog_dialect (dialect) VALUES ($1)
 	ON CONFLICT (repository) DO UPDATE

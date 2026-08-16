@@ -21,7 +21,7 @@ type discoveryDoc struct {
 	Versions []apiVersionInfo `json:"versions"`
 	// Server names the running build.
 	Server serverInfo `json:"server"`
-	// Vocabulary reports the binary's max schema dialect. The per-repository
+	// Vocabulary reports the binary's max vocabulary dialect. The per-repository
 	// STORED dialect is not on the wire anywhere: it lives in each
 	// repository's own `vocabulary_dialect` row, and this endpoint opens none.
 	Vocabulary vocabularyInfo `json:"vocabulary"`
