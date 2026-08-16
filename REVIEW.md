@@ -78,16 +78,70 @@ Still open, and needed before the freeze: `required`/`default` (enforce or
 rename, P0 item 9), the stability vocabulary (add `beta` or redefine
 `stable`, P0 item 15), and the verb audit below.
 
-**The verb audit.** Decision 3 shrinks by first removing verbs that are
-records or state transitions in disguise: `recordmerges`/`recordsplits` are
-themselves shipped core kinds (which is why their collections are
-unreachable); `bundles/{id}/disable|enable|uninstall|purge` are lifecycle
-transitions on a record the substrate owns, which ADR 0019 says should be a
-state machine; `bundles/status` and `triggers/status` are computed state,
-which the envelope's server-owned `status` key already carries. What is
-irreducibly a verb: invocation, `POST /graphql`, `vocabulary/apply` (the
-transaction boundary), blob bytes, `changes`, `catalog`, trait queries and
-the OAuth pair.
+5. **Agents get no bespoke API.** Their whole state is already records
+   (`llmthread`, `llmmessage`, `llminteraction`, `run`, `agent`), the
+   continuation already runs off `notifies` (ADR 0003) and asks are already
+   records (ADR 0004). Invocation is a record write; reads are REST, GraphQL
+   and `watch`. Delete `agents/{name}/call` and `agents/{name}/chat`. The one
+   thing records cannot express is token-level output of an in-flight
+   generation, because the changelog is hashed and permanent so partial
+   tokens can never go in it; **token streaming is not a v1 requirement**, so
+   the console renders messages as they commit. If real use later demands it,
+   it arrives as a generic ephemeral-progress channel keyed on a record, never
+   as an agent-shaped route. #71 (GraphQL reference inverses) stops being an
+   agent problem and becomes what it is: a gap in the general query surface.
+
+## The v1 API surface, after reduction
+
+The aim is the smallest surface that can be frozen. Everything below is one
+decision list; the path-grammar ADR (decision 3) carries it.
+
+**Delete** (no replacement, the capability exists elsewhere or is not v1):
+
+- `POST {core}/functions/{name}/call` — `triggers/{id}/run` is the debug path.
+- `POST {core}/agents/{name}/call`, `POST {core}/agents/{name}/chat`.
+
+**Fold into records** (the operation stays, the bespoke route goes):
+
+- `POST {core}/recordmerges`, `POST {core}/recordsplits` — `recordmerge` and
+  `recordsplit` are shipped kinds; creating the record is the operation, and
+  the collision that makes those collections unreachable disappears. Cheap.
+- `GET {core}/bundles/status`, `GET {core}/bundles/{id}/status`, and the
+  trigger status verb — the envelope's server-owned `status` key already
+  carries computed state. Cheap.
+- `POST {core}/bundles/{id}/disable|enable|uninstall|purge` — lifecycle
+  transitions on a record the substrate owns, which ADR 0019 says is a state
+  machine. **Needs design**: the finalizer and purge flows must hang off
+  transitions, so this is the one fold that is not a route change.
+- `POST {core}/bundles/{id}/bind` — an input binding is an edge; writing it
+  is a record write. Cheap.
+
+**Audit before freezing** (defensible either way, decide once):
+
+- `GET {core}/traits/{id}/implementors` and `/records` — both are queries. If
+  the filter grammar can express "kinds implementing trait X" they are
+  collection reads, not routes.
+- `POST {core}/catalog/{id}/install` — installing is applying the closure
+  through the same admission path as `vocabulary/apply`; it may be that verb
+  with a catalog reference rather than its own.
+- The trigger verbs `replay` and `wake` — genuine operations (a cursor reset,
+  an immediate scan), but they are the template for every future verb, so
+  they should be the ones that prove the reserved segment works.
+
+**Keep, irreducibly:**
+
+- Record CRUD, `incoming`, edge link/unlink (the restructured record tree).
+- `GET {core}/changes` and the watch stream — the log is not a collection.
+- `POST /graphql` — a query transport.
+- `POST {core}/vocabulary/apply` — the multi-document transaction boundary.
+- `PUT`/`GET /blobs/{digest}` — bytes, ranges, `413`.
+- `GET {core}/catalog`, `GET {core}/catalog/{id}` — shipped in the binary,
+  not repository records.
+- `POST {core}/oauth/start` and `GET {core}/oauth/callback` — an external
+  protocol; the callback carries no bearer by design.
+- The auth routes (`register`, `login`, `password`, `totp`, `tokens`,
+  `recovery/enroll`), which should also gain a version prefix or be fully
+  listed in discovery's `endpoints` block.
 
 ## The P0 list
 
