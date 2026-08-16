@@ -56,7 +56,7 @@ func TestPrincipalStampsTheEntryAndItsManagerRows(t *testing.T) {
 
 	task, err := ds.Put(first, owner, substrate.PutInput{
 		Kind:       principalTask,
-		Properties: map[string]any{"title": "Ship it", "description": "with the token that wrote it"},
+		Properties: map[string]any{"name": "Ship it", "description": "with the token that wrote it"},
 	})
 	if err != nil {
 		t.Fatalf("put: %v", err)
@@ -72,21 +72,21 @@ func TestPrincipalStampsTheEntryAndItsManagerRows(t *testing.T) {
 	// both move, which is the whole point — the actor cannot tell them apart.
 	second := substrate.WithPrincipal(context.Background(), "tok_second")
 	if _, err := ds.Patch(second, owner, task.Kind, task.ID, substrate.PatchInput{
-		Properties: map[string]any{"title": "Ship it now"},
+		Properties: map[string]any{"name": "Ship it now"},
 	}); err != nil {
 		t.Fatalf("patch: %v", err)
 	}
 	if got := lastPrincipal(t, dsn); got != "tok_second" {
 		t.Fatalf("the second entry's principal is %q, want tok_second", got)
 	}
-	var titlePrincipal string
+	var namePrincipal string
 	if err := rawDB(t, dsn).QueryRow(`
 		SELECT principal FROM property_managers
-		WHERE record_kind = $1 AND record_id = $2 AND property = 'title'`, task.Kind, task.ID).Scan(&titlePrincipal); err != nil {
-		t.Fatalf("read the title manager: %v", err)
+		WHERE record_kind = $1 AND record_id = $2 AND property = 'name'`, task.Kind, task.ID).Scan(&namePrincipal); err != nil {
+		t.Fatalf("read the name manager: %v", err)
 	}
-	if titlePrincipal != "tok_second" {
-		t.Fatalf("the title manager still names %q after tok_second wrote it", titlePrincipal)
+	if namePrincipal != "tok_second" {
+		t.Fatalf("the name manager still names %q after tok_second wrote it", namePrincipal)
 	}
 
 	// The principal is hashed like every other column, so the chain has to
@@ -105,7 +105,7 @@ func TestPrincipalIsEmptyWhereNoTokenWrote(t *testing.T) {
 
 	task := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       principalTask,
-		Properties: map[string]any{"title": "no token here"},
+		Properties: map[string]any{"name": "no token here"},
 	})
 	if got := lastPrincipal(t, dsn); got != "" {
 		t.Fatalf("an unauthenticated write stamped principal %q, want empty", got)
@@ -131,13 +131,13 @@ func TestSplitKeepsAManagerRowAnotherTokenWroteSince(t *testing.T) {
 	first := substrate.WithPrincipal(context.Background(), "tok_first")
 
 	winner, err := ds.Put(first, owner, substrate.PutInput{
-		Kind: principalTask, Properties: map[string]any{"title": "Winner"},
+		Kind: principalTask, Properties: map[string]any{"name": "Winner"},
 	})
 	if err != nil {
 		t.Fatalf("put winner: %v", err)
 	}
 	loser, err := ds.Put(substrate.WithPrincipal(context.Background(), "tok_second"), owner, substrate.PutInput{
-		Kind: principalTask, Properties: map[string]any{"title": "Loser", "url": "https://example.com/1"},
+		Kind: principalTask, Properties: map[string]any{"name": "Loser", "url": "https://example.com/1"},
 	})
 	if err != nil {
 		t.Fatalf("put loser: %v", err)
@@ -181,14 +181,14 @@ func TestRebuildReplaysTheManagerPrincipal(t *testing.T) {
 
 	winner, err := ds.Put(ctx, owner, substrate.PutInput{
 		Kind:       principalTask,
-		Properties: map[string]any{"title": "Winner", "description": "keeps its own"},
+		Properties: map[string]any{"name": "Winner", "description": "keeps its own"},
 	})
 	if err != nil {
 		t.Fatalf("put winner: %v", err)
 	}
 	loser, err := ds.Put(substrate.WithPrincipal(context.Background(), "tok_second"), owner, substrate.PutInput{
 		Kind:       principalTask,
-		Properties: map[string]any{"title": "Loser", "url": "https://example.com/1"},
+		Properties: map[string]any{"name": "Loser", "url": "https://example.com/1"},
 	})
 	if err != nil {
 		t.Fatalf("put loser: %v", err)
