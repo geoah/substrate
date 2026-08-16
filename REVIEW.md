@@ -117,6 +117,23 @@ rename, P0 item 9), the stability vocabulary (add `beta` or redefine
      provider mirror kinds for properties the provider does not always send,
      which would start refusing syncs.
 
+7. **Add `beta` and re-stamp every feature honestly.** `StabilityAlpha` and
+   `StabilityStable` are the only two values, so `features()` hard-codes
+   `stable` for everything except agents, at v0.8.0, including surfaces this
+   review is about to delete or restructure. Add a third value, and stamp
+   `stable` only where the shape is genuinely frozen for v1. On the current
+   decisions that means roughly: `changefeed` and `blobs` stable once the
+   `/changes` continuation marker lands; `triggers` and `bundles` beta until
+   the reserved verb segment and the status fold ship; `functions` beta (the
+   direct call route is being deleted); `search` beta and `embeddings` beta or
+   absent, since neither has a REST route and the embedding store has no model
+   identity; `agents` stays alpha. Compute the list from the seams actually
+   present on the dataset rather than hard-coding it, so a feature cannot be
+   advertised without a route. `docs/agents.md` stops telling readers to build
+   on a frozen core, and `docs/graphql-and-search.md` states that the GraphQL
+   schema is a per-repository projection and is not frozen at all.
+   (P0 item 15, #129)
+
 ## The v1 API surface, after reduction
 
 The aim is the smallest surface that can be frozen. Everything below is one
