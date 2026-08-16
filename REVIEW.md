@@ -109,12 +109,29 @@ decision list; the path-grammar ADR (decision 3) carries it.
 - `GET {core}/bundles/status`, `GET {core}/bundles/{id}/status`, and the
   trigger status verb — the envelope's server-owned `status` key already
   carries computed state. Cheap.
-- `POST {core}/bundles/{id}/disable|enable|uninstall|purge` — lifecycle
-  transitions on a record the substrate owns, which ADR 0019 says is a state
-  machine. **Needs design**: the finalizer and purge flows must hang off
-  transitions, so this is the one fold that is not a route change.
 - `POST {core}/bundles/{id}/bind` — an input binding is an edge; writing it
   is a record write. Cheap.
+
+**Do not fold, despite looking foldable.** The bundle lifecycle verbs read
+like state edits and are not. `DisableBundle` does patch `disabled: true`,
+but under the exclusive `lifecycleFence`, so that every admitted invocation
+has committed before it returns; a plain `PATCH` takes no fence and would
+silently drop the drain. `EnableBundle` adds a precondition (it refuses
+during or after an interrupted purge). `UninstallBundle` is not a property
+write at all: it is an `applyVocabularyBatch` with `replaceAuthorities` and a
+guard that tears down the authority's callable triggers first. `PurgeBundle`
+takes the fence, guards on the bundle being blocked, writes a `purging`
+marker, runs an ordered multi-phase teardown (accounts first, the OAuth
+client input's kind last so revocation runs against a live client), returns a
+count, and is resumable through the standing marker.
+
+Folding those would require transitions that carry a concurrency barrier,
+transitions that execute a multi-document vocabulary batch, and transitions
+that start a resumable job and return a count: new engine machinery, for no
+gain. Uninstall and purge are verbs in the same sense `vocabulary/apply` is a
+verb (one of them is one). Keep all four under the reserved segment; revisit
+disable and enable only if a fence-taking state transition is ever built for
+another reason.
 
 **Audit before freezing** (defensible either way, decide once):
 
