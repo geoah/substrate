@@ -391,8 +391,24 @@ func descendPath(expr string, path []fieldStep, i int, a *sqlArgs, final func(st
 		alias := fmt.Sprintf("e%d", i)
 		member = alias
 		wrap = func(inner string) string {
+			// A LIST THAT IS NOT THERE HAS NO ELEMENTS, so an absent field and
+			// a stored JSON null both expand to nothing. Without that arm
+			// `jsonb_build_array(NULL)` boxes them as `[null]`, and a
+			// complement predicate (valuesOutsidePath) counts that JSON null
+			// as a value outside the declared set: a string→enum retype then
+			// strands every row that left the field out, which for
+			// recordpatchpolicy's `selector.ops` is the declared "empty means
+			// all three". The keyed arm below cannot have the bug, because
+			// jsonb_each of `{}` yields no rows. A stored scalar still boxes:
+			// a value that IS there is what the box is for.
+			//
+			// One discriminant, so the arms cannot come to judge different
+			// expressions.
 			return fmt.Sprintf(
-				"EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(%s) = 'array' THEN %s ELSE jsonb_build_array(%s) END) %s WHERE %s)",
+				"EXISTS (SELECT 1 FROM jsonb_array_elements("+
+					"CASE coalesce(jsonb_typeof(%s), 'null') "+
+					"WHEN 'array' THEN %s WHEN 'null' THEN '[]'::jsonb "+
+					"ELSE jsonb_build_array(%s) END) %s WHERE %s)",
 				expr, expr, expr, alias, inner)
 		}
 	case step.keyed:

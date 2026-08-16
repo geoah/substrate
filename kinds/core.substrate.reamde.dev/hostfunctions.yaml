@@ -151,7 +151,9 @@ data:
         - patch
         - create
         - delete
-      description: patch (default), create, or delete
+      description: 'what accepting would do: patch (the default) an existing
+        record, create the named one, or delete it. These are the request''s
+        own words, not the put/patch/delete the mutate tool takes'
     - name: target
       type: string
       description: the existing record id to patch or delete (requires kind

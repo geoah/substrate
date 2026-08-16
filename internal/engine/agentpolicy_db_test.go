@@ -99,6 +99,110 @@ func TestPolicyGatesAMutateIntoARequest(t *testing.T) {
 	})
 }
 
+// GATING `patch` IS NOT EDIT-ONLY REVIEW. convertToRequest resolves `put` and
+// `patch` the same way, so a patch of a record that is not there converts to a
+// request whose accept MINTS it. An owner reading the selector as "review the
+// edits" would be handing over creation, so the behavior is pinned here and
+// said out loud on the property.
+func TestPolicyGatesAPatchOfAnAbsentTargetIntoACreate(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	putPolicy(t, ds, "gate-widget-patches", map[string]any{
+		"selector": map[string]any{
+			"kinds": []any{crewAuthority + "/widget"},
+			"ops":   []any{"patch"},
+		},
+		"action": "gate",
+	})
+	fake.script("mut",
+		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
+			"query": `mutation { patch(kind: "crew.test.dev/widget", id: "w-absent", input: {properties: {name: "wanted"}}) { id } }`,
+		})}}},
+		fakeTurn{content: "held, waiting."},
+	)
+	if _, err := ds.CallAgent(ctx, crewAuthority+"/editor", "edit a widget"); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	req := onlyPatchRequest(t, ds)
+	if req.Properties["op"] != "create" || req.Properties["targetId"] != "w-absent" {
+		t.Fatalf("a gated patch of an absent target: %+v", req.Properties)
+	}
+}
+
+// AN EDGE WRITE IS NOT GATEABLE. Link and Unlink check the emit ceiling and
+// write (agentgql.go); policyVerdict never runs for them, so the widest
+// selector there is does not hold one. The declaration and
+// docs/changelog.md#change-verbs both say so, and this is what holds them to it.
+func TestPolicyNeverGatesAnEdgeWrite(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, fake := openAgentDataset(t)
+	putPolicy(t, ds, "gate-everything", map[string]any{"action": "gate"})
+	mustPutInternal(t, ds, substrate.PutInput{Kind: crewAuthority + "/widget", ID: "w-a"})
+	mustPutInternal(t, ds, substrate.PutInput{Kind: crewAuthority + "/widget", ID: "w-b"})
+	fake.script("mut",
+		fakeTurn{calls: []fakeCall{{"mutate", gqlToolArgs(t, map[string]any{
+			"query": `mutation { link(rel: "related", srcKind: "crew.test.dev/widget", src: "w-a",
+				dstKind: "crew.test.dev/widget", dst: "w-b") { id } }`,
+		})}}},
+		fakeTurn{content: "linked."},
+	)
+	if _, err := ds.CallAgent(ctx, crewAuthority+"/editor", "link the widgets"); err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	page, err := ds.List(ctx, substrate.Query{
+		Filter: substrate.Filter{Kinds: []string{vocabulary.KindRecordPatchRequest}}, First: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Records) != 0 {
+		t.Fatalf("an edge write minted %d request(s): the door does not see link", len(page.Records))
+	}
+}
+
+// A SELECTOR SPEAKS THE DOOR'S OWN VERBS. `ops` used to be a free string, so a
+// reader who saw `op: create` on the request a gate produced and wrote that
+// word back into the selector got a rule that admitted and then matched
+// nothing. The declared enum makes it a refusal that names the three words.
+func TestPolicySelectorRefusesAVerbFromAnotherVocabulary(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openAgentDataset(t)
+	for _, op := range []string{"create", "update"} {
+		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-" + op,
+			Properties: map[string]any{
+				"selector": map[string]any{"ops": []any{op}},
+				"action":   "gate",
+			},
+		})
+		if err == nil {
+			t.Fatalf("a selector spelled %q admitted", op)
+		}
+		// The whole phrase, not the words: "input" contains "put" and
+		// "recordpatchpolicy" contains "patch", so a substring check on either
+		// passes on an error that names no verb at all.
+		if !strings.Contains(err.Error(), "expected one of put, patch, delete") {
+			t.Fatalf("the refusal for %q does not name the declared verbs: %v", op, err)
+		}
+	}
+	// The door's own words still admit, and match the write they name.
+	putPolicy(t, ds, "gate-puts", map[string]any{
+		"selector": map[string]any{"ops": []any{"put"}},
+		"action":   "gate",
+	})
+	verdict, _, err := ds.policyVerdict(ctx, crewAuthority+"/widget", policyOpPut, crewAuthority+"/editor")
+	if err != nil || verdict != policyGate {
+		t.Fatalf("verdict for a put = %s %v", verdict, err)
+	}
+	verdict, _, err = ds.policyVerdict(ctx, crewAuthority+"/widget", policyOpDelete, crewAuthority+"/editor")
+	if err != nil || verdict != policyAllow {
+		t.Fatalf("verdict for a delete = %s %v", verdict, err)
+	}
+}
+
 func TestPolicyRefusesAndComposesMostRestrictive(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

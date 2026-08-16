@@ -318,7 +318,7 @@ type LLMMessageChanges struct {
 	// Seq is the changelog seq of the entry, which addresses its delta.
 	Seq *int64
 
-	// Op is the changelog op the entry landed as.
+	// Op is the changelog op the entry landed as, verbatim.
 	Op *LLMMessageChangesOp
 
 	// Kind is the written record's kind.
@@ -331,7 +331,7 @@ type LLMMessageChanges struct {
 // LLMMessageChangesOp is a declared enum: the admissible set, in declaration
 // order.
 //
-// the changelog op the entry landed as
+// the changelog op the entry landed as, verbatim
 type LLMMessageChangesOp string
 
 const (

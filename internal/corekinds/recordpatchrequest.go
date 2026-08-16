@@ -15,8 +15,9 @@ import (
 // the decision applies it, and the envelope is frozen once proposed so nobody
 // can swap what was reviewed.
 type RecordPatchRequest struct {
-	// Op is the change verb — patch (default when absent), create, or
-	// delete.
+	// Op is what the accept does: patch an existing target (the default when
+	// absent), create the named record, or delete it. A gated put or patch
+	// arrives here as create unless the target is live.
 	Op *RecordPatchRequestOp
 
 	// TargetKind is op create: the full type identity of the record to mint.
@@ -61,7 +62,9 @@ type RecordPatchRequest struct {
 // RecordPatchRequestOp is a declared enum: the admissible set, in declaration
 // order.
 //
-// the change verb — patch (default when absent), create, or delete
+// what the accept does: patch an existing target (the default when absent),
+// create the named record, or delete it. A gated put or patch arrives here as
+// create unless the target is live
 type RecordPatchRequestOp string
 
 const (

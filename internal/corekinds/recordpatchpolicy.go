@@ -270,11 +270,45 @@ type RecordPatchPolicySelector struct {
 	// Kinds is kind references; empty means every kind.
 	Kinds []string
 
-	// Ops is put, patch or delete; empty means all three.
-	Ops []string
+	// Ops is the write verb matched: put, patch or delete, the three policy
+	// evaluates (link, unlink, merge and split are outside it), never a
+	// trigger's create/update/delete; empty means all three.
+	Ops []RecordPatchPolicySelectorOps
 
 	// Agents is agent identities; empty means every agent.
 	Agents []string
+}
+
+// RecordPatchPolicySelectorOps is a declared enum: the admissible set, in
+// declaration order.
+//
+// the write verb matched: put, patch or delete, the three policy evaluates
+// (link, unlink, merge and split are outside it), never a trigger's
+// create/update/delete; empty means all three
+type RecordPatchPolicySelectorOps string
+
+const (
+	RecordPatchPolicySelectorOpsPut    RecordPatchPolicySelectorOps = "put"
+	RecordPatchPolicySelectorOpsPatch  RecordPatchPolicySelectorOps = "patch"
+	RecordPatchPolicySelectorOpsDelete RecordPatchPolicySelectorOps = "delete"
+)
+
+// RecordPatchPolicySelectorOpsValues are the declared values in declaration
+// order, which is render order.
+var RecordPatchPolicySelectorOpsValues = []string{"put", "patch", "delete"}
+
+// Valid reports whether v is one of the declared values.
+func (v RecordPatchPolicySelectorOps) Valid() bool {
+	return Declared(RecordPatchPolicySelectorOpsValues, string(v))
+}
+
+// decodeRecordPatchPolicySelectorOps decodes a declared RecordPatchPolicySelectorOps value.
+func decodeRecordPatchPolicySelectorOps(d *decoder, path string, v any) (RecordPatchPolicySelectorOps, bool) {
+	s, ok := d.text(path, v, RecordPatchPolicySelectorOpsValues, nil)
+	if !ok {
+		return "", false
+	}
+	return RecordPatchPolicySelectorOps(s), true
 }
 
 // decodeRecordPatchPolicySelector decodes one RecordPatchPolicySelector value at path.
@@ -305,9 +339,9 @@ func decodeRecordPatchPolicySelector(d *decoder, path string, v any) (RecordPatc
 		case "ops":
 			p := at(path, "ops")
 			if items, listed := d.list(p, props[key]); listed {
-				list := make([]string, 0, len(items))
+				list := make([]RecordPatchPolicySelectorOps, 0, len(items))
 				for i, item := range items {
-					if e, ok := d.text(index(p, i), item, nil, nil); ok {
+					if e, ok := decodeRecordPatchPolicySelectorOps(d, index(p, i), item); ok {
 						list = append(list, e)
 					}
 				}
@@ -350,7 +384,7 @@ func (v *RecordPatchPolicySelector) Encode() map[string]any {
 	if v.Ops != nil {
 		items := make([]any, 0, len(v.Ops))
 		for i := range v.Ops {
-			items = append(items, v.Ops[i])
+			items = append(items, string(v.Ops[i]))
 		}
 		out["ops"] = items
 	}

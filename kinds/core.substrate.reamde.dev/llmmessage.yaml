@@ -32,7 +32,9 @@ data:
   # the effect applier can stamp, merge and split included (effects.go), not
   # just the five the prose named: a stamped op outside the declared set
   # would refuse the loop's own message write.
-  version: 7
+  # version 8: `changes.op` says on the property that it carries the changelog
+  # op verbatim, so a reader does not take it for a trigger's change class.
+  version: 8
   names:
     singular: llmmessage
     plural: llmmessages
@@ -95,6 +97,9 @@ data:
           type: int
           description: the changelog seq of the entry, which addresses its
             delta
+        # THE CHANGELOG'S OWN OP, verbatim (substrate.Op): what the entry
+        # landed as, never a trigger's change class and never the request op a
+        # propose wrote. docs/changelog.md#change-verbs holds the mapping.
         op:
           type: enum
           values:
@@ -105,7 +110,7 @@ data:
             - unlink
             - merge
             - split
-          description: the changelog op the entry landed as
+          description: the changelog op the entry landed as, verbatim
         kind:
           type: string
           description: the written record's kind
