@@ -48,7 +48,7 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]subs
 	if mode == "" {
 		mode = substrate.SearchHybrid
 	}
-	if ds.svc.embedder == nil && mode != substrate.SearchLexical {
+	if !ds.svc.EmbeddingsEnabled() && mode != substrate.SearchLexical {
 		// Lexical-only when no embedder is configured.
 		if mode == substrate.SearchSemantic {
 			return nil, fmt.Errorf("%w: semantic search needs an embedder", substrate.ErrValidation)

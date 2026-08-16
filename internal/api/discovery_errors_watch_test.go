@@ -139,9 +139,20 @@ func TestDiscoveryOmitsEmbeddingsWithoutAnEmbedder(t *testing.T) {
 	names := map[string]bool{}
 	for _, f := range doc.Features {
 		names[f.Name] = true
+		if f.Name == featureEmbeddings {
+			t.Fatalf("embeddings listed with no embedder configured: %+v", doc.Features)
+		}
+		// Every other entry survives the drop whole: dropping one must not
+		// disturb its neighbours' surfaces or stability.
+		if !slices.Equal(f.Surfaces, wantFeatureSurfaces[f.Name]) {
+			t.Fatalf("feature %q surfaces = %v, want %v", f.Name, f.Surfaces, wantFeatureSurfaces[f.Name])
+		}
+		if f.Stability == "" {
+			t.Fatalf("feature %q lost its stability: %+v", f.Name, doc.Features)
+		}
 	}
-	if names["embeddings"] {
-		t.Fatalf("embeddings listed with no embedder configured: %+v", doc.Features)
+	if len(names) != len(wantFeatureSurfaces)-1 {
+		t.Fatalf("features = %+v, want every entry but embeddings", doc.Features)
 	}
 	if !names["search"] {
 		t.Fatalf("search dropped with no embedder: %+v", doc.Features)
