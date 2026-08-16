@@ -159,6 +159,28 @@ later open under a binary that relaxed the contract) clears the marker.
 Quarantine is a state a migrated repository may reach, never one it may be
 migrated in.
 
+**A migration this binary does not recognize stops the boot.** The runner
+records each migration's sha256 as it applies it, and every boot compares the
+recorded hashes against the files the binary carries. A difference means the
+database applied a migration whose text has changed since, so the binary
+refuses before applying anything pending: a new migration must not land on a
+schema its predecessors did not build. The refusal names every migration that
+diverges, with both hashes, rather than the first one it meets.
+
+A released binary never triggers this, because a landed migration is never
+edited. What does trigger it is a database migrated by a build from a branch
+that was still revising its migration. Throw such a database away:
+`mise run dev:wipe` for a development one, a restore from a dump a matching
+binary wrote for anything else. There is no repair, because two branch
+revisions of one migration can differ in any way at all.
+
+The one sanctioned exception is a migration corrected before it landed.
+`supersededSHA256` in `internal/engine/migrate.go` names the hash the branch
+file had, and a later migration adds whatever that revision lacked, so a
+database carrying the old hash boots and catches up. `0007_signed_from_positive`
+is the only such catch-up: it adds the CHECK constraint that `0005` gained four
+minutes before it merged.
+
 ## Backups
 
 **A backup is the changelog plus blobs plus sealed, as one unit.** All three live in
