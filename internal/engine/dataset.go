@@ -255,10 +255,12 @@ type txn struct {
 	// changelog entry it appends and every manager row it lands. Empty when
 	// no token stands behind the write — the seed, the boot upgrade, a
 	// background worker, registration and login — and never taken from the
-	// caller: the actor is asserted, the principal is resolved. A dispatch a
-	// request triggered inherits that request's principal, which is what it
-	// says: the token that CAUSED the write, never a credential the connector
-	// or function holds.
+	// caller: the actor is asserted, the principal is resolved. It follows
+	// the CONTEXT and nothing else, so a dispatch that runs on the request's
+	// own context (an agent chat, a synchronous call) carries the token that
+	// caused it, while one the trigger pass fires later runs on the server's
+	// ticker context (ProcessTriggers) and carries none. The changelog's
+	// caused_by is what links that entry back to the write behind it.
 	principal string
 	now       time.Time
 	maxSeq    int64

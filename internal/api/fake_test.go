@@ -495,13 +495,14 @@ func (d *fakeDataset) Put(ctx context.Context, actor substrate.Actor, in substra
 	return e, nil
 }
 
-func (d *fakeDataset) Patch(_ context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput) (*substrate.Record, error) {
+func (d *fakeDataset) Patch(ctx context.Context, actor substrate.Actor, typ, id string, in substrate.PatchInput) (*substrate.Record, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err := d.fail("Patch"); err != nil {
 		return nil, err
 	}
 	d.lastPatch, d.lastActor = in, actor
+	d.lastPrincipal = substrate.PrincipalFrom(ctx)
 	e, ok := d.records[id]
 	if !ok || (typ != "" && e.Kind != typ) {
 		return nil, fmt.Errorf("%w: %s", substrate.ErrNotFound, id)
@@ -516,10 +517,11 @@ func (d *fakeDataset) Patch(_ context.Context, actor substrate.Actor, typ, id st
 	return e, nil
 }
 
-func (d *fakeDataset) Delete(_ context.Context, _ substrate.Actor, typ, id string) (*substrate.Record, error) {
+func (d *fakeDataset) Delete(ctx context.Context, _ substrate.Actor, typ, id string) (*substrate.Record, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.lastDeleteType, d.lastDeleteID = typ, id
+	d.lastPrincipal = substrate.PrincipalFrom(ctx)
 	if err := d.fail("Delete"); err != nil {
 		return nil, err
 	}
@@ -532,13 +534,14 @@ func (d *fakeDataset) Delete(_ context.Context, _ substrate.Actor, typ, id strin
 	return e, nil
 }
 
-func (d *fakeDataset) Link(_ context.Context, actor substrate.Actor, _, src, rel string, to substrate.EdgeRef, props map[string]any) error {
+func (d *fakeDataset) Link(ctx context.Context, actor substrate.Actor, _, src, rel string, to substrate.EdgeRef, props map[string]any) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err := d.fail("Link"); err != nil {
 		return err
 	}
 	d.lastActor = actor
+	d.lastPrincipal = substrate.PrincipalFrom(ctx)
 	e, ok := d.records[src]
 	if !ok {
 		return fmt.Errorf("%w: %s", substrate.ErrNotFound, src)
@@ -550,13 +553,14 @@ func (d *fakeDataset) Link(_ context.Context, actor substrate.Actor, _, src, rel
 	return nil
 }
 
-func (d *fakeDataset) Unlink(_ context.Context, actor substrate.Actor, _, src, rel string, to substrate.EdgeRef) error {
+func (d *fakeDataset) Unlink(ctx context.Context, actor substrate.Actor, _, src, rel string, to substrate.EdgeRef) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err := d.fail("Unlink"); err != nil {
 		return err
 	}
 	d.lastActor = actor
+	d.lastPrincipal = substrate.PrincipalFrom(ctx)
 	e, ok := d.records[src]
 	if !ok {
 		return fmt.Errorf("%w: %s", substrate.ErrNotFound, src)
