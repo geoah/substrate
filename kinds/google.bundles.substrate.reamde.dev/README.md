@@ -211,18 +211,29 @@ One provider page, or one hydrate batch of 25 `messages.get`, per invocation.
   `text/html` part goes through `html.parser` and an `<a href>` comes out as
   `[label](url)`, because core's `emailmessage.text` is a markdown property
   and a tag-strip left a mail whose visible words are "click here" with
-  nothing to follow. `<script>`, `<style>` and `<title>` contents are
-  dropped, block tags become line breaks, images are dropped rather than
-  written as `![alt](src)` (a mailing has more tracking pixels than
-  pictures). The read is bounded twice: an inline `data:` URI keeps its media
-  type and loses its payload before the parser sees it, and the html is fed
-  in chunks that stop as soon as there is enough text for the
-  8,000-character body, with a 1,000,000-character ceiling for markup that
-  never produces any. An anchor ends where the next one begins and where its
-  paragraph, list item or cell ends, so a missing `</a>` cannot pull the rest
-  of the letter into one link label. Markup that makes the parser raise, or
-  that swallows its own body, falls back to the tag-strip for that one
-  message and logs that it did.
+  nothing to follow. The rest of the rules, each one a mail shape that got
+  them written:
+  - `<script>`, `<style>` and `<title>` contents are dropped; block tags
+    become line breaks; a list item becomes `- `.
+  - A picture is dropped but its `alt` is kept, because inside an anchor it
+    is the only label a button has. An anchor with no words at all (a spacer,
+    an image with no `alt`) is dropped rather than written out as a bare
+    tracking url.
+  - A destination is kept only for `http`, `https`, `mailto` and `tel`. The
+    tag-strip let no href through at all, and `data:text/html,<script>` in a
+    rendered body is somebody else's code.
+  - An anchor ends where the next one begins and where its paragraph, list
+    item or cell ends, so a missing `</a>` cannot pull the rest of the letter
+    into one link label. An inline tag never ends one: `Click <b>here</b>` is
+    a whole label.
+  - The read is bounded three times: the source is cut at 4,000,000
+    characters, comments (Outlook's conditional blocks are comments) and
+    `data:` URI payloads go before the parser sees them, and the html is fed
+    in chunks that stop as soon as there is enough text for the
+    8,000-character body, with a ceiling near a megabyte for markup that
+    never produces any.
+  - Markup that makes the parser raise, or that swallows its own body, falls
+    back to the tag-strip for that one message and logs that it did.
 - **The flattener is forward-only, like every other mirror change.** A
   message already synced under an earlier version keeps the `text` it was
   written with until Gmail reports a change to it. Clearing the account's
