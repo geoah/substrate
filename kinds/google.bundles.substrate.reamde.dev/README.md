@@ -230,10 +230,13 @@ One provider page, or one hydrate batch of 25 `messages.get`, per invocation.
     characters, comments (Outlook's conditional blocks are comments) and
     `data:` URI payloads go before the parser sees them, and the html is fed
     in chunks that stop as soon as there is enough text for the
-    8,000-character body, with a ceiling near a megabyte for markup that
+    8,000-character body, with a 600,000-character ceiling for markup that
     never produces any.
   - Markup that makes the parser raise, or that swallows its own body, falls
-    back to the tag-strip for that one message and logs that it did.
+    back to the tag-strip for that one message and logs that it did. So does
+    a parse that hit the ceiling holding nothing but a preheader, but only if
+    the strip, which reads the whole source, finds the letter that was behind
+    it: otherwise the short parse stands and keeps its links.
 - **The flattener is forward-only, like every other mirror change.** A
   message already synced under an earlier version keeps the `text` it was
   written with until Gmail reports a change to it. Clearing the account's
