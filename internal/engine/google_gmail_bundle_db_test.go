@@ -410,6 +410,29 @@ func gmailMessage(id, thread, subject, from, to, internalDate, body string) map[
 	}
 }
 
+// gmailHTMLMessage builds a messages.get payload carrying an html body and
+// the text/plain alternative beside it, verbatim: the shape a marketing mail
+// arrives in, and the one the body's flattener has to turn into markdown. A
+// plain part that is empty or whitespace must not stand in for the html.
+func gmailHTMLMessage(id, thread, subject, from, to, internalDate, plain, body string) map[string]any {
+	msg := gmailMessage(id, thread, subject, from, to, internalDate, "")
+	payload := msg["payload"].(map[string]any)
+	payload["mimeType"] = "multipart/alternative"
+	delete(payload, "body")
+	parts := []any{}
+	if plain != "" {
+		parts = append(parts, map[string]any{
+			"mimeType": "text/plain",
+			"body":     map[string]any{"data": b64url(plain), "size": len(plain)},
+		})
+	}
+	payload["parts"] = append(parts, map[string]any{
+		"mimeType": "text/html",
+		"body":     map[string]any{"data": b64url(body), "size": len(body)},
+	})
+	return msg
+}
+
 func b64url(s string) string {
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 	var out strings.Builder
@@ -675,6 +698,23 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 	fake.msgs["m2"] = gmailMessage("m2", "t-m1", "Re: Rack layout",
 		"Ada <ada@example.com>", "alice@example.com",
 		googleMillisAgo(24*time.Hour), "looks good")
+	// The html message, in a thread of its own so the newest-wins assertions
+	// on t-m1 keep their subject. Its text/plain alternative is whitespace,
+	// which is a body only a sender's template thinks it is.
+	fake.listed = append(fake.listed, "m3")
+	fake.msgs["m3"] = gmailHTMLMessage("m3", "t-m3", "Datacenter tour",
+		"Bob <bob@example.com>", "ada@example.com",
+		googleMillisAgo(72*time.Hour), "\r\n   \r\n",
+		`<html><head><style>a{color:red}</style></head><body>`+
+			`<img src="data:image/png;base64,`+strings.Repeat("A", 600)+`">`+
+			`<p>Book a slot&nbsp;now: <a href="https://example.com/tour?a=1&amp;b=2">`+
+			`click <strong>here</strong></a>.</p>`+
+			`<ul><li><a href="https://example.com/map?to=(dc)">the map</a></li>`+
+			`<li><a href="https://example.com/dir">directions<li>parking</ul>`+
+			`<table><tr><td>Rack A<td>Rack B</tr></table>`+
+			`<p>PS: <a href="https://example.com/ps">read this</p>`+
+			`<p>and the sign-off</p>`+
+			`</body></html>`)
 	fake.start(t)
 
 	ds := openInternalDataset(t)
@@ -703,6 +743,37 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 	raw := fmt.Sprint(mirror.Properties["raw"])
 	if strings.Contains(raw, b64url("the cold aisle plan")) {
 		t.Fatalf("raw still carries the inline body bytes: %s", raw)
+	}
+
+	// The html body reaches `text` as markdown with its hrefs intact: core's
+	// emailmessage.text is a markdown property, and a reader given "click
+	// here" without the target has nothing to click (#188). The fixture holds
+	// every hazard the flattener has to survive at once: a whitespace
+	// text/plain part that must not stand in for the body, an inline data:
+	// URI, a table whose cells omit their optional end tags, a url whose `)`
+	// would end a plain markdown destination early, an inline `<strong>`
+	// inside a label, which must not cut the label short, and two `<a>` tags
+	// with no `</a>`, which must end at the paragraph and the list item
+	// rather than swallowing what follows into the link.
+	htmlID := substratefn.ExternalID("gmail-message", "acct-step", "m3")
+	htmlMirror, err := ds.Get(ctx, googleMessageType, htmlID)
+	if err != nil {
+		t.Fatalf("html message did not sync: %v", err)
+	}
+	wantText := "Book a slot now: [click here](https://example.com/tour?a=1&b=2).\n\n" +
+		"- [the map](<https://example.com/map?to=(dc)>)\n" +
+		"- [directions](https://example.com/dir)\n- parking\n\n" +
+		"Rack A Rack B\n\n" +
+		"PS: [read this](https://example.com/ps)\n\nand the sign-off"
+	if got := fmt.Sprint(htmlMirror.Properties["text"]); got != wantText {
+		t.Fatalf("html body flattened to %q, want %q", got, wantText)
+	}
+	htmlCore, err := ds.Get(ctx, coreMessageType, htmlID)
+	if err != nil {
+		t.Fatalf("core row for the html-only message did not sync: %v", err)
+	}
+	if got := fmt.Sprint(htmlCore.Properties["text"]); got != wantText {
+		t.Fatalf("core text = %q, want %q", got, wantText)
 	}
 
 	// The CORE row rides the same id, a different type — and its required

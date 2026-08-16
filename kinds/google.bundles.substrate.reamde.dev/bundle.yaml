@@ -51,7 +51,9 @@ data:
   # version 3: the grants group under one `permissions:` object, and the permission
   # to write is `writes:` inside it. This closure's functions and agents
   # follow core's declaration.
-  version: 4
+  # version 5: gmailsync flattens an html-only body to markdown instead of
+  # stripping its tags, so a message whose only body is html keeps its links.
+  version: 5
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -1384,8 +1386,9 @@ data:
     text:
       type: text
       displayName: Text
-      description: the message body, text/plain preferred and text/html stripped,
-        bounded
+      description: "the message body, bounded: text/plain when the message
+        carries one, else the text/html part flattened to markdown, links
+        kept as [label](url)"
     # The header objects keep `address` as a plain string, not the `email`
     # kind: a mirror records what the header SAID, malformed or not. The
     # validated, canonical copy is the emailaddress record.
@@ -1524,6 +1527,8 @@ data:
     import urllib.request
     import uuid
     from email.utils import getaddresses
+    from html import unescape as _unescape
+    from html.parser import HTMLParser
 
     AUTHORITY = "google.bundles.substrate.reamde.dev"
     ACCOUNT_TYPE = AUTHORITY + "/account"
@@ -1570,6 +1575,79 @@ data:
         r"^" + _ATEXT + r"(?:\." + _ATEXT + r")*@"
         + _LABEL + r"(?:\." + _LABEL + r")+$")
     _RE_TAG = re.compile(r"<[^>]+>")
+    # The html flattener's tag sets. HTML_SKIP is content that is not prose;
+    # HTML_BREAK is where a line ends. `head` is NOT in the skip set: its end
+    # tag is optional and HTMLParser does not synthesize one, so muting on it
+    # would swallow the whole letter. `<body>` clears the mute for the same
+    # reason: an unclosed `<title>` must not take the message with it.
+    # Sets, not tuples: every tag event tests three of them, and a page of
+    # layout markup is hundreds of thousands of tag events.
+    HTML_SKIP = frozenset(("script", "style", "title"))
+    HTML_BREAK = frozenset((
+        "address", "article", "aside", "blockquote", "br", "caption",
+        "center", "dd", "div", "dl", "dt", "fieldset", "figcaption",
+        "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5",
+        "h6", "header", "hr", "legend", "main", "nav", "ol", "p",
+        "pre", "section", "table", "tbody", "tfoot", "thead", "tr", "ul"))
+    HTML_SPACE = frozenset(("td", "th"))  # cells sit on one line, not welded
+    # What ends an anchor that a sender left open. `br` is deliberately not
+    # one: a button label written across two lines is still one link.
+    HTML_STRUCTURE = (HTML_BREAK - frozenset(("br",))) | HTML_SPACE | {"li"}
+    # The schemes a destination may carry. An ALLOWLIST, because the tag-strip
+    # this replaces let no href through at all and `data:text/html,<script>`
+    # or `vbscript:` in a rendered body is somebody else's code: a scheme
+    # nobody clicks safely leaves the label as words. A relative href has no
+    # base outside the mail client, so it is not a target either.
+    URL_SCHEMES = ("http://", "https://", "mailto:", "tel:")
+    # An inline `data:` URI is the one thing that makes a mail megabytes and
+    # it is never prose, so its payload is cut before the parser reads any of
+    # it. An embedded photo in the first tag must not eat the whole budget
+    # below and leave the letter under it unread. Only the payload goes: the
+    # scheme and the media type stay, so the same pattern serves an
+    # attribute, a css `url(...)` and an unquoted value without knowing which
+    # it is in. A media type or a `base64,` is REQUIRED and a word character
+    # before `data:` disqualifies the match, so prose reading
+    # `metadata:0123...` keeps every character it had.
+    _RE_DATA_URI = re.compile(
+        r"""(?<![\w.-])(data:(?:[\w.+-]+/|;?base64,))[^\s"'<>)]{100,}""",
+        re.IGNORECASE)
+    # Outlook's conditional blocks are comments, and they are most of the
+    # markup in a templated mail. HTMLParser skips their CONTENT but still
+    # reads every character of it against the budget below.
+    # The `|\Z` is not decoration: without it every unterminated `<!--`
+    # rescans to the end of the source and a page of them is quadratic.
+    _RE_COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
+    # A destination with a `)`, a `<` or a space in it ends the markdown span
+    # early, so it goes in CommonMark's angle-bracket form instead.
+    _RE_URL_UNSAFE = re.compile(r"[\s()<>]")
+    # The href comes off the RAW start tag, not off HTMLParser's parsed
+    # attributes: the parser unescapes `&copy` (no semicolon) the way a
+    # browser does in TEXT, but a browser leaves it alone in an ATTRIBUTE, so
+    # `?a=1&copy=1` would otherwise reach the reader as `?a=1(c)=1` and point
+    # somewhere else. Only the terminated form is a reference here.
+    # One attribute at a time, because a SEARCH for `href=` finds the one
+    # inside `data-href="..."` or inside `title="see href=http://phish"`,
+    # which templates and phishing mail respectively put before the real one.
+    # A quoted value is consumed whole here, so it can hide nothing.
+    _RE_ATTR = re.compile(
+        r"""([\w:.-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?""")
+    _RE_CHARREF = re.compile(r"&[#\w]{1,32};")
+    # The work ceiling, not an output one: HTMLParser is pure python and a
+    # megabyte of text-free tag soup costs the better part of a second, which
+    # 25 messages of it would not keep inside one 30s invocation. It binds
+    # only on markup that never produced a body's worth of text, because the
+    # flattener stops feeding as soon as it has one, and what lies past it is
+    # not lost: the tag-strip below reads the whole source and says whether
+    # the letter was in the part the parser never reached.
+    HTML_MAX = 600000
+    HTML_CHUNK = 65536
+    # The cap on the SOURCE, so the passes before the parser (the comment cut,
+    # the data: cut, the tag-strip) are bounded too.
+    HTML_SOURCE_MAX = 4000000
+    MAX_LABEL = 500  # a link label is a phrase; see _close_link
+    # Below this a parse that ran out of budget produced a preheader, not a
+    # body, and the tag-strip over the whole source reads better.
+    MIN_BODY = 200
 
 
     class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -1758,19 +1836,305 @@ data:
             _walk(child, plain, html)
 
 
-    def _text(payload):
+    def _href_of(tag_text):
+        """The anchor's own href, off the RAW start tag. HTMLParser unescapes
+        an attribute the way a browser unescapes text, so its parsed value
+        turns `?a=1&copy=1` into `?a=1(c)=1` and points somewhere else; here
+        only a terminated `&...;` is a reference."""
+        for attr in _RE_ATTR.finditer(tag_text):
+            if attr.group(1).lower() != "href":
+                continue
+            for value in attr.groups()[1:]:
+                if value is not None:
+                    return _RE_CHARREF.sub(
+                        lambda m: _unescape(m.group(0)), value).strip()
+            return ""
+        return ""
+
+
+    class _Flatten(HTMLParser):
+        """Gmail's text/html alternative, flattened into the markdown core's
+        `emailmessage.text` declares. An `<a href>` becomes `[label](url)`:
+        the target is the content of a mail whose visible words are "click
+        here". Every other tag is a line break, a space or nothing."""
+
+        def __init__(self):
+            HTMLParser.__init__(self, convert_charrefs=True)
+            self.parts = []
+            self.chars = 0    # collapsed text so far, the feed's stop signal
+            self._muted = 0
+            self._bullet = False  # a list marker is waiting for its content
+            # At most ONE anchor is ever open: html5 ends the open one where
+            # the next `<a>` begins, and so does this. [href, mark, seen],
+            # where `seen` says whether the label has words in it yet, which
+            # is what decides whether a structure closes the anchor.
+            self._link = None
+
+        def handle_starttag(self, tag, attrs):
+            if tag in HTML_SKIP:
+                self._muted += 1
+                return
+            if tag == "body":
+                self._muted = 0
+            if self._muted:
+                return
+            if tag == "a":
+                self._close_link()
+                href = _href_of(self.get_starttag_text() or "")
+                # A url wraps across lines in the source of a real mail, and
+                # a destination holds no whitespace in either markdown form.
+                # Browsers drop the tab and the line break; the space is the
+                # one that has to be carried.
+                for ws in ("\t", "\n", "\r", "\f", "\v", "\xa0"):
+                    href = href.replace(ws, "")
+                self._link = [href.replace(" ", "%20"), len(self.parts), False]
+                return
+            if tag == "img":
+                # The picture is dropped, its `alt` is not: it is the words
+                # the sender wrote for a reader who cannot see the image, and
+                # inside an anchor it is the only label a button ever has.
+                for name, value in attrs:
+                    if name == "alt" and (value or "").strip():
+                        self.handle_data(value)
+                return
+            # A structure that opens ends an anchor that already has its
+            # words: `<p><a href=…>linked<p>sign-off` is a missing `</a>` and
+            # the sign-off is not part of the link, the same way `<li>…<li>`
+            # is a second bullet. An anchor still empty stays open, because
+            # `<a href=…><div>Buy now</div></a>` is one link around a block
+            # and mail is full of them. An INLINE tag never closes one:
+            # `<a href=…>Click <b>here</b></a>` is one label.
+            if tag in HTML_STRUCTURE and self._link_has_words():
+                self._close_link()
+            if tag == "li":
+                self.parts.append("\n- ")
+                self._bullet = True
+                return
+            if tag in HTML_BREAK:
+                # ...but not the break right after a bullet: `<li><div>` is
+                # what a composer writes, and the marker would be left on a
+                # line of its own.
+                if not self._bullet:
+                    self.parts.append("\n")
+            elif tag in HTML_SPACE:
+                # on the START tag too: `<td>A<td>B` is valid html, and its
+                # cells would otherwise weld into `AB`
+                self.parts.append(" ")
+            self._bullet = False
+
+        def handle_startendtag(self, tag, attrs):
+            # `<br/>` and `<img/>` never reach handle_endtag, and a
+            # self-closing `<a/>` owes no target, so start-tag handling
+            # alone, with the link closed straight back.
+            self.handle_starttag(tag, attrs)
+            if tag in HTML_SKIP:
+                self._muted -= 1
+            elif tag == "a" and not self._muted:
+                self._close_link()
+
+        def handle_endtag(self, tag):
+            if tag in HTML_SKIP:
+                self._muted = max(0, self._muted - 1)
+                return
+            if self._muted:
+                return
+            if tag == "a" or (tag in HTML_STRUCTURE and self._link_has_words()):
+                # An `</a>` a sender forgot would take the rest of the letter
+                # into one link label, so a structure that ends closes the
+                # anchor holding words. One still empty stays open: the first
+                # `</td>` of `<a ...><table><tr><td>&nbsp;<td>Buy now` is a
+                # spacer cell, and closing there would unlink the button.
+                self._close_link()
+            if tag in HTML_BREAK:
+                self.parts.append("\n")
+            elif tag in HTML_SPACE:
+                self.parts.append(" ")
+
+        def handle_data(self, data):
+            if self._muted:
+                return
+            if self._bullet:
+                # The indentation between `<li>` and its content carries the
+                # newline that would strand the marker. Dropping it here
+                # keeps every index in `parts` valid, which the open link's
+                # mark depends on. It arrives either as its own event or as
+                # the head of the text, so both go.
+                if not data.strip():
+                    return
+                data = data.lstrip()
+                self._bullet = False
+            self.parts.append(data)
+            # The collapsed length, not the raw one: 64 KiB of indentation
+            # between two tags is not a body, and counting it as one would
+            # stop the read before the letter arrived.
+            self.chars += len(_squash(data))
+            if self._link is not None and not self._link[2] and data.strip():
+                self._link[2] = True
+
+        def _link_has_words(self):
+            # An anchor with a label yet. Both the start and the end tag ask,
+            # and they have to ask the same question.
+            return self._link is not None and self._link[2]
+
+        def _close_link(self):
+            if self._link is None:
+                return
+            href, mark, _ = self._link
+            self._link = None
+            raw = "".join(self.parts[mark:])
+            label = _squash(raw)
+            del self.parts[mark:]
+            # The space just inside the tag is the one between two words:
+            # `Visit<a> our site </a>for` must not read as `Visitour sitefor`.
+            lead = " " if raw[:1].isspace() else ""
+            trail = " " if raw[-1:].isspace() else ""
+            if not href.lower().startswith(URL_SCHEMES):
+                self.parts.append(raw if not label else lead + label + trail)
+                return
+            if not label:
+                # An anchor around a spacer or an image with no `alt`. A
+                # newsletter of image tiles would otherwise store a wall of
+                # tracking urls where its words should be.
+                self.parts.append(raw)
+                return
+            if label == href:
+                self.parts.append(lead + href + trail)
+                return
+            if len(label) > MAX_LABEL:
+                # Not a phrase, but a block, or an `</a>` nobody wrote. The
+                # target rides after the words instead of wrapping them: a
+                # span that long is unreadable.
+                self.parts.append("%s%s (%s)%s" % (lead, label, href, trail))
+                return
+            if _RE_URL_UNSAFE.search(href):
+                href = "<" + href.replace("<", "%3C").replace(">", "%3E") + ">"
+            # A bracket in the label opens or ends the span early, the same
+            # way a `)` does in the destination. The backslash goes first, or
+            # it escapes the escapes.
+            for ch in ("\\", "[", "]"):
+                label = label.replace(ch, "\\" + ch)
+            self.parts.append("%s[%s](%s)%s" % (lead, label, href, trail))
+
+        def close(self):
+            HTMLParser.close(self)
+            self._close_link()  # an unclosed <a> still owes its target
+
+        def text(self):
+            return _collapse("".join(self.parts))
+
+
+    def _squash(text):
+        # The collapse rule, in one place: the feed's character budget, a
+        # link label and every output line have to agree on what a run of
+        # whitespace is worth, or the budget stops measuring the output.
+        return " ".join(text.split())
+
+
+    def _collapse(text):
+        # Mail html is indented and newline-wrapped for the renderer, so every
+        # run of layout whitespace collapses and only the breaks the tags
+        # asked for survive, at most one blank line between. The tag-strip
+        # fallback runs through here too: it leaves a space per tag, and a
+        # page of layout markup is a page of them.
+        lines, blank = [], False
+        for line in text.split("\n"):
+            line = _squash(line)
+            if not line:
+                if blank:
+                    continue
+                blank = True
+            else:
+                blank = False
+            lines.append(line)
+        return "\n".join(lines).strip()
+
+
+    def _flatten(source, host, mid):
+        source = source[:HTML_SOURCE_MAX]
+        # The cuts feed the PARSER only. The tag-strip below reads the source
+        # as it arrived, so a `<!--` inside a script string, which the comment
+        # cut cannot see is quoted, takes the parse down but not the letter.
+        markup = _RE_DATA_URI.sub(r"\1", _RE_COMMENT.sub(" ", source))
+        parser = _Flatten()
+        text, failure, read = "", "", 0
+        try:
+            # Fed in chunks so the read STOPS at a body rather than at a byte
+            # offset: HTMLParser buffers a tag split across two feeds, so no
+            # chunk boundary can eat a link or a paragraph. Four times the
+            # property's cap, because collapsing layout whitespace shortens
+            # what was read and the body must still be able to fill it.
+            for cut in range(0, min(len(markup), HTML_MAX), HTML_CHUNK):
+                parser.feed(markup[cut:cut + HTML_CHUNK])
+                read = min(cut + HTML_CHUNK, len(markup))
+                if parser.chars > TEXT_MAX * 4:
+                    break
+            parser.close()
+            text = parser.text()
+        except Exception as exc:  # a parser defect must not park the drain
+            failure = repr(exc)
+        # A parse that reached the END of the source is the body, however
+        # short: a two-line mail is a two-line mail.
+        if text and read >= len(markup):
+            return text
+        stripped = _collapse(
+            _unescape(_RE_TAG.sub(" ", source)).replace("\xa0", " "))
+        if text and len(stripped) <= len(text) + MIN_BODY:
+            # The parse ran out of budget, but the strip, which reads all of
+            # the source, found nothing waiting behind the ceiling: the parse
+            # stands and keeps the links the strip would have dropped.
+            return text
+        # The fallback SAYS it ran, because a body that quietly lost its
+        # links is how this bug went unseen. Not for a message that has no
+        # words at all, though: an image-only mailing loses nothing here and
+        # would put 25 false lines in the log every re-read.
+        if host is not None and stripped.strip():
+            host.log("google-gmail: message %s: the html body did not "
+                     "flatten (%s), so its links are lost to the tag-strip"
+                     % (mid, failure or "no text came out of it"))
+        return stripped
+
+
+    def _text(payload, host, mid):
         plain, html = [], []
         _walk(payload or {}, plain, html)
-        if plain:
+        # A text/plain part that says nothing (a sender's placeholder, or a
+        # part that did not decode) must not stand in for a body the html
+        # alternative does carry.
+        flattened = False
+        if plain and "".join(plain).strip():
             body = "\n".join(plain)
         elif html:
-            body = _RE_TAG.sub(" ", "\n".join(html))
-            for record, ch in (("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"),
-                               ("&gt;", ">"), ("&quot;", '"')):
-                body = body.replace(record, ch)
+            body = _flatten("\n".join(html), host, mid)
+            flattened = True
         else:
             body = ""
-        return body.strip()[:TEXT_MAX]
+        body = body.strip()
+        if len(body) <= TEXT_MAX:
+            return body
+        body = body[:TEXT_MAX]
+        if not flattened:
+            # A `[` in a text/plain body is a `[`, not a link this wrote.
+            return body
+        # The cap is a character count and the flattened body is markdown, so
+        # the cut can land inside a `[label](url)` and store half a
+        # destination. The last `](` is where the last span this wrote turns
+        # into its target: if that one closes, nothing is dangling, and a `[`
+        # anywhere else is the sender's own bracket, not a link.
+        shut = body.rfind("](")
+        if shut < 0:
+            return body
+        destination = body[shut + 2:]
+        # The angle form ends at `>)`, and only there: an ordinary `)` inside
+        # it is part of the url, which is why it is wearing the angles.
+        ender = ">)" if destination.startswith("<") else ")"
+        if ender in destination:
+            return body
+        opened = body.rfind("[", 0, shut + 1)
+        while opened > 0 and body[opened - 1] == "\\":
+            opened = body.rfind("[", 0, opened)  # an escaped one in a label
+        if opened > 0:
+            body = body[:opened].rstrip()
+        return body
 
 
     def _attachments(part, out):
@@ -1830,7 +2194,8 @@ data:
                     held["name"] = item["name"]
             records.append({
                 "id": mid, "threadId": tid, "subject": subject,
-                "preview": preview, "text": _text(payload), "sentAt": sent_at,
+                "preview": preview, "text": _text(payload, host, mid),
+                "sentAt": sent_at,
                 "from": frm[0] if frm else None, "to": to, "cc": cc, "bcc": bcc,
                 "labelIds": [str(x) for x in (msg.get("labelIds") or [])],
                 "historyId": str(msg.get("historyId") or ""),

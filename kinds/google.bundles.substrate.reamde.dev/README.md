@@ -205,6 +205,42 @@ One provider page, or one hydrate batch of 25 `messages.get`, per invocation.
   try/except, so a looser pattern does not skip one header — it rolls the
   page's transaction back and parks the drain deterministically on every
   retry. Quoted local parts are refused rather than risked.
+- **An html body is flattened to markdown, links kept.** `text` prefers the
+  `text/plain` part, but only if it says something: an empty or whitespace
+  plain part is a template's placeholder, not a body. Otherwise the
+  `text/html` part goes through `html.parser` and an `<a href>` comes out as
+  `[label](url)`, because core's `emailmessage.text` is a markdown property
+  and a tag-strip left a mail whose visible words are "click here" with
+  nothing to follow. The rest of the rules, each one a mail shape that got
+  them written:
+  - `<script>`, `<style>` and `<title>` contents are dropped; block tags
+    become line breaks; a list item becomes `- `.
+  - A picture is dropped but its `alt` is kept, because inside an anchor it
+    is the only label a button has. An anchor with no words at all (a spacer,
+    an image with no `alt`) is dropped rather than written out as a bare
+    tracking url.
+  - A destination is kept only for `http`, `https`, `mailto` and `tel`. The
+    tag-strip let no href through at all, and `data:text/html,<script>` in a
+    rendered body is somebody else's code.
+  - An anchor ends where the next one begins and where its paragraph, list
+    item or cell ends, so a missing `</a>` cannot pull the rest of the letter
+    into one link label. An inline tag never ends one: `Click <b>here</b>` is
+    a whole label.
+  - The read is bounded three times: the source is cut at 4,000,000
+    characters, comments (Outlook's conditional blocks are comments) and
+    `data:` URI payloads go before the parser sees them, and the html is fed
+    in chunks that stop as soon as there is enough text for the
+    8,000-character body, with a 600,000-character ceiling for markup that
+    never produces any.
+  - Markup that makes the parser raise, or that swallows its own body, falls
+    back to the tag-strip for that one message and logs that it did. So does
+    a parse that hit the ceiling holding nothing but a preheader, but only if
+    the strip, which reads the whole source, finds the letter that was behind
+    it: otherwise the short parse stands and keeps its links.
+- **The flattener is forward-only, like every other mirror change.** A
+  message already synced under an earlier version keeps the `text` it was
+  written with until Gmail reports a change to it. Clearing the account's
+  `gmailHistoryId` forces the windowed re-read that rewrites them.
 - **Person edges are capped at 200 per message and per thread.** Every edge
   target is locked in the page's one transaction, and a 1,000-recipient list
   across a 25-message hydrate batch is 25,000 of them. The mirror keeps the
