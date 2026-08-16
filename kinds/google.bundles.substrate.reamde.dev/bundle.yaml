@@ -1625,8 +1625,11 @@ data:
     # browser does in TEXT, but a browser leaves it alone in an ATTRIBUTE, so
     # `?a=1&copy=1` would otherwise reach the reader as `?a=1(c)=1` and point
     # somewhere else. Only the terminated form is a reference here.
+    # `(?<![\w-])` so `data-href="..."`, which templates put BEFORE the real
+    # one, is not mistaken for it.
     _RE_HREF = re.compile(
-        r"""href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""", re.IGNORECASE)
+        r"""(?<![\w-])href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""",
+        re.IGNORECASE)
     _RE_CHARREF = re.compile(r"&[#\w]{1,32};")
     # The work ceiling, not an output one: HTMLParser is pure python and a
     # megabyte of text-free tag soup costs the better part of a second, which
@@ -2102,7 +2105,11 @@ data:
         if opened > 0:
             tail = body[opened:]
             shut = tail.find("](")
-            if shut < 0 or ")" not in tail[shut:]:
+            # The angle form ends at `>)`, and only there: an ordinary `)`
+            # inside it is part of the url, which is why it wears the angles.
+            destination = tail[shut + 2:] if shut >= 0 else ""
+            ender = ">)" if destination.startswith("<") else ")"
+            if shut < 0 or ender not in destination:
                 body = body[:opened].rstrip()
         return body
 
