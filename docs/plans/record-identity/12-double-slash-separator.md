@@ -18,6 +18,7 @@ today.
 
 ```
 URL of the publisher    github.com/geoah/vocab
+the proof               a well-known file served at that URL names the authority
 kind reference          github.com/geoah/vocab//note
 a record's path         github.com/geoah/vocab//note/n1       (the first // ends the authority)
 a declaration's path    core.substrate.reamde.dev//kind/github.com/geoah/vocab//note
