@@ -1834,11 +1834,14 @@ data:
         def handle_startendtag(self, tag, attrs):
             # `<br/>` and `<img/>` never reach handle_endtag, and a
             # self-closing `<a/>` owes no target, so start-tag handling
-            # alone, with the link popped straight back off.
+            # alone, with the link popped straight back off. Only if it went
+            # ON: past the open-link cap the start pushed nothing, and
+            # closing here would end somebody else's anchor.
+            depth = len(self._links)
             self.handle_starttag(tag, attrs)
             if tag in HTML_SKIP:
                 self._muted -= 1
-            elif tag == "a":
+            elif len(self._links) > depth:
                 self._close_link()
 
         def handle_endtag(self, tag):
@@ -1941,7 +1944,10 @@ data:
     def _text(payload):
         plain, html = [], []
         _walk(payload or {}, plain, html)
-        if plain:
+        # A text/plain part that says nothing (a sender's placeholder, or a
+        # part that did not decode) must not stand in for a body the html
+        # alternative does carry.
+        if plain and "".join(plain).strip():
             body = "\n".join(plain)
         elif html:
             body = _flatten("\n".join(html))
