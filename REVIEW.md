@@ -8,9 +8,11 @@ with its evidence (the raw per-reviewer reports live in the review session's
 gitignored `.dev/review/`, not in this tree). Where the two reviewers
 disagreed on severity the section says so and gives the adjudicated priority.
 
-Priorities: **P0** blocks calling this stable and giving it to people.
-**P1** should land shortly after. **P2** is optional. Findings marked
-*(both)* were reported independently by both reviewers.
+Priorities, as settled with the owner after the reports landed: **P0** must
+land before this goes to people, **P1** before it is called stable, **P2** is
+optional. Findings marked *(both)* were reported independently by both
+reviewers. The per-category sections below keep each reviewer's original
+priority; where that differs from the agreed list at the top, the top wins.
 
 Sections: [1 Architecture](#1-architecture-and-protocol) ·
 [2 Security](#2-security) ·
@@ -32,10 +34,11 @@ properties, `required`, `account`, the error-code set) are wrong or
 unenforced, and there is no license, no backup procedure, and no reachable
 operator hat in the artifact people would actually run. The right posture is
 exactly what was asked: stop adding features (defer the vocabulary-migrations
-program, the agent features, blob backends, scoped tokens), delete the
-scaffolding (~18k lines: the `kinds:gen` pipeline, the dialect-1 rung, the
-insecure signing switch, the seed disclosure), and spend the remaining effort
-on the P0 list below.
+program, the agent features, scoped tokens), delete the scaffolding (~18k
+lines: the `kinds:gen` pipeline, the dialect-1 rung, the insecure signing
+switch, the seed disclosure), and spend the remaining effort on the P0 list
+below. One feature is the exception, on the owner's call: blob bytes move out
+of Postgres, because the backup story depends on it.
 
 ## Decisions taken while reviewing (2026-08-16)
 
@@ -69,14 +72,6 @@ is built; they are recorded here so the reasoning is not lost.
    retry, and drops the function's own logs. `triggers/{id}/run` already
    gives function authors a debug path through the real delivery machinery,
    with a run record. Functions exist to react to records.
-
-Also filed: [#194](https://github.com/geoah/substrate/issues/194), whether an
-authority may ever contain path segments (raw `/`), as research rather than
-release work.
-
-Still open, and needed before the freeze: `required`/`default` (enforce or
-rename, P0 item 9), the stability vocabulary (add `beta` or redefine
-`stable`, P0 item 15), and the verb audit below.
 
 5. **Agents get no bespoke API.** Their whole state is already records
    (`llmthread`, `llmmessage`, `llminteraction`, `run`, `agent`), the
@@ -134,6 +129,23 @@ rename, P0 item 9), the stability vocabulary (add `beta` or redefine
    schema is a per-repository projection and is not frozen at all.
    (P0 item 15, #129)
 
+Also filed: [#194](https://github.com/geoah/substrate/issues/194), whether an
+authority may ever contain path segments (raw `/`), as research rather than
+release work.
+
+**One decision still open**, surfaced while reconciling the tracker rather
+than by the reviewers: **#116**, the policy `selector.kinds` grammar. It is
+exact-match only, while the trigger source (its closest analog) already admits
+`<authority>/*` and `*`. The first policy anybody writes is "gate everything
+an agent writes under `tasks.*`", which today is either an empty list
+(everything) or an enumerated snapshot that silently misses the next installed
+kind. Retrofitting wildcards into stored exact-match strings changes behavior
+on live data silently, so it is a freeze decision, on the surface that carries
+the product's safety claim. The cheap answer is to adopt the trigger source's
+existing grammar rather than invent one. Its second half, marking `action`
+required so the engine stops silently skipping actionless rules, falls out of
+decision 6.
+
 ## The v1 API surface, after reduction
 
 The aim is the smallest surface that can be frozen. Everything below is one
@@ -141,18 +153,18 @@ decision list; the path-grammar ADR (decision 3) carries it.
 
 **Delete** (no replacement, the capability exists elsewhere or is not v1):
 
-- `POST {core}/functions/{name}/call` — `triggers/{id}/run` is the debug path.
+- `POST {core}/functions/{name}/call`: `triggers/{id}/run` is the debug path.
 - `POST {core}/agents/{name}/call`, `POST {core}/agents/{name}/chat`.
 
 **Fold into records** (the operation stays, the bespoke route goes):
 
-- `POST {core}/recordmerges`, `POST {core}/recordsplits` — `recordmerge` and
+- `POST {core}/recordmerges`, `POST {core}/recordsplits`: `recordmerge` and
   `recordsplit` are shipped kinds; creating the record is the operation, and
   the collision that makes those collections unreachable disappears. Cheap.
 - `GET {core}/bundles/status`, `GET {core}/bundles/{id}/status`, and the
-  trigger status verb — the envelope's server-owned `status` key already
+  trigger status verb: the envelope's server-owned `status` key already
   carries computed state. Cheap.
-- `POST {core}/bundles/{id}/bind` — an input binding is an edge; writing it
+- `POST {core}/bundles/{id}/bind`: an input binding is an edge; writing it
   is a record write. Cheap.
 
 **Do not fold, despite looking foldable.** The bundle lifecycle verbs read
@@ -178,26 +190,26 @@ another reason.
 
 **Audit before freezing** (defensible either way, decide once):
 
-- `GET {core}/traits/{id}/implementors` and `/records` — both are queries. If
+- `GET {core}/traits/{id}/implementors` and `/records`: both are queries. If
   the filter grammar can express "kinds implementing trait X" they are
   collection reads, not routes.
-- `POST {core}/catalog/{id}/install` — installing is applying the closure
+- `POST {core}/catalog/{id}/install`: installing is applying the closure
   through the same admission path as `vocabulary/apply`; it may be that verb
   with a catalog reference rather than its own.
-- The trigger verbs `replay` and `wake` — genuine operations (a cursor reset,
+- The trigger verbs `replay` and `wake`: genuine operations (a cursor reset,
   an immediate scan), but they are the template for every future verb, so
   they should be the ones that prove the reserved segment works.
 
 **Keep, irreducibly:**
 
 - Record CRUD, `incoming`, edge link/unlink (the restructured record tree).
-- `GET {core}/changes` and the watch stream — the log is not a collection.
-- `POST /graphql` — a query transport.
-- `POST {core}/vocabulary/apply` — the multi-document transaction boundary.
-- `PUT`/`GET /blobs/{digest}` — bytes, ranges, `413`.
-- `GET {core}/catalog`, `GET {core}/catalog/{id}` — shipped in the binary,
+- `GET {core}/changes` and the watch stream: the log is not a collection.
+- `POST /graphql`: a query transport.
+- `POST {core}/vocabulary/apply`: the multi-document transaction boundary.
+- `PUT`/`GET /blobs/{digest}`: bytes, ranges, `413`.
+- `GET {core}/catalog`, `GET {core}/catalog/{id}`: shipped in the binary,
   not repository records.
-- `POST {core}/oauth/start` and `GET {core}/oauth/callback` — an external
+- `POST {core}/oauth/start` and `GET {core}/oauth/callback`: an external
   protocol; the callback carries no bearer by design.
 - The auth routes (`register`, `login`, `password`, `totp`, `tokens`,
   `recovery/enroll`), which should also gain a version prefix or be fully
@@ -205,68 +217,100 @@ another reason.
 
 ## The P0 list
 
-What must land before giving this to people, grouped so each group is one
-theme of work. Section links carry the evidence.
+Agreed with the owner on 2026-08-16, going through the review's original 21
+items one at a time. Five were demoted to P1 (TLS, LICENSE, backup and
+restore, the version gates, the narrowing race) and one was promoted from the
+deferred set (blob storage, because backup depends on it). Section links carry
+the evidence.
 
-**A. The deployment must not betray the design** (sections 2, 6, 7)
+**Deployment**
 
-1. Compose requires or mints a credential key; delete
-   `SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES` outright; set
-   `SUBSTRATE_SANDBOX=enforce`; fix the README/introduction claims. (#175,
-   widened)
-2. Credential key gets a format floor and a rotation verb that re-wraps DEKs
-   and signing seeds; fold #133 in. (#99 split)
-3. A TLS/exposure contract: documented terminator, loopback default,
-   explicit insecure override. (untracked)
-4. LICENSE (plus SECURITY.md). (untracked)
-5. A documented, tested backup and restore procedure ending in
-   `repository verify`. (untracked)
-6. The operator hat reachable in the shipped image (`substratectl` in the
-   container); today a lost authenticator is a permanent lockout. (untracked)
+1. Compose mints a credential key into a named volume rather than booting
+   without one, sets `SUBSTRATE_SANDBOX=enforce`, and moves the `postgres`
+   password and `let-me-in` invite code to a laptop-only override. Delete
+   `SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES` outright: the env var, the
+   config field, the engine option and the keyless branch in `settleChain`,
+   so unsigned history is impossible rather than discouraged. Placeholder
+   signatures stay readable only below `signed_from_seq`. (#175, widened)
+2. The credential key gets a format floor (32 bytes in one exact encoding,
+   refused at boot with the accepted shape named in the error), a
+   `substratectl` command that generates one so the operator is never inventing
+   key material by hand, and an operator rotation verb that re-wraps every DEK
+   and signing seed in one transaction. #133's key id rides in the sealed
+   frame as part of it. (#99 split, #133 folded in)
+3. `substratectl` ships inside both runtime images, so
+   `docker compose exec substrate substratectl --dsn "$DATABASE_URL" …`
+   reaches `verify`, `reseal` and `user reset` with no exposed Postgres port.
+   For v1 the operator hat is the only lockout escape, stated plainly in the
+   docs rather than fixed with a new recovery route. (untracked)
+4. Blob bytes move out of Postgres into a filesystem store, with an S3
+   backend behind the same interface. This is a prerequisite for the backup
+   procedure: a database dump must not carry blob bytes, and the backup doc
+   must tell the operator where the bytes live and that they are backed up
+   separately. (#97, promoted from the deferred set)
+5. `SECURITY.md` with a private reporting address. No LICENSE and no
+   `CONTRIBUTING.md` in this pass.
 
-**B. What is about to freeze must be right** (sections 1, 3, 6)
+**What freezes**
 
-7. REST grammar: fix the silent-create dispatch bug (`POST /{plural}/{id}`),
-   decide the verb/record separator, resolve the `incoming` shadowing.
-   (#131 split)
-8. Actor identity: collapse to `bundle:`/`function:`, key on full identity,
-   retire `connector:` before it is hashed into anyone's history. (untracked;
-   #51 partial)
-9. Decide `required`/`default`: enforce them or rename them; stop refusing
-   transitions to a rule nothing enforces. (untracked)
-10. Refuse undeclared edge properties and reserve `edges.<rel>.properties`,
-    `unique`, `deprecated` in one loader change. (#110, #111)
-11. `account` becomes one representation across shared kinds and mirrors.
-    (#124)
-12. Version gates at open: SQL ledger, changelog dialect, chain domain;
-    no-migrate opens for operator reads; rebuild refuses unreplayable legacy
-    entries. (#104 widened, #159 folded, #106)
-13. Narrowing race: registry-generation lock on every record write. (#150
-    invariant 2, pulled out of the deferred program)
-14. Embeddings: store model identity and add a reindex verb, or ship lexical
-    search only; stop advertising `search`/`embeddings` as stable. (#98
-    split, #129)
-15. Stability honesty on the wire: a `beta` value in discovery until the
-    surface is actually frozen. (untracked)
-16. The extension tier gets named interfaces and compile-time assertions.
+6. The path-grammar ADR and its one migration: reserved verb segment, plurals
+   dropped, the repository-local dispatch settled, the silent-create
+   dispatch bug fixed, and the API surface reduction (delete, fold, keep)
+   below carried with it. One break, then freeze. (#131 split: OpenAPI after)
+7. Actor identity: `bundle:<authority>` and `function:<authority>:<name>`,
+   derived by the engine from the full identity, `connector:` retired.
+   (untracked; #51 partial)
+8. `required` is enforced and `default` applies at write, with the four
+   consequences in decision 6 above. Fold #170's datetime bound into the same
+   validation pass. (untracked, #170)
+9. Refuse a non-empty edge `props` map on the generic link surfaces while it
+   is still free, reserve `edges.<rel>.properties`, `unique` and `deprecated`
+   in the same loader change, and add edge removal, `many` and target changes
+   to the narrowing classifier. (#110, #111)
+10. `account` stops naming two things. Both mechanisms are correct and stay:
+    the required `ownerRef` edge on the provider-sync containers (which is
+    what makes disconnect cascade) and the provenance string the connector
+    stamps on synced rows (deliberately not a reference, since retyping is a
+    refused narrowing). Rename the provenance property so one word is not two
+    shapes, while the only store that exists is the owner's and the rename is
+    nearly free. A user-authored calendar or conversation is not a v1 kind;
+    the shipped kinds are honestly named provider containers. (#124, rewritten:
+    its "choose one representation" framing is wrong)
+11. Embeddings store a provider and model fingerprint, it becomes part of the
+    cache key so a mismatch re-embeds, and an operator verb clears and
+    refills the queue for a repository. (#98 split; the per-repository
+    provider design stays deferred)
+12. Add a `beta` stability value and stamp every feature honestly, computing
+    the list from the seams present on the dataset rather than hard-coding
+    it. (#129)
+13. The extension tier gets named optional interfaces in
+    `internal/substrate` and `var _` assertions in `internal/engine`.
     (untracked)
 
-**C. The process must not eat data or lie about itself** (sections 4, 5)
+**The process**
 
-17. Detached goroutines (judge, thread resume, function prep): shutdown
-    barrier, `recover`, `defer tx.Rollback()`. (untracked)
-18. Release workflows publish only commits with a green `ci` run. (untracked)
-19. Sandbox tests fail instead of skip in CI
-    (`SUBSTRATE_TEST_REQUIRE_SANDBOX`). (untracked)
-20. One real-engine HTTP conformance suite: every published error code
-    produced once through the real stack. (untracked)
+14. Detached goroutines (judge, thread resume, function prep): one spawn
+    helper with a WaitGroup and shutdown context, `recover` in both families,
+    `defer tx.Rollback()` in `inTx`. (untracked)
+15. Release workflows publish only commits with a green `ci` for that exact
+    commit; manual tagging and direct tag-push publishing go, and `latest`
+    triggers from `ci` completion. (untracked)
+16. `SUBSTRATE_TEST_REQUIRE_SANDBOX=1` turns the confinement skips into
+    failures, set in `ci:go` and `ci:race`; the plain skip stays the laptop
+    default. (untracked)
+17. One conformance file under `internal/testenv` drives the record lifecycle
+    over real HTTP against the real engine, asserting one case per published
+    error code. The fake stays for handler and failure-injection tests.
+    (untracked)
 
-**D. The docs must tell the truth** (section 6)
+**The docs**
 
-21. The truth-in-docs pass: quickstart, signing claim, rollback claim,
-    recovery claim, backfill claim; document the policy door and the fifth
-    host function; fix `data-model.md`'s `title` guidance; add `gated` to the
-    closed error set.
+18. The truth-in-docs pass, last, so each page describes the finished system
+    once: the quickstart and signing claims, the rollback claim (which now
+    says downgrade is unsupported, since the gates are P1), the recovery
+    claim, the backfill claim, the `recordpatchpolicy` section, the fifth
+    host function, `data-model.md`'s `title` guidance, `gated` in the closed
+    error set, and the reference drift.
 
 ## Deletions (do these, they are negative work)
 
@@ -277,43 +321,131 @@ theme of work. Section links carry the evidence.
   tag.
 - The insecure-signatures switch and the registration-response signing seed
   (return the public key).
+- The three deleted routes: `functions/{name}/call`, `agents/{name}/call`,
+  `agents/{name}/chat`, and the folded ones (merge, split, bundle status,
+  bundle bind).
 - The dead vocabulary in `internal/substrate` and the 277 dead-word
   identifiers; the 85 citations of deleted documents.
 
 ## Suggested order
 
-1. Group A items 1-4 (small, independent, and everything else is tested
-   against the resulting honest deployment) plus the two one-day items 17
-   and 18.
-2. Group B: the freeze decisions (7-11, 15) need the owner's judgment; 12-14
-   and 16 are mechanical once decided.
-3. Group C remainder (19, 20) and the deletions, which shrink the surface
-   the docs pass must describe.
-4. Group D last, so the docs describe the post-fix system once.
+1. Deployment items 1-3 and 5, plus 14 and 15. Small, independent, and
+   everything after is tested against an honest deployment.
+2. Item 4 (blobs out of Postgres), which unblocks the P1 backup procedure.
+3. The freeze work: item 6 carries 7 and the surface reduction; 8-13 are
+   mechanical now that the decisions are made.
+4. Items 16 and 17, then the deletions, which shrink what the docs describe.
+5. Item 18 last.
+
+## The P1 list: before this is called stable
+
+The five demoted P0s come first, because each is a promise the docs or the
+wire currently make.
+
+1. A TLS and exposure contract: loopback default, one documented reverse-proxy
+   termination path, a refusal to bind publicly in cleartext without an
+   explicitly named setting, and the security-header middleware (HSTS, CSP
+   `frame-ancestors 'none'`, nosniff, no-referrer) with a nonce for the OAuth
+   return page. Until it lands, the docs say remote exposure is unsupported.
+2. A LICENSE, with `org.opencontainers.image.licenses` set and the file in
+   every release archive.
+3. The backup and restore procedure, after item 4 above: exact dump and
+   restore commands, the credential key stored separately from the dump, the
+   blob store named as a separate artifact, a restore ending in
+   `repository verify`, and one tested round trip. (#137's restore tool and
+   #136's export half fold in here.)
+4. The version gates at open: refuse a newer `schema_migrations` version, a
+   newer changelog dialect or an unknown chain domain; no-migrate opens for
+   operator reads; rebuild refuses unreplayable legacy entries before
+   deleting a fold table. (#104 widened, #159's writer gate folded, #106)
+5. The narrowing race: the registry-dependency lock taken shared on every
+   record write that resolves a kind. (#150 invariant 2)
+
+Then, grouped by theme:
+
+**Wire and contract.** Operational lists get the page envelope (#127); the
+gated `409` carries a structured `heldAs` and validation problems get
+structure (#128); `POST` retries stop duplicating records and re-running
+effects (#130); the watch cursor guarantees and ndjson control frames get
+documented, with the `/changes` continuation marker and the GraphQL horizon
+and `hash` gaps fixed (#144, #127); `wire.golden.json` widens to every shape
+the console mirrors, recording required versus optional, and the known `Page`
+and `BundleStatus` drift is corrected (#131 split); the request id reaches the
+error envelope, an `X-Request-Id` header and one completion log line per
+request; the auth routes get a version prefix or a complete discovery
+`endpoints` block.
+
+**Engine correctness.** `recordScan.finish` returns its JSON errors and the
+`rows.Err()` checks land in `gc.go` and `search.go`; declared indexes are
+named from their definition rather than their ordinal, and orphans are
+dropped; constraint tightening (`pattern`, `min`, `max`) counts live
+violations like other narrowings; `fts` leaves the byte-for-byte fold snapshot
+and the rebuild is documented as the sanctioned reindex (#105); the rule for a
+migration that edits `records` outside the fold is written and tested (#106);
+signing key rotation (#147).
+
+**Vocabulary.** Property descriptions stop being jargon in console form help
+(#49); the core-kind declaration gaps (#51); the renames before they freeze
+(#125); the `occurrencelog` and `recurring` trait extraction (#122); provider
+timestamp names and types (#143); `permissions.network` becomes the honest
+boolean grant it already is (#50, rewritten); trigger label properties (#118);
+`run` stores references rather than bare strings (#117); the `deprecated` and
+retirement markers that #146 shrinks to once #110 lands.
+
+**Code and tests.** The dead vocabulary rename in `internal/substrate` and the
+277 identifiers; a scheduled `-race` job over `./internal/engine/...`; the
+sleep-based lock-order barriers replaced with a deterministic wait; tests for
+`internal/oauthflow`'s state HMAC, `internal/config`, and one `gql.BuildSchema`
+over the shipped registry; the `test:db` package allowlist guarded; `errcheck`
+enabled; the 85 citations of deleted documents removed.
+
+**Operations and DX.** The env contract settled and fully documented, with
+`SUBSTRATE_SANDBOX` moved into `Config` and the prefix rule decided (#164,
+rescoped); compose selects a published image tag with the source build behind
+an override, and the release archives and image are named in the docs; a
+readiness endpoint that pings Postgres, with the container healthcheck moved
+to it; the function cache persisted in compose and retired installation
+directories evicted; function logs returned from a direct invocation path and
+kept on the `run` row for parked deliveries; `apply -f <dir>`; ADR #134
+(repository id is identity) and a paragraph for #106; #138 reduced to a
+one-line record, plus a default expiry on login-minted tokens.
 
 ## Open-issue dispositions
 
-Do before release (the P0 set): #175, #99 (split), #104 (widened), #106,
-#110, #111, #124, #131 (split: path grammar now, OpenAPI after), #150
-(invariant 2 only), #98 (split: storage fix now), #129, #170 (elevate to the
-release set; five-line fix).
+**Do now (the P0 set):** #175 (widened to the compose default), #99 (split:
+the key floor and the rotation verb), #133 (folded into that rotation), #97
+(promoted: blobs out of Postgres), #131 (split: the path grammar now),
+#110, #111, #124 (rewritten per item 10), #98 (split: the model fingerprint
+now), #129, #170 (folded into the validation pass), #51 (the actor half only).
 
-Do shortly after (P1): #127, #128, #130, #144, #137 (restore tool; fold
-#136's export half in), #138 (as ADR, widened), #147, #134, #49, #51, #125,
-#122, #143, #164 (rescoped to the env contract), #50 (rewritten as the
-boolean grant), #118, #146 (shrunk: markers move to the #110 change), #117.
+**Do before stable (P1):** the five demoted items above (#104, #159's writer
+gate, #106, #150 invariant 2, plus the untracked TLS, LICENSE and backup
+work), then #127, #128, #130, #144, #137 (+#136's export half), #138, #147,
+#134, #49, #51, #125, #122, #143, #164, #50, #118, #117, #146 (shrunk), #105,
+#142 (its bundle-state bullet rides with the status fold in P0 item 10: three
+independent booleans can express states the verbs never produce, and ADR 0019
+wants one state property; the rest of #142 is additive).
 
-Defer past release: #151, #152, #155, #156, #157, #97, #153, #148, #133
-(folded into rotation), #135, #136 (delete half), #55, #54, #67, #68, #47
-(close into #68), #76, #75, #74, #71, #70, #69, #6 (rescope to the scheduled
-job), #77 (mechanical half only, later), #105 (take option one when touching
-the snapshot), #159 (backfill half).
+**Defer past stable:** #151, #152, #155, #156, #157 (the vocabulary-migrations
+verbs), #153, #148, #135, #136's delete half, #55, #54, #67, #68, #47 (close
+into #68), #69, #70, #71, #74, #75, #76 (the agent surface), #6 (rescope to
+the scheduled job), #77 (the mechanical gate only), #159's backfill half.
 
-Close: #103 (wontfix per ADR 0017; three reviewers concur), #158 (wontfix),
-#166 (strike the stale reseal bullet, fold the rest), #132/#164/#126/#100/
-#107/#112/#119/#165 (trackers: update or close as their children resolve),
-#53 (rescope to the `vocabularydiff` gate and surviving symbols; six of nine
-listed symbols are already gone).
+**Close:** #103 (wontfix per ADR 0017; three reviewers concur), #158
+(wontfix), #166 (strike the stale reseal bullet, fold the rest), #53 (rescope
+to the `vocabularydiff` added-declaration gate and the surviving test-only
+symbols; six of the nine it names are already gone). The trackers #100, #107,
+#112, #119, #126, #132, #164, #165 get updated to the dispositions above or
+closed as their children resolve.
+
+**New tickets needed** (untracked work above): the path-grammar ADR and
+migration, actor identity, `required`/`default` enforcement, the `beta`
+stability value, the extension-tier interfaces, the detached-goroutine
+lifecycle, the release-pipeline gate, the sandbox test gate, the HTTP
+conformance suite, the truth-in-docs pass, `substratectl` in the image, the
+credential-key generator, TLS and security headers, LICENSE, the backup
+procedure, the request-id correlation, the readiness endpoint, and the
+scaffolding deletions.
 
 ---
 
