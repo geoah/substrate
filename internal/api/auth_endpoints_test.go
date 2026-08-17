@@ -41,10 +41,14 @@ func TestRegisterThenLogin(t *testing.T) {
 	if out.Secret == "" || out.Token.Label != "console" {
 		t.Fatalf("registration response = %+v", out)
 	}
-	// The signing seed rides this one response and no other.
-	if out.SigningSeed != strings.Repeat("ab", 32) ||
-		out.SigningPublicKey != strings.Repeat("cd", 32) {
-		t.Fatalf("registration did not carry the signing seed: %+v", out)
+	// Registration hands back the signing PIN and no private key material:
+	// `signingPublicKey` is what `repository verify --expect-public-key` wants,
+	// and the seed that mints the signatures stays sealed server-side.
+	if out.SigningPublicKey != strings.Repeat("cd", 32) {
+		t.Fatalf("registration did not carry the signing public key: %+v", out)
+	}
+	if strings.Contains(rec.Body.String(), "signingSeed") {
+		t.Fatal("registration carried a signing seed; no response may hand out private key material")
 	}
 
 	// The token registration handed back is an ordinary bearer.
@@ -60,7 +64,7 @@ func TestRegisterThenLogin(t *testing.T) {
 		t.Fatal("login handed back the registration's secret")
 	}
 	if strings.Contains(rec.Body.String(), "signingSeed") {
-		t.Fatal("login carried a signing seed; registration is its only showing")
+		t.Fatal("login carried a signing seed; no response hands out private key material")
 	}
 }
 

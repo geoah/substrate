@@ -110,9 +110,9 @@ func TestBothViewsLoad(t *testing.T) {
 // THE SHIPPED TREE IS AUTHORED IN THE DECLARED SPELLING. The loader admits one
 // spelling per key and refuses each pre-typed one by name, so a tree document
 // left in an old spelling does not store as something other than what it says: it
-// does not load at all. The only reader that still understands those spellings is
-// the frozen dialect-1 grammar (internal/engine/dialectonegrammar.go), and it
-// translates the ROWS an older binary stored, never a document.
+// does not load at all. Nothing understands those spellings any more: the
+// dialect-1 grammar that read the ROWS an older binary stored was deleted with
+// its rung (#217).
 //
 // The test still earns its keep for what it says when that happens. A load
 // failure names one key inside one closure; this names the document (its kind and
@@ -250,6 +250,49 @@ func TestEveryKindDeclaresADisplayTemplate(t *testing.T) {
 		if !declared[id] {
 			t.Errorf("%s is listed as titling itself from the built-in slot, but the tree declares no such kind", id)
 		}
+	}
+}
+
+// EVERY STAMP IN THE TREE NAMES A DECLARED DATETIME PROPERTY. A transition's
+// stamp writes a stored property, and the loader SYNTHESIZES an implicit
+// datetime one where the author declared none — it has to, because stored
+// declarations written before targets were declarable must keep parsing at open
+// (vocabulary/load.go). So a missing target in the shipped tree is invisible to
+// the loader, and this reads the documents rather than the registry.
+//
+// The rule is absolute here and nowhere else: the tree is the vocabulary this
+// binary ships, an undeclared target hides a stored datetime from every reader
+// of the declaration, and the fix is one `type: datetime` property.
+func TestEveryStampTargetIsADeclaredDatetime(t *testing.T) {
+	stamps := 0
+	for _, d := range readTreeDocuments(t) {
+		if d.Kind != vocabulary.DocKind {
+			continue
+		}
+		props := asMapping(d.Data["properties"])
+		for name, pv := range props {
+			// A state property carries its machine INLINE (states, initial,
+			// transitions), so the transitions list is the machine.
+			for _, tv := range asList(asMapping(pv)["transitions"]) {
+				for target := range asMapping(asMapping(tv)["stamps"]) {
+					stamps++
+					decl := asMapping(props[target])
+					if len(decl) == 0 {
+						t.Errorf("%s: %s stamps %q, which the kind does not declare; declare it (type: datetime)",
+							d.ID, name, target)
+						continue
+					}
+					if decl["type"] != "datetime" || decl["repeated"] == true || decl["keyed"] == true {
+						t.Errorf("%s: %s stamps %q, so it must be a single-valued datetime, not %v",
+							d.ID, name, target, decl["type"])
+					}
+				}
+			}
+		}
+	}
+	// A reader that stopped finding stamps would pass this test forever.
+	if stamps == 0 {
+		t.Fatal("read no stamps at all: the documents no longer spell a machine's transitions this way")
 	}
 }
 

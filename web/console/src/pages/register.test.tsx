@@ -154,19 +154,18 @@ describe("RegisterPage", () => {
     })
   })
 
-  it("holds the reader on the recovery key and signing seed, shown once", async () => {
+  it("holds the reader on the recovery key, and shows the signing pin beside it", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, ENROLLMENT))
     render(<RegisterPage />)
     await enroll()
 
-    const seed = "ab".repeat(32)
+    const pin = "cd".repeat(32)
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
         ...MINT,
         recoveryKey: "AGE-SECRET-KEY-1TEST",
         recoveryPublicKey: "age1test",
-        signingSeed: seed,
-        signingPublicKey: "cd".repeat(32),
+        signingPublicKey: pin,
       })
     )
     fireEvent.change(screen.getByLabelText("One-time code"), {
@@ -176,15 +175,17 @@ describe("RegisterPage", () => {
       screen.getByRole("button", { name: "Create my repository" })
     )
 
-    // Logged in, but NOT navigated: both keys arrive only on this response,
-    // and the page holds the reader until they carry them off.
+    // Logged in, but NOT navigated: the recovery key arrives only on this
+    // response, and the page holds the reader until they carry it off.
     await waitFor(() => expect(getToken()).toBe("substrate_tok_minted"))
     const recovery = (await screen.findByLabelText(
       "Recovery key"
     )) as HTMLInputElement
     expect(recovery.value).toBe("AGE-SECRET-KEY-1TEST")
-    const signing = screen.getByLabelText("Signing key") as HTMLInputElement
-    expect(signing.value).toBe(seed)
+    const signing = screen.getByLabelText(
+      "Signing public key"
+    ) as HTMLInputElement
+    expect(signing.value).toBe(pin)
     expect(navigate).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole("button", { name: /I saved them/ }))

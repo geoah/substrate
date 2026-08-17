@@ -561,9 +561,9 @@ var functionDataKeys = map[string]bool{
 // deletedFunctionKeys are the removed keys, each naming what replaced it: the
 // CEL and wasm bodies are removed (POC verdicts, ticket 009), the subscription
 // moved onto trigger records, and the typed core retired the wrapper and the
-// recursive IO schemas. No compatibility shim for any of them — the rows written
-// that way are translated by the dialect rung
-// (engine/dialectonegrammar.go), which is the last reader of those spellings.
+// recursive IO schemas. No compatibility shim for any of them, and nothing
+// translates a row written that way: the rung that did was deleted before the
+// first release (#217), so the store it comes from is refused at open.
 var deletedFunctionKeys = map[string]string{
 	"run":          "runtime + source — the CEL and wasm run arms are removed; CEL survives only as the trigger's when: guard",
 	"on":           "a trigger record (core.substrate.reamde.dev) — the subscription lives on the trigger, the function is a pure callable",

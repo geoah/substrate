@@ -34,9 +34,6 @@ area/vocabulary:
       - any-glob-to-any-file:
           - kinds/**
           - internal/vocabulary/**
-          - internal/kinddialect/**
-          - internal/corekinds/**
-          - cmd/kindsgen/**
           - cmd/vocabularydiff/**
 
 area/cli:

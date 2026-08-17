@@ -125,16 +125,12 @@ func (t *txn) normalizeReferenceValue(p *vocabulary.Property, v any, where strin
 }
 
 // storedReferencePath reads a STORED reference value as its record path,
-// tolerating the released dialect-1 {kind, id} pair.
+// tolerating the retired dialect-1 {kind, id} pair.
 //
-// POST-RUNG THIS IS UNREACHABLE: the promotion rewrites every trigger holding a
-// pair (canonicalizeTriggerCallables), and every released store passes through
-// it at first open, so a dialect-2 store has none. It stays as stated defense,
-// so a dispatcher reading a row mid-migration reads it correctly rather than
-// skipping a live trigger — the failure mode a silent nil would cause here is
-// delivery that stops without saying so.
-//
-// Nothing AUTHORS a pair: the write path refuses it by name (coerceReference).
+// NO STORE HOLDS ONE: no release ever wrote a dialect-1 row, and the write path
+// refuses a pair by name (coerceReference). It stays as stated defense, because
+// the failure mode a silent nil would cause here is a dispatcher skipping a live
+// trigger — delivery that stops without saying so.
 func storedReferencePath(v any) string {
 	switch t := v.(type) {
 	case string:

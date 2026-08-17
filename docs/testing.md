@@ -175,33 +175,6 @@ and then fails the console's test until `types.ts` and its key map agree with
 it. Adding a shape to `wireTypes` in that Go test is a deliberate act: it
 commits the console to tracking it.
 
-## The generated core types
-
-The declarations under `kinds/` are the source of truth for what a core record
-is, and the type representations of them are generated from those files rather
-than kept by hand: `internal/corekinds` in Go and
-`web/console/src/lib/generated/corekinds.ts` for the console, both checked in.
-
-```bash
-mise run kinds:gen          # write both; :go and :ts narrow it to one
-mise run kinds:gen:check    # regenerate into a temp tree and diff
-```
-
-`kinds:gen:check` runs in the lint job beside `kinds:check`, and the two fail
-differently on purpose: `kinds:check` says a changed declaration did not bump its
-`version`, and `kinds:gen:check` says the checked-in types are not the ones the
-declarations produce. The fix for the second is `mise run kinds:gen` and a commit
-of what it wrote.
-
-Two readers of one contract would drift, so something holds them together. The
-generator has a reader of its own (`internal/kinddialect`, so a broken generated
-file cannot make the generator unbuildable), and the hand-written conformance
-tests in `internal/corekinds` pin it to the loader in three ways: the two readers
-agree on every core document, each kind's generated key set is exactly its
-declared property set in both directions, and `Decode(Properties(x)) == x` per
-kind, including absent versus empty, which is the round trip optional scalars
-are pointers for.
-
 ## The live tests
 
 Almost every suite here is hermetic: the agent loop is driven by an in-process
@@ -301,7 +274,7 @@ pipeline is reproducible on a laptop:
 
 | Job | Task | Is |
 | --- | ---- | -- |
-| lint | `ci:lint` | formatting, every linter, the release config, and both `kinds/` guards: the version bump (`kinds:check`) and the generated types (`kinds:gen:check`) |
+| lint | `ci:lint` | formatting, every linter, the release config, and the two diff guards: the `kinds/` version bump (`kinds:check`) and the write-once files (`frozen:check`) |
 | cross compile | `ci:cross` | build and vet for linux and darwin, amd64 and arm64 |
 | go test | `ci:go` | both halves, with the coverage profile kept as an artifact |
 | race | `ci:race` | the short suite under `-race` |

@@ -137,7 +137,7 @@ export function RegisterPage() {
   const [confirm, setConfirm] = useState("")
   const [code, setCode] = useState("")
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null)
-  const [signingSeed, setSigningSeed] = useState<string | null>(null)
+  const [signingPublicKey, setSigningPublicKey] = useState<string | null>(null)
   const [enrolled, setEnrolled] = useState<TOTPEnrollment | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isBusy, setBusy] = useState(false)
@@ -216,15 +216,17 @@ export function RegisterPage() {
         totpCode: normalized,
         label: "console",
       })
-      // The recovery identity and the signing seed arrive ONCE, on this
-      // response, and no later call can produce either: they land in state
-      // BEFORE the fallible session write, so a blocked localStorage cannot
-      // take the only showing with it, and the page holds the reader until
-      // they carry the keys off instead of navigating past them.
-      const holdKeys = Boolean(minted.recoveryKey || minted.signingSeed)
+      // The recovery identity arrives ONCE, on this response, and no later
+      // call can produce it: it lands in state BEFORE the fallible session
+      // write, so a blocked localStorage cannot take the only showing with it,
+      // and the page holds the reader until they carry it off instead of
+      // navigating past it. The signing public key is not a secret and is
+      // readable again from the server; it rides the same card because this is
+      // where somebody is already writing things down.
+      const holdKeys = Boolean(minted.recoveryKey || minted.signingPublicKey)
       if (holdKeys) {
         setRecoveryKey(minted.recoveryKey ?? null)
-        setSigningSeed(minted.signingSeed ?? null)
+        setSigningPublicKey(minted.signingPublicKey ?? null)
       }
       saveSession(minted.secret, name, minted.token.id)
       if (holdKeys) return
@@ -254,13 +256,13 @@ export function RegisterPage() {
           </div>
           <span className="text-lg font-semibold">substrate</span>
         </div>
-        {(recoveryKey !== null || signingSeed !== null) && (
+        {(recoveryKey !== null || signingPublicKey !== null) && (
           <Card>
             <CardHeader>
               <CardTitle>Your keys</CardTitle>
               <CardDescription>
-                Shown once, never shown again. Put them in your password manager
-                now.
+                The recovery key is shown once and never shown again. Put it in
+                your password manager now.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
@@ -288,21 +290,22 @@ export function RegisterPage() {
                       </FieldDescription>
                     </Field>
                   )}
-                  {signingSeed !== null && (
+                  {signingPublicKey !== null && (
                     <Field>
-                      <FieldLabel htmlFor="signing-seed">
-                        Signing key
+                      <FieldLabel htmlFor="signing-public-key">
+                        Signing public key
                       </FieldLabel>
                       <KeepKeyField
-                        id="signing-seed"
-                        label="signing key"
-                        value={signingSeed}
+                        id="signing-public-key"
+                        label="signing public key"
+                        value={signingPublicKey}
                       />
                       <FieldDescription>
-                        The Ed25519 seed your repository signs its changelog
-                        with. The server keeps only a sealed copy and remains
-                        the only signer; this copy lets you verify the
-                        signatures yourself.
+                        Not a secret, but keep it somewhere outside this
+                        substrate: it is what{" "}
+                        <code>repository verify --expect-public-key</code> holds
+                        your changelog to, and a pin read back out of the same
+                        database proves nothing.
                       </FieldDescription>
                     </Field>
                   )}
@@ -314,7 +317,7 @@ export function RegisterPage() {
             </CardContent>
           </Card>
         )}
-        {recoveryKey === null && signingSeed === null && (
+        {recoveryKey === null && signingPublicKey === null && (
           <Card>
             <CardHeader>
               <CardTitle>Register</CardTitle>

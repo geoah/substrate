@@ -8,8 +8,6 @@ package engine
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
 	"sync"
 	"testing"
 	"time"
@@ -103,75 +101,6 @@ def main(input, host):
 		}}
 	}
 	return m
-}
-
-// windBackDialect erases the repository's schema-dialect stamp, simulating a
-// store written by a pre-dialect binary. A legacy-shaped row and a
-// max-dialect stamp cannot coexist in the wild (the stamp says the ladder
-// already ran), so a test that hand-plants legacy content must wind the stamp
-// back for the reopen to re-run the promotion steps.
-func windBackDialect(t *testing.T, db *sql.DB) {
-	t.Helper()
-	for _, q := range []string{`DELETE FROM vocabulary_dialect`, `DELETE FROM vocabulary_promotions`} {
-		if _, err := db.Exec(q); err != nil {
-			t.Fatalf("wind back the schema dialect: %v", err)
-		}
-	}
-}
-
-// w2SeedLegacy plants the pre-wave-1 shape onto an installed repository: the
-// mirror function's definition regains the given legacy keys, its cursor is
-// keyed by the FUNCTION identity at the given seq, and one parked failure
-// rides the same key.
-func w2SeedLegacy(t *testing.T, ds *dataset, defKeys map[string]any, seq int64) {
-	t.Helper()
-	ctx := context.Background()
-	w2SeedLegacyBlob(t, ds, w2Mirror, defKeys)
-	if _, err := ds.db.ExecContext(ctx, `
-		INSERT INTO trigger_cursors (trigger_id, seq, updated_at) VALUES ($1, $2, $3)
-		ON CONFLICT (repository, trigger_id) DO UPDATE SET seq = EXCLUDED.seq`,
-		w2Mirror, seq, time.Now().UTC()); err != nil {
-		t.Fatalf("seed cursor: %v", err)
-	}
-	if _, err := ds.db.ExecContext(ctx, `
-		INSERT INTO trigger_failures (trigger_id, seq, fire_id, record_id, attempts, last_error, parked_at)
-		VALUES ($1, 1, '', 'somerecord', 3, 'old park', $2)`,
-		w2Mirror, time.Now().UTC()); err != nil {
-		t.Fatalf("seed failure: %v", err)
-	}
-}
-
-// w2SeedLegacyBlob merges legacy keys into one declaration row's `definition`
-// blob, in place. It is the LEGACY-CONTENT half of the recipe above, apart from
-// it because a dialect-1 grammar fixture needs exactly this and none of the
-// trigger bookkeeping: a row planted in the dialect-1 shape
-// (PlantDeclarationRow) holds the declaration as this binary would write it,
-// and what a fixture wants is the spelling an OLDER binary stored, which no
-// write path in this tree produces.
-func w2SeedLegacyBlob(t *testing.T, ds *dataset, id string, defKeys map[string]any) {
-	t.Helper()
-	ctx := context.Background()
-	var raw []byte
-	if err := ds.db.QueryRowContext(ctx,
-		`SELECT props->'definition' FROM records WHERE id = $1`, id).Scan(&raw); err != nil {
-		t.Fatalf("read definition: %v", err)
-	}
-	var def map[string]any
-	if err := json.Unmarshal(raw, &def); err != nil {
-		t.Fatal(err)
-	}
-	for k, v := range defKeys {
-		def[k] = v
-	}
-	newRaw, err := json.Marshal(def)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ds.db.ExecContext(ctx, `
-		UPDATE records SET props = jsonb_set(props, '{definition}', $2::jsonb) WHERE id = $1`,
-		id, string(newRaw)); err != nil {
-		t.Fatalf("seed old definition: %v", err)
-	}
 }
 
 // w2AssertExactResume asserts the trigger owns the legacy position exactly:

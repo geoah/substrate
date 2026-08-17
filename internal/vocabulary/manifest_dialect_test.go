@@ -3,10 +3,10 @@ package vocabulary_test
 // The manifest dialect's typed spellings, and they are the ONLY ones: a tool
 // entry names its function, a function declares flat arguments and one
 // `permissions:` grant, a mapping rule is an object, a trait's variants are a list.
-// Each spelling that came before is refused here, naming what replaced it — the
-// stored rows written that way are translated by the dialect rung, whose frozen
-// grammar and fixtures live in internal/engine — and each refusal the dialect
-// adds is asserted by message.
+// Each spelling that came before is refused here, naming what replaced it, and
+// each refusal the dialect adds is asserted by message. Nothing translates a
+// stored row written the old way either: the rung that did was deleted before
+// the first release (#217).
 
 import (
 	"reflect"
@@ -705,7 +705,8 @@ func TestTraitVariantListRefusals(t *testing.T) {
 // An index names its properties and an OAuth feature names its scopes: both used
 // to be written as a bare list, and the property dialect cannot state either of
 // those shapes — a list of lists, or a keyed map of lists. Each is refused
-// naming the object that replaced it; stored rows are translated by the rung.
+// naming the object that replaced it; nothing translates a stored row written
+// the bare way.
 func TestBareListSpellingsAreRefused(t *testing.T) {
 	const indexDoc = `kind: core.substrate.reamde.dev/authority
 metadata: {id: i.example.com}

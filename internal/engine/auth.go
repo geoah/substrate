@@ -373,13 +373,12 @@ func (s *service) Register(ctx context.Context, in substrate.RegisterInput) (sub
 	if err != nil {
 		return zero, err
 	}
-	// The signing seed's one disclosure: the server keeps its only copy
-	// sealed under the credential key and remains the only signer — this is
-	// the user's safekeeping copy, never retrievable again (a lost credential
-	// key otherwise stops writes with nothing to recover from). Nil under the
-	// insecure keyless switch, which signs nothing.
+	// The PUBLIC key, and only ever that: it is what verifies a signature, so
+	// it is the whole of what a user needs, and it is worth handing over
+	// because a pin read back out of the same database an attacker rewrote
+	// proves nothing. The seed stays sealed under the credential key, where
+	// the only signer keeps it.
 	if signKey != nil {
-		out.SigningSeed = hex.EncodeToString(signKey.Seed())
 		out.SigningPublicKey = hex.EncodeToString(signKey.Public().(ed25519.PublicKey))
 	}
 	return out, nil

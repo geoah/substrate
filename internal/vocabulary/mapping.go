@@ -245,8 +245,9 @@ func (l *loader) parseMapping(d Document) *Mapping {
 		rule := &MapRule{Merge: MergeAtomic}
 		// A rule is an OBJECT. The bare path string is refused: one property has
 		// one shape, which is what lets the meta-kind declare a rule's own fields.
-		// Stored mappings written that way are translated by the dialect rung
-		// (engine/dialectonegrammar.go).
+		// Nothing translates a stored mapping written that way: the rung that
+		// did was deleted before the first release (#217), so the store it
+		// comes from is refused at open.
 		if s, bare := rv.(string); bare {
 			l.errf("%s: %q is a bare path — a rule is an object: {path: %s}", mwhere, s, s)
 			continue

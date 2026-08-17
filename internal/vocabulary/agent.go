@@ -217,8 +217,9 @@ var agentDataKeys = map[string]bool{
 // deletedAgentKeys are the removed keys, each naming what replaced it. An
 // agent's two grants group under `permissions:` with a function's five, and the
 // permission to write is named for writing: a bare `emit:` said nothing about
-// being a grant at all. No compatibility shim: the rows written that way are
-// translated by the dialect rung (engine/dialectonegrammar.go).
+// being a grant at all. No compatibility shim, and nothing translates a row
+// written that way: the rung that did was deleted before the first release
+// (#217), so the store it comes from is refused at open.
 var deletedAgentKeys = map[string]string{
 	"emit":  "permissions.writes: the grants group under `permissions:`, and the permission to write is named for writing",
 	"reads": "permissions.reads: the grants group under `permissions:`",
@@ -482,9 +483,9 @@ func (l *loader) parseAgentParams(where string, data map[string]any, a *Agent) b
 // because it made the built-ins the ONE thing an agent could name that no record
 // declared, and it is gone now that they are records. And `{callable: x}` said
 // the entry might name something other than a function; it never could, since a
-// sub-agent is named on `agents:`. The stored rows written any of those ways are
-// translated by the dialect rung (engine/dialectonegrammar.go), which is the
-// only reader of those spellings left.
+// sub-agent is named on `agents:`. Nothing translates a stored row written any
+// of those ways: the rung that did was deleted before the first release
+// (#217), so the store it comes from is refused at open.
 func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bool {
 	seen := map[string]bool{}
 	add := func(i int, t AgentTool) bool {

@@ -604,8 +604,9 @@ func (l *loader) parseBundleOAuth2(where string, data map[string]any) *BundleOAu
 			// A toggle's value is `{scopes: [...]}`. The bare list is refused: a keyed
 			// map of LISTS is the one shape the property dialect cannot state — keyed
 			// and repeated are the two containers and a declaration is one or the
-			// other — so the value takes a field. Stored bundles written the bare way
-			// are translated by the dialect rung (engine/dialectonegrammar.go).
+			// other — so the value takes a field. Nothing translates a stored bundle
+			// written the bare way: the rung that did was deleted before the first
+			// release (#217), so the store it comes from is refused at open.
 			inner := asMapOrNil(fs[toggle])
 			if inner == nil {
 				l.errf("%s.featureScopes[%q]: a bare list of scopes — the toggle's value names them: {scopes: [...]}", w, toggle)

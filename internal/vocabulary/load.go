@@ -99,8 +99,8 @@ func ParseYAML(data []byte, source string) ([]*Authority, error) {
 // and the manifest document list). The POST …/connectors shim and the frozen
 // substrate.ConnectorManifest wire type were removed at the v1 freeze (ticket
 // 004, ruling A12); this struct survives ONLY as the in-memory shape the
-// historical stored-manifest promotion (dialect step 4) decodes an old blob
-// into, and the loader test's fixture. It is not a wire contract.
+// loader test's fixture decodes into. It is not a wire contract, and the
+// stored-manifest promotion that once shared it is gone (#217).
 type Manifest struct {
 	Name      string           `json:"name"`
 	Authority string           `json:"authority"`
@@ -522,8 +522,9 @@ var traitVariantKeys = map[string]bool{"name": true, "properties": true}
 // of with `traits: [temporal(point)]`. A variant is an entry carrying its own
 // name ({name, properties}), and the LIST of them is the one spelling: a mapping
 // of name to properties is refused, because a keyed map of keyed maps leaves
-// every reader guessing which level a path addresses. Stored traits written that
-// way are translated by the dialect rung (engine/dialectonegrammar.go).
+// every reader guessing which level a path addresses. Nothing translates a
+// stored trait written that way: the rung that did was deleted before the first
+// release (#217), so the store it comes from is refused at open.
 //
 // Nil when nothing is declared, which is what makes a trait variant-free.
 func (l *loader) parseTraitVariants(where string, raw any) map[string]map[string]Datatype {
@@ -815,8 +816,8 @@ func (l *loader) parseType(doc Document) *Kind {
 	// an implicit datetime property, NOT refused: stored declarations written
 	// before targets were declarable must keep parsing at open, or the
 	// repository holding them cannot be opened to upgrade them. The shipped
-	// tree itself declares every target (cmd/kindsgen refuses an undeclared
-	// one).
+	// tree itself declares every target, which this cannot enforce and
+	// TestEveryStampTargetIsADeclaredDatetime (kinds/kinds_test.go) does.
 	for _, pname := range sortedKeys(mapOfAny(t.Machines)) {
 		for _, tr := range t.Machines[pname].Transitions {
 			for _, stamp := range sortedKeys(mapOfAny(tr.Stamps)) {
@@ -934,9 +935,10 @@ func (l *loader) parseType(doc Document) *Kind {
 
 	// indices. An index NAMES its properties (`{properties: [...]}`); the bare
 	// list of names a kind used to be written with is refused, since one shape
-	// per property is what lets the meta-kind declare this one. Stored rows
-	// written that way are translated by the dialect rung
-	// (engine/dialectonegrammar.go).
+	// per property is what lets the meta-kind declare this one. Nothing
+	// translates a stored row written that way: the rung that did was deleted
+	// before the first release (#217), so the store it comes from is refused
+	// at open.
 	for _, iv := range mslice(d, "indices") {
 		if cols, bare := iv.([]any); bare {
 			l.errf("%s: data.indices: a bare list of property names — an index names them: {properties: %v}", where, cols)
