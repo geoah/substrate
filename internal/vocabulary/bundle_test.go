@@ -112,7 +112,7 @@ func TestBundleAuthorityFirstLabelMustBeAWord(t *testing.T) {
 }
 
 // Two authorities may share a first label. An install writes under
-// `bundle:<authority>` (record 0020), so the two are two writers: two
+// `bundle:<authority>` (record 0025), so the two are two writers: two
 // attributions, two sets of manager rows, and neither one's writes read as the
 // other's trigger echo. This used to be refused at declaration time
 // (bundleNameProblems), which is why the label is asserted shared here.

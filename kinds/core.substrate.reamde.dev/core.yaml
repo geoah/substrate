@@ -77,7 +77,7 @@ data:
   # version 11: the actor kind says what a machine hand is spelled like, and
   # the spelling changed: an actor carries the full authority
   # (`bundle:<authority>`, `function:<authority>:<name>`,
-  # `agent:<authority>:<name>`), and `connector:` is retired (record 0020).
+  # `agent:<authority>:<name>`), and `connector:` is retired (record 0025).
   # Entries already written keep the spelling they recorded.
   version: 11
 ---

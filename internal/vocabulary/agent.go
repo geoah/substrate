@@ -188,7 +188,7 @@ func (a *Agent) Identity() string { return KindRef(a.Authority, a.Name) }
 // actor its writes are attributed to and the one trigger self-exclusion keys
 // on. It carries the declaring authority, so two bundles declaring an agent of
 // one name stay two actors, and it carries its own prefix, so an agent and a
-// function of one name under one authority do too (record 0020).
+// function of one name under one authority do too (record 0025).
 func (a *Agent) Actor() string { return string(substrate.AgentActor(a.Authority, a.Name)) }
 
 // EmitAllows reports whether the agent's write allowlist names a type.

@@ -337,7 +337,7 @@ substrate                     the engine's own hand
 A machine hand carries the full authority, so two bundles that share a first
 label are two writers. `connector:<label>` was a second spelling of
 `bundle:<authority>` and is retired
-([0020](decisions/0020-an-actor-carries-the-full-authority.md)); entries
+([0025](decisions/0025-an-actor-carries-the-full-authority.md)); entries
 written under it keep it, because an actor is part of the hashed changelog
 preimage.
 

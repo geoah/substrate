@@ -2502,6 +2502,6 @@ func (r *Registry) graphqlNameProblems() []string {
 // Two bundles sharing a first label used to be refused here
 // (bundleNameProblems), because they shared the actor an install wrote under
 // and each one's writes read as the other's trigger echo. An actor carries the
-// full authority now (record 0020), so the label is a display name and a
+// full authority now (record 0025), so the label is a display name and a
 // GraphQL prefix: a real collision is one GraphQL name claimed twice, which
 // graphqlNameProblems above refuses and names both kinds in.

@@ -7,7 +7,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// A machine hand carries the FULL AUTHORITY (record 0020). Two authorities
+// A machine hand carries the FULL AUTHORITY (record 0025). Two authorities
 // sharing a first label, and two authorities declaring a callable of one name,
 // are different writers — which is what attribution, the manager ledger and
 // the trigger self-exclusion all key on.

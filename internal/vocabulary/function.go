@@ -210,7 +210,7 @@ func (f *Function) IsHost() bool { return f.Runtime == RuntimeHost }
 // It carries the DECLARING AUTHORITY, not the local name alone. Two
 // authorities declaring a function of one name used to write under one actor,
 // so each one's trigger excluded the other's writes as its own echo and
-// dropped them silently (record 0020). The colon is the separator because
+// dropped them silently (record 0025). The colon is the separator because
 // `<actor>/<name>` metadata keys reserve the slash.
 func (f *Function) Actor() string { return string(substrate.FunctionActor(f.Authority, f.Name)) }
 

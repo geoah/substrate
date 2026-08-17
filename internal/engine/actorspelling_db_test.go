@@ -1,6 +1,6 @@
 package engine_test
 
-// THE RETIRED SPELLING (record 0020). An actor is part of the hashed changelog
+// THE RETIRED SPELLING (record 0025). An actor is part of the hashed changelog
 // preimage, so an entry written as `connector:gmail` before actors carried the
 // full authority keeps that string for the life of the repository. Nothing
 // translates it on read: the fold replays the actor and the tier the entry
@@ -13,7 +13,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// retiredActor is exactly what AuthorityActor minted before record 0020, for
+// retiredActor is exactly what AuthorityActor minted before record 0025, for
 // an authority whose first label was `gmail`.
 const retiredActor = substrate.Actor("connector:gmail")
 

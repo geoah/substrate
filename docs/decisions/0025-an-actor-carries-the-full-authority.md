@@ -4,7 +4,7 @@ date: 2026-08-17
 decision-makers: George Antoniadis (via the issue-203 agent session)
 ---
 
-# 0020. An actor carries the full authority, and `connector:` is retired
+# 0025. An actor carries the full authority, and `connector:` is retired
 
 ## Context and Problem Statement
 

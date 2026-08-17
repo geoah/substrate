@@ -196,7 +196,7 @@ func sanitizeName(s string) string {
 // declarations under. An authority declares it as an actor document so its
 // tier and its mapping precedence are legible, but the string is derived here
 // and never authored: two authorities sharing a first label shared this actor
-// until record 0020, and with it their attribution and their trigger
+// until record 0025, and with it their attribution and their trigger
 // self-exclusion.
 func AuthorityActor(authority string) string {
 	return string(substrate.BundleActor(authority))

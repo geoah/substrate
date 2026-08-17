@@ -280,7 +280,7 @@ func TestTierIsActorDataNotSpelling(t *testing.T) {
 // writing hands, refused at the door, so an undeclared one is a hand whose
 // declaration is gone or a facility like `substrate.oauth` — never the
 // owner's edit. It holds at the machine tier, and recompute replaces it. The
-// retired spelling is the case that matters after record 0020: every entry
+// retired spelling is the case that matters after record 0025: every entry
 // written before it carries one.
 func TestUndeclaredReservedActorHoldsAtTheMachineTier(t *testing.T) {
 	t.Parallel()
@@ -295,7 +295,7 @@ func TestUndeclaredReservedActorHoldsAtTheMachineTier(t *testing.T) {
 
 	// No authority declares this hand: nothing in the registry answers for
 	// it, and the name is reserved — the spelling actors carried before
-	// record 0020, which no repository can rewrite.
+	// record 0025, which no repository can rewrite.
 	gone := substrate.Actor("connector:gone")
 	if _, err := ds.Patch(ctx, gone, typeTierProfile, pid, substrate.PatchInput{
 		Properties: map[string]any{"name": "Gone Name"},

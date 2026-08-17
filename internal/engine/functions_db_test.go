@@ -178,7 +178,7 @@ func process(t *testing.T, ops fnOps) int {
 }
 
 // actorChanges lists the changelog rows one function authored. The function
-// is named by its IDENTITY, because so is its actor (record 0020).
+// is named by its IDENTITY, because so is its actor (record 0025).
 func actorChanges(t *testing.T, ds substrate.Dataset, function string) []substrate.Change {
 	t.Helper()
 	authority, name := vocabulary.SplitKindRef(function)

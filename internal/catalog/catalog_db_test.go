@@ -201,7 +201,7 @@ func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 	// INSTALL IS A COPY: the manifests landed in the repository's own
 	// changelog as entries attributed to the BUNDLE —
 	// `bundle:web.bundles.substrate.reamde.dev`, the full authority (record
-	// 0020) — not to the owner who asked for them and not to the catalog,
+	// 0025) — not to the owner who asked for them and not to the catalog,
 	// which is a source and never an authority.
 	changes, err := ds.Changes(ctx, 0, substrate.ChangeFilter{
 		Actors: []substrate.Actor{substrate.BundleActor(webBundleAuthority)},

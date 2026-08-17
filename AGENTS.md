@@ -227,7 +227,7 @@ the record id alphabet is frozen and never gains `%`, an authority widens
 only with characters the id alphabet excludes and never gains a raw `/`, and
 first-label keying moves to the full authority or a hash of it before the
 grammar widens. The actors moved
-([0020](docs/decisions/0020-an-actor-carries-the-full-authority.md)):
+([0025](docs/decisions/0025-an-actor-carries-the-full-authority.md)):
 `bundle:<authority>`, `function:<authority>:<name>`,
 `agent:<authority>:<name>`, derived by the engine and never declared, with
 `connector:` retired. The GraphQL prefix is the one keying left.

@@ -619,7 +619,7 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 //
 // An actor the registry does not answer for splits two ways. A RESERVED name
 // (the `substrate` namespace, `bundle:`, `function:`, `agent:`, and the
-// retired `connector:` spelling every repository written before record 0020
+// retired `connector:` spelling every repository written before record 0025
 // still carries) is one of
 // the substrate's own writing hands, which a request may never claim
 // (api/auth.go) — an undeclared one is a hand whose declaration is gone, a

@@ -24,7 +24,7 @@ import "strings"
 // separator is a colon because `<actor>/<name>` label and annotation keys
 // reserve the slash (engine metaKeyAllowed). An authority always carries a
 // dot, so nothing derived here can collide with a flat name. Decision record
-// 0020 has the why.
+// 0025 has the why.
 type Actor string
 
 const (
@@ -72,7 +72,7 @@ const (
 )
 
 // retiredConnectorPrefix was a second spelling of BundleActorPrefix, minted
-// from an authority's FIRST LABEL until record 0020 retired it. Nothing mints
+// from an authority's FIRST LABEL until record 0025 retired it. Nothing mints
 // it now, and no changelog entry that carries it can be rewritten (the actor
 // is in the hashed preimage), so it survives here for one reason: a request
 // that could claim it would write something that reads as a past sync's hand.

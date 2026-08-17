@@ -2197,7 +2197,7 @@ func TestValidID(t *testing.T) {
 }
 
 // The actor grammar admits the closed domain's flat words and the machine
-// hands, which carry the full authority (record 0020). It still admits the
+// hands, which carry the full authority (record 0025). It still admits the
 // retired `connector:<label>` spelling, because an actor DECLARATION carrying
 // it is stored in every repository written before the rename and has to keep
 // loading.

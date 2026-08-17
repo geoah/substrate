@@ -270,7 +270,7 @@ func ValidVocabularyAuthority(authority string) bool {
 // It is the bundle's `metadata.id` suffix and the prefix its installed kinds
 // carry in GraphQL. It is NOT the actor an install writes under: that is
 // `bundle:<authority>`, so two bundles sharing a first label stay two writers
-// (record 0020).
+// (record 0025).
 func BundleName(authority string) string {
 	return leadingLabel(authority)
 }
