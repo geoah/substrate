@@ -108,9 +108,13 @@ func TestSpawnRefusesAfterShutdownStarted(t *testing.T) {
 	}) {
 		t.Fatal("spawn admitted a task after shutdown started")
 	}
-	// Nothing was started, so there is nothing to wait for; a second drain
-	// returns at once and proves the refusal did not leave a counter behind.
-	s.stopBackground(5 * time.Second)
+	// A refusal must not leave a count behind: a second drain with a budget
+	// far under the wait it would need reports no timeout only if the counter
+	// is where it was.
+	s.stopBackground(2 * time.Second)
+	if strings.Contains(logs.String(), "shutdown budget") {
+		t.Fatalf("the refused task left a count behind: %s", logs.String())
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	if ran {
