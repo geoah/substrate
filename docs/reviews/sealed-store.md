@@ -9,6 +9,12 @@ reading the code rather than the docs. Every finding below says whether it was
 Nothing here is fixed in this branch. Each finding is filed as its own issue,
 listed in [Findings and their issues](#findings-and-their-issues).
 
+A second pass re-checked every load-bearing claim against the code and
+confirmed each finding's mechanism. It corrected three things, now folded in:
+`rekeySealedStore` does break under the AAD binding (2.1),
+`core.substrate.reamde.dev/credential` is a shipped kind with two secret
+properties (4.1), and 5.2 is latent rather than live.
+
 ## What the sealed store is
 
 Three layers, added in this order, all still live.
@@ -58,7 +64,7 @@ host, from a dump plus a dictionary. Against a real 32-byte key the derivation
 is fine; the defect is that nothing makes the operator supply one.
 
 Filed as [#229](https://github.com/geoah/substrate/issues/229), with
-[ADR 0021](../decisions/0021-the-credential-key-is-key-material-not-a-passphrase.md)
+[ADR 0024](../decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)
 for the choice between demanding key material and stretching.
 
 ### 1.2 The shipped `compose.yaml` boots keyless, and the dump alone opens everything (verified)
@@ -81,13 +87,33 @@ The boot warning is one `slog.Warn` line (`engine.go:272`).
 
 Attacker capability assumed: a copy of the database.
 
-Cost: on the deployment the repository ships, a stolen dump is every secret.
+Cost: a substrate started this way holds its DEKs in plaintext, so a stolen
+dump is every secret. How much that is worth turns on who runs compose, and
+the repository is not consistent about it. `compose.yaml:1` calls itself "a
+whole substrate on this machine" and `AGENTS.md` calls the keyless signing
+default pre-v1 scaffolding tied to
+[#175](https://github.com/geoah/substrate/issues/175), both of which read as
+local-only. But `README.md:18` puts `docker compose up` under "Quick start"
+with "that is the whole thing" and "nothing to configure before the first
+run", and `docs/operations.md`, the page on running a substrate, never
+mentions compose at all, so nothing tells a reader who followed the quick
+start that they are on a development artifact. Registration is one-shot per
+user and there is no unregister, so the database somebody registers into is
+the one they keep.
+
+What makes this worth fixing regardless of that argument is the documentation.
 `docs/operations.md:186-194` describes a backup as sealed rows plus two wraps
 of the DEK and says "either the host key or the user's recovery identity opens
-a backup", which reads as a claim that the dump alone does not. That claim
-does not hold for the shipped defaults, and the Backups section does not
-mention the keyless case. `README.md:119` is honest about it ("unset implies
-plaintext and a warning"); `docs/operations.md` is not.
+a backup", which reads as a claim that the dump alone does not. That claim is
+false in the keyless state, the Backups section never mentions that state, and
+the only runtime signal is one `slog.Warn` nobody reads twice. `README.md:119`
+is honest ("unset implies plaintext and a warning"); `docs/operations.md` is
+not.
+
+I kept this at p0 on that basis: not because compose is a production artifact,
+which it does not claim to be, but because the documented first-run path
+produces a silently keyless substrate and the operations page tells the
+operator the opposite. Either half is cheap to fix.
 
 Filed as [#230](https://github.com/geoah/substrate/issues/230).
 
@@ -133,12 +159,16 @@ resolves every non-OAuth secret property to material for a function body), and
 the substrate decrypts it for them. Binding `ref || record_kind || record_id`
 as AAD turns that from a read into a decryption failure.
 
-I did not find anything that breaks under AAD: `rekeySealedStore`
-(`reseal.go:456`) re-seals in place under the same ref and owner, rotation
-mints a fresh ref and deletes the old row, and `RebuildRepository` never
-touches `sealed`. The DEK wrap in `repositories.dek` has no ref and needs its
-own binding string. Details and the framing-byte question are in
-[ADR 0020](../decisions/0020-a-sealed-payload-is-bound-to-its-address.md).
+One thing breaks under AAD and has to be fixed first. `rekeySealedStore`
+(`reseal.go:456`) decides a payload needs no work with
+`payload[0] == credSealed && openWith(dekAEAD, …)` (`reseal.go:488-492`), and
+`openWith` passes nil additional data, so a bound payload matches neither
+half: the migration would re-key every already-correct row and then fail to
+open it. The rest is clear: rotation mints a fresh ref and deletes the old row,
+and `RebuildRepository` never touches `sealed`. The DEK wrap in
+`repositories.dek` has no ref and needs its own binding string. Details, the
+framing-byte question and the reseal prerequisite are in
+[ADR 0023](../decisions/0023-a-sealed-payload-is-bound-to-its-address.md).
 
 Filed as [#231](https://github.com/geoah/substrate/issues/231).
 
@@ -328,8 +358,15 @@ containment working, and it is worth saying explicitly because everything else
 in this section depends on it.
 
 Attacker capability assumed: the ability to write two secret properties on one
-record. No shipped kind declares two, so this needs a repository-local kind or
-an installed bundle's kind.
+record. One shipped kind declares two, `core.substrate.reamde.dev/credential`
+with `passwordRef` and `totpRef`
+(`kinds/core.substrate.reamde.dev/credential.yaml:32,35`); the bundle files
+spread their two across separate kinds. The bug cannot fire on `credential`:
+`guardSystemKind` refuses the generic write surface for it, and the auth
+machinery writes the two properties with distinct material through its own
+path and never aliases them. So no shipped kind exposes two
+attacker-writable secret properties, and reproducing this needs a
+repository-local kind or an installed bundle's kind that declares two.
 
 Cost: silent loss of secret material on an ordinary rotation, unrecoverable
 because the sealed row is gone. A second effect is that a same-record alias
@@ -445,6 +482,14 @@ valid when it was written. Anyone holding a superseded identity plus a dump
 still opens every payload. Revoking a compromised recovery identity means
 rotating the DEK and re-sealing every payload under it, not re-wrapping.
 
+**This is latent, and the issue is scoped to say so.** Because enrollment is
+one-shot and no rotation path exists, a repository has exactly one recipient
+and no superseded recipient can exist yet. That single identity opening the
+DEK is recovery working. The finding is a constraint on the rotation #137 asks
+for, and the work it names is to write the constraint down before that
+rotation is designed, so it carries `priority/p2` and no milestone, matching
+#137.
+
 Filed as [#237](https://github.com/geoah/substrate/issues/237).
 
 ### 5.3 The recovery claim is proven end to end (verified)
@@ -508,14 +553,19 @@ the most carefully gated thing in the sealed store.
 | 4.2 | The re-paste no-op is a write-side equality oracle | [#234](https://github.com/geoah/substrate/issues/234) | bug, p2 |
 | 4.3 | DELETE is not erasure against MVCC, WAL and backups | [#235](https://github.com/geoah/substrate/issues/235) | bug, p2 |
 | 4.4 | Hard delete orphans sealed rows | [#236](https://github.com/geoah/substrate/issues/236) | bug, p2 |
-| 5.2 | A past recovery recipient can never be revoked | [#237](https://github.com/geoah/substrate/issues/237) | bug, p1 |
+| 5.2 | A past recovery recipient can never be revoked (latent: no rotation exists) | [#237](https://github.com/geoah/substrate/issues/237) | bug, p2 |
 
 Two decisions came out of this and are recorded:
 
-- [ADR 0020](../decisions/0020-a-sealed-payload-is-bound-to-its-address.md):
-  bind `ref || record_kind || record_id` as AAD, behind a framing byte.
-- [ADR 0021](../decisions/0021-the-credential-key-is-key-material-not-a-passphrase.md):
-  demand base64 of 32 bytes and refuse anything else.
+- [ADR 0023](../decisions/0023-a-sealed-payload-is-bound-to-its-address.md):
+  bind `ref || record_kind || record_id` as AAD, behind a framing byte. It
+  names `rekeySealedStore` as a prerequisite: the migration decides idempotency
+  with an AAD-blind open and has to learn the new framing first.
+- [ADR 0024](../decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md):
+  demand base64 of 32 bytes and refuse anything else. Stretching is rejected
+  for taking the operator's judgement as an input, not for being ineffective:
+  argon2id would raise the per-guess cost by roughly a factor of a million
+  even with a salt the attacker holds.
 
 ## What was not settled
 

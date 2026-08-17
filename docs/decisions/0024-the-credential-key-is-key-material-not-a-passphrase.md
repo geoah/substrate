@@ -4,7 +4,7 @@ date: 2026-08-17
 decision-makers: George Antoniadis
 ---
 
-# 0021. `SUBSTRATE_CREDENTIAL_KEY` is key material, not a passphrase
+# 0024. `SUBSTRATE_CREDENTIAL_KEY` is key material, not a passphrase
 
 ## Context and Problem Statement
 
@@ -28,12 +28,23 @@ filed as [#229](https://github.com/geoah/substrate/issues/229).
 Chosen: demand base64 of exactly 32 bytes and refuse anything else at boot,
 naming the command that generates one.
 
-Stretching is the wrong shape here, not merely more work. The salt has to live
-somewhere, and the only somewhere is the database the attacker already stole,
-so argon2id buys a work factor and nothing else; the operator still picks the
-entropy, and a bad passphrase behind a good KDF is a bad key. It also puts a
-tunable cost parameter on the boot path of every process that opens a
-repository, including every operator command.
+Stretching is a real defense and is rejected for a different reason. argon2id
+with a known salt still raises the cost of a guess from the few hundred
+nanoseconds this key derivation costs today to a few hundred milliseconds, a
+factor of roughly a million, which is the difference between an instant
+dictionary crack and an infeasible one for a moderately good passphrase. The
+salt living in the stolen database does not undo that; it only removes the
+benefit of a per-target salt, which was never the point.
+
+It is rejected because it leaves the operator in the loop. Under stretching the
+security of a deployment is a function of a passphrase nobody can inspect from
+outside, and the substrate can neither measure it nor report on it: the same
+config produces a strong deployment or a weak one depending on a choice made
+once and never revisited. Demanding key material removes that variable
+entirely, and the strength of every deployment becomes a property the code
+guarantees rather than one the operator supplies. It also keeps a tunable cost
+parameter off the boot path of every process that opens a repository, operator
+commands included.
 
 Accepting both is worse than either. It makes the security of a deployment
 depend on whether a string happened to base64-decode to 32 bytes, which is not

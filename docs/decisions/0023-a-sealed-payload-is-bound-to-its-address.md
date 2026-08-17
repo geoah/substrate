@@ -4,7 +4,7 @@ date: 2026-08-17
 decision-makers: George Antoniadis
 ---
 
-# 0020. A sealed payload is bound to the address it was written at
+# 0023. A sealed payload is bound to the address it was written at
 
 ## Context and Problem Statement
 
@@ -69,21 +69,40 @@ string `dek` and the repository id instead.
 - Bad, because a repository whose sealed rows are `'a'`-framed cannot be read
   by an older binary at all. That is correct behavior and it is still a
   one-way door.
+- Bad, because the reseal migration has to change first. See the dependency
+  below: it is the one piece of work this decision requires and does not
+  describe.
+
+### The reseal migration is a prerequisite, not a consequence
+
+`rekeySealedStore` (`internal/engine/reseal.go:456`) decides whether a payload
+already needs no work with `payload[0] == credSealed && openWith(dekAEAD, …)`
+(`reseal.go:488-492`), and `openWith` (`credentials.go:187`) passes nil
+additional data. An `'a'`-framed payload fails both halves: the first byte is
+not `credSealed`, and the AAD-blind open would not authenticate it even if it
+were. Left alone, the migration would treat every already-correct payload as
+needing re-keying, and `t.ds.openPayload` would then fail to open it at all.
+
+So `rekeySealedStore` and its `openWith`/`openPayload` callees must learn the
+`'a'` framing and compute the binding from the row they are iterating, before
+the byte-identical idempotency test below can pass. That is the same row loop,
+which already has `ref` in hand and needs `record_kind` and `record_id` added
+to its `SELECT`.
 
 ### Confirmation
 
 A test that seals a payload at one `(ref, kind, id)`, writes the bytes into a
 second row at a different address, and asserts the open fails. A second test
 that `rekeySealedStore` leaves an `'a'` payload byte-identical when the DEK
-already opens it, which is the migration's idempotency.
+already opens it, which is the migration's idempotency and the check that the
+prerequisite above actually landed.
 
 ## More Information
 
-Scope check done while reviewing: nothing in the tree breaks under the binding.
-`rekeySealedStore` (`internal/engine/reseal.go:456`) re-seals in place under the
-same ref and owner, rotation mints a fresh ref and deletes the old row,
-`RebuildRepository` never touches `sealed`, and `OpenPayloadWithKey` takes the
-address from the row it read.
+Scope check done while reviewing: rotation mints a fresh ref and deletes the
+old row, `RebuildRepository` never touches `sealed`, and `OpenPayloadWithKey`
+takes the address from the row it read, so none of those three needs changing.
+`rekeySealedStore` does, and the section above says how.
 
 Reopen this if a verb that moves a secret between records is ever wanted: the
 binding is what would make that expensive, and re-sealing under the new address
