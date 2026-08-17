@@ -14,38 +14,10 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// bundleOps is the engine's bundle-lifecycle seam, asserted at runtime like
-// the automation seam: substrate.Dataset stays frozen, a dataset without
-// bundles simply has no verbs. Status is computed; disable/enable and
-// uninstall are reversible runtime state; purge tombstones the owned
-// authority's data through the finalizer flow; StartOAuth begins the host
-// connect flow for one account record.
-type bundleOps interface {
-	BundleStatuses(ctx context.Context) ([]substrate.BundleStatus, error)
-	BundleStatus(ctx context.Context, id string) (substrate.BundleStatus, error)
-	// BundleAuthority resolves a bundle's owned authority (from the live registry or
-	// stored rows) for the lifecycle scope gate.
-	BundleAuthority(ctx context.Context, id string) (string, error)
-	DisableBundle(ctx context.Context, id string) error
-	EnableBundle(ctx context.Context, id string) error
-	// BindBundleInput points a bundle's input at a chosen record (empty
-	// record clears the choice) — the explicit step of input resolution.
-	BindBundleInput(ctx context.Context, id, input, record string) error
-	UninstallBundle(ctx context.Context, id string) error
-	PurgeBundle(ctx context.Context, id string) (int, error)
-	StartOAuth(ctx context.Context, actor substrate.Actor, recordID string) (string, error)
-	TypesImplementing(ctx context.Context, trait string) ([]substrate.KindInfo, error)
-}
-
-// oauthCompleter is the service half of the flow: the callback carries no
-// bearer — the signed state IS the authentication — so it resolves the
-// repository itself.
-type oauthCompleter interface {
-	CompleteOAuth(ctx context.Context, state, code string) (string, error)
-}
-
-func bundlesFrom(ctx context.Context) (bundleOps, bool) {
-	ops, ok := DatasetFrom(ctx).(bundleOps)
+// bundlesFrom resolves the request's dataset to the bundle-lifecycle seam; a
+// dataset without it has no bundle verbs.
+func bundlesFrom(ctx context.Context) (substrate.BundleOps, bool) {
+	ops, ok := DatasetFrom(ctx).(substrate.BundleOps)
 	return ops, ok
 }
 
@@ -89,7 +61,7 @@ func (h *handler) getBundleStatus(w http.ResponseWriter, r *http.Request) {
 // the whole repository, and the bundle's own lifecycle rules —
 // not a capability list — decide what the verb may do. On failure it has
 // already written the response.
-func (h *handler) bundleLifecycleGate(w http.ResponseWriter, r *http.Request, ops bundleOps) (string, bool) {
+func (h *handler) bundleLifecycleGate(w http.ResponseWriter, r *http.Request, ops substrate.BundleOps) (string, bool) {
 	authority, err := ops.BundleAuthority(r.Context(), pathParam(r, "id"))
 	if err != nil {
 		writeSubstrateError(w, err)
@@ -101,7 +73,7 @@ func (h *handler) bundleLifecycleGate(w http.ResponseWriter, r *http.Request, op
 // postBundleVerb runs one reversible lifecycle verb (disable/enable) then
 // answers with the refreshed status. Uninstall does NOT use this — it deletes
 // the bundle row, so there is no status to reload (postBundleUninstall).
-func (h *handler) postBundleVerb(verb func(bundleOps, context.Context, string) error) http.HandlerFunc {
+func (h *handler) postBundleVerb(verb func(substrate.BundleOps, context.Context, string) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ops, ok := bundlesFrom(r.Context())
 		if !ok {
@@ -288,7 +260,7 @@ func (h *handler) postOAuthStart(w http.ResponseWriter, r *http.Request) {
 // the operator joins against the server log, where the fixed message + the
 // engine's real error are recorded.
 func (h *handler) getOAuthCallback(w http.ResponseWriter, r *http.Request) {
-	oc, ok := h.svc.(oauthCompleter)
+	oc, ok := h.svc.(substrate.OAuthCompleter)
 	if !ok {
 		writeNoBundles(w)
 		return

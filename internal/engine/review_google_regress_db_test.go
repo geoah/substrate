@@ -55,7 +55,7 @@ func TestReviewGoogleEndpointsFromManifest(t *testing.T) {
 
 	// The code exchange lands on the MANIFEST token endpoint (the fake
 	// provider), never the patched evil one — the exchange succeeds.
-	if _, err := svc.(oauthCompleter).CompleteOAuth(ctx, stateFrom(t, consent), "code-123"); err != nil {
+	if _, err := svc.(substrate.OAuthCompleter).CompleteOAuth(ctx, stateFrom(t, consent), "code-123"); err != nil {
 		t.Fatalf("callback (exchange must hit the manifest endpoint): %v", err)
 	}
 	if p.exchanges != 1 {

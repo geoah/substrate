@@ -6,10 +6,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/geoah/substrate/internal/substrate"
 )
 
-// oauthSvc wraps the fake service with the oauthCompleter half the callback
-// asserts at runtime — a canned outcome, so the test drives the return-page.
+// oauthSvc wraps the fake service with the substrate.OAuthCompleter half the
+// callback asserts at runtime — a canned outcome, so the test drives the
+// return-page.
 type oauthSvc struct {
 	*fakeService
 	record string
@@ -19,6 +22,8 @@ type oauthSvc struct {
 func (s oauthSvc) CompleteOAuth(context.Context, string, string) (string, error) {
 	return s.record, s.err
 }
+
+var _ substrate.OAuthCompleter = oauthSvc{}
 
 func callbackHandler(record string, err error, consoleURL string) http.Handler {
 	return New(Config{Service: oauthSvc{fakeService: newFakeService(), record: record, err: err}, ConsoleURL: consoleURL})

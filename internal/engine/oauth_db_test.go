@@ -109,11 +109,6 @@ func (p *fakeProvider) configProps() map[string]any {
 	}
 }
 
-// oauthCompleter is the service seam the unauthenticated callback rides.
-type oauthCompleter interface {
-	CompleteOAuth(ctx context.Context, state, code string) (string, error)
-}
-
 // installOAuthBundle stands up a repository with the oauth facility on, the
 // mail bundle installed, its config record created against the fake
 // provider, and one pending account record.
@@ -167,7 +162,7 @@ func TestOAuthRoundTrip(t *testing.T) {
 		t.Fatalf("consent query: %v", q)
 	}
 
-	oc, ok := svc.(oauthCompleter)
+	oc, ok := svc.(substrate.OAuthCompleter)
 	if !ok {
 		t.Fatal("service does not implement the oauth completer seam")
 	}
@@ -220,7 +215,7 @@ func TestOAuthRunnerConfigAndRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	if _, err := svc.(oauthCompleter).CompleteOAuth(ctx, stateFrom(t, consent), "code-123"); err != nil {
+	if _, err := svc.(substrate.OAuthCompleter).CompleteOAuth(ctx, stateFrom(t, consent), "code-123"); err != nil {
 		t.Fatalf("callback: %v", err)
 	}
 
@@ -298,7 +293,7 @@ func TestOAuthAccountDeletionRevokes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	if _, err := svc.(oauthCompleter).CompleteOAuth(ctx, stateFrom(t, consent), "code-123"); err != nil {
+	if _, err := svc.(substrate.OAuthCompleter).CompleteOAuth(ctx, stateFrom(t, consent), "code-123"); err != nil {
 		t.Fatalf("callback: %v", err)
 	}
 	if _, err := ds.Delete(ctx, owner, account.Kind, account.ID); err != nil {

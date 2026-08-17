@@ -115,7 +115,7 @@ func TestOAuthPopulatesAccountEmailFromGrant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	oc, ok := svc.(oauthCompleter)
+	oc, ok := svc.(substrate.OAuthCompleter)
 	if !ok {
 		t.Fatal("service does not implement the oauth completer seam")
 	}

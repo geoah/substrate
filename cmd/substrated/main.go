@@ -260,16 +260,9 @@ func sweepGC(ctx context.Context, svc substrate.Service) {
 	}
 }
 
-// resolutionSweeper is the engine's resume-recovery seam: settled threads
-// whose newest resolution row postdates their settlement get their dropped
-// continuation back (engine/agentdecision.go SweepResolutions).
-type resolutionSweeper interface {
-	SweepResolutions(ctx context.Context) (int, error)
-}
-
 func sweepResolutions(ctx context.Context, svc substrate.Service) {
 	for _, ds := range repositoryDatasets(ctx, svc) {
-		rs, ok := ds.(resolutionSweeper)
+		rs, ok := ds.(substrate.ResolutionSweeper)
 		if !ok {
 			continue
 		}
@@ -284,12 +277,6 @@ func sweepResolutions(ctx context.Context, svc substrate.Service) {
 	}
 }
 
-// triggerDispatcher is the engine's dispatcher seam, off the frozen Dataset
-// interface like ResetUser is off Service.
-type triggerDispatcher interface {
-	ProcessTriggers(ctx context.Context) (int, error)
-}
-
 // dispatchTriggers runs one dispatcher pass per repository: each enabled trigger
 // drains its changelog backlog to head (record sources) or fires its due
 // occurrence (schedule sources), serially. The pass cadence is the schedule
@@ -297,7 +284,7 @@ type triggerDispatcher interface {
 // to one fire.
 func dispatchTriggers(ctx context.Context, svc substrate.Service) {
 	for _, ds := range repositoryDatasets(ctx, svc) {
-		fr, ok := ds.(triggerDispatcher)
+		fr, ok := ds.(substrate.TriggerDispatcher)
 		if !ok {
 			continue
 		}
@@ -312,17 +299,9 @@ func dispatchTriggers(ctx context.Context, svc substrate.Service) {
 	}
 }
 
-// oauthMaintainer is the engine's OAuth seam, off the frozen Dataset
-// interface like the dispatcher is: refresh keeps stored tokens fresh, the
-// finalizer pass revokes and releases deleted accounts ahead of GC.
-type oauthMaintainer interface {
-	RefreshOAuthTokens(ctx context.Context) (int, error)
-	ProcessOAuthFinalizers(ctx context.Context) (int, error)
-}
-
 func maintainOAuth(ctx context.Context, svc substrate.Service) {
 	for _, ds := range repositoryDatasets(ctx, svc) {
-		om, ok := ds.(oauthMaintainer)
+		om, ok := ds.(substrate.OAuthMaintainer)
 		if !ok {
 			continue
 		}

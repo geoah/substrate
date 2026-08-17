@@ -18,16 +18,9 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// vocabularyApplier is the engine's batch verb, asserted at runtime exactly the
-// way the API layer reaches it (it is deliberately not on the frozen
-// substrate.Dataset).
-type vocabularyApplier interface {
-	ApplyVocabularyDocuments(ctx context.Context, actor substrate.Actor, docs []map[string]any) ([]*substrate.Record, error)
-}
-
-func applier(t *testing.T, ds substrate.Dataset) vocabularyApplier {
+func applier(t *testing.T, ds substrate.Dataset) substrate.VocabularyApplier {
 	t.Helper()
-	sa, ok := ds.(vocabularyApplier)
+	sa, ok := ds.(substrate.VocabularyApplier)
 	if !ok {
 		t.Fatal("dataset does not implement the schema apply seam")
 	}
@@ -1070,15 +1063,6 @@ func TestOpenNeverPrunesShippedRows(t *testing.T) {
 	}
 }
 
-// bundleInstaller is the closure-install seam (a bundle's vocabulary AND its
-// shipped data documents as one repository transaction), asserted at runtime
-// the way the catalog reaches it: it is deliberately not on the frozen
-// substrate.Dataset.
-type bundleInstaller interface {
-	InstallBundleClosure(ctx context.Context, actor substrate.Actor,
-		vocabularyDocs []map[string]any, dataDocs []substrate.PutInput) ([]*substrate.Record, error)
-}
-
 // swInstallAuthority is the closure the install below admits, kept apart from
 // swAuthority so the whole-authority replace never prunes the widget kind its
 // data documents are written against.
@@ -1121,7 +1105,7 @@ func TestCandidateResolutionIsTheProjectionsAlone(t *testing.T) {
 	})
 
 	t.Run("an install's data documents", func(t *testing.T) {
-		inst, ok := ds.(bundleInstaller)
+		inst, ok := ds.(substrate.BundleInstaller)
 		if !ok {
 			t.Fatal("dataset does not implement the closure-install seam")
 		}
@@ -1200,7 +1184,7 @@ func TestBundleUpgradeRefusesARowOfTheKindItRemoves(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newCoreDataset(t)
-	inst, ok := ds.(bundleInstaller)
+	inst, ok := ds.(substrate.BundleInstaller)
 	if !ok {
 		t.Fatal("dataset does not implement the closure-install seam")
 	}

@@ -15,16 +15,9 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// blobStore is the engine's byte-store seam, asserted at runtime the way the
-// API layer reaches it (it is deliberately off the frozen substrate.Dataset).
-type blobStore interface {
-	PutBlob(ctx context.Context, actor substrate.Actor, up substrate.BlobUpload, data []byte, wantDigest string) (*substrate.BlobInfo, error)
-	GetBlob(ctx context.Context, digest string) (*substrate.BlobInfo, []byte, error)
-}
-
-func blobStoreOf(t *testing.T, ds substrate.Dataset) blobStore {
+func blobStoreOf(t *testing.T, ds substrate.Dataset) substrate.BlobStore {
 	t.Helper()
-	bs, ok := ds.(blobStore)
+	bs, ok := ds.(substrate.BlobStore)
 	if !ok {
 		t.Fatal("dataset does not implement the blob store seam")
 	}

@@ -64,7 +64,7 @@ func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string
 	if len(names) == 0 {
 		names = Vocabulary
 	}
-	sa, ok := ds.(vocabularyApplier)
+	sa, ok := ds.(substrate.VocabularyApplier)
 	if !ok {
 		return errors.New("enginetest: dataset does not support ApplyVocabularyDocuments")
 	}
@@ -120,7 +120,7 @@ const ShelfAuthority = "shelf.test.dev"
 // apply an import rides, under its own bundle actor. It requires people:
 // the author and narrator edges land on person.
 func InstallShelf(ctx context.Context, ds substrate.Dataset) error {
-	sa, ok := ds.(vocabularyApplier)
+	sa, ok := ds.(substrate.VocabularyApplier)
 	if !ok {
 		return errors.New("enginetest: dataset does not support ApplyVocabularyDocuments")
 	}
@@ -189,7 +189,7 @@ func InstallShelf(ctx context.Context, ds substrate.Dataset) error {
 // needs function, agent and bundle declaration rows calls this; the vocabulary
 // bundles ImportVocabulary handles ship kinds alone.
 func InstallBundle(ctx context.Context, ds substrate.Dataset, name string) error {
-	sa, ok := ds.(vocabularyApplier)
+	sa, ok := ds.(substrate.VocabularyApplier)
 	if !ok {
 		return errors.New("enginetest: dataset does not support ApplyVocabularyDocuments")
 	}
@@ -315,20 +315,13 @@ type Trigger struct {
 	Properties map[string]any
 }
 
-// vocabularyApplier is the bundle-tier install surface (a concrete engine
-// method, not on the frozen substrate.Dataset interface — ruling A12). Both
-// *engine.dataset and any test fake satisfy it.
-type vocabularyApplier interface {
-	ApplyVocabularyDocuments(ctx context.Context, actor substrate.Actor, raw []map[string]any) ([]*substrate.Record, error)
-}
-
 // Install installs an authority's schema documents through the batch verb, then
 // writes its default triggers create-only — the RegisterConnector shim's
 // behavior, minus the retired connector bookkeeping row. Re-installing is
 // the upgrade verb (the authority is replaced whole); an existing trigger row is
 // left exactly as it stands.
 func Install(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, m Manifest) error {
-	sa, ok := ds.(vocabularyApplier)
+	sa, ok := ds.(substrate.VocabularyApplier)
 	if !ok {
 		return errors.New("enginetest: dataset does not support ApplyVocabularyDocuments")
 	}

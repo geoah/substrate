@@ -64,6 +64,8 @@ func (d *bundleDataset) TypesImplementing(context.Context, string) ([]substrate.
 	return nil, nil
 }
 
+var _ substrate.BundleOps = (*bundleDataset)(nil)
+
 type bundleService struct {
 	*fakeService
 	ds *bundleDataset

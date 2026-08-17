@@ -186,22 +186,6 @@ type Catalog struct {
 	warnings []string
 }
 
-// bundleInstaller is the atomic install verb an installable target must offer:
-// the schema closure AND the shipped delivery wiring admitted as ONE
-// repository transaction, so a data-document failure rolls the schema apply
-// back with it. It is asserted on the dataset at install time, exactly as the
-// HTTP layer asserts the ordinary verbs.
-type bundleInstaller interface {
-	InstallBundleClosure(ctx context.Context, actor substrate.Actor, vocabularyDocs []map[string]any, dataDocs []substrate.PutInput) ([]*substrate.Record, error)
-}
-
-// bundleUpgradePlanner is the read-only preview beside the install verb: what
-// installing the shipped closure over the stored declarations would move, and
-// the guard lines the install would refuse it on.
-type bundleUpgradePlanner interface {
-	PlanBundleUpgrade(ctx context.Context, vocabularyDocs []map[string]any) (substrate.BundleUpgrade, error)
-}
-
 // Load parses every shipped bundle directory in fsys (each a top-level
 // directory of manifests). A directory that carries no bundle document is not
 // a bundle and is skipped; a directory that fails to parse is dropped with a
@@ -389,7 +373,7 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 	if !ok {
 		return nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
 	}
-	inst, ok := ds.(bundleInstaller)
+	inst, ok := ds.(substrate.BundleInstaller)
 	if !ok {
 		return nil, errors.New("catalog: this dataset cannot install bundle closures")
 	}
@@ -427,7 +411,7 @@ func (c *Catalog) Upgrade(ctx context.Context, id string, ds substrate.Dataset) 
 	if !ok {
 		return nil, fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
 	}
-	p, ok := ds.(bundleUpgradePlanner)
+	p, ok := ds.(substrate.BundleUpgradePlanner)
 	if !ok {
 		return nil, nil
 	}

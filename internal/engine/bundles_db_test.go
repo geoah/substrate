@@ -31,19 +31,11 @@ const (
 	mbBundleRow   = mbAuthority + "/mail" // "<first label>.<owned authority>"
 )
 
-// bundleOps is the engine's bundle seam, asserted at runtime the way the API
-// reaches it.
+// bundleOps is what these tests reach for: the bundle verbs the HTTP layer
+// calls, plus the OAuth upkeep pass the service loop drives.
 type bundleOps interface {
-	BundleStatuses(ctx context.Context) ([]substrate.BundleStatus, error)
-	BundleStatus(ctx context.Context, id string) (substrate.BundleStatus, error)
-	DisableBundle(ctx context.Context, id string) error
-	EnableBundle(ctx context.Context, id string) error
-	UninstallBundle(ctx context.Context, id string) error
-	PurgeBundle(ctx context.Context, id string) (int, error)
-	TypesImplementing(ctx context.Context, trait string) ([]substrate.KindInfo, error)
-	StartOAuth(ctx context.Context, actor substrate.Actor, recordID string) (string, error)
-	RefreshOAuthTokens(ctx context.Context) (int, error)
-	ProcessOAuthFinalizers(ctx context.Context) (int, error)
+	substrate.BundleOps
+	substrate.OAuthMaintainer
 }
 
 func bundler(t *testing.T, ds substrate.Dataset) bundleOps {
