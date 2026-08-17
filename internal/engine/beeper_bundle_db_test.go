@@ -444,10 +444,12 @@ func beeperResync(t *testing.T, ds *dataset, accountID string) {
 func beeperCountByAccount(t *testing.T, ds *dataset, typ, accountID string) int {
 	t.Helper()
 	var n int
+	// `account` is an owner reference (record 0032), so the STORED value is the
+	// account's record path and not the bare id the sync wrote.
 	if err := ds.db.QueryRowContext(context.Background(),
 		`SELECT count(*) FROM records
 		 WHERE kind = $1 AND deleted_at IS NULL AND props->>'account' = $2`,
-		typ, accountID).Scan(&n); err != nil {
+		typ, beeperAccountType+"/"+accountID).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -586,7 +588,7 @@ func TestBeeperBundleInstallsAndSyncs(t *testing.T) {
 		if got := room.Properties["network"]; got != wantNet {
 			t.Fatalf("room %02d network = %v, want %s", i, got, wantNet)
 		}
-		if got := room.Properties["account"]; got != acctID {
+		if got := room.Properties["account"]; got != beeperAccountType+"/"+acctID {
 			t.Fatalf("room %02d account = %v", i, got)
 		}
 	}

@@ -583,7 +583,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	if !strings.Contains(content, "# Heading") || !strings.Contains(content, "Some paragraph text.") {
 		t.Fatalf("pg1 content not normalized: %q", content)
 	}
-	if p1.Properties["account"] != acct.ID || p1.Properties["archived"] != false {
+	if p1.Properties["account"] != notionAccountType+"/"+acct.ID || p1.Properties["archived"] != false {
 		t.Fatalf("pg1 props wrong: account=%v archived=%v", p1.Properties["account"], p1.Properties["archived"])
 	}
 	if _, ok := p1.Properties["lastEditedAt"]; !ok {
