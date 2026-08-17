@@ -437,3 +437,72 @@ func TestKeyPatternRegexpAgreesWithCheckKey(t *testing.T) {
 		t.Errorf("an uncontracted keyed map must have no pattern, got %q", src)
 	}
 }
+
+// `default:` is parsed onto the property, so the write path has a value to
+// materialize. It is one literal of the declared family, and an enum's default
+// is one of that enum's own values.
+func TestDefaultParsesOntoTheProperty(t *testing.T) {
+	w := dialectWidget(t, `  properties:
+    priority: {type: enum, values: [none, high], default: none}
+    retries: {type: int, default: 3}
+    live: {type: bool, default: false}
+`)
+	for name, want := range map[string]any{"priority": "none", "retries": 3, "live": false} {
+		p, ok := w.Prop(name)
+		if !ok {
+			t.Fatalf("%s: not declared", name)
+		}
+		if p.Default != want {
+			t.Fatalf("%s: default = %#v, want %#v", name, p.Default, want)
+		}
+	}
+}
+
+// A default the property could never hold is refused where it is written.
+func TestDefaultRefusedWhenTheValueCouldNotBeStored(t *testing.T) {
+	for name, tc := range map[string]struct{ body, want string }{
+		"not an enum value": {
+			body: `  properties:
+    priority: {type: enum, values: [none, high], default: urgent}
+`,
+			want: `"urgent" is not one of none, high`,
+		},
+		"a string where a number belongs": {
+			body: `  properties:
+    retries: {type: int, default: "3"}
+`,
+			want: "expected a number",
+		},
+		"a list": {
+			body: `  properties:
+    tags: {type: string, repeated: true, default: x}
+`,
+			want: "a default fills one value",
+		},
+		"a secret": {
+			body: `  properties:
+    token: {type: secret, default: hunter2}
+`,
+			want: "never written into a declaration",
+		},
+		"a property the engine stamps": {
+			body: `  properties:
+    count: {type: int, managed: true, default: 1}
+`,
+			want: "the engine stamps a managed property",
+		},
+		"null": {
+			body: `  properties:
+    note: {type: string, default: null}
+`,
+			want: "a default is a value",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := dialectLoad(t, tc.body)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("got %v, want it to name %q", err, tc.want)
+			}
+		})
+	}
+}

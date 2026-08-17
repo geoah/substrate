@@ -167,12 +167,24 @@ type Property struct {
 	Max     *float64
 	Embed   bool
 	FTS     bool
-	// Required mirrors the declared `required:` hint. The engine does not
-	// enforce it on writes (it stays a form-level hint the read surfaces
-	// consume from Definition) — but ADDING it to a property is a narrowing
-	// definition change, refused by admission while live rows lack the
-	// property.
+	// Required is the declared `required:`: the record must hold a value for
+	// this property AFTER every write, which the engine enforces on the merged
+	// row (checkRequiredProps, in internal/engine). A Default is what keeps a
+	// required property writable without naming it. ADDING `required` to a
+	// property is a narrowing definition change, refused by admission while
+	// live rows lack the property, and a Default does not backfill.
 	Required bool
+	// Default is the declared `default:`, the value a CREATE stores when it
+	// does not name the property. It is materialized at write time, into the
+	// stored value and the changelog delta both: a default applied on read
+	// would be derived data, and the fold would no longer be the truth.
+	//
+	// The value is the author's literal, held to this property's own
+	// declaration at admission (checkDeclaredDefaults, in internal/engine) so a
+	// kind whose default no write could store is refused rather than stored. It
+	// is declarable on a single scalar property alone: not on a list or a keyed
+	// map, not on an object, a reference, a state or a secret.
+	Default any
 	// Unique is the RESERVED single-value uniqueness marker: at most one live
 	// record of the kind may carry any given value. Admitted, validated and
 	// stored, but NOT ENFORCED: no index exists and no write is refused for a

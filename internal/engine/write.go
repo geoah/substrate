@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -180,24 +181,12 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 	if err := t.preRecordLocks(ty); err != nil {
 		return nil, err
 	}
-	authored, hot, states, err := splitProps(ty, in.Properties)
-	if err != nil {
-		return nil, err
-	}
-	props, err := coerceProps(ty, authored)
-	if err != nil {
-		return nil, err
-	}
-	labels, err := coerceLabels(t.actor, in.Labels)
-	if err != nil {
-		return nil, err
-	}
-
 	// A supplied id is the writer's OWN key, not an address to resolve: a
 	// former id (of this type — trails are per-type) is refused outright
 	// (conflict), so nothing here canonicalizes. Reads, patches, links and
 	// deletes still follow the trail.
 	id := in.ID
+	var err error
 	if id != "" {
 		if err := t.checkID(ty.Identity, id); err != nil {
 			return nil, err
@@ -216,6 +205,25 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 		}
 	}
 	if err := checkCAS(existing, in.IfVersion); err != nil {
+		return nil, err
+	}
+
+	// The declared defaults are filled BEFORE the split and the coercion, so a
+	// default lands in whichever place storage keeps its property and passes
+	// the same validation an authored value does. The row this write produces
+	// is what the changelog delta carries, so the default is stored data from
+	// the first write on: a value applied on the way out would be derived, and
+	// the fold would stop being the truth.
+	authored, hot, states, err := splitProps(ty, withDefaults(ty, in.Properties, existing == nil))
+	if err != nil {
+		return nil, err
+	}
+	props, err := coerceProps(ty, authored)
+	if err != nil {
+		return nil, err
+	}
+	labels, err := coerceLabels(t.actor, in.Labels)
+	if err != nil {
 		return nil, err
 	}
 
@@ -299,6 +307,38 @@ func (h *hotProps) clearing(name string) {
 func (h *hotProps) mentions() bool {
 	return h.title != nil || h.body != nil || h.at != nil || h.endsAt != nil ||
 		h.dueAt != nil || len(h.clear) > 0
+}
+
+// withDefaults answers the authored properties a CREATE actually writes: the
+// ones it named, plus every declared `default:` it did not. Nothing is filled
+// on an update — a default seeds a record, it does not re-assert itself against
+// a value the record has since lost — and an EXPLICIT null is left alone,
+// because that is the writer saying this record has no value here, which a
+// required property then refuses rather than quietly refilling.
+//
+// The authored map is never mutated: it is the caller's, and a bundle's
+// function may hold it across the call.
+func withDefaults(ty *vocabulary.Kind, in map[string]any, create bool) map[string]any {
+	if !create {
+		return in
+	}
+	out, copied := in, false
+	for _, name := range ty.PropOrder {
+		p := ty.Props[name]
+		if p.Default == nil {
+			continue
+		}
+		if _, named := in[name]; named {
+			continue
+		}
+		if !copied {
+			out = make(map[string]any, len(in)+1)
+			maps.Copy(out, in)
+			copied = true
+		}
+		out[name] = p.Default
+	}
+	return out
 }
 
 // splitProps takes one authored properties map apart into the three places
@@ -911,10 +951,14 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		}
 	}
 
-	// Required pointers are asserted at birth: a record is created with them or
-	// not at all. A later patch that does not touch them is unaffected.
+	// `required` is a statement about the RECORD: the merged row is what has to
+	// satisfy it, so this runs on every write. Required edges are birth-only
+	// (checkRequiredEdges).
+	if err := t.checkRequiredProps(sp, row); err != nil {
+		return nil, err
+	}
 	if create {
-		if err := t.checkRequiredPointers(sp, row); err != nil {
+		if err := t.checkRequiredEdges(sp); err != nil {
 			return nil, err
 		}
 	}
@@ -1180,41 +1224,88 @@ func (t *txn) stampTargetVersion(sp *applySpec, row *erow, target eref, accepted
 	return nil
 }
 
-// checkRequiredPointers asserts every declared required POINTER is present on a
-// freshly created record — a required edge, and a required reference property.
+// checkRequiredProps holds the MERGED ROW to every `required:` its kind
+// declares. It runs on every write, not only at birth, because `required` is a
+// statement about the record and not about the patch: a write that clears the
+// last value of a required property is refused, and a write that never mentions
+// one is not.
 //
-// References are here because a pointer that moves from an edge to a reference
-// must not silently lose the invariant it was written under: `required` on an
-// edge has always been enforced at birth, and a declaration that changed only
-// its storage would otherwise become a suggestion.
+// A declared `default:` is what keeps a required property writable without
+// naming it — withDefaults has already filled it on a create. Defaults do not
+// backfill, so a record stored before its property was declared required stays
+// missing it, and admission is what refuses that declaration change
+// (schemadiff.go) rather than this.
 //
-// Required on any OTHER kind of property stays what it has always been —
-// declaration-level documentation a client honors — because `default:` is
-// consumed by the form and never applied server-side, so enforcing it here
-// would refuse creates that legitimately rely on a declared default. Making
-// those enforceable is its own change, and it needs defaults first.
-func (t *txn) checkRequiredPointers(sp *applySpec, row *erow) error {
-	var missingRefs []string
+// The check is a kind's OWN properties. `required` inside an object's declared
+// fields is not enforced, and deliberately: schemadiff counts no live rows for
+// a field-level narrowing, so enforcing one would strand stored objects with no
+// way to bring them under their own declaration.
+func (t *txn) checkRequiredProps(sp *applySpec, row *erow) error {
+	var problems []string
 	for _, name := range sp.ty.PropOrder {
 		p := sp.ty.Props[name]
-		if p.Datatype != vocabulary.DatatypeReference || !p.Required {
+		// A state property always holds a state (a create is born in the
+		// machine's initial one), so `required` on one asks for nothing.
+		if !p.Required || p.IsState() {
 			continue
 		}
-		v, ok := row.Props[name]
-		// An empty LIST names nothing, so a required repeated reference is as
-		// absent with `[]` as it is with no key at all — the write would
-		// otherwise satisfy "requires a target" by carrying none.
-		if list, isList := v.([]any); isList && len(list) == 0 {
-			ok = false
+		var v any
+		if sp.ty.UsesHot(name) {
+			// A trait-bound instant lives in its own column, never in the
+			// property map.
+			if ts := hotColumnOf(row, name); ts != nil {
+				v = ts.Format(time.RFC3339Nano)
+			}
+		} else {
+			v = row.Props[name]
 		}
-		if !ok || v == nil {
-			missingRefs = append(missingRefs, name)
+		if emptyValue(v) {
+			problems = append(problems, fmt.Sprintf("props.%s: %s requires a value", name, sp.ty.Name))
 		}
 	}
-	if len(missingRefs) > 0 {
-		return fmt.Errorf("%w: %s requires reference %s", substrate.ErrValidation,
-			sp.ty.Name, strings.Join(missingRefs, ", "))
+	if len(problems) > 0 {
+		return &substrate.ValidationError{Problems: problems}
 	}
+	return nil
+}
+
+// emptyValue reports whether a stored value holds nothing, which is what does
+// not satisfy `required`. An empty list or map names no value — a required
+// repeated reference would otherwise meet "requires a target" by carrying none
+// — and an empty string is the unfilled form field the declaration exists to
+// refuse.
+func emptyValue(v any) bool {
+	switch t := v.(type) {
+	case nil:
+		return true
+	case string:
+		return t == ""
+	case []any:
+		return len(t) == 0
+	case map[string]any:
+		return len(t) == 0
+	}
+	return false
+}
+
+// hotColumnOf reads the row column a trait-bound property occupies.
+func hotColumnOf(row *erow, name string) *time.Time {
+	switch name {
+	case substrate.PropAt:
+		return row.At
+	case substrate.PropEndsAt:
+		return row.EndsAt
+	case substrate.PropDueAt:
+		return row.DueAt
+	}
+	return nil
+}
+
+// checkRequiredEdges asserts every declared required EDGE is present on a
+// freshly created record: a record is created with them or not at all, and a
+// later patch that does not touch them is unaffected. Edges are birth-only
+// because nothing about a patch can clear one — unlink is its own verb.
+func (t *txn) checkRequiredEdges(sp *applySpec) error {
 	var required []string
 	for _, name := range sp.ty.EdgeOrder {
 		if sp.ty.Edges[name].Required {

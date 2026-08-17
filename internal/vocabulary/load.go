@@ -1560,13 +1560,12 @@ var propKeys = map[string]bool{
 	// property. Both are declared shape, so they ride into the Definition map
 	// like every other key.
 	"keyed": true, "keyPattern": true, "managed": true,
-	// Presentational hints the read surfaces (the console's config/account form)
-	// consume verbatim from the Definition map: `required` marks a field the
-	// form refuses to submit empty, `default` seeds a create (an enum's default
-	// option). Both ride into Definition; the engine does not enforce them on
-	// writes — but ADDING `required` to a stored declaration is a narrowing
-	// change, refused by admission while live rows lack the property (ticket
-	// 003, ruling A3).
+	// The two the engine enforces on writes: `required` says the record holds a
+	// value for this property after every write, `default` says what a create
+	// that does not name it stores. Both also ride into Definition, where the
+	// read surfaces (the console's config/account form) consume them verbatim.
+	// ADDING `required` to a stored declaration is a narrowing change, refused
+	// by admission while live rows lack the property (ticket 003, ruling A3).
 	"required": true, "default": true,
 	// renamedFrom is RESERVED for declared evolution:
 	// the property's previous name, admitted and stored (it rides in the
@@ -1888,6 +1887,9 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 		}
 	}
 	p.Required = mbool(d, "required")
+	if raw, declared := d["default"]; declared {
+		p.Default = l.parseDefault(where, p, raw)
+	}
 	l.parseReservedMarkers(where, name, d, p)
 	return p
 }
@@ -1926,6 +1928,62 @@ func (l *loader) parseReservedMarkers(where, name string, d map[string]any, p *P
 	if p.Deprecated && p.Required {
 		l.errf("%s: a property is deprecated or required, never both: required means a form refuses to submit without it", where)
 	}
+}
+
+// parseDefault holds a declared `default:` to a value this property could
+// actually store: one literal of the declared family, an enum's own value, and
+// never on a container or a property whose value is not the author's to write.
+// The value's OWN rules — a pattern, a bound, an instant's range — are the
+// write path's coercion, which admission runs over every declared default
+// (checkDeclaredDefaults, in internal/engine), so a kind whose default no write
+// could store is refused there rather than at every create.
+func (l *loader) parseDefault(where string, p *Property, v any) any {
+	switch {
+	case v == nil:
+		l.errf("%s.default: a default is a value — absent is what having none means", where)
+		return nil
+	case p.Repeated || p.Keyed:
+		l.errf("%s.default: a default fills one value, and this property holds a %s",
+			where, map[bool]string{true: "list", false: "map"}[p.Repeated])
+		return nil
+	case p.Managed:
+		l.errf("%s.default: the engine stamps a managed property, so a default would never be its value", where)
+		return nil
+	case p.Sensitive():
+		l.errf("%s.default: a %s value is never written into a declaration", where, p.Datatype)
+		return nil
+	case p.Datatype == DatatypeBlobRef:
+		l.errf("%s.default: a blob-ref names bytes that exist, which a declaration cannot", where)
+		return nil
+	}
+	switch p.Datatype {
+	case DatatypeBool:
+		if _, ok := v.(bool); !ok {
+			l.errf("%s.default: expected true or false", where)
+			return nil
+		}
+	case DatatypeInt, DatatypeFloat:
+		switch v.(type) {
+		case int, int64, float64:
+		default:
+			l.errf("%s.default: expected a number", where)
+			return nil
+		}
+	case DatatypeJSON:
+		// A json property holds a shape we do not own, so its default is any
+		// literal the document carried.
+	default:
+		s, ok := v.(string)
+		if !ok {
+			l.errf("%s.default: expected a %s, written as a string", where, p.Datatype)
+			return nil
+		}
+		if vals := p.ValueStrings(); len(vals) > 0 && !slices.Contains(vals, s) {
+			l.errf("%s.default: %q is not one of %s", where, s, strings.Join(vals, ", "))
+			return nil
+		}
+	}
+	return v
 }
 
 // parseFields parses one object level's field declarations: camelCase names,

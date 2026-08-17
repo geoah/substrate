@@ -511,6 +511,11 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 	if err := candidate.InstallAll(rebuilt); err != nil {
 		return nil, err
 	}
+	// A declared default is stored by the write path, so it is refused here on
+	// the terms the write path would refuse it on.
+	if defaults := checkDeclaredDefaults(candidate, touched); len(defaults) > 0 {
+		return nil, &substrate.ValidationError{Problems: defaults}
+	}
 
 	// Types the candidate no longer declares: refuse while instances exist,
 	// counted transactionally below. Functions carry no delivery state of

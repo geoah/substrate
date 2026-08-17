@@ -17,9 +17,10 @@ package engine
 //   - enum value removed while rows hold it;
 //   - state removed while rows occupy it (a state property dropped or turned
 //     scalar counts as a kind change);
-//   - required added while rows lack the property (`required:` stays a form
-//     hint on writes, but adding it to a stored declaration makes existing
-//     rows nonconforming, so it narrows).
+//   - required added while rows lack the property (the write path enforces
+//     `required` on the merged row, and a declared `default` does not
+//     backfill, so the rows that lack it now would be nonconforming and
+//     unpatchable).
 //
 // Additive changes — new type, new optional property, new enum value, new
 // state, new transition, required removed, presentational keys — admit
@@ -30,6 +31,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -63,6 +65,38 @@ const countStateQuery = `SELECT count(*) FROM records WHERE kind = $1 AND delete
 // given states ($3 is a JSON array of state names).
 const countStateValuesQuery = `SELECT count(*) FROM records
 	WHERE kind = $1 AND deleted_at IS NULL AND states ? $2 AND $3::jsonb @> (states->$2)`
+
+// checkDeclaredDefaults holds every `default:` the touched authorities declare
+// to the coercion a WRITE puts a value through, and answers one problem per
+// default that would not survive it. The loader has already checked the
+// literal's shape (parseDefault); what is left is the value's own rules — a
+// pattern, a bound, an instant's range — which live with the write path. A kind
+// whose default no create could store is refused here, once, instead of at
+// every create of it.
+func checkDeclaredDefaults(candidate *vocabulary.Registry, touched map[string]bool) []string {
+	var problems []string
+	for aname := range touched {
+		a, ok := candidate.AuthorityByName(aname)
+		if !ok || a == nil {
+			continue
+		}
+		for _, tn := range a.KindOrder {
+			ty := a.Kinds[tn]
+			for _, pname := range ty.PropOrder {
+				p := ty.Props[pname]
+				if p.Default == nil {
+					continue
+				}
+				if _, err := coerceValue(p, p.Default); err != nil {
+					problems = append(problems, fmt.Sprintf("kind %s: property %q: default %v: %v",
+						ty.Identity, pname, p.Default, err))
+				}
+			}
+		}
+	}
+	sort.Strings(problems)
+	return problems
+}
 
 // classifyNarrowings walks every type present in BOTH the current and the
 // candidate registry (dropped types are refuse-with-instances' whole-type

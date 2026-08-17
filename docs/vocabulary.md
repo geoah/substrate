@@ -236,10 +236,15 @@ properties:
       - done
 ```
 
-`required:` is a form hint, unenforced on writes, but adding it to a stored
-declaration is still a narrowing: the guard counts the records that lack the
-property. Nothing converts or discards your records behind your back; they
-are yours to migrate, and the refusal tells you how many stand in the way.
+`required:` is enforced on writes, against the record the write produces: a
+create that omits the property is refused with `422`, and so is a patch that
+clears it, while a patch that never mentions it is not. A `default:` beside it
+is what a create that does not name the property stores, materialized into the
+row and the changelog entry at the write. Defaults do not backfill, so adding
+`required:` to a stored declaration is still a narrowing: the guard counts the
+records that lack the property. Nothing converts or discards your records
+behind your back; they are yours to migrate, and the refusal tells you how many
+stand in the way.
 
 **Renaming: `renamedFrom:` is reserved.** A property may declare the name it
 replaces:
