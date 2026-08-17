@@ -130,7 +130,7 @@ export const authorityRoute = createRoute({
 
 export const kindBrowseRoute = createRoute({
   getParentRoute: () => shellRoute,
-  path: "/data/$authority/$plural",
+  path: "/data/$authority/$name",
   component: KindBrowsePage,
 })
 
@@ -138,19 +138,19 @@ export const kindBrowseRoute = createRoute({
 // no record yet); `$id/edit` is the edit surface for an existing one.
 export const recordNewRoute = createRoute({
   getParentRoute: () => shellRoute,
-  path: "/data/$authority/$plural/new",
+  path: "/data/$authority/$name/new",
   component: RecordNewPage,
 })
 
 export const recordRoute = createRoute({
   getParentRoute: () => shellRoute,
-  path: "/data/$authority/$plural/$id",
+  path: "/data/$authority/$name/$id",
   component: RecordPage,
 })
 
 export const recordEditRoute = createRoute({
   getParentRoute: () => shellRoute,
-  path: "/data/$authority/$plural/$id/edit",
+  path: "/data/$authority/$name/$id/edit",
   component: RecordEditPage,
 })
 

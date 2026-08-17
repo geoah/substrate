@@ -76,7 +76,7 @@ const keyOf = (ref: NodeRef) => `${ref.kind} ${ref.id}`
 function routeOf(kinds: KindInfo[], kind: string) {
   const info = kindByIdentity(kinds, kind)
   if (!info) return undefined
-  return { authority: splitKind(kind).authority, plural: info.plural }
+  return { authority: splitKind(kind).authority, name: info.name }
 }
 
 function RecordLink({
@@ -99,8 +99,8 @@ function RecordLink({
   }
   return (
     <Link
-      to="/data/$authority/$plural/$id"
-      params={{ authority: route.authority, plural: route.plural, id: node.id }}
+      to="/data/$authority/$name/$id"
+      params={{ authority: route.authority, name: route.name, id: node.id }}
       className={cn(
         "truncate underline-offset-4 hover:underline",
         !node.title && "data",
@@ -264,7 +264,7 @@ function NodeRow({
         open && route ? (
           <GraphNode
             authority={route.authority}
-            plural={route.plural}
+            plural={route.name}
             id={node.id}
             kind={node.kind}
             kinds={kinds}

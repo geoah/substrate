@@ -118,13 +118,13 @@ function KindLinks({
         <SidebarMenuSubItem key={k.identity}>
           <SidebarMenuSubButton
             isActive={
-              params.authority === nav.authority && params.plural === k.plural
+              params.authority === nav.authority && params.name === k.name
             }
             className={className}
             render={
               <Link
-                to="/data/$authority/$plural"
-                params={{ authority: nav.authority, plural: k.plural }}
+                to="/data/$authority/$name"
+                params={{ authority: nav.authority, name: k.name }}
               />
             }
           >

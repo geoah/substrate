@@ -59,7 +59,7 @@ const tabParser = parseAsStringLiteral(TABS)
 
 export function RecordPage() {
   // The route path still spells `$authority/$plural`; read them under their v1 names.
-  const { authority, plural, id } = recordRoute.useParams()
+  const { authority, name: plural, id } = recordRoute.useParams()
   const [tab, setTab] = useQueryState("tab", tabParser)
 
   const registry = useQuery(kindsQueryOptions)
@@ -154,8 +154,8 @@ export function RecordPage() {
             className="ml-1 gap-1.5"
             render={
               <Link
-                to="/data/$authority/$plural/$id/edit"
-                params={{ authority: authority, plural: plural, id: e.id }}
+                to="/data/$authority/$name/$id/edit"
+                params={{ authority: authority, name: plural, id: e.id }}
               />
             }
           >

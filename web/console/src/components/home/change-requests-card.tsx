@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
-  CR_PLURAL,
+  CR_NAME,
   changeRequestsQueryOptions,
   pendingChangeCountQueryOptions,
 } from "@/lib/api/changerequests"
@@ -97,8 +97,8 @@ export function ChangeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
       <CardHeader>
         <CardTitle className="flex items-baseline gap-2">
           <Link
-            to="/data/$authority/$plural"
-            params={{ authority: CORE_AUTHORITY, plural: CR_PLURAL }}
+            to="/data/$authority/$name"
+            params={{ authority: CORE_AUTHORITY, name: CR_NAME }}
             className="underline-offset-4 hover:underline"
           >
             Pending changes
@@ -112,8 +112,8 @@ export function ChangeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
         </CardTitle>
         <CardAction>
           <Link
-            to="/data/$authority/$plural"
-            params={{ authority: CORE_AUTHORITY, plural: CR_PLURAL }}
+            to="/data/$authority/$name"
+            params={{ authority: CORE_AUTHORITY, name: CR_NAME }}
             className="text-xs text-muted-foreground underline-offset-4 hover:underline"
           >
             View queue
@@ -144,8 +144,8 @@ export function ChangeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
             ))}
             {pending !== undefined && pending > rows.length && (
               <Link
-                to="/data/$authority/$plural"
-                params={{ authority: CORE_AUTHORITY, plural: CR_PLURAL }}
+                to="/data/$authority/$name"
+                params={{ authority: CORE_AUTHORITY, name: CR_NAME }}
                 className="text-xs text-muted-foreground underline-offset-4 hover:underline"
               >
                 +{(pending - rows.length).toLocaleString()}

@@ -81,7 +81,7 @@ function parseSort(sort: string): SortingState {
 export function KindBrowsePage() {
   // The route path still spells `$authority/$plural`; a collection is addressed by
   // its (authority, plural) pair, so read them under their v1 names.
-  const { authority, plural } = kindBrowseRoute.useParams()
+  const { authority, name: plural } = kindBrowseRoute.useParams()
   const navigate = useNavigate()
 
   const [tab, setTab] = useQueryState("tab", tabParser)
@@ -152,7 +152,7 @@ export function KindBrowsePage() {
 
   const listOptions = recordsQueryOptions({
     authority,
-    plural,
+    name: plural,
     first: PAGE_SIZE,
     after: cursorStack[pageIndex],
     filter: recordFilter,
@@ -281,8 +281,8 @@ export function KindBrowsePage() {
           className="shrink-0 gap-1.5"
           render={
             <Link
-              to="/data/$authority/$plural/new"
-              params={{ authority: authority, plural: plural }}
+              to="/data/$authority/$name/new"
+              params={{ authority: authority, name: plural }}
             />
           }
         >
@@ -340,10 +340,10 @@ export function KindBrowsePage() {
                   loading={records.isPlaceholderData && records.isFetching}
                   onRowClick={(row) =>
                     void navigate({
-                      to: "/data/$authority/$plural/$id",
+                      to: "/data/$authority/$name/$id",
                       params: {
                         authority: authority,
-                        plural: plural,
+                        name: plural,
                         id: row.id,
                       },
                     })

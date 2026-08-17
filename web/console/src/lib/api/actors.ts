@@ -14,8 +14,8 @@ import { queryOptions } from "@tanstack/react-query"
 import { corePath, request } from "./http"
 import type { SubstrateRecord, Page } from "./types"
 
-const ACTORS = "actors"
-const AUTHORITIES = "authorities"
+const ACTORS = "actor"
+const AUTHORITIES = "authority"
 /** One generous page reads a mirror whole. */
 const MIRROR_PAGE = 500
 
@@ -27,16 +27,13 @@ export interface ActorMirrors {
 }
 
 async function fetchMirror(
-  plural: string,
+  name: string,
   signal?: AbortSignal
 ): Promise<SubstrateRecord[]> {
   const q = new URLSearchParams({ first: String(MIRROR_PAGE) })
-  const page = await request<Page>(
-    "GET",
-    `${corePath(plural)}?${q}`,
-    undefined,
-    { signal }
-  )
+  const page = await request<Page>("GET", `${corePath(name)}?${q}`, undefined, {
+    signal,
+  })
   return page.records ?? []
 }
 

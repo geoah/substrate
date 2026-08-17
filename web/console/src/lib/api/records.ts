@@ -4,7 +4,7 @@
  * change feed filtered to one record.
  *
  * A collection path IS the kind reference split into segments —
- * `/{authority}/{plural}` for a published kind, `/{plural}` for a
+ * `/{authority}/{name}` for a published kind, `/{name}` for a
  * repository-local one (`collectionPath`). The PUT/POST body carries the
  * authored envelope only (`{properties, labels, annotations, edges}`); the kind
  * is settled by the path, so the body never repeats it.
@@ -38,7 +38,7 @@ export const recordIdSegment = (id: string): string => seg(id)
 export interface ListParams {
   /** The publishing authority, or "" for a repository-local kind. */
   authority: string
-  plural: string
+  name: string
   first?: number
   /** The opaque keyset cursor a previous page returned, resent VERBATIM. */
   after?: string
@@ -65,7 +65,7 @@ export function listPath(p: ListParams): string {
   if (hasFilter(p.filter)) q.set("filter", JSON.stringify(p.filter))
   if (p.orderBy) q.set("orderBy", p.orderBy)
   if (p.withEdges) q.set("withEdges", "1")
-  return `${collectionPath(p.authority, p.plural)}?${q}`
+  return `${collectionPath(p.authority, p.name)}?${q}`
 }
 
 export function recordsQueryOptions(p: ListParams) {
@@ -73,7 +73,7 @@ export function recordsQueryOptions(p: ListParams) {
     queryKey: [
       "records",
       p.authority,
-      p.plural,
+      p.name,
       {
         first: p.first ?? 50,
         after: p.after ?? null,
@@ -108,7 +108,7 @@ const COUNT_MAX_PAGES = 20
 /** Count a collection by walking the opaque cursor, bounded by the ceiling. */
 export async function countRecords(
   authority: string,
-  plural: string,
+  name: string,
   filter: RecordFilter | undefined,
   signal?: AbortSignal
 ): Promise<RecordCount> {
@@ -117,7 +117,7 @@ export async function countRecords(
   for (let page = 0; page < COUNT_MAX_PAGES; page++) {
     const res = await request<Page>(
       "GET",
-      listPath({ authority, plural, first: COUNT_PAGE, after, filter }),
+      listPath({ authority, name, first: COUNT_PAGE, after, filter }),
       undefined,
       { signal }
     )
@@ -130,17 +130,17 @@ export async function countRecords(
 
 export function recordCountQueryOptions(
   authority: string,
-  plural: string,
+  name: string,
   filter?: RecordFilter
 ) {
   return queryOptions({
     queryKey: [
       "records-count",
       authority,
-      plural,
+      name,
       hasFilter(filter) ? filter : null,
     ],
-    queryFn: ({ signal }) => countRecords(authority, plural, filter, signal),
+    queryFn: ({ signal }) => countRecords(authority, name, filter, signal),
     staleTime: 60_000,
   })
 }
@@ -154,15 +154,15 @@ export function formatCount(count: RecordCount): string {
 
 export function recordQueryOptions(
   authority: string,
-  plural: string,
+  name: string,
   id: string
 ) {
   return queryOptions({
-    queryKey: ["record", authority, plural, id],
+    queryKey: ["record", authority, name, id],
     queryFn: ({ signal }) =>
       request<SubstrateRecord>(
         "GET",
-        `${collectionPath(authority, plural)}/${seg(id)}`,
+        `${collectionPath(authority, name)}/${seg(id)}`,
         undefined,
         { signal }
       ),
@@ -191,34 +191,34 @@ export interface RecordWrite {
   ifVersion?: number
 }
 
-/** Create one record in a collection: `POST /{authority}/{plural}` (or
- * `POST /{plural}` for a repository-local kind). The kind is settled by the
+/** Create one record in a collection: `POST /{authority}/{name}` (or
+ * `POST /{name}` for a repository-local kind). The kind is settled by the
  * URL; the body carries authored properties (and an optional id — omit it and
  * the substrate mints one). */
 export function createRecord(
   authority: string,
-  plural: string,
+  name: string,
   input: RecordWrite
 ): Promise<SubstrateRecord> {
   return request<SubstrateRecord>(
     "POST",
-    collectionPath(authority, plural),
+    collectionPath(authority, name),
     input
   )
 }
 
-/** Upsert one record by id: `PUT /{authority}/{plural}/{id}`. A full-document
+/** Upsert one record by id: `PUT /{authority}/{name}/{id}`. A full-document
  * apply — the write replaces the authored envelope wholesale (unlike PATCH's
  * key-wise merge), the natural semantic for the YAML editor's Edit flow. */
 export function putRecord(
   authority: string,
-  plural: string,
+  name: string,
   id: string,
   input: RecordWrite
 ): Promise<SubstrateRecord> {
   return request<SubstrateRecord>(
     "PUT",
-    `${collectionPath(authority, plural)}/${seg(id)}`,
+    `${collectionPath(authority, name)}/${seg(id)}`,
     input
   )
 }
@@ -234,31 +234,28 @@ export interface RecordPatch {
   ifVersion?: number
 }
 
-/** Patch one record in place: `PATCH /{authority}/{plural}/{id}`. Maps merge
+/** Patch one record in place: `PATCH /{authority}/{name}/{id}`. Maps merge
  * key-wise (a null value deletes the key); omitted fields are untouched — so a
  * blank secret input simply isn't sent and the sealed value stands. */
 export function patchRecord(
   authority: string,
-  plural: string,
+  name: string,
   id: string,
   patch: RecordPatch
 ): Promise<SubstrateRecord> {
   return request<SubstrateRecord>(
     "PATCH",
-    `${collectionPath(authority, plural)}/${seg(id)}`,
+    `${collectionPath(authority, name)}/${seg(id)}`,
     patch
   )
 }
 
 export async function deleteRecord(
   authority: string,
-  plural: string,
+  name: string,
   id: string
 ): Promise<void> {
-  await request<void>(
-    "DELETE",
-    `${collectionPath(authority, plural)}/${seg(id)}`
-  )
+  await request<void>("DELETE", `${collectionPath(authority, name)}/${seg(id)}`)
 }
 
 // ── incoming edges (record 57) ──────────────────────────────────────────────
@@ -268,7 +265,7 @@ export async function deleteRecord(
  * record has — and the page's total is then that group's, not the record's. */
 export function incomingInfiniteOptions(
   authority: string,
-  plural: string,
+  name: string,
   id: string,
   first = 50,
   narrow: { rel?: string; fromKind?: string } = {}
@@ -277,7 +274,7 @@ export function incomingInfiniteOptions(
     queryKey: [
       "incoming",
       authority,
-      plural,
+      name,
       id,
       { rel: narrow.rel ?? null, fromKind: narrow.fromKind ?? null, first },
     ],
@@ -288,7 +285,7 @@ export function incomingInfiniteOptions(
       if (narrow.fromKind) q.set("fromKind", narrow.fromKind)
       return request<IncomingPage>(
         "GET",
-        `${collectionPath(authority, plural)}/${seg(id)}/incoming?${q}`,
+        `${collectionPath(authority, name)}/${seg(id)}/incoming?${q}`,
         undefined,
         { signal }
       )

@@ -83,13 +83,13 @@ type Lens = "form" | "yaml"
 
 /** New-record route wrapper (`/data/:authority/:plural/new`). */
 export function RecordNewPage() {
-  const { authority, plural } = recordNewRoute.useParams()
+  const { authority, name: plural } = recordNewRoute.useParams()
   return <RecordEditor authority={authority} plural={plural} mode="create" />
 }
 
 /** Edit route wrapper (`/data/:authority/:plural/:id/edit`). */
 export function RecordEditPage() {
-  const { authority, plural, id } = recordEditRoute.useParams()
+  const { authority, name: plural, id } = recordEditRoute.useParams()
   return (
     <RecordEditor authority={authority} plural={plural} mode="edit" id={id} />
   )
@@ -250,8 +250,8 @@ export function RecordEditorForm({
       })
       void queryClient.invalidateQueries()
       void navigate({
-        to: "/data/$authority/$plural/$id",
-        params: { authority: authority, plural: plural, id: saved.id },
+        to: "/data/$authority/$name/$id",
+        params: { authority: authority, name: plural, id: saved.id },
       })
     },
     onError: (error) => {
@@ -324,17 +324,17 @@ export function RecordEditorForm({
             render={
               mode === "edit" && record ? (
                 <Link
-                  to="/data/$authority/$plural/$id"
+                  to="/data/$authority/$name/$id"
                   params={{
                     authority: authority,
-                    plural: plural,
+                    name: plural,
                     id: record.id,
                   }}
                 />
               ) : (
                 <Link
-                  to="/data/$authority/$plural"
-                  params={{ authority: authority, plural: plural }}
+                  to="/data/$authority/$name"
+                  params={{ authority: authority, name: plural }}
                 />
               )
             }

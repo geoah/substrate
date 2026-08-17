@@ -144,7 +144,7 @@ describe("KindDefinition", () => {
       (a) => a.textContent === "→ account"
     )
     expect(link?.getAttribute("href")).toBe(
-      "/data/core.substrate.reamde.dev/accounts"
+      "/data/core.substrate.reamde.dev/account"
     )
   })
 

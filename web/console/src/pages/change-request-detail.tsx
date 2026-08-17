@@ -70,7 +70,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import {
-  CR_PLURAL,
+  CR_NAME,
   changeRequestQueryOptions,
   submitDecision,
 } from "@/lib/api/changerequests"
@@ -630,7 +630,7 @@ function useTargetQuery(
   return {
     kind,
     query: useQuery({
-      ...recordQueryOptions(authority, kind?.plural ?? "", target?.id ?? ""),
+      ...recordQueryOptions(authority, kind?.name ?? "", target?.id ?? ""),
       enabled: enabled && Boolean(target && kind),
     }),
   }
@@ -741,7 +741,7 @@ export function ChangeRequestDetailPage() {
             <ChangeTarget target={target} types={types} />
           </h1>
           <p className="data text-xs text-muted-foreground">
-            {CORE_AUTHORITY}/{CR_PLURAL}/{request.id}
+            {CORE_AUTHORITY}/{CR_NAME}/{request.id}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2 pt-0.5">

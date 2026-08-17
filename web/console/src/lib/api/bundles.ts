@@ -1,14 +1,14 @@
 /** Bundle lifecycle reads and writes. Everything rides the host's computed
- * status endpoints and the lifecycle verbs — the bundle ROWS themselves are
- * ordinary `core.substrate.reamde.dev/bundles` records the generic browse already
- * renders. Account configs are a TRAIT query (kinds implementing
+ * status endpoints and the lifecycle transitions — the bundle ROWS themselves
+ * are ordinary `core.substrate.reamde.dev/bundle` records the generic browse
+ * already renders. Account configs are a TRAIT query (kinds implementing
  * `accountconfig`), and the OAuth connect button hits `oauth/start` for one
  * account record. */
 
 import { queryOptions, type QueryClient } from "@tanstack/react-query"
 
 import { catalogQueryOptions, type CatalogItem } from "./catalog"
-import { API_BASE, CORE_AUTHORITY, corePath, request, seg } from "./http"
+import { corePath, request, rootPath, seg } from "./http"
 import type { BundleStatus, SubstrateRecord, Page } from "./types"
 
 /** Re-exported so the pages keep their `@/lib/api/bundles` import for the
@@ -23,7 +23,7 @@ export type { BundleStatus, InputStatus, SetupItem } from "./types"
  * confirm both against the server before relying on them. */
 export const ACCOUNT_CONFIG_TRAIT = "accountconfig.core.substrate.reamde.dev"
 
-const BUNDLES = corePath("bundles")
+const BUNDLES = corePath("bundle")
 
 /** Every installed bundle's computed status. */
 export async function fetchBundleStatuses(
@@ -55,27 +55,38 @@ export function bundleStatusQueryOptions(id: string) {
   })
 }
 
-/** The lifecycle verbs. disable/enable answer with the fresh status;
- * uninstall tears the bundle row down, so there is no status to answer and
- * the server acks instead; purge answers with the tombstoned-row count. */
+/** The lifecycle transitions. A bundle's runtime lifecycle IS record state the
+ * substrate owns (decision 0033), so each is a PATCH of the bundle record's
+ * `disabled`/`uninstalled`/`purging` state, not a verb. disable/enable answer
+ * with the fresh status; uninstall tears the bundle row down, so there is no
+ * status to answer and the server acks instead; purge answers with the
+ * tombstoned-row count. */
 export type BundleVerb = "disable" | "enable" | "uninstall"
+
+/** PATCH one bundle-state property. */
+function patchBundleState<T>(
+  id: string,
+  prop: string,
+  value: unknown
+): Promise<T> {
+  return request<T>("PATCH", `${BUNDLES}/${seg(id)}`, {
+    properties: { [prop]: value },
+  })
+}
 
 export function runBundleVerb(
   id: string,
   verb: "disable" | "enable"
 ): Promise<BundleStatus> {
-  return request<BundleStatus>("POST", `${BUNDLES}/${seg(id)}/${verb}`)
+  return patchBundleState<BundleStatus>(id, "disabled", verb === "disable")
 }
 
 export function uninstallBundle(id: string): Promise<{ uninstalled: boolean }> {
-  return request<{ uninstalled: boolean }>(
-    "POST",
-    `${BUNDLES}/${seg(id)}/uninstall`
-  )
+  return patchBundleState<{ uninstalled: boolean }>(id, "uninstalled", true)
 }
 
 export function purgeBundle(id: string): Promise<{ purged: number }> {
-  return request<{ purged: number }>("POST", `${BUNDLES}/${seg(id)}/purge`)
+  return patchBundleState<{ purged: number }>(id, "purging", true)
 }
 
 /** Bind one input to a record (an edge on the bundle's record row, rel = the
@@ -156,7 +167,7 @@ export function traitRecordsQueryOptions(trait: string) {
       const q = new URLSearchParams({ first: String(TRAIT_ACCOUNTS_CAP) })
       const page = await request<Page>(
         "GET",
-        `${corePath("traits", trait)}/records?${q}`,
+        `${corePath("trait", trait)}/records?${q}`,
         undefined,
         { signal }
       )
@@ -173,11 +184,9 @@ export function traitRecordsQueryOptions(trait: string) {
 /** Begin the host connect flow for one account record: the response carries
  * the provider consent URL the browser should visit. */
 export function startOAuth(record: string): Promise<{ url: string }> {
-  return request<{ url: string }>(
-    "POST",
-    `${API_BASE}/${CORE_AUTHORITY}/oauth/start`,
-    { record }
-  )
+  return request<{ url: string }>("POST", rootPath("oauth", "start"), {
+    record,
+  })
 }
 
 // ── OAuth return-to-origin (postMessage from the substrate callback) ─────────

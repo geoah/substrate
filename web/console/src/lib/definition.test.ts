@@ -160,7 +160,7 @@ describe("kind resolution", () => {
 
   it("routes authority+plural back to the kind", () => {
     expect(
-      kindByCollection(kinds, "people.substrate.reamde.dev", "people")
+      kindByCollection(kinds, "people.substrate.reamde.dev", "person")
     ).toBe(person)
     expect(
       kindByCollection(kinds, "people.substrate.reamde.dev", "nope")
