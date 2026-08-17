@@ -37,7 +37,7 @@ func TestShippedURLHarvesterExampleApplies(t *testing.T) {
 	}
 	batches := 0
 	for _, req := range h.fake.requests {
-		if req == "POST /api/v1/core.substrate.reamde.dev/vocabulary/apply" {
+		if req == "POST /api/v1/vocabulary/apply" {
 			batches++
 		}
 	}
@@ -46,7 +46,7 @@ func TestShippedURLHarvesterExampleApplies(t *testing.T) {
 	}
 
 	// The four triggers each resolved through the real `type: trigger` path and
-	// were PUT into core.substrate.reamde.dev/triggers.
+	// were PUT into core.substrate.reamde.dev/trigger.
 	for _, id := range []string{
 		"web-findurls-on-message", "web-fetch-on-page",
 		"web-classify-on-page", "web-rollup-weekly",

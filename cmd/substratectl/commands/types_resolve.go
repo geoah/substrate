@@ -61,7 +61,7 @@ func (c *client) fetchTypes(ctx context.Context) ([]substrate.KindInfo, error) {
 // cursor ("" when exhausted, and always "" for the bare-array shape, which
 // does not page).
 func (c *client) fetchTypePage(ctx context.Context, q url.Values) ([]json.RawMessage, string, error) {
-	resp, err := c.send(ctx, http.MethodGet, collectionPath(coreAuthority, pluralKinds), q, nil)
+	resp, err := c.send(ctx, http.MethodGet, collectionPath(coreAuthority, nameKind), q, nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -189,7 +189,7 @@ func stateProperties(ti substrate.KindInfo) []string {
 
 // statesFor resolves the state properties of a collection's type, best-effort:
 // a registry the CLI cannot reach costs an empty STATE column, never the read
-// itself. A qualified plural resolves without a round trip, so this is where
+// itself. A qualified name resolves without a round trip, so this is where
 // that collection's registry lookup happens — and only for the output formats
 // that have a STATE column to fill.
 func (a *app) statesFor(ctx context.Context, col collection) []string {
@@ -198,7 +198,7 @@ func (a *app) statesFor(ctx context.Context, col collection) []string {
 		return nil
 	}
 	for _, ti := range types {
-		if ti.Authority == col.Authority && pluralOf(ti) == col.Plural {
+		if ti.Authority == col.Authority && ti.Name == col.Name {
 			return stateProperties(ti)
 		}
 	}
@@ -226,10 +226,12 @@ func splitIdentity(identity string) (name, authority string, ok bool) {
 	return name, authority, true
 }
 
-// collection is a resolved REST collection.
+// collection is a resolved REST collection. Name is the kind NAME, the
+// collection path segment (decision 0033): the path is
+// /api/v1/{Authority}/{Name}, which for a record is its reference value.
 type collection struct {
 	Authority string
-	Plural    string
+	Name      string
 	// Identity is the type identity when known ("" when resolved purely
 	// syntactically from a qualified argument).
 	Identity string
@@ -239,24 +241,25 @@ type collection struct {
 func (c collection) ref(id string) string {
 	name := c.Identity
 	if name == "" {
-		name = vocabulary.KindRef(c.Authority, c.Plural)
+		name = vocabulary.KindRef(c.Authority, c.Name)
 	}
 	return name + "/" + id
 }
 
 // resolveCollection turns a CLI argument into a collection. The qualified form
-// "<authority>/<plural>" wins outright; a bare plural with -g is taken
-// literally; a bare plural otherwise resolves against the kind registry.
+// "<authority>/<name>" wins outright; a bare name with -g is taken literally; a
+// bare name or plural otherwise resolves against the kind registry, and the
+// path always uses the resolved kind NAME.
 func (a *app) resolveCollection(ctx context.Context, arg, authority string) (collection, error) {
-	if g, plural := vocabulary.SplitKindRef(arg); g != "" {
-		col := collection{Authority: g, Plural: plural}
-		if ti, found := a.lookupCached(plural, g); found {
-			col.Plural, col.Identity = ti.Plural, ti.Identity
+	if g, name := vocabulary.SplitKindRef(arg); g != "" {
+		col := collection{Authority: g, Name: name}
+		if ti, found := a.lookupCached(name, g); found {
+			col.Name, col.Identity = ti.Name, ti.Identity
 		}
 		return col, nil
 	}
 	if authority != "" {
-		return collection{Authority: authority, Plural: arg}, nil
+		return collection{Authority: authority, Name: arg}, nil
 	}
 	types, err := a.types(ctx)
 	if err != nil {
@@ -270,16 +273,16 @@ func (a *app) resolveCollection(ctx context.Context, arg, authority string) (col
 	}
 	switch len(matches) {
 	case 0:
-		return collection{}, fmt.Errorf("no type with plural %q; run `substratectl kinds` to list them", arg)
+		return collection{}, fmt.Errorf("no kind named %q; run `substratectl kinds` to list them", arg)
 	case 1:
 		ti := matches[0]
-		return collection{Authority: ti.Authority, Plural: pluralOf(ti), Identity: ti.Identity}, nil
+		return collection{Authority: ti.Authority, Name: ti.Name, Identity: ti.Identity}, nil
 	}
 	names := make([]string, 0, len(matches))
 	for _, ti := range matches {
-		names = append(names, vocabulary.KindRef(ti.Authority, pluralOf(ti)))
+		names = append(names, vocabulary.KindRef(ti.Authority, ti.Name))
 	}
-	return collection{}, fmt.Errorf("%q is ambiguous across authorities: %s (qualify it as plural.authority or pass -g)",
+	return collection{}, fmt.Errorf("%q is ambiguous across authorities: %s (qualify it as authority/name or pass -g)",
 		arg, strings.Join(names, ", "))
 }
 
@@ -338,7 +341,7 @@ func (a *app) collectionForKind(ctx context.Context, ref string) (collection, er
 			continue
 		}
 		if ti.Authority == authority {
-			return collection{Authority: ti.Authority, Plural: pluralOf(ti), Identity: ti.Identity}, nil
+			return collection{Authority: ti.Authority, Name: ti.Name, Identity: ti.Identity}, nil
 		}
 		elsewhere = append(elsewhere, ti.Authority)
 	}

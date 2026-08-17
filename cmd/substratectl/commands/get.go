@@ -66,14 +66,14 @@ states.`,
 			}
 			if watch {
 				q.Set("watch", "1")
-				resp, err := cl.send(ctx, http.MethodGet, collectionPath(col.Authority, col.Plural), q, nil)
+				resp, err := cl.send(ctx, http.MethodGet, collectionPath(col.Authority, col.Name), q, nil)
 				if err != nil {
 					return err
 				}
 				defer resp.Body.Close()
 				return streamChanges(a.out, resp.Body)
 			}
-			page, err := cl.list(ctx, col.Authority, col.Plural, q)
+			page, err := cl.list(ctx, col.Authority, col.Name, q)
 			if err != nil {
 				return err
 			}
@@ -93,7 +93,7 @@ states.`,
 }
 
 func (a *app) getOne(ctx context.Context, cl *client, col collection, id, output string) error {
-	e, meta, err := cl.get(ctx, col.Authority, col.Plural, id)
+	e, meta, err := cl.get(ctx, col.Authority, col.Name, id)
 	if err != nil {
 		return err
 	}

@@ -87,7 +87,7 @@ key-wise; a raw -p patch may use null values to delete keys.`,
 			if err != nil {
 				return err
 			}
-			e, err := cl.patch(ctx, col.Authority, col.Plural, args[1], in)
+			e, err := cl.patch(ctx, col.Authority, col.Name, args[1], in)
 			if err != nil {
 				return err
 			}

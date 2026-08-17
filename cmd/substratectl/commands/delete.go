@@ -24,7 +24,7 @@ tombstoned and hard deletion waits for its finalizers to be released.`,
 			if err != nil {
 				return err
 			}
-			e, err := cl.delete(ctx, col.Authority, col.Plural, args[1])
+			e, err := cl.delete(ctx, col.Authority, col.Name, args[1])
 			if err != nil {
 				return err
 			}

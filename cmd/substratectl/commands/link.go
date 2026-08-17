@@ -74,7 +74,7 @@ properties are set with --prop key=value.`,
 			if err != nil {
 				return err
 			}
-			e, err := cl.link(ctx, col.Authority, col.Plural, args[1], args[2], to, props)
+			e, err := cl.link(ctx, col.Authority, col.Name, args[1], args[2], to, props)
 			if err != nil {
 				return err
 			}
@@ -112,7 +112,7 @@ The target syntax matches ` + "`link`" + `: a bare id, or <authority>/<name>:<id
 			if err != nil {
 				return err
 			}
-			e, err := cl.unlink(ctx, col.Authority, col.Plural, args[1], args[2], to)
+			e, err := cl.unlink(ctx, col.Authority, col.Name, args[1], args[2], to)
 			if err != nil {
 				return err
 			}

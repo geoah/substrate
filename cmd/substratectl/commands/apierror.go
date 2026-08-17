@@ -47,7 +47,7 @@ func (e *apiError) headline() string {
 		switch {
 		case strings.Contains(e.Path, "/vocabulary/apply"):
 			return "the schema change was refused: it would break stored data"
-		case strings.Contains(e.Path, "/bundles/"):
+		case strings.Contains(e.Path, "/bundle/"):
 			return "the bundle's state does not allow this"
 		}
 		return "that transition is not allowed for this actor"
@@ -101,7 +101,7 @@ func guardHint(path string) string {
 	switch {
 	case strings.Contains(path, "/vocabulary/apply"):
 		return "the problems above name the rows in the way: migrate or delete them, or keep the declaration wide enough for what is stored"
-	case strings.Contains(path, "/bundles/"):
+	case strings.Contains(path, "/bundle/"):
 		return "check the bundle's state with `substratectl bundle status <id>` — a disabled bundle freezes its config and accounts"
 	}
 	return "check the state transition guards for the state this record is in"
