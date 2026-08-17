@@ -69,14 +69,13 @@ func TestSkepticMergeSplitWinnerLoserEdge(t *testing.T) {
 		t.Fatalf("install account type: %v", err)
 	}
 
-	acc := mustPut(t, ds, slack, substrate.PutInput{
+	acc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: enginetest.AccountType, ID: "slack-account:T1",
 		Properties: map[string]any{"provider": "slack", "label": "Acme"},
 	})
 	conv := mustPut(t, ds, slack, substrate.PutInput{
 		Kind: "conversation", ID: "slack-channel:T1:C1",
-		Properties: map[string]any{"kind": "channel", "name": "general"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acc.ID}}},
+		Properties: map[string]any{"kind": "channel", "name": "general", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	author := mustPut(t, ds, slack, substrate.PutInput{
 		Kind: "person", Properties: map[string]any{"name": "A"},

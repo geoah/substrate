@@ -17,14 +17,13 @@ func TestLexicalSearch(t *testing.T) {
 		t.Fatalf("install account type: %v", err)
 	}
 
-	acc := mustPut(t, ds, gcal, substrate.PutInput{
+	acc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: enginetest.AccountType, ID: "gcal-account:a",
 		Properties: map[string]any{"provider": "gcal", "label": "Work"},
 	})
 	cal := mustPut(t, ds, gcal, substrate.PutInput{
 		Kind: "calendar", ID: "gcal-cal:primary",
-		Properties: map[string]any{"name": "Primary"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acc.ID}}},
+		Properties: map[string]any{"name": "Primary", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	titled := mustPut(t, ds, gcal, substrate.PutInput{
 		Kind: "calendarevent", ID: "gcal-event:e1",
@@ -86,14 +85,13 @@ func TestEmbedQueueAndHybridSearch(t *testing.T) {
 		t.Fatalf("install account type: %v", err)
 	}
 
-	acc := mustPut(t, ds, gcal, substrate.PutInput{
+	acc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: enginetest.AccountType, ID: "gcal-account:a",
 		Properties: map[string]any{"provider": "gcal", "label": "Work"},
 	})
 	cal := mustPut(t, ds, gcal, substrate.PutInput{
 		Kind: "calendar", ID: "gcal-cal:primary",
-		Properties: map[string]any{"name": "Primary"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acc.ID}}},
+		Properties: map[string]any{"name": "Primary", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	newEvent := func(ext, summary, desc, day string) *substrate.Record {
 		return mustPut(t, ds, gcal, substrate.PutInput{

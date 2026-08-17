@@ -319,8 +319,10 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 	if core.Properties["name"] != "Work" || core.Properties["timezone"] != "Europe/London" {
 		t.Fatalf("core calendar = %v", core.Properties)
 	}
-	if targets := core.Edges["account"]; len(targets) != 1 || targets[0].ID != "acct-step" {
-		t.Fatalf("core calendar account edge = %v", core.Edges["account"])
+	// `account` is a trait-pinned ownerRef reference (0034): the body writes the
+	// full account path as a property, not an edge.
+	if got := core.Properties["account"]; got != googleAccountType+"/acct-step" {
+		t.Fatalf("core calendar account = %v, want %s/acct-step", got, googleAccountType)
 	}
 
 	// The freeBusyReader share carries no content: never mirrored, never
@@ -413,6 +415,53 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 	}
 	if s, _ := stamp["calendarBackfillAnchorAt"].(string); s == "" {
 		t.Fatalf("calendarBackfillAnchorAt not stamped on the first run")
+	}
+}
+
+// TestGoogleCalendarAccountDisconnectCascades proves the trait-pinned `account`
+// owner pointer end to end on the SHIPPED closure (0034): a real calendar sync
+// mirrors the core calendar and its events through the actual connector body,
+// and disconnecting the account collects the calendar (its `trait: accountconfig`
+// `ownerRef` reference) and the events under it (the calendar `ownerRef` edge),
+// through the ordinary GC sweep. This is the shared-kind half record 0032 could
+// not deliver.
+func TestGoogleCalendarAccountDisconnectCascades(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newCalendarFixture(t)
+
+	s := newGoogleStepper(t, ds, googleCalendarFn, googleStepConfig(calStepProps(nil)))
+	s.drainApplying(nil)
+
+	calID := substratefn.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
+	core, err := ds.Get(ctx, coreCalendarType, calID)
+	if err != nil {
+		t.Fatalf("core calendar did not sync: %v", err)
+	}
+	if got := core.Properties["account"]; got != googleAccountType+"/acct-step" {
+		t.Fatalf("core calendar account = %v, want the trait-pinned path", got)
+	}
+	evtID := substratefn.ExternalID("gcal-event", calID, "e1")
+	if _, err := ds.Get(ctx, coreEventType, evtID); err != nil {
+		t.Fatalf("core calendarevent did not sync: %v", err)
+	}
+
+	// Disconnect the account, the owner-managed delete the console issues, and
+	// run the sweep the server runs on its own cadence.
+	if _, err := ds.Delete(ctx, substrate.ActorAPI, googleAccountType, "acct-step"); err != nil {
+		t.Fatalf("delete account: %v", err)
+	}
+	if _, err := ds.RunGC(ctx); err != nil {
+		t.Fatalf("gc: %v", err)
+	}
+	if _, err := ds.Get(ctx, googleAccountType, "acct-step"); err == nil {
+		t.Fatal("the disconnected account should be hard-deleted")
+	}
+	if _, err := ds.Get(ctx, coreCalendarType, calID); err == nil {
+		t.Fatal("the calendar's trait-pinned account owner pointer should have collected it")
+	}
+	if _, err := ds.Get(ctx, coreEventType, evtID); err == nil {
+		t.Fatal("the calendarevent under the collected calendar should be collected too")
 	}
 }
 

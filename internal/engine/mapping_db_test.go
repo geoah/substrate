@@ -161,14 +161,13 @@ func newConversation(t *testing.T, ds substrate.Dataset) *substrate.Record {
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
-	acc := mustPut(t, ds, slack, substrate.PutInput{
+	acc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: enginetest.AccountType, ID: "slack-acct-1",
 		Properties: map[string]any{"provider": "slack", "label": "Work", "status": "ok"},
 	})
 	return mustPut(t, ds, slack, substrate.PutInput{
 		Kind: "conversation", ID: "slack-C1",
-		Properties: map[string]any{"kind": "channel"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acc.ID}}},
+		Properties: map[string]any{"kind": "channel", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 }
 

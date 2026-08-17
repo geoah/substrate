@@ -165,3 +165,41 @@ func TestOwnerRefTraitReferenceCascade(t *testing.T) {
 		t.Fatal("a trait reference without ownerRef was collected")
 	}
 }
+
+// `incoming` enumerates a trait pin the same way the cascade does: standing on
+// an account, the reverse read lists the session that names it through the
+// trait-pinned reference, labeled ViaReference. Enumerability is what `ownerRef`
+// requires, so this is the other half of the same registry read.
+func TestIncomingOverTraitReference(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	if err := enginetest.Install(ctx, ds, substrate.ActorAPI, traitMirrorManifest()); err != nil {
+		t.Fatalf("install trait mirror types: %v", err)
+	}
+	accA := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: traitMirrorAuthority + "/providera", ID: "acct-a",
+		Properties: map[string]any{"label": "A"},
+	})
+	sess := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: traitMirrorAuthority + "/session", ID: "sess-a",
+		Properties: map[string]any{"label": "on A", "account": accA.Kind + "/" + accA.ID},
+	})
+	page, err := ds.Incoming(ctx, accA.Kind, accA.ID, substrate.IncomingOptions{})
+	if err != nil {
+		t.Fatalf("incoming: %v", err)
+	}
+	found := false
+	for _, row := range page.Incoming {
+		if row.From.ID != sess.ID {
+			continue
+		}
+		if row.Via != substrate.ViaReference || row.Rel != "account" {
+			t.Fatalf("the trait-pinned reference row reads %+v", row)
+		}
+		found = true
+	}
+	if !found {
+		t.Fatalf("incoming did not list the session pointing through the trait pin: %+v", page.Incoming)
+	}
+}

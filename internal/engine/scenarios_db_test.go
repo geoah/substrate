@@ -19,14 +19,13 @@ func TestMeetingScenario(t *testing.T) {
 		t.Fatalf("install account type: %v", err)
 	}
 
-	acc := mustPut(t, ds, gcal, substrate.PutInput{
+	acc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: enginetest.AccountType, ID: "gcal-account:george-at-acme.com",
 		Properties: map[string]any{"provider": "gcal", "label": "Work"},
 	})
 	cal := mustPut(t, ds, gcal, substrate.PutInput{
 		Kind: "calendar", ID: "gcal-cal:primary",
-		Properties: map[string]any{"name": "Primary", "timezone": "Europe/Athens"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acc.ID}}},
+		Properties: map[string]any{"name": "Primary", "timezone": "Europe/Athens", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	// The connector writes the recurring definition; the substrate never
 	// expands RRULEs.
@@ -124,19 +123,17 @@ func TestQueryGrammar(t *testing.T) {
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
-	acc := mustPut(t, ds, beeper, substrate.PutInput{
+	acc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: enginetest.AccountType, ID: "beeper-account:a",
 		Properties: map[string]any{"provider": "beeper", "label": "Personal"},
 	})
 	conv := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "conversation", ID: "slack-channel:x1",
-		Properties: map[string]any{"kind": "direct"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acc.ID}}},
+		Properties: map[string]any{"kind": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	other := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "conversation", ID: "slack-channel:x2",
-		Properties: map[string]any{"kind": "group", "name": "Family"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acc.ID}}},
+		Properties: map[string]any{"kind": "group", "name": "Family", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	alex := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "person", Properties: map[string]any{"name": "Alex"},
@@ -266,14 +263,13 @@ func TestReplyLifecycle(t *testing.T) {
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
-	acc := mustPut(t, ds, beeper, substrate.PutInput{
+	acc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: enginetest.AccountType, ID: "beeper-account:a",
 		Properties: map[string]any{"provider": "beeper", "label": "Personal"},
 	})
 	conv := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "conversation", ID: "slack-channel:x1",
-		Properties: map[string]any{"kind": "direct"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acc.ID}}},
+		Properties: map[string]any{"kind": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	me := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "person", Properties: map[string]any{"name": "George"},

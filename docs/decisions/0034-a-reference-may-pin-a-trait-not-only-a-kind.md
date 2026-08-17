@@ -89,9 +89,17 @@ nothing, and a required account would refuse it. The mirror kinds keep
   closure must understand; a binary that predates it quarantines the authority
   (record 0020), which is why the three declarations bump their authority
   version.
-- Bad, because retyping `account` from an edge to a reference is a narrowing:
-  the boot upgrade refuses the authority while live `account` edge rows exist,
-  and pre-v1 the answer is `mise run dev:wipe`.
+- Bad, because retyping `account` from an edge to a reference strands the rows
+  that hold the old edge: after the retype the kind declares no `account` edge,
+  so `edgeOwnedChildren` cannot see those edge rows and the new reference is an
+  absent property on them, leaving the row owned by nothing. The base narrowing
+  guard did not catch this, because it diffs properties only and never diffs
+  edges (`classifyNarrowings`: "Dropping the edge is unguarded"), and the shared
+  kinds' `account` is OPTIONAL so the added-as-required guard does not fire
+  either. This record adds one: an edge that becomes a reference of the same
+  name is counted over the `edges` table (`countEdgeRelQuery`) and the upgrade
+  refuses the authority while live `account` edge rows exist. Pre-v1 the answer
+  is still `mise run dev:wipe`; there is no migration.
 - Bad, because a trait pin's referent check costs a registry `Implements` read
   per write, where a kind pin is a string compare.
 
@@ -102,10 +110,15 @@ declares a trait, two account kinds that implement it, and a shared kind whose
 `account` is a trait-pinned `ownerRef` reference. It collects the shared record
 when its account is deleted, leaves alone the record on the other account and a
 trait reference without `ownerRef`, and refuses a write pointing at a kind that
-implements nothing. `TestOwnerRefOnATraitReference` and
+implements nothing. `TestIncomingOverTraitReference` (same file) holds the
+reverse read: standing on an account, `incoming` lists the record that names it
+through the trait pin, labeled `ViaReference`, which is the enumerability
+`ownerRef` requires. `TestOwnerRefOnATraitReference` and
 `TestReferenceRefusesBothPins` (`internal/vocabulary/ownerref_test.go`) hold
 the parse: a trait pin survives and resolves, and both pins together are
-refused.
+refused. The connector bodies write the new property, not the old edge: the
+gmail and calendar sync suites (`internal/engine/google_*_bundle_db_test.go`)
+mirror a thread and a calendar and read `account` back as the record path.
 
 ## More Information
 

@@ -2389,12 +2389,17 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 		for _, site := range referenceSites(t) {
 			p := site.Prop
 			// A `trait:` pin resolves against the registry's traits the way a
-			// binding does: in-authority first, then uniquely across authorities.
-			// The resolved full identity is what the write path and the GC
-			// cascade key on, so a bundle-local trait cannot counterfeit a
-			// host-recognized one.
+			// binding does: a bare name in-authority first then uniquely across
+			// authorities, and a full identity (`authority/name`) against that
+			// authority directly, exactly as a `kind:` pin accepts both. The
+			// resolved full identity is what the write path and the GC cascade key
+			// on, so a bundle-local trait cannot counterfeit a host-recognized one.
 			if p.ToTrait != "" {
-				c, err := r.ResolveTrait(g.Name, p.ToTrait)
+				authority, name := g.Name, p.ToTrait
+				if Qualified(p.ToTrait) {
+					authority, name = SplitKindRef(p.ToTrait)
+				}
+				c, err := r.ResolveTrait(authority, name)
 				if err != nil {
 					problems = append(problems, fmt.Sprintf("%s: data.properties.%s.trait: %v", where, site.Path, err))
 					continue

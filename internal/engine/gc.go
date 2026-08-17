@@ -93,9 +93,7 @@ func (ds *dataset) gcPass(ctx context.Context) (int, error) {
 	return n, nil
 }
 
-// ownedChild is one record the cascade collects: its kind and id, plus the
-// declaration that named the owner, for the sake of the error nobody reads
-// until it happens.
+// ownedChild is one record the cascade collects: its kind (typ) and id.
 type ownedChild struct{ id, typ string }
 
 // cascadeOwned tombstones every live record that points at the record about to

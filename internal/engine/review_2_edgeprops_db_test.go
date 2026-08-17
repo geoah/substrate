@@ -74,8 +74,7 @@ func TestSk2MergeDestroysWinnerLoserEdge(t *testing.T) {
 	})
 	conv := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       "conversation",
-		Properties: map[string]any{"kind": "direct"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acct.ID}}},
+		Properties: map[string]any{"kind": "direct", "account": enginetest.AccountType + "/" + acct.ID},
 	})
 	contact := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "person", Properties: map[string]any{"name": "A"},
