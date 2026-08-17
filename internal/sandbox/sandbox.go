@@ -5,11 +5,14 @@
 // rlimits for the cheap resource ceilings.
 //
 // It exists because the runner's env allowlist is NOT a boundary on its own.
-// Every body runs as the substrate's own uid in the substrate's own container
-// (the image declares no USER, so that uid is root), which means
-// `open("/proc/1/environ")` reads the substrate's environment (the credential
-// key that unseals every repository's OAuth, the database URL) straight past
-// the allowlist that so carefully kept them out of the child's own env.
+// Every body runs as the substrate's own uid in the substrate's own container.
+// Both images declare `USER substrate` (uid 65532), so that uid is not root —
+// and it does not matter, because it is pid 1's uid either way, which is what
+// makes `open("/proc/1/environ")` read the substrate's environment (the
+// credential key that unseals every repository's OAuth, the database URL)
+// straight past the allowlist that so carefully kept them out of the child's
+// own env. Dropping root narrows what a body reaches on the host; it closes
+// nothing that belongs to the substrate's own process.
 // Landlock is what closes that, and it is the layer this package is really
 // for; the rest is defense in depth around it.
 //
@@ -143,10 +146,11 @@ type Report struct {
 // to be called enforced.
 //
 // ABI 3 (Linux 6.2) is where LANDLOCK_ACCESS_FS_TRUNCATE arrives. Below it,
-// truncate(2) is mediated by nothing at all: a root body outside its granted
-// trees cannot read or write a file, but can still empty one. Reporting ABI 1
-// or 2 as "enforced" would let SUBSTRATE_SANDBOX=enforce pass its check on a
-// kernel where every file on the host is still destructible.
+// truncate(2) is mediated by nothing at all: a body outside its granted trees
+// cannot read or write a file, but can still empty any file the container's
+// uid may write. Reporting ABI 1 or 2 as "enforced" would let
+// SUBSTRATE_SANDBOX=enforce pass its check on a kernel where the substrate's
+// own files are still destructible.
 const MinLandlockABI = 3
 
 // FS reports whether the filesystem layer is available AND complete. A kernel

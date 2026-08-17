@@ -17,7 +17,8 @@ how to stand one up and look after it.
 - **Nothing else.** Search, the change feed, the function runner, and the OAuth
   facility are all in the one process; the image also carries `python3`, the Go
   toolchain, and `uv`, because [functions](functions.md) run as child
-  processes of the substrate.
+  processes of the substrate. It carries `substratectl` too, so the operator
+  commands below run inside the container.
 
 Everything lives in one Postgres schema. Repositories are separated by a
 `repository` column plus `FORCE ROW LEVEL SECURITY` keyed on the authenticated
@@ -337,6 +338,30 @@ SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl repository reseal ada
 SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl user reset ada
 ```
 
+**On the compose deployment, run them inside the container.** Both runtime
+images carry `substratectl` beside the server, because `compose.yaml`
+publishes no Postgres port and the DSN resolves nowhere else. The container
+already holds `DATABASE_URL` and `SUBSTRATE_CREDENTIAL_KEY` in its
+environment, so neither is repeated on the command line:
+
+```
+docker compose exec substrate substratectl repository list
+docker compose exec substrate substratectl repository verify ada
+docker compose exec substrate substratectl user reset ada
+```
+
+`reseal` and `user reset` refuse on a deployment left at the out-of-the-box
+default, because that default sets no `SUBSTRATE_CREDENTIAL_KEY` and both write
+sealed material. Set the key in the environment compose reads, then
+`docker compose up -d`, which recreates the container around the new value.
+Not `docker compose restart`: that restarts the process the container already
+has, with the environment it was created with, so both commands go on refusing
+and nothing says why.
+
+Publishing the Postgres port to reach the same commands from the host is a
+worse trade: it exposes the database to everything that can reach the host, and
+the exec path needs nothing open at all.
+
 - **`repository list`** reads the one control-plane table: one row per user.
 - **`repository inspect <username>`** reports the repository id, the username,
   when it was created, the changelog head and entry count, live and tombstoned record
@@ -392,6 +417,14 @@ SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl user reset ada
   factors. It writes fresh sealed material and a new credential record and
   prints a fresh TOTP enrollment. The data is untouched; the account gets new
   keys. There is no self-serve recovery, deliberately.
+
+**A lost second factor is an operator's job, and only an operator's.** Every
+credential-change endpoint requires the current TOTP code, and no route resets
+a credential from the recovery key: the recovery key opens the sealed store's
+data-encryption key, not the login. So `user reset`, run on the box or through
+`docker compose exec`, is the whole of the escape from a lockout in v1. A
+deployment nobody can exec into is a deployment where a lost authenticator is
+permanent.
 
 The signing seed has one copy outside the database: registration hands it to
 the user, once ([the chain](changelog.md#the-chain)). With it the user can
