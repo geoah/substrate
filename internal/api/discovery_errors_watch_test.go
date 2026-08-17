@@ -32,7 +32,6 @@ var wantFeatureSurfaces = map[string][]string{
 
 func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 	svc := newFakeService()
-	svc.embeddings = true
 	h := New(Config{Service: svc, MaxDialect: 6})
 
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
@@ -67,21 +66,25 @@ func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 		t.Fatalf("horizon = %d, want 0", doc.Changelog.Horizon)
 	}
 
-	// Feature list: agents carry alpha stability straight from the marker;
-	// the rest are stable and present.
+	// The feature list follows the fake's seams: it carries ChangeFeedOps and
+	// nothing else, so the extension features it cannot serve are absent
+	// rather than advertised over a 501.
 	stab := map[string]string{}
 	for _, f := range doc.Features {
 		stab[f.Name] = f.Stability
 	}
-	if stab[substrate.FeatureAgents] != substrate.AgentStability || stab["agents"] != "alpha" {
-		t.Fatalf("agents feature = %q, want alpha", stab["agents"])
-	}
-	for want := range wantFeatureSurfaces {
-		if want == substrate.FeatureAgents {
-			continue
+	for name, want := range map[string]string{
+		"changefeed": substrate.StabilityBeta,
+		"search":     substrate.StabilityBeta,
+		"embeddings": substrate.StabilityAlpha,
+	} {
+		if stab[name] != want {
+			t.Fatalf("feature %q stability = %q, want %q", name, stab[name], want)
 		}
-		if stab[want] != substrate.StabilityStable {
-			t.Fatalf("feature %q stability = %q, want stable", want, stab[want])
+	}
+	for _, absent := range []string{"triggers", "functions", "bundles", "blobs", substrate.FeatureAgents} {
+		if _, ok := stab[absent]; ok {
+			t.Fatalf("feature %q advertised, but the dataset has no seam serving it", absent)
 		}
 	}
 	if version := doc.Server.Version; version == "" {
@@ -90,12 +93,14 @@ func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 }
 
 // Every feature says which surfaces serve it, because the two are not
-// equivalent: search is the GraphQL query's alone, and a client that read
-// "stable" as "a REST route exists" went looking for one that never shipped.
+// equivalent: search is the GraphQL query's alone, and a client that read a
+// listed feature as "a REST route exists" went looking for one that never
+// shipped. Read against a dataset carrying every seam, so the whole roster is
+// on the wire.
 func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
 	svc := newFakeService()
 	svc.embeddings = true
-	h := New(Config{Service: svc})
+	h := New(Config{Service: allSeamsService{svc}})
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil))
@@ -125,40 +130,6 @@ func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
 	}
 }
 
-// The embeddings feature is the one this deployment may not have: without an
-// embedder the semantic arm refuses and nothing drains the embed queue, so
-// listing it would be the advertised-but-not-served bug again. `search` stays
-// listed, because it degrades to lexical.
-func TestDiscoveryOmitsEmbeddingsWithoutAnEmbedder(t *testing.T) {
-	h := New(Config{Service: newFakeService()})
-
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil))
-	doc := decodeJSON[discoveryDoc](t, rec)
-
-	names := map[string]bool{}
-	for _, f := range doc.Features {
-		names[f.Name] = true
-		if f.Name == featureEmbeddings {
-			t.Fatalf("embeddings listed with no embedder configured: %+v", doc.Features)
-		}
-		// Every other entry survives the drop whole: dropping one must not
-		// disturb its neighbours' surfaces or stability.
-		if !slices.Equal(f.Surfaces, wantFeatureSurfaces[f.Name]) {
-			t.Fatalf("feature %q surfaces = %v, want %v", f.Name, f.Surfaces, wantFeatureSurfaces[f.Name])
-		}
-		if f.Stability == "" {
-			t.Fatalf("feature %q lost its stability: %+v", f.Name, doc.Features)
-		}
-	}
-	if len(names) != len(wantFeatureSurfaces)-1 {
-		t.Fatalf("features = %+v, want every entry but embeddings", doc.Features)
-	}
-	if !names["search"] {
-		t.Fatalf("search dropped with no embedder: %+v", doc.Features)
-	}
-}
-
 // The gql-only marker is a claim about the routes, so hold the routes to it:
 // a search path under /api/v1 is read as an ordinary collection ("unknown
 // collection"), which is what "there is no search route" looks like from
@@ -172,6 +143,89 @@ func TestSearchHasNoRESTRoute(t *testing.T) {
 		if body := rec.Body.String(); !strings.Contains(body, "unknown collection") {
 			t.Fatalf("GET %s = %s, want the generic collection 404", path, body)
 		}
+	}
+}
+
+// allSeams satisfies every optional Dataset extension by embedding the
+// interfaces. Discovery only type-asserts the probe, so no method is ever
+// called and none needs a body.
+type allSeams struct {
+	substrate.Dataset
+	substrate.AutomationOps
+	substrate.BundleOps
+	substrate.BlobStore
+	substrate.ChangeFeedOps
+	substrate.AgentOps
+}
+
+type allSeamsService struct{ *fakeService }
+
+func (s allSeamsService) DatasetSeams() substrate.Dataset { return (*allSeams)(nil) }
+
+// A deployment whose datasets carry every seam advertises every feature, each
+// with the stability the surface has actually reached. `stable` means frozen
+// for v1 and nothing here is: the paths all move under the settled path
+// grammar (#202). Change a stamp here and in features() together, and only
+// with the ticket that froze the surface.
+func TestDiscoveryStampsEachFeatureStability(t *testing.T) {
+	h := New(Config{Service: allSeamsService{newFakeService()}})
+
+	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	doc := decodeJSON[discoveryDoc](t, rec)
+
+	want := map[string]string{
+		"triggers":              substrate.StabilityBeta,
+		"functions":             substrate.StabilityBeta,
+		"bundles":               substrate.StabilityBeta,
+		"blobs":                 substrate.StabilityBeta,
+		"changefeed":            substrate.StabilityBeta,
+		"search":                substrate.StabilityBeta,
+		"embeddings":            substrate.StabilityAlpha,
+		substrate.FeatureAgents: substrate.AgentStability,
+	}
+	got := map[string]string{}
+	for _, f := range doc.Features {
+		got[f.Name] = f.Stability
+	}
+	if len(got) != len(want) {
+		t.Fatalf("features = %+v, want %d entries", doc.Features, len(want))
+	}
+	for name, stability := range want {
+		if got[name] != stability {
+			t.Fatalf("feature %q stability = %q, want %q", name, got[name], stability)
+		}
+	}
+	// The agent surface reads its stability off the substrate marker, never a
+	// literal here.
+	if got[substrate.FeatureAgents] != "alpha" {
+		t.Fatalf("agents feature = %q, want alpha", got[substrate.FeatureAgents])
+	}
+}
+
+// noSeamReporter is a Service with the seam report hidden: embedding the
+// INTERFACE promotes only the methods Service names, so DatasetSeams is gone.
+type noSeamReporter struct{ substrate.Service }
+
+// A service that reports no seams advertises no feature, and the field is an
+// empty list rather than null: a client that cannot see the seams reads the
+// routes, and a guessed list would send it to a 501.
+func TestDiscoveryAdvertisesNothingWithoutASeamReporter(t *testing.T) {
+	var svc substrate.Service = noSeamReporter{newFakeService()}
+	if _, ok := svc.(substrate.SeamReporter); ok {
+		t.Fatalf("noSeamReporter reports seams; this test asserts the opposite")
+	}
+	h := New(Config{Service: svc})
+
+	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if got := len(decodeJSON[discoveryDoc](t, rec).Features); got != 0 {
+		t.Fatalf("features = %d entries, want none", got)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, `"features":[]`) {
+		t.Fatalf("features serialized as null, want an empty list: %s", body)
 	}
 }
 

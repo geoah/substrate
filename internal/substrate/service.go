@@ -5,10 +5,10 @@ import "context"
 // Service is the process-wide handle: schema files loaded, database
 // connected, the shared schema migrated. One per process.
 //
-// Two seams sit off this interface as named OPTIONAL EXTENSIONS an
+// Three seams sit off this interface as named OPTIONAL EXTENSIONS an
 // implementation may also satisfy, on the same terms as Dataset's:
-// OAuthCompleter and RecoveryEnroller. A consumer type-asserts the named
-// interface, and the implementation asserts it at compile time.
+// OAuthCompleter, RecoveryEnroller and SeamReporter. A consumer type-asserts
+// the named interface, and the implementation asserts it at compile time.
 type Service interface {
 	// Repositories lists every repository the substrate holds. It is the
 	// control-plane read the background loops enumerate through; there is no
@@ -54,4 +54,19 @@ type Service interface {
 	Authenticate(ctx context.Context, tokenSecret string) (Dataset, TokenInfo, error)
 
 	Close() error
+}
+
+// SeamReporter answers which optional Dataset extensions this implementation's
+// datasets satisfy, WITHOUT opening a repository. Discovery is the caller: it
+// serves an unauthenticated document that names no repository, so it cannot
+// reach a real dataset, and a feature list written as a literal drifts from
+// the routes it describes.
+//
+// It is an optional Service extension (see Service).
+type SeamReporter interface {
+	// DatasetSeams returns a Dataset carried ONLY for type assertions against
+	// the optional extension interfaces. Its methods are never called and the
+	// value is expected to be a typed nil, so an implementation returns the
+	// same concrete type Dataset returns and nothing else.
+	DatasetSeams() Dataset
 }
