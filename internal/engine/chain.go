@@ -322,13 +322,17 @@ var zeroHash [32]byte
 // unsignedSig is the all-zero signature: the one value that means "not
 // signed" rather than "signed wrong". No write path commits it any more —
 // settleChain signs every entry it appends or refuses the transaction — and
-// it survives in two places only. Inside an open transaction it is what the
+// it survives in three places only. Inside an open transaction it is what the
 // INSERT carries between the append and the stamp, which the store's own
 // `changelog_sig_needs_hash` CHECK requires while `hash` is still NULL. In
-// history it is what migration 0005 stamped on entries written before
-// signing existed, because an append-only log cannot be signed after the
-// fact. It is hashed like any other value, so it cannot be edited without
-// breaking the chain, and `repository verify` names it wherever it sits.
+// history it is what migration 0005 stamped on entries written before signing
+// existed, because an append-only log cannot be signed after the fact, and
+// what the backfill stamps when it hashes that same pre-signing history. The
+// third is `rechainFrom` (reseal.go): a reseal that rewrites below the
+// activation seq re-stamps it there, because a reseal moves values and does
+// not extend the guarantee backwards. It is hashed like any other value, so
+// it cannot be edited without breaking the chain, and `repository verify`
+// names it wherever it sits.
 //
 // The principal placeholder has no constant: 'invalid' is migration 0005's
 // value alone, and an entry written since carries the door's verified token

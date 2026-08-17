@@ -175,3 +175,28 @@ func TestVerifyNamesAMovedActivationMarkAndRepairRefuses(t *testing.T) {
 	}
 	reportFinding(t, svc2.(*service), "disagrees with the repository's activation mark")
 }
+
+// Activation is ONE-WAY at the write path too: a dataset whose signing key is
+// not in hand refuses to append rather than writing an entry the guarantee no
+// longer covers. The open leaves exactly this state behind when a seed will
+// not unwrap, so reads keep working while writes stop.
+func TestAnActivatedRepositoryRefusesToAppendWithoutItsKey(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds := openInternalDataset(t)
+	st := ds.signing()
+	if st.signedFrom == 0 || st.key == nil {
+		t.Fatalf("a fresh repository is not signing: %+v", st)
+	}
+	// The key gone, the durable mark untouched.
+	ds.setSigning(datasetSigning{public: st.public, signedFrom: st.signedFrom})
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "must refuse"},
+	}); err == nil || !strings.Contains(err.Error(), "signing key is unavailable") {
+		t.Fatalf("a dataset that cannot sign appended anyway: %v", err)
+	}
+	// Reads are unaffected: refusing to write is not refusing to serve.
+	if _, err := ds.List(ctx, substrate.Query{}); err != nil {
+		t.Fatalf("a repository that cannot sign stopped serving reads: %v", err)
+	}
+}

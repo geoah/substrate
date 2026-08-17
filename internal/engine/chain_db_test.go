@@ -381,13 +381,86 @@ func TestChangelogSigningSignsAndDetectsRemoval(t *testing.T) {
 	}
 }
 
-func TestSigningActivationIsOneWay(t *testing.T) {
+// A store a pre-signing release wrote, opened by a binary whose shipped
+// vocabulary is newer than the store's. The open ladder has entries to append
+// (the shipped-vocabulary upgrade, the dialect promotion), and settleChain
+// refuses an unsigned append, so activation has to land BEFORE those appends
+// or the first open refuses its own upgrade and the repository can never be
+// opened, rebuilt or resealed again.
+func TestLegacyStoreWithAPendingUpgradeOpens(t *testing.T) {
 	t.Parallel()
-	// Every repository is signed from seq 1 and the activation mark is
-	// durable, so the only way to reach "activated but cannot sign" is a
-	// stored seed that will not open — what a rotated or restored-wrong
-	// credential key looks like from inside. Reads keep working and every
-	// write refuses: the guarantee does not quietly shed.
+	svc, ds, dsn := newChainDataset(t)
+	ctx := context.Background()
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind:       "tasks.substrate.reamde.dev/task",
+		Properties: map[string]any{"name": "written before signing"},
+	})
+	db := rawDB(t, dsn)
+	for _, wind := range []string{
+		`UPDATE changelog SET hash = NULL, sig = decode(repeat('00', 64), 'hex')`,
+		`DELETE FROM chain_epochs`,
+		`UPDATE repositories SET signing_key = NULL, signing_public = NULL, signed_from_seq = NULL`,
+		// Every stored declaration one version behind the shipped tree, so
+		// the ladder's upgrade has something to write.
+		`UPDATE records SET props = jsonb_set(props, '{version}', '1'::jsonb)
+			WHERE props ? 'version' AND deleted_at IS NULL`,
+	} {
+		if _, err := db.Exec(wind); err != nil {
+			t.Fatalf("wind back (%s): %v", wind, err)
+		}
+	}
+	_ = svc.Close()
+
+	svc2, err := engine.Open(ctx, dsn,
+		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithCredentialKey("test-cred-key"))
+	if err != nil {
+		t.Fatalf("reopen a legacy store with a pending upgrade: %v", err)
+	}
+	t.Cleanup(func() { _ = svc2.Close() })
+	if _, err := svc2.Dataset(ctx, "geoah"); err != nil {
+		t.Fatalf("open a legacy store with a pending upgrade: %v", err)
+	}
+	report := mustVerify(t, svc2, "geoah")
+	if report.SignedFrom == 0 {
+		t.Fatalf("the open did not activate signing: %+v", report)
+	}
+	// The upgrade's own entries are inside the guarantee: activation landed
+	// before them, so the head is above the mark and every entry from the
+	// mark on carries a real signature.
+	if report.Head < report.SignedFrom {
+		t.Fatalf("the ladder appended nothing: head %d, signed from %d — the test no longer covers what it says",
+			report.Head, report.SignedFrom)
+	}
+	var unsigned int64
+	if err := db.QueryRow(`SELECT count(*) FROM changelog
+		WHERE seq >= $1 AND sig = decode(repeat('00', 64), 'hex')`,
+		report.SignedFrom).Scan(&unsigned); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if unsigned != 0 {
+		t.Fatalf("%d entries at or after the activation seq carry no signature", unsigned)
+	}
+	// And the repository still writes.
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("reopen dataset: %v", err)
+	}
+	if _, err := ds2.Put(ctx, owner, substrate.PutInput{
+		Kind:       "tasks.substrate.reamde.dev/task",
+		Properties: map[string]any{"name": "written after signing"},
+	}); err != nil {
+		t.Fatalf("write after the upgrade: %v", err)
+	}
+}
+
+// A credential key that does not open what the database already holds is
+// refused AT BOOT, not discovered one repository at a time. This is the shape
+// a lost key volume produces: a fresh key minted over a store full of
+// repositories nothing can now unwrap, on a server that would otherwise
+// listen and report healthy.
+func TestAWrongCredentialKeyIsRefusedAtBoot(t *testing.T) {
+	t.Parallel()
 	svc, ds, dsn := newChainDataset(t)
 	ctx := context.Background()
 	mustPut(t, ds, owner, substrate.PutInput{
@@ -395,46 +468,42 @@ func TestSigningActivationIsOneWay(t *testing.T) {
 		Properties: map[string]any{"name": "signed"},
 	})
 	db := rawDB(t, dsn)
-	var sig []byte
-	if err := db.QueryRow(`SELECT sig FROM changelog WHERE seq = (SELECT max(seq) FROM changelog)`).Scan(&sig); err != nil {
-		t.Fatalf("read sig: %v", err)
-	}
-	if len(sig) != 64 || string(sig) == string(make([]byte, 64)) {
-		t.Fatalf("an append is not signed (%d bytes)", len(sig))
+	var original []byte
+	if err := db.QueryRow(`SELECT signing_key FROM repositories LIMIT 1`).Scan(&original); err != nil {
+		t.Fatalf("read the stored seed: %v", err)
 	}
 	_ = svc.Close()
 
-	// Sealed framing ('s'), then bytes the credential key cannot open.
+	// Sealed framing ('s'), then bytes this credential key cannot open — what
+	// every repository looks like to a host holding the wrong key.
 	if _, err := db.Exec(
 		`UPDATE repositories SET signing_key = decode('73' || repeat('ff', 60), 'hex')`); err != nil {
 		t.Fatalf("spoil the stored seed: %v", err)
+	}
+	_, err := engine.Open(ctx, dsn,
+		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithCredentialKey("test-cred-key"))
+	if err == nil {
+		t.Fatal("a host whose key opens nothing in this database booted anyway")
+	}
+	if !strings.Contains(err.Error(), "does not open the signing seed") {
+		t.Fatalf("the boot refusal does not name the cause: %v", err)
+	}
+
+	// And it is a refusal about the KEY, not a bricked store: the original
+	// seed back, the same host boots and the repository verifies.
+	if _, err := db.Exec(`UPDATE repositories SET signing_key = $1`, original); err != nil {
+		t.Fatalf("restore the stored seed: %v", err)
 	}
 	svc2, err := engine.Open(ctx, dsn,
 		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
 		engine.WithCredentialKey("test-cred-key"))
 	if err != nil {
-		t.Fatalf("reopen: %v", err)
+		t.Fatalf("reopen with the original seed restored: %v", err)
 	}
 	t.Cleanup(func() { _ = svc2.Close() })
-	ds2, err := svc2.Dataset(ctx, "geoah")
-	if err != nil {
-		t.Fatalf("open dataset with an unopenable seed: %v", err)
-	}
-	if _, err := ds2.Put(ctx, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.reamde.dev/task",
-		Properties: map[string]any{"name": "must refuse"},
-	}); err == nil ||
-		!strings.Contains(err.Error(), "signing key is unavailable") {
-		t.Fatalf("a host that cannot sign appended anyway: %v", err)
-	}
-	if _, err := svc2.(resealer).ResealRepository(ctx, "geoah"); err == nil {
-		t.Fatal("a reseal without the signing key did not refuse")
-	}
-	// The durable mark stands: nothing about a missing key deactivates it.
-	after := mustVerify(t, svc2, "geoah")
-	if after.SignedFrom != 1 || after.UnsignedEntries != 0 {
-		t.Fatalf("the activation mark moved: signed from %d, %d unsigned entries",
-			after.SignedFrom, after.UnsignedEntries)
+	if report := mustVerify(t, svc2, "geoah"); !report.OK {
+		t.Fatalf("the store did not survive the refused boot: %+v", report.Findings)
 	}
 }
 

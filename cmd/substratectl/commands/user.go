@@ -168,7 +168,6 @@ working the moment the swap commits.
 
 func (a *app) userResetCommand() *cobra.Command {
 	var passwordStdin bool
-	var allowUnsealed bool
 	cmd := &cobra.Command{
 		Use:   "reset <username>",
 		Short: "Operator: give a user new factors (direct database, no HTTP)",
@@ -195,7 +194,7 @@ change the password once they are back in.
 			if _, err := a.dsn(); err != nil {
 				return err
 			}
-			svc, err := a.openEngineWrite(cmd.Context(), allowUnsealed)
+			svc, err := a.openEngineWrite(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -225,8 +224,6 @@ change the password once they are back in.
 		},
 	}
 	cmd.Flags().BoolVar(&passwordStdin, "password-stdin", false, "read the new password from stdin (one line)")
-	cmd.Flags().BoolVar(&allowUnsealed, "allow-unsealed", false,
-		"DEV ONLY: write the new sealed material in plaintext when no credential key is set (never in production)")
 	return cmd
 }
 

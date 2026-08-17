@@ -69,22 +69,17 @@ func (a *app) openEngineRead(ctx context.Context) (substrate.Service, error) {
 }
 
 // openEngineWrite opens the substrate engine for a command that WRITES sealed
-// material (user reset). A valid credential key is REQUIRED: without it the
-// server would store the password hash and TOTP seed as a plain-marked payload
-// it later accepts — persistent silent plaintext of the account's factors — so
-// the command REFUSES rather than defaulting an omitted production secret into
-// plaintext. `allowUnsealed` is the explicit dev/test escape: it stores plain,
-// loudly, and is never the default.
-func (a *app) openEngineWrite(ctx context.Context, allowUnsealed bool) (substrate.Service, error) {
+// material (user reset). The credential key is REQUIRED, with no escape: the
+// write appends changelog entries, every entry is signed, and the signing
+// seed only opens under this key, so a keyless engine cannot finish a reset
+// at all. It would also store the password hash and the TOTP seed as a
+// plain-marked payload. The refusal is here, before a password is typed,
+// rather than at the append.
+func (a *app) openEngineWrite(ctx context.Context) (substrate.Service, error) {
 	credKey := os.Getenv(credentialKeyEnv)
-	if credKey == "" && !allowUnsealed {
-		return nil, fmt.Errorf(
-			"refusing to write unsealed credential material: set %s to the key the server runs with (or pass --allow-unsealed for a dev database)",
-			credentialKeyEnv)
-	}
 	if credKey == "" {
-		fmt.Fprintf(a.errOut,
-			"warning: %s is unset and --allow-unsealed was given — the new sealed material is stored in PLAINTEXT\n",
+		return nil, fmt.Errorf(
+			"refusing to reset: set %s to the key the server runs with. Changelog signing is mandatory and its seed seals under that key, so a reset without it cannot write",
 			credentialKeyEnv)
 	}
 	return a.openEngineWithKey(ctx, credKey)
