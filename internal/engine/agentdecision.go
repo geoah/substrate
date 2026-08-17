@@ -236,13 +236,12 @@ func (t *txn) nextThreadTurn(threadID string) (int64, error) {
 // thread that is mid-turn refuses cleanly; the loop's settle-time re-check
 // is what then picks the resolution up.
 func (ds *dataset) resumeNotifiedThread(threadID string, decider substrate.Actor) {
-	go func() {
-		ctx := context.Background()
+	ds.spawn("resume notified thread", func(ctx context.Context) {
 		if !ds.admitResume(ctx, threadID, decider) {
 			return
 		}
 		ds.continueThread(ctx, threadID)
-	}()
+	})
 }
 
 // admitResume applies the resume bounds: the agent's own `resume: never`,
@@ -250,6 +249,12 @@ func (ds *dataset) resumeNotifiedThread(threadID string, decider substrate.Actor
 // its own thread — it is already awake, or chose to settle), and the hourly
 // per-thread budget.
 func (ds *dataset) admitResume(ctx context.Context, threadID string, decider substrate.Actor) bool {
+	// Shutdown reaches here as a canceled context. Every query below would then
+	// fail and be logged as a thread that does not resolve, which is a false
+	// alarm: the resume is dropped, and the sweep recovers it after the restart.
+	if ctx.Err() != nil {
+		return false
+	}
 	row, err := ds.loadRowDB(ctx, eref{Kind: typeThread, ID: threadID})
 	if err != nil || row == nil || row.DeletedAt != nil {
 		ds.svc.log.Warn("substrate: resume: thread does not resolve", "thread", threadID, "error", err)
@@ -322,7 +327,9 @@ func (ds *dataset) continueThread(ctx context.Context, threadID string) {
 	}
 	defer release()
 	mode, _ := row.Props["mode"].(string)
-	if _, err := ds.runAgent(ctx, ag, agentInvocation{mode: mode, threadID: threadID}); err != nil {
+	if _, err := ds.runAgent(ctx, ag, agentInvocation{mode: mode, threadID: threadID}); err != nil && ctx.Err() == nil {
+		// A canceled context is the shutdown taking the turn down, not a
+		// continuation that failed on its own; the sweep is the retry.
 		ds.svc.log.Warn("substrate: resume: the continuation failed", "thread", threadID, "agent", agentID, "error", err)
 	}
 }

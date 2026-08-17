@@ -359,23 +359,26 @@ func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal boo
 	if err != nil {
 		return err
 	}
+	// ONE rollback covers every exit, the PANIC included: a panic that unwound
+	// past here would leave the transaction open and its connection held out of
+	// an 8-connection pool until the context died, and a detached task's context
+	// outlives the request that scheduled it. Rollback after Commit reports
+	// sql.ErrTxDone and changes nothing.
+	defer func() { _ = tx.Rollback() }()
 	t := &txn{
 		ctx: ctx, ds: ds, tx: tx, actor: actor, tier: ds.actorTier(actor),
 		principal: substrate.PrincipalFrom(ctx), now: nowUTC(), internal: internal,
 	}
 	if err := fn(t); err != nil {
-		_ = tx.Rollback()
 		return err
 	}
 	if err := t.settleFold(); err != nil {
-		_ = tx.Rollback()
 		return err
 	}
 	// After settleFold: the last entry's payload is final only once the
 	// transaction's late effects have merged into it, and the hash covers the
 	// payload as stored.
 	if err := t.settleChain(); err != nil {
-		_ = tx.Rollback()
 		return err
 	}
 	if err := tx.Commit(); err != nil {

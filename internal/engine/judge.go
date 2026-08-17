@@ -71,7 +71,9 @@ func (ds *dataset) maybeJudge(requestID string, rule *policyRule) {
 		return
 	}
 	snapshot := *rule
-	go ds.judgeRequest(context.Background(), requestID, &snapshot)
+	ds.spawn("judge", func(ctx context.Context) {
+		ds.judgeRequest(ctx, requestID, &snapshot)
+	})
 }
 
 // judgeRequest runs one evaluation: read the request at a version, run the
@@ -81,6 +83,12 @@ func (ds *dataset) maybeJudge(requestID string, rule *policyRule) {
 func (ds *dataset) judgeRequest(ctx context.Context, requestID string, rule *policyRule) {
 	req, err := ds.Get(ctx, vocabulary.KindRecordPatchRequest, requestID)
 	if err != nil {
+		// A canceled context is the shutdown, not a request that went missing:
+		// the judge is idempotent and the request is still proposed, so the
+		// next invocation is the retry.
+		if ctx.Err() != nil {
+			return
+		}
 		ds.svc.log.Warn("substrate: judge: request does not resolve", "request", requestID, "error", err)
 		return
 	}
@@ -133,7 +141,7 @@ func (ds *dataset) judgeRequest(ctx context.Context, requestID string, rule *pol
 		}
 		return t.appendChange(substrate.ActorSystem, substrate.OpPatch, req.ID,
 			vocabulary.KindRecordPatchRequest, map[string]any{"policyVerdict": audit})
-	}); aerr != nil {
+	}); aerr != nil && ctx.Err() == nil {
 		ds.svc.log.Warn("substrate: judge: the audit write failed", "request", requestID, "error", aerr)
 	}
 }

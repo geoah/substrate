@@ -190,6 +190,9 @@ type service struct {
 	// gqlSchemas caches the agent loop's GraphQL schema per repository
 	// (internal/gql owns the key and builder); the API layer holds its own.
 	gqlSchemas *gql.Cache
+	// bg counts and bounds every detached task the engine starts
+	// (background.go); Close drains it before any pool closes.
+	bg *background
 
 	mu sync.Mutex
 	// datasets is keyed by REPOSITORY ID, never by username: a username is a
@@ -259,6 +262,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		totpDisabled:        o.insecureDisableTOTP,
 		log:                 o.log,
 		gqlSchemas:          gql.NewCache(),
+		bg:                  newBackground(),
 		datasets:            map[string]*dataset{},
 		opening:             map[string]chan struct{}{},
 	}
@@ -371,6 +375,10 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 }
 
 func (s *service) Close() error {
+	// The detached tasks (background.go) hold this service's pools, so they are
+	// refused, canceled and drained FIRST: closing a pool under one of them
+	// would pull the connection out from under a live transaction.
+	s.stopBackground(backgroundDrainTimeout)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, ds := range s.datasets {
