@@ -622,14 +622,29 @@ description = "CI job `go test` — the suite in its two halves, with a coverage
 # through `test:coverage` so the gate also produces the profile CI keeps as an
 # artifact; `mise run test` is the same two halves without the instrumentation,
 # and stays the inner loop.
-depends = ["test:coverage"]
+#
+# SUBSTRATE_TEST_REQUIRE_SANDBOX: internal/sandbox and internal/runner skip
+# their confinement cases where the kernel offers no Landlock or no seccomp, so
+# an image, kernel or `lsm=` change that removes either would take those cases
+# from passing to skipping with no red build. Here they fail instead. It is set
+# on the CI task and not on `test:coverage`, so a laptop without Landlock still
+# runs the rest of the suite.
+#
+# `run`, not `depends`: mise gives a dependency task its own environment, so a
+# variable set here would never reach `test:coverage`.
+env = { SUBSTRATE_TEST_REQUIRE_SANDBOX = "1" }
+run = "mise run test:coverage"
 
 [tasks."ci:race"]
 description = "CI job `race` — the short suite under the race detector"
 # Its own job, not a step of `ci:go`: -race roughly triples the suite's runtime
 # and the two want different build caches, so sharing a runner would put a slow
 # check in front of the fast one for no gain.
-depends = ["test:race"]
+#
+# See `ci:go` for why the sandbox variable is set here rather than on the task
+# it runs.
+env = { SUBSTRATE_TEST_REQUIRE_SANDBOX = "1" }
+run = "mise run test:race"
 
 [tasks."ci:audit"]
 description = "CI job `audit` — the vulnerability scans"

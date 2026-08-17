@@ -13,6 +13,8 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/geoah/substrate/internal/sandboxtest"
 )
 
 // These tests exercise the REAL kernel facilities against real child
@@ -20,17 +22,26 @@ import (
 // assembler proves nothing. Where the kernel does not offer a layer the test
 // skips rather than fails: a CI runner or a developer laptop with Landlock
 // left out of its lsm= list is an environment difference, not a regression.
+// Under SUBSTRATE_TEST_REQUIRE_SANDBOX that skip is a failure instead, so a
+// kernel or image that lost the confinement cannot pass CI quietly.
 
 func newTestConfiner(t *testing.T) *Confiner {
 	t.Helper()
 	c := New(ModeBestEffort)
 	if !c.Report().FS() {
-		t.Skipf("landlock unavailable: %s", c.Report())
+		sandboxtest.Unavailable(t, "landlock unavailable: %s", c.Report())
 	}
 	if !c.Report().Seccomp {
-		t.Skipf("seccomp unavailable: %s", c.Report())
+		sandboxtest.Unavailable(t, "seccomp unavailable: %s", c.Report())
 	}
+	sandboxtest.Ran()
 	return c
+}
+
+// The four cases below run a real confined child; TestFilterAssembles needs no
+// kernel and is not one of them.
+func TestMain(m *testing.M) {
+	os.Exit(sandboxtest.Run(m, 4))
 }
 
 // runConfined runs /bin/sh -c under a policy and returns its combined output.
