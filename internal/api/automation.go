@@ -18,15 +18,17 @@ func automationFrom(ctx context.Context) (substrate.AutomationOps, bool) {
 }
 
 // mountTriggerVerbs registers the trigger delivery verbs under one authority.
-// It is mounted at core.substrate.reamde.dev, where the trigger records live (ruling A8:
-// a resource's operational verbs sit at the resource).
+// It is mounted at core.substrate.reamde.dev, where the trigger records live
+// (ruling A8: a record's operational verbs sit at the record), each behind the
+// reserved verb segment so a trigger whose id is `status` stays addressable.
 func (h *handler) mountTriggerVerbs(r chi.Router, authority string) {
-	r.Get("/"+authority+"/triggers/status", h.getTriggerStatus)
-	r.Post("/"+authority+"/triggers/{id}/replay", h.postTriggerReplay)
-	r.Post("/"+authority+"/triggers/{id}/run", h.postTriggerRun)
-	r.Post("/"+authority+"/triggers/{id}/wake", h.postTriggerWake)
-	r.Get("/"+authority+"/triggers/{id}/parked", h.getTriggerParked)
-	r.Post("/"+authority+"/triggers/{id}/parked/{fid}/retry", h.postTriggerRetry)
+	trigger := "/" + authority + "/trigger"
+	r.Get(trigger+verbPrefix+"/status", h.getTriggerStatus)
+	r.Post(trigger+"/{id}"+verbPrefix+"/replay", h.postTriggerReplay)
+	r.Post(trigger+"/{id}"+verbPrefix+"/run", h.postTriggerRun)
+	r.Post(trigger+"/{id}"+verbPrefix+"/wake", h.postTriggerWake)
+	r.Get(trigger+"/{id}"+verbPrefix+"/parked", h.getTriggerParked)
+	r.Post(trigger+"/{id}"+verbPrefix+"/parked/{fid}/retry", h.postTriggerRetry)
 }
 
 func writeNoAutomation(w http.ResponseWriter) {

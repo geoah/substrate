@@ -65,9 +65,13 @@ type grammarInfo struct {
 	Kind string `json:"kind"`
 	// Record is a record reference: the kind reference, then the id.
 	Record string `json:"record"`
-	// Collection is the REST collection path under a version prefix: an
-	// authority segment and a plural, or just the plural for a bare kind.
+	// Collection is the REST collection path under a version prefix: the kind
+	// reference, so everything after the prefix is Record above and a record's
+	// URL is the value a `reference` property stores.
 	Collection string `json:"collection"`
+	// Verb is the segment reserved for verbs at every depth. A client reads it
+	// to know that the segment can never be an id, a kind or an authority.
+	Verb string `json:"verb"`
 	// Actors is the closed actor domain. The first three are
 	// the doors a request may name in X-Substrate-Actor; the rest are the
 	// substrate's own writing hands and are refused on that header.
@@ -124,7 +128,8 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 		Grammar: grammarInfo{
 			Kind:       "<authority>/<name> | <name>",
 			Record:     "<authority>/<kind>/<id> | <kind>/<id>",
-			Collection: "/api/" + APIVersion + "/{authority}/{plural}[/{id}] | /api/" + APIVersion + "/{plural}[/{id}]",
+			Collection: "/api/" + APIVersion + "/{authority}/{kind}[/{id}] | /api/" + APIVersion + "/{kind}[/{id}]",
+			Verb:       verbSegment,
 			Actors: []string{
 				string(substrate.ActorAPI), string(substrate.ActorConsole), string(substrate.ActorCLI),
 				substrate.ConnectorActorPrefix + "<name>", substrate.FunctionActorPrefix + "<name>",

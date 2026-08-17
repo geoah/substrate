@@ -55,7 +55,7 @@ func TestStrictDecodeNamesUnknownBodyKey(t *testing.T) {
 func TestStrictDecodeNamesUnknownEdgeKey(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodPost, peoplePath+"/p1/edges/member_of", tok, map[string]any{
+	rec := env.do(t, http.MethodPost, peoplePath+"/p1/-/edges/member_of", tok, map[string]any{
 		"id":    "org1",
 		"props": map[string]any{"role": "admin"}, // it is `properties`, not `props`
 	})

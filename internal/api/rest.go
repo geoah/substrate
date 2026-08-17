@@ -14,60 +14,118 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// collection resolves a REST collection path to a declared kind. The path
-// carries the KIND REFERENCE, split into its segments:
+// THE PATH GRAMMAR (decision 0028).
 //
-//	/{authority}/{plural}    a published kind — /tasks.substrate.reamde.dev/tasks
-//	/{plural}                a repository-local kind — /tasks
+//	/{authority}/{kind}         a published kind's collection
+//	/{kind}                     a repository-local kind's collection
+//	/{authority}/{kind}/{id}    a published kind's record
+//	/{kind}/{id}                a repository-local kind's record
 //
-// The two are told apart by inspection, not by a route: an authority is a DNS
-// name and always carries a dot, a plural never does. So the two-segment form
-// is a qualified collection when its first segment is dotted and a
-// repository-local RESOURCE (plural + id) when it is not.
-func (h *handler) collection(w http.ResponseWriter, r *http.Request) (substrate.Dataset, substrate.KindInfo, bool) {
+// The collection segment is the kind's NAME, so everything after the version
+// prefix is the kind reference, and a record's path is the record path a
+// `reference` property stores (vocabulary.RecordPath) character for character.
+// The two shapes are told apart by inspection, not by a route: an authority is
+// a DNS name and always carries a dot, a kind name never does. `-` is the
+// reserved verb segment at every depth and can never be an address, because an
+// id begins with an alphanumeric and a kind name is one lowercase word.
+
+// address is what a REST path addresses: the collection's authority (empty for
+// a repository-local kind), the kind name, and the record id ("" on a
+// collection route).
+type address struct {
+	authority string
+	kind      string
+	id        string
+}
+
+// ref is the kind reference the collection segments spell.
+func (a address) ref() string { return vocabulary.KindRef(a.authority, a.kind) }
+
+// path is the address as a URL, which for a record is also its stored
+// reference value.
+func (a address) path() string {
+	p := "/api/" + APIVersion + "/" + a.ref()
+	if a.id != "" {
+		p += "/" + a.id
+	}
+	return p
+}
+
+// addressed reads what a REST path addresses. It is the ONE place the two path
+// shapes are told apart. A second return of false means the segments spell no
+// address at all — a three-segment path whose first segment is not an
+// authority — which is a 404 rather than a lookup.
+func addressed(r *http.Request) (address, bool) {
+	s1, s2, s3 := pathParam(r, "a1"), pathParam(r, "a2"), pathParam(r, "a3")
+	// The reserved segment is never part of an address, at any depth. The
+	// verb sub-tree is mounted, so a top-level `-` never reaches here; this
+	// refuses the rest (`/task/-`, `/authority/kind/-`) rather than looking
+	// for a record whose id no id alphabet admits.
+	if s1 == verbSegment || s2 == verbSegment || s3 == verbSegment {
+		return address{}, false
+	}
+	switch {
+	case s3 != "":
+		if !strings.Contains(s1, ".") {
+			return address{}, false
+		}
+		return address{authority: s1, kind: s2, id: s3}, true
+	case s2 != "":
+		if strings.Contains(s1, ".") {
+			return address{authority: s1, kind: s2}, true
+		}
+		return address{kind: s1, id: s2}, true
+	case s1 != "":
+		return address{kind: s1}, true
+	default:
+		return address{}, false
+	}
+}
+
+// collection resolves the addressed collection to a declared kind, refusing an
+// address of the wrong shape FIRST.
+//
+// wantID says which shape the caller serves. A method that means one thing at a
+// collection and nothing at a record (or the reverse) answers 405 naming the
+// path that works, and never falls through to a write: `POST` at a record path
+// used to resolve the collection, discard the id and create a record under a
+// server-assigned one (#202).
+func (h *handler) collection(w http.ResponseWriter, r *http.Request, wantID bool) (substrate.Dataset, substrate.KindInfo, address, bool) {
+	addr, ok := addressed(r)
+	if !ok {
+		writeError(w, http.StatusNotFound, codeNotFound, "no such API path: "+r.URL.Path)
+		return nil, substrate.KindInfo{}, address{}, false
+	}
+	if wantID && addr.id == "" {
+		writeError(w, http.StatusMethodNotAllowed, codeBadRequest,
+			r.Method+" addresses a record, not a collection: "+r.Method+" "+addr.path()+
+				"/{id} writes one record, POST "+addr.path()+" creates one")
+		return nil, substrate.KindInfo{}, address{}, false
+	}
+	if !wantID && addr.id != "" {
+		coll := address{authority: addr.authority, kind: addr.kind}
+		writeError(w, http.StatusMethodNotAllowed, codeBadRequest,
+			r.Method+" addresses a collection, not a record: "+r.Method+" "+coll.path()+
+				" creates one, PUT "+addr.path()+" writes this record")
+		return nil, substrate.KindInfo{}, address{}, false
+	}
 	ctx := r.Context()
 	ds := DatasetFrom(ctx)
-	authority, plural := collectionSegments(r)
-	ti, err := ds.KindByPlural(ctx, authority, plural)
+	ti, err := ds.KindByCollection(ctx, addr.authority, addr.kind)
 	if err != nil {
 		if errors.Is(err, substrate.ErrNotFound) {
-			writeError(w, http.StatusNotFound, codeNotFound, "unknown collection "+vocabulary.KindRef(authority, plural))
-			return nil, substrate.KindInfo{}, false
+			writeError(w, http.StatusNotFound, codeNotFound, "unknown collection "+addr.ref())
+			return nil, substrate.KindInfo{}, address{}, false
 		}
 		writeSubstrateError(w, err)
-		return nil, substrate.KindInfo{}, false
+		return nil, substrate.KindInfo{}, address{}, false
 	}
 	// There is no scope gate here any more: a token has FULL ACCESS to its
 	// repository, so authentication is the whole authorization
 	// story on this path. What a token cannot do is written into the kinds
 	// themselves — the auth kinds refuse generic writes at the engine's one
 	// chokepoint, not with a per-request capability check.
-	return ds, ti, true
-}
-
-// addressed reads what a REST path addresses: the collection's authority
-// (empty for a repository-local kind), its plural, and the record id ("" on a
-// collection route). It is the ONE place the two path shapes are told apart,
-// by the rule that an authority is a DNS name and a plural is one word.
-func addressed(r *http.Request) (authority, plural, id string) {
-	s1, s2, s3 := pathParam(r, "a1"), pathParam(r, "a2"), pathParam(r, "a3")
-	switch {
-	case s3 != "":
-		return s1, s2, s3
-	case s2 != "":
-		if strings.Contains(s1, ".") {
-			return s1, s2, ""
-		}
-		return "", s1, s2
-	default:
-		return "", s1, ""
-	}
-}
-
-// collectionSegments reads the authority and plural a request addresses.
-func collectionSegments(r *http.Request) (authority, plural string) {
-	authority, plural, _ = addressed(r)
-	return authority, plural
+	return ds, ti, addr, true
 }
 
 // pathParam reads a chi URL parameter, percent-decoded. chi routes on the RAW
@@ -93,11 +151,13 @@ func putStatus(e *substrate.Record) int {
 	return http.StatusOK
 }
 
-// getCollectionOrResource is the two-segment GET: a qualified collection when
-// the first segment is an authority, a repository-local record when it is a
-// plural. One route, one rule (addressed), no ambiguity.
+// The two-segment routes serve BOTH shapes, so each method picks its handler
+// from the address rather than from the segment count. GET means list at a
+// collection and read at a record; POST means create and is refused at a
+// record; PUT, PATCH and DELETE address a record and are refused at a
+// collection.
 func (h *handler) getCollectionOrResource(w http.ResponseWriter, r *http.Request) {
-	if _, _, id := addressed(r); id != "" {
+	if addr, ok := addressed(r); ok && addr.id != "" {
 		h.getResource(w, r)
 		return
 	}
@@ -105,7 +165,7 @@ func (h *handler) getCollectionOrResource(w http.ResponseWriter, r *http.Request
 }
 
 func (h *handler) listCollection(w http.ResponseWriter, r *http.Request) {
-	ds, ti, ok := h.collection(w, r)
+	ds, ti, _, ok := h.collection(w, r, false)
 	if !ok {
 		return
 	}
@@ -157,7 +217,7 @@ func (h *handler) listCollection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) createInCollection(w http.ResponseWriter, r *http.Request) {
-	ds, ti, ok := h.collection(w, r)
+	ds, ti, _, ok := h.collection(w, r, false)
 	if !ok {
 		return
 	}
@@ -177,13 +237,13 @@ func (h *handler) createInCollection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) getResource(w http.ResponseWriter, r *http.Request) {
-	ds, ti, ok := h.collection(w, r)
+	ds, ti, addr, ok := h.collection(w, r, true)
 	if !ok {
 		return
 	}
 	// The path carries the whole record reference — the collection names the
 	// kind, {id} the id — so the read is kind-scoped by construction.
-	ent, err := ds.Get(r.Context(), ti.Identity, resourceID(r))
+	ent, err := ds.Get(r.Context(), ti.Identity, addr.id)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -192,7 +252,7 @@ func (h *handler) getResource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) putResource(w http.ResponseWriter, r *http.Request) {
-	ds, ti, ok := h.collection(w, r)
+	ds, ti, addr, ok := h.collection(w, r, true)
 	if !ok {
 		return
 	}
@@ -202,7 +262,7 @@ func (h *handler) putResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.Kind = ti.Identity
-	in.ID = resourceID(r)
+	in.ID = addr.id
 	ctx := r.Context()
 	ent, err := ds.Put(ctx, ActorFrom(ctx), in)
 	if err != nil {
@@ -213,7 +273,7 @@ func (h *handler) putResource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) patchResource(w http.ResponseWriter, r *http.Request) {
-	ds, ti, ok := h.collection(w, r)
+	ds, ti, addr, ok := h.collection(w, r, true)
 	if !ok {
 		return
 	}
@@ -223,8 +283,7 @@ func (h *handler) patchResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	id := resourceID(r)
-	ent, err := ds.Patch(ctx, ActorFrom(ctx), ti.Identity, id, in)
+	ent, err := ds.Patch(ctx, ActorFrom(ctx), ti.Identity, addr.id, in)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -233,13 +292,12 @@ func (h *handler) patchResource(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) deleteResource(w http.ResponseWriter, r *http.Request) {
-	ds, ti, ok := h.collection(w, r)
+	ds, ti, addr, ok := h.collection(w, r, true)
 	if !ok {
 		return
 	}
 	ctx := r.Context()
-	id := resourceID(r)
-	ent, err := ds.Delete(ctx, ActorFrom(ctx), ti.Identity, id)
+	ent, err := ds.Delete(ctx, ActorFrom(ctx), ti.Identity, addr.id)
 	if err != nil {
 		writeSubstrateError(w, err)
 		return
@@ -381,13 +439,4 @@ func parseOrderBy(raw string) ([]substrate.Order, error) {
 		orders = append(orders, o)
 	}
 	return orders, nil
-}
-
-// resourceID is the id a resource route addresses, percent-decoded. A
-// declaration record's id IS a kind reference and therefore carries a `/`,
-// which a client writes as `%2F`: chi routes on the raw path, so the segment
-// stays whole and is decoded here.
-func resourceID(r *http.Request) string {
-	_, _, id := addressed(r)
-	return id
 }

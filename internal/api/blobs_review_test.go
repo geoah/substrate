@@ -68,7 +68,7 @@ func TestBlobPutIsConcurrencyBounded(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorAPI)
-			req := httptest.NewRequest(http.MethodPut, "/api/"+APIVersion+"/blobs",
+			req := httptest.NewRequest(http.MethodPut, "/api/"+APIVersion+"/-/blobs",
 				strings.NewReader("payload")).WithContext(ctx)
 			req.Header.Set("Content-Type", "text/plain")
 			h.putBlob(httptest.NewRecorder(), req)

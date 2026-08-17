@@ -189,7 +189,7 @@ func TestCatalogListSurvivesAFailedUpgradePreview(t *testing.T) {
 	env := newUpgradeErrEnv(t)
 	tok := env.svc.token("geoah")
 
-	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/catalog", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/-/catalog", tok, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("catalog list = %d, want 200 (a failed preview must not blank the listing): %s", rec.Code, rec.Body)
 	}
@@ -208,7 +208,7 @@ func TestCatalogListSurvivesAFailedUpgradePreview(t *testing.T) {
 		}
 	}
 
-	rec = env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/catalog/"+url.PathEscape(webBundleID), tok, nil)
+	rec = env.do(t, http.MethodGet, "/api/v1/-/catalog/"+url.PathEscape(webBundleID), tok, nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("catalog detail = %d, want 200: %s", rec.Code, rec.Body)
 	}
@@ -217,7 +217,7 @@ func TestCatalogListSurvivesAFailedUpgradePreview(t *testing.T) {
 func TestCatalogListReturnsShippedBundles(t *testing.T) {
 	env := newCatalogEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/catalog", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/-/catalog", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	body := decodeJSON[struct {
 		Catalog []struct {
@@ -253,7 +253,7 @@ const googleBundleID = "google.bundles.substrate.reamde.dev/google"
 func TestCatalogListCarriesIntegrationFacet(t *testing.T) {
 	env := newCatalogEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/catalog", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/-/catalog", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	body := decodeJSON[struct {
 		Catalog []struct {
@@ -281,7 +281,7 @@ func TestCatalogListCarriesIntegrationFacet(t *testing.T) {
 func TestCatalogDetailPreviewsTheClosure(t *testing.T) {
 	env := newCatalogEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/catalog/"+url.PathEscape(webBundleID), tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/-/catalog/"+url.PathEscape(webBundleID), tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	item := decodeJSON[catalogItem](t, rec)
 	if len(item.Closure.Functions) != 4 || len(item.Closure.Records) != 4 {
@@ -292,7 +292,7 @@ func TestCatalogDetailPreviewsTheClosure(t *testing.T) {
 func TestCatalogDetailUnknownIs404(t *testing.T) {
 	env := newCatalogEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/catalog/nope.bundles.substrate.reamde.dev", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/-/catalog/nope.bundles.substrate.reamde.dev", tok, nil)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 }
 
@@ -302,14 +302,14 @@ func TestCatalogDetailUnknownIs404(t *testing.T) {
 func TestCatalogListSurfacesStatusReadFailure(t *testing.T) {
 	env := newStatusErrEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/catalog", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/-/catalog", tok, nil)
 	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
 }
 
 func TestCatalogDetailSurfacesStatusReadFailure(t *testing.T) {
 	env := newStatusErrEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/catalog/"+url.PathEscape(webBundleID), tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/-/catalog/"+url.PathEscape(webBundleID), tok, nil)
 	wantErrorCode(t, rec, http.StatusInternalServerError, codeInternal)
 }
 
@@ -320,7 +320,7 @@ func TestCatalogDetailSurfacesStatusReadFailure(t *testing.T) {
 func TestCatalogInstallRefusesNonOwner(t *testing.T) {
 	env := newCatalogEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodPost, "/api/v1/core.substrate.reamde.dev/catalog/"+url.PathEscape(webBundleID)+"/install", tok, nil,
+	rec := env.do(t, http.MethodPost, "/api/v1/-/catalog/"+url.PathEscape(webBundleID)+"/install", tok, nil,
 		actorHeader, "reader.substrate.reamde.dev")
 	wantErrorCode(t, rec, http.StatusForbidden, codeForbidden)
 }

@@ -168,10 +168,14 @@ func (ds *dataset) KindByRef(ctx context.Context, ref string) (substrate.KindInf
 	return typeInfo(t), nil
 }
 
-func (ds *dataset) KindByPlural(ctx context.Context, authority, plural string) (substrate.KindInfo, error) {
-	t, ok := ds.registry().ByPlural(authority, plural)
+// KindByCollection resolves a collection segment. The segment is the kind's
+// NAME, so the lookup is ByIdentity over the reference the two segments spell —
+// there is no second index and no second grammar (decision 0028).
+func (ds *dataset) KindByCollection(_ context.Context, authority, name string) (substrate.KindInfo, error) {
+	ref := vocabulary.KindRef(authority, name)
+	t, ok := ds.registry().ByIdentity(ref)
 	if !ok {
-		return substrate.KindInfo{}, fmt.Errorf("%w: kind %s/%s", substrate.ErrNotFound, authority, plural)
+		return substrate.KindInfo{}, fmt.Errorf("%w: kind %s", substrate.ErrNotFound, ref)
 	}
 	return typeInfo(t), nil
 }

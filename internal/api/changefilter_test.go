@@ -14,7 +14,7 @@ import (
 func TestParseChangeFilterAcceptsRepeatedAndCommaLists(t *testing.T) {
 	// recordId now REQUIRES its recordKind companion: the pair is
 	// prepended to Types, then the explicit kinds= list follows.
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/core.substrate.reamde.dev/changes"+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/-/changes"+
 		"?kinds=tasks.substrate.reamde.dev/task,messaging.substrate.reamde.dev/conversationmessage"+
 		"&actors=api&actors=connector:gmail"+
 		"&ops=put,patch&ops=delete"+
@@ -66,7 +66,7 @@ func TestChangesHonorsRepeatedTypeParams(t *testing.T) {
 		})
 	}
 
-	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/changes"+
+	rec := env.do(t, http.MethodGet, "/api/v1/-/changes"+
 		"?kinds=people.substrate.reamde.dev/person&kinds=messaging.substrate.reamde.dev/conversationmessage", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 
@@ -86,19 +86,19 @@ func TestChangesHonorsRepeatedTypeParams(t *testing.T) {
 // types — so recordId REQUIRES its recordKind companion, and the two are ANDed.
 func TestParseChangeFilterRequiresKindCompanion(t *testing.T) {
 	idOnly := httptest.NewRequest(http.MethodGet,
-		"/api/v1/core.substrate.reamde.dev/changes?recordId=e-1", nil)
+		"/api/v1/-/changes?recordId=e-1", nil)
 	if _, err := parseChangeFilter(idOnly); err == nil {
 		t.Fatal("recordId without recordKind must be an error — a bare id is not one record")
 	}
 
 	typeOnly := httptest.NewRequest(http.MethodGet,
-		"/api/v1/core.substrate.reamde.dev/changes?recordKind=people.substrate.reamde.dev/person", nil)
+		"/api/v1/-/changes?recordKind=people.substrate.reamde.dev/person", nil)
 	if _, err := parseChangeFilter(typeOnly); err == nil {
 		t.Fatal("recordKind without recordId must be an error")
 	}
 
 	both := httptest.NewRequest(http.MethodGet,
-		"/api/v1/core.substrate.reamde.dev/changes?recordId=e-1&recordKind=people.substrate.reamde.dev/person", nil)
+		"/api/v1/-/changes?recordId=e-1&recordKind=people.substrate.reamde.dev/person", nil)
 	f, err := parseChangeFilter(both)
 	if err != nil {
 		t.Fatalf("recordId+recordKind must parse: %v", err)
@@ -114,7 +114,7 @@ func TestChangesRecordIdWithoutKindIsBadRequest(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 	rec := env.do(t, http.MethodGet,
-		"/api/v1/core.substrate.reamde.dev/changes?recordId=shared", tok, nil)
+		"/api/v1/-/changes?recordId=shared", tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 }
 
@@ -133,7 +133,7 @@ func TestChangesRecordIdPlusKindScopesToOneRecord(t *testing.T) {
 	})
 
 	rec := env.do(t, http.MethodGet,
-		"/api/v1/core.substrate.reamde.dev/changes?recordId=shared&recordKind=people.substrate.reamde.dev/person", tok, nil)
+		"/api/v1/-/changes?recordId=shared&recordKind=people.substrate.reamde.dev/person", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	types := changeTypesFromNDJSON(t, rec)
 	if len(types) != 1 || types[0] != "people.substrate.reamde.dev/person" {

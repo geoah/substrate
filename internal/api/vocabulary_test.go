@@ -35,7 +35,7 @@ func TestSchemaApplyEndpoint(t *testing.T) {
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
 
-	rec := env.do(t, http.MethodPost, "/api/v1/"+coreAuthority+"/vocabulary/apply", tok, map[string]any{
+	rec := env.do(t, http.MethodPost, "/api/v1/-/vocabulary/apply", tok, map[string]any{
 		"documents": []map[string]any{
 			{
 				"kind":     coreAuthority + "/authority",
@@ -54,7 +54,7 @@ func TestSchemaApplyEndpoint(t *testing.T) {
 	}
 
 	// An empty batch is a validation refusal, mapped like every other.
-	rec = env.do(t, http.MethodPost, "/api/v1/"+coreAuthority+"/vocabulary/apply", tok, map[string]any{
+	rec = env.do(t, http.MethodPost, "/api/v1/-/vocabulary/apply", tok, map[string]any{
 		"documents": []map[string]any{},
 	})
 	wantErrorCode(t, rec, http.StatusUnprocessableEntity, codeValidation)

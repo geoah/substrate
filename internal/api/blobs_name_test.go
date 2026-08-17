@@ -64,7 +64,7 @@ func putNamedBlob(t *testing.T, ds *echoBlobDS, target string, header map[string
 }
 
 func TestBlobNameComesFromTheQueryOrTheDisposition(t *testing.T) {
-	base := "/api/" + APIVersion + "/blobs"
+	base := "/api/" + APIVersion + "/-/blobs"
 	for _, tc := range []struct {
 		name   string
 		target string
@@ -106,7 +106,7 @@ func TestBlobMimeTypeIsOptional(t *testing.T) {
 	h := &handler{}
 	ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorAPI)
 
-	req := httptest.NewRequest(http.MethodPut, "/api/"+APIVersion+"/blobs",
+	req := httptest.NewRequest(http.MethodPut, "/api/"+APIVersion+"/-/blobs",
 		strings.NewReader("payload")).WithContext(ctx)
 	req.Header.Del("Content-Type")
 	rec := httptest.NewRecorder()
@@ -118,7 +118,7 @@ func TestBlobMimeTypeIsOptional(t *testing.T) {
 		t.Fatalf("store saw mime %q, want none", ds.got.MimeType)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/"+APIVersion+"/blobs/x", nil).WithContext(ctx)
+	req = httptest.NewRequest(http.MethodGet, "/api/"+APIVersion+"/-/blobs/x", nil).WithContext(ctx)
 	rec = httptest.NewRecorder()
 	h.getBlob(rec, req)
 	if got := rec.Header().Get("Content-Type"); got != "application/octet-stream" {
@@ -134,12 +134,12 @@ func TestBlobMimeTypeIsOptional(t *testing.T) {
 func TestBlobReadSaysItsName(t *testing.T) {
 	ds := &echoBlobDS{fakeDataset: newFakeDataset("geoah")}
 	const name = `quarterly report".pdf`
-	putNamedBlob(t, ds, "/api/"+APIVersion+"/blobs?name="+url.QueryEscape(name),
+	putNamedBlob(t, ds, "/api/"+APIVersion+"/-/blobs?name="+url.QueryEscape(name),
 		map[string]string{"Content-Type": "application/pdf"})
 
 	h := &handler{}
 	ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorAPI)
-	req := httptest.NewRequest(http.MethodGet, "/api/"+APIVersion+"/blobs/x", nil).WithContext(ctx)
+	req := httptest.NewRequest(http.MethodGet, "/api/"+APIVersion+"/-/blobs/x", nil).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	h.getBlob(rec, req)
 

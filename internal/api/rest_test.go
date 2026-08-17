@@ -12,7 +12,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const peoplePath = "/api/v1/people.substrate.reamde.dev/people"
+const peoplePath = "/api/v1/people.substrate.reamde.dev/person"
 
 func TestRESTUnknownCollectionIs404(t *testing.T) {
 	env := newTestEnv(t)
@@ -138,7 +138,7 @@ func TestRESTIncomingIsSeparateAndPaged(t *testing.T) {
 	// paged resource below is the only way to read them.
 	_ = decodeJSON[substrate.Record](t, rec)
 
-	rec = env.do(t, http.MethodGet, peoplePath+"/p1/incoming?first=1", tok, nil)
+	rec = env.do(t, http.MethodGet, peoplePath+"/p1/-/incoming?first=1", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	page := decodeJSON[substrate.IncomingPage](t, rec)
 	if page.Total != 1 || len(page.Incoming) != 1 || page.Incoming[0].From.ID != "people-c1001" {

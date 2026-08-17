@@ -13,7 +13,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const graphqlPath = "/api/v1/graphql"
+const graphqlPath = "/api/v1/-/graphql"
 
 type gqlResponse struct {
 	Data   map[string]any `json:"data"`

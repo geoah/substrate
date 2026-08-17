@@ -7,11 +7,10 @@ import (
 )
 
 func (h *handler) getIncoming(w http.ResponseWriter, r *http.Request) {
-	ds, ti, ok := h.collection(w, r)
+	ds, ti, addr, ok := h.collection(w, r, true)
 	if !ok {
 		return
 	}
-	id := resourceID(r)
 	// Incoming is a fixed-order reverse read: it honors first/after, plus the
 	// two narrowings a drill-down needs — `rel` (one relationship) and
 	// `fromKind` (one source kind), which are what let a client expand ONE
@@ -35,7 +34,7 @@ func (h *handler) getIncoming(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The path names the full identity: the read is type-scoped.
-	page, err := ds.Incoming(r.Context(), ti.Identity, id, substrate.IncomingOptions{
+	page, err := ds.Incoming(r.Context(), ti.Identity, addr.id, substrate.IncomingOptions{
 		First:    q.First,
 		After:    q.After,
 		Rel:      r.URL.Query().Get("rel"),

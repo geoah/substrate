@@ -39,8 +39,8 @@ func TestUnmatchedAPIPathsAreJSONNotFound(t *testing.T) {
 		"/api/v1/nope",
 		"/api/v1/nope",
 		"/api/v1/core.substrate.reamde.dev/nope",
-		"/api/v1/core.substrate.reamde.dev/changes/nope",
-		"/api/v1/people.substrate.reamde.dev/people/9f2k/nope",
+		"/api/v1/-/changes/nope",
+		"/api/v1/people.substrate.reamde.dev/person/9f2k/nope",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Header.Set("Authorization", "Bearer "+tok)

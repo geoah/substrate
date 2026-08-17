@@ -13,6 +13,7 @@ import (
 	"filippo.io/age"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The api package is developed against this hand-written fake rather than
@@ -413,6 +414,17 @@ func testTypes() []substrate.KindInfo {
 			},
 		},
 		{
+			// A REPOSITORY-LOCAL kind: no authority, so its collection is one
+			// segment and its records are addressed at two. That is the shape
+			// `POST /api/v1/{kind}/{id}` used to create under a server-assigned
+			// id (#202), so the fake has to carry one.
+			Identity: "note", Name: "note", Authority: "",
+			Version: 1, Plural: "notes", Source: "builtin",
+			Definition: map[string]any{
+				"properties": map[string]any{"text": map[string]any{"type": "markdown"}},
+			},
+		},
+		{
 			Identity: "core.substrate.reamde.dev/token", Name: "token", Authority: coreAuthority,
 			Version: 1, Plural: "tokens", Source: "builtin",
 			Definition: map[string]any{
@@ -440,13 +452,14 @@ func (d *fakeDataset) KindByRef(_ context.Context, identity string) (substrate.K
 	return substrate.KindInfo{}, fmt.Errorf("%w: type %q", substrate.ErrNotFound, identity)
 }
 
-func (d *fakeDataset) KindByPlural(_ context.Context, authority, plural string) (substrate.KindInfo, error) {
+func (d *fakeDataset) KindByCollection(_ context.Context, authority, name string) (substrate.KindInfo, error) {
 	for _, t := range d.types {
-		if t.Authority == authority && t.Plural == plural {
+		if t.Authority == authority && t.Name == name {
 			return t, nil
 		}
 	}
-	return substrate.KindInfo{}, fmt.Errorf("%w: collection %s/%s", substrate.ErrNotFound, authority, plural)
+	return substrate.KindInfo{}, fmt.Errorf("%w: collection %s", substrate.ErrNotFound,
+		vocabulary.KindRef(authority, name))
 }
 
 func (d *fakeDataset) put(e *substrate.Record) {

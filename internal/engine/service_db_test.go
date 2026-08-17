@@ -99,7 +99,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	if len(actors.Records) != 4 {
 		t.Fatalf("actor projections = %v", ids(actors.Records))
 	}
-	ti, err := ds.KindByPlural(ctx, "calendar.substrate.reamde.dev", "calendarevents")
+	ti, err := ds.KindByCollection(ctx, "calendar.substrate.reamde.dev", "calendarevent")
 	if err != nil || ti.Identity != "calendar.substrate.reamde.dev/calendarevent" {
 		t.Fatalf("TypeByPlural = %+v %v", ti, err)
 	}
@@ -339,7 +339,7 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	if _, has := mp.Properties["sourceYAML"]; has {
 		t.Fatalf("mapping projection carries sourceYAML; records 58/61 removed it")
 	}
-	if ti, err := ds.KindByPlural(ctx, "core.substrate.reamde.dev", "recordmappings"); err != nil ||
+	if ti, err := ds.KindByCollection(ctx, "core.substrate.reamde.dev", "recordmapping"); err != nil ||
 		ti.Identity != "core.substrate.reamde.dev/recordmapping" {
 		t.Fatalf("recordmappings collection = %+v %v", ti, err)
 	}

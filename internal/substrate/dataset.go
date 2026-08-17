@@ -30,9 +30,11 @@ type Dataset interface {
 	// KindByRef resolves a kind REFERENCE ("tasks.substrate.reamde.dev/task", or a bare
 	// "task"), or an unambiguous local name.
 	KindByRef(ctx context.Context, ref string) (KindInfo, error)
-	// KindByPlural resolves a REST collection segment within an authority; an
-	// empty authority resolves a repository-local kind's plural.
-	KindByPlural(ctx context.Context, authority, plural string) (KindInfo, error)
+	// KindByCollection resolves a REST collection segment within an authority;
+	// an empty authority resolves a repository-local kind. The segment IS the
+	// kind's name, so `authority` and `name` together spell the kind reference
+	// and the collection path is the reference (decision 0028).
+	KindByCollection(ctx context.Context, authority, name string) (KindInfo, error)
 
 	// --- the seven mutations ---
 	// Record identity is the FULL (type, id) pair: every

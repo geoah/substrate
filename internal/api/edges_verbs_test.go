@@ -8,7 +8,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const peopleV1 = "/api/v1/people.substrate.reamde.dev/people"
+const peopleV1 = "/api/v1/people.substrate.reamde.dev/person"
 
 // TestRESTEdgeLinkUnlinkRoundTrip is ruling A8's edge verbs: a REST client can
 // now REMOVE an edge, not only add one on a put. POST …/{id}/edges/{rel} links,
@@ -21,14 +21,14 @@ func TestRESTEdgeLinkUnlinkRoundTrip(t *testing.T) {
 		ID: "p1", Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "Sam"},
 	}
 
-	rec := env.do(t, http.MethodPost, peopleV1+"/p1/edges/member_of", tok, map[string]any{"id": "org1"})
+	rec := env.do(t, http.MethodPost, peopleV1+"/p1/-/edges/member_of", tok, map[string]any{"id": "org1"})
 	wantStatus(t, rec, http.StatusOK)
 	e := decodeJSON[substrate.Record](t, rec)
 	if len(e.Edges["member_of"]) != 1 || e.Edges["member_of"][0].ID != "org1" {
 		t.Fatalf("after link, edges = %+v", e.Edges)
 	}
 
-	rec = env.do(t, http.MethodDelete, peopleV1+"/p1/edges/member_of", tok, map[string]any{"id": "org1"})
+	rec = env.do(t, http.MethodDelete, peopleV1+"/p1/-/edges/member_of", tok, map[string]any{"id": "org1"})
 	wantStatus(t, rec, http.StatusOK)
 	e = decodeJSON[substrate.Record](t, rec)
 	if len(e.Edges["member_of"]) != 0 {
@@ -40,7 +40,7 @@ func TestRESTEdgeLinkNeedsATarget(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 	env.svc.datasets["geoah"].records["p1"] = &substrate.Record{ID: "p1", Kind: "people.substrate.reamde.dev/person"}
-	rec := env.do(t, http.MethodPost, peopleV1+"/p1/edges/member_of", tok, map[string]any{})
+	rec := env.do(t, http.MethodPost, peopleV1+"/p1/-/edges/member_of", tok, map[string]any{})
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 }
 
@@ -55,7 +55,7 @@ func TestTriggerVerbsLiveUnderCore(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 
-	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/triggers/status", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/trigger/-/status", tok, nil)
 	wantErrorCode(t, rec, http.StatusNotImplemented, codeUnsupported)
 	if w := rec.Header().Get("Warning"); w != "" {
 		t.Fatalf("the resource path must not carry a deprecation Warning: %q", w)
@@ -63,7 +63,7 @@ func TestTriggerVerbsLiveUnderCore(t *testing.T) {
 
 	// The folded-away authority is not a route: it resolves as an unknown
 	// collection, never as a second spelling of the verbs.
-	rec = env.do(t, http.MethodGet, "/api/v1/automation.substrate.reamde.dev/triggers/status", tok, nil)
+	rec = env.do(t, http.MethodGet, "/api/v1/automation.substrate.reamde.dev/trigger/-/status", tok, nil)
 	if rec.Code == http.StatusNotImplemented {
 		t.Fatal("the retired automation.substrate.reamde.dev path still reaches the trigger verbs")
 	}
@@ -86,7 +86,7 @@ func TestIncomingRejectsListParams(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 	env.svc.datasets["geoah"].records["p1"] = &substrate.Record{ID: "p1", Kind: "people.substrate.reamde.dev/person"}
-	rec := env.do(t, http.MethodGet, peopleV1+"/p1/incoming?filter=%7B%7D", tok, nil)
+	rec := env.do(t, http.MethodGet, peopleV1+"/p1/-/incoming?filter=%7B%7D", tok, nil)
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 	if msg := decodeJSON[errorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "filter") {
 		t.Fatalf("error must name filter: %q", msg)

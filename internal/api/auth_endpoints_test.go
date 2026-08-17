@@ -48,7 +48,7 @@ func TestRegisterThenLogin(t *testing.T) {
 	}
 
 	// The token registration handed back is an ordinary bearer.
-	wantStatus(t, env.do(t, http.MethodGet, "/api/v1/people.substrate.reamde.dev/people", out.Secret, nil),
+	wantStatus(t, env.do(t, http.MethodGet, "/api/v1/people.substrate.reamde.dev/person", out.Secret, nil),
 		http.StatusOK)
 
 	// Login mints another — sessions ARE token records.
@@ -197,7 +197,7 @@ func TestConsoleRoutesFallThroughToTheSPA(t *testing.T) {
 		}
 	}
 	// Under an API prefix the method really is wrong, and says so.
-	rec := env.do(t, http.MethodDelete, "/api/v1/graphql", svc.token("geoah"), nil)
+	rec := env.do(t, http.MethodDelete, "/api/v1/-/graphql", svc.token("geoah"), nil)
 	wantStatus(t, rec, http.StatusMethodNotAllowed)
 	// Discovery sits outside the API surface, the same class as /healthz: a
 	// wrong method there falls to the SPA too, never a JSON 405.

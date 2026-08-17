@@ -88,9 +88,9 @@ func newBundleEnv(t *testing.T) (*testEnv, *bundleDataset) {
 	return &testEnv{svc: fs, h: New(Config{Service: svc, Now: clock.now}), clock: clock}, bd
 }
 
-const uninstallPath = "/api/v1/core.substrate.reamde.dev/bundles/widgets.bundles.substrate.reamde.dev/uninstall"
+const uninstallPath = "/api/v1/core.substrate.reamde.dev/bundle/widgets.bundles.substrate.reamde.dev/-/uninstall"
 
-const bindPath = "/api/v1/core.substrate.reamde.dev/bundles/widgets.bundles.substrate.reamde.dev/bind"
+const bindPath = "/api/v1/core.substrate.reamde.dev/bundle/widgets.bundles.substrate.reamde.dev/-/bind"
 
 // TestBundleBindValidatesAndAnswersStatus drives the bind endpoint: a bind
 // reaches the engine with its input and record and answers the refreshed
@@ -233,7 +233,7 @@ func TestGraphQLIntVariableIsUsable(t *testing.T) {
 func TestStrictDecodeRejectsTrailingCloser(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/people.substrate.reamde.dev/people", strings.NewReader("{}}"))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/people.substrate.reamde.dev/person", strings.NewReader("{}}"))
 	req.RemoteAddr = "10.0.0.1:1234"
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec := httptest.NewRecorder()

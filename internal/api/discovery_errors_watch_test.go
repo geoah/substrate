@@ -10,7 +10,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const changesPath = "/api/v1/core.substrate.reamde.dev/changes"
+const changesPath = "/api/v1/-/changes"
 
 // --- A1: discovery + versioning + the deprecation channel ---------------
 
@@ -78,7 +78,7 @@ func TestDiscoveryDoesNotRequireAuth(t *testing.T) {
 func TestPrimaryPrefixServesResources(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodGet, "/api/v1/people.substrate.reamde.dev/people", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/people.substrate.reamde.dev/person", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	if w := rec.Header().Get("Warning"); w != "" {
 		t.Fatalf("primary /api/v1 carried a Warning header: %q", w)
@@ -101,7 +101,7 @@ func TestUnsupportedIs501(t *testing.T) {
 	// is a capability-absent 501 → code unsupported (never internal).
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/bundles/status", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/bundle/-/status", tok, nil)
 	wantErrorCode(t, rec, http.StatusNotImplemented, codeUnsupported)
 }
 
@@ -109,7 +109,7 @@ func TestUnavailableIs503WithRetryAfter(t *testing.T) {
 	env := newTestEnv(t)
 	env.svc.authErr = errors.New("repository open failed")
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodGet, "/api/v1/people.substrate.reamde.dev/people", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/people.substrate.reamde.dev/person", tok, nil)
 	wantErrorCode(t, rec, http.StatusServiceUnavailable, codeUnavailable)
 	if ra := rec.Header().Get("Retry-After"); ra == "" {
 		t.Fatalf("503 unavailable must carry Retry-After")
@@ -131,7 +131,7 @@ func TestGraphQLErrorCarriesProblemInExtensions(t *testing.T) {
 	// Wrap so errors.Is matches the sentinel, exactly like the engine.
 	ds.errs["List"] = fmt.Errorf("label ns: %w", substrate.ErrForbidden)
 
-	rec := env.do(t, http.MethodPost, "/api/v1/graphql", tok,
+	rec := env.do(t, http.MethodPost, "/api/v1/-/graphql", tok,
 		map[string]any{"query": `{ records(first: 10) { nodes { id } } }`})
 	wantStatus(t, rec, http.StatusOK)
 

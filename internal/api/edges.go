@@ -18,10 +18,11 @@ type edgeBody struct {
 }
 
 // linkEdge adds one outgoing edge to the addressed source record: the verb
-// lives at the resource, POST …/{authority}/{plural}/{id}/edges/{rel}.
+// lives at the record, behind the reserved segment —
+// POST …/{authority}/{kind}/{id}/-/edges/{rel}.
 // It returns the refreshed source record, like put/patch.
 func (h *handler) linkEdge(w http.ResponseWriter, r *http.Request) {
-	ds, ti, ok := h.collection(w, r)
+	ds, ti, addr, ok := h.collection(w, r, true)
 	if !ok {
 		return
 	}
@@ -35,21 +36,20 @@ func (h *handler) linkEdge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	id := resourceID(r)
 	rel := pathParam(r, "rel")
-	if err := ds.Link(ctx, ActorFrom(ctx), ti.Identity, id, rel, body.EdgeRef, body.Properties); err != nil {
+	if err := ds.Link(ctx, ActorFrom(ctx), ti.Identity, addr.id, rel, body.EdgeRef, body.Properties); err != nil {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeRecord(w, ctx, ds, ti.Identity, id)
+	writeRecord(w, ctx, ds, ti.Identity, addr.id)
 }
 
 // unlinkEdge removes one outgoing edge from the addressed source record:
-// DELETE …/{authority}/{plural}/{id}/edges/{rel} with the same EdgeRef body. It is
-// the mutation a REST client could not perform before this stage — a put could
-// add an edge but never drop one.
+// DELETE …/{authority}/{kind}/{id}/-/edges/{rel} with the same EdgeRef body. It
+// is the mutation a REST client could not perform before this stage — a put
+// could add an edge but never drop one.
 func (h *handler) unlinkEdge(w http.ResponseWriter, r *http.Request) {
-	ds, ti, ok := h.collection(w, r)
+	ds, ti, addr, ok := h.collection(w, r, true)
 	if !ok {
 		return
 	}
@@ -63,13 +63,12 @@ func (h *handler) unlinkEdge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	id := resourceID(r)
 	rel := pathParam(r, "rel")
-	if err := ds.Unlink(ctx, ActorFrom(ctx), ti.Identity, id, rel, body.EdgeRef); err != nil {
+	if err := ds.Unlink(ctx, ActorFrom(ctx), ti.Identity, addr.id, rel, body.EdgeRef); err != nil {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeRecord(w, ctx, ds, ti.Identity, id)
+	writeRecord(w, ctx, ds, ti.Identity, addr.id)
 }
 
 // writeRecord re-reads the addressed record and writes it as the 200 body —
