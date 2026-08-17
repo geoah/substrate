@@ -15,7 +15,7 @@ every repository's DEK, and the wrapped DEKs sit in the same database as the
 sealed rows they open. An attacker with a dump and a dictionary tries a guess
 for the cost of one SHA-256 and one AES-GCM open. Found by the sealed store
 review ([#99](https://github.com/geoah/substrate/issues/99), section 1.1);
-filed as [#221](https://github.com/geoah/substrate/issues/221).
+filed as [#229](https://github.com/geoah/substrate/issues/229).
 
 ## Considered Options
 
@@ -60,7 +60,7 @@ message carries the generator command
 - Bad, because it makes the shipped `compose.yaml` fail to start until the
   operator sets a key, which is the correct outcome and still a change in
   first-run experience
-  ([#222](https://github.com/geoah/substrate/issues/222)).
+  ([#230](https://github.com/geoah/substrate/issues/230)).
 
 ### Confirmation
 

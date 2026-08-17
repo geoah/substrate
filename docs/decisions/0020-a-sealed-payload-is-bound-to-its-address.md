@@ -17,7 +17,7 @@ attacker who can write the `sealed` table without holding the key therefore
 copies one row's payload into a row they can read through the runner's secret
 injection, and the substrate decrypts it for them. Found by the sealed store
 review ([#99](https://github.com/geoah/substrate/issues/99), section 2.1);
-filed as [#223](https://github.com/geoah/substrate/issues/223).
+filed as [#231](https://github.com/geoah/substrate/issues/231).
 
 ## Considered Options
 

@@ -57,7 +57,7 @@ TOTP seed and every repository's changelog signing seed, for every user on the
 host, from a dump plus a dictionary. Against a real 32-byte key the derivation
 is fine; the defect is that nothing makes the operator supply one.
 
-Filed as [#221](https://github.com/geoah/substrate/issues/221), with
+Filed as [#229](https://github.com/geoah/substrate/issues/229), with
 [ADR 0021](../decisions/0021-the-credential-key-is-key-material-not-a-passphrase.md)
 for the choice between demanding key material and stretching.
 
@@ -89,7 +89,7 @@ does not hold for the shipped defaults, and the Backups section does not
 mention the keyless case. `README.md:119` is honest about it ("unset implies
 plaintext and a warning"); `docs/operations.md` is not.
 
-Filed as [#222](https://github.com/geoah/substrate/issues/222).
+Filed as [#230](https://github.com/geoah/substrate/issues/230).
 
 ### 1.3 What a stolen backup gets, stated plainly (verified)
 
@@ -140,7 +140,7 @@ touches `sealed`. The DEK wrap in `repositories.dek` has no ref and needs its
 own binding string. Details and the framing-byte question are in
 [ADR 0020](../decisions/0020-a-sealed-payload-is-bound-to-its-address.md).
 
-Filed as [#223](https://github.com/geoah/substrate/issues/223).
+Filed as [#231](https://github.com/geoah/substrate/issues/231).
 
 ### 2.2 Nonces: random 96-bit, no counter (verified, not a defect)
 
@@ -243,7 +243,7 @@ digest itself, which is exactly what `Sensitive()` exists to keep off the wire.
 No shipped declaration spells such a token, so this is a latent bug rather
 than a live leak, and it becomes live the day a new `digest` property arrives.
 
-Filed as [#224](https://github.com/geoah/substrate/issues/224).
+Filed as [#232](https://github.com/geoah/substrate/issues/232).
 
 Two asymmetries inside that set, neither a live leak:
 
@@ -303,7 +303,7 @@ filesystem or S3 backend. This is a deliberate scope line, not an oversight:
 the sealed store seals declared secret-typed values, and a blob is opaque
 bytes with no declaration saying what is in it. It should be written into
 `docs/operations.md` beside the backup claim rather than left implied, which is
-part of [#222](https://github.com/geoah/substrate/issues/222).
+part of [#230](https://github.com/geoah/substrate/issues/230).
 
 ## 4. The write path
 
@@ -341,7 +341,7 @@ path gains a bundle nothing it does not already receive as a resolved token
 today, so I rate it hardening rather than a live escalation, and note it as
 the reason the aliasing is worth refusing rather than tolerating.
 
-Filed as [#225](https://github.com/geoah/substrate/issues/225).
+Filed as [#233](https://github.com/geoah/substrate/issues/233).
 
 ### 4.2 The re-paste no-op is an equality oracle with an observable effect (verified)
 
@@ -369,7 +369,7 @@ means giving up the re-paste no-op, which exists so that `get -o yaml | apply
 comment recording the trade rather than a behavior change, which is what the
 issue asks for.
 
-Filed as [#226](https://github.com/geoah/substrate/issues/226).
+Filed as [#234](https://github.com/geoah/substrate/issues/234).
 
 ### 4.3 DELETE is not erasure (verified)
 
@@ -388,7 +388,7 @@ comments nor `docs/operations.md` say so.
 Cost: an operator who rotates a leaked key and restores a week-old backup
 restores the leaked key with it, and nothing in the docs warned them.
 
-Filed as [#227](https://github.com/geoah/substrate/issues/227).
+Filed as [#235](https://github.com/geoah/substrate/issues/235).
 
 ### 4.4 Orphaned sealed rows outside the OAuth teardown (verified)
 
@@ -406,7 +406,7 @@ inspect`, uncounted by `reseal`, and never erased. It is not a leak while the
 DEK holds, and it is exactly what a future "delete my account" story
 (issue [#136](https://github.com/geoah/substrate/issues/136)) has to sweep.
 
-Filed as [#228](https://github.com/geoah/substrate/issues/228).
+Filed as [#236](https://github.com/geoah/substrate/issues/236).
 
 ## 5. Recovery and the operator hat
 
@@ -445,7 +445,7 @@ valid when it was written. Anyone holding a superseded identity plus a dump
 still opens every payload. Revoking a compromised recovery identity means
 rotating the DEK and re-sealing every payload under it, not re-wrapping.
 
-Filed as [#229](https://github.com/geoah/substrate/issues/229).
+Filed as [#237](https://github.com/geoah/substrate/issues/237).
 
 ### 5.3 The recovery claim is proven end to end (verified)
 
@@ -498,17 +498,17 @@ the most carefully gated thing in the sealed store.
 
 | # | Finding | Issue | Kind |
 | --- | --- | --- | --- |
-| 1.1 | `deriveCredentialKey` is one unsalted SHA-256 with no length floor | [#221](https://github.com/geoah/substrate/issues/221) | bug, p0 |
-| 1.2 | `compose.yaml` boots keyless, so the dump alone opens every sealed row | [#222](https://github.com/geoah/substrate/issues/222) | bug, p0 |
-| 2.1 | `sealWith` binds no additional data | [#223](https://github.com/geoah/substrate/issues/223) | bug, p1 |
+| 1.1 | `deriveCredentialKey` is one unsalted SHA-256 with no length floor | [#229](https://github.com/geoah/substrate/issues/229) | bug, p0 |
+| 1.2 | `compose.yaml` boots keyless, so the dump alone opens every sealed row | [#230](https://github.com/geoah/substrate/issues/230) | bug, p0 |
+| 2.1 | `sealWith` binds no additional data | [#231](https://github.com/geoah/substrate/issues/231) | bug, p1 |
 | 2.3, 2.4 | Host-key fallback and `credPlain` never turn off | [#133](https://github.com/geoah/substrate/issues/133) (commented, not duplicated) | existing |
-| 3.2 | `referenceProp` skips the sensitive check `targetProp` has | [#224](https://github.com/geoah/substrate/issues/224) | bug, p1 |
-| 3.4 | Blob bytes are not sealed | [#97](https://github.com/geoah/substrate/issues/97), scope stated in [#222](https://github.com/geoah/substrate/issues/222) | existing |
-| 4.1 | Two secret properties on one record alias one sealed row | [#225](https://github.com/geoah/substrate/issues/225) | bug, p1 |
-| 4.2 | The re-paste no-op is a write-side equality oracle | [#226](https://github.com/geoah/substrate/issues/226) | bug, p2 |
-| 4.3 | DELETE is not erasure against MVCC, WAL and backups | [#227](https://github.com/geoah/substrate/issues/227) | bug, p2 |
-| 4.4 | Hard delete orphans sealed rows | [#228](https://github.com/geoah/substrate/issues/228) | bug, p2 |
-| 5.2 | A past recovery recipient can never be revoked | [#229](https://github.com/geoah/substrate/issues/229) | bug, p1 |
+| 3.2 | `referenceProp` skips the sensitive check `targetProp` has | [#232](https://github.com/geoah/substrate/issues/232) | bug, p1 |
+| 3.4 | Blob bytes are not sealed | [#97](https://github.com/geoah/substrate/issues/97), scope stated in [#230](https://github.com/geoah/substrate/issues/230) | existing |
+| 4.1 | Two secret properties on one record alias one sealed row | [#233](https://github.com/geoah/substrate/issues/233) | bug, p1 |
+| 4.2 | The re-paste no-op is a write-side equality oracle | [#234](https://github.com/geoah/substrate/issues/234) | bug, p2 |
+| 4.3 | DELETE is not erasure against MVCC, WAL and backups | [#235](https://github.com/geoah/substrate/issues/235) | bug, p2 |
+| 4.4 | Hard delete orphans sealed rows | [#236](https://github.com/geoah/substrate/issues/236) | bug, p2 |
+| 5.2 | A past recovery recipient can never be revoked | [#237](https://github.com/geoah/substrate/issues/237) | bug, p1 |
 
 Two decisions came out of this and are recorded:
 
