@@ -30,11 +30,11 @@ data:
     One rule for agent writes: which kinds, ops and agents it speaks for,
     and whether their writes land, gate into recordpatchrequests, or refuse.
     The most restrictive matching policy wins; no match means the write lands.
-  # Its first own pin, above the authority's 10 it took until now.
-  # version 11: `selector.kinds` takes the trigger source's glob grammar
+  # Its first own pin, above the authority's 11 it took until now.
+  # version 12: `selector.kinds` takes the trigger source's glob grammar
   # (`<authority>/*` and `*`), `action` is required by the write door, and the
   # two judge thresholds say which verdict each one reads.
-  version: 11
+  version: 12
   names:
     singular: recordpatchpolicy
     plural: recordpatchpolicies
