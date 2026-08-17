@@ -6,8 +6,7 @@ package engine_test
 // named only because a declared default fills it, and the default is filled at
 // the WRITE so the stored row and the changelog delta carry the same value. A
 // default applied on the way out would be derived data, and the records table
-// would stop being a fold of the changelog — which the rebuild here is what
-// proves.
+// would stop being a fold of the changelog. The rebuild here is what proves it.
 
 import (
 	"context"

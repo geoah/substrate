@@ -311,8 +311,8 @@ func (h *hotProps) mentions() bool {
 
 // withDefaults answers the authored properties a CREATE actually writes: the
 // ones it named, plus every declared `default:` it did not. Nothing is filled
-// on an update — a default seeds a record, it does not re-assert itself against
-// a value the record has since lost — and an EXPLICIT null is left alone,
+// on an update: a default seeds a record, it does not re-assert itself against
+// a value the record has since lost. An EXPLICIT null is left alone too,
 // because that is the writer saying this record has no value here, which a
 // required property then refuses rather than quietly refilling.
 //
@@ -1231,7 +1231,7 @@ func (t *txn) stampTargetVersion(sp *applySpec, row *erow, target eref, accepted
 // one is not.
 //
 // A declared `default:` is what keeps a required property writable without
-// naming it — withDefaults has already filled it on a create. Defaults do not
+// naming it, and withDefaults has already filled it on a create. Defaults do not
 // backfill, so a record stored before its property was declared required stays
 // missing it, and admission is what refuses that declaration change
 // (schemadiff.go) rather than this.
@@ -1270,10 +1270,9 @@ func (t *txn) checkRequiredProps(sp *applySpec, row *erow) error {
 }
 
 // emptyValue reports whether a stored value holds nothing, which is what does
-// not satisfy `required`. An empty list or map names no value — a required
-// repeated reference would otherwise meet "requires a target" by carrying none
-// — and an empty string is the unfilled form field the declaration exists to
-// refuse.
+// not satisfy `required`. An empty list or map names no value: a required
+// repeated reference would otherwise meet "requires a target" by carrying none.
+// An empty string is the unfilled form field the declaration exists to refuse.
 func emptyValue(v any) bool {
 	switch t := v.(type) {
 	case nil:
@@ -1304,7 +1303,7 @@ func hotColumnOf(row *erow, name string) *time.Time {
 // checkRequiredEdges asserts every declared required EDGE is present on a
 // freshly created record: a record is created with them or not at all, and a
 // later patch that does not touch them is unaffected. Edges are birth-only
-// because nothing about a patch can clear one — unlink is its own verb.
+// because nothing about a patch can clear one: unlink is its own verb.
 func (t *txn) checkRequiredEdges(sp *applySpec) error {
 	var required []string
 	for _, name := range sp.ty.EdgeOrder {

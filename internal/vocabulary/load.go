@@ -1933,14 +1933,14 @@ func (l *loader) parseReservedMarkers(where, name string, d map[string]any, p *P
 // parseDefault holds a declared `default:` to a value this property could
 // actually store: one literal of the declared family, an enum's own value, and
 // never on a container or a property whose value is not the author's to write.
-// The value's OWN rules — a pattern, a bound, an instant's range — are the
+// The value's OWN rules (a pattern, a bound, an instant's range) are the
 // write path's coercion, which admission runs over every declared default
 // (checkDeclaredDefaults, in internal/engine), so a kind whose default no write
 // could store is refused there rather than at every create.
 func (l *loader) parseDefault(where string, p *Property, v any) any {
 	switch {
 	case v == nil:
-		l.errf("%s.default: a default is a value — absent is what having none means", where)
+		l.errf("%s.default: a default is a value, and absent is what having none means", where)
 		return nil
 	case p.Repeated || p.Keyed:
 		l.errf("%s.default: a default fills one value, and this property holds a %s",

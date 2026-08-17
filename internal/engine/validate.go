@@ -549,7 +549,7 @@ const (
 
 // checkInstantRange holds a parsed instant to what `timestamptz` accepts. Go's
 // parsers take instants Postgres cannot store, and the value persists as
-// written because the columns are jsonb — but both read paths CAST it
+// written because the columns are jsonb. Both read paths CAST it
 // (condJSON's range filters, orderExpr's ordering), so a single stored instant
 // outside the range fails the whole collection listing rather than its own row.
 // Year 0 is the reachable case: `time.Parse` takes "0000-01-01T00:00:00Z", the

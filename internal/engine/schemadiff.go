@@ -69,8 +69,8 @@ const countStateValuesQuery = `SELECT count(*) FROM records
 // checkDeclaredDefaults holds every `default:` the touched authorities declare
 // to the coercion a WRITE puts a value through, and answers one problem per
 // default that would not survive it. The loader has already checked the
-// literal's shape (parseDefault); what is left is the value's own rules — a
-// pattern, a bound, an instant's range — which live with the write path. A kind
+// literal's shape (parseDefault); what is left is the value's own rules (a
+// pattern, a bound, an instant's range), which live with the write path. A kind
 // whose default no create could store is refused here, once, instead of at
 // every create of it.
 func checkDeclaredDefaults(candidate *vocabulary.Registry, touched map[string]bool) []string {
