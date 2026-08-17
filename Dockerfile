@@ -44,6 +44,16 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
       -X github.com/geoah/substrate/internal/build.version=${VERSION} \
       -X github.com/geoah/substrate/internal/build.commit=${COMMIT}" \
       -o /out/substrate ./cmd/substrated
+# The CLI ships beside the server because the operator hat speaks the DSN, not
+# HTTP, and compose publishes no Postgres port. Without this binary in the
+# image, `repository verify`, `repository reseal` and `user reset` are
+# unreachable in the deployment the README tells people to run, so a user who
+# loses their authenticator stays locked out. See docs/operations.md.
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags="-s -w \
+      -X github.com/geoah/substrate/internal/build.version=${VERSION} \
+      -X github.com/geoah/substrate/internal/build.commit=${COMMIT}" \
+      -o /out/substratectl ./cmd/substratectl
 
 # ---- go toolchain for the runtime (TARGET arch) -------------------------
 # Pulled at the target platform (no BUILDPLATFORM override) so the toolchain
@@ -90,6 +100,7 @@ ENV PATH=/usr/local/go/bin:$PATH \
     GOCACHE=/tmp/gocache \
     HOME=/home/substrate
 COPY --from=build /out/substrate /usr/local/bin/substrate
+COPY --from=build /out/substratectl /usr/local/bin/substratectl
 COPY --from=web /web/console/dist /web
 ENV WEB_DIR=/web \
     PORT=8080

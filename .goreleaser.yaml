@@ -74,7 +74,9 @@ checksum:
 
 dockers_v2:
   - id: substrate
-    ids: [substrated]
+    # Both binaries: the image carries the CLI so the operator hat is reachable
+    # with `docker compose exec`, which needs no published Postgres port.
+    ids: [substrated, substratectl]
     images:
       - ghcr.io/geoah/substrate
     platforms: [linux/amd64, linux/arm64]

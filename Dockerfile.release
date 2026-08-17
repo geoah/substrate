@@ -47,8 +47,15 @@ ENV PATH=/usr/local/go/bin:$PATH \
     HOME=/home/substrate
 
 # goreleaser lays the built binaries out under <os>/<arch>/, which is exactly
-# what TARGETPLATFORM spells.
+# what TARGETPLATFORM spells. Both binaries are here because .goreleaser.yaml's
+# docker step names both build ids.
 COPY --chmod=0755 $TARGETPLATFORM/substrated /usr/local/bin/substrate
+# The CLI ships beside the server because the operator hat speaks the DSN, not
+# HTTP, and compose publishes no Postgres port. Without this binary in the
+# image, `repository verify`, `repository reseal` and `user reset` are
+# unreachable in the deployment the README tells people to run, so a user who
+# loses their authenticator stays locked out. See docs/operations.md.
+COPY --chmod=0755 $TARGETPLATFORM/substratectl /usr/local/bin/substratectl
 COPY web/console/dist /web
 
 ENV WEB_DIR=/web \
