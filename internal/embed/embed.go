@@ -91,9 +91,24 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 // Client implements substrate.Embedder.
 type Client struct {
-	client    *openai.Client
-	model     string
+	client *openai.Client
+	model  string
+	// apiKey is held only to keep it OUT of an error. The queue drains on a
+	// server loop and reports through the host's log, so an endpoint that
+	// quotes the bearer it refused would put one repository's secret in the
+	// deployment's log; scrub takes it back out.
+	apiKey    string
 	dimension int
+}
+
+// scrub replaces the row's own bearer wherever an endpoint echoed it back.
+// OpenAI's 401 body quotes the key it was given verbatim, and that body is
+// what the wire error carries.
+func (e *Client) scrub(s string) string {
+	if e.apiKey == "" {
+		return s
+	}
+	return strings.ReplaceAll(s, e.apiKey, "<redacted>")
 }
 
 // New builds the embedder for one resolved provider row. It refuses a config
@@ -131,6 +146,7 @@ func New(cfg Config) (*Client, error) {
 	return &Client{
 		client:    openai.NewClientWithConfig(clientCfg),
 		model:     cfg.Model,
+		apiKey:    cfg.APIKey,
 		dimension: dim,
 	}, nil
 }
@@ -145,7 +161,9 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 		Input: texts,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("embed: embedding request failed: %w", err)
+		// The message is rebuilt rather than wrapped: %w would carry the
+		// original text, key and all, to anything that unwraps it.
+		return nil, fmt.Errorf("embed: embedding request failed: %s", e.scrub(err.Error()))
 	}
 	// The queue pairs each vector with its input BY POSITION, so a short or
 	// long answer is a failure, never something to zip against.
