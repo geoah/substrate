@@ -31,12 +31,17 @@ unless you ask it not to.
 - **Cross-repository access.** One user's token reading or writing another
   user's repository, or any bypass of the row level security that binds the
   `substrate_app` role.
-- **Authentication bypass.** Registering without the invite code, minting or
-  using a token without the password and the TOTP code, or changing a
-  credential without the current second factor.
-- **Secret material escaping.** `SUBSTRATE_CREDENTIAL_KEY`, a sealed value, a
-  provider OAuth token or a changelog signing seed reaching an API response, a
-  log line, another repository, or a record any token can read.
+- **Authentication bypass.** Registering without the invite code, logging in
+  without the password and the TOTP code, using or forging a token that was not
+  issued to you, or changing a credential without the current password and TOTP
+  code in the request body.
+- **Secret material escaping.** `SUBSTRATE_CREDENTIAL_KEY`, a sealed value or a
+  provider OAuth token reaching a response, a log line, another repository, or a
+  record a token can read. A secret-typed property reads back `<redacted>`
+  everywhere; anything else is a finding. The registration response is the one
+  deliberate disclosure, handing back the repository's changelog signing seed
+  and a server-minted recovery key exactly once, so either of those reaching any
+  other call is a finding too.
 - **Sandbox escape under `SUBSTRATE_SANDBOX=enforce`.** A function body
   reaching the filesystem, the network or another process past what
   [the sandbox](docs/functions.md#the-sandbox) says it may.
@@ -63,8 +68,10 @@ unless you ask it not to.
   evidence against the operator ([the chain](docs/changelog.md#the-chain)).
   Operator commands run on the box, over the DSN, by design.
 - **A token doing what a token may.** A token has full access to its own
-  repository: there are no scopes and no roles, and function bodies a user
-  installs run with the user's data in reach.
+  repository: there are no scopes and no roles, every authenticated request
+  presents the token and neither factor, `POST /tokens` mints another token from
+  an existing one with no password and no code (the authenticated twin of
+  login), and function bodies a user installs run with the user's data in reach.
 - **Documented absences.** No sharing, no second user reading your repository,
   no erasure or retention policy, one replica only. Each is written down in
   [running a substrate](docs/operations.md) as a decision.
