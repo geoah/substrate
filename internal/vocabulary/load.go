@@ -313,14 +313,28 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 			l.errf("%s: must be a lowercase dotted name", where)
 			continue
 		}
-		// A DISPATCH HAND IS NEVER DECLARED. `function:` and `agent:` actors
-		// are minted by the engine from the callable that runs (function.go,
-		// agent.go), and a declaration carries a tier: admitting one here
-		// would let any authority set the tier another authority's callable
-		// writes at.
-		if strings.HasPrefix(d.ID, substrate.FunctionActorPrefix) ||
-			strings.HasPrefix(d.ID, substrate.AgentActorPrefix) {
+		// A MINTED HAND IS NEVER DECLARED FOR SOMEBODY ELSE. The engine
+		// derives `bundle:`, `function:` and `agent:` actors from the identity
+		// that writes (substrate/actor.go), and an actor DECLARATION carries a
+		// tier — so an authority able to name another's hand here would set
+		// the tier that hand's writes stand at (registry ActorTier, consulted
+		// before the reserved-name fallback in engine actorTier).
+		//
+		// A dispatch hand is minted per call and declared by nobody. A bundle
+		// hand has one legal declarer, the authority it names, which is the
+		// AuthorityActor an authority declares so its own tier and mapping
+		// precedence are legible. The retired `connector:` spelling stays
+		// declarable: repositories written before record 0025 store those
+		// declarations and must keep loading, and since nothing mints one, no
+		// live writer can take a tier from it.
+		switch {
+		case strings.HasPrefix(d.ID, substrate.FunctionActorPrefix),
+			strings.HasPrefix(d.ID, substrate.AgentActorPrefix):
 			l.errf("%s: a function's and an agent's actor is minted at dispatch from its identity — it is never declared", where)
+			continue
+		case strings.HasPrefix(d.ID, substrate.BundleActorPrefix) && d.ID != AuthorityActor(name):
+			l.errf("%s: a bundle actor belongs to the authority it names — %s may declare %q and no other",
+				where, name, AuthorityActor(name))
 			continue
 		}
 		if slices.Contains(g.Actors, d.ID) {

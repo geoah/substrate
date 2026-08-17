@@ -45,10 +45,16 @@ own actor string could name another bundle's hand and inherit its manager
 rows, its policy tier and its echo suppression, so the derivation stays the
 engine's: `substrate.BundleActor`, `substrate.FunctionActor` and
 `substrate.AgentActor` are the only mints, and `X-Substrate-Actor` refuses
-every prefix they use (api/auth.go). An actor DOCUMENT naming a dispatch hand
-is refused by the loader for the same reason: a declaration carries a tier,
-and admitting one would let any authority set the tier another authority's
-callable writes at.
+every prefix they use (api/auth.go). An actor DOCUMENT may not name somebody
+else's hand for the same reason: a declaration carries a tier, and the
+registry answers with it before the engine's reserved-name fallback, so an
+authority able to declare another's hand would set the tier that hand's writes
+stand at. The loader refuses a declared `function:` or `agent:` id outright
+(minted per dispatch, declared by nobody) and binds a declared
+`bundle:<authority>` to the authority declaring it. The retired `connector:`
+spelling stays declarable, because repositories written before this record
+store those declarations and nothing mints one now, so no live writer can take
+a tier from one.
 
 A hash of the authority collides too, rarely and then unreadably, and it makes
 a changelog unreadable by inspection, which is the property 0014 exists to
@@ -104,10 +110,12 @@ already unique per authority.
 `TestMachineActorsCarryTheFullAuthority` and
 `TestReservedActorHoldsTheRetiredConnectorPrefix` (internal/substrate) pin the
 three derivations and hold the door shut on the retired spelling;
-`TestActorsCarryTheFullAuthority`, `TestValidActor` and
+`TestActorsCarryTheFullAuthority`, `TestValidActor`,
+`TestADeclaredBundleActorBelongsToItsAuthority` and
 `TestTwoAuthoritiesMayShareABundleName` (internal/vocabulary) pin the widened
-grammar, the refusal of a declared dispatch hand, and the two bundles that
-used to be refused for one label; `TestOldActorSpellingSurvivesRebuild`
+grammar, the refusal of a declared dispatch hand, the binding of a declared
+bundle hand to its own authority, and the two bundles that used to be refused
+for one label; `TestOldActorSpellingSurvivesRebuild`
 (internal/engine) writes an entry as `connector:gmail`, rebuilds the
 repository from its changelog, and asserts the actor and its manager row come
 back unchanged, at the machine tier, with the chain still verifying.

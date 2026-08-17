@@ -2250,6 +2250,58 @@ data:
 	}
 }
 
+// actorDeclaration renders one authority declaring one actor at one tier —
+// the shape a bundle would ship to claim a hand.
+func actorDeclaration(authority, actor, tier string) []byte {
+	return []byte(`kind: core.substrate.reamde.dev/authority
+metadata:
+  id: ` + authority + `
+data:
+  version: 1
+---
+kind: core.substrate.reamde.dev/actor
+metadata:
+  id: ` + actor + `
+data:
+  authority: ` + authority + `
+  tier: ` + tier + `
+`)
+}
+
+// A DECLARED BUNDLE ACTOR IS ITS OWN AUTHORITY'S. A tier is declared data and
+// the registry answers with it before the engine's reserved-name fallback, so
+// an authority that could declare `bundle:<somebody else>` would decide the
+// tier that bundle's install and mapping writes stand at — owner tier pins
+// against the owner's own recompute. The declarer and the named authority must
+// be the same.
+func TestADeclaredBundleActorBelongsToItsAuthority(t *testing.T) {
+	const evil, victim = "evil.example.com", "victim.bundles.example.com"
+
+	_, err := vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{
+		Data: actorDeclaration(evil, vocabulary.AuthorityActor(victim), "owner"),
+	}})
+	if err == nil || !strings.Contains(err.Error(), "belongs to the authority it names") {
+		t.Fatalf("one authority declared another's bundle hand: %v", err)
+	}
+
+	// Its own hand is the legal declaration, and the tier it declares is the
+	// tier the registry answers with.
+	r, err := vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{
+		Data: actorDeclaration(evil, vocabulary.AuthorityActor(evil), "machine"),
+	}})
+	if err != nil {
+		t.Fatalf("an authority must be able to declare its own hand: %v", err)
+	}
+	tier, ok := r.ActorTier(vocabulary.AuthorityActor(evil))
+	if !ok || tier != substrate.TierMachine {
+		t.Fatalf("actor tier %q (%v), want machine", tier, ok)
+	}
+	// And it cannot answer for the hand it does not own, at any tier.
+	if _, ok := r.ActorTier(vocabulary.AuthorityActor(victim)); ok {
+		t.Fatal("the registry answers for an authority it never loaded")
+	}
+}
+
 // --- the shipped tree ----------------------------------------------------
 
 // The one test against the real files: what the engine cannot boot without.
