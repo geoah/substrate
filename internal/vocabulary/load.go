@@ -1657,7 +1657,7 @@ var objectPropKeys = map[string]bool{
 var referencePropKeys = map[string]bool{
 	"type": true, "kind": true, "repeated": true, "description": true,
 	"displayName": true, "required": true, "renamedFrom": true,
-	"inverse": true, "inverseDescription": true,
+	"inverse": true, "inverseDescription": true, "ownerRef": true,
 	"keyed": true, "keyPattern": true, "managed": true,
 	// `unique` on a pointer is the one-to-one link: at most one live record may
 	// name any given referent. Reserved like everywhere else: nothing enforces
@@ -1815,6 +1815,26 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 			p.To = pin
 		}
 		p.Required = mbool(d, "required")
+		p.OwnerRef = mbool(d, "ownerRef")
+		if p.OwnerRef {
+			// An owner pointer names ONE owner, and the GC has to find every
+			// record that names a given one. Both constraints are checked here
+			// rather than left to the sweep, where a declaration that cannot be
+			// swept would simply never collect anything and say nothing.
+			switch {
+			case depth > 1:
+				// The sweep reads a kind's OWN properties, so an owner pointer
+				// buried in an object would be declared and never followed.
+				l.errf("%s: ownerRef is a kind's own property, never an object field", where)
+			case p.Repeated || p.Keyed:
+				l.errf("%s: ownerRef names ONE owner — drop `repeated`/`keyed` or drop `ownerRef`", where)
+			case p.To == "" || p.To == ToAny:
+				// Unpinned would still cascade (the stored path names one
+				// record), but `incoming` cannot enumerate an unpinned pointer,
+				// so the owner could not see what deleting it would take.
+				l.errf("%s: ownerRef needs `kind:` pinned at one kind — an unpinned owner pointer is invisible to the owner's incoming read", where)
+			}
+		}
 		p.Inverse, p.InverseDescription = l.parseInverse(where, d)
 		l.parseReservedMarkers(where, name, d, p)
 		return p

@@ -175,3 +175,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0026](0026-embedding-vectors-are-1536-wide-or-refused.md) | Embedding vectors are 1536 wide or the provider row is refused | accepted |
 | [0030](0030-a-blob-outside-postgres-settles-after-its-bytes.md) | A blob outside Postgres settles after its bytes, behind a pending manifest | accepted |
 | [0031](0031-blob-bytes-outside-postgres-are-stored-plaintext.md) | Blob bytes outside Postgres are stored plaintext | accepted |
+| [0032](0032-an-owner-pointer-may-be-a-reference-and-a-mirror-account-is-one.md) | An owner pointer may be a reference, and a mirror's `account` is one | accepted |

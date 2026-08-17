@@ -36,7 +36,10 @@ data:
   # version 3: the grants group under one `permissions:` object, and the permission
   # to write is `writes:` inside it. This closure's functions and agents
   # follow core's declaration.
-  version: 4
+  # version 5: `account` on every mirror kind is a pinned owner
+  # reference instead of a string, so disconnecting an account collects
+  # the rows it synced (docs/decisions/0032).
+  version: 5
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -320,9 +323,12 @@ data:
     # string property to a reference is a NARROWING the boot upgrade refuses
     # while rows hold the old shape — it would strand every released store.
     account:
-      type: string
+      type: reference
+      kind: account
+      required: true
+      ownerRef: true
       displayName: Account
-      description: the account record id this user was synced through
+      description: the account this user was synced through
     login:
       type: string
       displayName: Login
@@ -379,9 +385,12 @@ data:
   displayTemplate: "{fullName}"
   properties:
     account:
-      type: string
+      type: reference
+      kind: account
+      required: true
+      ownerRef: true
       displayName: Account
-      description: the account record id this repository was synced through
+      description: the account this repository was synced through
     fullName:
       type: string
       displayName: Full name
@@ -441,9 +450,12 @@ data:
     plural: issues
   properties:
     account:
-      type: string
+      type: reference
+      kind: account
+      required: true
+      ownerRef: true
       displayName: Account
-      description: the account record id this issue was synced through
+      description: the account this issue was synced through
     number:
       type: int
       displayName: Number
@@ -506,9 +518,12 @@ data:
     plural: pullrequests
   properties:
     account:
-      type: string
+      type: reference
+      kind: account
+      required: true
+      ownerRef: true
       displayName: Account
-      description: the account record id this pull request was synced through
+      description: the account this pull request was synced through
     number:
       type: int
       displayName: Number
