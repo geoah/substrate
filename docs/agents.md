@@ -62,8 +62,9 @@ data:
 - **`provider`** (required): a `core.substrate.reamde.dev/llmprovider` record id — **where**
   the completions are bought, resolved at dispatch and never at load.
 - **`model`** (required): the model id sent on every completion, a plain string
-  the provider's endpoint understands — `anthropic/claude-opus-5` through the
-  host gateway's alias, the bare `claude-opus-5` on an `anthropic`-wire row.
+  the provider's endpoint understands — a gateway's alias
+  (`anthropic/claude-opus-5`) on a row pointed at that gateway, the bare
+  `claude-opus-5` on an `anthropic`-wire row.
   The substrate keeps no model table: re-pointing an agent at a cheaper model
   is one word here.
 - optional **`params`**: `{temperature, maxTokens}` for this agent's calls,
