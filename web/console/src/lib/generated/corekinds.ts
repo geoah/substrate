@@ -1577,13 +1577,12 @@ export interface RecordPatchPolicy {
    * proposing thread's recent turns beside it.
    */
   context?: RecordPatchPolicyContext
-  /** Judge confidence at or above accepts the gated request, an `accept`
-   * verdict only; absent means the judge never accepts.
+  /** An `accept` verdict at or above this confidence accepts the gated request;
+   * absent means the judge never accepts.
    */
   autoAccept?: number
-  /** Judge confidence at or above rejects it, a `reject` verdict only; absent
-   * means the judge never rejects; wins over `autoAccept` where both floors
-   * are cleared.
+  /** A `reject` verdict at or above this confidence rejects it; absent means
+   * the judge never rejects.
    */
   autoRefuse?: number
   /** Enforce decides within the thresholds; advise only ever recommends. */
@@ -1591,12 +1590,6 @@ export interface RecordPatchPolicy {
   /** A disabled policy matches nothing. */
   disabled?: boolean
 }
-
-/** The properties RecordPatchPolicy's declaration marks required. A form
- * refuses to submit without them; the server does not, so nothing here is a
- * guarantee about a record that arrives.
- */
-export const recordPatchPolicyRequired: string[] = ["action"]
 
 /** RecordPatchPolicyAction is a declared enum: the admissible set, in
  * declaration order.

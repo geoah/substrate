@@ -67,7 +67,7 @@ func TestValidatePolicyRowRefusesARuleTheDoorCannotAct(t *testing.T) {
 		{"action": "gate", "selector": sel("**")},
 	}
 	for _, props := range bad {
-		if err := validatePolicyRow(props); err == nil {
+		if err := validatePolicyRow(nil, props); err == nil {
 			t.Fatalf("admitted %v", props)
 		}
 	}
@@ -77,8 +77,45 @@ func TestValidatePolicyRowRefusesARuleTheDoorCannotAct(t *testing.T) {
 		{"action": "allow", "selector": sel("tasks.substrate.reamde.dev/*", "task")},
 	}
 	for _, props := range good {
-		if err := validatePolicyRow(props); err != nil {
+		if err := validatePolicyRow(nil, props); err != nil {
 			t.Fatalf("refused %v: %v", props, err)
+		}
+	}
+}
+
+// TestGovernsPrefersTheRuleThatCannotAutoAccept: among matches of equal
+// severity the governing rule carries the judge, so an id tie-break alone
+// would let the laxer of two rules decide by alphabet — and would let a
+// selector that starts matching (a bare name now resolved, a stored `*` now
+// honored) move a write from "the owner decides" to "a model may decide".
+func TestGovernsPrefersTheRuleThatCannotAutoAccept(t *testing.T) {
+	t.Parallel()
+	f := func(v float64) *float64 { return &v }
+	judged := func(id string) *policyRule {
+		return &policyRule{id: id, action: policyGate, judge: "j", mode: "enforce", autoAccept: f(0.6)}
+	}
+	plain := func(id string) *policyRule { return &policyRule{id: id, action: policyGate} }
+
+	// The judged rule sorts first by id and still does not govern.
+	if !governs(plain("z-plain"), judged("a-judged")) {
+		t.Fatal("a judged gate outranked an unjudged one")
+	}
+	if governs(judged("a-judged"), plain("z-plain")) {
+		t.Fatal("the comparison is not antisymmetric")
+	}
+	// Severity still comes first: a refuse outranks any gate.
+	if !governs(&policyRule{id: "z", action: policyRefuse}, plain("a")) {
+		t.Fatal("a gate outranked a refuse")
+	}
+	// A judge that cannot auto-accept is not laxer, so the id decides.
+	advisory := &policyRule{id: "a-advisory", action: policyGate, judge: "j", mode: "advise", autoAccept: f(0.6)}
+	noFloor := &policyRule{id: "a-nofloor", action: policyGate, judge: "j", mode: "enforce"}
+	for _, r := range []*policyRule{advisory, noFloor} {
+		if r.canAutoAccept() {
+			t.Fatalf("%s counts as able to auto-accept", r.id)
+		}
+		if !governs(r, plain("z-plain")) {
+			t.Fatalf("%s lost the id tie-break it should win", r.id)
 		}
 	}
 }

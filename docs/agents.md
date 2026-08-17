@@ -250,18 +250,22 @@ bounces it, and `gate` converts it into a `recordpatchrequest` for the owner
 to decide. Policies are the owner's hand alone: a bundle-tier actor cannot
 write the kind, and policy never runs for owner or machine writes. When
 several match one write the most restrictive action wins, `refuse` over `gate`
-over `allow`; no match means the write lands.
+over `allow`; no match means the write lands. Two matching rules with the same
+action are separated by which one can land the write without the owner: a rule
+with no judge to auto-accept on governs one that has, so the judge that runs is
+never decided by which id sorts first.
 
 `selector` says which writes a policy speaks for, and an empty dimension
 matches everything in it. `kinds` takes the same grammar a trigger's
 `source.record.kinds` does — a kind reference, every kind one authority
 publishes (`tasks.substrate.reamde.dev/*`), or every kind (`*`) — so a rule
 covering an authority does not have to enumerate today's kinds and miss
-tomorrow's. Any other spelling (`tasks.*`) is refused when the policy is
-written. `ops` are the write verbs the agent called (`put`, `patch`,
-`delete`), never a trigger's change classes, and `agents` are agent
-identities, both matched exactly. `action` is required: there is no default,
-and a rule without one speaks for nothing.
+tomorrow's. Any other spelling (`tasks.*`), and any exact reference to a kind
+the repository does not have, is refused when the policy is written: a
+selector that matches no write gates nothing. `ops` are the write verbs the
+agent called (`put`, `patch`, `delete`), never a trigger's change classes, and
+`agents` are agent identities, both matched exactly. `action` is required:
+there is no default, and a rule without one speaks for nothing.
 
 ```yaml
 kind: core.substrate.reamde.dev/recordpatchpolicy
@@ -282,8 +286,8 @@ gated, tool-less, replying `{verdict, confidence, rationale}`. It only ever
 recommends: in `mode: enforce` an `accept` verdict at or above `autoAccept`
 accepts and a `reject` at or above `autoRefuse` rejects, and everything else
 leaves the request for the owner with the verdict on it. The verdict picks
-which threshold is read, so the two are independent floors rather than a band;
-where one confidence clears both, the refusal wins.
+which threshold is read and one reply carries one verdict, so the two are
+independent floors rather than a band around one score.
 
 ## Threads, messages, and cost
 

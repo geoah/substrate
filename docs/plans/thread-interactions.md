@@ -389,14 +389,18 @@ properties:
 `selector.kinds` speaks the trigger source's grammar and is matched by the
 trigger source's matcher: a kind reference, every kind one authority publishes
 (`tasks.substrate.reamde.dev/*`), or every kind (`*`). A bare local name
-resolves to the kind's identity at load, the way a trigger source's does, and
-any other spelling (`tasks.*`) is refused at the write door rather than
-admitted as a rule that matches no write.
+resolves to the kind's identity at load, the way a trigger source's does. Any
+other spelling (`tasks.*`), and any exact reference to a kind the repository
+does not have, is refused at the write door rather than admitted as a rule that
+matches no write.
 
 Composition, when several policies match one write: the most restrictive
 action wins (`refuse` over `gate` over `allow`), the rule every surveyed
 harness follows (deny outranks ask outranks allow). No priority integer to
-misorder; the audit records every match and which one governed. Edge writes
+misorder; the audit records every match and which one governed. Two rules with
+the same action are separated by which can land the write without the owner:
+the governing rule carries the judge, so a rule with no judge to auto-accept on
+outranks one that has, and the id only breaks what is left. Edge writes
 (`link`/`unlink`) are not in the selector on purpose: the request kind
 cannot express them, so they stay governed by the emit ceiling alone until
 an edge op exists (a policy wanting to stop an agent's links names the
@@ -461,10 +465,9 @@ judge only ever recommends. Order of operations, fail-closed at every gap:
    carry them anyway).
 2. The engine routes, in `enforce` mode: `accept` at or above `autoAccept`
    accepts; `reject` at or above `autoRefuse` rejects with the rationale as
-   the note. The verdict picks the threshold, so the two are independent
-   floors rather than a band and never decide one reply between them; where a
-   confidence clears both, the reject arm is tested first, so a policy with
-   `autoRefuse` at or below `autoAccept` refuses rather than accepts. Everything
+   the note. The verdict picks the threshold and one reply carries one
+   verdict, so the two are independent floors rather than a band around one
+   score, and they never contend. Everything
    else, `escalate`, sub-threshold confidence,
    malformed output, transport failure, blown judge budget, a crash between
    verdict and decision, leaves the request PROPOSED for the human,

@@ -9,6 +9,7 @@ package engine
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -245,6 +246,118 @@ func TestPolicySelectorKindsGlobCoversAnAuthority(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "`action` is required") {
 		t.Fatalf("an actionless policy admitted: %v", err)
+	}
+}
+
+// A SELECTOR MUST NAME A KIND THE REPOSITORY HAS. The door compares kind
+// identities, so a plural typo (`widgets` for `widget`) or a reference to an
+// uninstalled kind admits and then gates nothing: a trigger that never fires
+// is a liveness bug, a policy that never matches is an open door.
+func TestPolicySelectorRefusesAKindTheRepositoryDoesNotHave(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openAgentDataset(t)
+	for _, pat := range []string{"widgets", "crew.test.dev/widgets", "gadget"} {
+		_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+			Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-typo",
+			Properties: map[string]any{
+				"selector": map[string]any{"kinds": []any{pat}},
+				"action":   "refuse",
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "matches no write") {
+			t.Fatalf("a selector naming %q admitted: %v", pat, err)
+		}
+	}
+	// A glob is NOT held to the vocabulary: an authority's kind set changing
+	// under it is why an owner writes one.
+	putPolicy(t, ds, "gate-elsewhere", map[string]any{
+		"selector": map[string]any{"kinds": []any{"nobody.test.dev/*"}},
+		"action":   "gate",
+	})
+}
+
+// GOVERNANCE DOES NOT MOVE TO THE LAXER RULE. Among matches of equal severity
+// the governing rule carries the judge, so a rule that can accept on a model's
+// word must not outrank one that always reaches the owner — otherwise the id
+// alphabet decides who reviews, and a selector that starts matching (a bare
+// name now resolved, a stored `*` now honored) silently hands review to a
+// judge.
+func TestPolicyGovernanceStaysWithTheRuleThatReachesTheOwner(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openAgentDataset(t)
+	// Written before the wildcards landed, in the bare spelling that matched
+	// nothing then and matches now. It sorts first by id.
+	putPolicy(t, ds, "a-widgets", map[string]any{
+		"selector":   map[string]any{"kinds": []any{"widget"}},
+		"action":     "gate",
+		"judge":      crewAuthority + "/verdictor",
+		"criteria":   "small honest changes yes",
+		"mode":       "enforce",
+		"autoAccept": 0.6,
+	})
+	putPolicy(t, ds, "b-editor", map[string]any{
+		"selector": map[string]any{"agents": []any{crewAuthority + "/editor"}},
+		"action":   "gate",
+	})
+	verdict, rule, err := ds.policyVerdict(ctx, crewAuthority+"/widget", policyOpPut, crewAuthority+"/editor")
+	if err != nil || verdict != policyGate {
+		t.Fatalf("verdict = %s %v", verdict, err)
+	}
+	if rule.id != "b-editor" {
+		t.Fatalf("the judged rule %s governs — an accept verdict would land the write with no owner", rule.id)
+	}
+	// The arm only breaks ties: where the judged rule is the only match it
+	// still governs and its judge still runs.
+	verdict, rule, err = ds.policyVerdict(ctx, crewAuthority+"/widget", policyOpPut, crewAuthority+"/ghost")
+	if err != nil || verdict != policyGate {
+		t.Fatalf("verdict for the unmatched agent = %s %v", verdict, err)
+	}
+	if rule.id != "a-widgets" || rule.judge == "" {
+		t.Fatalf("the sole matching rule did not govern: %s judge=%q", rule.id, rule.judge)
+	}
+}
+
+// THE ACTIONLESS ROW AN OLDER BINARY LEFT. The write door refuses one now, so
+// the fixture plants it the way the engine's own machinery writes; evaluation
+// skips it and says so once, not once per agent write.
+func TestActionlessPolicyIsSkippedAndWarnedOnce(t *testing.T) {
+	ctx := context.Background()
+	var logs syncBuffer
+	ds := openInternalDataset(t, WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+	if err := ds.inTx(ctx, substrate.ActorAPI, true, func(tx *txn) error {
+		_, err := tx.put(substrate.PutInput{
+			Kind: vocabulary.KindRecordPatchPolicy, ID: "legacy-actionless",
+			Properties: map[string]any{"selector": map[string]any{"kinds": []any{"*"}}},
+		})
+		return err
+	}); err != nil {
+		t.Fatalf("plant the row: %v", err)
+	}
+	for i := range 2 {
+		verdict, rule, err := ds.policyVerdict(ctx, typeThread, policyOpPut, "crew.test.dev/editor")
+		if err != nil || verdict != policyAllow || rule != nil {
+			t.Fatalf("evaluation %d saw the actionless rule: %s %v %v", i, verdict, rule, err)
+		}
+	}
+	if n := strings.Count(logs.String(), "legacy-actionless"); n != 1 {
+		t.Fatalf("the actionless rule warned %d times, want 1", n)
+	}
+	// The only ways out are an action or a delete: a write that leaves it
+	// actionless is refused like any other.
+	_, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: vocabulary.KindRecordPatchPolicy, ID: "legacy-actionless",
+		Properties: map[string]any{"criteria": "anything"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "`action` is required") {
+		t.Fatalf("a write that left the row actionless admitted: %v", err)
+	}
+	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: vocabulary.KindRecordPatchPolicy, ID: "legacy-actionless",
+		Properties: map[string]any{"action": "gate"},
+	}); err != nil {
+		t.Fatalf("giving the row an action: %v", err)
 	}
 }
 

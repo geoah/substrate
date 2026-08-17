@@ -79,11 +79,7 @@ func (ds *dataset) loadPolicies(ctx context.Context) ([]policyRule, error) {
 		}
 		rule.action, _ = rec.Properties["action"].(string)
 		if rule.action == "" {
-			// validatePolicyRow refuses this at the write door, so it can only
-			// be a row written before that check existed. It speaks for
-			// nothing, and a rule that looks live and does nothing is worth
-			// saying out loud rather than skipping in silence.
-			ds.svc.log.Warn("substrate: policy: no action, so the rule speaks for nothing", "policy", rec.ID)
+			ds.warnActionless(rec.ID)
 			continue
 		}
 		if sel, ok := rec.Properties["selector"].(map[string]any); ok {
@@ -104,6 +100,20 @@ func (ds *dataset) loadPolicies(ctx context.Context) ([]policyRule, error) {
 		rules = append(rules, rule)
 	}
 	return rules, nil
+}
+
+// warnActionless says once, per row and per process, that a policy carries no
+// action. validatePolicyRow refuses such a row at the write door, so it can
+// only come from a binary older than that check; loadPolicies runs per write
+// evaluation, and warning every time would bury the one line that matters.
+// The id is a user-authored string from a record row, so it goes through the
+// same id-grammar filter every other logged id does (triggers.go logSafeID).
+func (ds *dataset) warnActionless(id string) {
+	if _, seen := ds.warnedPolicies.LoadOrStore(id, struct{}{}); seen {
+		return
+	}
+	ds.svc.log.Warn("substrate: policy: no action, so the rule speaks for nothing — give it allow, gate or refuse, or delete it",
+		"repository", logSafeID(ds.Repository().Name), "policy", logSafeID(id))
 }
 
 // resolveSelectorKinds canonicalizes a selector's exact patterns against the
@@ -131,14 +141,21 @@ func resolveSelectorKinds(reg *vocabulary.Registry, pats []string) []string {
 
 // validatePolicyRow admits a recordpatchpolicy at the write door, the way a
 // trigger row is admitted (write.go): a rule the door cannot act on must not
-// land looking live.
+// land looking live. A trigger that never fires is a liveness bug; a policy
+// that never matches is an open door, so every spelling that can never match
+// is a refusal here rather than a silence at evaluation.
 //
-// `action` is required — there is no default action, and a rule without one
-// speaks for nothing at all. `selector.kinds` must hold the trigger source's
-// spellings, so a misspelled glob (`tasks.*`, which is neither a reference nor
-// `<authority>/*`) is refused instead of silently matching no write, which on
-// this kind means an ungated agent.
-func validatePolicyRow(props map[string]any) error {
+// `action` is required: there is no default action, and a rule without one
+// speaks for nothing at all.
+//
+// `selector.kinds` must hold the trigger source's spellings, so `tasks.*`,
+// which is neither a reference nor `<authority>/*`, is refused. An exact
+// pattern must also NAME A KIND THIS REPOSITORY KNOWS, whichever spelling it
+// uses: the door compares against kind identities, so `widgets` (a plural
+// typo for `widget`) or a reference to an uninstalled kind admits and then
+// gates nothing at all. A glob is not checked against the vocabulary, because
+// an authority's kind set changing under it is the whole point of writing one.
+func validatePolicyRow(reg *vocabulary.Registry, props map[string]any) error {
 	if action, _ := props["action"].(string); action == "" {
 		return fmt.Errorf("%w: recordpatchpolicy: `action` is required — allow, gate or refuse",
 			substrate.ErrValidation)
@@ -151,6 +168,13 @@ func validatePolicyRow(props map[string]any) error {
 		if !vocabulary.ValidTypeGlob(pat) {
 			return fmt.Errorf("%w: recordpatchpolicy: selector.kinds[%d]: %q is not a kind reference, `<authority>/*` or `*`",
 				substrate.ErrValidation, i, pat)
+		}
+		if pat == "*" || strings.HasSuffix(pat, "/*") || reg == nil {
+			continue
+		}
+		if _, err := reg.Resolve(pat); err != nil {
+			return fmt.Errorf("%w: recordpatchpolicy: selector.kinds[%d]: %w — a selector that matches no write gates nothing",
+				substrate.ErrValidation, i, err)
 		}
 	}
 	return nil
@@ -214,6 +238,35 @@ func severity(action string) int {
 	}
 }
 
+// canAutoAccept reports whether this rule could land a gated write without the
+// owner ever seeing it: a judge to run, `enforce` mode, and an accept floor for
+// the judge to clear. A rule missing any of the three always reaches the owner.
+func (r *policyRule) canAutoAccept() bool {
+	return r.judge != "" && r.mode == "enforce" && r.autoAccept != nil
+}
+
+// governs reports whether a outranks b as the rule that speaks for one write.
+//
+// Action severity first: refuse over gate over allow. Then, among equal
+// actions, THE RULE THAT CANNOT LAND THE WRITE ON A MODEL'S WORD, because the
+// governing rule carries the judge (maybeJudge) and an id tie-break alone
+// would let the laxer of two equally restrictive rules decide by alphabet. It
+// is also what keeps this PR's wildcards safe on stored data: a selector that
+// matched nothing before (a bare kind name the door never resolved, or a `*`
+// nothing validated) can now start matching, and without this arm a dormant
+// judged rule waking up could move a write from "the owner decides" to "a
+// model may decide" from a binary upgrade alone. The lowest id breaks what is
+// left, so the choice is stable.
+func governs(a, b *policyRule) bool {
+	if sa, sb := severity(a.action), severity(b.action); sa != sb {
+		return sa > sb
+	}
+	if aa, ba := a.canAutoAccept(), b.canAutoAccept(); aa != ba {
+		return !aa
+	}
+	return a.id < b.id
+}
+
 // policyVerdict evaluates the door for one bundle-tier write. The nil rule
 // with policyAllow is "no match": today's behavior, nothing to audit.
 func (ds *dataset) policyVerdict(ctx context.Context, kind, op, agent string) (string, *policyRule, error) {
@@ -233,8 +286,7 @@ func (ds *dataset) policyVerdict(ctx context.Context, kind, op, agent string) (s
 		if !rule.matches(kind, op, agent) {
 			continue
 		}
-		if governing == nil || severity(rule.action) > severity(governing.action) ||
-			(severity(rule.action) == severity(governing.action) && rule.id < governing.id) {
+		if governing == nil || governs(rule, governing) {
 			governing = rule
 		}
 	}

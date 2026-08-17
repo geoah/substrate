@@ -80,17 +80,15 @@ func (ds *dataset) maybeJudge(requestID string, rule *policyRule) {
 // `autoAccept` and `autoRefuse` meet.
 //
 // THE VERDICT PICKS THE THRESHOLD. `autoAccept` is read only against an
-// `accept` verdict and `autoRefuse` only against a `reject` one, so the two
-// never decide the same reply between them and a policy declaring both is
-// declaring two independent floors, not a band. Where one confidence clears
-// both floors the reject arm is tested first, so a policy whose floors overlap
-// (`autoRefuse` at or below `autoAccept`) refuses rather than accepts: the same
-// most-restrictive-wins composition the door uses when several policies match
-// one write.
+// `accept` verdict and `autoRefuse` only against a `reject` one. One reply
+// carries one verdict, so the two floors never contend and a policy declaring
+// both is declaring two independent rules, not a band around one score.
 //
 // Everything else escalates to the owner, which is every gap: an `escalate`
 // verdict, confidence under the floor, a threshold the policy never declared,
-// `advise` mode, and a judge that failed.
+// `advise` mode, and a judge that failed. The reject arm is tested first so
+// that a verdict vocabulary which ever stopped being exclusive would fail
+// toward refusing, but no reply reaches both arms today.
 func routeVerdict(rule *policyRule, verdict judgeVerdict, jerr error) (outcome, note string) {
 	switch {
 	case jerr != nil:
