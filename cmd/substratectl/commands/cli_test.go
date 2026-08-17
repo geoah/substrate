@@ -426,9 +426,23 @@ func TestRegisterEnrollsThenCommitsAndEndsLoggedIn(t *testing.T) {
 		"secret:      " + fakeTOTPSecret,
 		"nothing is stored until the code below is accepted",
 		"registered geoah on " + h.server,
+		// The signing PIN, printed so the reader can keep it outside the
+		// substrate: it is what `verify --expect-public-key` is fed.
+		"signing public key: " + fakeSigningPublicKey,
+		"--expect-public-key",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("register output missing %q:\n%s", want, out)
+		}
+	}
+	// AND NO PRIVATE KEY MATERIAL. Registration used to disclose the Ed25519
+	// SEED under the label "signing key" and offer to save it; the server stopped
+	// sending one (#217), so a CLI printing that again would be printing
+	// something it was never given. ("shown ONCE" is not forbidden: the recovery
+	// key beside it genuinely is.)
+	for _, forbidden := range []string{"signingSeed", "signing key ", "signing key:"} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("register output carries %q, which is the retired seed ceremony:\n%s", forbidden, out)
 		}
 	}
 	if got := h.fake.doorRequests(); len(got) != 2 || got[0] != "POST /register/enroll" || got[1] != "POST /register" {

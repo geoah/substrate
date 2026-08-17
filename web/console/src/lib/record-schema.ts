@@ -27,7 +27,13 @@ export const TO_ANY = "any"
 
 /** The contracts a keyed map's KEYS hold to, as the substrate spells them
  * (`internal/vocabulary/types.go`, KeyPatternRegexp). A pattern this map does
- * not know leaves the key unchecked here; the server is still the authority. */
+ * not know leaves the key unchecked here; the server is still the authority.
+ *
+ * These literals are the ONLY copy of a Go grammar in the console that no
+ * golden file covers, so a Go test reads them back out of this file and holds
+ * them to `KeyPatternRegexp`: `TestConsoleKeyPatternsMatchTheLoader` in
+ * `internal/vocabulary`. Edit a pattern here and that test fails; the block's
+ * shape is part of what it parses, so keep the `name: /regex/,` entries. */
 const KEY_PATTERNS: Record<string, RegExp> = {
   camel: /^[a-z][a-zA-Z0-9]*$/,
   kindRef:
