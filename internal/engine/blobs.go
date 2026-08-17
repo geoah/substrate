@@ -295,22 +295,25 @@ func (t *txn) mintPendingBlobRecord(actor substrate.Actor, digest, name, mimeTyp
 // postgres, whether any stored manifest has no byte row.
 func (s *service) checkBlobBackend(ctx context.Context) error {
 	if s.blobs.Name() == blobbytes.BackendPostgres {
-		var stranded int
+		// One row is the whole answer, so the probe stops at the first
+		// stranded blob rather than counting every record at every boot.
+		var one int
 		err := s.maint.QueryRowContext(ctx, `
-			SELECT count(*) FROM records r
+			SELECT 1 FROM records r
 			WHERE r.kind = $1 AND r.deleted_at IS NULL
 			  AND r.states->>'`+blobStateStatus+`' = $2
 			  AND NOT EXISTS (
 			      SELECT 1 FROM blobs b
-			      WHERE b.repository = r.repository AND b.digest = r.id)`,
-			kindBlob, string(substrate.BlobStored)).Scan(&stranded)
+			      WHERE b.repository = r.repository AND b.digest = r.id)
+			LIMIT 1`,
+			kindBlob, string(substrate.BlobStored)).Scan(&one)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
 		if err != nil {
 			return fmt.Errorf("substrate/engine: check the blob store: %w", err)
 		}
-		if stranded > 0 {
-			return fmt.Errorf("substrate/engine: %d stored blobs have no bytes in Postgres — they were written to another blob store. Point SUBSTRATE_BLOB_STORE back at it, or move them with `substratectl blobs migrate`", stranded)
-		}
-		return nil
+		return errors.New("substrate/engine: stored blobs have no bytes in Postgres — they were written to another blob store. Point SUBSTRATE_BLOB_STORE back at it, or move them with `substratectl blobs migrate`")
 	}
 	var rows int
 	if err := s.maint.QueryRowContext(ctx, `SELECT count(*) FROM blobs`).Scan(&rows); err != nil {
@@ -469,7 +472,7 @@ func (ds *dataset) GetBlob(ctx context.Context, digest string) (*substrate.BlobI
 	if err != nil {
 		return nil, nil, err
 	}
-	data, err := blobbytes.ReadAll(ctx, store, digest)
+	data, err := blobbytes.ReadAll(ctx, store, digest, m.size)
 	if errors.Is(err, blobbytes.ErrNotStored) {
 		return nil, nil, notFound
 	}
@@ -664,8 +667,13 @@ func (ds *dataset) blobGCPass(ctx context.Context) (int, error) {
 			if ref {
 				return nil
 			}
-			if err := t.deleteBlobBytes(store, digest); err != nil {
-				return err
+			// The bytes go with the tombstone where the backend can join this
+			// transaction. Where it cannot, the tombstone commits first and
+			// the delete follows, below, under a fresh lock.
+			if txStore, ok := store.(blobbytes.InTransaction); ok {
+				if err := txStore.DeleteTx(t.ctx, t.tx, digest); err != nil {
+					return err
+				}
 			}
 			row, err := t.loadRow(eref{Kind: kindBlob, ID: digest}, true)
 			if err != nil {
@@ -688,8 +696,24 @@ func (ds *dataset) blobGCPass(ctx context.Context) (int, error) {
 		if err != nil {
 			return n, err
 		}
-		if collected {
-			n++
+		if !collected {
+			continue
+		}
+		n++
+		// The external backend's delete comes AFTER the tombstone commits,
+		// and it re-takes the lock (deleteOrphanBytes) rather than riding this
+		// transaction's: between the commit and the delete a re-upload of the
+		// same bytes may take the lock, find the object still there and settle
+		// a new `stored` manifest, and deleting under that manifest would leave
+		// it pointing at nothing. Failing here is safe — the object is left
+		// for the sweep — while the opposite order would publish a live
+		// manifest whose bytes are already gone.
+		if _, ok := store.(blobbytes.InTransaction); ok {
+			continue
+		}
+		if err := ds.deleteOrphanBytes(ctx, store, digest); err != nil {
+			ds.svc.log.Warn("substrate: a collected blob's bytes could not be deleted; the orphan sweep will retry",
+				"digest", digest, "backend", store.Backend(), "error", err)
 		}
 	}
 	if err := ds.blobOrphanSweep(ctx, store); err != nil {
@@ -698,25 +722,28 @@ func (ds *dataset) blobGCPass(ctx context.Context) (int, error) {
 	return n, nil
 }
 
-// deleteBlobBytes removes a victim's bytes as part of its collection. Where the
-// backend can join this transaction the bytes and the tombstone commit
-// together, exactly as they always have. Where it cannot, the tombstone
-// commits FIRST and the delete follows it: a failure there leaves an object no
-// live manifest names, which the orphan sweep reaps on a later pass. The other
-// order would leave a live manifest whose bytes are gone, which is the one
-// state a reader must never see.
-func (t *txn) deleteBlobBytes(store blobbytes.Store, digest string) error {
-	if txStore, ok := store.(blobbytes.InTransaction); ok {
-		return txStore.DeleteTx(t.ctx, t.tx, digest)
-	}
-	ctx, ds := t.ctx, t.ds
-	t.afterCommit = append(t.afterCommit, func() {
-		if err := store.Delete(ctx, digest); err != nil {
-			ds.svc.log.Warn("substrate: a collected blob's bytes could not be deleted; the orphan sweep will retry",
-				"digest", digest, "backend", store.Backend(), "error", err)
+// deleteOrphanBytes deletes bytes no live manifest names, under the exclusive
+// per-digest lock and re-checking that under it: an upload commits its
+// `pending` manifest before writing a byte and holds the same lock, so a
+// manifest found here means the bytes belong to somebody and the delete does
+// not happen. It is the one path that removes bytes a transaction cannot
+// remove with their manifest.
+func (ds *dataset) deleteOrphanBytes(ctx context.Context, store blobbytes.Store, digest string) error {
+	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+		if err := t.lockKey(blobLockKey(digest)); err != nil {
+			return err
 		}
+		_, live, err := t.blobRecord(digest)
+		if err != nil || live {
+			return err
+		}
+		// Nothing to commit but the lock, so the delete runs inside the
+		// transaction that holds it.
+		if txStore, ok := store.(blobbytes.InTransaction); ok {
+			return txStore.DeleteTx(t.ctx, t.tx, digest)
+		}
+		return store.Delete(t.ctx, digest)
 	})
-	return nil
 }
 
 // blobOrphanSweep deletes stored bytes no live manifest names. Two things put
@@ -752,22 +779,7 @@ func (ds *dataset) blobOrphanSweep(ctx context.Context, store blobbytes.Store) e
 		if o.At.After(graceCut) {
 			continue
 		}
-		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-			if err := t.lockKey(blobLockKey(o.Digest)); err != nil {
-				return err
-			}
-			_, ok, err := t.blobRecord(o.Digest)
-			if err != nil || ok {
-				return err
-			}
-			// Nothing to commit but the lock, so the delete runs INSIDE the
-			// transaction: an upload that takes the lock next finds the object
-			// gone rather than half-deleted.
-			if txStore, ok := store.(blobbytes.InTransaction); ok {
-				return txStore.DeleteTx(t.ctx, t.tx, o.Digest)
-			}
-			return store.Delete(t.ctx, o.Digest)
-		})
+		err := ds.deleteOrphanBytes(ctx, store, o.Digest)
 		if err != nil {
 			return err
 		}

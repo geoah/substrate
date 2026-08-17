@@ -54,9 +54,11 @@ func checkDigest(digest string) error {
 	return nil
 }
 
-// checkRepository refuses anything that is not a repository id.
+// checkRepository refuses anything that is not a repository id. `.` and `..`
+// match the character class and are refused by name: either one would address
+// the store's root or its parent rather than one repository inside it.
 func checkRepository(repository string) error {
-	if !reRepository.MatchString(repository) {
+	if !reRepository.MatchString(repository) || repository == "." || repository == ".." {
 		return fmt.Errorf("blobbytes: %q is not a repository id", repository)
 	}
 	return nil
@@ -150,13 +152,23 @@ type Blob struct {
 	Bytes    []byte
 }
 
-// ReadAll reads a stored object whole. It is what the engine's non-streaming
-// GetBlob uses; the byte slice is bounded by the size the manifest declares.
-func ReadAll(ctx context.Context, s Store, digest string) ([]byte, error) {
+// ReadAll reads a stored object whole, refusing one longer than size. It is
+// what the engine's non-streaming GetBlob uses, and size is what the manifest
+// declares: an object that outgrew its manifest is a corrupt store, not a
+// bigger blob, and reading it whole into memory is how a 64 MiB cap gets
+// exceeded from the outside.
+func ReadAll(ctx context.Context, s Store, digest string, size int64) ([]byte, error) {
 	rc, err := s.Open(ctx, digest)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rc.Close() }()
-	return io.ReadAll(rc)
+	data, err := io.ReadAll(io.LimitReader(rc, size+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) != size {
+		return nil, fmt.Errorf("blobbytes: %s holds %d bytes or more, its manifest says %d", digest, len(data), size)
+	}
+	return data, nil
 }

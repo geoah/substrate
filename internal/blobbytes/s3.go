@@ -218,25 +218,70 @@ func (s *s3Store) Delete(ctx context.Context, digest string) error {
 
 // listResult is the half of a ListObjectsV2 response this reads.
 type listResult struct {
-	XMLName  xml.Name `xml:"ListBucketResult"`
-	Contents []struct {
+	XMLName     xml.Name `xml:"ListBucketResult"`
+	IsTruncated bool     `xml:"IsTruncated"`
+	// NextContinuationToken carries the position S3 stopped at. The cursor
+	// this package exposes is a digest, but a page can be all non-digest keys,
+	// so the token is what walks past them without losing the place.
+	NextContinuationToken string `xml:"NextContinuationToken"`
+	Contents              []struct {
 		Key          string    `xml:"Key"`
 		Size         int64     `xml:"Size"`
 		LastModified time.Time `xml:"LastModified"`
 	} `xml:"Contents"`
 }
 
-// List runs one ListObjectsV2 page. S3 returns keys in ascending order and
-// `start-after` is the cursor, so the sweep walks a big bucket in batches
-// without paying for the whole listing at once.
+// List walks ListObjectsV2 from `after`. S3 returns keys in ascending order
+// and `start-after` is the cursor, so a sweep or a move reads a big bucket in
+// batches instead of paying for the whole listing at once.
+//
+// It follows the continuation token until it has `limit` OBJECTS or the
+// listing runs out, because `max-keys` bounds the keys S3 returns and keys
+// that are not digests are dropped here: a short page would otherwise read as
+// the end of the store when it is only the end of a page of other people's
+// keys.
 func (s *s3Store) List(ctx context.Context, after string, limit int) ([]Object, error) {
-	q := url.Values{}
-	q.Set("list-type", "2")
-	q.Set("prefix", s.prefix)
 	if after != "" {
 		if err := checkDigest(after); err != nil {
 			return nil, err
 		}
+	}
+	var out []Object
+	token := ""
+	for {
+		page, err := s.listPage(ctx, after, token, limit)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range page.Contents {
+			digest := strings.TrimPrefix(c.Key, s.prefix)
+			// A key under this repository's prefix that is not a digest is not
+			// this store's object, and deleting it is not this sweep's
+			// business.
+			if !reDigest.MatchString(digest) {
+				continue
+			}
+			out = append(out, Object{Digest: digest, Size: c.Size, At: c.LastModified.UTC()})
+			if limit > 0 && len(out) == limit {
+				return out, nil
+			}
+		}
+		if !page.IsTruncated || page.NextContinuationToken == "" {
+			return out, nil
+		}
+		token = page.NextContinuationToken
+	}
+}
+
+// listPage is one ListObjectsV2 request.
+func (s *s3Store) listPage(ctx context.Context, after, token string, limit int) (*listResult, error) {
+	q := url.Values{}
+	q.Set("list-type", "2")
+	q.Set("prefix", s.prefix)
+	switch {
+	case token != "":
+		q.Set("continuation-token", token)
+	case after != "":
 		q.Set("start-after", s.prefix+after)
 	}
 	if limit > 0 {
@@ -254,25 +299,13 @@ func (s *s3Store) List(ctx context.Context, after string, limit int) ([]Object, 
 	if err := s3Error(resp, "list"); err != nil {
 		return nil, err
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody*100))
-	if err != nil {
-		return nil, err
-	}
+	// Decoded as a stream: a full page of keys is hundreds of kilobytes, and a
+	// body read into a fixed buffer would silently truncate into a parse error.
 	var parsed listResult
-	if err := xml.Unmarshal(body, &parsed); err != nil {
+	if err := xml.NewDecoder(resp.Body).Decode(&parsed); err != nil {
 		return nil, fmt.Errorf("blobbytes: s3 list: %w", err)
 	}
-	out := make([]Object, 0, len(parsed.Contents))
-	for _, c := range parsed.Contents {
-		digest := strings.TrimPrefix(c.Key, s.prefix)
-		// A key under this repository's prefix that is not a digest is not
-		// this store's object, and deleting it is not this sweep's business.
-		if !reDigest.MatchString(digest) {
-			continue
-		}
-		out = append(out, Object{Digest: digest, Size: c.Size, At: c.LastModified.UTC()})
-	}
-	return out, nil
+	return &parsed, nil
 }
 
 // request builds a signed S3 request. key is the object key without the

@@ -135,7 +135,7 @@ func TestS3PrefixIsHonored(t *testing.T) {
 		t.Fatalf("bind: %v", err)
 	}
 	digest := put(t, s, []byte("under a prefix"))
-	if got := read(t, s, digest); string(got) != "under a prefix" {
+	if got := read(t, s, digest, len("under a prefix")); string(got) != "under a prefix" {
 		t.Fatalf("read back %q", got)
 	}
 	// The same bucket, no prefix: a store that ignored the prefix would find
@@ -151,6 +151,33 @@ func TestS3PrefixIsHonored(t *testing.T) {
 	}
 	if held {
 		t.Fatal("the object is addressable without the configured prefix")
+	}
+}
+
+// `max-keys` bounds the KEYS the endpoint returns, and keys that are not
+// digests are dropped here, so a page can come back holding no objects while
+// the store holds plenty. A caller reading that as the end of the store would
+// stop a sweep or a move early, so the listing follows the continuation token
+// until it has what it asked for.
+func TestS3ListWalksPastKeysThatAreNotBlobs(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	b := newS3(t, "straykeys", "")
+	s, err := b.Repository("repostray", nil)
+	if err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+	digest := put(t, s, []byte("the one real blob"))
+	// Sorts before any digest, so a single-key page holds only this.
+	if err := b.PutRawForTest(ctx, "repostray/README", []byte("not a blob")); err != nil {
+		t.Fatalf("write the stray key: %v", err)
+	}
+	objects, err := s.List(ctx, "", 1)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(objects) != 1 || objects[0].Digest != digest {
+		t.Fatalf("list returned %v, want the one blob %s", objects, digest)
 	}
 }
 

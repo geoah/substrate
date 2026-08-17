@@ -43,7 +43,7 @@ func TestMoveBetweenPostgresAndFS(t *testing.T) {
 	// only after the object is durable, and the count is what the operator
 	// checks the move against.
 	for digest, body := range stored {
-		if got := read(t, disk, digest); string(got) != body {
+		if got := read(t, disk, digest, len(body)); string(got) != body {
 			t.Fatalf("fs holds %q for %s, want %q", got, digest, body)
 		}
 	}
@@ -74,7 +74,7 @@ func TestMoveBetweenPostgresAndFS(t *testing.T) {
 		t.Fatalf("moved %d blobs back, stored %d", back, len(bodies))
 	}
 	for digest, body := range stored {
-		if got := read(t, pg, digest); string(got) != body {
+		if got := read(t, pg, digest, len(body)); string(got) != body {
 			t.Fatalf("postgres holds %q for %s, want %q", got, digest, body)
 		}
 	}
@@ -116,7 +116,7 @@ func TestMoveResumesOverACopyThatAlreadyLanded(t *testing.T) {
 	if moved != 1 {
 		t.Fatalf("the resumed move reported %d blobs, want 1", moved)
 	}
-	if got := read(t, disk, digest); string(got) != string(data) {
+	if got := read(t, disk, digest, len(data)); string(got) != string(data) {
 		t.Fatalf("the target holds %q", got)
 	}
 	held, err := pg.Exists(ctx, digest)

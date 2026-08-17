@@ -6,9 +6,26 @@ package blobbytes
 // an operator already made, with the access policy they chose.
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 )
+
+// PutRawForTest writes an arbitrary key, so a test can put something in the
+// bucket that is not a blob and check the listing walks past it.
+func (s *S3) PutRawForTest(ctx context.Context, key string, data []byte) error {
+	req, err := s.request(ctx, http.MethodPut, key, nil, bytes.NewReader(data), hashHex(data))
+	if err != nil {
+		return err
+	}
+	req.ContentLength = int64(len(data))
+	resp, err := s.do(req)
+	if err != nil {
+		return err
+	}
+	defer drain(resp)
+	return s3Error(resp, "put")
+}
 
 // CreateBucketForTest creates the configured bucket.
 func (s *S3) CreateBucketForTest(ctx context.Context) error {

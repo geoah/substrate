@@ -34,9 +34,9 @@ func put(t *testing.T, s blobbytes.Store, data []byte) string {
 	return digest
 }
 
-func read(t *testing.T, s blobbytes.Store, digest string) []byte {
+func read(t *testing.T, s blobbytes.Store, digest string, size int) []byte {
 	t.Helper()
-	data, err := blobbytes.ReadAll(context.Background(), s, digest)
+	data, err := blobbytes.ReadAll(context.Background(), s, digest, int64(size))
 	if err != nil {
 		t.Fatalf("read %s: %v", digest, err)
 	}
@@ -70,7 +70,7 @@ func conformance(t *testing.T, open openStore) {
 		if err != nil || !held {
 			t.Fatalf("exists after put: %v %v", held, err)
 		}
-		if got := read(t, s, digest); string(got) != string(data) {
+		if got := read(t, s, digest, len(data)); string(got) != string(data) {
 			t.Fatalf("read back %q, stored %q", got, data)
 		}
 	})
@@ -80,7 +80,7 @@ func conformance(t *testing.T, open openStore) {
 		data := []byte("stored twice, held once")
 		digest := put(t, s, data)
 		put(t, s, data)
-		if got := read(t, s, digest); string(got) != string(data) {
+		if got := read(t, s, digest, len(data)); string(got) != string(data) {
 			t.Fatalf("read back %q after a re-put, stored %q", got, data)
 		}
 		objects, err := s.List(ctx, "", 0)
@@ -228,7 +228,7 @@ func repositoryIsolation(t *testing.T, open openStore) {
 	if err := theirs.Delete(ctx, digest); err != nil {
 		t.Fatalf("delete across repositories: %v", err)
 	}
-	if got := read(t, mine, digest); string(got) != string(data) {
+	if got := read(t, mine, digest, len(data)); string(got) != string(data) {
 		t.Fatalf("another repository's delete removed these bytes")
 	}
 }
@@ -237,7 +237,9 @@ func repositoryIsolation(t *testing.T, open openStore) {
 // that could hold a path separator would let one repository's store address
 // another's.
 func refuseBadRepository(t *testing.T, b blobbytes.Backend, db blobbytes.DB) {
-	for _, bad := range []string{"", "../elsewhere", "a/b", strings.Repeat("r", 129)} {
+	// `.` and `..` match the id character class, and either one would address
+	// the store's root or its parent instead of one repository inside it.
+	for _, bad := range []string{"", ".", "..", "../elsewhere", "a/b", strings.Repeat("r", 129)} {
 		if _, err := b.Repository(bad, db); err == nil {
 			t.Fatalf("the backend bound to %q as a repository id", bad)
 		}
