@@ -108,10 +108,14 @@ trusted as the database. Give the fs root to the substrate's user alone (it
 creates directories `0700` and files `0600`), and keep the bucket private, with
 credentials only this substrate holds.
 
-**The bytes are stored as they arrived, in the clear**
+**Blob bytes are never sealed, on any backend.** The sealed store covers
+secret-typed properties; `blobs.bytes`, an object on disk and an object in a
+bucket are all stored exactly as they arrived, and no credential key is
+involved in reading any of them
 ([0021](decisions/0021-blob-bytes-outside-postgres-are-stored-plaintext.md)).
-For encryption at rest, put it under the store: an encrypted volume for `fs`,
-the bucket's own server-side encryption for `s3`.
+Whoever holds the dump, the root or the bucket holds every attachment in the
+clear. For encryption at rest, put it under the store: disk encryption for
+Postgres or the `fs` root, the bucket's own server-side encryption for `s3`.
 
 **An upload becomes two steps, and a crash between them is cheap.** Outside
 Postgres the bytes cannot commit with the manifest, so the manifest is written
@@ -288,6 +292,13 @@ keyless build wrote is the exception and the dangerous one: its
 `repositories.dek` holds the key in the clear beside the rows it opens, so
 the dump alone is every secret in that repository, and nothing re-wraps that
 column today ([#230](https://github.com/geoah/substrate/issues/230)).
+
+**What is sealed is the sealed store, and nothing else.** Blob bytes are stored
+as they arrived on every backend — the `blobs.bytes` column included — so a
+dump of a substrate on the default backend carries every attachment in the
+clear, whatever the credential key is doing. The changelog and the records
+folded from it are plaintext for the same reason. Encrypt the backup itself, or
+the storage under it; the substrate does not.
 
 **On `fs` or `s3` the dump is half the backup.** The blob bytes are outside the
 database, so the second artifact is the fs root or the bucket, and it has to be
