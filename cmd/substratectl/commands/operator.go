@@ -104,12 +104,6 @@ func (a *app) openEngineWithKey(ctx context.Context, credKey string) (substrate.
 		engine.WithCredentialKey(credKey),
 		engine.WithLogger(log),
 	}
-	// The operator hat honors the same insecure switch as the server: a
-	// rebuild against a keyless local substrate must be able to open the
-	// repository the server itself runs unsigned.
-	if os.Getenv("SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES") == "true" {
-		opts = append(opts, engine.WithInsecureAllowInvalidSignatures())
-	}
 	svc, err := engine.Open(ctx, dsn, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("open the substrate database: %w", err)

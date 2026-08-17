@@ -37,21 +37,11 @@ type Config struct {
 	OAuthStateKey    string `envconfig:"SUBSTRATE_OAUTH_STATE_KEY" default:""`
 	OAuthCallbackURL string `envconfig:"SUBSTRATE_OAUTH_CALLBACK_URL" default:""`
 	// CredentialKey seals the credential store (AES-256-GCM, derived from
-	// any string). Unset stores provider tokens unsealed, with a boot warning.
+	// any string) and every repository's changelog signing seed. Changelog
+	// signing is MANDATORY and its seed may never sit unsealed beside the
+	// signatures it mints, so a host without this key refuses to boot. There
+	// is no exception.
 	CredentialKey string `envconfig:"SUBSTRATE_CREDENTIAL_KEY" default:""`
-	// InsecureAllowInvalidSignatures lets a substrate run without the
-	// signature guarantee. Changelog signing is MANDATORY: every repository
-	// activates per-repository Ed25519 at its next open, and the signing
-	// seed seals under the credential key, so a keyless host refuses to
-	// boot. This switch is the local-testing exception: a keyless host runs,
-	// never activates signing, stamps the all-zero placeholder signature on
-	// every entry, and `repository verify` names that state as a finding.
-	// Verification still runs everywhere and still complains; this only
-	// stops the complaints from refusing. It does NOT weaken an activated
-	// repository: activation is one-way, and an activated repository whose
-	// key cannot open refuses to append no matter what this is set to.
-	// Placeholder attestations are pre-v1 scaffolding (issue #175).
-	InsecureAllowInvalidSignatures bool `envconfig:"SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES" default:"false"`
 	// ConsoleURL is the console origin the OAuth callback return-page posts its
 	// completion message to and falls back to redirecting into. The scheme+host
 	// is the postMessage targetOrigin; the full base is the fallback redirect
