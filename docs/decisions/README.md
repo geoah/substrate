@@ -167,4 +167,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0017](0017-the-changelog-is-one-writers-total-order.md) | The changelog is one writer's total order per repository | accepted |
 | [0018](0018-reseal-rewrites-history-values-in-place.md) | Reseal rewrites history's values in place, so entry bytes are not identity | accepted |
 | [0019](0019-a-lifecycle-is-a-state-machine-only-where-the-substrate-owns-it.md) | A lifecycle is a state machine only where the substrate owns it | accepted |
-| [0028](0028-a-record-url-is-its-reference-and-verbs-live-behind-a-dash.md) | A record's URL is its reference, and verbs live behind a reserved `-` | proposed |
+| [0028](0028-a-record-url-is-its-reference-and-verbs-live-behind-a-dash.md) | A record's URL is its reference, and verbs live behind a reserved `-` | accepted |

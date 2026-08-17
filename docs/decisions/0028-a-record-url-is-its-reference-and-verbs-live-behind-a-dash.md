@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-08-17
 decision-makers: George Antoniadis (via the issue-202 agent session)
 ---
