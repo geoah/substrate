@@ -41,18 +41,36 @@ boot.
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                                      | Signs OAuth flow state. Unset mints a random key per boot, with a warning: flows in progress break on restart. |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers.                                                        |
 | `SUBSTRATE_CONSOLE_URL`        | —                                      | The console origin the OAuth return-page posts to and falls back to redirecting into. Empty is local dev. |
-| `SUBSTRATE_LLM_BASE_URL`       | — (unset: no embedder)                 | The host's OpenAI-compatible gateway: it backs embeddings, and it is the endpoint an [`llmprovider`](agents.md#providers) row that names no `baseURL` resolves to. Nothing seeds such a row: the [LLM example bundle](bundles-catalog.md#llm-example) is what ships one. |
-| `SUBSTRATE_LLM_API_KEY`        | —                                      | The bearer for that gateway, and the fallback key for a provider row that names neither a `baseURL` nor an `apiKey`. Absent means no embedder: the embed queue simply does not drain. |
-| `SUBSTRATE_LLM_EMBED_MODEL`    | `text-embedding-3-small`               | Must be a 1536-dimension model.                                                                           |
 | `SUBSTRATE_SANDBOX`            | `best-effort`                          | How hard to confine function bodies: `off`, `best-effort`, or `enforce` (refuse to run a body unconfined). |
 
 `SUBSTRATE_CREDENTIAL_KEY` is the one that must be backed up beside the
 database: without it, sealed material is unreadable.
 
-`SUBSTRATE_LLM_API_KEY` travels to `SUBSTRATE_LLM_BASE_URL` and nowhere else:
-an [`llmprovider`](agents.md#providers) row that names its own `baseURL` must
-carry its own `apiKey`, so a repository-chosen endpoint can never be handed the
-host's bearer.
+## There is no LLM configuration
+
+The server takes no LLM endpoint, no key and no embedding model. Completions
+and embeddings alike are bought through a repository's own
+[`llmprovider`](agents.md#providers) records, which carry the wire, the
+endpoint, the key and (for embeddings) the model. The process holds no bearer,
+so no host-wide key can reach a repository-chosen endpoint.
+
+What that means for an operator:
+
+- A fresh repository has no agents and no semantic search until its owner
+  writes a provider row. Nothing seeds one; the
+  [LLM example bundle](bundles-catalog.md#llm-example) ships two ready to key.
+- Semantic search runs against the one row that declares `embedModel`, and
+  hybrid search returns its lexical arm alone until that row exists.
+- Every stored vector names the row and the model that produced it. Change
+  either and the older vectors stop being searched, which is deliberate: cosine
+  distance between two models' vectors is not a distance. Run
+  `substratectl --dsn … repository reembed <username>` to queue their
+  replacement, or `POST
+  /api/v1/core.substrate.reamde.dev/embeddings/reembed` from the repository's
+  own token. Both write queue rows; the server's drain loop buys the vectors a
+  batch at a time, so an interrupted re-embed resumes by itself.
+- A gateway swapped behind an unchanged row and model name is invisible to the
+  provenance columns, so that case takes `reembed --all`.
 
 ## The function sandbox
 

@@ -311,12 +311,24 @@ and a later row for the same key wins. A map is declarable: a property marked
 `keyed: true` is one, which is how a kind's own `properties` block stays a map.
 These two stay lists because each row's key is a value with a name of its own.
 
-**The host key travels only to the host gateway.** An `openai` row with an
-empty `baseURL` means the host's configured gateway
-(`SUBSTRATE_LLM_BASE_URL`), and only then may an empty `apiKey` fall back to
-the host's own (`SUBSTRATE_LLM_API_KEY`). A row that names its own `baseURL`
-must carry its own `apiKey` or it refuses to resolve; on `anthropic` the row's
-key is required for the same reason, and on `azure` both are.
+**Every row carries its own endpoint and its own key.** There is no host
+gateway and no host key: the server takes no LLM configuration at all, so
+nothing process-wide can travel to a repository-chosen endpoint. An `openai` or
+`azure` row that names no `baseURL` refuses to resolve, and every wire requires
+the row's own `apiKey`. Only `anthropic` may leave `baseURL` empty, for its
+official endpoint.
+
+**One row buys the embeddings.** A row that declares `embedModel` is the
+repository's embeddings provider, and only one row may declare it. Because only
+the `openai` wire has an embeddings endpoint, a row on any other wire that
+names an `embedModel` is refused at the write, as is a model whose vectors are
+not 1536 wide ([decision
+0020](decisions/0020-embedding-vectors-are-1536-wide-or-refused.md)). Every
+stored vector names the row and the model that produced it, and semantic search
+scores only the current pair's vectors, so changing either hides the older ones
+rather than mixing two models' distances. `substratectl --dsn … repository
+reembed <username>` and `POST
+/api/v1/core.substrate.reamde.dev/embeddings/reembed` queue their replacement.
 
 **Nothing seeds a provider.** A fresh repository holds no `llmprovider` row at
 all: a row is where the wire, the endpoint and the key live, and a substrate
@@ -378,12 +390,25 @@ data:
     apiKey: …
 ```
 
-Every one of the three carries its own `apiKey`, and must: the host's gateway
-key travels only to the host's gateway, so an `openai` row that names a
-`baseURL` needs its own key, and an `anthropic` or `azure` row always does.
-Nothing checks that at write time — a half-written row applies fine and
-refuses at the first dispatch that resolves it, naming the row and what it
-lacks.
+Every one of the three carries its own `apiKey`, and must: there is no host key
+to fall back to. Nothing checks that at write time — a half-written row applies
+fine and refuses at the first dispatch that resolves it, naming the row and
+what it lacks. The embeddings rules are the exception, and are checked at the
+write, because the row that carries them is resolved by a background loop with
+nobody watching:
+
+```yaml
+# The embeddings provider: one row per repository declares embedModel.
+kind: core.substrate.reamde.dev/llmprovider
+metadata: {id: vectors}
+data:
+  properties:
+    name: Vectors
+    wire: openai
+    baseURL: https://api.openai.com/v1
+    apiKey: sk-…
+    embedModel: text-embedding-3-small
+```
 
 `apiKey` is secret-typed: every read surface hands back `<redacted>`, and
 writing the sentinel back is a round trip, so

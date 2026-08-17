@@ -14,14 +14,12 @@ import (
 
 // hostSecretNames are the master secrets that must never reach a child: the
 // credential-seal key (unseals every repository's OAuth), DATABASE_URL (direct
-// Postgres as the app role), the operator OTP, the OAuth state key, and the
-// host LLM gateway key.
+// Postgres as the app role), the operator OTP and the OAuth state key.
 var hostSecretNames = []string{
 	"SUBSTRATE_CREDENTIAL_KEY",
 	"DATABASE_URL",
 	"SUBSTRATE_OPERATOR_OTP",
 	"SUBSTRATE_OAUTH_STATE_KEY",
-	"SUBSTRATE_LLM_API_KEY",
 }
 
 // setHostSecrets plants a recognizable value for every master secret on the
@@ -39,7 +37,7 @@ const pySecretProbe = `
 import os
 def main(input, host):
     names = ["SUBSTRATE_CREDENTIAL_KEY", "DATABASE_URL", "SUBSTRATE_OPERATOR_OTP",
-             "SUBSTRATE_OAUTH_STATE_KEY", "SUBSTRATE_LLM_API_KEY"]
+             "SUBSTRATE_OAUTH_STATE_KEY"]
     return {"output": {"leaked": {n: os.environ.get(n, "") for n in names},
                        "hasPath": bool(os.environ.get("PATH", ""))}}
 `
@@ -115,7 +113,7 @@ import (
 
 func Main(in *substratefn.Input, host *substratefn.Host) (*substratefn.Result, error) {
 	names := []string{"SUBSTRATE_CREDENTIAL_KEY", "DATABASE_URL", "SUBSTRATE_OPERATOR_OTP",
-		"SUBSTRATE_OAUTH_STATE_KEY", "SUBSTRATE_LLM_API_KEY"}
+		"SUBSTRATE_OAUTH_STATE_KEY"}
 	leaked := map[string]any{}
 	for _, n := range names {
 		leaked[n] = os.Getenv(n)

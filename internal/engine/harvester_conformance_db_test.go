@@ -201,16 +201,16 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		t.Fatalf("install account type: %v", err)
 	}
 
-	// Point the HOST gateway at the fake server and write the row the shipped
-	// agents name. Nothing seeds a provider, so `default` is created here —
-	// an openai-wire row with no baseURL of its own, which is what makes it
-	// resolve to the host gateway.
+	// Write the row the shipped agents name, pointing at the fake server.
+	// Nothing seeds a provider, so `default` is created here, and it carries
+	// its own endpoint and key because there is no host gateway to inherit.
 	fake := newFakeLLM(t)
-	ds.svc.llmBaseURL = fake.srv.URL
-	ds.svc.llmAPIKey = "host-gateway-key"
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: typeProvider, ID: "default",
-		Properties: map[string]any{"name": "default", "wire": "openai"},
+		Properties: map[string]any{
+			"name": "default", "wire": "openai",
+			"baseURL": fake.srv.URL, "apiKey": "row-key-default",
+		},
 	}); err != nil {
 		t.Fatalf("put the default provider row: %v", err)
 	}

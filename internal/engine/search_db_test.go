@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 )
@@ -80,8 +79,9 @@ func TestLexicalSearch(t *testing.T) {
 func TestEmbedQueueAndHybridSearch(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	emb := &fakeEmbedder{}
-	_, ds := newDataset(t, engine.WithEmbedder(emb))
+	emb := newFakeEmbedServer(t)
+	_, ds := newDataset(t)
+	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
 	if err := enginetest.InstallAccountType(context.Background(), ds, substrate.ActorAPI); err != nil {
 		t.Fatalf("install account type: %v", err)
 	}
@@ -105,14 +105,14 @@ func TestEmbedQueueAndHybridSearch(t *testing.T) {
 	wanted := newEvent("e1", "Standup", "we will discuss the datacentre rack layout", "05")
 	newEvent("e2", "Lunch", "sandwiches and coffee", "06")
 
-	n, err := ds.ProcessEmbedQueue(ctx, emb, 10)
+	n, err := ds.ProcessEmbedQueue(ctx, 10)
 	if err != nil {
 		t.Fatalf("process embed queue: %v", err)
 	}
 	if n != 2 {
 		t.Fatalf("drained %d queue items, want 2 (one per embed:true property)", n)
 	}
-	if again, err := ds.ProcessEmbedQueue(ctx, emb, 10); err != nil || again != 0 {
+	if again, err := ds.ProcessEmbedQueue(ctx, 10); err != nil || again != 0 {
 		t.Fatalf("queue not drained: %d %v", again, err)
 	}
 
@@ -141,26 +141,28 @@ func TestEmbedQueueAndHybridSearch(t *testing.T) {
 	// Unchanged chunks are not re-embedded.
 	long := strings.Repeat("the rack layout is long prose. ", 200)
 	ev := newEvent("e3", "Long", long, "07")
-	emb.texts = 0
-	if _, err := ds.ProcessEmbedQueue(ctx, emb, 10); err != nil {
+	_, before := emb.counts()
+	if _, err := ds.ProcessEmbedQueue(ctx, 10); err != nil {
 		t.Fatal(err)
 	}
-	firstChunks := emb.texts
+	_, after := emb.counts()
+	firstChunks := after - before
 	if firstChunks < 3 {
 		t.Fatalf("expected several chunks, embedded %d", firstChunks)
 	}
 	mustPut(t, ds, gcal, substrate.PutInput{
 		Kind: "calendarevent", ID: ev.ID, Properties: map[string]any{"description": long + " and a tail"},
 	})
-	emb.texts = 0
-	if _, err := ds.ProcessEmbedQueue(ctx, emb, 10); err != nil {
+	_, before = emb.counts()
+	if _, err := ds.ProcessEmbedQueue(ctx, 10); err != nil {
 		t.Fatal(err)
 	}
-	if emb.texts == 0 {
+	_, after = emb.counts()
+	if after-before == 0 {
 		t.Fatal("the changed tail chunk should have been re-embedded")
 	}
-	if emb.texts >= firstChunks {
-		t.Fatalf("unchanged chunks were re-embedded: %d of %d", emb.texts, firstChunks)
+	if after-before >= firstChunks {
+		t.Fatalf("unchanged chunks were re-embedded: %d of %d", after-before, firstChunks)
 	}
 }
 
