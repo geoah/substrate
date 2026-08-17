@@ -28,12 +28,12 @@ type RecordPatchPolicy struct {
 	// (default), or the proposing thread's recent turns beside it.
 	Context *RecordPatchPolicyContext
 
-	// AutoAccept is judge confidence at or above accepts the gated request;
-	// absent means the judge never accepts.
+	// AutoAccept is an `accept` verdict at or above this confidence accepts
+	// the gated request; absent means the judge never accepts.
 	AutoAccept *float64
 
-	// AutoRefuse is judge confidence at or above rejects it; absent means the
-	// judge never rejects.
+	// AutoRefuse is a `reject` verdict at or above this confidence rejects it;
+	// absent means the judge never rejects.
 	AutoRefuse *float64
 
 	// Mode is enforce decides within the thresholds; advise only ever
@@ -267,7 +267,8 @@ func (v *RecordPatchPolicy) Encode() map[string]any {
 //
 // the writes this policy speaks for; empty lists match all
 type RecordPatchPolicySelector struct {
-	// Kinds is kind references; empty means every kind.
+	// Kinds is kind references, `<authority>/*` or `*`; empty means every
+	// kind.
 	Kinds []string
 
 	// Ops is the write verb matched: put, patch or delete, the three policy

@@ -49,13 +49,14 @@ func patchShipped(t *testing.T, path string, replace func(string) string) {
 }
 
 // pinVersion rewrites a declaration's own `version:`, whatever it stands at.
-// llmprovider pins one of its own, so a test that wants an OLDER pin replaces
-// it rather than adding a second key the parser would refuse.
+// A kind that pins one of its own (llmprovider, recordpatchpolicy) needs the
+// line REPLACED by a test that wants an older pin, not a second key the parser
+// would refuse.
 func pinVersion(t *testing.T, doc, version string) string {
 	t.Helper()
 	at := reDeclaredVersion.FindStringIndex(doc)
 	if at == nil {
-		t.Fatal("llmprovider no longer pins a version of its own")
+		t.Fatal("the declaration no longer pins a version of its own")
 	}
 	return reDeclaredVersion.ReplaceAllString(doc, "\n  version: "+version+"\n")
 }

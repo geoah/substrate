@@ -1022,6 +1022,22 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		}
 	}
 
+	// Policy rows are admitted at write time for the same reason triggers are:
+	// the merged result must be a rule the door can act on. An actionless rule,
+	// a misspelled glob or a kind reference this repository does not know
+	// matches nothing, which on this kind reads as a gate that is open
+	// (engine/policy.go). The registry read holds the SHARED registry-dependency
+	// lock for the reason the trigger admission above does: a bundle upgrade's
+	// exclusive side must not drop the kind across this check.
+	if sp.ty.Identity == vocabulary.KindRecordPatchPolicy && !t.internal {
+		if err := t.lockKeyShared(registryDepKey(t.ds)); err != nil {
+			return nil, err
+		}
+		if err := validatePolicyRow(t.ds.registry(), row.Props); err != nil {
+			return nil, err
+		}
+	}
+
 	// Bundle-owned types carry the lifecycle rules (engine/bundles.go):
 	// a disabled bundle's inputs and accounts are frozen. No cardinality
 	// rule lives here: records of an input's kind are ordinary.

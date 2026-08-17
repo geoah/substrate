@@ -1577,12 +1577,12 @@ export interface RecordPatchPolicy {
    * proposing thread's recent turns beside it.
    */
   context?: RecordPatchPolicyContext
-  /** Judge confidence at or above accepts the gated request; absent means the
-   * judge never accepts.
+  /** An `accept` verdict at or above this confidence accepts the gated request;
+   * absent means the judge never accepts.
    */
   autoAccept?: number
-  /** Judge confidence at or above rejects it; absent means the judge never
-   * rejects.
+  /** A `reject` verdict at or above this confidence rejects it; absent means
+   * the judge never rejects.
    */
   autoRefuse?: number
   /** Enforce decides within the thresholds; advise only ever recommends. */
@@ -1635,7 +1635,7 @@ export const recordPatchPolicyModeValues: RecordPatchPolicyMode[] = [
  * the writes this policy speaks for; empty lists match all
  */
 export interface RecordPatchPolicySelector {
-  /** Kind references; empty means every kind. */
+  /** Kind references, `<authority>/*` or `*`; empty means every kind. */
   kinds?: string[]
   /** The write verb matched: put, patch or delete, the three policy evaluates
    * (link, unlink, merge and split are outside it), never a trigger's

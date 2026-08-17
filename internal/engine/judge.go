@@ -76,6 +76,33 @@ func (ds *dataset) maybeJudge(requestID string, rule *policyRule) {
 	})
 }
 
+// routeVerdict turns one judge reply into an audit outcome, and is where
+// `autoAccept` and `autoRefuse` meet.
+//
+// THE VERDICT PICKS THE THRESHOLD. `autoAccept` is read only against an
+// `accept` verdict and `autoRefuse` only against a `reject` one. One reply
+// carries one verdict, so the two floors never contend and a policy declaring
+// both is declaring two independent rules, not a band around one score.
+//
+// Everything else escalates to the owner, which is every gap: an `escalate`
+// verdict, confidence under the floor, a threshold the policy never declared,
+// `advise` mode, and a judge that failed. The reject arm is tested first so
+// that a verdict vocabulary which ever stopped being exclusive would fail
+// toward refusing, but no reply reaches both arms today.
+func routeVerdict(rule *policyRule, verdict judgeVerdict, jerr error) (outcome, note string) {
+	switch {
+	case jerr != nil:
+		return judgedError, jerr.Error()
+	case rule.mode != "enforce":
+		return judgedAdvised, ""
+	case verdict.Verdict == judgeVerdictReject && rule.autoRefuse != nil && verdict.Confidence >= *rule.autoRefuse:
+		return judgedRejected, ""
+	case verdict.Verdict == judgeVerdictAccept && rule.autoAccept != nil && verdict.Confidence >= *rule.autoAccept:
+		return judgedAccepted, ""
+	}
+	return judgedEscalated, ""
+}
+
 // judgeRequest runs one evaluation: read the request at a version, run the
 // judge, route, audit. Idempotent by construction — the decision CAS's on
 // the read version and a decided request is left alone — so a duplicate
@@ -96,18 +123,7 @@ func (ds *dataset) judgeRequest(ctx context.Context, requestID string, rule *pol
 		return
 	}
 	verdict, judgeThread, jerr := ds.runJudge(ctx, req, rule)
-	outcome := judgedEscalated
-	note := ""
-	switch {
-	case jerr != nil:
-		outcome, note = judgedError, jerr.Error()
-	case rule.mode != "enforce":
-		outcome = judgedAdvised
-	case verdict.Verdict == judgeVerdictAccept && rule.autoAccept != nil && verdict.Confidence >= *rule.autoAccept:
-		outcome = judgedAccepted
-	case verdict.Verdict == judgeVerdictReject && rule.autoRefuse != nil && verdict.Confidence >= *rule.autoRefuse:
-		outcome = judgedRejected
-	}
+	outcome, note := routeVerdict(rule, verdict, jerr)
 	if outcome == judgedAccepted || outcome == judgedRejected {
 		if err := ds.decideAsPolicy(ctx, req, rule, outcome); err != nil {
 			// The decision lost (the request moved, the apply conflicted):

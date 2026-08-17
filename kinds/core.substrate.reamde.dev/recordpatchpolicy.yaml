@@ -5,10 +5,15 @@
 # owner (or, within thresholds, the policy's judge) decides. When several
 # policies match one write, the most restrictive action wins — refuse over
 # gate over allow, the composition every harness trains people on — and no
-# match means today's behavior, the write landing. Policies never run for
-# owner or machine writes: a human's hand and the substrate's own machinery
-# are not what they bound. Bundle-tier actors cannot write this kind at all:
-# a policy an agent could edit is a gate that agent could open.
+# match means today's behavior, the write landing. Two matching rules carrying
+# the SAME action are separated by which one can land the write without the
+# owner: a rule with no judge to auto-accept on governs one that has, so the
+# judge that runs is never picked by alphabet (policy.go governs).
+#
+# Policies never run for owner or machine writes: a human's hand and the
+# substrate's own machinery are not what they bound. Bundle-tier actors cannot
+# write this kind at all: a policy an agent could edit is a gate that agent
+# could open.
 #
 # The judge half (judge/criteria/context/autoAccept/autoRefuse/mode) is
 # DECLARED here so the kind does not churn, and lands in the plan's phase 4:
@@ -25,8 +30,11 @@ data:
     One rule for agent writes: which kinds, ops and agents it speaks for,
     and whether their writes land, gate into recordpatchrequests, or refuse.
     The most restrictive matching policy wins; no match means the write lands.
-  # No version of its own: this kind takes the authority's, and the authority
-  # bumped to 10 for the `selector.ops` enum below.
+  # Its first own pin, above the authority's 11 it took until now.
+  # version 12: `selector.kinds` takes the trigger source's glob grammar
+  # (`<authority>/*` and `*`), `action` is required by the write door, and the
+  # two judge thresholds say which verdict each one reads.
+  version: 12
   names:
     singular: recordpatchpolicy
     plural: recordpatchpolicies
@@ -43,10 +51,26 @@ data:
       type: object
       description: the writes this policy speaks for; empty lists match all
       fields:
+        # THE TRIGGER SOURCE'S GRAMMAR, matched by the trigger source's
+        # matcher (vocabulary.MatchTypeGlob): a kind reference, every kind one
+        # authority publishes (`tasks.substrate.reamde.dev/*`), or every kind
+        # (`*`). A bare local name resolves to the kind's identity at load, the
+        # same resolve-at-the-gate a trigger source gets, because the door
+        # compares against identities.
+        #
+        # The write door (policy.go validatePolicyRow) refuses every pattern
+        # that can never match: `tasks.*`, which is neither a reference nor
+        # `<authority>/*`, and an exact pattern naming a kind this repository
+        # does not have, such as the plural typo `widgets` for `widget`. A
+        # selector that matches no write gates nothing, and on this kind that
+        # reads as an ungated agent. A glob is not checked against the
+        # vocabulary: an authority's kind set changing under it is why one is
+        # written.
         kinds:
           type: string
           repeated: true
-          description: kind references; empty means every kind
+          description: kind references, `<authority>/*` or `*`; empty means
+            every kind
         # THE WRITE VERB THE AGENT CALLED, which is neither the change class a
         # trigger watches nor the op the gated request ends up carrying: a
         # gated `put` OR `patch` lands as a request with `op: create` when the
@@ -68,6 +92,17 @@ data:
           type: string
           repeated: true
           description: agent identities; empty means every agent
+    # REQUIRED, and the write door is what requires it (policy.go
+    # validatePolicyRow): there is no default action, so a rule without one
+    # speaks for nothing while sitting in the list looking live.
+    #
+    # The `required:` KEY is deliberately not set yet. Adding it to a property
+    # live records may lack is a narrowing, and the boot upgrade answers a
+    # narrowing by withholding the whole authority's projection — all of core,
+    # until somebody fixes the row — with the reason in a server log the
+    # repository's owner cannot read. #204 turns `required` into real
+    # enforcement together with the violator scan that makes that transition
+    # safe, and this property takes the key there.
     action:
       type: enum
       values:
@@ -96,18 +131,25 @@ data:
         - thread
       description: how much the judge reads — the frozen envelope alone (default),
         or the proposing thread's recent turns beside it
+    # TWO INDEPENDENT FLOORS, NOT A BAND. The judge's verdict picks which floor
+    # is read: `autoAccept` measures an `accept` verdict and `autoRefuse` a
+    # `reject` one, and one reply carries one verdict, so the two never contend
+    # and declaring both declares two separate rules (judge.go routeVerdict).
+    # Anything that is not a verdict clearing its own floor escalates to the
+    # owner: an `escalate` verdict, confidence under the floor, an undeclared
+    # threshold, `advise` mode, a judge that failed.
     autoAccept:
       type: float
       min: 0
       max: 1
-      description: judge confidence at or above accepts the gated request;
-        absent means the judge never accepts
+      description: an `accept` verdict at or above this confidence accepts
+        the gated request; absent means the judge never accepts
     autoRefuse:
       type: float
       min: 0
       max: 1
-      description: judge confidence at or above rejects it; absent means the
-        judge never rejects
+      description: a `reject` verdict at or above this confidence rejects
+        it; absent means the judge never rejects
     mode:
       type: enum
       values:

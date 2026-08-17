@@ -135,6 +135,12 @@ type dataset struct {
 
 	// whens caches compiled trigger guards by source text (triggers.go).
 	whens whenCache
+
+	// warnedPolicies remembers which actionless policy rows have already been
+	// warned about (policy.go). loadPolicies runs per write evaluation, and a
+	// row that can no longer be written would otherwise warn on every agent
+	// write for the life of the process.
+	warnedPolicies sync.Map
 }
 
 func (ds *dataset) close() {
