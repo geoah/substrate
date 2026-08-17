@@ -87,10 +87,11 @@ func (ds *dataset) backfillChain(ctx context.Context) error {
 				if err != nil {
 					return err
 				}
-				// Below signed_from_seq the placeholder is the permanent
-				// truth: backfilled history was never witnessed, and an
-				// after-the-fact signature would say otherwise.
-				sig := sigPlaceholder
+				// Below signed_from_seq the all-zero signature is the
+				// permanent truth: backfilled history was never witnessed,
+				// and an after-the-fact signature would say otherwise.
+				// `repository verify` names every entry that carries it.
+				sig := unsignedSig
 				if signing.signedFrom > 0 && e.Seq >= signing.signedFrom {
 					if signing.key == nil {
 						return fmt.Errorf("substrate/engine: chain backfill: signing is active from seq %d but the signing key is unavailable", signing.signedFrom)

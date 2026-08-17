@@ -116,7 +116,7 @@ budgets.
 | `LOG_LEVEL`                    | `info`                          | debug/info/warn/error                                          |
 | `WEB_DIR`                      | —                               | the built console, served at `/`; empty disables it            |
 | `SUBSTRATE_INVITE_CODE`        | — (unset ⇒ registration closed) | required by `POST /register`                                   |
-| `SUBSTRATE_CREDENTIAL_KEY`     | —                               | seals the sealed store (provider tokens, every secret property's material); unset ⇒ plaintext and a warning |
+| `SUBSTRATE_CREDENTIAL_KEY`     | — (required)                    | seals the sealed store (provider tokens, every secret property's material) and every repository's changelog signing seed; unset ⇒ the server refuses to boot |
 | `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                      | **local development only**: stops verifying the second factor, so a password is the whole credential |
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                               | the one redirect URI providers register                        |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                               | signs OAuth flow state                                         |

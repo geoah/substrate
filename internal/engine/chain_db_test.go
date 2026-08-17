@@ -244,12 +244,12 @@ func TestChainTailTruncationIsTheDocumentedLimit(t *testing.T) {
 
 func TestChainBackfillStampsLegacyHistory(t *testing.T) {
 	t.Parallel()
-	_, ds, dsn := newChainDataset(t)
+	svc, ds, dsn := newChainDataset(t)
 	ctx := context.Background()
 	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "old world"}})
 	db := rawDB(t, dsn)
 	// Wind the chain back: a store written before the chain (and before
-	// signing) existed — placeholder signatures, no signing state at all.
+	// signing) existed — all-zero signatures, no signing state at all.
 	if _, err := db.Exec(`UPDATE changelog SET hash = NULL, sig = decode(repeat('00', 64), 'hex')`); err != nil {
 		t.Fatalf("wind back: %v", err)
 	}
@@ -267,6 +267,13 @@ func TestChainBackfillStampsLegacyHistory(t *testing.T) {
 		VALUES ($1, (SELECT max(seq) + 1 FROM changelog WHERE repository = $1), now(), 'api', 'invalid', 'put', 'x', 'task',
 			'{"n": 9007199254740993, "f": 1.50, "e": 1e3, "neg": -0.0}'::jsonb, decode(repeat('00', 64), 'hex'))`, repoID); err != nil {
 		t.Fatalf("plant a legacy entry: %v", err)
+	}
+
+	// Wound back, the store is what a pre-signing release left behind, and
+	// verify says so by name before anything touches it.
+	never := mustVerify(t, svc, "geoah")
+	if never.OK || !findingContaining(never, "never activated") {
+		t.Fatalf("a never-activated repository verified clean: %+v", never.Findings)
 	}
 
 	// A fresh service on the same store: first open backfills, activates
@@ -288,17 +295,23 @@ func TestChainBackfillStampsLegacyHistory(t *testing.T) {
 		t.Fatalf("%d entries still unhashed after the first open", unhashed)
 	}
 	report := mustVerify(t, svc2, "geoah")
-	if !report.OK {
-		t.Fatalf("the backfilled store does not verify: %+v", report.Findings)
-	}
-	// Everything below the activation seq is history from before signing:
-	// permanently placeholder-signed, counted rather than named.
 	if report.SignedFrom == 0 {
 		t.Fatalf("the keyed reopen did not activate signing: %+v", report)
 	}
-	if report.PlaceholderSigs != report.SignedFrom-1 {
-		t.Fatalf("%d placeholder signatures below activation seq %d; want %d",
-			report.PlaceholderSigs, report.SignedFrom, report.SignedFrom-1)
+	// The hashes check, so the backfill did its job. The entries below the
+	// activation seq still carry no signature, and that is a finding now:
+	// nothing sanctioned can sign the past, so nothing vouches for it.
+	if report.UnsignedEntries != report.SignedFrom-1 {
+		t.Fatalf("%d unsigned entries below activation seq %d; want %d",
+			report.UnsignedEntries, report.SignedFrom, report.SignedFrom-1)
+	}
+	if report.OK || !findingContaining(report, "carry no signature") {
+		t.Fatalf("an unsigned prefix was not named: %+v", report.Findings)
+	}
+	for _, f := range report.Findings {
+		if strings.Contains(f, "hash") {
+			t.Fatalf("the backfill left a hash finding: %s", f)
+		}
 	}
 	backfilled := false
 	for _, ep := range report.Epochs {
@@ -352,56 +365,33 @@ func TestChangelogSigningSignsAndDetectsRemoval(t *testing.T) {
 	}
 	// A fresh repository activates before its seed, so nothing predates the
 	// guarantee.
-	if report.SignedFrom != 1 || report.PlaceholderSigs != 0 {
-		t.Fatalf("a fresh repository is signed from seq %d with %d placeholders; want seq 1 and none",
-			report.SignedFrom, report.PlaceholderSigs)
+	if report.SignedFrom != 1 || report.UnsignedEntries != 0 {
+		t.Fatalf("a fresh repository is signed from seq %d with %d unsigned entries; want seq 1 and none",
+			report.SignedFrom, report.UnsignedEntries)
 	}
 	// Signature removal is the downgrade the durable mark exists to catch:
-	// with sig NOT NULL, stripping one means writing the placeholder.
+	// with sig NOT NULL, stripping one means writing the all-zero value.
 	if _, err := db.Exec(`UPDATE changelog SET sig = decode(repeat('00', 64), 'hex') WHERE seq = (SELECT max(seq) FROM changelog)`); err != nil {
 		t.Fatalf("strip a signature: %v", err)
 	}
 	stripped := mustVerify(t, svc, "geoah")
-	if stripped.OK || !findingContaining(stripped, "placeholder") {
+	if stripped.OK || !findingContaining(stripped, "all-zero signature") {
 		t.Fatalf("a stripped signature was not named: %+v", stripped.Findings)
 	}
 }
 
 func TestSigningActivationIsOneWay(t *testing.T) {
 	t.Parallel()
-	// Born KEYLESS on purpose (the insecure switch is what lets a keyless
-	// host run at all): the DEK then stores plain-framed, so a later keyless
-	// reopen can still open the repository — the scenario where the
-	// write-path refusal is what stands between an activated repository and
-	// an unsigned append.
-	svc, ds, dsn := newChainDataset(t,
-		engine.WithCredentialKey(""), engine.WithInsecureAllowInvalidSignatures())
+	// Every repository is signed from seq 1 and the activation mark is
+	// durable, so the only way to reach "activated but cannot sign" is a
+	// stored seed that will not open — what a rotated or restored-wrong
+	// credential key looks like from inside. Reads keep working and every
+	// write refuses: the guarantee does not quietly shed.
+	svc, ds, dsn := newChainDataset(t)
 	ctx := context.Background()
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       "tasks.substrate.reamde.dev/task",
-		Properties: map[string]any{"name": "before signing"},
-	})
-	// A keyless repository is the state verify complains about by name.
-	unsigned := mustVerify(t, svc, "geoah")
-	if unsigned.OK || !findingContaining(unsigned, "never activated") {
-		t.Fatalf("a never-activated repository verified clean: %+v", unsigned.Findings)
-	}
-	_ = svc.Close()
-
-	// Reopened WITH the key: activation is mandatory and automatic.
-	svc3, err := engine.Open(ctx, dsn,
-		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		engine.WithCredentialKey("test-cred-key"))
-	if err != nil {
-		t.Fatalf("reopen with key: %v", err)
-	}
-	ds3, err := svc3.Dataset(ctx, "geoah")
-	if err != nil {
-		t.Fatalf("open dataset: %v", err)
-	}
-	mustPut(t, ds3, owner, substrate.PutInput{
-		Kind:       "tasks.substrate.reamde.dev/task",
-		Properties: map[string]any{"name": "now signed"},
+		Properties: map[string]any{"name": "signed"},
 	})
 	db := rawDB(t, dsn)
 	var sig []byte
@@ -409,30 +399,41 @@ func TestSigningActivationIsOneWay(t *testing.T) {
 		t.Fatalf("read sig: %v", err)
 	}
 	if len(sig) != 64 || string(sig) == string(make([]byte, 64)) {
-		t.Fatalf("an append on the keyed reopen is not signed (%d bytes)", len(sig))
+		t.Fatalf("an append is not signed (%d bytes)", len(sig))
 	}
-	_ = svc3.Close()
+	_ = svc.Close()
 
-	// Reopened WITHOUT the credential key: the repository opens (plain DEK),
-	// and every append refuses — the guarantee does not quietly shed.
-	svc4, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
-	if err != nil {
-		t.Fatalf("reopen keyless: %v", err)
+	// Sealed framing ('s'), then bytes the credential key cannot open.
+	if _, err := db.Exec(
+		`UPDATE repositories SET signing_key = decode('73' || repeat('ff', 60), 'hex')`); err != nil {
+		t.Fatalf("spoil the stored seed: %v", err)
 	}
-	t.Cleanup(func() { _ = svc4.Close() })
-	ds4, err := svc4.Dataset(ctx, "geoah")
+	svc2, err := engine.Open(ctx, dsn,
+		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		engine.WithCredentialKey("test-cred-key"))
 	if err != nil {
-		t.Fatalf("open dataset keyless: %v", err)
+		t.Fatalf("reopen: %v", err)
 	}
-	if _, err := ds4.Put(ctx, owner, substrate.PutInput{
+	t.Cleanup(func() { _ = svc2.Close() })
+	ds2, err := svc2.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("open dataset with an unopenable seed: %v", err)
+	}
+	if _, err := ds2.Put(ctx, owner, substrate.PutInput{
 		Kind:       "tasks.substrate.reamde.dev/task",
 		Properties: map[string]any{"name": "must refuse"},
 	}); err == nil ||
 		!strings.Contains(err.Error(), "signing key is unavailable") {
-		t.Fatalf("a keyless host appended to a signed repository: %v", err)
+		t.Fatalf("a host that cannot sign appended anyway: %v", err)
 	}
-	if _, err := svc4.(resealer).ResealRepository(ctx, "geoah"); err == nil {
-		t.Fatal("a keyless reseal of a signed repository did not refuse")
+	if _, err := svc2.(resealer).ResealRepository(ctx, "geoah"); err == nil {
+		t.Fatal("a reseal without the signing key did not refuse")
+	}
+	// The durable mark stands: nothing about a missing key deactivates it.
+	after := mustVerify(t, svc2, "geoah")
+	if after.SignedFrom != 1 || after.UnsignedEntries != 0 {
+		t.Fatalf("the activation mark moved: signed from %d, %d unsigned entries",
+			after.SignedFrom, after.UnsignedEntries)
 	}
 }
 
@@ -468,7 +469,7 @@ func TestResealRefusesTamperThenRechainsLegacy(t *testing.T) {
 	}
 
 	// The honest legacy state predates the chain and signing both: no
-	// hashes, placeholder signatures, no signing state. The backfill
+	// hashes, all-zero signatures, no signing state. The backfill
 	// notarizes the planted bytes at the next open, and only THEN does the
 	// reseal — the one sanctioned rewrite — re-chain what it rewrites and
 	// record the epoch that explains the moved head.
@@ -498,9 +499,13 @@ func TestResealRefusesTamperThenRechainsLegacy(t *testing.T) {
 	if report.Entries == 0 {
 		t.Fatalf("the reseal rewrote nothing: %+v", report)
 	}
+	// The chain verifies: the only finding left is the unsigned prefix the
+	// reseal cannot sign and does not pretend to.
 	after := mustVerify(t, svc2, "geoah")
-	if !after.OK {
-		t.Fatalf("the resealed chain does not verify: %+v", after.Findings)
+	for _, f := range after.Findings {
+		if !strings.Contains(f, "carry no signature") {
+			t.Fatalf("the resealed chain does not verify: %+v", after.Findings)
+		}
 	}
 	resealed := false
 	for _, ep := range after.Epochs {

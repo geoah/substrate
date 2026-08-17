@@ -1,8 +1,8 @@
 package engine
 
-// The database-only attacker, replayed against the placeholder era
+// The database-only attacker, replayed against the unsigned prefix
 // (adversarial review, third pass — Codex): below signed_from_seq every
-// signature is the placeholder, so the chain there needs no secret, and the
+// signature is all-zero, so the chain there needs no secret, and the
 // activation epoch's SIGNED heads are the one anchor the key reaches into
 // that prefix. These tests rewrite the prefix and move the mark the way an
 // attacker with full database access would, and hold verify to naming both —
@@ -19,7 +19,7 @@ import (
 	"github.com/geoah/substrate/internal/testdb"
 )
 
-// upgradedRepository builds the placeholder-era shape: a repository whose
+// upgradedRepository builds the pre-signing shape: a repository whose
 // whole history predates the chain and signing, reopened under a key so the
 // backfill stamps hashes and activation lands at head+1. It returns the
 // service, the repository id, a raw (RLS-free) connection, and the dsn.
@@ -79,20 +79,26 @@ func reportFinding(t *testing.T, svc *service, substr string) VerifyReport {
 	return report
 }
 
-// A rewritten-and-re-chained placeholder prefix is byte-consistent — every
-// hash checks, every placeholder is where placeholders live — and ONLY the
+// A rewritten-and-re-chained unsigned prefix is byte-consistent — every hash
+// checks, every unsigned entry is where unsigned entries live — and ONLY the
 // activation epoch's signed heads still know the history it activated over.
-func TestVerifyNamesARewrittenPlaceholderPrefix(t *testing.T) {
+func TestVerifyNamesARewrittenUnsignedPrefix(t *testing.T) {
 	t.Parallel()
 	svc, repoID, raw, dsn := upgradedRepository(t)
 	ctx := context.Background()
-	if before := reportFinding(t, svc, ""); !before.OK || before.PlaceholderSigs == 0 {
-		t.Fatalf("the upgraded repository does not verify clean before the attack: %+v", before)
+	before := reportFinding(t, svc, "carry no signature")
+	if before.UnsignedEntries == 0 {
+		t.Fatalf("the upgraded repository counts no unsigned entries: %+v", before)
+	}
+	for _, f := range before.Findings {
+		if strings.Contains(f, "hash") {
+			t.Fatalf("the chain below the activation seq does not check: %s", f)
+		}
 	}
 
-	// The attack: change one placeholder entry, then re-chain the whole
-	// prefix so every stored hash checks again. No key is needed for any of
-	// it — that is the point of the placeholder era.
+	// The attack: change one unsigned entry, then re-chain the whole prefix
+	// so every stored hash checks again. No key is needed for any of it —
+	// that is what an unsigned prefix is worth.
 	if _, err := raw.Exec(`UPDATE changelog SET actor = 'console' WHERE seq = 1`); err != nil {
 		t.Fatalf("rewrite: %v", err)
 	}
@@ -111,7 +117,7 @@ func TestVerifyNamesARewrittenPlaceholderPrefix(t *testing.T) {
 		}
 		prev = h
 	}
-	reportFinding(t, svc, "placeholder history has been rewritten")
+	reportFinding(t, svc, "unsigned history has been rewritten")
 
 	// The crash repair must not launder it: the epoch is intact, so nothing
 	// is repaired, and verify keeps naming the rewrite after a reopen.
@@ -126,7 +132,7 @@ func TestVerifyNamesARewrittenPlaceholderPrefix(t *testing.T) {
 	if _, err := svc2.Dataset(ctx, "geoah"); err != nil {
 		t.Fatalf("open dataset: %v", err)
 	}
-	reportFinding(t, svc2.(*service), "placeholder history has been rewritten")
+	reportFinding(t, svc2.(*service), "unsigned history has been rewritten")
 }
 
 // A moved activation mark is named twice — the epoch disagrees with it, and a

@@ -10,14 +10,13 @@ package engine
 // (public key, signed_from_seq) pair logged at activation and pinned outside
 // the database, plus remembered heads.
 //
-// Signing is MANDATORY: every repository activates at its first open under a
-// keyed host, and a keyless host refuses the open unless
-// SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES accepts running unsigned with
-// placeholder signatures (engine.go, openRepository). Activation is DURABLE
-// and ONE-WAY: once signed_from_seq is set, an entry at or after it without a
-// valid signature is a verification failure, and the engine refuses to append
-// unsigned — a lost credential key stops writes rather than silently shedding
-// the guarantee, and no switch weakens an activated repository.
+// Signing is MANDATORY and has no exception: every repository activates at
+// its first open under a keyed host, and a keyless host refuses the open
+// (engine.go, openRepository). Activation is DURABLE and ONE-WAY: once
+// signed_from_seq is set, an entry at or after it without a valid signature
+// is a verification failure, and the engine refuses to append unsigned — a
+// lost credential key stops writes rather than silently shedding the
+// guarantee.
 //
 // The key rules are STRICTER than the DEK's, deliberately: the DEK wrap
 // falls back to plain framing on a keyless host, which is fatal here — the
@@ -321,7 +320,7 @@ func (s *service) ensureActivationEpoch(ctx context.Context, ds *dataset) error 
 		// The late epoch signs the BOUNDARY — the hash at signed_from_seq - 1,
 		// the same head a timely activation signed — never the current head:
 		// signing whatever the database holds now would launder a rewrite of
-		// the placeholder prefix into a fresh attestation.
+		// the unsigned prefix into a fresh attestation.
 		var boundary []byte
 		if st.signedFrom > 1 {
 			if err := t.row(`SELECT hash FROM changelog WHERE seq = $1`, st.signedFrom-1).Scan(&boundary); err != nil {

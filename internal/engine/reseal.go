@@ -211,8 +211,8 @@ func (t *txn) reseal(report *ResealReport) error {
 
 // rechainFrom recomputes every entry hash from `from` to the head — the
 // reseal's second half. Signatures re-mint where the signing state requires
-// them and revert to the placeholder where it does not: an old signature over
-// a moved hash would only ever read as tampering.
+// them and go back to all-zero where it does not: an old signature over a
+// moved hash would only ever read as tampering.
 func (t *txn) rechainFrom(from int64) ([]byte, error) {
 	prev := zeroHash
 	if from > 1 {
@@ -241,9 +241,9 @@ func (t *txn) rechainFrom(from int64) ([]byte, error) {
 			if err != nil {
 				return nil, err
 			}
-			// Below signed_from_seq the placeholder stays: a reseal moves
-			// values, it does not extend the signature guarantee backwards.
-			sig := sigPlaceholder
+			// Below signed_from_seq the all-zero signature stays: a reseal
+			// moves values, it does not extend the guarantee backwards.
+			sig := unsignedSig
 			if signing.signedFrom > 0 && e.Seq >= signing.signedFrom {
 				if signing.key == nil {
 					return nil, fmt.Errorf("substrate/engine: rechain: signing is active from seq %d but the signing key is unavailable", signing.signedFrom)
