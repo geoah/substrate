@@ -15,7 +15,7 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 | **repository** | Everything one user has: one changelog, the records folded out of it, and the blob store beside them. One user, one repository, no sharing. |
 | **record** | One typed thing. Identity is `(kind, id)` within a repository. It is the only thing the substrate stores. |
 | **kind** | What a record is, written `<authority>/<name>` — or a bare `<name>` for a kind local to one repository. A kind declares the properties and edges its records may carry. |
-| **authority** | The DNS-style label that publishes a set of kinds and decides who may write their declarations. One path segment: `/api/v1/{authority}/{plural}`. |
+| **authority** | The DNS-style label that publishes a set of kinds and decides who may write their declarations. One path segment: `/api/v1/{authority}/{kind}`. |
 | **plural** | A kind's collection segment in a path — `people` for `people.substrate.reamde.dev/person`. |
 | **property** | A named, typed value on a record, declared by its kind. |
 | **property type** | A named refinement of a base type plus its validations, declared by an authority and reusable across its kinds. |
@@ -53,7 +53,7 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 | **integration** | A bundle whose job includes an ongoing connection to an outside provider. A catalog facet of a bundle, not a different thing. |
 | **vocabulary bundle** | A bundle that ships only kinds and rules — no functions, no provider. |
 | **input** | A bundle's named configuration need: it names a kind, and the engine resolves ONE record per input — the bound record, else the record whose id is `default`, else the sole live record, else nothing, surfaced per input on the bundle's status. No cardinality is enforced on the kind. |
-| **bind** | The explicit step of input resolution: an edge on the bundle's own record row (`rel` = the input name) pointing the input at a chosen record. `POST /bundles/{id}/bind`; an empty record unbinds. |
+| **bind** | The explicit step of input resolution: an edge on the bundle's own record row (`rel` = the input name) pointing the input at a chosen record. `POST /core.substrate.reamde.dev/bundle/{id}/bind`; an empty record unbinds. |
 | **account** | One configured connection to a provider: a record of an `accountconfig`-trait kind. The console groups these under **Connections**. |
 | **catalog** | The read-only list of the bundle closures built into the binary. A source to install from, never an authority. |
 | **callable** | The union of function and agent — what a trigger binds and what dispatch invokes. |

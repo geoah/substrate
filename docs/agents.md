@@ -381,7 +381,7 @@ stored vector names the row and the model that produced it, and semantic search
 scores only the current pair's vectors, so changing either hides the older ones
 rather than mixing two models' distances. `substratectl --dsn … repository
 reembed <username>` and `POST
-/api/v1/core.substrate.reamde.dev/embeddings/reembed` queue their replacement.
+/api/v1/embeddings/reembed` queue their replacement.
 
 **Nothing seeds a provider.** A fresh repository holds no `llmprovider` row at
 all: a row is where the wire, the endpoint and the key live, and a substrate
@@ -536,7 +536,7 @@ so a run is the call API or the console's chat:
 ```sh
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" -d '{"input": "ping"}' \
-  http://localhost:8080/api/v1/core.substrate.reamde.dev/agents/smoke.example.com%2Fecho/call
+  http://localhost:8080/api/v1/core.substrate.reamde.dev/agent/smoke.example.com%2Fecho/call
 ```
 
 The id carries a `/`, so the path segment spells it `%2F`. The answer carries
@@ -561,13 +561,13 @@ where they happen:
 
 ## Calling an agent
 
-`POST /api/v1/core.substrate.reamde.dev/agents/{name}/call` with `{"input": …}` runs the
+`POST /api/v1/core.substrate.reamde.dev/agent/{name}/call` with `{"input": …}` runs the
 loop once: the input becomes the first user message, and the answer carries
 `reply`, `thread`, `status`, `effects` with its `effectsByAction` breakdown,
 `turns`, `toolCalls`, and the token and `costUSD` tallies. Unlike a function
 call, something durable is minted — the thread is the trace.
 
-`POST /api/v1/core.substrate.reamde.dev/agents/{name}/chat` with `{"thread"?, "message"}`
+`POST /api/v1/core.substrate.reamde.dev/agent/{name}/chat` with `{"thread"?, "message"}`
 opens or continues a thread and streams the loop: `application/x-ndjson`, one
 JSON object per line keyed by `kind` (`thread` first, `delta` carrying `text`
 per streamed token, `toolStarted` and `toolFinished` around each dispatch, one

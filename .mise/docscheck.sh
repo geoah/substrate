@@ -209,4 +209,44 @@ for path in docs/decisions/*; do
   fi
 done
 
+# --- the retired URL shapes ---------------------------------------------
+#
+# Decision 0033 moved every URL at once: a collection segment is the kind's
+# NAME, the non-record endpoints sit at the version root, and a bundle's
+# lifecycle is a PATCH of its record's state rather than a verb path. A page
+# still printing an old shape is a paste that 404s, and the one that hurts is an
+# OAuth redirect URI, which an operator registers with a provider and only finds
+# wrong when a consent flow fails. So the shapes are grepped here, over a WIDER
+# scope than `files`: a bundle README prints the callback URL, the console
+# README prints its route table.
+url_files=(docs/*.md README.md web/console/README.md kinds/*/README.md)
+
+grep_urls() {
+  grep "$@" "${url_files[@]}"
+  local status=$?
+  [ "$status" -le 1 ] || flag "grep failed (status ${status}) — a URL rule checked nothing"
+  return "$status"
+}
+
+# A collection is addressed by the kind's NAME. The list is core's declared
+# plurals, closed and checkable: every one addressed a collection before 0033
+# and addresses nothing now. `blobs` matches only under the authority — the
+# top-level `/api/v1/blobs` byte store is a different path and stays.
+core_plurals='actors|agents|authorities|blobs|bundles|credentials|functions|kinds|llminteractions|llmmessages|llmproviders|llmthreads|propertytypes|recordmappings|recordmerges|recordmergerequests|recordpatchpolicies|recordpatchrequests|recordsplits|recoverykeys|repositories|runs|tokens|traits|triggers'
+if grep_urls -rnE "core\.substrate\.reamde\.dev/(${core_plurals})\b"; then
+  flag "a documented collection is addressed by its plural; the segment is the kind's name (decision 0033)"
+fi
+
+# The non-record endpoints hang off the version root, never off an authority.
+repo_endpoints='vocabulary/apply|oauth/start|oauth/callback|catalog|changes|embeddings|recordmerges|recordsplits'
+if grep_urls -rnE "(/api/v[0-9]+|…)/core\.substrate\.reamde\.dev/(${repo_endpoints})\b"; then
+  flag "a documented repository endpoint is under an authority; it sits at the /api/v1 root (decision 0033)"
+fi
+
+# A bundle's lifecycle is a PATCH of its record's state, so disable/enable/
+# uninstall/purge no longer name a path segment after a bundle id.
+if grep_urls -rnE "bundle[s]?/[A-Za-z0-9{}._%]+/(disable|enable|uninstall|purge)\b"; then
+  flag "a documented bundle lifecycle verb is a path; it is a PATCH of the bundle record's state (decision 0033)"
+fi
+
 exit "$fail"

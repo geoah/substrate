@@ -100,7 +100,7 @@ shipped here):
    redirect URI — the OAuth facility's callback:
 
    ```
-   https://<your-substrate-host>/api/v1/core.substrate.reamde.dev/oauth/callback
+   https://<your-substrate-host>/api/v1/oauth/callback
    ```
 
    (The value is the host's `SUBSTRATE_OAUTH_CALLBACK_URL`.)
@@ -115,7 +115,7 @@ shipped here):
    derived from the grant, never typed.
 
 5. **Connect.** Run the host OAuth flow against the account
-   (`substratectl bundle connect`, or `POST …/core.substrate.reamde.dev/oauth/start
+   (`substratectl bundle connect`, or `POST …/oauth/start
    {"record": "<accountId>"}`) → consent at WHOOP → the callback stores the
    grant, sets `tokenStatus: connected`, and the on-connect trigger fires the
    first backfill.
