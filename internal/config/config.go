@@ -15,6 +15,9 @@ type Config struct {
 	// DatabaseURL is the one Postgres holding every repository, in one
 	// shared schema.
 	DatabaseURL string `envconfig:"DATABASE_URL" required:"true"`
+	// Blobs says where blob bytes live. Its own type, because the operator
+	// hat loads it without the rest (LoadBlobs).
+	Blobs Blobs
 	// InviteCode is the ONE door into a fresh substrate: registering with it
 	// creates a user and their one repository. UNSET TURNS REGISTRATION OFF —
 	// /register answers `unsupported` — which is the right default for a

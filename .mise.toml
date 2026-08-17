@@ -117,7 +117,7 @@ description = "The suites that want a database: a pgvector container, or SUBSTRA
 # -skip '^TestLive': the live set BUYS COMPLETIONS. It skips itself without
 # keys, but a dev box has keys in its environment — so the default suite
 # excludes it by name and `test:llm` selects it by the same name.
-run = "go test -count=1 -p 1 -skip '^TestLive' ./internal/engine/... ./internal/catalog/... ./internal/testenv/..."
+run = "go test -count=1 -p 1 -skip '^TestLive' ./internal/engine/... ./internal/blobbytes/... ./internal/catalog/... ./internal/testenv/..."
 
 [tasks."test:race"]
 description = "The short suite under the race detector"
@@ -141,7 +141,7 @@ description = "The whole suite with a coverage profile -> coverage.out"
 # block, so keeping the first line and dropping the other's is the whole merge.
 run = [
   "go test -count=1 -short -covermode=atomic -coverprofile=coverage.short.out ./...",
-  "go test -count=1 -p 1 -skip '^TestLive' -covermode=atomic -coverprofile=coverage.db.out ./internal/engine/... ./internal/catalog/... ./internal/testenv/...",
+  "go test -count=1 -p 1 -skip '^TestLive' -covermode=atomic -coverprofile=coverage.db.out ./internal/engine/... ./internal/blobbytes/... ./internal/catalog/... ./internal/testenv/...",
   """
     { cat coverage.short.out; tail -n +2 coverage.db.out; } >coverage.out
     rm -f coverage.short.out coverage.db.out

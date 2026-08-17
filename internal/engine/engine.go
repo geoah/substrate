@@ -28,6 +28,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/gql"
 	"github.com/geoah/substrate/internal/oauthflow"
 	"github.com/geoah/substrate/internal/runner"
@@ -43,6 +44,7 @@ type options struct {
 	oauthURL  string
 	oauthHTTP *http.Client
 	credKey   string
+	blobs     blobbytes.Backend
 	log       *slog.Logger
 	// insecureAllowSuperuser downgrades the fail-closed role check to a warning
 	// (WithInsecureAllowSuperuser). Dev/test only; never the production default.
@@ -86,6 +88,13 @@ func WithOAuth(stateKey, callbackURL string, hc *http.Client) Option {
 // Without it no repository can activate the mandatory signing, so creating a
 // repository and opening a not-yet-activated one both refuse.
 func WithCredentialKey(key string) Option { return func(o *options) { o.credKey = key } }
+
+// WithBlobStore puts blob bytes somewhere other than the `blobs` bytea column.
+// Without it the engine uses the postgres backend, where bytes and manifest
+// still settle in one transaction and one database dump is still a whole
+// backup. An external backend (fs, s3) trades both of those for bytes that
+// never reach WAL; internal/blobbytes says what each one keeps.
+func WithBlobStore(b blobbytes.Backend) Option { return func(o *options) { o.blobs = b } }
 
 // WithInsecureAllowSuperuser DOWNGRADES the fail-closed role check to a loud
 // warning: when the two bound roles are absent or misconfigured, Open proceeds
@@ -142,6 +151,9 @@ type service struct {
 	oauth *oauthflow.Client
 	// credKey seals the sealed store (AES-256-GCM); empty stores plain.
 	credKey []byte
+	// blobs is where blob bytes live (WithBlobStore); the postgres backend by
+	// default, which is the `blobs` bytea column this schema has always had.
+	blobs blobbytes.Backend
 	// totpDisabled stops verifying the second factor (WithInsecureDisableTOTP):
 	// the password is then the whole credential. Dev only.
 	totpDisabled bool
@@ -209,11 +221,15 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	// has. It assumes NO role: it exists precisely because the bound roles own
 	// nothing and may not create, so the DSN's own user is the point.
 	admin.SetMaxOpenConns(4)
+	if o.blobs == nil {
+		o.blobs = blobbytes.NewPostgres()
+	}
 	s := &service{
 		dsn:          dsn,
 		admin:        admin,
 		base:         reg,
 		credKey:      deriveCredentialKey(o.credKey),
+		blobs:        o.blobs,
 		totpDisabled: o.insecureDisableTOTP,
 		log:          o.log,
 		gqlSchemas:   gql.NewCache(),
@@ -306,6 +322,14 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 			_ = admin.Close()
 			return nil, err
 		}
+	}
+	// A backend switch on a store that already holds bytes is refused here,
+	// before anything is served: half the blobs would 404 otherwise, and a
+	// 404 reads like a deletion.
+	if err := s.checkBlobBackend(ctx); err != nil {
+		_ = maint.Close()
+		_ = admin.Close()
+		return nil, err
 	}
 	// Reclaim any repository-scoped rows a registration that crashed between its
 	// scoped commit and its control-plane insert left behind (createSeededRepository

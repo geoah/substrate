@@ -173,3 +173,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0024](0024-the-credential-key-is-key-material-not-a-passphrase.md) | `SUBSTRATE_CREDENTIAL_KEY` is key material, not a passphrase | proposed |
 | [0025](0025-an-actor-carries-the-full-authority.md) | An actor carries the full authority, and `connector:` is retired | accepted |
 | [0026](0026-embedding-vectors-are-1536-wide-or-refused.md) | Embedding vectors are 1536 wide or the provider row is refused | accepted |
+| [0030](0030-a-blob-outside-postgres-settles-after-its-bytes.md) | A blob outside Postgres settles after its bytes, behind a pending manifest | accepted |
+| [0031](0031-blob-bytes-outside-postgres-are-stored-plaintext.md) | Blob bytes outside Postgres are stored plaintext | accepted |
