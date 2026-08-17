@@ -110,9 +110,9 @@ func TestBothViewsLoad(t *testing.T) {
 // THE SHIPPED TREE IS AUTHORED IN THE DECLARED SPELLING. The loader admits one
 // spelling per key and refuses each pre-typed one by name, so a tree document
 // left in an old spelling does not store as something other than what it says: it
-// does not load at all. The only reader that still understands those spellings is
-// the frozen dialect-1 grammar (internal/engine/dialectonegrammar.go), and it
-// translates the ROWS an older binary stored, never a document.
+// does not load at all. Nothing understands those spellings any more: the
+// dialect-1 grammar that read the ROWS an older binary stored was deleted with
+// its rung (#217).
 //
 // The test still earns its keep for what it says when that happens. A load
 // failure names one key inside one closure; this names the document (its kind and

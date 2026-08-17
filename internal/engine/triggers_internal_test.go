@@ -53,12 +53,11 @@ func TestTriggerSourceResolvesBareKinds(t *testing.T) {
 	}
 }
 
-// THE ONE RELEASED REFERENCE VALUE. `trigger.callable` shipped as a
-// `{kind, id}` pair before a reference became one flat path, and a trigger is a
-// DATA row: the rung walks declaration rows alone, so nothing re-projects a
-// stored trigger. Two things therefore have to hold at once — a stored pair
-// still dispatches, and any rewrite of that row canonicalizes it — and this
-// pins both, so neither can be dropped as "the old shape".
+// THE ONE RETIRED REFERENCE VALUE. `trigger.callable` was a `{kind, id}` pair
+// before a reference became one flat path, and a trigger is a DATA row that
+// nothing re-projects. Two things therefore have to hold at once — a stored
+// pair still dispatches, and any rewrite of that row canonicalizes it — and
+// this pins both, so neither can be dropped as "the old shape".
 func TestTriggerCallableReadsTheReleasedPairAndTheFlatPath(t *testing.T) {
 	const id = "x.substrate.reamde.dev/f"
 	source := map[string]any{
@@ -79,14 +78,14 @@ func TestTriggerCallableReadsTheReleasedPairAndTheFlatPath(t *testing.T) {
 		})
 	}
 
-	// The WRITE half: the pair is the retired shape, refused by name, because the
-	// rung is what migrates a stored one and nothing may author a new one.
+	// The WRITE half: the pair is the retired shape, refused by name, because
+	// nothing migrates a stored one and nothing may author a new one.
 	pin := &vocabulary.Property{Datatype: vocabulary.DatatypeReference, To: kindFunction}
 	_, err := coerceReference(pin, map[string]any{"kind": kindFunction, "id": id})
 	if err == nil {
 		t.Fatal("the retired {kind, id} pair must be refused at the write door")
 	}
-	for _, want := range []string{"retired", "rung"} {
+	for _, want := range []string{"retired", "migrates"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal must name %q, got: %v", want, err)
 		}

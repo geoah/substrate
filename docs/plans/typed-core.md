@@ -5,10 +5,19 @@ load-bearing claims verified against the code). This file is the working plan
 for the three stacked PRs and is updated as work lands. It is a plan, not a
 contract: the code that lands is the contract.
 
-Directive 2's generator is gone (#217). `cmd/kindsgen`, `internal/corekinds`,
-`internal/kinddialect` and the console's generated module were deleted with the
+Two things this plan describes were deleted before the first release (#217), so
+read them as history rather than as the tree.
+
+Directive 2's generator is gone. `cmd/kindsgen`, `internal/corekinds`,
+`internal/kinddialect` and the console's generated module went with the
 `kinds:gen` tasks: nothing outside the generator ever imported the types it
 produced, so the whole pipeline held one contract that had no reader.
+
+The dialect rung is gone. `dialectonegrammar.go` and `dialecttyped.go`
+translated a dialect-1 store, and no release ever produced one, so every
+install would have carried a rung it could never reach. `internal/engine/dialect.go`
+stays as the gate: a store above the binary's dialect refuses to open, and so
+does one still holding a `definition` blob.
 
 ## The directives (owner)
 

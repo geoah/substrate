@@ -212,16 +212,15 @@ func coerceReference(p *vocabulary.Property, v any) (any, error) {
 	case string:
 		return coerceReferencePath(pin, t)
 	case map[string]any:
-		// The retired dialect-1 shape, refused BY NAME rather than folded. The
-		// boot rung canonicalizes the stored rows that hold one
-		// (canonicalizeTriggerCallables), so this door never has to: a pair
-		// arriving here is either an author writing the dead shape or a store
-		// that skipped the rung, and quietly accepting it would keep the old
-		// spelling alive in a dialect that says it is gone.
+		// The retired dialect-1 shape, refused BY NAME rather than folded. No
+		// release ever stored one and no rung translates one (#217), so a pair
+		// arriving here is an author writing the dead shape, and quietly
+		// accepting it would keep the old spelling alive in a dialect that says
+		// it is gone.
 		kind, _ := t["kind"].(string)
 		id, _ := t["id"].(string)
 		return nil, fmt.Errorf(
-			"a reference is a %q path string; the {kind: %q, id: %q} pair is the retired shape, and the boot rung is what migrates a stored one",
+			"a reference is a %q path string; the {kind: %q, id: %q} pair is the retired shape, and nothing migrates a stored one",
 			"<kind>/<id>", kind, id)
 	default:
 		return nil, fmt.Errorf(`a reference is a "<kind>/<id>" path string`)
@@ -229,8 +228,8 @@ func coerceReference(p *vocabulary.Property, v any) (any, error) {
 }
 
 // coerceReferencePath holds one authored string to the value model: the whole
-// decision, in one place, so the write path and the rung cannot answer it
-// differently.
+// decision, in one place, so every door that admits a reference answers it the
+// same way.
 func coerceReferencePath(pin, s string) (any, error) {
 	if s == "" {
 		return nil, fmt.Errorf("a reference needs an id")

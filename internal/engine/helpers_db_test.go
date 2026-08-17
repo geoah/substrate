@@ -2,7 +2,6 @@ package engine_test
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"math"
@@ -18,20 +17,6 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 )
-
-// windBackDialect erases the repository's schema-dialect stamp, simulating a
-// store written by a pre-dialect binary. A legacy-shaped row and a
-// max-dialect stamp cannot coexist in the wild (the stamp says the ladder
-// already ran), so a test that hand-plants legacy content must wind the stamp
-// back for the reopen to re-run the promotion steps.
-func windBackDialect(t *testing.T, db *sql.DB) {
-	t.Helper()
-	for _, q := range []string{`DELETE FROM vocabulary_dialect`, `DELETE FROM vocabulary_promotions`} {
-		if _, err := db.Exec(q); err != nil {
-			t.Fatalf("wind back the schema dialect: %v", err)
-		}
-	}
-}
 
 // Almost every test in this package calls t.Parallel(), and that is what makes
 // the suite finish in a third of the time it used to: the work is mostly spent

@@ -2,22 +2,30 @@ package engine
 
 // The stored-schema dialect gate. A repository's stored declaration rows speak
 // exactly one DIALECT — a per-repository monotonic integer stamped by the
-// binary when the repository opens. The gate does two things and no more:
+// binary when the repository opens. The gate refuses, in both directions, and
+// promotes nothing:
 //
 //   - a binary whose maximum dialect is BELOW the stored one REFUSES the open
 //     with ErrVocabularyDialectNewer, rather than misreading rows it does not
 //     understand. The refusal surfaces like any temporarily-unavailable
 //     repository: Authenticate passes it through un-wrapped (it is not an auth
 //     failure) and the API maps it to `503` with Retry-After;
-//   - an older store is promoted step by step, each step recorded in
-//     vocabulary_promotions before the dialect is stamped.
+//   - a store still holding dialect 1's `definition` blob REFUSES the open with
+//     ErrDeclarationUntranslated, because no rung translates it any more.
 //
-// THE LADDER HAS ONE RUNG. Dialect 1 stored a declaration's content in a
-// `definition` json blob; dialect 2 stores the declaration's own properties, and
-// dialecttyped.go is the step that moves a repository from the first to the
-// second. Nothing in the ladder borrows the shipped tree to decide a
-// repository's CONTENT — a repository's vocabulary is only ever its own rows
-// (seed.go) — and the rung changes shape alone.
+// THE LADDER IS EMPTY, and dialect 2 is where it starts. Dialect 1 stored a
+// declaration's content in a `definition` json blob; dialect 2 stores the
+// declaration's own properties. The rung that moved a repository between them
+// was deleted before the first release (#217): no release ever produced a
+// dialect-1 store, so every install from here on carries a rung it can never
+// reach, and the standing answer for a development store that has one is
+// `mise run dev:wipe`.
+//
+// A NEW DIALECT ADDS A STEP BACK. dialectStep and the loop that ran it are gone
+// with the rung, so dialect 3 reintroduces both; what stays is the shape they
+// need — a step is content-gated and idempotent, records itself in
+// vocabulary_promotions, and stamps inside its own transaction where the
+// rewrite and the stamp must be indivisible.
 
 import (
 	"context"
@@ -25,6 +33,8 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"strconv"
+	"strings"
 )
 
 // ErrVocabularyDialectNewer is the named downgrade refusal: the repository's store
@@ -33,30 +43,15 @@ import (
 // deploy a substrate whose maximum dialect covers the store.
 var ErrVocabularyDialectNewer = errors.New("substrate/engine: the store speaks a newer schema dialect than this binary")
 
-// dialectStep is one recorded promotion N-1 → N of the stored declaration
-// rows. Steps stay content-gated and idempotent (a step that finds nothing to
-// do is free), so a crash between a step's own transactions and the stamp
-// below re-runs it harmlessly at the next open.
-type dialectStep struct {
-	dialect int
-	name    string
-	run     func(*dataset, context.Context) error
-}
+// ErrDeclarationUntranslated is the upward refusal: a stored declaration row in
+// a shape this binary cannot read. It is what a `definition` blob meets, at the
+// gate below and at every later read (rowDocument), and the two agree on
+// purpose — a store the gate stamped and the reader then refused would carry a
+// stamp that lies about its own rows.
+var ErrDeclarationUntranslated = errors.New("substrate/engine: a stored declaration is in a shape this binary cannot read")
 
-// dialectSteps is the ladder. A new dialect appends a step here and bumps
-// maxVocabularyDialect; steps are never deleted or reordered once they ship,
-// since vocabulary_promotions records which repositories passed which one.
-//
-// Step 2 stamps the dialect ITSELF, inside the transaction that rewrites the
-// rows (t.stampDialect): the rewrite and the stamp are indivisible, because an
-// older binary reading the new rows under the old stamp would read declarations
-// with no declaration in them. The stamp below is then a no-op for it — the
-// stamp only ever moves up.
-var dialectSteps = []dialectStep{
-	{dialect: 2, name: dialectTypedDeclarations, run: func(ds *dataset, ctx context.Context) error {
-		return ds.promoteTypedDeclarations(ctx)
-	}},
-}
+// dialectTypedDeclarations is dialect 2's name in vocabulary_promotions.
+const dialectTypedDeclarations = "typed-declarations"
 
 // maxVocabularyDialect is the newest dialect this binary speaks. A fresh
 // repository is stamped here at its first open; a repository stored above it
@@ -74,7 +69,7 @@ func MaxSchemaDialect() int { return maxVocabularyDialect }
 const dialectLockClass int32 = 0x53444c31 // "SDL1"
 
 // promoteSchemaDialect runs the gate at repository open: refuse a store newer
-// than the binary, promote an older one step by step, then stamp.
+// than the binary, refuse an older one this binary cannot read, then stamp.
 func (ds *dataset) promoteSchemaDialect(ctx context.Context) error {
 	// The lock lives on one pinned connection (releasing from another pooled
 	// connection is a silent no-op — the DDL runner's lesson) and is held
@@ -103,21 +98,54 @@ func (ds *dataset) promoteSchemaDialect(ctx context.Context) error {
 	if stored == maxVocabularyDialect {
 		return nil
 	}
-	for _, step := range dialectSteps {
-		if step.dialect <= stored {
-			continue
-		}
-		if err := step.run(ds, ctx); err != nil {
-			return fmt.Errorf("substrate/engine: schema dialect step %d (%s): %w", step.dialect, step.name, err)
-		}
-		if err := ds.recordDialectStep(ctx, step.dialect, step.name); err != nil {
-			return err
-		}
+	// BELOW THE MAXIMUM AND NOT PROMOTABLE. An unstamped store is a fresh
+	// repository in almost every case, and its rows say which: dialect 1 is the
+	// `definition` blob, and a repository being created has no declaration row
+	// carrying one. The check runs BEFORE the stamp because the stamp is durable
+	// and one-way — stamping a dialect-1 store and letting the reader refuse it
+	// a moment later (rowDocument) would leave a mark that says the rows are
+	// typed when they are not.
+	if left, err := ds.definitionBearingRows(ctx); err != nil {
+		return err
+	} else if len(left) > 0 {
+		return fmt.Errorf("%w: repository %s: %d declaration row(s) carry a `%s` blob, which dialect 1 stored and no release ever produced; there is no rung that translates it (#217), so wipe the store: %s",
+			ErrDeclarationUntranslated, ds.info.Name, len(left), propDeclarationBlob, strings.Join(left, ", "))
 	}
-	// A ladder that ran nothing still stamps: the dialect is the store's SHAPE,
-	// not a count of promotions run, so a fresh repository leaves its first open
-	// at the binary's maximum and never re-enters this path.
+	// A gate that promoted nothing still stamps: the dialect is the store's
+	// SHAPE, not a count of promotions run, so a fresh repository leaves its
+	// first open at the binary's maximum and never re-enters this path.
 	return ds.recordDialectStep(ctx, maxVocabularyDialect, dialectTypedDeclarations)
+}
+
+// definitionBearingRows lists the live declaration rows that still carry a
+// `definition` property — the dialect-1 shape — as the ids the refusal names.
+// It runs on the dataset's pool rather than in a transaction: the gate reads it
+// before anything in the open has written.
+func (ds *dataset) definitionBearingRows(ctx context.Context) ([]string, error) {
+	args := make([]any, 0, len(vocabularyKindRefs))
+	ph := make([]string, 0, len(vocabularyKindRefs))
+	for i, ident := range vocabularyKindRefs {
+		args = append(args, ident)
+		ph = append(ph, "$"+strconv.Itoa(i+1))
+	}
+	rows, err := ds.db.QueryContext(ctx, `
+		SELECT kind, id FROM records
+		WHERE kind IN (`+strings.Join(ph, ", ")+`) AND deleted_at IS NULL
+		  AND props ? '`+propDeclarationBlob+`'
+		ORDER BY kind, id`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: read the dialect-1 rows: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var kind, id string
+		if err := rows.Scan(&kind, &id); err != nil {
+			return nil, err
+		}
+		out = append(out, kind+" "+id)
+	}
+	return out, rows.Err()
 }
 
 // storedSchemaDialect reads the repository's stored dialect; an absent row is

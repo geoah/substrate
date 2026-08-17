@@ -334,8 +334,7 @@ type txn struct {
 	// writeReg is the registry this transaction's DECLARATIONS come from, when it
 	// is not the live one: the vocabulary projection resolves a declaration row's
 	// kind against the candidate it is installing (vocabularywrite.go
-	// projectionKind) and the dialect rung against the candidate it translated
-	// (dialecttyped.go). The fold consults the registry for exactly one thing —
+	// projectionKind). The fold consults the registry for exactly one thing —
 	// the weighted search bands — and computing those from a declaration OTHER
 	// than the one the row was validated against is what made a live row and its
 	// own replay disagree: a replay reads the registry the rebuild holds, which is

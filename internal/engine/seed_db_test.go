@@ -347,6 +347,47 @@ func TestBootUpgradeAppendsTheDifferenceOnceAndOnlyWhereOpened(t *testing.T) {
 // the projection test below.
 const kindDecl = "core.substrate.reamde.dev/kind"
 
+// declarationPlanter is the internal-write seam a declaration row is rewritten
+// through (vocabularyplant_internal_test.go). No public door offers it: the
+// shape these tests plant is one the write path refuses.
+type declarationPlanter interface {
+	PlantDeclarationRow(ctx context.Context, kindIdent, id string, props map[string]any) error
+}
+
+func planter(t *testing.T, ds substrate.Dataset) declarationPlanter {
+	t.Helper()
+	p, ok := ds.(declarationPlanter)
+	if !ok {
+		t.Fatal("the dataset does not expose the declaration-planting seam")
+	}
+	return p
+}
+
+// declarationRows lists every declaration row a repository holds, by kind.
+func declarationRows(t *testing.T, ds substrate.Dataset) map[string][]*substrate.Record {
+	t.Helper()
+	out := map[string][]*substrate.Record{}
+	for _, kind := range []string{
+		"core.substrate.reamde.dev/authority", "core.substrate.reamde.dev/actor",
+		"core.substrate.reamde.dev/kind", "core.substrate.reamde.dev/trait",
+		"core.substrate.reamde.dev/propertytype", "core.substrate.reamde.dev/recordmapping",
+		"core.substrate.reamde.dev/function", "core.substrate.reamde.dev/agent",
+		"core.substrate.reamde.dev/bundle",
+	} {
+		page, err := ds.List(context.Background(), substrate.Query{
+			Filter: substrate.Filter{Kinds: []string{kind}}, First: 500,
+		})
+		if err != nil {
+			t.Fatalf("list %s: %v", kind, err)
+		}
+		if len(page.Records) == 0 {
+			continue // this repository holds none of that kind
+		}
+		out[kind] = page.Records
+	}
+	return out
+}
+
 // plantKindDeclarationsWithout stands the repository up as a binary that never
 // declared `prop` on core's `kind` left it: `prop` absent from core's own `kind`
 // declaration, absent from every kind declaration ROW because that binary's

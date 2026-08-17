@@ -201,11 +201,11 @@ func TestReferencePathRefusals(t *testing.T) {
 			prop: "free", value: "nosuch.example.com/thing/x",
 			want: []string{"unknown"},
 		},
-		// The retired pair is refused by NAME wherever it appears: the rung is
-		// what migrates a stored one, so nothing may author a new one.
+		// The retired pair is refused by NAME wherever it appears: nothing
+		// migrates a stored one, so nothing may author a new one.
 		"the retired pair": {
 			prop: "free", value: map[string]any{"id": "a"},
-			want: []string{"retired", "rung"},
+			want: []string{"retired", "migrates"},
 		},
 		// THE AMBIGUOUS CORNER. Under a pin, a value that parses as a path whose
 		// kind is not the pin reads two ways, and both are named rather than one
