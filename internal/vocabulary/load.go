@@ -815,8 +815,8 @@ func (l *loader) parseType(doc Document) *Kind {
 	// an implicit datetime property, NOT refused: stored declarations written
 	// before targets were declarable must keep parsing at open, or the
 	// repository holding them cannot be opened to upgrade them. The shipped
-	// tree itself declares every target (cmd/kindsgen refuses an undeclared
-	// one).
+	// tree itself declares every target, which this cannot enforce and
+	// TestEveryStampTargetIsADeclaredDatetime (kinds/kinds_test.go) does.
 	for _, pname := range sortedKeys(mapOfAny(t.Machines)) {
 		for _, tr := range t.Machines[pname].Transitions {
 			for _, stamp := range sortedKeys(mapOfAny(tr.Stamps)) {

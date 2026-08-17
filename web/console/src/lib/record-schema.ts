@@ -26,7 +26,7 @@ import { coerceReferencePath, recordPath } from "@/lib/record-path"
 export const TO_ANY = "any"
 
 /** The contracts a keyed map's KEYS hold to, as the substrate spells them
- * (`internal/corekinds/support.go`, KeyPattern*Regexp). A pattern this map does
+ * (`internal/vocabulary/types.go`, KeyPatternRegexp). A pattern this map does
  * not know leaves the key unchecked here; the server is still the authority. */
 const KEY_PATTERNS: Record<string, RegExp> = {
   camel: /^[a-z][a-zA-Z0-9]*$/,

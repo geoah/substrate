@@ -253,6 +253,49 @@ func TestEveryKindDeclaresADisplayTemplate(t *testing.T) {
 	}
 }
 
+// EVERY STAMP IN THE TREE NAMES A DECLARED DATETIME PROPERTY. A transition's
+// stamp writes a stored property, and the loader SYNTHESIZES an implicit
+// datetime one where the author declared none — it has to, because stored
+// declarations written before targets were declarable must keep parsing at open
+// (vocabulary/load.go). So a missing target in the shipped tree is invisible to
+// the loader, and this reads the documents rather than the registry.
+//
+// The rule is absolute here and nowhere else: the tree is the vocabulary this
+// binary ships, an undeclared target hides a stored datetime from every reader
+// of the declaration, and the fix is one `type: datetime` property.
+func TestEveryStampTargetIsADeclaredDatetime(t *testing.T) {
+	stamps := 0
+	for _, d := range readTreeDocuments(t) {
+		if d.Kind != vocabulary.DocKind {
+			continue
+		}
+		props := asMapping(d.Data["properties"])
+		for name, pv := range props {
+			// A state property carries its machine INLINE (states, initial,
+			// transitions), so the transitions list is the machine.
+			for _, tv := range asList(asMapping(pv)["transitions"]) {
+				for target := range asMapping(asMapping(tv)["stamps"]) {
+					stamps++
+					decl := asMapping(props[target])
+					if len(decl) == 0 {
+						t.Errorf("%s: %s stamps %q, which the kind does not declare; declare it (type: datetime)",
+							d.ID, name, target)
+						continue
+					}
+					if decl["type"] != "datetime" || decl["repeated"] == true || decl["keyed"] == true {
+						t.Errorf("%s: %s stamps %q, so it must be a single-valued datetime, not %v",
+							d.ID, name, target, decl["type"])
+					}
+				}
+			}
+		}
+	}
+	// A reader that stopped finding stamps would pass this test forever.
+	if stamps == 0 {
+		t.Fatal("read no stamps at all: the documents no longer spell a machine's transitions this way")
+	}
+}
+
 // readTreeDocuments parses every DECLARATION document in the tree.
 func readTreeDocuments(t *testing.T) []vocabulary.Document {
 	t.Helper()

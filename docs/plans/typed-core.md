@@ -5,6 +5,11 @@ load-bearing claims verified against the code). This file is the working plan
 for the three stacked PRs and is updated as work lands. It is a plan, not a
 contract: the code that lands is the contract.
 
+Directive 2's generator is gone (#217). `cmd/kindsgen`, `internal/corekinds`,
+`internal/kinddialect` and the console's generated module were deleted with the
+`kinds:gen` tasks: nothing outside the generator ever imported the types it
+produced, so the whole pipeline held one contract that had no reader.
+
 ## The directives (owner)
 
 1. Every core kind is strongly typed. No `definition: json` blob on kinds whose
