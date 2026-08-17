@@ -22,6 +22,14 @@ dist/
 /.dev/
 .mise.local.toml
 
+# Agent worktrees. A coding agent given its own checkout puts it here, inside
+# the repo, and each one carries a whole console tree. `.yamlfmt` reads this
+# file as its exclusion list, so without this line `mise run fmt:check` and
+# `mise run lint:yaml` walk into a nested `pnpm-lock.yaml` and fail on a file
+# that is not in the change. Only the worktrees: `.claude/` also holds
+# settings and agent definitions somebody may want tracked.
+/.claude/worktrees/
+
 # Linter caches. `*.out` above already covers the coverage profile
 # `mise run test:coverage` writes.
 .ruff_cache/
