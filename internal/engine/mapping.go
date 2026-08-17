@@ -117,6 +117,10 @@ func (t *txn) matchOrLink(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mappi
 		return "", err
 	}
 	if target == "" {
+		// The shell carries no properties, so a subject kind with a `required:`
+		// property and no `default:` refuses it and the source write fails with
+		// it. That is the declaration's own contract: a kind nothing can create
+		// empty is not one a mapping can mint a subject of.
 		shell, err := t.put(substrate.PutInput{Kind: m.To})
 		if err != nil {
 			return "", fmt.Errorf("substrate/engine: shell subject for %s: %w", src.ID, err)
