@@ -76,9 +76,12 @@ RUN apk add --no-cache ca-certificates tzdata python3 uv
 # The runner spawns bundle code as child processes, and NONE of it needs root.
 # uv's cache, the python host and the Go toolchain all write under HOME, so the
 # unprivileged user owns one; GOCACHE sits in /tmp, which it can also write.
+# /keys is where a deployment that mints its own credential key keeps it (see
+# compose.yaml). Docker copies this directory's ownership onto a fresh named
+# volume, which is what lets the unprivileged user write the key it mints.
 RUN addgroup -g 65532 -S substrate \
     && adduser -u 65532 -S -G substrate -h /home/substrate substrate \
-    && install -d -o substrate -g substrate /home/substrate
+    && install -d -o substrate -g substrate /home/substrate /keys
 
 COPY --from=gotoolchain /usr/local/go /usr/local/go
 ENV PATH=/usr/local/go/bin:$PATH \

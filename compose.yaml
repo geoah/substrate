@@ -27,6 +27,33 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      # The credential key the entrypoint mints, kept out of the database it
+      # protects. `docker compose down -v` deletes it with the data.
+      - substrate-keys:/keys
+    # A baked-in default key would be publicly known, so it would seal
+    # nothing, and no key at all refuses to boot. The first start mints 32
+    # random bytes (base64, what `openssl rand -base64 32` prints) into the
+    # volume instead; every start after reads them back. The mint SAYS SO,
+    # because a mint on a database that already holds repositories is a
+    # different event from a mint on an empty one: the server then refuses to
+    # boot (it checks the key against the seeds the store carries), and that
+    # line is what tells the operator the keys volume, not the database, is
+    # what they lost. 077 because this file opens every repository.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -z "$${SUBSTRATE_CREDENTIAL_KEY:-}" ]; then
+          if [ ! -s /keys/credential.key ]; then
+            (umask 077; python3 -c 'import base64,os;print(base64.b64encode(os.urandom(32)).decode())' \
+              > /keys/credential.key)
+            echo "substrate: minted a new credential key into /keys/credential.key. Back it up. If this database is not new, stop and restore the original key instead."
+          fi
+          SUBSTRATE_CREDENTIAL_KEY="$$(cat /keys/credential.key)"
+          export SUBSTRATE_CREDENTIAL_KEY
+        fi
+        exec /usr/local/bin/substrate
     environment:
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-substrate}?sslmode=disable
       # The one door into a fresh substrate. Registering with this code creates
@@ -36,17 +63,13 @@ services:
       # With :- an operator could never close the door from the environment,
       # because empty would fall back to the known default.
       SUBSTRATE_INVITE_CODE: ${SUBSTRATE_INVITE_CODE-let-me-in}
-      # Seals stored provider tokens at rest AND the changelog signing seed:
-      # signing is mandatory, so a real deployment sets this and removes the
-      # insecure switch below. Any string works; losing it stops writes.
+      # Seals stored provider tokens at rest AND the changelog signing seed.
+      # Signing is mandatory, so a host without a key refuses to boot. Unset,
+      # the entrypoint mints one into the keys volume; set it here to pin
+      # your own, but only ever the SAME key this database was written under:
+      # a different one is refused at boot, because nothing here can be
+      # re-keyed. Back it up. Key rotation is not built.
       SUBSTRATE_CREDENTIAL_KEY: ${SUBSTRATE_CREDENTIAL_KEY:-}
-      # The out-of-the-box default runs UNSIGNED, loudly: entries carry
-      # placeholder signatures and `repository verify` names the state. A
-      # baked-in default key would be worse — publicly known, so it certifies
-      # nothing, and key rotation is not built, so replacing it later stops
-      # writes. Set the key above, drop this, and the next open activates
-      # signing for every repository.
-      SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES: ${SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES:-true}
       # The one redirect URI every OAuth provider app registers. Unset, the
       # host OAuth facility refuses to start a flow, so no connector bundle
       # can connect an account.
@@ -66,3 +89,4 @@ services:
 
 volumes:
   substrate-db:
+  substrate-keys:

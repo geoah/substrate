@@ -26,6 +26,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -318,27 +319,33 @@ func canonicalNumber(lex string) (string, error) {
 // zeroHash is the chain's genesis link.
 var zeroHash [32]byte
 
-// The placeholders. sig and principal are NOT NULL, and history that predates
-// them carries a value that says so: the all-zero signature (an append-only
-// log cannot be signed after the fact) and the principal 'invalid' (the token
-// id was discarded before it was ever stored). Both are hashed like any
-// value, so neither can be edited without breaking the chain. Pre-v1
-// scaffolding, tracked in #175.
+// unsignedSig is the all-zero signature: the one value that means "not
+// signed" rather than "signed wrong". No write path commits it any more —
+// settleChain signs every entry it appends or refuses the transaction — and
+// it survives in three places only. Inside an open transaction it is what the
+// INSERT carries between the append and the stamp, which the store's own
+// `changelog_sig_needs_hash` CHECK requires while `hash` is still NULL. In
+// history it is what migration 0005 stamped on entries written before signing
+// existed, because an append-only log cannot be signed after the fact, and
+// what the backfill stamps when it hashes that same pre-signing history. The
+// third is `rechainFrom` (reseal.go): a reseal that rewrites below the
+// activation seq re-stamps it there, because a reseal moves values and does
+// not extend the guarantee backwards. It is hashed like any other value, so
+// it cannot be edited without breaking the chain, and `repository verify`
+// names it wherever it sits.
 //
-// Only the signature placeholder has a constant, because only it is still
-// written. 'invalid' is migration 0005's value alone: no write path stamps a
-// principal placeholder, and an entry written since carries the door's token
+// The principal placeholder has no constant: 'invalid' is migration 0005's
+// value alone, and an entry written since carries the door's verified token
 // id or, where no token stood behind it, the empty string.
-var sigPlaceholder = make([]byte, ed25519.SignatureSize)
+var unsignedSig = make([]byte, ed25519.SignatureSize)
 
-// isPlaceholderSig reports the all-zero placeholder: the one signature value
-// that means "not signed" rather than "signed wrong".
-func isPlaceholderSig(sig []byte) bool {
-	return len(sig) == ed25519.SignatureSize && bytes.Equal(sig, sigPlaceholder)
+// isUnsignedSig reports the all-zero signature.
+func isUnsignedSig(sig []byte) bool {
+	return len(sig) == ed25519.SignatureSize && bytes.Equal(sig, unsignedSig)
 }
 
-// settleChain stamps the hash — and, when signing is active, the signature —
-// of every entry this transaction appended, in seq order, chaining from the
+// settleChain stamps the hash and the signature of every entry this
+// transaction appended, in seq order, chaining from the
 // last committed entry's hash. It runs at commit (inTx), after settleFold
 // has made the last payload final, under the changelog advisory lock the
 // first append took, so the head it chains from cannot move underneath.
@@ -368,6 +375,15 @@ func (t *txn) settleChain() error {
 			return fmt.Errorf("substrate/engine: chain: re-read the signing state: %w", err)
 		}
 	}
+	// Every entry this transaction appended is signed, or none of it commits:
+	// signing is mandatory, and a host that cannot sign refuses the write
+	// rather than appending a row no signature covers.
+	if signing.signedFrom == 0 {
+		return errors.New("substrate/engine: changelog signing has never activated on this repository; refusing to append unsigned")
+	}
+	if signing.key == nil {
+		return fmt.Errorf("substrate/engine: changelog signing is active from seq %d but the signing key is unavailable (is SUBSTRATE_CREDENTIAL_KEY set?); refusing to append unsigned", signing.signedFrom)
+	}
 	repo := t.ds.scope.Repository
 	for i := range t.pending {
 		e := t.pending[i]
@@ -375,19 +391,7 @@ func (t *txn) settleChain() error {
 		if err != nil {
 			return err
 		}
-		// The placeholder stands only where signing never activated (a
-		// keyless host under the insecure switch); an activated repository
-		// signs or refuses.
-		sig := sigPlaceholder
-		if signing.signedFrom > 0 && e.Seq >= signing.signedFrom {
-			if signing.key == nil {
-				// Activation is one-way: a host that cannot sign refuses the
-				// write rather than quietly appending an entry the guarantee
-				// no longer covers.
-				return fmt.Errorf("substrate/engine: changelog signing is active from seq %d but the signing key is unavailable (is SUBSTRATE_CREDENTIAL_KEY set?); refusing to append unsigned", signing.signedFrom)
-			}
-			sig = ed25519.Sign(signing.key, h[:])
-		}
+		sig := ed25519.Sign(signing.key, h[:])
 		res, err := t.exec(`UPDATE changelog SET hash = $2, sig = $3 WHERE seq = $1`, e.Seq, h[:], sig)
 		if err != nil {
 			return fmt.Errorf("substrate/engine: chain: stamp seq %d: %w", e.Seq, err)

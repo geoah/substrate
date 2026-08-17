@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 )
 
@@ -91,29 +90,5 @@ func TestRegistrationDisclosesSigningSeedOnce(t *testing.T) {
 		TOTPSecret: u.seed, TOTPCode: u.code(t),
 	}); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("a second registration did not refuse on the taken username: %v", err)
-	}
-}
-
-func TestKeylessRegistrationReturnsNoSigningSeed(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	svc, _ := newService(t,
-		engine.WithCredentialKey(""), engine.WithInsecureAllowInvalidSignatures())
-
-	enrollment, err := svc.BeginRegistration(ctx, "ada")
-	if err != nil {
-		t.Fatalf("begin: %v", err)
-	}
-	u := &authUser{username: "ada", password: testPassword, seed: enrollment.Secret}
-	res, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "ada", Password: testPassword,
-		TOTPSecret: u.seed, TOTPCode: u.code(t),
-	})
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
-	if res.SigningSeed != "" || res.SigningPublicKey != "" {
-		t.Fatalf("an unsigned (keyless) creation returned signing material: %q %q",
-			res.SigningSeed, res.SigningPublicKey)
 	}
 }

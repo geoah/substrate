@@ -57,10 +57,11 @@ type VerifyReport struct {
 	HeadHash   string `json:"headHash,omitempty"`
 	SignedFrom int64  `json:"signedFrom,omitempty"`
 	PublicKey  string `json:"publicKey,omitempty"`
-	// PlaceholderSigs counts entries below SignedFrom carrying the all-zero
-	// placeholder signature: history written before signing, which nothing
-	// sanctioned can sign after the fact (#175).
-	PlaceholderSigs int64         `json:"placeholderSigs,omitempty"`
+	// UnsignedEntries counts entries below SignedFrom carrying the all-zero
+	// signature: history migration 0005 stamped, which nothing sanctioned
+	// can sign after the fact. Each one is also a finding, so a report that
+	// carries any is never OK.
+	UnsignedEntries int64         `json:"unsignedEntries,omitempty"`
 	Epochs          []EpochInfo   `json:"epochs,omitempty"`
 	Findings        []string      `json:"findings,omitempty"`
 	Truncated       bool          `json:"truncated,omitempty"`
@@ -142,17 +143,21 @@ func (s *service) VerifyRepositoryPinned(ctx context.Context, username string, p
 		return report, err
 	}
 	report.Entries, report.Head = res.entries, res.head
-	report.PlaceholderSigs = res.placeholderSigs
+	report.UnsignedEntries = res.unsignedEntries
 	if res.headHash != nil {
 		report.HeadHash = hex.EncodeToString(res.headHash)
 	}
 
-	// Signing is mandatory; a repository with no activation mark has only
-	// ever run on a keyless host under the insecure switch, and every one of
-	// its entries carries the placeholder. Named as a finding: the complaint
-	// the switch lets an operator live with (#175).
-	if signing.signedFrom == 0 && res.entries > 0 {
-		found("changelog signing has never activated on this repository — signing is mandatory, and every entry carries a placeholder signature (SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES, local testing only)")
+	// Signing is mandatory; a repository with no activation mark has never
+	// signed anything, and no write path can produce that state any more.
+	// Below the mark, an all-zero signature is history migration 0005
+	// stamped: nothing vouches for it, and nothing sanctioned can sign it
+	// now. Both are findings, not tolerated states.
+	switch {
+	case signing.signedFrom == 0 && res.entries > 0:
+		found("changelog signing has never activated on this repository — signing is mandatory, and no entry carries a signature")
+	case res.unsignedEntries > 0:
+		found(fmt.Sprintf("%d entries below seq %d carry no signature (all-zero) — history written before signing, which nothing vouches for", res.unsignedEntries, signing.signedFrom))
 	}
 	if signing.signedFrom > 0 && len(signing.public) == 0 {
 		found("signing is active but the repository stores no public key")
@@ -218,9 +223,9 @@ type chainWalkResult struct {
 	entries  int64
 	head     int64
 	headHash []byte
-	// placeholderSigs counts entries below signed_from_seq carrying the
-	// all-zero placeholder: history from before signing, permanent (#175).
-	placeholderSigs int64
+	// unsignedEntries counts entries below signed_from_seq carrying the
+	// all-zero signature: history from before signing, permanent.
+	unsignedEntries int64
 	// boundaryHash is the stored hash at signed_from_seq - 1 — what the
 	// activation epoch's heads must equal; empty when signed_from_seq <= 1.
 	boundaryHash string
@@ -293,7 +298,7 @@ func verifyChainCorePinned(ctx context.Context, db dbx, repository string, signe
 			}
 			// The activation boundary: the hash the signed activation epoch
 			// recorded as its head, held against the chain below (adversarial
-			// review, third pass: without this, placeholder history rewrites
+			// review, third pass: without this, unsigned history rewrites
 			// under an intact epoch).
 			if signedFrom > 1 && row.entry.Seq == signedFrom-1 {
 				res.boundaryHash = hex.EncodeToString(row.hash)
@@ -303,13 +308,16 @@ func verifyChainCorePinned(ctx context.Context, db dbx, repository string, signe
 			switch {
 			case len(row.sig) != ed25519.SignatureSize:
 				found(fmt.Sprintf("seq %d: signature is %d bytes, want %d", row.entry.Seq, len(row.sig), ed25519.SignatureSize))
-			case isPlaceholderSig(row.sig) && mustSign:
-				found(fmt.Sprintf("seq %d: placeholder (all-zero) signature, but signing is active from seq %d", row.entry.Seq, signedFrom))
-			case isPlaceholderSig(row.sig):
-				// The permanent state of history written before signing
-				// activated: counted for the report, never a per-row finding,
-				// because nothing sanctioned can sign the past (#175).
-				res.placeholderSigs++
+			case isUnsignedSig(row.sig) && mustSign:
+				found(fmt.Sprintf("seq %d: all-zero signature, but signing is active from seq %d", row.entry.Seq, signedFrom))
+			case isUnsignedSig(row.sig):
+				// Below the activation seq: history migration 0005 stamped,
+				// which nothing sanctioned can sign after the fact. Counted
+				// here rather than named per row, because the count is what
+				// the report turns into its one finding — the core walk is
+				// also rebuild's and reseal's chain check, and those two
+				// judge the CHAIN, which an unsigned prefix does not break.
+				res.unsignedEntries++
 			case len(public) == 0:
 				found(fmt.Sprintf("seq %d: a signature with no public key on the repository", row.entry.Seq))
 			case !ed25519.Verify(public, row.hash, row.sig):
@@ -365,10 +373,10 @@ func verifyEpochs(epochs []EpochInfo, signing signingState, boundaryHash string,
 			found(fmt.Sprintf("epoch (activate, from seq %d, signed from %d): disagrees with the repository's activation mark (%d)", ep.FromSeq, ep.SignedFrom, signing.signedFrom))
 		case (ep.NewHead != boundaryHash || ep.OldHead != boundaryHash) && !resealedBelowBoundary:
 			// The one anchor the signature reaches BELOW the activation seq:
-			// the epoch signed the head it activated over, so a placeholder
+			// the epoch signed the head it activated over, so an unsigned
 			// prefix rewritten and re-chained under an intact epoch stops
 			// matching here (adversarial review, third pass).
-			found(fmt.Sprintf("epoch (activate, from seq %d): its signed head does not match the chain at seq %d — placeholder history has been rewritten", ep.FromSeq, ep.FromSeq-1))
+			found(fmt.Sprintf("epoch (activate, from seq %d): its signed head does not match the chain at seq %d — unsigned history has been rewritten", ep.FromSeq, ep.FromSeq-1))
 		default:
 			if activatedAt < 0 {
 				activatedAt = i

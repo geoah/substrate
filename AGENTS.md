@@ -106,11 +106,9 @@ variable outside this tree.
 seed seals under `SUBSTRATE_CREDENTIAL_KEY`, so the dev tasks mint a key once
 into `.dev/credential.key` and every start reuses it; `dev:wipe` removes it
 with the database. An operator command that needs the key (`repository
-reseal`) reads the same file — `dev:status` prints the export line. The
-keyless escape hatch (`SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES=true`,
-placeholder signatures, named by `repository verify`) is pre-v1 scaffolding
-([#175](https://github.com/geoah/substrate/issues/175)) and compose's
-out-of-the-box default, never this tree's dev default.
+reseal`) reads the same file — `dev:status` prints the export line. There is
+no keyless mode to fall back to: a host without the key refuses to boot, and
+a repository whose key cannot open refuses every write.
 
 **Run the engine suite on its own.** `internal/engine`'s `*_db_test.go` files
 each start a pgvector testcontainer, and they starve under a full-tree parallel

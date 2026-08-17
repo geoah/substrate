@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"strings"
 	"testing"
@@ -132,10 +133,7 @@ func TestResyncIsSilentUnderAnyActor(t *testing.T) {
 func TestSecretRoundTripLeavesStoredValue(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	// Explicitly KEYLESS: this test is about the plain-marked DEK framing a
-	// keyless host writes, which mandatory signing otherwise refuses to run.
-	ds, raw, dsn := newDatasetWithDB(t,
-		engine.WithCredentialKey(""), engine.WithInsecureAllowInvalidSignatures())
+	ds, raw, dsn := newDatasetWithDB(t)
 	ty := installSecretCRD(t, ds)
 
 	cfg := mustPut(t, ds, gmail, substrate.PutInput{
@@ -155,10 +153,9 @@ func TestSecretRoundTripLeavesStoredValue(t *testing.T) {
 	if back.Properties["label"] != "personal" {
 		t.Fatalf("round trip lost the ordinary property: %v", back.Properties)
 	}
-	// The stored form is SEALED now (plain-marked here: this service holds no
-	// credential key), so the round-trip assertion decodes the engine's own
-	// framing to prove the credential survived intact.
-	if got := storedSecretPlain(t, raw, dsn, cfg.ID); got != "hunter2" {
+	// The stored form is SEALED, so the round-trip assertion opens it under
+	// the repository's own DEK to prove the credential survived intact.
+	if got := storedSecret(t, raw, dsn, cfg.ID); got != "hunter2" {
 		t.Fatalf("round trip destroyed the credential: stored %q", got)
 	}
 	rows := changesSince(t, ds, before)
@@ -175,17 +172,16 @@ func TestSecretRoundTripLeavesStoredValue(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("rotate secret: %v", err)
 	}
-	if got := storedSecretPlain(t, raw, dsn, cfg.ID); got != "hunter3" {
+	if got := storedSecret(t, raw, dsn, cfg.ID); got != "hunter3" {
 		t.Fatalf("secret rotation did not land: %q", got)
 	}
 }
 
-// storedSecretPlain reads the raw stored apiKey ref, follows it into the
-// sealed store, and opens the payload under the repository's DEK. This
-// suite's HOST runs keyless, so the DEK's control-plane wrap is the
-// plain-marked framing and the test can lift the key the way an operator's
-// tooling would; the payload itself is encrypted regardless.
-func storedSecretPlain(t *testing.T, raw *sql.DB, dsn, id string) string {
+// storedSecret reads the raw stored apiKey ref, follows it into the sealed
+// store, and opens the payload under the repository's DEK — the key lifted
+// out of the control plane under the host credential key, the way an
+// operator's tooling would.
+func storedSecret(t *testing.T, raw *sql.DB, dsn, id string) string {
 	t.Helper()
 	var ref string
 	if err := raw.QueryRow(
@@ -211,10 +207,15 @@ func storedSecretPlain(t *testing.T, raw *sql.DB, dsn, id string) string {
 	if err := cp.QueryRow(`SELECT dek FROM repositories LIMIT 1`).Scan(&wrapped); err != nil {
 		t.Fatalf("read wrapped dek: %v", err)
 	}
-	if len(wrapped) == 0 || wrapped[0] != 'p' {
-		t.Fatalf("keyless host should wrap the DEK plain-marked")
+	if len(wrapped) == 0 || wrapped[0] != 's' {
+		t.Fatalf("a keyed host must wrap the DEK sealed, not plain-marked")
 	}
-	plain, err := engine.OpenPayloadWithKey(wrapped[1:], payload)
+	hostKey := sha256.Sum256([]byte("test-cred-key"))
+	dek, err := engine.OpenPayloadWithKey(hostKey[:], wrapped)
+	if err != nil {
+		t.Fatalf("unwrap the DEK: %v", err)
+	}
+	plain, err := engine.OpenPayloadWithKey(dek, payload)
 	if err != nil {
 		t.Fatalf("open payload under the DEK: %v", err)
 	}

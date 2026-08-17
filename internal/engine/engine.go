@@ -47,10 +47,6 @@ type options struct {
 	oauthHTTP  *http.Client
 	credKey    string
 	log        *slog.Logger
-	// insecureInvalidSigs lets a keyless host run without activating the
-	// mandatory changelog signing (WithInsecureAllowInvalidSignatures).
-	// Dev/test only; never the production default.
-	insecureInvalidSigs bool
 	// insecureAllowSuperuser downgrades the fail-closed role check to a warning
 	// (WithInsecureAllowSuperuser). Dev/test only; never the production default.
 	insecureAllowSuperuser bool
@@ -101,23 +97,9 @@ func WithOAuth(stateKey, callbackURL string, hc *http.Client) Option {
 
 // WithCredentialKey seals the sealed store with AES-256-GCM, the key derived
 // from any non-empty string, and the per-repository changelog signing seeds.
-// Without it secrets store unsealed (with a boot warning) and no repository
-// can activate the mandatory signing, so opening a not-yet-activated
-// repository refuses unless WithInsecureAllowInvalidSignatures accepts
-// running unsigned.
+// Without it no repository can activate the mandatory signing, so creating a
+// repository and opening a not-yet-activated one both refuse.
 func WithCredentialKey(key string) Option { return func(o *options) { o.credKey = key } }
-
-// WithInsecureAllowInvalidSignatures lets a KEYLESS host run without the
-// mandatory changelog signing: a repository that cannot activate (no
-// credential key to seal the seed under) opens anyway, never activates, and
-// stamps the all-zero placeholder signature on every entry — a state
-// `repository verify` names as a finding. It does NOT weaken an activated
-// repository: activation is one-way, and an activated repository whose key
-// cannot open still refuses to append (signing.go). Local testing only;
-// pre-v1 scaffolding (issue #175).
-func WithInsecureAllowInvalidSignatures() Option {
-	return func(o *options) { o.insecureInvalidSigs = true }
-}
 
 // WithInsecureAllowSuperuser DOWNGRADES the fail-closed role check to a loud
 // warning: when the two bound roles are absent or misconfigured, Open proceeds
@@ -179,10 +161,6 @@ type service struct {
 	oauth *oauthflow.Client
 	// credKey seals the sealed store (AES-256-GCM); empty stores plain.
 	credKey []byte
-	// insecureInvalidSigs lets a keyless host skip the mandatory signing
-	// activation and write placeholder signatures. It never deactivates an
-	// activated repository (signing.go).
-	insecureInvalidSigs bool
 	// totpDisabled stops verifying the second factor (WithInsecureDisableTOTP):
 	// the password is then the whole credential. Dev only.
 	totpDisabled bool
@@ -251,20 +229,19 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 	// nothing and may not create, so the DSN's own user is the point.
 	admin.SetMaxOpenConns(4)
 	s := &service{
-		dsn:                 dsn,
-		admin:               admin,
-		base:                reg,
-		embedder:            o.embedder,
-		llmBaseURL:          o.llmBaseURL,
-		llmAPIKey:           o.llmAPIKey,
-		credKey:             deriveCredentialKey(o.credKey),
-		insecureInvalidSigs: o.insecureInvalidSigs,
-		totpDisabled:        o.insecureDisableTOTP,
-		log:                 o.log,
-		gqlSchemas:          gql.NewCache(),
-		bg:                  newBackground(),
-		datasets:            map[string]*dataset{},
-		opening:             map[string]chan struct{}{},
+		dsn:          dsn,
+		admin:        admin,
+		base:         reg,
+		embedder:     o.embedder,
+		llmBaseURL:   o.llmBaseURL,
+		llmAPIKey:    o.llmAPIKey,
+		credKey:      deriveCredentialKey(o.credKey),
+		totpDisabled: o.insecureDisableTOTP,
+		log:          o.log,
+		gqlSchemas:   gql.NewCache(),
+		bg:           newBackground(),
+		datasets:     map[string]*dataset{},
+		opening:      map[string]chan struct{}{},
 	}
 	if o.oauthKey != "" || o.oauthURL != "" {
 		// An empty HMAC key would make every state "signature" forgeable —
@@ -371,7 +348,59 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		_ = admin.Close()
 		return nil, err
 	}
+	// FAIL CLOSED on the credential key itself: a key that does not open what
+	// this database already holds is refused HERE, not discovered one
+	// repository at a time by whoever opens one first.
+	if err := s.requireCredentialKeyOpens(ctx); err != nil {
+		_ = maint.Close()
+		_ = admin.Close()
+		return nil, err
+	}
 	return s, nil
+}
+
+// requireCredentialKeyOpens holds a configured credential key against the
+// signing seeds the store already carries. A host that starts with the WRONG
+// key otherwise listens, answers /healthz, and fails every repository open
+// after the fact — the shape a lost keys volume produces, where a fresh key
+// is minted over a database full of repositories nothing can now unwrap.
+//
+// A KEYLESS service skips the check and keeps its own refusals: it cannot
+// create or open a repository at all (openRepository, createSeededRepository),
+// which is what leaves the read-only operator commands — `repository list`,
+// `inspect`, `verify` — usable against a database whose key the operator
+// running them does not hold.
+func (s *service) requireCredentialKeyOpens(ctx context.Context) error {
+	if len(s.credKey) == 0 {
+		return nil
+	}
+	rows, err := s.maint.QueryContext(ctx,
+		`SELECT id, signing_key FROM repositories WHERE signing_key IS NOT NULL ORDER BY id`)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	var checked int
+	var sealed []string
+	for rows.Next() {
+		var id string
+		var wrapped []byte
+		if err := rows.Scan(&id, &wrapped); err != nil {
+			return err
+		}
+		checked++
+		if _, err := s.openSigningSeed(wrapped); err != nil {
+			sealed = append(sealed, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(sealed) == 0 {
+		return nil
+	}
+	return fmt.Errorf("substrate/engine: SUBSTRATE_CREDENTIAL_KEY does not open the signing seed of %d of this database's %d repositories (%s): this is the key that seals every signing seed and every repository DEK, so this database was written under a different one. Restore the original key, or point this host at the database that belongs to this key. Do NOT let a fresh key start over an existing database: nothing here can be re-keyed and every repository would be unopenable",
+		len(sealed), checked, strings.Join(sealed, ", "))
 }
 
 func (s *service) Close() error {
@@ -510,15 +539,45 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		watch: newBroadcaster(),
 		info:  repo.info(),
 	}
+	// The chain backfill runs FIRST: everything below appends, and an append
+	// needs a hashed head to chain from.
+	if err := ds.backfillChain(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	// Signing activation comes SECOND, after the backfill (the activation
+	// epoch needs a hashed head) and BEFORE the ladder below, because the
+	// ladder APPENDS: the dialect promotion and the shipped-vocabulary
+	// upgrade both write changelog entries, and settleChain refuses an
+	// unsigned append. Activating after them would make the first open of an
+	// unactivated store refuse its own upgrade, which is every open, forever.
+	// Activation is MANDATORY and has no exception: a keyless host cannot
+	// activate — the seed would store in the clear — so it refuses the open.
+	if ds.signing().signedFrom == 0 {
+		if len(s.credKey) == 0 {
+			_ = db.Close()
+			return nil, fmt.Errorf("substrate/engine: open repository %s: changelog signing is mandatory and needs SUBSTRATE_CREDENTIAL_KEY; the signing seed seals under it", repo.Username)
+		}
+		signing, key, err := s.adoptSigning(ctx, ds)
+		if err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("substrate/engine: open repository %s: activate signing: %w", repo.Username, err)
+		}
+		ds.setSigning(datasetSigning{key: key, public: signing.public, signedFrom: signing.signedFrom})
+	}
+	// A crash between activation's mark and its epoch leaves the attestation
+	// missing forever; the open is the sanctioned place to record it late.
+	if err := s.ensureActivationEpoch(ctx, ds); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("substrate/engine: open repository %s: activation epoch: %w", repo.Username, err)
+	}
 	// The stored rows speak one DIALECT: the gate in dialect.go refuses a
 	// store newer than this binary with a named error and stamps an older one,
 	// before anything reads declaration rows back. Then the whole vocabulary
 	// rebuilds FROM the rows, and only then does the shipped-vocabulary
-	// upgrade append what a newer binary added (seed.go).
+	// upgrade append what a newer binary added (seed.go). Every entry these
+	// steps append is at or after the activation seq, so every one is signed.
 	for _, step := range []func(context.Context) error{
-		// The chain backfill runs FIRST: every later step that writes appends
-		// entries, and an append needs a hashed head to chain from.
-		ds.backfillChain,
 		ds.promoteSchemaDialect,
 		ds.loadStoredVocabulary,
 		ds.upgradeShippedVocabulary,
@@ -528,36 +587,6 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 			_ = db.Close()
 			return nil, err
 		}
-	}
-	// Signing activation comes AFTER the backfill (the activation epoch needs
-	// a hashed head) and after the upgrade's own appends, so the durable
-	// boundary lands on a settled head. It is MANDATORY: every repository
-	// activates at its first open under a keyed host. A keyless host cannot
-	// activate — the seed would store in the clear — so it refuses the open,
-	// unless the insecure switch accepts running unsigned with placeholder
-	// signatures (verify names that state; issue #175).
-	if ds.signing().signedFrom == 0 {
-		switch {
-		case len(s.credKey) == 0 && s.insecureInvalidSigs:
-			s.log.Warn("substrate: INSECURE — changelog signing is NOT ACTIVE for this repository (no credential key); entries carry placeholder signatures that certify nothing",
-				"repository", repo.ID)
-		case len(s.credKey) == 0:
-			_ = db.Close()
-			return nil, fmt.Errorf("substrate/engine: open repository %s: changelog signing is mandatory and needs SUBSTRATE_CREDENTIAL_KEY (the signing seed seals under it); SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES=true runs unsigned, for local testing only", repo.Username)
-		default:
-			signing, key, err := s.adoptSigning(ctx, ds)
-			if err != nil {
-				_ = db.Close()
-				return nil, fmt.Errorf("substrate/engine: open repository %s: activate signing: %w", repo.Username, err)
-			}
-			ds.setSigning(datasetSigning{key: key, public: signing.public, signedFrom: signing.signedFrom})
-		}
-	}
-	// A crash between activation's mark and its epoch leaves the attestation
-	// missing forever; the open is the sanctioned place to record it late.
-	if err := s.ensureActivationEpoch(ctx, ds); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("substrate/engine: open repository %s: activation epoch: %w", repo.Username, err)
 	}
 	// Bodies prepare at open exactly as they do at registration: Go builds
 	// hit the cache, python sources register into the shared host.
@@ -657,25 +686,17 @@ func (s *service) createSeededRepository(ctx context.Context, name string, extra
 	// caller's auth material, and every one of those entries must be inside
 	// the guarantee, so the key is minted here and signed_from_seq is 1. A
 	// keyless host cannot mint (the seed would store in the clear) and
-	// refuses the creation, unless the insecure switch accepts an unsigned
-	// repository with placeholder signatures (#175).
-	var signKey ed25519.PrivateKey
-	switch {
-	case len(s.credKey) > 0:
-		wrapped, key, err := s.mintSigningSeed()
-		if err != nil {
-			return zero, nil, err
-		}
-		signKey = key
-		repo.SigningKey = wrapped
-		repo.SigningPublic = key.Public().(ed25519.PublicKey)
-		repo.SignedFrom = 1
-	case s.insecureInvalidSigs:
-		s.log.Warn("substrate: INSECURE — creating a repository with changelog signing OFF (no credential key); its entries carry placeholder signatures that certify nothing",
-			"repository", repo.ID, "username", name)
-	default:
-		return zero, nil, fmt.Errorf("substrate/engine: create repository %s: changelog signing is mandatory and needs SUBSTRATE_CREDENTIAL_KEY (the signing seed seals under it); SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES=true runs unsigned, for local testing only", name)
+	// refuses the creation.
+	if len(s.credKey) == 0 {
+		return zero, nil, fmt.Errorf("substrate/engine: create repository %s: changelog signing is mandatory and needs SUBSTRATE_CREDENTIAL_KEY; the signing seed seals under it", name)
 	}
+	wrapped, signKey, err := s.mintSigningSeed()
+	if err != nil {
+		return zero, nil, err
+	}
+	repo.SigningKey = wrapped
+	repo.SigningPublic = signKey.Public().(ed25519.PublicKey)
+	repo.SignedFrom = 1
 
 	db, err := openScoped(s.dsn, repo.scope(), s.appRole)
 	if err != nil {

@@ -278,8 +278,8 @@ Exits nonzero when anything does not verify.`,
 				} else {
 					fmt.Fprintln(a.out, "  signed:   no (signing has not been activated)")
 				}
-				if report.PlaceholderSigs > 0 {
-					fmt.Fprintf(a.out, "  placeholder signatures: %d entries below the activation seq — history from before signing, permanently unattested\n", report.PlaceholderSigs)
+				if report.UnsignedEntries > 0 {
+					fmt.Fprintf(a.out, "  unsigned: %d entries below the activation seq — history from before signing, permanently unattested\n", report.UnsignedEntries)
 				}
 				for _, ep := range report.Epochs {
 					line := fmt.Sprintf("  epoch:    %s at %s, from seq %d", ep.Reason, ep.At.Format(time.RFC3339), ep.FromSeq)

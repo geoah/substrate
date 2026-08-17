@@ -124,7 +124,7 @@ repository mints its own Ed25519 key at its first open (sealed under
 `SUBSTRATE_CREDENTIAL_KEY`, which the server refuses to boot without): a
 brand-new repository is signed from seq 1, and a store upgraded from an
 earlier release activates on its first open after the backfill. Activation is
-durable and one-way: from the activation seq forward, a placeholder or
+durable and one-way: from the activation seq forward, an all-zero or
 invalid signature is a verification failure, and a host that cannot sign
 refuses to append rather than quietly shedding the guarantee. The activation
 moment logs the `(public key, signed_from_seq)` pair — pin it outside the
@@ -145,18 +145,16 @@ beside it. A possible follow-up, not built: an operator
 path that re-seals a user-provided seed after a lost credential key, which
 today stops writes with no recovery.
 
-Two placeholder values exist, and both are hashed like any other value, so
-neither can be edited later without breaking the chain. Entries written
-before signing existed keep the **all-zero signature** forever — an
-append-only log cannot be signed after the fact, so `verify` counts them
-(`placeholderSigs`) below the activation seq and names them as findings at or
-after it. Entries written before the door threaded the **principal** keep the
-string `invalid`, which no write path stamps any more. A keyless host may
-run ONLY under `SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES=true`, never
-activates signing, writes placeholder signatures on everything, and `verify`
-names that state as a finding. The placeholders and the switch are pre-v1
-scaffolding, tracked to be removed before v1
-([#175](https://github.com/geoah/substrate/issues/175)).
+Two values survive from before signing and attribution existed, both hashed
+like any other value, so neither can be edited later without breaking the
+chain. Entries written before signing keep the **all-zero signature** forever
+— an append-only log cannot be signed after the fact — and `verify` reports
+every one of them as a finding, counting the ones below the activation seq in
+a single line (`unsignedEntries`). Entries written before the door threaded
+the **principal** keep the string `invalid`. No write path can produce either
+value now: every entry is signed at append, a host that cannot sign refuses
+the write, and the principal an entry carries is the token id the door
+verified.
 
 What this proves, honestly:
 

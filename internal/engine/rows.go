@@ -307,16 +307,18 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 	// hashes what a verifier will read later, never the bytes that went in.
 	var seq int64
 	var stored []byte
-	// The INSERT carries the sig placeholder (settleChain overwrites it with
-	// the real signature in this same transaction) and the transaction's
+	// The INSERT carries the all-zero signature and the transaction's
 	// principal — the token id the door verified, empty where no token stands
-	// behind the write. The pending entry and the row must agree on every
+	// behind the write. The zero never survives the transaction: settleChain
+	// signs every pending entry at commit or refuses, and the store's
+	// `changelog_sig_needs_hash` CHECK requires exactly this value while
+	// `hash` is still NULL. The pending entry and the row must agree on every
 	// hashed field, so both sides of this append stamp the same principal.
 	if err := t.row(`
 		INSERT INTO changelog (seq, ts, actor, principal, op, record_id, kind, payload, caused_by, sig)
 		VALUES ((SELECT coalesce(max(seq), 0) + 1 FROM changelog), $1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9)
 		RETURNING seq, payload::text`,
-		t.now, string(actor), t.principal, string(op), recordID, typ, raw, causedBy, sigPlaceholder).Scan(&seq, &stored); err != nil {
+		t.now, string(actor), t.principal, string(op), recordID, typ, raw, causedBy, unsignedSig).Scan(&seq, &stored); err != nil {
 		return err
 	}
 	if seq > t.maxSeq {
