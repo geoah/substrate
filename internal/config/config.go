@@ -48,15 +48,10 @@ type Config struct {
 	// target. Empty (local dev) uses targetOrigin "*" and renders no redirect.
 	ConsoleURL string `envconfig:"SUBSTRATE_CONSOLE_URL" default:""`
 
-	// The host's own LLM gateway: an OpenAI-wire endpoint. It backs the embed
-	// queue — without a base URL and key the embedder is nil and the queue
-	// simply does not drain — and it is what an openai-dialect llmprovider row
-	// with no baseURL of its own falls back to. The key travels ONLY to this
-	// URL. The embed model is a bare model id; a gateway that wants an alias
-	// (`openai/…`) is naming its own configuration, so it belongs in the env.
-	LLMBaseURL    string `envconfig:"SUBSTRATE_LLM_BASE_URL" default:""`
-	LLMAPIKey     string `envconfig:"SUBSTRATE_LLM_API_KEY"`
-	LLMEmbedModel string `envconfig:"SUBSTRATE_LLM_EMBED_MODEL" default:"text-embedding-3-small"`
+	// There is NO LLM configuration here. Completions and embeddings alike are
+	// bought through a repository's own llmprovider records, which carry the
+	// wire, the endpoint, the key and (for embeddings) the model, so the
+	// process holds no bearer that could reach a repository-chosen endpoint.
 }
 
 // Load reads the configuration from the environment.

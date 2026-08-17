@@ -1,6 +1,7 @@
 // Package embed is the substrate.Embedder the embed queue drains through: an
-// OpenAI-wire embeddings endpoint — the same wire every gateway that copied it
-// speaks, so the base URL is what selects one.
+// OpenAI-wire embeddings endpoint. Every gateway that copied that wire speaks
+// it, so the base URL is what selects one, and the caller resolves that URL
+// from a repository's llmprovider row rather than from the process.
 package embed
 
 import (
@@ -23,18 +24,69 @@ const Dim = 1536
 const DefaultModel = "text-embedding-3-small"
 
 // modelDimensions maps base embedding model names to their vector dimensions.
+// It is the whole model set: decision record 0020 fixes the stored width at
+// Dim, so a model this table does not carry is refused where the provider row
+// is written rather than guessed at when the vectors arrive.
 var modelDimensions = map[string]int{
 	"text-embedding-3-small": 1536,
 	"text-embedding-3-large": 3072,
 	"text-embedding-ada-002": 1536,
 }
 
-// Config configures the embedder. An empty Timeout means 30s.
+// BaseModel strips a gateway's routing prefix
+// ("openai/text-embedding-3-small"), which is the name the dimension table is
+// keyed by.
+func BaseModel(model string) string {
+	if idx := strings.LastIndex(model, "/"); idx >= 0 {
+		return model[idx+1:]
+	}
+	return model
+}
+
+// ModelDim reports a model's output width. The second result is false for a
+// model the table does not carry, which is the caller's cue to refuse rather
+// than to assume Dim.
+func ModelDim(model string) (int, bool) {
+	dim, ok := modelDimensions[BaseModel(model)]
+	return dim, ok
+}
+
+// KnownModels lists the models ModelDim answers for, sorted, for an error
+// message that tells the reader what to name instead.
+func KnownModels() []string {
+	return slices.Sorted(maps.Keys(modelDimensions))
+}
+
+// Config configures the embedder: one resolved llmprovider row's endpoint,
+// key, headers and model. An empty Timeout means 30s.
 type Config struct {
 	BaseURL string
 	APIKey  string
 	Model   string
+	Headers map[string]string
 	Timeout time.Duration
+}
+
+// headerTransport rides the gateway's own headers on every request. The
+// llmprovider row declares them (attribution headers, a proxy's routing
+// header) and internal/llm sends the same set on completions.
+type headerTransport struct {
+	base    http.RoundTripper
+	headers map[string]string
+}
+
+func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// The request is the caller's; cloning is what keeps a retry from seeing
+	// headers this transport added to the previous attempt.
+	clone := req.Clone(req.Context())
+	for k, v := range t.headers {
+		clone.Header.Set(k, v)
+	}
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return base.RoundTrip(clone)
 }
 
 // Client implements substrate.Embedder.
@@ -44,38 +96,38 @@ type Client struct {
 	dimension int
 }
 
-// New builds the embedder. It returns (nil, nil) when no endpoint or API key
-// is configured, so the service runs without semantic search rather than
-// refusing to boot. There is no default endpoint: a deployment names its own
-// gateway (SUBSTRATE_LLM_BASE_URL) or goes without.
+// New builds the embedder for one resolved provider row. It refuses a config
+// with no endpoint, no key or no model: there is no default endpoint and no
+// host-wide key, so a repository that has named no embeddings provider has no
+// embedder at all, and the caller answers that by not calling New.
 func New(cfg Config) (*Client, error) {
-	if cfg.BaseURL == "" || cfg.APIKey == "" {
-		return nil, nil
+	if cfg.BaseURL == "" {
+		return nil, fmt.Errorf("embed: no baseURL")
+	}
+	if cfg.APIKey == "" {
+		return nil, fmt.Errorf("embed: no apiKey")
 	}
 	if cfg.Model == "" {
-		cfg.Model = DefaultModel
+		return nil, fmt.Errorf("embed: no model")
 	}
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30 * time.Second
 	}
-	// The model may carry a gateway's routing prefix
-	// ("openai/text-embedding-3-small"), so the dimension lookup reads the
-	// base name after the last slash.
-	baseModel := cfg.Model
-	if idx := strings.LastIndex(cfg.Model, "/"); idx >= 0 {
-		baseModel = cfg.Model[idx+1:]
-	}
-	dim, ok := modelDimensions[baseModel]
+	dim, ok := ModelDim(cfg.Model)
 	if !ok {
 		return nil, fmt.Errorf("embed: unknown embedding model %q (base: %q); known: %s",
-			cfg.Model, baseModel, strings.Join(slices.Sorted(maps.Keys(modelDimensions)), ", "))
+			cfg.Model, BaseModel(cfg.Model), strings.Join(KnownModels(), ", "))
 	}
 	if dim != Dim {
 		return nil, fmt.Errorf("embed: model %q has dim %d; the embeddings column is vector(%d)", cfg.Model, dim, Dim)
 	}
 	clientCfg := openai.DefaultConfig(cfg.APIKey)
 	clientCfg.BaseURL = cfg.BaseURL
-	clientCfg.HTTPClient = &http.Client{Timeout: cfg.Timeout}
+	httpClient := &http.Client{Timeout: cfg.Timeout}
+	if len(cfg.Headers) > 0 {
+		httpClient.Transport = &headerTransport{headers: cfg.Headers}
+	}
+	clientCfg.HTTPClient = httpClient
 	return &Client{
 		client:    openai.NewClientWithConfig(clientCfg),
 		model:     cfg.Model,
@@ -109,6 +161,14 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 			return nil, fmt.Errorf("embed: the embeddings endpoint returned an out-of-range or duplicate index %d", d.Index)
 		}
 		seen[d.Index] = true
+		// The declared width is what the storage column holds, and a gateway
+		// serving something else under a known model name is the one way past
+		// the write-time check (decision record 0020). Refuse here rather than
+		// let Postgres refuse the insert with no model in the message.
+		if len(d.Embedding) != e.dimension {
+			return nil, fmt.Errorf("embed: model %q returned a %d-wide vector; %d is the declared width",
+				e.model, len(d.Embedding), e.dimension)
+		}
 		out[d.Index] = d.Embedding
 	}
 	return out, nil
@@ -116,3 +176,7 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 
 // Dimension returns the model's output width.
 func (e *Client) Dimension() int { return e.dimension }
+
+// Model returns the model id as sent, which is what stamps a stored vector's
+// provenance.
+func (e *Client) Model() string { return e.model }

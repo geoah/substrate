@@ -5,15 +5,17 @@
 # adding one of them is a record, never code. New code is only ever needed for
 # a new wire.
 #
-# The host gateway key travels ONLY to the host gateway URL. An openai row with
-# an empty baseURL means "the host's configured gateway", and then the host's
-# key applies; a row that names its own baseURL must carry its own apiKey, or
-# the host-wide bearer would reach a repository-chosen endpoint. On wire
-# anthropic the row's own apiKey is required for the same reason; on azure both
-# baseURL and apiKey are.
+# EVERY row carries its own endpoint and its own key. There is no host gateway
+# and no host key to fall back to, so no host-wide bearer can reach a
+# repository-chosen endpoint by construction. Only the anthropic wire has an
+# endpoint of its own to leave baseURL empty against.
 #
 # An agent references a row by id (`provider: default`) and names its model as
 # a plain string, so re-pointing every agent on `default` is one patch here.
+#
+# Embeddings resolve the same way, without an agent to name the row: the ONE
+# row that declares `embedModel` is the repository's embeddings provider, and
+# a second row declaring it refuses at the write.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: core.substrate.reamde.dev/llmprovider
@@ -33,7 +35,11 @@ data:
   # number, taken now rather than after stored rows make the retype a
   # migration. A repository whose provider rows still hold float prices keeps
   # version 3, loudly, until the rows are rewritten.
-  version: 4
+  # version 5: embedModel arrived, and the host gateway left. An empty baseURL
+  # on an openai row used to mean "the host's configured gateway"; it now means
+  # the row names no endpoint, and refuses. Every stored openai row must be
+  # given its own baseURL and apiKey.
+  version: 5
   names:
     singular: llmprovider
     plural: llmproviders
@@ -59,13 +65,23 @@ data:
         OpenAI's wire is an openai row
     baseURL:
       type: url
-      description: the endpoint; empty on openai means the host's configured
-        gateway, empty on anthropic the official endpoint, and azure requires
-        it
+      description: the endpoint; only anthropic may leave it empty, for its
+        official endpoint, and openai and azure both require it
     apiKey:
       type: secret
-      description: bearer for the endpoint; empty is only meaningful on an
-        openai row that also leaves baseURL empty
+      description: bearer for the endpoint; every row carries its own, because
+        there is no host key to fall back to
+    # Naming a model here is what makes this row the repository's embeddings
+    # provider — there is no agent to name one, so the declaration IS the
+    # selection. One row per repository may carry it; a second refuses at the
+    # write, as does a model whose width is not the stored 1536 (decision
+    # record 0020) and any wire but openai, the only one with an embeddings
+    # endpoint.
+    embedModel:
+      type: string
+      description: the embeddings model this row's endpoint serves; naming it
+        makes this the repository's embeddings provider, and only one row may
+        name one
     # A header is a name and a value, so it is declared as one: a repeated
     # object, not a json blob whose shape nothing checks. The substrate has no
     # map datatype — a keyed table is a list whose key is a declared field.

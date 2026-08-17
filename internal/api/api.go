@@ -222,6 +222,11 @@ func (h *handler) mountResources(r chi.Router) {
 			// admitted or none, one transaction, activation on commit.
 			r.Post("/"+coreAuthority+"/vocabulary/apply", h.applyVocabulary)
 
+			// Re-embed: enqueue every embeddable property whose stored
+			// vectors did not come from the llmprovider row this repository
+			// currently buys embeddings from.
+			r.Post("/"+coreAuthority+"/embeddings/reembed", h.postReembed)
+
 			r.Post("/"+coreAuthority+"/recordmerges", h.postMerges)
 			r.Post("/"+coreAuthority+"/recordsplits", h.postSplits)
 			r.Get("/"+coreAuthority+"/changes", h.getChanges)

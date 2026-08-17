@@ -197,26 +197,15 @@ func (ds *dataset) resolveProvider(ctx context.Context, id string) (*providerCon
 		return nil, fmt.Errorf("%w: llmprovider row %q declares wire %q — one of %s",
 			substrate.ErrValidation, id, wire, llm.WireNames())
 	}
-	// The host gateway fallbacks are ONE unit: the host key travels ONLY to
-	// the host URL. A row that selects its own baseURL must carry its own
-	// apiKey — falling back independently would send the host-wide gateway
-	// bearer to an arbitrary repository-chosen endpoint.
-	if policy.HostGatewayFallback && pc.cfg.BaseURL == "" {
-		pc.cfg.BaseURL = ds.svc.llmBaseURL
-		if pc.cfg.APIKey == "" {
-			pc.cfg.APIKey = ds.svc.llmAPIKey
-		}
-		if pc.cfg.BaseURL == "" {
-			return nil, fmt.Errorf("%w: llmprovider row %q has no baseURL and the host has no LLM gateway configured",
-				substrate.ErrValidation, id)
-		}
-	}
+	// Every row carries its own endpoint and its own key. There is nothing
+	// host-wide to fall back to, which is the point: a host bearer that could
+	// fall into a row would travel to whatever endpoint that row names.
 	if policy.RequiresBaseURL && pc.cfg.BaseURL == "" {
-		return nil, fmt.Errorf("%w: llmprovider row %q declares no baseURL — the %s wire has no host default, so the row names its own endpoint",
+		return nil, fmt.Errorf("%w: llmprovider row %q declares no baseURL — the %s wire has no endpoint of its own, so the row names one",
 			substrate.ErrValidation, id, pc.wire)
 	}
 	if policy.RequiresAPIKey && pc.cfg.APIKey == "" {
-		return nil, fmt.Errorf("%w: llmprovider row %q declares no apiKey — the host gateway key travels to the host's own gateway and nowhere else",
+		return nil, fmt.Errorf("%w: llmprovider row %q declares no apiKey — a row carries the key for the endpoint it names, and there is no host key",
 			substrate.ErrValidation, id)
 	}
 	return pc, nil

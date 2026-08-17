@@ -28,19 +28,23 @@ const (
 // WirePolicy states what a wire needs from a provider row before an adapter
 // can be built. The facts live here, beside the adapters that make them true,
 // so adding a wire declares its own rules instead of widening a caller's
-// switch. The caller owns the host-gateway pairing and the error wording.
+// switch. The caller owns the error wording.
+//
+// There is no host-gateway fallback on any wire: a row carries its own
+// endpoint and its own key, so no host-wide bearer can travel to a
+// repository-chosen endpoint.
 type WirePolicy struct {
-	// HostGatewayFallback: on this wire an empty baseURL MEANS the host's
-	// configured gateway. The URL and the key fall back as ONE unit — a row
-	// naming its own baseURL never inherits the host's key, or a host-wide
-	// gateway bearer would travel to a repository-chosen endpoint.
-	HostGatewayFallback bool
-	// RequiresBaseURL: the wire has neither an endpoint of its own nor a
-	// fallback, so the row must name one — an azure deployment IS its URL.
+	// RequiresBaseURL: the wire has no endpoint of its own, so the row must
+	// name one — an azure deployment IS its URL, and an openai-wire gateway is
+	// whichever one the row points at.
 	RequiresBaseURL bool
-	// RequiresAPIKey: the row must end up holding a key, its own or (only
-	// under HostGatewayFallback) the host's.
+	// RequiresAPIKey: the row must hold a key of its own.
 	RequiresAPIKey bool
+	// Embeddings: the wire has an embeddings endpoint, so a row on it may name
+	// an embedModel. Only openai's wire does; anthropic sells no embeddings at
+	// all, and the azure one is a per-deployment path this adapter does not
+	// build.
+	Embeddings bool
 }
 
 // wirePolicies is the valid wire set and what each one needs, in the order an
@@ -50,7 +54,7 @@ var wirePolicies = []struct {
 	wire   Wire
 	policy WirePolicy
 }{
-	{WireOpenAI, WirePolicy{HostGatewayFallback: true, RequiresAPIKey: true}},
+	{WireOpenAI, WirePolicy{RequiresBaseURL: true, RequiresAPIKey: true, Embeddings: true}},
 	{WireAnthropic, WirePolicy{RequiresAPIKey: true}},
 	{WireAzure, WirePolicy{RequiresBaseURL: true, RequiresAPIKey: true}},
 }

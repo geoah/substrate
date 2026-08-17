@@ -28,12 +28,17 @@ const (
 // leave every deployment quietly reporting no embeddings.
 var _ substrate.EmbeddingsReporter = (*service)(nil)
 
-// EmbeddingsEnabled reports whether an embedder was wired in (WithEmbedder).
-// Without one the semantic arm below refuses and nothing drains the embed
-// queue, so discovery reads this seam instead of advertising a feature this
-// deployment does not serve. It opens no repository: the answer is the
-// binary's configuration, not any repository's state.
-func (s *service) EmbeddingsEnabled() bool { return s.embedder != nil }
+// EmbeddingsEnabled reports whether this engine serves embeddings at all, and
+// it always does: the provider is a repository's own llmprovider row
+// (resolveEmbedProvider), not a host setting an operator can omit, so there is
+// no build of this engine where the feature is unreachable. Discovery is
+// unauthenticated and opens no repository, so it cannot answer the narrower
+// question (whether the CALLER's repository declares a row) and is not asked
+// to: Search answers that one on the first query, naming the property no row
+// declares. The seam stays because a Service that genuinely cannot embed
+// (the API's fake, a future reader-only implementation) still reports false and
+// discovery still drops the feature for it.
+func (*service) EmbeddingsEnabled() bool { return true }
 
 func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]substrate.Hit, error) {
 	q := strings.TrimSpace(in.Q)
@@ -48,12 +53,24 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]subs
 	if mode == "" {
 		mode = substrate.SearchHybrid
 	}
-	if !ds.svc.EmbeddingsEnabled() && mode != substrate.SearchLexical {
-		// Lexical-only when no embedder is configured.
-		if mode == substrate.SearchSemantic {
-			return nil, fmt.Errorf("%w: semantic search needs an embedder", substrate.ErrValidation)
+	// The embeddings provider is the REPOSITORY's, resolved here rather than
+	// held by the process: a repository that names none searches lexically,
+	// and one whose row does not resolve says so instead of quietly returning
+	// the lexical arm as if it were the whole answer.
+	var provider *embedProvider
+	if mode != substrate.SearchLexical {
+		p, err := ds.resolveEmbedProvider(ctx)
+		if err != nil {
+			return nil, err
 		}
-		mode = substrate.SearchLexical
+		provider = p
+		if provider == nil {
+			if mode == substrate.SearchSemantic {
+				return nil, fmt.Errorf("%w: semantic search needs an embeddings provider: no llmprovider row declares %s",
+					substrate.ErrValidation, propEmbedModel)
+			}
+			mode = substrate.SearchLexical
+		}
 	}
 	var types []string
 	reg := ds.registry()
@@ -89,7 +106,7 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]subs
 		}
 	}
 	if mode == substrate.SearchSemantic || mode == substrate.SearchHybrid {
-		sem, err := ds.semantic(ctx, q, types, k)
+		sem, err := ds.semantic(ctx, provider, q, types, k)
 		if err != nil {
 			return nil, err
 		}
@@ -201,8 +218,8 @@ func (ds *dataset) lexical(ctx context.Context, q string, types []string, k int)
 	return out, rows.Err()
 }
 
-func (ds *dataset) semantic(ctx context.Context, q string, types []string, k int) (map[eref]arm, error) {
-	vecs, err := ds.svc.embedder.Embed(ctx, []string{q})
+func (ds *dataset) semantic(ctx context.Context, provider *embedProvider, q string, types []string, k int) (map[eref]arm, error) {
+	vecs, err := provider.Embed(ctx, []string{q})
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: embed query: %w", err)
 	}
@@ -215,11 +232,17 @@ func (ds *dataset) semantic(ctx context.Context, q string, types []string, k int
 	if len(types) > 0 {
 		clause = ` AND e.kind IN ` + b.jsonArray(types)
 	}
+	// ONLY the resolved pair's vectors are scored. Cosine distance between two
+	// models' vectors is not a distance, so a half-finished re-embed returns
+	// fewer hits rather than a ranking mixed across models, and a vector whose
+	// producing model is unknown (the empty provenance a row stored before
+	// migration 0008 carries) is never scored at all.
+	prov := ` AND em.provider = ` + b.arg(provider.id) + ` AND em.model = ` + b.arg(provider.model)
 	rows, err := ds.db.QueryContext(ctx, `
 		SELECT em.record_kind, em.record_id, MAX(1 - (em.vec <=> `+vec+`)) AS sim,
 		       bool_or(`+demotion("e")+`) AS demoted
 		FROM embeddings em JOIN records e ON e.kind = em.record_kind AND e.id = em.record_id
-		WHERE e.deleted_at IS NULL`+clause+`
+		WHERE e.deleted_at IS NULL`+prov+clause+`
 		GROUP BY em.record_kind, em.record_id ORDER BY demoted, sim DESC LIMIT `+b.arg(k), b.args...)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: semantic search: %w", err)
@@ -247,16 +270,24 @@ func (ds *dataset) semantic(ctx context.Context, q string, types []string, k int
 // newer job pending and DOES NOT commit the stale vectors — the edit is never
 // lost to a slow embed, and two workers cannot both write, because the finalize
 // takes the queue row FOR UPDATE and the loser finds it already drained.
-func (ds *dataset) ProcessEmbedQueue(ctx context.Context, e substrate.Embedder, batch int) (int, error) {
-	if e == nil {
-		e = ds.svc.embedder
+//
+// The embeddings provider is the repository's own row, resolved on every pass:
+// a repository that names none drains nothing and reports 0, which is why the
+// drain loop runs for every repository whether or not any of them embeds.
+func (ds *dataset) ProcessEmbedQueue(ctx context.Context, batch int) (int, error) {
+	provider, err := ds.resolveEmbedProvider(ctx)
+	if err != nil {
+		return 0, err
 	}
-	if e == nil {
-		return 0, fmt.Errorf("%w: no embedder configured", substrate.ErrValidation)
+	if provider == nil {
+		return 0, nil
 	}
-	if e.Dimension() != vectorDim {
-		return 0, fmt.Errorf("%w: embedder dimension %d, storage expects %d",
-			substrate.ErrValidation, e.Dimension(), vectorDim)
+	// The write refuses a model of another width, so this is the second gate,
+	// for a row that predates the rule or a client the table's width no longer
+	// describes (decision record 0020).
+	if provider.Dimension() != vectorDim {
+		return 0, fmt.Errorf("%w: llmprovider row %q model %q is %d wide, storage expects %d",
+			substrate.ErrValidation, provider.id, provider.model, provider.Dimension(), vectorDim)
 	}
 	if batch <= 0 {
 		batch = 20
@@ -284,11 +315,11 @@ func (ds *dataset) ProcessEmbedQueue(ctx context.Context, e substrate.Embedder, 
 
 	done := 0
 	for _, it := range items {
-		plan, err := ds.computeEmbedding(ctx, e, it.id, it.prop)
+		plan, err := ds.computeEmbedding(ctx, provider, it.id, it.prop)
 		if err != nil {
 			return done, err
 		}
-		applied, err := ds.commitEmbedding(ctx, it.id, it.prop, it.gen, plan)
+		applied, err := ds.commitEmbedding(ctx, provider, it.id, it.prop, it.gen, plan)
 		if err != nil {
 			return done, err
 		}
@@ -321,7 +352,7 @@ type embedPlan struct {
 // computeEmbedding reads the current text and embeds the changed chunks. It
 // makes NO writes: the generation it was computed against is only confirmed at
 // commitEmbedding, so nothing here can outrun a concurrent edit.
-func (ds *dataset) computeEmbedding(ctx context.Context, emb substrate.Embedder, id eref, prop string) (*embedPlan, error) {
+func (ds *dataset) computeEmbedding(ctx context.Context, provider *embedProvider, id eref, prop string) (*embedPlan, error) {
 	row, err := scanRecord(ds.db.QueryRowContext(ctx,
 		`SELECT `+recordCols+` FROM records WHERE kind = $1 AND id = $2`, id.Kind, id.ID))
 	if err != nil {
@@ -341,11 +372,14 @@ func (ds *dataset) computeEmbedding(ctx context.Context, emb substrate.Embedder,
 	for i, c := range chunks {
 		sum := sha256.Sum256([]byte(c))
 		hash := hex.EncodeToString(sum[:])
-		var have string
+		var have, haveProvider, haveModel string
 		err := ds.db.QueryRowContext(ctx,
-			`SELECT text_hash FROM embeddings WHERE record_kind = $1 AND record_id = $2 AND property = $3 AND chunk = $4`,
-			id.Kind, id.ID, prop, i).Scan(&have)
-		if err == nil && have == hash {
+			`SELECT text_hash, provider, model FROM embeddings WHERE record_kind = $1 AND record_id = $2 AND property = $3 AND chunk = $4`,
+			id.Kind, id.ID, prop, i).Scan(&have, &haveProvider, &haveModel)
+		// The PROVENANCE is half the skip: unchanged text embedded by another
+		// pair is exactly what a re-embed exists to replace, so a stored chunk
+		// is kept only when its text and its producing pair both still stand.
+		if err == nil && have == hash && haveProvider == provider.id && haveModel == provider.model {
 			continue
 		}
 		plan.writes = append(plan.writes, embedWrite{chunk: i, hash: hash})
@@ -357,7 +391,7 @@ func (ds *dataset) computeEmbedding(ctx context.Context, emb substrate.Embedder,
 	for n, w := range plan.writes {
 		pending[n] = chunks[w.chunk]
 	}
-	vecs, err := emb.Embed(ctx, pending)
+	vecs, err := provider.Embed(ctx, pending)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: embed %s.%s: %w", id.ID, prop, err)
 	}
@@ -375,7 +409,7 @@ func (ds *dataset) computeEmbedding(ctx context.Context, emb substrate.Embedder,
 // FOR UPDATE: a bumped generation means the text changed under a slow embed, so
 // the stale plan is discarded and the newer generation left pending; a missing
 // row means another worker already drained it. Returns whether the job applied.
-func (ds *dataset) commitEmbedding(ctx context.Context, id eref, prop string, gen int64, plan *embedPlan) (bool, error) {
+func (ds *dataset) commitEmbedding(ctx context.Context, provider *embedProvider, id eref, prop string, gen int64, plan *embedPlan) (bool, error) {
 	tx, err := ds.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -412,12 +446,17 @@ func (ds *dataset) commitEmbedding(ctx context.Context, id eref, prop string, ge
 			return false, err
 		}
 		for _, w := range plan.writes {
+			// The pair is stamped in the same statement as the vector, so a
+			// stored vector whose provenance is wrong is not a state this
+			// path can produce.
 			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO embeddings (record_kind, record_id, property, chunk, text_hash, vec)
-				VALUES ($1, $2, $3, $4, $5, $6)
+				INSERT INTO embeddings (record_kind, record_id, property, chunk, text_hash, vec, provider, model)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 				ON CONFLICT (repository, record_kind, record_id, property, chunk) DO UPDATE SET
-					text_hash = EXCLUDED.text_hash, vec = EXCLUDED.vec`,
-				id.Kind, id.ID, prop, w.chunk, w.hash, pgvector.NewVector(w.vec)); err != nil {
+					text_hash = EXCLUDED.text_hash, vec = EXCLUDED.vec,
+					provider = EXCLUDED.provider, model = EXCLUDED.model`,
+				id.Kind, id.ID, prop, w.chunk, w.hash, pgvector.NewVector(w.vec),
+				provider.id, provider.model); err != nil {
 				return false, err
 			}
 		}
