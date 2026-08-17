@@ -120,7 +120,7 @@ func (p *postgresStore) DeleteTx(ctx context.Context, tx DB, digest string) erro
 }
 
 func (p *postgresStore) List(ctx context.Context, after string, limit int) ([]Object, error) {
-	q := `SELECT digest, created_at FROM blobs WHERE digest > $1 ORDER BY digest`
+	q := `SELECT digest, size, created_at FROM blobs WHERE digest > $1 ORDER BY digest`
 	args := []any{after}
 	if limit > 0 {
 		q += ` LIMIT $2`
@@ -135,7 +135,7 @@ func (p *postgresStore) List(ctx context.Context, after string, limit int) ([]Ob
 	for rows.Next() {
 		var o Object
 		var at time.Time
-		if err := rows.Scan(&o.Digest, &at); err != nil {
+		if err := rows.Scan(&o.Digest, &o.Size, &at); err != nil {
 			return nil, err
 		}
 		o.At = at.UTC()

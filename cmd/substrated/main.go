@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/geoah/substrate/internal/api"
+	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/config"
 	"github.com/geoah/substrate/internal/engine"
@@ -73,9 +74,22 @@ func run() error {
 	// (for embeddings) the model, and the engine resolves it per repository
 	// per pass. The process holds no key that could reach a
 	// repository-chosen endpoint.
+
+	// Where blob bytes live. The default is the `blobs` bytea column, so a
+	// deployment that sets nothing keeps a database dump as a whole backup.
+	blobs, err := cfg.Blobs.Backend()
+	if err != nil {
+		return err
+	}
+	if blobs.Name() != blobbytes.BackendPostgres {
+		slog.Info("blob bytes are stored outside Postgres: a database dump is no longer a whole backup",
+			"backend", blobs.Name())
+	}
+
 	opts := []engine.Option{
 		engine.WithKindsFS(kinds.Seed()),
 		engine.WithCredentialKey(cfg.CredentialKey),
+		engine.WithBlobStore(blobs),
 	}
 	if cfg.OAuthCallbackURL != "" {
 		stateKey := cfg.OAuthStateKey

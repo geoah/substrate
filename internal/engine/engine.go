@@ -323,6 +323,14 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 			return nil, err
 		}
 	}
+	// A backend switch on a store that already holds bytes is refused here,
+	// before anything is served: half the blobs would 404 otherwise, and a
+	// 404 reads like a deletion.
+	if err := s.checkBlobBackend(ctx); err != nil {
+		_ = maint.Close()
+		_ = admin.Close()
+		return nil, err
+	}
 	// Reclaim any repository-scoped rows a registration that crashed between its
 	// scoped commit and its control-plane insert left behind (createSeededRepository
 	// commits the repository's own rows FIRST and the control-plane row LAST, so

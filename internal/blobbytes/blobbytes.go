@@ -62,10 +62,12 @@ func checkRepository(repository string) error {
 	return nil
 }
 
-// Object is one stored object: its digest and when the store received it. The
-// time is what the unreferenced-upload grace and the orphan sweep read.
+// Object is one stored object, as a listing reports it. The time is what the
+// unreferenced-upload grace and the orphan sweep read; the size is what a
+// migration passes to the store it is copying into.
 type Object struct {
 	Digest string
+	Size   int64
 	At     time.Time
 }
 

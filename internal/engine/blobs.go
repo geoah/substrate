@@ -111,22 +111,16 @@ func (ds *dataset) putBlobOneTx(ctx context.Context, actor substrate.Actor, stor
 		}); err != nil {
 			return err
 		}
-		// The AUTHORITATIVE metadata is the stored row's, not this request's
-		//: on a dedup PUT the first writer's name/mime/size win, so a
-		// second PUT of the same bytes as a different name returns — and settles
-		// — the original, never a lie.
-		var authName, authMime string
-		var authSize int64
-		if err := t.row(`SELECT name, mime_type, size FROM blobs WHERE digest = $1`, digest).
-			Scan(&authName, &authMime, &authSize); err != nil {
+		auth, _, err := t.authoritativeBlobMeta(digest, name, mimeType, size)
+		if err != nil {
 			return err
 		}
-		if err := t.settleBlobRecord(actor, digest, authSize, authName, authMime); err != nil {
+		if err := t.settleBlobRecord(actor, digest, auth.size, auth.name, auth.mimeType); err != nil {
 			return err
 		}
 		info = &substrate.BlobInfo{
-			Digest: digest, Size: authSize, Name: authName,
-			MimeType: authMime, Status: substrate.BlobStored,
+			Digest: digest, Size: auth.size, Name: auth.name,
+			MimeType: auth.mimeType, Status: substrate.BlobStored,
 		}
 		return nil
 	})
@@ -155,25 +149,19 @@ func (ds *dataset) putBlobOneTx(ctx context.Context, actor substrate.Actor, stor
 // only with the bytes already durable.
 func (ds *dataset) putBlobExternal(ctx context.Context, actor substrate.Actor, store blobbytes.Store, digest, name, mimeType string, data []byte) (*substrate.BlobInfo, error) {
 	size := int64(len(data))
-	// The authoritative metadata is the first writer's, exactly as on the
-	// postgres path: a stored manifest is what a second PUT of the same bytes
-	// gets back, whatever it called them.
-	authName, authMime, authSize := name, mimeType, size
+	var auth blobRecordMeta
 	err := ds.inTx(ctx, actor, true, func(t *txn) error {
 		if err := t.lockKey(blobLockKey(digest)); err != nil {
 			return err
 		}
-		m, ok, err := t.blobRecord(digest)
+		a, exists, err := t.authoritativeBlobMeta(digest, name, mimeType, size)
 		if err != nil {
 			return err
 		}
-		if ok && m.status == string(substrate.BlobStored) {
-			authName, authMime, authSize = m.name, m.mimeType, m.size
-			return nil
-		}
-		if ok {
-			// A manifest created ahead of the upload (a reference minted
-			// pending): it stays, and step 3 fills it in.
+		auth = a
+		if exists {
+			// Either a stored manifest (this is a dedup PUT) or one created
+			// ahead of the upload; step 3 settles whichever it is.
 			return nil
 		}
 		return t.mintPendingBlobRecord(actor, digest, name, mimeType)
@@ -199,15 +187,33 @@ func (ds *dataset) putBlobExternal(ctx context.Context, actor substrate.Actor, s
 		if err := t.lockKey(blobLockKey(digest)); err != nil {
 			return err
 		}
-		return t.settleBlobRecord(actor, digest, authSize, authName, authMime)
+		return t.settleBlobRecord(actor, digest, auth.size, auth.name, auth.mimeType)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &substrate.BlobInfo{
-		Digest: digest, Size: authSize, Name: authName,
-		MimeType: authMime, Status: substrate.BlobStored,
+		Digest: digest, Size: auth.size, Name: auth.name,
+		MimeType: auth.mimeType, Status: substrate.BlobStored,
 	}, nil
+}
+
+// authoritativeBlobMeta is what a PUT settles and returns: the metadata a
+// STORED manifest already holds, not this request's claim, so a second PUT of
+// the same bytes under a different name gets the first name back rather than
+// renaming the blob. The digest is the identity; name and mime type are
+// descriptive and take no part in dedup. Reports whether a manifest exists at
+// all, in any status, which is what the external path needs to know before it
+// mints one.
+func (t *txn) authoritativeBlobMeta(digest, name, mimeType string, size int64) (blobRecordMeta, bool, error) {
+	m, ok, err := t.blobRecord(digest)
+	if err != nil {
+		return blobRecordMeta{}, false, err
+	}
+	if ok && m.status == string(substrate.BlobStored) {
+		return m, true, nil
+	}
+	return blobRecordMeta{name: name, mimeType: mimeType, size: size}, ok, nil
 }
 
 // blobBytes binds the configured backend to this repository. The repository is
@@ -275,6 +281,46 @@ func (t *txn) mintPendingBlobRecord(actor substrate.Actor, digest, name, mimeTyp
 	}
 	_, err := t.put(substrate.PutInput{Kind: kindBlob, ID: digest, Properties: props})
 	return err
+}
+
+// checkBlobBackend refuses a boot whose configured backend is not the one the
+// stored bytes are in. There is no automatic move: switching from postgres to
+// fs or s3 (or back) with blobs already stored would serve a 404 for every
+// blob that did not follow, and a 404 reads like a deletion. The migration is
+// an operator act — `substratectl blobs migrate` — so this names it and stops.
+//
+// It runs on the maintenance pool, which is the one that reads across
+// repositories, and it asks one question per direction:
+// into an external backend, whether any byte row is left behind; back into
+// postgres, whether any stored manifest has no byte row.
+func (s *service) checkBlobBackend(ctx context.Context) error {
+	if s.blobs.Name() == blobbytes.BackendPostgres {
+		var stranded int
+		err := s.maint.QueryRowContext(ctx, `
+			SELECT count(*) FROM records r
+			WHERE r.kind = $1 AND r.deleted_at IS NULL
+			  AND r.states->>'`+blobStateStatus+`' = $2
+			  AND NOT EXISTS (
+			      SELECT 1 FROM blobs b
+			      WHERE b.repository = r.repository AND b.digest = r.id)`,
+			kindBlob, string(substrate.BlobStored)).Scan(&stranded)
+		if err != nil {
+			return fmt.Errorf("substrate/engine: check the blob store: %w", err)
+		}
+		if stranded > 0 {
+			return fmt.Errorf("substrate/engine: %d stored blobs have no bytes in Postgres — they were written to another blob store. Point SUBSTRATE_BLOB_STORE back at it, or move them with `substratectl blobs migrate`", stranded)
+		}
+		return nil
+	}
+	var rows int
+	if err := s.maint.QueryRowContext(ctx, `SELECT count(*) FROM blobs`).Scan(&rows); err != nil {
+		return fmt.Errorf("substrate/engine: check the blob store: %w", err)
+	}
+	if rows > 0 {
+		return fmt.Errorf("substrate/engine: SUBSTRATE_BLOB_STORE is %q but %d blobs still hold their bytes in Postgres — move them with `substratectl blobs migrate --to %s`, or set SUBSTRATE_BLOB_STORE back to postgres",
+			s.blobs.Name(), rows, s.blobs.Name())
+	}
+	return nil
 }
 
 // checkBlobName validates and normalizes an uploaded blob's display name. A

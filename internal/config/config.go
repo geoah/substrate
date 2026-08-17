@@ -48,6 +48,10 @@ type Config struct {
 	// target. Empty (local dev) uses targetOrigin "*" and renders no redirect.
 	ConsoleURL string `envconfig:"SUBSTRATE_CONSOLE_URL" default:""`
 
+	// Blobs says where blob bytes live. Its own type, because the operator
+	// hat loads it without the rest (LoadBlobs).
+	Blobs Blobs
+
 	// There is NO LLM configuration here. Completions and embeddings alike are
 	// bought through a repository's own llmprovider records, which carry the
 	// wire, the endpoint, the key and (for embeddings) the model, so the
