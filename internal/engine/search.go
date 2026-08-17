@@ -23,6 +23,18 @@ const (
 	vectorDim = 1536
 )
 
+// The seam discovery asserts at runtime. Naming the shared symbol is what
+// keeps the two sides together: without it a rename in internal/api would
+// leave every deployment quietly reporting no embeddings.
+var _ substrate.EmbeddingsReporter = (*service)(nil)
+
+// EmbeddingsEnabled reports whether an embedder was wired in (WithEmbedder).
+// Without one the semantic arm below refuses and nothing drains the embed
+// queue, so discovery reads this seam instead of advertising a feature this
+// deployment does not serve. It opens no repository: the answer is the
+// binary's configuration, not any repository's state.
+func (s *service) EmbeddingsEnabled() bool { return s.embedder != nil }
+
 func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]substrate.Hit, error) {
 	q := strings.TrimSpace(in.Q)
 	if q == "" {
@@ -36,7 +48,7 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]subs
 	if mode == "" {
 		mode = substrate.SearchHybrid
 	}
-	if ds.svc.embedder == nil && mode != substrate.SearchLexical {
+	if !ds.svc.EmbeddingsEnabled() && mode != substrate.SearchLexical {
 		// Lexical-only when no embedder is configured.
 		if mode == substrate.SearchSemantic {
 			return nil, fmt.Errorf("%w: semantic search needs an embedder", substrate.ErrValidation)

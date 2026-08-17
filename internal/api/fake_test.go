@@ -43,7 +43,14 @@ type fakeService struct {
 	// totpDisabled models the engine's dev escape hatch: the second factor is
 	// not verified, so any code — including none — passes.
 	totpDisabled bool
+	// embeddings models WithEmbedder: the engine answers the same question
+	// through the same seam, and discovery lists the feature only when it is
+	// true.
+	embeddings bool
 }
+
+// EmbeddingsEnabled is the discovery seam (substrate.EmbeddingsReporter).
+func (s *fakeService) EmbeddingsEnabled() bool { return s.embeddings }
 
 type fakeToken struct {
 	repository string

@@ -84,7 +84,7 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 | **token** | A bearer credential, itself a record. It has full access to its repository; it carries no scopes. |
 | **blob** | Content-addressed bytes whose digest is its id and whose manifest is an ordinary record. |
 | **watch** | The ndjson tail of a collection or of the changelog, resumable from a cursor. |
-| **feature** | A named, stability-stamped entry in `GET /.well-known/substrate/server.json`, so a client reads what a deployment offers instead of probing for failures. |
+| **feature** | A named entry in `GET /.well-known/substrate/server.json` carrying its stability and the surfaces that serve it (`rest`, `graphql`, or both), so a client reads what a deployment offers instead of probing for failures. |
 
 ## Words that mean something narrower than they look
 

@@ -1,13 +1,16 @@
 # The API
 
-The substrate serves one surface for everything: four reads (`record`,
-`records`, `search`, `changelog`) plus a watch stream, and seven mutations. A new kind never adds an
+The substrate serves one set of operations for everything: four reads
+(`record`, `records`, `search`, `changelog`) plus a watch stream, and seven
+mutations. REST serves all of them but `search`, which is the GraphQL query's
+alone. A new kind never adds an
 endpoint: the REST path pattern is the same routes for every authority, and the
 [GraphQL](graphql-and-search.md) schema is generated from the loaded kinds.
 This page is the REST surface, the filter grammar, pagination, the mutations,
 errors, and discovery. Authentication has a page of its own,
-[users and tokens](auth.md). Everything here holds identically over REST and
-GraphQL.
+[users and tokens](auth.md). The record model, the filter grammar and the
+mutations hold identically over REST and GraphQL; where the two surfaces
+differ, [REST and GraphQL](#rest-and-graphql) below lists how.
 
 ## REST resources
 
@@ -274,16 +277,19 @@ versioned API (`/register`, `/login`, `/tokens`, `/password`, `/totp`); what
 registration asks for and whether it is open at all; and a feature list. (A
 repository's own stored dialect never appears on the wire; a binary too old
 for a store refuses to open it, which surfaces as `unavailable`.) That
-feature list is what replaces probing for 501s: each entry names a feature
-and its stability, and the agent surface reports `alpha`:
+feature list is what replaces probing for 501s: each entry names a feature,
+its stability and the `surfaces` that serve it (`rest`, `graphql`, or both).
+The agent surface reports `alpha`, and `search` reports `graphql` alone:
 
 ```json
 {"versions": [{"name": "v1", "status": "served"}],
  "server": {"version": "…", "build": "…"},
  "vocabulary": {"maxDialect": 2, "note": "…"},
  "changelog": {"horizon": 0},
- "features": [{"name": "triggers", "stability": "stable"},
-              {"name": "agents", "stability": "alpha"}],
+ "features": [{"name": "triggers", "stability": "stable", "surfaces": ["rest"]},
+              {"name": "changefeed", "stability": "stable", "surfaces": ["rest", "graphql"]},
+              {"name": "search", "stability": "stable", "surfaces": ["graphql"]},
+              {"name": "agents", "stability": "alpha", "surfaces": ["rest"]}],
  "grammar": {"kind": "<authority>/<name> | <name>",
              "record": "<authority>/<kind>/<id> | <kind>/<id>",
              "collection": "/api/v1/{authority}/{plural}[/{id}] | /api/v1/{plural}[/{id}]",
@@ -293,6 +299,18 @@ and its stability, and the agent surface reports `alpha`:
                "password": "/password", "totp": "/totp"},
  "registration": {"open": true, "totpRequired": true}}
 ```
+
+A feature's `surfaces` are the doors to its own operations, not to its
+records: a trigger and a blob manifest are ordinary records and read on both
+surfaces whatever the entry says, while `["rest"]` means the feature's verbs
+(a replay, an install, a function call, a blob's bytes) have REST paths and no
+GraphQL field. One entry is conditional: `embeddings` is listed only where the
+deployment has an embedder configured, because without one nothing drains the
+embed queue and the semantic arm refuses. `search` stays listed either way,
+since it degrades to lexical, and every other entry is present on every
+deployment. The example above is abridged; the full list is `triggers`,
+`functions`, `bundles`, `blobs`, `changefeed`, `search`, `embeddings` and
+`agents`.
 
 `registration` is what the register door asks for, and whether it is even
 open. `registration.open` is `false` only on a deployment with no invite code
@@ -317,6 +335,51 @@ not a silent break: a `Warning` HTTP header on the REST response and
 `@deprecated` on the GraphQL schema element, each with a minimum sunset window
 before removal. There is no Kubernetes-style multi-version conversion
 machinery.
+
+## REST and GraphQL
+
+The two surfaces make different promises, and the difference decides what a
+client may hard-code.
+
+**REST is the frozen v1 contract.** Its routes, request and response shapes,
+error codes and headers are fixed under `/api/v1` and widen only by addition,
+so a client may pin a path and a field name. A new kind adds no route: the
+collection segment is the kind's plural on the same route pattern.
+
+**GraphQL is a projection derived from the vocabulary**, rebuilt per
+repository. Installing a bundle adds types and fields and uninstalling one
+takes them away, so the schema is whatever that repository's installed kinds
+declare right now, and a client reads it by introspection instead of pinning
+it. The structural half (the four reads, the seven mutations, `Record`'s own
+fields, the scalars) follows the same additive rule REST does, `@deprecated`
+with a sunset window before anything leaves. The generated half carries only
+the [declaration's own upgrade
+rules](vocabulary.md#vocabulary-evolution-and-the-dialect-contract).
+
+The two also do not serve the same set. Discovery says which serves what
+(every `features` entry carries its `surfaces`), and this is the whole list:
+
+| Operation | REST | GraphQL |
+| --------- | ---- | ------- |
+| Records of every kind: read, list, filter, and the seven mutations | yes | yes |
+| Ranked search, and its semantic (embedding) arm | no route | `search(q, mode, kinds, k)` |
+| Changelog, forward from a seq | `GET …/changes?from=` | `changelog(from, filter, first)` |
+| Changelog, newest-first backward page | `GET …/changes?before=` | no field |
+| The live tail | `?watch=1` on a collection or on `…/changes`, ndjson | no subscription |
+| One record's own history | `GET …/changes?recordKind=&recordId=` | `history(first)` on the record |
+| Reverse edges | `GET …/{id}/incoming` | no field |
+| Per-property provenance, `propertyMeta` | single-record reads only | single-record reads only |
+| Operational verbs: triggers, bundles, catalog, blobs, vocabulary apply, function and agent calls | yes | none |
+
+Search is the deliberate one. **Filtering is REST's job** and **ranking is the
+GraphQL query's**: `?filter=` selects rows by predicate, `search` scores and
+orders them, and the two answer different questions. A client that needs
+ranking posts the `search` query to `POST /api/v1/graphql`; there is no other
+door. `propertyMeta` is the other asymmetry: it is assembled per record, so a
+list never carries it on either surface. Both are listed here rather than left
+for a client to find out by trying, which is the rule: an asymmetry is written
+down or it is a bug
+([decision 0022](decisions/0022-rest-is-frozen-graphql-is-a-projection.md)).
 
 ## Actors
 

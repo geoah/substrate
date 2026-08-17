@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -14,8 +16,23 @@ const changesPath = "/api/v1/core.substrate.reamde.dev/changes"
 
 // --- A1: discovery + versioning + the deprecation channel ---------------
 
+// wantFeatureSurfaces is the whole feature list as it stands, with the
+// surfaces each entry claims. Both discovery tests read it, so a new feature
+// is declared once and neither test can drift from the other.
+var wantFeatureSurfaces = map[string][]string{
+	"triggers":   {surfaceREST},
+	"functions":  {surfaceREST},
+	"bundles":    {surfaceREST},
+	"blobs":      {surfaceREST},
+	"changefeed": {surfaceREST, surfaceGraphQL},
+	"search":     {surfaceGraphQL},
+	"embeddings": {surfaceGraphQL},
+	"agents":     {surfaceREST},
+}
+
 func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 	svc := newFakeService()
+	svc.embeddings = true
 	h := New(Config{Service: svc, MaxDialect: 6})
 
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
@@ -59,13 +76,102 @@ func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 	if stab[substrate.FeatureAgents] != substrate.AgentStability || stab["agents"] != "alpha" {
 		t.Fatalf("agents feature = %q, want alpha", stab["agents"])
 	}
-	for _, want := range []string{"triggers", "functions", "bundles", "blobs", "changefeed", "search", "embeddings"} {
+	for want := range wantFeatureSurfaces {
+		if want == substrate.FeatureAgents {
+			continue
+		}
 		if stab[want] != substrate.StabilityStable {
 			t.Fatalf("feature %q stability = %q, want stable", want, stab[want])
 		}
 	}
 	if version := doc.Server.Version; version == "" {
 		t.Fatalf("server version missing")
+	}
+}
+
+// Every feature says which surfaces serve it, because the two are not
+// equivalent: search is the GraphQL query's alone, and a client that read
+// "stable" as "a REST route exists" went looking for one that never shipped.
+func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
+	svc := newFakeService()
+	svc.embeddings = true
+	h := New(Config{Service: svc})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil))
+	doc := decodeJSON[discoveryDoc](t, rec)
+
+	want := wantFeatureSurfaces
+	seen := map[string]bool{}
+	for _, f := range doc.Features {
+		if seen[f.Name] {
+			t.Fatalf("feature %q listed twice", f.Name)
+		}
+		seen[f.Name] = true
+		if len(f.Surfaces) == 0 {
+			t.Fatalf("feature %q names no surface", f.Name)
+		}
+		if _, ok := want[f.Name]; !ok {
+			t.Fatalf("unknown feature %q: a new one has to declare its surfaces here", f.Name)
+		}
+		if !slices.Equal(f.Surfaces, want[f.Name]) {
+			t.Fatalf("feature %q surfaces = %v, want %v", f.Name, f.Surfaces, want[f.Name])
+		}
+	}
+	for name := range want {
+		if !seen[name] {
+			t.Fatalf("feature %q missing from discovery", name)
+		}
+	}
+}
+
+// The embeddings feature is the one this deployment may not have: without an
+// embedder the semantic arm refuses and nothing drains the embed queue, so
+// listing it would be the advertised-but-not-served bug again. `search` stays
+// listed, because it degrades to lexical.
+func TestDiscoveryOmitsEmbeddingsWithoutAnEmbedder(t *testing.T) {
+	h := New(Config{Service: newFakeService()})
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil))
+	doc := decodeJSON[discoveryDoc](t, rec)
+
+	names := map[string]bool{}
+	for _, f := range doc.Features {
+		names[f.Name] = true
+		if f.Name == featureEmbeddings {
+			t.Fatalf("embeddings listed with no embedder configured: %+v", doc.Features)
+		}
+		// Every other entry survives the drop whole: dropping one must not
+		// disturb its neighbours' surfaces or stability.
+		if !slices.Equal(f.Surfaces, wantFeatureSurfaces[f.Name]) {
+			t.Fatalf("feature %q surfaces = %v, want %v", f.Name, f.Surfaces, wantFeatureSurfaces[f.Name])
+		}
+		if f.Stability == "" {
+			t.Fatalf("feature %q lost its stability: %+v", f.Name, doc.Features)
+		}
+	}
+	if len(names) != len(wantFeatureSurfaces)-1 {
+		t.Fatalf("features = %+v, want every entry but embeddings", doc.Features)
+	}
+	if !names["search"] {
+		t.Fatalf("search dropped with no embedder: %+v", doc.Features)
+	}
+}
+
+// The gql-only marker is a claim about the routes, so hold the routes to it:
+// a search path under /api/v1 is read as an ordinary collection ("unknown
+// collection"), which is what "there is no search route" looks like from
+// outside. The door that does rank is TestGraphQLSearch's.
+func TestSearchHasNoRESTRoute(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+	for _, path := range []string{"/api/v1/search", "/api/v1/core.substrate.reamde.dev/search"} {
+		rec := env.do(t, http.MethodGet, path+"?q=hello", tok, nil)
+		wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
+		if body := rec.Body.String(); !strings.Contains(body, "unknown collection") {
+			t.Fatalf("GET %s = %s, want the generic collection 404", path, body)
+		}
 	}
 }
 
