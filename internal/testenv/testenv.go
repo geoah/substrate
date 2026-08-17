@@ -221,7 +221,7 @@ func (e *Env) mustJSON(method, path string, body, into any) {
 // through the runner and its sandbox.
 func (e *Env) ApplyVocabulary(docs ...map[string]any) {
 	e.t.Helper()
-	e.mustJSON(http.MethodPost, "/api/v1/core.substrate.reamde.dev/vocabulary/apply",
+	e.mustJSON(http.MethodPost, "/api/v1/-/vocabulary/apply",
 		map[string]any{"documents": docs}, nil)
 }
 
@@ -247,7 +247,7 @@ func (e *Env) ApplyVocabularyYAML(docs ...string) {
 func (e *Env) CallFunction(ref string, input any) (any, error) {
 	e.t.Helper()
 	status, raw := e.Do(http.MethodPost,
-		"/api/v1/core.substrate.reamde.dev/functions/"+ref+"/call",
+		"/api/v1/core.substrate.reamde.dev/function/"+ref+"/-/call",
 		map[string]any{"input": input})
 	if status < 200 || status >= 300 {
 		return nil, fmt.Errorf("call %s: %d %s", ref, status, strings.TrimSpace(string(raw)))

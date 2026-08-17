@@ -635,7 +635,7 @@ is the function body.
 
 Delivery bookkeeping lives on the trigger, not on the function, and the verbs
 that drive it live at the trigger resource, under
-`/api/v1/core.substrate.reamde.dev/triggers/…` (a resource's verbs live at the
+`/api/v1/core.substrate.reamde.dev/trigger/{id}/-/…` (a resource's verbs live at the
 resource). No path carries a repository segment: the bearer token implies the
 repository.
 
@@ -664,7 +664,7 @@ manual run, a parked retry, a host call, the call API — mint nothing.
 `substratectl function call <name> --input <json>` invokes one function directly,
 applies its effects under the function's actor, and prints the effect count
 beside the output. Over HTTP that is
-`POST /api/v1/core.substrate.reamde.dev/functions/{name}/call` with `{"input": …}`,
+`POST /api/v1/core.substrate.reamde.dev/function/{name}/-/call` with `{"input": …}`,
 answering `{"output": …, "effects": n}`; what you send arrives at the body as
 `input["args"]`. A call moves no cursor, and its effects land under the
 function's actor as a fresh causal root. The trigger rows are ordinary

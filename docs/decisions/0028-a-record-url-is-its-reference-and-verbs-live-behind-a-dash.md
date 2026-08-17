@@ -106,9 +106,8 @@ not left claiming a job it no longer has.
   under an earlier grammar was owed a sunset window (`APIVersion`,
   internal/api/api.go).
 - Bad, because an OAuth redirect URI registered with a provider contains the
-  callback path, so `/api/v1/core.substrate.reamde.dev/oauth/callback` becomes
-  `/api/v1/-/oauth/callback` and every provider app registration is re-entered
-  by hand.
+  callback path, which moves out of the core authority and behind the reserved
+  segment, so every provider app registration is re-entered by hand.
 - Bad, because `data.names.plural` stays required while being read by nothing,
   which is a dead key in the declaration grammar until the dialect rung lands.
 - Bad, because the collection segment now reads as a singular
@@ -117,13 +116,16 @@ not left claiming a job it no longer has.
 
 ### Confirmation
 
+internal/api/grammar_test.go holds all three rules.
 `TestPostToRecordPathIsMethodNotAllowed` and
-`TestPutToCollectionPathIsMethodNotAllowed` (internal/api/rest_test.go) pin the
-two silent creates shut, and `TestReservedVerbSegment` pins that a record
-addressed under `-` is the verb and never the id. `TestRecordURLIsItsReference`
-(internal/api/rest_test.go) asserts the path a record is served at equals
-`vocabulary.RecordPath` of its kind and id, which is the one property the whole
-record rests on. `mise run lint:docs` holds `docs/terms.md` against the
+`TestPutToCollectionPathIsMethodNotAllowed` pin the two silent creates shut and
+assert that nothing was written. `TestRecordURLIsItsReference` asserts the path
+a record is served at equals `vocabulary.RecordPath` of its kind and id, which
+is the property the whole record rests on.
+`TestReservedVerbSegmentKeepsIdsAddressable` reads back records whose ids are
+`incoming`, `edges`, `status` and `call`, and
+`TestShadowedCollectionsAreReachable` lists the `recordmerge` collection the
+verb used to shadow. `mise run lint:docs` holds `docs/terms.md` against the
 prose. What is NOT held: nothing refuses a newly added route that binds a verb
 outside `-`, so that rule is held by review.
 

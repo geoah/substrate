@@ -35,7 +35,7 @@ LLM example bundle ships `anthropic` and `openai` instead, so this row is one
 you write:
 
 ```sh
-curl -s -X POST "$SUBSTRATE_SERVER/api/v1/core.substrate.reamde.dev/agents/notekeeper/call" \
+curl -s -X POST "$SUBSTRATE_SERVER/api/v1/core.substrate.reamde.dev/agent/notekeeper/-/call" \
   -H "Authorization: Bearer $SUBSTRATE_TOKEN" -H 'Content-Type: application/json' \
   -d '{"input": {"text": "id: my-note\n\nSomething worth keeping."}}'
 ```

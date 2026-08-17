@@ -19,7 +19,7 @@
 #   never config-record properties (review-google #1).
 # Connect:  create an account, then run the host OAuth flow against it —
 #   the callback URL registered on the GitHub OAuth app is the host's
-#   GET …/api/v1/core.substrate.reamde.dev/oauth/callback (see README).
+#   GET …/api/v1/-/oauth/callback (see README).
 #
 # This file is the SCHEMA closure (the atomic install unit). The delivery
 # wiring lives beside it in triggers.yaml as ordinary data records.

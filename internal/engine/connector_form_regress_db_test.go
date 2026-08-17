@@ -78,7 +78,7 @@ func TestOAuthPopulatesAccountEmailFromGrant(t *testing.T) {
 	ctx := context.Background()
 	p := newFakeProvider(t)
 	svc, ds := newDataset(t,
-		engine.WithOAuth("test-state-key", "https://substrate.example/api/v1/core.substrate.reamde.dev/oauth/callback", p.ts.Client()),
+		engine.WithOAuth("test-state-key", "https://substrate.example/api/v1/-/oauth/callback", p.ts.Client()),
 		engine.WithCredentialKey("test-cred-key"),
 	)
 	docs := mbStandardDocs()

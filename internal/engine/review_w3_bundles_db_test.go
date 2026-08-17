@@ -184,7 +184,7 @@ func installW3OAuthBundle(t *testing.T) (substrate.Service, substrate.Dataset, *
 	t.Helper()
 	p := newW3Provider(t)
 	svc, ds, db := newW3Env(t,
-		engine.WithOAuth("w3-state-key", "https://substrate.example/api/v1/core.substrate.reamde.dev/oauth/callback", p.ts.Client()),
+		engine.WithOAuth("w3-state-key", "https://substrate.example/api/v1/-/oauth/callback", p.ts.Client()),
 		engine.WithCredentialKey("w3-cred-key"),
 	)
 	docs := mbStandardDocs()

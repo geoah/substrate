@@ -1,7 +1,7 @@
 # GraphQL and search
 
 The whole read/write surface also serves at one endpoint,
-`POST /api/v1/graphql`. Filters take the same JSON grammar as
+`POST /api/v1/-/graphql`. Filters take the same JSON grammar as
 [REST](api.md#the-filter-grammar):
 
 ```graphql

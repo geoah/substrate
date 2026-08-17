@@ -264,7 +264,7 @@ stale data. Three guarantees:
 `split` reverses one merge, addressed by the `recordmerge` record's own id:
 
 ```http
-POST /api/v1/core.substrate.reamde.dev/recordsplits
+POST /api/v1/-/recordsplits
 {"merge": "kq3v9x2m41pf"}
 ```
 
@@ -312,7 +312,7 @@ Accepting is an ordinary
 [state transition](data-model.md#validation-and-state-machines), a patch:
 
 ```http
-PATCH /api/v1/core.substrate.reamde.dev/recordmergerequests/dupe-9f2k-x41c
+PATCH /api/v1/core.substrate.reamde.dev/recordmergerequest/dupe-9f2k-x41c
 {"properties": {"decision": "accepted"}}
 ```
 
@@ -339,7 +339,7 @@ rationale beside a field-by-field comparison of the two records. Merging without
 and the two ids:
 
 ```http
-POST /api/v1/core.substrate.reamde.dev/recordmerges
+POST /api/v1/-/recordmerges
 {"kind": "people.substrate.reamde.dev/person", "winner": "9f2k", "loser": "x41c"}
 ```
 

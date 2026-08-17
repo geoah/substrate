@@ -4,9 +4,9 @@ One word per thing. If a word is not here, it is not a term — and where these
 pages and the code disagree, the code is right.
 
 Dead words, and what replaced them: **entity** → record, **group** → authority,
-**type** → kind (or *plural*, for the path segment), **capability** → trait,
-**schema** → vocabulary, **log** → changelog, **extension** → bundle,
-**relationship** → edge, **tenant** and **identity** → nothing, there are none.
+**type** → kind, **capability** → trait, **schema** → vocabulary,
+**log** → changelog, **extension** → bundle, **relationship** → edge,
+**tenant** and **identity** → nothing, there are none.
 
 ## The shape of things
 
@@ -15,8 +15,9 @@ Dead words, and what replaced them: **entity** → record, **group** → authori
 | **repository** | Everything one user has: one changelog, the records folded out of it, and the blob store beside them. One user, one repository, no sharing. |
 | **record** | One typed thing. Identity is `(kind, id)` within a repository. It is the only thing the substrate stores. |
 | **kind** | What a record is, written `<authority>/<name>` — or a bare `<name>` for a kind local to one repository. A kind declares the properties and edges its records may carry. |
-| **authority** | The DNS-style label that publishes a set of kinds and decides who may write their declarations. One path segment: `/api/v1/{authority}/{plural}`. |
-| **plural** | A kind's collection segment in a path — `people` for `people.substrate.reamde.dev/person`. |
+| **authority** | The DNS-style label that publishes a set of kinds and decides who may write their declarations. One path segment: `/api/v1/{authority}/{kind}`. |
+| **collection** | Every record of one kind, addressed at the kind reference: `/api/v1/people.substrate.reamde.dev/person`. The segment is the kind's name, so a record's path is the reference value that points at it ([0028](decisions/0028-a-record-url-is-its-reference-and-verbs-live-behind-a-dash.md)). |
+| **plural** | A retired word. It named the collection segment; the segment is the kind's name now, and nothing reads a plural. `data.names.plural` is still required on a kind declaration and still stored, because every existing declaration row carries it and the loader admits a closed key set — retiring the key needs a dialect rung that strips it first. Nothing else may use the word. |
 | **property** | A named, typed value on a record, declared by its kind. |
 | **property type** | A named refinement of a base type plus its validations, declared by an authority and reusable across its kinds. |
 | **trait** | A contract a kind implements: a set of properties a kind promises to declare, so unrelated kinds can be treated alike. |

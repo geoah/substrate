@@ -34,7 +34,7 @@
 #   longer redirect a token exchange or a revocation (review-google #1).
 # Connect:  create an account, then run the host OAuth flow against it —
 #   the callback URL the user registers in their Google client is the host's
-#   GET …/api/v1/core.substrate.reamde.dev/oauth/callback (see README).
+#   GET …/api/v1/-/oauth/callback (see README).
 #
 # This file is the SCHEMA closure (the atomic install unit). The delivery
 # wiring lives beside it in triggers.yaml as ordinary data records.

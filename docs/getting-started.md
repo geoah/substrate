@@ -80,10 +80,10 @@ it is percent-encoded to stay one path segment. Tasks name an assignee, so
 
 ```bash
 curl -X POST -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/core.substrate.reamde.dev/catalog/people.substrate.reamde.dev%2Fpeople/install
+  http://localhost:8080/api/v1/-/catalog/people.substrate.reamde.dev%2Fpeople/install
 
 curl -X POST -H "Authorization: Bearer $TOKEN" \
-  http://localhost:8080/api/v1/core.substrate.reamde.dev/catalog/tasks.substrate.reamde.dev%2Ftasks/install
+  http://localhost:8080/api/v1/-/catalog/tasks.substrate.reamde.dev%2Ftasks/install
 
 substratectl get tasks                     # empty, but the collection is there
 ```
@@ -97,7 +97,7 @@ Add a task. The collection path names the kind, so the body is only the
 properties:
 
 ```http
-POST /api/v1/tasks.substrate.reamde.dev/tasks
+POST /api/v1/tasks.substrate.reamde.dev/task
 Authorization: Bearer substrate_tok_…
 {"properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
@@ -140,7 +140,7 @@ substratectl watch
 ```
 
 ```http
-GET /api/v1/core.substrate.reamde.dev/changes?watch=1
+GET /api/v1/-/changes?watch=1
 
 {"bookmark": 412}
 {"seq": 413, "ts": "2026-08-12T10:00:00.183742Z", "actor": "api", "op": "put",

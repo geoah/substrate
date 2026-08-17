@@ -48,9 +48,9 @@ pnpm build       # tsc -b && vite build
 | `/agents`, `/agents/:id`       | declared agents + llm rows; the `:id` route is the ndjson streaming chat                                           |
 | `/merge-requests/:id`          | a duplicate-suggestion verdict                                                                                     |
 | `/data/:authority`             | one authority's collections                                                                                        |
-| `/data/:authority/:plural`     | browse a kind's records                                                                                            |
-| `/data/:authority/:plural/new` | create a record                                                                                                    |
-| `/data/:authority/:plural/:id` | one record, and `/edit` beside it                                                                                  |
+| `/data/:authority/:kind`       | browse a kind's records                                                                                            |
+| `/data/:authority/:kind/new`   | create a record                                                                                                    |
+| `/data/:authority/:kind/:id`   | one record, and `/edit` beside it                                                                                  |
 | `/actors/:id`                  | an actor's view                                                                                                    |
 | `/account`, `/account/tokens`  | the account, and the tokens it has minted                                                                          |
 

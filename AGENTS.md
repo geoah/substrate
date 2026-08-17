@@ -156,7 +156,7 @@ bin/substratectl --dsn "$DATABASE_URL" user reset <username>   # needs SUBSTRATE
 bundle the repository imports, so a walkthrough that reaches for any non-core
 collection installs one first — `apply -f` of the closure's files, the
 console's Registry page, or `POST
-/api/v1/core.substrate.reamde.dev/catalog/{id}/install`, which are three doors
+/api/v1/-/catalog/{id}/install`, which are three doors
 to the same admission. A snippet that opens with `get people` on a fresh
 substrate is wrong, and was.
 
@@ -194,7 +194,7 @@ words, and what each one replaced:
 | **record**    | the thing stored; `record_kind`/`record_id` in every table | entity       |
 | **kind**      | what a record is; `{authority}/{name}`                     | type, schema |
 | **authority** | who publishes a kind; one DNS-style label                  | group        |
-| **plural**    | the collection segment in a path                           | type         |
+| **plural**    | RETIRED: the collection segment is the kind's name         | type         |
 | **trait**     | a contract a kind implements                               | capability   |
 | **vocabulary**| kinds, traits and property types together; `/vocabulary/apply` | schema   |
 | **changelog** | the append-only sequence of deltas; the `changelog` table  | log          |
@@ -215,7 +215,7 @@ one. Anywhere else, each of them is a bug.
 A kind reference is `{authority}/{name}`: the authority is a single
 dot-separated DNS-style label and the name never contains a slash, so the
 reference splits on its one slash. The authority is one path segment in
-`/api/v1/{authority}/{plural}` — the same shape Kubernetes uses to keep
+`/api/v1/{authority}/{kind}` — the same shape Kubernetes uses to keep
 `networking.k8s.io` addressable.
 
 `substrate.reamde.dev` is a **placeholder**. Moving kind identity to URLs (so

@@ -94,7 +94,7 @@ above ships `anthropic` and `openai` rather than `default`. Calling an agent is
 an API call, not a CLI verb:
 
 ```bash
-curl -s -X POST "$SUBSTRATE_SERVER/api/v1/core.substrate.reamde.dev/agents/notekeeper/call" \
+curl -s -X POST "$SUBSTRATE_SERVER/api/v1/core.substrate.reamde.dev/agent/notekeeper/-/call" \
   -H "Authorization: Bearer $SUBSTRATE_TOKEN" -H 'Content-Type: application/json' \
   -d '{"input": {"text": "id: my-note\n\nSomething worth keeping."}}'
 ```

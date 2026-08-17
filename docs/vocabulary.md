@@ -44,14 +44,14 @@ data:
   version: 1
 ```
 
-Each declarable kind has a collection under `core.substrate.reamde.dev`, the plural of
+Each declarable kind has a collection under `core.substrate.reamde.dev`, the name of
 its name, and declarations list and read there like any other record. A
 declaration's id is the one id form that carries a `/`, which is legal in a
 URI path segment only percent-encoded, so a REST path spells it `%2F` and the
 API decodes it once:
 
 ```http
-GET /api/v1/core.substrate.reamde.dev/kinds/tasks.substrate.reamde.dev%2Ftask
+GET /api/v1/core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev%2Ftask
 ```
 
 ## How the vocabulary reaches a repository
@@ -127,7 +127,7 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
 - **Casing is one rule.** Every declared name and system key is camelCase
   with initialisms uppercase (`displayTemplate`, `oneOf`, `ifVersion`,
   `onEnter`, `endsAt`). Snake spellings are errors, not aliases. Kind
-  singulars and plurals stay `[a-z][a-z0-9]*`; an authority stays a dotted
+  a kind name stays `[a-z][a-z0-9]*`; an authority stays a dotted
   lowercase DNS name; an actor is a bare word or a prefixed machine hand,
   never a DNS name; enum and state values stay lowercase words.
 - **Reserved property names.** `title`, `body`, `at`, `endsAt`, `dueAt` are

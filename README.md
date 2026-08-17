@@ -69,7 +69,7 @@ bin/substratectl watch                   # the changelog, streaming
 
 The console's Registry page installs the same bundle from the catalog compiled
 into the binary, and so does
-`POST /api/v1/core.substrate.reamde.dev/catalog/{id}/install`: all three run
+`POST /api/v1/-/catalog/{id}/install`: all three run
 the same install path and validation, which
 [docs/vocabulary.md](docs/vocabulary.md#admission) calls admission.
 [`docs/getting-started.md`](docs/getting-started.md) walks

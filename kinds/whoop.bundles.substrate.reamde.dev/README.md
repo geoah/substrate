@@ -100,7 +100,7 @@ shipped here):
    redirect URI — the OAuth facility's callback:
 
    ```
-   https://<your-substrate-host>/api/v1/core.substrate.reamde.dev/oauth/callback
+   https://<your-substrate-host>/api/v1/-/oauth/callback
    ```
 
    (The value is the host's `SUBSTRATE_OAUTH_CALLBACK_URL`.)

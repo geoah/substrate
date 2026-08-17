@@ -160,7 +160,7 @@ unique.
 A **record reference** writes kind and id together:
 `tasks.substrate.reamde.dev/task/t9` for a qualified kind, `task/t9` for a bare one. That
 is the string form; on REST the same reference is split into path segments
-(`/api/v1/tasks.substrate.reamde.dev/tasks/t9`), and on GraphQL it travels as two
+(`/api/v1/tasks.substrate.reamde.dev/task/t9`), and on GraphQL it travels as two
 arguments.
 
 The shipped vocabulary is split by subsystem, Kubernetes-style, each subsystem
@@ -428,7 +428,7 @@ edge when the graph should see the link; name one as data with a reference.
 
 **Blob references.** A `blobref` names stored bytes by their digest. The bytes
 live in the repository's content-addressed blob store
-(`PUT /api/v1/blobs`, `GET /api/v1/blobs/{digest}`), and their metadata is an
+(`PUT /api/v1/-/blobs`, `GET /api/v1/-/blobs/{digest}`), and their metadata is an
 ordinary `core.substrate.reamde.dev/blob` record whose id **is** the digest, so the same
 bytes always mint the same blob. A read resolves the ref to
 `{digest, name, mimeType, size, status}`, never to the bytes inline.
