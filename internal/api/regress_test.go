@@ -10,6 +10,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -42,7 +43,13 @@ func (d *bundleDataset) BundleStatus(_ context.Context, id string) (substrate.Bu
 	return substrate.BundleStatus{ID: id, Authority: d.authority, Installed: true, Enabled: true}, nil
 }
 
-func (d *bundleDataset) BundleAuthority(context.Context, string) (string, error) {
+func (d *bundleDataset) BundleAuthority(_ context.Context, id string) (string, error) {
+	// The lifecycle PATCH addresses the bundle by id; an empty one is the
+	// generic-route param bug (a3, not {id}), so refuse it the way the engine
+	// would rather than answering for a bundle nobody named.
+	if id == "" {
+		return "", fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
+	}
 	return d.authority, nil
 }
 func (d *bundleDataset) DisableBundle(context.Context, string) error { return nil }

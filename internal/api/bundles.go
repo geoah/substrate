@@ -117,7 +117,12 @@ func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, i
 				propBundleUninstalled+" or "+propBundlePurging)
 		return
 	}
-	if _, ok := h.bundleLifecycleGate(w, r, ops); !ok {
+	// Resolve the bundle by the id the PATCH addresses. The generic patch route
+	// binds it as `a3` (addr.id), not the `{id}` chi param the bind sub-path
+	// uses, so this cannot reuse bundleLifecycleGate — that reads `pathParam
+	// "id"`, which is empty here.
+	if _, err := ops.BundleAuthority(r.Context(), id); err != nil {
+		writeSubstrateError(w, err)
 		return
 	}
 	ctx := r.Context()
