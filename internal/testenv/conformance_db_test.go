@@ -197,8 +197,10 @@ func conformanceCases() []codeCase {
 		name: "a system-kind write answers 403 forbidden",
 		code: "forbidden",
 		run: func(t *testing.T, e *testenv.Env) {
-			status, body := e.Do(http.MethodPost, "/api/v1/core.substrate.reamde.dev/kinds",
-				map[string]any{"id": "forged", "properties": map[string]any{}})
+			// A token is a record, and the mint path is the only hand that
+			// writes one.
+			status, body := e.Do(http.MethodPost, "/api/v1/core.substrate.reamde.dev/tokens",
+				map[string]any{"id": "forged", "properties": map[string]any{"label": "forged"}})
 			wantError(t, status, body, http.StatusForbidden, "forbidden")
 		},
 	}, {
