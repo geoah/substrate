@@ -506,3 +506,30 @@ func TestDefaultRefusedWhenTheValueCouldNotBeStored(t *testing.T) {
 		})
 	}
 }
+
+// A field's `default` is refused rather than accepted and ignored: the write
+// path fills a property a create did not name and never reaches inside an
+// object to build one, so a field default would be a declared promise nothing
+// keeps. `required` on a field is a different matter, and is enforced.
+func TestDefaultRefusedInsideFields(t *testing.T) {
+	_, err := dialectLoad(t, `  properties:
+    profile:
+      type: object
+      fields:
+        locale: {type: string, default: en}
+`)
+	if err == nil || !strings.Contains(err.Error(), "default fills a type's own property, not a field") {
+		t.Fatalf("got %v, want a field default refused by name", err)
+	}
+	// The sibling markers stay: a required field parses, and is what the engine
+	// enforces against the written object.
+	w := dialectWidget(t, `  properties:
+    profile:
+      type: object
+      fields:
+        email: {type: email, required: true}
+`)
+	if p, _ := w.Prop("profile"); p == nil || !p.Fields["email"].Required {
+		t.Fatal("a required field must survive the parse")
+	}
+}

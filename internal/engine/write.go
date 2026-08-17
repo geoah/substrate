@@ -1236,10 +1236,15 @@ func (t *txn) stampTargetVersion(sp *applySpec, row *erow, target eref, accepted
 // missing it, and admission is what refuses that declaration change
 // (schemadiff.go) rather than this.
 //
-// The check is a kind's OWN properties. `required` inside an object's declared
-// fields is not enforced, and deliberately: schemadiff counts no live rows for
-// a field-level narrowing, so enforcing one would strand stored objects with no
-// way to bring them under their own declaration.
+// This is a kind's OWN properties; a `required:` FIELD is held to the object
+// the write stores, where the object is coerced (coerceObject, in validate.go).
+//
+// NO ACTOR IS EXEMPT, internal writes included, and that is the point: a record
+// the engine wrote without a required value could never be repaired, because
+// every later write to it would be refused for the value the engine left out.
+// checkManagedProps bypasses internal writes because the engine IS that
+// property's writer; `required` is about the record's shape, and the record has
+// one shape whoever wrote it.
 func (t *txn) checkRequiredProps(sp *applySpec, row *erow) error {
 	var problems []string
 	for _, name := range sp.ty.PropOrder {
@@ -1252,7 +1257,11 @@ func (t *txn) checkRequiredProps(sp *applySpec, row *erow) error {
 		var v any
 		if sp.ty.UsesHot(name) {
 			// A trait-bound instant lives in its own column, never in the
-			// property map.
+			// property map. Nothing declares a required one today (a trait
+			// variant is `name: datatype`, and a kind may not redeclare the
+			// property the trait binds), so this arm exists to keep the write
+			// path and the admission count reading the same place if one ever
+			// does — missingValueCount, in schemadiff.go.
 			if ts := hotColumnOf(row, name); ts != nil {
 				v = ts.Format(time.RFC3339Nano)
 			}
@@ -1273,6 +1282,11 @@ func (t *txn) checkRequiredProps(sp *applySpec, row *erow) error {
 // not satisfy `required`. An empty list or map names no value: a required
 // repeated reference would otherwise meet "requires a target" by carrying none.
 // An empty string is the unfilled form field the declaration exists to refuse.
+//
+// `emptyJSONValues` (schemadiff.go) is this rule in SQL, and admission counts
+// with it: the door that refuses adding `required` and the door that refuses
+// the write have to draw one line, or a declaration lands that no later write
+// to those rows can satisfy.
 func emptyValue(v any) bool {
 	switch t := v.(type) {
 	case nil:
@@ -1318,15 +1332,16 @@ func (t *txn) checkRequiredEdges(sp *applySpec) error {
 	if err != nil {
 		return err
 	}
-	var missing []string
+	var problems []string
 	for _, name := range required {
 		if len(edges[name]) == 0 {
-			missing = append(missing, name)
+			problems = append(problems, fmt.Sprintf("edges.%s: %s requires this edge", name, sp.ty.Name))
 		}
 	}
-	if len(missing) > 0 {
-		return fmt.Errorf("%w: %s requires edge %s", substrate.ErrValidation,
-			sp.ty.Name, strings.Join(missing, ", "))
+	if len(problems) > 0 {
+		// A ValidationError, so the 422 carries the same `problems` array a
+		// required PROPERTY answers with: one refusal shape for one rule.
+		return &substrate.ValidationError{Problems: problems}
 	}
 	return nil
 }
@@ -2704,6 +2719,22 @@ func (t *txn) unlink(rel string, src eref, to substrate.EdgeRef) error {
 	removed, err := t.deleteEdge(rel, src, dst)
 	if err != nil || !removed {
 		return err
+	}
+	// Unlink is the verb that clears an edge, so it is where a required one is
+	// defended: creation asserts it and nothing else could remove it, which
+	// leaves this call the only way a live record loses the edge its
+	// declaration requires. Counted AFTER the delete, so unlinking one target of
+	// a required many-edge that still has others is untouched.
+	if ed, declared := ty.Edge(rel); declared && ed.Required {
+		edges, err := t.edgesOf(src)
+		if err != nil {
+			return err
+		}
+		if len(edges[rel]) == 0 {
+			return &substrate.ValidationError{Problems: []string{
+				fmt.Sprintf("edges.%s: %s requires this edge, and it has no other target", rel, ty.Name),
+			}}
+		}
 	}
 	if err := t.bumpVersion(src); err != nil {
 		return err

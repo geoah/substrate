@@ -291,3 +291,48 @@ func TestBootUpgradeRefusesAnEdgeBecomingARequiredReference(t *testing.T) {
 		t.Fatal("the reference landed anyway — the guard did not hold")
 	}
 }
+
+// The boot upgrade takes the DEFAULT check `/vocabulary/apply` takes. A shipped
+// property whose declared default no write could store would otherwise land at
+// open and break every create of that kind afterwards, with the door that
+// refuses it by hand never consulted.
+func TestBootUpgradeRefusesAnUnstorableDefault(t *testing.T) {
+	t.Parallel()
+	dsn := seededRepository(t)
+	tree := shippedTree(t)
+	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
+		// llmprovider pins a version of its own, so the authority bump alone
+		// would leave this declaration exactly where it stands and re-project
+		// nothing — the upgrade under test would never run.
+		doc = pinVersion(t, doc, "99")
+		return strings.Replace(doc, "  properties:\n",
+			"  properties:\n    region:\n      type: string\n      pattern: \"^eu-\"\n"+
+				"      default: us-east\n      description: a default the pattern refuses\n", 1)
+	})
+	if err := openMoved(t, dsn, tree); err != nil {
+		t.Fatalf("a refused upgrade must not fail the open: %v", err)
+	}
+	// The declaration did not land: the property the bad default rode in on is
+	// not declared, so a write naming it is refused as undeclared.
+	ctx := context.Background()
+	svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir(shippedTree(t)))
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer func() { _ = svc.Close() }()
+	ds, err := svc.Dataset(ctx, "geoah")
+	if err != nil {
+		t.Fatalf("dataset: %v", err)
+	}
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/llmprovider", ID: "after",
+		Properties: map[string]any{"name": "still writable", "wire": "openai", "region": "eu-west"},
+	}); err == nil {
+		t.Fatal("the declaration carrying the unstorable default must not have landed")
+	}
+	// …and the repository still works under the declaration it stored.
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/llmprovider", ID: "after",
+		Properties: map[string]any{"name": "still writable", "wire": "openai"},
+	})
+}

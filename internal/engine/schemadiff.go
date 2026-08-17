@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -49,8 +50,54 @@ type narrowing struct {
 // (a nulled property's key is deleted from props, so presence is a value).
 const countPropQuery = `SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL AND props ? $2`
 
-// countMissingPropQuery counts live rows of a type NOT carrying the property.
-const countMissingPropQuery = `SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL AND NOT props ? $2`
+// emptyJSONValues is the SQL spelling of emptyValue (write.go): the stored
+// values that hold nothing, and so do not satisfy `required`. THE TWO MUST
+// AGREE. The write path refuses a record whose value is one of these, so a
+// guard that counted only the missing KEY would admit `required` onto a kind
+// whose rows already hold "" and lock every later write to them out, with no
+// way to migrate them under a declaration that refuses them.
+const emptyJSONValues = `('null'::jsonb, '""'::jsonb, '[]'::jsonb, '{}'::jsonb)`
+
+// countMissingPropQuery counts live rows of a type holding no value for the
+// property: the key absent, or a value emptyJSONValues names.
+const countMissingPropQuery = `SELECT count(*) FROM records
+	WHERE kind = $1 AND deleted_at IS NULL
+	AND (NOT props ? $2 OR props->$2 IN ` + emptyJSONValues + `)`
+
+// hotColumns is the trait-bound property that occupies each own column, and the
+// column it occupies. A hot property is NEVER a key in `props` (splitProps
+// moves it out before the row is written), so counting the jsonb key would call
+// every live row missing and refuse `required` on a temporal property forever,
+// however faithfully the rows carry the instant.
+var hotColumns = map[string]string{
+	substrate.PropAt:     "at",
+	substrate.PropEndsAt: "ends_at",
+	substrate.PropDueAt:  "due_at",
+}
+
+// missingValueCount answers the live-row count for a property turning required:
+// the jsonb key for an ordinary property, the trait-bound COLUMN for a hot one.
+// It is the classification half of checkRequiredProps, which reads exactly the
+// same two places (hotColumnOf, in write.go).
+//
+// NO DECLARATION REACHES THE HOT ARM TODAY, and it is here so the two halves
+// cannot drift if one ever does: a kind that binds the trait may not declare the
+// property at all ("`at` is the temporal trait's"), and a trait variant declares
+// `name: datatype`, which has no room for `required`. Counting the jsonb key
+// instead would call every live row missing and refuse the narrowing forever,
+// however faithfully the rows carry the instant.
+//
+// The column is interpolated rather than bound because a column name cannot be
+// a placeholder; it comes from the closed map above and never from a
+// declaration.
+func missingValueCount(ty *vocabulary.Kind, ident, pname string) (string, []any) {
+	if col, hot := hotColumns[pname]; hot && ty.UsesHot(pname) {
+		return fmt.Sprintf(
+				"SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL AND %s IS NULL", col),
+			[]any{ident}
+	}
+	return countMissingPropQuery, []any{ident, pname}
+}
 
 // countNonIntPropQuery counts live rows whose value for a property is not an
 // integral number — the rows a scalar retype to `int` actually strands.
@@ -263,9 +310,10 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 					[]fieldStep{{key: pname, repeated: curP.Repeated, keyed: curP.Keyed}}, curP, candP)...)
 			}
 			if !curP.Required && candP.Required {
+				q, args := missingValueCount(candT, ident, pname)
 				out = append(out, narrowing{
 					format: fmt.Sprintf("type %s: property %q becomes required while %%d live records lack it — backfill them first", ident, pname),
-					query:  countMissingPropQuery, args: []any{ident, pname},
+					query:  q, args: args,
 				})
 			}
 		}
@@ -290,10 +338,11 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 		if _, existed := curT.Props[pname]; existed {
 			continue // the `becomes required` case above owns it
 		}
+		q, args := missingValueCount(candT, ident, pname)
 		out = append(out, narrowing{
 			format: fmt.Sprintf("type %s: property %q is added as required while %%d live records lack it — backfill or delete them first",
 				ident, pname),
-			query: countMissingPropQuery, args: []any{ident, pname},
+			query: q, args: args,
 		})
 	}
 	return out
@@ -612,6 +661,14 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 				query: q, args: args,
 			})
 		}
+		if !curF.Required && candF.Required {
+			q, args := fieldEmpty(ident, path, fname)
+			out = append(out, narrowing{
+				format: fmt.Sprintf("type %s: object %q field %q becomes required while %%d live records hold an object without a value for it — backfill them first",
+					ident, label, fname),
+				query: q, args: args,
+			})
+		}
 		next := containerPath(path, curF, fname)
 		if curF.Datatype == vocabulary.DatatypeReference && refTargetNarrows(curF.To, candF.To) {
 			q, args := refOutsidePath(ident, next, candF.To)
@@ -625,7 +682,43 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 			out = append(out, objectFieldNarrowings(ident, next, curF, candF)...)
 		}
 	}
+	// A field the candidate ADDS as required strands every stored object at this
+	// path at once: none of them can carry a name no declaration had. The loop
+	// above walks the CURRENT fields, so this is the one shape it cannot see.
+	for _, fname := range candP.FieldOrder {
+		if !candP.Fields[fname].Required {
+			continue
+		}
+		if _, existed := curP.Fields[fname]; existed {
+			continue // the `becomes required` case above owns it
+		}
+		q, args := fieldEmpty(ident, path, fname)
+		out = append(out, narrowing{
+			format: fmt.Sprintf("type %s: object %q adds field %q as required while %%d live records hold an object without it — backfill or clear them first",
+				ident, label, fname),
+			query: q, args: args,
+		})
+	}
 	return out
+}
+
+// fieldEmpty counts the live rows whose object at the path holds NO VALUE for
+// the field: the key absent, or a value emptyJSONValues names. It is
+// fieldPresence's complement and the depth-wise twin of countMissingPropQuery,
+// so a field turning required is refused on exactly the rows the write path
+// would then refuse.
+//
+// A row that does not carry the object at all is not counted: whether the
+// object itself must be there is the enclosing property's own `required`, and
+// counting an absent optional object here would refuse every field that ever
+// turns required on one.
+func fieldEmpty(ident string, path []fieldStep, key string) (string, []any) {
+	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
+		k := a.add(key)
+		return fmt.Sprintf(
+			"jsonb_typeof(%s) = 'object' AND (NOT %s ? %s OR %s->%s IN %s)",
+			expr, expr, k, expr, k, emptyJSONValues)
+	})
 }
 
 // keyPatternTightens reports whether a keyed map's declared key contract moved

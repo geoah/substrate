@@ -2057,6 +2057,15 @@ func (l *loader) parseFields(where string, d map[string]any, depth int) map[stri
 			l.errf("%s: managed marks a type's own property, not a field", fwhere)
 			continue
 		}
+		// `default` is the same claim: the write path fills a PROPERTY the
+		// create did not name (withDefaults, in internal/engine) and never
+		// reaches inside an object to build one, so a field default would be a
+		// declared promise no write keeps. Refused rather than accepted and
+		// ignored. `required` on a field is enforced, and stays.
+		if fp.Default != nil {
+			l.errf("%s: default fills a type's own property, not a field — the write path never builds an object to put one in", fwhere)
+			continue
+		}
 		out[fname] = fp
 	}
 	return out

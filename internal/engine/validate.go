@@ -135,6 +135,13 @@ func coerceKeyed(p *vocabulary.Property, v any) (any, error) {
 // dropped from the stored object, and each field coerces in its OWN declared
 // container — a repeated field elementwise, a keyed field per key, a nested
 // object recursively. An empty object stores as {}.
+//
+// A `required:` FIELD is checked against the object this write stores. An
+// object value is written whole (the merge replaces the property, it does not
+// reach inside it), so the value coerced here IS the value the record ends up
+// holding, and checking it here is the same post-write rule a kind's own
+// properties get. Admission counts the rows a field turning required would
+// strand, at the field's own depth (schemadiff.go), so the two doors agree.
 func coerceObject(p *vocabulary.Property, v any) (any, error) {
 	in, ok := v.(map[string]any)
 	if !ok {
@@ -155,6 +162,14 @@ func coerceObject(p *vocabulary.Property, v any) (any, error) {
 			return nil, fmt.Errorf(".%s: %w", fname, err)
 		}
 		out[fname] = cv
+	}
+	for _, fname := range p.FieldOrder {
+		if !p.Fields[fname].Required {
+			continue
+		}
+		if fv, held := out[fname]; !held || emptyValue(fv) {
+			return nil, fmt.Errorf(".%s: this field is required", fname)
+		}
 	}
 	return out, nil
 }
