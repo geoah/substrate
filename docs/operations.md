@@ -112,7 +112,7 @@ credentials only this substrate holds.
 secret-typed properties; `blobs.bytes`, an object on disk and an object in a
 bucket are all stored exactly as they arrived, and no credential key is
 involved in reading any of them
-([0021](decisions/0021-blob-bytes-outside-postgres-are-stored-plaintext.md)).
+([0031](decisions/0031-blob-bytes-outside-postgres-are-stored-plaintext.md)).
 Whoever holds the dump, the root or the bucket holds every attachment in the
 clear. For encryption at rest, put it under the store: disk encryption for
 Postgres or the `fs` root, the bucket's own server-side encryption for `s3`.
@@ -120,7 +120,7 @@ Postgres or the `fs` root, the bucket's own server-side encryption for `s3`.
 **An upload becomes two steps, and a crash between them is cheap.** Outside
 Postgres the bytes cannot commit with the manifest, so the manifest is written
 `pending` first, then the bytes, then `stored`
-([0020](decisions/0020-a-blob-outside-postgres-settles-after-its-bytes.md)). A
+([0030](decisions/0030-a-blob-outside-postgres-settles-after-its-bytes.md)). A
 manifest only ever says `stored` once the store confirms the bytes, so no read
 ever meets a blob whose bytes are missing. What a crash leaves is a `pending`
 manifest, which the sweep collects with anything else nobody references.

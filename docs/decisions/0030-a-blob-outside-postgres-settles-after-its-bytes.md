@@ -4,7 +4,7 @@ date: 2026-08-17
 decision-makers: geoah
 ---
 
-# 0020. A blob outside Postgres settles after its bytes, behind a pending manifest
+# 0030. A blob outside Postgres settles after its bytes, behind a pending manifest
 
 ## Context and Problem Statement
 

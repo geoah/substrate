@@ -4,7 +4,7 @@ date: 2026-08-17
 decision-makers: geoah
 ---
 
-# 0021. Blob bytes outside Postgres are stored plaintext
+# 0031. Blob bytes outside Postgres are stored plaintext
 
 ## Context and Problem Statement
 

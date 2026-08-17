@@ -56,7 +56,7 @@ var rePrefix = regexp.MustCompile(`^[A-Za-z0-9_.\-/]*$`)
 // reach every repository in the bucket.
 //
 // The bytes are stored as they arrived, in the clear. That is a decision, not
-// an oversight: see docs/decisions/0021-blob-bytes-outside-postgres-are-stored-plaintext.md.
+// an oversight: see docs/decisions/0031-blob-bytes-outside-postgres-are-stored-plaintext.md.
 type S3 struct {
 	cfg    S3Config
 	client *http.Client
