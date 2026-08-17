@@ -7,8 +7,8 @@ package testenv_test
 // contract and nothing holds the seam. The fake never returns
 // substrate.ErrGated, its Put ignores IfVersion, and it never builds a
 // *substrate.ValidationError, so "the engine returns sentinel X" and "the API
-// maps sentinel X to status Y" are both true while the engine may still be
-// returning some other sentinel for the same request.
+// maps sentinel X to status Y" can both pass while the engine returns a
+// different sentinel for the request that matters.
 //
 // Every case below is one HTTP request to a running substrate, and the table
 // is checked against the code* constants in internal/api/errors.go: a code
