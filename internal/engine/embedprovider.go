@@ -76,10 +76,12 @@ func (ds *dataset) resolveEmbedProvider(ctx context.Context) (*embedProvider, er
 		return nil, nil
 	case 1:
 	default:
-		// The write refuses a second claimant, so two rows here mean history
-		// that predates the rule. Refusing loudly is the only answer that
-		// keeps the stored vectors' provenance meaningful: picking one would
-		// silently re-embed everything against a coin toss.
+		// Unreachable by design: every path that can make a row live and
+		// claiming goes through admitProviderRow — the ordinary write
+		// (write.go) and the split that resurrects a merged-away row
+		// (merge.go). This stays because the cost of being wrong about that
+		// is silent: picking one of two claimants would re-embed a whole
+		// repository against a coin toss, and the vectors would not say so.
 		return nil, fmt.Errorf("%w: llmprovider rows %s each declare %s — a repository buys embeddings from one row, so clear it from all but one",
 			substrate.ErrValidation, strings.Join(ids, ", "), propEmbedModel)
 	}
@@ -243,6 +245,15 @@ func (t *txn) admitProviderRow(id string, props map[string]any) error {
 	// One row per repository declares it, so the check is a claim: the
 	// exclusive lock is what stops two concurrent writes from both finding no
 	// other claimant and both landing.
+	//
+	// LOCK ORDER. This is taken before the transaction's changelog append,
+	// while a provider row written by a post-apply effect or a mapping shell
+	// takes it after one, so two such transactions in the same repository can
+	// deadlock. Postgres detects it and aborts one, and the cost is a
+	// transient error after deadlock_timeout rather than a hang. It needs
+	// user-authored vocabulary that writes llmprovider rows from an effect,
+	// and the `credential` lock (auth.go) already has the same shape, so the
+	// ordering is a known class rather than this claim's own bug.
 	if err := t.lockKey("embedprovider"); err != nil {
 		return err
 	}

@@ -130,6 +130,54 @@ func TestEmbedProviderRowRefusals(t *testing.T) {
 	}
 }
 
+// TestProviderRowsAreOutsideTheMergeSurface: merge is the one verb that could
+// get a SECOND live claimant past the write. It does not migrate properties,
+// so a merged-away llmprovider row keeps its embedModel while another row is
+// free to take the job, and split would then restore it beside that row by
+// clearing the tombstone and folding directly.
+//
+// That sequence cannot start: llmprovider is core's, and the generic merge
+// surface refuses every core kind. A recordmerge naming one cannot be forged
+// either, because recordmerge is a system kind no external write may create.
+// The split path carries the claim check anyway (merge.go), so the invariant
+// does not silently depend on guardMergeType continuing to exclude core kinds.
+func TestProviderRowsAreOutsideTheMergeSurface(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	emb := newFakeEmbedServer(t)
+
+	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: typeProvider, ID: "completions",
+		Properties: map[string]any{
+			"name": "completions", "wire": "openai",
+			"baseURL": emb.srv.URL, "apiKey": "row-key-completions",
+		},
+	}); err != nil {
+		t.Fatalf("put the completions row: %v", err)
+	}
+
+	_, err := ds.Merge(ctx, owner, typeProvider, "completions", "vectors")
+	if err == nil || !errors.Is(err, substrate.ErrForbidden) {
+		t.Fatalf("an llmprovider row was merged: %v", err)
+	}
+
+	// And the merge record that a split would need cannot be written by hand.
+	_, err = ds.Put(ctx, owner, substrate.PutInput{
+		Kind: "core.substrate.reamde.dev/recordmerge", ID: "forged",
+	})
+	if err == nil || !errors.Is(err, substrate.ErrForbidden) {
+		t.Fatalf("a recordmerge was forged: %v", err)
+	}
+
+	// The one claimant still answers, so nothing above changed resolution.
+	report, err := ds.Reembed(ctx, false)
+	if err != nil || report.Provider != "vectors" {
+		t.Fatalf("reembed = %+v, %v", report, err)
+	}
+}
+
 // TestEmbedQueueRefusesWrongWidth: the write-time check reads a table of model
 // names, so an endpoint serving something else under a known name is the one
 // way past it. The drain refuses the answer rather than letting Postgres refuse

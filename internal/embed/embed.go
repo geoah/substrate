@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -101,14 +102,27 @@ type Client struct {
 	dimension int
 }
 
-// scrub replaces the row's own bearer wherever an endpoint echoed it back.
-// OpenAI's 401 body quotes the key it was given verbatim, and that body is
-// what the wire error carries.
+// maskedSecret matches a token an endpoint starred out itself. OpenAI's 401
+// body does NOT quote a real key whole: it keeps a leading and a trailing
+// fragment and replaces the middle with asterisks, so an exact-match scrub
+// removes nothing and both fragments reach the log. Three asterisks in a row
+// inside one whitespace-delimited token is that shape, and nothing else in a
+// wire error legitimately looks like it.
+var maskedSecret = regexp.MustCompile(`\S*\*{3,}\S*`)
+
+// scrub takes the row's own bearer back out of an endpoint's words, in the two
+// shapes endpoints send: quoted whole (a short key, or a gateway that does not
+// mask), and self-masked with the middle starred out.
+//
+// What it does NOT catch: an endpoint that echoes a bare fragment with no
+// asterisks to mark it. Nothing distinguishes that from prose, so the standing
+// rule is the one above it — the drain reports through the HOST's log, and a
+// repository's secret does not belong there.
 func (e *Client) scrub(s string) string {
-	if e.apiKey == "" {
-		return s
+	if e.apiKey != "" {
+		s = strings.ReplaceAll(s, e.apiKey, "<redacted>")
 	}
-	return strings.ReplaceAll(s, e.apiKey, "<redacted>")
+	return maskedSecret.ReplaceAllString(s, "<redacted>")
 }
 
 // New builds the embedder for one resolved provider row. It refuses a config

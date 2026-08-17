@@ -10,9 +10,10 @@ import "net/http"
 // does, so a re-embed of a large repository is spread over passes and resumes
 // after a restart.
 //
-// It sits beside the provider row rather than under it because the target is
-// the whole repository, not one row: the console offers it where the row is
-// shown, and the operator's hat runs it over the DSN
+// It addresses the repository rather than one row, which is why it is not
+// mounted under the llmprovider resource: the row is where the model is
+// chosen, but every embeddable property is what gets requeued. The operator's
+// hat runs the same verb over the DSN
 // (`substratectl --dsn … repository reembed <username>`).
 
 type reembedRequest struct {

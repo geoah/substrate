@@ -648,6 +648,16 @@ func (t *txn) split(mergeID string) (*substrate.Record, error) {
 	if err := t.checkBundleWrite(loserTy, loserID, true); err != nil {
 		return nil, err
 	}
+	// The same admission for the embeddings claim, and for the same reason.
+	// A merge does not migrate properties, so a tombstoned llmprovider row
+	// keeps its embedModel while another row is free to take the job; without
+	// this, a split would land a second live claimant that no write path ever
+	// admitted, and the refusal would surface later, to whoever searched.
+	if loserTy.Identity == typeProvider {
+		if err := t.admitProviderRow(loserID, loser.Props); err != nil {
+			return nil, err
+		}
+	}
 
 	// The loser answers to its own id again, and the trail the merge moved
 	// onto the winner goes back with it. Trails are per-type; the pair share

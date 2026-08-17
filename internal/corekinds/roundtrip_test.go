@@ -224,7 +224,7 @@ func TestRoundTripPopulated(t *testing.T) {
 	}, corekinds.DecodeLLMMessage)
 
 	roundTrip(t, "llmprovider", &corekinds.LLMProvider{
-		Name:    str("the host gateway"),
+		Name:    str("the openai-wire row"),
 		Wire:    ptr(corekinds.LLMProviderWireOpenai),
 		BaseURL: str("https://example.com/v1"),
 		ApiKey:  secret("sealed:1:key"),

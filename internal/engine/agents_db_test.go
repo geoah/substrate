@@ -185,8 +185,8 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: typeProvider, ID: id,
 			Properties: map[string]any{
-				// A row-defined baseURL REQUIRES a row-defined apiKey (the
-				// host gateway key never travels to a custom endpoint).
+				// Every row carries its own endpoint and its own key: there
+				// is nothing host-wide to fall back to.
 				"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-" + id,
 				// pricing is a repeated object: one row per model, keyed by
 				// the `model` field.
