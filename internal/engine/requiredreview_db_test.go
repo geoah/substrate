@@ -228,3 +228,29 @@ func TestAddingARequiredFieldIsRefusedWhileObjectsLackIt(t *testing.T) {
 		t.Fatalf("the narrowing must land once nothing is stranded: %v", err)
 	}
 }
+
+// A create that names NO properties at all still gets its defaults. The
+// authored map is nil there, and the copy-on-write has to build one: cloning
+// nil answers nil, and a nil map panics on assignment.
+func TestDefaultFillsACreateThatNamesNoProperties(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	authority := reviewAuthority + ".nilmap"
+	docs := []map[string]any{
+		vocabulary.AuthorityManifest(authority, 0),
+		vocabulary.KindManifest(authority,
+			map[string]any{"singular": "knob", "plural": "knobs"},
+			map[string]any{"properties": map[string]any{
+				"mode":  map[string]any{"type": "enum", "values": []any{"off", "on"}, "default": "off"},
+				"label": map[string]any{"type": "string"},
+			}}),
+	}
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
+		t.Fatalf("apply the knob declaration: %v", err)
+	}
+	created := mustPut(t, ds, owner, substrate.PutInput{Kind: authority + "/knob", ID: "k1"})
+	if created.Properties["mode"] != "off" {
+		t.Fatalf("a default must fill a create that names nothing, got %v", created.Properties["mode"])
+	}
+}

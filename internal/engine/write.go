@@ -332,8 +332,14 @@ func withDefaults(ty *vocabulary.Kind, in map[string]any, create bool) map[strin
 			continue
 		}
 		if !copied {
-			out = make(map[string]any, len(in)+1)
-			maps.Copy(out, in)
+			// Clone rather than size a new map: a length plus one is arithmetic
+			// in an allocation, which the security scan reads as an overflow it
+			// cannot rule out. A nil authored map clones to nil, and a nil map
+			// panics on assignment.
+			out = maps.Clone(in)
+			if out == nil {
+				out = map[string]any{}
+			}
 			copied = true
 		}
 		out[name] = p.Default
