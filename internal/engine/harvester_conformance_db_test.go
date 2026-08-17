@@ -331,7 +331,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		blogPage).Scan(&classActor); err != nil {
 		t.Fatalf("the class-patch changelog row: %v", err)
 	}
-	if classActor != "function:pageclassifier" {
+	if classActor != "agent:"+webAuthority+":pageclassifier" {
 		t.Fatalf("class patched by %q, not the classifier agent", classActor)
 	}
 
@@ -345,7 +345,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		ORDER BY c.seq LIMIT 1`, vocabulary.KindRecordPatchRequest).Scan(&reqID, &reqActor); err != nil {
 		t.Fatalf("the reading-list proposal: %v", err)
 	}
-	if reqActor != "function:readinglistagent" {
+	if reqActor != "agent:"+webAuthority+":readinglistagent" {
 		t.Fatalf("proposal authored by %q, not the reading-list agent", reqActor)
 	}
 	var target string
@@ -392,7 +392,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	var childConfigWrites int
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM changelog WHERE record_id = $1 AND actor = $2`,
-		cfg.ID, "function:readinglistagent").Scan(&childConfigWrites); err != nil {
+		cfg.ID, "agent:"+webAuthority+":readinglistagent").Scan(&childConfigWrites); err != nil {
 		t.Fatal(err)
 	}
 	if childConfigWrites != 0 {

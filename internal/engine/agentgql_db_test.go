@@ -141,7 +141,7 @@ func TestAgentMutateWritesWithinEmit(t *testing.T) {
 	if err != nil || len(changes) == 0 {
 		t.Fatalf("changes: %v %v", changes, err)
 	}
-	if changes[0].Actor != "function:editor" {
+	if changes[0].Actor != substrate.Actor("agent:"+crewAuthority+":editor") {
 		t.Fatalf("actor %q, want the agent's", changes[0].Actor)
 	}
 }

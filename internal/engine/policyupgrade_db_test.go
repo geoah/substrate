@@ -127,9 +127,10 @@ func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 	if ops := policySelectorOps(t, ds); strings.Join(ops, ",") != "put,patch,delete" {
 		t.Fatalf("after the upgrade the field declares %v", ops)
 	}
-	// The rest of core's version 10 rode the same projection.
-	if v := kindVersion(t, ds, coreAuthority+"/trigger"); v != 10 {
-		t.Fatalf("trigger is at version %d, want 10", v)
+	// The rest of core's version rode the same projection: `trigger` pins
+	// none of its own, so it carries the authority's.
+	if v := kindVersion(t, ds, coreAuthority+"/trigger"); v != 11 {
+		t.Fatalf("trigger is at version %d, want 11", v)
 	}
 	rec, err := ds.Get(ctx, vocabulary.KindRecordPatchPolicy, "gate-puts")
 	if err != nil {
