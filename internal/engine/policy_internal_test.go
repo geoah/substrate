@@ -29,8 +29,8 @@ func TestPolicySelectorKindsTakeTheTriggerGlob(t *testing.T) {
 		{[]string{"tasks.substrate.reamde.dev/task"}, "tasks.substrate.reamde.dev/project", false},
 		{[]string{"people.substrate.reamde.dev/person", "tasks.substrate.reamde.dev/*"}, "tasks.substrate.reamde.dev/task", true},
 		// The glob cuts on the authority boundary, never on a prefix of it:
-		// `tasks.substrate.reamde.dev/*` is not a licence over
-		// `taskstuff.substrate.reamde.dev`.
+		// `tasks.substrate.reamde.dev/*` does not reach
+		// `tasks.substrate.reamde.dev.evil`.
 		{[]string{"tasks.substrate.reamde.dev/*"}, "tasks.substrate.reamde.dev.evil/task", false},
 	}
 	for _, c := range cases {

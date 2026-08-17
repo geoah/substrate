@@ -117,7 +117,7 @@ data:
     # TWO INDEPENDENT FLOORS, NOT A BAND. The judge's verdict picks which floor
     # is read: `autoAccept` measures an `accept` verdict, `autoRefuse` a
     # `reject` one, so the two never decide the same reply between them
-    # (policy.go routeVerdict). Where one confidence clears both floors the
+    # (judge.go routeVerdict). Where one confidence clears both floors the
     # reject arm is tested first, so a policy with `autoRefuse` at or below
     # `autoAccept` refuses rather than accepts — the same most-restrictive-wins
     # composition the door uses when several policies match one write. Every
@@ -127,8 +127,8 @@ data:
       type: float
       min: 0
       max: 1
-      description: judge confidence at or above accepts the gated request, an
-        `accept` verdict only; absent means the judge never accepts
+      description: judge confidence at or above accepts the gated request,
+        an `accept` verdict only; absent means the judge never accepts
     autoRefuse:
       type: float
       min: 0

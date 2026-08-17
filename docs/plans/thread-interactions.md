@@ -373,18 +373,25 @@ kind: core.substrate.reamde.dev/recordpatchpolicy
 properties:
   selector:      # object: which writes this policy speaks for
     fields:
-      kinds:       # repeated string: kind references; empty means every kind
+      kinds:       # repeated string: a kind reference, <authority>/* or *; empty means every kind
       ops:         # repeated string: put/patch/delete; empty means all three
       agents:      # repeated string: agent identities; empty means every agent
-  action:        # enum: allow | gate | refuse
+  action:        # enum: allow | gate | refuse — REQUIRED
   judge:         # reference core/agent: judges what this policy GATES; optional
   criteria:      # text: the owner's instructions to the judge, in prose
   context:       # enum: envelope | thread — how much the judge sees; envelope is the default
-  autoAccept:    # float 0..1: judge confidence at or above accepts the gated request
-  autoRefuse:    # float 0..1: judge confidence at or above rejects it
+  autoAccept:    # float 0..1: an ACCEPT verdict at or above accepts the gated request
+  autoRefuse:    # float 0..1: a REJECT verdict at or above rejects it; wins where both floors are cleared
   mode:          # enum: enforce | advise (advise: the judge recommends, never decides)
   disabled:      # bool
 ```
+
+`selector.kinds` speaks the trigger source's grammar and is matched by the
+trigger source's matcher: a kind reference, every kind one authority publishes
+(`tasks.substrate.reamde.dev/*`), or every kind (`*`). A bare local name
+resolves to the kind's identity at load, the way a trigger source's does, and
+any other spelling (`tasks.*`) is refused at the write door rather than
+admitted as a rule that matches no write.
 
 Composition, when several policies match one write: the most restrictive
 action wins (`refuse` over `gate` over `allow`), the rule every surveyed
@@ -454,7 +461,11 @@ judge only ever recommends. Order of operations, fail-closed at every gap:
    carry them anyway).
 2. The engine routes, in `enforce` mode: `accept` at or above `autoAccept`
    accepts; `reject` at or above `autoRefuse` rejects with the rationale as
-   the note; everything else, `escalate`, sub-threshold confidence,
+   the note. The verdict picks the threshold, so the two are independent
+   floors rather than a band and never decide one reply between them; where a
+   confidence clears both, the reject arm is tested first, so a policy with
+   `autoRefuse` at or below `autoAccept` refuses rather than accepts. Everything
+   else, `escalate`, sub-threshold confidence,
    malformed output, transport failure, blown judge budget, a crash between
    verdict and decision, leaves the request PROPOSED for the human,
    carrying the verdict. The decision is CAS'd on the request version read
