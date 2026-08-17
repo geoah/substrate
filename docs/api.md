@@ -278,17 +278,16 @@ registration asks for and whether it is open at all; and a feature list. (A
 repository's own stored dialect never appears on the wire; a binary too old
 for a store refuses to open it, which surfaces as `unavailable`.) That
 feature list is what replaces probing for 501s: each entry names a feature,
-its stability and the `surfaces` that serve it (`rest`, `graphql`, or both).
-The agent surface reports `alpha`, and `search` reports `graphql` alone:
+its stability and the `surfaces` that serve it (`rest`, `graphql`, or both):
 
 ```json
 {"versions": [{"name": "v1", "status": "served"}],
  "server": {"version": "…", "build": "…"},
  "vocabulary": {"maxDialect": 2, "note": "…"},
  "changelog": {"horizon": 0},
- "features": [{"name": "triggers", "stability": "stable", "surfaces": ["rest"]},
-              {"name": "changefeed", "stability": "stable", "surfaces": ["rest", "graphql"]},
-              {"name": "search", "stability": "stable", "surfaces": ["graphql"]},
+ "features": [{"name": "triggers", "stability": "beta", "surfaces": ["rest"]},
+              {"name": "changefeed", "stability": "beta", "surfaces": ["rest", "graphql"]},
+              {"name": "search", "stability": "beta", "surfaces": ["graphql"]},
               {"name": "agents", "stability": "alpha", "surfaces": ["rest"]}],
  "grammar": {"kind": "<authority>/<name> | <name>",
              "record": "<authority>/<kind>/<id> | <kind>/<id>",
@@ -305,13 +304,10 @@ A feature's `surfaces` are the doors to its own operations, not to its
 records: a trigger and a blob manifest are ordinary records and read on both
 surfaces whatever the entry says, while `["rest"]` means the feature's verbs
 (a replay, an install, a function call, a blob's bytes) have REST paths and no
-GraphQL field. One entry is conditional: `embeddings` is listed only where the
-deployment has an embedder configured, because without one nothing drains the
-embed queue and the semantic arm refuses. `search` stays listed either way,
-since it degrades to lexical, and every other entry is present on every
-deployment. The example above is abridged; the full list is `triggers`,
-`functions`, `bundles`, `blobs`, `changefeed`, `search`, `embeddings` and
-`agents`.
+GraphQL field. The example above is abridged; the full roster a deployment may
+report is `triggers`, `functions`, `bundles`, `blobs`, `changefeed`, `search`,
+`embeddings` and `agents`, and which of them a given deployment lists is
+[what it implements](#what-a-features-stability-means).
 
 `registration` is what the register door asks for, and whether it is even
 open. `registration.open` is `false` only on a deployment with no invite code
@@ -322,6 +318,34 @@ the second factor is
 [switched off](auth.md#the-second-factor-can-be-switched-off-locally), which is
 a local substrate. Neither field is a verdict — the service refuses on its
 own terms either way.
+
+### What a feature's stability means
+
+The stamp is a promise about **change**, not about quality: everything listed
+is served and works today.
+
+| Value | Means |
+| ----- | ----- |
+| `alpha` | The shape may change or be withdrawn with no v1 wire break. Pin the server version if you depend on it. |
+| `beta` | Served and supported, and the shape is still moving before v1 freezes it. A break is announced, never silent. |
+| `stable` | Frozen for v1. Changes are additive only. |
+
+**Nothing reports `stable` yet.** The path grammar is still being settled
+before v1 — the plural is coming out of every collection segment and a segment
+is being reserved for verbs — so every path below moves, and the same change
+decides which parts of the surface survive it. `agents` and `embeddings` report
+`alpha`; every other feature reports `beta`.
+
+The list is derived from what the deployment implements, not written out, so a
+feature is never advertised without the code that serves it: a substrate that
+runs no triggers lists no `triggers` feature rather than listing one and
+answering `unsupported`, and `embeddings` is listed only where the deployment
+can embed at all. Discovery opens no repository, so it does not answer the
+narrower question of whether the CALLER's repository declares an
+[`llmprovider` row](agents.md): the first semantic query answers that one,
+naming the property no row declares. An entry stands for every route behind
+it, so `bundles` appears only where both the lifecycle verbs and catalog
+install are served.
 
 Send every request to the `/api/v1` prefix. Today it is the only prefix
 served, and `versions` is where

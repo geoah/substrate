@@ -6,8 +6,13 @@ and the `/agents` chat and call wire are all alpha and unfrozen at v1. They
 are marked alpha in the docs and in [API discovery](api.md#discovery),
 which lists the agent surface under the `agents` feature carrying the
 stability `alpha`, and they may change, or be superseded, without counting as
-a v1 wire break. Build on the frozen core (records, the API, functions,
-triggers) with confidence; treat agents as a preview.
+a v1 wire break. Treat agents as a preview.
+
+The rest of the surface is not frozen either, so there is no frozen core to
+retreat to yet. Every other feature discovery lists reports `beta`: served and
+supported, with the shape still moving until v1 freezes it. Read
+[discovery](api.md#discovery) for what each value promises, and pin the server
+version where a break would cost you.
 
 An `agent` is a callable whose body is an **LLM loop**, run host-side. It has
 one reference and the same four ways in as a [function](functions.md): a

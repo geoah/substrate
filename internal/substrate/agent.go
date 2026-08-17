@@ -7,21 +7,21 @@ import "context"
 // llmmessage RECORDS in core.substrate.reamde.dev — these types are only the live
 // transport around one invocation.
 //
-// ALPHA, UNFROZEN AT v1. Unlike the rest of this package, the
-// agent kind, the agent-loop vocabulary (llmprovider/llmthread/llmmessage) and the
-// /agents chat+call wire are NOT part of the frozen v1 contract: they may
-// change or be superseded without a v1 wire break. Everything an agent does
-// is layerable over the frozen function+trigger+effect core, so the loop is
-// shipped host-side for the streaming path but held OUT of the freeze.
+// ALPHA (StabilityAlpha, stability.go). The agent kind, the agent-loop
+// vocabulary (llmprovider/llmthread/llmmessage) and the /agents chat+call wire
+// may change or be superseded with no notice at all. That is a weaker promise
+// than the rest of this package makes, and the rest is not frozen either: no
+// surface is stable yet, so every other feature reports beta and announces its
+// breaks. Everything an agent does is layerable over the function+trigger+effect
+// core, so the loop is shipped host-side for the streaming path and is the
+// first thing that would be dropped.
 
 // AgentStability is the declared stability of the agent kind, its
-// llmprovider/llmthread/llmmessage vocabulary and the /agents wire: "alpha" at v1.
+// llmprovider/llmthread/llmmessage vocabulary and the /agents wire: "alpha".
 // It is the cheap machine-visible marker the discovery/features surface
-// reads to mark agents alpha; StabilityAlpha is the value it
+// reads to mark agents alpha; StabilityAlpha (stability.go) is the value it
 // carries.
 const (
-	StabilityAlpha  = "alpha"
-	StabilityStable = "stable"
 	// AgentStability marks the agent kind + its core vocabulary + /agents as
 	// alpha.
 	AgentStability = StabilityAlpha

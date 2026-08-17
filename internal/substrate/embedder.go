@@ -10,9 +10,9 @@ type Embedder interface {
 }
 
 // EmbeddingsReporter is the optional seam a Service implements to say whether
-// it has an Embedder at all. Service stays frozen, so this is asserted at
-// runtime (discovery lists the `embeddings` feature only where it answers
-// true) and both sides name this one symbol: a service that does not
+// it can embed at all. Service does not grow a method for it, so this is
+// asserted at runtime (discovery lists the `embeddings` feature only where it
+// answers true) and both sides name this one symbol: a service that does not
 // implement it reports no embeddings, which is the safe answer.
 type EmbeddingsReporter interface {
 	EmbeddingsEnabled() bool

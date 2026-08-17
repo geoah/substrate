@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"slices"
 
 	"github.com/geoah/substrate/internal/build"
 	"github.com/geoah/substrate/internal/substrate"
@@ -106,11 +105,14 @@ type changelogInfo struct {
 	Horizon int64 `json:"horizon"`
 }
 
-// featureInfo names one feature, how stable it is, and WHICH surfaces serve
-// it. The two surfaces are not equivalent: REST is the frozen v1 contract,
-// GraphQL is the per-repository projection over the same records (decision
-// 0022), so a feature only one of them serves has to say so here. Surfaces is
-// never empty.
+// featureInfo names one feature, how far its shape has settled, and WHICH
+// surfaces serve it. Stability is one of substrate.StabilityAlpha,
+// StabilityBeta or StabilityStable, and it describes CHANGE, not quality:
+// everything listed is served today.
+//
+// The two surfaces are not equivalent: REST is the v1 contract, GraphQL is the
+// per-repository projection over the same records (decision 0022), so a feature
+// only one of them serves has to say so here. Surfaces is never empty.
 //
 // Surfaces are about the feature's OWN operations, never about its records: a
 // trigger and a blob manifest are ordinary records, readable through
@@ -130,14 +132,15 @@ const (
 	surfaceGraphQL = "graphql"
 )
 
-// featureEmbeddings is the one entry a deployment may not carry, so it has a
-// name both the roster and the drop below can hold.
+// featureEmbeddings is the one entry a deployment may lack for a reason that
+// is not a seam: the embedder is configuration, not a method set.
 const featureEmbeddings = "embeddings"
 
-// embeddingsEnabled asks the service whether it has an embedder, through
-// substrate.EmbeddingsReporter: the seam is asserted at runtime like
-// changeFeedOps, so Service stays frozen and discovery carries no second copy
-// of a wiring a host could forget to set.
+// embeddingsEnabled asks the service whether it can embed at all, through
+// substrate.EmbeddingsReporter: the seam is asserted at runtime like the
+// dataset seams, so Service stays frozen and discovery carries no second copy
+// of a wiring a host could forget to set. A service that does not implement it
+// reports no embeddings, which is the safe answer.
 func (h *handler) embeddingsEnabled() bool {
 	ops, ok := h.svc.(substrate.EmbeddingsReporter)
 	return ok && ops.EmbeddingsEnabled()
@@ -153,7 +156,7 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 			Note:       "binary maximum; the stored dialect is per-repository, in that repository's own vocabulary_dialect row, and is not served",
 		},
 		Changelog: changelogInfo{Horizon: retentionHorizon()},
-		Features:  features(h.embeddingsEnabled()),
+		Features:  h.features(),
 		Grammar: grammarInfo{
 			Kind:       "<authority>/<name> | <name>",
 			Record:     "<authority>/<kind>/<id> | <kind>/<id>",
@@ -178,40 +181,82 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, doc)
 }
 
-// features is the deployment's feature list. Everything the frozen core
-// serves is stable; the agent surface carries its declared stability
-// straight from the substrate marker, so "alpha" surfaces here
-// rather than being hard-coded.
+// features asks the service which seams its datasets satisfy
+// (substrate.SeamReporter) and lists what those serve. A service that does not
+// report them lists only what substrate.Dataset itself guarantees: guessing at
+// an extension would send a client to a 501, while hiding a core read would
+// hide a capability that works.
+func (h *handler) features() []featureInfo {
+	var seams substrate.Dataset
+	if reporter, ok := h.svc.(substrate.SeamReporter); ok {
+		seams = reporter.DatasetSeams()
+	}
+	return features(seams, h.embeddingsEnabled())
+}
+
+// features derives the capability list from the extension interfaces a dataset
+// of this deployment satisfies, so an entry cannot outlive the endpoints it
+// stands for: the handler type-asserts the same interface per request before
+// it serves any of these verbs, and a seam that goes away takes its feature
+// off this list instead of leaving it advertised over a 501. A feature served
+// by more than one seam names them all, because a client reads one entry and
+// gets every route behind it.
+//
+// Each stability is stamped against the tickets still to land on that surface,
+// and `stable` means frozen for v1 (see substrate.StabilityStable). None of
+// these is: #202 drops the plural from every collection segment and reserves a
+// segment for verbs, which moves every path below, and carries the v1 surface
+// reduction, which decides which of them survive at all.
 //
 // Each entry's surfaces are the doors that actually exist today. Search and
 // embeddings are the two the REST surface does not serve: REST filters
 // (`?filter=`), the GraphQL `search(q, mode, kinds, k)` query ranks, and
-// embeddings reach a caller only as that query's semantic arm. The
-// changefeed is read on both. Everything else is a set of REST verbs with no
-// GraphQL field.
-//
-// embeddings is also the one CONFIGURED feature: it is listed only where this
-// deployment has an embedder, because without one the semantic arm answers a
-// validation error and nothing drains the embed queue. `search` stays listed
-// either way, because it degrades to lexical.
-func features(embeddings bool) []featureInfo {
-	out := []featureInfo{
-		{Name: "triggers", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
-		{Name: "functions", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
-		{Name: "bundles", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
-		{Name: "blobs", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST}},
-		// The changefeed is the one feature both surfaces read: REST pages it
-		// (`GET …/changes?before=`), resumes it forward (`?from=`) and tails
-		// it (`?watch=1`), GraphQL resumes it forward
-		// (`changelog(from, filter, first)`) but streams nothing, because
-		// there is no subscription.
-		{Name: "changefeed", Stability: substrate.StabilityStable, Surfaces: []string{surfaceREST, surfaceGraphQL}},
-		{Name: "search", Stability: substrate.StabilityStable, Surfaces: []string{surfaceGraphQL}},
-		{Name: featureEmbeddings, Stability: substrate.StabilityStable, Surfaces: []string{surfaceGraphQL}},
-		{Name: substrate.FeatureAgents, Stability: substrate.AgentStability, Surfaces: []string{surfaceREST}},
+// embeddings reach a caller only as that query's semantic arm. The changefeed
+// is read on both. Everything else is a set of REST verbs with no GraphQL
+// field.
+func features(seams substrate.Dataset, embeddings bool) []featureInfo {
+	out := make([]featureInfo, 0, 8)
+	add := func(present bool, name, stability string, surfaces []string) {
+		if present {
+			out = append(out, featureInfo{Name: name, Stability: stability, Surfaces: surfaces})
+		}
 	}
-	if !embeddings {
-		out = slices.DeleteFunc(out, func(f featureInfo) bool { return f.Name == featureEmbeddings })
-	}
+	// One seam serves both: AutomationOps carries the trigger verbs and
+	// CallFunction.
+	_, automation := seams.(substrate.AutomationOps)
+	add(automation, "triggers", substrate.StabilityBeta, []string{surfaceREST})
+	add(automation, "functions", substrate.StabilityBeta, []string{surfaceREST})
+	// The bundle surface spans two seams: BundleOps serves the lifecycle verbs
+	// and BundleInstaller serves catalog install, which fails outright without
+	// it. BundleUpgradePlanner is NOT required: a dataset that cannot plan an
+	// upgrade answers a nil preview by design (internal/catalog), and the rest
+	// of the surface still works.
+	_, bundles := seams.(substrate.BundleOps)
+	_, installer := seams.(substrate.BundleInstaller)
+	add(bundles && installer, "bundles", substrate.StabilityBeta, []string{surfaceREST})
+	// Blobs are beta for a second reason beside the path: #97 moves the bytes
+	// out of the `blobs.bytes` column into a byte store, which reopens the
+	// 64 MiB cap and the missing range read that the wire currently implies.
+	_, blobs := seams.(substrate.BlobStore)
+	add(blobs, "blobs", substrate.StabilityBeta, []string{surfaceREST})
+	// The changefeed is the one feature both surfaces read: REST pages it
+	// (`GET …/changes?before=`), resumes it forward (`?from=`) and tails it
+	// (`?watch=1`), GraphQL resumes it forward
+	// (`changelog(from, filter, first)`) but streams nothing, because there is
+	// no subscription.
+	_, changefeed := seams.(substrate.ChangeFeedOps)
+	add(changefeed, "changefeed", substrate.StabilityBeta, []string{surfaceREST, surfaceGraphQL})
+	// Search is not an extension: Search is on the frozen Dataset core, so
+	// every dataset serves it and it is listed unconditionally. What it is NOT
+	// is frozen, because the only door to it is the GraphQL schema, which is
+	// generated per repository from that repository's kinds
+	// (docs/graphql-and-search.md).
+	add(true, "search", substrate.StabilityBeta, []string{surfaceGraphQL})
+	// Embeddings are alpha: no route serves them directly, they reach a caller
+	// only as the semantic arm of that same query, and the vector width is a
+	// constant in the engine (vectorDim) that no declaration can move.
+	add(embeddings, featureEmbeddings, substrate.StabilityAlpha, []string{surfaceGraphQL})
+	_, agents := seams.(substrate.AgentOps)
+	add(agents, substrate.FeatureAgents, substrate.AgentStability, []string{surfaceREST})
 	return out
 }

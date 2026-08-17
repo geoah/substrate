@@ -129,6 +129,7 @@ var (
 	_ substrate.Service          = (*service)(nil)
 	_ substrate.OAuthCompleter   = (*service)(nil)
 	_ substrate.RecoveryEnroller = (*service)(nil)
+	_ substrate.SeamReporter     = (*service)(nil)
 )
 
 type service struct {
@@ -611,6 +612,13 @@ func (s *service) Dataset(ctx context.Context, username string) (substrate.Datas
 	}
 	return s.open(ctx, repo)
 }
+
+// DatasetSeams reports which optional extensions a dataset of this engine
+// satisfies (substrate.SeamReporter), for a discovery document that opens no
+// repository. The value is the typed nil of the type Dataset returns, so the
+// answer is the method set itself and can never disagree with it; nothing
+// calls a method on it.
+func (s *service) DatasetSeams() substrate.Dataset { return (*dataset)(nil) }
 
 // CreateRepository creates a repository and its control-plane row: the user IS
 // that row, and the repository it owns is born holding the shipped kinds.
