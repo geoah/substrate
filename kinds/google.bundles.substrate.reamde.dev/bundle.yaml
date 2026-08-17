@@ -56,7 +56,10 @@ data:
   # version 6: `account` on every mirror kind is a pinned owner
   # reference instead of a string, so disconnecting an account collects
   # the rows it synced (docs/decisions/0032).
-  version: 6
+  # version 7: gmailsync and calendarsync write the shared kinds' `account`
+  # as the reference property, not the edge that kind no longer declares
+  # (docs/decisions/0034).
+  version: 7
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
