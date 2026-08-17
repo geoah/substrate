@@ -801,7 +801,7 @@ func TestGetAmbiguousPluralErrors(t *testing.T) {
 	h2.writeConfig()
 	// Both escape hatches the error names must actually address the right
 	// collection; only the recorded requests matter here.
-	h2.run("get", "slack.connectors.substrate.reamde.dev/syncrun")      //nolint:dogsled // requests are the assertion
+	h2.run("get", "slack.connectors.substrate.reamde.dev/syncrun")           //nolint:dogsled // requests are the assertion
 	h2.run("get", "syncrun", "-g", "google.connectors.substrate.reamde.dev") //nolint:dogsled // requests are the assertion
 	for _, want := range []string{
 		"GET /api/v1/slack.connectors.substrate.reamde.dev/syncrun",

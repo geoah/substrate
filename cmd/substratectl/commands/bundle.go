@@ -18,7 +18,7 @@ func bundlePath(segments ...string) string {
 // patchBundleState PATCHes the bundle record with one runtime-state transition
 // (disabled/uninstalled/purging), the shape the lifecycle takes now that it is
 // record state, not a verb.
-func (a *app) patchBundleState(cmd *cobra.Command, id, prop string, value any, out any) error {
+func (a *app) patchBundleState(cmd *cobra.Command, id, prop string, value, out any) error {
 	cl, err := a.client()
 	if err != nil {
 		return err
