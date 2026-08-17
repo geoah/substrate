@@ -16,9 +16,9 @@ const changesPath = "/api/v1/core.substrate.reamde.dev/changes"
 
 // --- A1: discovery + versioning + the deprecation channel ---------------
 
-// wantFeatureSurfaces is the whole feature list as it stands, with the
-// surfaces each entry claims. Both discovery tests read it, so a new feature
-// is declared once and neither test can drift from the other.
+// wantFeatureSurfaces is the whole roster a deployment can report, with the
+// surfaces each entry claims. Every discovery test reads it, so a new feature
+// is declared once and no test can drift from another.
 var wantFeatureSurfaces = map[string][]string{
 	"triggers":   {surfaceREST},
 	"functions":  {surfaceREST},
@@ -67,8 +67,8 @@ func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 	}
 
 	// The feature list follows the fake's seams: it carries ChangeFeedOps and
-	// nothing else, so the extension features it cannot serve are absent
-	// rather than advertised over a 501.
+	// nothing else, and the fake has no embedder, so every other extension
+	// feature is absent rather than advertised over a 501.
 	stab := map[string]string{}
 	for _, f := range doc.Features {
 		stab[f.Name] = f.Stability
@@ -76,15 +76,14 @@ func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 	for name, want := range map[string]string{
 		"changefeed": substrate.StabilityBeta,
 		"search":     substrate.StabilityBeta,
-		"embeddings": substrate.StabilityAlpha,
 	} {
 		if stab[name] != want {
 			t.Fatalf("feature %q stability = %q, want %q", name, stab[name], want)
 		}
 	}
-	for _, absent := range []string{"triggers", "functions", "bundles", "blobs", substrate.FeatureAgents} {
+	for _, absent := range []string{"triggers", "functions", "bundles", "blobs", featureEmbeddings, substrate.FeatureAgents} {
 		if _, ok := stab[absent]; ok {
-			t.Fatalf("feature %q advertised, but the dataset has no seam serving it", absent)
+			t.Fatalf("feature %q advertised, but nothing here serves it", absent)
 		}
 	}
 	if version := doc.Server.Version; version == "" {
@@ -153,6 +152,7 @@ type allSeams struct {
 	substrate.Dataset
 	substrate.AutomationOps
 	substrate.BundleOps
+	substrate.BundleInstaller
 	substrate.BlobStore
 	substrate.ChangeFeedOps
 	substrate.AgentOps
@@ -162,18 +162,42 @@ type allSeamsService struct{ *fakeService }
 
 func (s allSeamsService) DatasetSeams() substrate.Dataset { return (*allSeams)(nil) }
 
+// bundleLifecycleOnly serves the bundle lifecycle verbs and nothing else: it
+// is a BundleOps that cannot install a catalog closure.
+type bundleLifecycleOnly struct {
+	substrate.Dataset
+	substrate.BundleOps
+}
+
+type bundleLifecycleService struct{ *fakeService }
+
+func (s bundleLifecycleService) DatasetSeams() substrate.Dataset {
+	return (*bundleLifecycleOnly)(nil)
+}
+
+// discoveryFeatures reads the feature list one service reports.
+func discoveryFeatures(t *testing.T, svc substrate.Service) map[string]string {
+	t.Helper()
+	h := New(Config{Service: svc})
+	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	got := map[string]string{}
+	for _, f := range decodeJSON[discoveryDoc](t, rec).Features {
+		got[f.Name] = f.Stability
+	}
+	return got
+}
+
 // A deployment whose datasets carry every seam advertises every feature, each
 // with the stability the surface has actually reached. `stable` means frozen
 // for v1 and nothing here is: the paths all move under the settled path
 // grammar (#202). Change a stamp here and in features() together, and only
 // with the ticket that froze the surface.
 func TestDiscoveryStampsEachFeatureStability(t *testing.T) {
-	h := New(Config{Service: allSeamsService{newFakeService()}})
-
-	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-	doc := decodeJSON[discoveryDoc](t, rec)
+	svc := newFakeService()
+	svc.embeddings = true
+	got := discoveryFeatures(t, allSeamsService{svc})
 
 	want := map[string]string{
 		"triggers":              substrate.StabilityBeta,
@@ -182,15 +206,11 @@ func TestDiscoveryStampsEachFeatureStability(t *testing.T) {
 		"blobs":                 substrate.StabilityBeta,
 		"changefeed":            substrate.StabilityBeta,
 		"search":                substrate.StabilityBeta,
-		"embeddings":            substrate.StabilityAlpha,
+		featureEmbeddings:       substrate.StabilityAlpha,
 		substrate.FeatureAgents: substrate.AgentStability,
 	}
-	got := map[string]string{}
-	for _, f := range doc.Features {
-		got[f.Name] = f.Stability
-	}
 	if len(got) != len(want) {
-		t.Fatalf("features = %+v, want %d entries", doc.Features, len(want))
+		t.Fatalf("features = %+v, want %d entries", got, len(want))
 	}
 	for name, stability := range want {
 		if got[name] != stability {
@@ -204,14 +224,58 @@ func TestDiscoveryStampsEachFeatureStability(t *testing.T) {
 	}
 }
 
+// The embed queue drains through an Embedder the host wires in, and the
+// semantic arm refuses without one, so a deployment with no embedder does not
+// list the feature however many seams its datasets carry.
+func TestDiscoveryOmitsEmbeddingsWithoutAnEmbedder(t *testing.T) {
+	svc := newFakeService()
+	svc.embeddings = false
+	got := discoveryFeatures(t, allSeamsService{svc})
+
+	if _, ok := got[featureEmbeddings]; ok {
+		t.Fatalf("embeddings advertised on a deployment with no embedder: %+v", got)
+	}
+	// The other entries are undisturbed: this drops one, not the list.
+	if got["search"] != substrate.StabilityBeta {
+		t.Fatalf("search = %q, want %q", got["search"], substrate.StabilityBeta)
+	}
+	if len(got) != len(wantFeatureSurfaces)-1 {
+		t.Fatalf("features = %+v, want every entry but embeddings", got)
+	}
+
+	// Dropping one entry must not disturb its neighbours' surfaces either.
+	h := New(Config{Service: allSeamsService{svc}})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil))
+	for _, f := range decodeJSON[discoveryDoc](t, rec).Features {
+		if !slices.Equal(f.Surfaces, wantFeatureSurfaces[f.Name]) {
+			t.Fatalf("feature %q surfaces = %v, want %v", f.Name, f.Surfaces, wantFeatureSurfaces[f.Name])
+		}
+	}
+}
+
+// The `bundles` entry stands for the lifecycle verbs AND catalog install, and
+// install is a different seam (substrate.BundleInstaller, asserted in
+// internal/catalog). A dataset that serves only half the surface advertises
+// none of it: half a feature is what a client cannot route around.
+func TestDiscoveryOmitsBundlesWithoutTheInstaller(t *testing.T) {
+	got := discoveryFeatures(t, bundleLifecycleService{newFakeService()})
+
+	if _, ok := got["bundles"]; ok {
+		t.Fatalf("bundles advertised without BundleInstaller: %+v", got)
+	}
+}
+
 // noSeamReporter is a Service with the seam report hidden: embedding the
-// INTERFACE promotes only the methods Service names, so DatasetSeams is gone.
+// INTERFACE promotes only the methods Service names, so DatasetSeams and
+// EmbeddingsEnabled are both gone.
 type noSeamReporter struct{ substrate.Service }
 
-// A service that reports no seams advertises no feature, and the field is an
-// empty list rather than null: a client that cannot see the seams reads the
-// routes, and a guessed list would send it to a 501.
-func TestDiscoveryAdvertisesNothingWithoutASeamReporter(t *testing.T) {
+// A service that reports no seams lists exactly what substrate.Dataset itself
+// guarantees. Search is on that interface and /api/v1/graphql serves it, so
+// hiding it would hide a capability that works; every extension depends on a
+// seam nobody reported, so listing one would send a client to a 501.
+func TestDiscoveryWithoutASeamReporterListsTheCoreReads(t *testing.T) {
 	var svc substrate.Service = noSeamReporter{newFakeService()}
 	if _, ok := svc.(substrate.SeamReporter); ok {
 		t.Fatalf("noSeamReporter reports seams; this test asserts the opposite")
@@ -221,11 +285,14 @@ func TestDiscoveryAdvertisesNothingWithoutASeamReporter(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if got := len(decodeJSON[discoveryDoc](t, rec).Features); got != 0 {
-		t.Fatalf("features = %d entries, want none", got)
+	doc := decodeJSON[discoveryDoc](t, rec)
+	if len(doc.Features) != 1 || doc.Features[0].Name != "search" {
+		t.Fatalf("features = %+v, want search alone", doc.Features)
 	}
-	if body := rec.Body.String(); !strings.Contains(body, `"features":[]`) {
-		t.Fatalf("features serialized as null, want an empty list: %s", body)
+	// A list, never null: a client that decodes an array must not have to
+	// handle a missing one.
+	if body := rec.Body.String(); !strings.Contains(body, `"features":[{"name":"search"`) {
+		t.Fatalf("features did not serialize as a list: %s", body)
 	}
 }
 

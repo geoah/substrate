@@ -907,10 +907,11 @@ var _ substrate.Dataset = (*fakeDataset)(nil)
 // and the suite still passes. The seams NOT listed are absent on purpose:
 // the tests that exercise a 501 rely on their absence.
 var (
-	_ substrate.ChangeFeedOps     = (*fakeDataset)(nil)
-	_ substrate.VocabularyApplier = (*fakeDataset)(nil)
-	_ substrate.RecoveryEnroller  = (*fakeService)(nil)
-	_ substrate.SeamReporter      = (*fakeService)(nil)
+	_ substrate.ChangeFeedOps      = (*fakeDataset)(nil)
+	_ substrate.VocabularyApplier  = (*fakeDataset)(nil)
+	_ substrate.RecoveryEnroller   = (*fakeService)(nil)
+	_ substrate.SeamReporter       = (*fakeService)(nil)
+	_ substrate.EmbeddingsReporter = (*fakeService)(nil)
 )
 
 // DatasetSeams is what discovery reads its feature list off, so this fake's

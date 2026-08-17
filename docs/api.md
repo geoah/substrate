@@ -336,10 +336,16 @@ is being reserved for verbs — so every path below moves, and the same change
 decides which parts of the surface survive it. `agents` and `embeddings` report
 `alpha`; every other feature reports `beta`.
 
-The list is derived from the seams the deployment's datasets implement, not
-written out, so a feature is never advertised without the code that serves it:
-a substrate that runs no triggers lists no `triggers` feature rather than
-listing one and answering `unsupported`.
+The list is derived from what the deployment implements, not written out, so a
+feature is never advertised without the code that serves it: a substrate that
+runs no triggers lists no `triggers` feature rather than listing one and
+answering `unsupported`, and `embeddings` is listed only where the deployment
+can embed at all. Discovery opens no repository, so it does not answer the
+narrower question of whether the CALLER's repository declares an
+[`llmprovider` row](agents.md): the first semantic query answers that one,
+naming the property no row declares. An entry stands for every route behind
+it, so `bundles` appears only where both the lifecycle verbs and catalog
+install are served.
 
 Send every request to the `/api/v1` prefix. Today it is the only prefix
 served, and `versions` is where

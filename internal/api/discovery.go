@@ -132,14 +132,15 @@ const (
 	surfaceGraphQL = "graphql"
 )
 
-// featureEmbeddings is the one entry a deployment may not carry, so it has a
-// name both the roster and the drop below can hold.
+// featureEmbeddings is the one entry a deployment may lack for a reason that
+// is not a seam: the embedder is configuration, not a method set.
 const featureEmbeddings = "embeddings"
 
-// embeddingsEnabled asks the service whether it has an embedder, through
-// substrate.EmbeddingsReporter: the seam is asserted at runtime like
-// changeFeedOps, so Service stays frozen and discovery carries no second copy
-// of a wiring a host could forget to set.
+// embeddingsEnabled asks the service whether it can embed at all, through
+// substrate.EmbeddingsReporter: the seam is asserted at runtime like the
+// dataset seams, so Service stays frozen and discovery carries no second copy
+// of a wiring a host could forget to set. A service that does not implement it
+// reports no embeddings, which is the safe answer.
 func (h *handler) embeddingsEnabled() bool {
 	ops, ok := h.svc.(substrate.EmbeddingsReporter)
 	return ok && ops.EmbeddingsEnabled()
@@ -182,21 +183,24 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 
 // features asks the service which seams its datasets satisfy
 // (substrate.SeamReporter) and lists what those serve. A service that does not
-// report them advertises nothing: an empty list sends a client to the routes
-// themselves, while a guessed one sends it to a 501.
+// report them lists only what substrate.Dataset itself guarantees: guessing at
+// an extension would send a client to a 501, while hiding a core read would
+// hide a capability that works.
 func (h *handler) features() []featureInfo {
-	reporter, ok := h.svc.(substrate.SeamReporter)
-	if !ok {
-		return []featureInfo{}
+	var seams substrate.Dataset
+	if reporter, ok := h.svc.(substrate.SeamReporter); ok {
+		seams = reporter.DatasetSeams()
 	}
-	return features(reporter.DatasetSeams())
+	return features(seams, h.embeddingsEnabled())
 }
 
 // features derives the capability list from the extension interfaces a dataset
 // of this deployment satisfies, so an entry cannot outlive the endpoints it
 // stands for: the handler type-asserts the same interface per request before
 // it serves any of these verbs, and a seam that goes away takes its feature
-// off this list instead of leaving it advertised over a 501.
+// off this list instead of leaving it advertised over a 501. A feature served
+// by more than one seam names them all, because a client reads one entry and
+// gets every route behind it.
 //
 // Each stability is stamped against the tickets still to land on that surface,
 // and `stable` means frozen for v1 (see substrate.StabilityStable). None of
@@ -210,7 +214,7 @@ func (h *handler) features() []featureInfo {
 // embeddings reach a caller only as that query's semantic arm. The changefeed
 // is read on both. Everything else is a set of REST verbs with no GraphQL
 // field.
-func features(seams substrate.Dataset) []featureInfo {
+func features(seams substrate.Dataset, embeddings bool) []featureInfo {
 	out := make([]featureInfo, 0, 8)
 	add := func(present bool, name, stability string, surfaces []string) {
 		if present {
@@ -222,8 +226,14 @@ func features(seams substrate.Dataset) []featureInfo {
 	_, automation := seams.(substrate.AutomationOps)
 	add(automation, "triggers", substrate.StabilityBeta, []string{surfaceREST})
 	add(automation, "functions", substrate.StabilityBeta, []string{surfaceREST})
+	// The bundle surface spans two seams: BundleOps serves the lifecycle verbs
+	// and BundleInstaller serves catalog install, which fails outright without
+	// it. BundleUpgradePlanner is NOT required: a dataset that cannot plan an
+	// upgrade answers a nil preview by design (internal/catalog), and the rest
+	// of the surface still works.
 	_, bundles := seams.(substrate.BundleOps)
-	add(bundles, "bundles", substrate.StabilityBeta, []string{surfaceREST})
+	_, installer := seams.(substrate.BundleInstaller)
+	add(bundles && installer, "bundles", substrate.StabilityBeta, []string{surfaceREST})
 	// Blobs are beta for a second reason beside the path: #97 moves the bytes
 	// out of the `blobs.bytes` column into a byte store, which reopens the
 	// 64 MiB cap and the missing range read that the wire currently implies.
@@ -236,15 +246,16 @@ func features(seams substrate.Dataset) []featureInfo {
 	// no subscription.
 	_, changefeed := seams.(substrate.ChangeFeedOps)
 	add(changefeed, "changefeed", substrate.StabilityBeta, []string{surfaceREST, surfaceGraphQL})
-	// Search and embeddings are not extensions: Search and ProcessEmbedQueue
-	// are on the frozen Dataset core, so any dataset at all carries them. What
-	// they are NOT is frozen. Search is served only by the GraphQL schema,
-	// which is generated per repository from that repository's kinds
-	// (docs/graphql-and-search.md), and embeddings are alpha because #98
-	// replaces the host-wide SUBSTRATE_LLM_* embedder with a per-repository
-	// llmprovider row and leaves the vector width to a decision record.
-	add(seams != nil, "search", substrate.StabilityBeta, []string{surfaceGraphQL})
-	add(seams != nil, featureEmbeddings, substrate.StabilityAlpha, []string{surfaceGraphQL})
+	// Search is not an extension: Search is on the frozen Dataset core, so
+	// every dataset serves it and it is listed unconditionally. What it is NOT
+	// is frozen, because the only door to it is the GraphQL schema, which is
+	// generated per repository from that repository's kinds
+	// (docs/graphql-and-search.md).
+	add(true, "search", substrate.StabilityBeta, []string{surfaceGraphQL})
+	// Embeddings are alpha: no route serves them directly, they reach a caller
+	// only as the semantic arm of that same query, and the vector width is a
+	// constant in the engine (vectorDim) that no declaration can move.
+	add(embeddings, featureEmbeddings, substrate.StabilityAlpha, []string{surfaceGraphQL})
 	_, agents := seams.(substrate.AgentOps)
 	add(agents, substrate.FeatureAgents, substrate.AgentStability, []string{surfaceREST})
 	return out

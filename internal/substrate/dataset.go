@@ -10,7 +10,7 @@ import (
 // system seams (tokens, GC, embeddings) the service loops need.
 // Implementations are safe for concurrent use.
 //
-// THE FROZEN LIBRARY CONTRACT IS THIS CORE ONLY.
+// THE LIBRARY CONTRACT MEANT TO FREEZE AT v1 IS THIS CORE ONLY.
 // The EXTENSION TIER — vocabulary apply, triggers, functions, agents,
 // bundles, blobs — is NOT on this interface: it is the fast-moving surface,
 // and each part of it is a named OPTIONAL EXTENSION interface in this package
@@ -21,7 +21,9 @@ import (
 // and every implementation asserts each seam it satisfies at compile time
 // (`var _ substrate.BundleOps = (*dataset)(nil)`) — otherwise renaming a
 // method turns a whole endpoint family into a 501 with a green build.
-// The seven mutations and four reads below are the part frozen at v1.
+// The seven mutations and four reads below are the part meant to freeze at v1;
+// the HTTP paths that serve them are not frozen yet, which is why no discovery
+// feature reports stable (stability.go).
 type Dataset interface {
 	Repository() RepositoryInfo
 
