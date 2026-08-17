@@ -613,12 +613,14 @@ func (t *txn) applyAnnotation(ref eref, key string, value any) (bool, error) {
 // actorTier resolves an actor's manager tier from DATA, never from the
 // actor's spelling: the three human DOORS — api, console, substratectl — are
 // the owner tier; the engine's own actor is machine; and every actor the
-// registry answers for carries its declared tier — authority-declared
-// connector/bundle actors default machine, a registered function's or agent's
-// own actor is bundle.
+// registry answers for carries its declared tier — an authority-declared
+// `bundle:<authority>` actor defaults machine, a registered function's or
+// agent's own actor is bundle.
 //
 // An actor the registry does not answer for splits two ways. A RESERVED name
-// (the `substrate` namespace, `bundle:`, `connector:`, `function:`) is one of
+// (the `substrate` namespace, `bundle:`, `function:`, `agent:`, and the
+// retired `connector:` spelling every repository written before record 0020
+// still carries) is one of
 // the substrate's own writing hands, which a request may never claim
 // (api/auth.go) — an undeclared one is a hand whose declaration is gone, a
 // facility like `substrate.oauth`, or a dispatch mid-uninstall, and none of

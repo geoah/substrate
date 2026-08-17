@@ -31,11 +31,11 @@ import (
 //
 // What the fixed `.bundles.` suffix used to guarantee BY CONSTRUCTION is that
 // an authority's first label was unique: the label is the bundle's name, its
-// `metadata.id` suffix, the actor an install writes under (`bundle:<name>`) and
-// the prefix every installed kind's GraphQL name carries (ref.go). With the
-// suffix free, two authorities can reach for one label, so the uniqueness is
-// checked instead of assumed — Registry.Finalize refuses the second (load.go,
-// bundleNameProblems).
+// `metadata.id` suffix and the prefix every installed kind's GraphQL name
+// carries (ref.go). The suffix is free now, so two authorities may share a
+// label: an install writes under `bundle:<authority>`, which cannot collide,
+// and a GraphQL name claimed twice is refused by name (load.go,
+// graphqlNameProblems).
 
 // BundleAuthoritySuffix is the CONVENTIONAL category the shipped tree's
 // extension authorities carry. It is not admission: an extension authority may
@@ -267,9 +267,10 @@ func ValidVocabularyAuthority(authority string) bool {
 // BundleName is the bundle name an owned authority implies — its FIRST LABEL
 // ("google" of "google.bundles.substrate.reamde.dev", "llm" of
 // "llm.examples.substrate.reamde.dev", "people" of "people.substrate.reamde.dev").
-// It is the bundle's `metadata.id` suffix and the actor an install writes under
-// (`bundle:<name>`), and it is what bundleNameProblems holds unique now that
-// the rest of the authority is free.
+// It is the bundle's `metadata.id` suffix and the prefix its installed kinds
+// carry in GraphQL. It is NOT the actor an install writes under: that is
+// `bundle:<authority>`, so two bundles sharing a first label stay two writers
+// (record 0020).
 func BundleName(authority string) string {
 	return leadingLabel(authority)
 }

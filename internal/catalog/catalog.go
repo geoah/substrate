@@ -395,7 +395,7 @@ func (c *Catalog) Install(ctx context.Context, actor substrate.Actor, id string,
 	// the bundle, exactly as the core tree's seed is attributed to
 	// `bundle:core`. The catalog is the source; the changelog is the truth, and
 	// nothing on the serving path reads the catalog again.
-	if _, err := inst.InstallBundleClosure(ctx, substrate.BundleActor(b.Name), b.vocabularyDocs, dataInputs); err != nil {
+	if _, err := inst.InstallBundleClosure(ctx, substrate.BundleActor(b.Authority), b.vocabularyDocs, dataInputs); err != nil {
 		return nil, err
 	}
 	return b, nil

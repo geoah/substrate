@@ -165,7 +165,7 @@ func TestChangeTriggersStates(t *testing.T) {
 	}
 	// The callable's own task write matches the source by type but is its
 	// own echo: self-actor exclusion drops the chip.
-	if ct, ok := chipOf("t-"+processed.ID, substrate.FunctionActor(vocabulary.KindName(mirror))); ok {
+	if ct, ok := chipOf("t-"+processed.ID, substrate.FunctionActor(fnAuthority, vocabulary.KindName(mirror))); ok {
 		t.Fatalf("self write carries a chip: %+v", ct)
 	}
 }

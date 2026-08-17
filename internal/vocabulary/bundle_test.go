@@ -8,8 +8,13 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// bnAuthority renders a minimal one-kind bundle closure on the given authority.
-func bnAuthority(authority string) string {
+// bnAuthority renders a minimal one-kind bundle closure on the given
+// authority, shipping a kind called `widget`.
+func bnAuthority(authority string) string { return bnAuthorityKind(authority, "widget") }
+
+// bnAuthorityKind is the same closure with the kind named, so two authorities
+// can share a first label without claiming one GraphQL name.
+func bnAuthorityKind(authority, kind string) string {
 	name, _, _ := strings.Cut(authority, ".")
 	return `kind: core.substrate.reamde.dev/authority
 metadata:
@@ -24,14 +29,14 @@ data:
   authority: ` + authority + `
   description: one kind, so the closure is whole
   installs:
-    - ` + authority + `/widget
+    - ` + authority + `/` + kind + `
 ---
 kind: core.substrate.reamde.dev/kind
 metadata:
-  id: ` + authority + `/widget
+  id: ` + authority + `/` + kind + `
 data:
   authority: ` + authority + `
-  names: {singular: widget, plural: ` + name + `widgets}
+  names: {singular: ` + kind + `, plural: ` + name + kind + `s}
   properties:
     name: {type: string}
 `
@@ -106,17 +111,41 @@ func TestBundleAuthorityFirstLabelMustBeAWord(t *testing.T) {
 	}
 }
 
-// What the fixed `.bundles.` suffix used to guarantee by construction — one
-// first label, one authority — is now checked, because two free authorities can
-// reach for one label. Both would write as `bundle:llm`, and the trigger loop
-// guard keys on exactly that name, so the second is refused at declaration time
-// rather than silently swallowing the first's writes.
-func TestTwoAuthoritiesCannotShareABundleName(t *testing.T) {
+// Two authorities may share a first label. An install writes under
+// `bundle:<authority>` (record 0020), so the two are two writers: two
+// attributions, two sets of manager rows, and neither one's writes read as the
+// other's trigger echo. This used to be refused at declaration time
+// (bundleNameProblems), which is why the label is asserted shared here.
+func TestTwoAuthoritiesMayShareABundleName(t *testing.T) {
+	one := "llm.examples.substrate.reamde.dev"
+	two := "llm.bundles.substrate.reamde.dev"
+	r, err := loadBnAuthorities(bnAuthorityKind(one, "widget"), bnAuthorityKind(two, "gadget"))
+	if err != nil {
+		t.Fatalf("a shared first label must load: %v", err)
+	}
+	g1, _ := r.AuthorityByName(one)
+	g2, _ := r.AuthorityByName(two)
+	if g1.Bundle.Name != "llm" || g2.Bundle.Name != "llm" {
+		t.Fatalf("the labels must still be shared: %q and %q", g1.Bundle.Name, g2.Bundle.Name)
+	}
+	a1, a2 := vocabulary.AuthorityActor(one), vocabulary.AuthorityActor(two)
+	if a1 == a2 {
+		t.Fatalf("two authorities share the actor %q", a1)
+	}
+	if a1 != "bundle:"+one || a2 != "bundle:"+two {
+		t.Fatalf("actors %q and %q — an actor carries the full authority", a1, a2)
+	}
+}
+
+// One GraphQL name is still one kind: what two authorities sharing a first
+// label may NOT do is claim the same installed GraphQL name, and the refusal
+// names both kinds.
+func TestOneGraphQLNameIsStillOneKind(t *testing.T) {
 	_, err := loadBnAuthorities(
-		bnAuthority("llm.examples.substrate.reamde.dev"),
-		bnAuthority("llm.bundles.substrate.reamde.dev"),
+		bnAuthorityKind("llm.examples.substrate.reamde.dev", "widget"),
+		bnAuthorityKind("llm.bundles.substrate.reamde.dev", "widget"),
 	)
-	if err == nil || !strings.Contains(err.Error(), "bundle name llm is claimed by") {
-		t.Fatalf("a shared first label must refuse: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "graphql name Widget is claimed by") {
+		t.Fatalf("one GraphQL name claimed twice must refuse: %v", err)
 	}
 }

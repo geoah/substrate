@@ -191,10 +191,13 @@ func sanitizeName(s string) string {
 	return out.String()
 }
 
-// AuthorityActor is the writing hand an AUTHORITY's own installed code carries:
-// `connector:<first label>`. An authority declares it as an
-// actor document so its tier and its mapping precedence are legible, but the
-// name itself is the closed actor domain's, never a DNS name.
+// AuthorityActor is the writing hand an AUTHORITY's own installed code
+// carries: `bundle:<authority>`, the same hand an install writes its
+// declarations under. An authority declares it as an actor document so its
+// tier and its mapping precedence are legible, but the string is derived here
+// and never authored: two authorities sharing a first label shared this actor
+// until record 0020, and with it their attribution and their trigger
+// self-exclusion.
 func AuthorityActor(authority string) string {
-	return substrate.ConnectorActorPrefix + leadingLabel(authority)
+	return string(substrate.BundleActor(authority))
 }

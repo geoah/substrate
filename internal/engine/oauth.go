@@ -205,7 +205,7 @@ func oauthScopesForAccount(meta *vocabulary.BundleOAuth2, row *erow) []string {
 // it returns the provider consent URL, state signed over (repository, record,
 // nonce). The requested scope union is DERIVED from the account's enabled
 // feature toggles; the flow is gated on the OWNER TIER —
-// an actor DECLARED below owner (a bundle's or connector's own hand) may
+// an actor DECLARED below owner (an authority's or a bundle's own hand) may
 // not start or restart a consent. An undeclared actor reads
 // as owner (actorTier's default), so the gate binds declared machine actors,
 // not unknown names.

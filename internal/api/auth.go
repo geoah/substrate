@@ -70,8 +70,9 @@ func bearerSecret(r *http.Request) string {
 // came through (`X-Substrate-Actor` — the console sends `console`, substratectl sends
 // `substratectl`), and a request that names nothing is `api`, which is exactly what
 // the substrate knows about it. The refusals are the substrate's own writing
-// hands — `substrate`, `substrate.oauth`, and the `bundle:` / `connector:` /
-// `function:` paths — decided by actor-name equality at write time, so a
+// hands — `substrate`, `substrate.oauth`, the `bundle:` / `function:` /
+// `agent:` paths and the retired `connector:` spelling of the first of them —
+// decided by actor-name equality at write time, so a
 // request allowed to claim one could forge a credential ref, a connected
 // account's address, or a SHIPPED kind declaration (the authority chokepoint,
 // engine/seed.go). This header is the only place a request names an actor, so
@@ -105,9 +106,9 @@ func (h *handler) authenticate(r *http.Request) (context.Context, int, string, s
 		if substrate.ReservedActor(substrate.Actor(want)) {
 			return nil, http.StatusForbidden, codeForbidden,
 				"actor " + want + " is reserved: the " + substrate.HostActorNamespace +
-					" namespace and the " + substrate.BundleActorPrefix + ", " +
-					substrate.ConnectorActorPrefix + " and " + substrate.FunctionActorPrefix +
-					" paths are the substrate's own writing hands"
+					" namespace, the " + substrate.BundleActorPrefix + ", " +
+					substrate.FunctionActorPrefix + " and " + substrate.AgentActorPrefix +
+					" paths, and the retired connector: spelling, are the substrate's own writing hands"
 		}
 		actor = substrate.Actor(want)
 	}

@@ -80,7 +80,8 @@ auditable in the [changelog](changelog.md):
   somebody else here is skipped whole: the upgrade never seizes a name it
   does not already own.
 - **An install, which is a copy.** Installing a bundle writes that
-  bundle's manifests into the repository's changelog under `bundle:<name>`
+  bundle's manifests into the repository's changelog under
+  `bundle:<authority>`
   ([Bundles](bundles.md)). The shipped catalog is a source, never an
   authority, and nothing on the serving path reads it.
 
@@ -98,7 +99,7 @@ moves its authority's forward instead, so nobody bumps by hand.
 what an authority is for. Shipped vocabulary, an authority whose stored rows
 say `source: builtin`, is writable only through a substrate path: the seed,
 an upgrade, an install, which is what the actors `substrate` and
-`bundle:<name>` name. A generic API write into one is `forbidden`, and
+`bundle:<authority>` name. A generic API write into one is `forbidden`, and
 neither actor form can be claimed by a request. Everything else, the
 repository's own bare kinds and the bundles it installed, is the user's to
 write.

@@ -94,7 +94,7 @@ func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string
 				return err
 			}
 		}
-		if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(name), docs); err != nil {
+		if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(name+".substrate.reamde.dev"), docs); err != nil {
 			return fmt.Errorf("enginetest: import %s: %w", name, err)
 		}
 		return nil
@@ -177,7 +177,7 @@ func InstallShelf(ctx context.Context, ds substrate.Dataset) error {
 			"from": ShelfAuthority + "/bookedition", "to": ShelfAuthority + "/book", "edge": "work",
 		}),
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor("shelf"), docs); err != nil {
+	if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(ShelfAuthority), docs); err != nil {
 		return fmt.Errorf("enginetest: install the shelf fixture: %w", err)
 	}
 	return nil
@@ -207,7 +207,7 @@ func InstallBundle(ctx context.Context, ds substrate.Dataset, name string) error
 			docs = append(docs, d)
 		}
 	}
-	if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(name), docs); err != nil {
+	if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(name+".bundles.substrate.reamde.dev"), docs); err != nil {
 		return fmt.Errorf("enginetest: install %s: %w", name, err)
 	}
 	return nil

@@ -78,7 +78,7 @@ func TestFunctionLoads(t *testing.T) {
 	if fn.Identity() != "fn.example.com/mirror" {
 		t.Fatalf("identity: %s", fn.Identity())
 	}
-	if fn.Actor() != "function:mirror" {
+	if fn.Actor() != "function:fn.example.com:mirror" {
 		t.Fatalf("actor: %s", fn.Actor())
 	}
 	if fn.Description == "" {

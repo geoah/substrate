@@ -24,10 +24,11 @@ loader does not require that shape. A vocabulary bundle owns a plain
 organization-style label like `people.substrate.reamde.dev`, and that shape
 is the one the loader does check, because it is what marks a vocabulary
 [shipped](builtin-kinds.md) rather than installed. The authority's **first
-label** is the bundle's name — its `metadata.id` suffix, the actor an install
-writes under (`bundle:<name>`), and the prefix an installed kind's GraphQL name
-carries — so it must be one lowercase word, and no two bundles may claim the
-same one. `installs:` lists the exact references of everything the closure
+label** is the bundle's name — its `metadata.id` suffix and the prefix an
+installed kind's GraphQL name carries — so it must be one lowercase word. Two
+bundles may share it: an install writes under `bundle:<authority>`, so they
+stay two writers, and what is refused instead is one GraphQL name claimed
+twice. `installs:` lists the exact references of everything the closure
 ships: its [kinds](data-model.md#kinds-and-references),
 [traits](data-model.md#traits),
 [property types](data-model.md#property-types),
@@ -88,9 +89,10 @@ closure members, so they never appear in `installs:`.
 The installed callables react through the ordinary machinery: a bundle's
 functions and agents run on the same [changelog](changelog.md) every other write
 lands in, its [mappings](projection.md) fold provider records onto your people
-and tasks, and its writes carry their own machine hands — `function:<name>` for
-a callable's effects, `bundle:<name>` for the declarations an install lays down
-([actors](api.md#actors)).
+and tasks, and its writes carry their own machine hands —
+`function:<authority>:<name>` for a function's effects,
+`agent:<authority>:<name>` for an agent's, `bundle:<authority>` for the
+declarations an install lays down ([actors](api.md#actors)).
 
 ## Install and lifecycle
 
@@ -363,7 +365,7 @@ refused for any actor outside the three interactive clients (`api`, `console`,
 `substratectl`) with a 403, before the closure is touched: installing bundle
 code is a person's action. What lands is a copy —
 the bundle's own declarations, written into this repository's changelog under
-`bundle:<name>` — so the catalog is the source and the changelog is the truth, and
+`bundle:<authority>` — so the catalog is the source and the changelog is the truth, and
 nothing on the serving path reads the catalog again. The response is the
 installed bundle's computed status. Uninstall, disable, enable, and purge
 are the lifecycle verbs above; the catalog does not duplicate them.

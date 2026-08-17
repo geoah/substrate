@@ -12,9 +12,10 @@ triggers) with confidence; treat agents as a preview.
 An `agent` is a callable whose body is an **LLM loop**, run host-side. It has
 one reference and the same four ways in as a [function](functions.md): a
 trigger delivery (a `callable` whose `kind` is `core.substrate.reamde.dev/agent`), the
-call API, a sub-agent call, and chat. Its actor is `function:<name>`, the same
-machine hand a function writes under, because both are installed code; its
-dispatch stamps the bundle tier on its writes, exactly like a function's. A
+call API, a sub-agent call, and chat. Its actor is `agent:<authority>:<name>`,
+its own machine hand, held apart from a function's so an agent and a function
+of one name under one authority are two writers; its dispatch stamps the
+bundle tier on its writes, exactly like a function's. A
 bundled agent obeys its bundle's
 [lifecycle](bundles.md#install-and-lifecycle): while the bundle is
 disabled or uninstalled, every entry refuses with a guard error.

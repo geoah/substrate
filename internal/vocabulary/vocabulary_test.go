@@ -2196,6 +2196,60 @@ func TestValidID(t *testing.T) {
 	}
 }
 
+// The actor grammar admits the closed domain's flat words and the machine
+// hands, which carry the full authority (record 0020). It still admits the
+// retired `connector:<label>` spelling, because an actor DECLARATION carrying
+// it is stored in every repository written before the rename and has to keep
+// loading.
+func TestValidActor(t *testing.T) {
+	for _, ok := range []string{
+		"api", "console", "substratectl", "substrate",
+		"bundle:core", "bundle:web.bundles.substrate.reamde.dev",
+		"function:web.bundles.substrate.reamde.dev:harvestUrls",
+		"agent:web.bundles.substrate.reamde.dev:librarian",
+		"connector:gmail",
+	} {
+		if !vocabulary.ValidActor(ok) {
+			t.Errorf("%q should be a legal actor", ok)
+		}
+	}
+	for _, bad := range []string{
+		"", "Bundle:web", "bundle:web/harvest", "function:web.example.com:Harvest",
+		"substrate.oauth", "bundle:", "a:b:c:d", "bundle:web bundles",
+	} {
+		if vocabulary.ValidActor(bad) {
+			t.Errorf("%q should not be a legal actor", bad)
+		}
+	}
+}
+
+// An actor is DERIVED from the identity that writes, never authored: a
+// declaration naming a dispatch hand is refused, so no authority can set the
+// tier another authority's callable writes at.
+func TestActorsCarryTheFullAuthority(t *testing.T) {
+	authority := "fn.example.com"
+	if got := vocabulary.AuthorityActor(authority); got != "bundle:fn.example.com" {
+		t.Fatalf("authority actor %q", got)
+	}
+	_, err := vocabulary.LoadFS(fstest.MapFS{"a.yaml": &fstest.MapFile{Data: []byte(
+		`kind: core.substrate.reamde.dev/authority
+metadata:
+  id: ` + authority + `
+data:
+  version: 1
+---
+kind: core.substrate.reamde.dev/actor
+metadata:
+  id: function:` + authority + `:mirror
+data:
+  authority: ` + authority + `
+  tier: owner
+`)}})
+	if err == nil || !strings.Contains(err.Error(), "minted at dispatch") {
+		t.Fatalf("a declared function actor must refuse: %v", err)
+	}
+}
+
 // --- the shipped tree ----------------------------------------------------
 
 // The one test against the real files: what the engine cannot boot without.

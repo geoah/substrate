@@ -18,7 +18,7 @@ type Run struct {
 	Trigger *string
 
 	// Callable is the callable that ran, as its actor spells it —
-	// `function:<name>`.
+	// `function:<authority>:<name>`.
 	Callable *string
 
 	// Mode is how the delivery fired.

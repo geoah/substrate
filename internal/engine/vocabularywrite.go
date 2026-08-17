@@ -1004,7 +1004,7 @@ func authorityDeclarations(g *vocabulary.Authority) ([]declaration, error) {
 		return nil, err
 	}
 	for _, a := range g.Actors {
-		// A single-writer connector's actor IS its authority: the
+		// An actor named for its authority has no row of its own: the
 		// authority row above already holds that id and lists the actor.
 		if a == g.Name {
 			continue

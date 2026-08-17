@@ -25,12 +25,19 @@ var (
 	reAuthority = regexp.MustCompile("^" + authorityRE + "$")
 	reWord      = regexp.MustCompile("^" + wordRE + "$")
 	reCamel     = regexp.MustCompile("^" + camelRE + "$")
-	// An actor is one of the closed domain's names: a bare
-	// word (`console`, `substratectl`, `api`, `substrate`) or a prefixed machine hand
-	// (`connector:<name>`, `function:<name>`, `bundle:<name>`).
-	reActor = regexp.MustCompile(`^[a-z][a-z0-9]*(:[a-z][a-z0-9-]*)?$`)
+	// An actor is one of the closed domain's names: a bare word (`console`,
+	// `substratectl`, `api`, `substrate`) or a prefixed machine hand carrying
+	// the full authority — `bundle:<authority>`,
+	// `function:<authority>:<name>`, `agent:<authority>:<name>` (record 0020).
+	// The first segment after the prefix admits dots so an authority fits; the
+	// optional second is the callable's local name. The retired
+	// `connector:<label>` spelling still matches, because a repository written
+	// before 0020 has actor declarations carrying it and they must keep
+	// loading.
+	reActor = regexp.MustCompile(`^` + wordRE + `(:[a-z][a-z0-9.-]*)?(:` + camelRE + `)?$`)
 	// A namespaced label/annotation key is "<actor>/<name>", and an actor may
-	// carry the domain's one colon (`connector:gmail/synced`).
+	// carry the domain's colons and an authority's dots
+	// (`function:web.bundles.example.com:harvest/synced`).
 	reMetaKey = regexp.MustCompile(`^[a-z][a-z0-9_.*:-]*/[a-z][a-z0-9_.-]*$`)
 	// reID is the record-id alphabet. Minted ids are 12 lowercase base32
 	// characters; a writer's own id is its provider key ENCODED into this set,

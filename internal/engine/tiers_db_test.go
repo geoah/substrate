@@ -275,11 +275,13 @@ func TestTierIsActorDataNotSpelling(t *testing.T) {
 }
 
 // An undeclared RESERVED actor is the one undeclared name that does not hold
-// like the owner (#102). `connector:`, `function:`, `bundle:` and the
-// `substrate` namespace are the substrate's own writing hands, refused at the
-// door, so an undeclared one is a hand whose declaration is gone or a
-// facility like `substrate.oauth` — never the owner's edit. It holds at the
-// machine tier, and recompute replaces it.
+// like the owner (#102). `bundle:`, `function:`, `agent:`, the retired
+// `connector:` spelling and the `substrate` namespace are the substrate's own
+// writing hands, refused at the door, so an undeclared one is a hand whose
+// declaration is gone or a facility like `substrate.oauth` — never the
+// owner's edit. It holds at the machine tier, and recompute replaces it. The
+// retired spelling is the case that matters after record 0020: every entry
+// written before it carries one.
 func TestUndeclaredReservedActorHoldsAtTheMachineTier(t *testing.T) {
 	t.Parallel()
 	if testing.Short() {
@@ -291,13 +293,14 @@ func TestUndeclaredReservedActorHoldsAtTheMachineTier(t *testing.T) {
 	tierSyncRecord(t, ds, "rec-1", "Synced Name", "ada@example.com")
 	pid := tierProfileOf(t, ds, "rec-1")
 
-	// No authority declares this connector: nothing in the registry answers
-	// for it, and the name is reserved.
-	gone := substrate.Actor(substrate.ConnectorActorPrefix + "gone")
+	// No authority declares this hand: nothing in the registry answers for
+	// it, and the name is reserved — the spelling actors carried before
+	// record 0020, which no repository can rewrite.
+	gone := substrate.Actor("connector:gone")
 	if _, err := ds.Patch(ctx, gone, typeTierProfile, pid, substrate.PatchInput{
 		Properties: map[string]any{"name": "Gone Name"},
 	}); err != nil {
-		t.Fatalf("undeclared connector patch: %v", err)
+		t.Fatalf("undeclared reserved-actor patch: %v", err)
 	}
 	p := tierGet(t, ds, pid)
 	wantMeta(t, p, "name", string(gone), substrate.TierMachine)
@@ -305,7 +308,7 @@ func TestUndeclaredReservedActorHoldsAtTheMachineTier(t *testing.T) {
 	tierSyncRecord(t, ds, "rec-1", "Fresher Name", "ada@example.com")
 	p = tierGet(t, ds, pid)
 	if p.Properties["name"] != "Fresher Name" {
-		t.Fatalf("an undeclared connector pinned a mapped property against recompute: %v", p.Properties["name"])
+		t.Fatalf("an undeclared reserved actor pinned a mapped property against recompute: %v", p.Properties["name"])
 	}
 }
 

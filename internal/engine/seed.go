@@ -19,7 +19,7 @@ package engine
 //     one transaction per repository — and a repository nobody opens is never
 //     touched.
 //   - THE INSTALL, when a user installs a bundle: the catalog's manifests
-//     are COPIED into the changelog under `bundle:<name>` (catalog/catalog.go). The
+//     are COPIED into the changelog under `bundle:<authority>` (catalog/catalog.go). The
 //     embedded catalog is a source, never an authority; nothing on the serving
 //     path reads it.
 //
@@ -45,7 +45,7 @@ import (
 //   - SHIPPED vocabulary — an authority whose stored rows say `source: builtin`,
 //     which is exactly what the creation seed and shipped upgrades write — is
 //     writable only by a SUBSTRATE PATH: the seed, an install or an upgrade,
-//     which is what the actors `substrate` and `bundle:<name>` name.
+//     which is what the actors `substrate` and `bundle:<authority>` name.
 //     A generic API write into one is refused here; those actors cannot be
 //     claimed by a request (substrate.ReservedActor, checked on the
 //     X-Substrate-Actor header), so "substrate path" means what it says.
@@ -68,7 +68,7 @@ func authorizeDeclarationWrite(actor substrate.Actor, current *vocabulary.Regist
 
 // isSubstratePath reports whether an actor is one of the substrate's own
 // vocabulary-writing hands: the engine itself (seed, upgrade) or a bundle
-// (`bundle:<name>` — the seed's `bundle:core` and every install).
+// (`bundle:<authority>` — the seed's `bundle:core` and every install).
 func isSubstratePath(actor substrate.Actor) bool {
 	return actor == substrate.ActorSystem || substrate.IsBundleActor(actor)
 }

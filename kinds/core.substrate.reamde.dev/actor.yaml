@@ -7,14 +7,14 @@ data:
   description: >-
     One declared actor — the name a write is attributed to. Actors are attribution
     and a manager tier, never authorization: `api`, `console` and `substratectl`
-    are the doors a human write comes through, and machine hands like `function:<name>`
+    are the doors a human write comes through, and machine hands like `function:<authority>:<name>`
     are minted at dispatch.
   names:
     singular: actor
     plural: actors
-  # projections of declared actors — the shipped ones at boot, connector ones
-  # at installation. `source` is the declaring authority's origin, the same closed
-  # set kind carries.
+  # projections of declared actors — the shipped ones at boot, an installed
+  # authority's own at installation. `source` is the declaring authority's
+  # origin, the same closed set kind carries.
   displayTemplate: "{localName}"
   properties:
     # Every declaration carries its own version: the
@@ -43,8 +43,8 @@ data:
         - builtin
         - installed
       managed: true
-      description: builtin for shipped authorities, installed for connector
-        authorities
+      description: builtin for shipped authorities, installed for the ones
+        a bundle install brought
     # the actor's manager tier — an explicit attribute of the declaration
     # (ticket 002), never derived from the actor's spelling. Authority-declared
     # actors are the sync machinery, so machine is the default.
