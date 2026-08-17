@@ -83,6 +83,52 @@ else
     sed 's/^mise run //' | sort -u)
 fi
 
+# --- the retired URL shapes ---------------------------------------------
+#
+# Decision 0028 moved every URL at once: a collection segment is the kind's
+# NAME, and every verb sits behind the reserved `-`. A page still printing the
+# old shape is a paste that 404s, and the one that hurts is an OAuth redirect
+# URI, which an operator registers with a provider and only finds wrong when a
+# consent flow fails. `lint:docs` was green through exactly that miss, so the
+# shapes are grepped here.
+#
+# The scope is WIDER than `files`: a bundle's own README prints the callback URL
+# an operator registers, and the console's README prints its route table. The
+# dead-word and vocabulary rules above stay on the reader-facing pages, because
+# those are about register rather than about paths.
+url_files=(docs/*.md README.md web/console/README.md kinds/*/README.md)
+
+grep_urls() {
+  grep "$@" "${url_files[@]}"
+  local status=$?
+  [ "$status" -le 1 ] || flag "grep failed (status ${status}) — a URL rule checked nothing"
+  return "$status"
+}
+
+# A verb sits behind `-`, so the segment before it is never an id or a kind.
+# `-` is left out of the segment class on purpose: that is what makes
+# `/bundle/{id}/-/status` pass and `/bundles/{id}/status` fail, with no
+# lookbehind.
+verbs='status|install|call|chat|replay|wake|parked|retry|bind|enable|disable|uninstall|purge|implementors|incoming|edges'
+seg='[A-Za-z0-9{}._%]+'
+if grep_urls -rnE "(/api/v[0-9]+|…|core\.substrate\.reamde\.dev)(/${seg})*/${seg}/(${verbs})\b"; then
+  flag "a documented verb is not behind the reserved '-' segment (decision 0028)"
+fi
+
+# The repository verbs hang off the top-level `-`, never off an authority.
+repo_verbs='vocabulary/apply|oauth/start|oauth/callback|catalog|changes|graphql|blobs|recordmerges|recordsplits'
+if grep_urls -rnE "(/api/v[0-9]+|…)/(core\.substrate\.reamde\.dev/)?(${repo_verbs})\b"; then
+  flag "a documented repository verb is not at /api/v1/-/ (decision 0028)"
+fi
+
+# A collection segment is the kind's NAME. The list is core's declared plurals,
+# closed and checkable: every one of them addressed a collection before 0028
+# and addresses nothing now.
+core_plurals='actors|agents|authorities|blobs|bundles|credentials|functions|kinds|llminteractions|llmmessages|llmproviders|llmthreads|propertytypes|recordmappings|recordmerges|recordmergerequests|recordpatchpolicies|recordpatchrequests|recordsplits|recoverykeys|repositories|runs|tokens|traits|triggers'
+if grep_urls -rnE "core\.substrate\.reamde\.dev/(${core_plurals})\b"; then
+  flag "a documented collection is addressed by its plural; the segment is the kind's name (decision 0028)"
+fi
+
 # --- the index names every page -----------------------------------------
 #
 # docs/README.md is the way in. A page it does not list is a page nobody is

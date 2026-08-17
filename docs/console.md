@@ -88,7 +88,7 @@ because there is only one changelog.
 ## Merge requests
 
 A proposed [merge](projection.md#merge-requests) is an ordinary record, so the
-queue is its collection — `core.substrate.reamde.dev/recordmergerequests` in
+queue is its collection — `core.substrate.reamde.dev/recordmergerequest` in
 the data nav, with the pending pile also on the overview. Opening one shows the
 matcher's evidence, a field-by-field comparison of the two records, and accept
 or reject. Accepting is an ordinary state transition, and performing the merge
@@ -132,7 +132,7 @@ They live under Data → `core.substrate.reamde.dev` → llmproviders, and
 edit.
 
 [Triggers](functions.md#triggers) have no section of their own: they are
-ordinary records, so `core.substrate.reamde.dev/triggers` in the data nav is
+ordinary records, so `core.substrate.reamde.dev/trigger` in the data nav is
 the list, and one trigger's record page is the trigger.
 
 ## Account

@@ -839,7 +839,7 @@ func TestClientIDIsACreateRule(t *testing.T) {
 		created := mustPut(t, ds, owner, substrate.PutInput{
 			Kind: tc.ty, Properties: map[string]any{tc.prop: "x"},
 		})
-		// PUT …/{plural}/{id} — the console's Save, and `substrate apply`.
+		// PUT …/{kind}/{id} — the console's Save, and `substrate apply`.
 		saved := mustPut(t, ds, owner, substrate.PutInput{
 			Kind: tc.ty, ID: created.ID, Properties: map[string]any{tc.prop: "edited"},
 		})

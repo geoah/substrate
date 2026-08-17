@@ -840,7 +840,7 @@ data:
 		},
 		"the plural mirror names names.plural": {
 			kindDoc,
-			"key \"plural\" is deleted — the retired mirror: a kind's collection segment is `names.plural`",
+			"key \"plural\" is deleted — the retired mirror: `names.plural` is where a kind's plural is declared",
 		},
 		"the functions mirror names tools": {
 			agentMirror("  functions: [ag.example.com/annotate]\n"),

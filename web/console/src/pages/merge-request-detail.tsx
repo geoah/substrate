@@ -619,7 +619,7 @@ export function MergeRequestDetailPage() {
             {winnerTitle}
           </h1>
           <p className="data text-xs text-muted-foreground">
-            core.substrate.reamde.dev/recordmergerequests/{request.id}
+            core.substrate.reamde.dev/recordmergerequest/{request.id}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2 pt-0.5">

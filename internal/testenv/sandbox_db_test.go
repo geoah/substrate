@@ -99,7 +99,7 @@ func indent(items []string, prefix string) string {
 }
 
 // ref is how the HTTP surface addresses a function: the route is
-// `/functions/{name}/call`, one path segment, so a call names the function by
+// `/function/{name}/-/call`, one path segment, so a call names the function by
 // its bare name and the registry resolves it.
 func ref(name string) string { return name }
 

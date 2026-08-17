@@ -47,7 +47,7 @@ func TestDeleteThroughTheWrongCollectionIsRefused(t *testing.T) {
 
 	// The token collection must not delete a person (nor a person
 	// collection a token).
-	rec := env.do(t, http.MethodDelete, "/api/v1/core.substrate.reamde.dev/tokens/"+id, tok, nil)
+	rec := env.do(t, http.MethodDelete, "/api/v1/core.substrate.reamde.dev/token/"+id, tok, nil)
 	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
 	if ds.records[id].DeletedAt != nil {
 		t.Fatal("delete through a foreign collection tombstoned the record")

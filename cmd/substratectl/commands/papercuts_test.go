@@ -99,7 +99,7 @@ func TestGuardHintsBranchOnWhatFailed(t *testing.T) {
 		// forbidden is never about the token's reach. It is the write itself
 		// being refused on principle.
 		name:          "forbidden is about the write, not the token's reach",
-		err:           &apiError{Status: 403, Code: "forbidden", Path: apiPrefix + "/core.substrate.reamde.dev/tokens", Method: "POST"},
+		err:           &apiError{Status: 403, Code: "forbidden", Path: apiPrefix + "/core.substrate.reamde.dev/token", Method: "POST"},
 		wantHeadline:  "forbidden",
 		wantHint:      "refused on principle",
 		unwantedWords: []string{"transition", "scope"},

@@ -197,7 +197,7 @@ shipped here):
    `backfillDepth`. It starts `tokenStatus: pending`.
 
 4. **Connect.** Run the host OAuth flow against the account
-   (`substratectl bundle connect`, or `POST …/core.substrate.reamde.dev/oauth/start
+   (`substratectl bundle connect`, or `POST /api/v1/-/oauth/start
    {"record": "<accountId>"}`) → consent at GitHub → the callback stores the
    grant, sets `tokenStatus: connected`, writes the account's public email
    off `GET /user`, and the on-connect trigger fires the first backfill.

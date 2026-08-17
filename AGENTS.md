@@ -196,9 +196,9 @@ words, and what each one replaced:
 | **authority** | who publishes a kind; one DNS-style label                  | group        |
 | **plural**    | RETIRED: the collection segment is the kind's name         | type         |
 | **trait**     | a contract a kind implements                               | capability   |
-| **vocabulary**| kinds, traits and property types together; `/vocabulary/apply` | schema   |
+| **vocabulary**| kinds, traits and property types together; `/-/vocabulary/apply` | schema |
 | **changelog** | the append-only sequence of deltas; the `changelog` table  | log          |
-| **bundle**    | the install unit; `/bundles`, and the `bundle` tier         | extension    |
+| **bundle**    | the install unit; the `bundle` kind and the `bundle` tier   | extension    |
 | **input**     | a bundle's named configuration need; one record resolves per input (bound edge, the id `default`, then the sole record) | config, configType, singleton |
 | **edge**      | a named (`rel`), directed link between records              | relationship |
 

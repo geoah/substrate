@@ -1,4 +1,4 @@
-/** The cross-collection change feed (`GET /core.substrate.reamde.dev/changes`), read
+/** The cross-collection change feed (`GET /api/v1/-/changes`), read
  * three ways:
  *
  * - **History**: newest-first pages addressed by `before=<seq>`. The changelog

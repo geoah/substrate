@@ -84,7 +84,7 @@ auditable in the [changelog](changelog.md):
   ([Bundles](bundles.md)). The shipped catalog is a source, never an
   authority, and nothing on the serving path reads it.
 
-Install and apply are one path. `POST …/core.substrate.reamde.dev/vocabulary/apply` with
+Install and apply are one path. `POST /api/v1/-/vocabulary/apply` with
 `{"documents": […]}` is the batch verb, the same closure an install applies,
 and where `substratectl apply` routes any vocabulary documents it is given. A generic
 PUT, PATCH, or DELETE of a vocabulary record is a batch of one. On every one

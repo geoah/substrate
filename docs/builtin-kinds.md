@@ -13,7 +13,7 @@ Importing is one action per bundle, and a bundle that maps onto another
 authority says so in its `requires:` — installing `google` before `people`
 is refused, naming what to import first. Nothing installed ever redefines a
 shipped kind. Every declaration is queryable in your own repository
-(`substratectl kinds`, or `GET …/core.substrate.reamde.dev/kinds`), descriptions included,
+(`substratectl kinds`, or `GET …/core.substrate.reamde.dev/kind`), descriptions included,
 so this page is the map, not the source of truth.
 
 Kinds are named `<authority>/<name>`. The tables below give the name; the

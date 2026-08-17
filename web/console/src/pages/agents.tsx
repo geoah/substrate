@@ -200,7 +200,7 @@ export function AgentsPage() {
         <h1 className="text-lg font-semibold">Agents</h1>
         <p className="text-xs text-muted-foreground">
           {agentRows.length.toLocaleString()} declared, from{" "}
-          <span className="data">core.substrate.reamde.dev/agents</span>
+          <span className="data">core.substrate.reamde.dev/agent</span>
           {subagentOnlyCount > 0 &&
             ` (${subagentOnlyCount.toLocaleString()} more subagent-only, under Data)`}
         </p>

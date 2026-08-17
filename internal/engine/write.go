@@ -264,7 +264,7 @@ func (t *txn) checkID(typ, id string) error {
 // checkCreateID enforces proposal §6's naming rule, which is about WHO NAMES a
 // new record: a type some mapping points at is always server-assigned,
 // because nothing external names a subject. Addressing a record that already
-// exists is not naming it, so `PUT …/{plural}/{id}` — the console's Save, and
+// exists is not naming it, so `PUT …/{kind}/{id}` — the console's Save, and
 // `substrate apply` — works on every type.
 func (t *txn) checkCreateID(ty *vocabulary.Kind) error {
 	if len(t.ds.registry().MappingsTo(ty.Identity)) == 0 {

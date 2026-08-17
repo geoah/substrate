@@ -46,7 +46,7 @@ func TestShippedURLHarvesterExampleApplies(t *testing.T) {
 	}
 
 	// The four triggers each resolved through the real `type: trigger` path and
-	// were PUT into core.substrate.reamde.dev/triggers.
+	// were PUT into core.substrate.reamde.dev/trigger.
 	for _, id := range []string{
 		"web-findurls-on-message", "web-fetch-on-page",
 		"web-classify-on-page", "web-rollup-weekly",

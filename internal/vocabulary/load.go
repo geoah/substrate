@@ -686,7 +686,7 @@ var deletedDataKeys = map[string]string{
 
 	"definition": "the retired blob: a declaration carries its own properties now, one key per authored field",
 	"name":       "the retired mirror: a declaration's local name is metadata.id",
-	"plural":     "the retired mirror: a kind's collection segment is `names.plural`",
+	"plural":     "the retired mirror: `names.plural` is where a kind's plural is declared",
 	"functions":  "the retired mirror: an agent names its callables under `tools`",
 	"subagents":  "the retired mirror: an agent names its sub-agents under `agents`",
 	"sourceYAML": "the retired mirror: nothing stores a document's text, and the parsed declaration is the row",

@@ -41,7 +41,7 @@ const TARGETS = {
   ids: {},
   kinds: {
     "core.substrate.reamde.dev/llmprovider":
-      "/data/core.substrate.reamde.dev/llmproviders",
+      "/data/core.substrate.reamde.dev/llmprovider",
   },
 }
 
@@ -123,7 +123,7 @@ describe("YamlView", () => {
     })
     const link = container.querySelector("a")
     expect(link?.getAttribute("href")).toBe(
-      "/data/core.substrate.reamde.dev/llmproviders"
+      "/data/core.substrate.reamde.dev/llmprovider"
     )
     expect(link?.textContent).toBe("core.substrate.reamde.dev/llmprovider")
   })

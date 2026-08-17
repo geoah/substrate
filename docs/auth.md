@@ -119,7 +119,7 @@ Four things follow from a token being a record:
 - **Expiry is optional and server-enforced.** A token past its `expiresAt`
   fails authentication with an `auth` error, no revoke step needed. A token
   without one lives until it is deleted.
-- **They list and read like anything else.** `GET …/core.substrate.reamde.dev/tokens` is
+- **They list and read like anything else.** `GET …/core.substrate.reamde.dev/token` is
   an ordinary collection read, and every mint and revocation is a row in the
   [changelog](changelog.md).
 

@@ -635,22 +635,22 @@ is the function body.
 
 Delivery bookkeeping lives on the trigger, not on the function, and the verbs
 that drive it live at the trigger resource, under
-`/api/v1/core.substrate.reamde.dev/trigger/{id}/-/…` (a resource's verbs live at the
-resource). No path carries a repository segment: the bearer token implies the
+`/api/v1/core.substrate.reamde.dev/trigger/{id}/-/…` (a record's verbs live at the
+record, behind the reserved `-`). No path carries a repository segment: the bearer token implies the
 repository.
 
-- `GET …/triggers/status` is the one collection-level verb: every trigger's
+- `GET …/trigger/-/status` is the one collection-level verb: every trigger's
   kind, callable, cursor, head, lag, last fire and parked count in a single
   answer. There is no per-trigger `status`.
-- `POST …/triggers/{id}/replay` takes `{"from": seq}` and resets a
+- `POST …/trigger/{id}/-/replay` takes `{"from": seq}` and resets a
   record-sourced trigger's cursor for a retrospective run.
-- `POST …/triggers/{id}/run` takes `{"kind": …, "id": …}`, both required, and
+- `POST …/trigger/{id}/-/run` takes `{"kind": …, "id": …}`, both required, and
   synthesizes one delivery of that record's current state (guard applied,
   source filter not, cursor untouched).
-- `POST …/triggers/{id}/wake` scans now: a webhook fires once, a record
+- `POST …/trigger/{id}/-/wake` scans now: a webhook fires once, a record
   trigger drains its backlog, a schedule checks its due occurrence.
-- `GET …/triggers/{id}/parked` lists the deliveries the trigger gave up on,
-  and `POST …/triggers/{id}/parked/{failureId}/retry` re-runs one.
+- `GET …/trigger/{id}/-/parked` lists the deliveries the trigger gave up on,
+  and `POST …/trigger/{id}/-/parked/{failureId}/retry` re-runs one.
 
 `replay` answers the cursor it set; `run`, `wake` and `retry` answer
 `{"ran": n}`, the number of deliveries that applied effects. Every settled

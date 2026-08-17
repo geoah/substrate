@@ -849,7 +849,9 @@ func (r *Registry) ByIdentity(identity string) (*Kind, bool) {
 	return t, ok
 }
 
-// ByPlural resolves a REST collection segment inside an authority.
+// ByPlural resolves a kind by its declared plural inside an authority. It is
+// NOT the REST lookup any more: a collection segment is the kind's NAME, which
+// ByIdentity answers (decision 0028).
 func (r *Registry) ByPlural(authority, plural string) (*Kind, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

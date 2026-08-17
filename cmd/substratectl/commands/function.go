@@ -222,7 +222,7 @@ func fetchParked(ctx context.Context, cl *client, id string) ([]substrate.Trigge
 	return res.Parked, nil
 }
 
-// triggersPath is /api/v1/core.substrate.reamde.dev/triggers/{segments…}. A resource's
+// triggersPath is /api/v1/core.substrate.reamde.dev/trigger/…/-/{verb}. A record's
 // operational verbs live AT the resource and trigger records are
 // core's — the substrate maintains its own delivery plumbing, so it publishes
 // it — which makes this the one spelling.

@@ -20,7 +20,7 @@ its limits.
 This is the map. The source of truth is each bundle's own manifests under
 `kinds/`, and everything an install will add — the declarations and the records
 it writes beside them — is previewable through
-`GET …/core.substrate.reamde.dev/catalog/{id}`.
+`GET /api/v1/-/catalog/{id}`.
 
 Kinds, functions, agents, and mappings are named `<authority>/<name>`; each
 section's first line gives the authority, and its lists give the name. The

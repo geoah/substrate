@@ -545,7 +545,7 @@ traits:
 ```
 
 Because implementing a trait is queryable, a client can page every record of
-a trait (`GET …/core.substrate.reamde.dev/traits/{id}/records`), which is what the
+a trait (`GET …/core.substrate.reamde.dev/trait/{id}/-/records`), which is what the
 console's connections view over `accountconfig` accounts is.
 [Bundles](bundles.md) puts these three interfaces to work.
 

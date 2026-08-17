@@ -149,7 +149,7 @@ shipped here):
    `syncFrequency`. It starts `tokenStatus: pending`.
 
 5. **Connect.** Run the host OAuth flow against the account
-   (`substratectl bundle connect`, or `POST …/core.substrate.reamde.dev/oauth/start
+   (`substratectl bundle connect`, or `POST /api/v1/-/oauth/start
    {"record": "<accountId>"}`) → consent at Linear → the callback stores the
    grant, sets `tokenStatus: connected`, and the on-connect trigger fires the
    first backfill.

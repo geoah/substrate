@@ -1,6 +1,6 @@
 /** Bundle lifecycle reads and writes. Everything rides the host's computed
  * status endpoints and the lifecycle verbs — the bundle ROWS themselves are
- * ordinary `core.substrate.reamde.dev/bundles` records the generic browse already
+ * ordinary `core.substrate.reamde.dev/bundle` records the generic browse already
  * renders. Account configs are a TRAIT query (kinds implementing
  * `accountconfig`), and the OAuth connect button hits `oauth/start` for one
  * account record. */

@@ -357,7 +357,7 @@ shipped here):
    `tokenStatus: pending`.
 
 4. **Connect.** Run the host OAuth flow against the account
-   (`substratectl bundle connect`, or `POST …/core.substrate.reamde.dev/oauth/start
+   (`substratectl bundle connect`, or `POST /api/v1/-/oauth/start
    {"record": "<accountId>"}`) → consent at Google → the callback stores the
    grant, sets `tokenStatus: connected`, and each enabled stream's on-connect
    trigger fires its first backfill.

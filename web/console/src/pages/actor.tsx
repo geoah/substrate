@@ -2,7 +2,7 @@
  * identity card over its changelog, which is the same changelog list
  * pre-filtered to one actor (one spine, two views).
  *
- * Actors are records: the mirror row in `core.substrate.reamde.dev/actors`, or — for a
+ * Actors are records: the mirror row in `core.substrate.reamde.dev/actor`, or — for a
  * single-writer connector whose actor IS its authority (record 60) — the
  * `authorities` mirror. A name in neither collection still has a real
  * changelog; it renders an unregistered stub, never a dead end. */

@@ -57,7 +57,7 @@ func TestTokenListAndRevoke(t *testing.T) {
 func TestRepositoryCollectionHasNoInstallVerb(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodPost, "/api/v1/core.substrate.reamde.dev/repositories/geoah/rotateotp", tok, map[string]any{})
+	rec := env.do(t, http.MethodPost, "/api/v1/core.substrate.reamde.dev/repository/geoah/rotateotp", tok, map[string]any{})
 	wantStatus(t, rec, http.StatusNotFound)
 }
 

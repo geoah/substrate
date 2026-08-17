@@ -12,7 +12,7 @@
  * the record already (its edges, and its reference-typed properties), so
  * `thread → agent` costs nothing to show — and could not be answered by the
  * fan-in reader at all, which only ever looks the other way. Incoming groups
- * come from `/incoming`, narrowed per group so expanding one pulls that group
+ * come from `/-/incoming`, narrowed per group so expanding one pulls that group
  * alone.
  *
  * A member expands IN PLACE into the same component, so the graph is walkable

@@ -39,20 +39,20 @@ pnpm build       # tsc -b && vite build
 
 ## Pages
 
-| Route                         | Surface                                                                                                            |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `/login`, `/register`         | the door; everything else needs a session                                                                          |
-| `/`                           | overview                                                                                                           |
-| `/changelog`                  | the repository's change feed                                                                                       |
-| `/registry`, `/registry/:id`  | the catalog: install, upgrade, lifecycle verbs, input resolution + bind, accountconfig trait query + OAuth connect |
-| `/agents`, `/agents/:id`      | declared agents + llm rows; the `:id` route is the ndjson streaming chat                                           |
-| `/merge-requests/:id`         | a duplicate-suggestion verdict                                                                                     |
-| `/data/:authority`            | one authority's collections                                                                                        |
+| Route                              | Surface                                                                                                            |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `/login`, `/register`              | the door; everything else needs a session                                                                          |
+| `/`                                | overview                                                                                                           |
+| `/changelog`                       | the repository's change feed                                                                                       |
+| `/registry`, `/registry/:id`       | the catalog: install, upgrade, lifecycle verbs, input resolution + bind, accountconfig trait query + OAuth connect |
+| `/agents`, `/agents/:id`           | declared agents + llm rows; the `:id` route is the ndjson streaming chat                                           |
+| `/merge-requests/:id`              | a duplicate-suggestion verdict                                                                                     |
+| `/data/:authority`                 | one authority's collections                                                                                        |
 | `/data/:authority/:collection`     | browse a kind's records                                                                                            |
 | `/data/:authority/:collection/new` | create a record                                                                                                    |
 | `/data/:authority/:collection/:id` | one record, and `/edit` beside it                                                                                  |
-| `/actors/:id`                 | an actor's view                                                                                                    |
-| `/account`, `/account/tokens` | the account, and the tokens it has minted                                                                          |
+| `/actors/:id`                      | an actor's view                                                                                                    |
+| `/account`, `/account/tokens`      | the account, and the tokens it has minted                                                                          |
 
 `/account/tokens` is deliberately not `/tokens`: the API door answers
 `GET /tokens`, so a browser refreshing that path would be handed JSON.

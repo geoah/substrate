@@ -299,7 +299,7 @@ func (c *client) delete(ctx context.Context, authority, kind, id string) (*subst
 }
 
 // link adds one outgoing edge to the source record via the resource's edge
-// verb (POST …/{id}/edges/{rel}); the refreshed source record comes back.
+// verb (POST …/{id}/-/edges/{rel}); the refreshed source record comes back.
 func (c *client) link(ctx context.Context, authority, kind, id, rel string, to substrate.EdgeRef, props map[string]any) (*substrate.Record, error) {
 	body := struct {
 		substrate.EdgeRef
@@ -313,7 +313,7 @@ func (c *client) link(ctx context.Context, authority, kind, id, rel string, to s
 }
 
 // unlink removes one outgoing edge from the source record (DELETE
-// …/{id}/edges/{rel}); the refreshed source record comes back.
+// …/{id}/-/edges/{rel}); the refreshed source record comes back.
 func (c *client) unlink(ctx context.Context, authority, kind, id, rel string, to substrate.EdgeRef) (*substrate.Record, error) {
 	var e substrate.Record
 	if err := c.do(ctx, http.MethodDelete, recordVerbPath(authority, kind, id, "edges", rel), nil, to, &e); err != nil {

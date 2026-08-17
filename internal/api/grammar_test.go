@@ -119,3 +119,25 @@ func TestShadowedCollectionsAreReachable(t *testing.T) {
 	rec := env.do(t, http.MethodGet, "/api/v1/"+coreAuthority+"/recordmerge", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 }
+
+// The four-segment dashless shapes the old grammar served. Neither answers
+// 405: `…/{kind}/{id}/incoming` is now an ordinary record read of a record
+// whose id is `incoming`, which is the whole point of the reserved segment,
+// and `…/{kind}/{id}/edges/{rel}` matches no route at all.
+func TestDashlessSubresourcePathsAreNotVerbs(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+	ds := env.svc.datasets["geoah"]
+	ds.put(&substrate.Record{ID: "incoming", Kind: "people.substrate.reamde.dev/person", Version: 1})
+
+	rec := env.do(t, http.MethodGet, peoplePath+"/incoming", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if got := decodeJSON[substrate.Record](t, rec); got.ID != "incoming" {
+		t.Fatalf("GET %s/incoming served %q, want the record", peoplePath, got.ID)
+	}
+
+	for _, method := range []string{http.MethodPost, http.MethodDelete} {
+		rec := env.do(t, method, peoplePath+"/p1/edges/member_of", tok, map[string]any{"id": "org1"})
+		wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
+	}
+}

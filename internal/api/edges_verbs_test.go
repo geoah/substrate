@@ -11,7 +11,7 @@ import (
 const peopleV1 = "/api/v1/people.substrate.reamde.dev/person"
 
 // TestRESTEdgeLinkUnlinkRoundTrip is ruling A8's edge verbs: a REST client can
-// now REMOVE an edge, not only add one on a put. POST …/{id}/edges/{rel} links,
+// now REMOVE an edge, not only add one on a put. POST …/{id}/-/edges/{rel} links,
 // DELETE unlinks, and each returns the refreshed source record.
 func TestRESTEdgeLinkUnlinkRoundTrip(t *testing.T) {
 	env := newTestEnv(t)

@@ -177,8 +177,8 @@ func (a *app) rootCommand() *cobra.Command {
 		Long: `substratectl is the command line client for a substrate, and it wears two hats.
 
 AS A USER it holds a token and talks HTTP. Everything in a repository is a
-record of a declared kind, addressed by its kind reference — {authority}/{plural}
-for a published kind, {plural} alone for a repository-local one — and the CLI is
+record of a declared kind, addressed by its kind reference — {authority}/{kind}
+for a published kind, {kind} alone for a repository-local one — and the CLI is
 a thin door onto that surface: types, get, apply, patch, delete, link, unlink,
 watch. The token implies the repository; there is nothing else to point at.
 

@@ -6,7 +6,7 @@
  *
  * NOT the Registry PAGE. That surface (`/registry`, pages/registry.tsx) lists
  * bundles; this module is the vocabulary the console routes on, and it is
- * named for the collection it reads — `core.substrate.reamde.dev/kinds`, since the
+ * named for the collection it reads — `core.substrate.reamde.dev/kind`, since the
  * entity→record rename retired `entitykinds`. */
 
 import { queryOptions } from "@tanstack/react-query"
