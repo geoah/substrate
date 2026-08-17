@@ -76,6 +76,48 @@ touched the engine's goroutines specifically, run the expensive one by hand:
 go test -race ./internal/engine/...
 ```
 
+## The confinement cases
+
+`internal/sandbox` and `internal/runner` assert what a function body cannot do:
+read the substrate's environment out of `/proc`, write outside its work dir,
+reach another installation's scratch, open a socket its manifest did not
+declare. All of it rests on Landlock and seccomp, so where the kernel offers
+neither, those cases skip.
+
+That skip is also how the promise disappears quietly: an image change, a
+distribution `lsm=` change or a runner upgrade removes the confinement, every
+case goes from passing to skipping, and the build stays green.
+`SUBSTRATE_TEST_REQUIRE_SANDBOX=1` closes that. The guards fail instead of
+skipping, and `internal/sandboxtest` counts, so a run that skipped its way to
+zero cases cannot exit 0 either. Each package's `TestMain` declares how many
+cases guard on the confinement, eight in `internal/runner` and four in
+`internal/sandbox`, and the count is held to that **exactly**: adding a ninth
+case, or deleting one of the eight, fails until the number moves with it. A
+case that passes the guard and then skips on a precondition of its own (a uid
+that cannot make a device node, a probe that will not build) counts as guarded
+but not as asserted, and at least one case must have asserted.
+
+```bash
+SUBSTRATE_TEST_REQUIRE_SANDBOX=1 go test -count=1 -short ./internal/sandbox/... ./internal/runner/...
+```
+
+`-short` because `TestGoBuildAndInvoke` compiles a body with the host
+toolchain, which is slow and has a VCS-stamping failure mode of its own; every
+confinement case runs in the short suite, which is also the only half of
+`ci:go` that reaches `internal/runner`.
+
+`ci:go` and `ci:race` set the variable; `mise run test` does not, so a laptop
+with Landlock left out of its `lsm=` list still runs the rest of the suite. On
+macOS there is no Landlock and no seccomp at all, so do not set it there. That
+those two tasks still set it, and still reach the suite through `run` rather
+than a `depends` edge (which mise gives an environment of its own), is what
+`mise run lint:sandboxgate` holds: this gate's own failure mode is a green
+build, so it gets a guard.
+
+A `-run` or `-skip` relaxes the exact count, because a filter can only shrink
+the set, but it does not lift the gate: with the variable set, a filter that
+leaves no confinement case to run is a failure rather than a quiet pass.
+
 ## Coverage
 
 ```bash

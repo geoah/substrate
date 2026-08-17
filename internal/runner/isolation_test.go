@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/geoah/substrate/internal/sandboxtest"
 )
 
 // nowPlus is the sweep clock: sweep takes the time so a test can retire an
@@ -29,8 +31,9 @@ func nowPlus(d time.Duration) time.Time { return time.Now().Add(d) }
 func requireSandbox(t *testing.T, r *Runner) {
 	t.Helper()
 	if rep := r.sandbox.Report(); !rep.FS() || !rep.Seccomp {
-		t.Skipf("kernel does not offer the sandbox: %s", rep)
+		sandboxtest.Unavailablef(t, "kernel does not offer the sandbox: %s", rep)
 	}
+	sandboxtest.Case(t)
 }
 
 // requireSeccomp is requireSandbox for an assertion that needs only the SYSCALL
@@ -39,8 +42,18 @@ func requireSandbox(t *testing.T, r *Runner) {
 func requireSeccomp(t *testing.T, r *Runner) {
 	t.Helper()
 	if rep := r.sandbox.Report(); !rep.Seccomp {
-		t.Skipf("kernel has no syscall filter: %s", rep)
+		sandboxtest.Unavailablef(t, "kernel has no syscall filter: %s", rep)
 	}
+	sandboxtest.Case(t)
+}
+
+// Eight cases below guard on the confinement, and under
+// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly eight must reach that guard: a kernel
+// or image change that turns them into skips cannot leave a green build
+// behind, and a ninth case cannot be added, or one of the eight removed,
+// without this number moving with it.
+func TestMain(m *testing.M) {
+	os.Exit(sandboxtest.Run(m, 8))
 }
 
 // The exploit that motivated retiring the shared interpreter: a function in
