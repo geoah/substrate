@@ -23,7 +23,6 @@ const agentKind: KindInfo = {
   name: "agent",
   authority: "crew.test.dev",
   version: 0,
-  plural: "agents",
   source: "builtin",
   definition: {
     properties: {
@@ -92,7 +91,6 @@ describe("templateYAML", () => {
       name: "kind",
       authority: "core.substrate.reamde.dev",
       version: 0,
-      plural: "kinds",
       source: "builtin",
       definition: {
         properties: {
@@ -212,7 +210,6 @@ describe("validateApplyDoc: the declaration id", () => {
     name: "agent",
     authority: "core.substrate.reamde.dev",
     version: 0,
-    plural: "agents",
     source: "builtin",
     definition: { properties: { model: { type: "string" } } },
   }
@@ -395,7 +392,6 @@ const taskKind: KindInfo = {
   name: "task",
   authority: "tasks.substrate.reamde.dev",
   version: 0,
-  plural: "tasks",
   source: "installed",
   definition: {
     properties: {

@@ -110,10 +110,10 @@ export function kindManifestYAML(kind: KindInfo): string {
 }
 
 /** A kind's browse collection address. The console's data routes mirror the
- * API's collection paths — `/data/{authority}/{plural}`. (A repository-local
+ * API's collection paths — `/data/{authority}/{collection}`. (A repository-local
  * kind carries an empty authority; its routing is the browse page's concern.) */
 function collectionHref(kind: KindInfo): string {
-  return `/data/${kind.authority}/${kind.plural}`
+  return `/data/${kind.authority}/${kind.name}`
 }
 
 /** Every registry kind by its reference, so any `kind:` a document carries

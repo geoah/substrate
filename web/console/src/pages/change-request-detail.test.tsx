@@ -46,9 +46,8 @@ vi.mock("@/router", () => ({
 import { ChangeRequestDetailPage } from "./change-request-detail"
 
 const TASK_KIND = "tasks.substrate.reamde.dev/task"
-const REQUEST_PATH =
-  "/api/v1/core.substrate.reamde.dev/recordpatchrequests/cr-1"
-const TARGET_PATH = "/api/v1/tasks.substrate.reamde.dev/tasks/task-1"
+const REQUEST_PATH = "/api/v1/core.substrate.reamde.dev/recordpatchrequest/cr-1"
+const TARGET_PATH = "/api/v1/tasks.substrate.reamde.dev/task/task-1"
 
 const KINDS: KindInfo[] = [
   {
@@ -56,7 +55,6 @@ const KINDS: KindInfo[] = [
     name: "task",
     authority: "tasks.substrate.reamde.dev",
     version: 1,
-    plural: "tasks",
     source: "installed",
     definition: {
       properties: { summary: { type: "string", description: "what it is" } },
@@ -131,7 +129,7 @@ describe("ChangeRequestDetailPage", () => {
     fetchMock.mockImplementation(async (url, init) => {
       const method = (init as RequestInit | undefined)?.method ?? "GET"
       const path = String(url)
-      if (path.startsWith("/api/v1/core.substrate.reamde.dev/kinds")) {
+      if (path.startsWith("/api/v1/core.substrate.reamde.dev/kind")) {
         return jsonResponse(200, { kinds: KINDS })
       }
       if (path === REQUEST_PATH) {

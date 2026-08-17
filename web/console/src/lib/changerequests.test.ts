@@ -28,7 +28,6 @@ const taskKind: KindInfo = {
   name: "task",
   authority: "tasks.substrate.reamde.dev",
   version: 1,
-  plural: "tasks",
   source: "installed",
   definition: {
     properties: {

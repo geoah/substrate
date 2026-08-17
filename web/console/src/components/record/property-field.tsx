@@ -551,7 +551,7 @@ function ReferenceField({
   const pinned = pinnedKind(field)
   const chosen = ref.kind || pinned
   const target = kindByIdentity(kinds, chosen)
-  // The PIN names a kind, a KindInfo is an authority and a plural, so the
+  // The PIN names a kind, a KindInfo is an authority and a collection, so the
   // registry the editor already holds says which collection to offer.
   const offered = useRecordOptions(chosen, kinds, self)
 

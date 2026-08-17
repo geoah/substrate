@@ -6,7 +6,7 @@
 
 import { queryOptions } from "@tanstack/react-query"
 
-import { API_BASE, CORE_AUTHORITY, corePath, request, seg } from "./http"
+import { request, seg, verbPath } from "./http"
 import type { BundleClosure, BundleStatus, CatalogBundle } from "./types"
 
 /** One shipped bundle closure plus whether this repository already installed it
@@ -16,7 +16,7 @@ export type CatalogItem = CatalogBundle
 /** What installing lands, by kind — the detail preview before installing. */
 export type CatalogClosure = BundleClosure
 
-const CATALOG = corePath("catalog")
+const CATALOG = verbPath("catalog")
 
 export const catalogQueryOptions = queryOptions({
   queryKey: ["catalog"],
@@ -69,9 +69,9 @@ const SUBSTRATE_ORIGIN =
   import.meta.env.VITE_SUBSTRATE_ORIGIN ?? "https://substrate.example.com"
 
 /** The exact OAuth callback URL the owner must register in their provider
- * client — the `GET /core.substrate.reamde.dev/oauth/callback` the host serves, on the
+ * client — the `GET /api/v1/-/oauth/callback` the host serves, on the
  * substrate's own origin. KNOWN CONSTANT, not derived. */
-export const OAUTH_CALLBACK_URL = `${SUBSTRATE_ORIGIN}${API_BASE}/${CORE_AUTHORITY}/oauth/callback`
+export const OAUTH_CALLBACK_URL = `${SUBSTRATE_ORIGIN}${verbPath("oauth", "callback")}`
 
 export function oauthCallbackURL(): string {
   return OAUTH_CALLBACK_URL

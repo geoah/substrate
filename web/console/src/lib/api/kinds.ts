@@ -14,7 +14,7 @@ import { queryOptions } from "@tanstack/react-query"
 import { CORE_AUTHORITY, corePath, request, splitKind } from "./http"
 import type { KindInfo, Page } from "./types"
 
-const KINDS = "kinds"
+const KINDS = "kind"
 /** One page comfortably above any real registry; the fetch still follows the
  * cursor if a substrate ever outgrows it. */
 const REGISTRY_PAGE = 500
@@ -41,7 +41,6 @@ function kindFromRecord(item: Record<string, unknown>): KindInfo | undefined {
     // The declaration version is an incremental int64; 0 (absent) covers a
     // declaration written before the server versioned them.
     version: Number(properties.version) || 0,
-    plural: String(names.plural ?? properties.plural ?? name),
     source: String(properties.source ?? "builtin"),
     // A STRING or nothing — this renders as prose, and `String()` would turn a
     // malformed declaration's object into "[object Object]" on the page.
@@ -61,10 +60,7 @@ export function normalizeKinds(payload: unknown): KindInfo[] {
       [])
   const out: KindInfo[] = []
   for (const item of raw as Array<Record<string, unknown>>) {
-    if (
-      typeof item?.identity === "string" &&
-      typeof item?.plural === "string"
-    ) {
+    if (typeof item?.identity === "string" && typeof item?.name === "string") {
       out.push(item as unknown as KindInfo)
       continue
     }

@@ -166,10 +166,10 @@ export function ChangeRecordLink({
   }
   return (
     <Link
-      to="/data/$authority/$plural/$id"
+      to="/data/$authority/$collection/$id"
       params={{
         authority: authority,
-        plural: kindInfo.plural,
+        collection: kindInfo.name,
         id: row.recordId,
       }}
       className="block truncate data underline-offset-4 hover:underline"

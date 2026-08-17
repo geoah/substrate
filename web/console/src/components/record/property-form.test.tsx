@@ -27,7 +27,6 @@ const llmprovider: KindInfo = {
   name: "llmprovider",
   authority: "core.substrate.reamde.dev",
   version: 0,
-  plural: "llmproviders",
   source: "builtin",
   definition: {
     properties: {
@@ -284,7 +283,6 @@ const mappingKind: KindInfo = {
   name: "mapping",
   authority: "crew.test.dev",
   version: 0,
-  plural: "mappings",
   source: "installed",
   definition: {
     properties: {
@@ -314,7 +312,6 @@ const agentKind: KindInfo = {
   name: "agent",
   authority: "core.substrate.reamde.dev",
   version: 0,
-  plural: "agents",
   source: "builtin",
   definition: {
     properties: {
@@ -375,13 +372,12 @@ function agentRecord(properties: Record<string, unknown>): SubstrateRecord {
 
 /** The REGISTRY a pointer's pin resolves through: a `KindInfo` per pinned
  * kind, which is where the picker learns the collection to read. */
-function registryKind(identity: string, plural: string): KindInfo {
+function registryKind(identity: string): KindInfo {
   return {
     identity,
     name: identity.split("/")[1],
     authority: identity.split("/")[0],
     version: 0,
-    plural,
     source: "builtin",
     description: "",
     definition: {},
@@ -394,9 +390,9 @@ const KIND_RECORDS = [FUNCTION, KIND, LLMPROVIDER]
 
 const REGISTRY: KindInfo[] = [
   agentKind,
-  registryKind(FUNCTION, "functions"),
-  registryKind(KIND, "kinds"),
-  registryKind(LLMPROVIDER, "llmproviders"),
+  registryKind(FUNCTION),
+  registryKind(KIND),
+  registryKind(LLMPROVIDER),
 ]
 
 /** The collections the pickers read, served from one stub so a dropdown can be
@@ -417,7 +413,7 @@ function stubCollections() {
 
   vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
     const url = String(input)
-    if (url.includes("/functions?")) {
+    if (url.includes("/function?")) {
       return Promise.resolve(
         page([
           record("core.substrate.reamde.dev/propose", {
@@ -427,7 +423,7 @@ function stubCollections() {
         ])
       )
     }
-    if (url.includes("/agents?")) {
+    if (url.includes("/agent?")) {
       return Promise.resolve(
         page([
           record("crew.test.dev/scout", {
@@ -437,12 +433,12 @@ function stubCollections() {
         ])
       )
     }
-    if (url.includes("/kinds?")) {
+    if (url.includes("/kind?")) {
       return Promise.resolve(
         page(KIND_RECORDS.map((id) => record(id, { description: "a kind" })))
       )
     }
-    if (url.includes("/llmproviders?")) {
+    if (url.includes("/llmprovider?")) {
       return Promise.resolve(page([record("claude", { name: "the gateway" })]))
     }
     return Promise.resolve(page([]))

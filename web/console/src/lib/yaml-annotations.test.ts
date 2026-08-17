@@ -81,7 +81,6 @@ describe("keyDocsOf", () => {
     name: "person",
     authority: "people.substrate.reamde.dev",
     version: 0,
-    plural: "people",
     source: "builtin",
     definition: {
       properties: {

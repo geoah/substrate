@@ -9,7 +9,6 @@ function kindInfo(overrides: Partial<KindInfo>): KindInfo {
     name: "person",
     authority: "people.substrate.reamde.dev",
     version: 0,
-    plural: "persons",
     source: "builtin",
     ...overrides,
   }
@@ -25,7 +24,6 @@ describe("normalizeKinds", () => {
           properties: {
             name: "person",
             authority: "people.substrate.reamde.dev",
-            plural: "persons",
             source: "builtin",
             definition: {
               authority: "people.substrate.reamde.dev",
@@ -42,7 +40,6 @@ describe("normalizeKinds", () => {
         name: "person",
         authority: "people.substrate.reamde.dev",
         version: 0,
-        plural: "persons",
         source: "builtin",
         description: "One human, one record.",
         definition: {
@@ -80,7 +77,6 @@ describe("normalizeKinds", () => {
       identity: "tasks.substrate.reamde.dev/task",
       name: "task",
       authority: "tasks.substrate.reamde.dev",
-      plural: "task",
     })
   })
 
@@ -114,33 +110,28 @@ describe("buildKindNav", () => {
     kindInfo({
       identity: "people.substrate.reamde.dev/organization",
       name: "organization",
-      plural: "organizations",
     }),
     kindInfo({
       identity: "tasks.substrate.reamde.dev/task",
       name: "task",
       authority: "tasks.substrate.reamde.dev",
-      plural: "tasks",
     }),
     kindInfo({
       identity: "core.substrate.reamde.dev/kind",
       name: "kind",
       authority: "core.substrate.reamde.dev",
-      plural: "kinds",
       source: "builtin",
     }),
     kindInfo({
       identity: "google.bundles.substrate.reamde.dev/contact",
       name: "contact",
       authority: "google.bundles.substrate.reamde.dev",
-      plural: "contacts",
       source: "installed",
     }),
     kindInfo({
       identity: "google.bundles.substrate.reamde.dev/syncrun",
       name: "syncrun",
       authority: "google.bundles.substrate.reamde.dev",
-      plural: "syncruns",
       source: "installed",
     }),
   ]
@@ -161,14 +152,12 @@ describe("buildKindNav", () => {
         identity: "beeper.bundles.substrate.reamde.dev/beeperuser",
         name: "beeperuser",
         authority: "beeper.bundles.substrate.reamde.dev",
-        plural: "beeperusers",
         source: "installed",
       }),
       kindInfo({
         identity: "core.substrate.reamde.dev/kind",
         name: "kind",
         authority: "core.substrate.reamde.dev",
-        plural: "kinds",
       }),
     ])
     expect(nav.authorities.map((a) => a.authority)).toEqual([
@@ -191,21 +180,18 @@ describe("buildKindNav", () => {
         identity: "acme.substrate.reamde.dev/custom",
         name: "custom",
         authority: "acme.substrate.reamde.dev",
-        plural: "customs",
         source: "schema",
       }),
       kindInfo({
         identity: "acme.substrate.reamde.dev/installedtoo",
         name: "installedtoo",
         authority: "acme.substrate.reamde.dev",
-        plural: "installedtoos",
         source: "installed",
       }),
       kindInfo({
         identity: "core.substrate.reamde.dev/kind",
         name: "kind",
         authority: "core.substrate.reamde.dev",
-        plural: "kinds",
       }),
     ])
     expect(nav.authorities.map((a) => a.authority)).toEqual([

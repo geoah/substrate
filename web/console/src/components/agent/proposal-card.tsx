@@ -53,7 +53,7 @@ export function ProposalCard({ id }: { id: string }) {
   const threadId = threadPath.slice(threadPath.lastIndexOf("/") + 1)
   const gated = typeof request.data?.properties.policy === "string"
   const thread = useQuery({
-    ...recordQueryOptions(CORE_AUTHORITY, "llmthreads", threadId),
+    ...recordQueryOptions(CORE_AUTHORITY, "llmthread", threadId),
     enabled: gated && Boolean(threadId),
   })
   // The card shows WHAT would change, not a link to find out: for a patch,
@@ -72,7 +72,7 @@ export function ProposalCard({ id }: { id: string }) {
   const targetRecord = useQuery({
     ...recordQueryOptions(
       pendingTarget ? splitKind(pendingTarget.kind).authority : "",
-      targetKindInfo?.plural ?? "",
+      targetKindInfo?.name ?? "",
       pendingTarget?.id ?? ""
     ),
     enabled: pendingOp === "patch" && Boolean(pendingTarget && targetKindInfo),
@@ -138,7 +138,7 @@ export function ProposalCard({ id }: { id: string }) {
     setSubmitting("accepted")
     setError(null)
     try {
-      await putRecord(CORE_AUTHORITY, "recordpatchpolicies", `allow-${id}`, {
+      await putRecord(CORE_AUTHORITY, "recordpatchpolicy", `allow-${id}`, {
         properties: remedyRule,
         annotations: {
           "owner/provenance": `minted from the gate card of recordpatchrequest ${id}`,

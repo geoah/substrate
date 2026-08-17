@@ -8,7 +8,7 @@
 import { queryOptions, type QueryClient } from "@tanstack/react-query"
 
 import { catalogQueryOptions, type CatalogItem } from "./catalog"
-import { API_BASE, CORE_AUTHORITY, corePath, request, seg } from "./http"
+import { corePath, request, seg, verbPath, VERB } from "./http"
 import type { BundleStatus, SubstrateRecord, Page } from "./types"
 
 /** Re-exported so the pages keep their `@/lib/api/bundles` import for the
@@ -23,7 +23,7 @@ export type { BundleStatus, InputStatus, SetupItem } from "./types"
  * confirm both against the server before relying on them. */
 export const ACCOUNT_CONFIG_TRAIT = "accountconfig.core.substrate.reamde.dev"
 
-const BUNDLES = corePath("bundles")
+const BUNDLES = corePath("bundle")
 
 /** Every installed bundle's computed status. */
 export async function fetchBundleStatuses(
@@ -31,7 +31,7 @@ export async function fetchBundleStatuses(
 ): Promise<BundleStatus[]> {
   const res = await request<{ bundles?: BundleStatus[] }>(
     "GET",
-    `${BUNDLES}/status`,
+    `${BUNDLES}/${VERB}/status`,
     undefined,
     { signal }
   )
@@ -48,9 +48,14 @@ export function bundleStatusQueryOptions(id: string) {
   return queryOptions({
     queryKey: ["bundle", "status", id],
     queryFn: ({ signal }) =>
-      request<BundleStatus>("GET", `${BUNDLES}/${seg(id)}/status`, undefined, {
-        signal,
-      }),
+      request<BundleStatus>(
+        "GET",
+        `${BUNDLES}/${seg(id)}/${VERB}/status`,
+        undefined,
+        {
+          signal,
+        }
+      ),
     staleTime: 30_000,
   })
 }
@@ -64,18 +69,21 @@ export function runBundleVerb(
   id: string,
   verb: "disable" | "enable"
 ): Promise<BundleStatus> {
-  return request<BundleStatus>("POST", `${BUNDLES}/${seg(id)}/${verb}`)
+  return request<BundleStatus>("POST", `${BUNDLES}/${seg(id)}/${VERB}/${verb}`)
 }
 
 export function uninstallBundle(id: string): Promise<{ uninstalled: boolean }> {
   return request<{ uninstalled: boolean }>(
     "POST",
-    `${BUNDLES}/${seg(id)}/uninstall`
+    `${BUNDLES}/${seg(id)}/${VERB}/uninstall`
   )
 }
 
 export function purgeBundle(id: string): Promise<{ purged: number }> {
-  return request<{ purged: number }>("POST", `${BUNDLES}/${seg(id)}/purge`)
+  return request<{ purged: number }>(
+    "POST",
+    `${BUNDLES}/${seg(id)}/${VERB}/purge`
+  )
 }
 
 /** Bind one input to a record (an edge on the bundle's record row, rel = the
@@ -85,7 +93,7 @@ export function bindBundleInput(
   input: string,
   record: string
 ): Promise<BundleStatus> {
-  return request<BundleStatus>("POST", `${BUNDLES}/${seg(id)}/bind`, {
+  return request<BundleStatus>("POST", `${BUNDLES}/${seg(id)}/${VERB}/bind`, {
     input,
     record,
   })
@@ -156,7 +164,7 @@ export function traitRecordsQueryOptions(trait: string) {
       const q = new URLSearchParams({ first: String(TRAIT_ACCOUNTS_CAP) })
       const page = await request<Page>(
         "GET",
-        `${corePath("traits", trait)}/records?${q}`,
+        `${corePath("trait", trait)}/${VERB}/records?${q}`,
         undefined,
         { signal }
       )
@@ -173,11 +181,9 @@ export function traitRecordsQueryOptions(trait: string) {
 /** Begin the host connect flow for one account record: the response carries
  * the provider consent URL the browser should visit. */
 export function startOAuth(record: string): Promise<{ url: string }> {
-  return request<{ url: string }>(
-    "POST",
-    `${API_BASE}/${CORE_AUTHORITY}/oauth/start`,
-    { record }
-  )
+  return request<{ url: string }>("POST", verbPath("oauth", "start"), {
+    record,
+  })
 }
 
 // ── OAuth return-to-origin (postMessage from the substrate callback) ─────────

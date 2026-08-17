@@ -6,7 +6,7 @@
  *
  * There is NO repository segment anywhere — the token implies the repository —
  * and no tenant. A collection path IS the kind reference split into segments:
- * `/{authority}/{plural}` for a published kind, `/{plural}` for a
+ * `/{authority}/{kind}` for a published kind, `/{kind}` for a
  * repository-local one. */
 
 import { getToken, sessionExpired } from "./session"
@@ -151,17 +151,42 @@ export function joinKind(authority: string, name: string): string {
   return authority ? `${authority}/${name}` : name
 }
 
-/** The collection path of a declared kind: the authority and the plural are
- * both segments, and a repository-local kind (empty authority) has only the
- * plural. */
-export function collectionPath(authority: string, plural: string): string {
+/** The segment reserved for verbs at every depth. Nothing stored can be
+ * spelled with it — an id begins with an alphanumeric, a kind name is one
+ * lowercase word, an authority carries a dot — so a verb never takes an id out
+ * of a collection (decision 0028). */
+export const VERB = "-"
+
+/** The collection path of a declared kind: the authority and the collection
+ * segment are both segments, and a repository-local kind (empty authority) has
+ * only the collection. The collection segment IS the kind's name, so
+ * everything after `/api/v1/` is the kind reference and a record's path is the
+ * value a `reference` property stores. */
+export function collectionPath(authority: string, collection: string): string {
   return authority
-    ? `${API_BASE}/${seg(authority)}/${seg(plural)}`
-    : `${API_BASE}/${seg(plural)}`
+    ? `${API_BASE}/${seg(authority)}/${seg(collection)}`
+    : `${API_BASE}/${seg(collection)}`
 }
 
 /** The core meta-model's own collections, addressed the same way. */
-export function corePath(plural: string, id?: string): string {
-  const base = `${API_BASE}/${CORE_AUTHORITY}/${plural}`
+export function corePath(collection: string, id?: string): string {
+  const base = `${API_BASE}/${CORE_AUTHORITY}/${collection}`
   return id === undefined ? base : `${base}/${seg(id)}`
+}
+
+/** A repository verb: `/api/v1/-/{verb}`. The changefeed, the vocabulary
+ * apply, the blob store, GraphQL, the catalog and the OAuth doors all live
+ * here — none of them is a collection. */
+export function verbPath(...segments: string[]): string {
+  return `${API_BASE}/${VERB}/${segments.join("/")}`
+}
+
+/** A verb at one record: the record's path, the reserved segment, the verb. */
+export function recordVerbPath(
+  authority: string,
+  collection: string,
+  id: string,
+  ...verb: string[]
+): string {
+  return `${collectionPath(authority, collection)}/${seg(id)}/${VERB}/${verb.join("/")}`
 }

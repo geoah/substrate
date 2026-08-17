@@ -607,11 +607,11 @@ function BundleDisclosure({
               const title = k.description
                 ? `${named}\n\n${k.description}`
                 : named
-              return k.authority && k.plural ? (
+              return k.authority && k.name ? (
                 <Link
                   key={k.identity}
-                  to="/data/$authority/$plural"
-                  params={{ authority: k.authority, plural: k.plural }}
+                  to="/data/$authority/$collection"
+                  params={{ authority: k.authority, collection: k.name }}
                   className="rounded border bg-background px-1.5 py-0.5 data underline-offset-4 hover:underline"
                   title={title}
                   onClick={(e) => e.stopPropagation()}

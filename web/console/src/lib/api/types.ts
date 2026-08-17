@@ -285,8 +285,6 @@ export interface KindInfo {
   /** The declaration's incremental version, server-maintained: every accepted
    * change to the declaration bumps it. 0 means no version is stored. */
   version: number
-  /** The collection segment. */
-  plural: string
   /** `builtin` for vocabulary the substrate ships, `installed` for kinds a
    * bundle declared, `schema` for repository-declared ones. */
   source: string

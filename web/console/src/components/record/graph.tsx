@@ -76,7 +76,7 @@ const keyOf = (ref: NodeRef) => `${ref.kind} ${ref.id}`
 function routeOf(kinds: KindInfo[], kind: string) {
   const info = kindByIdentity(kinds, kind)
   if (!info) return undefined
-  return { authority: splitKind(kind).authority, plural: info.plural }
+  return { authority: splitKind(kind).authority, collection: info.name }
 }
 
 function RecordLink({
@@ -99,8 +99,12 @@ function RecordLink({
   }
   return (
     <Link
-      to="/data/$authority/$plural/$id"
-      params={{ authority: route.authority, plural: route.plural, id: node.id }}
+      to="/data/$authority/$collection/$id"
+      params={{
+        authority: route.authority,
+        collection: route.collection,
+        id: node.id,
+      }}
       className={cn(
         "truncate underline-offset-4 hover:underline",
         !node.title && "data",
@@ -264,7 +268,7 @@ function NodeRow({
         open && route ? (
           <GraphNode
             authority={route.authority}
-            plural={route.plural}
+            collection={route.collection}
             id={node.id}
             kind={node.kind}
             kinds={kinds}
@@ -292,7 +296,7 @@ function NodeRow({
  * paged on its own cursor so opening it costs that group alone. */
 function IncomingGroupRow({
   authority,
-  plural,
+  collection,
   id,
   rel,
   fromKind,
@@ -303,7 +307,7 @@ function IncomingGroupRow({
   depth,
 }: {
   authority: string
-  plural: string
+  collection: string
   id: string
   rel: string
   fromKind: string
@@ -319,7 +323,7 @@ function IncomingGroupRow({
     [kinds, fromKind, rel]
   )
   const rows = useInfiniteQuery({
-    ...incomingInfiniteOptions(authority, plural, id, GROUP_PAGE, {
+    ...incomingInfiniteOptions(authority, collection, id, GROUP_PAGE, {
       rel,
       fromKind,
     }),
@@ -414,7 +418,7 @@ function MemberMeta({ row }: { row: IncomingEdge }) {
  * its own, lazily, when opened. */
 function GraphNode({
   authority,
-  plural,
+  collection,
   id,
   kind,
   kinds,
@@ -423,7 +427,7 @@ function GraphNode({
   record: given,
 }: {
   authority: string
-  plural: string
+  collection: string
   id: string
   kind: string
   kinds: KindInfo[]
@@ -432,14 +436,14 @@ function GraphNode({
   record?: SubstrateRecord
 }) {
   const fetched = useQuery({
-    ...recordQueryOptions(authority, plural, id),
+    ...recordQueryOptions(authority, collection, id),
     enabled: !given,
   })
   const record = given ?? fetched.data
   const kindInfo = kindByIdentity(kinds, kind)
 
   const incoming = useInfiniteQuery(
-    incomingInfiniteOptions(authority, plural, id, 200)
+    incomingInfiniteOptions(authority, collection, id, 200)
   )
   // The server orders by (rel, src_kind, …), so a bucket stays contiguous
   // across pages and grouping is a fold rather than a re-sort — which is what
@@ -500,7 +504,7 @@ function GraphNode({
         <IncomingGroupRow
           key={`${group.rel} ${group.kind}`}
           authority={authority}
-          plural={plural}
+          collection={collection}
           id={id}
           rel={group.rel}
           fromKind={group.kind}
@@ -528,19 +532,19 @@ function GraphNode({
 
 export function GraphRail({
   authority,
-  plural,
+  collection,
   record,
   kinds,
 }: {
   authority: string
-  plural: string
+  collection: string
   record: SubstrateRecord
   kinds: KindInfo[]
 }) {
   const kindInfo = kindByIdentity(kinds, record.kind)
   const outgoing = outgoingOf(record, kindInfo)
   const incoming = useInfiniteQuery(
-    incomingInfiniteOptions(authority, plural, record.id, 200)
+    incomingInfiniteOptions(authority, collection, record.id, 200)
   )
   const empty =
     outgoing.length === 0 &&
@@ -592,7 +596,7 @@ export function GraphRail({
       </p>
       <GraphNode
         authority={authority}
-        plural={plural}
+        collection={collection}
         id={record.id}
         kind={record.kind}
         kinds={kinds}

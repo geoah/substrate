@@ -54,7 +54,7 @@ vi.mock("@/router", () => ({
 
 import { BundleDetailPage } from "./bundle-detail"
 
-const CATALOG_PATH = "/api/v1/core.substrate.reamde.dev/catalog"
+const CATALOG_PATH = "/api/v1/-/catalog"
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -113,7 +113,6 @@ function kind(over: Partial<KindInfo>): KindInfo {
     name: "person",
     authority: "people.substrate.reamde.dev",
     version: 1,
-    plural: "persons",
     source: "builtin",
     ...over,
   }
@@ -125,14 +124,12 @@ const KINDS: KindInfo[] = [
     identity: "google.bundles.substrate.reamde.dev/config",
     name: "config",
     authority: "google.bundles.substrate.reamde.dev",
-    plural: "configs",
     definition: { traits: ["oauth2"] },
   }),
   kind({
     identity: "google.bundles.substrate.reamde.dev/contact",
     name: "contact",
     authority: "google.bundles.substrate.reamde.dev",
-    plural: "contacts",
   }),
 ]
 
@@ -182,24 +179,24 @@ describe("BundleDetailPage", () => {
     fetchMock.mockImplementation(async (url, init) => {
       const method = (init as RequestInit | undefined)?.method ?? "GET"
       const path = String(url)
-      if (path.includes("/bundles/") && path.endsWith("/status")) {
+      if (path.includes("/bundle/") && path.endsWith("/-/status")) {
         return jsonResponse(200, bundleStatus)
       }
       if (
-        path.includes("/bundles/") &&
-        path.endsWith("/bind") &&
+        path.includes("/bundle/") &&
+        path.endsWith("/-/bind") &&
         method === "POST"
       ) {
         return jsonResponse(200, bundleStatus)
       }
-      if (path.startsWith("/api/v1/core.substrate.reamde.dev/kinds")) {
+      if (path.startsWith("/api/v1/core.substrate.reamde.dev/kind")) {
         return jsonResponse(200, { kinds: KINDS })
       }
       if (path === CATALOG_PATH) {
         return jsonResponse(200, { catalog: [PEOPLE, GOOGLE] })
       }
       if (
-        path.startsWith("/api/v1/google.bundles.substrate.reamde.dev/configs")
+        path.startsWith("/api/v1/google.bundles.substrate.reamde.dev/config")
       ) {
         return jsonResponse(200, { records: opts.configs ?? [] })
       }
@@ -238,10 +235,10 @@ describe("BundleDetailPage", () => {
       renderPage(<BundleDetailPage />)
       const person = await screen.findByText("person")
       const link = person.closest("a")!
-      expect(link.getAttribute("data-to")).toBe("/data/$authority/$plural")
+      expect(link.getAttribute("data-to")).toBe("/data/$authority/$collection")
       expect(JSON.parse(link.getAttribute("data-params")!)).toEqual({
         authority: "people.substrate.reamde.dev",
-        plural: "persons",
+        collection: "person",
       })
     })
 
@@ -366,7 +363,7 @@ describe("BundleDetailPage", () => {
             const req = init as RequestInit | undefined
             return (
               String(url) ===
-                "/api/v1/core.substrate.reamde.dev/bundles/google.bundles.substrate.reamde.dev%2Fgoogle/bind" &&
+                "/api/v1/core.substrate.reamde.dev/bundle/google.bundles.substrate.reamde.dev%2Fgoogle/-/bind" &&
               req?.method === "POST" &&
               JSON.parse(String(req.body)) !== null &&
               JSON.parse(String(req.body)).input === "client" &&
@@ -433,10 +430,12 @@ describe("BundleDetailPage", () => {
         .getByText("llmprovider openai has no key")
         .closest("div") as HTMLElement
       const link = within(row).getByText("openai").closest("a")!
-      expect(link.getAttribute("data-to")).toBe("/data/$authority/$plural/$id")
+      expect(link.getAttribute("data-to")).toBe(
+        "/data/$authority/$collection/$id"
+      )
       expect(JSON.parse(link.getAttribute("data-params")!)).toEqual({
         authority: "core.substrate.reamde.dev",
-        plural: "llmproviders",
+        collection: "llmprovider",
         id: "openai",
       })
     })

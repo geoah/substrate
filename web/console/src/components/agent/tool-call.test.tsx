@@ -49,12 +49,7 @@ function renderCard(view: ToolCallView, request?: SubstrateRecord) {
   })
   if (request) {
     client.setQueryData(
-      [
-        "record",
-        "core.substrate.reamde.dev",
-        "recordpatchrequests",
-        request.id,
-      ],
+      ["record", "core.substrate.reamde.dev", "recordpatchrequest", request.id],
       request
     )
   }

@@ -407,7 +407,6 @@ const KINDS: KindInfo[] = [
     name: "issue",
     authority: "github.bundles.substrate.reamde.dev",
     version: 0,
-    plural: "issues",
     source: "installed",
   },
   {
@@ -415,7 +414,6 @@ const KINDS: KindInfo[] = [
     name: "person",
     authority: "people.substrate.reamde.dev",
     version: 0,
-    plural: "people",
     source: "builtin",
   },
 ]

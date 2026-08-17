@@ -12,7 +12,7 @@
 import { queryOptions } from "@tanstack/react-query"
 
 import { recordsQueryOptions } from "./records"
-import { corePath, CORE_AUTHORITY, envelopeError } from "./http"
+import { corePath, CORE_AUTHORITY, envelopeError, VERB } from "./http"
 import { getToken, sessionExpired } from "./session"
 import { ApiError, type SubstrateRecord } from "./types"
 
@@ -20,7 +20,7 @@ import { ApiError, type SubstrateRecord } from "./types"
 export function agentsQueryOptions() {
   return recordsQueryOptions({
     authority: CORE_AUTHORITY,
-    plural: "agents",
+    collection: "agent",
     first: 200,
     orderBy: "createdAt:desc",
   })
@@ -31,7 +31,7 @@ export function agentsQueryOptions() {
 export function providersQueryOptions() {
   return recordsQueryOptions({
     authority: CORE_AUTHORITY,
-    plural: "llmproviders",
+    collection: "llmprovider",
     first: 200,
     orderBy: "createdAt:desc",
   })
@@ -67,7 +67,7 @@ export function providerHasKey(record: SubstrateRecord): boolean {
 export function agentThreadsQueryOptions(agent: string, first = 50) {
   return recordsQueryOptions({
     authority: CORE_AUTHORITY,
-    plural: "llmthreads",
+    collection: "llmthread",
     first,
     // `agent` is a REFERENCE: the filter names the record it points at, and
     // a bare id is admitted because the declaration pins the kind.
@@ -83,7 +83,7 @@ export function threadMessagesQueryOptions(threadId: string) {
   return queryOptions({
     ...recordsQueryOptions({
       authority: CORE_AUTHORITY,
-      plural: "llmmessages",
+      collection: "llmmessage",
       first: TRANSCRIPT_WINDOW,
       // `thread` is a REFERENCE on the message now, not an edge.
       filter: { properties: { thread: { eq: threadId } } },
@@ -198,7 +198,7 @@ export function streamChat(opts: {
       }
       const token = getToken()
       if (token) headers.Authorization = `Bearer ${token}`
-      const res = await fetch(`${corePath("agents", opts.agent)}/chat`, {
+      const res = await fetch(`${corePath("agent", opts.agent)}/${VERB}/chat`, {
         method: "POST",
         headers,
         body: JSON.stringify({

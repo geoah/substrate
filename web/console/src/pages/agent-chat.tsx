@@ -332,10 +332,10 @@ function ChatSurface({ id }: { id: string }) {
           <p className="data text-xs text-muted-foreground">
             {thread ? (
               <Link
-                to="/data/$authority/$plural/$id"
+                to="/data/$authority/$collection/$id"
                 params={{
                   authority: "core.substrate.reamde.dev",
-                  plural: "llmthreads",
+                  collection: "llmthread",
                   id: thread,
                 }}
                 className="inline-flex items-center gap-0.5 underline-offset-4 hover:underline"

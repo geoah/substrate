@@ -95,7 +95,6 @@ const registry: KindInfo[] = [
     name: "person",
     authority: "people.substrate.reamde.dev",
     version: 0,
-    plural: "people",
     source: "builtin",
   },
   {
@@ -103,7 +102,6 @@ const registry: KindInfo[] = [
     name: "organization",
     authority: "people.substrate.reamde.dev",
     version: 0,
-    plural: "organizations",
     source: "builtin",
   },
   {
@@ -111,7 +109,6 @@ const registry: KindInfo[] = [
     name: "calendarevent",
     authority: "calendar.substrate.reamde.dev",
     version: 0,
-    plural: "calendarevents",
     source: "builtin",
   },
 ]
@@ -120,13 +117,13 @@ describe("linkTargetsOf", () => {
   it("maps edge target ids and the referenced kind refs", () => {
     const t = linkTargetsOf(record, registry)
     expect(t.ids.org1).toBe(
-      "/data/people.substrate.reamde.dev/organizations/org1"
+      "/data/people.substrate.reamde.dev/organization/org1"
     )
     expect(t.kinds["people.substrate.reamde.dev/organization"]).toBe(
-      "/data/people.substrate.reamde.dev/organizations"
+      "/data/people.substrate.reamde.dev/organization"
     )
     expect(t.kinds["people.substrate.reamde.dev/person"]).toBe(
-      "/data/people.substrate.reamde.dev/people"
+      "/data/people.substrate.reamde.dev/person"
     )
   })
 
@@ -135,16 +132,16 @@ describe("linkTargetsOf", () => {
       { ...record, canonicalId: "canon1", formerIds: ["old-a@x.io"] },
       registry
     )
-    expect(t.ids.canon1).toBe("/data/people.substrate.reamde.dev/people/canon1")
+    expect(t.ids.canon1).toBe("/data/people.substrate.reamde.dev/person/canon1")
     expect(t.ids["old-a@x.io"]).toBe(
-      "/data/people.substrate.reamde.dev/people/old-a@x.io"
+      "/data/people.substrate.reamde.dev/person/old-a@x.io"
     )
   })
 
   it("knows every registry kind by its reference", () => {
     const t = linkTargetsOf(record, registry)
     expect(t.kinds["calendar.substrate.reamde.dev/calendarevent"]).toBe(
-      "/data/calendar.substrate.reamde.dev/calendarevents"
+      "/data/calendar.substrate.reamde.dev/calendarevent"
     )
   })
 
@@ -172,7 +169,7 @@ describe("linkTargetsOf", () => {
     }
     const t = linkTargetsOf(pointing, withPointer)
     expect(t.ids["people.substrate.reamde.dev/person/boss1"]).toBe(
-      "/data/people.substrate.reamde.dev/people/boss1"
+      "/data/people.substrate.reamde.dev/person/boss1"
     )
     // The id alone never appears in the document, so it is not a target.
     expect(t.ids.boss1).toBeUndefined()
@@ -202,12 +199,11 @@ const llmprovider: KindInfo = {
   name: "llmprovider",
   authority: "core.substrate.reamde.dev",
   version: 1,
-  plural: "llmproviders",
   source: "builtin",
   definition: {
     // deliberately scrambled: jsonb lost the authored order.
     properties: { wire: { type: "string" } },
-    names: { singular: "llmprovider", plural: "llmproviders" },
+    names: { singular: "llmprovider", plural: "llmprovider" },
     displayTemplate: "{name}",
     authority: "core.substrate.reamde.dev",
     zzExtra: true,
@@ -253,10 +249,10 @@ describe("kindLinkTargets", () => {
   it("knows every registry kind and claims no record ids", () => {
     const t = kindLinkTargets(registry)
     expect(t.kinds["people.substrate.reamde.dev/person"]).toBe(
-      "/data/people.substrate.reamde.dev/people"
+      "/data/people.substrate.reamde.dev/person"
     )
     expect(t.kinds["calendar.substrate.reamde.dev/calendarevent"]).toBe(
-      "/data/calendar.substrate.reamde.dev/calendarevents"
+      "/data/calendar.substrate.reamde.dev/calendarevent"
     )
     expect(t.ids).toEqual({})
   })

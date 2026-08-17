@@ -23,7 +23,6 @@ const person: KindInfo = {
   name: "person",
   authority: "people.substrate.reamde.dev",
   version: 0,
-  plural: "people",
   source: "builtin",
   definition: {
     authority: "people.substrate.reamde.dev",
@@ -59,7 +58,6 @@ const event: KindInfo = {
   name: "calendarevent",
   authority: "calendar.substrate.reamde.dev",
   version: 0,
-  plural: "calendarevents",
   source: "builtin",
   definition: { traits: ["temporal(range)"], properties: {} },
 }
@@ -145,7 +143,6 @@ describe("kind resolution", () => {
     name: "organization",
     authority: "people.substrate.reamde.dev",
     version: 0,
-    plural: "organizations",
     source: "builtin",
   }
   const kinds = [person, org, event]
@@ -158,9 +155,9 @@ describe("kind resolution", () => {
     expect(splitKind("task")).toEqual({ authority: "", name: "task" })
   })
 
-  it("routes authority+plural back to the kind", () => {
+  it("routes authority+collection back to the kind", () => {
     expect(
-      kindByCollection(kinds, "people.substrate.reamde.dev", "people")
+      kindByCollection(kinds, "people.substrate.reamde.dev", "person")
     ).toBe(person)
     expect(
       kindByCollection(kinds, "people.substrate.reamde.dev", "nope")
@@ -201,7 +198,6 @@ describe("declaration detail", () => {
     name: "config",
     authority: "github.bundles.substrate.reamde.dev",
     version: 0,
-    plural: "configs",
     source: "installed",
     definition: {
       properties: {

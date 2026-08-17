@@ -20,7 +20,7 @@ account behind the session menu.
 
 The home page is an **Overview**: recent activity, anything waiting on you, and
 a count per kind that doubles as the way in. Following one opens that kind's
-collection at `/data/{authority}/{kind}`.
+collection at `/data/{authority}/{collection}`.
 
 A kind opens on two tabs — its **Records**, a filterable and pageable
 collection, and its **Definition**, the declaration rendered as the manifest it

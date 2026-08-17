@@ -39,11 +39,10 @@ const llmprovider: KindInfo = {
   name: "llmprovider",
   authority: "core.substrate.reamde.dev",
   version: 1,
-  plural: "llmproviders",
   source: "builtin",
   definition: {
     authority: "core.substrate.reamde.dev",
-    names: { singular: "llmprovider", plural: "llmproviders" },
+    names: { singular: "llmprovider", plural: "llmprovider" },
     displayTemplate: "{name} ({wire})",
     properties: {
       wire: {
@@ -74,7 +73,6 @@ const account: KindInfo = {
   name: "account",
   authority: "core.substrate.reamde.dev",
   version: 1,
-  plural: "accounts",
   source: "builtin",
 }
 
@@ -144,7 +142,7 @@ describe("KindDefinition", () => {
       (a) => a.textContent === "→ account"
     )
     expect(link?.getAttribute("href")).toBe(
-      "/data/core.substrate.reamde.dev/accounts"
+      "/data/core.substrate.reamde.dev/account"
     )
   })
 

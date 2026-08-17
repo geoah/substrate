@@ -76,7 +76,6 @@ function kindInfo(over: Partial<KindInfo> = {}): KindInfo {
     name: "person",
     authority: "people.substrate.reamde.dev",
     version: 0,
-    plural: "persons",
     source: "builtin",
     ...over,
   }
@@ -471,21 +470,18 @@ describe("installedKindRows — the Kinds table", () => {
     identity: "google.bundles.substrate.reamde.dev/config",
     name: "config",
     authority: "google.bundles.substrate.reamde.dev",
-    plural: "configs",
     definition: { traits: ["oauth2"] },
   })
   const accountKind = kindInfo({
     identity: "google.bundles.substrate.reamde.dev/account",
     name: "account",
     authority: "google.bundles.substrate.reamde.dev",
-    plural: "accounts",
     definition: { traits: ["accountconfig"] },
   })
   const contactKind = kindInfo({
     identity: "google.bundles.substrate.reamde.dev/contact",
     name: "contact",
     authority: "google.bundles.substrate.reamde.dev",
-    plural: "contacts",
   })
   const registry = [configKind, accountKind, contactKind]
 
@@ -504,7 +500,7 @@ describe("installedKindRows — the Kinds table", () => {
     ])
     const contact = rows.find((r) => r.identity === contactKind.identity)!
     expect(contact.authority).toBe("google.bundles.substrate.reamde.dev")
-    expect(contact.plural).toBe("contacts")
+    expect(contact.collection).toBe("contact")
   })
 
   it("marks the input and account kinds by role", () => {
@@ -577,7 +573,7 @@ describe("installedKindRows — the Kinds table", () => {
     expect(rows).toHaveLength(1)
     expect(rows[0].name).toBe("ghost")
     expect(rows[0].authority).toBeUndefined()
-    expect(rows[0].plural).toBeUndefined()
+    expect(rows[0].collection).toBeUndefined()
   })
 })
 
@@ -664,14 +660,12 @@ describe("declaresProviderInterfaces", () => {
     identity: "google.bundles.substrate.reamde.dev/account",
     name: "account",
     authority: "google.bundles.substrate.reamde.dev",
-    plural: "accounts",
     definition: { traits: ["accountconfig"] },
   })
   const clientKind = kindInfo({
     identity: "google.bundles.substrate.reamde.dev/config",
     name: "config",
     authority: "google.bundles.substrate.reamde.dev",
-    plural: "configs",
     definition: { traits: ["oauth2"] },
   })
 
@@ -709,7 +703,6 @@ describe("declaresProviderInterfaces", () => {
       identity: "web.bundles.substrate.reamde.dev/config",
       name: "config",
       authority: "web.bundles.substrate.reamde.dev",
-      plural: "configs",
     })
     expect(
       declaresProviderInterfaces(
@@ -733,7 +726,6 @@ describe("oauthConnectBlocked, the connect gate", () => {
     identity: "google.bundles.substrate.reamde.dev/config",
     name: "config",
     authority: "google.bundles.substrate.reamde.dev",
-    plural: "configs",
     definition: { traits: ["oauth2"] },
   })
   const inputs = [

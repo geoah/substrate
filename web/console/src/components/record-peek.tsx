@@ -45,17 +45,17 @@ export function RecordPeek({
     return <span className="data">{label}</span>
   }
 
-  const path = `${authority}/${targetKind.plural}/${target.id}`
+  const path = `${authority}/${targetKind.name}/${target.id}`
 
   return (
     <HoverCard onOpenChange={setOpen}>
       <HoverCardTrigger
         render={
           <Link
-            to="/data/$authority/$plural/$id"
+            to="/data/$authority/$collection/$id"
             params={{
               authority: authority,
-              plural: targetKind.plural,
+              collection: targetKind.name,
               id: target.id,
             }}
             onClick={(e) => e.stopPropagation()}
@@ -77,7 +77,7 @@ export function RecordPeek({
         <PeekBody
           open={open}
           authority={authority}
-          plural={targetKind.plural}
+          collection={targetKind.name}
           id={target.id}
           targetKind={targetKind}
           fallbackTitle={label}
@@ -91,7 +91,7 @@ export function RecordPeek({
 function PeekBody({
   open,
   authority,
-  plural,
+  collection,
   id,
   targetKind,
   fallbackTitle,
@@ -99,14 +99,14 @@ function PeekBody({
 }: {
   open: boolean
   authority: string
-  plural: string
+  collection: string
   id: string
   targetKind: KindInfo
   fallbackTitle: string
   path: string
 }) {
   const record = useQuery({
-    ...recordQueryOptions(authority, plural, id),
+    ...recordQueryOptions(authority, collection, id),
     enabled: open,
   })
 

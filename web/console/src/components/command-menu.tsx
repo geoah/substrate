@@ -100,10 +100,10 @@ export function CommandMenu({
                       go(
                         () =>
                           void navigate({
-                            to: "/data/$authority/$plural",
+                            to: "/data/$authority/$collection",
                             params: {
                               authority: a.authority,
-                              plural: k.plural,
+                              collection: k.name,
                             },
                           })
                       )

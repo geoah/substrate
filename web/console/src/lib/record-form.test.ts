@@ -24,7 +24,6 @@ function typeWith(
     name: "account",
     authority: "google.bundles.substrate.reamde.dev",
     version: 0,
-    plural: "accounts",
     source: "installed",
     definition: { properties },
   }

@@ -1,6 +1,6 @@
 /** The engine-stamped `changes` of a turn, as chips: one per changelog entry
  * a dispatch (or a decision) wrote — the op, and the record it moved, linked
- * where the registry can resolve the kind's plural into a data route. The seq
+ * where the registry can resolve the kind's collection into a data route. The seq
  * rides as the chip's title: it addresses the delta in the changelog for a
  * reader who wants the exact entry. */
 
@@ -33,8 +33,8 @@ function ChangeChip({ change }: { change: ChangeStamp }) {
   }
   return (
     <Link
-      to="/data/$authority/$plural/$id"
-      params={{ authority, plural: kind.plural, id: change.id }}
+      to="/data/$authority/$collection/$id"
+      params={{ authority, collection: kind.name, id: change.id }}
       className={`${className} underline-offset-4 hover:underline`}
       title={`changelog seq ${change.seq}`}
     >

@@ -1,7 +1,7 @@
 /** What a POINTER points at, as records to offer.
  *
  * A `reference` property pins the kind its value names, and a `KindInfo` is an
- * authority and a plural, so the registry the editor already holds says which
+ * authority and a collection, so the registry the editor already holds says which
  * collection to read. That is the whole of `collectionFor`, and it is the only
  * place that decides.
  *
@@ -27,7 +27,7 @@ export const PICKER_PAGE = 200
 /** Where a collection lives: the two segments its path is built from. */
 export interface Collection {
   authority: string
-  plural: string
+  collection: string
 }
 
 /** Which collection holds the records a pointer may name. A pointer at no
@@ -39,8 +39,8 @@ export function collectionFor(
 ): Collection | undefined {
   if (!pin || pin === TO_ANY) return undefined
   const declared = kindByIdentity(kinds, pin)
-  if (!declared?.plural) return undefined
-  return { authority: declared.authority, plural: declared.plural }
+  if (!declared?.name) return undefined
+  return { authority: declared.authority, collection: declared.name }
 }
 
 /** One offered record: the id a selection inserts (the pin supplies the kind
@@ -95,7 +95,7 @@ export function useRecordOptions(
   const records = useQuery({
     ...recordsQueryOptions({
       authority: collection?.authority ?? "",
-      plural: collection?.plural ?? "",
+      collection: collection?.collection ?? "",
       first: PICKER_PAGE,
     }),
     enabled: Boolean(collection),

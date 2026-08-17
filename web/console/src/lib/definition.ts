@@ -192,9 +192,9 @@ export function kindByIdentity(
 export function kindByCollection(
   kinds: KindInfo[],
   authority: string,
-  plural: string
+  collection: string
 ): KindInfo | undefined {
-  return kinds.find((k) => k.authority === authority && k.plural === plural)
+  return kinds.find((k) => k.authority === authority && k.name === collection)
 }
 
 /** Resolve an edge declaration's target. A bare singular (`person`) resolves

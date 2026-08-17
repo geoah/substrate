@@ -20,9 +20,9 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { CR_PLURAL } from "@/lib/api/changerequests"
+import { CR_COLLECTION } from "@/lib/api/changerequests"
 import { CORE_AUTHORITY } from "@/lib/api/http"
-import { MR_PLURAL } from "@/lib/api/mergerequests"
+import { MR_COLLECTION } from "@/lib/api/mergerequests"
 
 interface Crumb {
   label: string
@@ -68,8 +68,8 @@ function crumbsFor(pathname: string): Crumb[] {
       { label: "Data" },
       { label: CORE_AUTHORITY, to: `/data/${CORE_AUTHORITY}`, mono: true },
       {
-        label: MR_PLURAL,
-        to: `/data/${CORE_AUTHORITY}/${MR_PLURAL}`,
+        label: MR_COLLECTION,
+        to: `/data/${CORE_AUTHORITY}/${MR_COLLECTION}`,
         mono: true,
       },
       { label: id, mono: true },
@@ -83,8 +83,8 @@ function crumbsFor(pathname: string): Crumb[] {
       { label: "Data" },
       { label: CORE_AUTHORITY, to: `/data/${CORE_AUTHORITY}`, mono: true },
       {
-        label: CR_PLURAL,
-        to: `/data/${CORE_AUTHORITY}/${CR_PLURAL}`,
+        label: CR_COLLECTION,
+        to: `/data/${CORE_AUTHORITY}/${CR_COLLECTION}`,
         mono: true,
       },
       { label: id, mono: true },

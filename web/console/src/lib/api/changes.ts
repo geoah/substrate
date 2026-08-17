@@ -17,7 +17,7 @@
 
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query"
 
-import { corePath, envelopeError, request } from "./http"
+import { envelopeError, request, verbPath } from "./http"
 import { getToken, sessionExpired } from "./session"
 import { ApiError, type ChangeRow } from "./types"
 
@@ -90,7 +90,7 @@ export async function fetchChangesPage(opts: {
   if (opts.before && opts.before > 0) params.set("before", String(opts.before))
   const res = await request<{ changes?: ChangeRow[]; cursor?: number }>(
     "GET",
-    `${corePath("changes")}?${params}`,
+    `${verbPath("changes")}?${params}`,
     undefined,
     { signal: opts.signal }
   )
@@ -292,7 +292,7 @@ export function watchChanges(opts: {
         }
         const token = getToken()
         if (token) headers.Authorization = `Bearer ${token}`
-        const res = await fetch(`${corePath("changes")}?${params}`, {
+        const res = await fetch(`${verbPath("changes")}?${params}`, {
           headers,
           signal: ctrl.signal,
         })

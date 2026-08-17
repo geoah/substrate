@@ -189,8 +189,8 @@ function TargetCell({
   }
   return (
     <Link
-      to="/data/$authority/$plural"
-      params={{ authority: target.authority, plural: target.plural }}
+      to="/data/$authority/$collection"
+      params={{ authority: target.authority, collection: target.name }}
       className="block truncate data underline-offset-4 hover:underline"
       title={target.identity}
     >

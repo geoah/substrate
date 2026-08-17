@@ -101,7 +101,7 @@ describe("lifecycle verbs", () => {
     await runBundleVerb("web.bundles.substrate.reamde.dev", "disable")
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe(
-      "/api/v1/core.substrate.reamde.dev/bundles/web.bundles.substrate.reamde.dev/disable"
+      "/api/v1/core.substrate.reamde.dev/bundle/web.bundles.substrate.reamde.dev/-/disable"
     )
     expect(init?.method).toBe("POST")
   })
@@ -112,7 +112,7 @@ describe("lifecycle verbs", () => {
     )
     const res = await purgeBundle("web.bundles.substrate.reamde.dev")
     expect(String(fetchMock.mock.calls[0][0])).toContain(
-      "/bundles/web.bundles.substrate.reamde.dev/purge"
+      "/bundle/web.bundles.substrate.reamde.dev/-/purge"
     )
     expect(res.purged).toBe(12)
   })
@@ -128,7 +128,7 @@ describe("lifecycle verbs", () => {
     )
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe(
-      "/api/v1/core.substrate.reamde.dev/bundles/web.bundles.substrate.reamde.dev/bind"
+      "/api/v1/core.substrate.reamde.dev/bundle/web.bundles.substrate.reamde.dev/-/bind"
     )
     expect(init?.method).toBe("POST")
     expect(JSON.parse(String(init?.body))).toEqual({
@@ -156,7 +156,7 @@ describe("lifecycle verbs", () => {
     )
     const res = await startOAuth("acct-1")
     const [url, init] = fetchMock.mock.calls[0]
-    expect(String(url)).toBe("/api/v1/core.substrate.reamde.dev/oauth/start")
+    expect(String(url)).toBe("/api/v1/-/oauth/start")
     expect(JSON.parse(String(init?.body))).toEqual({ record: "acct-1" })
     expect(res.url).toBe("https://consent")
   })

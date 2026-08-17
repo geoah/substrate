@@ -13,8 +13,8 @@
  * document and writes them back one key at a time, so switching lenses is
  * lossless and a hand-authored comment survives being edited on the form.
  *
- * - **New** (`/data/:authority/:plural/new`) seeds a schema-derived template
- *   (`templateYAML`); **Edit** (`/data/:authority/:plural/:id/edit`) seeds the
+ * - **New** (`/data/:authority/:collection/new`) seeds a schema-derived template
+ *   (`templateYAML`); **Edit** (`/data/:authority/:collection/:id/edit`) seeds the
  *   record's apply-able YAML (`applyManifestYAML`, the manifest view's shape
  *   minus server-owned `status`).
  * - Validation runs as the owner types (`validateApplyDoc`): the document
@@ -81,37 +81,44 @@ import { recordEditRoute, recordNewRoute } from "@/router"
 type Mode = "create" | "edit"
 type Lens = "form" | "yaml"
 
-/** New-record route wrapper (`/data/:authority/:plural/new`). */
+/** New-record route wrapper (`/data/:authority/:collection/new`). */
 export function RecordNewPage() {
-  const { authority, plural } = recordNewRoute.useParams()
-  return <RecordEditor authority={authority} plural={plural} mode="create" />
+  const { authority, collection } = recordNewRoute.useParams()
+  return (
+    <RecordEditor authority={authority} collection={collection} mode="create" />
+  )
 }
 
-/** Edit route wrapper (`/data/:authority/:plural/:id/edit`). */
+/** Edit route wrapper (`/data/:authority/:collection/:id/edit`). */
 export function RecordEditPage() {
-  const { authority, plural, id } = recordEditRoute.useParams()
+  const { authority, collection, id } = recordEditRoute.useParams()
   return (
-    <RecordEditor authority={authority} plural={plural} mode="edit" id={id} />
+    <RecordEditor
+      authority={authority}
+      collection={collection}
+      mode="edit"
+      id={id}
+    />
   )
 }
 
 function RecordEditor({
   authority,
-  plural,
+  collection,
   mode,
   id,
 }: {
   authority: string
-  plural: string
+  collection: string
   mode: Mode
   id?: string
 }) {
   const registry = useQuery(kindsQueryOptions)
   const kindInfo = registry.data
-    ? kindByCollection(registry.data, authority, plural)
+    ? kindByCollection(registry.data, authority, collection)
     : undefined
   const record = useQuery({
-    ...recordQueryOptions(authority, plural, id ?? ""),
+    ...recordQueryOptions(authority, collection, id ?? ""),
     enabled: mode === "edit" && Boolean(id),
   })
 
@@ -123,7 +130,7 @@ function RecordEditor({
     return (
       <EditorEmpty
         title="Unknown collection"
-        description={`${authority}/${plural} is not in the kind registry.`}
+        description={`${authority}/${collection} is not in the kind registry.`}
       />
     )
   }
@@ -131,7 +138,7 @@ function RecordEditor({
     return (
       <EditorEmpty
         title="The record didn't load"
-        description={`${authority}/${plural}/${id} — ${record.error.message}`}
+        description={`${authority}/${collection}/${id} — ${record.error.message}`}
       />
     )
   }
@@ -144,7 +151,7 @@ function RecordEditor({
   return (
     <RecordEditorForm
       authority={authority}
-      plural={plural}
+      collection={collection}
       mode={mode}
       kind={kindInfo}
       kinds={registry.data ?? []}
@@ -157,7 +164,7 @@ function RecordEditor({
 /** The editor proper, over plain props (no route, so it is directly testable). */
 export function RecordEditorForm({
   authority,
-  plural,
+  collection,
   mode,
   kind,
   kinds,
@@ -165,7 +172,7 @@ export function RecordEditorForm({
   seed,
 }: {
   authority: string
-  plural: string
+  collection: string
   mode: Mode
   kind: KindInfo
   kinds: KindInfo[]
@@ -239,8 +246,8 @@ export function RecordEditorForm({
       }
       const input = toPutInput(parsed.value, kind)
       return mode === "edit" && record
-        ? putRecord(authority, plural, record.id, input)
-        : createRecord(authority, plural, input)
+        ? putRecord(authority, collection, record.id, input)
+        : createRecord(authority, collection, input)
     },
     onSuccess: (saved) => {
       toast.add({
@@ -250,8 +257,8 @@ export function RecordEditorForm({
       })
       void queryClient.invalidateQueries()
       void navigate({
-        to: "/data/$authority/$plural/$id",
-        params: { authority: authority, plural: plural, id: saved.id },
+        to: "/data/$authority/$collection/$id",
+        params: { authority: authority, collection: collection, id: saved.id },
       })
     },
     onError: (error) => {
@@ -300,8 +307,8 @@ export function RecordEditorForm({
           </h1>
           <p className="data text-xs text-muted-foreground">
             {mode === "edit" && record
-              ? `${authority}/${plural}/${record.id}`
-              : `${authority}/${plural}`}
+              ? `${authority}/${collection}/${record.id}`
+              : `${authority}/${collection}`}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
@@ -324,17 +331,17 @@ export function RecordEditorForm({
             render={
               mode === "edit" && record ? (
                 <Link
-                  to="/data/$authority/$plural/$id"
+                  to="/data/$authority/$collection/$id"
                   params={{
                     authority: authority,
-                    plural: plural,
+                    collection: collection,
                     id: record.id,
                   }}
                 />
               ) : (
                 <Link
-                  to="/data/$authority/$plural"
-                  params={{ authority: authority, plural: plural }}
+                  to="/data/$authority/$collection"
+                  params={{ authority: authority, collection: collection }}
                 />
               )
             }

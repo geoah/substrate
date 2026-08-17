@@ -1,4 +1,4 @@
-/** Record detail (`/data/:authority/:plural/:id`): the views are TOP TABS
+/** Record detail (`/data/:authority/:collection/:id`): the views are TOP TABS
  * (owner ruling, 2026-08-08), no scrolling past one to reach another.
  * **Properties** leads and is the default (issue #38: a clicked row shows its
  * data field by field, not a YAML dump); **Manifest** is the document itself
@@ -58,15 +58,15 @@ const tabParser = parseAsStringLiteral(TABS)
   .withOptions({ history: "push" })
 
 export function RecordPage() {
-  // The route path still spells `$authority/$plural`; read them under their v1 names.
-  const { authority, plural, id } = recordRoute.useParams()
+  // The route path still spells `$authority/$collection`; read them under their v1 names.
+  const { authority, collection, id } = recordRoute.useParams()
   const [tab, setTab] = useQueryState("tab", tabParser)
 
   const registry = useQuery(kindsQueryOptions)
   const kindInfo = registry.data
-    ? kindByCollection(registry.data, authority, plural)
+    ? kindByCollection(registry.data, authority, collection)
     : undefined
-  const record = useQuery(recordQueryOptions(authority, plural, id))
+  const record = useQuery(recordQueryOptions(authority, collection, id))
 
   // The hover vocabulary comes off the kinds query the page already holds —
   // one registry read backs every property tooltip on the manifest.
@@ -102,7 +102,7 @@ export function RecordPage() {
             </EmptyTitle>
             <EmptyDescription>
               <span className="data">
-                {authority}/{plural}/{id}
+                {authority}/{collection}/{id}
               </span>{" "}
               — {record.error.message}
             </EmptyDescription>
@@ -137,7 +137,7 @@ export function RecordPage() {
         <div className="min-w-0">
           <h1 className="truncate text-lg font-semibold">{title}</h1>
           <p className="data text-xs text-muted-foreground">
-            {authority}/{plural}/{e.id}
+            {authority}/{collection}/{e.id}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
@@ -154,8 +154,12 @@ export function RecordPage() {
             className="ml-1 gap-1.5"
             render={
               <Link
-                to="/data/$authority/$plural/$id/edit"
-                params={{ authority: authority, plural: plural, id: e.id }}
+                to="/data/$authority/$collection/$id/edit"
+                params={{
+                  authority: authority,
+                  collection: collection,
+                  id: e.id,
+                }}
               />
             }
           >
@@ -203,7 +207,7 @@ export function RecordPage() {
           <ScrollArea className="h-full">
             <GraphRail
               authority={authority}
-              plural={plural}
+              collection={collection}
               record={e}
               kinds={registry.data ?? []}
             />

@@ -20,7 +20,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { CORE_AUTHORITY } from "@/lib/api/http"
 import {
-  MR_PLURAL,
+  MR_COLLECTION,
   mergeRequestsQueryOptions,
   pendingMergeCountQueryOptions,
 } from "@/lib/api/mergerequests"
@@ -92,8 +92,8 @@ export function MergeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
       <CardHeader>
         <CardTitle className="flex items-baseline gap-2">
           <Link
-            to="/data/$authority/$plural"
-            params={{ authority: CORE_AUTHORITY, plural: MR_PLURAL }}
+            to="/data/$authority/$collection"
+            params={{ authority: CORE_AUTHORITY, collection: MR_COLLECTION }}
             className="underline-offset-4 hover:underline"
           >
             Merge requests
@@ -107,8 +107,8 @@ export function MergeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
         </CardTitle>
         <CardAction>
           <Link
-            to="/data/$authority/$plural"
-            params={{ authority: CORE_AUTHORITY, plural: MR_PLURAL }}
+            to="/data/$authority/$collection"
+            params={{ authority: CORE_AUTHORITY, collection: MR_COLLECTION }}
             className="text-xs text-muted-foreground underline-offset-4 hover:underline"
           >
             View queue
@@ -139,8 +139,11 @@ export function MergeRequestsCard({ kinds }: { kinds: KindInfo[] }) {
             ))}
             {pending !== undefined && pending > rows.length && (
               <Link
-                to="/data/$authority/$plural"
-                params={{ authority: CORE_AUTHORITY, plural: MR_PLURAL }}
+                to="/data/$authority/$collection"
+                params={{
+                  authority: CORE_AUTHORITY,
+                  collection: MR_COLLECTION,
+                }}
                 className="text-xs text-muted-foreground underline-offset-4 hover:underline"
               >
                 +{(pending - rows.length).toLocaleString()}

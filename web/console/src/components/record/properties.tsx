@@ -103,8 +103,12 @@ function ReferenceValue({
   }
   return (
     <Link
-      to="/data/$authority/$plural/$id"
-      params={{ authority: info.authority, plural: info.plural, id: target.id }}
+      to="/data/$authority/$collection/$id"
+      params={{
+        authority: info.authority,
+        collection: info.name,
+        id: target.id,
+      }}
       className="data break-all underline-offset-4 hover:underline"
       title={value}
     >

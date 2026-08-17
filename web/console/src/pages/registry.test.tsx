@@ -47,8 +47,8 @@ vi.mock("@tanstack/react-router", () => ({
 
 import { RegistryPage } from "./registry"
 
-const CATALOG_PATH = "/api/v1/core.substrate.reamde.dev/catalog"
-const STATUS_PATH = "/api/v1/core.substrate.reamde.dev/bundles/status"
+const CATALOG_PATH = "/api/v1/-/catalog"
+const STATUS_PATH = "/api/v1/core.substrate.reamde.dev/bundle/-/status"
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -122,7 +122,6 @@ const CORE_KIND: KindInfo = {
   name: "bundle",
   authority: "core.substrate.reamde.dev",
   version: 1,
-  plural: "bundles",
   source: "builtin",
 }
 
@@ -131,7 +130,6 @@ const PERSON_KIND: KindInfo = {
   name: "person",
   authority: "people.substrate.reamde.dev",
   version: 1,
-  plural: "persons",
   source: "builtin",
 }
 
@@ -177,7 +175,7 @@ describe("RegistryPage", () => {
       if (path === STATUS_PATH) {
         return jsonResponse(200, { bundles: wire.statuses ?? [] })
       }
-      if (path.startsWith("/api/v1/core.substrate.reamde.dev/kinds")) {
+      if (path.startsWith("/api/v1/core.substrate.reamde.dev/kind")) {
         return jsonResponse(200, { kinds: wire.kinds ?? [CORE_KIND] })
       }
       if (path === CATALOG_PATH) {
@@ -394,10 +392,12 @@ describe("RegistryPage", () => {
       const detail = expand(await rowOf("people"))
       const person = within(detail).getByText("person")
       expect(person.tagName).toBe("A")
-      expect(person.getAttribute("data-to")).toBe("/data/$authority/$plural")
+      expect(person.getAttribute("data-to")).toBe(
+        "/data/$authority/$collection"
+      )
       expect(JSON.parse(person.getAttribute("data-params")!)).toEqual({
         authority: "people.substrate.reamde.dev",
-        plural: "persons",
+        collection: "person",
       })
     })
 
