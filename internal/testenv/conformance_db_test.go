@@ -268,21 +268,22 @@ func conformanceCases() []codeCase {
 			if err := e.Service.Close(); err != nil {
 				t.Fatalf("close the service: %v", err)
 			}
-			resp, body := rawGet(t, e, notesPath)
-			wantError(t, resp.StatusCode, body, http.StatusServiceUnavailable, "unavailable")
+			status, header, body := rawGet(t, e, notesPath)
+			wantError(t, status, body, http.StatusServiceUnavailable, "unavailable")
 			// Ruling A6: every unavailable carries Retry-After, the auth path
 			// included. e.Do cannot see headers, so this case builds its own
 			// request.
-			if resp.Header.Get("Retry-After") == "" {
-				t.Errorf("503 without Retry-After: %v", resp.Header)
+			if header.Get("Retry-After") == "" {
+				t.Errorf("503 without Retry-After: %v", header)
 			}
 		},
 	}}
 }
 
-// rawGet performs one authenticated GET and hands back the whole response, for
-// the case that asserts a header rather than a body.
-func rawGet(t *testing.T, e *testenv.Env, path string) (*http.Response, []byte) {
+// rawGet performs one authenticated GET and hands back the status, the headers
+// and the body, for the case that asserts a header. The response itself does
+// not escape, so its body is closed here.
+func rawGet(t *testing.T, e *testenv.Env, path string) (int, http.Header, []byte) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, e.URL+path, nil)
 	if err != nil {
@@ -298,7 +299,7 @@ func rawGet(t *testing.T, e *testenv.Env, path string) (*http.Response, []byte) 
 	if err != nil {
 		t.Fatalf("read GET %s: %v", path, err)
 	}
-	return resp, body
+	return resp.StatusCode, resp.Header, body
 }
 
 // unreachable names the published codes no request to a substrate started by
