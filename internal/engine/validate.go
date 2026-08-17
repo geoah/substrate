@@ -76,6 +76,59 @@ func coerceProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, error)
 	return out, nil
 }
 
+// coerceEdgeProps validates ONE edge write's properties against what the rel
+// declares (`edges.<rel>.properties`) and returns them in their stored form.
+// The declaration is the whole admission: an undeclared name is refused, and a
+// rel that declares no block accepts no properties at all.
+//
+// An edge's props are REPLACED wholesale by every write of that edge (the
+// upsert in applyEdgePut sets `props = EXCLUDED.props`), so there is no merge
+// to reason about and no delete marker: a name the write omits is a name the
+// stored row will not carry. That is also what makes `required:` mean one
+// thing here — every stored edge row of the rel carries the property, because
+// the write that produced it was refused otherwise.
+//
+// A nil value is dropped rather than stored, for the same reason: writing
+// `{since: null}` and omitting `since` have to leave the same row behind.
+func coerceEdgeProps(ty *vocabulary.Kind, ed *vocabulary.Edge, in map[string]any) (map[string]any, error) {
+	var problems []string
+	var out map[string]any
+	for _, name := range sortedKeys(in) {
+		p := ed.Props[name]
+		if p == nil {
+			problems = append(problems, fmt.Sprintf("edges.%s.properties.%s: not declared on %s's %q edge",
+				ed.Name, name, ty.Identity, ed.Name))
+			continue
+		}
+		v := in[name]
+		if v == nil {
+			continue
+		}
+		cv, err := coerceValue(p, v)
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("edges.%s.properties.%s: %v", ed.Name, name, err))
+			continue
+		}
+		if out == nil {
+			out = make(map[string]any, len(in))
+		}
+		out[name] = cv
+	}
+	for _, name := range ed.PropOrder {
+		if !ed.Props[name].Required {
+			continue
+		}
+		if _, held := out[name]; !held {
+			problems = append(problems, fmt.Sprintf("edges.%s.properties.%s: %s's %q edge requires a value",
+				ed.Name, name, ty.Identity, ed.Name))
+		}
+	}
+	if len(problems) > 0 {
+		return nil, &substrate.ValidationError{Problems: problems}
+	}
+	return out, nil
+}
+
 // coerceValue validates one declared value in its declared CONTAINER: a keyed
 // map, a list, or the value itself. The container is the declaration's, so the
 // same function coerces a kind's own property and a field at any admitted

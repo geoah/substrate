@@ -29,7 +29,7 @@ func TestSk2MergeDropsLoserEdgeProps(t *testing.T) {
 		Kind: "person", Properties: map[string]any{"name": "N. Ray"},
 		Edges: []substrate.EdgeInput{{
 			Rel: "memberOf", To: substrate.EdgeRef{ID: team.ID},
-			Properties: map[string]any{"role": "admin", "since": "2019"},
+			Properties: map[string]any{"role": "admin", "since": "2019-04-01"},
 		}},
 	})
 
@@ -52,7 +52,7 @@ func TestSk2MergeDropsLoserEdgeProps(t *testing.T) {
 	if le == nil {
 		t.Errorf("DATA LOSS: loser's member_of edge is gone entirely")
 	} else if le["role"] != "admin" {
-		t.Errorf("DATA LOSS: loser's edge props came back as %+v, expected role=admin since=2019", le)
+		t.Errorf("DATA LOSS: loser's edge props came back as %+v, expected role=admin since=2019-04-01", le)
 	}
 }
 
@@ -91,9 +91,11 @@ func TestSk2MergeDestroysWinnerLoserEdge(t *testing.T) {
 		})
 	}
 	winner := mkMsg("M1", "root")
+	// No edge properties here: `replyTo` declares none, and an undeclared one
+	// is refused. Whether split restores an edge's PROPS is
+	// TestMergeSplitRestoresPairInternalEdge's, on a kind that declares them.
 	loser := mkMsg("M2", "dup", substrate.EdgeInput{
 		Rel: "replyTo", To: substrate.EdgeRef{ID: winner.ID},
-		Properties: map[string]any{"src": "beeper"},
 	})
 
 	logEdges(t, ds, "before merge loser", loser.Kind, loser.ID)
@@ -104,12 +106,8 @@ func TestSk2MergeDestroysWinnerLoserEdge(t *testing.T) {
 	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
 		t.Fatalf("split: %v", err)
 	}
-	p := edgeProps(t, ds, loser.Kind, loser.ID, "replyTo", winner.ID)
-	if p == nil {
+	if p := edgeProps(t, ds, loser.Kind, loser.ID, "replyTo", winner.ID); p == nil {
 		t.Fatalf("DATA LOSS: the loser's replyTo -> winner edge is gone")
-	}
-	if p["src"] != "beeper" {
-		t.Fatalf("loser replyTo props = %+v", p)
 	}
 }
 
