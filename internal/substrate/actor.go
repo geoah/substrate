@@ -3,21 +3,28 @@ package substrate
 import "strings"
 
 // Actor is the attributed identity of a writer ("console", "substratectl",
-// "connector:gmail", "substrate"). Attribution, not authorization.
+// "bundle:gmail.bundles.example.com", "substrate"). Attribution, not
+// authorization.
 //
-// THE ACTOR DOMAIN is closed and flat:
+// THE ACTOR DOMAIN is closed:
 //
-//	console            a write from the console
-//	substratectl              a write from the operator's CLI
-//	api                a write from a client holding a token, door unnamed
-//	connector:<name>   a connector's sync
-//	function:<name>    a function's effect
-//	bundle:<name>      a bundle writing its own declarations
-//	substrate          the engine's own hand
+//	console                          a write from the console
+//	substratectl                     a write from the operator's CLI
+//	api                              a write from a client holding a token, door unnamed
+//	bundle:<authority>               an install, and the authority's own hand
+//	function:<authority>:<name>      a function's effect
+//	agent:<authority>:<name>         an agent's effect
+//	substrate                        the engine's own hand
 //
 // The three human doors are attribution the CALLER declares
-// (`X-Substrate-Actor`); the last three are the substrate's own writing hands
+// (`X-Substrate-Actor`); the last four are the substrate's own writing hands
 // and a request may never claim one (ReservedActor).
+//
+// A machine hand carries the FULL AUTHORITY, never its first label, and the
+// separator is a colon because `<actor>/<name>` label and annotation keys
+// reserve the slash (engine metaKeyAllowed). An authority always carries a
+// dot, so nothing derived here can collide with a flat name. Decision record
+// 0025 has the why.
 type Actor string
 
 const (
@@ -46,35 +53,54 @@ const (
 const HostActorNamespace = "substrate"
 
 // BundleActorPrefix opens the actor a SHIPPED TREE OR CATALOG writes its
-// declarations under: the core seed is `bundle:core`, an
-// bundle install is `bundle:<name>`. Like the host namespace above, it is
-// decided by name equality — the declaration authority check (engine) admits
-// it for shipped kinds — so a request may never claim one either.
+// declarations under: the core seed is `bundle:core`, an install is
+// `bundle:<authority>`. Like the host namespace above, it is decided by name
+// equality — the declaration authority check (engine) admits it for shipped
+// kinds — so a request may never claim one either.
 const BundleActorPrefix = "bundle:"
 
-// ConnectorActorPrefix and FunctionActorPrefix open the two machine hands
-// installed code writes under: `connector:<name>` for a connector's sync,
-// `function:<name>` for a function's effects. Both are the substrate's to
-// stamp on a dispatch, so a request may never claim one.
+// FunctionActorPrefix and AgentActorPrefix open the two dispatch hands
+// installed code writes under: `function:<authority>:<name>` for a function's
+// effects, `agent:<authority>:<name>` for an agent's. Both are the
+// substrate's to stamp on a dispatch, so a request may never claim one. They
+// are held apart because one authority may declare a function and an agent of
+// the same name, and a shared string would merge their manager rows and their
+// trigger self-exclusion.
 const (
-	ConnectorActorPrefix = "connector:"
-	FunctionActorPrefix  = "function:"
+	FunctionActorPrefix = "function:"
+	AgentActorPrefix    = "agent:"
 )
+
+// retiredConnectorPrefix was a second spelling of BundleActorPrefix, minted
+// from an authority's FIRST LABEL until record 0025 retired it. Nothing mints
+// it now, and no changelog entry that carries it can be rewritten (the actor
+// is in the hashed preimage), so it survives here for one reason: a request
+// that could claim it would write something that reads as a past sync's hand.
+const retiredConnectorPrefix = "connector:"
 
 // ActorSeed is the actor the embedded core tree is copied into a new
 // repository's changelog under. The tree is a SEED, not an authority: this actor
 // says the entries came from the substrate's own shipped tree, once, at
-// creation.
+// creation. `core` is a flat word and an authority always carries a dot, so
+// it can never be an install's `bundle:<authority>`.
 const ActorSeed Actor = BundleActorPrefix + "core"
 
-// BundleActor renders a bundle's own writing hand, `bundle:<name>` — the
+// BundleActor renders a bundle's own writing hand, `bundle:<authority>` — the
 // actor an install (a copy of the catalog's manifests into the repository's
-// changelog) carries.
-func BundleActor(name string) Actor { return Actor(BundleActorPrefix + name) }
+// changelog) carries, and the hand an authority's own installed code writes
+// under.
+func BundleActor(authority string) Actor { return Actor(BundleActorPrefix + authority) }
 
-// ConnectorActor and FunctionActor render the two dispatch hands.
-func ConnectorActor(name string) Actor { return Actor(ConnectorActorPrefix + name) }
-func FunctionActor(name string) Actor  { return Actor(FunctionActorPrefix + name) }
+// FunctionActor and AgentActor render the two dispatch hands. Both take the
+// declaring authority, so two bundles declaring a callable of one name stay
+// two actors.
+func FunctionActor(authority, name string) Actor {
+	return Actor(FunctionActorPrefix + authority + ":" + name)
+}
+
+func AgentActor(authority, name string) Actor {
+	return Actor(AgentActorPrefix + authority + ":" + name)
+}
 
 // IsBundleActor reports whether an actor is a bundle path — the seed, an
 // install or an upgrade of shipped vocabulary.
@@ -89,13 +115,15 @@ var HumanActors = map[Actor]bool{ActorAPI: true, ActorConsole: true, ActorCLI: t
 
 // ReservedActor reports whether an actor name is one of the host's own
 // writing hands and therefore may never be claimed by a request: the
-// `substrate` namespace, and the `bundle:` / `connector:` / `function:`
-// paths installed code and shipped declarations write under. A name that
-// merely RESEMBLES one ("substrateish.example.com") is ordinary.
+// `substrate` namespace, the `bundle:` / `function:` / `agent:` paths
+// installed code and shipped declarations write under, and the retired
+// `connector:` spelling of the first of them. A name that merely RESEMBLES
+// one ("substrateish.example.com") is ordinary.
 func ReservedActor(a Actor) bool {
 	s := string(a)
 	return s == HostActorNamespace || strings.HasPrefix(s, HostActorNamespace+".") ||
 		strings.HasPrefix(s, BundleActorPrefix) ||
-		strings.HasPrefix(s, ConnectorActorPrefix) ||
-		strings.HasPrefix(s, FunctionActorPrefix)
+		strings.HasPrefix(s, FunctionActorPrefix) ||
+		strings.HasPrefix(s, AgentActorPrefix) ||
+		strings.HasPrefix(s, retiredConnectorPrefix)
 }

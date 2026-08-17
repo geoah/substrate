@@ -293,8 +293,9 @@ The agent surface reports `alpha`, and `search` reports `graphql` alone:
  "grammar": {"kind": "<authority>/<name> | <name>",
              "record": "<authority>/<kind>/<id> | <kind>/<id>",
              "collection": "/api/v1/{authority}/{plural}[/{id}] | /api/v1/{plural}[/{id}]",
-             "actors": ["api", "console", "substratectl", "connector:<name>",
-                        "function:<name>", "bundle:<name>", "substrate"]},
+             "actors": ["api", "console", "substratectl", "bundle:<authority>",
+                        "function:<authority>:<name>", "agent:<authority>:<name>",
+                        "substrate"]},
  "endpoints": {"register": "/register", "login": "/login", "tokens": "/tokens",
                "password": "/password", "totp": "/totp"},
  "registration": {"open": true, "totpRequired": true}}
@@ -384,25 +385,33 @@ down or it is a bug
 ## Actors
 
 Every write is attributed to an **actor**: what wrote the record. The domain is
-closed and flat, seven names:
+closed, seven names:
 
 ```
-console            a write from the console
-substratectl              a write from the command line
-api                a write from a client holding a token, client unnamed
-connector:<name>   a connector's own hand
-function:<name>    a function's or an agent's effects
-bundle:<name>      a bundle writing its own declarations
-substrate          the engine's own hand
+console                       a write from the console
+substratectl                  a write from the command line
+api                           a write from a client holding a token, client unnamed
+bundle:<authority>            an install, and the authority's own hand
+function:<authority>:<name>   a function's effects
+agent:<authority>:<name>      an agent's effects
+substrate                     the engine's own hand
 ```
+
+A machine hand carries the full authority, so two bundles that share a first
+label are two writers. `connector:<label>` was a second spelling of
+`bundle:<authority>` and is retired
+([0025](decisions/0025-an-actor-carries-the-full-authority.md)); entries
+written under it keep it, because an actor is part of the hashed changelog
+preimage.
 
 A request names its actor with the optional `X-Substrate-Actor` header, and a
 request that names none is `api`, which is exactly what the substrate knows
 about it. This is **attribution, not authorization**: a token has full access
 to its repository either way, so there is nothing an actor name could unlock.
 What the header cannot do is claim one of the substrate's own writing hands —
-`substrate`, anything under `substrate.`, or a `bundle:`/`connector:`/
-`function:` name — because those write past checks a request must not skip.
+`substrate`, anything under `substrate.`, a `bundle:`/`function:`/`agent:`
+name, or the retired `connector:` spelling — because those write past checks a
+request must not skip.
 Naming one is `403 forbidden`.
 
 Attribution is load-bearing three ways:

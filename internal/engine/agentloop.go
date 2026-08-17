@@ -21,7 +21,7 @@ import (
 // turn — runs this loop: completions through internal/llm against the
 // provider row's wire, tool schemas from function manifests, tool calls dispatched
 // through the existing callable machinery with effects held to the AGENT's
-// emit and applied under `function:<name>`, and the transcript + tally
+// emit and applied under `agent:<authority>:<name>`, and the transcript + tally
 // written as thread/message records AS THE LOOP RUNS. Streaming and mid-run
 // input are transport concerns of the API surface (api/agents.go), never a
 // second runtime. Sub-agents are child invocations: their OWN budgets, an

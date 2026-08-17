@@ -26,7 +26,7 @@
 # maintained by it, so they live where the rest of the machinery lives. The
 # `agent` KIND was already core. Neither authority declared an actor, a trait
 # or a property type: `run` rows are written as the system actor, threads and
-# messages under the AGENT's actor (`function:<name>`), a chat user message
+# messages under the AGENT's actor (`agent:<authority>:<name>`), a chat user message
 # under the caller's — every effect a delivery applies carries the CALLABLE's
 # actor.
 #
@@ -74,13 +74,18 @@ data:
   # (docs/changelog.md#change-verbs). The bump carries those three, none of
   # which pins a version of its own; recordpatchrequest and llmmessage say the
   # same thing under their own pins.
-  version: 10
+  # version 11: the actor kind says what a machine hand is spelled like, and
+  # the spelling changed: an actor carries the full authority
+  # (`bundle:<authority>`, `function:<authority>:<name>`,
+  # `agent:<authority>:<name>`), and `connector:` is retired (record 0025).
+  # Entries already written keep the spelling they recorded.
+  version: 11
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands
-# that carry a prefix — `bundle:<name>`, `connector:<name>`, `function:<name>` —
-# are minted by the substrate at dispatch and are never declared, and never
-# claimable by a request.
+# that carry a prefix — `bundle:<authority>`, `function:<authority>:<name>`,
+# `agent:<authority>:<name>` — are minted by the substrate at dispatch from the
+# identity that runs, never declared, and never claimable by a request.
 kind: core.substrate.reamde.dev/actor
 metadata:
   id: api

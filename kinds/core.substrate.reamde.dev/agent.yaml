@@ -2,8 +2,8 @@
 # "<authority>/<name>". The declaration IS the record (schema is records): the
 # row is the prompt store, the changelog is its version history, and the
 # dispatcher reads the registry this row rebuilds into. Agents dispatch like
-# functions — trigger deliveries, the call API, sub-agent calls — under the
-# actor `function:<name>`.
+# functions — trigger deliveries, the call API, sub-agent calls — under their
+# own actor, `agent:<authority>:<name>`.
 #
 # THE PROPERTIES ARE THE DECLARATION. There is no `definition` blob and no
 # projected mirror beside it: the row holds the manifest's own keys, one

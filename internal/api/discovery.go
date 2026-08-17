@@ -160,8 +160,10 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 			Collection: "/api/" + APIVersion + "/{authority}/{plural}[/{id}] | /api/" + APIVersion + "/{plural}[/{id}]",
 			Actors: []string{
 				string(substrate.ActorAPI), string(substrate.ActorConsole), string(substrate.ActorCLI),
-				substrate.ConnectorActorPrefix + "<name>", substrate.FunctionActorPrefix + "<name>",
-				substrate.BundleActorPrefix + "<name>", string(substrate.ActorSystem),
+				substrate.BundleActorPrefix + "<authority>",
+				substrate.FunctionActorPrefix + "<authority>:<name>",
+				substrate.AgentActorPrefix + "<authority>:<name>",
+				string(substrate.ActorSystem),
 			},
 		},
 		Endpoints: endpointsInfo{

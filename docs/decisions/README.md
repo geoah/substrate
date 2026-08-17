@@ -171,3 +171,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0022](0022-rest-is-frozen-graphql-is-a-projection.md) | REST is the frozen v1 contract; GraphQL is a derived projection | accepted |
 | [0023](0023-a-sealed-payload-is-bound-to-its-address.md) | A sealed payload is bound to the address it was written at | proposed |
 | [0024](0024-the-credential-key-is-key-material-not-a-passphrase.md) | `SUBSTRATE_CREDENTIAL_KEY` is key material, not a passphrase | proposed |
+| [0025](0025-an-actor-carries-the-full-authority.md) | An actor carries the full authority, and `connector:` is retired | accepted |

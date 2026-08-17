@@ -173,7 +173,7 @@ func TestAgentLoadsWithoutCoreEmit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ag.Actor() != "function:classifier" {
+	if ag.Actor() != "agent:ag.example.com:classifier" {
 		t.Fatalf("actor %q", ag.Actor())
 	}
 	if ag.Budgets.MaxTurns != 4 || ag.Budgets.Depth != 2 || ag.Budgets.MaxToolCalls != vocabulary.DefaultAgentToolCalls {

@@ -96,9 +96,10 @@ the owner tier: a token has full access to its repository, so a stranger's
 client holds like you, never like the machinery, and it gains nothing by
 picking an unusual name (it could send `api` instead). A
 [reserved](api.md#actors) name — the `substrate` namespace, `bundle:`,
-`connector:`, `function:` — is one of the substrate's own writing hands, which
-a request may never claim, so an undeclared one (a connector whose bundle is
-gone, a facility like `substrate.oauth`) holds at the machine tier and
+`function:`, `agent:`, and the retired `connector:` spelling — is one of the
+substrate's own writing hands, which a request may never claim, so an
+undeclared one (a hand whose bundle is gone, a facility like
+`substrate.oauth`) holds at the machine tier and
 recompute replaces it. The governing tier is resolved from the live
 declaration on every write, never frozen at mint, so re-declaring an actor at
 a different tier changes what already-minted tokens may do from their next

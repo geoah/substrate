@@ -544,7 +544,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 		SELECT actor FROM changelog WHERE record_id = 't-classified' ORDER BY seq LIMIT 1`).Scan(&taskActor); err != nil {
 		t.Fatal(err)
 	}
-	if taskActor != "function:classifier" {
+	if taskActor != "agent:"+crewAuthority+":classifier" {
 		t.Fatalf("the tool effect's actor is %q, not the agent's", taskActor)
 	}
 

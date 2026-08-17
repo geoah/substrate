@@ -6,7 +6,7 @@ agent runtime's data. Everything else is a **vocabulary bundle you import**:
 people, tasks, messaging, calendar, and the mneme-ported health, fitness,
 routines, journal, places, food and commerce. Each ships in the binary and
 installs on request, exactly the way a [bundle](bundles.md) does, under the
-same `bundle:<name>` actor. So a brand-new repository has no `person` kind
+same `bundle:<authority>` actor. So a brand-new repository has no `person` kind
 until you ask for one.
 
 Importing is one action per bundle, and a bundle that maps onto another

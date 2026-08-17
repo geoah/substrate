@@ -8,7 +8,7 @@ package corekinds
 // One declared actor — the name a write is attributed to. Actors are
 // attribution and a manager tier, never authorization: `api`, `console` and
 // `substratectl` are the doors a human write comes through, and machine hands
-// like `function:<name>` are minted at dispatch.
+// like `function:<authority>:<name>` are minted at dispatch.
 type Actor struct {
 	// Version is this declaration's incremental version, maintained by the
 	// engine. Managed: the engine stamps it, so a supplied value does not
@@ -18,9 +18,9 @@ type Actor struct {
 	// Authority is the authority that declares this actor.
 	Authority *string
 
-	// Source is builtin for shipped authorities, installed for connector
-	// authorities. Managed: the engine stamps it, so a supplied value does not
-	// decide it.
+	// Source is builtin for shipped authorities, installed for the ones a
+	// bundle install brought. Managed: the engine stamps it, so a supplied
+	// value does not decide it.
 	Source *ActorSource
 
 	// Tier is the manager tier this actor's direct writes hold at.
@@ -29,7 +29,8 @@ type Actor struct {
 
 // ActorSource is a declared enum: the admissible set, in declaration order.
 //
-// builtin for shipped authorities, installed for connector authorities
+// builtin for shipped authorities, installed for the ones a bundle install
+// brought
 type ActorSource string
 
 const (

@@ -313,6 +313,30 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 			l.errf("%s: must be a lowercase dotted name", where)
 			continue
 		}
+		// A MINTED HAND IS NEVER DECLARED FOR SOMEBODY ELSE. The engine
+		// derives `bundle:`, `function:` and `agent:` actors from the identity
+		// that writes (substrate/actor.go), and an actor DECLARATION carries a
+		// tier — so an authority able to name another's hand here would set
+		// the tier that hand's writes stand at (registry ActorTier, consulted
+		// before the reserved-name fallback in engine actorTier).
+		//
+		// A dispatch hand is minted per call and declared by nobody. A bundle
+		// hand has one legal declarer, the authority it names, which is the
+		// AuthorityActor an authority declares so its own tier and mapping
+		// precedence are legible. The retired `connector:` spelling stays
+		// declarable: repositories written before record 0025 store those
+		// declarations and must keep loading, and since nothing mints one, no
+		// live writer can take a tier from it.
+		switch {
+		case strings.HasPrefix(d.ID, substrate.FunctionActorPrefix),
+			strings.HasPrefix(d.ID, substrate.AgentActorPrefix):
+			l.errf("%s: a function's and an agent's actor is minted at dispatch from its identity — it is never declared", where)
+			continue
+		case strings.HasPrefix(d.ID, substrate.BundleActorPrefix) && d.ID != AuthorityActor(name):
+			l.errf("%s: a bundle actor belongs to the authority it names — %s may declare %q and no other",
+				where, name, AuthorityActor(name))
+			continue
+		}
 		if slices.Contains(g.Actors, d.ID) {
 			l.errf("%s: declared twice in %s", where, name)
 			continue
@@ -2108,7 +2132,6 @@ func (r *Registry) Finalize() error {
 	}
 	problems = append(problems, r.mappingInvariantProblems()...)
 	problems = append(problems, r.graphqlNameProblems()...)
-	problems = append(problems, r.bundleNameProblems()...)
 	if len(problems) > 0 {
 		return validationError(problems)
 	}
@@ -2557,37 +2580,9 @@ func (r *Registry) graphqlNameProblems() []string {
 	return problems
 }
 
-// bundleNameProblems is the DECLARATION-TIME uniqueness check on bundle names.
-// A bundle's name is its authority's first label (bundle.go), and three things
-// key on it alone: the actor an install writes under (`bundle:<name>`), the
-// prefix every installed kind's GraphQL name carries, and the bundle's own
-// `metadata.id` suffix. While an extension authority had to be spelled
-// "<name>.bundles.substrate.reamde.dev", one label meant one authority and the
-// uniqueness came free; the authority is free now, so two of them can reach for
-// one label and it is checked here instead. The actor is the reason this cannot
-// be left to the GraphQL check: two bundles sharing `bundle:llm` write as each
-// other, and the trigger loop guard keys on exactly that name — it would drop
-// one bundle's writes as though they were the other's echo, silently.
-func (r *Registry) bundleNameProblems() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	byName := map[string][]string{}
-	for name, g := range r.authorities {
-		if g.Bundle == nil {
-			continue
-		}
-		byName[g.Bundle.Name] = append(byName[g.Bundle.Name], name)
-	}
-	var problems []string
-	for name, authorities := range byName {
-		if len(authorities) < 2 {
-			continue
-		}
-		sort.Strings(authorities)
-		problems = append(problems, fmt.Sprintf(
-			"bundle name %s is claimed by %s — a bundle's name is its authority's first label, and it is the actor an install writes under; rename one of them",
-			name, strings.Join(authorities, " and ")))
-	}
-	sort.Strings(problems)
-	return problems
-}
+// Two bundles sharing a first label used to be refused here
+// (bundleNameProblems), because they shared the actor an install wrote under
+// and each one's writes read as the other's trigger echo. An actor carries the
+// full authority now (record 0025), so the label is a display name and a
+// GraphQL prefix: a real collision is one GraphQL name claimed twice, which
+// graphqlNameProblems above refuses and names both kinds in.

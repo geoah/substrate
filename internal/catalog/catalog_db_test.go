@@ -24,7 +24,10 @@ import (
 // operatorOTP is the control plane's base32 TOTP seed (RFC 6238 Appendix B).
 const operatorOTP = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
 
-const webBundleID = "web.bundles.substrate.reamde.dev/web"
+const (
+	webBundleAuthority = "web.bundles.substrate.reamde.dev"
+	webBundleID        = webBundleAuthority + "/web"
+)
 
 // The VOCABULARY bundles the web closure declares against. Repository creation
 // seeds core alone now, so a closure that subscribes to
@@ -195,19 +198,20 @@ func TestInstallLandsClosureAndIsIdempotent(t *testing.T) {
 		t.Errorf("triggers = %d, want 4", got)
 	}
 
-	// INSTALL IS A COPY: the manifests landed in the
-	// repository's own changelog as entries attributed to the BUNDLE — `bundle:web`
-	// — not to the owner who asked for them and not to the catalog, which is
-	// a source and never an authority.
+	// INSTALL IS A COPY: the manifests landed in the repository's own
+	// changelog as entries attributed to the BUNDLE —
+	// `bundle:web.bundles.substrate.reamde.dev`, the full authority (record
+	// 0025) — not to the owner who asked for them and not to the catalog,
+	// which is a source and never an authority.
 	changes, err := ds.Changes(ctx, 0, substrate.ChangeFilter{
-		Actors: []substrate.Actor{substrate.BundleActor("web")},
+		Actors: []substrate.Actor{substrate.BundleActor(webBundleAuthority)},
 		Kinds:  []string{"core.substrate.reamde.dev/kind"},
 	}, 100)
 	if err != nil {
 		t.Fatalf("changes: %v", err)
 	}
 	if len(changes) == 0 {
-		t.Fatal("the install wrote no declaration entries under bundle:web")
+		t.Fatal("the install wrote no declaration entries under the bundle's actor")
 	}
 
 	// Re-install is the bundle's own whole-authority re-apply: idempotent, no
@@ -318,7 +322,7 @@ func TestInstallRefusesNonOwner(t *testing.T) {
 	c := loadCatalog(t)
 	ctx := context.Background()
 
-	_, err := c.Install(ctx, substrate.Actor("connector:reader"), webBundleID, ds)
+	_, err := c.Install(ctx, substrate.FunctionActor("reader.bundles.example.com", "sync"), webBundleID, ds)
 	if !errors.Is(err, substrate.ErrForbidden) {
 		t.Fatalf("non-owner install error = %v, want ErrForbidden", err)
 	}

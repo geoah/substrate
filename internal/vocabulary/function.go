@@ -203,17 +203,16 @@ func (f *Function) Identity() string { return KindRef(f.Authority, f.Name) }
 // warm or reconcile, and the caller's own grants are what scope the call.
 func (f *Function) IsHost() bool { return f.Runtime == RuntimeHost }
 
-// Actor is the function's own writing hand: `function:<name>`, the actor its
-// effects are attributed to and the one trigger self-exclusion keys on.
+// Actor is the function's own writing hand: `function:<authority>:<name>`,
+// the actor its effects are attributed to and the one trigger self-exclusion
+// keys on.
 //
-// It carries the LOCAL name, not the identity: the actor grammar is a closed
-// set of flat words (naming.go reActor) and a slash or a dot is not in it. So
-// two authorities declaring a function of the same name write under one actor,
-// and each one's trigger excludes the other's writes as though they were its
-// own. The shipped bundles keep their local names distinct for exactly this
-// reason; a repository that installs two bundles colliding on a name is
-// known-issue territory, not something this line can fix.
-func (f *Function) Actor() string { return substrate.FunctionActorPrefix + f.Name }
+// It carries the DECLARING AUTHORITY, not the local name alone. Two
+// authorities declaring a function of one name used to write under one actor,
+// so each one's trigger excluded the other's writes as its own echo and
+// dropped them silently (record 0025). The colon is the separator because
+// `<actor>/<name>` metadata keys reserve the slash.
+func (f *Function) Actor() string { return string(substrate.FunctionActor(f.Authority, f.Name)) }
 
 // MatchTypeGlob matches one trigger `source.record.kinds` pattern against a
 // kind reference: `*` matches every kind, `<authority>/*` every kind that

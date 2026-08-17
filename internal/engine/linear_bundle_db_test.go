@@ -545,7 +545,7 @@ func linearGet(t *testing.T, ds *dataset, typ, id string) *substrate.Record {
 // stamped as the sync's own actor would be skipped, not delivered.
 func linearResync(t *testing.T, ds *dataset, accountID string) {
 	t.Helper()
-	syncActor := substrate.FunctionActor(vocabulary.KindName(linearProjFn))
+	syncActor := substrate.FunctionActor(linearAuthority, vocabulary.KindName(linearProjFn))
 	if _, err := ds.Patch(context.Background(), syncActor, linearAccountType, accountID, substrate.PatchInput{
 		Properties: map[string]any{"lastSyncedAt": nil},
 	}); err != nil {

@@ -17,8 +17,9 @@ import (
 // `tools:` (callable functions, the four host built-ins among them, each
 // optionally aliased for the agent's own prompt context), `agents:`
 // (sub-agents), `budgets:` and `permissions:`. Agents dispatch exactly like
-// functions — triggers, the call API, sub-agent calls — under the actor
-// `function:<name>`; the loop itself is host-side (engine/agentloop.go).
+// functions — triggers, the call API, sub-agent calls — under their own actor,
+// `agent:<authority>:<name>`; the loop itself is host-side
+// (engine/agentloop.go).
 
 // The built-in agent tools, by the LOCAL NAME of the host function record that
 // declares each one. `query` is the capability-scoped read (gated by the agent's
@@ -183,12 +184,12 @@ type AgentBudgets struct {
 // Identity is "<authority>/<name>".
 func (a *Agent) Identity() string { return KindRef(a.Authority, a.Name) }
 
-// Actor is the agent's own writing hand — a function actor by another
-// name: `function:<name>`, since an agent IS a callable and the actor domain
-// has one word for installed code. The local-name caveat on
-// Function.Actor holds here too, and across the two: an agent and a function
-// sharing a name share an actor.
-func (a *Agent) Actor() string { return substrate.FunctionActorPrefix + a.Name }
+// Actor is the agent's own writing hand: `agent:<authority>:<name>`, the
+// actor its writes are attributed to and the one trigger self-exclusion keys
+// on. It carries the declaring authority, so two bundles declaring an agent of
+// one name stay two actors, and it carries its own prefix, so an agent and a
+// function of one name under one authority do too (record 0025).
+func (a *Agent) Actor() string { return string(substrate.AgentActor(a.Authority, a.Name)) }
 
 // EmitAllows reports whether the agent's write allowlist names a type.
 func (a *Agent) EmitAllows(ident string) bool {

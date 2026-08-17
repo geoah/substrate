@@ -80,7 +80,7 @@ type documentStatus struct {
 }
 
 // statusProperty is one managed property: its manager (the actor whose write
-// stands — `owner` for a hand edit, a connector actor for a mapped one), its
+// stands — `owner` for a hand edit, a bundle's own actor for a mapped one), its
 // tier (`owner` | `bundle` | `machine` — machine means recompute may
 // replace the value, the other two hold), when it last changed, and the
 // alternatives — every live mapping-source offer whose value differs from

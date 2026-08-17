@@ -58,7 +58,7 @@ export interface StateTransition<S extends string = string> {
  * One declared actor — the name a write is attributed to. Actors are
  * attribution and a manager tier, never authorization: `api`, `console` and
  * `substratectl` are the doors a human write comes through, and machine hands
- * like `function:<name>` are minted at dispatch.
+ * like `function:<authority>:<name>` are minted at dispatch.
  */
 export interface Actor {
   /** This declaration's incremental version, maintained by the engine. Managed:
@@ -67,8 +67,8 @@ export interface Actor {
   version?: number
   /** The authority that declares this actor. */
   authority?: string
-  /** Builtin for shipped authorities, installed for connector authorities.
-   * Managed: the server stamps it, so render it read-only.
+  /** Builtin for shipped authorities, installed for the ones a bundle install
+   * brought. Managed: the server stamps it, so render it read-only.
    */
   source?: ActorSource
   /** The manager tier this actor's direct writes hold at. */
@@ -83,7 +83,8 @@ export const actorRequired: string[] = ["authority"]
 
 /** ActorSource is a declared enum: the admissible set, in declaration order.
  *
- * builtin for shipped authorities, installed for connector authorities
+ * builtin for shipped authorities, installed for the ones a bundle install
+ * brought
  */
 export type ActorSource = "builtin" | "installed"
 
@@ -1833,7 +1834,9 @@ export const repositoryLifecycleTransitions: StateTransition<RepositoryLifecycle
 export interface Run {
   /** The trigger record this delivery belongs to. */
   trigger?: string
-  /** The callable that ran, as its actor spells it — `function:<name>`. */
+  /** The callable that ran, as its actor spells it —
+   * `function:<authority>:<name>`.
+   */
   callable?: string
   /** How the delivery fired. */
   mode?: RunMode

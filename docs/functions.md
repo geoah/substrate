@@ -237,7 +237,7 @@ change:
   op: update
   kind: github.bundles.substrate.reamde.dev/account
   id: gh-acct-1
-  actor: connector:github
+  actor: bundle:github.bundles.substrate.reamde.dev
   changed:
     - tokenStatus
 record:
@@ -623,9 +623,10 @@ is the function body.
   at-least-once floor, made safe by the same id composition.
 - **No loops.** Every function-authored write records the change that caused
   it, and a trigger never delivers writes carrying its own callable's actor.
-  That actor is `function:<name>` — the actor domain is flat, so two callables
-  sharing a local name share one actor. A causal chain deeper than the engine's
-  cap (16) parks instead of spinning.
+  That actor is `function:<authority>:<name>` (an agent's is
+  `agent:<authority>:<name>`), so two bundles declaring a callable of one name
+  are two actors and neither reads as the other's echo. A causal chain deeper
+  than the engine's cap (16) parks instead of spinning.
 - **No wedging.** A delivery that keeps failing is parked (3 attempts with
   backoff; a deterministic trip like an allowlist or budget violation parks on
   the first) and the trigger's cursor moves on. A false `when` is a skip, not a
