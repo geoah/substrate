@@ -120,10 +120,10 @@ data:
         deprecated:
           type: bool
           description: clients should stop offering this link
-        # RESERVED (issue 110): what an edge ROW of this rel may carry. The
-        # write path validates none of it yet (an edge write still takes
-        # whatever props it carries, issue 111) and the block is declared
-        # here so the day it does, the key is already one every binary reads.
+        # What an edge ROW of this rel may carry, and the whole set it may
+        # carry: an edge write naming a property this block does not declare
+        # is refused (issue 111). Reserved by issue 110 one change earlier, so
+        # the key was already one every binary reads before it meant anything.
         #
         # An edge property is a FLAT SINGLE VALUE, which is what makes the
         # block declarable at all: a record's own `properties` is the one json

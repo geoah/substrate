@@ -413,6 +413,17 @@ const countMissingEdgePropQuery = `SELECT count(*) ` + edgeFrom + ` AND NOT e.pr
 const countEdgePropValuesQuery = `SELECT count(*) ` + edgeFrom + `
 	AND e.props ? $3 AND $4::jsonb @> jsonb_build_array(e.props->$3)`
 
+// countEdgePropOutsideValuesQuery is its complement: the rows holding a value
+// the candidate's set does NOT admit.
+const countEdgePropOutsideValuesQuery = `SELECT count(*) ` + edgeFrom + `
+	AND e.props ? $3 AND NOT ($4::jsonb @> jsonb_build_array(e.props->$3))`
+
+// countEdgePropNonIntQuery counts live edge rows whose value for a property is
+// not an integral number — the rows a retype to `int` actually strands.
+const countEdgePropNonIntQuery = `SELECT count(*) ` + edgeFrom + `
+	AND e.props ? $3
+	AND (jsonb_typeof(e.props->$3) <> 'number' OR (e.props->>$3)::numeric <> floor((e.props->>$3)::numeric))`
+
 // edgeNarrowings classifies one kind's EDGE diff. Edges were classified by
 // nothing before this: dropping an edge, taking `many:` away and repointing
 // `to:` all landed silently, leaving stored rows in the `edges` table that no
@@ -421,10 +432,14 @@ const countEdgePropValuesQuery = `SELECT count(*) ` + edgeFrom + `
 // The four shapes are the property loop's, read against a link: an edge
 // dropped is a property dropped, `many: true` → single is a container flip,
 // `to:` repointed is a reference narrowing its pin, and an edge property is a
-// property. What is deliberately NOT here is an edge ADDED as required:
-// `required` on an edge is enforced at create alone (checkRequired in
-// write.go), so declaring one late leaves existing records nonconforming but
-// still writable, which is not a stranding.
+// property.
+//
+// What is deliberately NOT here is an edge ADDED as required. A narrowing
+// counts STORED ROWS the new declaration would not admit, and a record that
+// predates a newly required edge holds no row of that rel at all: there is
+// nothing in the `edges` table for a count to find. Required-edge enforcement
+// only ever constrains a record that HAS the edge (checkRequiredPointers, on a
+// create), which leaves an older record nonconforming and still writable.
 func edgeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 	var out []narrowing
 	ident := curT.Identity
@@ -460,6 +475,13 @@ func edgeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 // edge property is a flat single value by construction (parseEdgeProps), so
 // this is the property loop without the containers, the states and the object
 // recursion: dropped, retyped, an enum value removed, required added.
+//
+// The two retypes the record loop counts BY VALUE rather than by presence are
+// counted by value here too, and for the same reason: a backfill can rewrite
+// the stored values first and the declaration then follows them, which is the
+// evolution path the declaration-version migration needed. An edge property
+// held to a stricter rule than the identical record property would be a
+// difference with nothing behind it.
 func edgePropNarrowings(ident string, curE, candE *vocabulary.Edge) []narrowing {
 	var out []narrowing
 	for _, pname := range curE.PropOrder {
@@ -473,11 +495,27 @@ func edgePropNarrowings(ident string, curE, candE *vocabulary.Edge) []narrowing 
 			continue
 		}
 		if curP.Datatype != candP.Datatype {
-			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: edge %q changes property %q from %s to %s while %%d live edges hold values of the old kind — migrate them first",
-					ident, curE.Name, pname, curP.Datatype, candP.Datatype),
-				query: countEdgePropQuery, args: []any{ident, curE.Name, pname},
-			})
+			switch {
+			case candP.Datatype == vocabulary.DatatypeInt:
+				out = append(out, narrowing{
+					format: fmt.Sprintf("type %s: edge %q changes property %q from %s to int while %%d live edges hold values that are not integers — migrate them first",
+						ident, curE.Name, pname, curP.Datatype),
+					query: countEdgePropNonIntQuery, args: []any{ident, curE.Name, pname},
+				})
+			case stringToEnum(curP, candP):
+				out = append(out, narrowing{
+					format: fmt.Sprintf("type %s: edge %q changes property %q from string to enum while %%d live edges hold a value outside %s; rewrite them first",
+						ident, curE.Name, pname, quotedList(candP.ValueStrings())),
+					query: countEdgePropOutsideValuesQuery,
+					args:  []any{ident, curE.Name, pname, jsonArray(candP.ValueStrings())},
+				})
+			default:
+				out = append(out, narrowing{
+					format: fmt.Sprintf("type %s: edge %q changes property %q from %s to %s while %%d live edges hold values of the old kind — migrate them first",
+						ident, curE.Name, pname, curP.Datatype, candP.Datatype),
+					query: countEdgePropQuery, args: []any{ident, curE.Name, pname},
+				})
+			}
 			continue
 		}
 		if removed := removedStrings(curP.ValueStrings(), candP.ValueStrings()); len(removed) > 0 {

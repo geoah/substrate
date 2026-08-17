@@ -67,8 +67,28 @@ The rule binds WRITES, not replay. `applyEdgePut` names no record at all, and
 the fold reaches it both live and on rebuild, so `RebuildRepository` replays
 recorded edge effects without re-checking either end. Split does the same, out
 of the merge record's stored payload (`internal/engine/merge.go`). Both are
-correct on purpose: a rebuild that re-validated could produce a table the
-changelog does not describe, which is the one thing the fold exists to prevent.
+correct on purpose: re-validating at replay would make a rebuild fail on any
+changelog written before a rule existed, which is the drift the fold exists to
+prevent, inverted. A row that replays but could not be written today is
+history, not divergence.
+
+That has one consequence worth stating rather than discovering. `moveEdges`
+deletes every one of a merge loser's edge rows and parks a collision loser's
+props, and any pair-internal edge, in the merge record's `moved` payload;
+split reinserts them raw. So while a merge is open, a stored edge row can sit
+somewhere the `edges` table cannot see, and a narrowing counted over that
+table admits a change those parked rows contradict. Split then restores a row
+carrying a property no declaration admits.
+
+This is the tombstone window, seen from the merge record's side, and it is
+the window the record-property counts have had all along: `countPropQuery`
+carries `deleted_at IS NULL`, so a merged-away loser's own properties are
+invisible to it too, and split resurrects them the same way an undelete does.
+Edge counts are given the same posture deliberately. Holding edges stricter
+than the properties beside them would mean an open merge could block a
+vocabulary change that the identical change to a record property admits, which
+is a refusal nobody could act on: the writer cannot see the parked rows, and
+the only way to clear them is to split a merge they may still want.
 
 The cost is that a read can meet an edge whose target is a tombstone. Nothing
 filters it: `loadEdges` (`internal/engine/query.go`) inner-joins `records`, so
@@ -89,17 +109,26 @@ are the one place liveness is filtered, and it filters the SOURCE
   that it is one, and the caller has to read `status.deletedAt` to notice.
 - Bad, because an edge whose target is purged disappears from a read without
   a word, so nothing surfaces the inconsistency to anyone who could fix it.
-- Bad, because a purge is the only thing that collects edge rows: a repository
-  that only ever tombstones accumulates edges to records nobody can reach.
+- Bad, because nothing collects a dead record's edges automatically: plenty of
+  paths delete edge rows on purpose (unlink, a single-valued edge being
+  replaced, a bundle uninstall clearing its bindings), but a purge is the only
+  one that fires because a record ended, so a repository that only ever
+  tombstones accumulates edges to records nobody can reach.
+- Bad, because a merge parks the loser's edge rows outside the `edges` table
+  until it is split, where a narrowing count cannot see them.
 
 ### Confirmation
 
-The engine suite: `internal/engine/merge_fixes_db_test.go` holds the
-tombstone-keeps-its-edges half through merge and split, and
-`internal/engine/blobs_review_db_test.go` holds the tombstone-then-hard-delete
-sequence. The write-time refusal is exercised wherever a test names a target
-that is not there. Nothing holds the read-side behavior, which is why it is
-written down as a cost rather than claimed as a guarantee.
+`TestTombstoneKeepsEdgeRowsAndUndeleteRestoresThem`
+(`internal/engine/edgeprops_db_test.go`) holds the tombstone half and the
+undelete it exists for. `internal/engine/blobs_review_db_test.go` holds the
+tombstone-then-hard-delete sequence. `internal/engine/merge_fixes_db_test.go`
+holds split's restore, which is the merge record's payload rather than this
+rule: merge is the one path where a tombstoned record does NOT keep its edge
+rows, because `moveEdges` deletes them all.
+
+Nothing holds the read-side behavior or the parked-row window. Both are
+written down as costs for that reason, not claimed as guarantees.
 
 ## More Information
 

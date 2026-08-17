@@ -27,6 +27,7 @@ func epBaseEdges() map[string]any {
 				"role":  map[string]any{"type": "enum", "values": []any{map[string]any{"value": "lead"}, map[string]any{"value": "member"}}},
 				"order": map[string]any{"type": "int"},
 				"since": map[string]any{"type": "date"},
+				"note":  map[string]any{"type": "string"},
 			},
 		},
 		"plain": map[string]any{"to": "node", "many": true},
@@ -148,6 +149,55 @@ func TestEdgePropertiesAreDeclaredOrRefused(t *testing.T) {
 	})
 }
 
+// A SOFT DELETE LEAVES EVERY EDGE ROW STANDING (record 0027). This is the half
+// of the dangling split nothing held: the merge tests cover split's restore,
+// which is a different mechanism (moveEdges deletes the loser's rows and parks
+// them in the merge record), and a plain tombstone touches `records` alone.
+//
+// Undelete is what the rule is for. A cascade here would make a soft delete
+// irreversible, because nothing anywhere would hold the links to rebuild.
+func TestTombstoneKeepsEdgeRowsAndUndeleteRestoresThem(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	if err := epApply(t, ds, epBaseEdges()); err != nil {
+		t.Fatalf("install base type: %v", err)
+	}
+	target := epNodeRecord(t, ds, "target")
+	src := epNodeRecord(t, ds, "src", substrate.EdgeInput{
+		Rel: "peer", To: substrate.EdgeRef{ID: target.ID},
+		Properties: map[string]any{"role": "lead", "order": 1},
+	})
+
+	if _, err := ds.Delete(ctx, owner, src.Kind, src.ID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	gone := mustGet(t, ds, src.Kind, src.ID)
+	if gone.DeletedAt == nil {
+		t.Fatal("delete must tombstone, not hard-delete")
+	}
+	kept := edgePropsOf(t, ds, src.Kind, src.ID, "peer", target.ID)
+	if kept == nil {
+		t.Fatal("a tombstone dropped the record's edge rows; undelete could never rebuild them")
+	}
+	if kept["role"] != "lead" {
+		t.Fatalf("the tombstoned record's edge props changed: %+v", kept)
+	}
+
+	// Undelete is a put on the tombstoned record, naming no edge at all. The
+	// links come back with it because they never left.
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: epNode, ID: src.ID, Properties: map[string]any{"label": "src again"},
+	})
+	back := edgePropsOf(t, ds, src.Kind, src.ID, "peer", target.ID)
+	if back == nil {
+		t.Fatal("undelete returned a record stripped of its edges")
+	}
+	if back["role"] != "lead" {
+		t.Fatalf("undeleted edge props = %+v", back)
+	}
+}
+
 // `required:` on an edge property is enforced at the write, which is what the
 // core declaration has always said it means ("an edge written without it is
 // refused"). It can mean one thing here because an edge write REPLACES the
@@ -197,7 +247,7 @@ func TestEdgeNarrowingRefused(t *testing.T) {
 	epNodeRecord(t, ds, "src",
 		substrate.EdgeInput{
 			Rel: "peer", To: ref,
-			Properties: map[string]any{"role": "lead", "order": 1, "since": "2019-04-01"},
+			Properties: map[string]any{"role": "lead", "order": 1, "since": "2019-04-01", "note": "hello"},
 		},
 		substrate.EdgeInput{Rel: "peer", To: substrate.EdgeRef{ID: other.ID}},
 	)
@@ -245,6 +295,20 @@ func TestEdgeNarrowingRefused(t *testing.T) {
 			`edge "peer" changes property "order" from int to string`, "1 live edges")
 	})
 
+	// The two retypes the record loop counts BY VALUE are counted by value here
+	// too. An edge property held stricter than the identical record property
+	// would close the "values leading, declaration following" path for no
+	// reason: a backfill rewrites the stored values and the declaration then
+	// follows them.
+	t.Run("retype to int counts non-integers, not carriers", func(t *testing.T) {
+		edges := epBaseEdges()
+		// `since` holds the date string "2019-04-01", which is not a number.
+		edges["peer"].(map[string]any)["properties"].(map[string]any)["since"] = map[string]any{"type": "int"}
+		wantNarrowingGuard(t, epApply(t, ds, edges),
+			`edge "peer" changes property "since" from date to int`,
+			"values that are not integers", "1 live edges")
+	})
+
 	t.Run("edge property loses an enum value", func(t *testing.T) {
 		edges := epBaseEdges()
 		edges["peer"].(map[string]any)["properties"].(map[string]any)["role"] = map[string]any{
@@ -277,6 +341,31 @@ func TestEdgeNarrowingRefused(t *testing.T) {
 		edges["peer"].(map[string]any)["properties"].(map[string]any)["weight"] = map[string]any{"type": "int"}
 		if err := epApply(t, ds, edges); err != nil {
 			t.Fatalf("adding an optional edge property must admit: %v", err)
+		}
+	})
+
+	// LAST, because its admitting half leaves `note` an enum and the way back
+	// (enum → string) is an ordinary kind change the guard refuses, exactly as
+	// it does on a record property. Every subtest above wants the base
+	// declaration.
+	t.Run("retype string to enum counts values outside the set", func(t *testing.T) {
+		// `note` holds "hello" on the live edge, so a set without it strands
+		// that row and a set with it strands nothing. A presence count would
+		// refuse both.
+		edges := epBaseEdges()
+		edges["peer"].(map[string]any)["properties"].(map[string]any)["note"] = map[string]any{
+			"type": "enum", "values": []any{map[string]any{"value": "bye"}},
+		}
+		wantNarrowingGuard(t, epApply(t, ds, edges),
+			`edge "peer" changes property "note" from string to enum`,
+			`a value outside "bye"`, "1 live edges")
+
+		edges = epBaseEdges()
+		edges["peer"].(map[string]any)["properties"].(map[string]any)["note"] = map[string]any{
+			"type": "enum", "values": []any{map[string]any{"value": "hello"}, map[string]any{"value": "bye"}},
+		}
+		if err := epApply(t, ds, edges); err != nil {
+			t.Fatalf("string → enum admitting the stored value must admit: %v", err)
 		}
 	})
 }

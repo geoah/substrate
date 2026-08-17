@@ -222,7 +222,9 @@ func emitAllows(fn *vocabulary.Function, ident string) bool {
 }
 
 // decodeEffectEdges reads a put effect's edges: rel → a target or a list of
-// targets, each a bare id string or a {authority, type, id} reference.
+// targets, each a bare id string or a {kind, id} reference that may also carry
+// the edge row's own `properties`. The properties are validated against the
+// rel's declaration by the write, exactly as an API write's are.
 func decodeEffectEdges(raw any) ([]substrate.EdgeInput, error) {
 	m, ok := raw.(map[string]any)
 	if !ok {
@@ -235,14 +237,47 @@ func decodeEffectEdges(raw any) ([]substrate.EdgeInput, error) {
 			targets = []any{m[rel]}
 		}
 		for _, tv := range targets {
-			ref, err := decodeEdgeRef(tv)
+			ref, props, err := decodeEdgeTarget(tv)
 			if err != nil {
 				return nil, fmt.Errorf("edges.%s: %w", rel, err)
 			}
-			out = append(out, substrate.EdgeInput{Rel: rel, To: ref})
+			out = append(out, substrate.EdgeInput{Rel: rel, To: ref, Properties: props})
 		}
 	}
 	return out, nil
+}
+
+// edgeTargetKeys is the closed key set of one effect edge target. It is closed
+// for the reason decodeEffect's own sets are: an ignored key is a write the
+// author asked for and did not get. `properties` was exactly that, dropped in
+// silence while every other surface answers 422 for one it cannot honor.
+var edgeTargetKeys = map[string]bool{"kind": true, "id": true, "properties": true}
+
+// decodeEdgeTarget reads a target in either form and returns the reference and
+// the edge row's properties, which only the mapping form can carry.
+func decodeEdgeTarget(v any) (substrate.EdgeRef, map[string]any, error) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		ref, err := decodeEdgeRef(v)
+		return ref, nil, err
+	}
+	for k := range m {
+		if !edgeTargetKeys[k] {
+			return substrate.EdgeRef{}, nil, fmt.Errorf("an edge target: unknown key %q", k)
+		}
+	}
+	ref, err := decodeEdgeRef(m)
+	if err != nil {
+		return ref, nil, err
+	}
+	if raw, has := m["properties"]; has {
+		props, ok := raw.(map[string]any)
+		if !ok {
+			return ref, nil, fmt.Errorf("an edge target's properties is a map, got %T", raw)
+		}
+		return ref, props, nil
+	}
+	return ref, nil, nil
 }
 
 func decodeEdgeRef(v any) (substrate.EdgeRef, error) {
