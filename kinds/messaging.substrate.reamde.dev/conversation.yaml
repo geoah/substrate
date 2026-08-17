@@ -43,12 +43,17 @@ data:
     pinned:
       type: bool
       description: the platform's pinned flag, as synced
-  edges:
+    # The account this conversation synced through. `trait: accountconfig` pins
+    # any bundle's account kind rather than one, because a conversation is
+    # provider-agnostic; `ownerRef` collects it when that account disconnects
+    # (0034, 0032). Optional: a person may hand-author one.
     account:
-      to: any
-      required: true
+      type: reference
+      trait: accountconfig
       ownerRef: true
+      displayName: Account
       description: the accountconfig record this conversation synced through
+  edges:
     participants:
       to: person
       many: true

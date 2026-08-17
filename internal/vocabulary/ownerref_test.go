@@ -83,11 +83,11 @@ func TestOwnerRefRefusesTheShapesItCannotFollow(t *testing.T) {
 		},
 		"unpinned": {
 			account: "      type: reference\n      ownerRef: true\n",
-			want:    "needs `kind:` pinned",
+			want:    "needs `kind:` or `trait:` pinned",
 		},
 		"pinned at any": {
 			account: "      type: reference\n      kind: any\n      ownerRef: true\n",
-			want:    "needs `kind:` pinned",
+			want:    "needs `kind:` or `trait:` pinned",
 		},
 		"an object field": {
 			account: "      type: object\n      fields:\n        held: {type: reference, kind: account, ownerRef: true}\n",
@@ -103,6 +103,85 @@ func TestOwnerRefRefusesTheShapesItCannotFollow(t *testing.T) {
 				t.Fatalf("error = %v, want it to name %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// traitOwnerRefDocs is one authority holding a trait, an account kind that
+// implements it, and a mirror kind whose `account` property is filled per case.
+func traitOwnerRefDocs(account string) string {
+	return `kind: core.substrate.reamde.dev/authority
+metadata:
+  id: own.example.com
+data:
+  version: 1
+---
+kind: core.substrate.reamde.dev/trait
+metadata:
+  id: own.example.com/connected
+data:
+  authority: own.example.com
+  properties:
+    tokenRef: secret
+---
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: own.example.com/account
+data:
+  authority: own.example.com
+  names: {singular: account, plural: accounts}
+  traits: [connected]
+  properties:
+    tokenRef: {type: secret}
+---
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: own.example.com/mirror
+data:
+  authority: own.example.com
+  names: {singular: mirror, plural: mirrors}
+  properties:
+    account:
+` + account
+}
+
+// `ownerRef` is declarable on a TRAIT-pinned reference (0034): a
+// provider-agnostic kind owns any record whose kind implements the trait, and
+// the pin stays enumerable because the kinds implementing a trait are finite.
+func TestOwnerRefOnATraitReference(t *testing.T) {
+	r, err := vocabulary.LoadFS(fstest.MapFS{
+		"own.yaml": {Data: []byte(traitOwnerRefDocs("      type: reference\n      trait: connected\n      ownerRef: true\n"))},
+	})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	mirror, ok := r.ByIdentity("own.example.com/mirror")
+	if !ok {
+		t.Fatal("mirror kind missing")
+	}
+	p, ok := mirror.Prop("account")
+	if !ok {
+		t.Fatal("account property missing")
+	}
+	if !p.OwnerRef {
+		t.Fatal("ownerRef did not survive the parse")
+	}
+	if p.To != "" {
+		t.Fatalf("To = %q, want empty for a trait pin", p.To)
+	}
+	// The trait pin resolves to the full trait identity, the way a binding does.
+	if p.ToTrait != "own.example.com/connected" {
+		t.Fatalf("ToTrait = %q, want the resolved trait identity", p.ToTrait)
+	}
+}
+
+// A reference pins one kind of thing: naming both `kind:` and `trait:` is
+// refused rather than resolved to one of them.
+func TestReferenceRefusesBothPins(t *testing.T) {
+	_, err := vocabulary.LoadFS(fstest.MapFS{
+		"own.yaml": {Data: []byte(traitOwnerRefDocs("      type: reference\n      kind: account\n      trait: connected\n      ownerRef: true\n"))},
+	})
+	if err == nil || !strings.Contains(err.Error(), "pins `kind:` OR `trait:`") {
+		t.Fatalf("error = %v, want it to refuse both pins", err)
 	}
 }
 

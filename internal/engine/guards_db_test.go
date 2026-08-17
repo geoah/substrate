@@ -380,14 +380,13 @@ func TestRequiredEdgesEnforcedOnCreate(t *testing.T) {
 		t.Fatalf("error should name the missing rels: %v", err)
 	}
 
-	acc := mustPut(t, ds, slack, substrate.PutInput{
+	acc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: enginetest.AccountType, ID: "slack:T1",
 		Properties: map[string]any{"provider": "slack"},
 	})
 	conv := mustPut(t, ds, slack, substrate.PutInput{
 		Kind: "conversation", ID: "slack:T1:C1",
-		Properties: map[string]any{"kind": "channel", "name": "general"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acc.ID}}},
+		Properties: map[string]any{"kind": "channel", "name": "general", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	author := mustPut(t, ds, slack, substrate.PutInput{
 		Kind: "person", Properties: map[string]any{"name": "Alex"},

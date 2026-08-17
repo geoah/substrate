@@ -644,9 +644,11 @@ func googleAccountStamp(t *testing.T, effects []effect, id string) map[string]an
 }
 
 // googleSeedAccount creates the connection record the core rows point at:
-// emailthread.account and calendar.account are required ownerRef edges, so
-// the account must EXIST before a sync's first effect applies. The injected
-// config carries the properties the body reads; this row is the edge target.
+// emailthread.account and calendar.account are trait-pinned ownerRef references
+// (0034). A reference does not refuse a missing target at write, but the
+// account must exist for the cascade to collect the rows it owns and for a read
+// to resolve the pointer, so the sync seeds it. The injected config carries the
+// properties the body reads.
 func googleSeedAccount(t *testing.T, ds *dataset, id string) {
 	t.Helper()
 	if _, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{

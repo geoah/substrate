@@ -56,7 +56,10 @@ data:
   # version 6: `account` on every mirror kind is a pinned owner
   # reference instead of a string, so disconnecting an account collects
   # the rows it synced (docs/decisions/0032).
-  version: 6
+  # version 7: gmailsync and calendarsync write the shared kinds' `account`
+  # as the reference property, not the edge that kind no longer declares
+  # (docs/decisions/0034).
+  version: 7
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -2272,7 +2275,13 @@ data:
                 props["preview"] = agg["preview"]
                 props["lastMessageAt"] = agg["lastMessageAt"]
             host.effects.put(THREAD_TYPE, tref, properties=props)
-            core = {"subject": subject} if subject else {}
+            # `account` is a trait-pinned ownerRef REFERENCE on the shared kind
+            # (0034), so it is a property carrying the full account path, not an
+            # edge. A trait pin completes no bare id, so the value is written in
+            # full. `participants` stays an edge.
+            core = {"account": ACCOUNT_TYPE + "/" + aid}
+            if subject:
+                core["subject"] = subject
             # Same edge cap as the message recipients, and for the same
             # reason: the mirror's `participants` property keeps the whole
             # union, the core edge is bounded.
@@ -2285,8 +2294,7 @@ data:
                 everyone = everyone[:MAX_RECIPIENTS]
             host.effects.put(
                 CORE_THREAD, tref, properties=core,
-                edges={"account": {"kind": AUTHORITY + "/account", "id": aid},
-                       "participants": [_person_ref(host, aid, a)
+                edges={"participants": [_person_ref(host, aid, a)
                                         for a in everyone]})
 
 
@@ -3589,12 +3597,13 @@ data:
             # A put MERGES and never prunes, so this calendar's stored
             # syncToken and syncGeneration survive the refresh.
             host.effects.put(CALENDAR_TYPE, cref, properties=props)
-            core = {"name": summary}
+            # `account` is a trait-pinned ownerRef REFERENCE on the shared kind
+            # (0034): a property carrying the full account path, not an edge. A
+            # trait pin completes no bare id, so the value is written in full.
+            core = {"name": summary, "account": ACCOUNT_TYPE + "/" + aid}
             if tzname:
                 core["timezone"] = tzname
-            host.effects.put(
-                CORE_CALENDAR, cref, properties=core,
-                edges={"account": {"kind": AUTHORITY + "/account", "id": aid}})
+            host.effects.put(CORE_CALENDAR, cref, properties=core)
             cals.append(cid)
         cur["cals"] = cals
         cur["dead"] = dead

@@ -117,8 +117,7 @@ func TestSk3MergeOfOneType(t *testing.T) {
 	})
 	conv := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       "messaging.substrate.reamde.dev/conversation",
-		Properties: map[string]any{"title": "c"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acc.ID}}},
+		Properties: map[string]any{"title": "c", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	author := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "alex"}})
 	mk := func(ext, text string) *substrate.Record {

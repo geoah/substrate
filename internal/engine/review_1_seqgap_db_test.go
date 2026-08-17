@@ -83,7 +83,7 @@ func TestZZSK1SeqGap(t *testing.T) {
 		go func(w int) {
 			defer wg.Done()
 			for i := range perWriter {
-				_, err := ds.Put(ctx, gmail, substrate.PutInput{
+				_, err := ds.Put(ctx, owner, substrate.PutInput{
 					Kind:       enginetest.AccountType,
 					ID:         extID("gmail.account", fmt.Sprintf("w%d-%d@acme.com", w, i)),
 					Properties: map[string]any{"provider": "gmail", "label": "L", "status": "ok"},

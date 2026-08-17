@@ -262,8 +262,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	acct := mustPutInternal(t, ds, substrate.PutInput{Kind: enginetest.AccountType, ID: "acct-test", Properties: map[string]any{"provider": "test", "label": "test inbox"}})
 	conv := mustPutInternal(t, ds, substrate.PutInput{
 		Kind: "messaging.substrate.reamde.dev/conversation", ID: "conv-1",
-		Properties: map[string]any{"kind": "direct", "name": "reading chat"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acct.ID}}},
+		Properties: map[string]any{"kind": "direct", "name": "reading chat", "account": enginetest.AccountType + "/" + acct.ID},
 	})
 	feedMessage(t, ds, "msg-1", person.ID, conv.ID,
 		fmt.Sprintf("read %s and %s later", blogURL, trackerURL))

@@ -41,11 +41,11 @@ func fullSync(t *testing.T, ds substrate.Dataset) {
 		t.Fatalf("install account type: %v", err)
 	}
 
-	beeperAcc := mustPut(t, ds, beeper, substrate.PutInput{
+	beeperAcc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: enginetest.AccountType, ID: "beeper-account:acct-1",
 		Properties: map[string]any{"provider": "beeper", "label": "Personal", "status": "ok"},
 	})
-	gcalAcc := mustPut(t, ds, gcal, substrate.PutInput{
+	gcalAcc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: enginetest.AccountType, ID: "gcal-account:acct-2",
 		Properties: map[string]any{"provider": "gcal", "label": "Work", "status": "ok"},
 	})
@@ -66,9 +66,8 @@ func fullSync(t *testing.T, ds substrate.Dataset) {
 	for i, chat := range []string{"c1", "c2"} {
 		conv := mustPut(t, ds, beeper, substrate.PutInput{
 			Kind: "conversation", ID: extID("slack.channel", chat),
-			Properties: map[string]any{"kind": "direct"},
+			Properties: map[string]any{"kind": "direct", "account": enginetest.AccountType + "/" + beeperAcc.ID},
 			Edges: []substrate.EdgeInput{
-				{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: beeperAcc.ID}},
 				{Rel: "participants", To: substrate.EdgeRef{ID: humans["alex@acme.com"]}},
 			},
 		})
@@ -89,8 +88,7 @@ func fullSync(t *testing.T, ds substrate.Dataset) {
 
 	cal := mustPut(t, ds, gcal, substrate.PutInput{
 		Kind: "calendar", ID: "gcal-cal:primary",
-		Properties: map[string]any{"name": "Primary", "timezone": "Europe/Athens"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: gcalAcc.ID}}},
+		Properties: map[string]any{"name": "Primary", "timezone": "Europe/Athens", "account": enginetest.AccountType + "/" + gcalAcc.ID},
 	})
 	series := mustPut(t, ds, gcal, substrate.PutInput{
 		Kind: "calendareventseries", ID: "gcal-series:standup",
@@ -225,14 +223,13 @@ func TestFinalizersAndOwnerRefGC(t *testing.T) {
 		t.Fatalf("install account type: %v", err)
 	}
 
-	acc := mustPut(t, ds, beeper, substrate.PutInput{
+	acc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: enginetest.AccountType, ID: "beeper-account:a",
 		Properties: map[string]any{"provider": "beeper", "label": "Personal"},
 	})
 	conv := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "conversation", ID: "slack-channel:c1",
-		Properties: map[string]any{"kind": "direct"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acc.ID}}},
+		Properties: map[string]any{"kind": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	msg := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "conversationmessage", ID: "slack-msg:m1",

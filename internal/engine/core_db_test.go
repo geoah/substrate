@@ -28,7 +28,7 @@ func TestPutCreatesAndSuppressesNoops(t *testing.T) {
 		t.Fatalf("install account type: %v", err)
 	}
 
-	acc := mustPut(t, ds, gmail, substrate.PutInput{
+	acc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       enginetest.AccountType,
 		ID:         "gmail:george@acme.com",
 		Properties: map[string]any{"provider": "gmail", "label": "Work", "status": "ok"},
@@ -42,7 +42,7 @@ func TestPutCreatesAndSuppressesNoops(t *testing.T) {
 
 	before := maxSeq(t, ds)
 	// Byte-identical re-put with the props in a different order.
-	again := mustPut(t, ds, gmail, substrate.PutInput{
+	again := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       enginetest.AccountType,
 		ID:         "gmail:george@acme.com",
 		Properties: map[string]any{"status": "ok", "label": "Work", "provider": "gmail"},
@@ -61,7 +61,7 @@ func TestPutCreatesAndSuppressesNoops(t *testing.T) {
 	}
 
 	// A real change bumps version and writes exactly one row.
-	changed := mustPut(t, ds, gmail, substrate.PutInput{
+	changed := mustPut(t, ds, owner, substrate.PutInput{
 		Kind:       enginetest.AccountType,
 		ID:         "gmail:george@acme.com",
 		Properties: map[string]any{"status": "erroring"},
@@ -86,14 +86,13 @@ func TestNoopSuppressionAcrossRecords(t *testing.T) {
 		t.Fatalf("install account type: %v", err)
 	}
 
-	acc := mustPut(t, ds, gmail, substrate.PutInput{
+	acc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: enginetest.AccountType, ID: "gmail:a",
 		Properties: map[string]any{"provider": "gmail"},
 	})
 	conv := mustPut(t, ds, gmail, substrate.PutInput{
 		Kind: "conversation", ID: "slack:t1",
-		Properties: map[string]any{"kind": "direct", "name": "Alex"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acc.ID}}},
+		Properties: map[string]any{"kind": "direct", "name": "Alex", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 
 	// Labels, edges and annotations are all no-op suppressed.
@@ -110,8 +109,7 @@ func TestNoopSuppressionAcrossRecords(t *testing.T) {
 	})
 	mustPut(t, ds, gmail, substrate.PutInput{
 		Kind: "conversation", ID: "slack:t1",
-		Properties: map[string]any{"kind": "direct", "name": "Alex"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acc.ID}}},
+		Properties: map[string]any{"kind": "direct", "name": "Alex", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	if got := mustGet(t, ds, conv.Kind, conv.ID).Version; got != v {
 		t.Fatalf("identical metadata writes bumped version %d → %d", v, got)
@@ -703,14 +701,13 @@ func TestPutResurrectsATombstone(t *testing.T) {
 		t.Fatalf("install account type: %v", err)
 	}
 
-	acc := mustPut(t, ds, gcal, substrate.PutInput{
+	acc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: enginetest.AccountType, ID: "gcal:acct",
 		Properties: map[string]any{"provider": "gcal", "label": "Work"},
 	})
 	cal := mustPut(t, ds, gcal, substrate.PutInput{
 		Kind: "calendar", ID: "gcal:primary",
-		Properties: map[string]any{"name": "Primary", "timezone": "Europe/Athens"},
-		Edges:      []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acc.ID}}},
+		Properties: map[string]any{"name": "Primary", "timezone": "Europe/Athens", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	event := mustPut(t, ds, gcal, substrate.PutInput{
 		Kind: "calendarevent", ID: "gcal:evt-1",
@@ -778,13 +775,12 @@ func TestResurrectDoesNotCascade(t *testing.T) {
 		t.Fatalf("install account type: %v", err)
 	}
 
-	acc := mustPut(t, ds, beeper, substrate.PutInput{
+	acc := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: enginetest.AccountType, ID: "beeper:acct",
 		Properties: map[string]any{"provider": "beeper", "label": "Personal"},
 	})
 	conv := mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "conversation", ID: "beeper:c1", Properties: map[string]any{"kind": "direct"},
-		Edges: []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acc.ID}}},
+		Kind: "conversation", ID: "beeper:c1", Properties: map[string]any{"kind": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	author := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "person", Properties: map[string]any{"name": "Alex"},
@@ -803,8 +799,7 @@ func TestResurrectDoesNotCascade(t *testing.T) {
 		}
 	}
 	mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "conversation", ID: conv.ID, Properties: map[string]any{"kind": "direct"},
-		Edges: []substrate.EdgeInput{{Rel: "account", To: substrate.EdgeRef{Kind: enginetest.AccountType, ID: acc.ID}}},
+		Kind: "conversation", ID: conv.ID, Properties: map[string]any{"kind": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	if got := mustGet(t, ds, conv.Kind, conv.ID); got.DeletedAt != nil {
 		t.Fatal("the conversation should be live again")

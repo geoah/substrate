@@ -356,7 +356,11 @@ const (
 )
 
 // AccountManifest is the installable account type (provider/label/status, the
-// three properties connectoraccount carried).
+// three properties connectoraccount carried). It binds `accountconfig`, the
+// trait the shipped provider account kinds bind, so a shared kind's
+// trait-pinned `account` reference (calendar, conversation, emailthread) may
+// name it. The trait's own properties are redeclared, as the real account
+// kinds redeclare them.
 func AccountManifest() Manifest {
 	return Manifest{
 		Name:      "testacct",
@@ -374,10 +378,14 @@ func AccountManifest() Manifest {
 					"authority":       AccountAuthority,
 					"names":           map[string]any{"singular": "account", "plural": "accounts"},
 					"displayTemplate": "{label}",
+					"traits":          []any{"accountconfig"},
 					"properties": map[string]any{
-						"provider": map[string]any{"type": "string"},
-						"label":    map[string]any{"type": "string"},
-						"status":   map[string]any{"type": "string"},
+						"provider":      map[string]any{"type": "string"},
+						"label":         map[string]any{"type": "string"},
+						"status":        map[string]any{"type": "string"},
+						"tokenRef":      map[string]any{"type": "secret"},
+						"tokenStatus":   map[string]any{"type": "string"},
+						"grantedScopes": map[string]any{"type": "string"},
 					},
 				},
 			},
