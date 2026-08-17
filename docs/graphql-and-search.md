@@ -1,5 +1,14 @@
 # GraphQL and search
 
+**The schema is a per-repository projection, and it is not frozen.** It is
+generated from the kinds that repository has loaded, so two repositories on one
+deployment serve different types, and installing a bundle changes yours.
+Introspect it; do not hold a copy. The generation rules below (the naming arms,
+the scalars, the interfaces) are also pre-v1: they may change with the
+vocabulary, which is why the `search` feature reports `beta` in
+[discovery](api.md#what-a-features-stability-means). The frozen-for-v1 promise
+belongs to [REST](api.md), when it is made at all.
+
 The whole read/write surface also serves at one endpoint,
 `POST /api/v1/graphql`. Filters take the same JSON grammar as
 [REST](api.md#the-filter-grammar):
