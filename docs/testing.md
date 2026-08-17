@@ -76,6 +76,29 @@ touched the engine's goroutines specifically, run the expensive one by hand:
 go test -race ./internal/engine/...
 ```
 
+## The confinement cases
+
+`internal/sandbox` and `internal/runner` assert what a function body cannot do:
+read the substrate's environment out of `/proc`, write outside its work dir,
+reach another installation's scratch, open a socket its manifest did not
+declare. All of it rests on Landlock and seccomp, so where the kernel offers
+neither, those cases skip.
+
+That skip is also how the promise disappears quietly: an image change, a
+distribution `lsm=` change or a runner upgrade removes the confinement, every
+case goes from passing to skipping, and the build stays green.
+`SUBSTRATE_TEST_REQUIRE_SANDBOX=1` closes that. The guards fail instead of
+skipping, and `internal/sandboxtest` counts the cases that reached their
+assertions confined, so a run where every guard skipped cannot exit 0 either.
+
+```bash
+SUBSTRATE_TEST_REQUIRE_SANDBOX=1 go test -count=1 ./internal/sandbox/... ./internal/runner/...
+```
+
+`ci:go` and `ci:race` set it; `mise run test` does not, so a laptop with
+Landlock left out of its `lsm=` list still runs the rest of the suite. On macOS
+there is no Landlock and no seccomp at all, so do not set it there.
+
 ## Coverage
 
 ```bash

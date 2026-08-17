@@ -35,9 +35,9 @@ func Required() bool {
 	return v != "" && v != "0"
 }
 
-// Unavailable ends the case: a skip normally, a failure when the confinement
+// Unavailablef ends the case: a skip normally, a failure when the confinement
 // is required.
-func Unavailable(t *testing.T, format string, args ...any) {
+func Unavailablef(t *testing.T, format string, args ...any) {
 	t.Helper()
 	if Required() {
 		t.Fatalf(format, args...)
@@ -59,8 +59,8 @@ func Run(m *testing.M, want int) int {
 		return code
 	}
 	if got := ran.Load(); got < int64(want) {
-		fmt.Fprintf(os.Stderr, "%s is set, but only %d confinement cases ran (want %d): "+
-			"the kernel offers no Landlock or no seccomp, so nothing here proved anything\n",
+		fmt.Fprintf(os.Stderr, "%s is set, but %d of %d confinement cases ran: either this "+
+			"kernel offers no Landlock or no seccomp, or a guarded case was removed\n",
 			EnvRequire, got, want)
 		return 1
 	}

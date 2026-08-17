@@ -31,7 +31,7 @@ func nowPlus(d time.Duration) time.Time { return time.Now().Add(d) }
 func requireSandbox(t *testing.T, r *Runner) {
 	t.Helper()
 	if rep := r.sandbox.Report(); !rep.FS() || !rep.Seccomp {
-		sandboxtest.Unavailable(t, "kernel does not offer the sandbox: %s", rep)
+		sandboxtest.Unavailablef(t, "kernel does not offer the sandbox: %s", rep)
 	}
 	sandboxtest.Ran()
 }
@@ -42,7 +42,7 @@ func requireSandbox(t *testing.T, r *Runner) {
 func requireSeccomp(t *testing.T, r *Runner) {
 	t.Helper()
 	if rep := r.sandbox.Report(); !rep.Seccomp {
-		sandboxtest.Unavailable(t, "kernel has no syscall filter: %s", rep)
+		sandboxtest.Unavailablef(t, "kernel has no syscall filter: %s", rep)
 	}
 	sandboxtest.Ran()
 }

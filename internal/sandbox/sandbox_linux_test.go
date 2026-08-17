@@ -29,10 +29,10 @@ func newTestConfiner(t *testing.T) *Confiner {
 	t.Helper()
 	c := New(ModeBestEffort)
 	if !c.Report().FS() {
-		sandboxtest.Unavailable(t, "landlock unavailable: %s", c.Report())
+		sandboxtest.Unavailablef(t, "landlock unavailable: %s", c.Report())
 	}
 	if !c.Report().Seccomp {
-		sandboxtest.Unavailable(t, "seccomp unavailable: %s", c.Report())
+		sandboxtest.Unavailablef(t, "seccomp unavailable: %s", c.Report())
 	}
 	sandboxtest.Ran()
 	return c
