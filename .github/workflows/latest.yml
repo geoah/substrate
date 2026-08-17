@@ -1,7 +1,7 @@
 # The tip of main as one image: ghcr.io/geoah/substrate:latest.
 #
-# This `latest` is NOT a stable release tag in the usual sense — it moves
-# with every commit to main and has no release notes behind it. It says so
+# This `latest` is NOT a stable release tag in the usual sense — it moves with
+# every green commit on main and has no release notes behind it. It says so
 # when asked: the version it reports is `git describe`, so a build that is not
 # a release reads as `v0.2.0-4-g1a2b3c4` rather than as v0.2.0. Deploy it only
 # if you meant to track main. Released versions come from a tag, through
@@ -10,16 +10,25 @@
 #
 # No per-commit tags: one moving tag, so the registry does not fill up with
 # images nobody will ever ask for by name.
+#
+# It hangs off ci, like version.yml, rather than off the push: on the push it
+# built and published a commit whose suite was still running, so `latest` could
+# be red. There is no dispatch, because a dispatch is that same untested
+# publish with a person's name on it. Re-running the ci run for a commit brings
+# its image back.
 name: latest
 
 on:
-  push:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
     branches: [main]
-  workflow_dispatch:
 
 concurrency:
   # Newer commits win — an in-flight latest build for an older commit is
-  # wasted.
+  # wasted. Completions arrive in commit order because ci cancels its own
+  # older run on main (that workflow's concurrency), so the run that reaches
+  # here is the newest one that went green.
   group: latest
   cancel-in-progress: true
 
@@ -29,6 +38,14 @@ permissions:
 jobs:
   latest:
     name: push latest image
+    # Both halves are load-bearing. `conclusion == 'success'` is the gate this
+    # trigger exists for; `event == 'push'` is because ci runs on pull
+    # requests too and those runs arrive here as well. The trigger's branch
+    # filter reads the HEAD branch, and a fork's pull request from its own
+    # `main` matches it.
+    if: >-
+      github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion
+      == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -41,6 +58,8 @@ jobs:
           # version. A shallow checkout has none, and every latest image would
           # call itself by a bare sha.
           fetch-depth: 0
+          # The commit ci went green on, not whatever main points at now.
+          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
