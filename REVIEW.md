@@ -312,6 +312,41 @@ the evidence.
     host function, `data-model.md`'s `title` guidance, `gated` in the closed
     error set, and the reference drift.
 
+### Where each P0 item lives
+
+Filed on 2026-08-16, all on the `v1.0.0` milestone with `priority/p0`. The
+milestone holds 22 P0 and 14 P1 issues and nothing else; everything deferred
+past stable was taken off it.
+
+| Item | Issue |
+| --- | --- |
+| Compose mints a key, sandbox enforced, insecure flag deleted | [#175](https://github.com/geoah/substrate/issues/175) |
+| Credential key floor, generator, rotation (#133 folded in) | [#99](https://github.com/geoah/substrate/issues/99) |
+| `substratectl` in both runtime images | [#211](https://github.com/geoah/substrate/issues/211) |
+| Blob bytes out of Postgres (filesystem, then s3) | [#97](https://github.com/geoah/substrate/issues/97) |
+| SECURITY.md | [#213](https://github.com/geoah/substrate/issues/213) |
+| Path grammar: verb segment, no plurals, no silent create | [#202](https://github.com/geoah/substrate/issues/202) |
+| Actor identity on the full authority | [#203](https://github.com/geoah/substrate/issues/203) |
+| `required` enforced, `default` at write | [#204](https://github.com/geoah/substrate/issues/204), [#170](https://github.com/geoah/substrate/issues/170) |
+| Edge properties refused, dialect keys reserved | [#111](https://github.com/geoah/substrate/issues/111), [#110](https://github.com/geoah/substrate/issues/110) |
+| `account` names two things (**needs human review**) | [#124](https://github.com/geoah/substrate/issues/124) |
+| Embeddings model fingerprint and reindex verb | [#98](https://github.com/geoah/substrate/issues/98) |
+| A `beta` stability value, computed feature list | [#205](https://github.com/geoah/substrate/issues/205) |
+| Extension-tier interfaces and assertions | [#206](https://github.com/geoah/substrate/issues/206) |
+| Goroutine lifecycle and `defer Rollback` | [#207](https://github.com/geoah/substrate/issues/207) |
+| Releases publish only green commits | [#208](https://github.com/geoah/substrate/issues/208) |
+| Sandbox tests fail instead of skip | [#209](https://github.com/geoah/substrate/issues/209) |
+| Real-engine HTTP conformance suite | [#210](https://github.com/geoah/substrate/issues/210) |
+| Truth-in-docs pass | [#212](https://github.com/geoah/substrate/issues/212) |
+| Delete the pre-release scaffolding | [#217](https://github.com/geoah/substrate/issues/217) |
+| Policy `selector.kinds` grammar (**needs a yes or no**) | [#116](https://github.com/geoah/substrate/issues/116) |
+
+The three demoted items are [#214](https://github.com/geoah/substrate/issues/214)
+(TLS and security headers), [#215](https://github.com/geoah/substrate/issues/215)
+(LICENSE) and [#216](https://github.com/geoah/substrate/issues/216) (backup and
+restore, blocked on #97), all `priority/p1` on the same milestone. Closed
+during the pass: #103, #158, #47 and #129 (folded into #205).
+
 ## Deletions (do these, they are negative work)
 
 - The `kinds:gen` pipeline (~15k lines nothing imports), and with it
