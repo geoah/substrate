@@ -33,14 +33,16 @@ services:
       - substrate-keys:/keys
     # A baked-in default key would be publicly known, so it would seal
     # nothing, and no key at all refuses to boot. The first start mints 32
-    # random bytes into the volume instead; every start after reads them back.
+    # random bytes (base64, what `openssl rand -base64 32` prints) into the
+    # volume instead; every start after reads them back.
     entrypoint:
       - /bin/sh
       - -c
       - |
         if [ -z "$${SUBSTRATE_CREDENTIAL_KEY:-}" ]; then
           if [ ! -s /keys/credential.key ]; then
-            head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > /keys/credential.key
+            python3 -c 'import base64,os;print(base64.b64encode(os.urandom(32)).decode())' \
+              > /keys/credential.key
           fi
           SUBSTRATE_CREDENTIAL_KEY="$$(cat /keys/credential.key)"
           export SUBSTRATE_CREDENTIAL_KEY

@@ -192,6 +192,14 @@ wrapped to the user's age recipient (the user's half). Either the host key
 or the user's recovery identity opens a backup; losing both makes the
 sealed rows inert.
 
+**The host's half is a real wrap on anything this release wrote.** Changelog
+signing is mandatory, so a host without `SUBSTRATE_CREDENTIAL_KEY` refuses to
+boot and cannot create or open a repository at all. A store an earlier,
+keyless build wrote is the exception and the dangerous one: its
+`repositories.dek` holds the key in the clear beside the rows it opens, so
+the dump alone is every secret in that repository, and nothing re-wraps that
+column today ([#230](https://github.com/geoah/substrate/issues/230)).
+
 What you do **not** have to back up separately is the fold. The records table
 and its indexes are derived; the changelog is the truth.
 

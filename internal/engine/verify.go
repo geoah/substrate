@@ -150,13 +150,13 @@ func (s *service) VerifyRepositoryPinned(ctx context.Context, username string, p
 
 	// Signing is mandatory; a repository with no activation mark has never
 	// signed anything, and no write path can produce that state any more.
-	if signing.signedFrom == 0 && res.entries > 0 {
+	// Below the mark, an all-zero signature is history migration 0005
+	// stamped: nothing vouches for it, and nothing sanctioned can sign it
+	// now. Both are findings, not tolerated states.
+	switch {
+	case signing.signedFrom == 0 && res.entries > 0:
 		found("changelog signing has never activated on this repository — signing is mandatory, and no entry carries a signature")
-	}
-	// An entry below the activation seq that carries the all-zero signature
-	// is history migration 0005 stamped: nothing vouches for it, and nothing
-	// sanctioned can sign it now. It is a finding, not a tolerated state.
-	if res.unsignedEntries > 0 {
+	case res.unsignedEntries > 0:
 		found(fmt.Sprintf("%d entries below seq %d carry no signature (all-zero) — history written before signing, which nothing vouches for", res.unsignedEntries, signing.signedFrom))
 	}
 	if signing.signedFrom > 0 && len(signing.public) == 0 {

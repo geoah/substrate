@@ -248,16 +248,24 @@ func TestChainBackfillStampsLegacyHistory(t *testing.T) {
 	ctx := context.Background()
 	mustPut(t, ds, owner, substrate.PutInput{Kind: "tasks.substrate.reamde.dev/task", Properties: map[string]any{"name": "old world"}})
 	db := rawDB(t, dsn)
-	// Wind the chain back: a store written before the chain (and before
-	// signing) existed — all-zero signatures, no signing state at all.
-	if _, err := db.Exec(`UPDATE changelog SET hash = NULL, sig = decode(repeat('00', 64), 'hex')`); err != nil {
-		t.Fatalf("wind back: %v", err)
+	// Wind signing back: all-zero signatures, no signing state at all, which
+	// is what a release before signing left behind. Verify names it.
+	if _, err := db.Exec(`UPDATE changelog SET sig = decode(repeat('00', 64), 'hex')`); err != nil {
+		t.Fatalf("wind back signatures: %v", err)
 	}
 	if _, err := db.Exec(`DELETE FROM chain_epochs`); err != nil {
 		t.Fatalf("wind back epochs: %v", err)
 	}
 	if _, err := db.Exec(`UPDATE repositories SET signing_key = NULL, signing_public = NULL, signed_from_seq = NULL`); err != nil {
 		t.Fatalf("wind back signing: %v", err)
+	}
+	never := mustVerify(t, svc, "geoah")
+	if never.OK || !findingContaining(never, "never activated") {
+		t.Fatalf("a never-activated repository verified clean: %+v", never.Findings)
+	}
+	// And the chain back too: a store written before the chain existed.
+	if _, err := db.Exec(`UPDATE changelog SET hash = NULL`); err != nil {
+		t.Fatalf("wind back hashes: %v", err)
 	}
 	// Plant one raw legacy entry with numbers a float64 cannot carry: the
 	// backfill and the verifier must agree on its canonical form.
@@ -267,13 +275,6 @@ func TestChainBackfillStampsLegacyHistory(t *testing.T) {
 		VALUES ($1, (SELECT max(seq) + 1 FROM changelog WHERE repository = $1), now(), 'api', 'invalid', 'put', 'x', 'task',
 			'{"n": 9007199254740993, "f": 1.50, "e": 1e3, "neg": -0.0}'::jsonb, decode(repeat('00', 64), 'hex'))`, repoID); err != nil {
 		t.Fatalf("plant a legacy entry: %v", err)
-	}
-
-	// Wound back, the store is what a pre-signing release left behind, and
-	// verify says so by name before anything touches it.
-	never := mustVerify(t, svc, "geoah")
-	if never.OK || !findingContaining(never, "never activated") {
-		t.Fatalf("a never-activated repository verified clean: %+v", never.Findings)
 	}
 
 	// A fresh service on the same store: first open backfills, activates
