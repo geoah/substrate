@@ -47,7 +47,11 @@ func oldPolicyTree(t *testing.T) string {
 		if !strings.Contains(doc, opsEnumBlock) {
 			t.Fatal("recordpatchpolicy no longer declares selector.ops as the enum this reverts")
 		}
-		return strings.Replace(doc, opsEnumBlock, opsStringBlock, 1)
+		// The kind pins a version of its own now; back then it took the
+		// authority's, so the fixture puts it back on 9 with everything else
+		// under that authority. Left at its shipped pin, the old tree and the
+		// new one would declare the same version and no upgrade would run.
+		return pinVersion(t, strings.Replace(doc, opsEnumBlock, opsStringBlock, 1), "9")
 	})
 	bumpGroupVersion(t, tree, coreAuthority, "9")
 	return tree
