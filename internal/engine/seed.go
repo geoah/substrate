@@ -215,29 +215,29 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	//
 	// This is the same answer /vocabulary/apply gives — the narrowing does not
 	// land — differing only in what it costs a caller who did not ask for it.
+	// A bad default is decided already, so the counting transaction never opens.
 	refused := badDefaults
-	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-		if len(refused) > 0 {
-			return nil
-		}
-		if err := t.lockKey(registryDepKey(ds)); err != nil {
+	if len(refused) == 0 {
+		err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+			if err := t.lockKey(registryDepKey(ds)); err != nil {
+				return err
+			}
+			guards, err := narrowingGuards(t, narrowings)
+			if err != nil {
+				return err
+			}
+			if len(guards) > 0 {
+				refused = guards
+				return nil
+			}
+			_, err = t.projectAuthorities(reg, upgrade, projectOpts{
+				skip: func(key string) bool { return keep[key] },
+			})
 			return err
-		}
-		guards, err := narrowingGuards(t, narrowings)
-		if err != nil {
-			return err
-		}
-		if len(guards) > 0 {
-			refused = guards
-			return nil
-		}
-		_, err = t.projectAuthorities(reg, upgrade, projectOpts{
-			skip: func(key string) bool { return keep[key] },
 		})
-		return err
-	})
-	if err != nil {
-		return fmt.Errorf("substrate/engine: upgrade shipped vocabulary of %s: %w", ds.info.Name, err)
+		if err != nil {
+			return fmt.Errorf("substrate/engine: upgrade shipped vocabulary of %s: %w", ds.info.Name, err)
+		}
 	}
 	if len(refused) > 0 {
 		// The message is the entire interface for the migration it is asking
