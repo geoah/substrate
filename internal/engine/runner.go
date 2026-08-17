@@ -556,14 +556,14 @@ func (ds *dataset) warmFunctions() {
 	if len(fns) == 0 {
 		return
 	}
-	go func() {
+	ds.spawn("warm functions", func(ctx context.Context) {
 		for _, fn := range fns {
-			if err := runner.Shared.Warm(context.Background(), ds.runnerSpec(fn)); err != nil {
+			if err := runner.Shared.Warm(ctx, ds.runnerSpec(fn)); err != nil {
 				ds.svc.log.Error("substrate: function body failed to prepare at repository open — its deliveries will park until the body or toolchain is fixed",
 					"repository", ds.Repository().Name, "function", fn.Identity(), "error", err)
 			}
 		}
-	}()
+	})
 }
 
 // reconcileRunner retires runner state no live registration references — the

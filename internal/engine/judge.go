@@ -71,7 +71,9 @@ func (ds *dataset) maybeJudge(requestID string, rule *policyRule) {
 		return
 	}
 	snapshot := *rule
-	go ds.judgeRequest(context.Background(), requestID, &snapshot)
+	ds.spawn("judge", func(ctx context.Context) {
+		ds.judgeRequest(ctx, requestID, &snapshot)
+	})
 }
 
 // judgeRequest runs one evaluation: read the request at a version, run the

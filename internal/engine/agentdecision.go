@@ -236,13 +236,12 @@ func (t *txn) nextThreadTurn(threadID string) (int64, error) {
 // thread that is mid-turn refuses cleanly; the loop's settle-time re-check
 // is what then picks the resolution up.
 func (ds *dataset) resumeNotifiedThread(threadID string, decider substrate.Actor) {
-	go func() {
-		ctx := context.Background()
+	ds.spawn("resume notified thread", func(ctx context.Context) {
 		if !ds.admitResume(ctx, threadID, decider) {
 			return
 		}
 		ds.continueThread(ctx, threadID)
-	}()
+	})
 }
 
 // admitResume applies the resume bounds: the agent's own `resume: never`,
