@@ -1,6 +1,9 @@
 package substrate
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // ChangeTrigger is one enabled trigger's stance on one change row, as the
 // /changes feed reports it. Only triggers the row can fire appear: a source
@@ -55,4 +58,27 @@ type TriggerFailure struct {
 	Attempts  int       `json:"attempts"`
 	LastError string    `json:"lastError"`
 	ParkedAt  time.Time `json:"parkedAt"`
+}
+
+// AutomationOps is the trigger-delivery seam, an optional Dataset extension
+// (see Dataset): status is computed, a replay is a cursor reset, a run is one
+// synthesized delivery, a wake is an immediate scan, and CallFunction is the
+// callable invocation API (`mode: call`). A dataset without it has no trigger
+// verbs.
+type AutomationOps interface {
+	TriggerStatuses(ctx context.Context) ([]TriggerStatus, error)
+	ReplayTrigger(ctx context.Context, id string, from int64) error
+	RunTrigger(ctx context.Context, id, recordKind, recordID string) (int, error)
+	WakeTrigger(ctx context.Context, id string) (int, error)
+	TriggerFailures(ctx context.Context, id string) ([]TriggerFailure, error)
+	RetryTriggerFailure(ctx context.Context, id string, failureID int64) (int, error)
+	CallFunction(ctx context.Context, name string, args any) (any, int, error)
+}
+
+// TriggerDispatcher is the dispatcher pass the service loop drives, an
+// optional Dataset extension (see Dataset): each enabled trigger drains its
+// changelog backlog to head or fires its due occurrence. It is separate from
+// AutomationOps because nothing reachable from the network calls it.
+type TriggerDispatcher interface {
+	ProcessTriggers(ctx context.Context) (int, error)
 }
