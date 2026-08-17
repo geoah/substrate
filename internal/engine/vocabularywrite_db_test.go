@@ -1012,7 +1012,9 @@ func TestOpenNeverPrunesShippedRows(t *testing.T) {
 	_ = svc.Close()
 
 	// The fixture: rows a PREVIOUS binary's shipped tree seeded, for an authority
-	// today's tree no longer declares.
+	// today's tree no longer declares. Typed, like any row this dialect stores —
+	// a `definition` blob would be refused at the open by the dialect gate, which
+	// is a different question from pruning.
 	raw, err := engine.OpenScopedDB(dsn, testdb.RepositoryID(t, dsn, "geoah"), engine.RoleApp)
 	if err != nil {
 		t.Fatal(err)
@@ -1025,7 +1027,7 @@ func TestOpenNeverPrunesShippedRows(t *testing.T) {
 		},
 		{
 			"ghost.substrate.reamde.dev/color", "core.substrate.reamde.dev/propertytype",
-			`{"name": "color", "authority": "ghost.substrate.reamde.dev", "base": "string", "version": 1, "definition": {"authority": "ghost.substrate.reamde.dev", "base": "string"}}`,
+			`{"name": "color", "authority": "ghost.substrate.reamde.dev", "base": "string", "version": 1}`,
 		},
 	} {
 		if _, err := raw.ExecContext(ctx, `
