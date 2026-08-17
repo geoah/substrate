@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/geoah/substrate/internal/engine"
 )
 
 // A user is a username, a password and a TOTP secret. Two of these commands
@@ -207,7 +209,7 @@ change the password once they are back in.
 				return errors.New("a new password is required")
 			}
 			defer func() { _ = svc.Close() }()
-			r, ok := svc.(resetter)
+			r, ok := svc.(engine.Resetter)
 			if !ok {
 				return seamMissing("ResetUser")
 			}

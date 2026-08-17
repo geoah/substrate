@@ -69,6 +69,23 @@ var foldTables = []string{
 // cursor while it writes, so the changelog is read a page at a time by seq.
 const rebuildBatch = 500
 
+// Rebuilder and ForceRebuilder are the operator hat's rebuild seams, off
+// substrate.Service like Resetter (auth.go) and asserted here for the same
+// reason. They stay two interfaces because rebuilding from history the chain
+// refuses is a distinct act, not a flag the ordinary path could trip over.
+type Rebuilder interface {
+	RebuildRepository(ctx context.Context, username string) (RebuildReport, error)
+}
+
+type ForceRebuilder interface {
+	RebuildRepositoryUnverified(ctx context.Context, username string) (RebuildReport, error)
+}
+
+var (
+	_ Rebuilder      = (*service)(nil)
+	_ ForceRebuilder = (*service)(nil)
+)
+
 // RebuildRepository clears one repository's fold and replays its whole changelog
 // into it. The repository's own advisory lock is held for the duration, so no
 // write can interleave, and the whole rebuild is ONE transaction: a rebuild

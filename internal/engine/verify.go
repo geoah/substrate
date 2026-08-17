@@ -81,6 +81,15 @@ type EpochInfo struct {
 	SigOK      *bool     `json:"sigOk,omitempty"`
 }
 
+// Verifier is the operator hat's chain-verification seam, off
+// substrate.Service like Resetter (auth.go) and asserted here for the same
+// reason.
+type Verifier interface {
+	VerifyRepositoryPinned(ctx context.Context, username string, pins VerifyPins) (VerifyReport, error)
+}
+
+var _ Verifier = (*service)(nil)
+
 // VerifyRepository walks one repository's whole chain with nothing pinned.
 func (s *service) VerifyRepository(ctx context.Context, username string) (VerifyReport, error) {
 	return s.VerifyRepositoryPinned(ctx, username, VerifyPins{})
