@@ -69,25 +69,32 @@ func TestConfigRoundTrip(t *testing.T) {
 // declaration record's id IS a kind reference — travels percent-encoded.
 func TestCollectionPathIsTheKindReference(t *testing.T) {
 	cases := []struct {
-		authority, plural string
-		id                []string
-		want              string
+		authority, kind string
+		id              []string
+		want            string
 	}{
-		{"tasks.substrate.reamde.dev", "tasks", nil, "/api/v1/tasks.substrate.reamde.dev/tasks"},
-		{"tasks.substrate.reamde.dev", "tasks", []string{"t9"}, "/api/v1/tasks.substrate.reamde.dev/tasks/t9"},
-		{"", "tasks", nil, "/api/v1/tasks"},
-		{"", "tasks", []string{"t9"}, "/api/v1/tasks/t9"},
+		{"tasks.substrate.reamde.dev", "task", nil, "/api/v1/tasks.substrate.reamde.dev/task"},
+		{"tasks.substrate.reamde.dev", "task", []string{"t9"}, "/api/v1/tasks.substrate.reamde.dev/task/t9"},
+		{"", "task", nil, "/api/v1/task"},
+		{"", "task", []string{"t9"}, "/api/v1/task/t9"},
 		{
-			"core.substrate.reamde.dev", "kinds",
+			"core.substrate.reamde.dev", "kind",
 			[]string{"tasks.substrate.reamde.dev/task"},
-			"/api/v1/core.substrate.reamde.dev/kinds/tasks.substrate.reamde.dev%2Ftask",
+			"/api/v1/core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev%2Ftask",
 		},
-		{"tasks.substrate.reamde.dev", "tasks", []string{"t9", "edges", "source"}, "/api/v1/tasks.substrate.reamde.dev/tasks/t9/edges/source"},
 	}
 	for _, tc := range cases {
-		if got := collectionPath(tc.authority, tc.plural, tc.id...); got != tc.want {
-			t.Errorf("collectionPath(%q, %q, %v) = %q, want %q", tc.authority, tc.plural, tc.id, got, tc.want)
+		if got := collectionPath(tc.authority, tc.kind, tc.id...); got != tc.want {
+			t.Errorf("collectionPath(%q, %q, %v) = %q, want %q", tc.authority, tc.kind, tc.id, got, tc.want)
 		}
+	}
+	// A record verb sits behind the reserved segment, never where an id can be.
+	if got, want := recordVerbPath("tasks.substrate.reamde.dev", "task", "t9", "edges", "source"),
+		"/api/v1/tasks.substrate.reamde.dev/task/t9/-/edges/source"; got != want {
+		t.Errorf("recordVerbPath = %q, want %q", got, want)
+	}
+	if got, want := verbPath("changes"), "/api/v1/-/changes"; got != want {
+		t.Errorf("verbPath = %q, want %q", got, want)
 	}
 	// The encoded id survives the round trip a server does on it.
 	if got, err := url.PathUnescape("tasks.substrate.reamde.dev%2Ftask"); err != nil || got != "tasks.substrate.reamde.dev/task" {

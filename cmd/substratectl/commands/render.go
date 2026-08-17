@@ -95,14 +95,17 @@ func printRecordTable(w io.Writer, records []*substrate.Record, wide bool, now t
 
 func printKindsTable(w io.Writer, types []substrate.KindInfo) error {
 	tw := newTable(w)
-	fmt.Fprintln(tw, "NAME\tAUTHORITY\tPLURAL\tVERSION\tSOURCE")
+	// COLLECTION is the segment a command takes, which is the kind's name: a
+	// reader copies it straight into `substratectl get <collection>` and into a
+	// URL, because those are now the same string (decision 0028).
+	fmt.Fprintln(tw, "NAME\tAUTHORITY\tCOLLECTION\tVERSION\tSOURCE")
 	for _, ti := range types {
 		version := "-"
 		if ti.Version > 0 {
 			version = strconv.FormatInt(ti.Version, 10)
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
-			dash(ti.Name), dash(ti.Authority), dash(pluralOf(ti)), version, dash(ti.Source))
+			dash(ti.Name), dash(ti.Authority), dash(collectionOf(ti)), version, dash(ti.Source))
 	}
 	return tw.Flush()
 }

@@ -26,7 +26,7 @@ func (a *app) getCommand() *cobra.Command {
 		after     string
 	)
 	cmd := &cobra.Command{
-		Use:   "get <plural> [id]",
+		Use:   "get <kind> [id]",
 		Short: "List or read records",
 		Long: `Read records from a collection.
 
@@ -66,14 +66,14 @@ states.`,
 			}
 			if watch {
 				q.Set("watch", "1")
-				resp, err := cl.send(ctx, http.MethodGet, collectionPath(col.Authority, col.Plural), q, nil)
+				resp, err := cl.send(ctx, http.MethodGet, collectionPath(col.Authority, col.Name), q, nil)
 				if err != nil {
 					return err
 				}
 				defer resp.Body.Close()
 				return streamChanges(a.out, resp.Body)
 			}
-			page, err := cl.list(ctx, col.Authority, col.Plural, q)
+			page, err := cl.list(ctx, col.Authority, col.Name, q)
 			if err != nil {
 				return err
 			}
@@ -81,7 +81,7 @@ states.`,
 		},
 	}
 	f := cmd.Flags()
-	f.StringVarP(&authority, "authority", "g", "", "kind authority for a bare plural")
+	f.StringVarP(&authority, "authority", "g", "", "kind authority for a bare kind name")
 	f.StringVarP(&output, "output", "o", "", "output format: table|wide|yaml|json (default table for lists, yaml for a single record)")
 	f.StringVar(&filter, "filter", "", `filter as JSON (substrate.Filter), e.g. '{"properties":{"prominence":{"eq":"known"}}}'`)
 	f.StringArrayVarP(&selector, "selector", "l", nil, "label selector, key=value (repeatable); bare key means present")
@@ -93,7 +93,7 @@ states.`,
 }
 
 func (a *app) getOne(ctx context.Context, cl *client, col collection, id, output string) error {
-	e, meta, err := cl.get(ctx, col.Authority, col.Plural, id)
+	e, meta, err := cl.get(ctx, col.Authority, col.Name, id)
 	if err != nil {
 		return err
 	}

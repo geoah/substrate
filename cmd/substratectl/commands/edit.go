@@ -16,7 +16,7 @@ import (
 func (a *app) editCommand() *cobra.Command {
 	var authority string
 	cmd := &cobra.Command{
-		Use:   "edit <plural> <id>",
+		Use:   "edit <kind> <id>",
 		Short: "Edit a record in $EDITOR and apply the result",
 		Long: `Open the record's manifest (kind/metadata/data/status) in
 $EDITOR, then apply what comes back. The ` + "`status`" + ` block is server-set and
@@ -32,7 +32,7 @@ ignored on the way in; emptying the file aborts.`,
 			if err != nil {
 				return err
 			}
-			e, meta, err := cl.get(ctx, col.Authority, col.Plural, args[1])
+			e, meta, err := cl.get(ctx, col.Authority, col.Name, args[1])
 			if err != nil {
 				return err
 			}
@@ -79,7 +79,7 @@ ignored on the way in; emptying the file aborts.`,
 			return a.applyDocument(ctx, cl, d)
 		},
 	}
-	cmd.Flags().StringVarP(&authority, "authority", "g", "", "kind authority for a bare plural")
+	cmd.Flags().StringVarP(&authority, "authority", "g", "", "kind authority for a bare kind name")
 	return cmd
 }
 

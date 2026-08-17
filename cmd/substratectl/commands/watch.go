@@ -44,7 +44,7 @@ and every printed line starts with the sequence it can be resumed from.`,
 				q.Set("actors", strings.Join(actors, ","))
 			}
 			resp, err := cl.send(cmd.Context(), http.MethodGet,
-				collectionPath(coreAuthority, pluralChanges), q, nil)
+				verbPath("changes"), q, nil)
 			if err != nil {
 				return err
 			}

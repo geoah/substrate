@@ -19,7 +19,7 @@ func (a *app) patchCommand() *cobra.Command {
 		raw        string
 	)
 	cmd := &cobra.Command{
-		Use:   "patch <plural> <id>",
+		Use:   "patch <kind> <id>",
 		Short: "Patch a record — state transitions, labels, properties",
 		Long: `Patch a record in place. State transitions only travel this way
 ("complete a task" is --state status=done; apply/put refuse to move a state).
@@ -87,7 +87,7 @@ key-wise; a raw -p patch may use null values to delete keys.`,
 			if err != nil {
 				return err
 			}
-			e, err := cl.patch(ctx, col.Authority, col.Plural, args[1], in)
+			e, err := cl.patch(ctx, col.Authority, col.Name, args[1], in)
 			if err != nil {
 				return err
 			}
@@ -103,7 +103,7 @@ key-wise; a raw -p patch may use null values to delete keys.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&authority, "authority", "g", "", "kind authority for a bare plural")
+	cmd.Flags().StringVarP(&authority, "authority", "g", "", "kind authority for a bare kind name")
 	cmd.Flags().StringArrayVar(&states, "state", nil, "state transition name=state (repeatable)")
 	cmd.Flags().StringArrayVar(&labels, "label", nil, "label key=value (repeatable)")
 	cmd.Flags().StringArrayVar(&properties, "prop", nil, "property key=value (repeatable)")

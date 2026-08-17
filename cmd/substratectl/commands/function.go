@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -49,7 +50,7 @@ func (a *app) triggerStatusCommand() *cobra.Command {
 			var res struct {
 				Triggers []substrate.TriggerStatus `json:"triggers"`
 			}
-			if err := cl.do(cmd.Context(), http.MethodGet, triggersPath("status"), nil, nil, &res); err != nil {
+			if err := cl.do(cmd.Context(), http.MethodGet, triggersPath("", "status"), nil, nil, &res); err != nil {
 				return err
 			}
 			tw := newTable(a.out)
@@ -225,8 +226,11 @@ func fetchParked(ctx context.Context, cl *client, id string) ([]substrate.Trigge
 // operational verbs live AT the resource and trigger records are
 // core's — the substrate maintains its own delivery plumbing, so it publishes
 // it — which makes this the one spelling.
-func triggersPath(segments ...string) string {
-	return collectionPath(coreAuthority, "triggers", segments...)
+func triggersPath(id string, verb ...string) string {
+	if id == "" {
+		return collectionPath(coreAuthority, "trigger") + "/" + verbSegment + "/" + strings.Join(verb, "/")
+	}
+	return recordVerbPath(coreAuthority, "trigger", id, verb...)
 }
 
 func (a *app) functionCommand() *cobra.Command {
@@ -266,7 +270,7 @@ func (a *app) functionCallCommand() *cobra.Command {
 				Effects int `json:"effects"`
 			}
 			if err := cl.do(cmd.Context(), http.MethodPost,
-				collectionPath(coreAuthority, "functions", args[0], "call"), nil,
+				recordVerbPath(coreAuthority, "function", args[0], "call"), nil,
 				map[string]any{"input": input}, &res); err != nil {
 				return err
 			}

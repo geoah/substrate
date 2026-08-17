@@ -533,14 +533,14 @@ func TestErrorRenderingProblemsAndHints(t *testing.T) {
 			err: &apiError{
 				Status: 422, Code: "validation", Message: "3 problems",
 				Problems: []string{"properties.detail: required", "at: not a timestamp"},
-				Method:   "PUT", Path: "/api/v1/tasks.substrate.reamde.dev/tasks/t9",
+				Method:   "PUT", Path: "/api/v1/tasks.substrate.reamde.dev/task/t9",
 			},
 			want: []string{
 				"error: the substrate rejected this write as invalid",
 				"  problems:",
 				"    - properties.detail: required",
 				"    - at: not a timestamp",
-				"request: PUT /api/v1/tasks.substrate.reamde.dev/tasks/t9 (422)",
+				"request: PUT /api/v1/tasks.substrate.reamde.dev/task/t9 (422)",
 			},
 		},
 		{
@@ -573,24 +573,24 @@ func TestKindsTable(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	out, _ := h.mustRun("kinds")
-	want := "NAME                  AUTHORITY                                PLURAL                 VERSION   SOURCE\n" +
-		"calendarevent         calendar.substrate.reamde.dev            calendarevents         1         builtin\n" +
-		"calendareventseries   calendar.substrate.reamde.dev            calendareventseries    1         builtin\n" +
-		"kind                  core.substrate.reamde.dev                kinds                  1         builtin\n" +
-		"recordmerge           core.substrate.reamde.dev                recordmerges           1         builtin\n" +
-		"recordsplit           core.substrate.reamde.dev                recordsplits           1         builtin\n" +
-		"token                 core.substrate.reamde.dev                tokens                 1         builtin\n" +
-		"syncrun               google.connectors.substrate.reamde.dev   syncruns               1         installed\n" +
-		"book                  library.substrate.reamde.dev             books                  1         builtin\n" +
-		"bookseries            library.substrate.reamde.dev             bookseries             1         builtin\n" +
-		"movie                 library.substrate.reamde.dev             movies                 1         builtin\n" +
-		"podcast               library.substrate.reamde.dev             podcasts               1         builtin\n" +
-		"tvseries              library.substrate.reamde.dev             tvseries               1         builtin\n" +
-		"conversationmessage   messaging.substrate.reamde.dev           conversationmessages   1         builtin\n" +
-		"organization          people.substrate.reamde.dev              organizations          1         builtin\n" +
-		"person                people.substrate.reamde.dev              people                 1         builtin\n" +
-		"syncrun               slack.connectors.substrate.reamde.dev    syncruns               1         installed\n" +
-		"task                  tasks.substrate.reamde.dev               tasks                  1         builtin\n"
+	want := "NAME                  AUTHORITY                                COLLECTION            VERSION   SOURCE\n" +
+		"calendarevent         calendar.substrate.reamde.dev            calendarevent         1         builtin\n" +
+		"calendareventseries   calendar.substrate.reamde.dev            calendareventseries   1         builtin\n" +
+		"kind                  core.substrate.reamde.dev                kind                  1         builtin\n" +
+		"recordmerge           core.substrate.reamde.dev                recordmerge           1         builtin\n" +
+		"recordsplit           core.substrate.reamde.dev                recordsplit           1         builtin\n" +
+		"token                 core.substrate.reamde.dev                token                 1         builtin\n" +
+		"syncrun               google.connectors.substrate.reamde.dev   syncrun               1         installed\n" +
+		"book                  library.substrate.reamde.dev             book                  1         builtin\n" +
+		"bookseries            library.substrate.reamde.dev             bookseries            1         builtin\n" +
+		"movie                 library.substrate.reamde.dev             movie                 1         builtin\n" +
+		"podcast               library.substrate.reamde.dev             podcast               1         builtin\n" +
+		"tvseries              library.substrate.reamde.dev             tvseries              1         builtin\n" +
+		"conversationmessage   messaging.substrate.reamde.dev           conversationmessage   1         builtin\n" +
+		"organization          people.substrate.reamde.dev              organization          1         builtin\n" +
+		"person                people.substrate.reamde.dev              person                1         builtin\n" +
+		"syncrun               slack.connectors.substrate.reamde.dev    syncrun               1         installed\n" +
+		"task                  tasks.substrate.reamde.dev               task                  1         builtin\n"
 	if out != want {
 		t.Fatalf("kinds table:\ngot:\n%s\nwant:\n%s", out, want)
 	}
@@ -659,9 +659,9 @@ func TestGetQualifiedPluralResolvesWithoutTheRegistry(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	h.mustRun("get", "tasks.substrate.reamde.dev/tasks", "-o", "yaml")
+	h.mustRun("get", "tasks.substrate.reamde.dev/task", "-o", "yaml")
 	for _, req := range h.fake.requests {
-		if strings.Contains(req, "/core.substrate.reamde.dev/kinds") {
+		if strings.Contains(req, "/core.substrate.reamde.dev/kind") {
 			t.Fatalf("qualified plural should not hit the type registry: %v", h.fake.requests)
 		}
 	}
@@ -675,11 +675,11 @@ func TestGetTableAsksTheRegistryOnlyForTheStateColumn(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	out, _ := h.mustRun("get", "tasks.substrate.reamde.dev/tasks")
+	out, _ := h.mustRun("get", "tasks.substrate.reamde.dev/task")
 	if !strings.Contains(out, "lifecycle=open") {
 		t.Fatalf("qualified plural lost the STATE column:\n%s", out)
 	}
-	if h.fake.requests[0] != "GET /api/v1/tasks.substrate.reamde.dev/tasks" {
+	if h.fake.requests[0] != "GET /api/v1/tasks.substrate.reamde.dev/task" {
 		t.Fatalf("the collection read must come first: %v", h.fake.requests)
 	}
 }
@@ -714,16 +714,16 @@ func TestStateColumnComesFromTheDeclaration(t *testing.T) {
 // addressed, not what came back.
 func TestGetBarePluralResolvesWhenUniqueAcrossGroups(t *testing.T) {
 	cases := []struct{ arg, path string }{
-		{"people", "/api/v1/people.substrate.reamde.dev/people"},
-		{"calendarevents", "/api/v1/calendar.substrate.reamde.dev/calendarevents"},
-		{"conversationmessages", "/api/v1/messaging.substrate.reamde.dev/conversationmessages"},
-		{"books", "/api/v1/library.substrate.reamde.dev/books"},
-		{"movies", "/api/v1/library.substrate.reamde.dev/movies"},
-		{"podcasts", "/api/v1/library.substrate.reamde.dev/podcasts"},
+		{"people", "/api/v1/people.substrate.reamde.dev/person"},
+		{"calendarevents", "/api/v1/calendar.substrate.reamde.dev/calendarevent"},
+		{"conversationmessages", "/api/v1/messaging.substrate.reamde.dev/conversationmessage"},
+		{"books", "/api/v1/library.substrate.reamde.dev/book"},
+		{"movies", "/api/v1/library.substrate.reamde.dev/movie"},
+		{"podcasts", "/api/v1/library.substrate.reamde.dev/podcast"},
 		{"bookseries", "/api/v1/library.substrate.reamde.dev/bookseries"},
 		// The singular resolves too, so `get person` is not a usage error.
-		{"person", "/api/v1/people.substrate.reamde.dev/people"},
-		{"book", "/api/v1/library.substrate.reamde.dev/books"},
+		{"person", "/api/v1/people.substrate.reamde.dev/person"},
+		{"book", "/api/v1/library.substrate.reamde.dev/book"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.arg, func(t *testing.T) {
@@ -774,9 +774,9 @@ func TestGetAmbiguousPluralErrors(t *testing.T) {
 	}
 	for _, want := range []string{
 		"ambiguous",
-		"google.connectors.substrate.reamde.dev/syncruns",
-		"slack.connectors.substrate.reamde.dev/syncruns",
-		"qualify it as plural.authority",
+		"google.connectors.substrate.reamde.dev/syncrun",
+		"slack.connectors.substrate.reamde.dev/syncrun",
+		"qualify it as authority/kind",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("ambiguity error missing %q: %v", want, err)
@@ -787,11 +787,11 @@ func TestGetAmbiguousPluralErrors(t *testing.T) {
 	h2.writeConfig()
 	// Both escape hatches the error names must actually address the right
 	// collection; only the recorded requests matter here.
-	h2.run("get", "slack.connectors.substrate.reamde.dev/syncruns")           //nolint:dogsled // requests are the assertion
-	h2.run("get", "syncruns", "-g", "google.connectors.substrate.reamde.dev") //nolint:dogsled // requests are the assertion
+	h2.run("get", "slack.connectors.substrate.reamde.dev/syncrun")           //nolint:dogsled // requests are the assertion
+	h2.run("get", "syncrun", "-g", "google.connectors.substrate.reamde.dev") //nolint:dogsled // requests are the assertion
 	for _, want := range []string{
-		"GET /api/v1/slack.connectors.substrate.reamde.dev/syncruns",
-		"GET /api/v1/google.connectors.substrate.reamde.dev/syncruns",
+		"GET /api/v1/slack.connectors.substrate.reamde.dev/syncrun",
+		"GET /api/v1/google.connectors.substrate.reamde.dev/syncrun",
 	} {
 		var saw bool
 		for _, req := range h2.fake.requests {
@@ -830,7 +830,7 @@ func TestTypeRegistryIsReadWhole(t *testing.T) {
 	var sawBooks bool
 	pages := 0
 	for _, req := range h.fake.requests {
-		sawBooks = sawBooks || req == "GET /api/v1/library.substrate.reamde.dev/books"
+		sawBooks = sawBooks || req == "GET /api/v1/library.substrate.reamde.dev/book"
 		if req == "GET "+typesPath {
 			pages++
 		}
@@ -866,7 +866,7 @@ func TestGetUnknownPluralErrors(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	_, _, err := h.run("get", "widgets")
-	if err == nil || !strings.Contains(err.Error(), `no type with plural "widgets"`) {
+	if err == nil || !strings.Contains(err.Error(), `no kind named "widgets"`) {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -1258,8 +1258,8 @@ data:
 	}
 	var sawPost, sawPut bool
 	for _, req := range h.fake.requests {
-		sawPost = sawPost || req == "POST /api/v1/tasks.substrate.reamde.dev/tasks"
-		sawPut = sawPut || req == "PUT /api/v1/tasks.substrate.reamde.dev/tasks/t7"
+		sawPost = sawPost || req == "POST /api/v1/tasks.substrate.reamde.dev/task"
+		sawPut = sawPut || req == "PUT /api/v1/tasks.substrate.reamde.dev/task/t7"
 	}
 	if !sawPost || !sawPut {
 		t.Fatalf("expected a POST for the id-less doc and a PUT for t7: %v", h.fake.requests)
@@ -1311,10 +1311,10 @@ func TestApplyResolvesTheTypeThroughItsAuthority(t *testing.T) {
 	_, _, _ = h.run("apply", "-f", "-") //nolint:dogsled // the addressed collection is the assertion
 	var saw bool
 	for _, req := range h.fake.requests {
-		saw = saw || req == "PUT /api/v1/slack.connectors.substrate.reamde.dev/syncruns/r1"
+		saw = saw || req == "PUT /api/v1/slack.connectors.substrate.reamde.dev/syncrun/r1"
 	}
 	if !saw {
-		t.Fatalf("requests = %v, want the slack authority's syncruns", h.fake.requests)
+		t.Fatalf("requests = %v, want the slack authority's syncrun", h.fake.requests)
 	}
 
 	// A type that is real but not in the named authority says where it lives.
@@ -1375,9 +1375,9 @@ data:
 	batches, puts := 0, 0
 	for _, req := range h.fake.requests {
 		switch req {
-		case "POST /api/v1/core.substrate.reamde.dev/vocabulary/apply":
+		case "POST /api/v1/-/vocabulary/apply":
 			batches++
-		case "PUT /api/v1/tasks.substrate.reamde.dev/tasks/t9":
+		case "PUT /api/v1/tasks.substrate.reamde.dev/task/t9":
 			puts++
 		}
 	}
@@ -1414,7 +1414,7 @@ func TestDelete(t *testing.T) {
 func TestDeleteNotFoundRendersNotFound(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
-	_, _, err := h.run("delete", "tasks.substrate.reamde.dev/tasks", "nope")
+	_, _, err := h.run("delete", "tasks.substrate.reamde.dev/task", "nope")
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -1459,7 +1459,7 @@ func TestWatchSendsFilters(t *testing.T) {
 	// that the client built the query without error.
 	var saw bool
 	for _, req := range h.fake.requests {
-		saw = saw || req == "GET /api/v1/core.substrate.reamde.dev/changes"
+		saw = saw || req == "GET /api/v1/-/changes"
 	}
 	if !saw {
 		t.Fatalf("watch did not hit the changes endpoint: %v", h.fake.requests)
@@ -1473,7 +1473,7 @@ func TestGetWatchStreamsCollectionChanges(t *testing.T) {
 		{Seq: 42, TS: testNow, Actor: substrate.ActorAPI, Op: substrate.OpPut, RecordID: "t9", Kind: "tasks.substrate.reamde.dev/task"},
 		{Seq: 43, TS: testNow, Actor: substrate.ActorAPI, Op: substrate.OpPatch, RecordID: "t9", Kind: "tasks.substrate.reamde.dev/task"},
 	}
-	out, _ := h.mustRun("get", "tasks.substrate.reamde.dev/tasks", "-w")
+	out, _ := h.mustRun("get", "tasks.substrate.reamde.dev/task", "-w")
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	if len(lines) != 4 {
 		t.Fatalf("get -w should stream bookmark + header + 2 changes, got:\n%s", out)
@@ -1719,7 +1719,7 @@ func TestEnvOverridesConfig(t *testing.T) {
 	seedTask(h)
 	t.Setenv("SUBSTRATE_SERVER", h.server)
 	t.Setenv("SUBSTRATE_TOKEN", "substrate_tok_geoah_fromenv")
-	h.mustRun("get", "tasks.substrate.reamde.dev/tasks")
+	h.mustRun("get", "tasks.substrate.reamde.dev/task")
 	if h.fake.lastAuth != "Bearer substrate_tok_geoah_fromenv" {
 		t.Fatalf("SUBSTRATE_TOKEN did not override the config: %q", h.fake.lastAuth)
 	}
@@ -1749,7 +1749,7 @@ func TestCanonicalAndAliasEnvVars(t *testing.T) {
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}
-			h.mustRun("get", "tasks.substrate.reamde.dev/tasks")
+			h.mustRun("get", "tasks.substrate.reamde.dev/task")
 			if h.fake.lastAuth != tc.want {
 				t.Fatalf("auth header = %q, want %q", h.fake.lastAuth, tc.want)
 			}
@@ -1759,7 +1759,7 @@ func TestCanonicalAndAliasEnvVars(t *testing.T) {
 
 func TestNoServerConfiguredIsAClearError(t *testing.T) {
 	h := newHarness(t)
-	_, _, err := h.run("get", "tasks.substrate.reamde.dev/tasks")
+	_, _, err := h.run("get", "tasks.substrate.reamde.dev/task")
 	if err == nil || !strings.Contains(err.Error(), "no substrate server configured") {
 		t.Fatalf("err = %v", err)
 	}
@@ -1769,11 +1769,11 @@ func TestActorFlagIsSent(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
-	h.mustRun("--actor", "gmail.google.connectors.substrate.reamde.dev", "get", "tasks.substrate.reamde.dev/tasks")
+	h.mustRun("--actor", "gmail.google.connectors.substrate.reamde.dev", "get", "tasks.substrate.reamde.dev/task")
 	// The fake records the auth header only; assert via a direct client too.
 	cl := newClient(h.server, "substrate_tok_geoah_test", nil)
 	cl.actor = "gmail.google.connectors.substrate.reamde.dev"
-	req, err := cl.newRequest(context.Background(), "GET", "/api/v1/core.substrate.reamde.dev/kinds", nil, nil)
+	req, err := cl.newRequest(context.Background(), "GET", "/api/v1/core.substrate.reamde.dev/kind", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

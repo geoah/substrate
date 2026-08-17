@@ -38,7 +38,7 @@ func (a *app) linkCommand() *cobra.Command {
 		properties []string
 	)
 	cmd := &cobra.Command{
-		Use:   "link <plural> <id> <rel> <target>",
+		Use:   "link <kind> <id> <rel> <target>",
 		Short: "Add an outgoing edge",
 		Long: `Add an outgoing edge {rel} from a source record to a target.
 
@@ -74,7 +74,7 @@ properties are set with --prop key=value.`,
 			if err != nil {
 				return err
 			}
-			e, err := cl.link(ctx, col.Authority, col.Plural, args[1], args[2], to, props)
+			e, err := cl.link(ctx, col.Authority, col.Name, args[1], args[2], to, props)
 			if err != nil {
 				return err
 			}
@@ -82,7 +82,7 @@ properties are set with --prop key=value.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&authority, "authority", "g", "", "kind authority for a bare plural")
+	cmd.Flags().StringVarP(&authority, "authority", "g", "", "kind authority for a bare kind name")
 	cmd.Flags().StringArrayVar(&properties, "prop", nil, "edge property key=value (repeatable)")
 	return cmd
 }
@@ -90,7 +90,7 @@ properties are set with --prop key=value.`,
 func (a *app) unlinkCommand() *cobra.Command {
 	var authority string
 	cmd := &cobra.Command{
-		Use:   "unlink <plural> <id> <rel> <target>",
+		Use:   "unlink <kind> <id> <rel> <target>",
 		Short: "Remove an outgoing edge",
 		Long: `Remove an outgoing edge {rel} from a source record to a target.
 
@@ -112,7 +112,7 @@ The target syntax matches ` + "`link`" + `: a bare id, or <authority>/<name>:<id
 			if err != nil {
 				return err
 			}
-			e, err := cl.unlink(ctx, col.Authority, col.Plural, args[1], args[2], to)
+			e, err := cl.unlink(ctx, col.Authority, col.Name, args[1], args[2], to)
 			if err != nil {
 				return err
 			}
@@ -120,7 +120,7 @@ The target syntax matches ` + "`link`" + `: a bare id, or <authority>/<name>:<id
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&authority, "authority", "g", "", "kind authority for a bare plural")
+	cmd.Flags().StringVarP(&authority, "authority", "g", "", "kind authority for a bare kind name")
 	return cmd
 }
 

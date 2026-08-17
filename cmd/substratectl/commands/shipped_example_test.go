@@ -37,7 +37,7 @@ func TestShippedURLHarvesterExampleApplies(t *testing.T) {
 	}
 	batches := 0
 	for _, req := range h.fake.requests {
-		if req == "POST /api/v1/core.substrate.reamde.dev/vocabulary/apply" {
+		if req == "POST /api/v1/-/vocabulary/apply" {
 			batches++
 		}
 	}

@@ -3,15 +3,22 @@ package commands
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// bundlesPath is /api/v1/core.substrate.reamde.dev/bundles/{segments…}.
-func bundlesPath(segments ...string) string {
-	return collectionPath(coreAuthority, "bundles", segments...)
+// bundlesPath is a bundle verb, behind the reserved segment: an empty id
+// addresses the collection (/api/v1/{core}/bundle/-/status), an id addresses one
+// bundle (/api/v1/{core}/bundle/{id}/-/enable). The segment is what keeps a
+// bundle whose id is `status` addressable.
+func bundlesPath(id string, verb ...string) string {
+	if id == "" {
+		return collectionPath(coreAuthority, "bundle") + "/" + verbSegment + "/" + strings.Join(verb, "/")
+	}
+	return recordVerbPath(coreAuthority, "bundle", id, verb...)
 }
 
 func (a *app) bundleCommand() *cobra.Command {
@@ -53,7 +60,7 @@ func (a *app) bundleListCommand() *cobra.Command {
 			var res struct {
 				Bundles []substrate.BundleStatus `json:"bundles"`
 			}
-			if err := cl.do(cmd.Context(), http.MethodGet, bundlesPath("status"), nil, nil, &res); err != nil {
+			if err := cl.do(cmd.Context(), http.MethodGet, bundlesPath("", "status"), nil, nil, &res); err != nil {
 				return err
 			}
 			tw := newTable(a.out)
@@ -211,7 +218,7 @@ func (a *app) bundleConnectCommand() *cobra.Command {
 				URL string `json:"url"`
 			}
 			body := map[string]any{"record": args[0]}
-			if err := cl.do(cmd.Context(), http.MethodPost, collectionPath(coreAuthority, "oauth", "start"), nil, body, &res); err != nil {
+			if err := cl.do(cmd.Context(), http.MethodPost, verbPath("oauth", "start"), nil, body, &res); err != nil {
 				return err
 			}
 			fmt.Fprintln(a.out, res.URL)

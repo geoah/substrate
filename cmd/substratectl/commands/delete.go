@@ -9,7 +9,7 @@ import (
 func (a *app) deleteCommand() *cobra.Command {
 	var authority string
 	cmd := &cobra.Command{
-		Use:   "delete <plural> <id>",
+		Use:   "delete <kind> <id>",
 		Short: "Soft-delete a record",
 		Long: `Delete a record. Deletion is soft and cooperative: the record is
 tombstoned and hard deletion waits for its finalizers to be released.`,
@@ -24,7 +24,7 @@ tombstoned and hard deletion waits for its finalizers to be released.`,
 			if err != nil {
 				return err
 			}
-			e, err := cl.delete(ctx, col.Authority, col.Plural, args[1])
+			e, err := cl.delete(ctx, col.Authority, col.Name, args[1])
 			if err != nil {
 				return err
 			}
@@ -39,6 +39,6 @@ tombstoned and hard deletion waits for its finalizers to be released.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&authority, "authority", "g", "", "kind authority for a bare plural")
+	cmd.Flags().StringVarP(&authority, "authority", "g", "", "kind authority for a bare kind name")
 	return cmd
 }

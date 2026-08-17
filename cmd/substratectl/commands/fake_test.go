@@ -141,8 +141,8 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/substrate/server.json", f.handleDiscovery)
 	mux.HandleFunc("GET "+typesPath, f.handleTypes)
-	mux.HandleFunc("POST /api/v1/core.substrate.reamde.dev/vocabulary/apply", f.handleVocabularyApply)
-	mux.HandleFunc("GET /api/v1/core.substrate.reamde.dev/changes", f.handleChanges)
+	mux.HandleFunc("POST /api/v1/-/vocabulary/apply", f.handleVocabularyApply)
+	mux.HandleFunc("GET /api/v1/-/changes", f.handleChanges)
 	// The door, BESIDE the versioned API and outside every prefix: no
 	// repository segment anywhere, because registration has none yet and
 	// everything after it takes one from the token.
@@ -169,9 +169,9 @@ func (f *fakeSubstrate) handler() http.Handler {
 	// core.substrate.reamde.dev and NOWHERE else here, so a client still riding the
 	// retired automation.substrate.reamde.dev spelling falls through to the 404 catch-all
 	// rather than passing quietly.
-	mux.HandleFunc("GET "+triggerColPath+"/status", f.handleTriggerStatus)
-	mux.HandleFunc("POST "+triggerColPath+"/{id}/run", f.handleTriggerRun)
-	mux.HandleFunc("POST "+triggerColPath+"/{id}/wake", f.handleTriggerWake)
+	mux.HandleFunc("GET "+triggerColPath+"/-/status", f.handleTriggerStatus)
+	mux.HandleFunc("POST "+triggerColPath+"/{id}/-/run", f.handleTriggerRun)
+	mux.HandleFunc("POST "+triggerColPath+"/{id}/-/wake", f.handleTriggerWake)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		f.noteRequest(r)
 		writeError(w, http.StatusNotFound, "not_found", "no such route: "+r.URL.Path, nil)
@@ -196,9 +196,9 @@ func writeError(w http.ResponseWriter, status int, code, msg string, problems []
 // lives in `tasks.substrate.reamde.dev`, since the shipped vocabulary is split by subject
 // domain rather than gathered under a single `vocab` authority.
 const (
-	typesPath      = "/api/v1/core.substrate.reamde.dev/kinds"
-	tasksPath      = "/api/v1/tasks.substrate.reamde.dev/tasks"
-	triggerColPath = "/api/v1/core.substrate.reamde.dev/triggers"
+	typesPath      = "/api/v1/core.substrate.reamde.dev/kind"
+	tasksPath      = "/api/v1/tasks.substrate.reamde.dev/task"
+	triggerColPath = "/api/v1/core.substrate.reamde.dev/trigger"
 )
 
 func typeRecord(name, authority, plural, source string, definition map[string]any) map[string]any {

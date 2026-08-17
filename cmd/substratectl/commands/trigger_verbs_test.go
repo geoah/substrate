@@ -67,9 +67,9 @@ func TestTriggerVerbsRideTheCorePath(t *testing.T) {
 	h.mustRun("trigger", "wake", "classify-page")
 
 	for _, want := range []string{
-		"GET " + triggerColPath + "/status",
-		"POST " + triggerColPath + "/classify-page/run",
-		"POST " + triggerColPath + "/classify-page/wake",
+		"GET " + triggerColPath + "/-/status",
+		"POST " + triggerColPath + "/classify-page/-/run",
+		"POST " + triggerColPath + "/classify-page/-/wake",
 	} {
 		found := false
 		for _, got := range h.fake.requests {

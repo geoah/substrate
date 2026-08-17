@@ -197,7 +197,7 @@ func (a *app) applyDocument(ctx context.Context, cl *client, d *document) error 
 	var prior *substrate.Record
 	if id != "" {
 		in.ID = id
-		prior, _, err = cl.get(ctx, col.Authority, col.Plural, id)
+		prior, _, err = cl.get(ctx, col.Authority, col.Name, id)
 		if err != nil {
 			var ae *apiError
 			if !errors.As(err, &ae) || ae.Status != 404 {
@@ -206,7 +206,7 @@ func (a *app) applyDocument(ctx context.Context, cl *client, d *document) error 
 			prior = nil
 		}
 	}
-	e, err := cl.put(ctx, col.Authority, col.Plural, id, in)
+	e, err := cl.put(ctx, col.Authority, col.Name, id, in)
 	if err != nil {
 		return err
 	}
