@@ -14,8 +14,13 @@
 # It hangs off ci, like version.yml, rather than off the push: on the push it
 # built and published a commit whose suite was still running, so `latest` could
 # be red. There is no dispatch, because a dispatch is that same untested
-# publish with a person's name on it. Re-running the ci run for a commit brings
-# its image back.
+# publish with a person's name on it.
+#
+# A green ci run is necessary and not sufficient, so the `tip` job below asks
+# whether the commit is still what main points at. Anyone can re-run an old ci
+# run, to look at a flake or by mistake, and its completion arrives here
+# carrying a green, push, main event for a commit two releases back. Without
+# the check, that event rewinds `latest` to an image nobody asked for.
 name: latest
 
 on:
@@ -25,19 +30,30 @@ on:
     branches: [main]
 
 concurrency:
-  # Newer commits win — an in-flight latest build for an older commit is
-  # wasted. Completions arrive in commit order because ci cancels its own
-  # older run on main (that workflow's concurrency), so the run that reaches
-  # here is the newest one that went green.
+  # One build at a time, so two of them cannot push the one moving tag in an
+  # order nobody chose. Successive pushes to main arrive here in commit order
+  # (ci cancels its own older run on main, so an older run only reports success
+  # by finishing before the newer one starts), but a re-run of an ancient ci
+  # run arrives whenever a person clicks it.
+  #
+  # NOT cancel-in-progress: arrival order is what a cancellation would act on,
+  # and that re-run is an arrival for a commit two releases back. It would
+  # cancel the build of the actual tip and then skip at the `tip` job below,
+  # leaving `latest` behind. A superseded build is left to finish and cost a
+  # runner instead.
   group: latest
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  latest:
-    name: push latest image
+  # A job of its own so a superseded commit SKIPS rather than fails: there is
+  # nothing wrong with the commit or the run, it is simply not the one `latest`
+  # names any more, and a red X on it would be a lie somebody has to
+  # investigate.
+  tip:
+    name: is this commit still main
     # Both halves are load-bearing. `conclusion == 'success'` is the gate this
     # trigger exists for; `event == 'push'` is because ci runs on pull
     # requests too and those runs arrive here as well. The trigger's branch
@@ -46,6 +62,31 @@ jobs:
     if: >-
       github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion
       == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.main.outputs.sha }}
+    steps:
+      # Read now rather than from the event, so it is where main points after
+      # the ci run finished. A commit that has been overtaken stays overtaken.
+      - id: main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/heads/main" --jq .sha)"
+          echo "main is at $sha, this run carries $HEAD_SHA" >&2
+          echo "sha=$sha" >>"$GITHUB_OUTPUT"
+
+  latest:
+    name: push latest image
+    needs: tip
+    # Skipped, not failed, when the commit has been overtaken. The commit that
+    # overtook it gets its own ci run and its own turn here.
+    if: needs.tip.outputs.sha == github.event.workflow_run.head_sha
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:

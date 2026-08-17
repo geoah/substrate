@@ -140,3 +140,12 @@ release:
   # created and written the body of; goreleaser now creates it, so appending
   # would only mean a re-run stacking a second copy of the notes under the
   # first.
+  #
+  # Re-running a release that died partway through is the recovery path for
+  # one (the image push failed at v0.1.0, and the same thing can fail during
+  # the uploads). Without this, the second attempt refuses every asset the
+  # first one had already uploaded, with `already_exists`, and the release is
+  # stuck half-populated with no way forward but deleting assets by hand. The
+  # bytes it replaces are a rebuild of the same commit, because the tag and
+  # the commit behind it are both fixed by then.
+  replace_existing_artifacts: true

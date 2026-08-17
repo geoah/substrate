@@ -14,8 +14,9 @@
 # before it calls.
 #
 # Recovering a release that died halfway (the ghcr push, a flaky upload) is a
-# re-run of the version.yml run that called this: it replays the same tag
-# through the same gate. Nothing has to be tagged by hand.
+# re-run of the version.yml run that called this, or a dispatch of it: either
+# one finds the tag already pushed and no release behind it, and calls here
+# again. Nothing has to be tagged, deleted or released by hand.
 name: release
 
 on:
@@ -23,6 +24,10 @@ on:
     inputs:
       tag:
         description: The tag to build
+        required: true
+        type: string
+      sha:
+        description: The commit that tag was made at, and that ci passed for
         required: true
         type: string
 
@@ -49,9 +54,31 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # goreleaser needs the full history to resolve the previous tag, and
-          # the tag itself, which version.yml pushed moments ago.
+          # every tag, which fetch-depth 0 brings whatever the ref is.
           fetch-depth: 0
-          ref: ${{ inputs.tag }}
+          # The COMMIT, never the tag. A tag is a mutable pointer: ci passed
+          # for this sha and version.yml tagged this sha, and checking the tag
+          # out would build whatever it names by the time this job starts.
+          # HEAD lands in the same detached state a tag checkout produces, so
+          # goreleaser sees what it always saw.
+          ref: ${{ inputs.sha }}
+      # The tag as fetched moments ago must still be the commit ci passed for.
+      # Failing here means somebody moved the tag between version.yml pushing
+      # it and this checkout, and the release that would go out carries a name
+      # that no longer means what it says.
+      - name: verify the tag is the verified commit
+        env:
+          TAG: ${{ inputs.tag }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          at="$(git rev-parse -q --verify "refs/tags/$TAG^{commit}" || true)"
+          if [ "$head" != "$SHA" ] || [ "$at" != "$SHA" ]; then
+            echo "expected $TAG and HEAD at $SHA; tag is at ${at:-nowhere} and HEAD is $head" >&2
+            exit 1
+          fi
+          echo "$TAG is $SHA, which is HEAD" >&2
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
