@@ -2,9 +2,11 @@ package engine
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
@@ -146,5 +148,50 @@ func TestCoerceDurationIsISO8601Only(t *testing.T) {
 		if _, err := coerceScalar(p, tc.in); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("%q: got %v, want it to name %q", tc.in, err, tc.want)
 		}
+	}
+}
+
+// The instant contract: what Postgres's timestamptz holds and nothing wider.
+// A stored year-0000 instant fails every read that casts (a range filter, an
+// ordering) and takes the whole collection listing with it, so the refusal
+// happens at the write, naming the property.
+func TestCoerceDatetimeStaysInPostgresRange(t *testing.T) {
+	dt := &vocabulary.Property{Name: "at", Datatype: vocabulary.DatatypeDatetime}
+	date := &vocabulary.Property{Name: "on", Datatype: vocabulary.DatatypeDate}
+	for _, tc := range []struct {
+		p  *vocabulary.Property
+		in string
+	}{
+		{dt, "2026-08-17T12:00:00Z"},
+		{dt, "0001-01-01T00:00:00Z"},
+		{date, "2026-08-17"},
+		{date, "0001-01-01"},
+	} {
+		if _, err := coerceScalar(tc.p, tc.in); err != nil {
+			t.Fatalf("%s %q: %v", tc.p.Datatype, tc.in, err)
+		}
+	}
+	for _, tc := range []struct {
+		p    *vocabulary.Property
+		in   string
+		want string
+	}{
+		{dt, "0000-01-01T00:00:00Z", "no year zero"},
+		{dt, "0000-12-31T23:59:59Z", "no year zero"},
+		{date, "0000-01-01", "no year zero"},
+	} {
+		if _, err := coerceScalar(tc.p, tc.in); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%s %q: got %v, want it to name %q", tc.p.Datatype, tc.in, err, tc.want)
+		}
+	}
+	// The whole properties map answers with a ValidationError naming the
+	// property, which is what the API turns into a 422 with problems.
+	_, err := coerceProps(&vocabulary.Kind{
+		Identity: "example.com/thing",
+		Props:    map[string]*vocabulary.Property{"at": dt},
+	}, map[string]any{"at": "0000-01-01T00:00:00Z"})
+	var ve *substrate.ValidationError
+	if !errors.As(err, &ve) || len(ve.Problems) != 1 || !strings.Contains(ve.Problems[0], "props.at") {
+		t.Fatalf("got %v, want a ValidationError naming props.at", err)
 	}
 }
