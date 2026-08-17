@@ -26,6 +26,13 @@ jobs:
       contents: read
       pull-requests: write
     steps:
+      # A label is cosmetic and the action reads its config over the API, so a
+      # GitHub outage marks the pull request red for something no reviewer can
+      # act on and no merge depends on. A missing area label costs less
+      # attention than a red check that means nothing, so the step reports its
+      # own failure and the job stays green. A real error in labeler.yml still
+      # shows in the step log.
       - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        continue-on-error: true
         with:
           configuration-path: .github/labeler.yml
