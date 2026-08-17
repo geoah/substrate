@@ -103,7 +103,7 @@ func TestSPAHandlerMissingAssetIsNotFound(t *testing.T) {
 
 	// The client's own routes carry no extension, and still fall back.
 	for _, path := range []string{
-		"/data/people.substrate.reamde.dev/people/9f2kq1x7m0zb/edit",
+		"/data/people.substrate.reamde.dev/person/9f2kq1x7m0zb/edit",
 		"/nope",
 	} {
 		rec := httptest.NewRecorder()

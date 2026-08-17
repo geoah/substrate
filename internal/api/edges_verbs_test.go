@@ -8,7 +8,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const peopleV1 = "/api/v1/people.substrate.reamde.dev/people"
+const peopleV1 = "/api/v1/people.substrate.reamde.dev/person"
 
 // TestRESTEdgeLinkUnlinkRoundTrip is ruling A8's edge verbs: a REST client can
 // now REMOVE an edge, not only add one on a put. POST …/{id}/edges/{rel} links,
@@ -55,7 +55,7 @@ func TestTriggerVerbsLiveUnderCore(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 
-	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/triggers/status", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/trigger/status", tok, nil)
 	wantErrorCode(t, rec, http.StatusNotImplemented, codeUnsupported)
 	if w := rec.Header().Get("Warning"); w != "" {
 		t.Fatalf("the resource path must not carry a deprecation Warning: %q", w)

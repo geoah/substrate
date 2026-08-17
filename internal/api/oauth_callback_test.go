@@ -29,7 +29,7 @@ func callbackHandler(record string, err error, consoleURL string) http.Handler {
 	return New(Config{Service: oauthSvc{fakeService: newFakeService(), record: record, err: err}, ConsoleURL: consoleURL})
 }
 
-const callbackPath = "/api/v1/core.substrate.reamde.dev/oauth/callback?state=abc&code=xyz"
+const callbackPath = "/api/v1/oauth/callback?state=abc&code=xyz"
 
 func getCallback(h http.Handler) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, callbackPath, nil)

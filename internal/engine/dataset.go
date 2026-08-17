@@ -179,14 +179,6 @@ func (ds *dataset) KindByRef(ctx context.Context, ref string) (substrate.KindInf
 	return typeInfo(t), nil
 }
 
-func (ds *dataset) KindByPlural(ctx context.Context, authority, plural string) (substrate.KindInfo, error) {
-	t, ok := ds.registry().ByPlural(authority, plural)
-	if !ok {
-		return substrate.KindInfo{}, fmt.Errorf("%w: kind %s/%s", substrate.ErrNotFound, authority, plural)
-	}
-	return typeInfo(t), nil
-}
-
 // typeInfo is one declared kind as the read surfaces see it.
 //
 // `Definition` is RENDERED FROM THE PARSED DECLARATION — the data map the loader

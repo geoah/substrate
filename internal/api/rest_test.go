@@ -12,7 +12,9 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-const peoplePath = "/api/v1/people.substrate.reamde.dev/people"
+// The collection segment is the kind NAME, not a plural (decision 0033), so a
+// person's collection is /person and a record's URL equals its reference.
+const peoplePath = "/api/v1/people.substrate.reamde.dev/person"
 
 func TestRESTUnknownCollectionIs404(t *testing.T) {
 	env := newTestEnv(t)

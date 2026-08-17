@@ -431,6 +431,28 @@ func testTypes() []substrate.KindInfo {
 				"properties": map[string]any{"name": map[string]any{"type": "string"}},
 			},
 		},
+		{
+			// The bundle kind: a PATCH of one of its records runs the lifecycle
+			// transition (disable/enable/uninstall/purge), so the fake carries
+			// it for the collection to resolve.
+			Identity: kindBundleIdentity, Name: "bundle", Authority: coreAuthority,
+			Version: 1, Plural: "bundles", Source: "builtin",
+			Definition: map[string]any{
+				"plural":     "bundles",
+				"properties": map[string]any{"authority": map[string]any{"type": "string"}},
+			},
+		},
+		{
+			// A REPOSITORY-LOCAL kind: no authority, so its collection is one
+			// segment (/note) and its records two (/note/{id}). That is the
+			// shape `POST /api/v1/{kind}/{id}` used to create under a
+			// server-assigned id (#202), so the fake carries one.
+			Identity: "note", Name: "note", Authority: "",
+			Version: 1, Plural: "notes", Source: "builtin",
+			Definition: map[string]any{
+				"properties": map[string]any{"text": map[string]any{"type": "markdown"}},
+			},
+		},
 	}
 }
 
@@ -449,15 +471,6 @@ func (d *fakeDataset) KindByRef(_ context.Context, identity string) (substrate.K
 		}
 	}
 	return substrate.KindInfo{}, fmt.Errorf("%w: type %q", substrate.ErrNotFound, identity)
-}
-
-func (d *fakeDataset) KindByPlural(_ context.Context, authority, plural string) (substrate.KindInfo, error) {
-	for _, t := range d.types {
-		if t.Authority == authority && t.Plural == plural {
-			return t, nil
-		}
-	}
-	return substrate.KindInfo{}, fmt.Errorf("%w: collection %s/%s", substrate.ErrNotFound, authority, plural)
 }
 
 func (d *fakeDataset) put(e *substrate.Record) {

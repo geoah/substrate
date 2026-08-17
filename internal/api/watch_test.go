@@ -119,7 +119,7 @@ func TestWatchResumesFromCursor(t *testing.T) {
 		})
 	}
 
-	br, stop := startWatch(t, srv, "/api/v1/core.substrate.reamde.dev/changes?watch=1&from=1", tok)
+	br, stop := startWatch(t, srv, "/api/v1/changes?watch=1&from=1", tok)
 	defer stop()
 
 	if bm := readLine(t, br); bm["bookmark"] != float64(1) {
@@ -142,7 +142,7 @@ func TestChangesWithoutWatchIsASinglePage(t *testing.T) {
 		RecordID: "c1", Kind: "people.substrate.reamde.dev/person",
 	})
 
-	rec := env.do(t, http.MethodGet, "/api/v1/core.substrate.reamde.dev/changes?kinds=people.substrate.reamde.dev/person", tok, nil)
+	rec := env.do(t, http.MethodGet, "/api/v1/changes?kinds=people.substrate.reamde.dev/person", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	if got := rec.Header().Get("Content-Type"); got != "application/x-ndjson" {
 		t.Fatalf("content-type = %q", got)

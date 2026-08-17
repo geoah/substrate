@@ -31,6 +31,12 @@ const APIVersion = "v1"
 // hang off core beside the records they act on.
 const coreAuthority = "core.substrate.reamde.dev"
 
+// kindBundleIdentity is the bundle kind's reference. A PATCH of a bundle record
+// runs its lifecycle transition (disable/enable/uninstall/purge) instead of a
+// generic property write, because those are the substrate-owned state the
+// lifecycle ops maintain behind the engine's exclusive fence (decision 0019).
+const kindBundleIdentity = coreAuthority + "/bundle"
+
 // Config wires the HTTP layer.
 type Config struct {
 	Service substrate.Service
@@ -206,84 +212,109 @@ func isAPIPath(path string) bool {
 	return path == "/api" || strings.HasPrefix(path, "/api/")
 }
 
-// mountResources builds the versioned resource tree under /api/v1.
+// mountResources builds the versioned resource tree under /api/v1 (decision
+// 0033). Three groups: non-record endpoints at the version root, core-record
+// actions and sub-resources, and the generic record surface last.
 func (h *handler) mountResources(r chi.Router) {
 	{
 		// The OAuth callback carries no bearer: the provider redirects the
-		// browser here, and the HMAC-signed state IS the authentication.
-		r.Get("/"+coreAuthority+"/oauth/callback", h.getOAuthCallback)
+		// browser here, and the HMAC-signed state IS the authentication. It
+		// sits at the version root, not under an authority, so no kind can
+		// shadow it.
+		r.Get("/oauth/callback", h.getOAuthCallback)
 
 		r.Group(func(r chi.Router) {
 			r.Use(h.requireAuth)
 
+			// NON-RECORD ENDPOINTS, at the version root. Each is repository-wide
+			// and names no kind, so it leaves the kind namespace entirely: a
+			// two-segment kind reference can never collide with a one-segment
+			// reserved word, which is what lets them drop their authority prefix
+			// without a separator. This also frees the collections the old verb
+			// paths shadowed — `core.substrate.reamde.dev/recordmerge` and
+			// `/recordsplit` are reachable now that merge and split moved here
+			// (#202).
 			r.Post("/graphql", h.postGraphQL)
-
-			// The batch schema verb (schema is records): every document
-			// admitted or none, one transaction, activation on commit.
-			r.Post("/"+coreAuthority+"/vocabulary/apply", h.applyVocabulary)
-
-			// Re-embed: enqueue every embeddable property whose stored
-			// vectors did not come from the llmprovider row this repository
-			// currently buys embeddings from.
-			r.Post("/"+coreAuthority+"/embeddings/reembed", h.postReembed)
-
-			r.Post("/"+coreAuthority+"/recordmerges", h.postMerges)
-			r.Post("/"+coreAuthority+"/recordsplits", h.postSplits)
-			r.Get("/"+coreAuthority+"/changes", h.getChanges)
-
-			// Trigger delivery bookkeeping: status is computed, a replay is
-			// a cursor reset, a run is one synthesized delivery, a wake is
-			// an immediate scan. Triggers are core.substrate.reamde.dev records, so the
-			// verbs live at that resource — the substrate
-			// maintains its own delivery plumbing, so it publishes it.
-			h.mountTriggerVerbs(r, coreAuthority)
-			// Bundle lifecycle: status is computed; disable/enable and
-			// uninstall are reversible runtime state; purge tombstones the
-			// owned authority's data via the finalizer flow. The bundle ROWS are
-			// ordinary schema records under /core.substrate.reamde.dev/bundles.
-			r.Get("/"+coreAuthority+"/bundles/status", h.getBundleStatuses)
-			r.Get("/"+coreAuthority+"/bundles/{id}/status", h.getBundleStatus)
-			r.Post("/"+coreAuthority+"/bundles/{id}/disable", h.postBundleVerb(substrate.BundleOps.DisableBundle))
-			r.Post("/"+coreAuthority+"/bundles/{id}/enable", h.postBundleVerb(substrate.BundleOps.EnableBundle))
-			r.Post("/"+coreAuthority+"/bundles/{id}/bind", h.postBundleBind)
-			r.Post("/"+coreAuthority+"/bundles/{id}/uninstall", h.postBundleUninstall)
-			r.Post("/"+coreAuthority+"/bundles/{id}/purge", h.postBundlePurge)
+			// The batch vocabulary verb (a declaration is a record): every
+			// document admitted or none, one transaction, activation on commit.
+			// It stays distinct because a batch of declarations is not record
+			// data and the schema-apply admission is not the generic write path.
+			r.Post("/vocabulary/apply", h.applyVocabulary)
+			// Re-embed: enqueue every embeddable property whose stored vectors
+			// did not come from the llmprovider row this repository currently
+			// buys embeddings from.
+			r.Post("/embeddings/reembed", h.postReembed)
+			// Merge joins two records of one kind; split reverses a merge.
+			// Creating the command record performs the operation, so these are
+			// actions, not the recordmerge/recordsplit collections.
+			r.Post("/merge", h.postMerges)
+			r.Post("/split", h.postSplits)
+			r.Get("/changes", h.getChanges)
 			// The catalog: the installable bundle closures shipped in the
 			// binary. List and detail are repository reads (installed reflects
 			// this repository); install is an owner action that applies the
-			// closure through the same schema/apply admission path. Remote-URL
-			// / versioned install is future.
-			r.Get("/"+coreAuthority+"/catalog", h.getCatalog)
-			r.Get("/"+coreAuthority+"/catalog/{id}", h.getCatalogItem)
-			r.Post("/"+coreAuthority+"/catalog/{id}/install", h.postCatalogInstall)
-			// Traits as host-recognized interfaces: the types implementing
-			// one, and their records — the console's "account configs" view.
-			r.Get("/"+coreAuthority+"/traits/{id}/implementors", h.getTraitImplementors)
-			r.Get("/"+coreAuthority+"/traits/{id}/records", h.getTraitRecords)
-			// The host OAuth facility's authenticated half: start a connect
-			// flow for an account record.
-			r.Post("/"+coreAuthority+"/oauth/start", h.postOAuthStart)
-			// The content-addressed blob store: store bytes under
-			// their digest, stream them back, both repository-scoped. A blob's
-			// manifest is an ordinary `blob` record under /core.substrate.reamde.dev/blobs.
+			// closure through the same vocabulary-apply admission path.
+			r.Get("/catalog", h.getCatalog)
+			r.Get("/catalog/{id}", h.getCatalogItem)
+			r.Post("/catalog/{id}/install", h.postCatalogInstall)
+			// The host OAuth facility's authenticated half: start a connect flow
+			// for an account record.
+			r.Post("/oauth/start", h.postOAuthStart)
+			// The content-addressed blob store: store bytes under their digest,
+			// stream them back, both repository-scoped. A blob's manifest is an
+			// ordinary `blob` record under /core.substrate.reamde.dev/blob.
 			r.Put("/blobs", h.putBlob)
 			r.Put("/blobs/{digest}", h.putBlob)
 			r.Get("/blobs/{digest}", h.getBlob)
 
+			// CORE-RECORD ACTIONS AND SUB-RESOURCES. Each hangs one level below
+			// the record it acts on, where no id can sit, so a record whose id
+			// is `status` or `call` stays addressable.
+			//
+			// Trigger delivery bookkeeping: status is computed, a replay is a
+			// cursor reset, a run is one synthesized delivery, a wake is an
+			// immediate scan. Triggers are core.substrate.reamde.dev records, so
+			// the verbs live at that record.
+			h.mountTriggerVerbs(r, coreAuthority)
+			// Bundle status is computed; enable/disable, uninstall and purge are
+			// runtime STATE the substrate owns, reached by a PATCH of the bundle
+			// record (patchBundleLifecycle) rather than verbs. `bind` resolves
+			// an input to a record and is not a lifecycle state, so it stays a
+			// sub-path.
+			bundle := "/" + coreAuthority + "/bundle"
+			r.Get(bundle+"/status", h.getBundleStatuses)
+			r.Get(bundle+"/{id}/status", h.getBundleStatus)
+			r.Post(bundle+"/{id}/bind", h.postBundleBind)
+			// Traits as host-recognized interfaces: the kinds implementing one,
+			// and their records — the console's "account configs" view.
+			trait := "/" + coreAuthority + "/trait/{id}"
+			r.Get(trait+"/implementors", h.getTraitImplementors)
+			r.Get(trait+"/records", h.getTraitRecords)
 			// The callable invocation API: manual invoke with arbitrary input.
-			r.Post("/"+coreAuthority+"/functions/{name}/call", h.postFunctionCall)
+			r.Post("/"+coreAuthority+"/function/{name}/call", h.postFunctionCall)
 			// Agents: the same call API, plus chat — the one loop streaming.
-			r.Post("/"+coreAuthority+"/agents/{name}/call", h.postAgentCall)
-			r.Post("/"+coreAuthority+"/agents/{name}/chat", h.postAgentChat)
+			r.Post("/"+coreAuthority+"/agent/{name}/call", h.postAgentCall)
+			r.Post("/"+coreAuthority+"/agent/{name}/chat", h.postAgentChat)
 
-			// The collection path IS the kind reference:
-			// {authority}/{plural} for a published kind, {plural} alone for
-			// a repository-local one. An authority is a DNS name and always
-			// carries a dot; a plural never does, so a two-segment path is
-			// unambiguous — `addressed` is the ONE place that reads the
-			// difference, and every handler below takes its address from it.
+			// THE GENERIC RECORD SURFACE. The path IS the kind reference:
+			// {authority}/{kind} for a published kind, {kind} alone for a
+			// repository-local one, and the id after it. An authority is a DNS
+			// name and always carries a dot; a kind name never does, so a
+			// two-segment path is unambiguous — `addressed` is the ONE place
+			// that reads the difference.
+			//
+			// Each method says which shape it serves, and a method sent to the
+			// other shape answers 405 naming the spelling that works. POST at a
+			// two-segment path was bound to createInCollection whatever the path
+			// meant, so a POST to a repository-local RECORD discarded the id and
+			// created one under a server id; PUT was the mirror at a collection.
 			r.Get("/{a1}", h.listCollection)
 			r.Post("/{a1}", h.createInCollection)
+			// A one-segment path is always a collection, so the record methods
+			// bind here only to refuse with the address that works.
+			r.Put("/{a1}", h.putResource)
+			r.Patch("/{a1}", h.patchResource)
+			r.Delete("/{a1}", h.deleteResource)
 
 			r.Get("/{a1}/{a2}", h.getCollectionOrResource)
 			r.Post("/{a1}/{a2}", h.createInCollection)
@@ -291,24 +322,25 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Patch("/{a1}/{a2}", h.patchResource)
 			r.Delete("/{a1}/{a2}", h.deleteResource)
 
-			// Sub-resources hang off the record, at both address depths. A
-			// static segment beats a parameter in chi's tree, so a record
-			// whose id is literally `incoming` or `edges` is not addressable
-			// here — the one corner this shape costs.
+			r.Get("/{a1}/{a2}/{a3}", h.getResource)
+			r.Post("/{a1}/{a2}/{a3}", h.createInCollection)
+			r.Put("/{a1}/{a2}/{a3}", h.putResource)
+			r.Patch("/{a1}/{a2}/{a3}", h.patchResource)
+			r.Delete("/{a1}/{a2}/{a3}", h.deleteResource)
+
+			// Record sub-resources hang off the record, at both address depths.
+			// A static segment beats a parameter in chi's tree, so a record
+			// whose id is literally `incoming` or `edges` is not addressable —
+			// the one corner a separator-free grammar costs (decision 0033).
 			r.Get("/{a1}/{a2}/incoming", h.getIncoming)
 			r.Post("/{a1}/{a2}/edges/{rel}", h.linkEdge)
 			r.Delete("/{a1}/{a2}/edges/{rel}", h.unlinkEdge)
 			r.Get("/{a1}/{a2}/{a3}/incoming", h.getIncoming)
-			// Edge mutation lives at the resource: link and unlink
-			// an outgoing edge {rel} with an EdgeRef body. A put could add an
-			// edge but never remove one; DELETE closes that gap.
+			// Edge mutation lives at the record: link and unlink an outgoing
+			// edge {rel} with an EdgeRef body. A put could add an edge but never
+			// remove one; DELETE closes that gap.
 			r.Post("/{a1}/{a2}/{a3}/edges/{rel}", h.linkEdge)
 			r.Delete("/{a1}/{a2}/{a3}/edges/{rel}", h.unlinkEdge)
-
-			r.Get("/{a1}/{a2}/{a3}", h.getResource)
-			r.Put("/{a1}/{a2}/{a3}", h.putResource)
-			r.Patch("/{a1}/{a2}/{a3}", h.patchResource)
-			r.Delete("/{a1}/{a2}/{a3}", h.deleteResource)
 		})
 	}
 }
