@@ -112,6 +112,13 @@ func stringList(v any) []string {
 
 // matches reports whether the rule speaks for this write: every named
 // dimension must admit it, and an empty dimension admits everything.
+//
+// The kinds dimension is the trigger source's grammar, matched by the trigger
+// source's matcher (vocabulary.MatchTypeGlob): a kind reference, every kind
+// one authority publishes (`tasks.substrate.reamde.dev/*`), or every kind
+// (`*`). Ops and agents stay exact — an agent identity has no authority half
+// to cut on, and the three ops are a closed enum where an empty list already
+// says "all of them".
 func (r *policyRule) matches(kind, op, agent string) bool {
 	in := func(list []string, v string) bool {
 		if len(list) == 0 {
@@ -124,7 +131,18 @@ func (r *policyRule) matches(kind, op, agent string) bool {
 		}
 		return false
 	}
-	return in(r.kinds, kind) && in(r.ops, op) && in(r.agents, agent)
+	kindMatches := func() bool {
+		if len(r.kinds) == 0 {
+			return true
+		}
+		for _, pat := range r.kinds {
+			if vocabulary.MatchTypeGlob(pat, kind) {
+				return true
+			}
+		}
+		return false
+	}
+	return kindMatches() && in(r.ops, op) && in(r.agents, agent)
 }
 
 // severity orders the actions: the most restrictive matching policy governs.
