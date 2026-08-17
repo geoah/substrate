@@ -21,8 +21,8 @@ One entry, as the wire carries it, for the task created on the
  "hash": "5f0c…64 hex chars…9a1d"}
 ```
 
-`actor` names what wrote ([the actor domain](api.md#actors) is closed and
-flat) and is the caller's own claim; the entry also stores a **principal**
+`actor` names what wrote ([the actor domain](api.md#actors) is closed) and is
+the caller's own claim; the entry also stores a **principal**
 beside it, the id of the token the door resolved from the bearer secret,
 which no caller can name. Two tokens writing as `api` are one actor and two
 principals. It is hashed with the rest of the entry, so a stored principal

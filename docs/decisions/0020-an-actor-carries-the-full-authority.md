@@ -45,7 +45,10 @@ own actor string could name another bundle's hand and inherit its manager
 rows, its policy tier and its echo suppression, so the derivation stays the
 engine's: `substrate.BundleActor`, `substrate.FunctionActor` and
 `substrate.AgentActor` are the only mints, and `X-Substrate-Actor` refuses
-every prefix they use (api/auth.go).
+every prefix they use (api/auth.go). An actor DOCUMENT naming a dispatch hand
+is refused by the loader for the same reason: a declaration carries a tier,
+and admitting one would let any authority set the tier another authority's
+callable writes at.
 
 A hash of the authority collides too, rarely and then unreadably, and it makes
 a changelog unreadable by inspection, which is the property 0014 exists to
@@ -98,13 +101,16 @@ already unique per authority.
 
 ### Confirmation
 
-`TestActorsCarryTheFullAuthority` and `TestValidActor`
-(internal/vocabulary) pin the derivations and the widened grammar;
-`TestReservedActorHoldsTheRetiredConnectorPrefix` (internal/substrate) holds
-the door shut on the retired spelling; `TestOldActorSpellingSurvivesRebuild`
+`TestMachineActorsCarryTheFullAuthority` and
+`TestReservedActorHoldsTheRetiredConnectorPrefix` (internal/substrate) pin the
+three derivations and hold the door shut on the retired spelling;
+`TestActorsCarryTheFullAuthority`, `TestValidActor` and
+`TestTwoAuthoritiesMayShareABundleName` (internal/vocabulary) pin the widened
+grammar, the refusal of a declared dispatch hand, and the two bundles that
+used to be refused for one label; `TestOldActorSpellingSurvivesRebuild`
 (internal/engine) writes an entry as `connector:gmail`, rebuilds the
 repository from its changelog, and asserts the actor and its manager row come
-back unchanged and at the machine tier.
+back unchanged, at the machine tier, with the chain still verifying.
 
 ## More Information
 
