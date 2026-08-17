@@ -177,7 +177,7 @@ run = "go test -count=1 -run '^TestLive' -v ./internal/llm/... ./internal/engine
 # eslint from `lint` would drag pnpm into the lint job and run it twice.
 
 [tasks.lint]
-description = "Every linter: Go, YAML, shell, Python, the docs, the migrations and the toolchain pins"
+description = "Every linter: Go, YAML, shell, Python, the docs, the migrations, the toolchain pins and the sandbox gate"
 depends = [
   "lint:go",
   "lint:yaml",
@@ -185,6 +185,7 @@ depends = [
   "lint:python",
   "lint:docs",
   "lint:migrations",
+  "lint:sandboxgate",
   "lint:toolchain",
 ]
 
@@ -234,6 +235,14 @@ description = "The shape of internal/engine/migrations: naming, numbering, no ga
 # silently never runs. Two files claiming one version is worse: which schema a
 # database ends up with is then decided by directory order.
 run = ".mise/migrationscheck.sh"
+
+[tasks."lint:sandboxgate"]
+description = "The CI tasks still set SUBSTRATE_TEST_REQUIRE_SANDBOX, and still reach the suite through `run`"
+# The gate this holds is the one thing in the tree whose failure mode is a
+# GREEN build: disarm it and the confinement cases go back to skipping
+# themselves on a kernel that lost Landlock, with nothing to see. Same class of
+# problem as the tests it protects, one level up.
+run = ".mise/sandboxgatecheck.sh"
 
 [tasks."lint:toolchain"]
 description = "The version pins written twice: .mise.toml against the Dockerfiles"

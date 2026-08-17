@@ -34,12 +34,15 @@ func newTestConfiner(t *testing.T) *Confiner {
 	if !c.Report().Seccomp {
 		sandboxtest.Unavailablef(t, "seccomp unavailable: %s", c.Report())
 	}
-	sandboxtest.Ran()
+	sandboxtest.Case(t)
 	return c
 }
 
-// The four cases below run a real confined child; TestFilterAssembles needs no
-// kernel and is not one of them.
+// Four cases below run a real confined child, and under
+// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly four must reach the guard.
+// TestFilterAssembles needs no kernel and is not one of them. There is no
+// TestMain off Linux: sandbox_other.go confines nothing by construction, so
+// there is no case there to count.
 func TestMain(m *testing.M) {
 	os.Exit(sandboxtest.Run(m, 4))
 }

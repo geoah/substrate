@@ -33,7 +33,7 @@ func requireSandbox(t *testing.T, r *Runner) {
 	if rep := r.sandbox.Report(); !rep.FS() || !rep.Seccomp {
 		sandboxtest.Unavailablef(t, "kernel does not offer the sandbox: %s", rep)
 	}
-	sandboxtest.Ran()
+	sandboxtest.Case(t)
 }
 
 // requireSeccomp is requireSandbox for an assertion that needs only the SYSCALL
@@ -44,13 +44,14 @@ func requireSeccomp(t *testing.T, r *Runner) {
 	if rep := r.sandbox.Report(); !rep.Seccomp {
 		sandboxtest.Unavailablef(t, "kernel has no syscall filter: %s", rep)
 	}
-	sandboxtest.Ran()
+	sandboxtest.Case(t)
 }
 
-// The eight guarded cases below are the promise this file holds. Under
-// SUBSTRATE_TEST_REQUIRE_SANDBOX a run that proved fewer of them fails, so a
-// kernel or image change that turns every guard into a skip cannot leave a
-// green build behind.
+// Eight cases below guard on the confinement, and under
+// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly eight must reach that guard: a kernel
+// or image change that turns them into skips cannot leave a green build
+// behind, and a ninth case cannot be added, or one of the eight removed,
+// without this number moving with it.
 func TestMain(m *testing.M) {
 	os.Exit(sandboxtest.Run(m, 8))
 }
