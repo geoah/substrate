@@ -1,7 +1,7 @@
 # The tip of main as one image: ghcr.io/geoah/substrate:latest.
 #
-# This `latest` is NOT a stable release tag in the usual sense — it moves
-# with every commit to main and has no release notes behind it. It says so
+# This `latest` is NOT a stable release tag in the usual sense — it moves with
+# every green commit on main and has no release notes behind it. It says so
 # when asked: the version it reports is `git describe`, so a build that is not
 # a release reads as `v0.2.0-4-g1a2b3c4` rather than as v0.2.0. Deploy it only
 # if you meant to track main. Released versions come from a tag, through
@@ -10,25 +10,83 @@
 #
 # No per-commit tags: one moving tag, so the registry does not fill up with
 # images nobody will ever ask for by name.
+#
+# It hangs off ci, like version.yml, rather than off the push: on the push it
+# built and published a commit whose suite was still running, so `latest` could
+# be red. There is no dispatch, because a dispatch is that same untested
+# publish with a person's name on it.
+#
+# A green ci run is necessary and not sufficient, so the `tip` job below asks
+# whether the commit is still what main points at. Anyone can re-run an old ci
+# run, to look at a flake or by mistake, and its completion arrives here
+# carrying a green, push, main event for a commit two releases back. Without
+# the check, that event rewinds `latest` to an image nobody asked for.
 name: latest
 
 on:
-  push:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
     branches: [main]
-  workflow_dispatch:
 
 concurrency:
-  # Newer commits win — an in-flight latest build for an older commit is
-  # wasted.
+  # One build at a time, so two of them cannot push the one moving tag in an
+  # order nobody chose. Successive pushes to main arrive here in commit order
+  # (ci cancels its own older run on main, so an older run only reports success
+  # by finishing before the newer one starts), but a re-run of an ancient ci
+  # run arrives whenever a person clicks it.
+  #
+  # NOT cancel-in-progress: arrival order is what a cancellation would act on,
+  # and that re-run is an arrival for a commit two releases back. It would
+  # cancel the build of the actual tip and then skip at the `tip` job below,
+  # leaving `latest` behind. A superseded build is left to finish and cost a
+  # runner instead.
   group: latest
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
+  # A job of its own so a superseded commit SKIPS rather than fails: there is
+  # nothing wrong with the commit or the run, it is simply not the one `latest`
+  # names any more, and a red X on it would be a lie somebody has to
+  # investigate.
+  tip:
+    name: is this commit still main
+    # Both halves are load-bearing. `conclusion == 'success'` is the gate this
+    # trigger exists for; `event == 'push'` is because ci runs on pull
+    # requests too and those runs arrive here as well. The trigger's branch
+    # filter reads the HEAD branch, and a fork's pull request from its own
+    # `main` matches it.
+    if: >-
+      github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion
+      == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.main.outputs.sha }}
+    steps:
+      # Read now rather than from the event, so it is where main points after
+      # the ci run finished. A commit that has been overtaken stays overtaken.
+      - id: main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/heads/main" --jq .sha)"
+          echo "main is at $sha, this run carries $HEAD_SHA" >&2
+          echo "sha=$sha" >>"$GITHUB_OUTPUT"
+
   latest:
     name: push latest image
+    needs: tip
+    # Skipped, not failed, when the commit has been overtaken. The commit that
+    # overtook it gets its own ci run and its own turn here.
+    if: needs.tip.outputs.sha == github.event.workflow_run.head_sha
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -41,6 +99,8 @@ jobs:
           # version. A shallow checkout has none, and every latest image would
           # call itself by a bare sha.
           fetch-depth: 0
+          # The commit ci went green on, not whatever main points at now.
+          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0

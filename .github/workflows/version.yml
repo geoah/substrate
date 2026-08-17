@@ -23,11 +23,13 @@ on:
     workflows: [ci]
     types: [completed]
     branches: [main]
-  # The same fold, run by hand, for a main that is releasable and has no green
-  # ci run to hang off (a red job retried into oblivion, a workflow somebody
-  # skipped). It computes and tags exactly as the automatic path does, so it
-  # cannot re-publish a tag that already exists: that is release.yml's own
-  # dispatch, which takes the tag to build.
+  # The same fold, run by hand, for a main whose green ci run this workflow
+  # never saw (a workflow_run event GitHub dropped, a version job that failed
+  # after ci passed). It is NOT a way around ci: the first step below looks the
+  # green run up and refuses without one. It computes and tags exactly as the
+  # automatic path does, and it is a full recovery path rather than a second
+  # one: a tag already pushed by a run that then died is picked up and
+  # released, and a tag that already has its release is left alone.
   workflow_dispatch:
 
 concurrency:
@@ -56,50 +58,130 @@ jobs:
     permissions:
       # To push the tag. Nothing else here writes.
       contents: write
+      # To read ci's runs, which is what the dispatch gate below asks for.
+      actions: read
     outputs:
       tag: ${{ steps.next.outputs.tag }}
-      tagged: ${{ steps.next.outputs.tagged }}
+      # The commit the tag was made at, carried to release.yml so it builds a
+      # commit and not a name that can be repointed.
+      sha: ${{ steps.next.outputs.sha }}
+      publish: ${{ steps.next.outputs.publish }}
     steps:
+      # The workflow_run path arrives BECAUSE ci went green. A dispatch arrives
+      # because a person asked, so the green run is looked up here and this
+      # step is the whole difference between the two doors.
+      #
+      # `event == push` and `head_branch == main` because a pull request run
+      # can carry a main commit's sha (a fork's pull request from its own
+      # main), and that run tested the fork, not this repository's main.
+      - name: require a successful ci run for this commit
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          green="$(gh api \
+            "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$SHA&status=success&per_page=100" \
+            --jq '[.workflow_runs[] | select(.event == "push" and .head_branch == "main")] | length')"
+          if [ "$green" -eq 0 ]; then
+            echo "no successful ci run for $SHA on main; refusing to tag it" >&2
+            exit 1
+          fi
+          echo "$green successful ci run(s) for $SHA" >&2
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Every tag and every commit since: the version IS a fold over them.
           fetch-depth: 0
           # The commit ci went green on, not whatever main points at now. A
           # merge that landed while the suite was running is a different tree,
-          # and it will get its own run.
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          # and it will get its own run. On the dispatch path that is
+          # github.sha, the same sha the step above proved green, so a push
+          # between the two cannot slip an untested commit into the tag.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
         with:
           experimental: true
+      # `publish` says "this tag exists on this commit and has no release yet",
+      # NOT "I just created it". The difference is a run that pushed the tag
+      # and then died: the tag is there, nothing was built, and a `publish`
+      # meaning "I created it" is false forever after, because svu then reads
+      # that tag as the current version and computes no bump. With every other
+      # door into release.yml closed, that release could then never be built:
+      # not by a re-run, which recomputes the same nothing, and not by a
+      # dispatch. So the question asked is about the release, not about this
+      # run.
       - id: next
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          head="$(git rev-parse HEAD)"
           current="$(mise run version:current)"
           next="$(mise run version:next)"
-          if [ "$next" = "$current" ]; then
-            echo "nothing since $current bumps the version; not tagging" >&2
-            echo "tagged=false" >>"$GITHUB_OUTPUT"
+
+          if [ "$next" != "$current" ]; then
+            tag="$next"
+          else
+            # Nothing since the last tag bumps the version, which is the
+            # ordinary "docs: and chore: only, nothing to release" case unless
+            # that tag IS this commit: then a previous run tagged and got no
+            # further, and finishing it is the whole point of being here.
+            tag="$current"
+            at="$(git rev-parse -q --verify "refs/tags/$tag^{commit}" || true)"
+            if [ "$at" != "$head" ]; then
+              echo "nothing since $current bumps the version; not tagging" >&2
+              echo "publish=false" >>"$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          at="$(git rev-parse -q --verify "refs/tags/$tag^{commit}" || true)"
+          if [ -z "$at" ]; then
+            # Annotated, so the tag carries an author and a date of its own and
+            # `git describe` on any checkout finds it.
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$tag" -m "$tag"
+            git push origin "$tag"
+            echo "tagged $head as $tag" >&2
+          elif [ "$at" != "$head" ]; then
+            echo "$tag already exists at $at, not $head; refusing to move it" >&2
+            exit 1
+          else
+            echo "$tag already exists at $head; checking whether it was released" >&2
+          fi
+
+          # goreleaser creates the GitHub release at the END of its run, after
+          # the image push (the step v0.1.0 died on), so a release that exists
+          # is one that got all the way there. One that does not is a release
+          # to build. A release created and then half-uploaded is the one case
+          # this cannot see, and its recovery is re-running the release job
+          # itself, which `replace_existing_artifacts` in .goreleaser.yaml
+          # makes safe.
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag is already released; nothing to publish" >&2
+            echo "publish=false" >>"$GITHUB_OUTPUT"
             exit 0
           fi
-          # Annotated, so the tag carries an author and a date of its own and
-          # `git describe` on any checkout finds it.
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$next" -m "$next"
-          git push origin "$next"
-          echo "tagged $next" >&2
-          echo "tag=$next" >>"$GITHUB_OUTPUT"
-          echo "tagged=true" >>"$GITHUB_OUTPUT"
 
-  # Called rather than left to the tag: a tag pushed with GITHUB_TOKEN starts
-  # no workflow of its own, so an `on: push: tags` release would never fire for
-  # a tag this job pushed.
+          {
+            echo "tag=$tag"
+            echo "sha=$head"
+            echo "publish=true"
+          } >>"$GITHUB_OUTPUT"
+
+  # Called rather than left to the tag, and this call is release.yml's only
+  # door. A tag pushed with GITHUB_TOKEN starts no workflow of its own, so an
+  # `on: push: tags` release would never fire for a tag this job pushed, and
+  # would fire for one a person pushed over a commit nothing tested.
   publish:
     needs: tag
-    if: needs.tag.outputs.tagged == 'true'
+    if: needs.tag.outputs.publish == 'true'
     permissions:
       contents: write
       packages: write
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ needs.tag.outputs.tag }}
+      sha: ${{ needs.tag.outputs.sha }}
