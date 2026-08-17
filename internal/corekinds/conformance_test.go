@@ -154,6 +154,12 @@ func compareProps(t *testing.T, where string, declared map[string]*vocabulary.Pr
 		if r.RenamedFrom != d.RenamedFrom {
 			t.Errorf("%s: renamedFrom %q, loader %q", at, r.RenamedFrom, d.RenamedFrom)
 		}
+		// The reserved markers (issue 110). Nothing generates from them, which
+		// is exactly why one reader could quietly stop reading one.
+		if r.Unique != d.Unique || r.Deprecated != d.Deprecated {
+			t.Errorf("%s: reserved markers differ: reader unique=%v deprecated=%v, loader unique=%v deprecated=%v",
+				at, r.Unique, r.Deprecated, d.Unique, d.Deprecated)
+		}
 		if r.Inverse != d.Inverse || r.InverseDescription != d.InverseDescription {
 			t.Errorf("%s: inverse differs: reader %q/%q, loader %q/%q",
 				at, r.Inverse, r.InverseDescription, d.Inverse, d.InverseDescription)
@@ -209,7 +215,8 @@ func compareEnumValues(t *testing.T, at string, declared []vocabulary.EnumValue,
 		return
 	}
 	for i := range declared {
-		if declared[i].Value != read[i].Value || declared[i].Label != read[i].Label {
+		if declared[i].Value != read[i].Value || declared[i].Label != read[i].Label ||
+			declared[i].Deprecated != read[i].Deprecated {
 			t.Errorf("%s: value %d differs: reader %+v, loader %+v", at, i, read[i], declared[i])
 		}
 	}

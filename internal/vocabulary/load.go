@@ -849,7 +849,7 @@ func (l *loader) parseType(doc Document) *Kind {
 		}
 		ewhere := fmt.Sprintf("%s: data.edges.%s", where, ename)
 		inverse, inverseDesc := l.parseInverse(ewhere, ed)
-		t.Edges[ename] = &Edge{
+		e := &Edge{
 			Name:               ename,
 			Description:        l.parseDescription(ewhere, ed),
 			To:                 to,
@@ -858,7 +858,13 @@ func (l *loader) parseType(doc Document) *Kind {
 			OwnerRef:           mbool(ed, "ownerRef"),
 			Inverse:            inverse,
 			InverseDescription: inverseDesc,
+			Deprecated:         mbool(ed, "deprecated"),
 		}
+		if e.Deprecated && e.Required {
+			l.errf("%s: an edge is deprecated or required, never both: a client cannot stop offering a link a creation is refused without", ewhere)
+		}
+		e.Props, e.PropOrder = l.parseEdgeProps(ewhere, ed)
+		t.Edges[ename] = e
 	}
 	for n := range t.Edges {
 		t.EdgeOrder = append(t.EdgeOrder, n)
@@ -1037,6 +1043,122 @@ func mapOfAny[V any](m map[string]V) map[string]any {
 var edgeKeys = map[string]bool{
 	"to": true, "many": true, "required": true, "ownerRef": true,
 	"description": true, "inverse": true, "inverseDescription": true,
+	// RESERVED, both of them: `deprecated` is the marker every declaration
+	// carries, and `properties` declares what an edge ROW may hold. See
+	// Edge.Deprecated and Edge.Props.
+	"deprecated": true, "properties": true,
+}
+
+// edgePropKeys is the closed key set of ONE declared edge property: the scalar
+// half of propKeys and nothing else.
+//
+// What is missing is the point. `repeated`/`keyed` are containers, and an edge
+// property is one flat value; `fts`/`embed` are index placement on a record's
+// own columns, which an edge row does not have; `managed`/`writer` name a
+// stamping engine and a restricted writer, neither of which reaches an edge
+// row; `default` would need a `json` field in core's `kind` declaration, which
+// the dialect refuses inside an object; `renamedFrom` and `unique` are
+// evolution and identity, both of which belong to the record the edge hangs
+// off. Every one of them can be added later, which is the ordinary
+// coordinated event this reservation exists to make rarer, not to abolish.
+var edgePropKeys = map[string]bool{
+	"type": true, "description": true, "displayName": true,
+	"required": true, "deprecated": true,
+	"values": true, "pattern": true, "min": true, "max": true,
+}
+
+// edgePropForbiddenKinds are the datatypes an edge property may never be, each
+// saying why. The rule behind the list: an edge row is a LINK with a few flat
+// values on it, and anything that needs a shape, a machine, a resolver or a
+// lifecycle of its own is a record: declare the record and hang two edges off
+// it.
+var edgePropForbiddenKinds = map[Datatype]string{
+	DatatypeObject:    "an edge property is a flat value; a shape with fields is a record, with an edge at each end",
+	DatatypeJSON:      "`json` is a shape we do not own, and an edge row is not a place to hide one",
+	DatatypeState:     "a machine belongs to a record, which can be transitioned; an edge row cannot",
+	DatatypeSecret:    "a secret is a property of a record, sealed and read through its own path",
+	DatatypeDigest:    "a digest is minted onto a record",
+	DatatypeBlobRef:   "a blob-ref resolves on a record's read path, which an edge row does not have",
+	DatatypeReference: "the edge IS the pointer, and a second one on the same row is a record with two ends",
+}
+
+// parseEdgeProps reads the RESERVED `edges.<rel>.properties` block: the
+// properties an edge row of this rel may carry. Nothing validates an edge write
+// against it yet (issue 111); this is the declaration door alone.
+//
+// Each entry parses through parseProperty, so a refinement resolves, an enum
+// gets its values and a pattern compiles exactly as they do on a record's own
+// property. The narrower key set is checked FIRST, so `repeated: true` on an
+// edge property is named as the key it is rather than parsed and then
+// contradicted.
+func (l *loader) parseEdgeProps(where string, ed map[string]any) (map[string]*Property, []string) {
+	if _, declared := ed["properties"]; !declared {
+		return nil, nil
+	}
+	raw := mmap(ed, "properties")
+	if len(raw) == 0 {
+		l.errf("%s.properties: an edge declares the properties its rows carry; drop the key rather than declaring none", where)
+		return nil, nil
+	}
+	out := map[string]*Property{}
+	for pname, pdef := range raw {
+		pwhere := where + ".properties." + pname
+		if !ValidCamel(pname) {
+			l.errf("%s: must be %s", pwhere, camelRule)
+			continue
+		}
+		pd := asMapOrNil(pdef)
+		if pd == nil {
+			// No bare-datatype shorthand here, and that is deliberate: the
+			// shorthand belongs to an object's `fields:`, and what an edge
+			// declares has to survive the round trip into core's `kind` row,
+			// which holds each edge property as a mapping.
+			l.errf("%s: an edge property is a mapping, `{type: int}`, not a bare datatype", pwhere)
+			continue
+		}
+		l.checkKeys(pwhere, pd, edgePropKeys)
+		// Refused by name before the parse: a state declaration would otherwise
+		// fail on its missing machine first, and an object on its missing fields.
+		if reason, bad := edgePropForbiddenKinds[Datatype(mstr(pd, "type"))]; bad {
+			l.errf("%s: %s", pwhere, reason)
+			continue
+		}
+		// MaxFieldDepth, not 1: an edge property declares no fields, and a depth
+		// at the floor means any nesting that ever reached here is refused by the
+		// same guard a record's own properties are held to.
+		p := l.parseProperty(pwhere, pname, pd, true, MaxFieldDepth)
+		if p == nil {
+			continue
+		}
+		// A refinement resolves to its base datatype, so the rule holds through
+		// one: `type: isbn` is a string here and `type: someObject` is refused.
+		if reason, bad := edgePropForbiddenKinds[p.Datatype]; bad {
+			l.errf("%s: %s", pwhere, reason)
+			continue
+		}
+		// THE AUTHORED BLOCK IS THE STORED BLOCK, and this is what keeps it so.
+		// A record property may write `values: [low, high]`, but core's `kind`
+		// holds an edge property's values as {value, label} objects, so
+		// admitting the bare word here would mean rewriting somebody's
+		// declaration on its way into the row: the row would then differ from
+		// the document that produced it, which is how a byte-identical re-apply
+		// starts bumping a version every time.
+		for _, v := range mslice(pd, "values") {
+			if asMapOrNil(v) == nil {
+				l.errf("%s.values: an edge property spells a value as a mapping, `{value: %v}`, never a bare word", pwhere, v)
+			}
+		}
+		out[pname] = p
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	order := make([]string, 0, len(out))
+	for n := range out {
+		order = append(order, n)
+	}
+	sort.Strings(order)
+	return out, order
 }
 
 // reservedProps are the five properties EVERY record already carries, each
@@ -1164,7 +1286,10 @@ func (l *loader) parseDisplayName(where string, d map[string]any) string {
 const valueRule = "a lowercase word ([a-z][a-z0-9]*)"
 
 // enumValueKeys is the closed key set of a labeled enum value entry.
-var enumValueKeys = map[string]bool{"value": true, "label": true}
+// `deprecated` is the RESERVED marker on one value: removing a value live
+// records hold is a narrowing the guard refuses, so deprecating it is the move
+// the dialect has to have a word for.
+var enumValueKeys = map[string]bool{"value": true, "label": true, "deprecated": true}
 
 // parseEnumValue reads ONE `values:` entry in either declared form (record
 // 64): a bare scalar (`last30d`) is a value with no label; a mapping
@@ -1179,7 +1304,7 @@ func (l *loader) parseEnumValue(where string, v any) (EnumValue, bool) {
 			l.errf("%s.values: %q must be %s", where, val, valueRule)
 			return EnumValue{}, false
 		}
-		return EnumValue{Value: val, Label: mstr(m, "label")}, true
+		return EnumValue{Value: val, Label: mstr(m, "label"), Deprecated: mbool(m, "deprecated")}, true
 	}
 	s := fmt.Sprint(v)
 	if !ValidValue(s) {
@@ -1193,10 +1318,18 @@ func (l *loader) parseEnumValue(where string, v any) (EnumValue, bool) {
 // canonical wire form — `[{value, label}]`, always both keys — so the read
 // surfaces (the console's kind mirror) see one shape whether the manifest
 // authored bare scalars or labeled mappings.
+//
+// `deprecated` is rendered only where it was declared. It is an absent-means-
+// false marker like every other one, and writing it out everywhere would
+// rewrite the stored form of every refinement that already carries values.
 func enumValuesToAny(values []EnumValue) []any {
 	out := make([]any, len(values))
 	for i, v := range values {
-		out[i] = map[string]any{"value": v.Value, "label": v.Label}
+		m := map[string]any{"value": v.Value, "label": v.Label}
+		if v.Deprecated {
+			m["deprecated"] = true
+		}
+		out[i] = m
 	}
 	return out
 }
@@ -1330,6 +1463,10 @@ func isHot(s string) bool { return s == "at" || s == "endsAt" || s == "dueAt" }
 var machineKeys = map[string]bool{
 	"type": true, "states": true, "initial": true, "transitions": true,
 	"description": true, "displayName": true,
+	// `deprecated` is admitted on every property branch, a machine included: a
+	// picker that stops offering a deprecated property stops offering it
+	// whether the property holds a value or a state.
+	"deprecated": true,
 }
 
 var transitionKeys = map[string]bool{
@@ -1438,6 +1575,26 @@ var propKeys = map[string]bool{
 	// reserved-name checks live in parseType, where the whole property set is
 	// known.
 	"renamedFrom": true,
+	// `unique` and `deprecated` are RESERVED the same way and for the same
+	// reason: a key set is closed, so an unknown key quarantines the authority
+	// that ships it, and a dialect key nobody can use until every binary in an
+	// ecosystem has been upgraded is a key that has to land before the closure
+	// that wants it. Both are validated here and stored in the Definition map;
+	// neither changes a write. See Property.Unique and Property.Deprecated.
+	"unique": true, "deprecated": true,
+}
+
+// uniqueForbiddenKinds are the datatypes `unique:` never applies to, each
+// saying why. The line is whether a stored value has an equality an index
+// could police: a container has none that means what the author intends, and a
+// sealed secret compares as its ciphertext, which differs per write of the
+// same plaintext.
+var uniqueForbiddenKinds = map[Datatype]string{
+	DatatypeObject:  "an object holds fields; mark the field that identifies the record, not the wrapper",
+	DatatypeJSON:    "`json` is a shape we do not own; there is no value to hold unique",
+	DatatypeState:   "a machine is a position, and every record of a kind passes through the same states",
+	DatatypeSecret:  "a secret stores sealed, so two writes of one value are two different stored values",
+	DatatypeBlobRef: "a blob-ref names bytes many records may legitimately share",
 }
 
 // writerRoles is the closed set of a property's `writer:` restriction: who
@@ -1451,9 +1608,13 @@ var writerRoles = map[string]bool{
 // embed, no filter machinery — object properties stay out of all three until
 // a consumer arrives (§15). `repeated: true` is allowed, and `keyed: true` is
 // its twin.
+// `unique` is absent on purpose: an object's identifying value is one of its
+// fields, and `unique` on a field is refused too (parseFields), so the whole
+// question stays where an index could answer it.
 var objectPropKeys = map[string]bool{
 	"type": true, "fields": true, "repeated": true, "description": true,
 	"displayName": true, "keyed": true, "keyPattern": true, "managed": true,
+	"deprecated": true,
 }
 
 // referencePropKeys is a reference property's own key set: `kind:` pins WHICH
@@ -1473,6 +1634,10 @@ var referencePropKeys = map[string]bool{
 	"displayName": true, "required": true, "renamedFrom": true,
 	"inverse": true, "inverseDescription": true,
 	"keyed": true, "keyPattern": true, "managed": true,
+	// `unique` on a pointer is the one-to-one link: at most one live record may
+	// name any given referent. Reserved like everywhere else: nothing enforces
+	// it yet.
+	"unique": true, "deprecated": true,
 }
 
 // deletedReferencePropKeys are the reference declaration's retired keys, each
@@ -1529,6 +1694,10 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 	// refuses them as unknown.
 	p.Keyed = mbool(d, "keyed")
 	p.Managed = mbool(d, "managed")
+	// `deprecated` is read here for the same reason: all four branches admit it,
+	// because a client stops offering a deprecated declaration whatever shape it
+	// holds. It is RESERVED: stored, read by no server-side path.
+	p.Deprecated = mbool(d, "deprecated")
 	if p.Keyed && p.Repeated {
 		l.errf("%s: keyed and repeated are the two containers — a declaration is one or the other", where)
 		return nil
@@ -1622,16 +1791,7 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 		}
 		p.Required = mbool(d, "required")
 		p.Inverse, p.InverseDescription = l.parseInverse(where, d)
-		if rf := mstr(d, "renamedFrom"); rf != "" {
-			switch {
-			case !ValidCamel(rf):
-				l.errf("%s.renamedFrom: %q must be %s", where, rf, camelRule)
-			case rf == name:
-				l.errf("%s.renamedFrom: names the property itself", where)
-			default:
-				p.RenamedFrom = rf
-			}
-		}
+		l.parseReservedMarkers(where, name, d, p)
 		return p
 	}
 	l.checkKeys(where, d, propKeys)
@@ -1728,9 +1888,16 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 		}
 	}
 	p.Required = mbool(d, "required")
-	// renamedFrom (reserved, ticket 003): the shape checks that need no
-	// sibling knowledge. parseType finishes the job once the whole property
-	// set is parsed.
+	l.parseReservedMarkers(where, name, d, p)
+	return p
+}
+
+// parseReservedMarkers reads the three RESERVED property keys the scalar and
+// reference branches share (`renamedFrom`, `unique` and `deprecated`), and
+// records the shape problems that need no knowledge of the property's
+// siblings. parseType finishes renamedFrom's job once the whole property set is
+// parsed; nothing finishes the other two, because nothing acts on them yet.
+func (l *loader) parseReservedMarkers(where, name string, d map[string]any, p *Property) {
 	if rf := mstr(d, "renamedFrom"); rf != "" {
 		switch {
 		case !ValidCamel(rf):
@@ -1741,7 +1908,24 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 			p.RenamedFrom = rf
 		}
 	}
-	return p
+	if mbool(d, "unique") {
+		switch {
+		case p.Repeated || p.Keyed:
+			l.errf("%s.unique: one value per record; a list or a map holds several, and nothing says which of them is the unique one", where)
+		default:
+			if reason, bad := uniqueForbiddenKinds[p.Datatype]; bad {
+				l.errf("%s.unique: %s", where, reason)
+			} else {
+				p.Unique = true
+			}
+		}
+	}
+	// A form told to stop offering a property it may not submit without has
+	// nothing left to do, so the pair is refused rather than left to a client to
+	// resolve.
+	if p.Deprecated && p.Required {
+		l.errf("%s: a property is deprecated or required, never both: required means a form refuses to submit without it", where)
+	}
 }
 
 // parseFields parses one object level's field declarations: camelCase names,
@@ -1797,6 +1981,15 @@ func (l *loader) parseFields(where string, d map[string]any, depth int) map[stri
 		}
 		if fp.RenamedFrom != "" {
 			l.errf("%s: renamedFrom is only for a type's own property, not a field", fwhere)
+			continue
+		}
+		// `unique` names a whole property one index can police. Inside an object
+		// it would name a position within one value, and under a repeated or keyed
+		// container several positions per record, so it is refused where the
+		// constraint could not be stated, rather than stored and later found
+		// unenforceable.
+		if fp.Unique {
+			l.errf("%s: unique marks a type's own property, not a field", fwhere)
 			continue
 		}
 		// `managed` says the ENGINE stamps a property; the write path stamps

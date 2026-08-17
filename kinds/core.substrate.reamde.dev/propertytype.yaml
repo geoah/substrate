@@ -22,7 +22,9 @@ data:
   # integer, maintained by the engine.
   # version 7: the base set gained `decimal`, the exact string-carried
   # number. Additive, so live refinements are untouched.
-  version: 7
+  # version 8: an admitted value may be marked `deprecated` (issue 110):
+  # reserved, stored, and read by no server-side path.
+  version: 8
   names:
     singular: propertytype
     plural: propertytypes
@@ -104,3 +106,6 @@ data:
         label:
           type: string
           description: the human label a client renders beside it
+        deprecated:
+          type: bool
+          description: clients should stop offering this value

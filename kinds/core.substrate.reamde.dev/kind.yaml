@@ -9,6 +9,11 @@ data:
     browses through the same API as data, so every kind this repository holds
     is a row here, and these properties are what the engine validates every
     write against.
+  # version 11: the first version this kind pins itself, above the 10 it took
+  # from the authority. `edges.<rel>` gained `deprecated` and the reserved
+  # `properties` block (issue 110): additive, so every stored declaration keeps
+  # its shape and the upgrade is what carries the room for the new keys.
+  version: 11
   names:
     singular: kind
     plural: kinds
@@ -112,6 +117,67 @@ data:
         inverseDescription:
           type: string
           description: what the inverse means, from the target's side
+        deprecated:
+          type: bool
+          description: clients should stop offering this link
+        # RESERVED (issue 110): what an edge ROW of this rel may carry. The
+        # write path validates none of it yet (an edge write still takes
+        # whatever props it carries, issue 111) and the block is declared
+        # here so the day it does, the key is already one every binary reads.
+        #
+        # An edge property is a FLAT SINGLE VALUE, which is what makes the
+        # block declarable at all: a record's own `properties` is the one json
+        # leaf below, because a property declaration contains property
+        # declarations and no bounded schema states that. Take away the
+        # containers and the object, and what is left is exactly these fields.
+        properties:
+          type: object
+          keyed: true
+          keyPattern: camel
+          description: the values an edge row of this rel may carry
+          fields:
+            type:
+              type: string
+              required: true
+              description: the datatype, or an authority-local refinement
+                of one
+            description:
+              type: string
+              description: what the value means
+            displayName:
+              type: string
+              description: the human label a client renders instead of the
+                name
+            required:
+              type: bool
+              description: an edge written without it is refused
+            deprecated:
+              type: bool
+              description: clients should stop offering this value
+            pattern:
+              type: string
+              description: the regular expression a value matches
+            min:
+              type: float
+              description: the lowest admitted number
+            max:
+              type: float
+              description: the highest admitted number
+            values:
+              type: object
+              repeated: true
+              description: the admitted values, in render order
+              fields:
+                value:
+                  type: string
+                  required: true
+                  description: the stored value
+                label:
+                  type: string
+                  description: the human label a client renders beside it
+                deprecated:
+                  type: bool
+                  description: clients should stop offering this value
     # THE ONE json LEAF IN THE META-KIND, and the reason is a self-reference no
     # bounded schema escapes. A property declaration describes OBJECT FIELDS, and
     # a field declaration is a property declaration again — so describing

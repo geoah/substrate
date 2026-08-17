@@ -258,6 +258,90 @@ carry refuses like any other narrowing change. It is reserved so that when
 the rewrite arrives, the declaration is already in the manifest dialect and
 nothing changes shape on the wire.
 
+## The reserved keys
+
+A declaration's key set is closed, so a key one binary does not know
+[quarantines](#quarantine) the authority that ships it. That makes adding a
+key an upgrade of every binary that might read the closure, which is why these
+four are in the dialect before anything acts on them. Each is admitted,
+validated at load and stored on the declaration; none of them changes a write.
+`renamedFrom:`, above, is the fourth.
+
+**`unique:` marks one value per record.** At most one live record of the kind
+carries any given value, which is the constraint behind "one person per email"
+and "one book per ISBN":
+
+```yaml
+properties:
+  email:
+    type: email
+    unique: true
+```
+
+**Nothing enforces it yet**: no index exists and no duplicate write is
+refused. It is refused where it could not be stated: on a `repeated:` or
+`keyed:` property, on an object's field, and on `object`, `json`, `state`,
+`secret` and `blobref`, whose stored values have no equality an index could
+police.
+
+**`deprecated:` marks what a client should stop offering.** A property, an
+object property, a state property, a reference, an edge and a single enum
+value each take it:
+
+```yaml
+properties:
+  size:
+    type: string
+    deprecated: true
+  flavor:
+    type: enum
+    values:
+      - sweet
+      - value: salty
+        deprecated: true
+edges:
+  predecessor:
+    to: any
+    deprecated: true
+```
+
+The declaration still validates and still stores, so every existing record
+keeps working; what changes is what a picker offers, a form shows and a tool
+card suggests writing. This repository prefers add-and-deprecate to narrowing,
+and the marker is what makes the deprecated half tellable from the live one. A
+`deprecated:` declaration may not also be `required:`, because a form cannot
+both stop offering a value and refuse to submit without it.
+
+**`edges.<rel>.properties` declares what an edge row carries.** An edge row
+accepts arbitrary properties today and nothing declares or validates them:
+
+```yaml
+edges:
+  author:
+    to: person
+    properties:
+      order:
+        type: int
+        description: where this one sits in the list
+      role:
+        type: enum
+        values:
+          - value: writer
+          - value: editor
+```
+
+The block is admitted, validated and stored; **no edge write is checked
+against it yet**. An edge property is a flat single value: one scalar, enum
+or refinement, and never a list, a map, an object, a machine or a reference.
+That bound is what lets core's own `kind` declaration state the block field by
+field, and it is the line the dialect draws: anything an edge cannot hold
+under it is a record with an edge at each end.
+
+Two spellings a record property takes are refused here, both because the
+stored row has to be the document that was written. A value is a mapping
+(`{value: writer}`), never the bare word `writer`, and a property is a mapping
+(`{type: int}`), never a bare datatype.
+
 ## Quarantine
 
 A binary that tightens a vocabulary or trait contract can make an

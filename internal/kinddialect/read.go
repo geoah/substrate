@@ -89,6 +89,12 @@ type Property struct {
 	RenamedFrom        string
 	Inverse            string
 	InverseDescription string
+	// Unique and Deprecated are the reserved markers, admitted and carried the
+	// same way: a uniqueness nothing enforces yet and a marker only a client
+	// reads change no generated type. Read so the conformance test can hold both
+	// readers to one answer about them.
+	Unique     bool
+	Deprecated bool
 	// To is a reference property's declared referent, verbatim: a full kind
 	// reference, a bare kind name or "any". Resolution belongs to the registry.
 	To string
@@ -115,6 +121,9 @@ type Property struct {
 type EnumValue struct {
 	Value string
 	Label string
+	// Deprecated is the reserved marker on one admissible value: still admitted
+	// on writes, so a generated type still holds it.
+	Deprecated bool
 }
 
 // Machine is a state property's declared machine. A state is NOT stored in the
@@ -499,18 +508,20 @@ func (r *reader) checkStampProperties(where string, k *Kind) {
 // objectPropKeys, referencePropKeys and machineKeys. `embed`, `fts`, `default`
 // and `renamedFrom` are admitted and carry nothing into a generated type: the
 // first two are index placement, the third a form hint, the fourth reserved for
-// a rewrite nothing performs yet.
+// a rewrite nothing performs yet. `unique` and `deprecated` are reserved the
+// same way (issue 110) and admitted on the branches the loader admits them on:
+// `unique` on the scalar and reference branches, `deprecated` on all four.
 var (
 	scalarKeys = keys("type", "repeated", "embed", "fts", "values", "pattern",
 		"min", "max", "description", "base", "fields", "writer", "displayName",
 		"keyed", "keyPattern", "managed", "required", "default",
-		"renamedFrom")
+		"renamedFrom", "unique", "deprecated")
 	objectKeys = keys("type", "fields", "repeated", "description", "displayName",
-		"keyed", "keyPattern", "managed")
+		"keyed", "keyPattern", "managed", "deprecated")
 	referenceKeys = keys("type", "kind", "repeated", "description", "displayName",
 		"required", "renamedFrom", "inverse", "inverseDescription", "keyed",
-		"keyPattern", "managed")
-	machineKeys    = keys("type", "states", "initial", "transitions", "description", "displayName")
+		"keyPattern", "managed", "unique", "deprecated")
+	machineKeys    = keys("type", "states", "initial", "transitions", "description", "displayName", "deprecated")
 	transitionKeys = keys("from", "to", "stamps", "onEnter", "notifies")
 	keyPatterns    = keys("camel", "kindRef")
 	writerRoles    = keys("oauth", "connector", "owner")
@@ -577,6 +588,7 @@ func (r *reader) readProperty(where, name string, n *yaml.Node, depth int) *Prop
 	}
 	p.Repeated, p.Keyed = r.flag(where, d, "repeated"), r.flag(where, d, "keyed")
 	p.Managed = r.flag(where, d, "managed")
+	p.Deprecated = r.flag(where, d, "deprecated")
 	if p.Keyed && p.Repeated {
 		r.errf("%s: keyed and repeated are the two containers — a declaration is one or the other", where)
 		return nil
@@ -642,6 +654,7 @@ func (r *reader) readProperty(where, name string, n *yaml.Node, depth int) *Prop
 		p.To = d.str("kind")
 		p.Required = r.flag(where, d, "required")
 		p.RenamedFrom = d.str("renamedFrom")
+		p.Unique = r.flag(where, d, "unique")
 		p.Inverse, p.InverseDescription = d.str("inverse"), d.str("inverseDescription")
 		return p
 	}
@@ -656,6 +669,7 @@ func (r *reader) readProperty(where, name string, n *yaml.Node, depth int) *Prop
 	}
 	p.Required = r.flag(where, d, "required")
 	p.RenamedFrom = d.str("renamedFrom")
+	p.Unique = r.flag(where, d, "unique")
 	p.Pattern = d.str("pattern")
 	p.Min, p.Max = r.number(where, d, "min"), r.number(where, d, "max")
 	for i, v := range d.seq("values") {
@@ -720,8 +734,8 @@ func (r *reader) readEnumValue(where string, n *yaml.Node) (EnumValue, bool) {
 		r.errf("%s: an enum value is a scalar or {value, label}", where)
 		return EnumValue{}, false
 	}
-	r.checkKeys(where, d, keys("value", "label"))
-	v := EnumValue{Value: d.str("value"), Label: d.str("label")}
+	r.checkKeys(where, d, keys("value", "label", "deprecated"))
+	v := EnumValue{Value: d.str("value"), Label: d.str("label"), Deprecated: r.flag(where, d, "deprecated")}
 	if v.Value == "" {
 		r.errf("%s: an enum value needs a value", where)
 		return EnumValue{}, false
