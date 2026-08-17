@@ -9,19 +9,18 @@ import (
 )
 
 // backgroundDrainTimeout bounds how long Close waits for detached tasks once it
-// has cancelled them. A task that does not watch its context — an agent turn
+// has canceled them. A task that does not watch its context — an agent turn
 // inside a provider call that ignores cancellation — must not hold the process
 // open past its orchestrator's grace period, so the wait gives up and logs.
 const backgroundDrainTimeout = 10 * time.Second
 
 // background supervises the work that outlives the request that scheduled it:
-// the judge, a notified thread's resume (ADR 0003 makes `notifies` the one
-// resolution primitive, so this is not only the agent surface) and the
-// open-time function warm. Each runs an agent turn plus writes on this
-// service's pools, so each needs a context that shutdown can cancel, a counter
-// shutdown can wait on, and a recover: these goroutines carry no request, chi's
-// recoverer never sees them, and an unrecovered panic in one kills the process
-// for every request in flight.
+// the judge, a notified thread's resume (the `notifies` marker of ADR 0003,
+// which every resolution rides) and the open-time function warm. Each runs an
+// agent turn plus writes on this service's pools, so each needs a context that
+// shutdown can cancel, a counter shutdown can wait on, and a recover: these
+// goroutines carry no request, chi's recoverer never sees them, and an
+// unrecovered panic in one kills the process for every request in flight.
 type background struct {
 	ctx    context.Context
 	cancel context.CancelFunc

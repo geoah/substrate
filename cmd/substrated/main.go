@@ -135,6 +135,11 @@ func run() error {
 	// defer so it runs BEFORE it, and it cancels first itself, because a
 	// listener error returns with the loops still live and a Wait on them would
 	// hang the exit.
+	//
+	// This barrier covers the TICKER loops only. The engine's own detached
+	// tasks — the judge, a notified thread's resume, the open-time function
+	// warm — are counted by the service and drained inside svc.Close(), which
+	// is why they are not added here.
 	var loops sync.WaitGroup
 	defer func() {
 		cancel()

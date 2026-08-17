@@ -367,7 +367,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 
 func (s *service) Close() error {
 	// The detached tasks (background.go) hold this service's pools, so they are
-	// refused, cancelled and drained FIRST: closing a pool under one of them
+	// refused, canceled and drained FIRST: closing a pool under one of them
 	// would pull the connection out from under a live transaction.
 	s.stopBackground(backgroundDrainTimeout)
 	s.mu.Lock()
