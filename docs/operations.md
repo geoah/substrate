@@ -350,6 +350,11 @@ docker compose exec substrate substratectl repository verify ada
 docker compose exec substrate substratectl user reset ada
 ```
 
+`reseal` and `user reset` refuse on a deployment left at the out-of-the-box
+default, because that default sets no `SUBSTRATE_CREDENTIAL_KEY` and both write
+sealed material: set the key in the environment compose reads, restart, and
+they run.
+
 Publishing the Postgres port to reach the same commands from the host is a
 worse trade: it exposes the database to everything that can reach the host, and
 the exec path needs nothing open at all.
