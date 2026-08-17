@@ -24,7 +24,7 @@ const Dim = 1536
 const DefaultModel = "text-embedding-3-small"
 
 // modelDimensions maps base embedding model names to their vector dimensions.
-// It is the whole model set: decision record 0020 fixes the stored width at
+// It is the whole model set: decision record 0026 fixes the stored width at
 // Dim, so a model this table does not carry is refused where the provider row
 // is written rather than guessed at when the vectors arrive.
 var modelDimensions = map[string]int{
@@ -163,7 +163,7 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 		seen[d.Index] = true
 		// The declared width is what the storage column holds, and a gateway
 		// serving something else under a known model name is the one way past
-		// the write-time check (decision record 0020). Refuse here rather than
+		// the write-time check (decision record 0026). Refuse here rather than
 		// let Postgres refuse the insert with no model in the message.
 		if len(d.Embedding) != e.dimension {
 			return nil, fmt.Errorf("embed: model %q returned a %d-wide vector; %d is the declared width",

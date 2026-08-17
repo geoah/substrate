@@ -323,7 +323,7 @@ repository's embeddings provider, and only one row may declare it. Because only
 the `openai` wire has an embeddings endpoint, a row on any other wire that
 names an `embedModel` is refused at the write, as is a model whose vectors are
 not 1536 wide ([decision
-0020](decisions/0020-embedding-vectors-are-1536-wide-or-refused.md)). Every
+0026](decisions/0026-embedding-vectors-are-1536-wide-or-refused.md)). Every
 stored vector names the row and the model that produced it, and semantic search
 scores only the current pair's vectors, so changing either hides the older ones
 rather than mixing two models' distances. `substratectl --dsn … repository

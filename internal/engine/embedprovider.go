@@ -209,7 +209,7 @@ func checkEmbedWire(id string, wire llm.Wire, model string) error {
 
 // checkEmbedModel refuses a model the stored column cannot hold. The width is
 // fixed at vector(1536) and a model of any other width is refused rather than
-// truncated (decision record 0020).
+// truncated (decision record 0026).
 func checkEmbedModel(id, model string) error {
 	dim, ok := embed.ModelDim(model)
 	if !ok {

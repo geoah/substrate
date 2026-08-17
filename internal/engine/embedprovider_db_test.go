@@ -86,7 +86,7 @@ func TestEmbedProviderRowRefusals(t *testing.T) {
 		t.Fatalf("the refusal does not say why: %v", err)
 	}
 
-	// 3072 wide, and the column is 1536 (decision record 0020).
+	// 3072 wide, and the column is 1536 (decision record 0026).
 	_, err = ds.Put(ctx, owner, substrate.PutInput{
 		Kind: typeProvider, ID: "wide",
 		Properties: map[string]any{
@@ -168,8 +168,10 @@ func TestReembedReplacesVectorsAndResumes(t *testing.T) {
 	emb := newFakeEmbedServer(t)
 	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
 
-	titles := []string{"alpha unique marmalade prose", "beta zeppelin narrative here",
-		"gamma tangerine dictionary volume"}
+	titles := []string{
+		"alpha unique marmalade prose", "beta zeppelin narrative here",
+		"gamma tangerine dictionary volume",
+	}
 	ids := make([]string, 0, len(titles))
 	for i, desc := range titles {
 		row := mustPut(t, ds, owner, substrate.PutInput{

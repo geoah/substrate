@@ -4,7 +4,7 @@ date: 2026-08-17
 decision-makers: George Antoniadis
 ---
 
-# 0020. Embedding vectors are 1536 wide or the provider row is refused
+# 0026. Embedding vectors are 1536 wide or the provider row is refused
 
 ## Context and Problem Statement
 
@@ -79,8 +79,9 @@ one.
 
 `TestEmbedProviderRowRefusals` in `internal/engine` covers the width refusal (a
 row naming a 3072-wide model refuses, naming both widths) and the unknown-model
-refusal. `ProcessEmbedQueue` keeps its own width assertion as the second gate,
-covered by `TestEmbedQueueRefusesWrongWidth`.
+refusal. The drain keeps the second gate, for an endpoint that serves another
+width under a known model name: `TestEmbedQueueRefusesWrongWidth` points a
+valid row at an endpoint answering 768 floats and asserts the drain refuses.
 
 ## More Information
 

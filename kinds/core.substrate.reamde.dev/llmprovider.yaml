@@ -75,13 +75,13 @@ data:
     # provider — there is no agent to name one, so the declaration IS the
     # selection. One row per repository may carry it; a second refuses at the
     # write, as does a model whose width is not the stored 1536 (decision
-    # record 0020) and any wire but openai, the only one with an embeddings
+    # record 0026) and any wire but openai, the only one with an embeddings
     # endpoint.
     embedModel:
       type: string
-      description: the embeddings model this row's endpoint serves; naming it
-        makes this the repository's embeddings provider, and only one row may
-        name one
+      description: the embeddings model this row's endpoint serves; naming
+        it makes this the repository's embeddings provider, and only one row
+        may name one
     # A header is a name and a value, so it is declared as one: a repeated
     # object, not a json blob whose shape nothing checks. The substrate has no
     # map datatype — a keyed table is a list whose key is a declared field.

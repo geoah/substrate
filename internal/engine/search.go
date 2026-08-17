@@ -284,7 +284,7 @@ func (ds *dataset) ProcessEmbedQueue(ctx context.Context, batch int) (int, error
 	}
 	// The write refuses a model of another width, so this is the second gate,
 	// for a row that predates the rule or a client the table's width no longer
-	// describes (decision record 0020).
+	// describes (decision record 0026).
 	if provider.Dimension() != vectorDim {
 		return 0, fmt.Errorf("%w: llmprovider row %q model %q is %d wide, storage expects %d",
 			substrate.ErrValidation, provider.id, provider.model, provider.Dimension(), vectorDim)
