@@ -116,15 +116,25 @@ two arms:
   descriptions, and transcripts). Opted-in text is chunked into overlapping windows
   and embedded **asynchronously** after commit, off a queue, so writes never
   wait on an embedding call. Vectors live in Postgres (pgvector) beside
-  everything else, and the embedding model is deployment configuration, not
-  schema.
+  everything else, 1536 wide
+  ([0026](decisions/0026-embedding-vectors-are-1536-wide-or-refused.md)).
 
 `mode` picks `lexical`, `semantic`, or `hybrid` (the default): hybrid runs both
 arms, normalizes each against its own best hit, and merges. Every hit carries
 the record beside its raw per-arm scores, `lexical` and `semantic`, so a caller
-can threshold rather than trust a rank. On a deployment with no embedder
-configured, hybrid degrades to lexical and `semantic` reports an error rather
-than pretending.
+can threshold rather than trust a rank. In a repository that has named no
+embeddings provider, hybrid degrades to lexical and `semantic` reports an error
+rather than pretending.
+
+**Which model bought the vectors is data, per repository.** The one
+[`llmprovider`](agents.md#providers) row declaring `embedModel` is where a
+repository buys them, each stored vector names that row and that model, and the
+semantic arm scores only the currently resolved pair. Re-point the row and the
+older vectors stop being scored rather than being ranked against the new ones:
+cosine distance between two models' vectors is not a distance. `substratectl
+--dsn … repository reembed <username>` and `POST
+/api/v1/core.substrate.reamde.dev/embeddings/reembed` queue their replacement,
+which the server's drain loop buys a batch at a time.
 
 There are two honest boundaries. There is no REST search endpoint: filtering is
 REST's job (`?filter=`), ranking is the GraphQL query's, and discovery says so

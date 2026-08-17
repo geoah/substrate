@@ -9,23 +9,6 @@ import (
 	"github.com/geoah/substrate/internal/testdb"
 )
 
-// hookEmbedder runs a callback the first time it embeds, so a test can land an
-// edit WHILE the worker is embedding the previous text — the exact race the
-// generation fence exists for.
-type hookEmbedder struct {
-	fakeEmbedder
-	hook  func()
-	fired bool
-}
-
-func (h *hookEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, error) {
-	if h.hook != nil && !h.fired {
-		h.fired = true
-		h.hook()
-	}
-	return h.fakeEmbedder.Embed(ctx, texts)
-}
-
 // TestEmbedQueueDoesNotPublishStaleVectors: a property edited DURING a slow
 // embed must not lose the edit, and the vectors of the superseded text must not
 // win. The worker snapshots the queue generation before it embeds; an edit
@@ -35,8 +18,8 @@ func (h *hookEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, 
 func TestEmbedQueueDoesNotPublishStaleVectors(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	emb := &hookEmbedder{}
-	svc, dsn := newService(t, engine.WithEmbedder(emb))
+	emb := newFakeEmbedServer(t)
+	svc, dsn := newService(t)
 	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
@@ -46,6 +29,7 @@ func TestEmbedQueueDoesNotPublishStaleVectors(t *testing.T) {
 	}
 	importVocabulary(t, ds)
 	installShelf(t, ds)
+	installEmbedProvider(t, ds, "vectors", emb.srv.URL, "text-embedding-3-small")
 
 	// v1: a book whose blurb is embeddable. Putting it enqueues the embed.
 	book := mustPut(t, ds, owner, substrate.PutInput{
@@ -56,17 +40,17 @@ func TestEmbedQueueDoesNotPublishStaleVectors(t *testing.T) {
 
 	// The edit lands mid-embed: while the worker is embedding v1, the blurb is
 	// rewritten to v2, which re-enqueues and bumps the generation.
-	emb.hook = func() {
+	emb.setHook(func() {
 		mustPut(t, ds, owner, substrate.PutInput{
 			Kind: "book", ID: book.ID, Properties: map[string]any{
 				"description": "beta different zeppelin narrative",
 			},
 		})
-	}
+	})
 
 	// First drain: the worker embeds v1, but the generation moved, so nothing
 	// is applied.
-	n, err := ds.ProcessEmbedQueue(ctx, emb, 10)
+	n, err := ds.ProcessEmbedQueue(ctx, 10)
 	if err != nil {
 		t.Fatalf("first drain: %v", err)
 	}
@@ -100,8 +84,8 @@ func TestEmbedQueueDoesNotPublishStaleVectors(t *testing.T) {
 	}
 
 	// Second drain: the current text embeds and publishes, and the queue drains.
-	emb.hook = nil
-	if n, err := ds.ProcessEmbedQueue(ctx, emb, 10); err != nil || n != 1 {
+	emb.setHook(nil)
+	if n, err := ds.ProcessEmbedQueue(ctx, 10); err != nil || n != 1 {
 		t.Fatalf("second drain = %d, %v, want 1, nil", n, err)
 	}
 	hits, err := ds.Search(ctx, substrate.SearchInput{Q: "zeppelin narrative", Mode: substrate.SearchSemantic})

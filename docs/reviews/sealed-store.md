@@ -69,11 +69,18 @@ for the choice between demanding key material and stretching.
 
 ### 1.2 The shipped `compose.yaml` boots keyless, and the dump alone opens everything (verified)
 
-`compose.yaml:42` defaults `SUBSTRATE_CREDENTIAL_KEY` to empty and
-`compose.yaml:49` defaults `SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES` to
+**Fixed after this review.** `SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES` no
+longer exists in any form, and `compose.yaml` no longer defaults
+`SUBSTRATE_CREDENTIAL_KEY` to empty: it mints 32 random bytes into its keys
+volume on first start and reads them back on every later one, so a host with no
+credential key refuses to boot instead of running keyless. The rest of this
+section is the state at the date above.
+
+`compose.yaml:42` defaulted `SUBSTRATE_CREDENTIAL_KEY` to empty and
+`compose.yaml:49` defaulted `SUBSTRATE_INSECURE_ALLOW_INVALID_SIGNATURES` to
 `true`. Signing is otherwise mandatory and a keyless host refuses to open a
-repository (`internal/engine/engine.go:527`), so that second default is what
-lets the first one run.
+repository (`internal/engine/engine.go:527`), so that second default was what
+let the first one run.
 
 On a keyless host `sealCredential` (`credentials.go:207`) returns
 `'p' || raw`, so `repositories.dek` holds the DEK in the clear.

@@ -185,8 +185,8 @@ func openAgentDataset(t *testing.T) (*dataset, *fakeLLM) {
 		if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 			Kind: typeProvider, ID: id,
 			Properties: map[string]any{
-				// A row-defined baseURL REQUIRES a row-defined apiKey (the
-				// host gateway key never travels to a custom endpoint).
+				// Every row carries its own endpoint and its own key: there
+				// is nothing host-wide to fall back to.
 				"wire": "openai", "baseURL": fake.srv.URL, "apiKey": "row-key-" + id,
 				// pricing is a repeated object: one row per model, keyed by
 				// the `model` field.
@@ -1110,16 +1110,13 @@ func TestChatThreadSingleActiveTurn(t *testing.T) {
 	}
 }
 
-func TestCustomLLMEndpointNeverReceivesHostKey(t *testing.T) {
+func TestProviderRowCarriesItsOwnEndpointAndKey(t *testing.T) {
 	t.Parallel()
-	// The P0 boundary: the host's SUBSTRATE_LLM_API_KEY may travel ONLY to the
-	// host's own gateway URL. A row that selects its own baseURL must carry
-	// its own apiKey — resolving the two independently would hand the
-	// host-wide bearer to an arbitrary repository-chosen endpoint.
+	// The P0 boundary, now held by construction: there is no host gateway and
+	// no host key, so every row names its own endpoint and its own key and
+	// nothing host-wide can travel to a repository-chosen endpoint.
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
-	ds.svc.llmBaseURL = "https://gateway.example.com"
-	ds.svc.llmAPIKey = "host-secret-key"
 
 	// A custom baseURL without a row apiKey refuses to resolve at all.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
@@ -1131,8 +1128,7 @@ func TestCustomLLMEndpointNeverReceivesHostKey(t *testing.T) {
 	if _, err := ds.resolveProvider(ctx, "leaky"); err == nil || !errors.Is(err, substrate.ErrValidation) {
 		t.Fatalf("a row-defined baseURL resolved without a row-defined apiKey: %v", err)
 	}
-	// The anthropic wire has no host fallback at all: the host's gateway key
-	// belongs to the host's gateway, never to Anthropic.
+	// The anthropic wire has an endpoint of its own but still needs a key.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: typeProvider, ID: "keyless-anthropic",
 		Properties: map[string]any{"wire": "anthropic"},
@@ -1143,7 +1139,7 @@ func TestCustomLLMEndpointNeverReceivesHostKey(t *testing.T) {
 		t.Fatalf("an anthropic row resolved without its own apiKey: %v", err)
 	}
 
-	// A row with both uses ITS key; a row with neither uses the host pair.
+	// A row with both resolves to ITS pair.
 	keyed, err := ds.resolveProvider(ctx, "rootllm")
 	if err != nil {
 		t.Fatalf("resolve rootllm: %v", err)
@@ -1151,24 +1147,20 @@ func TestCustomLLMEndpointNeverReceivesHostKey(t *testing.T) {
 	if keyed.cfg.APIKey != "row-key-rootllm" || keyed.cfg.BaseURL != fake.srv.URL {
 		t.Fatalf("row-defined provider resolved to %q @ %q", keyed.cfg.APIKey, keyed.cfg.BaseURL)
 	}
-	// A row with no baseURL and no key of its own falls back to the host
-	// gateway. Nothing seeds one — the test writes it, like an owner would.
+	// An openai row with no baseURL used to mean "the host's gateway". There
+	// is no host gateway, so it now refuses and says which key it wants.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: typeProvider, ID: "hosted",
-		Properties: map[string]any{"name": "hosted", "wire": "openai"},
+		Properties: map[string]any{"name": "hosted", "wire": "openai", "apiKey": "row-key-hosted"},
 	}); err != nil {
-		t.Fatalf("put the hosted provider row: %v", err)
+		t.Fatalf("put the endpointless provider row: %v", err)
 	}
-	hosted, err := ds.resolveProvider(ctx, "hosted")
-	if err != nil {
-		t.Fatalf("resolve hosted: %v", err)
-	}
-	if hosted.cfg.BaseURL != "https://gateway.example.com" || hosted.cfg.APIKey != "host-secret-key" {
-		t.Fatalf("host fallback pair: %q @ %q", hosted.cfg.APIKey, hosted.cfg.BaseURL)
+	if _, err := ds.resolveProvider(ctx, "hosted"); err == nil || !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("an openai row resolved with no baseURL of its own: %v", err)
 	}
 
 	// End to end: a chat against a custom-endpoint agent — the fake server
-	// must never see the host key as a bearer.
+	// sees the ROW's bearer and nothing else.
 	fake.script("chat", fakeTurn{content: "done"})
 	if _, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewAuthority+"/chatter", "", "hi", func(substrate.AgentEvent) {}); err != nil {
 		t.Fatalf("chat: %v", err)
@@ -1178,9 +1170,6 @@ func TestCustomLLMEndpointNeverReceivesHostKey(t *testing.T) {
 		t.Fatal("the fake endpoint saw no requests")
 	}
 	for _, a := range auths {
-		if strings.Contains(a, "host-secret-key") {
-			t.Fatalf("the custom endpoint received the host gateway key: %q", a)
-		}
 		if a != "Bearer row-key-chatllm" {
 			t.Fatalf("unexpected bearer at the custom endpoint: %q", a)
 		}

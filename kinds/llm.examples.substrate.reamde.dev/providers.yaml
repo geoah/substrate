@@ -23,8 +23,13 @@ data:
         inputPer1M: "1"
         outputPer1M: "5"
 ---
-# An openai-wire row with an EMPTY baseURL means the host's configured gateway
-# — set `baseURL` to point it at anything else that speaks the OpenAI wire.
+# The openai wire has no endpoint of its own, so this row names one: OpenAI's.
+# Point `baseURL` at anything else that speaks the OpenAI wire (OpenRouter,
+# LiteLLM, Together, Groq, a local Ollama) and the row still works.
+#
+# Adding `embedModel: text-embedding-3-small` here makes this the repository's
+# embeddings provider, which is what turns semantic search on. One row per
+# repository may declare it.
 kind: core.substrate.reamde.dev/llmprovider
 metadata:
   id: openai
@@ -32,6 +37,7 @@ data:
   properties:
     name: openai
     wire: openai
+    baseURL: https://api.openai.com/v1
     pricing:
       - model: gpt-5
         inputPer1M: "1.25"

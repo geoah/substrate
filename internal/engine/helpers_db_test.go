@@ -3,9 +3,13 @@ package engine_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -257,41 +261,132 @@ func ids(records []*substrate.Record) []string {
 	return out
 }
 
-// fakeEmbedder is a deterministic stand-in for the vector provider: an
-// L2-normalised bag-of-words hash, so texts sharing words score high.
-type fakeEmbedder struct {
+// typeProvider is the llmprovider kind reference, spelled out here because
+// these tests are outside the engine package and the constant is not exported.
+const typeProvider = "core.substrate.reamde.dev/llmprovider"
+
+// fakeEmbedServer is an OpenAI-wire embeddings endpoint over httptest. The
+// embedder is no longer injectable — a repository resolves it from its own
+// llmprovider row — so a test that wants vectors points a row at THIS, which
+// exercises the resolution, the key and the wire rather than an interface the
+// production path does not use.
+//
+// The vectors are an L2-normalised bag-of-words hash, so texts sharing words
+// score high and a search assertion is deterministic.
+type fakeEmbedServer struct {
+	srv *httptest.Server
+
+	mu sync.Mutex
+	// calls counts requests and texts counts inputs across them.
 	calls int
 	texts int
+	// hook runs before the FIRST answer, so a test can land an edit while the
+	// worker is embedding: the exact race the generation fence exists for.
+	hook  func()
+	fired bool
+	// width overrides the answer's vector length, for the guard that refuses
+	// an endpoint serving something else under a known model name.
+	width int
+	// authsSeen records the Authorization header of every request.
+	auths []string
 }
 
-func (f *fakeEmbedder) Dimension() int { return 1536 }
+func newFakeEmbedServer(t *testing.T) *fakeEmbedServer {
+	t.Helper()
+	f := &fakeEmbedServer{}
+	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
+	t.Cleanup(f.srv.Close)
+	return f
+}
 
-func (f *fakeEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, error) {
-	f.calls++
-	f.texts += len(texts)
-	out := make([][]float32, 0, len(texts))
-	for _, s := range texts {
-		vec := make([]float32, 1536)
-		for _, word := range strings.Fields(strings.ToLower(s)) {
-			h := 0
-			for _, r := range word {
-				h = (h*31 + int(r)) % 1536
-			}
-			vec[h] += 1
-		}
-		var sum float64
-		for _, v := range vec {
-			sum += float64(v) * float64(v)
-		}
-		if sum == 0 {
-			vec[0] = 1
-		} else {
-			norm := float32(math.Sqrt(sum))
-			for i := range vec {
-				vec[i] /= norm
-			}
-		}
-		out = append(out, vec)
+func (f *fakeEmbedServer) handle(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Model string   `json:"model"`
+		Input []string `json:"input"`
 	}
-	return out, nil
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	f.mu.Lock()
+	f.calls++
+	f.texts += len(req.Input)
+	f.auths = append(f.auths, r.Header.Get("Authorization"))
+	hook := f.hook
+	fire := hook != nil && !f.fired
+	if fire {
+		f.fired = true
+	}
+	width := f.width
+	f.mu.Unlock()
+	if fire {
+		hook()
+	}
+	if width == 0 {
+		width = 1536
+	}
+	type datum struct {
+		Index     int       `json:"index"`
+		Embedding []float32 `json:"embedding"`
+	}
+	out := struct {
+		Data []datum `json:"data"`
+	}{}
+	for i, s := range req.Input {
+		out.Data = append(out.Data, datum{Index: i, Embedding: bagOfWordsVector(s, width)})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(out)
+}
+
+func (f *fakeEmbedServer) counts() (calls, texts int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls, f.texts
+}
+
+func (f *fakeEmbedServer) setHook(fn func()) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.hook, f.fired = fn, false
+}
+
+func bagOfWordsVector(s string, width int) []float32 {
+	vec := make([]float32, width)
+	for _, word := range strings.Fields(strings.ToLower(s)) {
+		h := 0
+		for _, r := range word {
+			h = (h*31 + int(r)) % width
+		}
+		vec[h] += 1
+	}
+	var sum float64
+	for _, v := range vec {
+		sum += float64(v) * float64(v)
+	}
+	if sum == 0 {
+		vec[0] = 1
+		return vec
+	}
+	norm := float32(math.Sqrt(sum))
+	for i := range vec {
+		vec[i] /= norm
+	}
+	return vec
+}
+
+// installEmbedProvider writes the llmprovider row that makes a repository
+// embed: the one row declaring embedModel. Nothing seeds one, so every test
+// that wants vectors writes it, exactly as an owner would.
+func installEmbedProvider(t *testing.T, ds substrate.Dataset, id, baseURL, model string) {
+	t.Helper()
+	if _, err := ds.Put(context.Background(), owner, substrate.PutInput{
+		Kind: typeProvider, ID: id,
+		Properties: map[string]any{
+			"name": id, "wire": "openai", "baseURL": baseURL,
+			"apiKey": "row-key-" + id, "embedModel": model,
+		},
+	}); err != nil {
+		t.Fatalf("put the embeddings provider row %q: %v", id, err)
+	}
 }

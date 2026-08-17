@@ -166,10 +166,10 @@ describe("provider rows", () => {
     updatedAt: "2026-08-08T00:00:00Z",
   })
 
-  it("reads an empty openai baseURL as the host's gateway", () => {
+  it("reads an empty openai baseURL as missing: there is no host gateway", () => {
     expect(
       providerEndpoint(provider({ name: "default", wire: "openai" }))
-    ).toBe("host gateway")
+    ).toBe("missing baseURL")
   })
   it("reads an empty non-openai baseURL as that wire's own endpoint", () => {
     expect(providerEndpoint(provider({ wire: "anthropic", baseURL: "" }))).toBe(

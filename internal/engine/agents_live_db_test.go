@@ -57,8 +57,8 @@ func TestLiveAgentChainAcrossWires(t *testing.T) {
 	openaiKey, anthropicKey := liveKeys(t)
 	ctx := context.Background()
 
-	openaiModel := liveAgentModel("SUBSTRATE_LLM_TEST_OPENAI_MODEL", liveOpenAIModel)
-	anthropicModel := liveAgentModel("SUBSTRATE_LLM_TEST_ANTHROPIC_MODEL", liveAnthropicModel)
+	openaiModel := liveAgentModel("SUBSTRATE_TEST_OPENAI_MODEL", liveOpenAIModel)
+	anthropicModel := liveAgentModel("SUBSTRATE_TEST_ANTHROPIC_MODEL", liveAnthropicModel)
 
 	ds := openInternalDataset(t)
 

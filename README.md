@@ -121,13 +121,12 @@ budgets.
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                               | the one redirect URI providers register                        |
 | `SUBSTRATE_OAUTH_STATE_KEY`    | —                               | signs OAuth flow state                                         |
 | `SUBSTRATE_CONSOLE_URL`        | —                               | postMessage origin for the OAuth return page                   |
-| `SUBSTRATE_LLM_BASE_URL`       | —                               | the host gateway: embeddings, and any provider row naming no `baseURL` |
-| `SUBSTRATE_LLM_API_KEY`        | —                               | its bearer; unset ⇒ no embedder and the embed queue idles      |
-| `SUBSTRATE_LLM_EMBED_MODEL`    | `text-embedding-3-small`        | must be 1536-dim                                               |
 
-Those three configure the **host gateway** and nothing else; every other place
-an agent buys completions is a provider record, as
-[docs/agents.md](docs/agents.md#providers) explains.
+There is no LLM configuration here. Completions and embeddings alike are bought
+through a repository's own `llmprovider` records, which carry the wire, the
+endpoint, the key and (for embeddings) the model, so the process holds no
+bearer that could reach a repository-chosen endpoint. See
+[docs/agents.md](docs/agents.md#providers).
 
 ## Development
 

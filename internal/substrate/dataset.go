@@ -92,6 +92,29 @@ type Dataset interface {
 	// RunGC performs one owner-reference mark-and-collect sweep for
 	// records tombstoned with no remaining finalizers; returns collected.
 	RunGC(ctx context.Context) (int, error)
-	// ProcessEmbedQueue drains up to batch pending embed items through e.
-	ProcessEmbedQueue(ctx context.Context, e Embedder, batch int) (int, error)
+	// ProcessEmbedQueue drains up to batch pending embed items through the
+	// repository's own embeddings provider. A repository that names none
+	// drains nothing and returns 0.
+	ProcessEmbedQueue(ctx context.Context, batch int) (int, error)
+	// Reembed enqueues every embeddable property whose stored vectors did not
+	// come from the repository's currently resolved embeddings provider and
+	// model. It buys nothing itself: the queue is the work, and the drain is
+	// what pays for it, so an interrupted re-embed resumes on the next pass.
+	// all enqueues every embeddable property regardless of what produced its
+	// vectors, which is the answer to a gateway swapped behind an unchanged
+	// provider row and model name.
+	Reembed(ctx context.Context, all bool) (ReembedReport, error)
+}
+
+// ReembedReport is what one Reembed enqueued: the pair every vector will name
+// once the queue drains, and how many properties are waiting.
+type ReembedReport struct {
+	// Provider is the llmprovider row id and Model the model it names.
+	Provider string `json:"provider"`
+	Model    string `json:"model"`
+	// Enqueued counts the (record, property) pairs now waiting, including any
+	// that were already queued.
+	Enqueued int `json:"enqueued"`
+	// All reports whether the scan ignored the stored provenance.
+	All bool `json:"all"`
 }

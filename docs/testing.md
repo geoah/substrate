@@ -277,8 +277,8 @@ Either default can be re-pointed without touching the code, which is also how a
 key that lacks one of those models is made green:
 
 ```bash
-SUBSTRATE_LLM_TEST_OPENAI_MODEL=gpt-4.1-nano mise run test:llm
-SUBSTRATE_LLM_TEST_ANTHROPIC_MODEL=claude-3-5-haiku-latest mise run test:llm
+SUBSTRATE_TEST_OPENAI_MODEL=gpt-4.1-nano mise run test:llm
+SUBSTRATE_TEST_ANTHROPIC_MODEL=claude-3-5-haiku-latest mise run test:llm
 ```
 
 Both halves honor the same two variables.

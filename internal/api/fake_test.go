@@ -313,6 +313,11 @@ type fakeDataset struct {
 	trStates map[int64][]substrate.ChangeTrigger
 	signals  chan int64
 
+	// reembedCalls records each Reembed's `all` flag, in order; reembedErr is
+	// what the verb answers instead.
+	reembedCalls []bool
+	reembedErr   error
+
 	// recorded inputs
 	lastQuery substrate.Query
 	lastPut   substrate.PutInput
@@ -878,8 +883,18 @@ func (d *fakeDataset) Tokens(context.Context) ([]substrate.TokenInfo, error) {
 
 func (d *fakeDataset) RunGC(context.Context) (int, error) { return 0, nil }
 
-func (d *fakeDataset) ProcessEmbedQueue(context.Context, substrate.Embedder, int) (int, error) {
+func (d *fakeDataset) ProcessEmbedQueue(context.Context, int) (int, error) {
 	return 0, nil
+}
+
+// reembed records what the verb was asked for, so the route test can assert
+// the `all` flag reached the dataset and not just that the call returned 200.
+func (d *fakeDataset) Reembed(_ context.Context, all bool) (substrate.ReembedReport, error) {
+	if d.reembedErr != nil {
+		return substrate.ReembedReport{}, d.reembedErr
+	}
+	d.reembedCalls = append(d.reembedCalls, all)
+	return substrate.ReembedReport{Provider: "vectors", Model: "text-embedding-3-small", Enqueued: 7, All: all}, nil
 }
 
 var _ substrate.Service = (*fakeService)(nil)

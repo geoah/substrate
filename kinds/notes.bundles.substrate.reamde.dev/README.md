@@ -48,8 +48,9 @@ substratectl get notes my-note -o yaml
 
 ## Pointing it at Anthropic directly
 
-With no host gateway configured, re-point the seeded row at the Anthropic wire
-instead. This is the documented one-patch path, and it is all that is needed:
+Re-pointing the `default` row at the Anthropic wire is one patch, and it is all
+that is needed. The `anthropic` wire is the only one with an endpoint of its
+own, so this row names no `baseURL`:
 
 ```sh
 substratectl apply -f - <<'YAML'

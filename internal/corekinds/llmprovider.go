@@ -18,14 +18,18 @@ type LLMProvider struct {
 	// OpenAI's wire is an openai row.
 	Wire *LLMProviderWire
 
-	// BaseURL is the endpoint; empty on openai means the host's configured
-	// gateway, empty on anthropic the official endpoint, and azure requires
-	// it.
+	// BaseURL is the endpoint; only anthropic may leave it empty, for its
+	// official endpoint, and openai and azure both require it.
 	BaseURL *string
 
-	// ApiKey is bearer for the endpoint; empty is only meaningful on an openai
-	// row that also leaves baseURL empty.
+	// ApiKey is bearer for the endpoint; every row carries its own, because
+	// there is no host key to fall back to.
 	ApiKey *SecretRef
+
+	// EmbedModel is the embeddings model this row's endpoint serves; naming it
+	// makes this the repository's embeddings provider, and only one row may
+	// name one.
+	EmbedModel *string
 
 	// Headers is extra request headers, e.g. a gateway's attribution headers.
 	Headers []LLMProviderHeaders
@@ -70,7 +74,7 @@ func (v LLMProviderWire) Valid() bool { return Declared(LLMProviderWireValues, s
 // core.substrate.reamde.dev/llmprovider declares, sorted. A key outside it is
 // refused by Decode, which is what replaces a hand-kept list of admitted keys
 // in Go.
-var LLMProviderKeys = []string{"apiKey", "baseURL", "defaults", "headers", "name", "pricing", "wire"}
+var LLMProviderKeys = []string{"apiKey", "baseURL", "defaults", "embedModel", "headers", "name", "pricing", "wire"}
 
 // DecodeLLMProvider decodes a properties map into LLMProvider, refusing what
 // the declaration cannot hold: an undeclared key, a value of the wrong type,
@@ -135,6 +139,11 @@ func decodeLLMProvider(d *decoder, path string, v any) (LLMProvider, bool) {
 			if e, ok := d.secret(p, props[key]); ok {
 				out.ApiKey = &e
 			}
+		case "embedModel":
+			p := at(path, "embedModel")
+			if e, ok := d.text(p, props[key], nil, nil); ok {
+				out.EmbedModel = &e
+			}
 		case "headers":
 			p := at(path, "headers")
 			if items, listed := d.list(p, props[key]); listed {
@@ -189,6 +198,9 @@ func (v *LLMProvider) Encode() map[string]any {
 	}
 	if v.ApiKey != nil {
 		out["apiKey"] = string(*v.ApiKey)
+	}
+	if v.EmbedModel != nil {
+		out["embedModel"] = *v.EmbedModel
 	}
 	if v.Headers != nil {
 		items := make([]any, 0, len(v.Headers))

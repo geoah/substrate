@@ -1010,6 +1010,18 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		}
 	}
 
+	// An llmprovider row that names an embedModel is where this repository
+	// buys its vectors, and the rules about it are held HERE, at the write:
+	// only the openai wire has an embeddings endpoint, only a 1536-wide model
+	// fits the column (decision record 0026), and only one row per repository
+	// may claim the job. A refusal at the drain would arrive hours later in a
+	// server log, addressed to nobody.
+	if sp.ty.Identity == typeProvider {
+		if err := t.admitProviderRow(sp.id, row.Props); err != nil {
+			return nil, err
+		}
+	}
+
 	// Bundle-owned types carry the lifecycle rules (engine/bundles.go):
 	// a disabled bundle's inputs and accounts are frozen. No cardinality
 	// rule lives here: records of an input's kind are ordinary.

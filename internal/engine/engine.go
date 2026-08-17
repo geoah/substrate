@@ -36,17 +36,14 @@ import (
 )
 
 type options struct {
-	kindsFS    fs.FS
-	kindsDir   string
-	registry   *vocabulary.Registry
-	embedder   substrate.Embedder
-	llmBaseURL string
-	llmAPIKey  string
-	oauthKey   string
-	oauthURL   string
-	oauthHTTP  *http.Client
-	credKey    string
-	log        *slog.Logger
+	kindsFS   fs.FS
+	kindsDir  string
+	registry  *vocabulary.Registry
+	oauthKey  string
+	oauthURL  string
+	oauthHTTP *http.Client
+	credKey   string
+	log       *slog.Logger
 	// insecureAllowSuperuser downgrades the fail-closed role check to a warning
 	// (WithInsecureAllowSuperuser). Dev/test only; never the production default.
 	insecureAllowSuperuser bool
@@ -67,17 +64,6 @@ func WithKindsDir(dir string) Option { return func(o *options) { o.kindsDir = di
 
 // WithRegistry supplies an already-loaded registry.
 func WithRegistry(r *vocabulary.Registry) Option { return func(o *options) { o.registry = r } }
-
-// WithEmbedder enables the semantic search arm and the embed queue.
-func WithEmbedder(e substrate.Embedder) Option { return func(o *options) { o.embedder = e } }
-
-// WithLLMGateway sets the host's own gateway — the endpoint an openai-dialect
-// llmprovider row falls back to when it declares no baseURL of its own
-// (SUBSTRATE_LLM_BASE_URL / SUBSTRATE_LLM_API_KEY in production). The key
-// travels only to that URL.
-func WithLLMGateway(baseURL, apiKey string) Option {
-	return func(o *options) { o.llmBaseURL, o.llmAPIKey = baseURL, apiKey }
-}
 
 // WithLogger sets the logger background loops report through.
 func WithLogger(l *slog.Logger) Option { return func(o *options) { o.log = l } }
@@ -150,12 +136,7 @@ type service struct {
 	// cluster would not let the engine create its roles.
 	appRole string
 
-	base     *vocabulary.Registry
-	embedder substrate.Embedder
-	// llmBaseURL/llmAPIKey are the agent loop's gateway fallbacks
-	// (WithLLMGateway); an llmprovider row's own baseURL/apiKey win.
-	llmBaseURL string
-	llmAPIKey  string
+	base *vocabulary.Registry
 	// oauth runs the host connect/refresh flows for oauth2-trait bundles;
 	// nil when WithOAuth was not given (StartOAuth then refuses).
 	oauth *oauthflow.Client
@@ -232,9 +213,6 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		dsn:          dsn,
 		admin:        admin,
 		base:         reg,
-		embedder:     o.embedder,
-		llmBaseURL:   o.llmBaseURL,
-		llmAPIKey:    o.llmAPIKey,
 		credKey:      deriveCredentialKey(o.credKey),
 		totpDisabled: o.insecureDisableTOTP,
 		log:          o.log,

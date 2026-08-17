@@ -23,7 +23,6 @@ import (
 	"github.com/geoah/substrate/internal/api"
 	"github.com/geoah/substrate/internal/catalog"
 	"github.com/geoah/substrate/internal/config"
-	"github.com/geoah/substrate/internal/embed"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/kinds"
@@ -69,27 +68,13 @@ func run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	embedClient, err := embed.New(embed.Config{
-		BaseURL: cfg.LLMBaseURL,
-		APIKey:  cfg.LLMAPIKey,
-		Model:   cfg.LLMEmbedModel,
-	})
-	if err != nil {
-		return err
-	}
-	// A typed nil pointer must not become a non-nil interface.
-	var embedder substrate.Embedder
-	if embedClient != nil {
-		embedder = embedClient
-	} else {
-		slog.Warn("SUBSTRATE_LLM_BASE_URL or SUBSTRATE_LLM_API_KEY unset: embed queue will not drain")
-	}
-
+	// There is no embedder here, and no LLM gateway either. Both are a
+	// REPOSITORY's data: an llmprovider row names the endpoint, the key and
+	// (for embeddings) the model, and the engine resolves it per repository
+	// per pass. The process holds no key that could reach a
+	// repository-chosen endpoint.
 	opts := []engine.Option{
 		engine.WithKindsFS(kinds.Seed()),
-		// The agent loop's gateway fallbacks: an llmprovider row's own
-		// baseURL/apiKey win over these.
-		engine.WithLLMGateway(cfg.LLMBaseURL, cfg.LLMAPIKey),
 		engine.WithCredentialKey(cfg.CredentialKey),
 	}
 	if cfg.OAuthCallbackURL != "" {
@@ -101,9 +86,6 @@ func run() error {
 			slog.Warn("no SUBSTRATE_OAUTH_STATE_KEY: oauth states will not survive a restart")
 		}
 		opts = append(opts, engine.WithOAuth(stateKey, cfg.OAuthCallbackURL, nil))
-	}
-	if embedder != nil {
-		opts = append(opts, engine.WithEmbedder(embedder))
 	}
 	if cfg.InsecureDisableTOTP {
 		// Loud, and at boot: from here on a password is the whole credential.
@@ -150,9 +132,10 @@ func run() error {
 	start("oauth maintenance", oauthInterval, func(ctx context.Context) { maintainOAuth(ctx, svc) })
 	start("resolution sweep", resumeInterval, func(ctx context.Context) { sweepResolutions(ctx, svc) })
 	start("trigger dispatch", triggersInterval, func(ctx context.Context) { dispatchTriggers(ctx, svc) })
-	if embedder != nil {
-		start("embed queue", embedInterval, func(ctx context.Context) { drainEmbeds(ctx, svc, embedder) })
-	}
+	// The drain runs unconditionally: whether a repository embeds is its own
+	// row's answer, given fresh on every pass, so a provider written after
+	// boot starts draining without a restart.
+	start("embed queue", embedInterval, func(ctx context.Context) { drainEmbeds(ctx, svc) })
 
 	cat, err := catalog.Load(kinds.Bundles())
 	if err != nil {
@@ -344,9 +327,9 @@ func randomStateKey() string {
 	return hex.EncodeToString(raw)
 }
 
-func drainEmbeds(ctx context.Context, svc substrate.Service, e substrate.Embedder) {
+func drainEmbeds(ctx context.Context, svc substrate.Service) {
 	for _, ds := range repositoryDatasets(ctx, svc) {
-		n, err := ds.ProcessEmbedQueue(ctx, e, embedBatch)
+		n, err := ds.ProcessEmbedQueue(ctx, embedBatch)
 		if err != nil {
 			slog.Error("embed queue", "repository", ds.Repository().Name, "error", err)
 			continue

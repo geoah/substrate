@@ -1082,14 +1082,18 @@ export interface LLMProvider {
    * is an openai row.
    */
   wire?: LLMProviderWire
-  /** The endpoint; empty on openai means the host's configured gateway, empty
-   * on anthropic the official endpoint, and azure requires it.
+  /** The endpoint; only anthropic may leave it empty, for its official
+   * endpoint, and openai and azure both require it.
    */
   baseURL?: string
-  /** Bearer for the endpoint; empty is only meaningful on an openai row that
-   * also leaves baseURL empty.
+  /** Bearer for the endpoint; every row carries its own, because there is no
+   * host key to fall back to.
    */
   apiKey?: SecretRef
+  /** The embeddings model this row's endpoint serves; naming it makes this the
+   * repository's embeddings provider, and only one row may name one.
+   */
+  embedModel?: string
   /** Extra request headers, e.g. a gateway's attribution headers. */
   headers?: LLMProviderHeaders[]
   /** Request params the agent's own merge OVER. */

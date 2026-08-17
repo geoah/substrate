@@ -27,8 +27,8 @@ const (
 	liveOpenAIModel    = "gpt-4.1-mini"
 	liveAnthropicModel = "claude-haiku-4-5"
 
-	liveOpenAIModelEnv    = "SUBSTRATE_LLM_TEST_OPENAI_MODEL"
-	liveAnthropicModelEnv = "SUBSTRATE_LLM_TEST_ANTHROPIC_MODEL"
+	liveOpenAIModelEnv    = "SUBSTRATE_TEST_OPENAI_MODEL"
+	liveAnthropicModelEnv = "SUBSTRATE_TEST_ANTHROPIC_MODEL"
 )
 
 // liveMaxTokens caps every live request. These tests spend real money; nothing

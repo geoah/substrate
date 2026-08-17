@@ -64,7 +64,10 @@ data:
   # recordpatchpolicy names — the policy layer's example.
   # version 9: the example providers quote their prices, following
   # llmprovider's pricing fields from float to decimal.
-  version: 9
+  # version 10: the openai row names OpenAI's endpoint. There is no host
+  # gateway left for an empty baseURL to mean, so the row that shipped without
+  # one refused at dispatch until it was hand-edited.
+  version: 10
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata:
