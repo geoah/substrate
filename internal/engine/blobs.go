@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -13,6 +14,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/geoah/substrate/internal/blobbytes"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -81,23 +83,33 @@ func (ds *dataset) PutBlob(ctx context.Context, actor substrate.Actor, up substr
 	if err != nil {
 		return nil, err
 	}
+	store, err := ds.blobBytes()
+	if err != nil {
+		return nil, err
+	}
+	if txStore, ok := store.(blobbytes.InTransaction); ok {
+		return ds.putBlobOneTx(ctx, actor, txStore, digest, name, up.MimeType, data)
+	}
+	return ds.putBlobExternal(ctx, actor, store, digest, name, up.MimeType, data)
+}
+
+// putBlobOneTx is the postgres path: bytes AND manifest settle in ONE
+// transaction under the exclusive per-digest lock, so a GC sweep can never
+// delete the byte row between its insert and the manifest settling, and no
+// crash can leave either half without the other.
+func (ds *dataset) putBlobOneTx(ctx context.Context, actor substrate.Actor, store blobbytes.InTransaction, digest, name, mimeType string, data []byte) (*substrate.BlobInfo, error) {
 	size := int64(len(data))
 	var info *substrate.BlobInfo
-	// Bytes AND manifest settle in ONE transaction under the exclusive per-digest
-	// lock: a GC sweep can no longer delete the byte row between
-	// its insert and the manifest settling, and no reader ever observes a stored
-	// manifest whose bytes are missing.
-	err = ds.inTx(ctx, actor, true, func(t *txn) error {
+	err := ds.inTx(ctx, actor, true, func(t *txn) error {
 		if err := t.lockKey(blobLockKey(digest)); err != nil {
 			return err
 		}
 		// The byte store is dedup-by-digest: first bytes win, a re-store is a
 		// no-op. The row and the manifest carry the same digest.
-		if _, err := t.exec(`
-			INSERT INTO blobs (digest, name, mime_type, size, bytes)
-			VALUES ($1, $2, $3, $4, $5)
-			ON CONFLICT (repository, digest) DO NOTHING`, digest, name, up.MimeType, size, data); err != nil {
-			return fmt.Errorf("substrate/engine: store blob bytes: %w", err)
+		if err := store.PutTx(t.ctx, t.tx, blobbytes.Blob{
+			Digest: digest, Name: name, MimeType: mimeType, Size: size, Bytes: data,
+		}); err != nil {
+			return err
 		}
 		// The AUTHORITATIVE metadata is the stored row's, not this request's
 		//: on a dedup PUT the first writer's name/mime/size win, so a
@@ -122,6 +134,147 @@ func (ds *dataset) PutBlob(ctx context.Context, actor substrate.Actor, up substr
 		return nil, err
 	}
 	return info, nil
+}
+
+// putBlobExternal is the fs and s3 path, where the bytes and the manifest
+// cannot commit together. It runs in three steps, and the order is the whole
+// design:
+//
+//  1. Under the digest lock, a manifest at `pending` — the intent, recorded in
+//     Postgres before a byte is written. It is what makes a crash cheap: the
+//     sweep collects an unreferenced pending manifest already, so nothing has
+//     to enumerate the store to discover an orphan.
+//  2. The bytes, outside any transaction. Idempotent by digest.
+//  3. Under the digest lock again, the manifest to `stored`, whose guard
+//     probes the store for the bytes.
+//
+// A crash after 1 leaves a pending manifest and no bytes; a crash after 2
+// leaves a pending manifest and an object nothing points at. Both collapse to
+// the same collectable state, and in neither does a reader see a `stored`
+// manifest whose bytes are missing, because only step 3 writes that word and
+// only with the bytes already durable.
+func (ds *dataset) putBlobExternal(ctx context.Context, actor substrate.Actor, store blobbytes.Store, digest, name, mimeType string, data []byte) (*substrate.BlobInfo, error) {
+	size := int64(len(data))
+	// The authoritative metadata is the first writer's, exactly as on the
+	// postgres path: a stored manifest is what a second PUT of the same bytes
+	// gets back, whatever it called them.
+	authName, authMime, authSize := name, mimeType, size
+	err := ds.inTx(ctx, actor, true, func(t *txn) error {
+		if err := t.lockKey(blobLockKey(digest)); err != nil {
+			return err
+		}
+		m, ok, err := t.blobRecord(digest)
+		if err != nil {
+			return err
+		}
+		if ok && m.status == string(substrate.BlobStored) {
+			authName, authMime, authSize = m.name, m.mimeType, m.size
+			return nil
+		}
+		if ok {
+			// A manifest created ahead of the upload (a reference minted
+			// pending): it stays, and step 3 fills it in.
+			return nil
+		}
+		return t.mintPendingBlobRecord(actor, digest, name, mimeType)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Re-store nothing: the digest is the content, so bytes already in the
+	// store are the bytes this request holds. The probe also heals a manifest
+	// whose object went missing, by putting them back.
+	held, err := store.Exists(ctx, digest)
+	if err != nil {
+		return nil, fmt.Errorf("substrate/engine: probe blob bytes: %w", err)
+	}
+	if !held {
+		if err := store.Put(ctx, digest, size, bytes.NewReader(data)); err != nil {
+			return nil, fmt.Errorf("substrate/engine: store blob bytes: %w", err)
+		}
+	}
+
+	err = ds.inTx(ctx, actor, true, func(t *txn) error {
+		if err := t.lockKey(blobLockKey(digest)); err != nil {
+			return err
+		}
+		return t.settleBlobRecord(actor, digest, authSize, authName, authMime)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &substrate.BlobInfo{
+		Digest: digest, Size: authSize, Name: authName,
+		MimeType: authMime, Status: substrate.BlobStored,
+	}, nil
+}
+
+// blobBytes binds the configured backend to this repository. The repository is
+// half of every key the fs and s3 backends build and the scoped pool is what
+// row level security binds for the postgres one, so a store handed to a
+// request can only ever reach that request's repository.
+func (ds *dataset) blobBytes() (blobbytes.Store, error) {
+	return ds.svc.blobs.Repository(ds.scope.Repository, ds.db)
+}
+
+// blobRecordMeta is a blob manifest, read as fields rather than as a map.
+type blobRecordMeta struct {
+	name     string
+	mimeType string
+	size     int64
+	status   string
+}
+
+// blobRecord reads one live blob manifest inside the caller's transaction.
+func (t *txn) blobRecord(digest string) (blobRecordMeta, bool, error) {
+	return scanBlobRecord(t.row(blobRecordQuery, digest, kindBlob))
+}
+
+// blobRecordQuery reads the manifest halves a blob read reports: the metadata
+// from its properties, the status from its state.
+const blobRecordQuery = `
+	SELECT props->>'` + blobPropName + `', props->>'` + blobPropMimeType + `',
+	       (props->>'` + blobPropSize + `')::bigint, states->>'` + blobStateStatus + `'
+	FROM records WHERE id = $1 AND kind = $2 AND deleted_at IS NULL`
+
+func scanBlobRecord(row *sql.Row) (blobRecordMeta, bool, error) {
+	var (
+		m      blobRecordMeta
+		name   sql.NullString
+		mime   sql.NullString
+		size   sql.NullInt64
+		status sql.NullString
+	)
+	err := row.Scan(&name, &mime, &size, &status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return m, false, nil
+	}
+	if err != nil {
+		return m, false, err
+	}
+	m.name, m.mimeType, m.size, m.status = name.String, mime.String, size.Int64, status.String
+	return m, true, nil
+}
+
+// mintPendingBlobRecord records the INTENT to store bytes: a manifest born
+// `pending`, before the bytes are written to a store that cannot join this
+// transaction. Only settleBlobRecord may write `stored`, and only with the
+// bytes already durable.
+func (t *txn) mintPendingBlobRecord(actor substrate.Actor, digest, name, mimeType string) error {
+	props := map[string]any{
+		blobPropDigest:    digest,
+		blobPropCreatedBy: string(actor),
+		blobStateStatus:   string(substrate.BlobPending),
+	}
+	if name != "" {
+		props[blobPropName] = name
+	}
+	if mimeType != "" {
+		props[blobPropMimeType] = mimeType
+	}
+	_, err := t.put(substrate.PutInput{Kind: kindBlob, ID: digest, Properties: props})
+	return err
 }
 
 // checkBlobName validates and normalizes an uploaded blob's display name. A
@@ -150,8 +303,10 @@ func checkBlobName(name string) (string, error) {
 // settleBlobRecord mints the blob manifest at status=stored, or transitions an
 // existing pending/failed manifest to stored, INSIDE the caller's byte-store
 // transaction. A manifest already stored is a no-op (no-op
-// suppression writes no changelog). The bytes have already been inserted in this
-// same transaction, so guardBlobWrite's "stored ⇒ bytes exist" invariant holds.
+// suppression writes no changelog). The bytes are already durable when this
+// runs — inserted in this same transaction on the postgres backend, written to
+// the store before it on fs and s3 — so guardBlobWrite's "stored ⇒ bytes
+// exist" invariant holds, and the guard proves it either way.
 func (t *txn) settleBlobRecord(actor substrate.Actor, digest string, size int64, name, mimeType string) error {
 	var status sql.NullString
 	err := t.row(
@@ -202,10 +357,11 @@ func (t *txn) settleBlobRecord(actor substrate.Actor, digest string, size int64,
 // reaches a `blob` record. The generic record API cannot reach one
 // at all (kindBlob is a systemType), so this guards the internal byte-store path
 // and any future internal writer: the id IS the digest, and a manifest may only
-// be `stored` once its bytes actually exist in the byte store — the store
-// inserts bytes then settles in the SAME transaction, so a forged stored
-// manifest with no bytes (or false size/mime claimed ahead of upload) is
-// refused, forced to stay pending.
+// be `stored` once its bytes actually exist in the byte store. The probe is a
+// query on the postgres backend, taken inside this transaction so it sees the
+// insert beside it, and an existence request against fs or s3 otherwise. A
+// forged stored manifest with no bytes (or false size/mime claimed ahead of
+// upload) is refused, forced to stay pending.
 func (t *txn) guardBlobWrite(sp *applySpec) error {
 	if sp.ty.Identity != kindBlob {
 		return nil
@@ -217,44 +373,66 @@ func (t *txn) guardBlobWrite(sp *applySpec) error {
 		return fmt.Errorf("%w: a blob's digest %q must equal its id %q", substrate.ErrValidation, d, sp.id)
 	}
 	if sp.states[blobStateStatus] == string(substrate.BlobStored) {
-		var one int
-		err := t.row(`SELECT 1 FROM blobs WHERE digest = $1`, sp.id).Scan(&one)
-		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("%w: a blob is stored only once its bytes exist — upload through the byte store", substrate.ErrForbidden)
-		}
+		held, err := t.blobBytesExist(sp.id)
 		if err != nil {
 			return err
+		}
+		if !held {
+			return fmt.Errorf("%w: a blob is stored only once its bytes exist — upload through the byte store", substrate.ErrForbidden)
 		}
 	}
 	return nil
 }
 
-// GetBlob streams a blob's bytes by digest. It is repository-scoped by
-// construction: the blobs table lives in the caller's repository schema, so a
-// digest another repository stored is simply absent here — a cross-repository read is
-// a not-found, never a leak. Returns the manifest alongside the bytes.
+// blobBytesExist is the guard's probe. The postgres backend runs it on this
+// transaction, so bytes inserted a statement earlier count; an external
+// backend answers over its own connection, and only bytes it has already
+// acknowledged count.
+func (t *txn) blobBytesExist(digest string) (bool, error) {
+	store, err := t.ds.blobBytes()
+	if err != nil {
+		return false, err
+	}
+	if txStore, ok := store.(blobbytes.InTransaction); ok {
+		return txStore.ExistsTx(t.ctx, t.tx, digest)
+	}
+	return store.Exists(t.ctx, digest)
+}
+
+// GetBlob reads a blob's bytes by digest. It resolves through the
+// repository-scoped MANIFEST first and reaches the store only for the bytes:
+// the manifest read is bound by row level security and the store is bound to
+// this repository's key prefix, so a digest another repository stored is
+// absent here whichever backend holds the bytes — a cross-repository read is a
+// not-found, never a leak. Returns the manifest alongside the bytes.
 func (ds *dataset) GetBlob(ctx context.Context, digest string) (*substrate.BlobInfo, []byte, error) {
 	if !validBlobDigest(digest) {
 		return nil, nil, fmt.Errorf("%w: %q is not a blob digest", substrate.ErrValidation, digest)
 	}
-	var (
-		name     string
-		mimeType string
-		size     int64
-		data     []byte
-	)
-	err := ds.db.QueryRowContext(ctx,
-		`SELECT name, mime_type, size, bytes FROM blobs WHERE digest = $1`, digest).
-		Scan(&name, &mimeType, &size, &data)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil, fmt.Errorf("%w: blob %s", substrate.ErrNotFound, digest)
+	notFound := fmt.Errorf("%w: blob %s", substrate.ErrNotFound, digest)
+	m, ok, err := scanBlobRecord(ds.db.QueryRowContext(ctx, blobRecordQuery, digest, kindBlob))
+	if err != nil {
+		return nil, nil, err
+	}
+	// A manifest that is not `stored` names bytes nobody has uploaded yet, so
+	// the read is a not-found rather than an empty body.
+	if !ok || m.status != string(substrate.BlobStored) {
+		return nil, nil, notFound
+	}
+	store, err := ds.blobBytes()
+	if err != nil {
+		return nil, nil, err
+	}
+	data, err := blobbytes.ReadAll(ctx, store, digest)
+	if errors.Is(err, blobbytes.ErrNotStored) {
+		return nil, nil, notFound
 	}
 	if err != nil {
 		return nil, nil, err
 	}
 	return &substrate.BlobInfo{
-		Digest: digest, Size: size, Name: name,
-		MimeType: mimeType, Status: substrate.BlobStored,
+		Digest: digest, Size: m.size, Name: m.name,
+		MimeType: m.mimeType, Status: substrate.BlobStored,
 	}, data, nil
 }
 
@@ -354,62 +532,48 @@ func (ds *dataset) resolveBlobRefs(ctx context.Context, x dbx, ty *vocabulary.Ki
 	return nil
 }
 
-// blobGCPass collects blobs no live record references. Victims are the UNION of
-// byte rows and live blob manifests: a `stored` blob with a byte
-// row AND a `pending` manifest that never received bytes are both collectable
-// once their last blob-ref goes. Under the exclusive per-digest lock, and only
-// after re-checking live references INSIDE the deletion transaction,
-// it hard-deletes the bytes and TOMBSTONES the manifest — ordinary record GC
-// hard-deletes the tombstone on a later pass, matching the tombstone contract.
-// A freshly uploaded byte row within BlobUploadGrace is spared.
-// Bounded per sweep (gcBatch). The manifest's own `digest` property is a plain
-// string, not a blob-ref, so a blob never keeps itself alive.
+// blobSweepBatch bounds how many objects the orphan sweep enumerates per pass.
+// The cursor (ds.blobSweepAfter) carries on where the last pass stopped, so a
+// store with more objects than this is walked over several passes rather than
+// having its tail never looked at.
+const blobSweepBatch = 1000
+
+// blobGCPass collects blobs no live record references. Candidates are the LIVE
+// MANIFESTS: a `stored` blob and a `pending` manifest that never received
+// bytes are both collectable once their last blob-ref goes, and every blob has
+// a manifest whichever store its bytes sit in. Under the exclusive per-digest
+// lock, and only after re-checking live references INSIDE the deletion
+// transaction, it deletes the bytes and TOMBSTONES the manifest — ordinary
+// record GC hard-deletes the tombstone on a later pass, matching the tombstone
+// contract. A manifest younger than BlobUploadGrace is spared, so an ordinary
+// PUT-then-reference workflow is not raced. Bounded per sweep (gcBatch). The
+// manifest's own `digest` property is a plain string, not a blob-ref, so a
+// blob never keeps itself alive. The orphan sweep afterwards is the other
+// half: bytes no manifest names at all.
 func (ds *dataset) blobGCPass(ctx context.Context) (int, error) {
+	store, err := ds.blobBytes()
+	if err != nil {
+		return 0, err
+	}
 	referenced, err := ds.referencedDigests(ctx)
 	if err != nil {
 		return 0, err
 	}
 
-	// Candidates: byte rows (with their age, for the grace) UNION live blob
-	// manifests (which may have no byte row at all — a pending manifest).
-	type cand struct {
-		hasBytes bool
-		byteAt   time.Time
-	}
-	cands := map[string]*cand{}
-	byteRows, err := ds.db.QueryContext(ctx, `SELECT digest, created_at FROM blobs`)
-	if err != nil {
-		return 0, err
-	}
-	for byteRows.Next() {
-		var d string
-		var at time.Time
-		if err := byteRows.Scan(&d, &at); err != nil {
-			_ = byteRows.Close()
-			return 0, err
-		}
-		cands[d] = &cand{hasBytes: true, byteAt: at}
-	}
-	if err := byteRows.Err(); err != nil {
-		_ = byteRows.Close()
-		return 0, err
-	}
-	_ = byteRows.Close()
-
+	live := map[string]time.Time{}
 	manRows, err := ds.db.QueryContext(ctx,
-		`SELECT id FROM records WHERE kind = $1 AND deleted_at IS NULL`, kindBlob)
+		`SELECT id, updated_at FROM records WHERE kind = $1 AND deleted_at IS NULL`, kindBlob)
 	if err != nil {
 		return 0, err
 	}
 	for manRows.Next() {
 		var id string
-		if err := manRows.Scan(&id); err != nil {
+		var at time.Time
+		if err := manRows.Scan(&id, &at); err != nil {
 			_ = manRows.Close()
 			return 0, err
 		}
-		if cands[id] == nil {
-			cands[id] = &cand{}
-		}
+		live[id] = at.UTC()
 	}
 	if err := manRows.Err(); err != nil {
 		_ = manRows.Close()
@@ -417,22 +581,16 @@ func (ds *dataset) blobGCPass(ctx context.Context) (int, error) {
 	}
 	_ = manRows.Close()
 
-	now := nowUTC()
-	graceCut := now.Add(-BlobUploadGrace)
-	digests := make([]string, 0, len(cands))
-	for d := range cands {
+	graceCut := nowUTC().Add(-BlobUploadGrace)
+	digests := make([]string, 0, len(live))
+	for d := range live {
 		digests = append(digests, d)
 	}
 	sort.Strings(digests)
 
 	var victims []string
 	for _, d := range digests {
-		if referenced[d] {
-			continue
-		}
-		// A byte row still inside its unreferenced-upload grace is spared, so an
-		// ordinary PUT-then-reference workflow is not raced.
-		if c := cands[d]; c.hasBytes && c.byteAt.After(graceCut) {
+		if referenced[d] || live[d].After(graceCut) {
 			continue
 		}
 		victims = append(victims, d)
@@ -460,7 +618,7 @@ func (ds *dataset) blobGCPass(ctx context.Context) (int, error) {
 			if ref {
 				return nil
 			}
-			if _, err := t.exec(`DELETE FROM blobs WHERE digest = $1`, digest); err != nil {
+			if err := t.deleteBlobBytes(store, digest); err != nil {
 				return err
 			}
 			row, err := t.loadRow(eref{Kind: kindBlob, ID: digest}, true)
@@ -488,7 +646,87 @@ func (ds *dataset) blobGCPass(ctx context.Context) (int, error) {
 			n++
 		}
 	}
+	if err := ds.blobOrphanSweep(ctx, store); err != nil {
+		return n, err
+	}
 	return n, nil
+}
+
+// deleteBlobBytes removes a victim's bytes as part of its collection. Where the
+// backend can join this transaction the bytes and the tombstone commit
+// together, exactly as they always have. Where it cannot, the tombstone
+// commits FIRST and the delete follows it: a failure there leaves an object no
+// live manifest names, which the orphan sweep reaps on a later pass. The other
+// order would leave a live manifest whose bytes are gone, which is the one
+// state a reader must never see.
+func (t *txn) deleteBlobBytes(store blobbytes.Store, digest string) error {
+	if txStore, ok := store.(blobbytes.InTransaction); ok {
+		return txStore.DeleteTx(t.ctx, t.tx, digest)
+	}
+	ctx, ds := t.ctx, t.ds
+	t.afterCommit = append(t.afterCommit, func() {
+		if err := store.Delete(ctx, digest); err != nil {
+			ds.svc.log.Warn("substrate: a collected blob's bytes could not be deleted; the orphan sweep will retry",
+				"digest", digest, "backend", store.Backend(), "error", err)
+		}
+	})
+	return nil
+}
+
+// blobOrphanSweep deletes stored bytes no live manifest names. Two things put
+// an object in that state: a crash between writing the bytes and settling the
+// manifest, and a collection whose post-commit delete did not land. Both are
+// re-runnable, because deleting bytes that are already gone succeeds.
+//
+// The re-check happens under the same exclusive per-digest lock an upload
+// takes, so an upload in flight — which has already committed its `pending`
+// manifest before writing a byte — is never swept out from under. An object
+// younger than BlobUploadGrace is spared as well, which keeps the sweep off
+// the write path of the ordinary case entirely.
+func (ds *dataset) blobOrphanSweep(ctx context.Context, store blobbytes.Store) error {
+	ds.mu.Lock()
+	after := ds.blobSweepAfter
+	ds.mu.Unlock()
+
+	objects, err := store.List(ctx, after, blobSweepBatch)
+	if err != nil {
+		return err
+	}
+	// A short page is the end of the store: the next pass starts over.
+	next := ""
+	if len(objects) == blobSweepBatch {
+		next = objects[len(objects)-1].Digest
+	}
+	ds.mu.Lock()
+	ds.blobSweepAfter = next
+	ds.mu.Unlock()
+
+	graceCut := nowUTC().Add(-BlobUploadGrace)
+	for _, o := range objects {
+		if o.At.After(graceCut) {
+			continue
+		}
+		err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+			if err := t.lockKey(blobLockKey(o.Digest)); err != nil {
+				return err
+			}
+			_, ok, err := t.blobRecord(o.Digest)
+			if err != nil || ok {
+				return err
+			}
+			// Nothing to commit but the lock, so the delete runs INSIDE the
+			// transaction: an upload that takes the lock next finds the object
+			// gone rather than half-deleted.
+			if txStore, ok := store.(blobbytes.InTransaction); ok {
+				return txStore.DeleteTx(t.ctx, t.tx, o.Digest)
+			}
+			return store.Delete(t.ctx, o.Digest)
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // blobReferenced reports whether any live record references this digest through

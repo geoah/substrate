@@ -108,6 +108,11 @@ type dataset struct {
 	mu   sync.RWMutex
 	reg  *vocabulary.Registry
 	info substrate.RepositoryInfo
+	// blobSweepAfter is the blob orphan sweep's cursor: the last digest the
+	// previous pass looked at, so a store with more objects than one batch is
+	// walked whole instead of the sweep restarting at the front every time.
+	// Empty starts over, which is also where a restart begins.
+	blobSweepAfter string
 
 	// vocabularyWriteMu serializes SCHEMA writes (the ACCESS EXCLUSIVE analog,
 	// scoped to schema): two concurrent schema writes must not both validate
