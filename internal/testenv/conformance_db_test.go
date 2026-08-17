@@ -255,7 +255,7 @@ var unreachable = map[string]string{
 		"so no HTTP response carries this code today",
 	"internal":    "500 is an unexpected fault, and producing one on purpose means breaking the engine",
 	"unsupported": "501 answers a capability the deployment omits, and testenv wires every one",
-	"unavailable": "503 needs the blob store's admission slots full and the caller's context cancelled",
+	"unavailable": "503 needs the blob store's admission slots full and the caller's context canceled",
 	"compacted":   "410 needs a `before` below the retention horizon, and api.retentionHorizon() returns 0",
 }
 
