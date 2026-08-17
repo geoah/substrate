@@ -61,6 +61,17 @@ go test ./internal/engine/...          # ~4 minutes, and the answer you can trus
 go test ./internal/engine/ -run TestFold -v
 ```
 
+### Testing the boot upgrade
+
+A test for boot-upgrade behavior (`upgrade_guard_db_test.go`, whose harness
+patches a copy of the shipped tree and opens the same database twice) must bump
+the version of the DECLARATION it patches, not only its authority's: a kind that
+pins a `data.version` of its own keeps whatever it stands at when the authority
+moves, so the upgrade under test never runs and the case passes vacuously.
+`pinVersion` is the helper for it, and `bumpGroupVersion` alone is enough only
+for a declaration that pins no version. Run any new case against the un-fixed
+code once; a boot-upgrade test that passes both ways is proving nothing.
+
 ## The race detector
 
 ```bash
