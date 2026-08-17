@@ -242,9 +242,9 @@ func (ds *dataset) upgradeShippedVocabulary(ctx context.Context) error {
 	if len(refused) > 0 {
 		// The message is the entire interface for the migration it is asking
 		// for, so it names the repository, the kind, the property and the count.
-		ds.svc.log.Error("substrate: REFUSED to upgrade a repository's shipped vocabulary — live rows hold the old shape, "+
-			"or a declared default no write could store; "+
-			"the stored declarations stand and this binary's newer ones will not land until it is resolved",
+		ds.svc.log.Error("substrate: REFUSED to upgrade a repository's shipped vocabulary. Live rows hold the old shape, "+
+			"or a declared default no write could store. The stored declarations stand, "+
+			"and this binary's newer ones will not land until it is resolved",
 			"repository", ds.info.Name, "refused", strings.Join(refused, "; "))
 		return nil
 	}

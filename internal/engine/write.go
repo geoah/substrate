@@ -1261,7 +1261,7 @@ func (t *txn) checkRequiredProps(sp *applySpec, row *erow) error {
 			// variant is `name: datatype`, and a kind may not redeclare the
 			// property the trait binds), so this arm exists to keep the write
 			// path and the admission count reading the same place if one ever
-			// does — missingValueCount, in schemadiff.go.
+			// does (missingValueCount, in schemadiff.go).
 			if ts := hotColumnOf(row, name); ts != nil {
 				v = ts.Format(time.RFC3339Nano)
 			}

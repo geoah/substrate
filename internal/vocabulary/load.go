@@ -2063,7 +2063,7 @@ func (l *loader) parseFields(where string, d map[string]any, depth int) map[stri
 		// declared promise no write keeps. Refused rather than accepted and
 		// ignored. `required` on a field is enforced, and stays.
 		if fp.Default != nil {
-			l.errf("%s: default fills a type's own property, not a field — the write path never builds an object to put one in", fwhere)
+			l.errf("%s: default fills a type's own property, not a field: the write path never builds an object to put one in", fwhere)
 			continue
 		}
 		out[fname] = fp

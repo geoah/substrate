@@ -664,7 +664,7 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 		if !curF.Required && candF.Required {
 			q, args := fieldEmpty(ident, path, fname)
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: object %q field %q becomes required while %%d live records hold an object without a value for it — backfill them first",
+				format: fmt.Sprintf("type %s: object %q field %q becomes required while %%d live records hold an object without a value for it; backfill them first",
 					ident, label, fname),
 				query: q, args: args,
 			})
@@ -694,7 +694,7 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 		}
 		q, args := fieldEmpty(ident, path, fname)
 		out = append(out, narrowing{
-			format: fmt.Sprintf("type %s: object %q adds field %q as required while %%d live records hold an object without it — backfill or clear them first",
+			format: fmt.Sprintf("type %s: object %q adds field %q as required while %%d live records hold an object without it; backfill or clear them first",
 				ident, label, fname),
 			query: q, args: args,
 		})

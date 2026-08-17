@@ -303,7 +303,7 @@ func TestBootUpgradeRefusesAnUnstorableDefault(t *testing.T) {
 	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
 		// llmprovider pins a version of its own, so the authority bump alone
 		// would leave this declaration exactly where it stands and re-project
-		// nothing — the upgrade under test would never run.
+		// nothing, and the upgrade under test would never run.
 		doc = pinVersion(t, doc, "99")
 		return strings.Replace(doc, "  properties:\n",
 			"  properties:\n    region:\n      type: string\n      pattern: \"^eu-\"\n"+
