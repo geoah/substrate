@@ -30,8 +30,8 @@ func (d statusErrDataset) BundleStatus(context.Context, string) (substrate.Bundl
 	return substrate.BundleStatus{}, d.err
 }
 
-// The rest of the bundleOps seam is stubbed: this fake exists only to fail the
-// status reads while still resolving as a bundle-running dataset.
+// The rest of the substrate.BundleOps seam is stubbed: this fake exists only
+// to fail the status reads while still resolving as a bundle-running dataset.
 func (d statusErrDataset) BundleAuthority(context.Context, string) (string, error) {
 	return "web.bundles.substrate.reamde.dev", nil
 }
@@ -52,6 +52,8 @@ func (d statusErrDataset) StartOAuth(context.Context, substrate.Actor, string) (
 func (d statusErrDataset) TypesImplementing(context.Context, string) ([]substrate.KindInfo, error) {
 	return nil, nil
 }
+
+var _ substrate.BundleOps = statusErrDataset{}
 
 // statusErrService authenticates into a statusErrDataset, so the handler
 // resolves a dataset whose bundle-status seam fails.
@@ -145,6 +147,11 @@ func (d upgradeErrDataset) StartOAuth(context.Context, substrate.Actor, string) 
 func (d upgradeErrDataset) TypesImplementing(context.Context, string) ([]substrate.KindInfo, error) {
 	return nil, nil
 }
+
+var (
+	_ substrate.BundleOps            = upgradeErrDataset{}
+	_ substrate.BundleUpgradePlanner = upgradeErrDataset{}
+)
 
 type upgradeErrService struct {
 	*fakeService

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -15,15 +14,6 @@ import (
 
 	"github.com/geoah/substrate/internal/substrate"
 )
-
-// blobStore is the engine's content-addressed byte store: store
-// bytes (deriving the digest, minting the blob manifest) and stream them back
-// by digest, both repository-scoped. Deliberately off substrate.Dataset, which is
-// frozen — the vocabularyApplier pattern.
-type blobStore interface {
-	PutBlob(ctx context.Context, actor substrate.Actor, up substrate.BlobUpload, data []byte, wantDigest string) (*substrate.BlobInfo, error)
-	GetBlob(ctx context.Context, digest string) (*substrate.BlobInfo, []byte, error)
-}
 
 // maxBlobBody bounds one uploaded blob. Blobs are archives and attachments,
 // not streams; a larger payload belongs in a chunked design this build does
@@ -48,7 +38,7 @@ var blobPutSem = make(chan struct{}, maxConcurrentBlobPuts)
 // status=stored. The same bytes always dedup to the same blob.
 func (h *handler) putBlob(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	bs, ok := DatasetFrom(ctx).(blobStore)
+	bs, ok := DatasetFrom(ctx).(substrate.BlobStore)
 	if !ok {
 		writeUnsupported(w, "this service has no blob store")
 		return
@@ -154,7 +144,7 @@ func drainBlobBody(w http.ResponseWriter, r *http.Request) (data []byte, digest 
 // here — a cross-repository read is a not-found, never a leak.
 func (h *handler) getBlob(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	bs, ok := DatasetFrom(ctx).(blobStore)
+	bs, ok := DatasetFrom(ctx).(substrate.BlobStore)
 	if !ok {
 		writeUnsupported(w, "this service has no blob store")
 		return

@@ -228,31 +228,11 @@ func assertScopedAppPrincipal(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// resetter and rebuilder are the two engine seams the operator hat needs. Both
-// are deliberately OFF substrate.Service — nothing reachable from the network
-// should be able to call them — so substratectl asks for them by shape.
-type resetter interface {
-	ResetUser(ctx context.Context, username, newPassword string) (substrate.TOTPEnrollment, error)
-}
-
-type rebuilder interface {
-	RebuildRepository(ctx context.Context, username string) (engine.RebuildReport, error)
-}
-
-// forceRebuilder is the escape hatch's OWN seam: rebuilding from history the
-// chain refuses is a distinct act, so it is a distinct method rather than a
-// flag the ordinary path could trip over.
-type forceRebuilder interface {
-	RebuildRepositoryUnverified(ctx context.Context, username string) (engine.RebuildReport, error)
-}
-
-type resealer interface {
-	ResealRepository(ctx context.Context, username string) (engine.ResealReport, error)
-}
-
-type verifier interface {
-	VerifyRepositoryPinned(ctx context.Context, username string, pins engine.VerifyPins) (engine.VerifyReport, error)
-}
+// The operator hat's seams are engine.Resetter, engine.Rebuilder,
+// engine.ForceRebuilder, engine.Resealer and engine.Verifier. All are
+// deliberately OFF substrate.Service — nothing reachable from the network
+// should be able to call them — so substratectl asks for them by shape, and
+// the engine asserts each against *service at compile time.
 
 // seamMissing is what an engine build without one of the operator seams gets:
 // a named refusal rather than a nil dereference.

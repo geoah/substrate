@@ -41,6 +41,8 @@ func (b *echoBlobDS) GetBlob(_ context.Context, _ string) (*substrate.BlobInfo, 
 	}, []byte("payload"), nil
 }
 
+var _ substrate.BlobStore = (*echoBlobDS)(nil)
+
 func putNamedBlob(t *testing.T, ds *echoBlobDS, target string, header map[string]string) *substrate.BlobInfo {
 	t.Helper()
 	h := &handler{}

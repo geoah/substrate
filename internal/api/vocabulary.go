@@ -1,18 +1,10 @@
 package api
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/geoah/substrate/internal/substrate"
 )
-
-// vocabularyApplier is the engine's batch schema verb (schema is records): one
-// transaction, every document admitted or none, activation on commit. It is
-// deliberately not on substrate.Dataset, which is frozen.
-type vocabularyApplier interface {
-	ApplyVocabularyDocuments(ctx context.Context, actor substrate.Actor, docs []map[string]any) ([]*substrate.Record, error)
-}
 
 // maxVocabularyApplyBody admits a batch carrying many inline function sources
 // (vocabulary.SourceMaxBytes each) with envelope headroom — the loader's own
@@ -39,7 +31,7 @@ func (h *handler) applyVocabulary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	sa, ok := DatasetFrom(ctx).(vocabularyApplier)
+	sa, ok := DatasetFrom(ctx).(substrate.VocabularyApplier)
 	if !ok {
 		writeUnsupported(w, "this service cannot apply schema documents")
 		return

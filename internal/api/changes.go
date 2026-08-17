@@ -8,14 +8,6 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// changeFeedOps is the engine's cross-collection feed seam, asserted at
-// runtime like automationOps: substrate.Dataset stays frozen, a dataset
-// without the seam serves the forward reads and plain rows only.
-type changeFeedOps interface {
-	ChangesBefore(ctx context.Context, before int64, f substrate.ChangeFilter, limit int) ([]substrate.Change, error)
-	ChangeTriggers(ctx context.Context, changes []substrate.Change) (map[int64][]substrate.ChangeTrigger, error)
-}
-
 // changeRow is the /changes wire row: the change plus each enabled trigger's
 // stance on it. Triggers is omitted when no trigger matches — absence means
 // "nothing listens", never "unknown".
@@ -31,7 +23,7 @@ func annotateChanges(ctx context.Context, ds substrate.Dataset, changes []substr
 	for i := range changes {
 		rows[i].Change = changes[i]
 	}
-	ops, ok := ds.(changeFeedOps)
+	ops, ok := ds.(substrate.ChangeFeedOps)
 	if !ok {
 		return rows, nil
 	}
@@ -50,7 +42,7 @@ func annotateChanges(ctx context.Context, ds substrate.Dataset, changes []substr
 // address the same rows from opposite ends, so a client walks backward with
 // `before` and resumes forward with `from`.
 func (h *handler) getChangesPage(w http.ResponseWriter, r *http.Request, ds substrate.Dataset, f substrate.ChangeFilter) {
-	ops, ok := ds.(changeFeedOps)
+	ops, ok := ds.(substrate.ChangeFeedOps)
 	if !ok {
 		writeUnsupported(w, "this substrate serves no change feed")
 		return

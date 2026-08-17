@@ -1,5 +1,7 @@
 package substrate
 
+import "context"
+
 // The agent loop's wire shapes (primitives §5): what the call API returns
 // and what the chat stream carries. Conversation state itself is llmthread +
 // llmmessage RECORDS in core.substrate.reamde.dev — these types are only the live
@@ -95,4 +97,20 @@ type AgentEvent struct {
 	// Error rides the error event: a post-200 loop failure the client routes to
 	// its error path instead of settling a blank assistant turn.
 	Error string `json:"error,omitempty"`
+}
+
+// AgentOps is the agent seam, an optional Dataset extension (see Dataset):
+// the call API's agent half, and chat, which is the same loop with a live
+// client attached. A dataset without it has no agent verbs.
+type AgentOps interface {
+	CallAgent(ctx context.Context, name string, input any) (*AgentResult, error)
+	ChatAgent(ctx context.Context, actor Actor, name, threadID, message string, emit func(AgentEvent)) (*AgentResult, error)
+}
+
+// ResolutionSweeper is the resume-recovery pass the service loop drives, an
+// optional Dataset extension (see Dataset): settled threads whose newest
+// resolution row postdates their settlement get their dropped continuation
+// back.
+type ResolutionSweeper interface {
+	SweepResolutions(ctx context.Context) (int, error)
 }

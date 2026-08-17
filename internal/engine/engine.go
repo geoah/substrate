@@ -145,6 +145,15 @@ func WithInsecureDisableTOTP() Option {
 	return func(o *options) { o.insecureDisableTOTP = true }
 }
 
+// The seams *service satisfies beyond substrate.Service, asserted here for
+// the same reason the dataset's are (dataset.go): a renamed method must break
+// the build, not one endpoint at runtime.
+var (
+	_ substrate.Service          = (*service)(nil)
+	_ substrate.OAuthCompleter   = (*service)(nil)
+	_ substrate.RecoveryEnroller = (*service)(nil)
+)
+
 type service struct {
 	dsn string
 	// admin is the DSN's own user: the DDL, the role setup, and the index

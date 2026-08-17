@@ -50,6 +50,14 @@ type ResealReport struct {
 	Took       time.Duration
 }
 
+// Resealer is the operator hat's reseal seam, off substrate.Service like
+// Resetter (auth.go) and asserted here for the same reason.
+type Resealer interface {
+	ResealRepository(ctx context.Context, username string) (ResealReport, error)
+}
+
+var _ Resealer = (*service)(nil)
+
 // ResealRepository moves one repository's legacy secret values into the
 // sealed store and re-points history at the refs. It refuses without a
 // credential key (a keyless run would move plaintext from one table to

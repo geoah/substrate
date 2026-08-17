@@ -879,6 +879,17 @@ var _ substrate.Service = (*fakeService)(nil)
 
 var _ substrate.Dataset = (*fakeDataset)(nil)
 
+// The optional seams these fakes carry, asserted here for the reason the
+// engine asserts its own (engine/dataset.go): a fake that quietly stops
+// satisfying a seam does not fail, it makes the handler take the 501 branch
+// and the suite still passes. The seams NOT listed are absent on purpose:
+// the tests that exercise a 501 rely on their absence.
+var (
+	_ substrate.ChangeFeedOps     = (*fakeDataset)(nil)
+	_ substrate.VocabularyApplier = (*fakeDataset)(nil)
+	_ substrate.RecoveryEnroller  = (*fakeService)(nil)
+)
+
 func containsString(hay []string, needle string) bool {
 	for _, h := range hay {
 		if h == needle {

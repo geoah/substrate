@@ -192,16 +192,11 @@ func TestServerMintedRecoveryKeyAndEnrollOnce(t *testing.T) {
 
 	// A second enrollment refuses: one recovery key, no rotation yet. The
 	// enrollment carries the password-factor rule, so a fresh code goes in.
-	if _, _, err := svc.(recoveryEnroller).EnrollRecoveryKey(ctx, substrate.LoginInput{
+	if _, _, err := svc.(substrate.RecoveryEnroller).EnrollRecoveryKey(ctx, substrate.LoginInput{
 		Username: "bo", Password: testPassword, TOTPCode: u.code(t),
 	}, ""); err == nil {
 		t.Fatal("a second recovery enrollment was accepted")
 	}
-}
-
-// recoveryEnroller is the service seam the API asserts.
-type recoveryEnroller interface {
-	EnrollRecoveryKey(ctx context.Context, in substrate.LoginInput, publicKey string) (string, string, error)
 }
 
 // TestEnrollRecoveryKeyMigratesLegacyPayloads is the pre-recovery
@@ -257,7 +252,7 @@ func TestEnrollRecoveryKeyMigratesLegacyPayloads(t *testing.T) {
 		t.Fatalf("plant host-key payload: %v", err)
 	}
 
-	identity, recipient, err := svc.(recoveryEnroller).EnrollRecoveryKey(ctx, substrate.LoginInput{
+	identity, recipient, err := svc.(substrate.RecoveryEnroller).EnrollRecoveryKey(ctx, substrate.LoginInput{
 		Username: "cleo", Password: testPassword, TOTPCode: u.code(t),
 	}, "")
 	if err != nil {
@@ -288,7 +283,7 @@ func TestEnrollRecoveryKeyMigratesLegacyPayloads(t *testing.T) {
 	}
 
 	// And a wrong-factors enrollment never gets that far.
-	if _, _, err := svc.(recoveryEnroller).EnrollRecoveryKey(ctx, substrate.LoginInput{
+	if _, _, err := svc.(substrate.RecoveryEnroller).EnrollRecoveryKey(ctx, substrate.LoginInput{
 		Username: "cleo", Password: "wrong-password-entirely", TOTPCode: "000000",
 	}, ""); err == nil {
 		t.Fatal("enrollment accepted without valid factors")

@@ -1,6 +1,9 @@
 package substrate
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // Op is a changelog operation.
 type Op string
@@ -65,3 +68,12 @@ const (
 	// seq) — retried out and advanced past, retryable by hand.
 	ChangeTriggerParked = "parked"
 )
+
+// ChangeFeedOps is the cross-collection feed seam: history paged backward,
+// and each enabled trigger's stance on a row. It is an optional Dataset
+// extension (see Dataset), so a dataset without it serves the forward reads
+// and plain rows.
+type ChangeFeedOps interface {
+	ChangesBefore(ctx context.Context, before int64, f ChangeFilter, limit int) ([]Change, error)
+	ChangeTriggers(ctx context.Context, changes []Change) (map[int64][]ChangeTrigger, error)
+}

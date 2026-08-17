@@ -238,8 +238,8 @@ func (h *handler) mountResources(r chi.Router) {
 			// ordinary schema records under /core.substrate.reamde.dev/bundles.
 			r.Get("/"+coreAuthority+"/bundles/status", h.getBundleStatuses)
 			r.Get("/"+coreAuthority+"/bundles/{id}/status", h.getBundleStatus)
-			r.Post("/"+coreAuthority+"/bundles/{id}/disable", h.postBundleVerb(bundleOps.DisableBundle))
-			r.Post("/"+coreAuthority+"/bundles/{id}/enable", h.postBundleVerb(bundleOps.EnableBundle))
+			r.Post("/"+coreAuthority+"/bundles/{id}/disable", h.postBundleVerb(substrate.BundleOps.DisableBundle))
+			r.Post("/"+coreAuthority+"/bundles/{id}/enable", h.postBundleVerb(substrate.BundleOps.EnableBundle))
 			r.Post("/"+coreAuthority+"/bundles/{id}/bind", h.postBundleBind)
 			r.Post("/"+coreAuthority+"/bundles/{id}/uninstall", h.postBundleUninstall)
 			r.Post("/"+coreAuthority+"/bundles/{id}/purge", h.postBundlePurge)

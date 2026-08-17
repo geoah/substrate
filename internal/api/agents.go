@@ -13,16 +13,10 @@ import (
 // (one AgentEvent per line, the changes feed's conventions); the thread it
 // writes is ordinary data any client re-reads through the record API.
 
-// agentOps is the engine's agent seam, asserted at runtime like
-// automationOps: substrate.Dataset stays frozen, a dataset without agents
-// simply has no verbs.
-type agentOps interface {
-	CallAgent(ctx context.Context, name string, input any) (*substrate.AgentResult, error)
-	ChatAgent(ctx context.Context, actor substrate.Actor, name, threadID, message string, emit func(substrate.AgentEvent)) (*substrate.AgentResult, error)
-}
-
-func agentsFrom(ctx context.Context) (agentOps, bool) {
-	ops, ok := DatasetFrom(ctx).(agentOps)
+// agentsFrom resolves the request's dataset to the agent seam; a dataset
+// without it has no agent verbs.
+func agentsFrom(ctx context.Context) (substrate.AgentOps, bool) {
+	ops, ok := DatasetFrom(ctx).(substrate.AgentOps)
 	return ops, ok
 }
 

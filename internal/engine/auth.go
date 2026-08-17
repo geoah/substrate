@@ -655,6 +655,17 @@ func (s *service) ReenrollTOTP(ctx context.Context, in substrate.LoginInput, new
 	})
 }
 
+// Resetter is the operator hat's reset seam. It is off substrate.Service on
+// purpose, so `substratectl user reset` asks for it by shape; naming it here
+// and asserting it below means a changed signature fails the build instead of
+// leaving the command to refuse at runtime, on the box, to a user who has
+// already lost their authenticator.
+type Resetter interface {
+	ResetUser(ctx context.Context, username, newPassword string) (substrate.TOTPEnrollment, error)
+}
+
+var _ Resetter = (*service)(nil)
+
 // ResetUser is the operator's door for a user who lost both factors: fresh
 // sealed material and a new credential record, an ordinary changelog entry
 // attributed to the substrate. It is off substrate.Service on purpose —

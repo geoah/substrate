@@ -60,6 +60,26 @@ var systemKinds = map[string]bool{
 	kindBlob: true,
 }
 
+// The seams *dataset satisfies beyond substrate.Dataset. Each is an optional
+// extension interface a consumer type-asserts (the HTTP layer, the catalog,
+// the service loops), so without these assertions renaming or re-signaturing
+// one method below compiles clean and turns a whole endpoint family into a
+// 501 at runtime. Add a line here whenever a seam is added.
+var (
+	_ substrate.Dataset              = (*dataset)(nil)
+	_ substrate.VocabularyApplier    = (*dataset)(nil)
+	_ substrate.ChangeFeedOps        = (*dataset)(nil)
+	_ substrate.AutomationOps        = (*dataset)(nil)
+	_ substrate.TriggerDispatcher    = (*dataset)(nil)
+	_ substrate.AgentOps             = (*dataset)(nil)
+	_ substrate.ResolutionSweeper    = (*dataset)(nil)
+	_ substrate.BundleOps            = (*dataset)(nil)
+	_ substrate.BundleInstaller      = (*dataset)(nil)
+	_ substrate.BundleUpgradePlanner = (*dataset)(nil)
+	_ substrate.OAuthMaintainer      = (*dataset)(nil)
+	_ substrate.BlobStore            = (*dataset)(nil)
+)
+
 type dataset struct {
 	svc *service
 	// db is the repository-scoped pool: every connection in it carries this

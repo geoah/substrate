@@ -180,13 +180,13 @@ unit.`,
 			defer func() { _ = svc.Close() }()
 			var report engine.RebuildReport
 			if forceUnverified {
-				r, ok := svc.(forceRebuilder)
+				r, ok := svc.(engine.ForceRebuilder)
 				if !ok {
 					return seamMissing("RebuildRepositoryUnverified")
 				}
 				report, err = r.RebuildRepositoryUnverified(cmd.Context(), args[0])
 			} else {
-				r, ok := svc.(rebuilder)
+				r, ok := svc.(engine.Rebuilder)
 				if !ok {
 					return seamMissing("RebuildRepository")
 				}
@@ -254,7 +254,7 @@ Exits nonzero when anything does not verify.`,
 				return err
 			}
 			defer func() { _ = svc.Close() }()
-			v, ok := svc.(verifier)
+			v, ok := svc.(engine.Verifier)
 			if !ok {
 				return seamMissing("VerifyRepositoryPinned")
 			}
@@ -349,7 +349,7 @@ feed redacts those kinds' payloads wholesale instead.`,
 				return err
 			}
 			defer func() { _ = svc.Close() }()
-			r, ok := svc.(resealer)
+			r, ok := svc.(engine.Resealer)
 			if !ok {
 				return seamMissing("ResealRepository")
 			}

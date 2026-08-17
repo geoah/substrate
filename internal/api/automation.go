@@ -10,23 +10,10 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// automationOps is the engine's trigger-delivery seam, asserted at runtime
-// like the TOTP rotator: substrate.Dataset stays frozen, a dataset without
-// triggers simply has no verbs. Status is computed, a replay is a cursor
-// reset, a run is one synthesized delivery, a wake is an immediate scan, and
-// CallFunction is the callable invocation API (`mode: call`).
-type automationOps interface {
-	TriggerStatuses(ctx context.Context) ([]substrate.TriggerStatus, error)
-	ReplayTrigger(ctx context.Context, id string, from int64) error
-	RunTrigger(ctx context.Context, id, recordKind, recordID string) (int, error)
-	WakeTrigger(ctx context.Context, id string) (int, error)
-	TriggerFailures(ctx context.Context, id string) ([]substrate.TriggerFailure, error)
-	RetryTriggerFailure(ctx context.Context, id string, failureID int64) (int, error)
-	CallFunction(ctx context.Context, name string, args any) (any, int, error)
-}
-
-func automationFrom(ctx context.Context) (automationOps, bool) {
-	ops, ok := DatasetFrom(ctx).(automationOps)
+// automationFrom resolves the request's dataset to the trigger-delivery seam;
+// a dataset without it has no trigger verbs.
+func automationFrom(ctx context.Context) (substrate.AutomationOps, bool) {
+	ops, ok := DatasetFrom(ctx).(substrate.AutomationOps)
 	return ops, ok
 }
 

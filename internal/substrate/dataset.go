@@ -11,13 +11,17 @@ import (
 // Implementations are safe for concurrent use.
 //
 // THE FROZEN LIBRARY CONTRACT IS THIS CORE ONLY.
-// The EXTENSION TIER — schema apply, triggers, functions, agents, bundles,
-// blobs — is NOT on this interface: it is the fast-moving surface and lives
-// as concrete methods on the engine's *dataset (ApplyVocabularyDocuments,
-// InstallBundleClosure, the trigger/function/agent/bundle/blob operations,
-// the chat/call agent wire). A library consumer that needs the bundle
-// tier type-asserts the concrete engine type or its own narrow interface;
-// the seven mutations and four reads below are the part frozen at v1.
+// The EXTENSION TIER — vocabulary apply, triggers, functions, agents,
+// bundles, blobs — is NOT on this interface: it is the fast-moving surface,
+// and each part of it is a named OPTIONAL EXTENSION interface in this package
+// that an implementation may also satisfy: VocabularyApplier, AutomationOps,
+// TriggerDispatcher, AgentOps, ResolutionSweeper, BundleOps, BundleInstaller,
+// BundleUpgradePlanner, OAuthMaintainer, BlobStore, ChangeFeedOps. A consumer
+// that needs one type-asserts THAT interface, never a concrete engine type,
+// and every implementation asserts each seam it satisfies at compile time
+// (`var _ substrate.BundleOps = (*dataset)(nil)`) — otherwise renaming a
+// method turns a whole endpoint family into a 501 with a green build.
+// The seven mutations and four reads below are the part frozen at v1.
 type Dataset interface {
 	Repository() RepositoryInfo
 

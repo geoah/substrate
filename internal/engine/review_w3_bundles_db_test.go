@@ -205,7 +205,7 @@ func w3Connect(t *testing.T, svc substrate.Service, ops bundleOps, accountID str
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	if _, err := svc.(oauthCompleter).CompleteOAuth(context.Background(), stateFrom(t, consent), "code-123"); err != nil {
+	if _, err := svc.(substrate.OAuthCompleter).CompleteOAuth(context.Background(), stateFrom(t, consent), "code-123"); err != nil {
 		t.Fatalf("callback: %v", err)
 	}
 }
@@ -229,7 +229,7 @@ func TestW3OAuthStateReplayRefused(t *testing.T) {
 		t.Fatalf("consent url carries no PKCE challenge: %s", consent)
 	}
 	state := stateFrom(t, consent)
-	oc := svc.(oauthCompleter)
+	oc := svc.(substrate.OAuthCompleter)
 	if _, err := oc.CompleteOAuth(ctx, state, "code-123"); err != nil {
 		t.Fatalf("first callback: %v", err)
 	}
@@ -280,7 +280,7 @@ func TestW3OAuthExchangeErrorSanitized(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	_, err = svc.(oauthCompleter).CompleteOAuth(ctx, stateFrom(t, consent), "wrong-code")
+	_, err = svc.(substrate.OAuthCompleter).CompleteOAuth(ctx, stateFrom(t, consent), "wrong-code")
 	if err == nil {
 		t.Fatal("a bad code completed")
 	}
@@ -310,7 +310,7 @@ func TestW3OAuthCallbackVsDeleteBarrier(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := svc.(oauthCompleter).CompleteOAuth(ctx, stateFrom(t, consent), "code-123")
+		_, err := svc.(substrate.OAuthCompleter).CompleteOAuth(ctx, stateFrom(t, consent), "code-123")
 		done <- err
 	}()
 	select {

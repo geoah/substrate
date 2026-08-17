@@ -18,7 +18,6 @@ package api
 //     so a leaked token's blast radius is the data, never the account.
 
 import (
-	"context"
 	"crypto/subtle"
 	"errors"
 	"net/http"
@@ -365,13 +364,6 @@ func (h *handler) postMintToken(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, tokenResponse{Token: info, Secret: secret})
 }
 
-// recoveryEnroller is the engine seam behind one-time recovery enrollment,
-// deliberately off the frozen contract: it exists for repositories that
-// predate recovery keys, and registration is the ordinary door.
-type recoveryEnroller interface {
-	EnrollRecoveryKey(ctx context.Context, in substrate.LoginInput, publicKey string) (identity, recipient string, err error)
-}
-
 type recoveryEnrollRequest struct {
 	Username          string `json:"username"`
 	Password          string `json:"password"`
@@ -400,7 +392,7 @@ func (h *handler) postRecoveryEnroll(w http.ResponseWriter, r *http.Request) {
 	if !h.factorsPresented(w, req.Password, req.TOTPCode) {
 		return
 	}
-	enroller, ok := h.svc.(recoveryEnroller)
+	enroller, ok := h.svc.(substrate.RecoveryEnroller)
 	if !ok {
 		writeError(w, http.StatusNotImplemented, codeUnsupported, "this build does not support recovery enrollment")
 		return
