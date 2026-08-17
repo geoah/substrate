@@ -352,8 +352,11 @@ docker compose exec substrate substratectl user reset ada
 
 `reseal` and `user reset` refuse on a deployment left at the out-of-the-box
 default, because that default sets no `SUBSTRATE_CREDENTIAL_KEY` and both write
-sealed material: set the key in the environment compose reads, restart, and
-they run.
+sealed material. Set the key in the environment compose reads, then
+`docker compose up -d`, which recreates the container around the new value.
+Not `docker compose restart`: that restarts the process the container already
+has, with the environment it was created with, so both commands go on refusing
+and nothing says why.
 
 Publishing the Postgres port to reach the same commands from the host is a
 worse trade: it exposes the database to everything that can reach the host, and
