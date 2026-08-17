@@ -426,13 +426,13 @@ data-encryption key, not the login. So `user reset`, run on the box or through
 deployment nobody can exec into is a deployment where a lost authenticator is
 permanent.
 
-The signing seed has one copy outside the database: registration hands it to
-the user, once ([the chain](changelog.md#the-chain)). With it the user can
-derive the public key and verify a backup's signatures with no server, and
-feed `verify --expect-public-key` from their own record of it. It does not
-soften the credential-key rule: a lost credential key still stops writes on an
-activated repository, and no path consumes a user-provided seed today (an
-operator re-seal from that copy is a possible follow-up, not built).
+The signing seed has NO copy outside the database: it is minted server-side,
+sealed under the credential key, and never disclosed. What registration does
+hand the user is the signing PUBLIC key ([the chain](changelog.md#the-chain)),
+which is what `verify --expect-public-key` wants and what makes a backup's
+signatures checkable with no server. A lost credential key still stops writes
+on an activated repository, with nothing to recover from; an operator path
+that re-seals a seed from elsewhere is a possible follow-up, not built.
 
 Two rules keep operator commands honest, and they explain the output: the CLI
 opens the engine with an empty registry, so an operator command can never

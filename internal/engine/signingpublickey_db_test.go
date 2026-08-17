@@ -1,8 +1,9 @@
 package engine_test
 
-// Registration's one disclosure of the signing seed: the seed comes back in
-// hex exactly once, the key derived from it is the key the store signs with,
-// and nothing after registration can produce it again.
+// What registration discloses about signing: the PUBLIC key, in hex, and no
+// private key material. The key that comes back is the one the store signs
+// with, so `repository verify --expect-public-key` can be pinned to it, and the
+// seed that mints those signatures never leaves the server.
 
 import (
 	"bytes"
@@ -15,7 +16,7 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-func TestRegistrationDisclosesSigningSeedOnce(t *testing.T) {
+func TestRegistrationDisclosesTheSigningPublicKey(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	svc, dsn := newService(t)
@@ -33,19 +34,14 @@ func TestRegistrationDisclosesSigningSeedOnce(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 
-	seed, err := hex.DecodeString(res.SigningSeed)
-	if err != nil || len(seed) != ed25519.SeedSize {
-		t.Fatalf("the signing seed is not %d hex-encoded bytes: %q (%v)",
-			ed25519.SeedSize, res.SigningSeed, err)
-	}
-	key := ed25519.NewKeyFromSeed(seed)
-	public := key.Public().(ed25519.PublicKey)
-	if got := hex.EncodeToString(public); got != res.SigningPublicKey {
-		t.Fatalf("the returned public key %q is not the seed's own %q", res.SigningPublicKey, got)
+	public, err := hex.DecodeString(res.SigningPublicKey)
+	if err != nil || len(public) != ed25519.PublicKeySize {
+		t.Fatalf("the signing public key is not %d hex-encoded bytes: %q (%v)",
+			ed25519.PublicKeySize, res.SigningPublicKey, err)
 	}
 
-	// The derived key IS the repository's: the control plane holds its public
-	// half, and every changelog signature verifies against it.
+	// The returned key IS the repository's: the control plane holds the same
+	// bytes, and every changelog signature verifies against it.
 	db := rawDB(t, dsn)
 	var repoID string
 	var storedPublic []byte
@@ -82,9 +78,8 @@ func TestRegistrationDisclosesSigningSeedOnce(t *testing.T) {
 		t.Fatal("registration left an empty changelog; nothing was verified")
 	}
 
-	// No second showing: the username is taken, so the one call that carries
-	// the seed can never run again for this repository, and login returns a
-	// token and nothing else.
+	// Registering the same username again refuses, so the response that carries
+	// the public key is a one-off per repository either way.
 	if _, err := svc.Register(ctx, substrate.RegisterInput{
 		Username: "ada", Password: testPassword,
 		TOTPSecret: u.seed, TOTPCode: u.code(t),
