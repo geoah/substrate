@@ -233,6 +233,7 @@ user and no privileged endpoint: ` + "`user reset`" + `, ` + "`repository inspec
 		// The box.
 		a.userCommand(),
 		a.repositoryCommand(),
+		a.blobsCommand(),
 		a.versionCommand(),
 	)
 	return root

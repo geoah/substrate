@@ -26,7 +26,9 @@ changelog through that same fold code
 ([running a substrate](operations.md#operator-recovery)).
 
 The changelog does not carry the side stores' bytes, so **a backup is changelog plus blobs
-plus sealed, as one unit**.
+plus sealed, as one unit** — and where blob bytes are configured to live
+outside the database, that unit is two artifacts
+([the blob store](operations.md#the-blob-store)).
 
 Sequence numbers are per repository, gapless, and assigned at commit, so
 commit-visibility order **is** sequence order and a consumer resuming from a
@@ -431,7 +433,10 @@ live in the repository's content-addressed blob store
 (`PUT /api/v1/blobs`, `GET /api/v1/blobs/{digest}`), and their metadata is an
 ordinary `core.substrate.reamde.dev/blob` record whose id **is** the digest, so the same
 bytes always mint the same blob. A read resolves the ref to
-`{digest, name, mimeType, size, status}`, never to the bytes inline.
+`{digest, name, mimeType, size, status}`, never to the bytes inline. The
+manifest is always a record in Postgres; where the BYTES sit is an operator's
+choice of backend ([the blob store](operations.md#the-blob-store)), and nothing
+on the wire changes with it.
 
 A blob's `name` and `mimeType` are both **optional and descriptive**. The
 upload says them — the name as `?name=` or a `Content-Disposition` filename,

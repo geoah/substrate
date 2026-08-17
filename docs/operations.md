@@ -42,6 +42,14 @@ boot.
 | `SUBSTRATE_OAUTH_CALLBACK_URL` | —                                      | The one redirect URI every provider app registers.                                                        |
 | `SUBSTRATE_CONSOLE_URL`        | —                                      | The console origin the OAuth return-page posts to and falls back to redirecting into. Empty is local dev. |
 | `SUBSTRATE_SANDBOX`            | `best-effort`                          | How hard to confine function bodies: `off`, `best-effort`, or `enforce` (refuse to run a body unconfined). |
+| `SUBSTRATE_BLOB_STORE`         | `postgres`                             | Where blob bytes live: `postgres` (the `blobs` column), `fs` (a directory) or `s3` (a bucket). See [the blob store](#the-blob-store). |
+| `SUBSTRATE_BLOB_FS_ROOT`       | —                                      | `fs` only: the root directory, one subdirectory per repository. Must be absolute, and must outlive the container.                    |
+| `SUBSTRATE_BLOB_S3_ENDPOINT`   | —                                      | `s3` only: the service URL, scheme included (`https://s3.us-east-1.amazonaws.com`, or a self-hosted endpoint).                       |
+| `SUBSTRATE_BLOB_S3_BUCKET`     | —                                      | `s3` only: the bucket. It must be PRIVATE — the bytes are stored as they arrived.                                                    |
+| `SUBSTRATE_BLOB_S3_REGION`     | `us-east-1`                            | `s3` only: the region the request is signed for.                                                                                     |
+| `SUBSTRATE_BLOB_S3_ACCESS_KEY_ID` / `SUBSTRATE_BLOB_S3_SECRET_ACCESS_KEY` | — | `s3` only: the credentials every request is signed with. `SUBSTRATE_BLOB_S3_SESSION_TOKEN` beside them for temporary ones.        |
+| `SUBSTRATE_BLOB_S3_PREFIX`     | —                                      | `s3` only: a key prefix, for a bucket this substrate shares with something else.                                                     |
+| `SUBSTRATE_BLOB_S3_PATH_STYLE` | `true`                                 | `s3` only: address the bucket as a path segment rather than a subdomain. Self-hosted endpoints want it; AWS accepts it.               |
 
 `SUBSTRATE_CREDENTIAL_KEY` is the one that must be backed up beside the
 database: without it, sealed material is unreadable.
@@ -71,6 +79,68 @@ What that means for an operator:
   batch at a time, so an interrupted re-embed resumes by itself.
 - A gateway swapped behind an unchanged row and model name is invisible to the
   provenance columns, so that case takes `reembed --all`.
+
+## The blob store
+
+A blob is two halves: a **manifest**, which is an ordinary record keyed by the
+content digest, and the **bytes**. The manifest is always in Postgres and is
+always the truth. `SUBSTRATE_BLOB_STORE` says where the bytes go.
+
+| Backend            | Where the bytes are            | Backup                             |
+| ------------------ | ------------------------------ | ---------------------------------- |
+| `postgres`         | the `blobs` column             | the database dump, and nothing else |
+| `fs`               | `<root>/<repository>/<digest>` | the dump **plus** the root          |
+| `s3`               | `<prefix><repository>/<digest>` in the bucket | the dump **plus** the bucket |
+
+`postgres` is the default and the simplest thing that works: one dump is a
+whole backup, row level security is what separates two repositories, and the
+bytes and the manifest commit in one transaction. What it costs is that every
+uploaded byte goes through WAL and into the backup of a database whose value is
+the changelog, which is why the other two exist.
+
+**Isolation stops being the database's job.** On `fs` and `s3` the repository
+is half of every key, and it comes from the authenticated token's repository,
+never from the request: a read resolves the manifest first, under row level
+security, and only then fetches bytes. So a caller cannot reach another
+repository's blob by guessing a digest. But anything that can read the root
+directory or the bucket can read every repository's blobs: the store is as
+trusted as the database. Give the fs root to the substrate's user alone (it
+creates directories `0700` and files `0600`), and keep the bucket private, with
+credentials only this substrate holds.
+
+**The bytes are stored as they arrived, in the clear**
+([0021](decisions/0021-blob-bytes-outside-postgres-are-stored-plaintext.md)).
+For encryption at rest, put it under the store: an encrypted volume for `fs`,
+the bucket's own server-side encryption for `s3`.
+
+**An upload becomes two steps, and a crash between them is cheap.** Outside
+Postgres the bytes cannot commit with the manifest, so the manifest is written
+`pending` first, then the bytes, then `stored`
+([0020](decisions/0020-a-blob-outside-postgres-settles-after-its-bytes.md)). A
+manifest only ever says `stored` once the store confirms the bytes, so no read
+ever meets a blob whose bytes are missing. What a crash leaves is a `pending`
+manifest, which the sweep collects with anything else nobody references.
+Deleting works the same way in reverse: the manifest is tombstoned, then the
+object is deleted, and an object left behind by a failure is reaped by a later
+sweep that lists the store.
+
+**Switching backends is a migration, not a setting.** A server whose configured
+store is not where the bytes actually are refuses to boot, rather than serving
+404s for half the blobs. Move them first, with the server stopped:
+
+```
+SUBSTRATE_BLOB_STORE=fs SUBSTRATE_BLOB_FS_ROOT=/var/lib/substrate/blobs \
+  DATABASE_URL=… substratectl blobs migrate --from postgres
+```
+
+It moves one repository at a time and deletes each object from the source only
+once the target holds it, so an interrupted run is finished by running it
+again. `--dry-run` counts what would move; a username moves that user alone.
+Then start the server with the same `SUBSTRATE_BLOB_STORE`. Going back is the
+same command with `--from` and `--to` swapped.
+
+The 64 MiB cap on one upload and the absence of range reads are the contract,
+not the backend: neither changes with the store.
 
 ## The function sandbox
 
@@ -200,9 +270,10 @@ minutes before it merged.
 
 ## Backups
 
-**A backup is the changelog plus blobs plus sealed, as one unit.** All three live in
-the one Postgres database, so an ordinary consistent dump of that database is a
-complete backup. The sealed rows encrypt under each repository's own
+**A backup is the changelog plus blobs plus sealed, as one unit.** Under the
+default `postgres` blob store all three live in the one database, so an
+ordinary consistent dump of that database is a complete backup. The sealed rows
+encrypt under each repository's own
 data-encryption key, which exists in two wraps: the control-plane
 `repositories.dek` column holds it wrapped under `SUBSTRATE_CREDENTIAL_KEY`
 (the host's half), and the repository's `recoverykey` record holds it
@@ -217,6 +288,24 @@ keyless build wrote is the exception and the dangerous one: its
 `repositories.dek` holds the key in the clear beside the rows it opens, so
 the dump alone is every secret in that repository, and nothing re-wraps that
 column today ([#230](https://github.com/geoah/substrate/issues/230)).
+
+**On `fs` or `s3` the dump is half the backup.** The blob bytes are outside the
+database, so the second artifact is the fs root or the bucket, and it has to be
+copied with its own step:
+
+- **`fs`**: back up the whole root (`rsync`, a snapshot of the volume, a
+  tarball). Objects are immutable and named by their content digest, so an
+  incremental copy is exact and a partially copied file is detectable by
+  hashing it.
+- **`s3`**: the bucket is the artifact. Turn on versioning or replication, or
+  copy the prefix to a second bucket. A provider's durability is not a backup:
+  a delete this substrate issues is a delete.
+
+**Take the blob copy FIRST, then the dump.** Bytes settle before the manifest
+does, so a store copied before the dump can hold objects the dump has no
+manifest for, which the sweep collects harmlessly. The other order can leave a
+`stored` manifest whose bytes were never copied, and that is a blob the restore
+cannot serve.
 
 What you do **not** have to back up separately is the fold. The records table
 and its indexes are derived; the changelog is the truth.
@@ -283,6 +372,11 @@ SUBSTRATE_CREDENTIAL_KEY=… DATABASE_URL=… substratectl user reset ada
   epoch naming the old head and the new: a head you wrote down before a
   reseal will not match after, and the epoch is what explains it. On a
   signed repository it refuses without the signing key.
+- **`blobs migrate`** moves blob bytes from one store to another, one
+  repository at a time, and is the only way across a
+  `SUBSTRATE_BLOB_STORE` change: see [the blob store](#the-blob-store). It
+  writes no records and appends no changelog entries, because the manifest
+  never moves.
 - **`user reset <username>`** is the answer to a user who has lost both
   factors. It writes fresh sealed material and a new credential record and
   prints a fresh TOTP enrollment. The data is untouched; the account gets new
