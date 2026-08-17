@@ -300,14 +300,17 @@ func (ds *dataset) incomingArms(
 	// One arm per reference property pinned at this kind. An unconstrained
 	// pointer (`kind: any`, or none) names no target kind, so the registry cannot
 	// say it points HERE without reading every row of every kind — those are
-	// left out rather than answered with a scan.
-	for _, k := range ds.registry().Kinds() {
+	// left out rather than answered with a scan. A `trait:` pin names a finite
+	// set of kinds, so a reference pinned at a trait this kind implements is
+	// enumerated the same way a kind pin is (referencePinsKind).
+	reg := ds.registry()
+	for _, k := range reg.Kinds() {
 		if opts.FromKind != "" && k.Identity != opts.FromKind {
 			continue
 		}
 		for _, pname := range k.PropOrder {
 			p := k.Props[pname]
-			if p.Datatype != vocabulary.DatatypeReference || p.To != canonical.Kind {
+			if p.Datatype != vocabulary.DatatypeReference || !referencePinsKind(reg, p, canonical.Kind) {
 				continue
 			}
 			if opts.Rel != "" && pname != opts.Rel {

@@ -1655,7 +1655,7 @@ var objectPropKeys = map[string]bool{
 // keys on. A reference still spelling `to:` is refused by name
 // (deletedReferencePropKeys).
 var referencePropKeys = map[string]bool{
-	"type": true, "kind": true, "repeated": true, "description": true,
+	"type": true, "kind": true, "trait": true, "repeated": true, "description": true,
 	"displayName": true, "required": true, "renamedFrom": true,
 	"inverse": true, "inverseDescription": true, "ownerRef": true,
 	"keyed": true, "keyPattern": true, "managed": true,
@@ -1811,8 +1811,17 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 			return nil
 		}
 		p.Datatype = DatatypeReference
-		if pin := mstr(d, "kind"); pin != "" {
-			p.To = pin
+		kindPin := mstr(d, "kind")
+		traitPin := mstr(d, "trait")
+		switch {
+		case kindPin != "" && traitPin != "":
+			// A reference names ONE kind of thing. Both pins would leave every
+			// reader to guess which one the value is held to.
+			l.errf("%s: a reference pins `kind:` OR `trait:`, never both", where)
+		case kindPin != "":
+			p.To = kindPin
+		case traitPin != "":
+			p.ToTrait = traitPin
 		}
 		p.Required = mbool(d, "required")
 		p.OwnerRef = mbool(d, "ownerRef")
@@ -1828,11 +1837,13 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 				l.errf("%s: ownerRef is a kind's own property, never an object field", where)
 			case p.Repeated || p.Keyed:
 				l.errf("%s: ownerRef names ONE owner — drop `repeated`/`keyed` or drop `ownerRef`", where)
-			case p.To == "" || p.To == ToAny:
+			case (p.To == "" || p.To == ToAny) && p.ToTrait == "":
 				// Unpinned would still cascade (the stored path names one
 				// record), but `incoming` cannot enumerate an unpinned pointer,
-				// so the owner could not see what deleting it would take.
-				l.errf("%s: ownerRef needs `kind:` pinned at one kind — an unpinned owner pointer is invisible to the owner's incoming read", where)
+				// so the owner could not see what deleting it would take. A
+				// `trait:` pin is enumerable — the kinds implementing a trait are
+				// a finite set — so it is admitted here as `kind:` is.
+				l.errf("%s: ownerRef needs `kind:` or `trait:` pinned — an unpinned owner pointer is invisible to the owner's incoming read", where)
 			}
 		}
 		p.Inverse, p.InverseDescription = l.parseInverse(where, d)
@@ -2377,6 +2388,20 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 		// every write and refuse the value the declaration asked for.
 		for _, site := range referenceSites(t) {
 			p := site.Prop
+			// A `trait:` pin resolves against the registry's traits the way a
+			// binding does: in-authority first, then uniquely across authorities.
+			// The resolved full identity is what the write path and the GC
+			// cascade key on, so a bundle-local trait cannot counterfeit a
+			// host-recognized one.
+			if p.ToTrait != "" {
+				c, err := r.ResolveTrait(g.Name, p.ToTrait)
+				if err != nil {
+					problems = append(problems, fmt.Sprintf("%s: data.properties.%s.trait: %v", where, site.Path, err))
+					continue
+				}
+				p.ToTrait = c.Identity()
+				continue
+			}
 			if p.To == "" || p.To == ToAny {
 				continue
 			}

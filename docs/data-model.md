@@ -425,9 +425,14 @@ referent's detail page.
 A reference may own. `ownerRef: true` says the referent OWNS this record, so
 collecting the referent tombstones everything that names it, exactly as an
 `ownerRef` edge does. It is declarable only on a kind's own single-valued
-reference with `kind:` pinned at one kind: a repeated pointer names no single
-owner, and an unpinned one cannot be enumerated, so the owner could not see
-what deleting it would take. Every provider bundle's `account` is one.
+reference pinned at one kind (`kind:`) or at one trait (`trait:`): a repeated
+pointer names no single owner, and an unpinned one cannot be enumerated, so the
+owner could not see what deleting it would take. A trait pin is enumerable
+because the kinds implementing a trait are a fixed set, which is what lets a
+provider-agnostic kind own any account: the mirror kinds pin their bundle's own
+`account` kind, and `calendar`, `conversation` and `emailthread` pin the
+`accountconfig` trait every account kind implements
+([decision record 0034](decisions/0034-a-reference-may-pin-a-trait-not-only-a-kind.md)).
 
 A reference is not an edge, and which to reach for is
 [decision record 0032](decisions/0032-an-owner-pointer-may-be-a-reference-and-a-mirror-account-is-one.md).

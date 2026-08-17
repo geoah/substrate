@@ -190,6 +190,13 @@ func (t *txn) edgeOwnedChildren(owner eref) ([]ownedChild, error) {
 // list finite — and each pair is one containment probe against `props`, served
 // by `records_props_idx` (a GIN jsonb_path_ops index, which is exactly `@>`).
 //
+// A pin is a `kind:` naming this kind, or a `trait:` this kind implements
+// (referencePinsKind). A trait pin keeps the list finite for the same reason a
+// kind pin does: the kinds implementing a trait are a fixed set the registry
+// enumerates, so a provider-agnostic kind (calendar, conversation, emailthread)
+// owns its account without naming one provider's account kind, and collecting
+// any account still walks to the records it owned.
+//
 // It probes every id the owner has ever had, not only the canonical one. A
 // merge REPOINTS edge rows and leaves reference values alone (merge.go: "every
 // old reference still resolves"), so a record synced before its account won a
@@ -200,11 +207,12 @@ func (t *txn) referenceOwnedChildren(owner eref) ([]ownedChild, error) {
 	if err != nil || len(paths) == 0 {
 		return nil, err
 	}
+	reg := t.ds.registry()
 	var out []ownedChild
-	for _, k := range t.ds.registry().Kinds() {
+	for _, k := range reg.Kinds() {
 		for _, pname := range k.PropOrder {
 			p := k.Props[pname]
-			if p.Datatype != vocabulary.DatatypeReference || !p.OwnerRef || p.To != owner.Kind {
+			if p.Datatype != vocabulary.DatatypeReference || !p.OwnerRef || !referencePinsKind(reg, p, owner.Kind) {
 				continue
 			}
 			for _, path := range paths {

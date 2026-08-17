@@ -218,10 +218,11 @@ type Property struct {
 	// OwnerRef marks a `reference` property whose referent OWNS this record:
 	// collecting the referent tombstones every record that names it, the same
 	// sweep an `ownerRef` edge gets (internal/engine/gc.go). It is only
-	// declarable on a kind's own single-valued reference with `kind:` pinned at
-	// one kind — the loader refuses the other shapes, because a repeated
-	// pointer names no single owner and an unpinned one cannot be enumerated by
-	// the owner's `incoming` read.
+	// declarable on a kind's own single-valued reference pinned at one kind
+	// (`kind:`) or at one trait (`trait:`) — the loader refuses the other
+	// shapes, because a repeated pointer names no single owner and an unpinned
+	// one cannot be enumerated by the owner's `incoming` read. A trait pin is
+	// enumerable because the kinds implementing a trait are a finite set.
 	OwnerRef bool
 	// To is a `reference` property's optional referent-type constraint
 	//, the twin of an edge's `to:`: a resolved full type
@@ -230,6 +231,18 @@ type Property struct {
 	// name to a full identity in Finalize, exactly like an edge target. Empty
 	// for every non-reference kind.
 	To string
+	// ToTrait is a `reference` property's optional TRAIT pin: a resolved full
+	// trait identity ("core.substrate.reamde.dev/accountconfig") the referent
+	// KIND must implement, the twin of `To`'s kind pin. A reference pins EITHER
+	// `kind:` (To) or `trait:` (ToTrait), never both. It is what lets a
+	// provider-agnostic kind own its account without naming one provider's
+	// account kind: any record whose kind implements the trait is an admissible
+	// referent, and an `ownerRef` trait reference is enumerable because the set
+	// of kinds implementing a trait is finite (the registry's Implementing).
+	// Resolved from a bare name to a full identity in Finalize. Empty for every
+	// non-reference kind and for a kind-pinned reference. A trait pin supplies no
+	// kind for a bare id, so its value is a full "<kind>/<id>" path, like `any`.
+	ToTrait string
 	// Inverse names this relationship as the TARGET reads it — `thread` on a
 	// message is `messages` on the thread — so a graph view standing on the
 	// target can say what points at it in the model's own words instead of
