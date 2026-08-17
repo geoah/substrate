@@ -30,3 +30,4 @@ ignore: |
   web/console/dist/
   .dev/
   bin/
+  .claude/worktrees/
