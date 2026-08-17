@@ -49,7 +49,10 @@ data:
   # authority and not a version of it, so upgrading this closure against a
   # task kind that still declares no `name` parks every issue delivery on an
   # undeclared property.
-  version: 6
+  # version 7: `account` on every mirror kind is a pinned owner
+  # reference instead of a string, so disconnecting an account collects
+  # the rows it synced (docs/decisions/0032).
+  version: 7
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -280,9 +283,12 @@ data:
     # string property to a reference is a NARROWING the boot upgrade refuses
     # while rows hold the old shape — it would strand every released store.
     account:
-      type: string
+      type: reference
+      kind: account
+      required: true
+      ownerRef: true
       displayName: Account
-      description: the account record id this user was synced from
+      description: the account this user was synced from
     providerId:
       type: string
       displayName: Linear id
@@ -329,9 +335,12 @@ data:
   displayTemplate: "{name}"
   properties:
     account:
-      type: string
+      type: reference
+      kind: account
+      required: true
+      ownerRef: true
       displayName: Account
-      description: the account record id this team was synced from
+      description: the account this team was synced from
     providerId:
       type: string
       displayName: Linear id
@@ -367,9 +376,12 @@ data:
     plural: issues
   properties:
     account:
-      type: string
+      type: reference
+      kind: account
+      required: true
+      ownerRef: true
       displayName: Account
-      description: the account record id this issue was synced from
+      description: the account this issue was synced from
     providerId:
       type: string
       displayName: Linear id
@@ -933,7 +945,16 @@ data:
   source: |
     TASK_TYPE = "tasks.substrate.reamde.dev/task"
     ISSUE_TYPE = "linear.bundles.substrate.reamde.dev/issue"
+    ACCOUNT_PREFIX = "linear.bundles.substrate.reamde.dev/account/"
     DONE_TYPES = ("completed", "canceled")
+
+
+    def _account_id(value):
+        # `account` is a reference, so the STORED value is the record path. The
+        # task id composes off the bare account id the sync passes, so the
+        # path's prefix comes off before it is hashed.
+        v = str(value or "")
+        return v[len(ACCOUNT_PREFIX):] if v.startswith(ACCOUNT_PREFIX) else v
 
 
     def _fold(state_type):
@@ -949,7 +970,7 @@ data:
         env = input.get("envelope") or {}
         issue = env.get("record") or {}
         props = issue.get("properties") or {}
-        aid = props.get("account") or ""
+        aid = _account_id(props.get("account"))
         pid = props.get("providerId") or ""
         if not aid or not pid:
             return {"output": {"skipped": True}}

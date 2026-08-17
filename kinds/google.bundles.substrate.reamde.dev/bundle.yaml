@@ -53,7 +53,10 @@ data:
   # follow core's declaration.
   # version 5: gmailsync flattens an html-only body to markdown instead of
   # stripping its tags, so a message whose only body is html keeps its links.
-  version: 5
+  # version 6: `account` on every mirror kind is a pinned owner
+  # reference instead of a string, so disconnecting an account collects
+  # the rows it synced (docs/decisions/0032).
+  version: 6
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -414,17 +417,20 @@ data:
     plural: contacts
   displayTemplate: "{name.displayName}"
   properties:
-    # The account this contact belongs to (the account record id): the
-    # mark-and-sweep filters this account's rows without touching another
-    # connected account's, and it keeps per-account resource-name collisions
-    # legible (review-google #6).
-    # NOT a reference, and every `account:` in this closure reads the same way:
-    # the connector writes it as provenance on synced rows, and retyping a live
-    # string property to a reference is a NARROWING the boot upgrade refuses
-    # while rows hold the old shape — it would strand every released store.
+    # The account this contact belongs to: the mark-and-sweep filters this
+    # account's rows without touching another connected account's, and it keeps
+    # per-account resource-name collisions legible (review-google #6).
+    # `ownerRef` is what makes disconnecting the account collect the contacts it
+    # synced — every `account:` in this closure is the same owner pointer
+    # (docs/decisions/0032). A filter or a write may still spell it as the bare
+    # account id: the pin supplies the kind, and the stored value is the path.
     account:
-      type: string
-      description: the account record id this contact was synced from
+      type: reference
+      kind: account
+      required: true
+      ownerRef: true
+      displayName: Account
+      description: the account this contact was synced from
     # The full-sync generation this row was last seen in: after a full read
     # the sweep deletes this account's rows NOT stamped with the current
     # generation — the deletes an expired-sync-token full read cannot tombstone
@@ -1021,12 +1027,21 @@ data:
     """
     CONTACT_TYPE = "google.bundles.substrate.reamde.dev/contact"
     PERSON_TYPE = "people.substrate.reamde.dev/person"
+    ACCOUNT_PREFIX = "google.bundles.substrate.reamde.dev/account/"
     MAX_BATCH = 200
     LIST_PAGE = 200
 
 
+    def _account_id(value):
+        # `account` is a reference, so the STORED value is the record path. The
+        # id composed into a contact id is the bare account id the sync passes,
+        # so the path's prefix comes off before it is hashed.
+        v = str(value or "")
+        return v[len(ACCOUNT_PREFIX):] if v.startswith(ACCOUNT_PREFIX) else v
+
+
     def _new_id(host, props):
-        account = (props or {}).get("account") or ""
+        account = _account_id((props or {}).get("account"))
         resource = (props or {}).get("resourceName") or ""
         if not account or not resource:
             return ""
@@ -1214,9 +1229,12 @@ data:
   displayTemplate: "{displayName|address}"
   properties:
     account:
-      type: string
+      type: reference
+      kind: account
+      required: true
+      ownerRef: true
       displayName: Account
-      description: the account record id this address was first seen through
+      description: the account this address was first seen through
     # `email`-kind, and the syncs only ever write an address that parses as an
     # RFC 5322 mailbox: one malformed header must not fail a whole page.
     address:
@@ -1285,9 +1303,12 @@ data:
   displayTemplate: "{subject|threadId}"
   properties:
     account:
-      type: string
+      type: reference
+      kind: account
+      required: true
+      ownerRef: true
       displayName: Account
-      description: the account record id this thread was synced from
+      description: the account this thread was synced from
     threadId:
       type: string
       displayName: Thread ID
@@ -1345,9 +1366,12 @@ data:
   displayTemplate: "{subject|messageId}"
   properties:
     account:
-      type: string
+      type: reference
+      kind: account
+      required: true
+      ownerRef: true
       displayName: Account
-      description: the account record id this message was synced from
+      description: the account this message was synced from
     messageId:
       type: string
       displayName: Message ID
@@ -2832,9 +2856,12 @@ data:
   displayTemplate: "{summary|calendarId}"
   properties:
     account:
-      type: string
+      type: reference
+      kind: account
+      required: true
+      ownerRef: true
       displayName: Account
-      description: the account record id this calendar was synced from
+      description: the account this calendar was synced from
     calendarId:
       type: string
       displayName: Calendar ID
@@ -2902,9 +2929,12 @@ data:
   displayTemplate: "{summary|eventId}"
   properties:
     account:
-      type: string
+      type: reference
+      kind: account
+      required: true
+      ownerRef: true
       displayName: Account
-      description: the account record id this event was synced from
+      description: the account this event was synced from
     calendarId:
       type: string
       displayName: Calendar ID

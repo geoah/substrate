@@ -422,11 +422,23 @@ references, and a reference is admitted inside an object or a keyed map at any
 declared depth. The [console](console.md) renders a reference as a link to the
 referent's detail page.
 
-A reference is not an edge. An edge is a traversable link with its own
-[incoming views](api.md#rest-resources) and its part in
-[record mapping](projection.md) subject resolution; a reference is an inert
-value you read and rewrite like any other property. Point at a record with an
-edge when the graph should see the link; name one as data with a reference.
+A reference may own. `ownerRef: true` says the referent OWNS this record, so
+collecting the referent tombstones everything that names it, exactly as an
+`ownerRef` edge does. It is declarable only on a kind's own single-valued
+reference with `kind:` pinned at one kind: a repeated pointer names no single
+owner, and an unpinned one cannot be enumerated, so the owner could not see
+what deleting it would take. Every provider bundle's `account` is one.
+
+A reference is not an edge, and which to reach for is
+[decision record 0032](decisions/0032-an-owner-pointer-may-be-a-reference-and-a-mirror-account-is-one.md).
+Both are named, directed pointers, both answer
+[incoming views](api.md#rest-resources), and both take `ownerRef`. Four things
+live only on the edge: the link's own properties, its part in
+[record mapping](projection.md) subject resolution, `link`/`unlink` writing it
+without writing the record, and a merge repointing it. A reference is a value
+in `data.properties`, so it travels in the change delta, round-trips through
+`get -o yaml | apply -f` and filters as a scalar. Use an edge when the LINK is
+a thing; use a reference when the pointer is part of what the record is.
 
 **Blob references.** A `blobref` names stored bytes by their digest. The bytes
 live in the repository's content-addressed blob store

@@ -40,7 +40,10 @@ data:
   # version 3: the grants group under one `permissions:` object, and the permission
   # to write is `writes:` inside it. This closure's functions and agents
   # follow core's declaration.
-  version: 4
+  # version 5: `account` on every mirror kind is a pinned owner
+  # reference instead of a string, so disconnecting an account collects
+  # the rows it synced (docs/decisions/0032).
+  version: 5
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block — an oauth2 block would demand a client input, and this
@@ -267,9 +270,12 @@ data:
     # string property to a reference is a NARROWING the boot upgrade refuses
     # while rows hold the old shape — it would strand every released store.
     account:
-      type: string
+      type: reference
+      kind: account
+      required: true
+      ownerRef: true
       displayName: Account
-      description: the account record id this room was synced from
+      description: the account this room was synced from
     roomId:
       type: string
       displayName: Room ID
@@ -310,9 +316,12 @@ data:
   displayTemplate: "{sender}: {text}"
   properties:
     account:
-      type: string
+      type: reference
+      kind: account
+      required: true
+      ownerRef: true
       displayName: Account
-      description: the account record id this message was synced from
+      description: the account this message was synced from
     roomId:
       type: string
       displayName: Room ID

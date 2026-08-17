@@ -215,6 +215,14 @@ type Property struct {
 	// Machine is the state machine a `type: state` property declares; nil
 	// for every other kind.
 	Machine *Machine
+	// OwnerRef marks a `reference` property whose referent OWNS this record:
+	// collecting the referent tombstones every record that names it, the same
+	// sweep an `ownerRef` edge gets (internal/engine/gc.go). It is only
+	// declarable on a kind's own single-valued reference with `kind:` pinned at
+	// one kind — the loader refuses the other shapes, because a repeated
+	// pointer names no single owner and an unpinned one cannot be enumerated by
+	// the owner's `incoming` read.
+	OwnerRef bool
 	// To is a `reference` property's optional referent-type constraint
 	//, the twin of an edge's `to:`: a resolved full type
 	// identity a value must name, ToAny ("any") for unconstrained, or empty
