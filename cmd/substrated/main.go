@@ -9,10 +9,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
@@ -145,19 +147,19 @@ func run() error {
 		cancel()
 		loops.Wait()
 	}()
-	start := func(every time.Duration, fn func(context.Context)) {
+	start := func(name string, every time.Duration, fn func(context.Context)) {
 		loops.Add(1)
 		go func() {
 			defer loops.Done()
-			loop(ctx, every, fn)
+			loop(ctx, name, every, fn)
 		}()
 	}
-	start(gcInterval, func(ctx context.Context) { sweepGC(ctx, svc) })
-	start(oauthInterval, func(ctx context.Context) { maintainOAuth(ctx, svc) })
-	start(resumeInterval, func(ctx context.Context) { sweepResolutions(ctx, svc) })
-	start(triggersInterval, func(ctx context.Context) { dispatchTriggers(ctx, svc) })
+	start("gc sweep", gcInterval, func(ctx context.Context) { sweepGC(ctx, svc) })
+	start("oauth maintenance", oauthInterval, func(ctx context.Context) { maintainOAuth(ctx, svc) })
+	start("resolution sweep", resumeInterval, func(ctx context.Context) { sweepResolutions(ctx, svc) })
+	start("trigger dispatch", triggersInterval, func(ctx context.Context) { dispatchTriggers(ctx, svc) })
 	if embedder != nil {
-		start(embedInterval, func(ctx context.Context) { drainEmbeds(ctx, svc, embedder) })
+		start("embed queue", embedInterval, func(ctx context.Context) { drainEmbeds(ctx, svc, embedder) })
 	}
 
 	cat, err := catalog.Load(kinds.Bundles())
@@ -210,7 +212,7 @@ func run() error {
 	return nil
 }
 
-func loop(ctx context.Context, every time.Duration, fn func(context.Context)) {
+func loop(ctx context.Context, name string, every time.Duration, fn func(context.Context)) {
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
@@ -218,9 +220,26 @@ func loop(ctx context.Context, every time.Duration, fn func(context.Context)) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			fn(ctx)
+			pass(ctx, name, fn)
 		}
 	}
+}
+
+// pass runs one tick of a loop with a recover around it. The recover belongs
+// HERE rather than at each callback, so a loop added later cannot be the
+// unprotected one: a pass reaches the same agent machinery a request does (the
+// resolution sweep continues a thread, the dispatcher delivers a trigger),
+// nothing above it recovers, and a panic in one pass would otherwise end the
+// process for every request in flight. The cadence survives it: one bad pass is
+// a bad pass, not the end of the loop.
+func pass(ctx context.Context, name string, fn func(context.Context)) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("background loop panicked and was contained; this pass did no more work",
+				"loop", name, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+		}
+	}()
+	fn(ctx)
 }
 
 // repositoryDatasets opens every repository the control-plane table holds; the
