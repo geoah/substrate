@@ -17,11 +17,9 @@ import "context"
 // AgentStability is the declared stability of the agent kind, its
 // llmprovider/llmthread/llmmessage vocabulary and the /agents wire: "alpha" at v1.
 // It is the cheap machine-visible marker the discovery/features surface
-// reads to mark agents alpha; StabilityAlpha is the value it
+// reads to mark agents alpha; StabilityAlpha (stability.go) is the value it
 // carries.
 const (
-	StabilityAlpha  = "alpha"
-	StabilityStable = "stable"
 	// AgentStability marks the agent kind + its core vocabulary + /agents as
 	// alpha.
 	AgentStability = StabilityAlpha
