@@ -25,8 +25,11 @@ data:
     One rule for agent writes: which kinds, ops and agents it speaks for,
     and whether their writes land, gate into recordpatchrequests, or refuse.
     The most restrictive matching policy wins; no match means the write lands.
-  # No version of its own: this kind takes the authority's, and the authority
-  # bumped to 10 for the `selector.ops` enum below.
+  # Its first own pin, above the authority's 10 it took until now.
+  # version 11: `selector.kinds` takes the trigger source's glob grammar
+  # (`<authority>/*` and `*`), `action` becomes required, and the two judge
+  # thresholds say which verdict each one reads.
+  version: 11
   names:
     singular: recordpatchpolicy
     plural: recordpatchpolicies
@@ -43,10 +46,20 @@ data:
       type: object
       description: the writes this policy speaks for; empty lists match all
       fields:
+        # THE TRIGGER SOURCE'S GRAMMAR, matched by the trigger source's
+        # matcher (vocabulary.MatchTypeGlob): a kind reference, every kind one
+        # authority publishes (`tasks.substrate.reamde.dev/*`), or every kind
+        # (`*`). A bare local name resolves to the kind's identity at load, the
+        # same resolve-at-the-gate a trigger source gets, because the door
+        # compares against identities. Anything else is refused at the write
+        # door (policy.go validatePolicyRow): `tasks.*` is neither a reference
+        # nor `<authority>/*`, and a pattern that matches no write is an
+        # ungated agent.
         kinds:
           type: string
           repeated: true
-          description: kind references; empty means every kind
+          description: kind references, `<authority>/*` or `*`; empty means
+            every kind
         # THE WRITE VERB THE AGENT CALLED, which is neither the change class a
         # trigger watches nor the op the gated request ends up carrying: a
         # gated `put` OR `patch` lands as a request with `op: create` when the
@@ -68,8 +81,13 @@ data:
           type: string
           repeated: true
           description: agent identities; empty means every agent
+    # REQUIRED: there is no default action, so a rule without one speaks for
+    # nothing while sitting in the list looking live. The write door refuses it
+    # (policy.go validatePolicyRow) whether or not `required:` is enforced for
+    # scalars yet.
     action:
       type: enum
+      required: true
       values:
         - allow
         - gate
@@ -96,18 +114,28 @@ data:
         - thread
       description: how much the judge reads — the frozen envelope alone (default),
         or the proposing thread's recent turns beside it
+    # TWO INDEPENDENT FLOORS, NOT A BAND. The judge's verdict picks which floor
+    # is read: `autoAccept` measures an `accept` verdict, `autoRefuse` a
+    # `reject` one, so the two never decide the same reply between them
+    # (policy.go routeVerdict). Where one confidence clears both floors the
+    # reject arm is tested first, so a policy with `autoRefuse` at or below
+    # `autoAccept` refuses rather than accepts — the same most-restrictive-wins
+    # composition the door uses when several policies match one write. Every
+    # gap escalates to the owner: an `escalate` verdict, confidence under the
+    # floor, an undeclared threshold, `advise` mode, a judge that failed.
     autoAccept:
       type: float
       min: 0
       max: 1
-      description: judge confidence at or above accepts the gated request;
-        absent means the judge never accepts
+      description: judge confidence at or above accepts the gated request, an
+        `accept` verdict only; absent means the judge never accepts
     autoRefuse:
       type: float
       min: 0
       max: 1
-      description: judge confidence at or above rejects it; absent means the
-        judge never rejects
+      description: judge confidence at or above rejects it, a `reject` verdict
+        only; absent means the judge never rejects; wins over `autoAccept`
+        where both floors are cleared
     mode:
       type: enum
       values:

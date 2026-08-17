@@ -203,6 +203,68 @@ func TestPolicySelectorRefusesAVerbFromAnotherVocabulary(t *testing.T) {
 	}
 }
 
+// A SELECTOR COVERS AN AUTHORITY WITHOUT ENUMERATING IT. `selector.kinds`
+// takes the trigger source's grammar, so "gate everything this authority
+// publishes" is one pattern that also covers the kind installed tomorrow —
+// the alternative was an enumerated snapshot or an empty list meaning every
+// kind in the repository.
+func TestPolicySelectorKindsGlobCoversAnAuthority(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openAgentDataset(t)
+	putPolicy(t, ds, "gate-crew", map[string]any{
+		"selector": map[string]any{"kinds": []any{crewAuthority + "/*"}},
+		"action":   "gate",
+	})
+	verdict, _, err := ds.policyVerdict(ctx, crewAuthority+"/widget", policyOpPut, crewAuthority+"/editor")
+	if err != nil || verdict != policyGate {
+		t.Fatalf("verdict for the globbed authority = %s %v", verdict, err)
+	}
+	verdict, _, err = ds.policyVerdict(ctx, "tasks.substrate.reamde.dev/task", policyOpPut, crewAuthority+"/editor")
+	if err != nil || verdict != policyAllow {
+		t.Fatalf("the glob reached another authority = %s %v", verdict, err)
+	}
+	// A pattern outside the grammar is refused at the write door rather than
+	// admitted as a rule that matches nothing.
+	_, err = ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-dotstar",
+		Properties: map[string]any{
+			"selector": map[string]any{"kinds": []any{"crew.*"}},
+			"action":   "gate",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "is not a kind reference") {
+		t.Fatalf("a selector spelled `crew.*` admitted: %v", err)
+	}
+	// A rule with no action speaks for nothing, so it never lands.
+	_, err = ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
+		Kind: vocabulary.KindRecordPatchPolicy, ID: "gate-actionless",
+		Properties: map[string]any{
+			"selector": map[string]any{"kinds": []any{crewAuthority + "/widget"}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "`action` is required") {
+		t.Fatalf("an actionless policy admitted: %v", err)
+	}
+}
+
+// A BARE KIND NAME IN A SELECTOR RESOLVES, like a trigger source's does. The
+// door compares against kind identities, so `widget` would otherwise admit and
+// then match nothing — the same silent no-op the glob exists to remove.
+func TestPolicySelectorResolvesABareKindName(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, _ := openAgentDataset(t)
+	putPolicy(t, ds, "gate-bare-widget", map[string]any{
+		"selector": map[string]any{"kinds": []any{"widget"}},
+		"action":   "gate",
+	})
+	verdict, _, err := ds.policyVerdict(ctx, crewAuthority+"/widget", policyOpPut, crewAuthority+"/editor")
+	if err != nil || verdict != policyGate {
+		t.Fatalf("verdict for a bare-named kind = %s %v", verdict, err)
+	}
+}
+
 func TestPolicyRefusesAndComposesMostRestrictive(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

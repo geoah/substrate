@@ -20,6 +20,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -66,6 +67,7 @@ func (ds *dataset) loadPolicies(ctx context.Context) ([]policyRule, error) {
 	if err != nil {
 		return nil, err
 	}
+	reg := ds.registry()
 	rules := make([]policyRule, 0, len(page.Records))
 	for _, rec := range page.Records {
 		if disabled, _ := rec.Properties["disabled"].(bool); disabled {
@@ -77,10 +79,15 @@ func (ds *dataset) loadPolicies(ctx context.Context) ([]policyRule, error) {
 		}
 		rule.action, _ = rec.Properties["action"].(string)
 		if rule.action == "" {
+			// validatePolicyRow refuses this at the write door, so it can only
+			// be a row written before that check existed. It speaks for
+			// nothing, and a rule that looks live and does nothing is worth
+			// saying out loud rather than skipping in silence.
+			ds.svc.log.Warn("substrate: policy: no action, so the rule speaks for nothing", "policy", rec.ID)
 			continue
 		}
 		if sel, ok := rec.Properties["selector"].(map[string]any); ok {
-			rule.kinds = stringList(sel["kinds"])
+			rule.kinds = resolveSelectorKinds(reg, stringList(sel["kinds"]))
 			rule.ops = stringList(sel["ops"])
 			rule.agents = stringList(sel["agents"])
 		}
@@ -97,6 +104,56 @@ func (ds *dataset) loadPolicies(ctx context.Context) ([]policyRule, error) {
 		rules = append(rules, rule)
 	}
 	return rules, nil
+}
+
+// resolveSelectorKinds canonicalizes a selector's exact patterns against the
+// repository's own vocabulary, the same resolve-at-the-gate a trigger source
+// gets (triggers.go resolveKinds). A kind has two spellings, `task` and
+// `tasks.substrate.reamde.dev/task`, and the door compares against the
+// IDENTITY, so a selector written in the bare spelling would admit and then
+// never match. A glob is not a reference and is left alone; so is a name the
+// registry does not know, which matches nothing, which is what an undeclared
+// kind should do.
+func resolveSelectorKinds(reg *vocabulary.Registry, pats []string) []string {
+	if reg == nil {
+		return pats
+	}
+	for i, pat := range pats {
+		if pat == "*" || strings.HasSuffix(pat, "/*") {
+			continue
+		}
+		if ty, err := reg.Resolve(pat); err == nil && ty != nil {
+			pats[i] = ty.Identity
+		}
+	}
+	return pats
+}
+
+// validatePolicyRow admits a recordpatchpolicy at the write door, the way a
+// trigger row is admitted (write.go): a rule the door cannot act on must not
+// land looking live.
+//
+// `action` is required — there is no default action, and a rule without one
+// speaks for nothing at all. `selector.kinds` must hold the trigger source's
+// spellings, so a misspelled glob (`tasks.*`, which is neither a reference nor
+// `<authority>/*`) is refused instead of silently matching no write, which on
+// this kind means an ungated agent.
+func validatePolicyRow(props map[string]any) error {
+	if action, _ := props["action"].(string); action == "" {
+		return fmt.Errorf("%w: recordpatchpolicy: `action` is required — allow, gate or refuse",
+			substrate.ErrValidation)
+	}
+	sel, _ := props["selector"].(map[string]any)
+	if sel == nil {
+		return nil
+	}
+	for i, pat := range stringList(sel["kinds"]) {
+		if !vocabulary.ValidTypeGlob(pat) {
+			return fmt.Errorf("%w: recordpatchpolicy: selector.kinds[%d]: %q is not a kind reference, `<authority>/*` or `*`",
+				substrate.ErrValidation, i, pat)
+		}
+	}
+	return nil
 }
 
 func stringList(v any) []string {

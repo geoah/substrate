@@ -28,12 +28,13 @@ type RecordPatchPolicy struct {
 	// (default), or the proposing thread's recent turns beside it.
 	Context *RecordPatchPolicyContext
 
-	// AutoAccept is judge confidence at or above accepts the gated request;
-	// absent means the judge never accepts.
+	// AutoAccept is judge confidence at or above accepts the gated request, an
+	// `accept` verdict only; absent means the judge never accepts.
 	AutoAccept *float64
 
-	// AutoRefuse is judge confidence at or above rejects it; absent means the
-	// judge never rejects.
+	// AutoRefuse is judge confidence at or above rejects it, a `reject`
+	// verdict only; absent means the judge never rejects; wins over
+	// `autoAccept` where both floors are cleared.
 	AutoRefuse *float64
 
 	// Mode is enforce decides within the thresholds; advise only ever
@@ -128,6 +129,24 @@ func DecodeRecordPatchPolicy(props map[string]any) (*RecordPatchPolicy, []Proble
 		return nil, d.problems
 	}
 	return &out, nil
+}
+
+// RecordPatchPolicyRequired names the properties the declaration marks
+// `required:`, sorted. It is a FORM-LEVEL contract: the write path does not
+// enforce it, so Decode admits a value that leaves one absent and this is what
+// a client checks before it submits one.
+var RecordPatchPolicyRequired = []string{"action"}
+
+// Missing names the required properties this value leaves absent, in
+// declaration order. Empty means every declared requirement is answered —
+// not that the value is admissible, which is the substrate's answer and not a
+// type's.
+func (v *RecordPatchPolicy) Missing() []string {
+	var out []string
+	if v.Action == nil {
+		out = append(out, "action")
+	}
+	return out
 }
 
 // decodeRecordPatchPolicyAction decodes a declared RecordPatchPolicyAction value.
@@ -267,7 +286,8 @@ func (v *RecordPatchPolicy) Encode() map[string]any {
 //
 // the writes this policy speaks for; empty lists match all
 type RecordPatchPolicySelector struct {
-	// Kinds is kind references; empty means every kind.
+	// Kinds is kind references, `<authority>/*` or `*`; empty means every
+	// kind.
 	Kinds []string
 
 	// Ops is the write verb matched: put, patch or delete, the three policy

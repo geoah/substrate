@@ -1577,12 +1577,13 @@ export interface RecordPatchPolicy {
    * proposing thread's recent turns beside it.
    */
   context?: RecordPatchPolicyContext
-  /** Judge confidence at or above accepts the gated request; absent means the
-   * judge never accepts.
+  /** Judge confidence at or above accepts the gated request, an `accept`
+   * verdict only; absent means the judge never accepts.
    */
   autoAccept?: number
-  /** Judge confidence at or above rejects it; absent means the judge never
-   * rejects.
+  /** Judge confidence at or above rejects it, a `reject` verdict only; absent
+   * means the judge never rejects; wins over `autoAccept` where both floors
+   * are cleared.
    */
   autoRefuse?: number
   /** Enforce decides within the thresholds; advise only ever recommends. */
@@ -1590,6 +1591,12 @@ export interface RecordPatchPolicy {
   /** A disabled policy matches nothing. */
   disabled?: boolean
 }
+
+/** The properties RecordPatchPolicy's declaration marks required. A form
+ * refuses to submit without them; the server does not, so nothing here is a
+ * guarantee about a record that arrives.
+ */
+export const recordPatchPolicyRequired: string[] = ["action"]
 
 /** RecordPatchPolicyAction is a declared enum: the admissible set, in
  * declaration order.
@@ -1635,7 +1642,7 @@ export const recordPatchPolicyModeValues: RecordPatchPolicyMode[] = [
  * the writes this policy speaks for; empty lists match all
  */
 export interface RecordPatchPolicySelector {
-  /** Kind references; empty means every kind. */
+  /** Kind references, `<authority>/*` or `*`; empty means every kind. */
   kinds?: string[]
   /** The write verb matched: put, patch or delete, the three policy evaluates
    * (link, unlink, merge and split are outside it), never a trigger's
