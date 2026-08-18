@@ -34,6 +34,10 @@ at all: `user reset`, `repository list`, `repository inspect`,
 every operator command refuses before touching anything.
 [Running a substrate](operations.md) is where that hat lives.
 
+`substratectl version` belongs to neither hat: it prints the client version
+and the API version it speaks (`substratectl <version> (api v1)`), and needs
+no server and no token.
+
 ## Registering
 
 `substratectl register` creates a user on a substrate that is open for registration:
@@ -72,8 +76,10 @@ so `logout` can revoke the very token it forgets. **No repository** — the toke
 implies it, and there is nothing else to configure.
 
 `SUBSTRATE_SERVER` and `SUBSTRATE_TOKEN` override the file, and flags override
-both; `--context` picks a stored context by name. `--actor` names the
-[actor](api.md#actors) a write is attributed to, and defaults to `substratectl`.
+both; `SS_SERVER` and `SS_TOKEN` are the one accepted alias, read only when the
+canonical variable is unset. `--context` picks a stored context by name.
+`--actor` names the [actor](api.md#actors) a write is attributed to, and
+defaults to `substratectl`.
 
 ## Reading
 
@@ -114,9 +120,9 @@ output applies back unchanged.
 ## Watching, triggers, and bundles
 
 `substratectl watch` streams [the changelog](changelog.md), one line per committed change,
-resumable with `--from` and filterable by `--actors` and `--ops`. To narrow to
-one collection instead, `substratectl get <plural> -w` streams that one kind's
-changes.
+resumable with `--from` and filterable by `--kinds`, `--actors` and `--ops`. To
+narrow to one collection instead, `substratectl get <plural> -w` streams that
+one kind's changes.
 
 Delivery bookkeeping lives on [triggers](functions.md#triggers), not on
 functions, so it is the `trigger` subcommands that drive it: `status` shows

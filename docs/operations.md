@@ -186,9 +186,10 @@ on the box, through the DSN.
   rebuilds its kind registry **from its own stored declaration records** —
   nothing on the serving path reads the binary's embedded tree.
 - **The chain backfill runs first**: a repository whose changelog predates
-  entry hashes gets them at its first open, oldest-first in bounded chunks,
-  before anything else writes, and the backfill records a `backfill` chain
-  epoch naming where attested history begins
+  entry hashes gets them at its first open, oldest-first, reading the changelog
+  in bounded pages but committing the whole repository's backfill in one
+  transaction, before anything else writes, and the backfill records a
+  `backfill` chain epoch naming where attested history begins
   ([the chain](changelog.md#the-chain)). A large history takes proportional
   time, once, and the open logs progress.
 - **Shipped vocabulary is upgraded, per repository, in one transaction**: the
@@ -283,9 +284,12 @@ encrypt under each repository's own
 data-encryption key, which exists in two wraps: the control-plane
 `repositories.dek` column holds it wrapped under `SUBSTRATE_CREDENTIAL_KEY`
 (the host's half), and the repository's `recoverykey` record holds it
-wrapped to the user's age recipient (the user's half). Either the host key
-or the user's recovery identity opens a backup; losing both makes the
-sealed rows inert.
+wrapped to the user's age recipient (the user's half). Only the host key has
+a tool that uses it: every operator command opens a repository through
+`SUBSTRATE_CREDENTIAL_KEY`. The `recoverykey` wrap is written at enrollment
+and no shipped command consumes it yet, so opening a backup from the age
+identity alone is not built in v1. Losing the host key leaves the sealed
+rows inert.
 
 **The host's half is a real wrap on anything this release wrote.** Changelog
 signing is mandatory, so a host without `SUBSTRATE_CREDENTIAL_KEY` refuses to
