@@ -142,7 +142,9 @@ func (s *service) openSigningSeed(wrapped []byte) (ed25519.PrivateKey, error) {
 	if aead == nil {
 		return nil, errors.New("substrate/engine: the signing key is sealed but no credential key is configured (SUBSTRATE_CREDENTIAL_KEY)")
 	}
-	seed, err := openWith(aead, wrapped)
+	// The signing seed is a repository-level secret with no owning record; it
+	// keeps the unbound framing (0023 binds the sealed store and the DEK wrap).
+	seed, err := openWith(aead, wrapped, nil)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: open signing key: %w", err)
 	}
@@ -167,7 +169,7 @@ func (s *service) mintSigningSeed() (wrapped []byte, key ed25519.PrivateKey, err
 	if err != nil {
 		return nil, nil, err
 	}
-	if wrapped, err = sealWith(aead, seed); err != nil {
+	if wrapped, err = sealWith(aead, seed, nil); err != nil {
 		return nil, nil, err
 	}
 	return wrapped, ed25519.NewKeyFromSeed(seed), nil

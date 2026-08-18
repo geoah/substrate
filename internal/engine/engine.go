@@ -694,7 +694,7 @@ func (s *service) createSeededRepository(ctx context.Context, name string, extra
 	if err != nil {
 		return zero, nil, err
 	}
-	if repo.DEK, err = s.wrapDEK(dek); err != nil {
+	if repo.DEK, err = s.wrapDEK(dek, repo.ID); err != nil {
 		return zero, nil, err
 	}
 

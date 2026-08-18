@@ -27,20 +27,33 @@ import (
 )
 
 // Payload framing: one marker byte, then the JSON (plain) or
-// nonce||ciphertext (sealed).
+// nonce||ciphertext (sealed). `credBoundSealed` marks a payload whose GCM
+// additional data binds it to the address it was written at, so a row moved,
+// copied or swapped without the key stops decrypting; `credSealed` is the older
+// unbound form, which the open path still reads until every store is resealed
+// ([0023](../../docs/decisions/0023-a-sealed-payload-is-bound-to-its-address.md)).
 const (
-	credPlain  byte = 'p'
-	credSealed byte = 's'
+	credPlain       byte = 'p'
+	credSealed      byte = 's'
+	credBoundSealed byte = 'a'
 )
 
+// sealedAAD is the binding a sealed-store row seals under: its ref, record kind
+// and record id, joined by NUL. A ref is prefixed hex, a record kind is
+// `{authority}/{name}` and a record id draws a frozen alphabet, so none holds a
+// NUL and the join is unambiguous (0023).
+func sealedAAD(ref, recordKind, recordID string) []byte {
+	return []byte(ref + "\x00" + recordKind + "\x00" + recordID)
+}
+
 // sealToken renders one token as its sealed row payload plus the
-// denormalized expiry column value.
-func (ds *dataset) sealToken(tok *oauth2.Token) (payload []byte, expires any, err error) {
+// denormalized expiry column value, bound to the row (ref, account) it lands in.
+func (ds *dataset) sealToken(tok *oauth2.Token, aad []byte) (payload []byte, expires any, err error) {
 	raw, err := json.Marshal(tok)
 	if err != nil {
 		return nil, nil, err
 	}
-	payload, err = ds.sealPayload(raw)
+	payload, err = ds.sealPayload(raw, aad)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -56,7 +69,7 @@ func (ds *dataset) sealToken(tok *oauth2.Token) (payload []byte, expires any, er
 // credential. Refresh never comes here: refreshed tokens
 // persist through updateCredential's update-only compare-and-swap.
 func (t *txn) putCredential(ref string, account eref, tok *oauth2.Token) error {
-	payload, expires, err := t.ds.sealToken(tok)
+	payload, expires, err := t.ds.sealToken(tok, sealedAAD(ref, account.Kind, account.ID))
 	if err != nil {
 		return err
 	}
@@ -81,7 +94,7 @@ func (t *txn) putCredential(ref string, account eref, tok *oauth2.Token) error {
 // orphan credential for a deleted account. Returns
 // whether the swap landed.
 func (ds *dataset) updateCredential(ctx context.Context, ref string, account eref, tok *oauth2.Token, seen time.Time) (bool, error) {
-	payload, expires, err := ds.sealToken(tok)
+	payload, expires, err := ds.sealToken(tok, sealedAAD(ref, account.Kind, account.ID))
 	if err != nil {
 		return false, err
 	}
@@ -115,7 +128,7 @@ func (ds *dataset) getCredential(ctx context.Context, ref string) (*oauth2.Token
 	if err != nil {
 		return nil, eref{}, time.Time{}, err
 	}
-	raw, err := ds.openPayload(payload)
+	raw, err := ds.openPayload(payload, sealedAAD(ref, account.Kind, account.ID))
 	if err != nil {
 		return nil, eref{}, time.Time{}, fmt.Errorf("substrate/engine: open credential %s: %w", ref, err)
 	}
@@ -172,23 +185,31 @@ func newAEAD(key []byte) (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
-// sealWith frames and seals one payload under an AEAD.
-func sealWith(aead cipher.AEAD, raw []byte) ([]byte, error) {
+// sealWith frames and seals one payload under an AEAD, binding aad as GCM
+// additional data. A non-nil aad frames `credBoundSealed` and the open side must
+// present the same aad; a nil aad frames the older unbound `credSealed`.
+func sealWith(aead cipher.AEAD, raw, aad []byte) ([]byte, error) {
 	nonce := make([]byte, aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, err
 	}
-	out := append([]byte{credSealed}, nonce...)
-	return aead.Seal(out, nonce, raw, nil), nil
+	frame := credSealed
+	if aad != nil {
+		frame = credBoundSealed
+	}
+	out := append([]byte{frame}, nonce...)
+	return aead.Seal(out, nonce, raw, aad), nil
 }
 
-// openWith opens one sealed-framed payload under an AEAD.
-func openWith(aead cipher.AEAD, payload []byte) ([]byte, error) {
+// openWith opens one sealed-framed payload under an AEAD, presenting aad as GCM
+// additional data. The caller passes the aad the framing byte calls for: the
+// row's binding for `credBoundSealed`, nil for the unbound `credSealed`.
+func openWith(aead cipher.AEAD, payload, aad []byte) ([]byte, error) {
 	body := payload[1:]
 	if len(body) < aead.NonceSize() {
 		return nil, errors.New("sealed credential too short")
 	}
-	return aead.Open(nil, body[:aead.NonceSize()], body[aead.NonceSize():], nil)
+	return aead.Open(nil, body[:aead.NonceSize()], body[aead.NonceSize():], aad)
 }
 
 // credentialAEAD derives the AES-GCM cipher off the configured HOST key; nil
@@ -202,8 +223,9 @@ func (s *service) credentialAEAD() (cipher.AEAD, error) {
 
 // sealCredential seals under the HOST key: the DEK wraps in the control
 // plane and nothing else. Repository payloads seal under the repository's
-// own DEK (dataset.sealPayload).
-func (s *service) sealCredential(raw []byte) ([]byte, error) {
+// own DEK (dataset.sealPayload). aad binds the wrap to its owner (0023); a
+// keyless host stores plain-marked and cannot bind.
+func (s *service) sealCredential(raw, aad []byte) ([]byte, error) {
 	aead, err := s.credentialAEAD()
 	if err != nil {
 		return nil, err
@@ -211,17 +233,17 @@ func (s *service) sealCredential(raw []byte) ([]byte, error) {
 	if aead == nil {
 		return append([]byte{credPlain}, raw...), nil
 	}
-	return sealWith(aead, raw)
+	return sealWith(aead, raw, aad)
 }
 
-func (s *service) openCredential(payload []byte) ([]byte, error) {
+func (s *service) openCredential(payload, aad []byte) ([]byte, error) {
 	if len(payload) == 0 {
 		return nil, errors.New("empty payload")
 	}
 	switch payload[0] {
 	case credPlain:
 		return payload[1:], nil
-	case credSealed:
+	case credSealed, credBoundSealed:
 		aead, err := s.credentialAEAD()
 		if err != nil {
 			return nil, err
@@ -229,7 +251,10 @@ func (s *service) openCredential(payload []byte) ([]byte, error) {
 		if aead == nil {
 			return nil, errors.New("sealed credential but no credential key configured")
 		}
-		return openWith(aead, payload)
+		if payload[0] == credSealed {
+			aad = nil // the unbound framing sealed no additional data
+		}
+		return openWith(aead, payload, aad)
 	default:
 		return nil, fmt.Errorf("unknown credential framing %q", payload[0])
 	}
@@ -300,7 +325,7 @@ func (t *txn) storeSecretValue(owner eref, plaintext string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	payload, err := t.ds.sealPayload([]byte(plaintext))
+	payload, err := t.ds.sealPayload([]byte(plaintext), sealedAAD(ref, owner.Kind, owner.ID))
 	if err != nil {
 		return "", err
 	}
@@ -339,15 +364,17 @@ func (ds *dataset) openSecretValue(ctx context.Context, stored string) (string, 
 		return "", nil
 	case strings.HasPrefix(stored, secretRefPrefix):
 		var payload []byte
+		var owner eref
 		err := ds.db.QueryRowContext(ctx,
-			`SELECT payload FROM sealed WHERE ref = $1`, stored).Scan(&payload)
+			`SELECT payload, record_kind, record_id FROM sealed WHERE ref = $1`, stored).
+			Scan(&payload, &owner.Kind, &owner.ID)
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", fmt.Errorf("substrate/engine: secret ref has no sealed row")
 		}
 		if err != nil {
 			return "", err
 		}
-		raw, err := ds.openPayload(payload)
+		raw, err := ds.openPayload(payload, sealedAAD(stored, owner.Kind, owner.ID))
 		if err != nil {
 			return "", fmt.Errorf("substrate/engine: open stored secret: %w", err)
 		}
@@ -357,7 +384,8 @@ func (ds *dataset) openSecretValue(ctx context.Context, stored string) (string, 
 		if err != nil {
 			return "", fmt.Errorf("substrate/engine: decode sealed property: %w", err)
 		}
-		out, err := openWithFallback(raw, ds.dek, ds.svc.credKey)
+		// The retired inline-sealed form predates the binding: unbound framing.
+		out, err := openWithFallback(raw, ds.dek, ds.svc.credKey, nil)
 		if err != nil {
 			return "", fmt.Errorf("substrate/engine: open sealed property: %w", err)
 		}
@@ -379,7 +407,8 @@ func (s *service) openPropValue(stored string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("substrate/engine: decode sealed property: %w", err)
 	}
-	out, err := s.openCredential(raw)
+	// The retired inline-sealed form predates the binding: unbound framing.
+	out, err := s.openCredential(raw, nil)
 	if err != nil {
 		return "", fmt.Errorf("substrate/engine: open sealed property: %w", err)
 	}

@@ -453,14 +453,15 @@ func (t *txn) resealSealedStore(report *ResealReport) error {
 	return err
 }
 
-// rekeySealedStore re-keys every sealed payload the DEK does not already
-// open: keyless plain framings and host-key-sealed legacies alike. The scan
-// takes every row FOR UPDATE, so a concurrent TOTP step consume or token
-// refresh serializes behind this transaction instead of being overwritten by
-// a stale buffered copy. A payload the DEK already opens passes
-// byte-identical, which is the idempotency. Shared by `repository reseal`
-// and recovery enrollment: the recovery promise is only true once every
-// payload is under the DEK the recovery key wraps.
+// rekeySealedStore re-keys every sealed payload not already bound and under the
+// DEK: keyless plain framings, host-key-sealed legacies, and the older unbound
+// `credSealed` form alike. The scan takes every row FOR UPDATE, so a concurrent
+// TOTP step consume or token refresh serializes behind this transaction instead
+// of being overwritten by a stale buffered copy. A payload already `credBoundSealed`
+// and openable under the DEK with its row binding passes byte-identical, which is
+// the idempotency. Shared by `repository reseal` and recovery enrollment: the
+// recovery promise is only true once every payload is under the DEK the recovery
+// key wraps.
 func (t *txn) rekeySealedStore() (int, error) {
 	dekAEAD, err := aeadOf(t.ds.dek)
 	if err != nil {
@@ -479,7 +480,7 @@ func (t *txn) rekeySealedStore() (int, error) {
 	for {
 		var updates []pending
 		rows, err := t.query(`
-			SELECT ref, payload FROM sealed
+			SELECT ref, record_kind, record_id, payload FROM sealed
 			WHERE ref > $1 ORDER BY ref LIMIT $2 FOR UPDATE`, after, rebuildBatch)
 		if err != nil {
 			return total, err
@@ -487,24 +488,29 @@ func (t *txn) rekeySealedStore() (int, error) {
 		n := 0
 		for rows.Next() {
 			var ref string
+			var owner eref
 			var payload []byte
-			if err := rows.Scan(&ref, &payload); err != nil {
+			if err := rows.Scan(&ref, &owner.Kind, &owner.ID, &payload); err != nil {
 				_ = rows.Close()
 				return total, err
 			}
 			n++
 			after = ref
-			if len(payload) > 0 && payload[0] == credSealed && dekAEAD != nil {
-				if _, err := openWith(dekAEAD, payload); err == nil {
+			aad := sealedAAD(ref, owner.Kind, owner.ID)
+			// Already bound and openable under the DEK: leave it byte-identical.
+			// A `credSealed` (unbound) payload fails this check and is re-keyed
+			// into the bound framing below.
+			if len(payload) > 0 && payload[0] == credBoundSealed && dekAEAD != nil {
+				if _, err := openWith(dekAEAD, payload, aad); err == nil {
 					continue
 				}
 			}
-			raw, err := t.ds.openPayload(payload)
+			raw, err := t.ds.openPayload(payload, aad)
 			if err != nil {
 				_ = rows.Close()
 				return total, fmt.Errorf("substrate/engine: re-key sealed %s: %w", ref, err)
 			}
-			sealed, err := t.ds.sealPayload(raw)
+			sealed, err := t.ds.sealPayload(raw, aad)
 			if err != nil {
 				_ = rows.Close()
 				return total, err

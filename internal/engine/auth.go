@@ -222,8 +222,10 @@ func (s *service) openSealed(ctx context.Context, repoID, ref string) ([]byte, e
 		return nil, fmt.Errorf("%w: credential incomplete", substrate.ErrAuth)
 	}
 	var payload []byte
+	var owner eref
 	err := s.maint.QueryRowContext(ctx,
-		`SELECT payload FROM sealed WHERE repository = $1 AND ref = $2`, repoID, ref).Scan(&payload)
+		`SELECT payload, record_kind, record_id FROM sealed WHERE repository = $1 AND ref = $2`,
+		repoID, ref).Scan(&payload, &owner.Kind, &owner.ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("%w: credential material missing", substrate.ErrAuth)
 	}
@@ -234,7 +236,7 @@ func (s *service) openSealed(ctx context.Context, repoID, ref string) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	return openWithFallback(payload, dek, s.credKey)
+	return openWithFallback(payload, dek, s.credKey, sealedAAD(ref, owner.Kind, owner.ID))
 }
 
 // consumeTOTPStep spends a code by recording its step on the sealed TOTP row.
@@ -249,9 +251,10 @@ func (s *service) consumeTOTPStep(ctx context.Context, repoID, ref string, to in
 	}
 	defer func() { _ = tx.Rollback() }()
 	var payload []byte
+	var owner eref
 	err = tx.QueryRowContext(ctx,
-		`SELECT payload FROM sealed WHERE repository = $1 AND ref = $2 FOR UPDATE`,
-		repoID, ref).Scan(&payload)
+		`SELECT payload, record_kind, record_id FROM sealed WHERE repository = $1 AND ref = $2 FOR UPDATE`,
+		repoID, ref).Scan(&payload, &owner.Kind, &owner.ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -262,7 +265,8 @@ func (s *service) consumeTOTPStep(ctx context.Context, repoID, ref string, to in
 	if err != nil {
 		return false, err
 	}
-	raw, err := openWithFallback(payload, dek, s.credKey)
+	aad := sealedAAD(ref, owner.Kind, owner.ID)
+	raw, err := openWithFallback(payload, dek, s.credKey, aad)
 	if err != nil {
 		return false, err
 	}
@@ -274,7 +278,7 @@ func (s *service) consumeTOTPStep(ctx context.Context, repoID, ref string, to in
 		return false, nil
 	}
 	m.Step = to
-	sealed, err := s.sealRepoPayload(dek, mustJSON(m))
+	sealed, err := s.sealRepoPayload(dek, mustJSON(m), aad)
 	if err != nil {
 		return false, err
 	}
@@ -771,11 +775,13 @@ func (t *txn) writeCredential(cw credentialWrite) error {
 	if err != nil {
 		return err
 	}
-	sealedPassword, err := t.ds.sealPayload([]byte(cw.passwordHash))
+	sealedPassword, err := t.ds.sealPayload([]byte(cw.passwordHash),
+		sealedAAD(passwordRef, kindCredential, credentialID))
 	if err != nil {
 		return err
 	}
-	sealedTOTP, err := t.ds.sealPayload(mustJSON(totpMaterial{Secret: cw.totp.Secret, Step: step}))
+	sealedTOTP, err := t.ds.sealPayload(mustJSON(totpMaterial{Secret: cw.totp.Secret, Step: step}),
+		sealedAAD(totpRef, kindCredential, credentialID))
 	if err != nil {
 		return err
 	}
@@ -814,10 +820,12 @@ func (t *txn) writeCredential(cw credentialWrite) error {
 // swap's DELETE, and the new credential would regress to the stale step.
 func (t *txn) openSealedRef(ref string) ([]byte, error) {
 	var payload []byte
-	if err := t.row(`SELECT payload FROM sealed WHERE ref = $1 FOR UPDATE`, ref).Scan(&payload); err != nil {
+	var owner eref
+	if err := t.row(`SELECT payload, record_kind, record_id FROM sealed WHERE ref = $1 FOR UPDATE`, ref).
+		Scan(&payload, &owner.Kind, &owner.ID); err != nil {
 		return nil, err
 	}
-	return t.ds.openPayload(payload)
+	return t.ds.openPayload(payload, sealedAAD(ref, owner.Kind, owner.ID))
 }
 
 // rewriteCredential is writeCredential's outer half: one transaction on the
