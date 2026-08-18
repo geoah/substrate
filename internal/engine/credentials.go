@@ -14,7 +14,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
@@ -236,13 +235,23 @@ func (s *service) openCredential(payload []byte) ([]byte, error) {
 	}
 }
 
-// deriveCredentialKey stretches any non-empty key string to the AES-256 key.
-func deriveCredentialKey(key string) []byte {
+// deriveCredentialKey decodes the credential key to its AES-256 key. The
+// accepted form is standard-base64 of exactly 32 bytes and nothing else: a
+// passphrase run through one hash is a key an offline attacker with a database
+// dump enumerates from a dictionary, so the key must carry 256 bits of entropy
+// the code can check rather than 256 bits an operator promises
+// ([0024](../../docs/decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)).
+// Empty is the keyless service; any other non-conforming value is refused, so
+// a misconfigured host cannot boot sealing everything under a weak key.
+func deriveCredentialKey(key string) ([]byte, error) {
 	if key == "" {
-		return nil
+		return nil, nil
 	}
-	sum := sha256.Sum256([]byte(key))
-	return sum[:]
+	raw, err := base64.StdEncoding.DecodeString(key)
+	if err != nil || len(raw) != 32 {
+		return nil, errors.New("substrate/engine: SUBSTRATE_CREDENTIAL_KEY must be base64 of exactly 32 bytes (generate one with: openssl rand -base64 32)")
+	}
+	return raw, nil
 }
 
 // --- secret-property refs ------------------------------------------------

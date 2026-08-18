@@ -56,7 +56,7 @@ func TestAssertPoolPrincipalRejectsSuperuser(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
-	svcIface, err := Open(ctx, dsn, WithCredentialKey("test-cred-key"), WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+	svcIface, err := Open(ctx, dsn, WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}
@@ -144,11 +144,11 @@ func TestOpenFailsClosedWithoutSafeRoles(t *testing.T) {
 	u.User = url.UserPassword("appbypass", "pw")
 	dsn := u.String()
 
-	if _, err := Open(ctx, dsn, WithCredentialKey("test-cred-key"), WithKindsDir("../../kinds/core.substrate.reamde.dev")); err == nil {
+	if _, err := Open(ctx, dsn, WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/core.substrate.reamde.dev")); err == nil {
 		t.Fatal("Open succeeded with no bound roles and a bypassing DSN; it must fail closed")
 	}
 	// The explicit escape hatch downgrades the refusal to a warning.
-	svc, err := Open(ctx, dsn, WithCredentialKey("test-cred-key"), WithKindsDir("../../kinds/core.substrate.reamde.dev"), WithInsecureAllowSuperuser())
+	svc, err := Open(ctx, dsn, WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/core.substrate.reamde.dev"), WithInsecureAllowSuperuser())
 	if err != nil {
 		t.Fatalf("the escape hatch did not let a dev database proceed: %v", err)
 	}

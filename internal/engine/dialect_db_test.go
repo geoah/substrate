@@ -23,7 +23,7 @@ func TestSchemaDialectLadder(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"),
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
 			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
@@ -180,7 +180,7 @@ func assertDefinitionBlobRefusesTheOpen(t *testing.T, declKind string, blob any)
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"),
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
 			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
@@ -276,7 +276,7 @@ func TestStampedStoreRefusesANullDefinitionAtTheRow(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"),
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
 			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 		if err != nil {
 			t.Fatalf("open: %v", err)
@@ -334,7 +334,7 @@ func TestStampedStoreRefusesAnInterimGrantRow(t *testing.T) {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	open := func() substrate.Service {
-		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey("test-cred-key"),
+		svc, err := engine.Open(ctx, dsn, engine.WithCredentialKey(engine.TestCredentialKey),
 			engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 		if err != nil {
 			t.Fatalf("open: %v", err)

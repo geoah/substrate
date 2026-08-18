@@ -133,7 +133,7 @@ func openInternalDataset(t *testing.T, opts ...Option) *dataset {
 	svc, err := Open(ctx, dsn,
 		append([]Option{
 			WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-			WithCredentialKey("test-cred-key"),
+			WithCredentialKey(TestCredentialKey),
 		}, opts...)...)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)

@@ -7,6 +7,8 @@ package catalog_test
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"os"
 	"path/filepath"
@@ -20,6 +22,17 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
 )
+
+// credKey is a conforming credential key (base64 of 32 random bytes, ADR 0024),
+// minted once per test binary so every Open here shares one key. Generated
+// rather than committed, because a key in the tree is a key everyone has.
+var credKey = func() string {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		panic(err)
+	}
+	return base64.StdEncoding.EncodeToString(raw)
+}()
 
 // operatorOTP is the control plane's base32 TOTP seed (RFC 6238 Appendix B).
 const operatorOTP = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
@@ -56,7 +69,7 @@ func newDataset(t *testing.T) substrate.Dataset {
 	dsn := testdb.NewSchema(t)
 	svc, err := engine.Open(context.Background(), dsn,
 		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		engine.WithCredentialKey("test-cred-key"),
+		engine.WithCredentialKey(credKey),
 	)
 	if err != nil {
 		t.Fatalf("open engine: %v", err)

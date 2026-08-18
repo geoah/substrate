@@ -20,7 +20,7 @@ func openCredentialService(t *testing.T) (*service, Repository) {
 	t.Helper()
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
-	svcIface, err := Open(ctx, dsn, WithCredentialKey("test-cred-key"), WithKindsDir("../../kinds/core.substrate.reamde.dev"))
+	svcIface, err := Open(ctx, dsn, WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/core.substrate.reamde.dev"))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}

@@ -44,6 +44,9 @@ DISABLE_TOTP="${SUBSTRATE_INSECURE_DISABLE_TOTP:-true}"
 # the state it belongs to: `dev:wipe` removes both together. An operator
 # command against this substrate reads the same file (dev:status prints the
 # path). The env var wins where a shell already carries one.
+#
+# The key is base64 of 32 bytes, what `openssl rand -base64 32` prints and the
+# only shape the server accepts (ADR 0024).
 readonly CREDFILE="${STATE}/credential.key"
 cred_key() {
 	if [ -n "${SUBSTRATE_CREDENTIAL_KEY:-}" ]; then
@@ -52,7 +55,7 @@ cred_key() {
 	fi
 	mkdir -p "$STATE"
 	if [ ! -f "$CREDFILE" ]; then
-		head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$CREDFILE"
+		head -c 32 /dev/urandom | base64 | tr -d '\n' >"$CREDFILE"
 	fi
 	cat "$CREDFILE"
 }

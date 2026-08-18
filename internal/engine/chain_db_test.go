@@ -280,7 +280,7 @@ func TestChainBackfillStampsLegacyHistory(t *testing.T) {
 	// A fresh service on the same store: first open backfills, activates
 	// signing on the settled head, then serves.
 	svc2, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		engine.WithCredentialKey("test-cred-key"))
+		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
@@ -413,7 +413,7 @@ func TestLegacyStoreWithAPendingUpgradeOpens(t *testing.T) {
 
 	svc2, err := engine.Open(ctx, dsn,
 		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		engine.WithCredentialKey("test-cred-key"))
+		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen a legacy store with a pending upgrade: %v", err)
 	}
@@ -482,7 +482,7 @@ func TestAWrongCredentialKeyIsRefusedAtBoot(t *testing.T) {
 	}
 	_, err := engine.Open(ctx, dsn,
 		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		engine.WithCredentialKey("test-cred-key"))
+		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
 		t.Fatal("a host whose key opens nothing in this database booted anyway")
 	}
@@ -497,7 +497,7 @@ func TestAWrongCredentialKeyIsRefusedAtBoot(t *testing.T) {
 	}
 	svc2, err := engine.Open(ctx, dsn,
 		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		engine.WithCredentialKey("test-cred-key"))
+		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen with the original seed restored: %v", err)
 	}
@@ -554,7 +554,7 @@ func TestResealRefusesTamperThenRechainsLegacy(t *testing.T) {
 	}
 	_ = svc.Close()
 	svc2, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		engine.WithCredentialKey("test-cred-key"))
+		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}

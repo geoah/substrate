@@ -37,7 +37,7 @@ func newW3Env(t *testing.T, opts ...engine.Option) (substrate.Service, substrate
 	dsn := testdb.NewSchema(t)
 	all := []engine.Option{
 		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		engine.WithCredentialKey("test-cred-key"),
+		engine.WithCredentialKey(engine.TestCredentialKey),
 	}
 	all = append(all, opts...)
 	svc, err := engine.Open(context.Background(), dsn, all...)
@@ -185,7 +185,7 @@ func installW3OAuthBundle(t *testing.T) (substrate.Service, substrate.Dataset, *
 	p := newW3Provider(t)
 	svc, ds, db := newW3Env(t,
 		engine.WithOAuth("w3-state-key", "https://substrate.example/api/v1/core.substrate.reamde.dev/oauth/callback", p.ts.Client()),
-		engine.WithCredentialKey("w3-cred-key"),
+		engine.WithCredentialKey(engine.TestCredentialKey),
 	)
 	docs := mbStandardDocs()
 	mbPointOAuthAt(docs, p.ts.URL)
@@ -260,7 +260,7 @@ func TestW3OAuthStateReplayRefused(t *testing.T) {
 func TestW3OAuthEmptyStateKeyRefused(t *testing.T) {
 	t.Parallel()
 	dsn := testdb.NewSchema(t)
-	_, err := engine.Open(context.Background(), dsn, engine.WithCredentialKey("test-cred-key"),
+	_, err := engine.Open(context.Background(), dsn, engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
 		engine.WithOAuth("", "https://substrate.example/callback", nil),
 	)

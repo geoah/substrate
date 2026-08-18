@@ -2,7 +2,12 @@
 // environment; there is no settings surface by design.
 package config
 
-import "github.com/kelseyhightower/envconfig"
+import (
+	"encoding/base64"
+	"errors"
+
+	"github.com/kelseyhightower/envconfig"
+)
 
 // Config is the full service configuration.
 type Config struct {
@@ -39,11 +44,13 @@ type Config struct {
 	// provider app registers. Both unset disables the facility.
 	OAuthStateKey    string `envconfig:"SUBSTRATE_OAUTH_STATE_KEY" default:""`
 	OAuthCallbackURL string `envconfig:"SUBSTRATE_OAUTH_CALLBACK_URL" default:""`
-	// CredentialKey seals the credential store (AES-256-GCM, derived from
-	// any string) and every repository's changelog signing seed. Changelog
-	// signing is MANDATORY and its seed may never sit unsealed beside the
-	// signatures it mints, so a host without this key refuses to boot. There
-	// is no exception.
+	// CredentialKey seals the credential store (AES-256-GCM) and every
+	// repository's changelog signing seed. It is key material, not a
+	// passphrase: standard-base64 of exactly 32 bytes, the AES-256 key
+	// itself, which Validate holds it to (ADR 0024). Changelog signing is
+	// MANDATORY and its seed may never sit unsealed beside the signatures it
+	// mints, so a host without this key refuses to boot. There is no
+	// exception.
 	CredentialKey string `envconfig:"SUBSTRATE_CREDENTIAL_KEY" default:""`
 	// ConsoleURL is the console origin the OAuth callback return-page posts its
 	// completion message to and falls back to redirecting into. The scheme+host
@@ -62,4 +69,30 @@ func Load() (Config, error) {
 	var c Config
 	err := envconfig.Process("", &c)
 	return c, err
+}
+
+// Validate refuses a configuration the service cannot run safely, before any
+// repository opens.
+func (c Config) Validate() error {
+	return ValidateCredentialKey(c.CredentialKey)
+}
+
+// ValidateCredentialKey holds SUBSTRATE_CREDENTIAL_KEY to key material: the
+// standard-base64 of exactly 32 bytes the sealed store uses as its AES-256
+// key. A passphrase is refused rather than stretched, because a single hash
+// over one turns a dictionary word into the key that unwraps every
+// repository's DEK from a stolen database, and the strength of the deployment
+// stops being an operator promise the code cannot inspect
+// ([0024](../../docs/decisions/0024-the-credential-key-is-key-material-not-a-passphrase.md)).
+// The message carries the generator command rather than describing the shape
+// in prose.
+func ValidateCredentialKey(key string) error {
+	if key == "" {
+		return errors.New("SUBSTRATE_CREDENTIAL_KEY is unset: changelog signing is mandatory and its seed seals under this key, so a host without it cannot write. Set it to base64 of 32 bytes (generate one with: openssl rand -base64 32)")
+	}
+	raw, err := base64.StdEncoding.DecodeString(key)
+	if err != nil || len(raw) != 32 {
+		return errors.New("SUBSTRATE_CREDENTIAL_KEY must be key material, not a passphrase: base64 of exactly 32 bytes (generate one with: openssl rand -base64 32)")
+	}
+	return nil
 }

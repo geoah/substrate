@@ -117,7 +117,7 @@ func installOAuthBundle(t *testing.T) (substrate.Service, substrate.Dataset, bun
 	p := newFakeProvider(t)
 	svc, ds := newDataset(t,
 		engine.WithOAuth("test-state-key", "https://substrate.example/api/v1/core.substrate.reamde.dev/oauth/callback", p.ts.Client()),
-		engine.WithCredentialKey("test-cred-key"),
+		engine.WithCredentialKey(engine.TestCredentialKey),
 	)
 	docs := mbStandardDocs()
 	mbPointOAuthAt(docs, p.ts.URL)

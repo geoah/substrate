@@ -293,7 +293,7 @@ func TestBlobBackendSwitchIsRefused(t *testing.T) {
 	}
 	switched, err := engine.Open(ctx, dsn,
 		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		engine.WithCredentialKey("test-cred-key"),
+		engine.WithCredentialKey(engine.TestCredentialKey),
 		engine.WithBlobStore(fs))
 	if err == nil {
 		_ = switched.Close()
@@ -326,7 +326,7 @@ func TestBlobBackendSwitchBackIsRefused(t *testing.T) {
 
 	switched, err := engine.Open(ctx, dsn,
 		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		engine.WithCredentialKey("test-cred-key"))
+		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err == nil {
 		_ = switched.Close()
 		t.Fatal("a boot on the postgres backend opened over blobs whose bytes are on disk")

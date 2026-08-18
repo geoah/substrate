@@ -83,10 +83,12 @@ func WithOAuth(stateKey, callbackURL string, hc *http.Client) Option {
 	}
 }
 
-// WithCredentialKey seals the sealed store with AES-256-GCM, the key derived
-// from any non-empty string, and the per-repository changelog signing seeds.
-// Without it no repository can activate the mandatory signing, so creating a
-// repository and opening a not-yet-activated one both refuse.
+// WithCredentialKey seals the sealed store with AES-256-GCM and the
+// per-repository changelog signing seeds. The key is standard-base64 of
+// exactly 32 bytes, the AES-256 key itself; Open refuses anything else (a
+// passphrase is a dictionary-searchable key, ADR 0024). Empty is the keyless
+// service, but no repository can then activate the mandatory signing, so
+// creating a repository and opening a not-yet-activated one both refuse.
 func WithCredentialKey(key string) Option { return func(o *options) { o.credKey = key } }
 
 // WithBlobStore puts blob bytes somewhere other than the `blobs` bytea column.
@@ -208,6 +210,11 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		return nil, errors.New("substrate/engine: no schema source (WithKindsFS/WithKindsDir/WithRegistry)")
 	}
 
+	credKey, err := deriveCredentialKey(o.credKey)
+	if err != nil {
+		return nil, err
+	}
+
 	admin, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("substrate/engine: open postgres: %w", err)
@@ -229,7 +236,7 @@ func Open(ctx context.Context, dsn string, opts ...Option) (substrate.Service, e
 		dsn:          dsn,
 		admin:        admin,
 		base:         reg,
-		credKey:      deriveCredentialKey(o.credKey),
+		credKey:      credKey,
 		blobs:        o.blobs,
 		totpDisabled: o.insecureDisableTOTP,
 		log:          o.log,

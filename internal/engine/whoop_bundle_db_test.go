@@ -497,9 +497,9 @@ func openWhoopOAuthDataset(t *testing.T, hc *http.Client) *dataset {
 	ctx := context.Background()
 	dsn := testdb.NewSchema(t)
 	svc, err := Open(ctx, dsn,
-		WithCredentialKey("test-cred-key"), WithKindsDir("../../kinds/core.substrate.reamde.dev"),
+		WithCredentialKey(TestCredentialKey), WithKindsDir("../../kinds/core.substrate.reamde.dev"),
 		WithOAuth("test-state-key", "https://substrate.example/api/v1/core.substrate.reamde.dev/oauth/callback", hc),
-		WithCredentialKey("test-cred-key"))
+		WithCredentialKey(TestCredentialKey))
 	if err != nil {
 		t.Fatalf("open engine: %v", err)
 	}

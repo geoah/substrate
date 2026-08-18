@@ -12,7 +12,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"io"
@@ -52,7 +51,7 @@ func unwrapWithIdentity(t *testing.T, identityStr, sealedKeyB64 string) []byte {
 func TestRegistrationEnrollsRecoveryKey(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, dsn := newService(t, engine.WithCredentialKey("test-cred-key"))
+	svc, dsn := newService(t, engine.WithCredentialKey(engine.TestCredentialKey))
 
 	// Client-side ceremony: the identity is minted here and only the
 	// recipient reaches Register.
@@ -155,7 +154,7 @@ func TestRegistrationEnrollsRecoveryKey(t *testing.T) {
 func TestServerMintedRecoveryKeyAndEnrollOnce(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, _ := newService(t, engine.WithCredentialKey("test-cred-key"))
+	svc, _ := newService(t, engine.WithCredentialKey(engine.TestCredentialKey))
 	enrollment, err := svc.BeginRegistration(ctx, "bo")
 	if err != nil {
 		t.Fatalf("begin: %v", err)
@@ -206,7 +205,7 @@ func TestServerMintedRecoveryKeyAndEnrollOnce(t *testing.T) {
 func TestEnrollRecoveryKeyMigratesLegacyPayloads(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	svc, dsn := newService(t, engine.WithCredentialKey("test-cred-key"))
+	svc, dsn := newService(t, engine.WithCredentialKey(engine.TestCredentialKey))
 	enrollment, err := svc.BeginRegistration(ctx, "cleo")
 	if err != nil {
 		t.Fatalf("begin: %v", err)
@@ -246,9 +245,9 @@ func TestEnrollRecoveryKeyMigratesLegacyPayloads(t *testing.T) {
 		"core.substrate.reamde.dev/llmprovider").Scan(&ref); err != nil {
 		t.Fatalf("read ref: %v", err)
 	}
-	hostKey := sha256.Sum256([]byte("test-cred-key"))
+	hostKey := engine.TestCredentialKeyBytes
 	if _, err := db.Exec(`UPDATE sealed SET payload = $1 WHERE ref = $2`,
-		sealUnder(t, hostKey[:], []byte("sk-legacy-material")), ref); err != nil {
+		sealUnder(t, hostKey, []byte("sk-legacy-material")), ref); err != nil {
 		t.Fatalf("plant host-key payload: %v", err)
 	}
 

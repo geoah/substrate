@@ -115,7 +115,7 @@ func addShippedType(t *testing.T, tree, authority, singular, plural string) {
 
 func openTree(t *testing.T, dsn, tree string) substrate.Service {
 	t.Helper()
-	svc, err := engine.Open(context.Background(), dsn, engine.WithCredentialKey("test-cred-key"), engine.WithKindsDir(tree))
+	svc, err := engine.Open(context.Background(), dsn, engine.WithCredentialKey(engine.TestCredentialKey), engine.WithKindsDir(tree))
 	if err != nil {
 		t.Fatalf("open the substrate: %v", err)
 	}

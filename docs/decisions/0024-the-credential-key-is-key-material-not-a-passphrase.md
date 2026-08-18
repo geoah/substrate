@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-08-17
 decision-makers: George Antoniadis
 ---
@@ -63,11 +63,13 @@ message carries the generator command
 - Good, because the failure is loud and early rather than a property nobody can
   observe from outside.
 - Bad, because it is a breaking change for any deployment running a passphrase.
-  The existing key still opens the existing wraps, so the migration is: set the
-  old key, run `substratectl repository reseal` per repository under a new
-  32-byte key, then drop the old one. Until reseal exists as a re-key (it
-  re-keys sealed payloads under the DEK, not the DEK under a new host key), the
-  break has no migration and this decision cannot ship.
+  The old SHA-of-the-string derivation is gone, so there is no in-place
+  migration: nothing re-wraps a DEK under a new host key (`ResealRepository`
+  re-keys sealed payloads under the DEK, not the DEK under the host key). This
+  is pre-v1, so it lands before anyone stores real secrets, which is the only
+  window where "no migration" costs nothing. A dev store keyed under a
+  passphrase is re-created with `mise run dev:wipe` (compose:
+  `docker compose down -v`); a store holding real data must not exist yet.
 - Bad, because it makes the shipped `compose.yaml` fail to start until the
   operator sets a key, which is the correct outcome and still a change in
   first-run experience
@@ -83,10 +85,11 @@ mint a conforming one, and the dev tasks are the second gate.
 
 ## More Information
 
-This decision depends on a host-key re-key path existing. `ResealRepository`
-today re-keys sealed payloads under a repository's DEK; nothing re-wraps a DEK
-under a new host key. That gap is the blocker, and it should be filed before
-this record moves to `accepted`.
+There is no host-key re-key path: `ResealRepository` re-keys sealed payloads
+under a repository's DEK, and nothing re-wraps a DEK under a new host key. That
+gap does not block this record, because pre-v1 no store holds real data, so the
+break has nothing to migrate. A host-key rotation path is future work, wanted
+the moment a deployment holds secrets under a key that must change.
 
 Reopen this if the substrate ever grows a KMS or a sealed-secret backend, where
 the host key stops being an environment variable and the question becomes which
