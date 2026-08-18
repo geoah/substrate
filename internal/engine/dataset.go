@@ -34,7 +34,7 @@ const (
 	// `self`, saying which repository this is.
 	kindRepository = "core.substrate.reamde.dev/repository"
 	// kindToken and kindCredential (auth.go) are the two AUTH kinds: the
-	// generic surface refuses writes to both (guardSystemKind) and only the
+	// generic surface refuses writes to both (forbidSystemKind) and only the
 	// auth paths write them. Revoking a token is the one exception — an
 	// ordinary record delete, so every revoke path is the same write.
 	kindToken       = "core.substrate.reamde.dev/token"

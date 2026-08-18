@@ -173,7 +173,7 @@ func (t *txn) putKind(ty *vocabulary.Kind, in substrate.PutInput) (*substrate.Re
 }
 
 func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, error) {
-	if err := t.guardSystemKind(ty, substrate.OpPut); err != nil {
+	if err := t.forbidSystemKind(ty, substrate.OpPut); err != nil {
 		return nil, err
 	}
 	// Global lock order: the registry-dep/subject locks this type needs come
@@ -550,7 +550,7 @@ func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error
 	if err != nil {
 		return nil, err
 	}
-	if err := t.guardSystemKind(ty, substrate.OpPatch); err != nil {
+	if err := t.forbidSystemKind(ty, substrate.OpPatch); err != nil {
 		switch {
 		// A repository's lifecycle machine is the one system transition the
 		// generic surface may drive. (The connector record's `options`
@@ -2625,7 +2625,7 @@ func (t *txn) link(rel string, src eref, to substrate.EdgeRef, props map[string]
 	if err != nil {
 		return err
 	}
-	if err := t.guardSystemKind(ty, substrate.OpLink); err != nil {
+	if err := t.forbidSystemKind(ty, substrate.OpLink); err != nil {
 		return err
 	}
 	ed, ok := ty.Edge(rel)
@@ -2722,7 +2722,7 @@ func (t *txn) unlink(rel string, src eref, to substrate.EdgeRef) error {
 	if err != nil {
 		return err
 	}
-	if err := t.guardSystemKind(ty, substrate.OpUnlink); err != nil {
+	if err := t.forbidSystemKind(ty, substrate.OpUnlink); err != nil {
 		return err
 	}
 	if ty.Identity == vocabulary.KindRecordPatchRequest && rel == propTarget {
@@ -2862,7 +2862,7 @@ func (t *txn) resolveEdgeRef(ed *vocabulary.Edge, ref substrate.EdgeRef) (eref, 
 
 // --- shared helpers ---
 
-func (t *txn) guardSystemKind(ty *vocabulary.Kind, op substrate.Op) error {
+func (t *txn) forbidSystemKind(ty *vocabulary.Kind, op substrate.Op) error {
 	if t.internal || !systemKinds[ty.Identity] {
 		return nil
 	}

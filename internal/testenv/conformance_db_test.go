@@ -4,11 +4,10 @@ package testenv_test
 //
 // internal/api is tested against a hand-written fake and internal/engine
 // against its own Go surface, so each half is held to its own half of the
-// contract and nothing holds the seam. The fake never returns
-// substrate.ErrGated, its Put ignores IfVersion, and it never builds a
-// *substrate.ValidationError, so "the engine returns sentinel X" and "the API
-// maps sentinel X to status Y" can both pass while the engine returns a
-// different sentinel for the request that matters.
+// contract and nothing holds the seam. The fake's Put ignores IfVersion, and it
+// never builds a *substrate.ValidationError, so "the engine returns sentinel X"
+// and "the API maps sentinel X to status Y" can both pass while the engine
+// returns a different sentinel for the request that matters.
 //
 // Every case below is one HTTP request to a running substrate, and the table
 // is checked against the code* declarations parsed out of internal/api: a code
@@ -195,7 +194,7 @@ func conformanceCases() []codeCase {
 		},
 	}, {
 		// The generic surface may not forge the records the substrate keeps
-		// for itself. This is `forbidden`, NOT `guard`: guardSystemKind wraps
+		// for itself. This is `forbidden`, NOT `guard`: forbidSystemKind wraps
 		// substrate.ErrForbidden.
 		name: "a system-kind write answers 403 forbidden",
 		code: "forbidden",
@@ -312,11 +311,6 @@ func rawGet(t *testing.T, e *testenv.Env, path string) (int, http.Header, []byte
 // A code leaves this map by gaining a case above; a code in it that a case
 // DOES declare fails the check, because the excuse has gone stale.
 var unreachable = map[string]string{
-	// No producing path: the mapping in api/errors.go is dead on the wire.
-	"gated": "the policy door runs only inside the agent loop (engine/agentgql.go door, " +
-		"engine/agentloop.go effects), where its refusal becomes a tool result the model " +
-		"reads, and engine/agents.go agentEntryError does not pass ErrGated through either, " +
-		"so no HTTP response carries this code today (issue #242)",
 	// Needs a different configuration: every writeUnsupported site fires on an
 	// absent capability, and Start wires all of them.
 	"unsupported": "501 answers a capability the deployment omits, and testenv.Start builds a " +

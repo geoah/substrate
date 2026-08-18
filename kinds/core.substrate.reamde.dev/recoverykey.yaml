@@ -19,7 +19,7 @@ data:
   #
   # Writes come from registration and the one recovery enrollment,
   # attributed to the substrate; the generic surface refuses them
-  # (engine/write.go guardSystemKind). Reading and listing it is ordinary.
+  # (engine/write.go forbidSystemKind). Reading and listing it is ordinary.
   displayTemplate: "{algorithm}"
   properties:
     algorithm:

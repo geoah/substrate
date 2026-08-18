@@ -14,7 +14,10 @@ var (
 	ErrValidation = errors.New("substrate: validation failed")
 	ErrForbidden  = errors.New("substrate: forbidden") // e.g. foreign label namespace, system type write
 	// ErrGated marks a write a policy HELD rather than refused: it converted
-	// into a recordpatchrequest awaiting review, and the message names it.
+	// into a recordpatchrequest awaiting review, and the message names it. The
+	// policy door runs only inside the agent loop, where the hold becomes a
+	// tool result the model reads, so this sentinel never leaves the loop and
+	// is not a wire error code (0037).
 	ErrGated = errors.New("substrate: held for review")
 	ErrAuth  = errors.New("substrate: authentication failed")
 )
