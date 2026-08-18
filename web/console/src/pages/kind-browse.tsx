@@ -79,8 +79,8 @@ function parseSort(sort: string): SortingState {
 }
 
 export function KindBrowsePage() {
-  // The route path still spells `$authority/$plural`; a collection is addressed by
-  // its (authority, plural) pair, so read them under their v1 names.
+  // The route param is `$name` (the kind name is the collection segment); it is
+  // aliased to a local `plural` only so the rest of this file reads unchanged.
   const { authority, name: plural } = kindBrowseRoute.useParams()
   const navigate = useNavigate()
 

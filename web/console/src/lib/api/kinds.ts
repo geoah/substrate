@@ -14,7 +14,9 @@ import { queryOptions } from "@tanstack/react-query"
 import { CORE_AUTHORITY, corePath, request, splitKind } from "./http"
 import type { KindInfo, Page } from "./types"
 
-const KINDS = "kinds"
+// The registry collection is the `kind` kind's own name (decision 0033); the
+// engine resolves the segment by identity, so the plural no longer routes.
+const KINDS = "kind"
 /** One page comfortably above any real registry; the fetch still follows the
  * cursor if a substrate ever outgrows it. */
 const REGISTRY_PAGE = 500

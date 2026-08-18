@@ -267,9 +267,16 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Put("/blobs/{digest}", h.putBlob)
 			r.Get("/blobs/{digest}", h.getBlob)
 
-			// CORE-RECORD ACTIONS AND SUB-RESOURCES. Each hangs one level below
-			// the record it acts on, where no id can sit, so a record whose id
-			// is `status` or `call` stays addressable.
+			// CORE-RECORD ACTIONS AND SUB-RESOURCES. An ACTION hangs one level
+			// below the record ({name}/call, {id}/bind), where no id can sit, so
+			// a record whose id is `call` or `bind` stays addressable. A
+			// COLLECTION-level verb (`bundle/status`, `trigger/status`) does sit
+			// where an id would, so it shadows a record with that id — but the
+			// bundle and trigger kinds are system-managed and refuse a generic
+			// write, so no unreadable row can land there. The record sub-resource
+			// words `incoming` and `edges` are reserved as ids on every kind
+			// (rest.go, reservedRecordID), which is what keeps that corner
+			// symmetric rather than a write-only trap.
 			//
 			// Trigger delivery bookkeeping: status is computed, a replay is a
 			// cursor reset, a run is one synthesized delivery, a wake is an

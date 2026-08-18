@@ -111,6 +111,16 @@ func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, i
 				propBundleUninstalled+" or "+propBundlePurging)
 		return
 	}
+	// ifVersion is refused, not ignored: a lifecycle transition runs an engine
+	// op (DisableBundle and its siblings) that holds the exclusive fence and
+	// takes no compare-and-set, so honoring a precondition here would be a lie.
+	// A client that meant a CAS gets told it does not apply rather than a false
+	// success.
+	if in.IfVersion != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest,
+			"ifVersion is not supported on a bundle lifecycle transition")
+		return
+	}
 	if len(in.Properties) != 1 {
 		writeError(w, http.StatusBadRequest, codeBadRequest,
 			"a bundle PATCH sets exactly one lifecycle state — "+propBundleDisabled+", "+

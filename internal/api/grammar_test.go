@@ -99,6 +99,32 @@ func TestShadowedCollectionsAreReachable(t *testing.T) {
 	wantStatus(t, rec, http.StatusOK)
 }
 
+// A record id may not be a sub-resource word. `…/{kind}/incoming` reads through
+// the incoming handler and 405s, so a PUT there used to create a person nothing
+// could read. Both directions refuse now, and nothing is written, so the corner
+// is symmetric (decision 0033).
+func TestReservedRecordIdsRefuseBothDirections(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+	ds := env.svc.datasets["geoah"]
+
+	for _, id := range []string{"incoming", "edges"} {
+		ds.lastPut = substrate.PutInput{}
+		put := env.do(t, http.MethodPut, peoplePath+"/"+id, tok,
+			map[string]any{"properties": map[string]any{"name": "x"}})
+		wantErrorCode(t, put, http.StatusBadRequest, codeBadRequest)
+		if ds.lastPut.Kind != "" {
+			t.Fatalf("PUT %s/%s wrote %+v; a reserved id is refused, not written", peoplePath, id, ds.lastPut)
+		}
+		del := env.do(t, http.MethodDelete, peoplePath+"/"+id, tok, nil)
+		wantErrorCode(t, del, http.StatusBadRequest, codeBadRequest)
+		// The repository-local shape is refused too, on both depths.
+		wantErrorCode(t, env.do(t, http.MethodPut, notePath+"/"+id, tok,
+			map[string]any{"properties": map[string]any{"text": "x"}}),
+			http.StatusBadRequest, codeBadRequest)
+	}
+}
+
 // A three-segment path whose first segment is not an authority spells no
 // address, so it is a 404 rather than a lookup of a kind that cannot exist.
 func TestNonAuthorityThreeSegmentPathIs404(t *testing.T) {

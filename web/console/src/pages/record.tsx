@@ -58,7 +58,8 @@ const tabParser = parseAsStringLiteral(TABS)
   .withOptions({ history: "push" })
 
 export function RecordPage() {
-  // The route path still spells `$authority/$plural`; read them under their v1 names.
+  // The route param is `$name` (the kind name is the collection segment),
+  // aliased to a local `plural` so the rest of this file reads unchanged.
   const { authority, name: plural, id } = recordRoute.useParams()
   const [tab, setTab] = useQueryState("tab", tabParser)
 

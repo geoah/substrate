@@ -228,12 +228,14 @@ grep_urls() {
   return "$status"
 }
 
-# A collection is addressed by the kind's NAME. The list is core's declared
-# plurals, closed and checkable: every one addressed a collection before 0033
-# and addresses nothing now. `blobs` matches only under the authority — the
-# top-level `/api/v1/blobs` byte store is a different path and stays.
-core_plurals='actors|agents|authorities|blobs|bundles|credentials|functions|kinds|llminteractions|llmmessages|llmproviders|llmthreads|propertytypes|recordmappings|recordmerges|recordmergerequests|recordpatchpolicies|recordpatchrequests|recordsplits|recoverykeys|repositories|runs|tokens|traits|triggers'
-if grep_urls -rnE "core\.substrate\.reamde\.dev/(${core_plurals})\b"; then
+# A collection is addressed by the kind's NAME. The list is every SHIPPED
+# declared plural, under ANY authority, closed and checkable: each addressed a
+# collection before 0033 and addresses nothing now. `calendareventseries` is
+# left out because its plural equals its singular, so it is a live name, not a
+# retired plural. `blobs` matches only under an authority — the top-level
+# `/api/v1/blobs` byte store is a different path and stays.
+shipped_plurals='accounts|actors|agents|authorities|blobs|bloodtests|bundles|calendarevents|calendars|configs|contacts|conversationmessages|conversations|credentials|databases|emailaddresses|emailmessages|emailthreads|events|exercises|functions|issues|journalentries|kinds|llminteractions|llmmessages|llmproviders|llmthreads|meals|medications|medicationschedulelogs|medicationschedules|messages|notes|observationlogs|observations|orderitems|orders|organizations|pages|people|places|projects|propertytypes|pullrequests|recipes|recordmappings|recordmergerequests|recordmerges|recordpatchpolicies|recordpatchrequests|recordsplits|recoveries|recoverykeys|repositories|rooms|routinelogs|routines|runs|scratchpads|sleeps|tasklogs|tasks|teams|threads|tokens|traits|transcripts|triggers|users|webdocuments|workoutlogs|workouts|workoutsets|workouttemplates'
+if grep_urls -rnE "[a-z0-9-]+(\.[a-z0-9-]+)*\.reamde\.dev/(${shipped_plurals})\b"; then
   flag "a documented collection is addressed by its plural; the segment is the kind's name (decision 0033)"
 fi
 

@@ -51,6 +51,20 @@ func (a address) path() string {
 	return p
 }
 
+// reservedRecordID reports whether an id collides with a record sub-resource
+// segment. `incoming` and `edges` are static routes below a record
+// (`…/{id}/incoming`, `…/{id}/edges/{rel}`), so an id spelled either way is
+// refused as a record id, both read and write, keeping the shadow corner
+// symmetric (decision 0033).
+func reservedRecordID(id string) bool {
+	switch id {
+	case "incoming", "edges":
+		return true
+	default:
+		return false
+	}
+}
+
 // addressed reads what a REST path addresses. It is the ONE place the two path
 // shapes are told apart. A second return of false means the segments spell no
 // address at all — a three-segment path whose first segment is not an
@@ -101,6 +115,19 @@ func (h *handler) collection(w http.ResponseWriter, r *http.Request, wantID bool
 		writeError(w, http.StatusMethodNotAllowed, codeBadRequest,
 			r.Method+" addresses a collection, not a record: POST "+coll.path()+
 				" creates one, PUT "+addr.path()+" writes this record")
+		return nil, substrate.KindInfo{}, address{}, false
+	}
+	// A record id may not be a sub-resource word. `…/{kind}/{id}/incoming` and
+	// `…/{kind}/{id}/edges/{rel}` are static routes, so a published record whose
+	// id is `incoming` reads through the sub-resource handler and 405s while a
+	// PUT to the same path creates it — a write-only row nothing can read. The
+	// reservation refuses BOTH directions, on every kind, so the word means the
+	// sub-resource everywhere and the corner is symmetric (decision 0033). It
+	// does not touch the sub-resource handlers themselves: those address the
+	// record by its real id (the segment before the word), never by the word.
+	if wantID && reservedRecordID(addr.id) {
+		writeError(w, http.StatusBadRequest, codeBadRequest,
+			"id "+strconv.Quote(addr.id)+" is reserved: it names a record sub-resource, so no record may take it")
 		return nil, substrate.KindInfo{}, address{}, false
 	}
 	ctx := r.Context()

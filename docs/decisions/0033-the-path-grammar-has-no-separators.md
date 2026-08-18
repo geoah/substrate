@@ -77,19 +77,31 @@ which kills both silent creates.
 - Good: no `%` and no new separator enters the id or authority alphabet, which
   keeps the reserved character budget
   ([0014](0014-authorities-widen-only-outside-the-id-alphabet.md)).
-- Bad: a sub-resource name (`incoming`, `edges`) and a top-level reserved word
-  (`graphql`, `merge`) shadow a record whose id or a repository-local kind
-  whose name is spelled the same. The set is small, fixed and documented; a
-  separator would have removed the corner at the cost the owner refused.
+- Bad: three shadow corners, each closed rather than left open. (1) The record
+  sub-resource words `incoming` and `edges` sit at `…/{id}/incoming` and
+  `…/{id}/edges/{rel}`, so a published record whose id is `incoming` read
+  through the sub-resource handler and 405'd while a `PUT` created it — a
+  write-only row. Both are now reserved as ids on every kind, refused in both
+  directions (`reservedRecordID`, rest.go), so the corner is symmetric. (2) A
+  collection-level verb (`bundle/status`, `trigger/status`) sits where an id
+  would, but the `bundle` and `trigger` kinds are system-managed and refuse a
+  generic write, so no unreadable row can land there; nothing extra is needed.
+  (3) A top-level reserved word (`graphql`, `merge`, `catalog`, `changes`,
+  `blobs`, `vocabulary`, `oauth`, `split`, `embeddings`) shadows a
+  repository-local kind whose name is spelled the same. The set is small, fixed
+  and documented; a separator would have removed the corners at the cost the
+  owner refused.
 - Bad: every client URL changes at once. This is one breaking change
   (`feat(api)!`), taken before v1 so no shipped client is owed a migration.
 
 ### Confirmation
 
 `internal/api/grammar_test.go` asserts both silent creates answer `405` and
-write nothing, and that a record's URL equals `vocabulary.RecordPath(kind, id)`.
-`.mise/docscheck.sh` greps the retired URL shapes (a plural collection, a
-`/{core}/catalog`, a `/{core}/vocabulary`) so a doc cannot reintroduce them.
+write nothing, that a record's URL equals `vocabulary.RecordPath(kind, id)`, and
+that a reserved id (`incoming`, `edges`) is refused in both directions and
+writes nothing. `.mise/docscheck.sh` greps the retired URL shapes (a plural
+collection under any authority, a `/{core}/catalog`, a `/{core}/vocabulary`, a
+`bundle/{id}/disable` verb) so a doc cannot reintroduce them.
 The `addressed` dispatch in `internal/api/rest.go` is the one place the two
 path shapes are told apart.
 
