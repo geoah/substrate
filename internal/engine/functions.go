@@ -788,7 +788,7 @@ func (t *txn) putRun(r runRecord) error {
 		props["pages"] = r.pages
 	}
 	if r.errMsg != "" {
-		props["error"] = r.errMsg
+		props["reason"] = r.errMsg
 	}
 	if len(r.effects) > 0 {
 		summary := make(map[string]any, len(r.effects))
