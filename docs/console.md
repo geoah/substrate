@@ -57,8 +57,10 @@ the value: a `put` may not move a state (that transition is a `patch`), and the
 id in the document is not a rename. Problems key to their line, the gutter
 marks them, and Save is barred while an error stands.
 
-A record opens on four tabs:
+A record opens on five tabs:
 
+- **Properties**: the declared properties rendered by type, the read view the
+  editor opens from.
 - **Manifest**: the [envelope](data-model.md#the-envelope), with every kind
   reference and every edge target rendered as a link you can follow.
 - **Activity**: this record's own slice of [the changelog](changelog.md), with the
@@ -93,6 +95,15 @@ the data nav, with the pending pile also on the overview. Opening one shows the
 matcher's evidence, a field-by-field comparison of the two records, and accept
 or reject. Accepting is an ordinary state transition, and performing the merge
 is what that transition does.
+
+## Change requests
+
+A [gated](agents.md#the-policy-door) agent write lands as a
+`core.substrate.reamde.dev/recordpatchrequest` instead of applying, and its
+queue is that collection in the data nav, with the pending pile also on the
+overview. Opening one at `/change-requests/{id}` shows the proposed create,
+patch or delete and its rationale, and accept or reject; accepting is the state
+transition that applies the change.
 
 ## Registry
 

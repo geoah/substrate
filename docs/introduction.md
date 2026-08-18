@@ -40,7 +40,7 @@ Like Kubernetes, the whole system is rules about a handful of primitives.
 | **Changelog**        | The repository's append-only, strictly sequential list of every change. It is the source of truth: replaying it rebuilds the records ([data model](data-model.md)). |
 | **Record**     | One instance of a kind, and the only thing there is. Tasks, people, tokens, and kind declarations are all records. Its identity is the pair `(kind, id)`.    |
 | **Kind**       | What a record is: `task` when it is yours alone, `tasks.substrate.reamde.dev/task` when an authority publishes it. A kind declares its properties and its edges.        |
-| **Property**   | A named, typed value slot on a record: `title`, `dueAt`. Declared on the kind, validated on every write.                                                     |
+| **Property**   | A named, typed value slot on a record: `name`, `dueAt`. Declared on the kind, validated on every write.                                                     |
 | **Edge**       | A named, directed link from one record to another, and the only traversable link between records. Declared on the kind it points from.               |
 
 Two supporting words appear constantly. An **authority** is the DNS name that

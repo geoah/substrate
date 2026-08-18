@@ -143,6 +143,7 @@ speaks:
 | `recordsplit`        | The undo of one merge, likewise performed on creation.                                                                                              |
 | `recordmergerequest` | A proposed merge, performed when its decision is accepted.                                                                                          |
 | `recordpatchrequest` | A proposed create, patch, or delete, applied when its decision is accepted ([the patch request sibling](projection.md#the-patch-request-sibling)). |
+| `recordpatchpolicy`  | An owner's standing rule for an agent's writes: a `selector` (kinds, ops, agents) and an `action` of `allow`, `gate` or `refuse` ([the policy door](agents.md#the-policy-door)). |
 
 The delivery machinery is core's too, declared as data kinds so a trigger is
 console-editable and changelog-visible like anything else
@@ -153,14 +154,15 @@ console-editable and changelog-visible like anything else
 | `trigger` | One binding of a source (a record subscription, a schedule, or a webhook) to one callable, owning the delivery cursor. |
 | `run`     | One settled trigger delivery attempt, the run ledger's row.                                                            |
 
-So is the agent runtime's data. **Agents are alpha**, so these three are a
+So is the agent runtime's data. **Agents are alpha**, so these four are a
 preview, unfrozen at v1 and not part of the frozen core:
 
-| Kind          | What it is                                                                                       |
-| ------------- | ------------------------------------------------------------------------------------------------ |
-| `llmprovider` | One place completions are bought: `wire` (enum), `baseURL`, `apiKey`, `headers` and `pricing` (repeated objects), `defaults` (object). |
-| `llmthread`   | One agent run's conversation state, written as the loop runs — its `provider` and `model` included. |
-| `llmmessage`  | One turn in a thread, with its tool-call audit.                                                  |
+| Kind             | What it is                                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------ |
+| `llmprovider`    | One place completions are bought: `wire` (enum), `baseURL`, `apiKey`, `headers` and `pricing` (repeated objects), `defaults` (object). |
+| `llmthread`      | One agent run's conversation state, written as the loop runs — its `provider` and `model` included. |
+| `llmmessage`     | One turn in a thread, with its tool-call audit.                                                  |
+| `llminteraction` | One batch of questions an agent asked the user, waiting in the thread it came from; answering or dismissing it is one reviewed owner transition that resumes the agent. Landed by the `ask` built-in. |
 
 The nine [declarable kinds](vocabulary.md#the-declarable-kinds) — `authority`,
 `kind`, `propertytype`, `trait`, `recordmapping`, `function`, `agent`,

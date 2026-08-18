@@ -75,7 +75,7 @@ substrate always knows, per record per property, who holds the current value.
 Beside the actor it records a **tier**, the manager's standing against
 recompute. There are three:
 
-- **machine**: the sync machinery. Authority-declared connector actors and
+- **machine**: the sync machinery. Authority-declared machine actors and
   the engine's own hand write here, and everything recompute writes is
   machine-held whatever actor it credits. Machine-held values are recompute's
   to replace.

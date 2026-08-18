@@ -1,8 +1,9 @@
 # Agents
 
 **Agents are alpha and not part of the frozen v1 contract.** The `agent`
-kind, the agent-loop vocabulary (`llmprovider`, `llmthread`, `llmmessage`),
-and the `/agents` chat and call wire are all alpha and unfrozen at v1. They
+kind, the agent-loop vocabulary (`llmprovider`, `llmthread`, `llmmessage`,
+`llminteraction`), and the `/agents` chat and call wire are all alpha and
+unfrozen at v1. They
 are marked alpha in the docs and in [API discovery](api.md#discovery),
 which lists the agent surface under the `agents` feature carrying the
 stability `alpha`, and they may change, or be superseded, without counting as
@@ -133,7 +134,7 @@ The key is `function` because an entry admits nothing else: a sub-agent is named
 on `agents:`, and `callable` is the [trigger](functions.md#triggers)'s word,
 where a target really may be a function or an agent.
 
-That is the only arm, because the four built-ins are
+That is the only arm, because the five built-ins are
 [**host functions**](functions.md#host-functions) — `runtime: host` records core
 ships — so an agent names one exactly as it names a bundle's function:
 
@@ -188,6 +189,13 @@ entry could name only a function.
   sees, never a bad request reaching the owner's inbox. The loop stamps the
   proposing `thread` onto the request, which is where the decision reports
   back (below).
+- **`core.substrate.reamde.dev/ask`** pauses to ask the user, and requires
+  `permissions.writes` to name `core.substrate.reamde.dev/llminteraction`. It
+  lands one [`llminteraction`](builtin-kinds.md#coresubstratereamdedev) carrying
+  a batch of at most eight questions and returns the record id, not an answer.
+  The run continues without one; the answer arrives in a later turn, when the
+  user answers the interaction and the thread resumes, so the model must not
+  poll for it.
 - **A function tool** runs through the same runner invoke a host call uses, its
   declared [arguments and returns](functions.md#arguments-and-returns) enforced,
   and its compiled argument schema is the card the model is shown. Its effects
