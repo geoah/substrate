@@ -436,6 +436,15 @@ func ParseAgentParams(params map[string]any) (AgentParams, error) {
 			if !ok {
 				return AgentParams{}, fmt.Errorf("%s: %v — a number", k, params[k])
 			}
+			// The kind declares min 0, max 2 (agent.yaml, llmprovider.yaml
+			// defaults), and min/max never reach the upgrade narrowing check, so
+			// a value the loader waved through would project a record the kind
+			// refuses. 2 is the widest the wires accept (OpenAI and Azure 0..2,
+			// Anthropic 0..1), so the manifest and the provider defaults are held
+			// to it here, where one validator serves both.
+			if f < 0 || f > 2 {
+				return AgentParams{}, fmt.Errorf("%s: %v: a number from 0 to 2", k, params[k])
+			}
 			t := float32(f)
 			out.Temperature = &t
 		case AgentParamMaxTokens:

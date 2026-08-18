@@ -779,6 +779,25 @@ data:
 	}
 }
 
+// An index over no properties covers nothing. The loader used to drop it
+// silently, but the kind now declares `indices[].properties` required and a
+// projected record keeps the authored empty list, which that required rejects.
+// The loader refuses the empty list so the two agree; a non-empty index loads.
+func TestEmptyIndexPropertiesRefused(t *testing.T) {
+	loadThingErr(t, `  indices: [{properties: []}]
+  properties:
+    label: {type: string}
+`, "an index names at least one property, not an empty list")
+
+	ty := loadThing(t, `  indices: [{properties: [label]}]
+  properties:
+    label: {type: string}
+`)
+	if len(ty.Indices) != 1 || len(ty.Indices[0]) != 1 || ty.Indices[0][0] != "label" {
+		t.Fatalf("index = %v", ty.Indices)
+	}
+}
+
 // --- dialect 1's row spellings, at the YAML door ---------------------------------
 
 // A legacy EXPORT is a document too: `apply -f` of one arrives at this loader

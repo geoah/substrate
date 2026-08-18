@@ -955,13 +955,20 @@ func (l *loader) parseType(doc Document) *Kind {
 			l.errf("%s: data.indices: properties is a list of property names", where)
 			continue
 		}
+		// An index over no properties covers nothing, so the loader used to drop
+		// it silently. The kind now declares `indices[].properties` required, and
+		// a projected record keeps the authored empty list, which that required
+		// then refuses: refuse the empty list here so the loader and the record
+		// agree.
+		if len(cols) == 0 {
+			l.errf("%s: data.indices: an index names at least one property, not an empty list", where)
+			continue
+		}
 		var idx []string
 		for _, c := range cols {
 			idx = append(idx, fmt.Sprint(c))
 		}
-		if len(idx) > 0 {
-			t.Indices = append(t.Indices, idx)
-		}
+		t.Indices = append(t.Indices, idx)
 	}
 
 	if t.DisplayTemplate != "" {

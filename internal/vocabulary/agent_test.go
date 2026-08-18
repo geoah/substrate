@@ -128,6 +128,27 @@ func loadAgAuthorityWithCore(t *testing.T, agData string) (*vocabulary.Registry,
 	return vocabulary.LoadFS(fsys)
 }
 
+// A temperature outside 0..2 is refused at load, so no projected agent or
+// provider record can violate the kind's own `min: 0`/`max: 2` (which the
+// upgrade narrowing check does not police). One validator serves the manifest
+// and the provider defaults both.
+func TestParseAgentParamsTemperatureBound(t *testing.T) {
+	for _, temp := range []float64{-0.1, 2.1, 3} {
+		if _, err := vocabulary.ParseAgentParams(map[string]any{"temperature": temp}); err == nil {
+			t.Fatalf("temperature %v accepted, want refused", temp)
+		}
+	}
+	for _, temp := range []float64{0, 1, 2} {
+		p, err := vocabulary.ParseAgentParams(map[string]any{"temperature": temp})
+		if err != nil {
+			t.Fatalf("temperature %v refused: %v", temp, err)
+		}
+		if p.Temperature == nil || float64(*p.Temperature) != temp {
+			t.Fatalf("temperature %v parsed as %v", temp, p.Temperature)
+		}
+	}
+}
+
 func TestAgentLoads(t *testing.T) {
 	r, err := loadAgAuthority(t, agAuthority(`  description: classifies widgets
   prompt: You classify widgets.

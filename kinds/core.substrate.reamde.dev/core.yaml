@@ -82,7 +82,8 @@ data:
   # version 12: the closure's constructor and numeric invariants (issue 51).
   # The declarations that carry no version of their own take this one:
   # `credential`, `recoverykey` and `repository` mark their singleton fields
-  # required, `recoverykey.algorithm` becomes a one-value enum, `recordmerge`
+  # required (`recoverykey.algorithm` stays a required string: its one value
+  # carries hyphens the enum grammar refuses), `recordmerge`
   # and `recordsplit` require their engine-written ledger and gain a display
   # template, `bundle` marks its loader-required fields required, `trigger`
   # requires `callable` and gains a template, and the `query` host card takes
