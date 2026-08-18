@@ -76,7 +76,7 @@ is computed from absence, never stored.
 | `observationlog`        | One recorded value, typed by its observation's `valueKind`.                   |
 | `medication`            | One medication at one strength and form; a new strength is a new record.      |
 | `medicationschedule`    | When and how much: a dose, an RRULE, a span. No recurrence means as-needed.   |
-| `medicationschedulelog` | One dose, taken or skipped; absence in the logs is what missed means.         |
+| `medicationschedulelog` | One dose, done or skipped; absence in the logs is what missed means.          |
 | `bloodtest`             | One blood draw; markers worth tracking are observationlogs pointing at it.    |
 
 ## fitness.substrate.reamde.dev — imported
