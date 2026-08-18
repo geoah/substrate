@@ -1,0 +1,37 @@
+# The shared scheduling vocabulary: the two traits the repeating kinds and
+# their occurrence logs held as hand-copied properties before. `recurring` is
+# the RRULE triple (recurrence, exdates, timezone); `occurrencelog` is the
+# done-or-skipped mark against one occurrence of a recurring thing. Neither
+# trait carries values, only property presence and datatype, so a binding kind
+# keeps its own enum states and its own owner edge.
+#
+# It ships no kinds, only traits, so the five authorities that repeat things
+# (tasks, fitness, health, routines, calendar) `require` it and bind its traits
+# cross-authority, the way every authority binds core's `temporal`. It is a
+# separate authority rather than core because it is domain vocabulary, not
+# engine machinery: `temporal` is backed by the physical at/endsAt/dueAt
+# columns, these two are ordinary declared properties.
+#
+# no new actors: writes arrive under the actor of whatever runs.
+kind: core.substrate.reamde.dev/authority
+metadata:
+  id: scheduling.substrate.reamde.dev
+data:
+  version: 1
+---
+# ---- the bundle document: the import unit -----------------------------------
+# A VOCABULARY bundle: traits only, imported from the registry. The `installs`
+# closure is the authority's members, which for a traits-only authority is the
+# two traits.
+kind: core.substrate.reamde.dev/bundle
+metadata:
+  id: scheduling.substrate.reamde.dev/scheduling
+data:
+  authority: scheduling.substrate.reamde.dev
+  description: >-
+    Two shared traits the repeating kinds bind: `recurring`, an RRULE stored
+    and never expanded, and `occurrencelog`, one occurrence marked done or
+    skipped.
+  installs:
+    - scheduling.substrate.reamde.dev/recurring
+    - scheduling.substrate.reamde.dev/occurrencelog

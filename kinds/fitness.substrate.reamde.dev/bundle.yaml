@@ -14,7 +14,9 @@ data:
   # version 2: the settled state vocabulary (decision record 0013). The
   # workoutlog's `completed` is `done`, the one success word for the
   # occurrence logs.
-  version: 2
+  # version 3: `workout` binds `recurring` and `workoutlog` binds
+  # `occurrencelog`, replacing the copied properties (#122).
+  version: 3
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.
@@ -27,6 +29,8 @@ data:
     Training: the exercise catalog, workout templates, workouts with their
     sets and tracker numbers, and the done-or-skipped log against a recurring
     workout.
+  requires:
+    - scheduling.substrate.reamde.dev
   installs:
     - fitness.substrate.reamde.dev/exercise
     - fitness.substrate.reamde.dev/workout

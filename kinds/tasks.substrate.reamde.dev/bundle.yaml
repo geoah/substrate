@@ -24,7 +24,9 @@ data:
   # version 3: the settled state vocabulary (decision record 0013). The task's
   # `dropped` is `abandoned`, matching project, and the tasklog's `completed`
   # is `done`, matching the task's own terminal state.
-  version: 3
+  # version 4: `tasklog` binds `occurrencelog`. The `task` kind pins its own
+  # version for its `recurring` binding (#122).
+  version: 4
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A VOCABULARY bundle (see people.substrate.reamde.dev): kinds only, imported from the
@@ -41,6 +43,7 @@ data:
     edge back to whatever asked for it.
   requires:
     - people.substrate.reamde.dev
+    - scheduling.substrate.reamde.dev
   installs:
     - tasks.substrate.reamde.dev/project
     - tasks.substrate.reamde.dev/task

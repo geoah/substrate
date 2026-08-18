@@ -12,7 +12,9 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: routines.substrate.reamde.dev
 data:
-  version: 1
+  # version 2: `routine` binds `recurring` and `routinelog` binds
+  # `occurrencelog`, replacing the copied properties (#122).
+  version: 2
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.
@@ -25,6 +27,8 @@ data:
     The generic recurring obligation: routines with an RRULE and a time-of-day
     window, and the done-or-skipped log against each occurrence. Missed is
     computed from absence, never stored.
+  requires:
+    - scheduling.substrate.reamde.dev
   installs:
     - routines.substrate.reamde.dev/routine
     - routines.substrate.reamde.dev/routinelog

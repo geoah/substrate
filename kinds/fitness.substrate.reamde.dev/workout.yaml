@@ -17,6 +17,7 @@ data:
   # the RRULE and `endsAt` closes the series.
   traits:
     - temporal(range)
+    - recurring
   properties:
     name:
       type: string

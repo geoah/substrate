@@ -160,7 +160,7 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0010](0010-signing-is-per-repository-ed25519-one-way.md) | Changelog signing is a per-repository Ed25519 key with one-way activation | accepted |
 | [0011](0011-chain-transitions-are-repository-scoped-epochs.md) | Sanctioned chain transitions are recorded as repository-scoped chain epochs | accepted |
 | [0012](0012-numbers-are-exact-or-refused.md)   | Numbers are exact or refused: string-carried decimal, safe-integer int, one stored duration grammar | accepted |
-| [0013](0013-state-machines-say-done-and-abandoned.md) | State machines say `done` and `abandoned`; a domain word survives only by decision | accepted |
+| [0013](0013-state-machines-say-done-and-abandoned.md) | State machines say `done` and `abandoned`; a domain word survives only by decision | superseded |
 | [0014](0014-authorities-widen-only-outside-the-id-alphabet.md) | Authorities may widen only with characters the id alphabet excludes | accepted |
 | [0015](0015-unproven-kinds-stay-out-of-the-stable-set.md) | Unproven kinds stay out of the stable vocabulary set | accepted |
 | [0016](0016-a-kind-titles-itself-from-a-declared-property.md) | A kind titles itself from a declared property, never the built-in slot | accepted |
@@ -183,3 +183,5 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0036](0036-operational-lists-are-a-page-envelope.md) | Operational lists answer with an `{items, cursor?}` envelope | accepted |
 | [0037](0037-gated-is-an-agent-loop-verdict-not-a-wire-code.md) | `gated` is an agent-loop verdict, not a wire code; it leaves the closed set | accepted |
 | [0038](0038-a-network-entry-is-a-bare-host-or-cidr-destination.md) | A `permissions.network` entry is a bare host or CIDR destination | accepted |
+| [0039](0039-the-substrate-stores-a-recurrence-rule-and-never-expands-it.md) | The substrate stores a recurrence rule and never expands it | accepted |
+| [0040](0040-the-four-occurrence-logs-say-done.md) | The four occurrence logs all say `done`; `medicationschedulelog` loses its `taken` exception | accepted |

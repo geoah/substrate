@@ -17,7 +17,11 @@ data:
   # a function's flat IO and hoisted grants, a mapping rule as `{path}`, an index
   # naming its properties. THE AUTHORITY IS VERSIONED AS A UNIT, so this bump
   # carries the closure whole rather than saying every declaration in it moved.
-  version: 2
+  # version 3: `medicationschedule` and `observation` bind `recurring`;
+  # `medicationschedulelog` binds `occurrencelog`, moves its status states from
+  # taken/skipped to done/skipped, and types `doseUnit` as the schedule's enum
+  # (#122).
+  version: 3
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.
@@ -30,6 +34,8 @@ data:
     The body: observations and their logged entries, medications with dose
     schedules and dose logs, and blood tests. Schedules carry RRULEs; the
     substrate stores the rule and never expands it.
+  requires:
+    - scheduling.substrate.reamde.dev
   installs:
     - health.substrate.reamde.dev/bloodtest
     - health.substrate.reamde.dev/medication

@@ -25,9 +25,12 @@ const (
 )
 
 // tasksRequires is what the tasks closure declares against: its assignee edge
-// lands on person, so people is imported first, exactly as the console would
-// have to.
-var tasksRequires = []string{"people.substrate.reamde.dev/people"}
+// lands on person and its task/tasklog bind the scheduling traits, so people
+// and scheduling are imported first, exactly as the console would have to.
+var tasksRequires = []string{
+	"people.substrate.reamde.dev/people",
+	"scheduling.substrate.reamde.dev/scheduling",
+}
 
 // movedTasksCatalog loads a catalog whose tasks closure is the shipped one
 // with each named file rewritten: binary N+1's tree, against a repository

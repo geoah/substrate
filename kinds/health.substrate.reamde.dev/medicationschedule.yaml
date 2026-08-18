@@ -17,6 +17,7 @@ data:
   # `endsAt` closes the course; an open-ended schedule omits it.
   traits:
     - temporal(range)
+    - recurring
   properties:
     name:
       type: string

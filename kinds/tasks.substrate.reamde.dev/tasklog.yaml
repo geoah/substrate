@@ -13,8 +13,12 @@ data:
     plural: tasklogs
   displayTemplate: "{status}"
   # `at` is when the occurrence was done or the skip was recorded.
+  # `occurrencelog` contracts status/scheduledAt/details and the
+  # absence-means-missed semantics; the flip states stay here (a trait carries
+  # no values).
   traits:
     - temporal(point)
+    - occurrencelog
   properties:
     status:
       type: state

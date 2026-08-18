@@ -51,9 +51,10 @@ const CatalogDir = "../../kinds"
 
 // Vocabulary names the shipped VOCABULARY bundles — the authorities repository
 // creation used to seed and no longer does (a fresh repository holds core
-// alone). Order matters only in that people comes first: messaging and
-// calendar declare against it.
-var Vocabulary = []string{"people", "tasks", "messaging", "calendar"}
+// alone). Order follows the requires: people and scheduling come before the
+// authorities that declare against them (messaging and calendar map onto
+// people; tasks and calendar bind scheduling's traits).
+var Vocabulary = []string{"people", "scheduling", "tasks", "messaging", "calendar"}
 
 // ImportVocabulary imports shipped vocabulary bundles by their bare label
 // ("people", "calendar") through the ONE install path — the schema-apply batch

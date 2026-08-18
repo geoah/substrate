@@ -16,6 +16,7 @@ data:
   # `at` seeds the recurrence (its DTSTART) and `endsAt` retires it.
   traits:
     - temporal(range)
+    - recurring
   properties:
     name:
       type: string

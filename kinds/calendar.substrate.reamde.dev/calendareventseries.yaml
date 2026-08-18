@@ -13,6 +13,10 @@ data:
     singular: calendareventseries
     plural: calendareventseries
   displayTemplate: "{summary}"
+  # `recurring` contracts the recurrence/exdates/timezone triple. The series is
+  # the DEFINITION and never sits on the timeline, so it binds no `temporal`.
+  traits:
+    - recurring
   properties:
     summary:
       type: string
