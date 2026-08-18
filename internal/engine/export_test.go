@@ -31,3 +31,10 @@ func mustDecodeTestCredentialKey(key string) []byte {
 	}
 	return raw
 }
+
+// SealedAAD builds the additional data a sealed-store row binds to, so a test
+// opens a payload the way the engine does (ADR 0023).
+func SealedAAD(ref, recordKind, recordID string) []byte { return sealedAAD(ref, recordKind, recordID) }
+
+// DEKAAD builds the additional data the control-plane DEK wrap binds to.
+func DEKAAD(repoID string) []byte { return dekAAD(repoID) }

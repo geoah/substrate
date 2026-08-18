@@ -125,8 +125,10 @@ func TestSecretMovesIntoTheStore(t *testing.T) {
 	if len(payload) == 0 {
 		t.Fatal("sealed payload is empty")
 	}
-	if payload[0] != 's' {
-		t.Fatalf("sealed payload is not encrypted (marker %q)", payload[0])
+	// The store binds a payload to its row under the 'a' framing (ADR 0023);
+	// 'p' would be plaintext.
+	if payload[0] != 'a' {
+		t.Fatalf("sealed payload is not bound-sealed (marker %q)", payload[0])
 	}
 	// Neither the fold nor the append-only log ever held the material.
 	mustHaveNoPlaintext(t, db, sgPlainKey)

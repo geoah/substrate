@@ -191,8 +191,10 @@ func storedSecret(t *testing.T, raw *sql.DB, dsn, id string) string {
 		t.Fatalf("stored secret is not a sealed-store ref: %q", ref)
 	}
 	var payload []byte
+	var kind, rid string
 	if err := raw.QueryRow(
-		`SELECT payload FROM sealed WHERE ref = $1`, ref).Scan(&payload); err != nil {
+		`SELECT payload, record_kind, record_id FROM sealed WHERE ref = $1`, ref).
+		Scan(&payload, &kind, &rid); err != nil {
 		t.Fatalf("read sealed payload for %s: %v", ref, err)
 	}
 	// The scoped app pool cannot see the control plane (that is the
@@ -203,18 +205,19 @@ func storedSecret(t *testing.T, raw *sql.DB, dsn, id string) string {
 	}
 	defer func() { _ = cp.Close() }()
 	var wrapped []byte
-	if err := cp.QueryRow(`SELECT dek FROM repositories LIMIT 1`).Scan(&wrapped); err != nil {
+	var repoID string
+	if err := cp.QueryRow(`SELECT id, dek FROM repositories LIMIT 1`).Scan(&repoID, &wrapped); err != nil {
 		t.Fatalf("read wrapped dek: %v", err)
 	}
-	if len(wrapped) == 0 || wrapped[0] != 's' {
-		t.Fatalf("a keyed host must wrap the DEK sealed, not plain-marked")
+	if len(wrapped) == 0 || wrapped[0] != 'a' {
+		t.Fatalf("a keyed host must wrap the DEK bound-sealed, not plain-marked or unbound")
 	}
 	hostKey := engine.TestCredentialKeyBytes
-	dek, err := engine.OpenPayloadWithKey(hostKey, wrapped)
+	dek, err := engine.OpenPayloadWithKey(hostKey, wrapped, engine.DEKAAD(repoID))
 	if err != nil {
 		t.Fatalf("unwrap the DEK: %v", err)
 	}
-	plain, err := engine.OpenPayloadWithKey(dek, payload)
+	plain, err := engine.OpenPayloadWithKey(dek, payload, engine.SealedAAD(ref, kind, rid))
 	if err != nil {
 		t.Fatalf("open payload under the DEK: %v", err)
 	}

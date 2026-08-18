@@ -131,10 +131,12 @@ func TestRegistrationEnrollsRecoveryKey(t *testing.T) {
 		t.Fatalf("read ref: %v", err)
 	}
 	var payload []byte
-	if err := db.QueryRow(`SELECT payload FROM sealed WHERE ref = $1`, ref).Scan(&payload); err != nil {
+	var kind, rid string
+	if err := db.QueryRow(`SELECT payload, record_kind, record_id FROM sealed WHERE ref = $1`, ref).
+		Scan(&payload, &kind, &rid); err != nil {
 		t.Fatalf("read sealed payload: %v", err)
 	}
-	plain, err := engine.OpenPayloadWithKey(recovered, payload)
+	plain, err := engine.OpenPayloadWithKey(recovered, payload, engine.SealedAAD(ref, kind, rid))
 	if err != nil {
 		t.Fatalf("the identity-recovered DEK does not open the payload: %v", err)
 	}
@@ -270,10 +272,12 @@ func TestEnrollRecoveryKeyMigratesLegacyPayloads(t *testing.T) {
 	// The planted host-key payload was re-keyed in the enrollment's own
 	// transaction: the identity-recovered DEK alone opens it now.
 	var payload []byte
-	if err := db.QueryRow(`SELECT payload FROM sealed WHERE ref = $1`, ref).Scan(&payload); err != nil {
+	var kind, rid string
+	if err := db.QueryRow(`SELECT payload, record_kind, record_id FROM sealed WHERE ref = $1`, ref).
+		Scan(&payload, &kind, &rid); err != nil {
 		t.Fatalf("read payload: %v", err)
 	}
-	plain, err := engine.OpenPayloadWithKey(dek, payload)
+	plain, err := engine.OpenPayloadWithKey(dek, payload, engine.SealedAAD(ref, kind, rid))
 	if err != nil {
 		t.Fatalf("enrollment left the payload host-keyed: %v", err)
 	}

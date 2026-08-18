@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-08-17
 decision-makers: George Antoniadis
 ---
@@ -58,7 +58,10 @@ string `dek` and the repository id instead.
 - Good, because it costs nothing at runtime: AAD is hashed by the same GCM pass
   that already runs.
 - Good, because the DEK wrap gains a binding it never had, so a wrap lifted
-  from one repository's row into another's stops opening.
+  from one repository's row into another's stops opening. This holds for a
+  store created under this change or resealed under it: creation and DEK
+  adoption write the bound wrap, and a legacy store's unbound wrap is rebound
+  by reseal, which rewraps `repositories.dek` when its framing is not `'a'`.
 - Bad, because rotation now has to re-seal rather than copy, and any future
   "move this secret to another record" verb has to re-seal too. Nothing does
   either today.

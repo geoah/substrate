@@ -29,13 +29,25 @@ func newDEK() ([]byte, error) {
 	return raw, nil
 }
 
+// dekAAD binds the control-plane DEK wrap to its repository. The wrap has no
+// owning record, so it binds the literal "dek" and the repository id (0023): a
+// wrap lifted into another repository's row stops opening.
+func dekAAD(repoID string) []byte {
+	return []byte("dek\x00" + repoID)
+}
+
 // wrapDEK seals a DEK under the host credential key for the control-plane
 // row: the same plain/sealed framing the store uses, so a keyless host
 // stores it plain-marked, loudly, and the boot warning is the operator's cue.
-func (s *service) wrapDEK(dek []byte) ([]byte, error) { return s.sealCredential(dek) }
+// The wrap binds its repository so it does not open in another's row.
+func (s *service) wrapDEK(dek []byte, repoID string) ([]byte, error) {
+	return s.sealCredential(dek, dekAAD(repoID))
+}
 
-// unwrapDEK opens a control-plane wrapped DEK.
-func (s *service) unwrapDEK(wrapped []byte) ([]byte, error) { return s.openCredential(wrapped) }
+// unwrapDEK opens a control-plane wrapped DEK, presenting its repository binding.
+func (s *service) unwrapDEK(wrapped []byte, repoID string) ([]byte, error) {
+	return s.openCredential(wrapped, dekAAD(repoID))
+}
 
 // repoDEK fetches and unwraps one repository's DEK straight from the control
 // plane: the authoritative read, used at open and by the maintenance-pool
@@ -50,7 +62,7 @@ func (s *service) repoDEK(ctx context.Context, repoID string) ([]byte, error) {
 	if len(wrapped) == 0 {
 		return nil, nil
 	}
-	return s.unwrapDEK(wrapped)
+	return s.unwrapDEK(wrapped, repoID)
 }
 
 // adoptDEK gives a pre-DEK repository its key, compare-and-swap on NULL so
@@ -60,7 +72,7 @@ func (s *service) adoptDEK(ctx context.Context, repoID string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	wrapped, err := s.wrapDEK(dek)
+	wrapped, err := s.wrapDEK(dek, repoID)
 	if err != nil {
 		return nil, err
 	}
@@ -79,16 +91,16 @@ func (s *service) adoptDEK(ctx context.Context, repoID string) ([]byte, error) {
 
 // sealRepoPayload seals one payload under a repository's DEK, or under the
 // host key for a pre-DEK repository the maintenance paths touch before any
-// open has adopted one.
-func (s *service) sealRepoPayload(dek, raw []byte) ([]byte, error) {
+// open has adopted one, binding aad to the row it lands in.
+func (s *service) sealRepoPayload(dek, raw, aad []byte) ([]byte, error) {
 	if len(dek) == 0 {
-		return s.sealCredential(raw)
+		return s.sealCredential(raw, aad)
 	}
 	aead, err := aeadOf(dek)
 	if err != nil {
 		return nil, err
 	}
-	return sealWith(aead, raw)
+	return sealWith(aead, raw, aad)
 }
 
 // aeadOf builds the AES-256-GCM cipher for one key.
@@ -99,11 +111,11 @@ func aeadOf(key []byte) (cipher.AEAD, error) {
 	return newAEAD(key)
 }
 
-// sealPayload seals one sealed-store payload under the repository's DEK.
-// Every repository has one from open onward, so there is no keyless branch
-// here: on a keyless HOST the weakness is the plain-marked wrap in the
-// control plane, never an unencrypted payload.
-func (ds *dataset) sealPayload(raw []byte) ([]byte, error) {
+// sealPayload seals one sealed-store payload under the repository's DEK, bound
+// to aad (the row's ref, kind and id). Every repository has a DEK from open
+// onward, so there is no keyless branch here: on a keyless HOST the weakness is
+// the plain-marked wrap in the control plane, never an unencrypted payload.
+func (ds *dataset) sealPayload(raw, aad []byte) ([]byte, error) {
 	aead, err := aeadOf(ds.dek)
 	if err != nil {
 		return nil, err
@@ -113,32 +125,40 @@ func (ds *dataset) sealPayload(raw []byte) ([]byte, error) {
 		// storing plaintext silently would be worse.
 		return nil, errors.New("substrate/engine: dataset has no DEK")
 	}
-	return sealWith(aead, raw)
+	return sealWith(aead, raw, aad)
 }
 
 // openPayload opens one sealed-store payload: plain framing as-is (keyless
-// legacy), then the DEK, then the host key (payloads sealed before DEKs).
+// legacy), then the DEK, then the host key (payloads sealed before DEKs). aad
+// is the row's binding, presented only for `credBoundSealed` payloads.
 // `repository reseal` re-keys the stragglers so the fallback goes quiet.
-func (ds *dataset) openPayload(payload []byte) ([]byte, error) {
-	return openWithFallback(payload, ds.dek, ds.svc.credKey)
+func (ds *dataset) openPayload(payload, aad []byte) ([]byte, error) {
+	return openWithFallback(payload, ds.dek, ds.svc.credKey, aad)
 }
 
 // OpenPayloadWithKey opens one sealed-store payload under an explicitly
-// supplied key: the recovery tooling's read, and the proof that a DEK
-// recovered through the age wrap is sufficient on its own.
-func OpenPayloadWithKey(key, payload []byte) ([]byte, error) {
-	return openWithFallback(payload, key, nil)
+// supplied key, presenting aad as the row's binding: the recovery tooling's
+// read, and the proof that a DEK recovered through the age wrap is sufficient
+// on its own.
+func OpenPayloadWithKey(key, payload, aad []byte) ([]byte, error) {
+	return openWithFallback(payload, key, nil, aad)
 }
 
-// openWithFallback is the shared open order for a repository's payloads.
-func openWithFallback(payload, dek, hostKey []byte) ([]byte, error) {
+// openWithFallback is the shared open order for a repository's payloads. It
+// presents aad only for the bound framing; the unbound `credSealed` sealed no
+// additional data, so it opens with nil.
+func openWithFallback(payload, dek, hostKey, aad []byte) ([]byte, error) {
 	if len(payload) == 0 {
 		return nil, errors.New("empty payload")
 	}
-	if payload[0] == credPlain {
+	switch payload[0] {
+	case credPlain:
 		return payload[1:], nil
-	}
-	if payload[0] != credSealed {
+	case credSealed:
+		aad = nil
+	case credBoundSealed:
+		// aad is the row's binding
+	default:
 		return nil, fmt.Errorf("unknown credential framing %q", payload[0])
 	}
 	// The FIRST failure is the authoritative one: the DEK is tried first,
@@ -155,7 +175,7 @@ func openWithFallback(payload, dek, hostKey []byte) ([]byte, error) {
 		if aead == nil {
 			continue
 		}
-		out, err := openWith(aead, payload)
+		out, err := openWith(aead, payload, aad)
 		if err == nil {
 			return out, nil
 		}

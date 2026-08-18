@@ -252,7 +252,9 @@ func (ds *dataset) StartOAuth(ctx context.Context, actor substrate.Actor, record
 // must not hand out redeemable states), the PKCE verifier sealed like any
 // credential. Expired leftovers prune opportunistically.
 func (ds *dataset) putOAuthFlow(ctx context.Context, nonce string, account eref, verifier string, exp time.Time) error {
-	sealed, err := ds.sealPayload([]byte(verifier))
+	// The PKCE verifier is an ephemeral row in oauth_flows, not the sealed
+	// store, and 0023 binds the sealed store: it keeps the unbound framing.
+	sealed, err := ds.sealPayload([]byte(verifier), nil)
 	if err != nil {
 		return err
 	}
@@ -285,7 +287,7 @@ func (ds *dataset) consumeOAuthFlow(ctx context.Context, nonce string, account e
 	if err != nil {
 		return "", err
 	}
-	verifier, err := ds.openPayload(sealed)
+	verifier, err := ds.openPayload(sealed, nil)
 	if err != nil {
 		return "", fmt.Errorf("substrate/engine: open oauth flow verifier: %w", err)
 	}
