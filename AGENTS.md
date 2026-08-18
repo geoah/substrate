@@ -276,9 +276,11 @@ grammar widens. The actors moved
   keys therefore land inert and validated, in batches, and there is no `x-`
   escape hatch
   ([0020](docs/decisions/0020-dialect-keys-are-reserved-not-tolerated.md)).
-  `unique`, `deprecated`, `edges.<rel>.properties` and `renamedFrom` are
-  reserved today: stored, refused where they could not be honored, and acted
-  on by nothing.
+  `unique`, `deprecated` and `renamedFrom` are reserved today: stored,
+  refused where they could not be honored, and acted on by nothing.
+  `edges.<rel>.properties` was reserved with them and is now live: an edge
+  write carrying a property the rel does not declare is refused
+  ([0027](docs/decisions/0027-an-edge-outlives-a-tombstone-and-dies-with-a-purge.md)).
 - **The console mirrors the wire by hand, and a golden file holds it to it.**
   `web/console/src/lib/api/types.ts` is written to match the structs in
   `internal/substrate`; nothing generates it. `wire.golden.json` is where the

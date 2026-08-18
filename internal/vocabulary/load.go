@@ -1069,9 +1069,9 @@ func mapOfAny[V any](m map[string]V) map[string]any {
 var edgeKeys = map[string]bool{
 	"to": true, "many": true, "required": true, "ownerRef": true,
 	"description": true, "inverse": true, "inverseDescription": true,
-	// RESERVED, both of them: `deprecated` is the marker every declaration
-	// carries, and `properties` declares what an edge ROW may hold. See
-	// Edge.Deprecated and Edge.Props.
+	// `deprecated` is the RESERVED marker every declaration carries;
+	// `properties` declares what an edge ROW may hold, and an edge write is
+	// held to it. See Edge.Deprecated and Edge.Props.
 	"deprecated": true, "properties": true,
 }
 
@@ -1085,8 +1085,8 @@ var edgeKeys = map[string]bool{
 // row; `default` would need a `json` field in core's `kind` declaration, which
 // the dialect refuses inside an object; `renamedFrom` and `unique` are
 // evolution and identity, both of which belong to the record the edge hangs
-// off. Every one of them can be added later, which is the ordinary
-// coordinated event this reservation exists to make rarer, not to abolish.
+// off. Every one of them can be added later, as the ordinary coordinated
+// event a new dialect key always is (record 0020).
 var edgePropKeys = map[string]bool{
 	"type": true, "description": true, "displayName": true,
 	"required": true, "deprecated": true,
@@ -1108,9 +1108,10 @@ var edgePropForbiddenKinds = map[Datatype]string{
 	DatatypeReference: "the edge IS the pointer, and a second one on the same row is a record with two ends",
 }
 
-// parseEdgeProps reads the RESERVED `edges.<rel>.properties` block: the
-// properties an edge row of this rel may carry. Nothing validates an edge write
-// against it yet (issue 111); this is the declaration door alone.
+// parseEdgeProps reads the `edges.<rel>.properties` block: the properties an
+// edge row of this rel may carry, and the whole set it may carry. This is the
+// declaration door; the write door is the engine's coerceEdgeProps, which
+// refuses a name this block does not hold.
 //
 // Each entry parses through parseProperty, so a refinement resolves, an enum
 // gets its values and a pattern compiles exactly as they do on a record's own

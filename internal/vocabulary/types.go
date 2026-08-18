@@ -466,12 +466,14 @@ type Edge struct {
 	// property carries: the edge still resolves and still stores, and a client
 	// should stop offering it. A deprecated edge may not also be `required:`.
 	Deprecated bool
-	// Props are the RESERVED declaration of what an edge ROW of this rel may
-	// carry (`edges.<rel>.properties`), keyed by property name, with PropOrder
-	// holding the sorted names. Admitted, validated and stored, but NOT ACTED
-	// ON: the write path still takes whatever props an edge write carries and
-	// validates none of them (issue 111), so declaring the block changes no
-	// write today.
+	// Props declares what an edge ROW of this rel may carry
+	// (`edges.<rel>.properties`), keyed by property name, with PropOrder
+	// holding the sorted names. It is the WHOLE admission: an edge write
+	// carrying a name this map does not hold is refused, and a rel that
+	// declares no block accepts no properties at all (engine's
+	// coerceEdgeProps). A `required:` edge property is enforced at the write,
+	// which it can be because an edge write replaces the row's whole props
+	// map, so every stored row of the rel carries one.
 	//
 	// An edge property is a FLAT SINGLE VALUE: one scalar, enum or refinement,
 	// never a list, a map, an object, a machine or a pointer

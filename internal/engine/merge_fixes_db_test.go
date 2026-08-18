@@ -180,7 +180,7 @@ func TestMergeSplitRestoresLoserEdgeProps(t *testing.T) {
 		Kind: "person", Properties: map[string]any{"name": "N. Ray"},
 		Edges: []substrate.EdgeInput{{
 			Rel: "memberOf", To: substrate.EdgeRef{ID: team.ID},
-			Properties: map[string]any{"role": "admin", "since": "2019"},
+			Properties: map[string]any{"role": "admin", "since": "2019-04-01"},
 		}},
 	})
 	rec, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID)
@@ -197,7 +197,7 @@ func TestMergeSplitRestoresLoserEdgeProps(t *testing.T) {
 	if back == nil {
 		t.Fatal("the loser's edge is gone")
 	}
-	if back["role"] != "admin" || back["since"] != "2019" {
+	if back["role"] != "admin" || back["since"] != "2019-04-01" {
 		t.Fatalf("the loser's edge props came back as %v", back)
 	}
 	if p := edgePropsOf(t, ds, winner.Kind, winner.ID, "memberOf", team.ID); p["role"] != "guest" {
@@ -223,7 +223,15 @@ func TestMergeSplitRestoresPairInternalEdge(t *testing.T) {
 				map[string]any{
 					"displayTemplate": "{label}",
 					"properties":      map[string]any{"label": map[string]any{"type": "string"}},
-					"edges":           map[string]any{"peer": map[string]any{"to": "node"}},
+					"edges": map[string]any{"peer": map[string]any{
+						"to": "node",
+						// Declared, because an undeclared edge property is
+						// refused: the props this test carries through merge
+						// and split have to be props a write would accept.
+						"properties": map[string]any{
+							"src": map[string]any{"type": "string"},
+						},
+					}},
 				}),
 		},
 	}); err != nil {

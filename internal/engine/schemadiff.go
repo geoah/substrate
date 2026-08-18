@@ -20,7 +20,10 @@ package engine
 //   - required added while rows lack the property (the write path enforces
 //     `required` on the merged row, and a declared `default` does not
 //     backfill, so the rows that lack it now would be nonconforming and
-//     unpatchable).
+//     unpatchable);
+//   - an edge dropped, an edge losing `many:`, an edge repointing `to:`, and
+//     the same four shapes again on a declared edge property — each counted
+//     over the `edges` table (edgeNarrowings).
 //
 // Additive changes — new type, new optional property, new enum value, new
 // state, new transition, required removed, presentational keys — admit
@@ -270,15 +273,6 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 						ident, pname, from, to),
 					query: countPropQuery, args: []any{ident, pname},
 				})
-				// This `continue` skips the `becomes required` count below, so a
-				// retype that ALSO adds `required` (a mirror's `account`, string →
-				// required reference) is counted only by presence here: a row that
-				// holds no value for the property is not counted, and a store where
-				// every row lacks it would admit the retype. Presence is the right
-				// count for the retype itself (a row with no old value strands
-				// nothing), and a mirror row always carries its `account`, so the
-				// gap is theoretical there; a kind that could hold rows missing the
-				// retyped-and-required property would need both counts.
 				continue
 			}
 			// Every value count below walks the property's own container, so a
@@ -292,12 +286,16 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 					query: q, args: args,
 				})
 			}
-			// A reference that narrows its pin — a `kind:` tightened, or a
-			// `trait:` changed — strands stored references pointing elsewhere.
-			if curP.Datatype == vocabulary.DatatypeReference {
-				if n, ok := refPinNarrowing(ident, containerPath(nil, curP, pname), "reference", pname, curP, candP); ok {
-					out = append(out, n)
-				}
+			// A reference that narrows its `kind:` pin (unconstrained → a kind,
+			// or one type → another) strands stored references pointing elsewhere
+			//.
+			if curP.Datatype == vocabulary.DatatypeReference && refTargetNarrows(curP.To, candP.To) {
+				q, args := refOutsidePath(ident, containerPath(nil, curP, pname), candP.To)
+				out = append(out, narrowing{
+					format: fmt.Sprintf("type %s: reference %q narrows its target to %s while %%d live records point elsewhere — repoint them first",
+						ident, pname, candP.To),
+					query: q, args: args,
+				})
 			}
 			if keyPatternTightens(curP, candP) {
 				q, args := keysOutsidePattern(ident, mapPath(nil, pname),
@@ -330,11 +328,9 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 	// declaration had, so every one of them is missing it the moment it is
 	// declared required.
 	//
-	// This is how a relationship that MOVES — an edge becoming a required
-	// reference — announces itself. Dropping the edge is unguarded (edges are
-	// not diffed at all) and the reference is a new name, so without this the
-	// declaration lands quietly and every existing row is left pointing the old
-	// way, invisible to every read written against the new one.
+	// This is how a link that MOVES — an edge becoming a required reference —
+	// announces itself from the reference's side. The edge's own side is
+	// edgeNarrowings, below.
 	for _, pname := range candT.PropOrder {
 		candP := candT.Props[pname]
 		if !candP.Required || candP.IsState() {
@@ -352,12 +348,12 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 	}
 	// A relationship that MOVES from an edge to a reference of the same name
 	// strands every row holding it the old way, whether or not the reference is
-	// required: this branch does not diff edges (that is #243/edgeNarrowings), so
-	// the dropped edge is otherwise invisible here, and the new reference is an
-	// absent property on those rows. The shared kinds' `account` is exactly this
-	// move (0034), and it is OPTIONAL, so the added-as-required guard above never
-	// fires. Count the live rows still carrying the old edge and refuse until they
-	// are migrated, matching the datatype-flip narrowings beside it.
+	// required: the new reference is an absent property on those rows, and the
+	// dropped edge is caught by edgeNarrowings below, but the move itself needs
+	// its own count. The shared kinds' `account` is exactly this move (0034),
+	// and it is OPTIONAL, so the added-as-required guard above never fires. Count
+	// the live rows still carrying the old edge and refuse until they are
+	// migrated, matching the datatype-flip narrowings beside it.
 	for _, pname := range candT.PropOrder {
 		candP := candT.Props[pname]
 		if candP.Datatype != vocabulary.DatatypeReference {
@@ -372,13 +368,190 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 			query: countEdgeRelQuery, args: []any{ident, pname},
 		})
 	}
+	out = append(out, edgeNarrowings(curT, candT)...)
 	return out
 }
 
+// Edge counts run over the `edges` table joined back to the SOURCE record, so
+// a stranded row is counted the same way a stranded property value is: once
+// per live record that holds it. The join names `repository` on both sides
+// because the vocabulary door is also reachable on the maintenance role, which
+// bypasses row level security; every other predicate here would then be right
+// and the count would still be wrong.
+const edgeFrom = `FROM edges e
+	JOIN records r ON r.repository = e.repository AND r.kind = e.src_kind AND r.id = e.src
+	WHERE e.src_kind = $1 AND e.rel = $2 AND r.deleted_at IS NULL`
+
 // countEdgeRelQuery counts live records of a kind that still hold an edge on a
-// given rel — the stranding count when that rel moves from an edge to a
+// given rel, the stranding count when that rel moves from an edge to a
 // reference of the same name.
 const countEdgeRelQuery = `SELECT count(*) FROM records r WHERE r.kind = $1 AND r.deleted_at IS NULL AND EXISTS (SELECT 1 FROM edges e WHERE e.src_kind = r.kind AND e.src = r.id AND e.rel = $2)`
+
+// countEdgeQuery counts live edge rows of one rel off one kind.
+const countEdgeQuery = `SELECT count(*) ` + edgeFrom
+
+// countEdgeSourcesOverOneQuery counts the live records that hold MORE THAN ONE
+// row of a rel — the rows an edge losing `many:` strands, counted per record
+// because that is what the writer has to go and fix.
+const countEdgeSourcesOverOneQuery = `SELECT count(*) FROM (
+	SELECT e.src ` + edgeFrom + `
+	GROUP BY e.src_kind, e.src HAVING count(*) > 1) x`
+
+// countEdgeOffTargetQuery counts live edge rows pointing at a kind other than
+// the one the candidate declares.
+const countEdgeOffTargetQuery = `SELECT count(*) ` + edgeFrom + ` AND e.dst_kind <> $3`
+
+// countEdgePropQuery counts live edge rows carrying a value for one declared
+// edge property.
+const countEdgePropQuery = `SELECT count(*) ` + edgeFrom + ` AND e.props ? $3`
+
+// countMissingEdgePropQuery counts live edge rows NOT carrying it.
+const countMissingEdgePropQuery = `SELECT count(*) ` + edgeFrom + ` AND NOT e.props ? $3`
+
+// countEdgePropValuesQuery counts live edge rows whose value for one property
+// is in a set ($4 is a JSON array of the values).
+const countEdgePropValuesQuery = `SELECT count(*) ` + edgeFrom + `
+	AND e.props ? $3 AND $4::jsonb @> jsonb_build_array(e.props->$3)`
+
+// countEdgePropOutsideValuesQuery is its complement: the rows holding a value
+// the candidate's set does NOT admit.
+const countEdgePropOutsideValuesQuery = `SELECT count(*) ` + edgeFrom + `
+	AND e.props ? $3 AND NOT ($4::jsonb @> jsonb_build_array(e.props->$3))`
+
+// countEdgePropNonIntQuery counts live edge rows whose value for a property is
+// not an integral number — the rows a retype to `int` actually strands.
+const countEdgePropNonIntQuery = `SELECT count(*) ` + edgeFrom + `
+	AND e.props ? $3
+	AND (jsonb_typeof(e.props->$3) <> 'number' OR (e.props->>$3)::numeric <> floor((e.props->>$3)::numeric))`
+
+// edgeNarrowings classifies one kind's EDGE diff. Edges were classified by
+// nothing before this: dropping an edge, taking `many:` away and repointing
+// `to:` all landed silently, leaving stored rows in the `edges` table that no
+// declaration described and no read could reach.
+//
+// The four shapes are the property loop's, read against a link: an edge
+// dropped is a property dropped, `many: true` → single is a container flip,
+// `to:` repointed is a reference narrowing its pin, and an edge property is a
+// property.
+//
+// What is deliberately NOT here is an edge ADDED as required. A narrowing
+// counts STORED ROWS the new declaration would not admit, and a record that
+// predates a newly required edge holds no row of that rel at all: there is
+// nothing in the `edges` table for a count to find. Required-edge enforcement
+// only ever constrains a record that HAS the edge (checkRequiredPointers, on a
+// create), which leaves an older record nonconforming and still writable.
+func edgeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
+	var out []narrowing
+	ident := curT.Identity
+	for _, rel := range curT.EdgeOrder {
+		curE, candE := curT.Edges[rel], candT.Edges[rel]
+		if candE == nil {
+			out = append(out, narrowing{
+				format: fmt.Sprintf("type %s: edge %q dropped while %%d live edges still stand — unlink them first", ident, rel),
+				query:  countEdgeQuery, args: []any{ident, rel},
+			})
+			continue
+		}
+		if curE.Many && !candE.Many {
+			out = append(out, narrowing{
+				format: fmt.Sprintf("type %s: edge %q stops being many while %%d live records carry more than one — unlink the extras first",
+					ident, rel),
+				query: countEdgeSourcesOverOneQuery, args: []any{ident, rel},
+			})
+		}
+		if refTargetNarrows(curE.To, candE.To) {
+			out = append(out, narrowing{
+				format: fmt.Sprintf("type %s: edge %q narrows its target to %s while %%d live edges point elsewhere — relink them first",
+					ident, rel, candE.To),
+				query: countEdgeOffTargetQuery, args: []any{ident, rel, candE.To},
+			})
+		}
+		out = append(out, edgePropNarrowings(ident, curE, candE)...)
+	}
+	return out
+}
+
+// edgePropNarrowings classifies the declared `edges.<rel>.properties` diff. An
+// edge property is a flat single value by construction (parseEdgeProps), so
+// this is the property loop without the containers, the states and the object
+// recursion: dropped, retyped, an enum value removed, required added.
+//
+// The two retypes the record loop counts BY VALUE rather than by presence are
+// counted by value here too, and for the same reason: a backfill can rewrite
+// the stored values first and the declaration then follows them, which is the
+// evolution path the declaration-version migration needed. An edge property
+// held to a stricter rule than the identical record property would be a
+// difference with nothing behind it.
+func edgePropNarrowings(ident string, curE, candE *vocabulary.Edge) []narrowing {
+	var out []narrowing
+	for _, pname := range curE.PropOrder {
+		curP, candP := curE.Props[pname], candE.Props[pname]
+		if candP == nil {
+			out = append(out, narrowing{
+				format: fmt.Sprintf("type %s: edge %q drops property %q while %%d live edges still carry it — null it on them first",
+					ident, curE.Name, pname),
+				query: countEdgePropQuery, args: []any{ident, curE.Name, pname},
+			})
+			continue
+		}
+		if curP.Datatype != candP.Datatype {
+			switch {
+			case candP.Datatype == vocabulary.DatatypeInt:
+				out = append(out, narrowing{
+					format: fmt.Sprintf("type %s: edge %q changes property %q from %s to int while %%d live edges hold values that are not integers — migrate them first",
+						ident, curE.Name, pname, curP.Datatype),
+					query: countEdgePropNonIntQuery, args: []any{ident, curE.Name, pname},
+				})
+			case stringToEnum(curP, candP):
+				out = append(out, narrowing{
+					format: fmt.Sprintf("type %s: edge %q changes property %q from string to enum while %%d live edges hold a value outside %s; rewrite them first",
+						ident, curE.Name, pname, quotedList(candP.ValueStrings())),
+					query: countEdgePropOutsideValuesQuery,
+					args:  []any{ident, curE.Name, pname, jsonArray(candP.ValueStrings())},
+				})
+			default:
+				out = append(out, narrowing{
+					format: fmt.Sprintf("type %s: edge %q changes property %q from %s to %s while %%d live edges hold values of the old kind — migrate them first",
+						ident, curE.Name, pname, curP.Datatype, candP.Datatype),
+					query: countEdgePropQuery, args: []any{ident, curE.Name, pname},
+				})
+			}
+			continue
+		}
+		if removed := removedStrings(curP.ValueStrings(), candP.ValueStrings()); len(removed) > 0 {
+			out = append(out, narrowing{
+				format: fmt.Sprintf("type %s: edge %q removes value(s) %s from property %q while %%d live edges hold one — rewrite them first",
+					ident, curE.Name, quotedList(removed), pname),
+				query: countEdgePropValuesQuery, args: []any{ident, curE.Name, pname, jsonArray(removed)},
+			})
+		}
+		if !curP.Required && candP.Required {
+			out = append(out, narrowing{
+				format: fmt.Sprintf("type %s: edge %q makes property %q required while %%d live edges lack it — backfill them first",
+					ident, curE.Name, pname),
+				query: countMissingEdgePropQuery, args: []any{ident, curE.Name, pname},
+			})
+		}
+	}
+	// A property the candidate ADDS as required strands every stored row, for
+	// the same reason it does on a record: an edge write is refused without it
+	// and no live row can carry a name no declaration had. The loop above walks
+	// the CURRENT declaration, so a new name never reaches it.
+	for _, pname := range candE.PropOrder {
+		if !candE.Props[pname].Required {
+			continue
+		}
+		if _, existed := curE.Props[pname]; existed {
+			continue
+		}
+		out = append(out, narrowing{
+			format: fmt.Sprintf("type %s: edge %q adds property %q as required while %%d live edges lack it — unlink them or drop the requirement",
+				ident, curE.Name, pname),
+			query: countMissingEdgePropQuery, args: []any{ident, curE.Name, pname},
+		})
+	}
+	return out
+}
 
 // sqlReader is the read surface the refuse-breakage counts run over: the
 // batch transaction on the apply door, the bare pool on the read-only upgrade
@@ -420,53 +593,6 @@ func droppedTypeGuards(q sqlReader, droppedTypes []string) ([]string, error) {
 		}
 	}
 	return guards, nil
-}
-
-// refPinNarrowing classifies a reference property's PIN change. A reference
-// pins either a `kind:` (To) or a `trait:` (ToTrait, 0034), and both can strand
-// stored values:
-//
-//   - a `kind:` tightened (any → a kind, or one kind → another) is counted
-//     exactly: the rows whose stored path names a kind other than the new one.
-//   - a `trait:` changed (to a trait, or between traits) is counted by
-//     PRESENCE, conservatively: the rows the new trait admits are the kinds
-//     that implement it, a set only the registry enumerates and this diff does
-//     not carry it, so a changed trait pin refuses while any live value is
-//     present rather than stranding one. Over-refusing a widening (a kind that
-//     already implements the new trait) is safe pre-v1 where stranding is not.
-//
-// It returns the narrowing and true when the pin narrows, and ok=false when it
-// widens or is unchanged (a pin → `any`, or the same pin).
-func refPinNarrowing(ident string, path []fieldStep, what, name string, curP, candP *vocabulary.Property) (narrowing, bool) {
-	if candP.ToTrait != "" {
-		if curP.ToTrait == candP.ToTrait {
-			return narrowing{}, false
-		}
-		q, args := refPresentPath(ident, path)
-		return narrowing{
-			format: fmt.Sprintf("type %s: %s %q repins to trait %s while %%d live records point at a kind that may not implement it — repoint them first",
-				ident, what, name, candP.ToTrait),
-			query: q, args: args,
-		}, true
-	}
-	if refTargetNarrows(curP.To, candP.To) {
-		q, args := refOutsidePath(ident, path, candP.To)
-		return narrowing{
-			format: fmt.Sprintf("type %s: %s %q narrows its target to %s while %%d live records point elsewhere — repoint them first",
-				ident, what, name, candP.To),
-			query: q, args: args,
-		}, true
-	}
-	return narrowing{}, false
-}
-
-// refPresentPath counts the live rows holding a present reference VALUE at the
-// path — the conservative count when a trait pin changes and the satisfying
-// kinds cannot be enumerated here.
-func refPresentPath(ident string, path []fieldStep) (string, []any) {
-	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
-		return fmt.Sprintf("jsonb_typeof(%s) = 'string'", expr)
-	})
 }
 
 // refTargetNarrows reports whether a reference's `kind:` pin moved to a
@@ -749,10 +875,13 @@ func objectFieldNarrowings(ident string, path []fieldStep, curP, candP *vocabula
 			})
 		}
 		next := containerPath(path, curF, fname)
-		if curF.Datatype == vocabulary.DatatypeReference {
-			if n, ok := refPinNarrowing(ident, next, fmt.Sprintf("object %q reference", label), fname, curF, candF); ok {
-				out = append(out, n)
-			}
+		if curF.Datatype == vocabulary.DatatypeReference && refTargetNarrows(curF.To, candF.To) {
+			q, args := refOutsidePath(ident, next, candF.To)
+			out = append(out, narrowing{
+				format: fmt.Sprintf("type %s: object %q reference %q narrows its target to %s while %%d live records point elsewhere — repoint them first",
+					ident, label, fname, candF.To),
+				query: q, args: args,
+			})
 		}
 		if curF.Datatype == vocabulary.DatatypeObject {
 			out = append(out, objectFieldNarrowings(ident, next, curF, candF)...)

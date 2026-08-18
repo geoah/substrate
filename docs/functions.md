@@ -411,6 +411,10 @@ reference:
   tombstoned, is a no-op, so a minting function never resets state a later
   stage owns. `ifAbsent` must be a boolean, and it cannot combine with
   `ifVersion` on one put (the version check would be silently dropped).
+  `edges` maps each `rel` to a target or a list of them, each one a bare id or
+  a `{kind, id}` reference that may also carry the edge row's own
+  `properties`. Those three keys are the whole set a target takes, and a
+  fourth is refused rather than dropped.
 - **`ifVersion`** (put and patch) is the optimistic-concurrency precondition: an
   integer the write applies against only if the stored version equals it (a
   non-existent record is version 0), else the whole delivery fails

@@ -14,6 +14,10 @@ data:
     lands here. What one source holds about them — a Google contact, a GitHub
     user — is that bundle's own record pointing here, so a person carries
     many provider identities and stays one row.
+  # version 2: the first version this kind pins itself, above the 1 it took
+  # from the authority. `memberOf` gained a declared `properties` block (issue
+  # 111): additive, and the first shipped use of the block.
+  version: 2
   names:
     singular: person
     # `people`, not `persons`: R5 allows any one-word plural, `people` is the
@@ -98,3 +102,15 @@ data:
       to: organization
       many: true
       description: the employer or workspace; there is no company property
+      # What the membership itself is, as opposed to what either end is. Both
+      # are optional, because a provider that syncs an org rarely knows the
+      # title and almost never knows the start date.
+      properties:
+        role:
+          type: string
+          displayName: role
+          description: the title held at this organization
+        since:
+          type: date
+          displayName: since
+          description: the day the membership started

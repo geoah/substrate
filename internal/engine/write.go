@@ -904,6 +904,10 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		if !ok {
 			return nil, fmt.Errorf("%w: %s declares no edge %q", substrate.ErrValidation, sp.ty.Name, e.Rel)
 		}
+		props, err := coerceEdgeProps(sp.ty, ed, e.Properties)
+		if err != nil {
+			return nil, err
+		}
 		dst, err := t.resolveEdgeRef(ed, e.To)
 		if err != nil {
 			return nil, err
@@ -929,7 +933,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 			}
 			subChanged = subChanged || cleared
 		}
-		ok2, err := t.putEdge(e.Rel, sp.ref(), dst, e.Properties, isSubject)
+		ok2, err := t.putEdge(e.Rel, sp.ref(), dst, props, isSubject)
 		if err != nil {
 			return nil, err
 		}
@@ -2074,6 +2078,9 @@ func validateCreateShape(ty *vocabulary.Kind, in substrate.PutInput) error {
 			return fmt.Errorf("%w: edge %q is polymorphic — it needs the full {authority, type, id} reference",
 				substrate.ErrValidation, e.Rel)
 		}
+		if _, err := coerceEdgeProps(ty, ed, e.Properties); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -2634,6 +2641,10 @@ func (t *txn) link(rel string, src eref, to substrate.EdgeRef, props map[string]
 			substrate.ErrForbidden)
 	}
 	if err := t.refuseSubjectRel(ty, rel, substrate.OpLink); err != nil {
+		return err
+	}
+	props, err = coerceEdgeProps(ty, ed, props)
+	if err != nil {
 		return err
 	}
 	dstType, err := t.edgeTargetType(ed, to)

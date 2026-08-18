@@ -219,6 +219,11 @@ once. The narrowing diffs that refuse:
 - adding `required:` to a property a record lacks, and declaring a **new**
   property `required:`, which strands every live record at once: none of them
   can carry a property no declaration had
+- dropping an edge, taking `many:` off an edge a record holds several rows of,
+  and narrowing an edge's `to:` while stored edges point elsewhere
+- the same four shapes on a declared [edge property](#edge-properties)
+  (dropped, retyped, an enum value removed, `required:` added), counted over
+  the stored edge rows rather than the records
 
 Widening diffs (a new kind, a new optional property, a new enum value, a new
 state or transition, removing `required:`) always admit. The guard counts, it
@@ -277,9 +282,9 @@ nothing changes shape on the wire.
 A declaration's key set is closed, so a key one binary does not know
 [quarantines](#quarantine) the authority that ships it. That makes adding a
 key an upgrade of every binary that might read the closure, which is why these
-four are in the dialect before anything acts on them. Each is admitted,
+three are in the dialect before anything acts on them. Each is admitted,
 validated at load and stored on the declaration; none of them changes a write.
-`renamedFrom:`, above, is the fourth.
+`renamedFrom:`, above, is the third.
 
 **`unique:` marks one value per record.** At most one live record of the kind
 carries any given value, which is the constraint behind "one person per email"
@@ -326,8 +331,11 @@ and the marker is what makes the deprecated half tellable from the live one. A
 `deprecated:` declaration may not also be `required:`, because a form cannot
 both stop offering a value and refuse to submit without it.
 
-**`edges.<rel>.properties` declares what an edge row carries.** An edge row
-accepts arbitrary properties today and nothing declares or validates them:
+## Edge properties
+
+An edge row can carry values of its own: where a link sits in a list, what
+role it names, when it started. They are declared per rel, and what is not
+declared is refused:
 
 ```yaml
 edges:
@@ -344,17 +352,33 @@ edges:
           - value: editor
 ```
 
-The block is admitted, validated and stored; **no edge write is checked
-against it yet**. An edge property is a flat single value: one scalar, enum
-or refinement, and never a list, a map, an object, a machine or a reference.
-That bound is what lets core's own `kind` declaration state the block field by
-field, and it is the line the dialect draws: anything an edge cannot hold
-under it is a record with an edge at each end.
+A write of that edge sends its values under the edge's `properties`, and the
+engine coerces each one exactly as it coerces a record's own property, against
+the declared datatype, enum set, pattern and bounds. An undeclared name
+answers `422`, and so does any property at all on a rel that declares no
+block. A rel's stored properties are REPLACED by every write of that edge, so
+a name the write leaves out is a name the row stops carrying, and `required:`
+on an edge property therefore means every stored row of the rel has one.
+
+An edge property is a flat single value: one scalar, enum or refinement, and
+never a list, a map, an object, a machine or a reference. That bound is what
+lets core's own `kind` declaration state the block field by field, and it is
+the line the dialect draws: anything an edge cannot hold under it is a record
+with an edge at each end.
 
 Two spellings a record property takes are refused here, both because the
 stored row has to be the document that was written. A value is a mapping
 (`{value: writer}`), never the bare word `writer`, and a property is a mapping
 (`{type: int}`), never a bare datatype.
+
+The block evolves under the
+[narrowing](#vocabulary-evolution-and-the-dialect-contract) guards, counted
+over stored edge rows rather than records: dropping a declared edge property,
+retyping one, removing an enum value it holds, and adding `required:` are each
+refused while live edges would be stranded. The edge itself is classified the
+same way. Dropping an edge, taking `many:` off one that holds several rows per
+record, and repointing `to:` at a narrower kind all count the rows they would
+strand.
 
 ## Quarantine
 
