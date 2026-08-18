@@ -133,8 +133,8 @@ func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 	}
 	// The rest of core's version rode the same projection: `trigger` pins
 	// none of its own, so it carries the authority's.
-	if v := kindVersion(t, ds, coreAuthority+"/trigger"); v != 11 {
-		t.Fatalf("trigger is at version %d, want 11", v)
+	if v := kindVersion(t, ds, coreAuthority+"/trigger"); v != 12 {
+		t.Fatalf("trigger is at version %d, want 12", v)
 	}
 	rec, err := ds.Get(ctx, vocabulary.KindRecordPatchPolicy, "gate-puts")
 	if err != nil {
@@ -187,7 +187,7 @@ func TestPolicySelectorOpsUpgradeRefusedByAStrandedSelector(t *testing.T) {
 		t.Fatalf("the stranding policy: %v", err)
 	}
 	// ONE ROW WITHHOLDS THE WHOLE AUTHORITY. The skip is per projection, not
-	// per kind, so core's other version-10 declarations do not land either.
+	// per kind, so core's other version-12 declarations do not land either.
 	// An owner reading the log needs the blast radius to be the authority,
 	// and a narrower skip is a change this assertion sees.
 	if v := kindVersion(t, ds, coreAuthority+"/trigger"); v != 9 {

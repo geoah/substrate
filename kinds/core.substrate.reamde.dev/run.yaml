@@ -24,11 +24,12 @@ data:
   # recorded.
   # version 12: the numeric and constructor invariants of a settled run. Every
   # run belongs to a trigger and names what ran, fired in a mode and settled
-  # in a status, over at least one attempt bounded by a start and a finish, so
-  # those seven are required. `seq` and `attempt` count from 1, an effect count
-  # from 1, and `pages` from 2 (a one-page delivery omits it). A display
-  # template reads a random-id row as its outcome. `error` is renamed `reason`,
-  # the word `llmthread` already uses for why a non-success run settled.
+  # in a status, over a run bounded by a start and a finish, so those seven are
+  # required. `seq` counts from 1 (a changelog seq), an effect count from 1,
+  # and `pages` from 2 (a one-page delivery omits it). `attempt` counts from 0:
+  # a delivery parked at the causal depth cap burns none. A display template
+  # reads a random-id row as its outcome. `error` is renamed `reason`, the word
+  # `llmthread` already uses for why a non-success run settled.
   version: 12
   names:
     singular: run
@@ -79,8 +80,9 @@ data:
     attempt:
       type: int
       required: true
-      min: 1
-      description: how many attempts the delivery burned
+      min: 0
+      description: how many attempts the delivery burned; 0 when it parked
+        at the causal depth cap before any ran
     startedAt:
       type: datetime
       required: true

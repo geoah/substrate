@@ -471,8 +471,13 @@ func TestLLMThreadTitleFollowsItsAgent(t *testing.T) {
 	thread := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/llmthread", ID: "t1",
 		Properties: map[string]any{
-			"agent":  vocabulary.RecordPath("core.substrate.reamde.dev/agent", authority+"/scribe"),
-			"status": "running",
+			"agent":      vocabulary.RecordPath("core.substrate.reamde.dev/agent", authority+"/scribe"),
+			"status":     "running",
+			"mode":       "chat",
+			"provider":   "default",
+			"model":      "test",
+			"agentDepth": 0,
+			"startedAt":  "2026-01-01T00:00:00Z",
 		},
 	})
 	if thread.Title != "scribe: running" {
