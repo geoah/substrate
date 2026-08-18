@@ -109,7 +109,7 @@ POST /tokens          # authenticated mint
 {"label": "backup", "expiresAt": "2027-01-01T00:00:00Z"}
 → 201 {"token": {…}, "secret": "substrate_tok_…"}
 
-GET    /tokens        # → 200 {"tokens": [ … ]} — metadata only, never a hash
+GET    /tokens        # → 200 {"items": [ … ]} — metadata only, never a hash
 DELETE /tokens/{id}   # revoke
 ```
 

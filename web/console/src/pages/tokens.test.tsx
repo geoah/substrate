@@ -55,7 +55,7 @@ describe("TokensPage", () => {
       const method = (init as RequestInit | undefined)?.method ?? "GET"
       const path = String(url)
       if (path === "/tokens" && method === "GET") {
-        return jsonResponse(200, { tokens: TOKENS })
+        return jsonResponse(200, { items: TOKENS })
       }
       if (path === "/tokens" && method === "POST") {
         return jsonResponse(201, MINT)

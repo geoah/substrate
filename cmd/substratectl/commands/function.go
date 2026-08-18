@@ -46,15 +46,13 @@ func (a *app) triggerStatusCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var res struct {
-				Triggers []substrate.TriggerStatus `json:"triggers"`
-			}
+			var res substrate.OperationalList[substrate.TriggerStatus]
 			if err := cl.do(cmd.Context(), http.MethodGet, triggersPath("status"), nil, nil, &res); err != nil {
 				return err
 			}
 			tw := newTable(a.out)
 			fmt.Fprintln(tw, "ID\tKIND\tCALLABLE\tENABLED\tCURSOR\tHEAD\tLAG\tLASTFIRE\tPARKED\tERROR")
-			for _, t := range res.Triggers {
+			for _, t := range res.Items {
 				lastFire := ""
 				if t.LastFire != nil {
 					lastFire = humanAge(a.now(), *t.LastFire)
@@ -212,13 +210,11 @@ func (a *app) triggerRetryCommand() *cobra.Command {
 }
 
 func fetchParked(ctx context.Context, cl *client, id string) ([]substrate.TriggerFailure, error) {
-	var res struct {
-		Parked []substrate.TriggerFailure `json:"parked"`
-	}
+	var res substrate.OperationalList[substrate.TriggerFailure]
 	if err := cl.do(ctx, http.MethodGet, triggersPath(id, "parked"), nil, nil, &res); err != nil {
 		return nil, err
 	}
-	return res.Parked, nil
+	return res.Items, nil
 }
 
 // triggersPath is /api/v1/core.substrate.reamde.dev/trigger/{segments…}. A

@@ -36,7 +36,7 @@ func (h *handler) getCatalog(w http.ResponseWriter, r *http.Request) {
 			items = append(items, h.catalogItemFor(r.Context(), b, installed[b.ID]))
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"catalog": items})
+	writeJSON(w, http.StatusOK, substrate.Listed(items))
 }
 
 // getCatalogItem is one shipped bundle's detail — the closure it installs

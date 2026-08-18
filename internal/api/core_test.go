@@ -34,9 +34,9 @@ func TestTokenListAndRevoke(t *testing.T) {
 
 	rec := env.do(t, http.MethodGet, tokensPath, tok, nil)
 	wantStatus(t, rec, http.StatusOK)
-	out := decodeJSON[tokenListResponse](t, rec)
-	if len(out.Tokens) != 1 || out.Tokens[0].Label != "console" {
-		t.Fatalf("tokens = %+v", out.Tokens)
+	out := decodeJSON[substrate.OperationalList[substrate.TokenInfo]](t, rec)
+	if len(out.Items) != 1 || out.Items[0].Label != "console" {
+		t.Fatalf("tokens = %+v", out.Items)
 	}
 
 	// Revoking IS deleting the record — the same write the generic record

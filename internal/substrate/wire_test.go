@@ -43,6 +43,9 @@ var wireTypes = map[string]any{
 	"PropertyAlternative": PropertyAlternative{},
 	"PutInput":            PutInput{},
 	"Change":              Change{},
+	// The operational-list envelope. Element type does not change the field
+	// names, so any instantiation pins items/cursor.
+	"OperationalList": OperationalList[TokenInfo]{},
 }
 
 // jsonFields lists the wire names a struct serializes, in declaration order. A

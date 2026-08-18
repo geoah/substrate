@@ -7,7 +7,12 @@
 import { queryOptions } from "@tanstack/react-query"
 
 import { rootPath, request, seg } from "./http"
-import type { BundleClosure, BundleStatus, CatalogBundle } from "./types"
+import type {
+  BundleClosure,
+  BundleStatus,
+  CatalogBundle,
+  OperationalList,
+} from "./types"
 
 /** One shipped bundle closure plus whether this repository already installed it
  * (substrate catalog.Bundle + the installed flag). The console's page vocabulary
@@ -21,13 +26,13 @@ const CATALOG = rootPath("catalog")
 export const catalogQueryOptions = queryOptions({
   queryKey: ["catalog"],
   queryFn: async ({ signal }) => {
-    const res = await request<{ catalog?: CatalogItem[] }>(
+    const res = await request<OperationalList<CatalogItem>>(
       "GET",
       CATALOG,
       undefined,
       { signal }
     )
-    return res.catalog ?? []
+    return res.items ?? []
   },
   staleTime: 60_000,
 })

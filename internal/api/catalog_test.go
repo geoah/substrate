@@ -194,15 +194,15 @@ func TestCatalogListSurvivesAFailedUpgradePreview(t *testing.T) {
 		t.Fatalf("catalog list = %d, want 200 (a failed preview must not blank the listing): %s", rec.Code, rec.Body)
 	}
 	body := decodeJSON[struct {
-		Catalog []struct {
+		Items []struct {
 			ID      string                   `json:"id"`
 			Upgrade *substrate.BundleUpgrade `json:"upgrade"`
-		} `json:"catalog"`
+		} `json:"items"`
 	}](t, rec)
-	if len(body.Catalog) == 0 {
+	if len(body.Items) == 0 {
 		t.Fatal("the listing is empty")
 	}
-	for _, item := range body.Catalog {
+	for _, item := range body.Items {
 		if item.Upgrade != nil {
 			t.Errorf("bundle %s carries an upgrade from a failed preview", item.ID)
 		}
@@ -220,16 +220,16 @@ func TestCatalogListReturnsShippedBundles(t *testing.T) {
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	body := decodeJSON[struct {
-		Catalog []struct {
+		Items []struct {
 			ID        string `json:"id"`
 			Name      string `json:"name"`
 			Authority string `json:"authority"`
 			Version   int64  `json:"version"`
 			Installed bool   `json:"installed"`
-		} `json:"catalog"`
+		} `json:"items"`
 	}](t, rec)
 	var found bool
-	for _, item := range body.Catalog {
+	for _, item := range body.Items {
 		if item.ID == webBundleID {
 			found = true
 			if item.Name != "web" || item.Authority != "web.bundles.substrate.reamde.dev" || item.Version != 5 {
@@ -241,7 +241,7 @@ func TestCatalogListReturnsShippedBundles(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("web bundle not in catalog list: %+v", body.Catalog)
+		t.Fatalf("web bundle not in catalog list: %+v", body.Items)
 	}
 }
 
@@ -256,14 +256,14 @@ func TestCatalogListCarriesIntegrationFacet(t *testing.T) {
 	rec := env.do(t, http.MethodGet, "/api/v1/catalog", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	body := decodeJSON[struct {
-		Catalog []struct {
+		Items []struct {
 			ID          string `json:"id"`
 			Integration bool   `json:"integration"`
-		} `json:"catalog"`
+		} `json:"items"`
 	}](t, rec)
 	want := map[string]bool{googleBundleID: true, webBundleID: false}
 	seen := map[string]bool{}
-	for _, item := range body.Catalog {
+	for _, item := range body.Items {
 		if w, ok := want[item.ID]; ok {
 			seen[item.ID] = true
 			if item.Integration != w {

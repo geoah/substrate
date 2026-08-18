@@ -10,7 +10,12 @@
 
 import { request } from "./http"
 import { clearSession, getToken, getTokenId } from "./session"
-import type { MintedToken, TokenInfo, TOTPEnrollment } from "./types"
+import type {
+  MintedToken,
+  OperationalList,
+  TokenInfo,
+  TOTPEnrollment,
+} from "./types"
 
 /** How many digits a TOTP code has; the substrate accepts nothing else. */
 export const CODE_DIGITS = 6
@@ -145,8 +150,8 @@ export async function totpChange(
 
 /** The tokens page's list: metadata only, never the hash. */
 export async function listTokens(): Promise<TokenInfo[]> {
-  const res = await request<{ tokens?: TokenInfo[] }>("GET", "/tokens")
-  return res?.tokens ?? []
+  const res = await request<OperationalList<TokenInfo>>("GET", "/tokens")
+  return res?.items ?? []
 }
 
 /** Mint a token for a script or a device. The secret comes back ONCE. */
