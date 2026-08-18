@@ -17,6 +17,7 @@ data:
   # and `endsAt` closes it. A definition with no recurrence may omit both.
   traits:
     - temporal(range)
+    - recurring
   indices:
     - properties:
         - category

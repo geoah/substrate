@@ -20,7 +20,9 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: calendar.substrate.reamde.dev
 data:
-  version: 2
+  # version 3: `calendareventseries` binds `recurring`, replacing the copied
+  # recurrence/exdates/timezone triple (#122).
+  version: 3
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A VOCABULARY bundle (see people.substrate.reamde.dev): kinds only, imported from the
@@ -36,6 +38,7 @@ data:
     happens when, with attendees pointing at people.
   requires:
     - people.substrate.reamde.dev
+    - scheduling.substrate.reamde.dev
   installs:
     - calendar.substrate.reamde.dev/calendar
     - calendar.substrate.reamde.dev/calendarevent

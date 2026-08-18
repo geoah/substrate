@@ -2448,13 +2448,15 @@ func TestShippedSchemaUsesBlockStyle(t *testing.T) {
 	}
 }
 
-// shippedVocabularyDirs are the four VOCABULARY bundles the binary ships and a
+// shippedVocabularyDirs are the VOCABULARY bundles the binary ships and a
 // repository IMPORTS — the authorities the creation seed used to write and no
-// longer does.
+// longer does. `scheduling` is the traits calendar and tasks bind, so it
+// admits alongside them.
 var shippedVocabularyDirs = []string{
 	"../../kinds/calendar.substrate.reamde.dev",
 	"../../kinds/messaging.substrate.reamde.dev",
 	"../../kinds/people.substrate.reamde.dev",
+	"../../kinds/scheduling.substrate.reamde.dev",
 	"../../kinds/tasks.substrate.reamde.dev",
 }
 
@@ -2504,10 +2506,11 @@ func TestShippedVocabularyBundles(t *testing.T) {
 		t.Fatalf("import the shipped vocabulary: %v", err)
 	}
 	want := map[string]string{
-		"calendar.substrate.reamde.dev":  "calendar.substrate.reamde.dev/calendar",
-		"messaging.substrate.reamde.dev": "messaging.substrate.reamde.dev/messaging",
-		"people.substrate.reamde.dev":    "people.substrate.reamde.dev/people",
-		"tasks.substrate.reamde.dev":     "tasks.substrate.reamde.dev/tasks",
+		"calendar.substrate.reamde.dev":   "calendar.substrate.reamde.dev/calendar",
+		"messaging.substrate.reamde.dev":  "messaging.substrate.reamde.dev/messaging",
+		"people.substrate.reamde.dev":     "people.substrate.reamde.dev/people",
+		"scheduling.substrate.reamde.dev": "scheduling.substrate.reamde.dev/scheduling",
+		"tasks.substrate.reamde.dev":      "tasks.substrate.reamde.dev/tasks",
 	}
 	for _, g := range authorities {
 		id, ok := want[g.Name]

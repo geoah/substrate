@@ -29,10 +29,9 @@ metadata:
 data:
   authority: scheduling.substrate.reamde.dev
   description: >-
-    The two shared scheduling traits: `recurring`, the RRULE and its exceptions
-    stored and never expanded, and `occurrencelog`, the done-or-skipped mark
-    against one occurrence. The repeating kinds and their logs bind these
-    instead of copying the properties.
+    Two shared traits the repeating kinds bind: `recurring`, an RRULE stored
+    and never expanded, and `occurrencelog`, one occurrence marked done or
+    skipped.
   installs:
     - scheduling.substrate.reamde.dev/recurring
     - scheduling.substrate.reamde.dev/occurrencelog
