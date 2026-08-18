@@ -339,12 +339,18 @@ unprivileged, none requiring a container runtime:
 - **seccomp** removes the syscall classes a body has no use for: `ptrace` and
   the other reach-into-another-process calls, the mount APIs, `io_uring`,
   `bpf`, the kernel keyring, module loading, and enforces
-  the network permission: **a function that declares no `permissions.network` is denied
-  `AF_INET` and `AF_INET6` sockets outright.** The enforcement is binary. A
-  syscall filter cannot read the address behind a `connect(2)` pointer, so
-  holding a body to the *specific hosts* it declared needs an egress proxy and
-  is not done yet; what is enforced is the difference between "some egress" and
-  "none".
+  the network permission in two layers. The coarse one: **a function that
+  declares no `permissions.network` is denied `AF_INET` and `AF_INET6` sockets
+  outright.** The fine one: a body that *does* declare network reaches the public
+  internet but not the deployment's own network. A second seccomp filter routes
+  every `connect(2)` to a supervisor in the runner, which refuses loopback,
+  link-local (the cloud metadata address among them) and the RFC1918 ranges
+  where the substrate's Postgres sits, and allows the rest
+  ([0035](decisions/0035-a-network-body-connect-is-filtered-by-destination.md)).
+  A local provider (a loopback Ollama) is re-permitted by listing its address in
+  `SUBSTRATE_SANDBOX_EGRESS_ALLOW`. Holding a body to the *specific hosts* it
+  declared is not done yet; what is enforced is "the internet, not the
+  deployment's own network".
 - **rlimits** cap descriptors and file size, and disable core dumps.
 
 The process environment is separately default-deny: every child starts from a
@@ -380,9 +386,12 @@ quietly does less than it claims is worse than none.
 **What it does not do.** It is not a container. A body still shares a uid and a
 pid namespace with the substrate, so it can signal it. There is no memory or
 process-count ceiling, because that needs a cgroup and `/sys/fs/cgroup` is
-read-only in a stock container. A body that *is* granted network reaches
-loopback, and therefore the substrate's own HTTP port, where it still needs a
-token it does not have. On non-Linux hosts (a macOS laptop running
+read-only in a stock container. A body that *is* granted network has its
+`connect` destinations filtered: the runner connects to the address it verified
+and installs that socket into the body, so a multi-threaded body cannot race the
+destination past the check. One residual remains: a UDP body reaching a private
+service through `sendto` with no `connect` is not filtered (Postgres is TCP, so
+the proven path is closed). On non-Linux hosts (a macOS laptop running
 `mise run dev`) none of it applies, and the boot log says so.
 
 ### Shared modules

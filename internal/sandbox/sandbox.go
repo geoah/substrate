@@ -44,14 +44,22 @@
 // and a uid with the substrate, so it can signal it (Landlock scopes signals
 // only at ABI 6, which the current deployment kernels do not all reach); it has
 // no memory or pid ceiling beyond rlimits, because cgroups are unavailable; and
-// a body GRANTED network reaches loopback, so it can talk to the substrate's
-// own HTTP port. Those are named residual risks, not oversights.
+// a body GRANTED network has its connect destinations filtered
+// (connectgate_linux.go): the runner connects to the address it verified and
+// injects the socket, so a multi-threaded body cannot race the destination past
+// the check. One residual remains: a UDP body reaching a private service through
+// sendto with no connect is not filtered
+// (0035-a-network-body-connect-is-filtered-by-destination). That is a named
+// residual risk, not an oversight.
 package sandbox
 
 import (
 	"fmt"
+	"io"
+	"net/netip"
 	"os/exec"
 	"strings"
+	"sync"
 )
 
 // Mode is how hard the sandbox insists.
@@ -104,11 +112,19 @@ type Policy struct {
 	// reason this package exists.
 	ReadWrite []string `json:"readWrite,omitempty"`
 	// Network grants AF_INET/AF_INET6 sockets. False denies them at the
-	// syscall, which is how `permissions.network` stops being decorative.
-	// It is a binary gate: per-host allowlisting needs an egress proxy, not a
-	// syscall filter, because a filter cannot read the sockaddr behind a
-	// pointer.
+	// syscall, which is how `permissions.network` stops being decorative. This
+	// is the coarse gate: it says whether a body may open an internet socket at
+	// all. Where it goes is NotifyConnect's job.
 	Network bool `json:"network,omitempty"`
+	// NotifyConnect asks the stub to install a seccomp user-notification filter
+	// on connect(2), so the parent can refuse a connection to the deployment's
+	// own private ranges while a body reaches the public internet
+	// (0035-a-network-body-connect-is-filtered-by-destination). It rides with
+	// Network: a body that may open a socket has its destinations filtered.
+	// NotifyFD is the child descriptor the stub sends the listener back on, set
+	// by Wrap, never by a caller.
+	NotifyConnect bool `json:"notifyConnect,omitempty"`
+	NotifyFD      int  `json:"notifyFD,omitempty"`
 	// NoFile, FileSize bound the cheap things rlimits actually bound well.
 	// RLIMIT_AS and RLIMIT_NPROC are deliberately absent: AS counts virtual
 	// address space, which the Go runtime and CPython reserve far more of than
@@ -198,7 +214,27 @@ func (r Report) String() string {
 type Confiner struct {
 	mode   Mode
 	report Report
+	// resolvers are the nameservers from /etc/resolv.conf, allowed on port 53
+	// so name resolution through a loopback stub survives the connect filter.
+	// Resolved once at New.
+	resolvers []netip.Addr
+	// pending holds the parent end of each connect-gate socket between Wrap and
+	// Serve, keyed by the *exec.Cmd Wrap set it up for.
+	pending sync.Map
 }
+
+// noopCloser is what Serve returns when a command has no connect gate.
+type noopCloser struct{}
+
+func (noopCloser) Close() error { return nil }
+
+// Serve starts the connect-destination supervisor for a command Wrap set up,
+// and must be called AFTER the command has started: the stub sends the seccomp
+// listener descriptor back during startup, and Serve receives it and services
+// notifications until the returned closer is closed (or the body exits). A
+// command with no connect gate (no network, or a platform without the filter)
+// returns a no-op closer. The caller closes it when the child is torn down.
+func (c *Confiner) Serve(cmd *exec.Cmd) (io.Closer, error) { return c.serve(cmd) }
 
 // Mode is the configured mode.
 func (c *Confiner) Mode() Mode { return c.mode }

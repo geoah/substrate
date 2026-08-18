@@ -3,6 +3,7 @@
 package sandbox
 
 import (
+	"io"
 	"os/exec"
 	"runtime"
 )
@@ -21,3 +22,5 @@ func New(mode Mode) *Confiner {
 }
 
 func (c *Confiner) wrap(*exec.Cmd, Policy) error { return nil }
+
+func (c *Confiner) serve(*exec.Cmd) (io.Closer, error) { return noopCloser{}, nil }

@@ -179,3 +179,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0032](0032-an-owner-pointer-may-be-a-reference-and-a-mirror-account-is-one.md) | An owner pointer may be a reference, and a mirror's `account` is one | accepted |
 | [0033](0033-the-path-grammar-has-no-separators.md) | The path grammar carries no separators; a record's URL is its reference | accepted |
 | [0034](0034-a-reference-may-pin-a-trait-not-only-a-kind.md) | A reference may pin a trait, not only a kind | accepted |
+| [0035](0035-a-network-body-connect-is-filtered-by-destination.md) | A network-granted body's connect is filtered by destination | accepted |

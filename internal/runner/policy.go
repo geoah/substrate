@@ -98,14 +98,16 @@ func policyFor(spec Spec, work string, readExec ...string) sandbox.Policy {
 		ReadExec:  append(append([]string{}, systemReadExec...), readExec...),
 		ReadOnly:  systemReadOnly,
 		ReadWrite: append([]string{work}, deviceReadWrite...),
-		// The whole enforcement of `permissions.network`: a manifest that
-		// declares no egress gets none, at the syscall. It is binary on
-		// purpose: a syscall filter cannot read the sockaddr behind a
-		// pointer, so per-host allowlisting needs an egress proxy, and
-		// pretending otherwise would be worse than saying so.
-		Network:  len(spec.Network) > 0,
-		NoFile:   childNoFile,
-		FileSize: childFileSize,
+		// `permissions.network` in two layers. Network is the coarse gate: no
+		// declaration, no internet socket, at the syscall. NotifyConnect narrows
+		// the granted case to destinations off the deployment's own network, so
+		// a body cannot reach the substrate's Postgres or metadata endpoint
+		// (0035-a-network-body-connect-is-filtered-by-destination). Both ride the
+		// same declaration.
+		Network:       len(spec.Network) > 0,
+		NotifyConnect: len(spec.Network) > 0,
+		NoFile:        childNoFile,
+		FileSize:      childFileSize,
 	}
 }
 
@@ -180,9 +182,14 @@ func provisionPolicy(work, uvCache string, bins ...string) sandbox.Policy {
 		ReadExec:  readExec,
 		ReadOnly:  systemReadOnly,
 		ReadWrite: append([]string{work, uvCache}, deviceReadWrite...),
-		Network:   true,
-		NoFile:    childNoFile,
-		FileSize:  childFileSize,
+		// A resolve genuinely needs the network (that is what a resolve is), but
+		// a PEP 517 build backend runs here too, so the destination filter
+		// applies: the resolve reaches package indexes, not the deployment's own
+		// Postgres.
+		Network:       true,
+		NotifyConnect: true,
+		NoFile:        childNoFile,
+		FileSize:      childFileSize,
 	}
 }
 

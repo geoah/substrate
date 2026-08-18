@@ -76,6 +76,15 @@ func stubMain(encoded string, argv []string) {
 	if err := applySeccomp(p); err != nil {
 		dief("seccomp: %v", err)
 	}
+	// The connect gate is installed AFTER the main filter: it is a second,
+	// stacked filter, and the main filter permits the seccomp(2) and sendmsg(2)
+	// calls it needs. Only when the parent set up a socket to receive the
+	// listener on.
+	if p.NotifyConnect && p.NotifyFD >= 3 {
+		if err := installConnectGate(p.NotifyFD); err != nil {
+			dief("connect gate: %v", err)
+		}
+	}
 
 	target, err := exec.LookPath(argv[0])
 	if err != nil {
@@ -94,9 +103,11 @@ func dief(format string, args ...any) {
 }
 
 // New probes the kernel once and returns the confiner every child goes
-// through.
+// through. The resolver addresses are read here, once, so the connect gate can
+// let name resolution through a loopback stub without reparsing resolv.conf per
+// connection.
 func New(mode Mode) *Confiner {
-	return &Confiner{mode: mode, report: probe()}
+	return &Confiner{mode: mode, report: probe(), resolvers: loadResolvers()}
 }
 
 // probe asks the kernel what it actually supports. Landlock answers its own
@@ -134,6 +145,24 @@ func (c *Confiner) wrap(cmd *exec.Cmd, p Policy) error {
 	}
 	// enforce means the CHILD refuses too, not just the boot probe.
 	p.Require = c.mode == ModeEnforce
+	// The connect gate needs a live seccomp layer to install its notify filter.
+	// Without seccomp there is nothing to service, so drop it rather than set up
+	// a socket the stub can never send on (which would hang Serve). Under
+	// enforce, Wrap already refused a missing seccomp layer before reaching here.
+	if p.NotifyConnect && c.report.Seccomp {
+		sp, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_DGRAM|unix.SOCK_CLOEXEC, 0)
+		if err != nil {
+			return fmt.Errorf("sandbox: connect-gate socketpair: %w", err)
+		}
+		parent := os.NewFile(uintptr(sp[0]), "connect-gate")
+		child := os.NewFile(uintptr(sp[1]), "connect-gate-child")
+		// The child's descriptor number after os/exec dups the ExtraFiles in.
+		p.NotifyFD = 3 + len(cmd.ExtraFiles)
+		cmd.ExtraFiles = append(cmd.ExtraFiles, child)
+		c.pending.Store(cmd, &pendingGate{parent: parent, child: child})
+	} else {
+		p.NotifyConnect = false
+	}
 	raw, err := json.Marshal(p)
 	if err != nil {
 		return err

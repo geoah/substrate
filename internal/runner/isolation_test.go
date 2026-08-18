@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -47,13 +48,13 @@ func requireSeccomp(t *testing.T, r *Runner) {
 	sandboxtest.Case(t)
 }
 
-// Eight cases below guard on the confinement, and under
-// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly eight must reach that guard: a kernel
+// Ten cases below guard on the confinement, and under
+// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly ten must reach that guard: a kernel
 // or image change that turns them into skips cannot leave a green build
-// behind, and a ninth case cannot be added, or one of the eight removed,
+// behind, and an eleventh case cannot be added, or one of the ten removed,
 // without this number moving with it.
 func TestMain(m *testing.M) {
-	os.Exit(sandboxtest.Run(m, 8))
+	os.Exit(sandboxtest.Run(m, 10))
 }
 
 // The exploit that motivated retiring the shared interpreter: a function in
@@ -618,5 +619,170 @@ def main(input, host):
 	out, _ = res.Output.(map[string]any)
 	if out["packet"] != "denied" {
 		t.Errorf("a body declaring egress opened a raw packet socket: %v", out["packet"])
+	}
+}
+
+// The exploit #239 named: a network-granted body reaching the deployment's own
+// Postgres. `permissions.network` must mean "reach the internet", not "reach
+// anything the substrate's network routes to". A body may open a socket (the
+// coarse gate lets it), but the connect destination is filtered: loopback and
+// the RFC1918 ranges (where the deployment's Postgres sits) are refused with
+// EACCES, while a public address is not refused by the gate. The gate answers
+// EACCES (errno 13); a live loopback LISTENER makes the refusal unambiguous, and
+// the public address is asserted only NOT to draw the gate's EACCES, so the case
+// is deterministic offline (the kernel's own ETIMEDOUT is not the gate).
+func TestNetworkBodyCannotReachTheDeploymentsOwnRanges(t *testing.T) {
+	r := New()
+	requireSeccomp(t, r)
+
+	// A listener on loopback stands in for the deployment's Postgres: the same
+	// class of address, reachable from the shared network namespace. It is up,
+	// so only the gate can refuse a connection to it.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
+	_, loopPort, _ := net.SplitHostPort(ln.Addr().String())
+
+	const probe = `
+import socket
+def dial(host, port):
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(5)
+        s.connect((host, int(port)))
+        s.close()
+        return "ok"
+    except OSError as e:
+        return "err:%s" % e.errno
+def main(input, host):
+    a = input["args"]
+    return {"output": {
+        "loopback": dial("127.0.0.1", a["loopPort"]),
+        "private": dial("10.255.255.1", "5432"),
+        "public": dial("1.1.1.1", "443"),
+    }}
+`
+	spec := Spec{
+		Repository: "t1", Function: "egress.g.test", Runtime: "python",
+		Source: probe, TimeoutMs: 20000, Network: []string{"api.example.com"},
+	}
+	in := testInput()
+	in.Args = map[string]any{"loopPort": loopPort}
+	res, err := r.Invoke(context.Background(), spec, in, nil)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, ok := res.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected output: %#v", res.Output)
+	}
+
+	const eacces = "err:13"
+	if got, _ := out["loopback"].(string); got != eacces {
+		t.Errorf("a network body reached a live loopback service: %v (want %s)", out["loopback"], eacces)
+	}
+	if got, _ := out["private"].(string); got != eacces {
+		t.Errorf("a network body reached an RFC1918 address: %v (want %s)", out["private"], eacces)
+	}
+	// The public address must not draw the gate's own refusal. It may connect,
+	// time out, or be unreachable, but the gate itself let it through.
+	if got, _ := out["public"].(string); got == eacces {
+		t.Errorf("the gate refused a public address: %v", out["public"])
+	}
+}
+
+// The TOCTOU race the ADDFD design closes. A multi-threaded body loops raw
+// connect(2) against a SHARED sockaddr buffer while another thread flips that
+// buffer between an allowed public address and a live loopback listener. The
+// old CONTINUE allow-path re-read the buffer in the kernel after the check, so a
+// flip that landed in that window reached the listener; the ADDFD path reads the
+// address once and connects to that value itself, so a connect that is allowed
+// can only reach the address the runner verified. The listener must accept
+// nothing, across thousands of iterations.
+func TestNetworkBodyCannotRaceTheConnectAddress(t *testing.T) {
+	r := New()
+	requireSeccomp(t, r)
+
+	var accepts atomic.Int64
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			accepts.Add(1)
+			_ = c.Close()
+		}
+	}()
+	_, blockedPort, _ := net.SplitHostPort(ln.Addr().String())
+
+	const probe = `
+import ctypes, socket, struct, threading
+libc = ctypes.CDLL(None, use_errno=True)
+def sa_in(ip, port):
+    return struct.pack("=H", socket.AF_INET) + struct.pack("!H", port) + socket.inet_aton(ip) + b"\x00" * 8
+def main(input, host):
+    a = input["args"]
+    bp = int(a["blockedPort"])
+    allowed = sa_in("1.1.1.1", 443)
+    blocked = sa_in("127.0.0.1", bp)
+    buf = ctypes.create_string_buffer(bytes(allowed), 16)
+    stop = threading.Event()
+    def flip():
+        while not stop.is_set():
+            ctypes.memmove(buf, blocked, 16)
+            ctypes.memmove(buf, allowed, 16)
+    t = threading.Thread(target=flip, daemon=True); t.start()
+    hits, iters = 0, 4000
+    for _ in range(iters):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setblocking(False)
+        try:
+            libc.connect(s.fileno(), buf, 16)
+            try:
+                peer = s.getpeername()
+                if peer[0] == "127.0.0.1" and peer[1] == bp:
+                    hits += 1
+            except OSError:
+                pass
+        finally:
+            s.close()
+    stop.set(); t.join(timeout=1)
+    return {"output": {"hits": hits, "iters": iters}}
+`
+	spec := Spec{
+		Repository: "t1", Function: "race.g.test", Runtime: "python",
+		Source: probe, TimeoutMs: 30000, Network: []string{"api.example.com"},
+	}
+	in := testInput()
+	in.Args = map[string]any{"blockedPort": blockedPort}
+	res, err := r.Invoke(context.Background(), spec, in, nil)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, _ := res.Output.(map[string]any)
+	// The listener is the ground truth: no connection may ever reach it.
+	if got := accepts.Load(); got != 0 {
+		t.Fatalf("a raced connect reached the blocked loopback listener %d time(s)", got)
+	}
+	// And the body never saw its own socket pointed at the blocked peer.
+	if hits, _ := out["hits"].(float64); hits != 0 {
+		t.Fatalf("a body socket reached the blocked address %v times", hits)
 	}
 }
