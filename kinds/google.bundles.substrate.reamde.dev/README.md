@@ -346,7 +346,7 @@ shipped here):
    redirect URI — the OAuth facility's callback:
 
    ```
-   https://<your-substrate-host>/api/v1/core.substrate.reamde.dev/oauth/callback
+   https://<your-substrate-host>/api/v1/oauth/callback
    ```
 
    (The value is the host's `SUBSTRATE_OAUTH_CALLBACK_URL`.) This is the URI
@@ -357,7 +357,7 @@ shipped here):
    `tokenStatus: pending`.
 
 4. **Connect.** Run the host OAuth flow against the account
-   (`substratectl bundle connect`, or `POST …/core.substrate.reamde.dev/oauth/start
+   (`substratectl bundle connect`, or `POST …/oauth/start
    {"record": "<accountId>"}`) → consent at Google → the callback stores the
    grant, sets `tokenStatus: connected`, and each enabled stream's on-connect
    trigger fires its first backfill.

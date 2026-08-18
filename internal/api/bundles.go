@@ -70,31 +70,134 @@ func (h *handler) bundleLifecycleGate(w http.ResponseWriter, r *http.Request, op
 	return authority, true
 }
 
-// postBundleVerb runs one reversible lifecycle verb (disable/enable) then
-// answers with the refreshed status. Uninstall does NOT use this — it deletes
-// the bundle row, so there is no status to reload (postBundleUninstall).
-func (h *handler) postBundleVerb(verb func(substrate.BundleOps, context.Context, string) error) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ops, ok := bundlesFrom(r.Context())
-		if !ok {
-			writeNoBundles(w)
+// bundleStateProps are the bundle's runtime-state properties, the transitions a
+// PATCH of the bundle record carries. They are managed properties the engine
+// writes, never authored, so a PATCH names exactly one and the handler runs the
+// matching lifecycle op behind the exclusive fence.
+const (
+	propBundleDisabled    = "disabled"
+	propBundleUninstalled = "uninstalled"
+	propBundlePurging     = "purging"
+)
+
+// patchBundleLifecycle runs one bundle lifecycle transition, expressed as a
+// PATCH of the bundle record's runtime state (decision 0019). It reads exactly
+// one state property and dispatches:
+//
+//	disabled: true    disable — execution stopped, reversible
+//	disabled: false   enable — reverses a disable
+//	uninstalled: true uninstall — runtime registration removed, data stays
+//	purging: true     purge — the owned authority's data tombstoned
+//
+// Disable, enable and bind answer with the refreshed status; uninstall removes
+// the row (no status to reload) and acks {"uninstalled": true}; purge answers
+// with the tombstoned count. The guards live in the engine ops, unchanged.
+func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, id string) {
+	ops, ok := bundlesFrom(r.Context())
+	if !ok {
+		writeNoBundles(w)
+		return
+	}
+	var in substrate.PatchInput
+	if err := decodeBody(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
+		return
+	}
+	// A bundle PATCH carries a state transition and nothing else: the authored
+	// properties are the declaration, maintained by an apply, never patched.
+	if len(in.Labels) > 0 || len(in.Annotations) > 0 || len(in.AddFinalizers) > 0 || len(in.RemoveFinalizers) > 0 {
+		writeError(w, http.StatusBadRequest, codeBadRequest,
+			"a bundle PATCH carries one lifecycle state — "+propBundleDisabled+", "+
+				propBundleUninstalled+" or "+propBundlePurging)
+		return
+	}
+	// ifVersion is refused, not ignored: a lifecycle transition runs an engine
+	// op (DisableBundle and its siblings) that holds the exclusive fence and
+	// takes no compare-and-set, so honoring a precondition here would be a lie.
+	// A client that meant a CAS gets told it does not apply rather than a false
+	// success.
+	if in.IfVersion != nil {
+		writeError(w, http.StatusBadRequest, codeBadRequest,
+			"ifVersion is not supported on a bundle lifecycle transition")
+		return
+	}
+	if len(in.Properties) != 1 {
+		writeError(w, http.StatusBadRequest, codeBadRequest,
+			"a bundle PATCH sets exactly one lifecycle state — "+propBundleDisabled+", "+
+				propBundleUninstalled+" or "+propBundlePurging)
+		return
+	}
+	// Resolve the bundle by the id the PATCH addresses. The generic patch route
+	// binds it as `a3` (addr.id), not the `{id}` chi param the bind sub-path
+	// uses, so this cannot reuse bundleLifecycleGate — that reads `pathParam
+	// "id"`, which is empty here.
+	if _, err := ops.BundleAuthority(r.Context(), id); err != nil {
+		writeSubstrateError(w, err)
+		return
+	}
+	ctx := r.Context()
+	switch {
+	case has(in.Properties, propBundleDisabled):
+		var disable bool
+		switch v := in.Properties[propBundleDisabled].(type) {
+		case bool:
+			disable = v
+		case nil:
+			// Clearing the flag enables, the PATCH-null-deletes convention.
+			disable = false
+		default:
+			writeError(w, http.StatusBadRequest, codeBadRequest, propBundleDisabled+" is a bool")
 			return
 		}
-		if _, ok := h.bundleLifecycleGate(w, r, ops); !ok {
-			return
+		var err error
+		if disable {
+			err = ops.DisableBundle(ctx, id)
+		} else {
+			err = ops.EnableBundle(ctx, id)
 		}
-		id := pathParam(r, "id")
-		if err := verb(ops, r.Context(), id); err != nil {
+		if err != nil {
 			writeSubstrateError(w, err)
 			return
 		}
-		st, err := ops.BundleStatus(r.Context(), id)
+		st, err := ops.BundleStatus(ctx, id)
 		if err != nil {
 			writeSubstrateError(w, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, st)
+	case has(in.Properties, propBundleUninstalled):
+		if v, ok := in.Properties[propBundleUninstalled].(bool); !ok || !v {
+			writeError(w, http.StatusBadRequest, codeBadRequest, propBundleUninstalled+" transitions only to true")
+			return
+		}
+		if err := ops.UninstallBundle(ctx, id); err != nil {
+			writeSubstrateError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"uninstalled": true})
+	case has(in.Properties, propBundlePurging):
+		if v, ok := in.Properties[propBundlePurging].(bool); !ok || !v {
+			writeError(w, http.StatusBadRequest, codeBadRequest, propBundlePurging+" transitions only to true")
+			return
+		}
+		purged, err := ops.PurgeBundle(ctx, id)
+		if err != nil {
+			writeSubstrateError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"purged": purged})
+	default:
+		writeError(w, http.StatusBadRequest, codeBadRequest,
+			"unknown bundle lifecycle state — set "+propBundleDisabled+", "+
+				propBundleUninstalled+" or "+propBundlePurging)
 	}
+}
+
+// has reports whether a key is present, so a `null` value (enable spelled
+// `disabled: null`) is told from an absent key.
+func has(m map[string]any, key string) bool {
+	_, ok := m[key]
+	return ok
 }
 
 // postBundleBind points one input at a chosen record, or clears the choice
@@ -132,47 +235,6 @@ func (h *handler) postBundleBind(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
-}
-
-// postBundleUninstall tears the bundle down and acks with a tombstone (codex
-// regress #4). Uninstall deletes the bundle registry/schema row, so reloading
-// its status afterward — as the generic verb handler does — always 404s and
-// turned a SUCCESSFUL uninstall into a client error. There is no status to
-// return; success is the acknowledgement {"uninstalled": true}.
-func (h *handler) postBundleUninstall(w http.ResponseWriter, r *http.Request) {
-	ops, ok := bundlesFrom(r.Context())
-	if !ok {
-		writeNoBundles(w)
-		return
-	}
-	if _, ok := h.bundleLifecycleGate(w, r, ops); !ok {
-		return
-	}
-	if err := ops.UninstallBundle(r.Context(), pathParam(r, "id")); err != nil {
-		writeSubstrateError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"uninstalled": true})
-}
-
-// postBundlePurge tombstones the bundle's authority data; the response carries
-// the count so the "separately confirmed" verb answers with its blast
-// radius.
-func (h *handler) postBundlePurge(w http.ResponseWriter, r *http.Request) {
-	ops, ok := bundlesFrom(r.Context())
-	if !ok {
-		writeNoBundles(w)
-		return
-	}
-	if _, ok := h.bundleLifecycleGate(w, r, ops); !ok {
-		return
-	}
-	purged, err := ops.PurgeBundle(r.Context(), pathParam(r, "id"))
-	if err != nil {
-		writeSubstrateError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"purged": purged})
 }
 
 // getTraitImplementors lists the record types implementing a trait — the

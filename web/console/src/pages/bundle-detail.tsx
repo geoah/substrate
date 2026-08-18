@@ -433,7 +433,7 @@ function SetupItemRow({ item, types }: { item: SetupItem; types: KindInfo[] }) {
         ? kindByIdentity(types, item.kind)
         : undefined
   const authority = item.code === "provider" ? CORE_AUTHORITY : kind?.authority
-  const plural = item.code === "provider" ? "llmproviders" : kind?.plural
+  const plural = item.code === "provider" ? "llmprovider" : kind?.name
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border border-warning/40 px-4 py-2.5">
       <p className="flex min-w-0 items-center gap-2 text-xs text-warning">
@@ -442,8 +442,8 @@ function SetupItemRow({ item, types }: { item: SetupItem; types: KindInfo[] }) {
       </p>
       {item.record && authority && plural && (
         <Link
-          to="/data/$authority/$plural/$id"
-          params={{ authority, plural, id: item.record }}
+          to="/data/$authority/$name/$id"
+          params={{ authority, name: plural, id: item.record }}
           className="inline-flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground underline-offset-4 hover:underline"
         >
           <span className="data">{item.record}</span>
@@ -476,7 +476,7 @@ function InputCard({
   const records = useQuery({
     ...recordsQueryOptions({
       authority,
-      plural: kind?.plural ?? "",
+      name: kind?.name ?? "",
       first: 50,
     }),
     enabled: Boolean(kind),
@@ -532,8 +532,8 @@ function InputCard({
               <span className="data">{input.via}</span>
               {kind && (
                 <Link
-                  to="/data/$authority/$plural/$id"
-                  params={{ authority, plural: kind.plural, id: input.record }}
+                  to="/data/$authority/$name/$id"
+                  params={{ authority, name: kind.name, id: input.record }}
                   className="inline-flex items-center gap-0.5 underline-offset-4 hover:underline"
                 >
                   record
@@ -885,10 +885,10 @@ function AccountRow({
           </span>
           {type && (
             <Link
-              to="/data/$authority/$plural/$id"
+              to="/data/$authority/$name/$id"
               params={{
                 authority: authority,
-                plural: type.plural,
+                name: type.name,
                 id: account.id,
               }}
               className="inline-flex items-center gap-0.5 text-muted-foreground underline-offset-4 hover:underline"
@@ -1105,9 +1105,9 @@ function AccountsSection({
  * no count — a bounded keyset walk over the list cursor, capped as N+). A kind
  * the registry has not resolved to a collection has no count to walk. */
 function KindRowCount({ row }: { row: KindRow }) {
-  const resolved = Boolean(row.authority && row.plural)
+  const resolved = Boolean(row.authority && row.name)
   const count = useQuery({
-    ...recordCountQueryOptions(row.authority ?? "", row.plural ?? ""),
+    ...recordCountQueryOptions(row.authority ?? "", row.name ?? ""),
     enabled: resolved,
   })
   if (!resolved || count.isError) {
@@ -1146,10 +1146,10 @@ function kindColumns(): DataTableColumn<KindRow>[] {
         )
         return (
           <div className="min-w-0">
-            {t.authority && t.plural ? (
+            {t.authority && t.name ? (
               <Link
-                to="/data/$authority/$plural"
-                params={{ authority: t.authority, plural: t.plural }}
+                to="/data/$authority/$name"
+                params={{ authority: t.authority, name: t.name }}
                 className="underline-offset-4 hover:underline"
               >
                 {name}
@@ -1225,8 +1225,8 @@ function ShippedRecordName({
   }
   return (
     <Link
-      to="/data/$authority/$plural/$id"
-      params={{ authority: k.authority, plural: k.plural, id: row.id }}
+      to="/data/$authority/$name/$id"
+      params={{ authority: k.authority, name: k.name, id: row.id }}
       className="block min-w-0 underline-offset-4 hover:underline"
     >
       {name}
@@ -1457,10 +1457,10 @@ export function BundleDetailPage() {
           </div>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
             <Link
-              to="/data/$authority/$plural/$id"
+              to="/data/$authority/$name/$id"
               params={{
                 authority: "core.substrate.reamde.dev",
-                plural: "bundles",
+                name: "bundle",
                 id: bundle.id,
               }}
               className="inline-flex items-center gap-0.5 underline-offset-4 hover:underline"

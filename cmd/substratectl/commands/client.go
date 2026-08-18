@@ -29,8 +29,18 @@ const (
 	// trigger delivery verbs hang off it.
 	coreAuthority = "core.substrate.reamde.dev"
 
-	pluralKinds   = "kinds"
-	pluralChanges = "changes"
+	// nameKind is the registry collection, the `kind` kind's own name; the
+	// meta-kind is core.substrate.reamde.dev/kind, self-describing the way a
+	// CRD is, so its collection needs no prefix.
+	nameKind = "kind"
+)
+
+// The repository-wide endpoints that name no kind sit at the version root, out
+// of the kind namespace (decision 0033).
+const (
+	pathChanges    = apiPrefix + "/changes"
+	pathVocabulary = apiPrefix + "/vocabulary/apply"
+	pathOAuthStart = apiPrefix + "/oauth/start"
 )
 
 // The door sits BESIDE the versioned API and outside every prefix:
@@ -67,16 +77,16 @@ func newClient(server, token string, hc *http.Client) *client {
 }
 
 // collectionPath is the kind reference AS a path:
-// /api/v1/{authority}/{plural} for a published kind, /api/v1/{plural} for a
+// /api/v1/{authority}/{kind} for a published kind, /api/v1/{kind} for a
 // repository-local one — the same two forms the reference itself has. Every id
 // segment is escaped, so a record id carrying a slash arrives as %2F rather
 // than as another path segment.
-func collectionPath(authority, plural string, id ...string) string {
+func collectionPath(authority, kind string, id ...string) string {
 	p := apiPrefix
 	if authority != "" {
 		p += "/" + authority
 	}
-	p += "/" + plural
+	p += "/" + kind
 	for _, seg := range id {
 		p += "/" + url.PathEscape(seg)
 	}
@@ -225,9 +235,9 @@ type recordPage struct {
 	Cursor  string              `json:"cursor,omitempty"`
 }
 
-func (c *client) list(ctx context.Context, authority, plural string, q url.Values) (*recordPage, error) {
+func (c *client) list(ctx context.Context, authority, kind string, q url.Values) (*recordPage, error) {
 	var page recordPage
-	if err := c.do(ctx, http.MethodGet, collectionPath(authority, plural), q, nil, &page); err != nil {
+	if err := c.do(ctx, http.MethodGet, collectionPath(authority, kind), q, nil, &page); err != nil {
 		return nil, err
 	}
 	return &page, nil
@@ -243,18 +253,18 @@ type recordRead struct {
 	PropertyMeta map[string]statusProperty `json:"propertyMeta"`
 }
 
-func (c *client) get(ctx context.Context, authority, plural, id string) (*substrate.Record, map[string]statusProperty, error) {
+func (c *client) get(ctx context.Context, authority, kind, id string) (*substrate.Record, map[string]statusProperty, error) {
 	var e recordRead
-	if err := c.do(ctx, http.MethodGet, collectionPath(authority, plural, id), nil, nil, &e); err != nil {
+	if err := c.do(ctx, http.MethodGet, collectionPath(authority, kind, id), nil, nil, &e); err != nil {
 		return nil, nil, err
 	}
 	return &e.Record, e.PropertyMeta, nil
 }
 
-func (c *client) put(ctx context.Context, authority, plural, id string, in substrate.PutInput) (*substrate.Record, error) {
-	method, path := http.MethodPost, collectionPath(authority, plural)
+func (c *client) put(ctx context.Context, authority, kind, id string, in substrate.PutInput) (*substrate.Record, error) {
+	method, path := http.MethodPost, collectionPath(authority, kind)
 	if id != "" {
-		method, path = http.MethodPut, collectionPath(authority, plural, id)
+		method, path = http.MethodPut, collectionPath(authority, kind, id)
 	}
 	var e substrate.Record
 	if err := c.do(ctx, method, path, nil, in, &e); err != nil {
@@ -263,17 +273,17 @@ func (c *client) put(ctx context.Context, authority, plural, id string, in subst
 	return &e, nil
 }
 
-func (c *client) patch(ctx context.Context, authority, plural, id string, in substrate.PatchInput) (*substrate.Record, error) {
+func (c *client) patch(ctx context.Context, authority, kind, id string, in substrate.PatchInput) (*substrate.Record, error) {
 	var e substrate.Record
-	if err := c.do(ctx, http.MethodPatch, collectionPath(authority, plural, id), nil, in, &e); err != nil {
+	if err := c.do(ctx, http.MethodPatch, collectionPath(authority, kind, id), nil, in, &e); err != nil {
 		return nil, err
 	}
 	return &e, nil
 }
 
-func (c *client) delete(ctx context.Context, authority, plural, id string) (*substrate.Record, error) {
+func (c *client) delete(ctx context.Context, authority, kind, id string) (*substrate.Record, error) {
 	var e substrate.Record
-	if err := c.do(ctx, http.MethodDelete, collectionPath(authority, plural, id), nil, nil, &e); err != nil {
+	if err := c.do(ctx, http.MethodDelete, collectionPath(authority, kind, id), nil, nil, &e); err != nil {
 		return nil, err
 	}
 	return &e, nil
@@ -281,13 +291,13 @@ func (c *client) delete(ctx context.Context, authority, plural, id string) (*sub
 
 // link adds one outgoing edge to the source record via the resource's edge
 // verb (POST …/{id}/edges/{rel}); the refreshed source record comes back.
-func (c *client) link(ctx context.Context, authority, plural, id, rel string, to substrate.EdgeRef, props map[string]any) (*substrate.Record, error) {
+func (c *client) link(ctx context.Context, authority, kind, id, rel string, to substrate.EdgeRef, props map[string]any) (*substrate.Record, error) {
 	body := struct {
 		substrate.EdgeRef
 		Properties map[string]any `json:"properties,omitempty"`
 	}{EdgeRef: to, Properties: props}
 	var e substrate.Record
-	if err := c.do(ctx, http.MethodPost, collectionPath(authority, plural, id, "edges", rel), nil, body, &e); err != nil {
+	if err := c.do(ctx, http.MethodPost, collectionPath(authority, kind, id, "edges", rel), nil, body, &e); err != nil {
 		return nil, err
 	}
 	return &e, nil
@@ -295,9 +305,9 @@ func (c *client) link(ctx context.Context, authority, plural, id, rel string, to
 
 // unlink removes one outgoing edge from the source record (DELETE
 // …/{id}/edges/{rel}); the refreshed source record comes back.
-func (c *client) unlink(ctx context.Context, authority, plural, id, rel string, to substrate.EdgeRef) (*substrate.Record, error) {
+func (c *client) unlink(ctx context.Context, authority, kind, id, rel string, to substrate.EdgeRef) (*substrate.Record, error) {
 	var e substrate.Record
-	if err := c.do(ctx, http.MethodDelete, collectionPath(authority, plural, id, "edges", rel), nil, to, &e); err != nil {
+	if err := c.do(ctx, http.MethodDelete, collectionPath(authority, kind, id, "edges", rel), nil, to, &e); err != nil {
 		return nil, err
 	}
 	return &e, nil
@@ -310,7 +320,7 @@ func (c *client) applyVocabulary(ctx context.Context, docs []map[string]any) ([]
 		Records []*substrate.Record `json:"records"`
 	}
 	body := map[string]any{"documents": docs}
-	if err := c.do(ctx, http.MethodPost, apiPrefix+"/"+coreAuthority+"/vocabulary/apply", nil, body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, pathVocabulary, nil, body, &out); err != nil {
 		return nil, err
 	}
 	return out.Records, nil

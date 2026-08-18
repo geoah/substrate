@@ -39,7 +39,7 @@ function kindDescription(k: KindInfo): string | undefined {
 }
 
 function CountCell({ kind }: { kind: KindInfo }) {
-  const count = useQuery(recordCountQueryOptions(kind.authority, kind.plural))
+  const count = useQuery(recordCountQueryOptions(kind.authority, kind.name))
   if (count.isPending) {
     return <Skeleton className="ml-auto h-3.5 w-10" />
   }
@@ -63,8 +63,8 @@ function buildColumns(authority: string): DataTableColumn<KindInfo>[] {
       ),
       cell: ({ row }) => (
         <Link
-          to="/data/$authority/$plural"
-          params={{ authority: authority, plural: row.original.plural }}
+          to="/data/$authority/$name"
+          params={{ authority: authority, name: row.original.name }}
           className="block truncate data underline-offset-4 hover:underline"
           onClick={(e) => e.stopPropagation()}
         >
@@ -189,8 +189,8 @@ export function AuthorityPage() {
           table={table}
           onRowClick={(k) =>
             void navigate({
-              to: "/data/$authority/$plural",
-              params: { authority: authority, plural: k.plural },
+              to: "/data/$authority/$name",
+              params: { authority: authority, name: k.name },
             })
           }
         />

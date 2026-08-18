@@ -194,7 +194,7 @@ newline-delimited JSON (`application/x-ndjson`), opened with a bookmark you can
 resume from, so a consumer that disconnects misses nothing:
 
 ```http
-GET /api/v1/core.substrate.reamde.dev/changes?from=4189&watch=1
+GET /api/v1/changes?from=4189&watch=1
 
 {"bookmark": 4189}
 {"seq": 4190, "op": "put", "kind": "tasks.substrate.reamde.dev/task",

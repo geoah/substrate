@@ -15,31 +15,40 @@ differ, [REST and GraphQL](#rest-and-graphql) below lists how.
 ## REST resources
 
 Every authority serves the same routes; the collection segment is the kind's
-declared plural:
+**name**, so a record's path after `/api/v1/` is exactly its
+[reference](data-model.md#kinds-and-references) value
+([decision 0033](decisions/0033-the-path-grammar-has-no-separators.md)):
 
 ```http
-GET    /api/v1/{authority}/{plural}          # list, filter, watch
-POST   /api/v1/{authority}/{plural}          # create / upsert
-GET    /api/v1/{authority}/{plural}/{id}
-PATCH  /api/v1/{authority}/{plural}/{id}
-PUT    /api/v1/{authority}/{plural}/{id}     # put addressed at id
-DELETE /api/v1/{authority}/{plural}/{id}     # soft delete
-GET    /api/v1/{authority}/{plural}/{id}/incoming   # paged reverse edges
+GET    /api/v1/{authority}/{kind}            # list, filter, watch
+POST   /api/v1/{authority}/{kind}            # create, server assigns the id
+GET    /api/v1/{authority}/{kind}/{id}
+PATCH  /api/v1/{authority}/{kind}/{id}       # patch, including state transitions
+PUT    /api/v1/{authority}/{kind}/{id}       # upsert at the given id
+DELETE /api/v1/{authority}/{kind}/{id}       # soft delete
+GET    /api/v1/{authority}/{kind}/{id}/incoming        # paged reverse edges
+POST   /api/v1/{authority}/{kind}/{id}/edges/{rel}     # add one outgoing edge
+DELETE /api/v1/{authority}/{kind}/{id}/edges/{rel}     # remove one
 ```
+
+A method sent to the wrong shape answers `405` naming the spelling that works,
+and never falls through to a write: `POST` at a record path used to drop the id
+and create under a server-assigned one, and `PUT` at a collection created under
+a random one. Both are refused now.
 
 **There is no repository segment anywhere.** The bearer token names the
 repository, so an address never has to, and there is nothing to get wrong.
 
-The path carries a record's **full identity**: `{authority}/{plural}` names the
+The path carries a record's **full identity**: `{authority}/{kind}` names the
 kind, `{id}` the id within it. Ids are unique per kind, so the same id may
 exist in two collections as two unrelated records, and a resource read is
 always scoped to its own collection. There is no cross-kind read by bare id
 anywhere on the surface.
 
 A [repository-local kind](data-model.md#kinds-and-references) has no authority
-segment, so every route above exists one segment shorter — `/api/v1/tasks`,
-`/api/v1/tasks/t9`. The two are told apart by inspection, in one place: an
-authority is a DNS name and always carries a dot, a plural never does. So a
+segment, so every route above exists one segment shorter — `/api/v1/task`,
+`/api/v1/task/t9`. The two are told apart by inspection, in one place: an
+authority is a DNS name and always carries a dot, a kind name never does. So a
 two-segment path is a qualified collection when its first segment is dotted and
 a repository-local resource when it is not.
 
@@ -48,7 +57,7 @@ reference, so it carries a `/`. A client percent-encodes it, and the API
 decodes it exactly once:
 
 ```http
-GET /api/v1/core.substrate.reamde.dev/kinds/tasks.substrate.reamde.dev%2Ftask
+GET /api/v1/core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev%2Ftask
 ```
 
 Reverse edges are a derived view of their own, paged separately so a popular
@@ -73,7 +82,7 @@ A worked sequence over the to-do list. Add a task (the kind comes from the
 path):
 
 ```http
-POST /api/v1/tasks.substrate.reamde.dev/tasks
+POST /api/v1/tasks.substrate.reamde.dev/task
 {"properties": {"name": "Buy milk", "dueAt": "2026-08-13T09:00:00Z"}}
 
 → 201 {"id": "kq3v9x2m41pf", "kind": "tasks.substrate.reamde.dev/task",
@@ -87,7 +96,7 @@ List what is open, soonest first (the filter is URL-encoded JSON, the grammar
 is below):
 
 ```http
-GET /api/v1/tasks.substrate.reamde.dev/tasks
+GET /api/v1/tasks.substrate.reamde.dev/task
       ?filter={"properties":{"status":{"eq":"open"}}}&orderBy=dueAt
 
 → {"records": [...], "cursor": "eyJv…", "head": 4207}
@@ -98,7 +107,7 @@ Complete one. A state change is just a patch, and the
 `completedAt`:
 
 ```http
-PATCH /api/v1/tasks.substrate.reamde.dev/tasks/kq3v9x2m41pf
+PATCH /api/v1/tasks.substrate.reamde.dev/task/kq3v9x2m41pf
 {"properties": {"status": "done"}}
 ```
 
@@ -110,7 +119,7 @@ mechanism), and, if you asked by an id that was merged away, `canonicalId`
 tells you where it went ([merges](projection.md#merges)):
 
 ```http
-GET /api/v1/people.substrate.reamde.dev/people/9f2k
+GET /api/v1/people.substrate.reamde.dev/person/9f2k
 
 → {"id": "9f2k", "kind": "people.substrate.reamde.dev/person",
    "properties": {"name": "Ada Lovelace", "emails": ["ada@example.com"]},
@@ -124,7 +133,7 @@ GET /api/v1/people.substrate.reamde.dev/people/9f2k
 
 The complete write surface, for every actor, forever. Each one addresses its
 target by **full identity**: the kind beside the id (on REST the path's
-`{authority}/{plural}` names the kind; on GraphQL the kind travels in the
+`{authority}/{kind}` names the kind; on GraphQL the kind travels in the
 mutation's arguments, as `kind` on `patch`, `delete` and `merge`, as
 `srcKind`/`dstKind` on `link` and `unlink`, and inside `input` on `put`),
 because an id is unique per kind, never per repository:
@@ -152,8 +161,8 @@ GraphQL-only, so an edge change is a request against the resource whose edge it
 is:
 
 ```http
-POST   /api/v1/{authority}/{plural}/{id}/edges/{rel}
-DELETE /api/v1/{authority}/{plural}/{id}/edges/{rel}
+POST   /api/v1/{authority}/{kind}/{id}/edges/{rel}
+DELETE /api/v1/{authority}/{kind}/{id}/edges/{rel}
 ```
 
 The body is an edge reference: `{kind, id}`, or a bare `{id}` where the
@@ -163,8 +172,8 @@ always add an edge inline; `DELETE` is how a REST client removes one.
 `substratectl` has matching `link` and `unlink` commands.
 
 This follows one rule, written into the contract: **a resource's operational
-verbs live at the resource**, its own `{authority}/{plural}/{id}` path. That is
-also why the trigger verbs live under `core.substrate.reamde.dev/triggers/…` — trigger
+verbs live at the resource**, its own `{authority}/{kind}/{id}` path. That is
+also why the trigger verbs live under `core.substrate.reamde.dev/trigger/…` — trigger
 records are core's, so their verbs sit beside them.
 
 ## The filter grammar
@@ -228,10 +237,10 @@ pass `first` for the page size and, on the next request, the `cursor` a page
 returned as `after`:
 
 ```http
-GET /api/v1/tasks.substrate.reamde.dev/tasks?first=50
+GET /api/v1/tasks.substrate.reamde.dev/task?first=50
 → {"records": [...], "cursor": "eyJv…", "head": 4211}
 
-GET /api/v1/tasks.substrate.reamde.dev/tasks?first=50&after=eyJv…
+GET /api/v1/tasks.substrate.reamde.dev/task?first=50&after=eyJv…
 → {"records": [...], "cursor": "eyJv…", "head": 4211}
 ```
 
@@ -291,7 +300,7 @@ its stability and the `surfaces` that serve it (`rest`, `graphql`, or both):
               {"name": "agents", "stability": "alpha", "surfaces": ["rest"]}],
  "grammar": {"kind": "<authority>/<name> | <name>",
              "record": "<authority>/<kind>/<id> | <kind>/<id>",
-             "collection": "/api/v1/{authority}/{plural}[/{id}] | /api/v1/{plural}[/{id}]",
+             "collection": "/api/v1/{authority}/{kind}[/{id}] | /api/v1/{kind}[/{id}]",
              "actors": ["api", "console", "substratectl", "bundle:<authority>",
                         "function:<authority>:<name>", "agent:<authority>:<name>",
                         "substrate"]},
@@ -330,11 +339,11 @@ is served and works today.
 | `beta` | Served and supported, and the shape is still moving before v1 freezes it. A break is announced, never silent. |
 | `stable` | Frozen for v1. Changes are additive only. |
 
-**Nothing reports `stable` yet.** The path grammar is still being settled
-before v1 — the plural is coming out of every collection segment and a segment
-is being reserved for verbs — so every path below moves, and the same change
-decides which parts of the surface survive it. `agents` and `embeddings` report
-`alpha`; every other feature reports `beta`.
+**Nothing reports `stable` yet.** The path grammar settled the collection
+segment to the kind name and moved the non-record endpoints to the version root
+([decision 0033](decisions/0033-the-path-grammar-has-no-separators.md)), but the
+surface is not frozen. `agents` and `embeddings` report `alpha`; every other
+feature reports `beta`.
 
 The list is derived from what the deployment implements, not written out, so a
 feature is never advertised without the code that serves it: a substrate that
@@ -344,7 +353,7 @@ can embed at all. Discovery opens no repository, so it does not answer the
 narrower question of whether the CALLER's repository declares an
 [`llmprovider` row](agents.md): the first semantic query answers that one,
 naming the property no row declares. An entry stands for every route behind
-it, so `bundles` appears only where both the lifecycle verbs and catalog
+it, so `bundles` appears only where both the lifecycle transitions and catalog
 install are served.
 
 Send every request to the `/api/v1` prefix. Today it is the only prefix
@@ -369,7 +378,7 @@ client may hard-code.
 **REST is the frozen v1 contract.** Its routes, request and response shapes,
 error codes and headers are fixed under `/api/v1` and widen only by addition,
 so a client may pin a path and a field name. A new kind adds no route: the
-collection segment is the kind's plural on the same route pattern.
+collection segment is the kind's name on the same route pattern.
 
 **GraphQL is a projection derived from the vocabulary**, rebuilt per
 repository. Installing a bundle adds types and fields and uninstalling one

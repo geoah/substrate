@@ -162,7 +162,7 @@ unique.
 A **record reference** writes kind and id together:
 `tasks.substrate.reamde.dev/task/t9` for a qualified kind, `task/t9` for a bare one. That
 is the string form; on REST the same reference is split into path segments
-(`/api/v1/tasks.substrate.reamde.dev/tasks/t9`), and on GraphQL it travels as two
+(`/api/v1/tasks.substrate.reamde.dev/task/t9`), and on GraphQL it travels as two
 arguments.
 
 The shipped vocabulary is split by subsystem, Kubernetes-style, each subsystem
@@ -567,7 +567,7 @@ traits:
 ```
 
 Because implementing a trait is queryable, a client can page every record of
-a trait (`GET …/core.substrate.reamde.dev/traits/{id}/records`), which is what the
+a trait (`GET …/core.substrate.reamde.dev/trait/{id}/records`), which is what the
 console's connections view over `accountconfig` accounts is.
 [Bundles](bundles.md) puts these three interfaces to work.
 

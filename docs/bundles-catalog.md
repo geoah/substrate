@@ -20,7 +20,7 @@ its limits.
 This is the map. The source of truth is each bundle's own manifests under
 `kinds/`, and everything an install will add — the declarations and the records
 it writes beside them — is previewable through
-`GET …/core.substrate.reamde.dev/catalog/{id}`.
+`GET …/catalog/{id}`.
 
 Kinds, functions, agents, and mappings are named `<authority>/<name>`; each
 section's first line gives the authority, and its lists give the name. The
@@ -94,7 +94,7 @@ above ships `anthropic` and `openai` rather than `default`. Calling an agent is
 an API call, not a CLI verb:
 
 ```bash
-curl -s -X POST "$SUBSTRATE_SERVER/api/v1/core.substrate.reamde.dev/agents/notekeeper/call" \
+curl -s -X POST "$SUBSTRATE_SERVER/api/v1/core.substrate.reamde.dev/agent/notekeeper/call" \
   -H "Authorization: Bearer $SUBSTRATE_TOKEN" -H 'Content-Type: application/json' \
   -d '{"input": {"text": "id: my-note\n\nSomething worth keeping."}}'
 ```

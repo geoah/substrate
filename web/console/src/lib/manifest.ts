@@ -113,7 +113,7 @@ export function kindManifestYAML(kind: KindInfo): string {
  * API's collection paths — `/data/{authority}/{plural}`. (A repository-local
  * kind carries an empty authority; its routing is the browse page's concern.) */
 function collectionHref(kind: KindInfo): string {
-  return `/data/${kind.authority}/${kind.plural}`
+  return `/data/${kind.authority}/${kind.name}`
 }
 
 /** Every registry kind by its reference, so any `kind:` a document carries

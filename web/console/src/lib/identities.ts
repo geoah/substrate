@@ -24,10 +24,11 @@ import { TO_ANY } from "@/lib/record-schema"
  * out loud rather than pretended away. */
 export const PICKER_PAGE = 200
 
-/** Where a collection lives: the two segments its path is built from. */
+/** Where a collection lives: the two segments its path is built from. The
+ * collection segment is the kind NAME (decision 0033). */
 export interface Collection {
   authority: string
-  plural: string
+  name: string
 }
 
 /** Which collection holds the records a pointer may name. A pointer at no
@@ -39,8 +40,8 @@ export function collectionFor(
 ): Collection | undefined {
   if (!pin || pin === TO_ANY) return undefined
   const declared = kindByIdentity(kinds, pin)
-  if (!declared?.plural) return undefined
-  return { authority: declared.authority, plural: declared.plural }
+  if (!declared?.name) return undefined
+  return { authority: declared.authority, name: declared.name }
 }
 
 /** One offered record: the id a selection inserts (the pin supplies the kind
@@ -95,7 +96,7 @@ export function useRecordOptions(
   const records = useQuery({
     ...recordsQueryOptions({
       authority: collection?.authority ?? "",
-      plural: collection?.plural ?? "",
+      name: collection?.name ?? "",
       first: PICKER_PAGE,
     }),
     enabled: Boolean(collection),

@@ -7,7 +7,7 @@ import (
 )
 
 // kindsCommand is the registry table: every kind this repository declares,
-// read from the one canonical collection (`/api/v1/core.substrate.reamde.dev/kinds`).
+// read from the one canonical collection (`/api/v1/core.substrate.reamde.dev/kind`).
 // `substratectl get kinds` reads the same collection as ordinary records; this
 // command is the registry VIEW of it, with the declaration's own columns.
 func (a *app) kindsCommand() *cobra.Command {

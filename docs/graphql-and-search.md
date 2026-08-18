@@ -142,7 +142,7 @@ semantic arm scores only the currently resolved pair. Re-point the row and the
 older vectors stop being scored rather than being ranked against the new ones:
 cosine distance between two models' vectors is not a distance. `substratectl
 --dsn … repository reembed <username>` and `POST
-/api/v1/core.substrate.reamde.dev/embeddings/reembed` queue their replacement,
+/api/v1/embeddings/reembed` queue their replacement,
 which the server's drain loop buys a batch at a time.
 
 There are two honest boundaries. There is no REST search endpoint: filtering is

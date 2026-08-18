@@ -35,7 +35,7 @@ import (
 const conformanceAuthority = "conformance.example.substrate.reamde.dev"
 
 // notesPath is the collection every record case writes to.
-const notesPath = "/api/v1/" + conformanceAuthority + "/notes"
+const notesPath = "/api/v1/" + conformanceAuthority + "/note"
 
 // conformanceVocabulary declares the one kind the record cases use. Each
 // property is load-bearing: `subject` is required (a write that omits it is
@@ -202,7 +202,7 @@ func conformanceCases() []codeCase {
 		run: func(t *testing.T, e *testenv.Env) {
 			// A token is a record, and the mint path is the only hand that
 			// writes one.
-			status, body := e.Do(http.MethodPost, "/api/v1/core.substrate.reamde.dev/tokens",
+			status, body := e.Do(http.MethodPost, "/api/v1/core.substrate.reamde.dev/token",
 				map[string]any{"id": "forged", "properties": map[string]any{"label": "forged"}})
 			wantError(t, status, body, http.StatusForbidden, "forbidden")
 		},
@@ -253,7 +253,7 @@ func conformanceCases() []codeCase {
 		code: "compacted",
 		run: func(t *testing.T, e *testenv.Env) {
 			status, body := e.Do(http.MethodGet,
-				"/api/v1/core.substrate.reamde.dev/changes?from=-1", nil)
+				"/api/v1/changes?from=-1", nil)
 			wantError(t, status, body, http.StatusGone, "compacted")
 		},
 	}, {

@@ -84,8 +84,8 @@ export function RecordConfigForm({
     mutationFn: () => {
       const properties = toProperties(fields, values, mode)
       return record
-        ? patchRecord(authority, type.plural, record.id, { properties })
-        : createRecord(authority, type.plural, { properties })
+        ? patchRecord(authority, type.name, record.id, { properties })
+        : createRecord(authority, type.name, { properties })
     },
     onSuccess: (saved) => {
       toast.add({

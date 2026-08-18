@@ -266,13 +266,12 @@ export function accountKindOf(
  * installed, resolved against the registry for its collection route, plus its
  * role when the host treats it specially (a kind some declared input resolves
  * records of, the `account` kind the connect flow writes tokens onto).
- * `authority`/`plural` are absent only when the registry has not (yet)
- * reconciled the kind. */
+ * `authority` is absent only when the registry has not (yet) reconciled the
+ * kind. */
 export interface KindRow {
   identity: string
   name: string
   authority?: string
-  plural?: string
   role?: "input" | "account"
   /** The kind's declared description: a chip says what it is on hover. From
    * the registry once the bundle is imported, and from the catalog's own
@@ -325,7 +324,6 @@ export function installedKindRows(
       identity,
       name: k?.name ?? splitKind(identity).name,
       authority: k?.authority,
-      plural: k?.plural,
       role,
       description: k?.description || described[identity],
     }

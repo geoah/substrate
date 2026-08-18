@@ -10,6 +10,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -42,7 +43,13 @@ func (d *bundleDataset) BundleStatus(_ context.Context, id string) (substrate.Bu
 	return substrate.BundleStatus{ID: id, Authority: d.authority, Installed: true, Enabled: true}, nil
 }
 
-func (d *bundleDataset) BundleAuthority(context.Context, string) (string, error) {
+func (d *bundleDataset) BundleAuthority(_ context.Context, id string) (string, error) {
+	// The lifecycle PATCH addresses the bundle by id; an empty one is the
+	// generic-route param bug (a3, not {id}), so refuse it the way the engine
+	// would rather than answering for a bundle nobody named.
+	if id == "" {
+		return "", fmt.Errorf("%w: bundle %q", substrate.ErrNotFound, id)
+	}
 	return d.authority, nil
 }
 func (d *bundleDataset) DisableBundle(context.Context, string) error { return nil }
@@ -88,9 +95,11 @@ func newBundleEnv(t *testing.T) (*testEnv, *bundleDataset) {
 	return &testEnv{svc: fs, h: New(Config{Service: svc, Now: clock.now}), clock: clock}, bd
 }
 
-const uninstallPath = "/api/v1/core.substrate.reamde.dev/bundles/widgets.bundles.substrate.reamde.dev/uninstall"
+// bundlePath is the bundle RECORD; its lifecycle is record state, so
+// enable/disable/uninstall/purge are a PATCH of it (decision 0033).
+const bundlePath = "/api/v1/core.substrate.reamde.dev/bundle/widgets.bundles.substrate.reamde.dev"
 
-const bindPath = "/api/v1/core.substrate.reamde.dev/bundles/widgets.bundles.substrate.reamde.dev/bind"
+const bindPath = bundlePath + "/bind"
 
 // TestBundleBindValidatesAndAnswersStatus drives the bind endpoint: a bind
 // reaches the engine with its input and record and answers the refreshed
@@ -127,13 +136,15 @@ func TestBundleBindValidatesAndAnswersStatus(t *testing.T) {
 // TestBundleUninstallAcksTombstone pins codex regress #4: uninstall deletes the
 // bundle row, so reloading its status afterward always fails — the handler must
 // NOT reload it. Even with a status read that errors (the deleted row), a
-// successful uninstall answers 200 {"uninstalled": true}.
+// successful uninstall answers 200 {"uninstalled": true}. Uninstall is a
+// transition of the bundle record's `uninstalled` state, a PATCH of it.
 func TestBundleUninstallAcksTombstone(t *testing.T) {
 	env, bd := newBundleEnv(t)
 	bd.statusErr = substrate.ErrNotFound // the row is gone once uninstall ran
 	tok := env.svc.token("geoah")
 
-	rec := env.do(t, http.MethodPost, uninstallPath, tok, nil)
+	rec := env.do(t, http.MethodPatch, bundlePath, tok,
+		map[string]any{"properties": map[string]any{"uninstalled": true}})
 	wantStatus(t, rec, http.StatusOK)
 	out := decodeJSON[map[string]any](t, rec)
 	if out["uninstalled"] != true {
@@ -142,6 +153,38 @@ func TestBundleUninstallAcksTombstone(t *testing.T) {
 	if !bd.uninstalled {
 		t.Fatal("uninstall verb never ran")
 	}
+}
+
+// TestBundleLifecycleIsRecordState drives the other three transitions as a
+// PATCH of the bundle record: disable and enable answer the refreshed status,
+// purge answers the tombstoned count, and a PATCH that names no lifecycle state
+// is a 400 before any op runs (decision 0033).
+func TestBundleLifecycleIsRecordState(t *testing.T) {
+	env, _ := newBundleEnv(t)
+	tok := env.svc.token("geoah")
+
+	rec := env.do(t, http.MethodPatch, bundlePath, tok,
+		map[string]any{"properties": map[string]any{"disabled": true}})
+	wantStatus(t, rec, http.StatusOK)
+	if st := decodeJSON[substrate.BundleStatus](t, rec); !st.Installed {
+		t.Fatalf("disable answers the refreshed status: %s", rec.Body.String())
+	}
+
+	rec = env.do(t, http.MethodPatch, bundlePath, tok,
+		map[string]any{"properties": map[string]any{"disabled": false}})
+	wantStatus(t, rec, http.StatusOK)
+
+	rec = env.do(t, http.MethodPatch, bundlePath, tok,
+		map[string]any{"properties": map[string]any{"purging": true}})
+	wantStatus(t, rec, http.StatusOK)
+	if out := decodeJSON[map[string]any](t, rec); out["purged"] != float64(3) {
+		t.Fatalf("purge body = %v, want {\"purged\": 3}", out)
+	}
+
+	// A PATCH that carries no lifecycle state names the accepted ones.
+	rec = env.do(t, http.MethodPatch, bundlePath, tok,
+		map[string]any{"properties": map[string]any{"authority": "x"}})
+	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 }
 
 // ---- GraphQL scope + strict decode + Long (#1 read/write, #9, #15) ----------
@@ -233,7 +276,7 @@ func TestGraphQLIntVariableIsUsable(t *testing.T) {
 func TestStrictDecodeRejectsTrailingCloser(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/people.substrate.reamde.dev/people", strings.NewReader("{}}"))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/people.substrate.reamde.dev/person", strings.NewReader("{}}"))
 	req.RemoteAddr = "10.0.0.1:1234"
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rec := httptest.NewRecorder()

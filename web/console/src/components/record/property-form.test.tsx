@@ -417,7 +417,7 @@ function stubCollections() {
 
   vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
     const url = String(input)
-    if (url.includes("/functions?")) {
+    if (url.includes("/function?")) {
       return Promise.resolve(
         page([
           record("core.substrate.reamde.dev/propose", {
@@ -427,7 +427,7 @@ function stubCollections() {
         ])
       )
     }
-    if (url.includes("/agents?")) {
+    if (url.includes("/agent?")) {
       return Promise.resolve(
         page([
           record("crew.test.dev/scout", {
@@ -437,12 +437,12 @@ function stubCollections() {
         ])
       )
     }
-    if (url.includes("/kinds?")) {
+    if (url.includes("/kind?")) {
       return Promise.resolve(
         page(KIND_RECORDS.map((id) => record(id, { description: "a kind" })))
       )
     }
-    if (url.includes("/llmproviders?")) {
+    if (url.includes("/llmprovider?")) {
       return Promise.resolve(page([record("claude", { name: "the gateway" })]))
     }
     return Promise.resolve(page([]))

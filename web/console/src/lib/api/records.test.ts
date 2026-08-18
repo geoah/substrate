@@ -17,7 +17,7 @@ describe("listPath", () => {
     const cursor = "eyJrIjpbIjIwMjYtMDgtMDYiXSwiaWQiOiJhYmMifQ"
     const path = listPath({
       authority: "people.substrate.reamde.dev",
-      plural: "people",
+      name: "person",
       first: 50,
       after: cursor,
       filter: { properties: { prominence: { eq: "known" } } },
@@ -25,7 +25,7 @@ describe("listPath", () => {
       withEdges: true,
     })
     const url = new URL(path, "http://x")
-    expect(url.pathname).toBe("/api/v1/people.substrate.reamde.dev/people")
+    expect(url.pathname).toBe("/api/v1/people.substrate.reamde.dev/person")
     expect(url.searchParams.get("first")).toBe("50")
     expect(url.searchParams.get("after")).toBe(cursor)
     expect(JSON.parse(url.searchParams.get("filter")!)).toEqual({
@@ -36,16 +36,13 @@ describe("listPath", () => {
   })
 
   it("addresses a repository-local kind with no authority as a bare collection", () => {
-    const url = new URL(
-      listPath({ authority: "", plural: "tasks" }),
-      "http://x"
-    )
-    expect(url.pathname).toBe("/api/v1/tasks")
+    const url = new URL(listPath({ authority: "", name: "task" }), "http://x")
+    expect(url.pathname).toBe("/api/v1/task")
   })
 
   it("omits what is not asked: no cursor at page one, no empty filter", () => {
     const url = new URL(
-      listPath({ authority: "g", plural: "p", first: 25, filter: {} }),
+      listPath({ authority: "g", name: "p", first: 25, filter: {} }),
       "http://x"
     )
     expect(url.searchParams.has("after")).toBe(false)

@@ -19,8 +19,10 @@ type vocabularyApplyResponse struct {
 	Records []*substrate.Record `json:"records"`
 }
 
-// applyVocabulary is POST /{core}/vocabulary/apply: the one verb that applies schema
-// documents — authority/type/metadata/data, the same envelope everything wears.
+// applyVocabulary is POST /api/v1/vocabulary/apply: the one verb that applies
+// schema documents, the same envelope everything wears. It sits at the version
+// root, not under an authority, because a batch of declarations is not record
+// data (decision 0033).
 func (h *handler) applyVocabulary(w http.ResponseWriter, r *http.Request) {
 	var req vocabularyApplyRequest
 	// Strict at the request wrapper: a misspelled `documents` key

@@ -141,8 +141,8 @@ func (f *fakeSubstrate) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /.well-known/substrate/server.json", f.handleDiscovery)
 	mux.HandleFunc("GET "+typesPath, f.handleTypes)
-	mux.HandleFunc("POST /api/v1/core.substrate.reamde.dev/vocabulary/apply", f.handleVocabularyApply)
-	mux.HandleFunc("GET /api/v1/core.substrate.reamde.dev/changes", f.handleChanges)
+	mux.HandleFunc("POST /api/v1/vocabulary/apply", f.handleVocabularyApply)
+	mux.HandleFunc("GET /api/v1/changes", f.handleChanges)
 	// The door, BESIDE the versioned API and outside every prefix: no
 	// repository segment anywhere, because registration has none yet and
 	// everything after it takes one from the token.
@@ -195,10 +195,13 @@ func writeError(w http.ResponseWriter, status int, code, msg string, problems []
 // scheme R4 — `type` is a column on every record), and the one data collection
 // lives in `tasks.substrate.reamde.dev`, since the shipped vocabulary is split by subject
 // domain rather than gathered under a single `vocab` authority.
+// The collection segment is the kind NAME (decision 0033): the registry is the
+// `kind` kind, the one data collection is `task`, and the trigger records and
+// their delivery verbs hang off `trigger`.
 const (
-	typesPath      = "/api/v1/core.substrate.reamde.dev/kinds"
-	tasksPath      = "/api/v1/tasks.substrate.reamde.dev/tasks"
-	triggerColPath = "/api/v1/core.substrate.reamde.dev/triggers"
+	typesPath      = "/api/v1/core.substrate.reamde.dev/kind"
+	tasksPath      = "/api/v1/tasks.substrate.reamde.dev/task"
+	triggerColPath = "/api/v1/core.substrate.reamde.dev/trigger"
 )
 
 func typeRecord(name, authority, plural, source string, definition map[string]any) map[string]any {

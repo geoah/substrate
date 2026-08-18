@@ -55,7 +55,7 @@ function IdentityCard({ actorId }: { actorId: string }) {
               {source}
             </Badge>
           )}
-          {collection === "authorities" && (
+          {collection === "authority" && (
             <Badge variant="outline" className="font-normal">
               writes as its authority
             </Badge>
@@ -66,10 +66,10 @@ function IdentityCard({ actorId }: { actorId: string }) {
             <>
               {authority && <span className="data">{authority}</span>}
               <Link
-                to="/data/$authority/$plural/$id"
+                to="/data/$authority/$name/$id"
                 params={{
                   authority: "core.substrate.reamde.dev",
-                  plural: collection!,
+                  name: collection!,
                   id: actorId,
                 }}
                 className="inline-flex items-center gap-0.5 underline-offset-4 hover:underline"

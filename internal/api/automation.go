@@ -21,12 +21,12 @@ func automationFrom(ctx context.Context) (substrate.AutomationOps, bool) {
 // It is mounted at core.substrate.reamde.dev, where the trigger records live (ruling A8:
 // a resource's operational verbs sit at the resource).
 func (h *handler) mountTriggerVerbs(r chi.Router, authority string) {
-	r.Get("/"+authority+"/triggers/status", h.getTriggerStatus)
-	r.Post("/"+authority+"/triggers/{id}/replay", h.postTriggerReplay)
-	r.Post("/"+authority+"/triggers/{id}/run", h.postTriggerRun)
-	r.Post("/"+authority+"/triggers/{id}/wake", h.postTriggerWake)
-	r.Get("/"+authority+"/triggers/{id}/parked", h.getTriggerParked)
-	r.Post("/"+authority+"/triggers/{id}/parked/{fid}/retry", h.postTriggerRetry)
+	r.Get("/"+authority+"/trigger/status", h.getTriggerStatus)
+	r.Post("/"+authority+"/trigger/{id}/replay", h.postTriggerReplay)
+	r.Post("/"+authority+"/trigger/{id}/run", h.postTriggerRun)
+	r.Post("/"+authority+"/trigger/{id}/wake", h.postTriggerWake)
+	r.Get("/"+authority+"/trigger/{id}/parked", h.getTriggerParked)
+	r.Post("/"+authority+"/trigger/{id}/parked/{fid}/retry", h.postTriggerRetry)
 }
 
 func writeNoAutomation(w http.ResponseWriter) {

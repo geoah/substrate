@@ -9,9 +9,22 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// bundlesPath is /api/v1/core.substrate.reamde.dev/bundles/{segments…}.
-func bundlesPath(segments ...string) string {
-	return collectionPath(coreAuthority, "bundles", segments...)
+// bundlePath is /api/v1/core.substrate.reamde.dev/bundle/{segments…} — the
+// bundle kind's collection and its records (decision 0033).
+func bundlePath(segments ...string) string {
+	return collectionPath(coreAuthority, "bundle", segments...)
+}
+
+// patchBundleState PATCHes the bundle record with one runtime-state transition
+// (disabled/uninstalled/purging), the shape the lifecycle takes now that it is
+// record state, not a verb.
+func (a *app) patchBundleState(cmd *cobra.Command, id, prop string, value, out any) error {
+	cl, err := a.client()
+	if err != nil {
+		return err
+	}
+	body := map[string]any{"properties": map[string]any{prop: value}}
+	return cl.do(cmd.Context(), http.MethodPatch, bundlePath(id), nil, body, out)
 }
 
 func (a *app) bundleCommand() *cobra.Command {
@@ -31,8 +44,8 @@ closure. connect starts the host OAuth flow for an account record.`,
 	cmd.AddCommand(
 		a.bundleListCommand(),
 		a.bundleStatusCommand(),
-		a.bundleVerbCommand("disable", "Stop a bundle's execution (reversible): triggers pause, functions refuse, accounts freeze"),
-		a.bundleVerbCommand("enable", "Reverse a disable; backlogged triggers resume from their cursors"),
+		a.bundleDisableCommand("disable", true, "Stop a bundle's execution (reversible): triggers pause, functions refuse, accounts freeze"),
+		a.bundleDisableCommand("enable", false, "Reverse a disable; backlogged triggers resume from their cursors"),
 		a.bundleUninstallCommand(),
 		a.bundlePurgeCommand(),
 		a.bundleConnectCommand(),
@@ -53,7 +66,7 @@ func (a *app) bundleListCommand() *cobra.Command {
 			var res struct {
 				Bundles []substrate.BundleStatus `json:"bundles"`
 			}
-			if err := cl.do(cmd.Context(), http.MethodGet, bundlesPath("status"), nil, nil, &res); err != nil {
+			if err := cl.do(cmd.Context(), http.MethodGet, bundlePath("status"), nil, nil, &res); err != nil {
 				return err
 			}
 			tw := newTable(a.out)
@@ -78,7 +91,7 @@ func (a *app) bundleStatusCommand() *cobra.Command {
 				return err
 			}
 			var st substrate.BundleStatus
-			if err := cl.do(cmd.Context(), http.MethodGet, bundlesPath(args[0], "status"), nil, nil, &st); err != nil {
+			if err := cl.do(cmd.Context(), http.MethodGet, bundlePath(args[0], "status"), nil, nil, &st); err != nil {
 				return err
 			}
 			printBundleStatus(a, st)
@@ -119,18 +132,16 @@ func setupSummary(st substrate.BundleStatus) string {
 	return fmt.Sprintf("%d steps", len(st.Setup))
 }
 
-func (a *app) bundleVerbCommand(verb, short string) *cobra.Command {
+// bundleDisableCommand PATCHes the bundle record's `disabled` state: enable and
+// disable are the two directions of one transition (decision 0033).
+func (a *app) bundleDisableCommand(verb string, disabled bool, short string) *cobra.Command {
 	return &cobra.Command{
 		Use:   verb + " <id>",
 		Short: short,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cl, err := a.client()
-			if err != nil {
-				return err
-			}
 			var st substrate.BundleStatus
-			if err := cl.do(cmd.Context(), http.MethodPost, bundlesPath(args[0], verb), nil, map[string]any{}, &st); err != nil {
+			if err := a.patchBundleState(cmd, args[0], "disabled", disabled, &st); err != nil {
 				return err
 			}
 			fmt.Fprintf(a.out, "bundle %s: %s applied\n", args[0], verb)
@@ -140,7 +151,7 @@ func (a *app) bundleVerbCommand(verb, short string) *cobra.Command {
 	}
 }
 
-// bundleUninstallCommand is not a bundleVerbCommand: uninstall tears the
+// bundleUninstallCommand PATCHes the `uninstalled` state: uninstall tears the
 // bundle row down, so there is no status to decode — the server acks.
 func (a *app) bundleUninstallCommand() *cobra.Command {
 	return &cobra.Command{
@@ -148,14 +159,10 @@ func (a *app) bundleUninstallCommand() *cobra.Command {
 		Short: "Tear down the schema, callables and runtime registration; refused while live data remains (purge first)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cl, err := a.client()
-			if err != nil {
-				return err
-			}
 			var res struct {
 				Uninstalled bool `json:"uninstalled"`
 			}
-			if err := cl.do(cmd.Context(), http.MethodPost, bundlesPath(args[0], "uninstall"), nil, map[string]any{}, &res); err != nil {
+			if err := a.patchBundleState(cmd, args[0], "uninstalled", true, &res); err != nil {
 				return err
 			}
 			fmt.Fprintf(a.out, "bundle %s: uninstalled\n", args[0])
@@ -179,14 +186,10 @@ collects.`,
 			if !yes {
 				return fmt.Errorf("purge deletes data — confirm with --yes")
 			}
-			cl, err := a.client()
-			if err != nil {
-				return err
-			}
 			var res struct {
 				Purged int `json:"purged"`
 			}
-			if err := cl.do(cmd.Context(), http.MethodPost, bundlesPath(args[0], "purge"), nil, map[string]any{}, &res); err != nil {
+			if err := a.patchBundleState(cmd, args[0], "purging", true, &res); err != nil {
 				return err
 			}
 			fmt.Fprintf(a.out, "bundle %s: %d records tombstoned (finalizers and GC take it from here)\n", args[0], res.Purged)
@@ -211,7 +214,7 @@ func (a *app) bundleConnectCommand() *cobra.Command {
 				URL string `json:"url"`
 			}
 			body := map[string]any{"record": args[0]}
-			if err := cl.do(cmd.Context(), http.MethodPost, collectionPath(coreAuthority, "oauth", "start"), nil, body, &res); err != nil {
+			if err := cl.do(cmd.Context(), http.MethodPost, pathOAuthStart, nil, body, &res); err != nil {
 				return err
 			}
 			fmt.Fprintln(a.out, res.URL)

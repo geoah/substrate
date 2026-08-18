@@ -6,8 +6,8 @@
  *
  * There is NO repository segment anywhere — the token implies the repository —
  * and no tenant. A collection path IS the kind reference split into segments:
- * `/{authority}/{plural}` for a published kind, `/{plural}` for a
- * repository-local one. */
+ * `/{authority}/{kind}` for a published kind, `/{kind}` for a
+ * repository-local one — the collection segment is the kind name. */
 
 import { getToken, sessionExpired } from "./session"
 import { ApiError, type ErrorCode } from "./types"
@@ -151,17 +151,41 @@ export function joinKind(authority: string, name: string): string {
   return authority ? `${authority}/${name}` : name
 }
 
-/** The collection path of a declared kind: the authority and the plural are
- * both segments, and a repository-local kind (empty authority) has only the
- * plural. */
-export function collectionPath(authority: string, plural: string): string {
+/** The collection path of a declared kind: the authority and the collection
+ * segment are both segments, and a repository-local kind (empty authority) has
+ * only the collection. The collection segment IS the kind's NAME (decision
+ * 0033), so everything after `/api/v1/` is the kind reference and a record's
+ * path is the value a `reference` property stores. */
+export function collectionPath(authority: string, name: string): string {
   return authority
-    ? `${API_BASE}/${seg(authority)}/${seg(plural)}`
-    : `${API_BASE}/${seg(plural)}`
+    ? `${API_BASE}/${seg(authority)}/${seg(name)}`
+    : `${API_BASE}/${seg(name)}`
 }
 
-/** The core meta-model's own collections, addressed the same way. */
-export function corePath(plural: string, id?: string): string {
-  const base = `${API_BASE}/${CORE_AUTHORITY}/${plural}`
+/** The core meta-model's own collections, addressed the same way (the segment
+ * is the kind name). */
+export function corePath(name: string, id?: string): string {
+  const base = `${API_BASE}/${CORE_AUTHORITY}/${seg(name)}`
   return id === undefined ? base : `${base}/${seg(id)}`
+}
+
+/** A repository-wide endpoint that names no kind: `/api/v1/{segments}`. The
+ * changefeed, the vocabulary apply, the blob store, GraphQL, the catalog, the
+ * merge/split and the OAuth doors live at the version root, out of the kind
+ * namespace, so nothing needs a separator to sit beside a collection (decision
+ * 0033). */
+export function rootPath(...segments: string[]): string {
+  return `${API_BASE}/${segments.map(seg).join("/")}`
+}
+
+/** A sub-resource or action of one record: the record's path, then the
+ * sub-resource segments, one level below the id where no id can collide with
+ * them (`.../{id}/incoming`, `.../{id}/edges/{rel}`, `.../{name}/call`). */
+export function recordSubPath(
+  authority: string,
+  name: string,
+  id: string,
+  ...sub: string[]
+): string {
+  return `${collectionPath(authority, name)}/${seg(id)}/${sub.map(seg).join("/")}`
 }

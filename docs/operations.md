@@ -75,7 +75,7 @@ What that means for an operator:
   distance between two models' vectors is not a distance. Run
   `substratectl --dsn … repository reembed <username>` to queue their
   replacement, or `POST
-  /api/v1/core.substrate.reamde.dev/embeddings/reembed` from the repository's
+  /api/v1/embeddings/reembed` from the repository's
   own token. Both write queue rows; the server's drain loop buys the vectors a
   batch at a time, so an interrupted re-embed resumes by itself.
 - A gateway swapped behind an unchanged row and model name is invisible to the

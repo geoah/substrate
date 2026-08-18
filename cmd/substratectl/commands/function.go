@@ -221,12 +221,12 @@ func fetchParked(ctx context.Context, cl *client, id string) ([]substrate.Trigge
 	return res.Parked, nil
 }
 
-// triggersPath is /api/v1/core.substrate.reamde.dev/triggers/{segments…}. A resource's
-// operational verbs live AT the resource and trigger records are
-// core's — the substrate maintains its own delivery plumbing, so it publishes
-// it — which makes this the one spelling.
+// triggersPath is /api/v1/core.substrate.reamde.dev/trigger/{segments…}. A
+// resource's operational verbs live AT the resource and trigger records are
+// core's (the substrate maintains its own delivery plumbing, so it publishes
+// it), which makes this the one spelling.
 func triggersPath(segments ...string) string {
-	return collectionPath(coreAuthority, "triggers", segments...)
+	return collectionPath(coreAuthority, "trigger", segments...)
 }
 
 func (a *app) functionCommand() *cobra.Command {
@@ -266,7 +266,7 @@ func (a *app) functionCallCommand() *cobra.Command {
 				Effects int `json:"effects"`
 			}
 			if err := cl.do(cmd.Context(), http.MethodPost,
-				collectionPath(coreAuthority, "functions", args[0], "call"), nil,
+				collectionPath(coreAuthority, "function", args[0], "call"), nil,
 				map[string]any{"input": input}, &res); err != nil {
 				return err
 			}

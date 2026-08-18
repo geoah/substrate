@@ -65,7 +65,7 @@ func TestMergeSplit(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 
-	rec := env.do(t, http.MethodPost, "/api/v1/core.substrate.reamde.dev/recordmerges", tok,
+	rec := env.do(t, http.MethodPost, "/api/v1/merge", tok,
 		map[string]any{"kind": "people.substrate.reamde.dev/person", "winner": "a1", "loser": "b2"})
 	wantStatus(t, rec, http.StatusCreated)
 	merged := decodeJSON[substrate.Record](t, rec)
@@ -74,7 +74,7 @@ func TestMergeSplit(t *testing.T) {
 		t.Fatalf("merge record edges = %v", merged.Edges)
 	}
 
-	rec = env.do(t, http.MethodPost, "/api/v1/core.substrate.reamde.dev/recordsplits", tok, map[string]any{"merge": "merge1"})
+	rec = env.do(t, http.MethodPost, "/api/v1/split", tok, map[string]any{"merge": "merge1"})
 	wantStatus(t, rec, http.StatusCreated)
 
 	// There is no identify: nothing matches records by value.

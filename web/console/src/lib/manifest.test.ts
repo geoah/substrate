@@ -120,13 +120,13 @@ describe("linkTargetsOf", () => {
   it("maps edge target ids and the referenced kind refs", () => {
     const t = linkTargetsOf(record, registry)
     expect(t.ids.org1).toBe(
-      "/data/people.substrate.reamde.dev/organizations/org1"
+      "/data/people.substrate.reamde.dev/organization/org1"
     )
     expect(t.kinds["people.substrate.reamde.dev/organization"]).toBe(
-      "/data/people.substrate.reamde.dev/organizations"
+      "/data/people.substrate.reamde.dev/organization"
     )
     expect(t.kinds["people.substrate.reamde.dev/person"]).toBe(
-      "/data/people.substrate.reamde.dev/people"
+      "/data/people.substrate.reamde.dev/person"
     )
   })
 
@@ -135,16 +135,16 @@ describe("linkTargetsOf", () => {
       { ...record, canonicalId: "canon1", formerIds: ["old-a@x.io"] },
       registry
     )
-    expect(t.ids.canon1).toBe("/data/people.substrate.reamde.dev/people/canon1")
+    expect(t.ids.canon1).toBe("/data/people.substrate.reamde.dev/person/canon1")
     expect(t.ids["old-a@x.io"]).toBe(
-      "/data/people.substrate.reamde.dev/people/old-a@x.io"
+      "/data/people.substrate.reamde.dev/person/old-a@x.io"
     )
   })
 
   it("knows every registry kind by its reference", () => {
     const t = linkTargetsOf(record, registry)
     expect(t.kinds["calendar.substrate.reamde.dev/calendarevent"]).toBe(
-      "/data/calendar.substrate.reamde.dev/calendarevents"
+      "/data/calendar.substrate.reamde.dev/calendarevent"
     )
   })
 
@@ -172,7 +172,7 @@ describe("linkTargetsOf", () => {
     }
     const t = linkTargetsOf(pointing, withPointer)
     expect(t.ids["people.substrate.reamde.dev/person/boss1"]).toBe(
-      "/data/people.substrate.reamde.dev/people/boss1"
+      "/data/people.substrate.reamde.dev/person/boss1"
     )
     // The id alone never appears in the document, so it is not a target.
     expect(t.ids.boss1).toBeUndefined()
@@ -253,10 +253,10 @@ describe("kindLinkTargets", () => {
   it("knows every registry kind and claims no record ids", () => {
     const t = kindLinkTargets(registry)
     expect(t.kinds["people.substrate.reamde.dev/person"]).toBe(
-      "/data/people.substrate.reamde.dev/people"
+      "/data/people.substrate.reamde.dev/person"
     )
     expect(t.kinds["calendar.substrate.reamde.dev/calendarevent"]).toBe(
-      "/data/calendar.substrate.reamde.dev/calendarevents"
+      "/data/calendar.substrate.reamde.dev/calendarevent"
     )
     expect(t.ids).toEqual({})
   })

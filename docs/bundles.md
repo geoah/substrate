@@ -122,12 +122,15 @@ unchanged. A changed declaration therefore **must** ship a changed version, or n
 repository ever learns it moved; CI enforces that (`mise run kinds:check`,
 AGENTS.md).
 
-After that, three lifecycle verbs act on an installed bundle, each guarded
-by one repository-wide lock: in-flight function and agent work finishes first,
-and no new work starts while the verb runs. A chain of nested calls acquires
-the lock once, at its root, and holds it until its last effect commits, so a
-nested or cross-bundle call can neither begin after the verb has returned nor
-commit behind it.
+After that, an installed bundle carries runtime lifecycle **state** the
+substrate owns: `disabled`, `uninstalled` and `purging`, each moved by a
+`PATCH` of the bundle record
+([decision 0033](decisions/0033-the-path-grammar-has-no-separators.md)). Each
+transition is guarded by one repository-wide lock: in-flight function and agent
+work finishes first, and no new work starts while it runs. A chain of nested
+calls acquires the lock once, at its root, and holds it until its last effect
+commits, so a nested or cross-bundle call can neither begin after the transition
+has returned nor commit behind it.
 
 - **disable** (reversible): the bundle's triggers stop delivering (cursors
   stand still, losing no position) and its functions and agents refuse to run on
@@ -162,8 +165,8 @@ reports `installed: false` beside the `quarantined`/`quarantineReason` pair;
 re-installing it clears the marker, and uninstall still works on one, resolved
 straight from its stored rows.
 
-Status is computed, never stored. `GET …/core.substrate.reamde.dev/bundles/status` answers
-every installed bundle and `…/core.substrate.reamde.dev/bundles/{id}/status` answers
+Status is computed, never stored. `GET …/core.substrate.reamde.dev/bundle/status` answers
+every installed bundle and `…/core.substrate.reamde.dev/bundle/{id}/status` answers
 one: `{id, name, authority, installed, enabled, inputs, setup, accounts,
 functions, kinds, liveRecords}`, plus the quarantine pair when it applies.
 `inputs` is each declared input's resolution: `{name, kind, record?, via?}`,
@@ -173,13 +176,18 @@ where `via` names the matching rule from
 bundle and every runtime path it ships (`{code, input?, kind?, record?,
 message}` — codes `missing`, `ambiguous`, `dangling`, `oauth-client`,
 `provider`), mirrors only refusals dispatch would actually make, and is
-empty when the bundle is ready. `POST …/bundles/{id}/bind` with `{input,
-record}` binds an input to a chosen record (empty `record` unbinds). The verbs are `POST …/core.substrate.reamde.dev/bundles/{id}/disable` and its
-`enable`, `uninstall` and `purge` siblings. Every path on this page hangs off
-`/api/v1`, and none of them names a repository: the token does. The CLI faces
-are `substratectl bundle list/status/disable/enable/uninstall/purge` (purge takes
-`--yes`), plus `substratectl bundle connect` for the consent flow below; install and
-upgrade stay `substratectl apply` of the closure.
+empty when the bundle is ready. `POST …/core.substrate.reamde.dev/bundle/{id}/bind` with
+`{input, record}` binds an input to a chosen record (empty `record` unbinds).
+Disable, enable, uninstall and purge are runtime state the substrate owns
+([decision 0033](decisions/0033-the-path-grammar-has-no-separators.md)), so each
+is a `PATCH …/core.substrate.reamde.dev/bundle/{id}` carrying the state change:
+`{"properties": {"disabled": true}}` disables (and `false` enables),
+`{"properties": {"uninstalled": true}}` uninstalls, `{"properties": {"purging":
+true}}` purges. Every path on this page hangs off `/api/v1`, and none of them
+names a repository: the token does. The CLI faces are `substratectl bundle
+list/status/disable/enable/uninstall/purge` (purge takes `--yes`), plus
+`substratectl bundle connect` for the consent flow below; install and upgrade
+stay `substratectl apply` of the closure.
 
 ## Integrations
 
@@ -260,14 +268,14 @@ actor, holding the feature toggles, `syncFrequency` and `backfillDepth`. The
 rule is enforced in the write path for REST, GraphQL, and CLI alike, not just
 in the console.
 
-The flow itself is two endpoints. `POST …/core.substrate.reamde.dev/oauth/start` takes the
+The flow itself is two endpoints. `POST …/oauth/start` takes the
 account record's id as `record` and answers the consent URL as `url`; it is
 owner-tier only (the three interactive clients, never installed code) and refuses
 while the client input does not resolve. The state is HMAC-signed over
 the repository, the record, and a random nonce, expires in fifteen minutes, and
 is persisted beside a sealed PKCE verifier, so a captured state cannot replay:
 the callback consumes it exactly once. The provider redirects the browser to
-`GET …/core.substrate.reamde.dev/oauth/callback`, which is unauthenticated because that
+`GET …/oauth/callback`, which is unauthenticated because that
 signed one-time state is the whole authentication, and which exchanges the
 code, seals the token in the credential store, and patches the account in one
 transaction — a secret-typed `tokenRef`, never a raw token on a record or any
@@ -320,7 +328,7 @@ The **Connections** view in the console is a cross-bundle operational
 surface over every such account, one row per account, read from the native
 `accountconfig` records that integration bundles ship. It pages every
 implementor of the `accountconfig` trait, which is a plain query
-(`GET …/core.substrate.reamde.dev/traits/{id}/records`, with `…/traits/{id}/implementors`
+(`GET …/core.substrate.reamde.dev/trait/{id}/records`, with `…/traits/{id}/implementors`
 for the kinds themselves), because implementing a trait is queryable.
 
 ## The catalog
@@ -350,13 +358,13 @@ repository that has not imported `people` is **refused** by the ordinary
 admission, before anything is touched, with a problem naming what to import
 first. Nothing resolves the dependency for you — the order is yours.
 
-`GET …/core.substrate.reamde.dev/catalog` lists every shipped bundle under a `catalog`
+`GET …/catalog` lists every shipped bundle under a `catalog`
 key, each flagged `installed` for this repository;
-`GET …/core.substrate.reamde.dev/catalog/{id}` is one entry with its closure, and an
+`GET …/catalog/{id}` is one entry with its closure, and an
 unknown id is a 404 `not_found`.
 
 Installing from the catalog is a thin wrapper over the ordinary apply, never a
-parallel path: `POST …/core.substrate.reamde.dev/catalog/{id}/install` applies the entry's
+parallel path: `POST …/catalog/{id}/install` applies the entry's
 closure exactly the way `substratectl apply -f bundle.yaml -f triggers.yaml` does —
 the declarations through the batch [admission](vocabulary.md#admission), the
 delivery wiring as ordinary records, both committing as one repository

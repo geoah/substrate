@@ -504,7 +504,7 @@ describe("installedKindRows — the Kinds table", () => {
     ])
     const contact = rows.find((r) => r.identity === contactKind.identity)!
     expect(contact.authority).toBe("google.bundles.substrate.reamde.dev")
-    expect(contact.plural).toBe("contacts")
+    expect(contact.name).toBe("contact")
   })
 
   it("marks the input and account kinds by role", () => {
@@ -577,7 +577,6 @@ describe("installedKindRows — the Kinds table", () => {
     expect(rows).toHaveLength(1)
     expect(rows[0].name).toBe("ghost")
     expect(rows[0].authority).toBeUndefined()
-    expect(rows[0].plural).toBeUndefined()
   })
 })
 

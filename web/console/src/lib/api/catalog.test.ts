@@ -53,7 +53,7 @@ describe("catalog reads and writes", () => {
       signal: new AbortController().signal,
     } as never)
     const [url, init] = fetchMock.mock.calls[0]
-    expect(String(url)).toBe("/api/v1/core.substrate.reamde.dev/catalog")
+    expect(String(url)).toBe("/api/v1/catalog")
     expect(init?.method).toBe("GET")
     expect(res).toHaveLength(2)
     expect(res[0].installed).toBe(false)
@@ -75,7 +75,7 @@ describe("catalog reads and writes", () => {
     await importBundle("google.bundles.substrate.reamde.dev")
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toBe(
-      "/api/v1/core.substrate.reamde.dev/catalog/google.bundles.substrate.reamde.dev/install"
+      "/api/v1/catalog/google.bundles.substrate.reamde.dev/install"
     )
     expect(init?.method).toBe("POST")
   })
@@ -86,7 +86,7 @@ describe("catalog reads and writes", () => {
     )
     await importBundle("acme.bundles.substrate.reamde.dev/planner")
     expect(String(fetchMock.mock.calls[0][0])).toBe(
-      "/api/v1/core.substrate.reamde.dev/catalog/acme.bundles.substrate.reamde.dev%2Fplanner/install"
+      "/api/v1/catalog/acme.bundles.substrate.reamde.dev%2Fplanner/install"
     )
   })
 })
@@ -113,7 +113,7 @@ describe("catalogItemQueryOptions", () => {
 describe("oauthCallbackURL", () => {
   it("is the substrate host's fixed callback, never the console origin", () => {
     expect(oauthCallbackURL()).toBe(
-      "https://substrate.example.com/api/v1/core.substrate.reamde.dev/oauth/callback"
+      "https://substrate.example.com/api/v1/oauth/callback"
     )
   })
   it("does not depend on window.location — a deployment setting is not guessed", () => {

@@ -114,12 +114,12 @@ Four things follow from a token being a record:
   _is_ the request's scope.
 - **Revoking is deleting the record.** No row means no access. The same write
   reaches from `DELETE /tokens/{id}`, from the generic record delete at
-  `DELETE /api/v1/core.substrate.reamde.dev/tokens/{id}`, from the console, or from
+  `DELETE /api/v1/core.substrate.reamde.dev/token/{id}`, from the console, or from
   `substratectl token revoke`.
 - **Expiry is optional and server-enforced.** A token past its `expiresAt`
   fails authentication with an `auth` error, no revoke step needed. A token
   without one lives until it is deleted.
-- **They list and read like anything else.** `GET …/core.substrate.reamde.dev/tokens` is
+- **They list and read like anything else.** `GET …/core.substrate.reamde.dev/token` is
   an ordinary collection read, and every mint and revocation is a row in the
   [changelog](changelog.md).
 

@@ -79,19 +79,19 @@ func TestGuardHintsBranchOnWhatFailed(t *testing.T) {
 		unwantedWords []string
 	}{{
 		name:          "schema apply",
-		err:           &apiError{Status: 403, Code: "guard", Path: apiPrefix + "/" + coreAuthority + "/vocabulary/apply", Method: "POST"},
+		err:           &apiError{Status: 403, Code: "guard", Path: apiPrefix + "/vocabulary/apply", Method: "POST"},
 		wantHeadline:  "stored data",
 		wantHint:      "migrate or delete",
 		unwantedWords: []string{"transition"},
 	}, {
 		name:          "bundle lifecycle",
-		err:           &apiError{Status: 403, Code: "guard", Path: apiPrefix + "/" + coreAuthority + "/bundles/whoop.bundles.substrate.reamde.dev/enable", Method: "POST"},
+		err:           &apiError{Status: 403, Code: "guard", Path: apiPrefix + "/" + coreAuthority + "/bundle/whoop.bundles.substrate.reamde.dev", Method: "PATCH"},
 		wantHeadline:  "bundle's state",
 		wantHint:      "substratectl bundle status",
 		unwantedWords: []string{"transition"},
 	}, {
 		name:         "record write keeps the transition advice",
-		err:          &apiError{Status: 403, Code: "guard", Path: apiPrefix + "/tasks.substrate.reamde.dev/tasks/t9", Method: "PATCH"},
+		err:          &apiError{Status: 403, Code: "guard", Path: apiPrefix + "/tasks.substrate.reamde.dev/task/t9", Method: "PATCH"},
 		wantHeadline: "transition",
 		wantHint:     "state transition guards",
 	}, {

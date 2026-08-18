@@ -24,7 +24,7 @@ import {
   type Verdict,
 } from "@/lib/changerequests"
 
-export const CR_PLURAL = "recordpatchrequests"
+export const CR_NAME = "recordpatchrequest"
 export const CR_KIND = `${CORE_AUTHORITY}/recordpatchrequest`
 
 /** `decision` is a state property; states filter through `properties` like any
@@ -52,7 +52,7 @@ export function changeRequestsQueryOptions(opts: {
 }) {
   return recordsQueryOptions({
     authority: CORE_AUTHORITY,
-    plural: CR_PLURAL,
+    name: CR_NAME,
     first: opts.first,
     after: opts.after,
     filter: decisionFilter(opts.decision),
@@ -70,7 +70,7 @@ export function changeRequestCountQueryOptions(
 ) {
   return recordCountQueryOptions(
     CORE_AUTHORITY,
-    CR_PLURAL,
+    CR_NAME,
     decisionFilter(decision)
   )
 }
@@ -83,7 +83,7 @@ export function pendingChangeCountQueryOptions() {
  * `propertyMeta` (who proposed, who decided) and `annotations` (the note, and
  * the server's conflict record after a refused apply). */
 export function changeRequestQueryOptions(id: string) {
-  return recordQueryOptions(CORE_AUTHORITY, CR_PLURAL, id)
+  return recordQueryOptions(CORE_AUTHORITY, CR_NAME, id)
 }
 
 /** The single atomic submit. `version` is the request AS LOADED: the write path
@@ -99,7 +99,7 @@ export function submitDecision(
 ): Promise<SubstrateRecord> {
   return patchRecord(
     CORE_AUTHORITY,
-    CR_PLURAL,
+    CR_NAME,
     id,
     decisionPatch(verdict, version, note)
   )

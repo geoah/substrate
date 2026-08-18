@@ -32,7 +32,7 @@ ignored on the way in; emptying the file aborts.`,
 			if err != nil {
 				return err
 			}
-			e, meta, err := cl.get(ctx, col.Authority, col.Plural, args[1])
+			e, meta, err := cl.get(ctx, col.Authority, col.Name, args[1])
 			if err != nil {
 				return err
 			}

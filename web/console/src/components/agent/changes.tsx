@@ -33,8 +33,8 @@ function ChangeChip({ change }: { change: ChangeStamp }) {
   }
   return (
     <Link
-      to="/data/$authority/$plural/$id"
-      params={{ authority, plural: kind.plural, id: change.id }}
+      to="/data/$authority/$name/$id"
+      params={{ authority, name: kind.name, id: change.id }}
       className={`${className} underline-offset-4 hover:underline`}
       title={`changelog seq ${change.seq}`}
     >

@@ -161,7 +161,7 @@ describe("PropertiesRail", () => {
       (a) => a.textContent === "t0"
     )
     expect(link?.getAttribute("href")).toBe(
-      "/data/tasks.substrate.reamde.dev/tasks/t0"
+      "/data/tasks.substrate.reamde.dev/task/t0"
     )
   })
 
@@ -249,7 +249,7 @@ describe("PropertiesRail", () => {
       (a) => a.textContent === "Ada"
     )
     expect(link?.getAttribute("href")).toBe(
-      "/data/people.substrate.reamde.dev/people/p1"
+      "/data/people.substrate.reamde.dev/person/p1"
     )
   })
 

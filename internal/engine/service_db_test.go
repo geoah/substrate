@@ -99,9 +99,9 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 	if len(actors.Records) != 4 {
 		t.Fatalf("actor projections = %v", ids(actors.Records))
 	}
-	ti, err := ds.KindByPlural(ctx, "calendar.substrate.reamde.dev", "calendarevents")
+	ti, err := ds.KindByRef(ctx, "calendar.substrate.reamde.dev/calendarevent")
 	if err != nil || ti.Identity != "calendar.substrate.reamde.dev/calendarevent" {
-		t.Fatalf("TypeByPlural = %+v %v", ti, err)
+		t.Fatalf("KindByRef = %+v %v", ti, err)
 	}
 
 	// Reconciliation is a no-op on restart.
@@ -339,9 +339,9 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	if _, has := mp.Properties["sourceYAML"]; has {
 		t.Fatalf("mapping projection carries sourceYAML; records 58/61 removed it")
 	}
-	if ti, err := ds.KindByPlural(ctx, "core.substrate.reamde.dev", "recordmappings"); err != nil ||
+	if ti, err := ds.KindByRef(ctx, "core.substrate.reamde.dev/recordmapping"); err != nil ||
 		ti.Identity != "core.substrate.reamde.dev/recordmapping" {
-		t.Fatalf("recordmappings collection = %+v %v", ti, err)
+		t.Fatalf("recordmapping collection = %+v %v", ti, err)
 	}
 	page, err := ds.List(ctx, substrate.Query{
 		Filter: substrate.Filter{Kinds: []string{"core.substrate.reamde.dev/recordmapping"}}, First: 50,

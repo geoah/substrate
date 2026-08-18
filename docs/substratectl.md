@@ -2,7 +2,7 @@
 
 `substratectl` is the command-line client: kubectl-shaped, speaking the
 [REST surface](api.md). Everything in a repository is a record of a declared
-kind, addressed as `{authority}/{plural}/{id}`, and the CLI mirrors that:
+kind, addressed as `{authority}/{kind}/{id}`, and the CLI mirrors that:
 kinds, get, apply, patch, delete, edit, link, unlink, watch. It lives in the
 same repository as the substrate (`cmd/substratectl`) and builds with Go.
 
@@ -78,7 +78,7 @@ both; `--context` picks a stored context by name. `--actor` names the
 ## Reading
 
 `substratectl get <plural> [id]` reads a collection or one record. The plural may be
-qualified (`tasks.substrate.reamde.dev/tasks`) or bare (`tasks`), which resolves against
+qualified (`tasks.substrate.reamde.dev/task`) or bare (`tasks`), which resolves against
 the kind registry; when two installed authorities declare the same plural, that
 plural needs qualifying, or `-g` to name the authority (every bundle
 installs a `config`, so `configs` always needs one). Lists take `--filter` (the
