@@ -143,7 +143,7 @@ speaks:
 | `recordsplit`        | The undo of one merge, likewise performed on creation.                                                                                              |
 | `recordmergerequest` | A proposed merge, performed when its decision is accepted.                                                                                          |
 | `recordpatchrequest` | A proposed create, patch, or delete, applied when its decision is accepted ([the patch request sibling](projection.md#the-patch-request-sibling)). |
-| `recordpatchpolicy`  | An owner's standing rule for an agent's writes: a `selector` (kinds, ops, agents) and an `action` of `allow`, `gate` or `refuse` ([gating an agent's writes](agents.md#gating-an-agents-writes)). |
+| `recordpatchpolicy`  | An owner's standing rule for an agent's writes: a `selector` (kinds, ops, agents) and an `action` of `allow`, `gate` or `refuse` ([the policy door](agents.md#the-policy-door)). |
 
 The delivery machinery is core's too, declared as data kinds so a trigger is
 console-editable and changelog-visible like anything else
