@@ -288,6 +288,12 @@ func (g *connectGate) decideAllow(n *seccompNotif) bool {
 	if err := notifIoctl(g.lfd, seccompIoctlNotifIDValid, unsafe.Pointer(&n.ID)); err != nil {
 		return false
 	}
+	// SAFETY: passing every non-INET family is safe only because the main
+	// seccomp socket-domain allowlist (seccomp_linux.go, buildFilter) bounds a
+	// body to AF_UNIX, AF_INET, AF_INET6 and AF_NETLINK, none of which reach an
+	// off-machine IP service without going through the AF_INET(6) arms below. If
+	// that allowlist ever gains AF_PACKET or AF_VSOCK, this default would pass
+	// them unfiltered and both sides must change together.
 	switch binary.LittleEndian.Uint16(buf[0:2]) {
 	case unix.AF_UNIX:
 		return true // addresses nothing off the machine

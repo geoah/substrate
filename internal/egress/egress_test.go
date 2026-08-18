@@ -14,14 +14,18 @@ func TestBlocked(t *testing.T) {
 		{"127.0.0.1", true},
 		{"::1", true},
 		{"0.0.0.0", true},
-		{"10.1.2.3", true},         // RFC1918
-		{"172.16.0.5", true},       // RFC1918, the compose DB range
-		{"192.168.1.1", true},      // RFC1918
-		{"169.254.169.254", true},  // cloud metadata (link-local)
-		{"fe80::1", true},          // IPv6 link-local
-		{"fc00::1", true},          // IPv6 unique-local
-		{"224.0.0.1", true},        // multicast
-		{"::ffff:127.0.0.1", true}, // IPv4-mapped loopback must not slip through
+		{"10.1.2.3", true},          // RFC1918
+		{"172.16.0.5", true},        // RFC1918, the compose DB range
+		{"192.168.1.1", true},       // RFC1918
+		{"169.254.169.254", true},   // cloud metadata (link-local)
+		{"fe80::1", true},           // IPv6 link-local
+		{"fc00::1", true},           // IPv6 unique-local
+		{"224.0.0.1", true},         // multicast
+		{"100.64.0.1", true},        // carrier-grade NAT (a tailnet lives here)
+		{"100.81.64.27", true},      // CGNAT, mid-range
+		{"0.1.2.3", true},           // the rest of 0.0.0.0/8, not just 0.0.0.0
+		{"::ffff:127.0.0.1", true},  // IPv4-mapped loopback must not slip through
+		{"::ffff:100.64.0.1", true}, // IPv4-mapped CGNAT must not slip through
 		// The public internet.
 		{"1.1.1.1", false},
 		{"8.8.8.8", false},
