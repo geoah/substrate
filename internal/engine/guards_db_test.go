@@ -2,7 +2,6 @@ package engine_test
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"strings"
 	"testing"
@@ -22,7 +21,7 @@ func newDatasetWithDB(t *testing.T, opts ...engine.Option) (substrate.Dataset, *
 	ctx := context.Background()
 	all := []engine.Option{
 		engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		engine.WithCredentialKey("test-cred-key"),
+		engine.WithCredentialKey(engine.TestCredentialKey),
 	}
 	all = append(all, opts...)
 	svc, err := engine.Open(ctx, dsn, all...)
@@ -210,8 +209,8 @@ func storedSecret(t *testing.T, raw *sql.DB, dsn, id string) string {
 	if len(wrapped) == 0 || wrapped[0] != 's' {
 		t.Fatalf("a keyed host must wrap the DEK sealed, not plain-marked")
 	}
-	hostKey := sha256.Sum256([]byte("test-cred-key"))
-	dek, err := engine.OpenPayloadWithKey(hostKey[:], wrapped)
+	hostKey := engine.TestCredentialKeyBytes
+	dek, err := engine.OpenPayloadWithKey(hostKey, wrapped)
 	if err != nil {
 		t.Fatalf("unwrap the DEK: %v", err)
 	}

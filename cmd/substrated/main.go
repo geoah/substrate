@@ -66,6 +66,12 @@ func run() error {
 	setupLogger(cfg.LogLevel)
 	reportSandbox()
 
+	// Before anything opens: the credential key seals every signing seed and
+	// unwraps every DEK, so a host without valid key material may not boot.
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -105,11 +111,6 @@ func run() error {
 		// Loud, and at boot: from here on a password is the whole credential.
 		slog.Warn("SUBSTRATE_INSECURE_DISABLE_TOTP is set: the second factor is NOT verified — local development only")
 		opts = append(opts, engine.WithInsecureDisableTOTP())
-	}
-	// Changelog signing is mandatory and the seed seals under the credential
-	// key, so a keyless host is refused here, before anything opens.
-	if cfg.CredentialKey == "" {
-		return errors.New("changelog signing is mandatory and needs SUBSTRATE_CREDENTIAL_KEY: the signing seed seals under it, and a host that cannot sign may not write")
 	}
 	svc, err := engine.Open(ctx, cfg.DatabaseURL, opts...)
 	if err != nil {

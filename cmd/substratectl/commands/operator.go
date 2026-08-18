@@ -15,6 +15,7 @@ import (
 	// imported.
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"github.com/geoah/substrate/internal/config"
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -87,6 +88,15 @@ func (a *app) openEngineWrite(ctx context.Context) (substrate.Service, error) {
 
 // openEngineWithKey is the shared opener the read/write hats route through.
 func (a *app) openEngineWithKey(ctx context.Context, credKey string) (substrate.Service, error) {
+	// A present key must be key material of the right shape, or the engine
+	// refuses to open under it. Report that here, before the DSN, rather than
+	// wrapped in an open error. An absent key is the read hat's keyless case
+	// (rebuild), left to the engine.
+	if credKey != "" {
+		if err := config.ValidateCredentialKey(credKey); err != nil {
+			return nil, err
+		}
+	}
 	dsn, err := a.dsn()
 	if err != nil {
 		return nil, err

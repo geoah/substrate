@@ -39,7 +39,7 @@ func newService(t *testing.T, opts ...engine.Option) (substrate.Service, string)
 		// Signing is mandatory and its seed seals under this key, so every
 		// test runs the keyed shape: a keyless host cannot create or open a
 		// repository at all.
-		engine.WithCredentialKey("test-cred-key"),
+		engine.WithCredentialKey(engine.TestCredentialKey),
 	}
 	all = append(all, opts...)
 	svc, err := engine.Open(context.Background(), dsn, all...)

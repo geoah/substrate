@@ -19,6 +19,8 @@ package testenv
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -45,6 +47,19 @@ import (
 // to say about it: a test registers through it, and a per-test value would
 // only make failures harder to read.
 const InviteCode = "test-invite"
+
+// mintCredentialKey returns a conforming credential key: standard-base64 of 32
+// random bytes, the shape the engine demands (ADR 0024). Generated per call
+// rather than committed, because a key checked into the tree is a key everyone
+// has; the throwaway substrate is opened once, so a fresh key each time is
+// enough.
+func mintCredentialKey() string {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		panic(err)
+	}
+	return base64.StdEncoding.EncodeToString(raw)
+}
 
 // Env is one running substrate and the credentials to talk to it.
 type Env struct {
@@ -96,8 +111,9 @@ func Start(t *testing.T, opts ...Option) *Env {
 	// repository holds core and nothing else, and a test that wants more
 	// installs it the way a user would.
 	svc, err := engine.Open(ctx, dsn, engine.WithKindsFS(kinds.Seed()),
-		// Signing is mandatory; the live-API env runs the keyed shape.
-		engine.WithCredentialKey("test-cred-key"))
+		// Signing is mandatory; the live-API env runs the keyed shape. The key
+		// is base64 of 32 bytes, minted here rather than committed (ADR 0024).
+		engine.WithCredentialKey(mintCredentialKey()))
 	if err != nil {
 		t.Fatalf("testenv: open engine: %v", err)
 	}

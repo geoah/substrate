@@ -37,7 +37,7 @@ func newSealingDataset(t *testing.T) (substrate.Service, substrate.Dataset, *sql
 // that reopen the same store under a fresh service.
 func newSealingDatasetDSN(t *testing.T) (substrate.Service, substrate.Dataset, *sql.DB, string) {
 	t.Helper()
-	svc, dsn := newService(t, engine.WithCredentialKey("test-cred-key"))
+	svc, dsn := newService(t, engine.WithCredentialKey(engine.TestCredentialKey))
 	ctx := context.Background()
 	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
 		t.Fatalf("create repository: %v", err)
@@ -315,7 +315,7 @@ func TestResealMovesLegacyValuesIntoTheStore(t *testing.T) {
 	}
 	_ = svc.Close()
 	svc, err := engine.Open(ctx, dsn, engine.WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		engine.WithCredentialKey("test-cred-key"))
+		engine.WithCredentialKey(engine.TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}

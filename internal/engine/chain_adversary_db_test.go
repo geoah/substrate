@@ -50,7 +50,7 @@ func upgradedRepository(t *testing.T) (*service, string, *sql.DB, string) {
 	_ = ds.svc.Close()
 	svc2, err := Open(ctx, dsn,
 		WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		WithCredentialKey("test-cred-key"))
+		WithCredentialKey(TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen keyed: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestVerifyNamesARewrittenUnsignedPrefix(t *testing.T) {
 	_ = svc.Close()
 	svc2, err := Open(ctx, dsn,
 		WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		WithCredentialKey("test-cred-key"))
+		WithCredentialKey(TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestVerifyNamesAMovedActivationMarkAndRepairRefuses(t *testing.T) {
 	_ = svc.Close()
 	svc2, err := Open(ctx, dsn,
 		WithKindsDir("../../kinds/core.substrate.reamde.dev"),
-		WithCredentialKey("test-cred-key"))
+		WithCredentialKey(TestCredentialKey))
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
