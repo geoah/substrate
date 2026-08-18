@@ -9,12 +9,13 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
 
 	openai "github.com/sashabaranov/go-openai"
+
+	"github.com/geoah/substrate/internal/providersecret"
 )
 
 // Dim is the width of the embeddings column; a model of any other
@@ -97,32 +98,9 @@ type Client struct {
 	// apiKey is held only to keep it OUT of an error. The queue drains on a
 	// server loop and reports through the host's log, so an endpoint that
 	// quotes the bearer it refused would put one repository's secret in the
-	// deployment's log; scrub takes it back out.
+	// deployment's log; providersecret.Scrub takes it back out.
 	apiKey    string
 	dimension int
-}
-
-// maskedSecret matches a token an endpoint starred out itself. OpenAI's 401
-// body does NOT quote a real key whole: it keeps a leading and a trailing
-// fragment and replaces the middle with asterisks, so an exact-match scrub
-// removes nothing and both fragments reach the log. Three asterisks in a row
-// inside one whitespace-delimited token is that shape, and nothing else in a
-// wire error legitimately looks like it.
-var maskedSecret = regexp.MustCompile(`\S*\*{3,}\S*`)
-
-// scrub takes the row's own bearer back out of an endpoint's words, in the two
-// shapes endpoints send: quoted whole (a short key, or a gateway that does not
-// mask), and self-masked with the middle starred out.
-//
-// What it does NOT catch: an endpoint that echoes a bare fragment with no
-// asterisks to mark it. Nothing distinguishes that from prose, so the standing
-// rule is the one above it — the drain reports through the HOST's log, and a
-// repository's secret does not belong there.
-func (e *Client) scrub(s string) string {
-	if e.apiKey != "" {
-		s = strings.ReplaceAll(s, e.apiKey, "<redacted>")
-	}
-	return maskedSecret.ReplaceAllString(s, "<redacted>")
 }
 
 // New builds the embedder for one resolved provider row. It refuses a config
@@ -177,7 +155,7 @@ func (e *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 	if err != nil {
 		// The message is rebuilt rather than wrapped: %w would carry the
 		// original text, key and all, to anything that unwraps it.
-		return nil, fmt.Errorf("embed: embedding request failed: %s", e.scrub(err.Error()))
+		return nil, fmt.Errorf("embed: embedding request failed: %s", providersecret.Scrub(e.apiKey, err.Error()))
 	}
 	// The queue pairs each vector with its input BY POSITION, so a short or
 	// long answer is a failure, never something to zip against.

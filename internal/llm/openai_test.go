@@ -264,3 +264,53 @@ func TestUnknownWireRefuses(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// A 401 quotes the bearer it refused, and under the per-repository provider
+// model that bearer is a repository's own key. The error the adapter returns
+// is the string the agent loop writes into a thread record and joins into the
+// sweep log, so no fragment of the key may survive in it. The masked shape is
+// the one that matters: a real provider stars out the middle and returns the
+// leading and trailing fragments, which an exact-match scrub does not touch.
+func TestOpenAICompletionErrorDoesNotCarryTheKey(t *testing.T) {
+	// Fragments of one synthetic key; no real key appears in this tree.
+	const key = "sk-proj-notarealkey000000000000000000000000000cdef"
+	prefix, suffix := key[:8], key[len(key)-4:]
+	for name, oneShot := range map[string]bool{"one-shot": true, "streamed": false} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				// The live 401's own shape: prefix, asterisks, last four.
+				masked := prefix + strings.Repeat("*", 32) + suffix
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_, _ = w.Write([]byte(`{"error":{"message":"Incorrect API key provided: ` + masked +
+					`. You can find your API key at https://example.com/account/api-keys.","type":"invalid_request_error"}}`))
+			}))
+			t.Cleanup(srv.Close)
+
+			client, err := New(WireOpenAI, Config{BaseURL: srv.URL, APIKey: key})
+			if err != nil {
+				t.Fatalf("new: %v", err)
+			}
+			var onDelta func(string)
+			if !oneShot {
+				onDelta = func(string) {}
+			}
+			_, err = client.Complete(context.Background(), Request{
+				Model: "m", Messages: []Message{{Role: RoleUser, Content: "hi"}},
+			}, onDelta)
+			if err == nil {
+				t.Fatal("a 401 was not reported as an error")
+			}
+			got := err.Error()
+			if strings.Contains(got, key) {
+				t.Fatalf("the error carries the row's key whole: %v", got)
+			}
+			if strings.Contains(got, prefix) || strings.Contains(got, suffix) {
+				t.Fatalf("the error carries a fragment of the row's key: %v", got)
+			}
+			if !strings.Contains(got, "Incorrect API key provided") {
+				t.Fatalf("the scrub ate the endpoint's message: %v", got)
+			}
+		})
+	}
+}

@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/sashabaranov/go-openai"
+
+	"github.com/geoah/substrate/internal/providersecret"
 )
 
 // The OpenAI-wire adapter — the one every gateway that copied that wire uses,
@@ -17,6 +19,11 @@ import (
 
 type openaiClient struct {
 	client *openai.Client
+	// apiKey is held only to keep it OUT of an error. On a 401 the endpoint
+	// quotes the bearer it refused; scrubbed rebuilds any provider error with
+	// providersecret.Scrub so the key cannot reach the agent loop's thread
+	// record or the sweep log.
+	apiKey string
 }
 
 func newOpenAI(cfg Config, azure bool) *openaiClient {
@@ -32,7 +39,15 @@ func newOpenAI(cfg Config, azure bool) *openaiClient {
 	if len(cfg.Headers) > 0 {
 		oc.HTTPClient = &headerDoer{inner: oc.HTTPClient, headers: cfg.Headers}
 	}
-	return &openaiClient{client: openai.NewClientWithConfig(oc)}
+	return &openaiClient{client: openai.NewClientWithConfig(oc), apiKey: cfg.APIKey}
+}
+
+// scrubbed rebuilds a provider error with the row's bearer taken back out. The
+// error is REBUILT, not %w-wrapped: wrapping would carry the original, key and
+// all, to anything downstream that unwraps it, and the leak this closes ends
+// in a stored record and a host log.
+func (c *openaiClient) scrubbed(err error) error {
+	return errors.New(providersecret.Scrub(c.apiKey, err.Error()))
 }
 
 // headerDoer injects the provider row's extra headers on every request. The
@@ -92,7 +107,7 @@ func (c *openaiClient) Complete(ctx context.Context, req Request, onDelta func(s
 func (c *openaiClient) oneShot(ctx context.Context, oreq openai.ChatCompletionRequest) (*Result, error) {
 	resp, err := c.client.CreateChatCompletion(ctx, oreq)
 	if err != nil {
-		return nil, err
+		return nil, c.scrubbed(err)
 	}
 	usage := &Usage{PromptTokens: resp.Usage.PromptTokens, CompletionTokens: resp.Usage.CompletionTokens}
 	if len(resp.Choices) == 0 {
@@ -108,7 +123,7 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 	oreq.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
 	stream, err := c.client.CreateChatCompletionStream(ctx, oreq)
 	if err != nil {
-		return nil, err
+		return nil, c.scrubbed(err)
 	}
 	defer func() { _ = stream.Close() }()
 	var content strings.Builder
@@ -120,7 +135,7 @@ func (c *openaiClient) stream(ctx context.Context, oreq openai.ChatCompletionReq
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, c.scrubbed(err)
 		}
 		if chunk.Usage != nil {
 			usage = &Usage{PromptTokens: chunk.Usage.PromptTokens, CompletionTokens: chunk.Usage.CompletionTokens}
