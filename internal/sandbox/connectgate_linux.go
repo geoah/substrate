@@ -11,8 +11,10 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -60,6 +62,16 @@ type seccompNotifResp struct {
 	Val   int64
 	Error int32
 	Flags uint32
+}
+
+// seccompNotifAddfd mirrors struct seccomp_notif_addfd. Its size (24 bytes) is
+// baked into the ADDFD ioctl number (0x40182103).
+type seccompNotifAddfd struct {
+	ID         uint64
+	Flags      uint32
+	SrcFD      uint32
+	NewFD      uint32
+	NewFDFlags uint32
 }
 
 // pendingGate is the parent end of one connect-gate socket, held between Wrap
@@ -247,8 +259,7 @@ func (g *connectGate) run() {
 	}
 }
 
-// handleOne services one connect notification, answering CONTINUE for an
-// allowed destination and EACCES for a refused one. It returns false only on an
+// handleOne services one connect notification. It returns false only on an
 // error that makes the listener unusable.
 func (g *connectGate) handleOne() bool {
 	var n seccompNotif
@@ -256,68 +267,383 @@ func (g *connectGate) handleOne() bool {
 		// EINTR, or a notification canceled before we read it: recoverable.
 		return errors.Is(err, unix.EINTR) || errors.Is(err, unix.ENOENT)
 	}
-	resp := seccompNotifResp{ID: n.ID}
-	if g.decideAllow(&n) {
-		resp.Flags = uint32(unix.SECCOMP_USER_NOTIF_FLAG_CONTINUE)
-	} else {
-		resp.Error = -int32(unix.EACCES)
+	return g.service(&n)
+}
+
+// verdict is what to do with one connect.
+type verdict int
+
+const (
+	verdictDeny    verdict = iota // refuse with EACCES
+	verdictPass                   // let the kernel run it: a non-INET family
+	verdictConnect                // an allowed INET destination: emulate it
+)
+
+// service answers one notification. An allowed INET destination is NOT answered
+// with CONTINUE: the kernel would re-read the body's sockaddr when it resumed
+// the syscall, and a second thread could flip the address in between (a TOCTOU
+// race). Instead the runner connects to the address it verified and installs
+// that connected socket into the body, so the kernel never re-reads the body's
+// memory. Every other path refuses; nothing falls open.
+func (g *connectGate) service(n *seccompNotif) bool {
+	v, family, dest := g.classify(n)
+	switch v {
+	case verdictPass:
+		// A non-INET family (AF_UNIX, AF_NETLINK). CONTINUE is safe here: these
+		// reach nothing off the IP stack, and the kernel and Landlock still
+		// mediate them when the syscall resumes. Only INET is raceable, and only
+		// INET is emulated.
+		return g.send(&seccompNotifResp{ID: n.ID, Flags: uint32(unix.SECCOMP_USER_NOTIF_FLAG_CONTINUE)})
+	case verdictConnect:
+		return g.emulateConnect(n, family, dest)
+	default:
+		return g.send(denyResp(n.ID, unix.EACCES))
 	}
-	if err := notifIoctl(g.lfd, unix.SECCOMP_IOCTL_NOTIF_SEND, unsafe.Pointer(&resp)); err != nil {
-		// ENOENT: the target was interrupted or exited before we answered, so
-		// this notification is void. Keep serving.
+}
+
+// classify reads the connect target from the body's memory and decides. The
+// read is trustworthy only while the target is still blocked in this
+// notification, which ID_VALID confirms; anything it cannot read, parse or
+// allow is a deny.
+//
+// SAFETY: treating every non-INET family as verdictPass is safe only because
+// the main seccomp socket-domain allowlist (seccomp_linux.go, buildFilter)
+// bounds a body to AF_UNIX, AF_INET, AF_INET6 and AF_NETLINK, none of which
+// reach an off-machine IP service without going through the AF_INET(6) arms
+// below. If that allowlist ever gains AF_PACKET or AF_VSOCK, this default would
+// pass them unfiltered and both sides must change together.
+func (g *connectGate) classify(n *seccompNotif) (verdict, int, netip.AddrPort) {
+	uaddr := uintptr(n.Data.Args[1])
+	alen := int(int32(n.Data.Args[2]))
+	if uaddr == 0 || alen < 2 || alen > 128 {
+		return verdictDeny, 0, netip.AddrPort{}
+	}
+	buf := make([]byte, alen)
+	if !readTargetMem(int(n.Pid), uaddr, buf) {
+		return verdictDeny, 0, netip.AddrPort{}
+	}
+	if err := notifIoctl(g.lfd, seccompIoctlNotifIDValid, unsafe.Pointer(&n.ID)); err != nil {
+		return verdictDeny, 0, netip.AddrPort{}
+	}
+	family := int(binary.LittleEndian.Uint16(buf[0:2]))
+	switch family {
+	case unix.AF_UNIX:
+		return verdictPass, family, netip.AddrPort{}
+	case unix.AF_INET:
+		if alen < 8 {
+			return verdictDeny, family, netip.AddrPort{}
+		}
+		port := binary.BigEndian.Uint16(buf[2:4])
+		var a [4]byte
+		copy(a[:], buf[4:8])
+		addr := netip.AddrFrom4(a)
+		if !g.allowDest(addr, port) {
+			return verdictDeny, family, netip.AddrPort{}
+		}
+		return verdictConnect, family, netip.AddrPortFrom(addr, port)
+	case unix.AF_INET6:
+		if alen < 24 {
+			return verdictDeny, family, netip.AddrPort{}
+		}
+		port := binary.BigEndian.Uint16(buf[2:4])
+		var a [16]byte
+		copy(a[:], buf[8:24])
+		addr := netip.AddrFrom16(a)
+		if !g.allowDest(addr, port) {
+			return verdictDeny, family, netip.AddrPort{}
+		}
+		return verdictConnect, family, netip.AddrPortFrom(addr, port)
+	default:
+		return verdictPass, family, netip.AddrPort{}
+	}
+}
+
+// emulateConnect connects to the verified destination in the runner and
+// installs the connected socket into the body over the descriptor it called
+// connect(2) on, then completes the syscall. Every failure path answers the
+// body with an error and never allows: a socket the runner cannot faithfully
+// reproduce is refused (EACCES), and a genuine connection failure is handed back
+// as its real errno so the body sees an ordinary failed connect.
+//
+// A body's own connect timeout is honored by NOT waiting on a non-blocking
+// socket: the runner starts the connect to the verified address, hands the body
+// the still-connecting descriptor and returns EINPROGRESS, so the body's own
+// poll loop drives it to completion on its own clock. The connection is already
+// aimed at the address the runner checked, so the body cannot redirect it. A
+// blocking socket has no body-side timeout, so the runner waits for it, bounded
+// by the body's own lifetime (waitConnect abandons when the notification goes
+// invalid).
+func (g *connectGate) emulateConnect(n *seccompNotif, family int, dest netip.AddrPort) bool {
+	bodyFD := int(int32(n.Data.Args[0]))
+	// seccomp reports the connecting THREAD's tid, but pidfd_open needs the
+	// thread-group leader; a body that connects from a worker thread (uv, tokio)
+	// has tid != tgid. Threads share the fd table, so the leader's pidfd reaches
+	// the same descriptor.
+	info, err := inspectSocket(tgidOf(int(n.Pid)), bodyFD)
+	if err != nil {
+		return g.send(denyResp(n.ID, unix.EACCES))
+	}
+	defer info.close()
+	// A bound source address the fresh socket cannot carry, or a type the runner
+	// does not emulate (only stream and datagram): refuse rather than connect
+	// with different semantics.
+	if info.bound || (info.typ != unix.SOCK_STREAM && info.typ != unix.SOCK_DGRAM) {
+		return g.send(denyResp(n.ID, unix.EACCES))
+	}
+	// Confirm the notification is still live before spending a connect on it.
+	if err := notifIoctl(g.lfd, seccompIoctlNotifIDValid, unsafe.Pointer(&n.ID)); err != nil {
+		return g.send(denyResp(n.ID, unix.EACCES))
+	}
+
+	fd, err := unix.Socket(info.domain, info.typ|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return g.send(denyResp(n.ID, toErrno(err, unix.EACCES)))
+	}
+	defer func() { _ = unix.Close(fd) }() // addfd dups it in; the runner's copy always closes
+	sa := sockaddrFor(family, dest)
+	if sa == nil {
+		return g.send(denyResp(n.ID, unix.EAFNOSUPPORT))
+	}
+
+	// The response errno to hand the body: 0 means the connect returns success.
+	var respErr unix.Errno
+	switch err := unix.Connect(fd, sa); {
+	case err == nil:
+		// A datagram socket, or a stream connection that completed at once.
+	case errors.Is(err, unix.EINPROGRESS):
+		if info.nonblock {
+			// Hand back the connecting socket and let the body poll it on its own
+			// timeout.
+			respErr = unix.EINPROGRESS
+		} else if e := g.waitConnect(fd, n.ID); e != 0 {
+			return g.send(denyResp(n.ID, e))
+		}
+	default:
+		return g.send(denyResp(n.ID, toErrno(err, unix.ECONNREFUSED)))
+	}
+
+	// Give the body the blocking mode its own socket had, then install the socket
+	// at the body's descriptor number.
+	if err := setNonblock(fd, info.nonblock); err != nil {
+		return g.send(denyResp(n.ID, unix.EACCES))
+	}
+	if err := g.addfd(n.ID, fd, bodyFD, info.cloexec); err != nil {
+		return g.send(denyResp(n.ID, unix.EACCES))
+	}
+	if respErr != 0 {
+		return g.send(denyResp(n.ID, respErr))
+	}
+	return g.send(&seccompNotifResp{ID: n.ID})
+}
+
+const (
+	connectTimeout = 30 * time.Second
+	connectPollMs  = 250
+)
+
+// waitConnect waits for a non-blocking stream connect to finish, in slices, so
+// it can drop the attempt the moment the body's notification is no longer valid
+// (the body exited or was interrupted). It returns 0 on success or the errno
+// the connection failed with.
+func (g *connectGate) waitConnect(fd int, id uint64) unix.Errno {
+	deadline := time.Now().Add(connectTimeout)
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return unix.ETIMEDOUT
+		}
+		ms := int(remaining / time.Millisecond)
+		if ms > connectPollMs {
+			ms = connectPollMs
+		}
+		pfd := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLOUT}}
+		nr, err := unix.Poll(pfd, ms)
+		if err != nil {
+			if errors.Is(err, unix.EINTR) {
+				continue
+			}
+			return unix.EACCES
+		}
+		if nr == 0 {
+			// A poll slice elapsed; the body must still be waiting on this connect.
+			if notifIoctl(g.lfd, seccompIoctlNotifIDValid, unsafe.Pointer(&id)) != nil {
+				return unix.ECONNABORTED
+			}
+			continue
+		}
+		soErr, err := unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_ERROR)
+		if err != nil {
+			return unix.EACCES
+		}
+		if soErr != 0 {
+			return unix.Errno(soErr)
+		}
+		return 0
+	}
+}
+
+// addfd installs srcfd into the body at the exact descriptor number newfd it
+// called connect on, replacing the socket that was there.
+func (g *connectGate) addfd(id uint64, srcfd, newfd int, cloexec bool) error {
+	a := seccompNotifAddfd{
+		ID:    id,
+		Flags: uint32(unix.SECCOMP_ADDFD_FLAG_SETFD),
+		SrcFD: uint32(srcfd),
+		NewFD: uint32(newfd),
+	}
+	if cloexec {
+		a.NewFDFlags = uint32(unix.O_CLOEXEC)
+	}
+	return notifIoctl(g.lfd, unix.SECCOMP_IOCTL_NOTIF_ADDFD, unsafe.Pointer(&a))
+}
+
+// send writes one response. It returns false only when the listener itself is
+// unusable; a notification that vanished under us (ENOENT) or a signal (EINTR)
+// is per-request and keeps the supervisor serving.
+func (g *connectGate) send(resp *seccompNotifResp) bool {
+	if err := notifIoctl(g.lfd, unix.SECCOMP_IOCTL_NOTIF_SEND, unsafe.Pointer(resp)); err != nil {
 		return errors.Is(err, unix.ENOENT) || errors.Is(err, unix.EINTR)
 	}
 	return true
 }
 
-// decideAllow reads the connect target from the body's memory and classifies it.
-// Anything it cannot read or parse is refused: a destination that cannot be
-// checked is not one to allow.
-func (g *connectGate) decideAllow(n *seccompNotif) bool {
-	uaddr := uintptr(n.Data.Args[1])
-	alen := int(int32(n.Data.Args[2]))
-	if uaddr == 0 || alen < 2 || alen > 128 {
-		return false
+func denyResp(id uint64, errno unix.Errno) *seccompNotifResp {
+	return &seccompNotifResp{ID: id, Error: -int32(errno)}
+}
+
+// sockInfo is what the runner learns about the body's socket before it emulates
+// the connect, read through a dup of the body's descriptor that never changes
+// the body's own socket.
+type sockInfo struct {
+	dupfd    int
+	domain   int
+	typ      int
+	nonblock bool
+	cloexec  bool
+	bound    bool
+}
+
+func (s *sockInfo) close() {
+	if s != nil && s.dupfd >= 0 {
+		_ = unix.Close(s.dupfd)
 	}
-	buf := make([]byte, alen)
-	if !readTargetMem(int(n.Pid), uaddr, buf) {
-		return false
+}
+
+// inspectSocket dups the body's connect socket into the runner and reads its
+// domain, type, blocking flag, close-on-exec flag and whether it was bound. The
+// dup shares the body's open file description, so this reads without changing
+// the body's socket; it is closed by sockInfo.close. pidfd_getfd is permitted
+// because the runner is the body's ancestor under yama ptrace scope 1.
+func inspectSocket(tgid, fd int) (*sockInfo, error) {
+	pidfd, err := unix.PidfdOpen(tgid, 0)
+	if err != nil {
+		return nil, err
 	}
-	// The read is trustworthy only while the target is still blocked in this
-	// notification; ID_VALID confirms it has not been interrupted since.
-	if err := notifIoctl(g.lfd, seccompIoctlNotifIDValid, unsafe.Pointer(&n.ID)); err != nil {
-		return false
+	defer func() { _ = unix.Close(pidfd) }()
+	dup, err := unix.PidfdGetfd(pidfd, fd, 0)
+	if err != nil {
+		return nil, err
 	}
-	// SAFETY: passing every non-INET family is safe only because the main
-	// seccomp socket-domain allowlist (seccomp_linux.go, buildFilter) bounds a
-	// body to AF_UNIX, AF_INET, AF_INET6 and AF_NETLINK, none of which reach an
-	// off-machine IP service without going through the AF_INET(6) arms below. If
-	// that allowlist ever gains AF_PACKET or AF_VSOCK, this default would pass
-	// them unfiltered and both sides must change together.
-	switch binary.LittleEndian.Uint16(buf[0:2]) {
-	case unix.AF_UNIX:
-		return true // addresses nothing off the machine
+	info := &sockInfo{dupfd: dup}
+	domain, err := unix.GetsockoptInt(dup, unix.SOL_SOCKET, unix.SO_DOMAIN)
+	if err != nil {
+		info.close()
+		return nil, err
+	}
+	typ, err := unix.GetsockoptInt(dup, unix.SOL_SOCKET, unix.SO_TYPE)
+	if err != nil {
+		info.close()
+		return nil, err
+	}
+	fl, err := unix.FcntlInt(uintptr(dup), unix.F_GETFL, 0)
+	if err != nil {
+		info.close()
+		return nil, err
+	}
+	fdfl, err := unix.FcntlInt(uintptr(dup), unix.F_GETFD, 0)
+	if err != nil {
+		info.close()
+		return nil, err
+	}
+	info.domain = domain
+	info.typ = typ
+	info.nonblock = fl&unix.O_NONBLOCK != 0
+	info.cloexec = fdfl&unix.FD_CLOEXEC != 0
+	if sa, err := unix.Getsockname(dup); err == nil {
+		info.bound = sockaddrBound(sa)
+	}
+	return info, nil
+}
+
+// tgidOf resolves the thread-group leader for a thread id, reading it from
+// /proc. seccomp reports the connecting thread's tid; pidfd_open wants the
+// leader. A read failure falls back to the id itself (the leader's own connect
+// already carries tid == tgid).
+func tgidOf(pid int) int {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+	if err != nil {
+		return pid
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		rest, ok := strings.CutPrefix(line, "Tgid:")
+		if !ok {
+			continue
+		}
+		if v, err := strconv.Atoi(strings.TrimSpace(rest)); err == nil {
+			return v
+		}
+		break
+	}
+	return pid
+}
+
+// sockaddrBound reports whether a socket carries a source address it chose, so
+// the emulation can refuse rather than connect from a different local address.
+func sockaddrBound(sa unix.Sockaddr) bool {
+	switch s := sa.(type) {
+	case *unix.SockaddrInet4:
+		return s.Port != 0 || s.Addr != [4]byte{}
+	case *unix.SockaddrInet6:
+		return s.Port != 0 || s.Addr != [16]byte{}
+	}
+	return false
+}
+
+// sockaddrFor builds the connect target for the family the body named.
+func sockaddrFor(family int, dest netip.AddrPort) unix.Sockaddr {
+	switch family {
 	case unix.AF_INET:
-		if alen < 8 {
-			return false
+		a := dest.Addr().Unmap()
+		if !a.Is4() {
+			return nil
 		}
-		port := binary.BigEndian.Uint16(buf[2:4])
-		var a [4]byte
-		copy(a[:], buf[4:8])
-		return g.allowDest(netip.AddrFrom4(a), port)
+		return &unix.SockaddrInet4{Port: int(dest.Port()), Addr: a.As4()}
 	case unix.AF_INET6:
-		if alen < 24 {
-			return false
-		}
-		port := binary.BigEndian.Uint16(buf[2:4])
-		var a [16]byte
-		copy(a[:], buf[8:24])
-		return g.allowDest(netip.AddrFrom16(a), port)
-	default:
-		// AF_NETLINK and the like: the socket gate allowed them and they reach
-		// nothing off the IP stack, so leave them to the main filter.
-		return true
+		return &unix.SockaddrInet6{Port: int(dest.Port()), Addr: dest.Addr().As16()}
 	}
+	return nil
+}
+
+func setNonblock(fd int, nonblock bool) error {
+	fl, err := unix.FcntlInt(uintptr(fd), unix.F_GETFL, 0)
+	if err != nil {
+		return err
+	}
+	if nonblock {
+		fl |= unix.O_NONBLOCK
+	} else {
+		fl &^= unix.O_NONBLOCK
+	}
+	_, err = unix.FcntlInt(uintptr(fd), unix.F_SETFL, fl)
+	return err
+}
+
+func toErrno(err error, fallback unix.Errno) unix.Errno {
+	var e unix.Errno
+	if errors.As(err, &e) {
+		return e
+	}
+	return fallback
 }
 
 // allowDest is the destination policy: an operator-permitted range, then a

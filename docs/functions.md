@@ -387,11 +387,11 @@ quietly does less than it claims is worse than none.
 pid namespace with the substrate, so it can signal it. There is no memory or
 process-count ceiling, because that needs a cgroup and `/sys/fs/cgroup` is
 read-only in a stock container. A body that *is* granted network has its
-`connect` destinations filtered, but two residuals remain: the allow path uses
-the kernel's `CONTINUE`, so a multi-threaded body can race the address past the
-check for one connection, and a UDP body reaching a private service through
-`sendto` with no `connect` is not filtered at all (Postgres is TCP, so the
-proven path is closed). On non-Linux hosts (a macOS laptop running
+`connect` destinations filtered: the runner connects to the address it verified
+and installs that socket into the body, so a multi-threaded body cannot race the
+destination past the check. One residual remains: a UDP body reaching a private
+service through `sendto` with no `connect` is not filtered (Postgres is TCP, so
+the proven path is closed). On non-Linux hosts (a macOS laptop running
 `mise run dev`) none of it applies, and the boot log says so.
 
 ### Shared modules

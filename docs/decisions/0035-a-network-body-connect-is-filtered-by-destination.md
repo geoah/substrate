@@ -45,12 +45,27 @@ body's ancestor) over a unix socket. On each `connect`, the runner reads the
 target `sockaddr` from the body's memory (`process_vm_readv`, permitted because
 the runner is an ancestor under `yama` ptrace scope 1), and refuses loopback,
 link-local (the cloud metadata address `169.254.169.254` among them), RFC1918
-and unique-local ranges, and the unspecified address. A resolver named in
-`/etc/resolv.conf` is allowed on port 53 only, so name resolution through a
-loopback stub (Docker's `127.0.0.11`, systemd-resolved's `127.0.0.53`) keeps
-working while the body cannot otherwise reach loopback. Every other destination
-continues. The classifier lives in `internal/egress`, so the server-side dial
-policy ([#241](https://github.com/geoah/substrate/issues/241)) can reuse it.
+and unique-local ranges, carrier-grade NAT (`100.64.0.0/10`, where a tailnet
+lives), and the `0.0.0.0/8` block. A resolver named in `/etc/resolv.conf` is
+allowed on port 53 only, so name resolution through a loopback stub (Docker's
+`127.0.0.11`, systemd-resolved's `127.0.0.53`) keeps working while the body
+cannot otherwise reach loopback. The classifier lives in `internal/egress`, so
+the server-side dial policy
+([#241](https://github.com/geoah/substrate/issues/241)) can reuse it.
+
+An ALLOWED destination is NOT answered with `SECCOMP_USER_NOTIF_FLAG_CONTINUE`.
+`CONTINUE` makes the kernel re-read the `sockaddr` when it resumes the syscall,
+so a second thread that rewrites the address in that window reaches a blocked
+destination (a TOCTOU race, reproduced: 941 connections to a blocked listener in
+4000 iterations against the `CONTINUE` version). Instead the runner connects a
+fresh socket to the address it verified (a value it holds, not a pointer the body
+can race), then installs that connected socket into the body over the descriptor
+it called `connect` on with `SECCOMP_IOCTL_NOTIF_ADDFD` and
+`SECCOMP_ADDFD_FLAG_SETFD`, and returns success. The kernel never re-reads the
+body's memory, so there is no window. The body's own connect timeout is honored:
+a non-blocking socket gets the still-connecting descriptor and `EINPROGRESS`, so
+the body drives its own poll loop; a blocking socket is waited on, bounded by the
+body's own lifetime.
 
 ### Consequences
 
@@ -63,32 +78,36 @@ policy ([#241](https://github.com/geoah/substrate/issues/241)) can reuse it.
 - Good, because `internal/api` never imports the runner, and the classifier is a
   leaf package, so the server can adopt the same policy for #241 without new
   coupling.
-- Bad, because the allow path uses `SECCOMP_USER_NOTIF_FLAG_CONTINUE`: the kernel
-  re-reads the `sockaddr` when it resumes the syscall, so a multi-threaded body
-  that rewrites the address between the supervisor's read and the kernel's
-  re-read can defeat the check for one connection (a TOCTOU race). The
-  straightforward proven exploit (a Postgres client connecting to the private
-  address) is refused; the race is a documented residual. Closing it needs the
-  supervisor to connect on the body's behalf and inject the descriptor
-  (`SECCOMP_IOCTL_NOTIF_ADDFD`), which is a later change.
+- Good, because the TOCTOU race is closed, not narrowed: a multi-threaded body
+  cannot flip the address past the check, because the runner connects to the
+  value it read and the kernel never re-reads the body's memory.
+- Bad, because a socket configuration the runner cannot faithfully reproduce (a
+  bound source address, a type other than stream or datagram) is refused with
+  `EACCES` rather than emulated. These are exotic for an outbound client; a
+  refused connect is safe, a raced one is not.
 - Bad, because a UDP body reaching a private service through `sendto`/`sendmsg`
   (no `connect`) is not filtered. Postgres is TCP and requires `connect`, so the
   proven path is unaffected; a UDP residual remains.
-- Bad, because a network-granted body costs one supervisor goroutine and one
-  unix-socket round trip at startup.
+- Bad, because a network-granted body costs one supervisor goroutine, one
+  unix-socket round trip at startup, and one supervised connect per outbound
+  connection.
 
 ### Confirmation
 
-`internal/runner/isolation_test.go` gains a case: a network-granted body is
+`internal/runner/isolation_test.go` gains two cases: a network-granted body is
 refused `connect` to a loopback and an RFC1918 address and still reaches an
-allowed public destination. It runs under the `SUBSTRATE_TEST_REQUIRE_SANDBOX`
-gate that #209 added, so a build where the confinement stopped running fails
-rather than skips. `internal/egress` has unit tests for the range classifier.
+allowed public destination, and a multi-threaded body flipping a shared
+`sockaddr` between an allowed and a blocked address reaches the blocked listener
+zero times (the case fails against the `CONTINUE` version). Both run under the
+`SUBSTRATE_TEST_REQUIRE_SANDBOX` gate that #209 added, so a build where the
+confinement stopped running fails rather than skips. `internal/egress` has unit
+tests for the range classifier.
 
 ## More Information
 
 Supersedes the residual named in `sandbox.go` that "a body GRANTED network
 reaches loopback, so it can talk to the substrate's own HTTP port"; that
-sentence is now narrowed to the TOCTOU and UDP residuals above. Reopen if the
+sentence is now narrowed to the UDP-`sendto` residual above. Reopen if the
 deployment gains a capability that makes a per-body network namespace possible,
-which would replace this with a route-table boundary and no TOCTOU.
+which would replace this with a route-table boundary and drop the per-connect
+emulation.

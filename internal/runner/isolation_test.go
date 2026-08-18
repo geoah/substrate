@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -47,13 +48,13 @@ func requireSeccomp(t *testing.T, r *Runner) {
 	sandboxtest.Case(t)
 }
 
-// Nine cases below guard on the confinement, and under
-// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly nine must reach that guard: a kernel
+// Ten cases below guard on the confinement, and under
+// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly ten must reach that guard: a kernel
 // or image change that turns them into skips cannot leave a green build
-// behind, and a tenth case cannot be added, or one of the nine removed,
+// behind, and an eleventh case cannot be added, or one of the ten removed,
 // without this number moving with it.
 func TestMain(m *testing.M) {
-	os.Exit(sandboxtest.Run(m, 9))
+	os.Exit(sandboxtest.Run(m, 10))
 }
 
 // The exploit that motivated retiring the shared interpreter: a function in
@@ -698,5 +699,90 @@ def main(input, host):
 	// time out, or be unreachable, but the gate itself let it through.
 	if got, _ := out["public"].(string); got == eacces {
 		t.Errorf("the gate refused a public address: %v", out["public"])
+	}
+}
+
+// The TOCTOU race the ADDFD design closes. A multi-threaded body loops raw
+// connect(2) against a SHARED sockaddr buffer while another thread flips that
+// buffer between an allowed public address and a live loopback listener. The
+// old CONTINUE allow-path re-read the buffer in the kernel after the check, so a
+// flip that landed in that window reached the listener; the ADDFD path reads the
+// address once and connects to that value itself, so a connect that is allowed
+// can only reach the address the runner verified. The listener must accept
+// nothing, across thousands of iterations.
+func TestNetworkBodyCannotRaceTheConnectAddress(t *testing.T) {
+	r := New()
+	requireSeccomp(t, r)
+
+	var accepts atomic.Int64
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			accepts.Add(1)
+			_ = c.Close()
+		}
+	}()
+	_, blockedPort, _ := net.SplitHostPort(ln.Addr().String())
+
+	const probe = `
+import ctypes, socket, struct, threading
+libc = ctypes.CDLL(None, use_errno=True)
+def sa_in(ip, port):
+    return struct.pack("=H", socket.AF_INET) + struct.pack("!H", port) + socket.inet_aton(ip) + b"\x00" * 8
+def main(input, host):
+    a = input["args"]
+    bp = int(a["blockedPort"])
+    allowed = sa_in("1.1.1.1", 443)
+    blocked = sa_in("127.0.0.1", bp)
+    buf = ctypes.create_string_buffer(bytes(allowed), 16)
+    stop = threading.Event()
+    def flip():
+        while not stop.is_set():
+            ctypes.memmove(buf, blocked, 16)
+            ctypes.memmove(buf, allowed, 16)
+    t = threading.Thread(target=flip, daemon=True); t.start()
+    hits, iters = 0, 4000
+    for _ in range(iters):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setblocking(False)
+        try:
+            libc.connect(s.fileno(), buf, 16)
+            try:
+                peer = s.getpeername()
+                if peer[0] == "127.0.0.1" and peer[1] == bp:
+                    hits += 1
+            except OSError:
+                pass
+        finally:
+            s.close()
+    stop.set(); t.join(timeout=1)
+    return {"output": {"hits": hits, "iters": iters}}
+`
+	spec := Spec{
+		Repository: "t1", Function: "race.g.test", Runtime: "python",
+		Source: probe, TimeoutMs: 30000, Network: []string{"api.example.com"},
+	}
+	in := testInput()
+	in.Args = map[string]any{"blockedPort": blockedPort}
+	res, err := r.Invoke(context.Background(), spec, in, nil)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, _ := res.Output.(map[string]any)
+	// The listener is the ground truth: no connection may ever reach it.
+	if got := accepts.Load(); got != 0 {
+		t.Fatalf("a raced connect reached the blocked loopback listener %d time(s)", got)
+	}
+	// And the body never saw its own socket pointed at the blocked peer.
+	if hits, _ := out["hits"].(float64); hits != 0 {
+		t.Fatalf("a body socket reached the blocked address %v times", hits)
 	}
 }

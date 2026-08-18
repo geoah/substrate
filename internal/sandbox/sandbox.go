@@ -45,12 +45,12 @@
 // only at ABI 6, which the current deployment kernels do not all reach); it has
 // no memory or pid ceiling beyond rlimits, because cgroups are unavailable; and
 // a body GRANTED network has its connect destinations filtered
-// (connectgate_linux.go) but two residuals remain: the allow path uses the
-// kernel's CONTINUE, which re-reads the sockaddr, so a multi-threaded body can
-// race the address past the check for one connection, and a UDP body reaching a
-// private service through sendto with no connect is not filtered at all
-// (0035-a-network-body-connect-is-filtered-by-destination). Those are named
-// residual risks, not oversights.
+// (connectgate_linux.go): the runner connects to the address it verified and
+// injects the socket, so a multi-threaded body cannot race the destination past
+// the check. One residual remains: a UDP body reaching a private service through
+// sendto with no connect is not filtered
+// (0035-a-network-body-connect-is-filtered-by-destination). That is a named
+// residual risk, not an oversight.
 package sandbox
 
 import (
