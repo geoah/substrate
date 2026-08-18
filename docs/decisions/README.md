@@ -183,3 +183,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0036](0036-operational-lists-are-a-page-envelope.md) | Operational lists answer with an `{items, cursor?}` envelope | accepted |
 | [0037](0037-gated-is-an-agent-loop-verdict-not-a-wire-code.md) | `gated` is an agent-loop verdict, not a wire code; it leaves the closed set | accepted |
 | [0038](0038-a-network-entry-is-a-bare-host-or-cidr-destination.md) | A `permissions.network` entry is a bare host or CIDR destination | accepted |
+| [0039](0039-the-substrate-stores-a-recurrence-rule-and-never-expands-it.md) | The substrate stores a recurrence rule and never expands it | accepted |
