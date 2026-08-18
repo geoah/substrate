@@ -14,7 +14,7 @@ metadata:
 data:
   # version 2: `routine` binds `recurring` and `routinelog` binds
   # `occurrencelog`, replacing the copied properties (#122).
-  version: 2
+  version: 3
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.

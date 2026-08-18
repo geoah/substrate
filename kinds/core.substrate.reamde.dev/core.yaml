@@ -88,7 +88,7 @@ data:
   # template, `bundle` marks its loader-required fields required, `trigger`
   # requires `callable` and gains a template, and the `query` host card takes
   # integer counts. The pinned kinds bump their own.
-  version: 12
+  version: 13
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands

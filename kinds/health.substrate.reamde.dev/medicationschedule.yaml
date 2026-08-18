@@ -11,7 +11,6 @@ data:
     with no recurrence is as-needed.
   names:
     singular: medicationschedule
-    plural: medicationschedules
   displayTemplate: "{name|recurrence}"
   # `at` seeds the recurrence (its DTSTART, so also the time of day) and
   # `endsAt` closes the course; an open-ended schedule omits it.

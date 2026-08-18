@@ -9,7 +9,6 @@ data:
     order owns it, so returning the order takes its lines with it.
   names:
     singular: orderitem
-    plural: orderitems
   displayTemplate: "{name}"
   properties:
     name:

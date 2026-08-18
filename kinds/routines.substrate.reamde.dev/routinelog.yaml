@@ -10,7 +10,6 @@ data:
     it from the RRULE rather than trusting a stored flag.
   names:
     singular: routinelog
-    plural: routinelogs
   displayTemplate: "{status}"
   # `at` is when the occurrence was done or the skip was recorded.
   # `occurrencelog` contracts status/scheduledAt/details and the

@@ -46,7 +46,7 @@ data:
   # version 6: the sync function's `permissions.network` drops the
   # `beeper.com/*` glob for the bare host `beeper.com`, the form the network
   # grammar admits (docs/decisions/0038).
-  version: 6
+  version: 7
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block — an oauth2 block would demand a client input, and this
@@ -95,7 +95,6 @@ data:
     else.
   names:
     singular: config
-    plural: configs
   displayTemplate: "Beeper at {homeserverUrl}"
   properties:
     homeserverUrl:
@@ -134,7 +133,6 @@ data:
     since no OAuth flow ever runs for this bundle.
   names:
     singular: account
-    plural: accounts
   traits: [accountconfig]
   displayTemplate: "{userId}"
   properties:
@@ -265,7 +263,6 @@ data:
     so a partial sync never erases a name.
   names:
     singular: room
-    plural: rooms
   displayTemplate: "{name|roomId}"
   properties:
     # NOT a reference, and every `account:` in this closure reads the same way:
@@ -315,7 +312,6 @@ data:
     id, often a bridge ghost rather than a human's own.
   names:
     singular: message
-    plural: messages
   displayTemplate: "{sender}: {text}"
   properties:
     account:

@@ -21,7 +21,7 @@ data:
   # `medicationschedulelog` binds `occurrencelog`, moves its status states from
   # taken/skipped to done/skipped, and types `doseUnit` as the schedule's enum
   # (#122).
-  version: 3
+  version: 4
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.

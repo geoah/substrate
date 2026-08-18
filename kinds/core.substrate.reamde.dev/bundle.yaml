@@ -20,7 +20,6 @@ data:
     own: disabled, uninstalled, purging.
   names:
     singular: bundle
-    plural: bundles
   displayTemplate: "{localName}"
   properties:
     # Every declaration carries its own version: the declaring authority's,

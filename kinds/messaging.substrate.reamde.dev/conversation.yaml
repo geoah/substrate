@@ -10,7 +10,6 @@ data:
     it synced through and names the people taking part.
   names:
     singular: conversation
-    plural: conversations
   displayTemplate: "{name|participants}"
   # `at` is the last activity, so an inbox orders conversations without
   # opening their messages. Optional: a conversation nothing wrote it for

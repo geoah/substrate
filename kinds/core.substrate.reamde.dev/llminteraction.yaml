@@ -19,10 +19,9 @@ data:
   # The declaration inherited the authority's version before this pin.
   # version 10: `resolvedAt` is a declared property (datetime, managed). The
   # answer and dismiss transitions stamped it as an undeclared string before.
-  version: 10
+  version: 11
   names:
     singular: llminteraction
-    plural: llminteractions
   displayTemplate: "{state} #{localName}"
   indices:
     - properties:

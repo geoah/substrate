@@ -67,7 +67,7 @@ data:
   # version 10: the openai row names OpenAI's endpoint. There is no host
   # gateway left for an empty baseURL to mean, so the row that shipped without
   # one refused at dispatch until it was hand-edited.
-  version: 10
+  version: 11
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata:
@@ -102,7 +102,6 @@ data:
     the arbiter judge a change to one.
   names:
     singular: scratchpad
-    plural: scratchpads
   displayTemplate: "{name}"
   properties:
     name:

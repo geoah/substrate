@@ -10,7 +10,6 @@ data:
     — an edge carries no properties, so every addressee is a recipient.
   names:
     singular: emailmessage
-    plural: emailmessages
   traits:
     - temporal(point)
   # subject alone: the sender lands on an address-born person whose name may

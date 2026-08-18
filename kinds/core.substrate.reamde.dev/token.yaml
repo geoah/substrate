@@ -21,10 +21,9 @@ data:
   # redacted on the wire.
   # version 5: `label` and `hash` are required. Minting refuses an empty label
   # and always writes the digest, so a token without either is not a token.
-  version: 5
+  version: 6
   names:
     singular: token
-    plural: tokens
   # A token has FULL ACCESS to its repository: no scopes, no actor set, no
   # roles. What it carries is what it is — a label, the SHA-256
   # of a high-entropy secret shown once at mint, and an optional expiry.

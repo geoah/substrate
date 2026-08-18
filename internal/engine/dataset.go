@@ -197,7 +197,7 @@ func (ds *dataset) KindByRef(ctx context.Context, ref string) (substrate.KindInf
 func typeInfo(t *vocabulary.Kind) substrate.KindInfo {
 	return substrate.KindInfo{
 		Identity: t.Identity, Name: t.Name, Authority: t.Authority, Version: t.Version,
-		Plural: t.Plural, Source: t.Source, Description: t.Description,
+		Source: t.Source, Description: t.Description,
 		Definition: authoredKindData(t.Definition),
 	}
 }

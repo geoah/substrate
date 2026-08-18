@@ -11,7 +11,6 @@ data:
     longer admits.
   names:
     singular: authority
-    plural: authorities
   displayTemplate: "{localName}"
   # the authority-level keys a kind projection cannot carry: who may write
   # under the authority, and where its declarations came from.

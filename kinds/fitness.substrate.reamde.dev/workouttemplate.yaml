@@ -10,7 +10,6 @@ data:
     just points back here, and set order lives on the sets.
   names:
     singular: workouttemplate
-    plural: workouttemplates
   displayTemplate: "{name}"
   properties:
     name:

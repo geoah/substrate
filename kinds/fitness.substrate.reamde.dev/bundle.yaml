@@ -16,7 +16,7 @@ data:
   # occurrence logs.
   # version 3: `workout` binds `recurring` and `workoutlog` binds
   # `occurrencelog`, replacing the copied properties (#122).
-  version: 3
+  version: 4
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.

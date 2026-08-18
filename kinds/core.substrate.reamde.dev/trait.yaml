@@ -20,10 +20,9 @@ data:
   # not declarable, so the map form went with the blob.
   # version 6: the declaration's own `version` became an incremental
   # integer, maintained by the engine.
-  version: 6
+  version: 7
   names:
     singular: trait
-    plural: traits
   # id = "<authority>/<name>". Traits resolve across authorities, so a vocabulary
   # type can bind core's `temporal` without redeclaring it.
   displayTemplate: "{localName}"

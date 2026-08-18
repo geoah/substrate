@@ -711,7 +711,7 @@ var deletedDataKeys = map[string]string{
 
 	"definition": "the retired blob: a declaration carries its own properties now, one key per authored field",
 	"name":       "the retired mirror: a declaration's local name is metadata.id",
-	"plural":     "the retired mirror: a kind's collection segment is `names.plural`",
+	"plural":     "the retired mirror: a kind's collection segment is its name (decision 0033)",
 	"functions":  "the retired mirror: an agent names its callables under `tools`",
 	"subagents":  "the retired mirror: an agent names its sub-agents under `agents`",
 	"sourceYAML": "the retired mirror: nothing stores a document's text, and the parsed declaration is the row",
@@ -734,6 +734,11 @@ var typeDataKeys = map[string]bool{
 	"description": true, "version": true,
 }
 
+// namesKeys is the `names` block's key set. `plural` is retired: the collection
+// segment is the kind name now (decision 0033), so nothing reads it and no
+// declaration ships it. It stays ADMITTED, not read, so a declaration a pre-0033
+// binary wrote still opens rather than quarantining its authority — the same
+// tolerated-inert acceptance the retired row mirrors get (deletedDataKeys).
 var namesKeys = map[string]bool{"singular": true, "plural": true}
 
 // indexKeys is one declared index's key set: the properties it covers, in order.
@@ -780,13 +785,6 @@ func (l *loader) parseType(doc Document) *Kind {
 	}
 	if v := l.parseVersion(where, d); v != 0 {
 		t.Version = v
-	}
-	t.Plural = mstr(names, "plural")
-	switch {
-	case t.Plural == "":
-		l.errf("%s: data.names.plural is required (never auto-derived)", where)
-	case !ValidName(t.Plural):
-		l.errf("%s: data.names.plural: one lowercase word [a-z][a-z0-9]*", where)
 	}
 	t.DisplayTemplate = mstr(d, "displayTemplate")
 
@@ -2149,12 +2147,6 @@ func (r *Registry) add(g *Authority) error {
 		t := g.Kinds[name]
 		r.byIdent[t.Identity] = t
 		r.byName[t.Name] = append(r.byName[t.Name], t)
-		key := g.Name + "/" + t.Plural
-		if prev, ok := r.byPlural[key]; ok {
-			return fmt.Errorf("substrate/schema: plural %q collides in authority %s (%s and %s)",
-				t.Plural, g.Name, prev.Name, t.Name)
-		}
-		r.byPlural[key] = t
 	}
 	return nil
 }
@@ -2254,7 +2246,6 @@ func (r *Registry) remove(authority string) {
 	for _, name := range g.KindOrder {
 		t := g.Kinds[name]
 		delete(r.byIdent, t.Identity)
-		delete(r.byPlural, g.Name+"/"+t.Plural)
 		rest := r.byName[t.Name][:0]
 		for _, c := range r.byName[t.Name] {
 			if c != t {

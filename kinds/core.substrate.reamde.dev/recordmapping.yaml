@@ -20,10 +20,9 @@ data:
   # string went with the blob.
   # version 6: the declaration's own `version` became an incremental
   # integer, maintained by the engine.
-  version: 6
+  version: 7
   names:
     singular: recordmapping
-    plural: recordmappings
   # id = "<authority>/<name>". A mapping is authority-local like a property type: its
   # `from` type lives in the authority that declares it, exactly one mapping per
   # source type; `to` is always a full type name.

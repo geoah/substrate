@@ -274,10 +274,6 @@ func TestLoadManifestStream(t *testing.T) {
 	if p, _ := book.Prop("secretKey"); !p.Secret() || p.FTS || p.Embed {
 		t.Fatalf("secret property = %+v", p)
 	}
-	if _, ok := r.ByPlural("vocab.example.com", "books"); !ok {
-		t.Fatal("plural lookup failed")
-	}
-
 	// A list is `repeated: true` on the property, never a bracketed type.
 	contact, _ := r.ByIdentity("vocab.example.com/contact")
 	if p, _ := contact.Prop("emails"); !p.Repeated || p.Datatype != vocabulary.DatatypeEmail {

@@ -11,7 +11,6 @@ data:
     reader never has to filter tombstones.
   names:
     singular: calendarevent
-    plural: calendarevents
   traits:
     - temporal(range)
   displayTemplate: "{summary}"

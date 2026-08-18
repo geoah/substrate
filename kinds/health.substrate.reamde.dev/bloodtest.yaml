@@ -10,7 +10,6 @@ data:
     edge points back here, so a marker's history reads like any other observation's.
   names:
     singular: bloodtest
-    plural: bloodtests
   displayTemplate: "{name}"
   # `at` is when the blood was drawn, not when results arrived.
   traits:

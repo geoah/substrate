@@ -10,7 +10,6 @@ data:
     the meal, so this record stays a diary line.
   names:
     singular: meal
-    plural: meals
   displayTemplate: "{name}"
   # `at` is when it was eaten.
   traits:

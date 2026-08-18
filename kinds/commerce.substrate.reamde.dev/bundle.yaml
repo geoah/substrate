@@ -23,7 +23,7 @@ data:
   # move a migration. A repository that already holds float rows keeps the
   # version 2 declarations (the boot upgrade refuses the retype, loudly)
   # until the rows are rewritten or deleted.
-  version: 3
+  version: 4
 ---
 # ---- the currency code, refined once and used by every money property -------
 kind: core.substrate.reamde.dev/propertytype

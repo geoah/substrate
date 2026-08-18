@@ -11,7 +11,6 @@ data:
     or was skipped is a routinelog.
   names:
     singular: routine
-    plural: routines
   displayTemplate: "{name}"
   # `at` seeds the recurrence (its DTSTART) and `endsAt` retires it.
   traits:

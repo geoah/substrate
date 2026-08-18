@@ -26,7 +26,7 @@ data:
   # is `done`, matching the task's own terminal state.
   # version 4: `tasklog` binds `occurrencelog`. The `task` kind pins its own
   # version for its `recurring` binding (#122).
-  version: 4
+  version: 5
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A VOCABULARY bundle (see people.substrate.reamde.dev): kinds only, imported from the

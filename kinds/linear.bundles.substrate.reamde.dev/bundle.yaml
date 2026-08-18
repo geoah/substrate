@@ -52,7 +52,7 @@ data:
   # version 7: `account` on every mirror kind is a pinned owner
   # reference instead of a string, so disconnecting an account collects
   # the rows it synced (docs/decisions/0032).
-  version: 7
+  version: 8
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -119,7 +119,6 @@ data:
     The endpoints live on the bundle manifest.
   names:
     singular: config
-    plural: configs
   traits: [oauth2]
   displayTemplate: "Linear client {clientId}"
   properties:
@@ -152,7 +151,6 @@ data:
     because Linear exposes no userinfo endpoint to read at the exchange.
   names:
     singular: account
-    plural: accounts
   traits: [accountconfig]
   displayTemplate: "{email}"
   properties:
@@ -275,7 +273,6 @@ data:
     other identities converge on one record.
   names:
     singular: user
-    plural: users
   displayTemplate: "{displayName|name}"
   properties:
     # NOT a reference, and every `account:` in this closure reads the same way:
@@ -331,7 +328,6 @@ data:
     no more.
   names:
     singular: team
-    plural: teams
   displayTemplate: "{name}"
   properties:
     account:
@@ -373,7 +369,6 @@ data:
     overwrites a status you set.
   names:
     singular: issue
-    plural: issues
   properties:
     account:
       type: reference

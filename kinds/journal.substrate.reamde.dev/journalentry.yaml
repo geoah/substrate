@@ -10,7 +10,6 @@ data:
     which is not always the day of writing.
   names:
     singular: journalentry
-    plural: journalentries
   displayTemplate: "{name}"
   # `at` is the day the entry is about.
   traits:

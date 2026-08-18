@@ -167,7 +167,7 @@ func TestSchemaApplyActivatesOnCommit(t *testing.T) {
 		t.Fatalf("reopen wrote %+v", changesSince(t, ds2, seq))
 	}
 	ti, err := ds2.KindByRef(ctx, swAuthority+"/widget")
-	if err != nil || ti.Plural != "widgets" || ti.Source != "installed" {
+	if err != nil || ti.Source != "installed" {
 		t.Fatalf("rebuilt type = %+v %v", ti, err)
 	}
 	if got := mustGet(t, ds2, w.Kind, w.ID); got.Properties["name"] != "roof" {

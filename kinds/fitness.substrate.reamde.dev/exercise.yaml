@@ -10,7 +10,6 @@ data:
     small and the history lives on the sets.
   names:
     singular: exercise
-    plural: exercises
   displayTemplate: "{name}"
   properties:
     name:

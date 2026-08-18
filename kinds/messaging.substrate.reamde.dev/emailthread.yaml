@@ -10,7 +10,6 @@ data:
     messages are what they open.
   names:
     singular: emailthread
-    plural: emailthreads
   displayTemplate: "{subject}"
   # `at` is the last message's time, so an inbox orders threads without
   # opening their messages.

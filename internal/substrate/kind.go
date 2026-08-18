@@ -8,9 +8,14 @@ type KindInfo struct {
 	// Version is the declaration's incremental version, server-maintained:
 	// 1 for a first declaration, +1 per change (or whatever higher number an
 	// explicit apply pinned).
-	Version int64  `json:"version"`
-	Plural  string `json:"plural"`
-	Source  string `json:"source"` // "builtin" | "installed"
+	Version int64 `json:"version"`
+	// Plural is retired: the collection segment is the kind name now
+	// (decision 0033), so no declaration ships a `names.plural` and the engine
+	// projects this empty. The field survives on the wire, and substratectl
+	// still resolves a typed plural client-side, so a legacy payload that
+	// carries one keeps decoding.
+	Plural string `json:"plural"`
+	Source string `json:"source"` // "builtin" | "installed"
 	// Description is what the kind is for, as its declaration says it: the
 	// line a reader gets above the collection, empty when undeclared.
 	Description string `json:"description"`

@@ -10,7 +10,6 @@ data:
     account takes the calendar and everything under it along.
   names:
     singular: calendar
-    plural: calendars
   displayTemplate: "{name}"
   properties:
     name:

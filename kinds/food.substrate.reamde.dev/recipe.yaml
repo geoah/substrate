@@ -10,7 +10,6 @@ data:
     so the recipe never accumulates history.
   names:
     singular: recipe
-    plural: recipes
   displayTemplate: "{name}"
   properties:
     name:

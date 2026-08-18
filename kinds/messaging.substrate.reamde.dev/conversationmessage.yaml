@@ -12,10 +12,9 @@ data:
   # The declaration inherited the authority's version before this pin.
   # version 2: `sentAt` is a declared property (datetime). The sent
   # transition stamped it as an undeclared string before.
-  version: 2
+  version: 3
   names:
     singular: conversationmessage
-    plural: conversationmessages
   traits:
     - temporal(point)
   # `{snippet}` is the engine's computed excerpt, not a property.

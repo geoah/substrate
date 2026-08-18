@@ -28,7 +28,6 @@ data:
   # takes the authority's, and the authority bumped for the typed core.
   names:
     singular: trigger
-    plural: triggers
   # A random-id row reads as the callable it delivers to.
   displayTemplate: "{callable}"
   properties:

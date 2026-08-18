@@ -27,7 +27,7 @@ data:
   # version 4: the grants group under one `permissions:` object, and the permission
   # to write is `writes:` inside it. This closure's functions and agents
   # follow core's declaration.
-  version: 4
+  version: 5
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -74,7 +74,6 @@ data:
     origin is pinned, so editing the URL cannot redirect the credential.
   names:
     singular: config
-    plural: configs
   displayTemplate: "Firecrawl {baseUrl}"
   properties:
     apiKey:
@@ -110,7 +109,6 @@ data:
     page again updates one document instead of minting a second.
   names:
     singular: webdocument
-    plural: webdocuments
   properties:
     url:
       type: url

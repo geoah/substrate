@@ -16,10 +16,11 @@ data:
   # version 12: `authority` drops `required`, which contradicted "absent on a
   # repository-local kind"; an index requires the `properties` it covers and an
   # edge requires its `to` target, both refused empty by the loader.
-  version: 12
+  # version 13: `names.plural` retired — the collection segment is the kind name
+  # now (issue 253, decision 0033), so `names` declares only `singular`.
+  version: 13
   names:
     singular: kind
-    plural: kinds
   # the declarations this repository holds; id is the kind REFERENCE
   # ("calendar.substrate.reamde.dev/calendarevent", or a bare "task" for a
   # repository-local kind) — the one id form that carries a slash.
@@ -56,16 +57,13 @@ data:
       description: who publishes it; absent on a repository-local kind
     names:
       type: object
-      description: what one record is called, and what the collection is
+      description: what one record is called; the name is also the collection
+        segment
       fields:
         singular:
           type: string
           required: true
           description: the kind's singular name, its identity's last segment
-        plural:
-          type: string
-          required: true
-          description: the collection segment in a path, never auto-derived
     description:
       type: string
       description: what this kind is for, read above its collection

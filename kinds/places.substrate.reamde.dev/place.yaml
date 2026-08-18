@@ -10,7 +10,6 @@ data:
     points at it.
   names:
     singular: place
-    plural: places
   displayTemplate: "{name}"
   indices:
     - properties:

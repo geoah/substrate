@@ -11,7 +11,6 @@ data:
     record API can still say where it is.
   names:
     singular: repository
-    plural: repositories
   # ONE record, id = the repository's opaque internal id: the store you are
   # reading, describing itself. The control-plane row is the
   # truth; this is its projection inside the repository, so a client that only
