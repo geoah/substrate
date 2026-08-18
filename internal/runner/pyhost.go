@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -234,8 +235,10 @@ func (r *Runner) provisionUV(ctx context.Context, hostFile, work, uvCache string
 	if err := r.sandbox.Wrap(sync, policy); err != nil {
 		return "", err
 	}
-	if out, err := sync.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("runner: uv sync: %w\n%s", err, out)
+	var syncOut bytes.Buffer
+	sync.Stdout, sync.Stderr = &syncOut, &syncOut
+	if err := r.runGatedCmd(sync); err != nil {
+		return "", fmt.Errorf("runner: uv sync: %w\n%s", err, syncOut.Bytes())
 	}
 	// What comes back is the interpreter OF THE SCRIPT'S ENVIRONMENT, which is
 	// the venv uv just built, not the one pinned above.
@@ -244,11 +247,12 @@ func (r *Runner) provisionUV(ctx context.Context, hostFile, work, uvCache string
 	if err := r.sandbox.Wrap(find, policy); err != nil {
 		return "", err
 	}
-	out, err := find.Output()
-	if err != nil {
-		return "", fmt.Errorf("runner: uv python find: %w", err)
+	var findOut, findErr bytes.Buffer
+	find.Stdout, find.Stderr = &findOut, &findErr
+	if err := r.runGatedCmd(find); err != nil {
+		return "", fmt.Errorf("runner: uv python find: %w\n%s", err, findErr.Bytes())
 	}
-	venv := strings.TrimSpace(string(out))
+	venv := strings.TrimSpace(findOut.String())
 	if venv == "" {
 		return "", fmt.Errorf("runner: uv python find returned no interpreter")
 	}

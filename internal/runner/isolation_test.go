@@ -47,13 +47,13 @@ func requireSeccomp(t *testing.T, r *Runner) {
 	sandboxtest.Case(t)
 }
 
-// Eight cases below guard on the confinement, and under
-// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly eight must reach that guard: a kernel
+// Nine cases below guard on the confinement, and under
+// SUBSTRATE_TEST_REQUIRE_SANDBOX exactly nine must reach that guard: a kernel
 // or image change that turns them into skips cannot leave a green build
-// behind, and a ninth case cannot be added, or one of the eight removed,
+// behind, and a tenth case cannot be added, or one of the nine removed,
 // without this number moving with it.
 func TestMain(m *testing.M) {
-	os.Exit(sandboxtest.Run(m, 8))
+	os.Exit(sandboxtest.Run(m, 9))
 }
 
 // The exploit that motivated retiring the shared interpreter: a function in
@@ -618,5 +618,85 @@ def main(input, host):
 	out, _ = res.Output.(map[string]any)
 	if out["packet"] != "denied" {
 		t.Errorf("a body declaring egress opened a raw packet socket: %v", out["packet"])
+	}
+}
+
+// The exploit #239 named: a network-granted body reaching the deployment's own
+// Postgres. `permissions.network` must mean "reach the internet", not "reach
+// anything the substrate's network routes to". A body may open a socket (the
+// coarse gate lets it), but the connect destination is filtered: loopback and
+// the RFC1918 ranges (where the deployment's Postgres sits) are refused with
+// EACCES, while a public address is not refused by the gate. The gate answers
+// EACCES (errno 13); a live loopback LISTENER makes the refusal unambiguous, and
+// the public address is asserted only NOT to draw the gate's EACCES, so the case
+// is deterministic offline (the kernel's own ETIMEDOUT is not the gate).
+func TestNetworkBodyCannotReachTheDeploymentsOwnRanges(t *testing.T) {
+	r := New()
+	requireSeccomp(t, r)
+
+	// A listener on loopback stands in for the deployment's Postgres: the same
+	// class of address, reachable from the shared network namespace. It is up,
+	// so only the gate can refuse a connection to it.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
+	_, loopPort, _ := net.SplitHostPort(ln.Addr().String())
+
+	const probe = `
+import socket
+def dial(host, port):
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(5)
+        s.connect((host, int(port)))
+        s.close()
+        return "ok"
+    except OSError as e:
+        return "err:%s" % e.errno
+def main(input, host):
+    a = input["args"]
+    return {"output": {
+        "loopback": dial("127.0.0.1", a["loopPort"]),
+        "private": dial("10.255.255.1", "5432"),
+        "public": dial("1.1.1.1", "443"),
+    }}
+`
+	spec := Spec{
+		Repository: "t1", Function: "egress.g.test", Runtime: "python",
+		Source: probe, TimeoutMs: 20000, Network: []string{"api.example.com"},
+	}
+	in := testInput()
+	in.Args = map[string]any{"loopPort": loopPort}
+	res, err := r.Invoke(context.Background(), spec, in, nil)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	out, ok := res.Output.(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected output: %#v", res.Output)
+	}
+
+	const eacces = "err:13"
+	if got, _ := out["loopback"].(string); got != eacces {
+		t.Errorf("a network body reached a live loopback service: %v (want %s)", out["loopback"], eacces)
+	}
+	if got, _ := out["private"].(string); got != eacces {
+		t.Errorf("a network body reached an RFC1918 address: %v (want %s)", out["private"], eacces)
+	}
+	// The public address must not draw the gate's own refusal. It may connect,
+	// time out, or be unreachable, but the gate itself let it through.
+	if got, _ := out["public"].(string); got == eacces {
+		t.Errorf("the gate refused a public address: %v", out["public"])
 	}
 }

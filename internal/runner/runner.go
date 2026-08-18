@@ -91,11 +91,13 @@ type Spec struct {
 	// sub-call trips.
 	CallTargets []string
 	// Network is the `permissions.network` declaration. Its CONTENT (the
-	// host patterns) is still only documentation, but its EMPTINESS is
-	// enforced: a body that declares no egress is denied AF_INET and AF_INET6
-	// sockets by the sandbox's seccomp filter. Holding it to the declared
-	// hosts needs an egress proxy, because a syscall filter cannot read the
-	// address behind a pointer.
+	// host patterns) is still only documentation, but its EMPTINESS gates the
+	// coarse layer: a body that declares no egress is denied AF_INET and
+	// AF_INET6 sockets by the sandbox's seccomp filter. A body that declares
+	// egress additionally has its connect destinations filtered, so it reaches
+	// the internet but not the deployment's own private ranges
+	// (0035-a-network-body-connect-is-filtered-by-destination). Holding it to
+	// the declared host PATTERNS is not done yet.
 	Network []string
 	// Modules are the SHARED bundle library modules this function's bundle
 	// ships, filename → source. `.py` files land on a bundle-scoped PYTHONPATH
@@ -519,6 +521,34 @@ type proc struct {
 	// stderr retains the tail of the child's stderr — where redirected body
 	// prints land — for diagnostics.
 	stderr *capBuf
+	// gate services the connect-destination filter for a network body. Closed on
+	// every teardown; the closer is idempotent, so kill and the reader's
+	// post-Wait cleanup can both call it.
+	gate atomic.Pointer[gateRef]
+}
+
+// gateRef boxes the connect-gate closer so it can be published atomically.
+type gateRef struct{ c io.Closer }
+
+// setGate publishes the connect gate. If the process was already killed (the
+// reader raced ahead), it closes the gate at once rather than leaving it
+// serving a dead body.
+func (p *proc) setGate(c io.Closer) {
+	if c == nil {
+		return
+	}
+	p.gate.Store(&gateRef{c})
+	if p.killed.Load() {
+		p.closeGate()
+	}
+}
+
+// closeGate stops the connect gate. Safe to call more than once and before the
+// gate is set: the closer is idempotent and a missing gate is a no-op.
+func (p *proc) closeGate() {
+	if r := p.gate.Load(); r != nil {
+		_ = r.c.Close()
+	}
 }
 
 // capBuf is a concurrency-safe ring buffer keeping the LAST cap bytes.
@@ -623,7 +653,43 @@ func (r *Runner) startCmd(cmd *exec.Cmd, policy sandbox.Policy) (*proc, error) {
 	if err := r.sandbox.Wrap(cmd, policy); err != nil {
 		return nil, err
 	}
-	return startCmd(cmd)
+	p, err := startCmd(cmd)
+	if err != nil {
+		return nil, err
+	}
+	// Serve the connect gate, if the policy declared network. It must run after
+	// Start: the stub sends the seccomp listener back during startup. A gate
+	// that cannot be received is fatal to this process — a network body with no
+	// supervisor blocks on its first connect — so kill and fail.
+	gate, err := r.sandbox.Serve(cmd)
+	if err != nil {
+		p.kill()
+		return nil, fmt.Errorf("runner: connect gate: %w", err)
+	}
+	p.setGate(gate)
+	return p, nil
+}
+
+// runGatedCmd runs a Wrapped command to completion with its connect gate
+// serviced. The provision and build steps are synchronous (they do not become a
+// supervised proc), so they cannot go through startCmd, but a resolve declares
+// network and its destinations must be filtered all the same. The caller sets
+// cmd.Stdout/Stderr before calling.
+func (r *Runner) runGatedCmd(cmd *exec.Cmd) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	gate, err := r.sandbox.Serve(cmd)
+	if err != nil {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+		return fmt.Errorf("connect gate: %w", err)
+	}
+	werr := cmd.Wait()
+	_ = gate.Close()
+	return werr
 }
 
 // childEnv is the MINIMAL environment every runner child is started with, built
@@ -720,6 +786,9 @@ func startCmd(cmd *exec.Cmd) (*proc, error) {
 		// The reader owns the reap: it runs after EOF, so Wait never races
 		// the pipe reads and always completes.
 		_ = cmd.Wait()
+		// The body is gone: stop its connect gate even if nobody called kill
+		// (a body that crashed on its own).
+		p.closeGate()
 		close(p.waited)
 	}()
 	return p, nil
@@ -742,6 +811,7 @@ func (p *proc) alive() bool {
 func (p *proc) kill() {
 	p.killed.Store(true)
 	p.goneOnce.Do(func() { close(p.gone) })
+	p.closeGate()
 	_ = p.stdin.Close()
 	if p.cmd.Process != nil {
 		// Setpgid above makes the child its own process-group leader.
