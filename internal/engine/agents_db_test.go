@@ -38,6 +38,10 @@ type fakeTurn struct {
 	// status, when non-zero, fails this turn with the HTTP code — the LLM
 	// transport error that makes a delivery retry.
 	status int
+	// errBody, with status set, is the exact response body: a real provider's
+	// 401 that quotes the masked bearer, where the default scripted body does
+	// not. Empty means the default.
+	errBody string
 	// arrived (closed on receipt) and release (blocks the response) build
 	// concurrency barriers.
 	arrived chan struct{}
@@ -116,6 +120,10 @@ func (f *fakeLLM) handle(w http.ResponseWriter, r *http.Request) {
 	if turn.status != 0 {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(turn.status)
+		if turn.errBody != "" {
+			_, _ = fmt.Fprint(w, turn.errBody)
+			return
+		}
 		_, _ = fmt.Fprintf(w, `{"error":{"message":"scripted failure %d"}}`, turn.status)
 		return
 	}

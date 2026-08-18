@@ -2,8 +2,8 @@
 // endpoint's own words. A wire client is built from one resolved llmprovider
 // row's key, and on a 401 the endpoint quotes the bearer it refused, so an
 // error returned verbatim would carry that repository's key into a log, a
-// record or an API response. Both wire clients need this — internal/llm buys
-// completions, internal/embed buys embeddings — so the scrub lives here once.
+// record or an API response. Both wire clients need this (internal/llm buys
+// completions, internal/embed buys embeddings), so the scrub lives here once.
 package providersecret
 
 import (
@@ -28,7 +28,7 @@ var maskedSecret = regexp.MustCompile(`\S*\*{3,}\S*`)
 //
 // What it does NOT catch: an endpoint that echoes a bare fragment with no
 // asterisks to mark it. Nothing distinguishes that from prose, so this narrows
-// the leak, it does not license the sink — a provider error still does not
+// the leak, it does not license the sink: a provider error still does not
 // belong anywhere a repository other than the key's owner can read.
 func Scrub(apiKey, s string) string {
 	if apiKey != "" {
