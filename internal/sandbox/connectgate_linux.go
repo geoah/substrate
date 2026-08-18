@@ -379,11 +379,13 @@ func (g *connectGate) emulateConnect(n *seccompNotif, family int, dest netip.Add
 	// thread-group leader; a body that connects from a worker thread (uv, tokio)
 	// has tid != tgid. Threads share the fd table, so the leader's pidfd reaches
 	// the same descriptor.
-	info, err := inspectSocket(tgidOf(int(n.Pid)), bodyFD)
+	tgid := tgidOf(int(n.Pid))
+	info, err := inspectSocket(tgid, bodyFD)
 	if err != nil {
 		return g.send(denyResp(n.ID, unix.EACCES))
 	}
 	defer info.close()
+	info.cloexec = fdCloexec(tgid, bodyFD)
 	// A bound source address the fresh socket cannot carry, or a type the runner
 	// does not emulate (only stream and datagram): refuse rather than connect
 	// with different semantics.
@@ -443,8 +445,10 @@ const (
 
 // waitConnect waits for a non-blocking stream connect to finish, in slices, so
 // it can drop the attempt the moment the body's notification is no longer valid
-// (the body exited or was interrupted). It returns 0 on success or the errno
-// the connection failed with.
+// (the body exited or was interrupted) or the gate is being torn down. It
+// returns 0 on success or the errno the connection failed with. The stop
+// eventfd is in the pollset so Close does not have to wait out connectTimeout on
+// a blocking connect to a slow address.
 func (g *connectGate) waitConnect(fd int, id uint64) unix.Errno {
 	deadline := time.Now().Add(connectTimeout)
 	for {
@@ -456,7 +460,10 @@ func (g *connectGate) waitConnect(fd int, id uint64) unix.Errno {
 		if ms > connectPollMs {
 			ms = connectPollMs
 		}
-		pfd := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLOUT}}
+		pfd := []unix.PollFd{
+			{Fd: int32(fd), Events: unix.POLLOUT},
+			{Fd: int32(g.stop), Events: unix.POLLIN},
+		}
 		nr, err := unix.Poll(pfd, ms)
 		if err != nil {
 			if errors.Is(err, unix.EINTR) {
@@ -464,11 +471,19 @@ func (g *connectGate) waitConnect(fd int, id uint64) unix.Errno {
 			}
 			return unix.EACCES
 		}
+		if pfd[1].Revents != 0 {
+			// Teardown: abandon the connect. The body is being killed anyway, so a
+			// failed connect is the right answer.
+			return unix.ECONNABORTED
+		}
 		if nr == 0 {
 			// A poll slice elapsed; the body must still be waiting on this connect.
 			if notifIoctl(g.lfd, seccompIoctlNotifIDValid, unsafe.Pointer(&id)) != nil {
 				return unix.ECONNABORTED
 			}
+			continue
+		}
+		if pfd[0].Revents == 0 {
 			continue
 		}
 		soErr, err := unix.GetsockoptInt(fd, unix.SOL_SOCKET, unix.SO_ERROR)
@@ -530,10 +545,15 @@ func (s *sockInfo) close() {
 }
 
 // inspectSocket dups the body's connect socket into the runner and reads its
-// domain, type, blocking flag, close-on-exec flag and whether it was bound. The
-// dup shares the body's open file description, so this reads without changing
+// domain, type, blocking flag and whether it was bound. The dup shares the
+// body's open file description, so all of those read through it without changing
 // the body's socket; it is closed by sockInfo.close. pidfd_getfd is permitted
 // because the runner is the body's ancestor under yama ptrace scope 1.
+//
+// The close-on-exec flag is NOT read here: FD_CLOEXEC is per-descriptor, not a
+// property of the shared open file description, so the dup would report the
+// runner's own copy, not the body's. It is read from the body's descriptor in
+// fdCloexec.
 func inspectSocket(tgid, fd int) (*sockInfo, error) {
 	pidfd, err := unix.PidfdOpen(tgid, 0)
 	if err != nil {
@@ -560,19 +580,38 @@ func inspectSocket(tgid, fd int) (*sockInfo, error) {
 		info.close()
 		return nil, err
 	}
-	fdfl, err := unix.FcntlInt(uintptr(dup), unix.F_GETFD, 0)
-	if err != nil {
-		info.close()
-		return nil, err
-	}
 	info.domain = domain
 	info.typ = typ
 	info.nonblock = fl&unix.O_NONBLOCK != 0
-	info.cloexec = fdfl&unix.FD_CLOEXEC != 0
 	if sa, err := unix.Getsockname(dup); err == nil {
 		info.bound = sockaddrBound(sa)
 	}
 	return info, nil
+}
+
+// fdCloexec reads the body descriptor's true close-on-exec flag from
+// /proc/<tgid>/fdinfo/<fd>, because FD_CLOEXEC is per-descriptor and cannot be
+// read from the pidfd_getfd dup. The fdinfo "flags:" line carries the octal open
+// flags, with O_CLOEXEC (0o2000000) set when the descriptor is close-on-exec. A
+// read failure defaults to close-on-exec, the safer choice for a descriptor the
+// body did not ask to leak across an exec.
+func fdCloexec(tgid, fd int) bool {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/fdinfo/%d", tgid, fd))
+	if err != nil {
+		return true
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		rest, ok := strings.CutPrefix(line, "flags:")
+		if !ok {
+			continue
+		}
+		v, err := strconv.ParseInt(strings.TrimSpace(rest), 8, 64)
+		if err != nil {
+			return true
+		}
+		return v&0o2000000 != 0
+	}
+	return true
 }
 
 // tgidOf resolves the thread-group leader for a thread id, reading it from
