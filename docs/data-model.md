@@ -263,8 +263,8 @@ one rule rather than a per-type table: `secret` and `digest` refuse filtering
 entirely, `reference` takes `eq`, `in`, `contains` and `exists`, and every
 other type takes the full grammar (`eq`, `gt`, `gte`, `lt`, `lte`, `in`,
 `prefix`, `contains`, `exists`), compared as its declared type. Nothing else
-about a property is special; `title` and `description` are declared and
-written identically.
+about a property is special; the built-in `title` and a declared `description`
+are written and filtered the same way.
 
 | Property type      | Validation / meaning                                        |
 | ------------------ | ----------------------------------------------------------- |
@@ -274,7 +274,7 @@ written identically.
 | `int`, `float`     | numbers, optional `min`/`max`; an `int` is a safe integer, refused past 2^53 - 1 in magnitude because JSON rides float64 |
 | `decimal`          | an exact decimal, written as a string (`"19.99"`); a bare JSON number is refused because it may already be rounded |
 | `bool`             | true/false                                                  |
-| `datetime`, `date` | RFC 3339 instants / civil dates                             |
+| `datetime`, `date` | RFC 3339 instants / civil dates; the year must fall in Postgres's storable range (4713 BC to 294276 AD) |
 | `duration`         | ISO 8601 without years/months (`PT47M12S`, `P2DT3H`, `P1W`); a day is exactly 24h, and the stored form is one canonical decomposition |
 | `email`            | refined `string`, RFC 5322 mailbox                          |
 | `url`              | refined `string`, absolute URL                              |
@@ -607,8 +607,10 @@ mechanical:
   transition. This is what lets a [function](functions.md) re-assert `done`
   on every delivery without churning: the re-assertion appends no changelog entry.
 - **Stamps record the moment of a transition.** `completedAt: now` writes the
-  transition time into a datetime property that the stamp itself declares; a
-  stamp name may not collide with a declared property.
+  transition time into a single-valued `datetime` property. The kind may declare
+  that property itself, as the shipped `task` declares `completedAt`; a stamp
+  target left undeclared is auto-declared as a datetime, so older declarations
+  keep loading.
 - **Transitions carry no guards**: any actor may perform any declared
   transition. What a transition may additionally do is declared too: an
   `onEnter` effect runs in the same transaction, which is how

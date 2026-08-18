@@ -42,7 +42,7 @@ thing, and the Records column counts them.
 | WHOOP         | Integration | OAuth          | 5     | 1         | 2       | 0      |
 | Notion        | Integration | Internal token | 4     | 1         | 2       | 0      |
 | Beeper        | Integration | Pasted token   | 4     | 1         | 2       | 0      |
-| LLM           | Example     | Key, per row   | 0     | 0         | 2       | 3      |
+| LLM           | Example     | Key, per row   | 1     | 0         | 2       | 6      |
 | Notes         | Example     | none           | 1     | 2         | 0       | 2      |
 | Firecrawl     | —           | API key        | 2     | 2         | 0       | 0      |
 | Web harvester | Example     | none           | 2     | 4         | 4       | 3      |
@@ -52,12 +52,23 @@ thing, and the Records column counts them.
 Authority `llm.examples.substrate.reamde.dev`. Install this bundle first if
 you want to run an agent at all. A fresh substrate seeds no `llmprovider` row,
 so this bundle ships the two an agent can name (`anthropic` and `openai`),
-correctly shaped for their wires and deliberately keyless, plus three agents.
-`substrate` is the one to chat with: it reads the whole graph
-through the `graphql` built-in and writes nothing directly, proposing every
-change as a `recordpatchrequest` the owner decides on. `substrateEcho` and
-`substrateSummarizer` are the delegation demo, and the summarizer is
-`subagentOnly`: off the chat list, callable only by other agents.
+correctly shaped for their wires and deliberately keyless, plus a `scratchpad`
+kind to practise on and six agents:
+
+- `substrate` is the one to chat with: it reads the whole graph through the
+  `graphql` built-in, writes nothing directly, proposes every change as a
+  `recordpatchrequest` the owner decides on, and asks clarifying questions
+  through the `ask` built-in.
+- `substrateEditor` writes scratchpads directly through the `mutate` built-in,
+  the demo for engine-stamped `changes` on a thread's tool rows.
+- `substrateArbiter` is a judge you point a trigger at: it accepts or rejects a
+  change request through `mutate`.
+- `substrateJudge` is the tool-less verdict agent a
+  [`recordpatchpolicy`](agents.md#the-policy-door) names under `judge:`, the
+  policy layer's example.
+- `substrateEcho` and `substrateSummarizer` are the delegation demo, and the
+  summarizer is `subagentOnly`: off the chat list, callable only by other
+  agents.
 
 Installing it gives you rows that refuse until you key them. The key is a
 record write: **Data → llmproviders → `anthropic` → Edit**, put it in `apiKey`,

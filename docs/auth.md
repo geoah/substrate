@@ -44,7 +44,8 @@ POST /register
  "totpSecret": "JBSWY3DPEHPK3PXP", "totpCode": "123456", "label": "laptop"}
 
 → 201 {"token": {…}, "secret": "substrate_tok_…",
-       "recoveryKey": "AGE-SECRET-KEY-1…", "recoveryPublicKey": "age1…"}
+       "recoveryKey": "AGE-SECRET-KEY-1…", "recoveryPublicKey": "age1…",
+       "signingPublicKey": "…"}
 ```
 
 A request that names no `recoveryPublicKey` asks the server to mint the
@@ -53,6 +54,12 @@ beside the token secret: that `recoveryKey` is what opens the repository's
 `recoverykey` record in a backup, and the substrate never stores it. A
 client that generated its own pair sends `recoveryPublicKey` instead and no
 key comes back.
+
+`signingPublicKey` is the repository's Ed25519 changelog-signing public key,
+in hex. No private key material rides this response: the signing seed stays
+sealed server-side, and the public key is what
+`repository verify --expect-public-key` checks a backup's signatures against
+([the chain](changelog.md#the-chain)).
 
 That second call is **one creation act**: the seed of the shipped vocabulary,
 the sealed material, the credential record and the first token all commit as

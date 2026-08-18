@@ -546,7 +546,14 @@ object with `404 not_found` — never the console's HTML with a 200.
 One more code lives on the changelog surface: `compacted` (410) answers a
 `from=` below the retention [horizon](changelog.md#frames-and-the-horizon),
 telling a consumer that has fallen too far behind to re-list rather than
-silently miss rows. That is the whole closed set; nothing else appears in
-`error.code`.
+silently miss rows.
+
+One code is defined and mapped but does not reach the wire today. `gated` (409)
+is the [policy door](agents.md#the-policy-door)'s verdict when an agent's write
+is held for the owner's review; it surfaces as a tool result inside the agent
+loop, never as an HTTP response, so no request receives it yet
+([#242](https://github.com/geoah/substrate/issues/242)). Every code a request
+can receive is above; those thirteen strings are the whole closed set, and
+nothing else appears in `error.code`.
 
 Next: [users and tokens](auth.md), the way in and what a token is.
