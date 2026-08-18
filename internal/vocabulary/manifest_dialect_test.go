@@ -385,7 +385,7 @@ func TestFunctionGrantsRidePermissions(t *testing.T) {
       kinds: [fn.example.com/widget]
       budgets: {calls: 4}
     call: [fn.example.com/mirror]
-    network: ["https://*"]
+    network: ["api.example.com"]
     mutations: [merge]
   source: "def main(input, host): return {}"
 `)

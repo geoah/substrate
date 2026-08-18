@@ -47,6 +47,67 @@ func loadFnAuthority(t *testing.T, fnData string) (*vocabulary.Registry, error) 
 	return vocabulary.LoadFS(fsys)
 }
 
+// loadFnNetwork loads the mirror function with one `permissions.network` entry,
+// returning any load error, so a case reads as the entry it is about.
+func loadFnNetwork(t *testing.T, entry string) error {
+	t.Helper()
+	_, err := loadFnAuthority(t, `  description: d
+  runtime: python
+  permissions:
+    network: [`+entry+`]
+  source: "def main(input, host): return {}"
+`)
+	return err
+}
+
+// Issue #50: a `permissions.network` entry is a bare destination: a host, a
+// host:port or a CIDR. The loader validates SHAPE, not reachability. It refuses
+// a URL, a glob, a bad port and a non-host string, so a malformed entry fails at
+// load; a private or loopback address is well-formed and accepted, because the
+// runtime egress confinement plus its operator escape decide reachability at
+// connect, not the loader.
+func TestNetworkEntryGrammar(t *testing.T) {
+	good := []string{
+		`"api.example.com"`,       // a bare host
+		`"api.example.com:443"`,   // a host with a port
+		`"example.com."`,          // a rooted DNS name (one trailing dot)
+		`"93.184.216.34"`,         // a public IPv4 literal
+		`"93.184.216.0/24"`,       // a public CIDR
+		`"2001:db8::1"`,           // a bare IPv6 literal, no brackets
+		`"[2606:4700::1111]"`,     // a bracketed IPv6 with no port
+		`"[2606:4700::1111]:443"`, // a bracketed IPv6 with a port
+		// A private or loopback address is a valid SHAPE: the confinement plus its
+		// operator escape, not the loader, decide reachability at connect.
+		`"127.0.0.1:11434"`,
+		`"10.0.0.0/8"`,
+		`"169.254.169.254"`,
+	}
+	for _, entry := range good {
+		if err := loadFnNetwork(t, entry); err != nil {
+			t.Fatalf("well-formed network entry %s refused: %v", entry, err)
+		}
+	}
+
+	bad := map[string]string{
+		`"https://api.example.com"`: "is a URL",
+		`"api.example.com/v1"`:      "is neither a host, a host:port nor a CIDR",
+		`"*.example.com"`:           "carries a glob",
+		`"api.example.com:70000"`:   "port outside 1..65535",
+		`""`:                        "is empty",          // an empty entry
+		`"not a host"`:              "is not a hostname", // a space in the host
+		`"例え.jp"`:                   "is not a hostname", // a raw IDN needs punycode
+	}
+	for entry, want := range bad {
+		err := loadFnNetwork(t, entry)
+		if err == nil {
+			t.Fatalf("malformed network entry %s was admitted", entry)
+		}
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("network entry %s: error %q does not name %q", entry, err, want)
+		}
+	}
+}
+
 func TestFunctionLoads(t *testing.T) {
 	r, err := loadFnAuthority(t, `  description: mirrors widgets into gadgets
   runtime: python
@@ -62,7 +123,7 @@ func TestFunctionLoads(t *testing.T) {
       kinds: [fn.example.com/widget]
       budgets: {calls: 4}
     call: [fn.example.com/mirror]
-    network: ["https://*"]
+    network: ["api.example.com"]
     mutations: [merge]
   source: |
     def main(input, host):

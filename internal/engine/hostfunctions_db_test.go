@@ -186,7 +186,7 @@ func preHostKindsDir(t *testing.T) string {
 		}
 		body := string(raw)
 		if e.Name() == "function.yaml" {
-			body = strings.Replace(body, "  version: 9\n", "  version: 4\n", 1)
+			body = strings.Replace(body, "  version: 10\n", "  version: 4\n", 1)
 			body = strings.Replace(body, "        - go\n        - host\n", "        - go\n", 1)
 			body = strings.Replace(body,
 				"      fts: false\n      description: the inline body, on an inline runtime\n",

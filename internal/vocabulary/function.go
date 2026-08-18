@@ -2,7 +2,11 @@ package vocabulary
 
 import (
 	"fmt"
+	"net"
+	"net/netip"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -147,8 +151,12 @@ type FunctionCaps struct {
 	// Call is the allowlist of function identities the body's host Call may
 	// invoke; empty means every sub-call trips.
 	Call []string
-	// Network is the declared egress allowlist (URL patterns). Declared for
-	// review; the V1 same-host runner does not yet enforce it.
+	// Network is the declared egress allowlist: each entry is a bare destination,
+	// a `host`, a `host:port` or a CIDR (networkEntryProblem holds the grammar).
+	// Enforcement is all-or-nothing today: a non-empty list grants the body
+	// AF_INET/AF_INET6 sockets and confines every connect to a public destination
+	// (0035), while the per-entry hosts stay documentation until a per-host gate
+	// exists (#50).
 	Network []string
 	// Mutations grants the capability-gated effects: merge, split.
 	Mutations []string
@@ -734,12 +742,12 @@ func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Functi
 		fn.Caps.Call = append(fn.Caps.Call, ident)
 	}
 	for i, nv := range mslice(perms, "network") {
-		pat := fmt.Sprint(nv)
-		if pat == "" {
-			l.errf("%s: data.permissions.network[%d]: empty pattern", where, i)
+		entry := fmt.Sprint(nv)
+		if problem := networkEntryProblem(entry); problem != "" {
+			l.errf("%s: data.permissions.network[%d]: %q %s", where, i, entry, problem)
 			continue
 		}
-		fn.Caps.Network = append(fn.Caps.Network, pat)
+		fn.Caps.Network = append(fn.Caps.Network, entry)
 	}
 	for i, mv := range mslice(perms, "mutations") {
 		m := fmt.Sprint(mv)
@@ -753,6 +761,71 @@ func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Functi
 		return nil
 	}
 	return fn
+}
+
+// hostLabel matches one RFC 1123 hostname label: a letter or digit, then up to
+// 62 more letters, digits or hyphens, not ending in a hyphen. A network entry's
+// host is one or more of these joined by dots.
+var hostLabel = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
+
+// networkEntryProblem holds a `permissions.network` entry to the grammar's
+// SHAPE and returns a description of the first violation, or "" when the entry
+// is well formed. An entry is a bare destination: a `host`, a `host:port`, or a
+// CIDR, where host is a DNS hostname or an IP literal, and it carries no scheme,
+// path, query or glob, none of which a TCP destination has.
+//
+// The grammar validates shape, not reachability. Whether a declared destination
+// can be reached is the runtime egress confinement's decision (0035), which
+// depends on the deployment: `SUBSTRATE_SANDBOX_EGRESS_ALLOW` lets an operator
+// permit a private destination (a loopback provider, #241). So a private or
+// loopback address is a well-formed entry accepted here, and the confinement
+// decides at connect whether it answers
+// (0038-a-network-entry-is-a-bare-host-or-cidr-destination).
+func networkEntryProblem(entry string) string {
+	switch {
+	case entry == "":
+		return "is empty"
+	case strings.Contains(entry, "*"):
+		return "carries a glob: egress is filtered by resolved destination, so name the host, not a pattern"
+	case strings.Contains(entry, "://"):
+		return "is a URL: an entry is a host or CIDR, so drop the scheme"
+	}
+	// A `/` that is not a scheme is a CIDR or a stray path. netip settles it: a
+	// prefix parses, a path does not.
+	if strings.Contains(entry, "/") {
+		if _, err := netip.ParsePrefix(entry); err != nil {
+			return "is neither a host, a host:port nor a CIDR"
+		}
+		return ""
+	}
+	host := entry
+	// SplitHostPort needs a port to succeed, so a bare host stays whole and only a
+	// host:port is split. A bracketed IPv6 with a port (`[::1]:443`) splits here too.
+	if h, portStr, err := net.SplitHostPort(entry); err == nil {
+		host = h
+		port, err := strconv.Atoi(portStr)
+		if err != nil || port < 1 || port > 65535 {
+			return "has a port outside 1..65535"
+		}
+	} else if strings.HasPrefix(entry, "[") && strings.HasSuffix(entry, "]") {
+		// A bracketed IPv6 with no port (`[2606:4700::1111]`) is what an author
+		// copies from a URL host. SplitHostPort refuses it (no port), so unwrap
+		// the brackets before the address parse.
+		host = entry[1 : len(entry)-1]
+	}
+	if _, err := netip.ParseAddr(host); err == nil {
+		return ""
+	}
+	// A rooted DNS name (`example.com.`) is legitimate, so drop the one trailing
+	// dot before the per-label check. A raw non-ASCII host is refused: punycode
+	// (`xn--…`) is the accepted form, so the label check stays ASCII.
+	host = strings.TrimSuffix(host, ".")
+	for _, label := range strings.Split(host, ".") {
+		if !hostLabel.MatchString(label) {
+			return "is not a hostname, an IP literal or a CIDR"
+		}
+	}
+	return ""
 }
 
 // permissionsObject reads the `permissions:` grant off a declaration's data,
