@@ -24,6 +24,10 @@
     "title",
     "properties"
   ],
+  "OperationalList": [
+    "items",
+    "cursor"
+  ],
   "PropertyAlternative": [
     "actor",
     "value",

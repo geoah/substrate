@@ -196,7 +196,7 @@ describe("BundleDetailPage", () => {
         return jsonResponse(200, { kinds: KINDS })
       }
       if (path === CATALOG_PATH) {
-        return jsonResponse(200, { catalog: [PEOPLE, GOOGLE] })
+        return jsonResponse(200, { items: [PEOPLE, GOOGLE] })
       }
       if (
         path.startsWith("/api/v1/google.bundles.substrate.reamde.dev/config")

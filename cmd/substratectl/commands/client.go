@@ -490,13 +490,11 @@ func (c *client) mintToken(ctx context.Context, label string, expiresAt *time.Ti
 }
 
 func (c *client) tokens(ctx context.Context) ([]substrate.TokenInfo, error) {
-	var out struct {
-		Tokens []substrate.TokenInfo `json:"tokens"`
-	}
+	var out substrate.OperationalList[substrate.TokenInfo]
 	if err := c.do(ctx, http.MethodGet, pathTokens, nil, nil, &out); err != nil {
 		return nil, err
 	}
-	return out.Tokens, nil
+	return out.Items, nil
 }
 
 // revokeToken deletes the token record — which is the whole of revocation: no

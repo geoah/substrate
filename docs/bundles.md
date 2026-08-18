@@ -166,7 +166,8 @@ re-installing it clears the marker, and uninstall still works on one, resolved
 straight from its stored rows.
 
 Status is computed, never stored. `GET …/core.substrate.reamde.dev/bundle/status` answers
-every installed bundle and `…/core.substrate.reamde.dev/bundle/{id}/status` answers
+every installed bundle under an `{items}` envelope and
+`…/core.substrate.reamde.dev/bundle/{id}/status` answers
 one: `{id, name, authority, installed, enabled, inputs, setup, accounts,
 functions, kinds, liveRecords}`, plus the quarantine pair when it applies.
 `inputs` is each declared input's resolution: `{name, kind, record?, via?}`,
@@ -358,8 +359,8 @@ repository that has not imported `people` is **refused** by the ordinary
 admission, before anything is touched, with a problem naming what to import
 first. Nothing resolves the dependency for you — the order is yours.
 
-`GET …/catalog` lists every shipped bundle under a `catalog`
-key, each flagged `installed` for this repository;
+`GET …/catalog` lists every shipped bundle under an `{items}`
+envelope, each flagged `installed` for this repository;
 `GET …/catalog/{id}` is one entry with its closure, and an
 unknown id is a 404 `not_found`.
 

@@ -47,7 +47,7 @@ func (h *handler) getTriggerStatus(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"triggers": statuses})
+	writeJSON(w, http.StatusOK, substrate.Listed(statuses))
 }
 
 type replayRequest struct {
@@ -135,7 +135,7 @@ func (h *handler) getTriggerParked(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"parked": failures})
+	writeJSON(w, http.StatusOK, substrate.Listed(failures))
 }
 
 // postTriggerRetry re-runs one parked delivery; success deletes the row.

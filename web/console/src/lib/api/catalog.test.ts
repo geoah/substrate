@@ -44,7 +44,7 @@ describe("catalog reads and writes", () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          catalog: [item(), item({ id: "x", installed: true })],
+          items: [item(), item({ id: "x", installed: true })],
         }),
         { status: 200 }
       )

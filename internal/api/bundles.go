@@ -37,7 +37,7 @@ func (h *handler) getBundleStatuses(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"bundles": statuses})
+	writeJSON(w, http.StatusOK, substrate.Listed(statuses))
 }
 
 // getBundleStatus is one bundle's computed state — lifecycle, input
@@ -250,7 +250,7 @@ func (h *handler) getTraitImplementors(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"kinds": types})
+	writeJSON(w, http.StatusOK, substrate.Listed(types))
 }
 
 // getTraitRecords pages the records of every type implementing a trait —

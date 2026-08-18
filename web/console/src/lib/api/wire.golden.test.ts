@@ -28,6 +28,7 @@ import type {
   EdgeInput,
   EdgeRef,
   EdgeTarget,
+  OperationalList,
   PropertyAlternative,
   PropertyMeta,
   PutInput,
@@ -111,6 +112,13 @@ const change: Keys<Change> = {
   hash: true,
 }
 
+/** The operational-list envelope is generic; its keys do not depend on the
+ * element, so `unknown` pins them. */
+const operationalList: Keys<OperationalList<unknown>> = {
+  items: true,
+  cursor: true,
+}
+
 const mirrors: Record<string, Record<string, true>> = {
   SubstrateRecord: substrateRecord,
   EdgeTarget: edgeTarget,
@@ -120,6 +128,7 @@ const mirrors: Record<string, Record<string, true>> = {
   PropertyAlternative: propertyAlternative,
   PutInput: putInput,
   Change: change,
+  OperationalList: operationalList,
 }
 
 describe("wire types mirror the Go structs", () => {

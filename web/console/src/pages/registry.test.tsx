@@ -175,13 +175,13 @@ describe("RegistryPage", () => {
       const method = (init as RequestInit | undefined)?.method ?? "GET"
       const path = String(url)
       if (path === STATUS_PATH) {
-        return jsonResponse(200, { bundles: wire.statuses ?? [] })
+        return jsonResponse(200, { items: wire.statuses ?? [] })
       }
       if (path.startsWith("/api/v1/core.substrate.reamde.dev/kind")) {
         return jsonResponse(200, { kinds: wire.kinds ?? [CORE_KIND] })
       }
       if (path === CATALOG_PATH) {
-        return jsonResponse(200, { catalog: wire.catalog ?? [PEOPLE, GOOGLE] })
+        return jsonResponse(200, { items: wire.catalog ?? [PEOPLE, GOOGLE] })
       }
       if (path.endsWith("/install") && method === "POST") {
         const id = decodeURIComponent(

@@ -98,10 +98,6 @@ type tokenResponse struct {
 	Secret string              `json:"secret"`
 }
 
-type tokenListResponse struct {
-	Tokens []substrate.TokenInfo `json:"tokens"`
-}
-
 // --- the shared gate ---
 
 // authGate rate-limits one unauthenticated auth request. A refusal has already
@@ -415,10 +411,7 @@ func (h *handler) getTokens(w http.ResponseWriter, r *http.Request) {
 		writeSubstrateError(w, err)
 		return
 	}
-	if tokens == nil {
-		tokens = []substrate.TokenInfo{}
-	}
-	writeJSON(w, http.StatusOK, tokenListResponse{Tokens: tokens})
+	writeJSON(w, http.StatusOK, substrate.Listed(tokens))
 }
 
 // deleteToken revokes: it deletes the token record, which is the same write

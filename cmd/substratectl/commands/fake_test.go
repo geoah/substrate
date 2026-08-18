@@ -521,7 +521,7 @@ func (f *fakeSubstrate) handleMint(w http.ResponseWriter, r *http.Request) {
 func (f *fakeSubstrate) handleTokens(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
 	expires := testNow.Add(720 * time.Hour)
-	writeJSON(w, http.StatusOK, map[string]any{"tokens": []substrate.TokenInfo{
+	writeJSON(w, http.StatusOK, map[string]any{"items": []substrate.TokenInfo{
 		{ID: "tk01", Label: "substratectl@laptop", Created: testNow.Add(-48 * time.Hour)},
 		{ID: "tk02", Label: "backup-script", Created: testNow.Add(-time.Hour), ExpiresAt: &expires},
 	}})
@@ -773,7 +773,7 @@ func (f *fakeSubstrate) handleTriggerPut(w http.ResponseWriter, r *http.Request)
 // handleTriggerStatus answers the computed per-trigger status table.
 func (f *fakeSubstrate) handleTriggerStatus(w http.ResponseWriter, r *http.Request) {
 	f.noteRequest(r)
-	writeJSON(w, http.StatusOK, map[string]any{"triggers": []substrate.TriggerStatus{{
+	writeJSON(w, http.StatusOK, map[string]any{"items": []substrate.TriggerStatus{{
 		ID: "classify-page", Kind: substrate.TriggerKindRecord,
 		Callable: "web.substrate.reamde.dev/classify", Enabled: true, Cursor: 41, Head: 41,
 	}}})

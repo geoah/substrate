@@ -9,7 +9,12 @@ import { queryOptions, type QueryClient } from "@tanstack/react-query"
 
 import { catalogQueryOptions, type CatalogItem } from "./catalog"
 import { corePath, request, rootPath, seg } from "./http"
-import type { BundleStatus, SubstrateRecord, Page } from "./types"
+import type {
+  BundleStatus,
+  OperationalList,
+  SubstrateRecord,
+  Page,
+} from "./types"
 
 /** Re-exported so the pages keep their `@/lib/api/bundles` import for the
  * computed status shape (the wire types live in types.ts). */
@@ -29,13 +34,13 @@ const BUNDLES = corePath("bundle")
 export async function fetchBundleStatuses(
   signal?: AbortSignal
 ): Promise<BundleStatus[]> {
-  const res = await request<{ bundles?: BundleStatus[] }>(
+  const res = await request<OperationalList<BundleStatus>>(
     "GET",
     `${BUNDLES}/status`,
     undefined,
     { signal }
   )
-  return res.bundles ?? []
+  return res.items ?? []
 }
 
 export const bundleStatusesQueryOptions = queryOptions({

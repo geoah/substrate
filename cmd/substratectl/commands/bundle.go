@@ -63,15 +63,13 @@ func (a *app) bundleListCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var res struct {
-				Bundles []substrate.BundleStatus `json:"bundles"`
-			}
+			var res substrate.OperationalList[substrate.BundleStatus]
 			if err := cl.do(cmd.Context(), http.MethodGet, bundlePath("status"), nil, nil, &res); err != nil {
 				return err
 			}
 			tw := newTable(a.out)
 			fmt.Fprintln(tw, "ID\tINSTALLED\tENABLED\tSETUP\tACCOUNTS\tFUNCTIONS\tKINDS\tRECORDS")
-			for _, b := range res.Bundles {
+			for _, b := range res.Items {
 				fmt.Fprintf(tw, "%s\t%t\t%t\t%s\t%d\t%d\t%d\t%d\n",
 					b.ID, b.Installed, b.Enabled, setupSummary(b), b.Accounts, b.Functions, b.Kinds, b.LiveRecords)
 			}

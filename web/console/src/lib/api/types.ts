@@ -143,6 +143,16 @@ export interface Page<T = SubstrateRecord> {
   total?: number
 }
 
+/** The envelope every OPERATIONAL list answers with — tokens, the catalog,
+ * trigger and bundle status, parked deliveries, trait implementors. `items`
+ * holds the whole set today; `cursor` is reserved so keyset pagination lands
+ * as a filled field, not a reshaped body (decision 0036). The record, history
+ * and incoming lists keep their own `Page`. */
+export interface OperationalList<T> {
+  items: T[]
+  cursor?: string
+}
+
 /** One enabled trigger's stance on one change row; omitted entirely when the
  * trigger cannot fire on the row. `trigger` is the trigger record's id,
  * `callable` what it invokes; `error` rides along on `parked` only. */
