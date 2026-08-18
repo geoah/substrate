@@ -39,7 +39,9 @@ data:
   # version 9: `effect` and `confirmation` — the author's objective facts for
   # the policy door (docs/plans/thread-interactions.md phase 3): what class
   # of effect the body has, and a floor no policy or judge loosens.
-  version: 9
+  # version 10: the `network` property description names the entry grammar the
+  # loader now enforces (a host, host:port or CIDR; docs/decisions/0038).
+  version: 10
   names:
     singular: function
     plural: functions
@@ -236,7 +238,8 @@ data:
         network:
           type: string
           repeated: true
-          description: the hosts it may reach; any entry grants network access,
+          description: the destinations it may reach, each a host, host:port
+            or CIDR (no scheme, path or glob); any entry grants network access,
             and enforcement is all-or-nothing today
         mutations:
           type: enum

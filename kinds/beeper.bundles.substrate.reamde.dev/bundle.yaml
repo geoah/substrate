@@ -43,7 +43,10 @@ data:
   # version 5: `account` on every mirror kind is a pinned owner
   # reference instead of a string, so disconnecting an account collects
   # the rows it synced (docs/decisions/0032).
-  version: 5
+  # version 6: the sync function's `permissions.network` drops the
+  # `beeper.com/*` glob for the bare host `beeper.com`, the form the network
+  # grammar admits (docs/decisions/0038).
+  version: 6
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block — an oauth2 block would demand a client input, and this
@@ -420,7 +423,7 @@ data:
         calls: 40
     network:
       - "matrix.beeper.com"
-      - "beeper.com/*"
+      - "beeper.com"
   source: |
     # /// script
     # requires-python = ">=3.11"
