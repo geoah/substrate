@@ -20,6 +20,7 @@ data:
   properties:
     name:
       type: string
+      required: true
       description: the username this repository belongs to
     # a repository is born `active`; suspend and resume are the operator's,
     # and `deleting` is terminal and reached by the teardown path, not by a

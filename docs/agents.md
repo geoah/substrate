@@ -319,7 +319,7 @@ redelivers its thread and message writes.
 audit row of a run and has to keep naming the agent that ran it, and an edge
 would be deleted along with its target. Each declares its `inverse`, so the
 graph reads the same link from the other side — an agent's `threads`,
-a thread's `messages` and its `subAgentThreads`.
+a thread's `messages` and its `subagentThreads`.
 
 **Cost rolls up onto the root thread**: every loop on a chain adds to one
 shared tally, so the root thread's numbers include every descendant while a

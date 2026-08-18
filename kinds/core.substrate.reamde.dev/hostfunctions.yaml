@@ -29,7 +29,7 @@ data:
   authority: core.substrate.reamde.dev
   description: >-
     Read records: pass kind + id for one record, kind (+ optional filter,
-    first) to list, or q (+ optional types, k) to search. Read-only. Records
+    first) to list, or q (+ optional kinds, k) to search. Read-only. Records
     are always addressed by their full reference (kind + id), never a bare
     id.
   runtime: host
@@ -48,7 +48,7 @@ data:
         properties maps a name to a condition (eq, in, prefix, gt, gte, lt,
         lte, contains, exists), timestamps RFC3339
     - name: first
-      type: float
+      type: int
       description: max rows to return
     - name: q
       type: string
@@ -62,7 +62,7 @@ data:
       description: narrow the search to these kinds, each within the reads
         allowlist
     - name: k
-      type: float
+      type: int
       description: max search hits
 ---
 # ---- graphql: the whole-repository read ------------------------------------

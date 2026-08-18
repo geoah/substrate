@@ -11,9 +11,12 @@ data:
   names:
     singular: recordsplit
     plural: recordsplits
+  # A random-id row reads as the merge it undoes instead of its opaque id.
+  displayTemplate: "{merge}"
   properties:
     result:
       type: json
+      required: true
       description: what the split put back where
   edges:
     # named, not polymorphic: a split undoes exactly one recorded merge, and

@@ -29,6 +29,8 @@ data:
   names:
     singular: trigger
     plural: triggers
+  # A random-id row reads as the callable it delivers to.
+  displayTemplate: "{callable}"
   properties:
     enabled:
       type: bool
@@ -106,5 +108,6 @@ data:
     callable:
       type: reference
       kind: any
+      required: true
       description: the function or agent a matched delivery invokes, as its
         `<kind>/<id>` path

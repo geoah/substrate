@@ -12,10 +12,13 @@ data:
   # The declaration inherited the authority's version before this pin.
   # version 10: `decidedAt` is a declared property (datetime, managed). The
   # decision transitions stamped it as an undeclared string before.
-  version: 10
+  # version 11: a display template, so a random-id request reads as the
+  # decision and the pair it proposes instead of its opaque id.
+  version: 11
   names:
     singular: recordmergerequest
     plural: recordmergerequests
+  displayTemplate: "{decision}: {winner} + {loser}"
   # recordpatchrequest's sibling: the envelope a suggested merge travels in
   # before anyone has agreed to it. A function (the dupe detector) or an app
   # writes one, the owner decides, and accepting it is what performs the
@@ -38,7 +41,7 @@ data:
       description: when the decision was made, stamped by the transition
     # accepting is what performs the merge: the transition runs `applyMerge`,
     # which re-runs Merge's own guards in the same transaction — a stale
-    # request (already merged, deleted, type mismatch) fails the transition
+    # request (already merged, deleted, kind mismatch) fails the transition
     # whole and annotates the request.
     decision:
       type: state
@@ -61,7 +64,7 @@ data:
             decidedAt: now
   edges:
     # `to: any` on both: anything mergeable may be named, and Merge itself
-    # guards same-type (and refuses core/system types) at apply.
+    # guards same-kind (and refuses core/system kinds) at apply.
     winner:
       to: any
       required: true

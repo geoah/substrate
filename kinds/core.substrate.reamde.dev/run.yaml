@@ -22,10 +22,17 @@ data:
   # version 11: `callable` spells the new actor grammar, which carries the
   # declaring authority (record 0025). Stored values keep whatever the run
   # recorded.
-  version: 11
+  # version 12: the numeric and constructor invariants of a settled run. Every
+  # run belongs to a trigger and names what ran, fired in a mode and settled
+  # in a status, over at least one attempt bounded by a start and a finish, so
+  # those seven are required. `seq` and `attempt` count from 1, an effect count
+  # from 1, and `pages` from 2 (a one-page delivery omits it). A display
+  # template reads a random-id row as its outcome.
+  version: 12
   names:
     singular: run
     plural: runs
+  displayTemplate: "{status}: {callable}"
   indices:
     - properties:
         - trigger
@@ -33,12 +40,15 @@ data:
   properties:
     trigger:
       type: string
+      required: true
       description: the trigger record this delivery belongs to
     callable:
       type: string
+      required: true
       description: the callable that ran, as its actor spells it — `function:<authority>:<name>`
     mode:
       type: enum
+      required: true
       values:
         - trigger
         - schedule
@@ -47,6 +57,7 @@ data:
       description: how the delivery fired
     seq:
       type: int
+      min: 1
       description: the changelog seq delivered, for record-sourced runs
     fireId:
       type: string
@@ -56,6 +67,7 @@ data:
       description: the delivered record's id, for record-sourced runs
     status:
       type: enum
+      required: true
       values:
         - ok
         - skipped
@@ -65,12 +77,16 @@ data:
         the retry handle)
     attempt:
       type: int
+      required: true
+      min: 1
       description: how many attempts the delivery burned
     startedAt:
       type: datetime
+      required: true
       description: when the attempt began
     finishedAt:
       type: datetime
+      required: true
       description: when the attempt settled
     error:
       type: string
@@ -80,8 +96,10 @@ data:
     effects:
       type: int
       keyed: true
+      min: 1
       description: "the applied-effects summary: action → count"
     pages:
       type: int
+      min: 2
       description: committed pages for a paged (backfill) delivery; absent
         for a single-shot body, the durable per-chain progress lives in paged_cursors

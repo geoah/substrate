@@ -13,7 +13,10 @@ data:
   # from the authority. `edges.<rel>` gained `deprecated` and the reserved
   # `properties` block (issue 110): additive, so every stored declaration keeps
   # its shape and the upgrade is what carries the room for the new keys.
-  version: 11
+  # version 12: `authority` drops `required`, which contradicted "absent on a
+  # repository-local kind"; an index requires the `properties` it covers and an
+  # edge requires its `to` target, both refused empty by the loader.
+  version: 12
   names:
     singular: kind
     plural: kinds
@@ -50,7 +53,6 @@ data:
     # back after a restart.
     authority:
       type: string
-      required: true
       description: who publishes it; absent on a repository-local kind
     names:
       type: object
@@ -84,6 +86,7 @@ data:
         properties:
           type: string
           repeated: true
+          required: true
           description: the properties the index covers, in order
     # A MAP in the authored form: the key is the rel, and the value follows
     # these fields.
@@ -97,6 +100,7 @@ data:
         # admits a non-path is not a pin.
         to:
           type: string
+          required: true
           description: the target kind, or `any`
         many:
           type: bool
@@ -113,7 +117,7 @@ data:
           description: what the link means
         inverse:
           type: string
-          description: what the TARGET calls this relationship
+          description: what the target calls this edge
         inverseDescription:
           type: string
           description: what the inverse means, from the target's side
