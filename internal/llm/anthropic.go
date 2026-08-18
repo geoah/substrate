@@ -3,10 +3,13 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+
+	"github.com/geoah/substrate/internal/providersecret"
 )
 
 // The Anthropic-wire adapter. Three shapes differ from the OpenAI wire and
@@ -25,6 +28,10 @@ const anthropicDefaultMaxTokens = 8192
 
 type anthropicClient struct {
 	client anthropic.Client
+	// apiKey is held only to keep it OUT of an error, the same reason the
+	// openai adapter holds one: on a 401 the endpoint quotes the bearer it
+	// refused, and scrubbed rebuilds any provider error without it.
+	apiKey string
 }
 
 func newAnthropic(cfg Config) *anthropicClient {
@@ -35,7 +42,13 @@ func newAnthropic(cfg Config) *anthropicClient {
 	for k, v := range cfg.Headers {
 		opts = append(opts, option.WithHeader(k, v))
 	}
-	return &anthropicClient{client: anthropic.NewClient(opts...)}
+	return &anthropicClient{client: anthropic.NewClient(opts...), apiKey: cfg.APIKey}
+}
+
+// scrubbed rebuilds a provider error with the row's bearer taken back out,
+// rebuilt rather than %w-wrapped so no unwrap can recover the key.
+func (c *anthropicClient) scrubbed(err error) error {
+	return errors.New(providersecret.Scrub(c.apiKey, err.Error()))
 }
 
 func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta func(string)) (*Result, error) {
@@ -66,7 +79,7 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta fun
 	if onDelta == nil {
 		msg, err := c.client.Messages.New(ctx, params)
 		if err != nil {
-			return nil, err
+			return nil, c.scrubbed(err)
 		}
 		return anthropicResult(msg), nil
 	}
@@ -80,14 +93,14 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request, onDelta fun
 		// The SDK's accumulator owns the reassembly, tool-call arguments
 		// arriving as input_json_delta fragments included.
 		if err := msg.Accumulate(event); err != nil {
-			return nil, err
+			return nil, c.scrubbed(err)
 		}
 		if event.Type == "content_block_delta" && event.Delta.Type == "text_delta" && event.Delta.Text != "" {
 			onDelta(event.Delta.Text)
 		}
 	}
 	if err := stream.Err(); err != nil {
-		return nil, err
+		return nil, c.scrubbed(err)
 	}
 	return anthropicResult(&msg), nil
 }
