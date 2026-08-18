@@ -250,8 +250,13 @@ func TestBootUpgradeRefusesAnEdgeBecomingARequiredReference(t *testing.T) {
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/llmthread", ID: "t1",
 		Properties: map[string]any{
-			"agent": vocabulary.RecordPath("core.substrate.reamde.dev/agent", "core.substrate.reamde.dev/chat"),
-			"mode":  "chat",
+			"agent":      vocabulary.RecordPath("core.substrate.reamde.dev/agent", "core.substrate.reamde.dev/chat"),
+			"mode":       "chat",
+			"provider":   "default",
+			"model":      "test",
+			"status":     "running",
+			"agentDepth": 0,
+			"startedAt":  "2026-01-01T00:00:00Z",
 		},
 	}); err != nil {
 		t.Fatalf("put a thread: %v", err)

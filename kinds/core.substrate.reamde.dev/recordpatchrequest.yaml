@@ -29,10 +29,13 @@ data:
   # version 11: `op`'s description says what the accept does and how a policy
   # selector's `put` or `patch` becomes create or patch here, so a reader of a
   # gated request can write the selector that matches it.
-  version: 11
+  # version 12: a display template, and `targetVersion` carries `min: 1`, since
+  # a record's first version is 1 and a CAS assertion below it names none.
+  version: 12
   names:
     singular: recordpatchrequest
     plural: recordpatchrequests
+  displayTemplate: "{decision}: {target|targetId}"
   # the envelope a change travels in before anyone has agreed to it: a
   # learner or an app writes one, the owner decides, and accepting it is
   # what applies the change (§7). `request` because it waits for a human;
@@ -71,11 +74,11 @@ data:
       description: 'what the accept does: patch an existing target (the default
         when absent), create the named record, or delete it. A gated put or
         patch arrives here as create unless the target is live'
-    # create only: the full type identity and the stable id of the record the
+    # create only: the full kind reference and the stable id of the record the
     # accept mints (create-if-absent, idempotent on replay).
     targetKind:
       type: string
-      description: "op create: the full type identity of the record to mint"
+      description: "op create: the full kind reference of the record to mint"
     targetId:
       type: string
       description: "op create: a stable id for the new record"
@@ -83,6 +86,7 @@ data:
     # against it (§7). Stamped by the engine when the target edge is written.
     targetVersion:
       type: int
+      min: 1
       description: the target version the diff was computed against
     diff:
       type: json

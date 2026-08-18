@@ -19,7 +19,9 @@ data:
   # auth matches it by SQL containment on every request, which the sealed
   # store indirection every `secret` now gets would break. A digest stays
   # redacted on the wire.
-  version: 4
+  # version 5: `label` and `hash` are required. Minting refuses an empty label
+  # and always writes the digest, so a token without either is not a token.
+  version: 5
   names:
     singular: token
     plural: tokens
@@ -36,9 +38,11 @@ data:
   properties:
     label:
       type: string
+      required: true
       description: what the token is for, chosen at mint
     hash:
       type: digest
+      required: true
       description: the SHA-256 of the secret; the secret itself is shown once,
         at mint
     expiresAt:

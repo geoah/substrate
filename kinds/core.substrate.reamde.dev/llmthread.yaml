@@ -34,7 +34,13 @@ data:
   # version 8: `mode` and `status` become enums, the loop's own closed sets
   # (agentloop.go). `judge` joins mode: the loop already mints it (judge.go),
   # the old prose just never named it.
-  version: 8
+  # version 9: the numeric and constructor invariants. Every counter and the
+  # cost carry `min: 0`, `agentDepth` carries `max: 3` (the sub-agent depth
+  # cap), and the six fields the loop stamps at open (`provider`, `model`,
+  # `mode`, `status`, `agentDepth`, `startedAt`) are required. The `parent`
+  # inverse label is `subagentThreads`, the spelling the rest of the subagent
+  # vocabulary uses.
+  version: 9
   names:
     singular: llmthread
     plural: llmthreads
@@ -59,12 +65,15 @@ data:
     # shape.
     provider:
       type: string
+      required: true
       description: the llmprovider row id the run resolved
     model:
       type: string
+      required: true
       description: the model id the run sent
     mode:
       type: enum
+      required: true
       values:
         - trigger
         - schedule
@@ -77,6 +86,7 @@ data:
       description: how the run was invoked
     status:
       type: enum
+      required: true
       values:
         - running
         - ok
@@ -88,28 +98,38 @@ data:
       description: which budget ended an overbudget run, or the error
     agentDepth:
       type: int
+      required: true
+      min: 0
+      max: 3
       description: how many sub-agent hops sit above this thread (0 = root)
     turns:
       type: int
+      min: 0
       description: model calls this thread burned
     toolCalls:
       type: int
+      min: 0
       description: tool dispatches this thread burned
     promptTokens:
       type: int
+      min: 0
       description: prompt tokens; on the root thread, sub-agents included
     completionTokens:
       type: int
+      min: 0
       description: completion tokens; on the root thread, sub-agents included
     totalTokens:
       type: int
+      min: 0
       description: total tokens; on the root thread, sub-agents included
     costUSD:
       type: float
+      min: 0
       description: the provider row's pricing for the model applied to the
         tally; 0 when unpriced
     startedAt:
       type: datetime
+      required: true
       description: when the loop opened the thread
     finishedAt:
       type: datetime
@@ -123,6 +143,6 @@ data:
     parent:
       type: reference
       kind: core.substrate.reamde.dev/llmthread
-      inverse: subAgentThreads
+      inverse: subagentThreads
       inverseDescription: the sub-agent runs this thread called
       description: the calling agent's thread, on sub-agent threads

@@ -22,10 +22,19 @@ data:
   # version 11: `callable` spells the new actor grammar, which carries the
   # declaring authority (record 0025). Stored values keep whatever the run
   # recorded.
-  version: 11
+  # version 12: the numeric and constructor invariants of a settled run. Every
+  # run belongs to a trigger and names what ran, fired in a mode and settled
+  # in a status, over a run bounded by a start and a finish, so those seven are
+  # required. `seq` counts from 1 (a changelog seq), an effect count from 1,
+  # and `pages` from 2 (a one-page delivery omits it). `attempt` counts from 0:
+  # a delivery parked at the causal depth cap burns none. A display template
+  # reads a random-id row as its outcome. `error` is renamed `reason`, the word
+  # `llmthread` already uses for why a non-success run settled.
+  version: 12
   names:
     singular: run
     plural: runs
+  displayTemplate: "{status}: {callable}"
   indices:
     - properties:
         - trigger
@@ -33,12 +42,15 @@ data:
   properties:
     trigger:
       type: string
+      required: true
       description: the trigger record this delivery belongs to
     callable:
       type: string
+      required: true
       description: the callable that ran, as its actor spells it — `function:<authority>:<name>`
     mode:
       type: enum
+      required: true
       values:
         - trigger
         - schedule
@@ -47,6 +59,7 @@ data:
       description: how the delivery fired
     seq:
       type: int
+      min: 1
       description: the changelog seq delivered, for record-sourced runs
     fireId:
       type: string
@@ -56,6 +69,7 @@ data:
       description: the delivered record's id, for record-sourced runs
     status:
       type: enum
+      required: true
       values:
         - ok
         - skipped
@@ -65,23 +79,31 @@ data:
         the retry handle)
     attempt:
       type: int
-      description: how many attempts the delivery burned
+      required: true
+      min: 0
+      description: how many attempts the delivery burned; 0 when it parked
+        at the causal depth cap before any ran
     startedAt:
       type: datetime
+      required: true
       description: when the attempt began
     finishedAt:
       type: datetime
+      required: true
       description: when the attempt settled
-    error:
+    reason:
       type: string
-      description: the last error, on parked runs
+      description: why a non-success run settled as it did; the last error
+        on a parked run
     # The keys are the action words the effect applier names (put, patch,
     # delete, link, unlink, merge, split), held to that set by the engine.
     effects:
       type: int
       keyed: true
+      min: 1
       description: "the applied-effects summary: action → count"
     pages:
       type: int
+      min: 2
       description: committed pages for a paged (backfill) delivery; absent
         for a single-shot body, the durable per-chain progress lives in paged_cursors

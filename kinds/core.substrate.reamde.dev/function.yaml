@@ -41,7 +41,10 @@ data:
   # of effect the body has, and a floor no policy or judge loosens.
   # version 10: the `network` property description names the entry grammar the
   # loader now enforces (a host, host:port or CIDR; docs/decisions/0038).
-  version: 10
+  # version 11: an argument and a return each require a `type`. The loader
+  # refuses an entry whose type it does not recognize, so the requirement
+  # moves onto the declaration.
+  version: 11
   names:
     singular: function
     plural: functions
@@ -137,6 +140,7 @@ data:
           description: the argument's name
         type:
           type: enum
+          required: true
           values:
             - string
             - int
@@ -169,6 +173,7 @@ data:
           description: the value's name
         type:
           type: enum
+          required: true
           values:
             - string
             - int

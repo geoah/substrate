@@ -12,6 +12,8 @@ data:
   names:
     singular: recordmerge
     plural: recordmerges
+  # A random-id row reads as the pair it joined instead of its opaque id.
+  displayTemplate: "{winner} ← {loser}"
   # command-as-record: creating a merge performs it (§6), so it is not a
   # "request" — nothing waits on a decision. Merging is always somebody's
   # deliberate act; nothing in the engine merges on its own. The moved sets
@@ -19,6 +21,7 @@ data:
   properties:
     moved:
       type: json
+      required: true
       description: the edges and properties the merge moved, what a split
         reads back
   edges:

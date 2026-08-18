@@ -79,7 +79,16 @@ data:
   # (`bundle:<authority>`, `function:<authority>:<name>`,
   # `agent:<authority>:<name>`), and `connector:` is retired (record 0025).
   # Entries already written keep the spelling they recorded.
-  version: 11
+  # version 12: the closure's constructor and numeric invariants (issue 51).
+  # The declarations that carry no version of their own take this one:
+  # `credential`, `recoverykey` and `repository` mark their singleton fields
+  # required (`recoverykey.algorithm` stays a required string: its one value
+  # carries hyphens the enum grammar refuses), `recordmerge`
+  # and `recordsplit` require their engine-written ledger and gain a display
+  # template, `bundle` marks its loader-required fields required, `trigger`
+  # requires `callable` and gains a template, and the `query` host card takes
+  # integer counts. The pinned kinds bump their own.
+  version: 12
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands
@@ -153,7 +162,7 @@ data:
   authority: core.substrate.reamde.dev
   description: "one connected account of a bundle; the host writes its credential
     ref"
-  # The host-written hands on an account (review-google #2): the account TYPE
+  # The host-written hands on an account (review-google #2): the account kind
   # redeclares these with `writer: oauth` so only the OAuth facility may set
   # them — a stranger cannot assign a credential ref, a status, or a scope set.
   properties:

@@ -209,16 +209,10 @@ func TestManagedPropertiesAreNotDocumentKeys(t *testing.T) {
 // a kind that ships without a displayTemplate fails this test, and one that
 // gains a template has to leave the list.
 func TestEveryKindDeclaresADisplayTemplate(t *testing.T) {
-	// core's six want composed templates (issue 51); the nine bundle mirrors
+	// the nine bundle mirrors
 	// carry the provider's own title and move with the built-in slot's
 	// retirement (issue 68).
 	onTheSlot := map[string]bool{
-		"core.substrate.reamde.dev/recordmerge":              true,
-		"core.substrate.reamde.dev/recordmergerequest":       true,
-		"core.substrate.reamde.dev/recordpatchrequest":       true,
-		"core.substrate.reamde.dev/recordsplit":              true,
-		"core.substrate.reamde.dev/run":                      true,
-		"core.substrate.reamde.dev/trigger":                  true,
 		"firecrawl.bundles.substrate.reamde.dev/webdocument": true,
 		"github.bundles.substrate.reamde.dev/issue":          true,
 		"github.bundles.substrate.reamde.dev/pullrequest":    true,

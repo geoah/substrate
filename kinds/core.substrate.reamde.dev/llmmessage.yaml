@@ -34,7 +34,10 @@ data:
   # would refuse the loop's own message write.
   # version 8: `changes.op` says on the property that it carries the changelog
   # op verbatim, so a reader does not take it for a trigger's change class.
-  version: 8
+  # version 9: the constructor invariants. Every row the loop writes carries a
+  # `role` and a `turn`, so both are required, and a turn counts from 0, so it
+  # carries `min: 0`.
+  version: 9
   names:
     singular: llmmessage
     plural: llmmessages
@@ -42,6 +45,7 @@ data:
   properties:
     role:
       type: enum
+      required: true
       values:
         - user
         - assistant
@@ -53,6 +57,8 @@ data:
       description: the turn's text; a tool row's result payload
     turn:
       type: int
+      required: true
+      min: 0
       description: the loop iteration this row belongs to, for ordering
     # The arguments ride as the VERBATIM wire string: they are the model's own
     # JSON, echoed back on the tool result, and re-encoding them would change

@@ -56,6 +56,7 @@ data:
         kind:
           type: reference
           kind: core.substrate.reamde.dev/kind
+          required: true
           description: the kind whose records satisfy this input
         inject:
           type: enum
@@ -72,6 +73,7 @@ data:
     installs:
       type: string
       repeated: true
+      required: true
       description: the exact identities the bundle ships into its authority
     # NOT a reference either: these are authority NAMES, read while the closure
     # is still being bucketed — before any registry exists to resolve a pin
@@ -95,13 +97,16 @@ data:
       fields:
         clientInput:
           type: string
+          required: true
           description: the input whose resolved record carries the OAuth client
             credentials
         authorizationEndpoint:
           type: url
+          required: true
           description: where the user is sent to consent
         tokenEndpoint:
           type: url
+          required: true
           description: where a code and a refresh are exchanged
         revocationEndpoint:
           type: url
@@ -125,6 +130,7 @@ data:
             scopes:
               type: string
               repeated: true
+              required: true
               description: the scopes the toggle requests
     disabled:
       type: bool

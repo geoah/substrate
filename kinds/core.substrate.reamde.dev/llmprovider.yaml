@@ -39,7 +39,9 @@ data:
   # on an openai row used to mean "the host's configured gateway"; it now means
   # the row names no endpoint, and refuses. Every stored openai row must be
   # given its own baseURL and apiKey.
-  version: 5
+  # version 6: `wire` is required. A row names no default wire, and dispatch
+  # refuses one without it, so the requirement moves to the write.
+  version: 6
   names:
     singular: llmprovider
     plural: llmproviders
@@ -54,6 +56,7 @@ data:
     # set without reading prose.
     wire:
       type: enum
+      required: true
       values:
         - value: openai
           label: OpenAI

@@ -48,7 +48,10 @@ data:
   # integer, maintained by the engine.
   # version 11: `resume` — whether a resolution on the agent's thread-borne
   # records continues the thread (docs/plans/thread-interactions.md).
-  version: 11
+  # version 12: `params.temperature` carries `min: 0` and `max: 2`, the bounds
+  # the provider row's `defaults.temperature` already declares. The agent
+  # value overrides the provider's, so the two are held to one range.
+  version: 12
   names:
     singular: agent
     plural: agents
@@ -104,6 +107,8 @@ data:
       fields:
         temperature:
           type: float
+          min: 0
+          max: 2
           description: the sampling temperature, when the model accepts one
         maxTokens:
           type: int

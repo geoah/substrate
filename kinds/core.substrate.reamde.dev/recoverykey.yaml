@@ -22,13 +22,20 @@ data:
   # (engine/write.go forbidSystemKind). Reading and listing it is ordinary.
   displayTemplate: "{algorithm}"
   properties:
+    # Registration writes exactly `age-x25519-v1`. It stays a string, not an
+    # enum: an enum value is a lowercase word ([a-z][a-z0-9]*) and this scheme
+    # name carries hyphens the grammar refuses, so the closed set cannot be
+    # spelled as enum values today.
     algorithm:
       type: string
+      required: true
       description: the recovery scheme; age-x25519-v1 in this release
     publicKey:
       type: string
+      required: true
       description: the age recipient the data-encryption key is wrapped to
     sealedKey:
       type: string
+      required: true
       description: the repository's data-encryption key wrapped to the recipient;
         only the matching age identity opens it
