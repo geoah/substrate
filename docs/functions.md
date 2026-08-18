@@ -212,9 +212,9 @@ That is also what decides **where each is callable**:
 - **As an agent tool**, all five.
 - **Through the [call API](#host-call)**, `graphql` and `query` only: the caller
   is a token that owns the repository, so a read needs no narrower grant.
-  `propose`, `mutate` and `ask` refuse there by name — there is no calling
-  agent whose grants would bound them, and `ask` has no thread to answer into —
-  and the refusal points at declaring an agent that carries the tool.
+  `propose`, `mutate` and `ask` refuse there by name: there is no calling
+  agent whose grants would bound them, and `ask` has no thread to answer into.
+  The refusal points at declaring an agent that carries the tool.
 - **As a [trigger](#triggers)'s callable**, none. A delivery has no caller to
   borrow grants from, so the row is refused at admission rather than parked
   forever, and the refusal names the same shape: an agent carrying the tool,
