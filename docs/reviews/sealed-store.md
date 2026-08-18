@@ -369,7 +369,7 @@ record. One shipped kind declares two, `core.substrate.reamde.dev/credential`
 with `passwordRef` and `totpRef`
 (`kinds/core.substrate.reamde.dev/credential.yaml:32,35`); the bundle files
 spread their two across separate kinds. The bug cannot fire on `credential`:
-`guardSystemKind` refuses the generic write surface for it, and the auth
+`forbidSystemKind` refuses the generic write surface for it, and the auth
 machinery writes the two properties with distinct material through its own
 path and never aliases them. So no shipped kind exposes two
 attacker-writable secret properties, and reproducing this needs a
@@ -473,7 +473,7 @@ transaction opens. This one is clean.
 
 `EnrollRecoveryKey` refuses when a live `recoverykey` record exists
 (`auth.go:464`), and the generic surface can neither write it
-(`guardSystemKind`) nor delete it (`write.go:2403` refuses a delete for every
+(`forbidSystemKind`) nor delete it (`write.go:2403` refuses a delete for every
 kind in `systemKinds`, and `dataset.go:56` lists `kindRecoveryKey`). So there
 is no rotation, no re-wrap, and no path at all for a user who loses the
 identity. [#137](https://github.com/geoah/substrate/issues/137) tracks that.

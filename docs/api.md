@@ -548,12 +548,11 @@ One more code lives on the changelog surface: `compacted` (410) answers a
 telling a consumer that has fallen too far behind to re-list rather than
 silently miss rows.
 
-One code is defined and mapped but does not reach the wire today. `gated` (409)
-is the [policy door](agents.md#the-policy-door)'s verdict when an agent's write
-is held for the owner's review; it surfaces as a tool result inside the agent
-loop, never as an HTTP response, so no request receives it yet
-([#242](https://github.com/geoah/substrate/issues/242)). Every code a request
-can receive is above; those thirteen strings are the whole closed set, and
-nothing else appears in `error.code`.
+Every code a request can receive is above; those twelve strings are the whole
+closed set, and nothing else appears in `error.code`. The
+[policy door](agents.md#the-policy-door)'s `gate` verdict is not one of them: it
+holds an agent's write for the owner's review and surfaces as a tool result
+inside the agent loop, never as an HTTP response
+([0037](decisions/0037-gated-is-an-agent-loop-verdict-not-a-wire-code.md)).
 
 Next: [users and tokens](auth.md), the way in and what a token is.
