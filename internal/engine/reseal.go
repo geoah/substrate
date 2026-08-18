@@ -107,8 +107,48 @@ func (s *service) ResealRepository(ctx context.Context, username string) (Reseal
 	if err := tx.Commit(); err != nil {
 		return report, err
 	}
+	// The control-plane DEK wrap lives in `repositories.dek`, outside the
+	// scoped transaction above, and only creation and DEK adoption ever write
+	// it. A store created before the address binding keeps an unbound wrap
+	// forever unless reseal rebinds it, so a legacy wrap lifted into another
+	// repository's row would keep opening. Rebind it here, on the control
+	// plane, so a resealed legacy store gets the binding a new store is born
+	// with (0023).
+	if err := s.rekeyDEKWrap(ctx, repo.ID); err != nil {
+		return report, err
+	}
 	report.Took = time.Since(started)
 	return report, nil
+}
+
+// rekeyDEKWrap re-wraps one repository's control-plane DEK under the host key
+// bound to its repository id (dekAAD), so a legacy 'p'/'s' wrap gains the
+// address binding new stores are born with. An already-bound wrap is left
+// byte-identical: the idempotency. Reseal holds a credential key (checked
+// above), so the rewrap is never the plain-marked keyless form.
+func (s *service) rekeyDEKWrap(ctx context.Context, repoID string) error {
+	var wrapped []byte
+	if err := s.maint.QueryRowContext(ctx,
+		`SELECT dek FROM repositories WHERE id = $1`, repoID).Scan(&wrapped); err != nil {
+		return err
+	}
+	// Nothing to rebind: a pre-DEK repository (no wrap), or one already bound.
+	if len(wrapped) == 0 || wrapped[0] == credBoundSealed {
+		return nil
+	}
+	dek, err := s.unwrapDEK(wrapped, repoID)
+	if err != nil {
+		return fmt.Errorf("substrate/engine: reseal: unwrap the legacy DEK wrap: %w", err)
+	}
+	rebound, err := s.wrapDEK(dek, repoID)
+	if err != nil {
+		return err
+	}
+	if _, err := s.maint.ExecContext(ctx,
+		`UPDATE repositories SET dek = $1 WHERE id = $2`, rebound, repoID); err != nil {
+		return fmt.Errorf("substrate/engine: reseal: rebind the DEK wrap: %w", err)
+	}
+	return nil
 }
 
 // secretPropNames lists a kind's secret-typed property names, nil when it
