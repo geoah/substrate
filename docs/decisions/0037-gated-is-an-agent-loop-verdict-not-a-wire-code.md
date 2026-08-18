@@ -43,8 +43,8 @@ resolves inside the loop as a tool result naming the request id. Making `gated`
 reachable would mean giving user writes a policy door they were deliberately
 kept out of, which contradicts 0005 and 0006, not a small honesty fix.
 
-`ErrGated` stays in `internal/substrate` because `heldForReview` and
-`convertToRequest` still use it inside the loop; it is no longer a wire code, so
+`ErrGated` stays in `internal/substrate` because `heldForReview` still wraps it
+for the loop's tool result; it is no longer a wire code, so
 `problemFor` no longer maps it and `internal/api/errors.go` no longer declares
 `codeGated`. Removing it now, before v1, is the one time the closed set may lose
 a member.

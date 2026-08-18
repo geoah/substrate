@@ -429,10 +429,11 @@ function tool's effect) the engine, after the emit ceiling admits it:
 - A declaration whose confirmation floor is `always` gates regardless of
   any `allow`.
 
-How the model hears it, honestly per surface: a gated MUTATE resolver fails
-typed: a `gated` error code carrying the request's path in extensions,
-never a fake success, and the console renders that tool chip as held, not
-failed. Mutations in one document stay independently transactional (they
+How the model hears it, honestly per surface: a gated MUTATE resolver returns
+a tool-result error naming the recordpatchrequest it converted the write into,
+never a fake success. A gate is an agent-loop verdict, not a wire error code
+([0037](../decisions/0037-gated-is-an-agent-loop-verdict-not-a-wire-code.md)),
+and the console renders that tool chip as held, not failed. Mutations in one document stay independently transactional (they
 already are today), so one document can land one write and gate another;
 the result names each. A gated function EFFECT fails the whole effect batch
 the way an emit refusal does today, with the request path in the message:
@@ -717,7 +718,7 @@ Additive throughout; no narrowing, no data migration:
    asking demo.
 3. **Phase 3, policy, static**: the `recordpatchpolicy` kind (owner-only), door
    evaluation with allow/gate/refuse and most-restrictive-wins, the gate
-   conversion with deterministic request ids and the typed `gated` result,
+   conversion with deterministic request ids and the tool-result error it returns,
    declaration-level effect class and confirmation floor on functions.
 4. **Phase 4, the judge**: engine-run judging with CAS and thresholds,
    enforce/advise, the policy-actor decision arm in `authorizeRequestOp`,
