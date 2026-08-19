@@ -100,8 +100,8 @@ what an authority is for. Shipped vocabulary, an authority whose stored rows
 say `source: builtin`, is writable only through a substrate path: the seed,
 an upgrade, an install, which is what the actors `substrate` and
 `bundle:<authority>` name. A generic API write into one is `forbidden`, and
-neither actor form can be claimed by a request. Everything else, the
-repository's own bare kinds and the bundles it installed, is the user's to
+neither actor form can be claimed by a request. Everything else, the kinds the
+repository declares itself and the bundles it installed, is the user's to
 write.
 
 Opening a repository rebuilds its registry from the stored declaration

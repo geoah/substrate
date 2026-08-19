@@ -170,8 +170,8 @@ prompt has a flag or a `--*-stdin` twin so the same command scripts headlessly.
 
 Everything — vocabulary declarations and data records alike — is one YAML document
 with **four** keys, `kind` / `metadata` / `data` / `status`. `kind` is the
-record's kind REFERENCE (`people.substrate.reamde.dev/person` for a published
-kind, a bare `task` for a repository-local one), `metadata.id` the record id,
+record's kind REFERENCE (`people.substrate.reamde.dev/person`; every kind
+carries an authority), `metadata.id` the record id,
 `data.properties` the declared properties with `data.edges` beside them —
 properties are NOT written straight onto `data`, and the CLI refuses a document
 that tries — and `status` is server-owned, ignored on input, so

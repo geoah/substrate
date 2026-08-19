@@ -136,11 +136,16 @@ func TestDiscoveryFeaturesNameTheirSurfaces(t *testing.T) {
 func TestSearchHasNoRESTRoute(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	for _, path := range []string{"/api/v1/search", "/api/v1/core.substrate.reamde.dev/search"} {
+	// A one-segment path names no kind (decision 0042), so it is the router's
+	// generic 404; a two-segment path is a collection lookup that misses.
+	for path, want := range map[string]string{
+		"/api/v1/search": "no such API path",
+		"/api/v1/core.substrate.reamde.dev/search": "unknown collection",
+	} {
 		rec := env.do(t, http.MethodGet, path+"?q=hello", tok, nil)
 		wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
-		if body := rec.Body.String(); !strings.Contains(body, "unknown collection") {
-			t.Fatalf("GET %s = %s, want the generic collection 404", path, body)
+		if body := rec.Body.String(); !strings.Contains(body, want) {
+			t.Fatalf("GET %s = %s, want %q", path, body, want)
 		}
 	}
 }

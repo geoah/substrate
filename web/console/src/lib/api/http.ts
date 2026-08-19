@@ -152,7 +152,10 @@ export async function request<T>(
  * record's id into `%2F`, which the API decodes exactly once (`pathParam`). */
 export const seg = encodeURIComponent
 
-/** A kind reference split into its two parts. A bare name has no authority. */
+/** A kind reference split into its two parts. A stored kind is always
+ * authority-qualified (decision 0042); the empty-authority answer only ever
+ * comes back for a bare shorthand name, which mirrors the server's
+ * `SplitKindRef`. */
 export function splitKind(ref: string): { authority: string; name: string } {
   const slash = ref.indexOf("/")
   return slash < 0
@@ -166,14 +169,12 @@ export function joinKind(authority: string, name: string): string {
 }
 
 /** The collection path of a declared kind: the authority and the collection
- * segment are both segments, and a repository-local kind (empty authority) has
- * only the collection. The collection segment IS the kind's NAME (decision
- * 0033), so everything after `/api/v1/` is the kind reference and a record's
- * path is the value a `reference` property stores. */
+ * segment are both path segments, and every kind carries an authority
+ * (decision 0042). The collection segment IS the kind's NAME (decision 0033),
+ * so everything after `/api/v1/` is the kind reference and a record's path is
+ * the value a `reference` property stores. */
 export function collectionPath(authority: string, name: string): string {
-  return authority
-    ? `${API_BASE}/${seg(authority)}/${seg(name)}`
-    : `${API_BASE}/${seg(name)}`
+  return `${API_BASE}/${seg(authority)}/${seg(name)}`
 }
 
 /** The core meta-model's own collections, addressed the same way (the segment

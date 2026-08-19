@@ -215,12 +215,13 @@ export function resolveEdgeTarget(
   return named.length === 1 ? named[0] : undefined
 }
 
-/** The GraphQL type name a kind reference maps to. A bare kind is its name
- * PascalCased (`task` → `Task`); a shipped authority's kind is likewise just
- * its name (`people.substrate.reamde.dev/person` → `Person`); an INSTALLED bundle kind is
+/** The GraphQL type name a kind reference maps to, mirroring the server's
+ * `GraphQLName`. A shipped authority's kind is its name PascalCased
+ * (`people.substrate.reamde.dev/person` → `Person`); an INSTALLED bundle kind is
  * prefixed with the bundle's name and an underscore
  * (`google.bundles.substrate.reamde.dev/person` → `Google_Person`), because installed
- * kinds share names across bundles and the prefix disambiguates. */
+ * kinds share names across bundles and the prefix disambiguates. A bare
+ * shorthand name (no authority) PascalCases the same way the server does. */
 export function graphqlTypeName(ref: string): string {
   const { authority, name } = splitKind(ref)
   const base = pascal(name)

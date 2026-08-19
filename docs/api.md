@@ -45,12 +45,11 @@ exist in two collections as two unrelated records, and a resource read is
 always scoped to its own collection. There is no cross-kind read by bare id
 anywhere on the surface.
 
-A [repository-local kind](data-model.md#kinds-and-references) has no authority
-segment, so every route above exists one segment shorter — `/api/v1/task`,
-`/api/v1/task/t9`. The two are told apart by inspection, in one place: an
-authority is a DNS name and always carries a dot, a kind name never does. So a
-two-segment path is a qualified collection when its first segment is dotted and
-a repository-local resource when it is not.
+Every kind carries an authority
+([decision 0042](decisions/0042-every-kind-carries-an-authority.md)), so the
+two path shapes are told apart by segment count, in one place: a two-segment
+path is a collection (`{authority}/{kind}`), a three-segment path a record
+(`{authority}/{kind}/{id}`). There is no authority-less shape and no dot rule.
 
 One id form needs care. A [kind declaration](vocabulary.md)'s id **is** a kind
 reference, so it carries a `/`. A client percent-encodes it, and the API

@@ -46,18 +46,20 @@ func TestSplitRecordPath(t *testing.T) {
 			path: "core.substrate.reamde.dev/llmprovider/claude",
 			kind: "core.substrate.reamde.dev/llmprovider", id: "claude", ok: true,
 		},
-		"repository-local kind": {
-			path: "task/abc123", kind: "task", id: "abc123", ok: true,
-		},
 		// A declaration record's id is a kind reference, so its path has four
 		// segments and the id keeps its own slash.
 		"declaration record id": {
 			path: "core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev/task",
 			kind: "core.substrate.reamde.dev/kind", id: "tasks.substrate.reamde.dev/task", ok: true,
 		},
-		"local kind, id with slashes": {
-			path: "task/a/b/c", kind: "task", id: "a/b/c", ok: true,
+		"qualified kind, id with slashes": {
+			path: "core.substrate.reamde.dev/note/a/b/c",
+			kind: "core.substrate.reamde.dev/note", id: "a/b/c", ok: true,
 		},
+		// Every kind carries an authority (decision 0042), so a dotless first
+		// segment is no stored path: a bare "<name>/<id>" like "task/abc123"
+		// never names a stored record.
+		"dotless first segment is not a path": {path: "task/abc123"},
 		// The authored short form of a reference to a declaration: a bare id
 		// that LOOKS like a path but has no id left over. It must not parse, or
 		// the pin could never complete it.

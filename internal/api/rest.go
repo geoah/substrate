@@ -14,24 +14,22 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// THE PATH GRAMMAR (decision 0033).
+// THE PATH GRAMMAR (decisions 0033, 0042).
 //
-//	/{authority}/{kind}         a published kind's collection
-//	/{kind}                     a repository-local kind's collection
-//	/{authority}/{kind}/{id}    a published kind's record
-//	/{kind}/{id}                a repository-local kind's record
+//	/{authority}/{kind}         a kind's collection
+//	/{authority}/{kind}/{id}    a record
 //
-// The collection segment is the kind's NAME, so everything after the version
-// prefix is the kind reference, and a record's path is the record path a
-// `reference` property stores (vocabulary.RecordPath) character for character.
-// The two shapes are told apart by inspection, not by a route: an authority is
-// a DNS name and always carries a dot, a kind name never does. There is no
-// separator segment: sub-resources hang one level below the id, and non-record
-// endpoints sit at the version root, so nothing needs one.
+// Every kind carries an authority (decision 0042), so a collection is always
+// two segments and a record always three, and the two shapes are told apart by
+// SEGMENT COUNT, never by inspecting a segment. The collection segment is the
+// kind's NAME, so everything after the version prefix is the kind reference,
+// and a record's path is the record path a `reference` property stores
+// (vocabulary.RecordPath) character for character. There is no separator
+// segment: sub-resources hang one level below the id, and non-record endpoints
+// sit at the version root, so nothing needs one.
 
-// address is what a REST path addresses: the collection's authority (empty for
-// a repository-local kind), the kind name, and the record id ("" on a
-// collection route).
+// address is what a REST path addresses: the collection's authority, the kind
+// name, and the record id ("" on a collection route).
 type address struct {
 	authority string
 	kind      string
@@ -65,25 +63,18 @@ func reservedRecordID(id string) bool {
 	}
 }
 
-// addressed reads what a REST path addresses. It is the ONE place the two path
-// shapes are told apart. A second return of false means the segments spell no
-// address at all — a three-segment path whose first segment is not an
-// authority — which is a 404 rather than a lookup.
+// addressed reads what a REST path addresses, by SEGMENT COUNT alone: three
+// segments name a record ({authority}/{kind}/{id}), two a collection
+// ({authority}/{kind}). Every kind carries an authority (decision 0042), so a
+// one-segment path names nothing and a second return of false is a 404 rather
+// than a lookup.
 func addressed(r *http.Request) (address, bool) {
 	s1, s2, s3 := pathParam(r, "a1"), pathParam(r, "a2"), pathParam(r, "a3")
 	switch {
 	case s3 != "":
-		if !strings.Contains(s1, ".") {
-			return address{}, false
-		}
 		return address{authority: s1, kind: s2, id: s3}, true
 	case s2 != "":
-		if strings.Contains(s1, ".") {
-			return address{authority: s1, kind: s2}, true
-		}
-		return address{kind: s1, id: s2}, true
-	case s1 != "":
-		return address{kind: s1}, true
+		return address{authority: s1, kind: s2}, true
 	default:
 		return address{}, false
 	}
@@ -172,17 +163,6 @@ func putStatus(e *substrate.Record) int {
 		return http.StatusCreated
 	}
 	return http.StatusOK
-}
-
-// getCollectionOrResource is the two-segment GET: a qualified collection when
-// the first segment is an authority, a repository-local record when it is a
-// kind name. One route, one rule (addressed), no ambiguity.
-func (h *handler) getCollectionOrResource(w http.ResponseWriter, r *http.Request) {
-	if addr, ok := addressed(r); ok && addr.id != "" {
-		h.getResource(w, r)
-		return
-	}
-	h.listCollection(w, r)
 }
 
 func (h *handler) listCollection(w http.ResponseWriter, r *http.Request) {

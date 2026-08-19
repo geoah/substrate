@@ -4,8 +4,8 @@
  * change feed filtered to one record.
  *
  * A collection path IS the kind reference split into segments —
- * `/{authority}/{name}` for a published kind, `/{name}` for a
- * repository-local one (`collectionPath`). The PUT/POST body carries the
+ * `/{authority}/{name}`, and every kind carries an authority (decision 0042,
+ * `collectionPath`). The PUT/POST body carries the
  * authored envelope only (`{properties, labels, annotations, edges}`); the kind
  * is settled by the path, so the body never repeats it.
  *
@@ -36,7 +36,7 @@ export const recordIdSegment = (id: string): string => seg(id)
 // ── list ────────────────────────────────────────────────────────────────────
 
 export interface ListParams {
-  /** The publishing authority, or "" for a repository-local kind. */
+  /** The publishing authority; every kind carries one. */
   authority: string
   name: string
   first?: number
@@ -191,10 +191,9 @@ export interface RecordWrite {
   ifVersion?: number
 }
 
-/** Create one record in a collection: `POST /{authority}/{name}` (or
- * `POST /{name}` for a repository-local kind). The kind is settled by the
- * URL; the body carries authored properties (and an optional id — omit it and
- * the substrate mints one). */
+/** Create one record in a collection: `POST /{authority}/{name}`. The kind is
+ * settled by the URL; the body carries authored properties (and an optional
+ * id — omit it and the substrate mints one). */
 export function createRecord(
   authority: string,
   name: string,

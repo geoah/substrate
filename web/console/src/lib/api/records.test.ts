@@ -35,9 +35,12 @@ describe("listPath", () => {
     expect(url.searchParams.get("withEdges")).toBe("1")
   })
 
-  it("addresses a repository-local kind with no authority as a bare collection", () => {
-    const url = new URL(listPath({ authority: "", name: "task" }), "http://x")
-    expect(url.pathname).toBe("/api/v1/task")
+  it("addresses a collection by its authority and kind name", () => {
+    const url = new URL(
+      listPath({ authority: "tasks.substrate.reamde.dev", name: "task" }),
+      "http://x"
+    )
+    expect(url.pathname).toBe("/api/v1/tasks.substrate.reamde.dev/task")
   })
 
   it("omits what is not asked: no cursor at page one, no empty filter", () => {
