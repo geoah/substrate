@@ -247,7 +247,7 @@ func TestLoadManifestStream(t *testing.T) {
 	if !ok {
 		t.Fatal("book type missing")
 	}
-	if book.Plural != "books" || book.Name != "book" || book.Authority != "vocab.example.com" {
+	if book.Name != "book" || book.Authority != "vocab.example.com" {
 		t.Fatalf("book = %+v", book)
 	}
 	if book.Version != 1 {
@@ -1890,9 +1890,7 @@ data: {authority: x.example.com}
 `,
 		// the body DSL
 		"missing names":     typ("  properties: {a: {type: string}}\n"),
-		"missing plural":    typ("  names: {singular: contact}\n"),
 		"bad type name":     typ("  names: {singular: my_contact, plural: mycontacts}\n"),
-		"bad plural":        typ("  names: {singular: contact, plural: my_contacts}\n"),
 		"unknown names key": typ("  names: {singular: contact, plural: contacts, short: c}\n"),
 		// One casing rule: every declared name is camelCase.
 		"capitalised property": typ(`  names: {singular: contact, plural: contacts}

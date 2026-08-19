@@ -133,8 +133,8 @@ func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 	}
 	// The rest of core's version rode the same projection: `trigger` pins
 	// none of its own, so it carries the authority's.
-	if v := kindVersion(t, ds, coreAuthority+"/trigger"); v != 12 {
-		t.Fatalf("trigger is at version %d, want 12", v)
+	if v := kindVersion(t, ds, coreAuthority+"/trigger"); v != 13 {
+		t.Fatalf("trigger is at version %d, want 13", v)
 	}
 	rec, err := ds.Get(ctx, vocabulary.KindRecordPatchPolicy, "gate-puts")
 	if err != nil {

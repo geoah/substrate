@@ -28,10 +28,10 @@ A state is a property, so --state and --prop write to the same block; --state is
 how you say that the value you are writing is a declared move, and the engine
 checks the transition against the state machine either way. Maps merge
 key-wise; a raw -p patch may use null values to delete keys.`,
-		Example: `  substratectl patch tasks t9 --state status=done
-  substratectl patch tasks t9 --prop description="rack layout"
-  substratectl patch people 9f2k --label owner/pinned=true
-  substratectl patch tasks t9 -p '{"properties":{"description":null}}'`,
+		Example: `  substratectl patch task t9 --state status=done
+  substratectl patch task t9 --prop description="rack layout"
+  substratectl patch person 9f2k --label owner/pinned=true
+  substratectl patch task t9 -p '{"properties":{"description":null}}'`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

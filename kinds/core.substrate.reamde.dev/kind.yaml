@@ -64,6 +64,14 @@ data:
           type: string
           required: true
           description: the kind's singular name, its identity's last segment
+        # Retired: the collection segment is the kind name now (decision 0033).
+        # Kept as an OPTIONAL field, read by nothing, so a declaration a pre-0033
+        # binary wrote still validates against this meta-kind rather than being
+        # refused as an undeclared field — the reserved-inert pattern (0020).
+        plural:
+          type: string
+          deprecated: true
+          description: retired; the collection segment is the kind name (0033)
     description:
       type: string
       description: what this kind is for, read above its collection

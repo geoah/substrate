@@ -80,7 +80,7 @@ func TestRepositoryProvisioningAndProjections(t *testing.T) {
 		t.Fatalf("type record by identity: %v", err)
 	}
 	names, _ := msgType.Properties["names"].(map[string]any)
-	if names["plural"] != "conversationmessages" || msgType.Properties["source"] != "builtin" {
+	if names["singular"] != "conversationmessage" || msgType.Properties["source"] != "builtin" {
 		t.Fatalf("kind projection = %v", msgType.Properties)
 	}
 	// The row's properties ARE the declaration: no blob beside them.
@@ -271,7 +271,7 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	if authority.Kind != "core.substrate.reamde.dev/authority" {
 		t.Fatalf("authority projection type = %q", authority.Kind)
 	}
-	if v, _ := vocabulary.VersionValue(authority.Properties["version"]); v != 1 || authority.Properties["source"] != "builtin" {
+	if v, _ := vocabulary.VersionValue(authority.Properties["version"]); v != 2 || authority.Properties["source"] != "builtin" {
 		t.Fatalf("authority projection = %v", authority.Properties)
 	}
 	// A vocabulary authority declares no actors of its own; core's three are the

@@ -110,20 +110,20 @@ func TestEdgeExamplesNameDeclaredEdges(t *testing.T) {
 			t.Fatalf("%s has no examples", cmd)
 		}
 		for _, line := range strings.Split(example, "\n") {
-			// "substratectl link <plural> <id> <rel> <target>"
+			// "substratectl link <kind> <id> <rel> <target>"
 			fields := strings.Fields(line)
 			if len(fields) < 6 {
 				continue
 			}
-			plural, rel := fields[2], fields[4]
-			ty, ok := declared[plural]
+			kind, rel := fields[2], fields[4]
+			ty, ok := declared[kind]
 			if !ok {
-				t.Errorf("%s example names collection %q, which the shipped schema does not declare", cmd, plural)
+				t.Errorf("%s example names collection %q, which the shipped schema does not declare", cmd, kind)
 				continue
 			}
 			if !ty.edges[rel] {
 				t.Errorf("%s example names edge %q on %q; declared edges are %v",
-					cmd, rel, plural, sortedSet(ty.edges))
+					cmd, rel, kind, sortedSet(ty.edges))
 			}
 		}
 	}
@@ -143,10 +143,10 @@ func TestPatchExamplesNameDeclaredProperties(t *testing.T) {
 		if len(fields) < 5 {
 			continue
 		}
-		plural := fields[2]
-		ty, ok := declared[plural]
+		kind := fields[2]
+		ty, ok := declared[kind]
 		if !ok {
-			t.Errorf("patch example names collection %q, which the shipped schema does not declare", plural)
+			t.Errorf("patch example names collection %q, which the shipped schema does not declare", kind)
 			continue
 		}
 		// The flags that name a PROPERTY. --label is a free key space and -p
@@ -158,7 +158,7 @@ func TestPatchExamplesNameDeclaredProperties(t *testing.T) {
 			key, _, _ := strings.Cut(fields[i+1], "=")
 			if !ty.properties[key] {
 				t.Errorf("patch example writes %q on %q; declared properties are %v",
-					key, plural, sortedSet(ty.properties))
+					key, kind, sortedSet(ty.properties))
 			}
 		}
 	}
@@ -171,8 +171,8 @@ type shippedType struct {
 	properties map[string]bool
 }
 
-// shippedTypes reads the shipped declarations: plural → what it declares. The
-// schema on disk is the only authority for what exists.
+// shippedTypes reads the shipped declarations: kind name → what it declares.
+// The schema on disk is the only authority for what exists.
 func shippedTypes(t *testing.T) map[string]shippedType {
 	t.Helper()
 	// The shipped vocabulary lives in TWO places since the seed shrank to
@@ -218,7 +218,7 @@ func shippedTypes(t *testing.T) map[string]shippedType {
 			var doc struct {
 				Data struct {
 					Names struct {
-						Plural string `yaml:"plural"`
+						Singular string `yaml:"singular"`
 					} `yaml:"names"`
 					Edges      map[string]any `yaml:"edges"`
 					Properties map[string]any `yaml:"properties"`
@@ -227,10 +227,10 @@ func shippedTypes(t *testing.T) map[string]shippedType {
 			if err := yaml.Unmarshal(raw, &doc); err != nil {
 				continue // not a type declaration (an authority manifest, a trait)
 			}
-			if doc.Data.Names.Plural == "" {
+			if doc.Data.Names.Singular == "" {
 				continue
 			}
-			ty, ok := out[doc.Data.Names.Plural]
+			ty, ok := out[doc.Data.Names.Singular]
 			if !ok {
 				ty = shippedType{edges: map[string]bool{}, properties: map[string]bool{}}
 				// Every record carries these whatever it declares (FORMAT.md
@@ -238,7 +238,7 @@ func shippedTypes(t *testing.T) map[string]shippedType {
 				for _, name := range []string{"title", "body", "at", "endsAt", "dueAt"} {
 					ty.properties[name] = true
 				}
-				out[doc.Data.Names.Plural] = ty
+				out[doc.Data.Names.Singular] = ty
 			}
 			for rel := range doc.Data.Edges {
 				ty.edges[rel] = true
