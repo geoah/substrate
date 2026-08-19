@@ -68,9 +68,10 @@ hourly schedule ──▶ sync ──▶ every connected account due by its sync
   outside that listing, so their required parent edge always resolves.
 - **`issue` / `pullrequest`** (mirrors): the provider's shape, plainly —
   `state` is a plain string (the PR state folds merged / closed / draft / open
-  the way v4 did), `title`/`body` ride the built-in columns (body truncated at
-  4000 chars, and dropped from `raw` to keep a 100-item page inside the frame
-  cap), `authorLogin`, `labels`, `htmlURL`, the provider timestamps, and `raw`.
+  the way v4 did), `title` rides the built-in column and `body` is a declared
+  property mapped to it (body truncated at 4000 chars, and dropped from `raw` to
+  keep a 100-item page inside the frame cap), `authorLogin`, `labels`,
+  `htmlURL`, the provider timestamps, and `raw`.
   Each carries a required `repository` edge. There is deliberately NO edge at
   `user`: it is a mapped source type, and the bipartite rule (record 50)
   forbids any edge landing on one — the human behind `authorLogin` is reached

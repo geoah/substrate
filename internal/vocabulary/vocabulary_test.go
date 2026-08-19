@@ -1685,6 +1685,7 @@ data:
   displayTemplate: "` + template + `"
   properties:
     label: {type: string}
+    body: {type: text}
     name:
       type: object
       fields: {displayName: {type: string}}
@@ -2103,14 +2104,25 @@ data:
   authority: x.example.com
   base: object
 `,
-		// The five column-backed properties every record already carries may
-		// not be redeclared: two declarations of one name means
-		// the write path validates against the wrong one.
+		// The column-backed `title` and temporal properties may not be
+		// redeclared: two declarations of one name means the write path
+		// validates against the wrong one. `body` is declarable (#68), but
+		// only text-family: the hot column is text, so a non-text `body` names
+		// a column that cannot hold its value.
 		"title is reserved": typ(`  names: {singular: contact, plural: contacts}
   properties: {title: {type: string}}
 `),
-		"body is reserved": typ(`  names: {singular: contact, plural: contacts}
-  properties: {body: {type: text}}
+		"body must be text-family": typ(`  names: {singular: contact, plural: contacts}
+  properties: {body: {type: int}}
+`),
+		// repeated text and keyed text are ordinarily fine; on `body` they name a
+		// list or map the single scalar column cannot hold, so the body guard
+		// refuses them where the datatype alone would pass.
+		"body cannot be repeated": typ(`  names: {singular: contact, plural: contacts}
+  properties: {body: {type: text, repeated: true}}
+`),
+		"body cannot be keyed": typ(`  names: {singular: contact, plural: contacts}
+  properties: {body: {type: text, keyed: true}}
 `),
 		"at is reserved": typ(`  names: {singular: contact, plural: contacts}
   properties: {at: {type: datetime}}

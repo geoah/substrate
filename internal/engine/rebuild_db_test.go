@@ -57,10 +57,9 @@ func writeSomeHistory(t *testing.T, ds substrate.Dataset) {
 		Kind: "tasks.substrate.reamde.dev/task",
 		Properties: map[string]any{
 			// The heading is `name`; the title column holds what the kind's
-			// displayTemplate renders from it, and `body` is the built-in
-			// column a writer still fills, so the history carries both.
+			// displayTemplate renders from it. A task carries no `body` (#68),
+			// so its prose is `description`.
 			"name":        "Ship the fold",
-			"body":        "the records table is a fold of the changelog",
 			"description": "carry the values, not just the names",
 			"dueAt":       due.Format(time.RFC3339),
 			"url":         "https://example.com/1",

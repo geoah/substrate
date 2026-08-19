@@ -323,6 +323,10 @@ func (t *txn) foldFTS(row *erow) [3]string {
 	if ty, ok := t.ds.registry().ByIdentity(row.Kind); ok {
 		return ftsBands(ty, row)
 	}
+	// No declaration to consult (a kind this binary no longer declares), so no
+	// `body` property `fts` flag to read. Index the stored body: it is the safe
+	// default for an unknown row, and it keeps a legacy body searchable rather
+	// than dropping it out of the index on a binary that forgot its kind (#68).
 	return [3]string{row.Title, "", row.Body}
 }
 

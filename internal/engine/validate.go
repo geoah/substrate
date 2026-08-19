@@ -1106,7 +1106,12 @@ func ftsBands(ty *vocabulary.Kind, row *erow) [3]string {
 			b = append(b, s)
 		}
 	}
-	if row.Body != "" {
+	// `body` lives in its own column, never in row.Props, so the loop above
+	// cannot reach it. Index it as prose (band C) only when the kind declares
+	// `body` AND the declaration keeps it searchable (#68): a declared
+	// `body: {fts: false}` is stored and served but never indexed, and a text
+	// body indexes exactly as the built-in column did before the unweld.
+	if bp, ok := ty.Props[substrate.PropBody]; ok && bp.FTS && !bp.Sensitive() && row.Body != "" {
 		c = append(c, row.Body)
 	}
 	return [3]string{row.Title, strings.Join(b, " "), strings.Join(c, " ")}
@@ -1136,7 +1141,12 @@ func recordOf(ty *vocabulary.Kind, row *erow) *substrate.Record {
 	if row.Title != "" {
 		e.Properties[substrate.PropTitle] = row.Title
 	}
-	if row.Body != "" {
+	// Body is served only where the kind still declares it, symmetric with the
+	// write door and ftsBands: an undeclared body left in the column by a
+	// pre-#68 write is not projected, so `get -o yaml | apply -f` round-trips
+	// (an echoed undeclared body would be refused at coerceProps). An unknown
+	// kind has no declaration to consult, so its stored body is served.
+	if row.Body != "" && (ty == nil || declaresBody(ty)) {
 		e.Properties[substrate.PropBody] = row.Body
 	}
 	for _, hc := range []struct {

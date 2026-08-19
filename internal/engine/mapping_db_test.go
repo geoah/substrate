@@ -717,7 +717,7 @@ func TestOneHopResolution(t *testing.T) {
 	conv := newConversation(t, ds)
 	msg := mustPut(t, ds, slack, substrate.PutInput{
 		Kind: "conversationmessage", ID: "s-msg-1",
-		Properties: map[string]any{"body": "hi", "at": "2026-08-03T10:00:00Z"},
+		Properties: map[string]any{"text": "hi", "at": "2026-08-03T10:00:00Z"},
 		Edges: []substrate.EdgeInput{
 			{Rel: "conversation", To: substrate.EdgeRef{ID: conv.ID}},
 			{Rel: "author", To: substrate.EdgeRef{Kind: slackAuthority + "/slackuser", ID: s.ID}},
@@ -752,7 +752,7 @@ func TestUnlinkedSourceGetsAShell(t *testing.T) {
 	// Resolving through the record links a new shell in line.
 	msg := mustPut(t, ds, slack, substrate.PutInput{
 		Kind: "conversationmessage", ID: "s-msg-1",
-		Properties: map[string]any{"body": "hi", "at": "2026-08-03T10:00:00Z"},
+		Properties: map[string]any{"text": "hi", "at": "2026-08-03T10:00:00Z"},
 		Edges: []substrate.EdgeInput{
 			{Rel: "conversation", To: substrate.EdgeRef{ID: newConversation(t, ds).ID}},
 			{Rel: "author", To: substrate.EdgeRef{Kind: googleAuthority + "/contact", ID: g.ID}},
@@ -946,7 +946,7 @@ func TestConcurrentShellBirthMintsOneShell(t *testing.T) {
 		go func() {
 			_, err := ds.Put(ctx, slack, substrate.PutInput{
 				Kind: "conversationmessage", ID: "s-msg-" + string(rune('a'+i)),
-				Properties: map[string]any{"body": "hi"},
+				Properties: map[string]any{"text": "hi"},
 				Edges: []substrate.EdgeInput{
 					{Rel: "conversation", To: substrate.EdgeRef{ID: conv.ID}},
 					{Rel: "author", To: substrate.EdgeRef{Kind: googleAuthority + "/contact", ID: src.ID}},
@@ -1068,9 +1068,9 @@ func TestObjectPropertyValidation(t *testing.T) {
 	}
 }
 
-// `title` and `body` are legal map targets — properties with a storage
-// column, not a category of their own — so a source's text
-// reaches the work it describes.
+// `title` is a legal map target through its storage column, and `body` is one
+// through the declared, column-backed property a kind carries (#68), so a
+// source's text reaches the work it describes.
 func TestHotMapTargets(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -1084,12 +1084,18 @@ func TestHotMapTargets(t *testing.T) {
 			vocabulary.ActorManifest(authority, "connector:library"),
 			vocabulary.KindManifest(authority,
 				map[string]any{"singular": "work", "plural": "works"},
-				map[string]any{"properties": map[string]any{"subtitle": map[string]any{"type": "string"}}}),
+				map[string]any{"properties": map[string]any{
+					"subtitle": map[string]any{"type": "string"},
+					"body":     map[string]any{"type": "text"},
+				}}),
 			vocabulary.KindManifest(authority,
 				map[string]any{"singular": "libraryrow", "plural": "libraryrows"},
 				map[string]any{
-					"traits":     []any{"temporal(point)"},
-					"properties": map[string]any{"subtitle": map[string]any{"type": "string"}},
+					"traits": []any{"temporal(point)"},
+					"properties": map[string]any{
+						"subtitle": map[string]any{"type": "string"},
+						"body":     map[string]any{"type": "text"},
+					},
 					"edges": map[string]any{
 						"work": map[string]any{"to": authority + "/work", "required": true},
 					},

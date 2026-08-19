@@ -878,9 +878,11 @@ func TestLinkUnlinkRefuseSystemTypes(t *testing.T) {
 }
 
 // A null DELETES, on the column-backed properties exactly as on the rest.
-// `body` and `dueAt` are the column-backed pair a task still authors: its
-// `title` is rendered from `name` (decision record 0016), and what a null
-// leaves behind there is TestClearingTheHeadingKeepsTheRenderedTitle's.
+// `dueAt` is the column-backed property a task authors: its `title` is
+// rendered from `name` (decision record 0016), and `body` is no longer a
+// built-in a task carries (#68), so a task's prose is its declared
+// `description`. What a null leaves behind on the title column is
+// TestClearingTheHeadingKeepsTheRenderedTitle's.
 func TestNullClearsEveryProperty(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
@@ -888,19 +890,19 @@ func TestNullClearsEveryProperty(t *testing.T) {
 	task := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "task",
 		Properties: map[string]any{
-			"name": "Ship it", "body": "the long version",
+			"name":  "Ship it",
 			"dueAt": "2026-08-08T00:00:00Z", "description": "notes",
 		},
 	})
-	if task.Properties["dueAt"] == nil || task.Properties["body"] == nil {
+	if task.Properties["dueAt"] == nil || task.Properties["description"] == nil {
 		t.Fatalf("setup = %v", task.Properties)
 	}
 	cleared := mustPatch(t, ds, owner, task.Kind, task.ID, substrate.PatchInput{
 		Properties: map[string]any{
-			"name": nil, "body": nil, "dueAt": nil, "description": nil,
+			"name": nil, "dueAt": nil, "description": nil,
 		},
 	})
-	for _, name := range []string{"name", "body", "dueAt", "description"} {
+	for _, name := range []string{"name", "dueAt", "description"} {
 		if v, still := cleared.Properties[name]; still {
 			t.Fatalf("%s survived a null: %v", name, v)
 		}
