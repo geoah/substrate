@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
+
+	"github.com/geoah/substrate/internal/egress"
 )
 
 // StateTTL bounds how long a signed state is accepted.
@@ -76,25 +78,38 @@ func (c *Client) now() time.Time {
 	return time.Now()
 }
 
-// noRedirectClient is the default transport for every credential-bearing call
-// this package makes. `http.DefaultClient` FOLLOWS redirects, and a POST body
-// is replayed to the redirect target on a 307/308 — which for Revoke below
-// means the refresh token itself would be re-sent to whatever host the
-// provider named. The endpoints are trusted manifest metadata, so this needs
-// the provider to misbehave rather than an attacker to intervene, but a
-// credential call has no legitimate reason to follow a hop: refuse, and let
-// the caller see the redirect as the error it is.
-var noRedirectClient = &http.Client{
-	CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		return fmt.Errorf("oauthflow: refusing to follow a redirect to %s on a credential-bearing request", req.URL.Host)
-	},
+// defaultClient is the client for every credential-bearing call this package
+// makes when a caller supplied no seam. It holds two guards at once.
+//
+// CheckRedirect: `http.DefaultClient` FOLLOWS redirects, and a POST body is
+// replayed to the redirect target on a 307/308 — which for Revoke below means
+// the refresh token itself would be re-sent to whatever host the provider
+// named. A credential call has no legitimate reason to follow a hop: refuse,
+// and let the caller see the redirect as the error it is.
+//
+// Transport: the endpoints are DECLARED ON DATA (a repository-applied bundle's
+// oauth2-trait config), and the bundle loader admits a loopback-`http`
+// tokenEndpoint, so the exchange is a repository-chosen server-side dial —
+// issue #241's SSRF read primitive, since the oauth2 library quotes a token
+// endpoint's response into its error. egress.Transport() confines every dial to
+// public destinations at CONNECT time, on the resolved address (DNS-rebinding
+// safe), with the operator's SUBSTRATE_EGRESS_ALLOW escape for a local test
+// provider. Built per call so the allowlist is read fresh, not frozen at
+// package init before a test's t.Setenv.
+func defaultClient() *http.Client {
+	return &http.Client{
+		Transport: egress.Transport(),
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return fmt.Errorf("oauthflow: refusing to follow a redirect to %s on a credential-bearing request", req.URL.Host)
+		},
+	}
 }
 
 func (c *Client) httpClient() *http.Client {
 	if c.HTTP != nil {
 		return c.HTTP
 	}
-	return noRedirectClient
+	return defaultClient()
 }
 
 // config renders the oauth2 library's shape. The auth style is declared, not
