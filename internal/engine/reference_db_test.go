@@ -297,6 +297,64 @@ func TestReferenceRendersInADisplayTemplate(t *testing.T) {
 	}
 }
 
+// A dotted reference token must skip a SENSITIVE referent property, the same
+// resolve-and-skip targetProp does for an edge hop. The loader refuses a
+// sensitive property in a kind's OWN template but cannot see across a reference
+// (load.go inspects only the referencing kind's properties), so nothing stops
+// the declaration and the skip has to live in referenceProp. Without it the
+// referent's digest lands verbatim in the referencing row's title, which is
+// unsealed, rides FTS band A and the change feed (#232).
+func TestReferenceDotSkipsASensitiveReferentProperty(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+	const auth = "sensitiveref.example.substrate.reamde.dev"
+	docs := []map[string]any{
+		vocabulary.AuthorityManifest(auth, 0),
+		// The referent declares a digest property: Sensitive() is true, and a
+		// digest stores its value verbatim in the fold (unlike a secret, which
+		// seals to a ref), so a leak would be the material itself.
+		vocabulary.KindManifest(auth,
+			map[string]any{"singular": "holder", "plural": "holders"},
+			map[string]any{"properties": map[string]any{
+				"fingerprint": map[string]any{"type": "digest"},
+			}}),
+		// The referencing kind hops the pointer to that digest. The loader
+		// admits this because `fingerprint` is another kind's property.
+		vocabulary.KindManifest(auth,
+			map[string]any{"singular": "viewer", "plural": "viewers"},
+			map[string]any{
+				"displayTemplate": "{holder.fingerprint}",
+				"properties": map[string]any{
+					"holder": map[string]any{
+						"type": "reference", "kind": auth + "/holder",
+					},
+				},
+			}),
+	}
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
+		t.Fatalf("install the sensitive-reference vocabulary: %v", err)
+	}
+
+	sum := strings.Repeat("ab", 32)
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: auth + "/holder", ID: "h1",
+		Properties: map[string]any{"fingerprint": sum},
+	})
+	row := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: auth + "/viewer", ID: "v1",
+		Properties: map[string]any{"holder": "h1"},
+	})
+	// The referent's digest sits verbatim in its fold, so without the skip the
+	// title would BE sum: assert both that the title is empty and that the
+	// digest did not leak into it.
+	if strings.Contains(row.Title, sum) {
+		t.Fatalf("a sensitive referent digest leaked into the title: %q", row.Title)
+	}
+	if row.Title != "" {
+		t.Fatalf("a dotted token over a sensitive referent property must render empty, got %q", row.Title)
+	}
+}
+
 func TestRequiredReferenceIsEnforcedAtBirth(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
