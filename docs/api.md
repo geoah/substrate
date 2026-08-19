@@ -176,6 +176,28 @@ verbs live at the resource**, its own `{authority}/{kind}/{id}` path. That is
 also why the trigger verbs live under `core.substrate.reamde.dev/trigger/…` — trigger
 records are core's, so their verbs sit beside them.
 
+### Idempotency and retries
+
+A retried write is safe when the request names its own target. `put` with an id
+is a primary-key upsert, so retrying it lands the same row. `patch` and `put`
+under `ifVersion` are compare-and-set: the second attempt sees the version it
+already moved and fails `conflict`. A blob `PUT` is content addressed by its
+digest. The trigger delivery path carries its own idempotency key, so a
+redelivered change applies once.
+
+A retried write is NOT safe when the server assigns the identity or the effect.
+A `POST /api/v1/{authority}/{kind}` with no id mints a random id, so a client
+that retries after a timeout creates a second record. `POST
+…/functions/{name}/call` mints a fresh idempotency key per call, so a retry
+re-runs the function's effects; the agent call, agent chat, `merge` and `split`
+POSTs behave the same way.
+
+The remedy is a client-supplied `Idempotency-Key` request header on that call
+surface: two requests carrying the same key return the same outcome, and the
+effect runs once. The header is additive and not yet accepted by the server;
+the semantics are fixed here so a client may rely on them the moment it lands. A
+caller that needs an idempotent create today supplies its own id and uses `put`.
+
 ## The filter grammar
 
 A filter is one JSON document, the same shape URL-encoded in REST's `?filter=`
