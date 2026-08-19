@@ -19,7 +19,7 @@ import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query"
 
 import { rootPath, envelopeError, request } from "./http"
 import { getToken, sessionExpired } from "./session"
-import { ApiError, type ChangeRow } from "./types"
+import { ApiError, type ChangeRow, type ProblemDetail } from "./types"
 
 // ── filter ──────────────────────────────────────────────────────────────────
 
@@ -201,6 +201,7 @@ export interface WatchError {
   code: string
   message: string
   problems?: string[]
+  problemDetails?: ProblemDetail[]
 }
 
 export interface WatchLine {
@@ -238,6 +239,11 @@ export function parseWatchLine(line: string): WatchLine | null {
         message: typeof e.message === "string" ? e.message : "stream failed",
         problems: Array.isArray(e.problems)
           ? (e.problems.filter((p) => typeof p === "string") as string[])
+          : undefined,
+        problemDetails: Array.isArray(e.problemDetails)
+          ? (e.problemDetails.filter(
+              (p) => typeof p === "object" && p !== null
+            ) as ProblemDetail[])
           : undefined,
       },
     }

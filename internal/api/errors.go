@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -30,12 +31,46 @@ const (
 	codeUnsupported = "unsupported"  // 501 — a capability absent from this deployment
 	codeUnavailable = "unavailable"  // 503 — transient; ALWAYS with Retry-After
 	codeCompacted   = "compacted"    // 410 — from= below the retention horizon; re-list
+	// codeFunctionFailed is 500: a callable's body faulted while running. It is
+	// distinct from codeValidation (422) so a caller tells its own bad
+	// arguments from the function failing to execute (substrate.ErrFunctionFault).
+	codeFunctionFailed = "function_failed" // 500 — a callable body faulted
 )
 
+// problemDetail is the field-addressable form of one validation problem. The
+// engine emits problems as "path: message" strings (`props.name: required`,
+// `edges.peer.properties.role: requires a value`); this splits each on its
+// first ": " so a form or SDK maps a problem to the input it concerns without
+// parsing prose. It is ADDITIVE: the `problems` string list stays for readers
+// that do not need the split.
+type problemDetail struct {
+	Path    string `json:"path"`
+	Message string `json:"message"`
+}
+
+// problemDetails derives the structured siblings from the engine's problem
+// strings. A string without a ": " separator keeps its whole text as the
+// message and an empty path, so a malformed problem never drops silently.
+func problemDetails(problems []string) []problemDetail {
+	if len(problems) == 0 {
+		return nil
+	}
+	out := make([]problemDetail, len(problems))
+	for i, p := range problems {
+		if path, msg, ok := strings.Cut(p, ": "); ok {
+			out[i] = problemDetail{Path: path, Message: msg}
+		} else {
+			out[i] = problemDetail{Message: p}
+		}
+	}
+	return out
+}
+
 type errorPayload struct {
-	Code     string   `json:"code"`
-	Message  string   `json:"message"`
-	Problems []string `json:"problems,omitempty"`
+	Code           string          `json:"code"`
+	Message        string          `json:"message"`
+	Problems       []string        `json:"problems,omitempty"`
+	ProblemDetails []problemDetail `json:"problemDetails,omitempty"`
 }
 
 type errorEnvelope struct {
@@ -92,9 +127,11 @@ func problemFor(err error) (int, errorPayload) {
 	var ve *substrate.ValidationError
 	switch {
 	case errors.As(err, &ve):
-		return http.StatusUnprocessableEntity, errorPayload{Code: codeValidation, Message: err.Error(), Problems: ve.Problems}
+		return http.StatusUnprocessableEntity, errorPayload{Code: codeValidation, Message: err.Error(), Problems: ve.Problems, ProblemDetails: problemDetails(ve.Problems)}
 	case errors.Is(err, substrate.ErrValidation):
 		return http.StatusUnprocessableEntity, errorPayload{Code: codeValidation, Message: err.Error()}
+	case errors.Is(err, substrate.ErrFunctionFault):
+		return http.StatusInternalServerError, errorPayload{Code: codeFunctionFailed, Message: err.Error()}
 	case errors.Is(err, substrate.ErrNotFound):
 		return http.StatusNotFound, errorPayload{Code: codeNotFound, Message: err.Error()}
 	case errors.Is(err, substrate.ErrConflict):

@@ -20,16 +20,28 @@ export type ErrorCode =
   | "validation"
   | "rate_limited"
   | "internal"
+  | "function_failed"
   | "unsupported"
   | "unavailable"
   | "network"
 
+/** One validation problem, split into the input it concerns and the message.
+ * The server derives it from the `problems` string list (`props.name: required`
+ * becomes `{path: "props.name", message: "required"}`), so a form maps a
+ * problem to a field without parsing prose. `problems` stays beside it. */
+export interface ProblemDetail {
+  path: string
+  message: string
+}
+
 /** The one error shape every call rejects with: the REST envelope's
- * `{code, message, problems}` plus the HTTP status that carried it. */
+ * `{code, message, problems, problemDetails}` plus the HTTP status that
+ * carried it. */
 export class ApiError extends Error {
   code: ErrorCode
   status: number
   problems: string[]
+  problemDetails: ProblemDetail[]
   retryAfter?: number
 
   constructor(
@@ -37,6 +49,7 @@ export class ApiError extends Error {
     message: string,
     status: number,
     problems: string[] = [],
+    problemDetails: ProblemDetail[] = [],
     retryAfter?: number
   ) {
     super(message)
@@ -44,6 +57,7 @@ export class ApiError extends Error {
     this.code = code
     this.status = status
     this.problems = problems
+    this.problemDetails = problemDetails
     this.retryAfter = retryAfter
   }
 }

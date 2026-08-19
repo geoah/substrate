@@ -57,13 +57,14 @@ describe("request", () => {
     expect(headers.Authorization).toBe("Bearer candidate")
   })
 
-  it("rejects with the envelope's code, message and problems", async () => {
+  it("rejects with the envelope's code, message, problems and problemDetails", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse(422, {
         error: {
           code: "validation",
           message: "bad manifest",
           problems: ["properties.name: required"],
+          problemDetails: [{ path: "properties.name", message: "required" }],
         },
       })
     )
@@ -73,6 +74,7 @@ describe("request", () => {
       code: "validation",
       message: "bad manifest",
       problems: ["properties.name: required"],
+      problemDetails: [{ path: "properties.name", message: "required" }],
       status: 422,
     })
   })

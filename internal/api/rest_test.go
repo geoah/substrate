@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -222,6 +223,7 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 		{"forbidden", fmt.Errorf("label ns: %w", substrate.ErrForbidden), http.StatusForbidden, codeForbidden},
 		{"auth", fmt.Errorf("token: %w", substrate.ErrAuth), http.StatusUnauthorized, codeAuth},
 		{"not_found", fmt.Errorf("id: %w", substrate.ErrNotFound), http.StatusNotFound, codeNotFound},
+		{"function_failed", fmt.Errorf("body: %w", substrate.ErrFunctionFault), http.StatusInternalServerError, codeFunctionFailed},
 		{"internal", errBoom, http.StatusInternalServerError, codeInternal},
 	}
 	for _, tc := range cases {
@@ -240,5 +242,11 @@ func TestRESTErrorEnvelopeMapping(t *testing.T) {
 	env2 := decodeJSON[errorEnvelope](t, rec)
 	if len(env2.Error.Problems) != 2 || env2.Error.Problems[0] != "name: required" {
 		t.Fatalf("problems = %v", env2.Error.Problems)
+	}
+	// The structured sibling splits each problem on its first ": " so a form
+	// maps it to the field it concerns without parsing prose.
+	want := []problemDetail{{Path: "name", Message: "required"}, {Path: "asin", Message: "malformed"}}
+	if !reflect.DeepEqual(env2.Error.ProblemDetails, want) {
+		t.Fatalf("problemDetails = %v, want %v", env2.Error.ProblemDetails, want)
 	}
 }
