@@ -10,6 +10,7 @@ import (
 
 	"github.com/sashabaranov/go-openai"
 
+	"github.com/geoah/substrate/internal/egress"
 	"github.com/geoah/substrate/internal/providersecret"
 )
 
@@ -36,6 +37,10 @@ func newOpenAI(cfg Config, azure bool) *openaiClient {
 			oc.BaseURL = cfg.BaseURL
 		}
 	}
+	// The base URL is a repository-chosen address, so the dial is confined to
+	// public destinations (issue #241); a row's extra headers ride over the
+	// gated client, never around it.
+	oc.HTTPClient = &http.Client{Transport: egress.Transport()}
 	if len(cfg.Headers) > 0 {
 		oc.HTTPClient = &headerDoer{inner: oc.HTTPClient, headers: cfg.Headers}
 	}

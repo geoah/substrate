@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 
+	"github.com/geoah/substrate/internal/egress"
 	"github.com/geoah/substrate/internal/providersecret"
 )
 
@@ -35,7 +37,12 @@ type anthropicClient struct {
 }
 
 func newAnthropic(cfg Config) *anthropicClient {
-	opts := []option.RequestOption{option.WithAPIKey(cfg.APIKey)}
+	opts := []option.RequestOption{
+		option.WithAPIKey(cfg.APIKey),
+		// The base URL is a repository-chosen address, so the dial is confined
+		// to public destinations (issue #241).
+		option.WithHTTPClient(&http.Client{Transport: egress.Transport()}),
+	}
 	if cfg.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(cfg.BaseURL))
 	}
