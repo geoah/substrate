@@ -32,7 +32,7 @@ var wantFeatureSurfaces = map[string][]string{
 
 func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 	svc := newFakeService()
-	h := New(Config{Service: svc, MaxDialect: 6})
+	h := New(Config{Service: svc, MaxDialect: 6, MaxChangelogDialect: 3})
 
 	req := httptest.NewRequest(http.MethodGet, "/.well-known/substrate/server.json", nil)
 	req.RemoteAddr = "10.0.0.1:1234"
@@ -61,9 +61,13 @@ func TestDiscoveryReportsVersionsFeaturesDialect(t *testing.T) {
 		t.Fatalf("schema note missing")
 	}
 
-	// Retention horizon is 0 today.
+	// Retention horizon is 0 today, and the changelog carries its own binary
+	// max: the dialect of entries this binary can replay.
 	if doc.Changelog.Horizon != 0 {
 		t.Fatalf("horizon = %d, want 0", doc.Changelog.Horizon)
+	}
+	if doc.Changelog.MaxDialect != 3 {
+		t.Fatalf("changelog maxDialect = %d, want 3", doc.Changelog.MaxDialect)
 	}
 
 	// The feature list follows the fake's seams: it carries ChangeFeedOps and

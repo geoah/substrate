@@ -43,6 +43,9 @@ import (
 //     half-finished oauth flow or drain has no meaning in the changelog at all.
 //   - vocabulary_dialect, vocabulary_promotions — the STORE SHAPE's ledger, about the
 //     tables rather than about their contents.
+//   - changelog_dialect — what dialect the entries being replayed are written
+//     in (changelogdialect.go). A replay does not rewrite an entry, so it
+//     cannot change the answer.
 //   - repositories — the control plane, one row per user.
 
 // RebuildReport is what one rebuild did.
@@ -143,6 +146,13 @@ func (t *txn) rebuild(report *RebuildReport, verify bool) error {
 	// The write path's own serialization: holding the changelog lock for the whole
 	// rebuild means no writer can append while the fold is missing.
 	if err := t.lockKey(changelogLockKey); err != nil {
+		return err
+	}
+	// Under that lock, the changelog dialect is read AGAIN rather than trusted
+	// from the open (changelogdialect.go): a replay is exactly the operation
+	// that must not run on a stale claim, and it refuses here, before the fold
+	// tables are cleared.
+	if err := t.refuseNewerChangelogDialect(); err != nil {
 		return err
 	}
 	// The chain check runs INSIDE this transaction, under this lock, over the
