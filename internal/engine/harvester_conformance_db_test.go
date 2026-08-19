@@ -293,7 +293,8 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		WHERE kind = $1 AND deleted_at IS NULL
 		  AND props->>'trigger' = $2 AND props->>'record' = $3
 		ORDER BY created_at DESC, id DESC LIMIT 1`,
-		typeRun, "web-findurls-on-message", denyMsg.ID).Scan(&denyStatus); err != nil {
+		typeRun, vocabulary.RecordPath(typeTrigger, "web-findurls-on-message"),
+		vocabulary.RecordPath(convMsgType, denyMsg.ID)).Scan(&denyStatus); err != nil {
 		t.Fatalf("the deny-only findurls run: %v", err)
 	}
 	if denyStatus != runStatusOK {
@@ -403,7 +404,8 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		var oks int
 		if err := ds.db.QueryRowContext(ctx, `
 			SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL
-			  AND props->>'trigger' = $2 AND props->>'status' = 'ok'`, typeRun, trID).Scan(&oks); err != nil {
+			  AND props->>'trigger' = $2 AND props->>'status' = 'ok'`,
+			typeRun, vocabulary.RecordPath(typeTrigger, trID)).Scan(&oks); err != nil {
 			t.Fatal(err)
 		}
 		if oks < 1 {
@@ -531,7 +533,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 				count(*) FILTER (WHERE e.props->>'status' = 'parked')
 			FROM records e JOIN changelog c ON c.record_id = e.id AND c.op = 'put'
 			WHERE e.kind = $1 AND e.deleted_at IS NULL AND e.props->>'trigger' = $2 AND c.seq > $3`,
-			typeRun, trID, runsHeadBefore).Scan(&settled, &parked); err != nil {
+			typeRun, vocabulary.RecordPath(typeTrigger, trID), runsHeadBefore).Scan(&settled, &parked); err != nil {
 			t.Fatal(err)
 		}
 		if parked != 0 {
@@ -571,7 +573,8 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	var rollupOK int
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL
-		  AND props->>'trigger' = $2 AND props->>'status' = 'ok'`, typeRun, "web-rollup-weekly").Scan(&rollupOK); err != nil {
+		  AND props->>'trigger' = $2 AND props->>'status' = 'ok'`,
+		typeRun, vocabulary.RecordPath(typeTrigger, "web-rollup-weekly")).Scan(&rollupOK); err != nil {
 		t.Fatal(err)
 	}
 	if rollupOK < 1 {

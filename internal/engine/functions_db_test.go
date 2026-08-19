@@ -326,7 +326,7 @@ func TestTriggerWhenGuard(t *testing.T) {
 	}
 	// And the skip is a settled attempt in the run ledger.
 	skips := runRowsOf(t, ds, trigID("guarded"), "skipped")
-	if len(skips) != 1 || skips[0].Properties["record"] != other.ID {
+	if len(skips) != 1 || skips[0].Properties["record"] != widgetType+"/"+other.ID {
 		t.Fatalf("skip runs: %+v", skips)
 	}
 }
@@ -338,7 +338,7 @@ func runRowsOf(t *testing.T, ds substrate.Dataset, triggerID, status string) []*
 		Filter: substrate.Filter{
 			Kinds: []string{runType},
 			Properties: map[string]substrate.Cond{
-				"trigger": {Eq: triggerID},
+				"trigger": {Eq: vocabulary.RecordPath("core.substrate.reamde.dev/trigger", triggerID)},
 				"status":  {Eq: status},
 			},
 		},

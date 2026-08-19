@@ -33,7 +33,12 @@ data:
   # version 14: the record-delivery mode value is `record`, where it was
   # `trigger`, matching the trigger source arm the delivery came from and the
   # same rename on `llmthread.mode`.
-  version: 14
+  # version 15: `trigger` and `record` retype from bare id strings to
+  # references (`<kind>/<id>` paths): `trigger` pins the trigger kind, `record`
+  # is `kind: any` because a delivery may carry any record. This is a
+  # narrowing, so a database with live run rows needs a wipe. `callable` stays
+  # a string: it spells an actor (record 0025), which no reference targets.
+  version: 15
   names:
     singular: run
   displayTemplate: "{status}: {callable}"
@@ -43,9 +48,10 @@ data:
         - status
   properties:
     trigger:
-      type: string
+      type: reference
+      kind: core.substrate.reamde.dev/trigger
       required: true
-      description: the trigger record this delivery belongs to
+      description: the trigger this delivery belongs to
     callable:
       type: string
       required: true
@@ -67,8 +73,9 @@ data:
       type: string
       description: the stable fire id, for schedule and webhook runs
     record:
-      type: string
-      description: the delivered record's id, for record-sourced runs
+      type: reference
+      kind: any
+      description: the delivered record, for record-sourced runs
     status:
       type: enum
       required: true

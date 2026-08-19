@@ -439,7 +439,7 @@ func okRunPages(t *testing.T, ds *dataset, triggerID string) int {
 		WHERE kind = $1 AND deleted_at IS NULL
 		  AND props->>'trigger' = $2 AND props->>'status' = 'ok'
 		ORDER BY created_at DESC, id DESC LIMIT 1`,
-		typeRun, triggerID).Scan(&raw)
+		typeRun, vocabulary.RecordPath(typeTrigger, triggerID)).Scan(&raw)
 	if err != nil {
 		t.Fatalf("read run pages: %v", err)
 	}

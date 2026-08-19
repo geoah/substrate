@@ -315,7 +315,7 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 			if res.moved {
 				ds.recordRun(ctx, runRecord{
 					trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeRecord,
-					seq: ch.Seq, recordID: ch.RecordID, status: runStatusOK,
+					seq: ch.Seq, recordID: ch.RecordID, recordKind: ch.Kind, status: runStatusOK,
 					attempt: attempt + 1, startedAt: started, effects: res.effects,
 					pages: res.pages,
 				})
@@ -506,7 +506,7 @@ func (ds *dataset) parkAndAdvance(ctx context.Context, tr *trigger, ch substrate
 		}
 		if err := t.putRun(runRecord{
 			trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeRecord,
-			seq: ch.Seq, recordID: ch.RecordID, status: runStatusParked,
+			seq: ch.Seq, recordID: ch.RecordID, recordKind: ch.Kind, status: runStatusParked,
 			attempt: attempts, startedAt: started, errMsg: cause.Error(),
 		}); err != nil {
 			return err
@@ -527,7 +527,7 @@ func (ds *dataset) recordSkipAndAdvance(ctx context.Context, tr *trigger, ch sub
 	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		if err := t.putRun(runRecord{
 			trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeRecord,
-			seq: ch.Seq, recordID: ch.RecordID, status: runStatusSkipped,
+			seq: ch.Seq, recordID: ch.RecordID, recordKind: ch.Kind, status: runStatusSkipped,
 			attempt: 1, startedAt: started,
 		}); err != nil {
 			return err
@@ -744,18 +744,22 @@ const (
 
 // runRecord is one settled delivery attempt, about to become a run record.
 type runRecord struct {
-	trigger   string
-	callable  string
-	mode      string
-	seq       int64
-	fireID    string
-	recordID  string
-	status    string
-	attempt   int
-	startedAt time.Time
-	errMsg    string
-	effects   map[string]int
-	pages     int // committed pages for a paged (backfill) delivery; >1 only when the body paged
+	trigger  string
+	callable string
+	mode     string
+	seq      int64
+	fireID   string
+	recordID string
+	// recordKind is the delivered record's kind identity, held beside recordID
+	// so the `record` reference stores the full `<kind>/<id>` path the reference
+	// datatype validates. Set whenever recordID is.
+	recordKind string
+	status     string
+	attempt    int
+	startedAt  time.Time
+	errMsg     string
+	effects    map[string]int
+	pages      int // committed pages for a paged (backfill) delivery; >1 only when the body paged
 }
 
 // putRun writes one run record inside the caller's transaction.
@@ -765,7 +769,7 @@ func (t *txn) putRun(r runRecord) error {
 		return err
 	}
 	props := map[string]any{
-		"trigger":    r.trigger,
+		"trigger":    vocabulary.RecordPath(typeTrigger, r.trigger),
 		"callable":   r.callable,
 		"mode":       r.mode,
 		"status":     r.status,
@@ -780,7 +784,7 @@ func (t *txn) putRun(r runRecord) error {
 		props["fireId"] = r.fireID
 	}
 	if r.recordID != "" {
-		props["record"] = r.recordID
+		props["record"] = vocabulary.RecordPath(r.recordKind, r.recordID)
 	}
 	// A paged (backfill) delivery drained more than one page; the durable
 	// per-chain progress lives in paged_cursors, this is its ledger echo.
@@ -826,7 +830,7 @@ func (t *txn) pruneRuns(triggerID string) error {
 		WHERE kind = $1 AND deleted_at IS NULL
 		  AND props->>'trigger' = $2 AND props->>'status' <> $3
 		ORDER BY created_at DESC, id DESC OFFSET $4`,
-		typeRun, triggerID, runStatusParked, runRetention)
+		typeRun, vocabulary.RecordPath(typeTrigger, triggerID), runStatusParked, runRetention)
 	if err != nil {
 		return err
 	}
