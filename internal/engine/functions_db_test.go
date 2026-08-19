@@ -338,7 +338,7 @@ func runRowsOf(t *testing.T, ds substrate.Dataset, triggerID, status string) []*
 		Filter: substrate.Filter{
 			Kinds: []string{runType},
 			Properties: map[string]substrate.Cond{
-				"trigger": {Eq: triggerID},
+				"trigger": {Eq: vocabulary.RecordPath("core.substrate.reamde.dev/trigger", triggerID)},
 				"status":  {Eq: status},
 			},
 		},

@@ -333,8 +333,9 @@ func TestRunRetentionKeepsFailuresPrunesSuccesses(t *testing.T) {
 	if len(parked) != 1 {
 		t.Fatalf("parked runs: %d — failures are kept", len(parked))
 	}
-	if parked[0].Properties["record"] != poisoned.ID {
-		t.Fatalf("parked run names %v, want %s", parked[0].Properties["record"], poisoned.ID)
+	wantRecord := poisoned.ID
+	if parked[0].Properties["record"] != wantRecord {
+		t.Fatalf("parked run names %v, want %s", parked[0].Properties["record"], wantRecord)
 	}
 	if _, err := ops.TriggerFailures(ctx, trigID("mirror")); err != nil {
 		t.Fatalf("failures: %v", err)

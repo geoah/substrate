@@ -765,7 +765,7 @@ func (t *txn) putRun(r runRecord) error {
 		return err
 	}
 	props := map[string]any{
-		"trigger":    r.trigger,
+		"trigger":    vocabulary.RecordPath(typeTrigger, r.trigger),
 		"callable":   r.callable,
 		"mode":       r.mode,
 		"status":     r.status,
@@ -826,7 +826,7 @@ func (t *txn) pruneRuns(triggerID string) error {
 		WHERE kind = $1 AND deleted_at IS NULL
 		  AND props->>'trigger' = $2 AND props->>'status' <> $3
 		ORDER BY created_at DESC, id DESC OFFSET $4`,
-		typeRun, triggerID, runStatusParked, runRetention)
+		typeRun, vocabulary.RecordPath(typeTrigger, triggerID), runStatusParked, runRetention)
 	if err != nil {
 		return err
 	}
