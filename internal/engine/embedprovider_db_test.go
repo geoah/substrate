@@ -151,7 +151,7 @@ func TestProviderRowsAreOutsideTheMergeSurface(t *testing.T) {
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
 		Kind: typeProvider, ID: "completions",
 		Properties: map[string]any{
-			"name": "completions", "wire": "openai",
+			"label": "completions", "wire": "openai",
 			"baseURL": emb.srv.URL, "apiKey": "row-key-completions",
 		},
 	}); err != nil {

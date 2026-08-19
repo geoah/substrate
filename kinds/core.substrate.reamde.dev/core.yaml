@@ -88,7 +88,14 @@ data:
   # template, `bundle` marks its loader-required fields required, `trigger`
   # requires `callable` and gains a template, and the `query` host card takes
   # integer counts. The pinned kinds bump their own.
-  version: 13
+  # version 14: the settled property renames of issue 51. `trigger` drops the
+  # `source.kind` discriminator (the arm present names the source), which pins
+  # no version of its own and takes this one. The renamed kinds that DO pin
+  # bump their own: agent `agents`->`subagents` and
+  # `subagentOnly`->`hiddenFromChat`, blob `mimeType`->`mediaType`, llmprovider
+  # `name`->`label`, llmmessage `tool`->`name`, and the record-delivery mode
+  # value `trigger`->`record` on llmthread and run.
+  version: 14
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands

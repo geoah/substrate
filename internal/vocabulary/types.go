@@ -60,7 +60,7 @@ const (
 	DatatypeDigest Datatype = "digest"
 	// DatatypeBlobRef references a content-addressed blob by its digest (the blob
 	// record's id). The stored value is the digest string; reads resolve it to
-	// the blob's manifest ({digest, mimeType, size, status}), never the bytes
+	// the blob's manifest ({digest, mediaType, size, status}), never the bytes
 	// inline. Edges point at records; a blob-ref points at bytes.
 	DatatypeBlobRef Datatype = "blobref"
 	// DatatypeState is a state machine declared as a property: states, initial

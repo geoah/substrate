@@ -250,7 +250,7 @@ export function transcriptOf(messages: SubstrateRecord[]): TurnView[] {
       tools: [
         {
           id: str(record.properties.toolCallId),
-          name: str(record.properties.tool),
+          name: str(record.properties.name),
           arguments: "",
           output,
           ok,

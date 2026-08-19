@@ -156,7 +156,7 @@ func TestAgentLoads(t *testing.T) {
   model: claude-opus-5
   tools:
     - {function: ag.example.com/annotate, name: markWidget, description: marks one widget}
-  agents: [ag.example.com/sorter]
+  subagents: [ag.example.com/sorter]
   budgets: {maxTurns: 4, depth: 2}
   permissions:
     writes:
@@ -180,7 +180,7 @@ func TestAgentLoadsWithoutCoreEmit(t *testing.T) {
   model: claude-opus-5
   tools:
     - {function: ag.example.com/annotate, name: markWidget}
-  agents: [ag.example.com/sorter]
+  subagents: [ag.example.com/sorter]
   budgets: {maxTurns: 4, depth: 2}
   permissions:
     writes: [ag.example.com/widget]
@@ -210,15 +210,15 @@ func TestAgentLoadsWithoutCoreEmit(t *testing.T) {
 
 // The graphql built-in needs no grant beyond its declaration (it is read-only
 // and repository-wide by design), mutate rides the emit allowlist, and
-// subagentOnly is an ordinary parsed flag: one manifest proves all three. The
+// hiddenFromChat is an ordinary parsed flag: one manifest proves all three. The
 // built-ins are named BY IDENTITY, and the derived Builtin word is what the
 // grant checks and the loop's dispatch read off the resolved entry.
-func TestAgentGraphQLBuiltinsAndSubagentOnly(t *testing.T) {
+func TestAgentGraphQLBuiltinsAndHiddenFromChat(t *testing.T) {
 	r, err := loadAgAuthorityWithCore(t, agAuthority(`  description: reads and writes the graph
   prompt: You tend widgets.
   provider: default
   model: claude-opus-5
-  subagentOnly: true
+  hiddenFromChat: true
   tools:
     - {function: core.substrate.reamde.dev/graphql}
     - {function: core.substrate.reamde.dev/mutate}
@@ -232,8 +232,8 @@ func TestAgentGraphQLBuiltinsAndSubagentOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ag.SubagentOnly {
-		t.Fatal("subagentOnly did not parse")
+	if !ag.HiddenFromChat {
+		t.Fatal("hiddenFromChat did not parse")
 	}
 	if len(ag.Tools) != 2 ||
 		ag.Tools[0].Builtin != vocabulary.AgentToolGraphQL ||
@@ -245,8 +245,8 @@ func TestAgentGraphQLBuiltinsAndSubagentOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sorter.SubagentOnly {
-		t.Fatal("sorter is not declared subagentOnly")
+	if sorter.HiddenFromChat {
+		t.Fatal("sorter is not declared hiddenFromChat")
 	}
 }
 
@@ -307,7 +307,7 @@ func TestAgentRefusals(t *testing.T) {
   prompt: p
   provider: default
   model: claude-opus-5
-  agents: [ag.example.com/classifier]
+  subagents: [ag.example.com/classifier]
 `, "may not name itself"},
 		{"depth above cap", `  description: d
   prompt: p
@@ -319,7 +319,7 @@ func TestAgentRefusals(t *testing.T) {
   prompt: p
   provider: default
   model: claude-opus-5
-  agents: [ag.example.com/ghost]
+  subagents: [ag.example.com/ghost]
 `, "unknown agent"},
 		{"tool collides with sub-agent", `  description: d
   prompt: p
@@ -327,7 +327,7 @@ func TestAgentRefusals(t *testing.T) {
   model: claude-opus-5
   tools:
     - {function: ag.example.com/annotate, name: sorter}
-  agents: [ag.example.com/sorter]
+  subagents: [ag.example.com/sorter]
 `, "collides with tool name"},
 		{"a bare tool string", `  description: d
   prompt: p

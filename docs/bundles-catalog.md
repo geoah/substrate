@@ -67,7 +67,7 @@ kind to practise on and six agents:
   [`recordpatchpolicy`](agents.md#the-policy-door) names under `judge:`, the
   policy layer's example.
 - `substrateEcho` and `substrateSummarizer` are the delegation demo, and the
-  summarizer is `subagentOnly`: off the chat list, callable only by other
+  summarizer is `hiddenFromChat`: off the chat list, callable only by other
   agents.
 
 Installing it gives you rows that refuse until you key them. The key is a

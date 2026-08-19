@@ -51,7 +51,7 @@ data:
   model: anthropic/claude-opus-5
   tools:
     - function: web.bundles.substrate.reamde.dev/setclass
-  agents: [web.bundles.substrate.reamde.dev/readinglistagent]
+  subagents: [web.bundles.substrate.reamde.dev/readinglistagent]
   budgets: {maxTurns: 4, maxToolCalls: 8, depth: 3}
   permissions:
     writes:
@@ -78,7 +78,7 @@ data:
   loop could not pass on is a load error rather than a line that silently does
   nothing.
 - **`tools:`**, the functions the model may invoke (below).
-- **`agents:`**, sub-agent references (self-reference is a load error).
+- **`subagents:`**, sub-agent references (self-reference is a load error).
 - **`budgets:`** bounds one run: `maxTurns` (default 8, max 64),
   `maxToolCalls` (default 32, max 256), `deadlineSeconds` (default 120, max
   600), and `depth` (default 3, max 3).
@@ -89,7 +89,7 @@ data:
   - optional **`reads:`**, which record kinds it may read and how much: a
     `kinds:` allowlist plus `budgets:` calls and rows. Leave it out and the
     `query` tool is withheld.
-- optional **`subagentOnly:`**, the chat-surface withholding: `true` keeps the
+- optional **`hiddenFromChat:`**, the chat-surface withholding: `true` keeps the
   agent off the console's chat list and makes the chat API refuse it, while
   sub-agent calls, the call API and triggers still dispatch it. An
   llm-as-judge is the shape it exists for. Any agent, marked or not, remains

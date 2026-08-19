@@ -65,15 +65,15 @@ func pinVersion(t *testing.T, doc, version string) string {
 // property named `version` (the kind declares one) is never the match.
 var reDeclaredVersion = regexp.MustCompile(`\n  version: \S+\n`)
 
-// narrowName turns llmprovider's `name` from a string into an int — the same
+// narrowLabel turns llmprovider's `label` from a string into an int — the same
 // datatype change `/vocabulary/apply` refuses while a live row holds a string.
-func narrowName(t *testing.T, doc string) string {
+func narrowLabel(t *testing.T, doc string) string {
 	t.Helper()
-	const from = "    name:\n      type: string\n"
+	const from = "    label:\n      type: string\n"
 	if !strings.Contains(doc, from) {
-		t.Fatal("llmprovider no longer declares `name` as a plain string")
+		t.Fatal("llmprovider no longer declares `label` as a plain string")
 	}
-	return strings.Replace(doc, from, "    name:\n      type: int\n", 1)
+	return strings.Replace(doc, from, "    label:\n      type: int\n", 1)
 }
 
 // seededRepository creates a repository under the REAL tree and leaves ONE
@@ -93,7 +93,7 @@ func seededRepository(t *testing.T) (dsn string) {
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/llmprovider", ID: "guarded",
-		Properties: map[string]any{"name": "a label", "wire": "openai"},
+		Properties: map[string]any{"label": "a label", "wire": "openai"},
 	}); err != nil {
 		t.Fatalf("put the live provider row: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestBootUpgradeRefusesANarrowingWithLiveRows(t *testing.T) {
 	dsn := seededRepository(t)
 	tree := shippedTree(t)
 	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
-		return narrowName(t, doc)
+		return narrowLabel(t, doc)
 	})
 
 	// The open SUCCEEDS — a repository whose rows a guard names must still be
@@ -151,7 +151,7 @@ func stillSpeaksTheOldShape(t *testing.T, dsn string) {
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/llmprovider", ID: "another",
-		Properties: map[string]any{"name": "still a string", "wire": "openai"},
+		Properties: map[string]any{"label": "still a string", "wire": "openai"},
 	}); err != nil {
 		t.Fatalf("the old shape must still be writable — the narrowing landed anyway: %v", err)
 	}
@@ -183,7 +183,7 @@ func TestBootUpgradeIgnoresAKindItDoesNotRewrite(t *testing.T) {
 	// touched authority, rather than the ones actually being rewritten, would
 	// refuse this boot over a change nobody is making.
 	patchShipped(t, coreKind(tree, "llmprovider.yaml"), func(doc string) string {
-		return pinVersion(t, narrowName(t, doc), "1")
+		return pinVersion(t, narrowLabel(t, doc), "1")
 	})
 	if err := openMoved(t, dsn, tree); err != nil {
 		t.Fatalf("a kind the upgrade will not rewrite must not refuse the boot: %v", err)
@@ -332,13 +332,13 @@ func TestBootUpgradeRefusesAnUnstorableDefault(t *testing.T) {
 	}
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/llmprovider", ID: "after",
-		Properties: map[string]any{"name": "still writable", "wire": "openai", "region": "eu-west"},
+		Properties: map[string]any{"label": "still writable", "wire": "openai", "region": "eu-west"},
 	}); err == nil {
 		t.Fatal("the declaration carrying the unstorable default must not have landed")
 	}
 	// …and the repository still works under the declaration it stored.
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/llmprovider", ID: "after",
-		Properties: map[string]any{"name": "still writable", "wire": "openai"},
+		Properties: map[string]any{"label": "still writable", "wire": "openai"},
 	})
 }

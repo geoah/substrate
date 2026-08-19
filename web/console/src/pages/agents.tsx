@@ -155,10 +155,10 @@ export function AgentsPage() {
   // nothing that would have worked.
   const allRows = useMemo(() => agents.data?.records ?? [], [agents.data])
   const agentRows = useMemo(
-    () => allRows.filter((r) => r.properties.subagentOnly !== true),
+    () => allRows.filter((r) => r.properties.hiddenFromChat !== true),
     [allRows]
   )
-  const subagentOnlyCount = allRows.length - agentRows.length
+  const hiddenFromChatCount = allRows.length - agentRows.length
   const aCols = useMemo(() => agentColumns(), [])
   const aTable = useDataTable({
     columns: aCols,
@@ -201,8 +201,8 @@ export function AgentsPage() {
         <p className="text-xs text-muted-foreground">
           {agentRows.length.toLocaleString()} declared, from{" "}
           <span className="data">core.substrate.reamde.dev/agents</span>
-          {subagentOnlyCount > 0 &&
-            ` (${subagentOnlyCount.toLocaleString()} more subagent-only, under Data)`}
+          {hiddenFromChatCount > 0 &&
+            ` (${hiddenFromChatCount.toLocaleString()} more subagent-only, under Data)`}
         </p>
       </div>
 

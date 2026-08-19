@@ -51,7 +51,7 @@ describe("transcriptOf", () => {
         role: "tool",
         content: '{"title":"ok"}',
         toolCallId: "c1",
-        tool: "titler",
+        name: "titler",
         turn: 2,
       }),
       row({ role: "assistant", content: "done", turn: 3 }),
@@ -81,8 +81,8 @@ describe("transcriptOf", () => {
         turn: 0,
       }),
       // Out of dispatch order on purpose: the ids decide, not the arrival.
-      row({ role: "tool", content: "second", toolCallId: "c2", tool: "stats" }),
-      row({ role: "tool", content: "first", toolCallId: "c1", tool: "stats" }),
+      row({ role: "tool", content: "second", toolCallId: "c2", name: "stats" }),
+      row({ role: "tool", content: "first", toolCallId: "c1", name: "stats" }),
     ])
 
     expect(turns[0].tools.map((t) => t.output)).toEqual(["first", "second"])
@@ -100,7 +100,7 @@ describe("transcriptOf", () => {
     const turns = transcriptOf([
       row({ role: "assistant", toolCalls: [call("c1", "slow", "{}")] }),
       row({ role: "assistant", content: "thinking" }),
-      row({ role: "tool", content: "late", toolCallId: "c1", tool: "slow" }),
+      row({ role: "tool", content: "late", toolCallId: "c1", name: "slow" }),
     ])
     expect(turns[0].tools[0].output).toBe("late")
     expect(turns[1].tools).toHaveLength(0)
@@ -111,7 +111,7 @@ describe("transcriptOf", () => {
     // showing it unattached: the turn above really did not call this tool.
     const turns = transcriptOf([
       row({ role: "assistant", content: "prose" }),
-      row({ role: "tool", content: "out", toolCallId: "gone", tool: "ghost" }),
+      row({ role: "tool", content: "out", toolCallId: "gone", name: "ghost" }),
     ])
     expect(turns).toHaveLength(2)
     expect(turns[0].tools).toEqual([])
@@ -121,8 +121,8 @@ describe("transcriptOf", () => {
   it("does not let a duplicate result settle a second card", () => {
     const turns = transcriptOf([
       row({ role: "assistant", toolCalls: [call("c1", "t", "{}")] }),
-      row({ role: "tool", content: "first", toolCallId: "c1", tool: "t" }),
-      row({ role: "tool", content: "again", toolCallId: "c1", tool: "t" }),
+      row({ role: "tool", content: "first", toolCallId: "c1", name: "t" }),
+      row({ role: "tool", content: "again", toolCallId: "c1", name: "t" }),
     ])
     expect(turns[0].tools[0].output).toBe("first")
     // The second is an orphan, on its own — never overwriting the first.
@@ -246,7 +246,7 @@ describe("system turns and engine-stamped changes", () => {
         role: "tool",
         content: "{}",
         toolCallId: "c1",
-        tool: "mutate",
+        name: "mutate",
         ok: true,
         turn: 1,
         changes: [stamp(3, "put", "crew.test.dev/widget", "w1")],

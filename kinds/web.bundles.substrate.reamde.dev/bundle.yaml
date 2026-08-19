@@ -33,7 +33,9 @@ data:
   # version 4: the grants group under one `permissions:` object, and the permission
   # to write is `writes:` inside it. This closure's functions and agents
   # follow core's declaration.
-  version: 6
+  # version 7: an agent's sub-agent list is `subagents`, where it was `agents`
+  # (issue 51).
+  version: 7
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -306,7 +308,7 @@ data:
   model: anthropic/claude-opus-5
   tools:
     - function: web.bundles.substrate.reamde.dev/setclass
-  agents: [web.bundles.substrate.reamde.dev/readinglistagent]
+  subagents: [web.bundles.substrate.reamde.dev/readinglistagent]
   budgets:
     maxTurns: 4
     maxToolCalls: 8

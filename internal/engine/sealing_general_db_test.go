@@ -59,7 +59,7 @@ func sgPutProvider(t *testing.T, ds substrate.Dataset, key string) *substrate.Re
 	return mustPut(t, ds, owner, substrate.PutInput{
 		Kind: sgProviderKind, ID: "prov",
 		Properties: map[string]any{
-			"name": "prov", "wire": "openai",
+			"label": "prov", "wire": "openai",
 			"baseURL": "https://llm.example.com/v1", "apiKey": key,
 		},
 	})

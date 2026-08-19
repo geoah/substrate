@@ -37,7 +37,10 @@ data:
   # version 9: the constructor invariants. Every row the loop writes carries a
   # `role` and a `turn`, so both are required, and a turn counts from 0, so it
   # carries `min: 0`.
-  version: 10
+  # version 11: a tool row names the tool it answers for in `name`, where the
+  # property was `tool`; the word matches `toolCalls.name`, the same tool name
+  # on the assistant turn that dispatched the call.
+  version: 11
   names:
     singular: llmmessage
   displayTemplate: "{role} #{turn}"
@@ -80,7 +83,7 @@ data:
     toolCallId:
       type: string
       description: the assistant tool call a tool row answers
-    tool:
+    name:
       type: string
       description: the tool name a tool row answers for
     ok:

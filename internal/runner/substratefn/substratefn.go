@@ -40,7 +40,7 @@ const (
 // Input is one invocation: the level-triggered envelope (or the call args)
 // plus the delivery bookkeeping the runtime contract pins.
 type Input struct {
-	// Mode is trigger (a dispatched record delivery), schedule (a due RRULE
+	// Mode is record (a dispatched record delivery), schedule (a due RRULE
 	// fire), webhook (a webhook trigger's wake), manual (an owner's run or a
 	// parked retry — no cursor motion) or call (a direct invocation with
 	// arbitrary Args).

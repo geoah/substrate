@@ -43,7 +43,9 @@ data:
   # version 3: the grants group under one `permissions:` object, and the permission
   # to write is `writes:` inside it. This closure's functions and agents
   # follow core's declaration.
-  version: 4
+  # version 5: an agent's sub-agent list is `subagents`, where it was `agents`
+  # (issue 51).
+  version: 5
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata:
@@ -224,7 +226,7 @@ data:
   tools:
     - function: notes.bundles.substrate.reamde.dev/stats
     - function: notes.bundles.substrate.reamde.dev/savenote
-  agents:
+  subagents:
     - notes.bundles.substrate.reamde.dev/titler
   budgets:
     maxTurns: 8

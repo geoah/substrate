@@ -81,7 +81,7 @@ func (f *fakeBackend) ResolveKind(name string) string {
 
 func testInput() Input {
 	return Input{
-		Mode: "trigger",
+		Mode: "record",
 		Envelope: map[string]any{
 			"change":     map[string]any{"id": "e1", "op": "create", "seq": int64(7)},
 			"record":     map[string]any{"id": "e1", "properties": map[string]any{"name": "x"}},

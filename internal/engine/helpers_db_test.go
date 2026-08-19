@@ -368,7 +368,7 @@ func installEmbedProvider(t *testing.T, ds substrate.Dataset, id, baseURL, model
 	if _, err := ds.Put(context.Background(), owner, substrate.PutInput{
 		Kind: typeProvider, ID: id,
 		Properties: map[string]any{
-			"name": id, "wire": "openai", "baseURL": baseURL,
+			"label": id, "wire": "openai", "baseURL": baseURL,
 			"apiKey": "row-key-" + id, "embedModel": model,
 		},
 	}); err != nil {

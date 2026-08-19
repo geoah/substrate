@@ -713,7 +713,6 @@ var deletedDataKeys = map[string]string{
 	"name":       "the retired mirror: a declaration's local name is metadata.id",
 	"plural":     "the retired mirror: a kind's collection segment is its name (decision 0033)",
 	"functions":  "the retired mirror: an agent names its callables under `tools`",
-	"subagents":  "the retired mirror: an agent names its sub-agents under `agents`",
 	"sourceYAML": "the retired mirror: nothing stores a document's text, and the parsed declaration is the row",
 
 	// A pointer is a POINTER now. `refersTo` was a hint beside a string, read by

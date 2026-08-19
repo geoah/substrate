@@ -103,7 +103,7 @@ them admit globs.
 
 The body's entrypoint is `main(input, host)` in Python
 (`Main(in, host)` in Go), and it returns `{effects, output}`. `input` names
-the `mode` that woke the body (`trigger`, `schedule`, `webhook`, `manual` or
+the `mode` that woke the body (`record`, `schedule`, `webhook`, `manual` or
 `call`) beside an `idempotencyKey`, a `causalDepth` and a `callDepth`, then
 carries that mode's payload: a delivery puts the envelope under
 `input["envelope"]`, while a direct call puts the caller's own JSON under

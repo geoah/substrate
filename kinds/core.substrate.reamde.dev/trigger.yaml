@@ -23,9 +23,10 @@ data:
     — bound to the one function or agent it invokes. The trigger owns its
     cursor, so enabling, replay, parking and manual runs are all verbs on
     this row.
-  # `source` is typed as of core's version 3 — the discriminator plus one object
-  # field per arm, where it was a json blob. No version of its own: this kind
-  # takes the authority's, and the authority bumped for the typed core.
+  # `source` is typed as of core's version 3 — one object field per arm, where
+  # it was a json blob. No version of its own: this kind takes the authority's,
+  # and the authority bumped for the typed core. The discriminator (`source.kind`)
+  # was removed at core version 14: the arm present names the source.
   names:
     singular: trigger
   # A random-id row reads as the callable it delivers to.
@@ -35,22 +36,13 @@ data:
       type: bool
       description: whether the dispatcher delivers for this trigger; false
         stops execution without losing the cursor
-    # EXACTLY ONE ARM, and `kind` names which: the discriminator is admitted and
-    # checked against the arm that is present (engine/triggers.go owns that
-    # semantic gate, as it owns the RRULE and the CEL guard). Absent is legal —
-    # the arm alone has always said it — so every trigger written before the
-    # discriminator existed still reads.
+    # EXACTLY ONE ARM: the arm that is present names the source, and
+    # engine/triggers.go refuses a source that carries more than one (it owns
+    # that gate, as it owns the RRULE and the CEL guard).
     source:
       type: object
       description: the one source this trigger delivers from
       fields:
-        kind:
-          type: enum
-          values:
-            - record
-            - schedule
-            - webhook
-          description: which arm below carries the source
         record:
           type: object
           description: matched records — the changelog is the source

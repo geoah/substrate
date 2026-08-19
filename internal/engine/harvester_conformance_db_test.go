@@ -208,7 +208,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: typeProvider, ID: "default",
 		Properties: map[string]any{
-			"name": "default", "wire": "openai",
+			"label": "default", "wire": "openai",
 			"baseURL": fake.srv.URL, "apiKey": "row-key-default",
 		},
 	}); err != nil {

@@ -256,7 +256,7 @@ def main(input, host):
 				map[string]any{"function": crewAuthority + "/annotate"},
 				map[string]any{"function": vocabulary.HostFunctionPropose},
 			},
-			"agents": []any{crewAuthority + "/scribe"},
+			"subagents": []any{crewAuthority + "/scribe"},
 			"permissions": map[string]any{
 				"writes": []any{"tasks.substrate.reamde.dev/task", vocabulary.KindRecordPatchRequest},
 			},
@@ -339,7 +339,7 @@ def main(input, host):
 		// warden writes NOTHING (empty emit) but delegates to minion, whose
 		// own emit could write tasks — the ceiling test pair.
 		agent("warden", map[string]any{
-			"provider": "wardenllm", "model": "warden", "agents": []any{crewAuthority + "/minion"},
+			"provider": "wardenllm", "model": "warden", "subagents": []any{crewAuthority + "/minion"},
 		}),
 		agent("minion", map[string]any{
 			"provider": "minionllm", "model": "minion",
@@ -399,20 +399,20 @@ def main(input, host):
 			"provider": "purellm", "model": "pure",
 			"tools": []any{map[string]any{"function": crewAuthority + "/measure"}},
 		}),
-		// judge is subagentOnly: off the chat surface, still a callable and
+		// judge is hiddenFromChat: off the chat surface, still a callable and
 		// still justice's sub-agent.
 		agent("judge", map[string]any{
-			"provider": "judgellm", "model": "judge", "subagentOnly": true,
+			"provider": "judgellm", "model": "judge", "hiddenFromChat": true,
 		}),
 		agent("justice", map[string]any{
 			"provider": "justicellm", "model": "justice",
-			"agents": []any{crewAuthority + "/judge"},
+			"subagents": []any{crewAuthority + "/judge"},
 		}),
 		agent("e", map[string]any{"provider": "chainllm", "model": "chain"}),
-		agent("d", map[string]any{"provider": "chainllm", "model": "chain", "agents": []any{crewAuthority + "/e"}}),
-		agent("c", map[string]any{"provider": "chainllm", "model": "chain", "agents": []any{crewAuthority + "/d"}}),
-		agent("b", map[string]any{"provider": "chainllm", "model": "chain", "agents": []any{crewAuthority + "/c"}}),
-		agent("a", map[string]any{"provider": "chainllm", "model": "chain", "agents": []any{crewAuthority + "/b"}}),
+		agent("d", map[string]any{"provider": "chainllm", "model": "chain", "subagents": []any{crewAuthority + "/e"}}),
+		agent("c", map[string]any{"provider": "chainllm", "model": "chain", "subagents": []any{crewAuthority + "/d"}}),
+		agent("b", map[string]any{"provider": "chainllm", "model": "chain", "subagents": []any{crewAuthority + "/c"}}),
+		agent("a", map[string]any{"provider": "chainllm", "model": "chain", "subagents": []any{crewAuthority + "/b"}}),
 	}
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
 		t.Fatalf("install crew authority: %v", err)
@@ -572,14 +572,14 @@ func TestAgentTriggerDispatch(t *testing.T) {
 		t.Fatalf("proposal targets %q", target)
 	}
 
-	// Threads: one root (mode trigger), one child (mode subagent) carrying
+	// Threads: one root (mode record), one child (mode subagent) carrying
 	// the parent edge; both settled ok.
 	roots := agentThreadsOf(t, ds, "classifier")
 	if len(roots) != 1 {
 		t.Fatalf("classifier threads: %d", len(roots))
 	}
 	root := roots[0]
-	if root["mode"] != "trigger" || root["status"] != threadOK {
+	if root["mode"] != "record" || root["status"] != threadOK {
 		t.Fatalf("root thread: mode %v status %v", root["mode"], root["status"])
 	}
 	children := agentThreadsOf(t, ds, "scribe")
@@ -823,7 +823,7 @@ func installGreeterBundle(t *testing.T, ds *dataset, fake *fakeLLM) {
 	const hostAuthority = "hostcrew.test.dev"
 	caller := vocabulary.AgentManifest(hostAuthority, "caller", map[string]any{
 		"description": "delegates to greeter", "prompt": "You delegate.",
-		"provider": "callerllm", "model": "caller", "agents": []any{abAuthority + "/greeter"},
+		"provider": "callerllm", "model": "caller", "subagents": []any{abAuthority + "/greeter"},
 	})
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, []map[string]any{
 		vocabulary.AuthorityManifest(hostAuthority, 0), caller,
@@ -1159,7 +1159,7 @@ func TestProviderRowCarriesItsOwnEndpointAndKey(t *testing.T) {
 	// is no host gateway, so it now refuses and says which key it wants.
 	if _, err := ds.Put(ctx, substrate.ActorAPI, substrate.PutInput{
 		Kind: typeProvider, ID: "hosted",
-		Properties: map[string]any{"name": "hosted", "wire": "openai", "apiKey": "row-key-hosted"},
+		Properties: map[string]any{"label": "hosted", "wire": "openai", "apiKey": "row-key-hosted"},
 	}); err != nil {
 		t.Fatalf("put the endpointless provider row: %v", err)
 	}

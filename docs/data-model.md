@@ -450,12 +450,12 @@ live in the repository's content-addressed blob store
 (`PUT /api/v1/blobs`, `GET /api/v1/blobs/{digest}`), and their metadata is an
 ordinary `core.substrate.reamde.dev/blob` record whose id **is** the digest, so the same
 bytes always mint the same blob. A read resolves the ref to
-`{digest, name, mimeType, size, status}`, never to the bytes inline. The
+`{digest, name, mediaType, size, status}`, never to the bytes inline. The
 manifest is always a record in Postgres; where the BYTES sit is an operator's
 choice of backend ([the blob store](operations.md#the-blob-store)), and nothing
 on the wire changes with it.
 
-A blob's `name` and `mimeType` are both **optional and descriptive**. The
+A blob's `name` and `mediaType` are both **optional and descriptive**. The
 upload says them — the name as `?name=` or a `Content-Disposition` filename,
 the type as the `Content-Type` header — and neither takes part in dedup,
 because the digest is the identity: the same bytes uploaded again under

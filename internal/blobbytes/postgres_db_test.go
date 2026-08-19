@@ -88,7 +88,7 @@ func TestPostgresSettlesInTheCallersTransaction(t *testing.T) {
 		t.Fatalf("begin: %v", err)
 	}
 	if err := tx.PutTx(ctx, dbTx, blobbytes.Blob{
-		Digest: digest, Name: "note.txt", MimeType: "text/plain",
+		Digest: digest, Name: "note.txt", MediaType: "text/plain",
 		Size: int64(len(data)), Bytes: data,
 	}); err != nil {
 		t.Fatalf("put in transaction: %v", err)
@@ -132,7 +132,7 @@ func TestPostgresKeepsTheRowShape(t *testing.T) {
 	data := []byte("a named blob")
 	digest := digestOf(data)
 	if err := s.(blobbytes.InTransaction).PutTx(ctx, db, blobbytes.Blob{
-		Digest: digest, Name: "report.pdf", MimeType: "application/pdf",
+		Digest: digest, Name: "report.pdf", MediaType: "application/pdf",
 		Size: int64(len(data)), Bytes: data,
 	}); err != nil {
 		t.Fatalf("put: %v", err)
