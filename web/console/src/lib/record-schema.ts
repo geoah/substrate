@@ -256,16 +256,18 @@ export function propSpecs(kind: KindInfo): PropSpec[] {
 
 /** The properties every kind carries whether or not it declares them: the hot
  * columns the write path splits out before validation (`engine/write.go`).
- * `title` and `body` are always legal strings; `at`/`endsAt`/`dueAt` are legal
- * only where a temporal trait binds them. An editor must not call these
- * undeclared, because the substrate accepts them. */
+ * `title` is always a legal string; `at`/`endsAt`/`dueAt` are legal only where
+ * a temporal trait binds them. `body` is NOT here: since #68 a kind carries a
+ * body only when it declares one, so body comes from the declared properties,
+ * and offering it everywhere would suggest a write the substrate now refuses.
+ * An editor must not call these undeclared, because the substrate accepts them.
+ */
 export function systemSpecs(kind: KindInfo): PropSpec[] {
   const specs: PropSpec[] = [
     specOf("title", {
       type: "string",
       description: "the record's display title",
     }),
-    specOf("body", { type: "text", description: "the record's body text" }),
   ]
   for (const name of temporalProperties(kind)) {
     specs.push(

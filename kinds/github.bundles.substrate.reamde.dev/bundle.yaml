@@ -846,8 +846,9 @@ data:
 
 
     def _item_props(aid, full, it, pull):
-        # The raw payload drops the body: it rides the built-in body column
-        # (truncated) instead, so a 100-item page stays inside the frame cap.
+        # The raw payload drops the body: the kind declares a `body` property
+        # (mapped to the body column, truncated) instead, so a 100-item page
+        # stays inside the frame cap.
         raw = dict(it)
         raw.pop("body", None)
         props = {"account": aid, "number": it.get("number"),

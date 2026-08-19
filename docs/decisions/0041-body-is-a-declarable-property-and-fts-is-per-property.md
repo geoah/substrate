@@ -64,6 +64,12 @@ reads and orders without unpacking jsonb.
 - Bad, because every kind that wrote the old built-in body must now declare
   `body` or its writes are refused. The GitHub `issue` and `pullrequest` mirrors
   gained a `body: {type: text}` declaration and their authority bumped.
+- A body written before this record, on a kind that does not declare `body`,
+  stays in the column but is no longer served: `recordOf` projects `body` only
+  where the kind declares it, so `get -o yaml | apply -f` still round-trips
+  (an echoed undeclared body would be refused on write). Such an orphan value is
+  inert (never served, never indexed after its next fold) and a pre-v1 `dev:wipe`
+  clears it, the same migration stance the rest of the release holds.
 
 ### Confirmation
 

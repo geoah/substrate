@@ -1141,7 +1141,12 @@ func recordOf(ty *vocabulary.Kind, row *erow) *substrate.Record {
 	if row.Title != "" {
 		e.Properties[substrate.PropTitle] = row.Title
 	}
-	if row.Body != "" {
+	// Body is served only where the kind still declares it, symmetric with the
+	// write door and ftsBands: an undeclared body left in the column by a
+	// pre-#68 write is not projected, so `get -o yaml | apply -f` round-trips
+	// (an echoed undeclared body would be refused at coerceProps). An unknown
+	// kind has no declaration to consult, so its stored body is served.
+	if row.Body != "" && (ty == nil || declaresBody(ty)) {
 		e.Properties[substrate.PropBody] = row.Body
 	}
 	for _, hc := range []struct {

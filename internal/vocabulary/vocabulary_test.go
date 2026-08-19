@@ -2115,6 +2115,15 @@ data:
 		"body must be text-family": typ(`  names: {singular: contact, plural: contacts}
   properties: {body: {type: int}}
 `),
+		// repeated text and keyed text are ordinarily fine; on `body` they name a
+		// list or map the single scalar column cannot hold, so the body guard
+		// refuses them where the datatype alone would pass.
+		"body cannot be repeated": typ(`  names: {singular: contact, plural: contacts}
+  properties: {body: {type: text, repeated: true}}
+`),
+		"body cannot be keyed": typ(`  names: {singular: contact, plural: contacts}
+  properties: {body: {type: text, keyed: true}}
+`),
 		"at is reserved": typ(`  names: {singular: contact, plural: contacts}
   properties: {at: {type: datetime}}
 `),

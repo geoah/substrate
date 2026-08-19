@@ -802,10 +802,12 @@ func (l *loader) parseType(doc Document) *Kind {
 			continue
 		}
 		// `body` is the one column-backed property a kind may declare (#68). The
-		// column is text, so a declared body is text-family or nothing: a
-		// non-text datatype would name a column that cannot hold its value.
-		if pname == "body" && !IsLongText(p.Datatype) {
-			l.errf("%s: data.properties.body: the built-in body column is text — declare it type text or markdown, not %s", where, p.Datatype)
+		// column holds one text value, so a declared body is a single text or
+		// markdown property: a non-text datatype names a column that cannot hold
+		// its value, and a repeated or keyed body has no scalar the column can
+		// store, so every write to it would fail in splitProps.
+		if pname == "body" && (!IsLongText(p.Datatype) || p.Repeated || p.Keyed) {
+			l.errf("%s: data.properties.body: the built-in body column holds one text value; declare body as a single text or markdown property", where)
 			continue
 		}
 		t.Props[pname] = p
