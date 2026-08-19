@@ -770,6 +770,16 @@ func (r *titleResolver) referenceProp(ref eref, prop string) string {
 	if prop == "" {
 		return row.Title
 	}
+	// The loader cannot check the referent's property across kinds (load.go
+	// inspects only the referencing kind's own properties), so the sensitive
+	// skip is enforced here, exactly as targetProp does for an edge hop: a
+	// value every read surface redacts must not land in the unsealed,
+	// FTS-indexed title.
+	if ty, terr := r.t.ds.resolveType(row.Kind); terr == nil && ty != nil {
+		if p, ok := ty.Prop(prop); ok && p.Sensitive() {
+			return ""
+		}
+	}
 	if v, ok := row.Props[prop]; ok {
 		return scalarString(v)
 	}
