@@ -101,7 +101,7 @@ is computed from absence, never stored.
 | Kind           | What it is                                                              |
 | -------------- | ------------------------------------------------------------------------ |
 | `journalentry` | One day's reflection; its timeline anchor is the day written about.      |
-| `note`         | Anything else written down; `kind` declares its audience, `status` its handled lifecycle. |
+| `note`         | Anything else written down; `audience` declares who it is for, `status` its handled lifecycle. |
 
 ## places.substrate.reamde.dev — imported
 
@@ -114,7 +114,7 @@ is computed from absence, never stored.
 | Kind     | What it is                                                            |
 | -------- | ---------------------------------------------------------------------- |
 | `recipe` | Instructions for one dish; cooking it is a meal pointing here.         |
-| `meal`   | One sitting on the timeline; nutrition numbers are observationlogs whose subject is the meal. |
+| `meal`   | One sitting on the timeline; nutrition numbers are observationlogs whose `derivedFrom` is the meal. |
 
 ## commerce.substrate.reamde.dev — imported
 

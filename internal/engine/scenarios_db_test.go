@@ -129,11 +129,11 @@ func TestQueryGrammar(t *testing.T) {
 	})
 	conv := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "conversation", ID: "slack-channel:x1",
-		Properties: map[string]any{"kind": "direct", "account": enginetest.AccountType + "/" + acc.ID},
+		Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	other := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "conversation", ID: "slack-channel:x2",
-		Properties: map[string]any{"kind": "group", "name": "Family", "account": enginetest.AccountType + "/" + acc.ID},
+		Properties: map[string]any{"category": "group", "name": "Family", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	alex := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "person", Properties: map[string]any{"name": "Alex"},
@@ -229,7 +229,7 @@ func TestQueryGrammar(t *testing.T) {
 	// Props filters and states filters.
 	page, err = ds.List(ctx, substrate.Query{Filter: substrate.Filter{
 		Kinds:      []string{"conversation"},
-		Properties: map[string]substrate.Cond{"kind": {In: []any{"group", "channel"}}},
+		Properties: map[string]substrate.Cond{"category": {In: []any{"group", "channel"}}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -269,7 +269,7 @@ func TestReplyLifecycle(t *testing.T) {
 	})
 	conv := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "conversation", ID: "slack-channel:x1",
-		Properties: map[string]any{"kind": "direct", "account": enginetest.AccountType + "/" + acc.ID},
+		Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	me := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "person", Properties: map[string]any{"name": "George"},

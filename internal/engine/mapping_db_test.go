@@ -167,7 +167,7 @@ func newConversation(t *testing.T, ds substrate.Dataset) *substrate.Record {
 	})
 	return mustPut(t, ds, slack, substrate.PutInput{
 		Kind: "conversation", ID: "slack-C1",
-		Properties: map[string]any{"kind": "channel", "account": enginetest.AccountType + "/" + acc.ID},
+		Properties: map[string]any{"category": "channel", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 }
 

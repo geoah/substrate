@@ -22,7 +22,8 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: messaging.substrate.reamde.dev
 data:
-  version: 3
+  # version 4: `conversation`'s enum property `kind` is `category` (#125).
+  version: 4
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A VOCABULARY bundle (see people.substrate.reamde.dev): kinds only, imported from the

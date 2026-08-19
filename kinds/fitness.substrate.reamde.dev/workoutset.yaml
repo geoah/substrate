@@ -28,9 +28,9 @@ data:
         - value: amrap
           label: AMRAP
         - failure
-    weight:
+    weightKg:
       type: float
-      description: the load moved, in the gym's unit
+      description: the load moved, in kilograms
     reps:
       type: int
       description: how many repetitions
