@@ -109,16 +109,15 @@ func ParsePath(s string) (Path, error) {
 	return p, nil
 }
 
-// columnProp resolves the column-backed properties every record carries but
-// no manifest declares (reservedProps): title and body always, the temporals
-// when a capability binds them. They are legal path sources and map targets
-// (§7.1 — hot props).
+// columnProp resolves the column-backed properties a record carries but no
+// manifest declares: title always, the temporals when a capability binds them.
+// They are legal path sources and map targets (§7.1, hot props). `body` is NOT
+// here: a kind that carries a body declares it (#68), so the declaration in
+// t.Props resolves it, and a kind that does not declare body has none to map.
 func columnProp(t *Kind, name string) (*Property, bool) {
 	switch name {
 	case "title":
 		return &Property{Name: "title", Datatype: DatatypeString}, true
-	case "body":
-		return &Property{Name: "body", Datatype: DatatypeText}, true
 	case "at", "endsAt", "dueAt":
 		if t.UsesHot(name) {
 			return &Property{Name: name, Datatype: DatatypeDatetime}, true

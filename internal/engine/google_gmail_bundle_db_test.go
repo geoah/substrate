@@ -181,12 +181,13 @@ func TestGoogleGmailBundleAdmitsSchema(t *testing.T) {
 		"historyId", "syncGeneration", "labelIds", "subject", "preview",
 		"text", "from", "to", "cc", "bcc", "sentAt", "sizeEstimate",
 		"attachments", "raw")
-	// `body` and `title` are reserved built-in columns; a mirror that
-	// redeclared one would not admit at all, so the names it DID pick are
-	// pinned here as the deliberate choice.
+	// `title` is a reserved built-in column and `snippet` is a template token;
+	// `body` is declarable (#68) but this mirror keeps its prose in `text`, not
+	// a `body` column. The names it DID pick are pinned here as the deliberate
+	// choice, so none of these three may appear.
 	for _, banned := range []string{"body", "title", "snippet"} {
 		if _, ok := msg.Prop(banned); ok {
-			t.Fatalf("message declares %q — reserved column or template token", banned)
+			t.Fatalf("message declares %q — reserved column, template token, or the unused body column", banned)
 		}
 	}
 

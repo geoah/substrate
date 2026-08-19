@@ -361,7 +361,11 @@ func splitProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, hotProp
 	for _, name := range sortedKeys(in) {
 		v := in[name]
 		switch {
-		case name == substrate.PropTitle, name == substrate.PropBody:
+		// `title` is always column-backed and never declared (ADR 0016). `body`
+		// is column-backed only when the kind DECLARES it (#68); undeclared, it
+		// falls through to the ordinary-property path, where coerceProps refuses
+		// a value as undeclared exactly like any other name.
+		case name == substrate.PropTitle, name == substrate.PropBody && declaresBody(ty):
 			if v == nil {
 				// Null clears it; the column is NOT NULL, so empty IS cleared.
 				hot.clearing(name)
@@ -419,6 +423,14 @@ func splitProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, hotProp
 		states[name] = s
 	}
 	return props, hot, states, nil
+}
+
+// declaresBody reports whether ty declares the column-backed `body` property.
+// Only then does a write route `body` into the hot column; undeclared, `body`
+// is refused like any other name the kind does not carry (#68).
+func declaresBody(ty *vocabulary.Kind) bool {
+	_, ok := ty.Prop(substrate.PropBody)
+	return ok
 }
 
 func isHotTime(name string) bool {
@@ -1704,15 +1716,17 @@ func guardImmutableEnvelope(sp *applySpec) error {
 
 // propertyWritable reports whether a name may appear in a proposed diff for
 // ty: a declared property (state properties included — a transition is a
-// legitimate patch), the reserved title/body columns, or a temporal column the
-// type binds. The identity keys `type`/`id` are never writable. A SECRET-typed
-// property is writable in principle, but a proposal never carries it (a raw
-// secret must not sit in the request's non-secret json diff) — normalizeDiff
-// rejects it separately.
+// legitimate patch), the reserved title column, a declared body column, or a
+// temporal column the type binds. The identity keys `type`/`id` are never
+// writable. A SECRET-typed property is writable in principle, but a proposal
+// never carries it (a raw secret must not sit in the request's non-secret json
+// diff) — normalizeDiff rejects it separately.
 func propertyWritable(ty *vocabulary.Kind, name string) bool {
 	switch name {
-	case substrate.PropTitle, substrate.PropBody:
+	case substrate.PropTitle:
 		return true
+	case substrate.PropBody:
+		return declaresBody(ty)
 	case substrate.PropAt, substrate.PropEndsAt, substrate.PropDueAt:
 		return ty.UsesHot(name)
 	}

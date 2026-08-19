@@ -39,7 +39,10 @@ data:
   # version 5: `account` on every mirror kind is a pinned owner
   # reference instead of a string, so disconnecting an account collects
   # the rows it synced (docs/decisions/0032).
-  version: 6
+  # version 7: issue and pullrequest DECLARE `body` (type text) instead of
+  # riding the former built-in column, which stops being reserved (#68,
+  # docs/decisions/0041). An additive property, so the upgrade is clean.
+  version: 7
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -427,10 +430,10 @@ data:
 # ---- mirror: one issue -------------------------------------------------------
 # The provider's shape, plainly: `state` is a plain string ("open" | "closed"),
 # never a state machine — GitHub owns the lifecycle, the mirror just reports
-# it. The sync ALSO writes `title` and `body` — the built-in columns every
-# record carries, so they are not re-declared here (body truncated at 4000
-# chars; the raw payload drops it so one page of mirrors stays inside the
-# frame cap).
+# it. `title` rides the built-in derived column; `body` is a declared,
+# column-backed text property (#68), FTS-indexed as it always was. The raw
+# payload drops the body so one page of mirrors stays inside the frame cap
+# (the sync truncates the stored body at 4000 chars).
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: github.bundles.substrate.reamde.dev/issue
@@ -459,6 +462,10 @@ data:
       type: string
       displayName: State
       description: "the provider's state, plainly (open | closed)"
+    body:
+      type: text
+      displayName: Body
+      description: the issue description, truncated, FTS-indexed
     authorLogin:
       type: string
       displayName: Author
@@ -496,9 +503,9 @@ data:
       description: the repository this issue belongs to
 ---
 # ---- mirror: one pull request ------------------------------------------------
-# Same posture as issue (`title`/`body` ride the built-in columns); `state`
-# folds GitHub's split fields (merged beats closed beats draft beats open),
-# still a plain string.
+# Same posture as issue (`title` rides the built-in column, `body` is a declared
+# text property, #68); `state` folds GitHub's split fields (merged beats closed
+# beats draft beats open), still a plain string.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: github.bundles.substrate.reamde.dev/pullrequest
@@ -527,6 +534,10 @@ data:
       displayName: State
       description: "the folded provider state, plainly (open | draft | merged
         | closed)"
+    body:
+      type: text
+      displayName: Body
+      description: the pull request description, truncated, FTS-indexed
     authorLogin:
       type: string
       displayName: Author

@@ -185,3 +185,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0038](0038-a-network-entry-is-a-bare-host-or-cidr-destination.md) | A `permissions.network` entry is a bare host or CIDR destination | accepted |
 | [0039](0039-the-substrate-stores-a-recurrence-rule-and-never-expands-it.md) | The substrate stores a recurrence rule and never expands it | accepted |
 | [0040](0040-the-four-occurrence-logs-say-done.md) | The four occurrence logs all say `done`; `medicationschedulelog` loses its `taken` exception | accepted |
+| [0041](0041-body-is-a-declarable-property-and-fts-is-per-property.md) | Body is a declarable, column-backed text property; FTS follows the property `fts` flag | accepted |

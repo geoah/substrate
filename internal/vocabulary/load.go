@@ -801,6 +801,13 @@ func (l *loader) parseType(doc Document) *Kind {
 		if p == nil {
 			continue
 		}
+		// `body` is the one column-backed property a kind may declare (#68). The
+		// column is text, so a declared body is text-family or nothing: a
+		// non-text datatype would name a column that cannot hold its value.
+		if pname == "body" && !IsLongText(p.Datatype) {
+			l.errf("%s: data.properties.body: the built-in body column is text — declare it type text or markdown, not %s", where, p.Datatype)
+			continue
+		}
 		t.Props[pname] = p
 		if p.Machine == nil {
 			continue
@@ -1192,15 +1199,17 @@ func (l *loader) parseEdgeProps(where string, ed map[string]any) (map[string]*Pr
 	return out, order
 }
 
-// reservedProps are the five properties EVERY record already carries, each
-// with its own storage column. They are written and read like
-// any other property, so redeclaring one is not an override — it is two
-// declarations of one name, and the write path would validate against the
-// wrong one. `at`/`endsAt`/`dueAt` arrive through a temporal trait, and
-// `title`/`body` are built in.
+// reservedProps are the property names a declaration may not name: each
+// already arrives on every record, and validating a second declaration of the
+// name against the wrong one is the danger. `title` is derived (ADR 0016) and
+// `at`/`endsAt`/`dueAt` arrive through a temporal trait, so all four stay
+// reserved. `body` is NOT here: it is a declarable, column-backed text
+// property now (ADR 0041, the body half of #68). A kind that declares `body`
+// gets the hot body column (columnProp), refused only when its datatype is
+// not text-family; a kind that does not declare `body` carries none, and a
+// write naming it is refused like any undeclared property.
 var reservedProps = map[string]string{
 	"title":  "every record carries `title`; a derived one is a displayTemplate",
-	"body":   "every record carries `body`",
 	"at":     "`at` is the temporal trait's, bound with `traits: [temporal(point)]`",
 	"endsAt": "`endsAt` is the temporal trait's, bound with `traits: [temporal(range)]`",
 	"dueAt":  "`dueAt` is the temporal trait's, bound with `traits: [\"temporal(point: dueAt)\"]`",
