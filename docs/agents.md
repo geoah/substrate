@@ -421,7 +421,7 @@ kind: core.substrate.reamde.dev/llmprovider
 metadata: {id: openrouter}
 data:
   properties:
-    name: OpenRouter
+    label: OpenRouter
     wire: openai
     baseURL: https://openrouter.ai/api/v1
     apiKey: sk-or-…
@@ -434,7 +434,7 @@ kind: core.substrate.reamde.dev/llmprovider
 metadata: {id: anthropic}
 data:
   properties:
-    name: Anthropic
+    label: Anthropic
     wire: anthropic
     apiKey: sk-ant-…
     pricing:
@@ -445,7 +445,7 @@ kind: core.substrate.reamde.dev/llmprovider
 metadata: {id: azure}
 data:
   properties:
-    name: Azure OpenAI
+    label: Azure OpenAI
     wire: azure
     baseURL: https://example-resource.openai.azure.com
     apiKey: …
@@ -464,7 +464,7 @@ kind: core.substrate.reamde.dev/llmprovider
 metadata: {id: vectors}
 data:
   properties:
-    name: Vectors
+    label: Vectors
     wire: openai
     baseURL: https://api.openai.com/v1
     apiKey: sk-…

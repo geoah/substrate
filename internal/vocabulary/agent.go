@@ -631,7 +631,7 @@ func (r *Registry) resolveAuthorityAgents(g *Authority) []string {
 		}
 		for _, ident := range a.Subagents {
 			if _, err := r.ResolveAgent(ident); err != nil {
-				problems = append(problems, fmt.Sprintf("%s: data.agents: unknown agent %q", where, ident))
+				problems = append(problems, fmt.Sprintf("%s: data.subagents: unknown agent %q", where, ident))
 			}
 		}
 	}
