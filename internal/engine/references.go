@@ -164,9 +164,9 @@ func storedReferencePath(v any) string {
 
 // normalizeReference resolves one reference value's referent kind against the
 // registry, checks the declaration's `kind:` pin, and returns the canonical
-// RECORD PATH — "<kind>/<id>", one flat string. A bare local kind name resolves
-// to its full identity here, so the stored path is spelled one way whatever the
-// writer typed.
+// RECORD PATH — "<authority>/<kind>/<id>", one flat string. Coercion already
+// produced a qualified path (a full path, or a pin-completed bare id), so the
+// stored path is spelled one way whatever the writer typed.
 func (t *txn) normalizeReference(p *vocabulary.Property, v any) (any, error) {
 	s, ok := v.(string)
 	if !ok || s == "" {

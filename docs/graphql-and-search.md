@@ -74,15 +74,14 @@ record's id.
 A GraphQL type name is a pure function of the kind's reference and where the
 kind came from, never of which other kinds happen to be installed, so the
 schema is deterministic and installing one bundle can never rename another
-kind. The rule has three arms. A **repository-local kind capitalizes**:
-`task` is `Task`. A **shipped kind keeps its bare singular**:
+kind. The rule has two arms. A **shipped kind keeps its bare singular**:
 `people.substrate.reamde.dev/person` is `Person`, `calendar.substrate.reamde.dev/calendarevent` is
 `Calendarevent`. An **installed kind is always authority-prefixed**: the
 leading label of its authority, TitleCased, an underscore, then the singular.
 Two bundles may declare the same singular and stay distinct, because the
 full reference separates them: `notion.bundles.substrate.reamde.dev/page` is
 `Notion_Page` and `web.bundles.substrate.reamde.dev/page` is `Web_Page`, and the
-underscore keeps both out of reach of any bare name. Interfaces follow the
+underscore keeps both out of reach of any shipped name. Interfaces follow the
 same determinism: one per trait that carries properties (a pure marker
 trait adds none), and one per distinct state-property name
 (`HasStatus`, `HasProminence`).

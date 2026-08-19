@@ -14,11 +14,8 @@ describe("splitRecordPath", () => {
     ).toEqual({ kind: "core.substrate.reamde.dev/llmprovider", id: "claude" })
   })
 
-  it("reads a dotless first segment as a repository-local kind", () => {
-    expect(splitRecordPath("task/abc123")).toEqual({
-      kind: "task",
-      id: "abc123",
-    })
+  it("refuses a dotless first segment: every kind carries an authority", () => {
+    expect(splitRecordPath("task/abc123")).toBeUndefined()
   })
 
   it("keeps the slashes inside an id: a declaration id IS a kind reference", () => {
@@ -30,7 +27,10 @@ describe("splitRecordPath", () => {
       kind: "core.substrate.reamde.dev/kind",
       id: "tasks.substrate.reamde.dev/task",
     })
-    expect(splitRecordPath("task/a/b/c")).toEqual({ kind: "task", id: "a/b/c" })
+    expect(splitRecordPath("core.substrate.reamde.dev/note/a/b/c")).toEqual({
+      kind: "core.substrate.reamde.dev/note",
+      id: "a/b/c",
+    })
   })
 
   it("refuses everything that is not a path, so a pin can complete it", () => {
@@ -47,7 +47,7 @@ describe("splitRecordPath", () => {
   it("round-trips through recordPath", () => {
     for (const path of [
       "core.substrate.reamde.dev/llmprovider/claude",
-      "task/abc123",
+      "core.substrate.reamde.dev/note/a/b/c",
       "core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev/task",
     ]) {
       const parts = splitRecordPath(path)
@@ -112,19 +112,31 @@ describe("coerceReferencePath", () => {
         /has an empty segment/
       )
     }
-    // Under the pin it parses as, the empty half is in the ID.
-    expect(coerceReferencePath("a", "a//b").error).toMatch(/empty id segment/)
+    // A full path under its own pin whose id half is empty.
+    expect(coerceReferencePath(KIND, `${KIND}//b`).error).toMatch(
+      /empty id segment/
+    )
     // Under any OTHER pin it is the ambiguous case, exactly as the engine
-    // reads it: a pointer at `a`, or an id the pin would complete.
-    expect(coerceReferencePath(FUNCTION, "a//b").error).toMatch(/ambiguous/)
+    // reads it: a pointer at the parsed kind, or an id the pin would complete.
+    expect(coerceReferencePath(FUNCTION, `${KIND}//b`).error).toMatch(
+      /ambiguous/
+    )
   })
 
   it("unpinned, takes a full path and nothing else", () => {
-    expect(coerceReferencePath("", "note/abc")).toEqual({ value: "note/abc" })
-    // A kind identity leaves nothing for an id, so it names no record.
+    // Every kind carries an authority, so the qualified path is the only
+    // unpinned value that names a record.
+    expect(coerceReferencePath("", "foo.bar/baz/abc")).toEqual({
+      value: "foo.bar/baz/abc",
+    })
+    // A kind identity leaves nothing for an id; a dotless first segment and a
+    // bare id are no path at all.
     expect(coerceReferencePath("", "foo.bar/baz").error).toMatch(/is not one/)
+    expect(coerceReferencePath("", "note/abc").error).toMatch(/is not one/)
     expect(coerceReferencePath("", "abc").error).toMatch(/is not one/)
-    expect(coerceReferencePath("", "note//abc").error).toMatch(/empty id/)
+    expect(coerceReferencePath("", "foo.bar/baz//abc").error).toMatch(
+      /empty id/
+    )
   })
 
   it("says an empty value needs an id", () => {

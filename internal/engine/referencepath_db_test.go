@@ -85,8 +85,9 @@ func TestReferencePathAuthoredStoredAndReadBack(t *testing.T) {
 		// supplies the kind the value omits.
 		"pinned, authored bare":      {authored: "a", stored: target},
 		"pinned, authored full path": {authored: target, stored: target},
-		// A pin naming a repository-LOCAL kind resolves to the full identity, so
-		// the stored path is spelled one way whatever the writer typed.
+		// A BARE pin (`kind: target`) resolves against the declaring authority
+		// to the full identity, so the stored path is spelled one way whatever
+		// the writer typed.
 		"local pin, authored bare": {authored: "a", stored: target},
 		// Unpinned: no kind to borrow, so only a full path says what it names.
 		"unpinned, authored full path": {authored: target, stored: target},
@@ -107,13 +108,6 @@ func TestReferencePathAuthoredStoredAndReadBack(t *testing.T) {
 		"pinned, slash-bearing id in full path form": {
 			authored: vocabulary.RecordPath(pathAuthority+"/target", "foo.bar/baz/qux"),
 			stored:   vocabulary.RecordPath(pathAuthority+"/target", "foo.bar/baz/qux"),
-		},
-		// Unpinned, the dot rule alone decides: no dot in the first segment
-		// means a repository-LOCAL kind, which then resolves to its full
-		// identity, so the stored path is spelled one way either way.
-		"unpinned, local kind path": {
-			authored: "target/abc",
-			stored:   vocabulary.RecordPath(pathAuthority+"/target", "abc"),
 		},
 		// Containers carry the same rule elementwise, at every declared depth.
 		"repeated, mixed forms": {
@@ -142,7 +136,6 @@ func TestReferencePathAuthoredStoredAndReadBack(t *testing.T) {
 			"declaration pin, authored path":             "declared",
 			"pinned, id equal to a kind identity":        "pinned",
 			"pinned, slash-bearing id in full path form": "pinned",
-			"unpinned, local kind path":                  "free",
 			"repeated, mixed forms":                      "many",
 			"keyed, mixed forms":                         "keyed",
 			"inside an object":                           "spec",

@@ -442,17 +442,6 @@ func testTypes() []substrate.KindInfo {
 				"properties": map[string]any{"authority": map[string]any{"type": "string"}},
 			},
 		},
-		{
-			// A REPOSITORY-LOCAL kind: no authority, so its collection is one
-			// segment (/note) and its records two (/note/{id}). That is the
-			// shape `POST /api/v1/{kind}/{id}` used to create under a
-			// server-assigned id (#202), so the fake carries one.
-			Identity: "note", Name: "note", Authority: "",
-			Version: 1, Plural: "notes", Source: "builtin",
-			Definition: map[string]any{
-				"properties": map[string]any{"text": map[string]any{"type": "markdown"}},
-			},
-		},
 	}
 }
 

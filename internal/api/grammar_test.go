@@ -9,30 +9,26 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// notePath is the repository-local shape: one segment for the collection, two
-// for a record. It is where both silent creates lived (#202).
-const notePath = "/api/v1/note"
-
 // A POST to a RECORD path used to resolve the collection, discard the id and
 // create a record under a server-assigned one, answering 201: a client that
 // believed it was upserting accumulated duplicates under ids it never chose
-// (#202). Both address depths refuse it now, and nothing is written.
+// (#202). A record path is three segments now (decision 0042); it refuses the
+// POST, and nothing is written.
 func TestPostToRecordPathIsMethodNotAllowed(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
 
-	for _, path := range []string{notePath + "/n1", peoplePath + "/p1"} {
-		ds.lastPut = substrate.PutInput{}
-		rec := env.do(t, http.MethodPost, path, tok,
-			map[string]any{"properties": map[string]any{"text": "hello"}})
-		wantErrorCode(t, rec, http.StatusMethodNotAllowed, codeBadRequest)
-		if ds.lastPut.Kind != "" {
-			t.Fatalf("POST %s wrote %+v; a refused method writes nothing", path, ds.lastPut)
-		}
-		if msg := decodeJSON[errorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "PUT "+path) {
-			t.Fatalf("POST %s said %q; it must name the PUT that writes this record", path, msg)
-		}
+	path := peoplePath + "/p1"
+	ds.lastPut = substrate.PutInput{}
+	rec := env.do(t, http.MethodPost, path, tok,
+		map[string]any{"properties": map[string]any{"text": "hello"}})
+	wantErrorCode(t, rec, http.StatusMethodNotAllowed, codeBadRequest)
+	if ds.lastPut.Kind != "" {
+		t.Fatalf("POST %s wrote %+v; a refused method writes nothing", path, ds.lastPut)
+	}
+	if msg := decodeJSON[errorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "PUT "+path) {
+		t.Fatalf("POST %s said %q; it must name the PUT that writes this record", path, msg)
 	}
 }
 
@@ -43,17 +39,15 @@ func TestPutToCollectionPathIsMethodNotAllowed(t *testing.T) {
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
 
-	for _, path := range []string{peoplePath, notePath} {
-		ds.lastPut = substrate.PutInput{}
-		rec := env.do(t, http.MethodPut, path, tok,
-			map[string]any{"properties": map[string]any{"title": "Ada"}})
-		wantErrorCode(t, rec, http.StatusMethodNotAllowed, codeBadRequest)
-		if ds.lastPut.Kind != "" {
-			t.Fatalf("PUT %s wrote %+v; a refused method writes nothing", path, ds.lastPut)
-		}
-		if msg := decodeJSON[errorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "POST "+path) {
-			t.Fatalf("PUT %s said %q; it must name the POST that creates", path, msg)
-		}
+	ds.lastPut = substrate.PutInput{}
+	rec := env.do(t, http.MethodPut, peoplePath, tok,
+		map[string]any{"properties": map[string]any{"title": "Ada"}})
+	wantErrorCode(t, rec, http.StatusMethodNotAllowed, codeBadRequest)
+	if ds.lastPut.Kind != "" {
+		t.Fatalf("PUT %s wrote %+v; a refused method writes nothing", peoplePath, ds.lastPut)
+	}
+	if msg := decodeJSON[errorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "POST "+peoplePath) {
+		t.Fatalf("PUT %s said %q; it must name the POST that creates", peoplePath, msg)
 	}
 	// PATCH and DELETE address a record too, and used to reach the engine with
 	// an empty id.
@@ -64,23 +58,21 @@ func TestPutToCollectionPathIsMethodNotAllowed(t *testing.T) {
 }
 
 // A record's URL is its stored reference value. The path after the version
-// prefix is exactly what a `reference` property holds, for both kind shapes,
-// which is the whole reason the collection segment is the kind's name
-// (decision 0033).
+// prefix is exactly what a `reference` property holds, which is the whole
+// reason the collection segment is the kind's name (decision 0033).
 func TestRecordURLIsItsReference(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
 
-	for _, kind := range []string{"people.substrate.reamde.dev/person", "note"} {
-		const id = "r1"
-		ds.put(&substrate.Record{ID: id, Kind: kind, Version: 1})
-		path := "/api/" + APIVersion + "/" + vocabulary.RecordPath(kind, id)
-		rec := env.do(t, http.MethodGet, path, tok, nil)
-		wantStatus(t, rec, http.StatusOK)
-		if got := decodeJSON[substrate.Record](t, rec); got.Kind != kind || got.ID != id {
-			t.Fatalf("GET %s served %s/%s", path, got.Kind, got.ID)
-		}
+	const kind = "people.substrate.reamde.dev/person"
+	const id = "r1"
+	ds.put(&substrate.Record{ID: id, Kind: kind, Version: 1})
+	path := "/api/" + APIVersion + "/" + vocabulary.RecordPath(kind, id)
+	rec := env.do(t, http.MethodGet, path, tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if got := decodeJSON[substrate.Record](t, rec); got.Kind != kind || got.ID != id {
+		t.Fatalf("GET %s served %s/%s", path, got.Kind, got.ID)
 	}
 }
 
@@ -99,10 +91,11 @@ func TestShadowedCollectionsAreReachable(t *testing.T) {
 	wantStatus(t, rec, http.StatusOK)
 }
 
-// A record id may not be a sub-resource word. `…/{kind}/incoming` reads through
-// the incoming handler and 405s, so a PUT there used to create a person nothing
-// could read. Both directions refuse now, and nothing is written, so the corner
-// is symmetric (decision 0033).
+// A record id may not be a sub-resource word. `…/{kind}/{id}/incoming` is a
+// static route, so a record whose id is `incoming` reads through the incoming
+// handler and 405s while a PUT there used to create a person nothing could
+// read. Both directions refuse now, and nothing is written, so the corner is
+// symmetric (decision 0033).
 func TestReservedRecordIdsRefuseBothDirections(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
@@ -118,18 +111,17 @@ func TestReservedRecordIdsRefuseBothDirections(t *testing.T) {
 		}
 		del := env.do(t, http.MethodDelete, peoplePath+"/"+id, tok, nil)
 		wantErrorCode(t, del, http.StatusBadRequest, codeBadRequest)
-		// The repository-local shape is refused too, on both depths.
-		wantErrorCode(t, env.do(t, http.MethodPut, notePath+"/"+id, tok,
-			map[string]any{"properties": map[string]any{"text": "x"}}),
-			http.StatusBadRequest, codeBadRequest)
 	}
 }
 
-// A three-segment path whose first segment is not an authority spells no
-// address, so it is a 404 rather than a lookup of a kind that cannot exist.
-func TestNonAuthorityThreeSegmentPathIs404(t *testing.T) {
+// A one-segment path names no kind: every kind carries an authority, so the
+// old authority-less collection shape (`/api/v1/note`) is gone and answers 404
+// rather than the console's index.html (decision 0042).
+func TestOneSegmentPathIs404(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodGet, "/api/v1/note/n1/extra", tok, nil)
-	wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		rec := env.do(t, method, "/api/v1/note", tok, map[string]any{})
+		wantErrorCode(t, rec, http.StatusNotFound, codeNotFound)
+	}
 }

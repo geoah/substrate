@@ -137,7 +137,8 @@ function KindLinks({
 }
 
 /** One authority's kinds, collapsible. In v1 authorities replace the old group
- * concept; a repository-local kind (empty authority) reads as "local". */
+ * concept, and every kind carries one (decision 0042); the `"local"` fallback
+ * is defensive against a malformed row with no authority. */
 function AuthorityGroup({ nav }: { nav: AuthorityNav }) {
   const label = nav.authority || "local"
   return (

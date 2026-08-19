@@ -146,22 +146,17 @@ Writers may only touch their own key namespace.
 
 ## Kinds and references
 
-A **kind** is what a record is, and it is named one of two ways:
-
-- **bare** — `task` — when the kind belongs to this repository alone;
-- **authority-qualified** — `tasks.substrate.reamde.dev/task` — when an **authority**
-  publishes it.
+A **kind** is what a record is, and it is named `<authority>/<name>`:
+`tasks.substrate.reamde.dev/task`. Every kind carries an **authority**
+([decision 0042](decisions/0042-every-kind-carries-an-authority.md)).
 
 An authority is a DNS name. It says who publishes a kind and, more
 importantly, who may change that kind's declaration: shipped vocabulary is the
-substrate's to write, your own bare kinds are yours, and an installed
-bundle's kinds belong to that bundle. The two forms cannot collide,
-because they are different shapes, and within one repository a bare name is
-unique.
+substrate's to write, and an installed bundle's kinds belong to that bundle.
 
 A **record reference** writes kind and id together:
-`tasks.substrate.reamde.dev/task/t9` for a qualified kind, `task/t9` for a bare one. That
-is the string form; on REST the same reference is split into path segments
+`tasks.substrate.reamde.dev/task/t9`. That is the string form; on REST the same
+reference is split into path segments
 (`/api/v1/tasks.substrate.reamde.dev/task/t9`), and on GraphQL it travels as two
 arguments.
 
@@ -244,10 +239,11 @@ data:
       to: any                     # the message, mail, or issue the task came from
 ```
 
-A declaration record's id **is** a kind reference, which is the one place a
-`/` and a dot are legal in an id. Drop the `authority:` line and the two
-qualified names, and the same document declares a bare `task` kind that is
-yours alone.
+A declaration record's id **is** a kind reference
+(`<data.authority>/<data.names.singular>`), which is the one place a `/` and a
+dot are legal in an id. The `authority:` line is required: every kind carries
+an authority
+([decision 0042](decisions/0042-every-kind-carries-an-authority.md)).
 
 Every property here names a declared property type (`markdown`, `url`,
 `datetime`, `state`), covered next.
@@ -399,19 +395,19 @@ what a client needs to offer a picker. A reference still spelling `to:` is
 refused naming the pin.
 
 A value is ONE FLAT STRING, the referent's path:
-`core.substrate.reamde.dev/llmprovider/claude`, or `task/abc123` for a
-repository-local kind. Against a concrete pin a bare record id is accepted as
-the authored short form and canonicalized to the full path on write, so
-`provider: default` stores as
+`core.substrate.reamde.dev/llmprovider/claude`. Against a concrete pin a bare
+record id is accepted as the authored short form and canonicalized to the full
+path on write, so `provider: default` stores as
 `core.substrate.reamde.dev/llmprovider/default`; unpinned, a bare id names no
 kind and is refused. A path that contradicts its pin is refused naming both
 ends.
 
 Splitting a path back into its two halves needs no registry, because an
-authority always carries a dot and a kind name never does: if the first segment
-has a dot the kind is the first two segments, otherwise it is the first alone,
-and the id is **everything after the kind** — slashes included, since a
-declaration record's id is itself a kind reference
+authority always carries a dot and a kind name never does, and every kind
+carries an authority
+([decision 0042](decisions/0042-every-kind-carries-an-authority.md)): the kind
+is the first two segments and the id is **everything after the kind** — slashes
+included, since a declaration record's id is itself a kind reference
 (`core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev/task` names one
 record).
 

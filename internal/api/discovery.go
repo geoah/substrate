@@ -60,13 +60,13 @@ type registrationInfo struct {
 
 // grammarInfo states the kind grammar in the form a client can check against.
 type grammarInfo struct {
-	// Kind is "<authority>/<name>" for a published kind, "<name>" for a
-	// repository-local one. There is no `local/` prefix.
+	// Kind is "<authority>/<name>": every kind carries an authority
+	// (decision 0042).
 	Kind string `json:"kind"`
 	// Record is a record reference: the kind reference, then the id.
 	Record string `json:"record"`
 	// Collection is the REST collection path under a version prefix: an
-	// authority segment and a plural, or just the plural for a bare kind.
+	// authority segment and the kind name.
 	Collection string `json:"collection"`
 	// Actors is the closed actor domain. The first three are
 	// the doors a request may name in X-Substrate-Actor; the rest are the
@@ -158,9 +158,9 @@ func (h *handler) getDiscovery(w http.ResponseWriter, _ *http.Request) {
 		Changelog: changelogInfo{Horizon: retentionHorizon()},
 		Features:  h.features(),
 		Grammar: grammarInfo{
-			Kind:       "<authority>/<name> | <name>",
-			Record:     "<authority>/<kind>/<id> | <kind>/<id>",
-			Collection: "/api/" + APIVersion + "/{authority}/{plural}[/{id}] | /api/" + APIVersion + "/{plural}[/{id}]",
+			Kind:       "<authority>/<name>",
+			Record:     "<authority>/<kind>/<id>",
+			Collection: "/api/" + APIVersion + "/{authority}/{kind}[/{id}]",
 			Actors: []string{
 				string(substrate.ActorAPI), string(substrate.ActorConsole), string(substrate.ActorCLI),
 				substrate.BundleActorPrefix + "<authority>",

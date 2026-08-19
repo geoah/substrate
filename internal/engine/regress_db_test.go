@@ -136,7 +136,7 @@ func TestSchemaEvolutionRefusesReferenceAndObjectNarrowing(t *testing.T) {
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: evoRefAuthority + "/holder",
 		Properties: map[string]any{
-			"ref":  vocabulary.RecordPath("widget", "w1"),
+			"ref":  vocabulary.RecordPath(evoRefAuthority+"/widget", "w1"),
 			"spec": map[string]any{"a": "x", "b": 5},
 		},
 	})

@@ -304,26 +304,23 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Post("/"+coreAuthority+"/agent/{name}/chat", h.postAgentChat)
 
 			// THE GENERIC RECORD SURFACE. The path IS the kind reference:
-			// {authority}/{kind} for a published kind, {kind} alone for a
-			// repository-local one, and the id after it. An authority is a DNS
-			// name and always carries a dot; a kind name never does, so a
-			// two-segment path is unambiguous — `addressed` is the ONE place
-			// that reads the difference.
+			// {authority}/{kind} for a collection, that plus the id for a
+			// record. Every kind carries an authority (decision 0042), so the
+			// two shapes are told apart by SEGMENT COUNT alone — a two-segment
+			// path is a collection, a three-segment path a record — and
+			// `addressed` is the ONE place that reads it.
 			//
 			// Each method says which shape it serves, and a method sent to the
 			// other shape answers 405 naming the spelling that works. POST at a
 			// two-segment path was bound to createInCollection whatever the path
-			// meant, so a POST to a repository-local RECORD discarded the id and
-			// created one under a server id; PUT was the mirror at a collection.
-			r.Get("/{a1}", h.listCollection)
-			r.Post("/{a1}", h.createInCollection)
-			// A one-segment path is always a collection, so the record methods
-			// bind here only to refuse with the address that works.
-			r.Put("/{a1}", h.putResource)
-			r.Patch("/{a1}", h.patchResource)
-			r.Delete("/{a1}", h.deleteResource)
-
-			r.Get("/{a1}/{a2}", h.getCollectionOrResource)
+			// meant, so a POST to a record discarded the id and created one under
+			// a server id; PUT was the mirror at a collection.
+			//
+			// A one-segment path names no kind, so no route binds it: an unknown
+			// word answers the router's JSON 404 and a wrong method on a
+			// reserved word (`DELETE /graphql`) its JSON 405, never the
+			// console's index.html.
+			r.Get("/{a1}/{a2}", h.listCollection)
 			r.Post("/{a1}/{a2}", h.createInCollection)
 			r.Put("/{a1}/{a2}", h.putResource)
 			r.Patch("/{a1}/{a2}", h.patchResource)
@@ -335,10 +332,13 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Patch("/{a1}/{a2}/{a3}", h.patchResource)
 			r.Delete("/{a1}/{a2}/{a3}", h.deleteResource)
 
-			// Record sub-resources hang off the record, at both address depths.
-			// A static segment beats a parameter in chi's tree, so a record
-			// whose id is literally `incoming` or `edges` is not addressable —
-			// the one corner a separator-free grammar costs (decision 0033).
+			// Record sub-resources hang one level below the id
+			// (`/{authority}/{kind}/{id}/incoming`). A static segment beats a
+			// parameter in chi's tree, so a record whose id is literally
+			// `incoming` or `edges` is shadowed by the sub-resource route a
+			// level up and is refused as an id in both directions
+			// (`reservedRecordID`), keeping the corner symmetric (decision
+			// 0033). The two-segment routes below hold that shadow.
 			r.Get("/{a1}/{a2}/incoming", h.getIncoming)
 			r.Post("/{a1}/{a2}/edges/{rel}", h.linkEdge)
 			r.Delete("/{a1}/{a2}/edges/{rel}", h.unlinkEdge)

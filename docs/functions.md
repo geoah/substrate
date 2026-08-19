@@ -263,9 +263,10 @@ webhook delivery has no changelog entry underneath it, so its envelope carries
 `record`.
 
 **One `kind`, everywhere.** A kind is named by a reference: `<authority>/<name>`
-for a kind some authority publishes (`tasks.substrate.reamde.dev/task`,
-`web.bundles.substrate.reamde.dev/page`), or a bare `<name>` for a kind local to this
-repository. The envelope, the SDK's reads, the SDK's writes and an explicit
+(`tasks.substrate.reamde.dev/task`, `web.bundles.substrate.reamde.dev/page`), and
+every kind carries an authority
+([decision 0042](decisions/0042-every-kind-carries-an-authority.md)). The
+envelope, the SDK's reads, the SDK's writes and an explicit
 `effects` list all spell a kind exactly that one way, so an envelope's
 `change` copies straight into a record reference:
 

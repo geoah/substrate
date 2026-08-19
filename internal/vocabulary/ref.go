@@ -8,23 +8,24 @@ import (
 
 // THE KIND REFERENCE GRAMMAR.
 //
-// A kind is named by a reference:
+// A stored, addressable kind is named by a qualified reference:
 //
-//	<authority>/<name>   a published kind — "tasks.substrate.reamde.dev/task"
-//	<name>               a repository-local kind — "task"
+//	<authority>/<name>   "tasks.substrate.reamde.dev/task"
 //
-// The authority is a DNS name and therefore always carries a dot; a bare name
-// never does, and neither form can carry a "/" inside its parts. So the two
-// forms are distinguishable by inspection, which is why bare and qualified
-// kinds cannot collide and why a REST path can tell an
-// authority segment from a plural one.
+// Every kind carries an authority (decision 0042): the authority is a DNS name
+// and therefore always carries a dot, the name never does, and neither part can
+// carry a "/". A bare name (`task`) is not a stored identity but load-time
+// SHORTHAND — an edge `to:`, a trigger source, a permission allowlist entry —
+// that resolves against the declaring authority to a qualified identity before
+// it is stored or addressed. The helpers below still render and split the bare
+// form because that shorthand relies on them; nothing stores it.
 //
-// A RECORD PATH is the kind reference plus the id: "<authority>/<kind>/<id>"
-// for a qualified kind, "<kind>/<id>" for a bare one. It is the whole stored
-// value of a `reference` property — one flat string, not a pair.
+// A RECORD PATH is the qualified kind reference plus the id:
+// "<authority>/<kind>/<id>". It is the whole stored value of a `reference`
+// property — one flat string, not a pair.
 
 // KindRef renders a kind reference from its parts. An empty authority renders
-// the bare form — there is no `local/` prefix.
+// the bare shorthand form — there is no `local/` prefix.
 func KindRef(authority, name string) string {
 	if authority == "" {
 		return name
@@ -33,7 +34,7 @@ func KindRef(authority, name string) string {
 }
 
 // SplitKindRef splits a kind reference into its authority and its local name.
-// A bare reference answers an empty authority.
+// A bare shorthand reference answers an empty authority.
 func SplitKindRef(ref string) (authority, name string) {
 	if a, n, ok := strings.Cut(ref, "/"); ok {
 		return a, n
@@ -71,22 +72,24 @@ func ValidKindReference(ref string) bool {
 // RecordPath renders a record path: the kind reference, then the id.
 func RecordPath(kind, id string) string { return kind + "/" + id }
 
-// SplitRecordPath splits a record path into its kind reference and its id.
+// SplitRecordPath splits a STORED record path into its kind reference and its
+// id. Every kind carries an authority (decision 0042), so a stored reference
+// value is always "<authority>/<kind>/<id>".
 //
 // The split rests on the KIND GRAMMAR above and on nothing else, so it is
 // deterministic WITHOUT a registry: an authority always carries a dot
 // (naming.go's authorityRE requires at least one dotted label) and a kind NAME
-// never does (wordRE admits letters and digits only). So the FIRST segment
-// decides — with a dot it is an authority and the kind is segments one and two,
-// without one it is a repository-local kind and the kind is segment one.
+// never does (wordRE admits letters and digits only). So the FIRST segment is
+// the authority, the kind is segments one and two, and a dotless first segment
+// is no path at all.
 //
 // The id is EVERYTHING after the kind, slashes included: a DECLARATION record's
 // id is itself a kind reference, so
 // "core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev/task" is one
 // four-segment path naming one record, not a malformed three-segment one.
 //
-// A string that is not a path answers ok=false, which is how an AUTHORED bare
-// id is told from a full path: a declaration id like
+// A string that is not a full path answers ok=false, which is how an AUTHORED
+// bare id is told from a stored path: a declaration id like
 // "tasks.substrate.reamde.dev/task" has a dotted first segment and nothing left
 // after its kind, so it fails here and the reader completes it from the pin.
 func SplitRecordPath(path string) (kind, id string, ok bool) {
@@ -95,7 +98,7 @@ func SplitRecordPath(path string) (kind, id string, ok bool) {
 		return "", "", false
 	}
 	if !strings.Contains(first, ".") {
-		return first, rest, true
+		return "", "", false
 	}
 	name, remainder, split := strings.Cut(rest, "/")
 	if !split || name == "" || remainder == "" {
@@ -140,14 +143,13 @@ func CoreKind(name string) string { return KindRef(AuthorityCore, name) }
 // GraphQLName is the GraphQL object name a kind resolves to, and the ONE place
 // the rule lives. The common case stays a readable name:
 //
-//   - a repository-local kind capitalizes — "task" -> Task;
 //   - a SHIPPED kind keeps its bare singular — "people.substrate.reamde.dev/person" ->
 //     Person;
 //   - an INSTALLED (bundle) kind is authority-prefixed with the leading
 //     label of its authority — "google.bundles.substrate.reamde.dev/person" ->
 //     Google_Person.
 //
-// The underscore keeps installed names in a namespace disjoint from the bare
+// The underscore keeps installed names in a namespace disjoint from the shipped
 // ones, so a bundle can never rename a shipped kind's GraphQL name by
 // colliding with it. Two kinds that still resolve to one name are refused at
 // DECLARATION time (engine), not silently renamed.

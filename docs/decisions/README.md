@@ -186,3 +186,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0039](0039-the-substrate-stores-a-recurrence-rule-and-never-expands-it.md) | The substrate stores a recurrence rule and never expands it | accepted |
 | [0040](0040-the-four-occurrence-logs-say-done.md) | The four occurrence logs all say `done`; `medicationschedulelog` loses its `taken` exception | accepted |
 | [0041](0041-body-is-a-declarable-property-and-fts-is-per-property.md) | Body is a declarable, column-backed text property; FTS follows the property `fts` flag | accepted |
+| [0042](0042-every-kind-carries-an-authority.md) | Every kind carries an authority; the URL disambiguates by segment count | accepted |

@@ -67,8 +67,10 @@ describe("referenceID / referenceCell", () => {
     expect(referenceID("core.substrate.reamde.dev/llmprovider/claude")).toBe(
       "claude"
     )
-    expect(referenceID("task/abc123")).toBe("abc123")
-    expect(referenceCell(["task/a", "task/b"])).toBe("a, b")
+    expect(referenceID("tasks.example.com/task/abc123")).toBe("abc123")
+    expect(
+      referenceCell(["tasks.example.com/task/a", "tasks.example.com/task/b"])
+    ).toBe("a, b")
   })
 
   it("answers nothing for a value that is not a path", () => {

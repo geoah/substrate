@@ -287,10 +287,11 @@ func coerceReferencePath(pin, s string) (any, error) {
 	}
 	kind, id, isPath := vocabulary.SplitRecordPath(s)
 	if pin == "" {
-		// Unpinned there is no kind to borrow, so only a full path says what
-		// this names. A dotted first segment is an AUTHORITY, so "foo.bar/baz"
-		// names the kind `foo.bar/baz` and leaves nothing for the id; "note/abc"
-		// is the local kind `note` and the id `abc`.
+		// Unpinned there is no kind to borrow, so only a full
+		// "<authority>/<kind>/<id>" path says what this names. Every kind
+		// carries an authority (decision 0042), so "foo.bar/baz" leaves nothing
+		// for the id and "note/abc" has a dotless first segment: neither is a
+		// path, and both are refused here.
 		if !isPath {
 			return nil, fmt.Errorf(
 				`a reference to any kind needs a full "<kind>/<id>" path, and %q is not one`, s)
