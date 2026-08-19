@@ -311,6 +311,16 @@ func TestFunctionLoadErrors(t *testing.T) {
 `,
 			want: "data.timeout",
 		},
+		"timeout is whole milliseconds": {
+			data: `  description: d
+  runtime: python
+  timeout: PT0.0005S
+  permissions:
+    writes: [fn.example.com/gadget]
+  source: "def main(input, host): return {}"
+`,
+			want: "sub-millisecond",
+		},
 		"reads.kinds is required": {
 			data: `  description: d
   runtime: python

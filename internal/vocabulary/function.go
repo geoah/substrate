@@ -913,6 +913,15 @@ func (l *loader) boundedDuration(where string, m map[string]any, key string, def
 		l.errf("%s: %s — a duration above zero and at most %s", where, s, FormatISODuration(limit))
 		return 0, false
 	}
+	// The runner enforces the timeout in whole milliseconds (its Spec carries
+	// ms), so a sub-millisecond fraction would truncate: a value under 1ms to
+	// zero, which the runner reads as "unset" and replaces with the default.
+	// Refuse it here so the stored timeout is exactly what runs, the same
+	// millisecond floor the old int `min: 1` gave.
+	if d%time.Millisecond != 0 {
+		l.errf("%s: %s has sub-millisecond precision; the run timeout is enforced in whole milliseconds", where, s)
+		return 0, false
+	}
 	return d, true
 }
 
