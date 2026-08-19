@@ -17,10 +17,10 @@ data:
   traits:
     - temporal(point)
   properties:
-    # one type over the three real shapes: platforms disagree about the
+    # one category over the three real shapes: platforms disagree about the
     # boundaries but messages don't. `type` is the envelope's own word and
-    # never a property name (R4), so this is `kind`.
-    kind:
+    # never a property name (R4), so this is `category`.
+    category:
       type: enum
       values:
         - direct

@@ -61,7 +61,7 @@ data:
     # untyped on purpose: an entry can be derived from a meal, a workout or
     # a blood test, and naming each would couple this authority to every
     # other one.
-    subject:
+    derivedFrom:
       to: any
       description: the meal, workout or blood test this entry was derived
         from

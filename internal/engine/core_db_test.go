@@ -92,7 +92,7 @@ func TestNoopSuppressionAcrossRecords(t *testing.T) {
 	})
 	conv := mustPut(t, ds, gmail, substrate.PutInput{
 		Kind: "conversation", ID: "slack:t1",
-		Properties: map[string]any{"kind": "direct", "name": "Alex", "account": enginetest.AccountType + "/" + acc.ID},
+		Properties: map[string]any{"category": "direct", "name": "Alex", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 
 	// Labels, edges and annotations are all no-op suppressed.
@@ -109,7 +109,7 @@ func TestNoopSuppressionAcrossRecords(t *testing.T) {
 	})
 	mustPut(t, ds, gmail, substrate.PutInput{
 		Kind: "conversation", ID: "slack:t1",
-		Properties: map[string]any{"kind": "direct", "name": "Alex", "account": enginetest.AccountType + "/" + acc.ID},
+		Properties: map[string]any{"category": "direct", "name": "Alex", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	if got := mustGet(t, ds, conv.Kind, conv.ID).Version; got != v {
 		t.Fatalf("identical metadata writes bumped version %d → %d", v, got)
@@ -780,7 +780,7 @@ func TestResurrectDoesNotCascade(t *testing.T) {
 		Properties: map[string]any{"provider": "beeper", "label": "Personal"},
 	})
 	conv := mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "conversation", ID: "beeper:c1", Properties: map[string]any{"kind": "direct", "account": enginetest.AccountType + "/" + acc.ID},
+		Kind: "conversation", ID: "beeper:c1", Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	author := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "person", Properties: map[string]any{"name": "Alex"},
@@ -799,7 +799,7 @@ func TestResurrectDoesNotCascade(t *testing.T) {
 		}
 	}
 	mustPut(t, ds, beeper, substrate.PutInput{
-		Kind: "conversation", ID: conv.ID, Properties: map[string]any{"kind": "direct", "account": enginetest.AccountType + "/" + acc.ID},
+		Kind: "conversation", ID: conv.ID, Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	if got := mustGet(t, ds, conv.Kind, conv.ID); got.DeletedAt != nil {
 		t.Fatal("the conversation should be live again")

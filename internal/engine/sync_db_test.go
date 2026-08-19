@@ -66,7 +66,7 @@ func fullSync(t *testing.T, ds substrate.Dataset) {
 	for i, chat := range []string{"c1", "c2"} {
 		conv := mustPut(t, ds, beeper, substrate.PutInput{
 			Kind: "conversation", ID: extID("slack.channel", chat),
-			Properties: map[string]any{"kind": "direct", "account": enginetest.AccountType + "/" + beeperAcc.ID},
+			Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + beeperAcc.ID},
 			Edges: []substrate.EdgeInput{
 				{Rel: "participants", To: substrate.EdgeRef{ID: humans["alex@acme.com"]}},
 			},
@@ -229,7 +229,7 @@ func TestFinalizersAndOwnerRefGC(t *testing.T) {
 	})
 	conv := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "conversation", ID: "slack-channel:c1",
-		Properties: map[string]any{"kind": "direct", "account": enginetest.AccountType + "/" + acc.ID},
+		Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 	msg := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "conversationmessage", ID: "slack-msg:m1",

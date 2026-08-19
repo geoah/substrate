@@ -21,7 +21,7 @@ data:
       type: string
       required: true
       description: the obligation, one line
-    kind:
+    category:
       type: enum
       description: what sort of obligation it is
       values:
