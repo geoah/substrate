@@ -61,7 +61,9 @@ data:
   # (docs/decisions/0034).
   # version 9: the inline functions' `timeoutMs` (int ms) is `timeout`, the
   # duration datatype (ISO 8601); the retype rides core's function kind bump.
-  version: 9
+  # version 10: the flattener cuts inline data: URIs before the source cap and
+  # backs off out of a link label at the body cap.
+  version: 10
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -2073,11 +2075,15 @@ data:
 
 
     def _flatten(source, host, mid):
-        source = source[:HTML_SOURCE_MAX]
-        # The cuts feed the PARSER only. The tag-strip below reads the source
-        # as it arrived, so a `<!--` inside a script string, which the comment
-        # cut cannot see is quoted, takes the parse down but not the letter.
-        markup = _RE_DATA_URI.sub(r"\1", _RE_COMMENT.sub(" ", source))
+        # The data: cut runs BEFORE the source cap: a single embedded photo
+        # can be larger than the cap on its own, and slicing first would
+        # leave the letter under it outside the slice and base64 inside it.
+        source = _RE_DATA_URI.sub(r"\1", source)[:HTML_SOURCE_MAX]
+        # The comment cut feeds the PARSER only. The tag-strip below reads
+        # the source with its comments, so a `<!--` inside a script string,
+        # which the cut cannot see is quoted, takes the parse down with it
+        # but not the letter.
+        markup = _RE_COMMENT.sub(" ", source)
         parser = _Flatten()
         text, failure, read = "", "", 0
         try:
@@ -2144,20 +2150,33 @@ data:
         # into its target: if that one closes, nothing is dangling, and a `[`
         # anywhere else is the sender's own bracket, not a link.
         shut = body.rfind("](")
-        if shut < 0:
-            return body
-        destination = body[shut + 2:]
-        # The angle form ends at `>)`, and only there: an ordinary `)` inside
-        # it is part of the url, which is why it is wearing the angles.
-        ender = ">)" if destination.startswith("<") else ")"
-        if ender in destination:
-            return body
-        opened = body.rfind("[", 0, shut + 1)
+        if shut >= 0:
+            destination = body[shut + 2:]
+            # The angle form ends at `>)`, and only there: an ordinary `)`
+            # inside it is part of the url, which is why it wears the angles.
+            ender = ">)" if destination.startswith("<") else ")"
+            if ender in destination:
+                return body
+            return _before_bracket(body, shut + 1)
+        # No destination in flight, but the cut can also land inside the
+        # LABEL, before its `](` was ever written. An unclosed `[` is that;
+        # `[External Sender]` in the sender's own words is not.
+        opened = _last_bracket(body, len(body))
+        if opened > 0 and "]" not in body[opened:]:
+            return body[:opened].rstrip()
+        return body
+
+
+    def _last_bracket(body, before):
+        opened = body.rfind("[", 0, before)
         while opened > 0 and body[opened - 1] == "\\":
             opened = body.rfind("[", 0, opened)  # an escaped one in a label
-        if opened > 0:
-            body = body[:opened].rstrip()
-        return body
+        return opened
+
+
+    def _before_bracket(body, before):
+        opened = _last_bracket(body, before)
+        return body[:opened].rstrip() if opened > 0 else body
 
 
     def _attachments(part, out):

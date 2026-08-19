@@ -845,6 +845,80 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 	}
 }
 
+// TestGoogleGmailFlattenerCapsGuardTheBody pins the two body-cap hazards in
+// the html flattener, each of which stored the wrong `text` for a message
+// (#191). The caps are lowered through the source seam so the fixtures stay
+// small; the slice-versus-substitute ORDER and the label back-off are what
+// the assertions turn on.
+func TestGoogleGmailFlattenerCapsGuardTheBody(t *testing.T) {
+	t.Parallel()
+	if testing.Short() {
+		t.Skip("db test")
+	}
+	if _, err := exec.LookPath("uv"); err != nil {
+		t.Skip("uv not on PATH — the closure's contacts body warms through uv at install")
+	}
+	ctx := context.Background()
+	fake := newFakeGmail(t)
+	fake.listed = []string{"mcap", "mlbl"}
+
+	// mcap: a 400-character inline data: URI ahead of the letter, with the
+	// source cap lowered to 200 below. Slicing the source before the data:
+	// substitution leaves the letter past the cut and base64 inside it, so
+	// the message syncs as the head of a payload; the substitution runs first
+	// now and the letter survives.
+	fake.msgs["mcap"] = gmailHTMLMessage("mcap", "t-mcap", "Inline photo",
+		"Bob <bob@example.com>", "ada@example.com",
+		googleMillisAgo(72*time.Hour), "\r\n   \r\n",
+		`<html><body><img src="data:image/png;base64,`+
+			strings.Repeat("A", 400)+`"><p>letter after the photo</p></body></html>`)
+
+	// mlbl: a body longer than the lowered 40-character text cap whose cut
+	// lands inside a link label, before its `](` was written. The old back-off
+	// only knew the destination half of a span and stored `[read the fu`; the
+	// unclosed `[` is backed off now, leaving the padding it wrote before it.
+	fake.msgs["mlbl"] = gmailHTMLMessage("mlbl", "t-mlbl", "Long body",
+		"Bob <bob@example.com>", "ada@example.com",
+		googleMillisAgo(71*time.Hour), "\r\n   \r\n",
+		`<html><body><p>paddingpaddingpaddingpaddi</p>`+
+			`<p><a href="https://example.com/x">read the full report now</a></p>`+
+			`</body></html>`)
+	fake.start(t)
+
+	ds := openInternalDataset(t)
+	googleInstallRewired(t, ds, func(docs []map[string]any) {
+		googlePointGmailAt(docs, fake.ts.URL)
+		googleGmailConst(t, docs, "HTML_SOURCE_MAX = 4000000", "HTML_SOURCE_MAX = 200")
+		googleGmailConst(t, docs, "TEXT_MAX = 8000", "TEXT_MAX = 40")
+	})
+	googleSeedAccount(t, ds, "acct-step")
+
+	s := newGoogleStepper(t, ds, googleGmailFn, googleStepConfig(gmailStepProps(nil)))
+	s.drainApplying(nil)
+
+	capID := substratefn.ExternalID("gmail-message", "acct-step", "mcap")
+	capMirror, err := ds.Get(ctx, googleMessageType, capID)
+	if err != nil {
+		t.Fatalf("inline-photo message did not sync: %v", err)
+	}
+	if got := fmt.Sprint(capMirror.Properties["text"]); got != "letter after the photo" {
+		t.Fatalf("an inline photo past the source cap replaced the body: text = %q", got)
+	}
+
+	lblID := substratefn.ExternalID("gmail-message", "acct-step", "mlbl")
+	lblMirror, err := ds.Get(ctx, googleMessageType, lblID)
+	if err != nil {
+		t.Fatalf("long-body message did not sync: %v", err)
+	}
+	got := fmt.Sprint(lblMirror.Properties["text"])
+	if strings.Contains(got, "[") {
+		t.Fatalf("the body cap cut inside a link label: text = %q", got)
+	}
+	if got != "paddingpaddingpaddingpaddi" {
+		t.Fatalf("the label back-off did not restore the body: text = %q", got)
+	}
+}
+
 // TestGoogleGmailHistoryExpiryAndSweepScope is the regression the plan calls
 // the archive-deletion hazard: only a 404 drops to a full re-read, and the
 // sweep that follows deletes only inside the re-read WINDOW. A message whose
