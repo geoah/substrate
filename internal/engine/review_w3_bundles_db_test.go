@@ -745,7 +745,7 @@ func w3WaiterDoc() map[string]any {
 		"description": "waits for the fence flag",
 		"runtime":     vocabulary.RuntimePython,
 		"source":      w3WaiterSource,
-		"timeoutMs":   20000,
+		"timeout":     "PT20S",
 		"permissions": map[string]any{
 			"writes": []any{mbMessageType},
 			"reads":  map[string]any{"kinds": []any{mbItemType}, "budgets": map[string]any{"calls": 500}},

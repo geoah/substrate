@@ -42,7 +42,9 @@ data:
   # version 7: issue and pullrequest DECLARE `body` (type text) instead of
   # riding the former built-in column, which stops being reserved (#68,
   # docs/decisions/0041). An additive property, so the upgrade is clean.
-  version: 7
+  # version 8: the inline functions' `timeoutMs` (int ms) is `timeout`, the
+  # duration datatype (ISO 8601); the retype rides core's function kind bump.
+  version: 8
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -610,7 +612,7 @@ data:
     and every involved or review-requested issue and pull request — one REST
     page per invocation, never writing back to GitHub.
   runtime: python
-  timeoutMs: 30000
+  timeout: PT30S
   permissions:
     writes:
       - github.bundles.substrate.reamde.dev/user

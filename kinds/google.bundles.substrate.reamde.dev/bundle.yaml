@@ -59,7 +59,9 @@ data:
   # version 7: gmailsync and calendarsync write the shared kinds' `account`
   # as the reference property, not the edge that kind no longer declares
   # (docs/decisions/0034).
-  version: 8
+  # version 9: the inline functions' `timeoutMs` (int ms) is `timeout`, the
+  # duration datatype (ISO 8601); the retype rides core's function kind bump.
+  version: 9
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -519,7 +521,7 @@ data:
     account's OAuth token, emit contact records mapped to persons, and store
     the People sync token for the next incremental run.
   runtime: python
-  timeoutMs: 30000
+  timeout: PT30S
   permissions:
     writes:
       - google.bundles.substrate.reamde.dev/contact
@@ -946,7 +948,7 @@ data:
     person edges carried, raced re-mints merged back into their original persons;
     loop with nextCursor until empty.
   runtime: python
-  timeoutMs: 60000
+  timeout: PT1M
   arguments:
     - name: limit
       type: float
@@ -1490,7 +1492,7 @@ data:
     window), mirror threads and messages, and emit core emailthread and emailmessage
     rows with person-resolved addresses.
   runtime: python
-  timeoutMs: 30000
+  timeout: PT30S
   permissions:
     writes:
       - google.bundles.substrate.reamde.dev/thread
@@ -3062,7 +3064,7 @@ data:
     own sync token, mirror them, and emit core calendar and calendarevent
     rows with person-resolved attendees.
   runtime: python
-  timeoutMs: 30000
+  timeout: PT30S
   permissions:
     writes:
       - google.bundles.substrate.reamde.dev/calendar

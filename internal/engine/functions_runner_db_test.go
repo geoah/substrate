@@ -199,7 +199,7 @@ func TestTriggerTimeoutRetriesThenParks(t *testing.T) {
 	// a wall timeout is not deterministic (load could clear it).
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("stuck", map[string]any{"kinds": []any{widgetType}})},
-		pyFn("stuck", map[string]any{"timeoutMs": 250}, []any{taskType}, `
+		pyFn("stuck", map[string]any{"timeout": "PT0.25S"}, []any{taskType}, `
 import time
 def main(input, host):
     time.sleep(30)

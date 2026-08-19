@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/cel-go/cel"
 
@@ -119,9 +120,11 @@ type Function struct {
 	// the implementation.
 	Runtime string
 	Source  string
-	// TimeoutMs bounds one invocation's wall clock; a timeout rides the
-	// normal retries then parks.
-	TimeoutMs int
+	// Timeout bounds one inline invocation's wall clock, declared as the
+	// `duration` datatype (an ISO 8601 string, PT30S); a timeout rides the
+	// normal retries then parks. The datatype declares no min or max, so the
+	// loader enforces the above-zero floor and the MaxRunTimeout cap.
+	Timeout time.Duration
 	// Input and Output are the optional shape schemas CheckValue validates
 	// against: call-mode arguments are held to Input, a declared Output checks
 	// the returned value. Each is COMPILED from the flat `arguments:`/`returns:`
@@ -194,13 +197,16 @@ type FunctionReads struct {
 // The inline-source bounds: the loader refuses a manifest outside them, so a
 // manifest that loaded always registers.
 const (
-	SourceMaxBytes      = 256 << 10
-	DefaultRunTimeoutMs = 5000
-	MaxRunTimeoutMs     = 60000
-	DefaultReadCalls    = 16
-	MaxReadCalls        = 1000
-	DefaultReadRows     = 500
-	MaxReadRows         = 10000
+	SourceMaxBytes = 256 << 10
+	// DefaultRunTimeout is the inline body's wall clock when `timeout` is
+	// absent; MaxRunTimeout is the cap the loader refuses a longer one against,
+	// standing in for the `min`/`max` the `duration` datatype does not declare.
+	DefaultRunTimeout = 5 * time.Second
+	MaxRunTimeout     = 60 * time.Second
+	DefaultReadCalls  = 16
+	MaxReadCalls      = 1000
+	DefaultReadRows   = 500
+	MaxReadRows       = 10000
 )
 
 // Identity is "<authority>/<name>".
@@ -556,7 +562,7 @@ func checkValue(path string, schema map[string]any, v any) error {
 
 var functionDataKeys = map[string]bool{
 	"authority": true, "description": true, "runtime": true, "source": true,
-	"timeoutMs": true,
+	"timeout": true,
 	// The IO shapes are `data`'s own; the grant is ONE key beside them, holding
 	// the five of functionPermissionKeys.
 	"arguments": true, "returns": true, "permissions": true,
@@ -667,7 +673,7 @@ func (l *loader) parseFunction(d Document) *Function {
 //
 // The host arm refuses three things rather than ignoring them, because each one
 // would look obeyed: a `source` (the engine is the body, so nothing would ever
-// run what was written), a `timeoutMs` (nothing supervises an in-process
+// run what was written), a `timeout` (nothing supervises an in-process
 // built-in on the loop's own clock), and the whole declaration when the build is
 // not the shipped one — a bundle or an owner cannot hand the engine an
 // implementation, so a `host` runtime from any other source names a body that
@@ -683,8 +689,8 @@ func (l *loader) parseFunctionBody(where string, data map[string]any, fn *Functi
 			l.errf("%s: data.source: a host function has no inline body — the engine is the implementation, and the declaration is its card", where)
 			return false
 		}
-		if _, declared := data["timeoutMs"]; declared {
-			l.errf("%s: data.timeoutMs: a host function runs in process under its caller's budgets — there is no child invocation to bound", where)
+		if _, declared := data["timeout"]; declared {
+			l.errf("%s: data.timeout: a host function runs in process under its caller's budgets — there is no child invocation to bound", where)
 			return false
 		}
 		return true
@@ -699,8 +705,8 @@ func (l *loader) parseFunctionBody(where string, data map[string]any, fn *Functi
 		return false
 	}
 	var ok bool
-	if fn.TimeoutMs, ok = l.boundedInt(where+": data.timeoutMs", data, "timeoutMs",
-		DefaultRunTimeoutMs, MaxRunTimeoutMs); !ok {
+	if fn.Timeout, ok = l.boundedDuration(where+": data.timeout", data, "timeout",
+		DefaultRunTimeout, MaxRunTimeout); !ok {
 		return false
 	}
 	return true
@@ -882,6 +888,41 @@ func (l *loader) parseReads(where string, perms map[string]any, fn *Function) bo
 	}
 	fn.Caps.Reads = reads
 	return true
+}
+
+// boundedDuration reads an optional `duration` value (an ISO 8601 string) with
+// a default and a cap. The datatype declares no min or max, so the above-zero
+// floor and the ceiling live here, exactly where the retyped property's old
+// int `min`/`max` were honored.
+func (l *loader) boundedDuration(where string, m map[string]any, key string, def, limit time.Duration) (time.Duration, bool) {
+	v, has := m[key]
+	if !has {
+		return def, true
+	}
+	s, isStr := v.(string)
+	if !isStr {
+		l.errf("%s: %v — an ISO 8601 duration (PT30S, P2DT3H)", where, v)
+		return 0, false
+	}
+	d, err := ParseISODuration(s)
+	if err != nil {
+		l.errf("%s: %v", where, err)
+		return 0, false
+	}
+	if d <= 0 || d > limit {
+		l.errf("%s: %s — a duration above zero and at most %s", where, s, FormatISODuration(limit))
+		return 0, false
+	}
+	// The runner enforces the timeout in whole milliseconds (its Spec carries
+	// ms), so a sub-millisecond fraction would truncate: a value under 1ms to
+	// zero, which the runner reads as "unset" and replaces with the default.
+	// Refuse it here so the stored timeout is exactly what runs, the same
+	// millisecond floor the old int `min: 1` gave.
+	if d%time.Millisecond != 0 {
+		l.errf("%s: %s has sub-millisecond precision; the run timeout is enforced in whole milliseconds", where, s)
+		return 0, false
+	}
+	return d, true
 }
 
 // boundedInt reads an optional positive integer with a default and a cap.

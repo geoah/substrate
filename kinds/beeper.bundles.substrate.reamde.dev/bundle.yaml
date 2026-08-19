@@ -46,7 +46,9 @@ data:
   # version 6: the sync function's `permissions.network` drops the
   # `beeper.com/*` glob for the bare host `beeper.com`, the form the network
   # grammar admits (docs/decisions/0038).
-  version: 7
+  # version 8: the inline functions' `timeoutMs` (int ms) is `timeout`, the
+  # duration datatype (ISO 8601); the retype rides core's function kind bump.
+  version: 8
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block — an oauth2 block would demand a client input, and this
@@ -404,7 +406,7 @@ data:
     rooms and messages page by page, and store the next_batch token for the
     next incremental run. Read-only.
   runtime: python
-  timeoutMs: 30000
+  timeout: PT30S
   permissions:
     writes:
       - beeper.bundles.substrate.reamde.dev/room

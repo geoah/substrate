@@ -45,7 +45,9 @@ data:
   # follow core's declaration.
   # version 5: an agent's sub-agent list is `subagents`, where it was `agents`
   # (issue 51).
-  version: 5
+  # version 6: the inline functions' `timeoutMs` (int ms) is `timeout`, the
+  # duration datatype (ISO 8601); the retype rides core's function kind bump.
+  version: 6
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata:
@@ -100,7 +102,7 @@ data:
   authority: notes.bundles.substrate.reamde.dev
   description: Count the words and characters in a piece of text.
   runtime: python
-  timeoutMs: 5000
+  timeout: PT5S
   arguments:
     - name: text
       type: string
@@ -131,7 +133,7 @@ data:
   authority: notes.bundles.substrate.reamde.dev
   description: Save a note with its title and its counts.
   runtime: python
-  timeoutMs: 5000
+  timeout: PT5S
   arguments:
     - name: id
       type: string

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -111,7 +112,7 @@ func TestNetworkEntryGrammar(t *testing.T) {
 func TestFunctionLoads(t *testing.T) {
 	r, err := loadFnAuthority(t, `  description: mirrors widgets into gadgets
   runtime: python
-  timeoutMs: 250
+  timeout: PT0.25S
   arguments:
     - {name: name, type: string, required: true}
     - {name: count, type: float}
@@ -148,8 +149,8 @@ func TestFunctionLoads(t *testing.T) {
 	if fn.Runtime != vocabulary.RuntimePython || !strings.Contains(fn.Source, "def main") {
 		t.Fatalf("body: %q %q", fn.Runtime, fn.Source)
 	}
-	if fn.TimeoutMs != 250 {
-		t.Fatalf("timeoutMs: %d", fn.TimeoutMs)
+	if fn.Timeout != 250*time.Millisecond {
+		t.Fatalf("timeout: %s", fn.Timeout)
 	}
 	if fn.Input == nil || fn.Output == nil {
 		t.Fatal("input/output schemas lost")
@@ -303,12 +304,22 @@ func TestFunctionLoadErrors(t *testing.T) {
 		"timeout is bounded": {
 			data: `  description: d
   runtime: python
-  timeoutMs: 600000
+  timeout: PT10M
   permissions:
     writes: [fn.example.com/gadget]
   source: "def main(input, host): return {}"
 `,
-			want: "data.timeoutMs",
+			want: "data.timeout",
+		},
+		"timeout is whole milliseconds": {
+			data: `  description: d
+  runtime: python
+  timeout: PT0.0005S
+  permissions:
+    writes: [fn.example.com/gadget]
+  source: "def main(input, host): return {}"
+`,
+			want: "sub-millisecond",
 		},
 		"reads.kinds is required": {
 			data: `  description: d
@@ -521,8 +532,8 @@ func TestFunctionDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if fn.TimeoutMs != vocabulary.DefaultRunTimeoutMs {
-		t.Fatalf("default timeout: %d", fn.TimeoutMs)
+	if fn.Timeout != vocabulary.DefaultRunTimeout {
+		t.Fatalf("default timeout: %s", fn.Timeout)
 	}
 	if fn.Input != nil || fn.Output != nil {
 		t.Fatal("undeclared input/output must stay nil")

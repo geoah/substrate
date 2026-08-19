@@ -34,7 +34,9 @@ data:
   # version 5: `account` on every mirror kind is a pinned owner
   # reference instead of a string, so disconnecting an account collects
   # the rows it synced (docs/decisions/0032).
-  version: 6
+  # version 7: the inline functions' `timeoutMs` (int ms) is `timeout`, the
+  # duration datatype (ISO 8601); the retype rides core's function kind bump.
+  version: 7
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members: the two config types,
@@ -452,7 +454,7 @@ data:
     workouts) over the account's OAuth token, upsert provider-keyed mirror
     records, and stamp the account's lastSyncedAt/syncStatus.
   runtime: python
-  timeoutMs: 30000
+  timeout: PT30S
   permissions:
     writes:
       - whoop.bundles.substrate.reamde.dev/recovery
