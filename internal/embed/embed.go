@@ -15,6 +15,7 @@ import (
 
 	openai "github.com/sashabaranov/go-openai"
 
+	"github.com/geoah/substrate/internal/egress"
 	"github.com/geoah/substrate/internal/providersecret"
 )
 
@@ -131,8 +132,15 @@ func New(cfg Config) (*Client, error) {
 	clientCfg := openai.DefaultConfig(cfg.APIKey)
 	clientCfg.BaseURL = cfg.BaseURL
 	httpClient := &http.Client{Timeout: cfg.Timeout}
+	// The base URL is a repository-chosen address, so the embeddings dial is
+	// confined to public destinations (issue #241). This path drains on a
+	// background ticker, not only on user dispatch, so the gate is the only
+	// thing standing between a chosen URL and the deployment's own network.
+	gated := egress.Transport()
 	if len(cfg.Headers) > 0 {
-		httpClient.Transport = &headerTransport{headers: cfg.Headers}
+		httpClient.Transport = &headerTransport{base: gated, headers: cfg.Headers}
+	} else {
+		httpClient.Transport = gated
 	}
 	clientCfg.HTTPClient = httpClient
 	return &Client{
