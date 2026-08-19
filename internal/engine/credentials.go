@@ -289,9 +289,11 @@ func deriveCredentialKey(key string) ([]byte, error) {
 // retiring old ciphertexts into immutable history; and re-keying touches one
 // table. The engine-minted auth and OAuth refs (passwordRef, totpRef,
 // tokenRef) are the same shape written by their own machinery, and the write
-// path recognizes any value naming an existing sealed row of the same record
-// as a carried ref: a check against server-side state, never trust in caller
-// bytes.
+// path recognizes a value naming an existing sealed row of the same record as
+// a carried ref: a check against server-side state, never trust in caller
+// bytes. That recognition is per-property (storeSecretProps): a value naming a
+// row a DIFFERENT property of the record owns is refused, so two properties
+// cannot share one sealed row (#233).
 //
 // A record hard-deleted outside the OAuth teardown path may orphan its
 // sealed rows; an orphan is encrypted material addressed by nothing, and the

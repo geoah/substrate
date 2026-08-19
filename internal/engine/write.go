@@ -1495,8 +1495,12 @@ func (t *txn) actorMayWriteProp(writer string) bool {
 //     the merge untouched (legacy plaintext is the reseal migration's to
 //     move, not an unrelated patch's);
 //   - an accepted value naming an existing sealed row OF THIS RECORD is a
-//     carried ref: the auth and OAuth machinery insert their material first
-//     and put the ref through here second, in one transaction;
+//     carried ref ONLY for the property that already owns the row, or for a
+//     row inserted in this txn no property owns yet: the auth and OAuth
+//     machinery insert their material first and put the ref through here
+//     second, in one transaction. A value naming a row a DIFFERENT property of
+//     this record owns is refused, so two properties cannot alias one row and
+//     have a rotation of either erase the other (#233);
 //   - an accepted plaintext equal to the current material keeps the current
 //     ref AND leaves the accepted list, so a re-pasted secret neither mints
 //     a delta nor steals the property's manager attribution;
@@ -1529,6 +1533,25 @@ func (t *txn) storeSecretProps(ty *vocabulary.Kind, owner eref, before, row *ero
 		}
 		return ""
 	}
+	// ownerBefore maps each sealed ref a secret property held BEFORE this write
+	// to that property. A carried ref is legitimate only for the property that
+	// already owns the row (the `get -o yaml | apply` round-trip) or for a row
+	// the auth/OAuth machinery inserted for it in this same txn (no property
+	// owns it yet, so it is absent here). A value naming a row a DIFFERENT
+	// property owns is refused rather than stored: two properties on one row
+	// alias, and rotating either runs `DELETE FROM sealed` on the row the other
+	// still points at, erasing live material (#233).
+	ownerBefore := map[string]string{}
+	if before != nil {
+		for _, name := range ty.PropOrder {
+			if !ty.Props[name].Secret() {
+				continue
+			}
+			if v, ok := before.Props[name].(string); ok && v != "" {
+				ownerBefore[v] = name
+			}
+		}
+	}
 	drop := map[string]bool{}
 	for _, name := range ty.PropOrder {
 		if !ty.Props[name].Secret() || !authored[name] {
@@ -1550,6 +1573,10 @@ func (t *txn) storeSecretProps(ty *vocabulary.Kind, owner eref, before, row *ero
 			return nil, err
 		}
 		if carried {
+			if prev, ok := ownerBefore[s]; ok && prev != name {
+				return nil, fmt.Errorf("%w: %s.%s names the sealed secret held by %s: a secret property may not adopt another property's ref",
+					substrate.ErrValidation, ty.Identity, name, prev)
+			}
 			continue
 		}
 		old := beforeRef(name)
@@ -1559,6 +1586,17 @@ func (t *txn) storeSecretProps(ty *vocabulary.Kind, owner eref, before, row *ero
 			cur, err := t.openSealedRef(old)
 			switch {
 			case err == nil:
+				// The compare is constant-time, which closes the timing channel
+				// and not the observable-effect channel: an equal re-paste keeps
+				// the ref and mints no delta, so `get -o yaml | apply` does not
+				// churn a secret's attribution, but a matching guess then bumps
+				// no version and takes no attribution where a wrong guess does
+				// all three. The write path is a one-bit-per-guess equality
+				// oracle for an actor that can write the property but not read it
+				// back (query.go's sensitiveProp records the read-side half of
+				// this trade). Under the single-writer model a token has full
+				// repository access, so this is documented, not closed: keeping
+				// the re-paste no-op is the deliberate side of the trade (#234).
 				if subtle.ConstantTimeCompare(cur, []byte(s)) == 1 {
 					row.Props[name] = old
 					drop[name] = true
