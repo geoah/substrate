@@ -148,11 +148,13 @@ func (t *txn) rebuild(report *RebuildReport, verify bool) error {
 	// The chain check runs INSIDE this transaction, under this lock, over the
 	// exact bytes the replay below will fold (adversarial review, both
 	// passes: a verify on a separate connection blesses a moment, not the
-	// bytes installed).
+	// bytes installed). It is verifyChainAndEpochs, not the chain walk alone,
+	// so the activation epoch's signed head still catches an unsigned prefix
+	// rewritten and re-chained below signed_from_seq (#252).
 	if verify {
 		signing := t.ds.signing()
 		var finding string
-		if _, err := verifyChainCore(t.ctx, t.tx, t.ds.scope.Repository, signing.signedFrom, signing.public,
+		if _, _, err := verifyChainAndEpochs(t.ctx, t.tx, t.ds.scope.Repository, signing.signedFrom, signing.public, 0,
 			func(f string) {
 				if finding == "" {
 					finding = f

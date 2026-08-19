@@ -138,7 +138,7 @@ func (s *service) VerifyRepositoryPinned(ctx context.Context, username string, p
 		}
 		report.Findings = append(report.Findings, f)
 	}
-	res, err := verifyChainCorePinned(ctx, tx, repo.ID, signing.signedFrom, signing.public, pins.HeadSeq, found)
+	res, epochs, err := verifyChainAndEpochs(ctx, tx, repo.ID, signing.signedFrom, signing.public, pins.HeadSeq, found)
 	if err != nil {
 		return report, err
 	}
@@ -147,6 +147,7 @@ func (s *service) VerifyRepositoryPinned(ctx context.Context, username string, p
 	if res.headHash != nil {
 		report.HeadHash = hex.EncodeToString(res.headHash)
 	}
+	report.Epochs = epochs
 
 	// Signing is mandatory; a repository with no activation mark has never
 	// signed anything, and no write path can produce that state any more.
@@ -167,12 +168,6 @@ func (s *service) VerifyRepositoryPinned(ctx context.Context, username string, p
 	if signing.signedFrom > res.head+1 {
 		found(fmt.Sprintf("the activation mark (seq %d) is beyond the head (%d) — signing has been deferred by hand", signing.signedFrom, res.head))
 	}
-	epochs, err := loadEpochs(ctx, tx, repo.ID, signing.public)
-	if err != nil {
-		return report, err
-	}
-	report.Epochs = epochs
-	verifyEpochs(epochs, signing, res.boundaryHash, found)
 
 	// The pins: the caller's out-of-band knowledge, enforced.
 	if pins.PublicKey != "" && pins.PublicKey != report.PublicKey {
@@ -241,16 +236,38 @@ func (r *chainWalkResult) hashAt(seq int64) string {
 	return ""
 }
 
-// verifyChainCore walks the WHOLE chain over any pool or transaction,
-// recomputes every hash from the stored bytes, checks every signature the
-// signing state requires, and hands each finding to found. It is the one
-// implementation: VerifyRepository, rebuild's pre-fold check and reseal's
-// pre-rewrite check all run through here, so "verifies" means the same
-// thing on all three doors.
-func verifyChainCore(ctx context.Context, db dbx, repository string, signedFrom int64, public ed25519.PublicKey, found func(string)) (chainWalkResult, error) {
-	return verifyChainCorePinned(ctx, db, repository, signedFrom, public, 0, found)
+// verifyChainAndEpochs is the whole integrity check the three doors share: the
+// full-chain walk (verifyChainCorePinned) AND the activation-epoch anchor
+// (verifyEpochs) held over the walk's boundaryHash. The core walk alone checks
+// the unsigned prefix (below signed_from_seq, where every entry carries the
+// all-zero signature) only for chain-hash consistency, so a prefix rewritten
+// and re-chained there passes it; the activation epoch's signed head, held
+// against the chain at signed_from_seq-1, is the one check that reaches into
+// that prefix. VerifyRepositoryPinned, reseal's pre-rewrite check and verified
+// rebuild's pre-fold check all run through here so the anchor cannot be
+// present on one door and skipped on another. The returned epochs let a
+// LEGITIMATELY prior-resealed repository still waive the boundary via a signed
+// reseal epoch (verifyEpochs' resealedBelowBoundary), so this refuses
+// tampering without refusing a sanctioned rewrite.
+func verifyChainAndEpochs(ctx context.Context, db dbx, repository string, signedFrom int64, public ed25519.PublicKey, pinSeq int64, found func(string)) (chainWalkResult, []EpochInfo, error) {
+	res, err := verifyChainCorePinned(ctx, db, repository, signedFrom, public, pinSeq, found)
+	if err != nil {
+		return res, nil, err
+	}
+	epochs, err := loadEpochs(ctx, db, repository, public)
+	if err != nil {
+		return res, nil, err
+	}
+	verifyEpochs(epochs, signingState{public: public, signedFrom: signedFrom}, res.boundaryHash, found)
+	return res, epochs, nil
 }
 
+// verifyChainCorePinned walks the WHOLE chain over any pool or transaction,
+// recomputes every hash from the stored bytes, checks every signature the
+// signing state requires, and hands each finding to found. It is the chain
+// half of verifyChainAndEpochs, which is what the three doors call so that
+// "verifies" also means the epoch anchor on all three. pinSeq > 0 additionally
+// captures the stored hash at that seq for the caller's out-of-band pin check.
 func verifyChainCorePinned(ctx context.Context, db dbx, repository string, signedFrom int64, public ed25519.PublicKey, pinSeq int64, found func(string)) (chainWalkResult, error) {
 	var res chainWalkResult
 	res.pinnedSeq = pinSeq

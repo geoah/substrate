@@ -178,14 +178,17 @@ func (t *txn) reseal(report *ResealReport) error {
 	// review, both passes): a reseal re-chains — and on a signed repository
 	// RE-SIGNS — whatever bytes are stored, so run over tampered history it
 	// would launder the tampering into freshly valid hashes and signatures.
-	// It refuses instead. There is deliberately NO force path here: rebuild
-	// installs a fold you can rebuild again, but a reseal mints signatures,
-	// and the sanctioned way to re-attest bytes you have decided to accept
-	// is the backfill (wipe the hashes, reopen), which cannot forge a
-	// signature over the signed range.
+	// It refuses instead. The check is verifyChainAndEpochs, not the chain
+	// walk alone: below signed_from_seq a rewritten and re-chained prefix
+	// passes every hash, so only the activation epoch's signed head, held over
+	// the boundary, still names it (#252). There is deliberately NO force path
+	// here: rebuild installs a fold you can rebuild again, but a reseal mints
+	// signatures, and the sanctioned way to re-attest bytes you have decided
+	// to accept is the backfill (wipe the hashes, reopen), which cannot forge
+	// a signature over the signed range.
 	signing := t.ds.signing()
 	var chainFinding string
-	if _, err := verifyChainCore(t.ctx, t.tx, t.ds.scope.Repository, signing.signedFrom, signing.public,
+	if _, _, err := verifyChainAndEpochs(t.ctx, t.tx, t.ds.scope.Repository, signing.signedFrom, signing.public, 0,
 		func(f string) {
 			if chainFinding == "" {
 				chainFinding = f
