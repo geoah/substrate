@@ -79,8 +79,8 @@ func TestHostFunctionLoadsAsACardAlone(t *testing.T) {
 	if !fn.IsHost() {
 		t.Fatalf("runtime %q is not host", fn.Runtime)
 	}
-	if fn.Source != "" || fn.TimeoutMs != 0 {
-		t.Fatalf("a host function carries a body or a timeout: source=%q timeoutMs=%d", fn.Source, fn.TimeoutMs)
+	if fn.Source != "" || fn.Timeout != 0 {
+		t.Fatalf("a host function carries a body or a timeout: source=%q timeout=%s", fn.Source, fn.Timeout)
 	}
 	// The card is the declaration: the compiled schema is what the model is shown.
 	props, _ := fn.Input["properties"].(map[string]any)
@@ -119,7 +119,7 @@ func TestHostFunctionRefusals(t *testing.T) {
 		"a timeout": {
 			`  description: d
   runtime: host
-  timeoutMs: 250
+  timeout: PT0.25S
 `,
 			"a host function runs in process under its caller's budgets",
 		},

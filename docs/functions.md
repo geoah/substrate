@@ -54,8 +54,9 @@ host call and the call API all address it with.
 - **`runtime`** is `python`, `go`, or [`host`](#host-functions).
 - **`source`** is the inline body (bounded, at most 256 KiB), on an inline
   runtime. A `host` function has none: the engine is its body.
-- **`timeoutMs`** bounds one invocation's wall clock, host calls included
-  (default 5000, max 60000).
+- **`timeout`** bounds one invocation's wall clock, host calls included. It is
+  the `duration` datatype, an ISO 8601 string (`PT30S`); absent defaults to 5s
+  and the loader caps it at 60s.
 - Optional **`arguments:`** and **`returns:`** are the flat named IO: a caller's
   arguments are checked before the body runs, the returned value after.
   [Arguments and returns](#arguments-and-returns) is the whole grammar.

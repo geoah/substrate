@@ -27,7 +27,9 @@ data:
   # version 4: the grants group under one `permissions:` object, and the permission
   # to write is `writes:` inside it. This closure's functions and agents
   # follow core's declaration.
-  version: 5
+  # version 6: the inline functions' `timeoutMs` (int ms) is `timeout`, the
+  # duration datatype (ISO 8601); the retype rides core's function kind bump.
+  version: 6
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -148,7 +150,7 @@ data:
     snippet}. Use for live facts (news, current events) or to find a URL to
     read with scrapepage. Read-only.
   runtime: python
-  timeoutMs: 30000
+  timeout: PT30S
   arguments:
     - name: query
       type: string
@@ -245,7 +247,7 @@ data:
     page is kept as a webdocument (the output's document id); re-scraping
     the same URL updates it.
   runtime: python
-  timeoutMs: 30000
+  timeout: PT30S
   arguments:
     - name: url
       type: string

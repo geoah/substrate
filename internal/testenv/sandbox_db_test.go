@@ -70,7 +70,7 @@ data:
   authority: %s
   description: a sandbox probe
   runtime: python
-  timeoutMs: 20000
+  timeout: PT20S
   permissions:
     writes: [%s/note]%s
   source: |

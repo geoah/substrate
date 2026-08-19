@@ -52,7 +52,9 @@ data:
   # version 7: `account` on every mirror kind is a pinned owner
   # reference instead of a string, so disconnecting an account collects
   # the rows it synced (docs/decisions/0032).
-  version: 8
+  # version 9: the inline functions' `timeoutMs` (int ms) is `timeout`, the
+  # duration datatype (ISO 8601); the retype rides core's function kind bump.
+  version: 9
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -480,7 +482,7 @@ data:
     Sync a Linear account's assigned issues: page viewer.assignedIssues over
     its OAuth token, mirror the viewer/teams/issues, and stamp lastSyncedAt.
   runtime: python
-  timeoutMs: 30000
+  timeout: PT30S
   permissions:
     writes:
       - linear.bundles.substrate.reamde.dev/issue

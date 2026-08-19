@@ -50,7 +50,7 @@ func fnDoc(name string, data map[string]any) map[string]any {
 }
 
 // pyFn renders a python function manifest: the inline body as source, the write
-// permission beside it, `data` carrying any further keys (timeoutMs, arguments,
+// permission beside it, `data` carrying any further keys (timeout, arguments,
 // and a `permissions:` object for the grants beyond writes).
 func pyFn(name string, data map[string]any, writes []any, source string) map[string]any {
 	data["runtime"] = vocabulary.RuntimePython

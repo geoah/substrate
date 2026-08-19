@@ -44,7 +44,11 @@ data:
   # version 11: an argument and a return each require a `type`. The loader
   # refuses an entry whose type it does not recognize, so the requirement
   # moves onto the declaration.
-  version: 12
+  # version 12: `timeoutMs` (an int of milliseconds) became `timeout`, the
+  # `duration` datatype (an ISO 8601 string). The datatype declares no min or
+  # max, so the loader keeps the old 60s cap and 5s default in Go. The bump is
+  # what carries the retype into repositories that stored the int property.
+  version: 13
   names:
     singular: function
   displayTemplate: "{localName}"
@@ -119,11 +123,10 @@ data:
       type: text
       fts: false
       description: the inline body, on an inline runtime
-    timeoutMs:
-      type: int
-      min: 1
-      max: 60000
-      description: what bounds one invocation's wall clock
+    timeout:
+      type: duration
+      description: the inline run's wall-clock bound, an ISO 8601 duration
+        (PT30S); absent defaults to 5s and the loader caps it at 60s
     # The FLAT argument dialect: one level of named arguments, which is what
     # makes a card valid JSON Schema by construction and keeps the value check
     # off a recursion. `json` is the named escape hatch for a value whose shape

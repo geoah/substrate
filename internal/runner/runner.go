@@ -76,8 +76,11 @@ type Spec struct {
 	Repository string
 	Function   string // "<authority>/<name>"
 
-	Runtime   string // vocabulary.RuntimePython | vocabulary.RuntimeGo
-	Source    string
+	Runtime string // vocabulary.RuntimePython | vocabulary.RuntimeGo
+	Source  string
+	// TimeoutMs is the wall-clock bound in milliseconds. The declaration's
+	// source of truth is the `duration` property the loader parses and caps
+	// (vocabulary.Function.Timeout); the engine converts it to ms here.
 	TimeoutMs int
 	// The read capability: the allowlist and budget every host call is held
 	// to. Empty ReadTypes means the body declared no reads: list and search
@@ -197,7 +200,7 @@ func sortedKeys(m map[string]string) []string {
 func (s Spec) timeout() time.Duration {
 	ms := s.TimeoutMs
 	if ms <= 0 {
-		ms = vocabulary.DefaultRunTimeoutMs
+		return vocabulary.DefaultRunTimeout
 	}
 	return time.Duration(ms) * time.Millisecond
 }

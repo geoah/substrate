@@ -61,7 +61,9 @@ data:
   # version 5: `account` on every mirror kind is a pinned owner
   # reference instead of a string, so disconnecting an account collects
   # the rows it synced (docs/decisions/0032).
-  version: 6
+  # version 7: the inline functions' `timeoutMs` (int ms) is `timeout`, the
+  # duration datatype (ISO 8601); the retype rides core's function kind bump.
+  version: 7
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members. NO `oauth2:` manifest
@@ -409,7 +411,7 @@ data:
     the config's integration token, skip unchanged last_edited_times, stamp
     the account when the walk completes.
   runtime: python
-  timeoutMs: 60000
+  timeout: PT1M
   arguments:
     - name: account
       type: string
