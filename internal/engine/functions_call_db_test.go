@@ -333,7 +333,7 @@ func TestRunRetentionKeepsFailuresPrunesSuccesses(t *testing.T) {
 	if len(parked) != 1 {
 		t.Fatalf("parked runs: %d — failures are kept", len(parked))
 	}
-	wantRecord := widgetType + "/" + poisoned.ID
+	wantRecord := poisoned.ID
 	if parked[0].Properties["record"] != wantRecord {
 		t.Fatalf("parked run names %v, want %s", parked[0].Properties["record"], wantRecord)
 	}

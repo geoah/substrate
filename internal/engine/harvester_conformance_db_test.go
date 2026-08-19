@@ -294,7 +294,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		  AND props->>'trigger' = $2 AND props->>'record' = $3
 		ORDER BY created_at DESC, id DESC LIMIT 1`,
 		typeRun, vocabulary.RecordPath(typeTrigger, "web-findurls-on-message"),
-		vocabulary.RecordPath(convMsgType, denyMsg.ID)).Scan(&denyStatus); err != nil {
+		denyMsg.ID).Scan(&denyStatus); err != nil {
 		t.Fatalf("the deny-only findurls run: %v", err)
 	}
 	if denyStatus != runStatusOK {

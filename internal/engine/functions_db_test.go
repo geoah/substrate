@@ -326,7 +326,7 @@ func TestTriggerWhenGuard(t *testing.T) {
 	}
 	// And the skip is a settled attempt in the run ledger.
 	skips := runRowsOf(t, ds, trigID("guarded"), "skipped")
-	if len(skips) != 1 || skips[0].Properties["record"] != widgetType+"/"+other.ID {
+	if len(skips) != 1 || skips[0].Properties["record"] != other.ID {
 		t.Fatalf("skip runs: %+v", skips)
 	}
 }
