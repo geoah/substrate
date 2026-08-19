@@ -131,6 +131,7 @@ func attachProblemExtensions(result *graphql.Result) {
 		ext := map[string]any{"code": p.Code, "message": p.Message}
 		if len(p.Problems) > 0 {
 			ext["problems"] = p.Problems
+			ext["problemDetails"] = p.ProblemDetails
 		}
 		result.Errors[i].Extensions = ext
 	}

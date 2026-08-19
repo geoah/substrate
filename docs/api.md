@@ -516,6 +516,11 @@ batch or a multi-part validation refuses:
 {"error": {"code": "validation", "message": "…", "problems": ["…"]}}
 ```
 
+Each problem is a `path: message` string (`props.name: required`). A
+`problemDetails` array carries the same list split into `{path, message}`
+objects, so a form maps a problem to the input it concerns without parsing the
+prose; `problems` stays beside it for readers that do not need the split.
+
 The code set is closed. The client-error codes:
 
 | Code           | HTTP | When                                                                                             |
@@ -530,8 +535,10 @@ The code set is closed. The client-error codes:
 | `rate_limited` | 429  | Slow down; the response carries `Retry-After`.                                                   |
 
 The server-error family is split so a client can tell "try again" from "never
-going to work": `internal` (500, an unexpected fault), `unsupported` (501, a
-feature this deployment does not offer, the thing `GET
+going to work": `internal` (500, an unexpected fault), `function_failed` (500, a
+callable's body faulted while running, distinct from `validation` so a caller
+tells its own bad arguments from the function failing to execute), `unsupported`
+(501, a feature this deployment does not offer, the thing `GET
 /.well-known/substrate/server.json` detection replaces), and `unavailable`
 (503, always with a `Retry-After`). One
 case is worth calling out: a well-formed token whose repository cannot be
@@ -548,7 +555,7 @@ One more code lives on the changelog surface: `compacted` (410) answers a
 telling a consumer that has fallen too far behind to re-list rather than
 silently miss rows.
 
-Every code a request can receive is above; those twelve strings are the whole
+Every code a request can receive is above; those thirteen strings are the whole
 closed set, and nothing else appears in `error.code`. The
 [policy door](agents.md#the-policy-door)'s `gate` verdict is not one of them: it
 holds an agent's write for the owner's review and surfaces as a tool result

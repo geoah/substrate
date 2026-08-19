@@ -10,7 +10,7 @@
  * repository-local one — the collection segment is the kind name. */
 
 import { getToken, sessionExpired } from "./session"
-import { ApiError, type ErrorCode } from "./types"
+import { ApiError, type ErrorCode, type ProblemDetail } from "./types"
 
 export const API_BASE = "/api/v1"
 
@@ -71,12 +71,26 @@ export function envelopeError(
 ): ApiError {
   const err = (
     body as
-      | { error?: { code?: string; message?: string; problems?: string[] } }
+      | {
+          error?: {
+            code?: string
+            message?: string
+            problems?: string[]
+            problemDetails?: ProblemDetail[]
+          }
+        }
       | undefined
   )?.error
   const code = (err?.code ?? fallbackCode(status)) as ErrorCode
   const message = err?.message ?? `request failed (${status})`
-  return new ApiError(code, message, status, err?.problems ?? [], retryAfter)
+  return new ApiError(
+    code,
+    message,
+    status,
+    err?.problems ?? [],
+    err?.problemDetails ?? [],
+    retryAfter
+  )
 }
 
 export async function request<T>(

@@ -9,12 +9,51 @@ package engine_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 )
+
+// A body that raises is a server-side execution fault, not invalid caller
+// input: it surfaces as ErrFunctionFault (500 function_failed), while
+// arguments that fail the declared input schema stay ErrValidation (422).
+func TestBodyFaultIsNotValidation(t *testing.T) {
+	t.Parallel()
+	boom := pyFn("boom", map[string]any{
+		"arguments": []any{
+			map[string]any{"name": "title", "type": "string", "required": true},
+		},
+	}, []any{taskType}, `
+def main(input, host):
+    raise Exception("body exploded")
+`)
+	_, ops := newFnDataset(t, nil, boom)
+	ctx := context.Background()
+
+	// Valid input, faulting body: the run reached the body and it raised.
+	_, _, err := ops.CallFunction(ctx, fnAuthority+"/boom", map[string]any{"title": "ok"})
+	if err == nil {
+		t.Fatal("a raising body returned no error")
+	}
+	if !errors.Is(err, substrate.ErrFunctionFault) {
+		t.Fatalf("body fault is %v, want ErrFunctionFault", err)
+	}
+	if errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("body fault still matches ErrValidation: %v", err)
+	}
+
+	// Missing the required argument refuses BEFORE the body runs, as validation.
+	_, _, err = ops.CallFunction(ctx, fnAuthority+"/boom", map[string]any{})
+	if !errors.Is(err, substrate.ErrValidation) {
+		t.Fatalf("missing required input is %v, want ErrValidation", err)
+	}
+	if errors.Is(err, substrate.ErrFunctionFault) {
+		t.Fatalf("input validation leaked the function-fault code: %v", err)
+	}
+}
 
 // adderFn is a pure callable with declared shapes: takes {title}, writes one
 // task, answers {id}.

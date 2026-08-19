@@ -425,7 +425,10 @@ func (ds *dataset) CallFunction(ctx context.Context, name string, args any) (any
 		IdempotencyKey: fmt.Sprintf("%s/%s/call/%s", ds.Repository().Name, fn.Identity(), callID),
 	})
 	if err != nil {
-		return nil, 0, fmt.Errorf("%w: %w", substrate.ErrValidation, err)
+		// The body ran and faulted (a raise, a bad effect, a failed sub-call).
+		// That is a server-side execution fault, NOT the caller's input failing
+		// the declared schema, which is checked above and stays ErrValidation.
+		return nil, 0, fmt.Errorf("%w: %w", substrate.ErrFunctionFault, err)
 	}
 	// A declared Output validates even a nil answer (`any` stays open): the
 	// shape contract holds before any effect commits.

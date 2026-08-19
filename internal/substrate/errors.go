@@ -20,6 +20,12 @@ var (
 	// is not a wire error code (0037).
 	ErrGated = errors.New("substrate: held for review")
 	ErrAuth  = errors.New("substrate: authentication failed")
+	// ErrFunctionFault marks a callable that failed WHILE ITS BODY RAN — a
+	// raise, a bad effect, a failed sub-call. It is distinct from ErrValidation,
+	// which is the caller's arguments failing the declared input schema before
+	// the body runs. A body fault is a server-side execution fault (500
+	// function_failed), never invalid caller input (422).
+	ErrFunctionFault = errors.New("substrate: function body failed")
 )
 
 // ValidationError carries per-field detail for the UI's YAML editor.
