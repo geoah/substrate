@@ -34,10 +34,9 @@ data:
   # version 12: `selector.kinds` takes the trigger source's glob grammar
   # (`<authority>/*` and `*`), `action` is required by the write door, and the
   # two judge thresholds say which verdict each one reads.
-  version: 12
+  version: 13
   names:
     singular: recordpatchpolicy
-    plural: recordpatchpolicies
   displayTemplate: "{action}: {localName}"
   properties:
     # Which writes this policy speaks for. Empty lists match everything of

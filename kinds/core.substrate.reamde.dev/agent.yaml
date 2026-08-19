@@ -51,10 +51,9 @@ data:
   # version 12: `params.temperature` carries `min: 0` and `max: 2`, the bounds
   # the provider row's `defaults.temperature` already declares. The agent
   # value overrides the provider's, so the two are held to one range.
-  version: 12
+  version: 13
   names:
     singular: agent
-    plural: agents
   displayTemplate: "{localName}"
   properties:
     # Every declaration carries its own version: the declaring authority's,

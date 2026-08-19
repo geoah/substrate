@@ -33,7 +33,7 @@ data:
   # version 4: the grants group under one `permissions:` object, and the permission
   # to write is `writes:` inside it. This closure's functions and agents
   # follow core's declaration.
-  version: 5
+  version: 6
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -87,7 +87,6 @@ data:
     produced.
   names:
     singular: config
-    plural: configs
   properties:
     denyDomains:
       type: string
@@ -116,7 +115,6 @@ data:
     Its id is a hash of the URL, so re-harvesting updates one row.
   names:
     singular: page
-    plural: pages
   properties:
     url:
       type: string

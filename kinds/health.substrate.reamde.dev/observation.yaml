@@ -11,7 +11,6 @@ data:
     is a habit or check-in, and its timeline span is the series.
   names:
     singular: observation
-    plural: observations
   displayTemplate: "{name}"
   # the timeline span is the SERIES: `at` seeds the recurrence (its DTSTART)
   # and `endsAt` closes it. A definition with no recurrence may omit both.

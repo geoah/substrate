@@ -34,7 +34,7 @@ data:
   # version 5: `account` on every mirror kind is a pinned owner
   # reference instead of a string, so disconnecting an account collects
   # the rows it synced (docs/decisions/0032).
-  version: 5
+  version: 6
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members: the two config types,
@@ -120,7 +120,6 @@ data:
     The endpoints and the feature-to-scope mapping are manifest metadata.
   names:
     singular: config
-    plural: configs
   traits: [oauth2]
   displayTemplate: "WHOOP client {clientId}"
   properties:
@@ -152,7 +151,6 @@ data:
     sync and how often the scheduled tick asks.
   names:
     singular: account
-    plural: accounts
   traits: [accountconfig]
   displayTemplate: "{email}"
   properties:
@@ -285,7 +283,6 @@ data:
     row, and the calendar date is display data, not identity.
   names:
     singular: recovery
-    plural: recoveries
   displayTemplate: "Recovery {date}"
   properties:
     # NOT a reference, and every `account:` in this closure reads the same way:
@@ -337,7 +334,6 @@ data:
     it a nap, the performance percentage and how long was spent in each stage.
   names:
     singular: sleep
-    plural: sleeps
   displayTemplate: "Sleep {start}"
   properties:
     account:
@@ -390,7 +386,6 @@ data:
     burned in kcal converted from WHOOP's kilojoules.
   names:
     singular: workout
-    plural: workouts
   displayTemplate: "{sport}"
   properties:
     account:

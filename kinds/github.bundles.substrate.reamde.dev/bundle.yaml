@@ -39,7 +39,7 @@ data:
   # version 5: `account` on every mirror kind is a pinned owner
   # reference instead of a string, so disconnecting an account collects
   # the rows it synced (docs/decisions/0032).
-  version: 5
+  version: 6
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -133,7 +133,6 @@ data:
     than editable rows.
   names:
     singular: config
-    plural: configs
   traits: [oauth2]
   displayTemplate: "GitHub app {clientId}"
   properties:
@@ -166,7 +165,6 @@ data:
     are derived from them.
   names:
     singular: account
-    plural: accounts
   traits: [accountconfig]
   # The public email when GitHub exposes one, else the connector-stamped
   # login — a private-email account never renders as a blank row
@@ -315,7 +313,6 @@ data:
     and the same human's address-book contact converge on one record.
   names:
     singular: user
-    plural: users
   displayTemplate: "{name|login}"
   properties:
     # NOT a reference, and every `account:` in this closure reads the same way:
@@ -381,7 +378,6 @@ data:
     always resolves.
   names:
     singular: repository
-    plural: repositories
   displayTemplate: "{fullName}"
   properties:
     account:
@@ -447,7 +443,6 @@ data:
     it.
   names:
     singular: issue
-    plural: issues
   properties:
     account:
       type: reference
@@ -515,7 +510,6 @@ data:
     closed beats draft beats open — and stays a plain string GitHub owns.
   names:
     singular: pullrequest
-    plural: pullrequests
   properties:
     account:
       type: reference

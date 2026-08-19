@@ -11,7 +11,6 @@ data:
     their schedule the same way, just without a scheduledAt.
   names:
     singular: medicationschedulelog
-    plural: medicationschedulelogs
   displayTemplate: "{status}"
   # `at` is when the dose was actually taken or the skip was recorded.
   # `occurrencelog` contracts status/scheduledAt/details and the

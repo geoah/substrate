@@ -40,10 +40,9 @@ data:
   # `mode`, `status`, `agentDepth`, `startedAt`) are required. The `parent`
   # inverse label is `subagentThreads`, the spelling the rest of the subagent
   # vocabulary uses.
-  version: 9
+  version: 10
   names:
     singular: llmthread
-    plural: llmthreads
   displayTemplate: "{agent}: {status}"
   # No index on `agent`: a reference filters by containment, which rides the
   # repository-wide GIN index on props.

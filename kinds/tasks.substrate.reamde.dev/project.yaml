@@ -10,7 +10,6 @@ data:
     lives on the tasks themselves.
   names:
     singular: project
-    plural: projects
   displayTemplate: "{name}"
   properties:
     name:

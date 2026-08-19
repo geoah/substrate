@@ -41,10 +41,9 @@ data:
   # given its own baseURL and apiKey.
   # version 6: `wire` is required. A row names no default wire, and dispatch
   # refuses one without it, so the requirement moves to the write.
-  version: 6
+  version: 7
   names:
     singular: llmprovider
-    plural: llmproviders
   displayTemplate: "{name} ({wire})"
   properties:
     name:

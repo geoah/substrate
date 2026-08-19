@@ -14,10 +14,9 @@ data:
   # decision transitions stamped it as an undeclared string before.
   # version 11: a display template, so a random-id request reads as the
   # decision and the pair it proposes instead of its opaque id.
-  version: 11
+  version: 12
   names:
     singular: recordmergerequest
-    plural: recordmergerequests
   displayTemplate: "{decision}: {winner} + {loser}"
   # recordpatchrequest's sibling: the envelope a suggested merge travels in
   # before anyone has agreed to it. A function (the dupe detector) or an app

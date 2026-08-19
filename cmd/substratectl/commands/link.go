@@ -45,9 +45,9 @@ func (a *app) linkCommand() *cobra.Command {
 The target is a bare id where the edge declaration pins a single target kind,
 or the qualified form <authority>/<name>:<id> for a to:any edge. Edge
 properties are set with --prop key=value.`,
-		Example: `  substratectl link tasks t9 project pr3
-  substratectl link tasks t9 source messaging.substrate.reamde.dev/conversationmessage:m7
-  substratectl link people 9f2k memberOf c3`,
+		Example: `  substratectl link task t9 project pr3
+  substratectl link task t9 source messaging.substrate.reamde.dev/conversationmessage:m7
+  substratectl link person 9f2k memberOf c3`,
 		Args: cobra.ExactArgs(4),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -95,8 +95,8 @@ func (a *app) unlinkCommand() *cobra.Command {
 		Long: `Remove an outgoing edge {rel} from a source record to a target.
 
 The target syntax matches ` + "`link`" + `: a bare id, or <authority>/<name>:<id>.`,
-		Example: `  substratectl unlink tasks t9 project pr3
-  substratectl unlink tasks t9 source messaging.substrate.reamde.dev/conversationmessage:m7`,
+		Example: `  substratectl unlink task t9 project pr3
+  substratectl unlink task t9 source messaging.substrate.reamde.dev/conversationmessage:m7`,
 		Args: cobra.ExactArgs(4),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()

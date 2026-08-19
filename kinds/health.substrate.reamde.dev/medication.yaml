@@ -10,7 +10,6 @@ data:
     When and how much lives on its medicationschedules.
   names:
     singular: medication
-    plural: medications
   displayTemplate: "{name}"
   properties:
     name:

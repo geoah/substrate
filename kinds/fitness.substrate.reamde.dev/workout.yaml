@@ -11,7 +11,6 @@ data:
     land here as the session's totals.
   names:
     singular: workout
-    plural: workouts
   displayTemplate: "{name}"
   # a single session spans `at` to `endsAt`; on a recurring plan `at` seeds
   # the RRULE and `endsAt` closes the series.

@@ -10,7 +10,6 @@ data:
     to put every edge and property back where it came from.
   names:
     singular: recordsplit
-    plural: recordsplits
   # A random-id row reads as the merge it undoes instead of its opaque id.
   displayTemplate: "{merge}"
   properties:

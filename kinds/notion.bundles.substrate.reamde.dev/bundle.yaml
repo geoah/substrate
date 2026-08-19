@@ -61,7 +61,7 @@ data:
   # version 5: `account` on every mirror kind is a pinned owner
   # reference instead of a string, so disconnecting an account collects
   # the rows it synced (docs/decisions/0032).
-  version: 5
+  version: 6
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members. NO `oauth2:` manifest
@@ -107,7 +107,6 @@ data:
     so an owner edit cannot become an exfiltration channel.
   names:
     singular: config
-    plural: configs
   displayTemplate: "Notion integration"
   properties:
     integrationToken:
@@ -153,7 +152,6 @@ data:
     health reads off the sync's own status instead.
   names:
     singular: account
-    plural: accounts
   traits: [accountconfig]
   displayTemplate: "{displayName}"
   properties:
@@ -276,7 +274,6 @@ data:
     sync compares to decide whether anything changed.
   names:
     singular: page
-    plural: pages
   properties:
     # NOT a reference, and every `account:` in this closure reads the same way:
     # the connector writes it as provenance on synced rows, and retyping a live
@@ -351,7 +348,6 @@ data:
     too.
   names:
     singular: database
-    plural: databases
   properties:
     account:
       type: reference

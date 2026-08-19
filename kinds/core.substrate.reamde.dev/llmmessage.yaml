@@ -37,10 +37,9 @@ data:
   # version 9: the constructor invariants. Every row the loop writes carries a
   # `role` and a `turn`, so both are required, and a turn counts from 0, so it
   # carries `min: 0`.
-  version: 9
+  version: 10
   names:
     singular: llmmessage
-    plural: llmmessages
   displayTemplate: "{role} #{turn}"
   properties:
     role:

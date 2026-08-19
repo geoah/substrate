@@ -31,10 +31,9 @@ data:
   # gated request can write the selector that matches it.
   # version 12: a display template, and `targetVersion` carries `min: 1`, since
   # a record's first version is 1 and a CAS assertion below it names none.
-  version: 12
+  version: 13
   names:
     singular: recordpatchrequest
-    plural: recordpatchrequests
   displayTemplate: "{decision}: {target|targetId}"
   # the envelope a change travels in before anyone has agreed to it: a
   # learner or an app writes one, the owner decides, and accepting it is

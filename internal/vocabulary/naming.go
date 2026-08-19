@@ -61,7 +61,7 @@ const MaxIDLen = 128
 // ValidAuthority reports whether s is a legal DNS-style authority name.
 func ValidAuthority(s string) bool { return reAuthority.MatchString(s) }
 
-// ValidName reports whether s is a legal type name or plural.
+// ValidName reports whether s is a legal kind name.
 func ValidName(s string) bool { return reWord.MatchString(s) }
 
 // ValidCamel reports whether s is a legal declared name — property, edge or

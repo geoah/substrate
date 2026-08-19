@@ -12,10 +12,9 @@ data:
   # The declaration inherited the authority's version before this pin.
   # version 4: `shippedAt` and `deliveredAt` are declared properties
   # (datetime). The transitions stamped them as undeclared strings before.
-  version: 4
+  version: 5
   names:
     singular: order
-    plural: orders
   displayTemplate: "{name}"
   # `at` is when the order was placed.
   traits:

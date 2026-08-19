@@ -22,7 +22,7 @@ metadata:
 data:
   # version 3: `calendareventseries` binds `recurring`, replacing the copied
   # recurrence/exdates/timezone triple (#122).
-  version: 3
+  version: 4
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A VOCABULARY bundle (see people.substrate.reamde.dev): kinds only, imported from the

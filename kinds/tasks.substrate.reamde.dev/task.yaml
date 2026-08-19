@@ -16,10 +16,9 @@ data:
   # built-in title slot, which is not a kind's storage (#123).
   # version 5: binds the `recurring` trait, which contracts the
   # recurrence/exdates/timezone triple this kind already declared (#122).
-  version: 5
+  version: 6
   names:
     singular: task
-    plural: tasks
   traits:
     - "temporal(point: dueAt)"
     - recurring

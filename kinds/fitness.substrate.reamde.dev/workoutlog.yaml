@@ -11,7 +11,6 @@ data:
     lives on the workout's sets, not here.
   names:
     singular: workoutlog
-    plural: workoutlogs
   displayTemplate: "{status}"
   # `at` is when the occurrence was done or the skip was recorded.
   # `occurrencelog` contracts status/scheduledAt/details and the

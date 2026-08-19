@@ -43,7 +43,7 @@ data:
   # version 3: the grants group under one `permissions:` object, and the permission
   # to write is `writes:` inside it. This closure's functions and agents
   # follow core's declaration.
-  version: 3
+  version: 4
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata:
@@ -73,7 +73,6 @@ data:
     by the savenote function, never by hand.
   names:
     singular: note
-    plural: notes
   properties:
     text:
       type: string

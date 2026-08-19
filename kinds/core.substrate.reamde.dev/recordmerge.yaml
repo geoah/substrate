@@ -11,7 +11,6 @@ data:
     a split.
   names:
     singular: recordmerge
-    plural: recordmerges
   # A random-id row reads as the pair it joined instead of its opaque id.
   displayTemplate: "{winner} ← {loser}"
   # command-as-record: creating a merge performs it (§6), so it is not a

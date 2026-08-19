@@ -59,7 +59,7 @@ data:
   # version 7: gmailsync and calendarsync write the shared kinds' `account`
   # as the reference property, not the edge that kind no longer declares
   # (docs/decisions/0034).
-  version: 7
+  version: 8
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -158,7 +158,6 @@ data:
     never properties on this row.
   names:
     singular: config
-    plural: configs
   traits: [oauth2]
   displayTemplate: "Google client {clientId}"
   properties:
@@ -193,7 +192,6 @@ data:
     per-calendar cursor, which lives on the calendar row.
   names:
     singular: account
-    plural: accounts
   traits: [accountconfig]
   displayTemplate: "{email}"
   properties:
@@ -417,7 +415,6 @@ data:
     a contact and a mail sender end up on the same human.
   names:
     singular: contact
-    plural: contacts
   displayTemplate: "{name.displayName}"
   properties:
     # The account this contact belongs to: the mark-and-sweep filters this
@@ -1228,7 +1225,6 @@ data:
     a contact is.
   names:
     singular: emailaddress
-    plural: emailaddresses
   displayTemplate: "{displayName|address}"
   properties:
     account:
@@ -1302,7 +1298,6 @@ data:
     newest-wins, so a backfill walking a mailbox backwards cannot stale them.
   names:
     singular: thread
-    plural: threads
   displayTemplate: "{subject|threadId}"
   properties:
     account:
@@ -1365,7 +1360,6 @@ data:
     the frame cap.
   names:
     singular: message
-    plural: messages
   displayTemplate: "{subject|messageId}"
   properties:
     account:
@@ -2860,7 +2854,6 @@ data:
     can never skip another calendar's tail.
   names:
     singular: calendar
-    plural: calendars
   displayTemplate: "{summary|calendarId}"
   properties:
     account:
@@ -2933,7 +2926,6 @@ data:
     no properties.
   names:
     singular: event
-    plural: events
   displayTemplate: "{summary|eventId}"
   properties:
     account:

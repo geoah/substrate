@@ -30,10 +30,9 @@ data:
   # a delivery parked at the causal depth cap burns none. A display template
   # reads a random-id row as its outcome. `error` is renamed `reason`, the word
   # `llmthread` already uses for why a non-success run settled.
-  version: 12
+  version: 13
   names:
     singular: run
-    plural: runs
   displayTemplate: "{status}: {callable}"
   indices:
     - properties:

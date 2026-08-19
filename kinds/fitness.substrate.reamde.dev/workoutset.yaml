@@ -10,7 +10,6 @@ data:
     itself stay thin.
   names:
     singular: workoutset
-    plural: workoutsets
   displayTemplate: "{number}"
   # `at` is when the set was performed, for pacing between sets.
   traits:

@@ -24,10 +24,9 @@ data:
   # number. Additive, so live refinements are untouched.
   # version 8: an admitted value may be marked `deprecated` (issue 110):
   # reserved, stored, and read by no server-side path.
-  version: 8
+  version: 9
   names:
     singular: propertytype
-    plural: propertytypes
   # id = "<authority>/<name>". A refinement is authority-local — a property type is
   # only usable inside the authority that declares it.
   displayTemplate: "{localName}"

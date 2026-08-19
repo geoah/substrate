@@ -11,7 +11,6 @@ data:
     contacts under one is deliberate.
   names:
     singular: organization
-    plural: organizations
   # one type for every corporate body — which of the many it is (employer,
   # workspace, publisher, studio, network, label) depends on the edge
   # pointing at it, exactly as with roles on `person`.

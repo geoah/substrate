@@ -590,7 +590,6 @@ type Kind struct {
 	Name      string
 	Authority string
 	Identity  string
-	Plural    string
 	Version   int64
 	Source    string // "builtin" | "installed"
 	// Description is what this kind is for, in the author's own words: it
@@ -780,7 +779,6 @@ type Registry struct {
 	order       []string
 	byIdent     map[string]*Kind
 	byName      map[string][]*Kind
-	byPlural    map[string]*Kind // "authority/plural"
 	version     int64
 }
 
@@ -790,7 +788,6 @@ func NewRegistry() *Registry {
 		authorities: map[string]*Authority{},
 		byIdent:     map[string]*Kind{},
 		byName:      map[string][]*Kind{},
-		byPlural:    map[string]*Kind{},
 	}
 }
 
@@ -809,9 +806,6 @@ func (r *Registry) Clone() *Registry {
 	}
 	for k, v := range r.byName {
 		c.byName[k] = append([]*Kind(nil), v...)
-	}
-	for k, v := range r.byPlural {
-		c.byPlural[k] = v
 	}
 	c.version = r.version
 	return c
@@ -925,14 +919,6 @@ func (r *Registry) ByIdentity(identity string) (*Kind, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	t, ok := r.byIdent[identity]
-	return t, ok
-}
-
-// ByPlural resolves a REST collection segment inside an authority.
-func (r *Registry) ByPlural(authority, plural string) (*Kind, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	t, ok := r.byPlural[authority+"/"+plural]
 	return t, ok
 }
 

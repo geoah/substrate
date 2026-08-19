@@ -24,10 +24,9 @@ data:
   # `digest` and `createdBy` on every manifest, so both are required, and a
   # byte length is never negative, so `size` carries `min: 0`. `size` stays
   # optional: a pending manifest omits it until the bytes land.
-  version: 4
+  version: 5
   names:
     singular: blob
-    plural: blobs
   # The name if it has one, the digest if it doesn't: a blob reads as
   # "invoice.pdf", not as 76 characters of sha-256.
   displayTemplate: "{name|digest}"

@@ -17,12 +17,10 @@ data:
   # version 2: the first version this kind pins itself, above the 1 it took
   # from the authority. `memberOf` gained a declared `properties` block (issue
   # 111): additive, and the first shipped use of the block.
-  version: 2
+  # version 3: `names.plural` retired (issue 253, decision 0033).
+  version: 3
   names:
     singular: person
-    # `people`, not `persons`: R5 allows any one-word plural, `people` is the
-    # English one, and the authority is already `people.substrate.reamde.dev`.
-    plural: people
   # what a human recognizes first is the friendly name; the full name is the
   # fallback for a person no source has nicknamed.
   displayTemplate: "{displayName|name}"

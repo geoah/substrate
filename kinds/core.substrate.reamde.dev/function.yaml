@@ -44,10 +44,9 @@ data:
   # version 11: an argument and a return each require a `type`. The loader
   # refuses an entry whose type it does not recognize, so the requirement
   # moves onto the declaration.
-  version: 11
+  version: 12
   names:
     singular: function
-    plural: functions
   displayTemplate: "{localName}"
   properties:
     # Every declaration carries its own version: the declaring authority's,
