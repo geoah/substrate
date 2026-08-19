@@ -121,7 +121,7 @@ func TestRegistrationEnrollsRecoveryKey(t *testing.T) {
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/llmprovider", ID: "prov",
 		Properties: map[string]any{
-			"name": "prov", "wire": "openai",
+			"label": "prov", "wire": "openai",
 			"baseURL": "https://llm.example.com/v1", "apiKey": "sk-recover-me",
 		},
 	})
@@ -238,7 +238,7 @@ func TestEnrollRecoveryKeyMigratesLegacyPayloads(t *testing.T) {
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/llmprovider", ID: "prov",
 		Properties: map[string]any{
-			"name": "prov", "wire": "openai",
+			"label": "prov", "wire": "openai",
 			"baseURL": "https://llm.example.com/v1", "apiKey": "sk-legacy-material",
 		},
 	})

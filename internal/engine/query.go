@@ -452,7 +452,7 @@ func (ds *dataset) hydrateWithType(ctx context.Context, x dbx, row *erow, ty *vo
 		}
 	}
 	// A blob-ref reads back as the blob's manifest, never the bytes inline:
-	// the stored digest resolves to {digest, mimeType, size, status} through
+	// the stored digest resolves to {digest, mediaType, size, status} through
 	// the blob record.
 	if err := ds.resolveBlobRefs(ctx, x, ty, e); err != nil {
 		return nil, err

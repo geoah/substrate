@@ -47,7 +47,7 @@ func TestBlobPutStoresMintsAndStreams(t *testing.T) {
 	bs := blobStoreOf(t, ds)
 	data := []byte("the untransformed provider payload")
 
-	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, data, "")
+	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, data, "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -69,8 +69,8 @@ func TestBlobPutStoresMintsAndStreams(t *testing.T) {
 	if ent.Properties["status"] != "stored" {
 		t.Fatalf("manifest status = %v", ent.Properties["status"])
 	}
-	if ent.Properties["mimeType"] != "text/plain" {
-		t.Fatalf("manifest mimeType = %v", ent.Properties["mimeType"])
+	if ent.Properties["mediaType"] != "text/plain" {
+		t.Fatalf("manifest mediaType = %v", ent.Properties["mediaType"])
 	}
 
 	// GET streams the exact bytes.
@@ -81,8 +81,8 @@ func TestBlobPutStoresMintsAndStreams(t *testing.T) {
 	if !bytes.Equal(raw, data) {
 		t.Fatalf("streamed bytes differ: %q", raw)
 	}
-	if got.MimeType != "text/plain" {
-		t.Fatalf("get mimeType = %q", got.MimeType)
+	if got.MediaType != "text/plain" {
+		t.Fatalf("get mediaType = %q", got.MediaType)
 	}
 }
 
@@ -93,12 +93,12 @@ func TestBlobDedupOnSameBytes(t *testing.T) {
 	bs := blobStoreOf(t, ds)
 	data := []byte("same bytes, same blob")
 
-	a, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "application/octet-stream"}, data, "")
+	a, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "application/octet-stream"}, data, "")
 	if err != nil {
 		t.Fatalf("put a: %v", err)
 	}
 	before := maxSeq(t, ds)
-	b, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "application/octet-stream"}, data, "")
+	b, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "application/octet-stream"}, data, "")
 	if err != nil {
 		t.Fatalf("put b: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestBlobDigestMismatchRefused(t *testing.T) {
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	bs := blobStoreOf(t, ds)
-	_, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, []byte("hello"),
+	_, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("hello"),
 		substrate.BlobDigestPrefix+"0000000000000000000000000000000000000000000000000000000000000000")
 	wantErr(t, err, substrate.ErrValidation, "digest mismatch")
 }
@@ -129,7 +129,7 @@ func TestBlobRefRendersManifestNotBytes(t *testing.T) {
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, blobDocDocs("attachment", false)); err != nil {
 		t.Fatalf("install doc type: %v", err)
 	}
-	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "image/png"}, []byte("\x89PNG fake bytes"), "")
+	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "image/png"}, []byte("\x89PNG fake bytes"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -147,8 +147,8 @@ func TestBlobRefRendersManifestNotBytes(t *testing.T) {
 	if m["digest"] != info.Digest {
 		t.Fatalf("manifest digest = %v", m["digest"])
 	}
-	if m["mimeType"] != "image/png" {
-		t.Fatalf("manifest mimeType = %v", m["mimeType"])
+	if m["mediaType"] != "image/png" {
+		t.Fatalf("manifest mediaType = %v", m["mediaType"])
 	}
 	if m["status"] != "stored" {
 		t.Fatalf("manifest status = %v", m["status"])
@@ -180,7 +180,7 @@ func TestBlobGetIsRepositoryScoped(t *testing.T) {
 	ctx := context.Background()
 	svc, ds := newDataset(t)
 	bs := blobStoreOf(t, ds)
-	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, []byte("repository A secret archive"), "")
+	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("repository A secret archive"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -211,11 +211,11 @@ func TestBlobGCCollectsUnreferenced(t *testing.T) {
 		t.Fatalf("install doc type: %v", err)
 	}
 
-	kept, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, []byte("referenced payload"), "")
+	kept, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("referenced payload"), "")
 	if err != nil {
 		t.Fatalf("put kept: %v", err)
 	}
-	orphan, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, []byte("orphan payload"), "")
+	orphan, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("orphan payload"), "")
 	if err != nil {
 		t.Fatalf("put orphan: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestBlobNameIsDescriptiveAndFirstWins(t *testing.T) {
 	data := []byte("%PDF-1.7 fake bytes")
 
 	info, err := bs.PutBlob(ctx, owner,
-		substrate.BlobUpload{Name: "invoice.pdf", MimeType: "application/pdf"}, data, "")
+		substrate.BlobUpload{Name: "invoice.pdf", MediaType: "application/pdf"}, data, "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestBlobNameIsDescriptiveAndFirstWins(t *testing.T) {
 	// The same bytes under another name are the same blob, still named as the
 	// first upload named it — the store never lies about what it holds.
 	again, err := bs.PutBlob(ctx, owner,
-		substrate.BlobUpload{Name: "copy.pdf", MimeType: "application/pdf"}, data, "")
+		substrate.BlobUpload{Name: "copy.pdf", MediaType: "application/pdf"}, data, "")
 	if err != nil {
 		t.Fatalf("re-put blob: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestBlobNameIsDescriptiveAndFirstWins(t *testing.T) {
 
 // Both descriptors are OPTIONAL: bytes with neither still store, and the
 // manifest says nothing rather than claiming an empty name or type.
-func TestBlobNameAndMimeTypeAreOptional(t *testing.T) {
+func TestBlobNameAndMediaTypeAreOptional(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -330,15 +330,15 @@ func TestBlobNameAndMimeTypeAreOptional(t *testing.T) {
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
-	if info.Name != "" || info.MimeType != "" {
+	if info.Name != "" || info.MediaType != "" {
 		t.Fatalf("unnamed blob = %+v", info)
 	}
 	ent := mustGet(t, ds, "core.substrate.reamde.dev/blob", info.Digest)
 	if _, ok := ent.Properties["name"]; ok {
 		t.Fatalf("manifest claims a name: %v", ent.Properties["name"])
 	}
-	if _, ok := ent.Properties["mimeType"]; ok {
-		t.Fatalf("manifest claims a mime type: %v", ent.Properties["mimeType"])
+	if _, ok := ent.Properties["mediaType"]; ok {
+		t.Fatalf("manifest claims a mime type: %v", ent.Properties["mediaType"])
 	}
 }
 

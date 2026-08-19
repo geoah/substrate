@@ -28,12 +28,12 @@ type BlobInfo struct {
 	// ("blob-sha256-<hex>").
 	Digest string `json:"digest"`
 	Size   int64  `json:"size"`
-	// Name and MimeType are both OPTIONAL and both descriptive: the digest is
+	// Name and MediaType are both OPTIONAL and both descriptive: the digest is
 	// the identity, so neither takes part in dedup and neither can be trusted
 	// as a fact about the bytes. Absent = the uploader said nothing.
-	Name     string     `json:"name,omitempty"`
-	MimeType string     `json:"mimeType,omitempty"`
-	Status   BlobStatus `json:"status"`
+	Name      string     `json:"name,omitempty"`
+	MediaType string     `json:"mediaType,omitempty"`
+	Status    BlobStatus `json:"status"`
 }
 
 // BlobUpload is what a caller SAYS about the bytes it is storing, as opposed
@@ -44,8 +44,8 @@ type BlobUpload struct {
 	// Name is a display name, typically the filename the bytes arrived as. It
 	// must not contain a path separator: it names the blob, it does not
 	// address anything.
-	Name     string
-	MimeType string
+	Name      string
+	MediaType string
 }
 
 // BlobStore is the content-addressed byte store, an optional Dataset

@@ -41,12 +41,15 @@ data:
   # given its own baseURL and apiKey.
   # version 6: `wire` is required. A row names no default wire, and dispatch
   # refuses one without it, so the requirement moves to the write.
-  version: 7
+  # version 8: the human label property is `label`, where it was `name`. A
+  # provider row's id is its reference, so the free-text field is a label, not
+  # the local name that a kind, task or person derives its title from.
+  version: 8
   names:
     singular: llmprovider
-  displayTemplate: "{name} ({wire})"
+  displayTemplate: "{label|localName} ({wire})"
   properties:
-    name:
+    label:
       type: string
       description: a human label for the row (the id is the reference)
     # The wire set is CLOSED: internal/llm's wirePolicies table is the same

@@ -33,7 +33,7 @@ func TestBlobGCCannotDangleUncommittedRef(t *testing.T) {
 		t.Fatalf("install doc type: %v", err)
 	}
 	bs := blobStoreOf(t, ds)
-	blob, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, []byte("racy payload"), "")
+	blob, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("racy payload"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestBlobUploadGraceSparesFreshBlob(t *testing.T) {
 	bs := blobStoreOf(t, ds)
 
 	engine.BlobUploadGrace = time.Hour
-	blob, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, []byte("fresh, not yet referenced"), "")
+	blob, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("fresh, not yet referenced"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}
@@ -132,32 +132,32 @@ func TestBlobManifestForgeRefusedAndDedupAuthoritative(t *testing.T) {
 		Kind: "core.substrate.reamde.dev/blob", ID: forged,
 		Properties: map[string]any{
 			"digest": forged, "size": 99999,
-			"mimeType": "text/plain", "status": "stored",
+			"mediaType": "text/plain", "status": "stored",
 		},
 	})
 	wantErr(t, err, substrate.ErrForbidden, "a forged generic blob manifest must be refused")
 
 	data := []byte("same bytes, different claimed mime")
-	first, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, data, "")
+	first, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, data, "")
 	if err != nil {
 		t.Fatalf("put first: %v", err)
 	}
-	second, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "image/png"}, data, "")
+	second, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "image/png"}, data, "")
 	if err != nil {
 		t.Fatalf("put second (dedup): %v", err)
 	}
 	if second.Digest != first.Digest {
 		t.Fatalf("dedup broke: %q != %q", second.Digest, first.Digest)
 	}
-	if second.MimeType != "text/plain" {
-		t.Fatalf("dedup PUT returned %q, want the authoritative text/plain", second.MimeType)
+	if second.MediaType != "text/plain" {
+		t.Fatalf("dedup PUT returned %q, want the authoritative text/plain", second.MediaType)
 	}
 	got, _, err := bs.GetBlob(ctx, first.Digest)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if got.MimeType != "text/plain" {
-		t.Fatalf("GET mime = %q, want text/plain", got.MimeType)
+	if got.MediaType != "text/plain" {
+		t.Fatalf("GET mime = %q, want text/plain", got.MediaType)
 	}
 }
 
@@ -172,7 +172,7 @@ func TestBlobGCTombstonesStoredManifest(t *testing.T) {
 	ctx := context.Background()
 	ds, raw, _ := newDatasetWithDB(t)
 	bs := blobStoreOf(t, ds)
-	blob, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MimeType: "text/plain"}, []byte("orphan to tombstone"), "")
+	blob, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{MediaType: "text/plain"}, []byte("orphan to tombstone"), "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
 	}

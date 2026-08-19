@@ -199,16 +199,14 @@ func fireID(at time.Time) string { return at.UTC().Format(time.RFC3339) }
 
 // --- parsing and admission ------------------------------------------------------
 
-// triggerSourceKeys is the source's key set: the three arms, plus the
-// DISCRIMINATOR that names which of them this source is. The arm alone has
-// always said it, so `kind` is optional — but a `kind` that disagrees with the
-// arm present is refused rather than ignored, since one of the two would have to
-// be the lie a reader believes.
+// triggerSourceKeys is the source's key set: the three arms, one of which is
+// present. The arm present names the source; there is no separate
+// discriminator to agree or disagree with it.
 var triggerSourceKeys = map[string]bool{
-	"kind": true, "record": true, "schedule": true, "webhook": true,
+	"record": true, "schedule": true, "webhook": true,
 }
 
-// triggerSourceArms are the source keys that carry an arm, discriminator aside.
+// triggerSourceArms are the source keys that carry an arm.
 var triggerSourceArms = map[string]bool{"record": true, "schedule": true, "webhook": true}
 
 var triggerRecordKeys = map[string]bool{"kinds": true, "ops": true, "when": true, "coalesce": true}
@@ -253,7 +251,7 @@ func parseTrigger(id string, props map[string]any) (*trigger, error) {
 	var arms []string
 	for k := range source {
 		if !triggerSourceKeys[k] {
-			return nil, fmt.Errorf("source: unknown key %q — kind, record, schedule or webhook", k)
+			return nil, fmt.Errorf("source: unknown key %q — record, schedule or webhook", k)
 		}
 		if triggerSourceArms[k] {
 			arms = append(arms, k)
@@ -262,11 +260,6 @@ func parseTrigger(id string, props map[string]any) (*trigger, error) {
 	if len(arms) != 1 {
 		sort.Strings(arms)
 		return nil, fmt.Errorf("source carries exactly one arm, got %s", strings.Join(arms, "+"))
-	}
-	if declared, has := source["kind"]; has {
-		if s, _ := declared.(string); s != arms[0] {
-			return nil, fmt.Errorf("source.kind says %v and the arm present is %q — one source, named once", declared, arms[0])
-		}
 	}
 
 	switch arms[0] {

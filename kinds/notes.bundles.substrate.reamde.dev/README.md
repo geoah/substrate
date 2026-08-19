@@ -57,7 +57,7 @@ substratectl apply -f - <<'YAML'
 kind: core.substrate.reamde.dev/llmprovider
 metadata: {id: default}
 data:
-  properties: {name: anthropic, wire: anthropic}
+  properties: {label: anthropic, wire: anthropic}
 YAML
 substratectl patch llmproviders default --prop apiKey="$ANTHROPIC_API_KEY"
 ```

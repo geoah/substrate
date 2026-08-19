@@ -51,7 +51,11 @@ data:
   # version 12: `params.temperature` carries `min: 0` and `max: 2`, the bounds
   # the provider row's `defaults.temperature` already declares. The agent
   # value overrides the provider's, so the two are held to one range.
-  version: 13
+  # version 14: the sub-agent list is `subagents`, where it was `agents`, so
+  # the word matches `subagentThreads` and the rest of the subagent
+  # vocabulary; and the chat-surface withholding is `hiddenFromChat`, where it
+  # was `subagentOnly`, naming what the flag does rather than who is left.
+  version: 14
   names:
     singular: agent
   displayTemplate: "{localName}"
@@ -117,7 +121,7 @@ data:
     # `runtime: host` function records core ships, so
     # `{function: core.substrate.reamde.dev/graphql}` names one exactly as a
     # bundle's function is named. An entry can name nothing else — a sub-agent
-    # is named on `agents:` — which is why the field is not `callable`, the
+    # is named on `subagents:` — which is why the field is not `callable`, the
     # trigger's word for a target that really may be either. `name` and
     # `description` alias the card for this agent's prompt context, built-ins
     # included.
@@ -137,7 +141,7 @@ data:
         description:
           type: string
           description: the model-facing card, overriding the function's own
-    agents:
+    subagents:
       type: reference
       kind: core.substrate.reamde.dev/agent
       repeated: true
@@ -208,7 +212,7 @@ data:
     # keeps it off the chat list and the chat API refuses it, while sub-agent
     # calls, the call API and triggers still dispatch it. Any agent, marked or
     # not, remains selectable as another agent's sub-agent.
-    subagentOnly:
+    hiddenFromChat:
       type: bool
       description: only callable by other agents; withheld from the chat surface
     # A resolution on this agent's thread-borne records (a decided proposal,

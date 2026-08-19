@@ -11,7 +11,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// The graphql/mutate built-ins and the subagentOnly withholding, against the
+// The graphql/mutate built-ins and the hiddenFromChat withholding, against the
 // crew fixture (agents_db_test.go): archivist reads through graphql alone,
 // editor mutates within its widget-only emit, arbiter decides change requests
 // within its own, judge exists to be called.
@@ -372,20 +372,20 @@ func TestTriggerFiresAgentThatAcceptsRequest(t *testing.T) {
 	if got, err := ds.Get(ctx, widget.Kind, widget.ID); err != nil || got.Properties["name"] != "reviewed" {
 		t.Fatalf("the accepted diff did not land: %+v %v", got, err)
 	}
-	if threads := agentThreadsOf(t, ds, "arbiter"); len(threads) != 1 || threads[0]["mode"] != "trigger" {
+	if threads := agentThreadsOf(t, ds, "arbiter"); len(threads) != 1 || threads[0]["mode"] != "record" {
 		t.Fatalf("arbiter threads: %+v", threads)
 	}
 }
 
-func TestSubagentOnlyWithholdsChatAlone(t *testing.T) {
+func TestHiddenFromChatWithholdsChatAlone(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	ds, fake := openAgentDataset(t)
 
 	// The chat surface refuses before any completion is bought.
 	_, err := ds.ChatAgent(ctx, substrate.ActorAPI, crewAuthority+"/judge", "", "hi", nil)
-	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "subagent-only") {
-		t.Fatalf("chat on a subagent-only agent: %v", err)
+	if !errors.Is(err, substrate.ErrValidation) || !strings.Contains(err.Error(), "hidden from chat") {
+		t.Fatalf("chat on an agent hidden from chat: %v", err)
 	}
 
 	// The flag projects onto the agent's row, where the console's filter
@@ -394,11 +394,11 @@ func TestSubagentOnlyWithholdsChatAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if row.Properties["subagentOnly"] != true {
-		t.Fatalf("projection: %+v", row.Properties["subagentOnly"])
+	if row.Properties["hiddenFromChat"] != true {
+		t.Fatalf("projection: %+v", row.Properties["hiddenFromChat"])
 	}
-	if chatter, err := ds.Get(ctx, kindAgent, crewAuthority+"/chatter"); err != nil || chatter.Properties["subagentOnly"] != nil {
-		t.Fatalf("unmarked agent projects subagentOnly: %v %v", chatter, err)
+	if chatter, err := ds.Get(ctx, kindAgent, crewAuthority+"/chatter"); err != nil || chatter.Properties["hiddenFromChat"] != nil {
+		t.Fatalf("unmarked agent projects hiddenFromChat: %v %v", chatter, err)
 	}
 
 	// The call API still dispatches it, and so does a caller's sub-agent hop.

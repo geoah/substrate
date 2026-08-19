@@ -145,11 +145,11 @@ type InTransaction interface {
 
 // Blob is one row of the postgres backend's own table.
 type Blob struct {
-	Digest   string
-	Name     string
-	MimeType string
-	Size     int64
-	Bytes    []byte
+	Digest    string
+	Name      string
+	MediaType string
+	Size      int64
+	Bytes     []byte
 }
 
 // ReadAll reads a stored object whole, refusing one longer than size. It is

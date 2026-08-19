@@ -43,7 +43,7 @@ const (
 	blobPropDigest    = "digest"
 	blobPropSize      = "size"
 	blobPropName      = "name"
-	blobPropMimeType  = "mimeType"
+	blobPropMediaType = "mediaType"
 	blobPropCreatedBy = "createdBy"
 	blobStateStatus   = "status"
 )
@@ -71,7 +71,7 @@ func blobDigest(data []byte) string {
 // digest, so a re-store is a no-op on the bytes and on the manifest. When
 // wantDigest is non-empty, the derived digest must equal it (a client that
 // addressed PUT /blobs/{digest}); a mismatch is a validation error. What the
-// caller SAYS about the bytes — up.Name, up.MimeType — is optional and
+// caller SAYS about the bytes — up.Name, up.MediaType — is optional and
 // descriptive; the digest is the identity, so neither field takes part in
 // dedup and neither displaces what a first upload already said.
 func (ds *dataset) PutBlob(ctx context.Context, actor substrate.Actor, up substrate.BlobUpload, data []byte, wantDigest string) (*substrate.BlobInfo, error) {
@@ -88,16 +88,16 @@ func (ds *dataset) PutBlob(ctx context.Context, actor substrate.Actor, up substr
 		return nil, err
 	}
 	if txStore, ok := store.(blobbytes.InTransaction); ok {
-		return ds.putBlobOneTx(ctx, actor, txStore, digest, name, up.MimeType, data)
+		return ds.putBlobOneTx(ctx, actor, txStore, digest, name, up.MediaType, data)
 	}
-	return ds.putBlobExternal(ctx, actor, store, digest, name, up.MimeType, data)
+	return ds.putBlobExternal(ctx, actor, store, digest, name, up.MediaType, data)
 }
 
 // putBlobOneTx is the postgres path: bytes AND manifest settle in ONE
 // transaction under the exclusive per-digest lock, so a GC sweep can never
 // delete the byte row between its insert and the manifest settling, and no
 // crash can leave either half without the other.
-func (ds *dataset) putBlobOneTx(ctx context.Context, actor substrate.Actor, store blobbytes.InTransaction, digest, name, mimeType string, data []byte) (*substrate.BlobInfo, error) {
+func (ds *dataset) putBlobOneTx(ctx context.Context, actor substrate.Actor, store blobbytes.InTransaction, digest, name, mediaType string, data []byte) (*substrate.BlobInfo, error) {
 	size := int64(len(data))
 	var info *substrate.BlobInfo
 	err := ds.inTx(ctx, actor, true, func(t *txn) error {
@@ -107,20 +107,20 @@ func (ds *dataset) putBlobOneTx(ctx context.Context, actor substrate.Actor, stor
 		// The byte store is dedup-by-digest: first bytes win, a re-store is a
 		// no-op. The row and the manifest carry the same digest.
 		if err := store.PutTx(t.ctx, t.tx, blobbytes.Blob{
-			Digest: digest, Name: name, MimeType: mimeType, Size: size, Bytes: data,
+			Digest: digest, Name: name, MediaType: mediaType, Size: size, Bytes: data,
 		}); err != nil {
 			return err
 		}
-		auth, _, err := t.authoritativeBlobMeta(digest, name, mimeType, size)
+		auth, _, err := t.authoritativeBlobMeta(digest, name, mediaType, size)
 		if err != nil {
 			return err
 		}
-		if err := t.settleBlobRecord(actor, digest, auth.size, auth.name, auth.mimeType); err != nil {
+		if err := t.settleBlobRecord(actor, digest, auth.size, auth.name, auth.mediaType); err != nil {
 			return err
 		}
 		info = &substrate.BlobInfo{
 			Digest: digest, Size: auth.size, Name: auth.name,
-			MimeType: auth.mimeType, Status: substrate.BlobStored,
+			MediaType: auth.mediaType, Status: substrate.BlobStored,
 		}
 		return nil
 	})
@@ -147,14 +147,14 @@ func (ds *dataset) putBlobOneTx(ctx context.Context, actor substrate.Actor, stor
 // the same collectable state, and in neither does a reader see a `stored`
 // manifest whose bytes are missing, because only step 3 writes that word and
 // only with the bytes already durable.
-func (ds *dataset) putBlobExternal(ctx context.Context, actor substrate.Actor, store blobbytes.Store, digest, name, mimeType string, data []byte) (*substrate.BlobInfo, error) {
+func (ds *dataset) putBlobExternal(ctx context.Context, actor substrate.Actor, store blobbytes.Store, digest, name, mediaType string, data []byte) (*substrate.BlobInfo, error) {
 	size := int64(len(data))
 	var auth blobRecordMeta
 	err := ds.inTx(ctx, actor, true, func(t *txn) error {
 		if err := t.lockKey(blobLockKey(digest)); err != nil {
 			return err
 		}
-		a, exists, err := t.authoritativeBlobMeta(digest, name, mimeType, size)
+		a, exists, err := t.authoritativeBlobMeta(digest, name, mediaType, size)
 		if err != nil {
 			return err
 		}
@@ -164,7 +164,7 @@ func (ds *dataset) putBlobExternal(ctx context.Context, actor substrate.Actor, s
 			// ahead of the upload; step 3 settles whichever it is.
 			return nil
 		}
-		return t.mintPendingBlobRecord(actor, digest, name, mimeType)
+		return t.mintPendingBlobRecord(actor, digest, name, mediaType)
 	})
 	if err != nil {
 		return nil, err
@@ -187,14 +187,14 @@ func (ds *dataset) putBlobExternal(ctx context.Context, actor substrate.Actor, s
 		if err := t.lockKey(blobLockKey(digest)); err != nil {
 			return err
 		}
-		return t.settleBlobRecord(actor, digest, auth.size, auth.name, auth.mimeType)
+		return t.settleBlobRecord(actor, digest, auth.size, auth.name, auth.mediaType)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &substrate.BlobInfo{
 		Digest: digest, Size: auth.size, Name: auth.name,
-		MimeType: auth.mimeType, Status: substrate.BlobStored,
+		MediaType: auth.mediaType, Status: substrate.BlobStored,
 	}, nil
 }
 
@@ -205,7 +205,7 @@ func (ds *dataset) putBlobExternal(ctx context.Context, actor substrate.Actor, s
 // descriptive and take no part in dedup. Reports whether a manifest exists at
 // all, in any status, which is what the external path needs to know before it
 // mints one.
-func (t *txn) authoritativeBlobMeta(digest, name, mimeType string, size int64) (blobRecordMeta, bool, error) {
+func (t *txn) authoritativeBlobMeta(digest, name, mediaType string, size int64) (blobRecordMeta, bool, error) {
 	m, ok, err := t.blobRecord(digest)
 	if err != nil {
 		return blobRecordMeta{}, false, err
@@ -213,7 +213,7 @@ func (t *txn) authoritativeBlobMeta(digest, name, mimeType string, size int64) (
 	if ok && m.status == string(substrate.BlobStored) {
 		return m, true, nil
 	}
-	return blobRecordMeta{name: name, mimeType: mimeType, size: size}, ok, nil
+	return blobRecordMeta{name: name, mediaType: mediaType, size: size}, ok, nil
 }
 
 // blobBytes binds the configured backend to this repository. The repository is
@@ -226,10 +226,10 @@ func (ds *dataset) blobBytes() (blobbytes.Store, error) {
 
 // blobRecordMeta is a blob manifest, read as fields rather than as a map.
 type blobRecordMeta struct {
-	name     string
-	mimeType string
-	size     int64
-	status   string
+	name      string
+	mediaType string
+	size      int64
+	status    string
 }
 
 // blobRecord reads one live blob manifest inside the caller's transaction.
@@ -240,7 +240,7 @@ func (t *txn) blobRecord(digest string) (blobRecordMeta, bool, error) {
 // blobRecordQuery reads the manifest halves a blob read reports: the metadata
 // from its properties, the status from its state.
 const blobRecordQuery = `
-	SELECT props->>'` + blobPropName + `', props->>'` + blobPropMimeType + `',
+	SELECT props->>'` + blobPropName + `', props->>'` + blobPropMediaType + `',
 	       (props->>'` + blobPropSize + `')::bigint, states->>'` + blobStateStatus + `'
 	FROM records WHERE id = $1 AND kind = $2 AND deleted_at IS NULL`
 
@@ -259,7 +259,7 @@ func scanBlobRecord(row *sql.Row) (blobRecordMeta, bool, error) {
 	if err != nil {
 		return m, false, err
 	}
-	m.name, m.mimeType, m.size, m.status = name.String, mime.String, size.Int64, status.String
+	m.name, m.mediaType, m.size, m.status = name.String, mime.String, size.Int64, status.String
 	return m, true, nil
 }
 
@@ -267,7 +267,7 @@ func scanBlobRecord(row *sql.Row) (blobRecordMeta, bool, error) {
 // `pending`, before the bytes are written to a store that cannot join this
 // transaction. Only settleBlobRecord may write `stored`, and only with the
 // bytes already durable.
-func (t *txn) mintPendingBlobRecord(actor substrate.Actor, digest, name, mimeType string) error {
+func (t *txn) mintPendingBlobRecord(actor substrate.Actor, digest, name, mediaType string) error {
 	props := map[string]any{
 		blobPropDigest:    digest,
 		blobPropCreatedBy: string(actor),
@@ -276,8 +276,8 @@ func (t *txn) mintPendingBlobRecord(actor substrate.Actor, digest, name, mimeTyp
 	if name != "" {
 		props[blobPropName] = name
 	}
-	if mimeType != "" {
-		props[blobPropMimeType] = mimeType
+	if mediaType != "" {
+		props[blobPropMediaType] = mediaType
 	}
 	_, err := t.put(substrate.PutInput{Kind: kindBlob, ID: digest, Properties: props})
 	return err
@@ -356,7 +356,7 @@ func checkBlobName(name string) (string, error) {
 // runs — inserted in this same transaction on the postgres backend, written to
 // the store before it on fs and s3 — so guardBlobWrite's "stored ⇒ bytes
 // exist" invariant holds, and the guard proves it either way.
-func (t *txn) settleBlobRecord(actor substrate.Actor, digest string, size int64, name, mimeType string) error {
+func (t *txn) settleBlobRecord(actor substrate.Actor, digest string, size int64, name, mediaType string) error {
 	var status sql.NullString
 	err := t.row(
 		`SELECT states->>'`+blobStateStatus+`' FROM records WHERE id = $1 AND kind = $2 AND deleted_at IS NULL`,
@@ -375,8 +375,8 @@ func (t *txn) settleBlobRecord(actor substrate.Actor, digest string, size int64,
 		if name != "" {
 			props[blobPropName] = name
 		}
-		if mimeType != "" {
-			props[blobPropMimeType] = mimeType
+		if mediaType != "" {
+			props[blobPropMediaType] = mediaType
 		}
 		_, err := t.put(substrate.PutInput{Kind: kindBlob, ID: digest, Properties: props})
 		return err
@@ -395,8 +395,8 @@ func (t *txn) settleBlobRecord(actor substrate.Actor, digest string, size int64,
 	if name != "" {
 		props[blobPropName] = name
 	}
-	if mimeType != "" {
-		props[blobPropMimeType] = mimeType
+	if mediaType != "" {
+		props[blobPropMediaType] = mediaType
 	}
 	_, err = t.patch(eref{Kind: kindBlob, ID: digest}, substrate.PatchInput{Properties: props})
 	return err
@@ -481,7 +481,7 @@ func (ds *dataset) GetBlob(ctx context.Context, digest string) (*substrate.BlobI
 	}
 	return &substrate.BlobInfo{
 		Digest: digest, Size: m.size, Name: m.name,
-		MimeType: m.mimeType, Status: substrate.BlobStored,
+		MediaType: m.mediaType, Status: substrate.BlobStored,
 	}, data, nil
 }
 
@@ -540,7 +540,7 @@ func (t *txn) blobExists(digest string) (bool, error) {
 }
 
 // resolveBlobRefs rewrites a projected record's blob-ref properties from the
-// stored digest string into the blob's manifest ({digest, name, mimeType,
+// stored digest string into the blob's manifest ({digest, name, mediaType,
 // size, status}) — the resolved reference reads never carry the bytes inline (ticket
 // 004). A digest whose manifest has vanished renders as the bare {digest}.
 func (ds *dataset) resolveBlobRefs(ctx context.Context, x dbx, ty *vocabulary.Kind, e *substrate.Record) error {
@@ -862,19 +862,19 @@ func (ds *dataset) referencedDigests(ctx context.Context) (map[string]bool, erro
 
 // blobManifest reads one blob's manifest for the read-time resolution of a
 // blob-ref. The digest is the manifest's id; status lives in the manifest's
-// state, size and mimeType in its properties.
+// state, size and mediaType in its properties.
 func (ds *dataset) blobManifest(ctx context.Context, x dbx, digest string) (map[string]any, error) {
 	m := map[string]any{blobPropDigest: digest}
 	var (
-		name     sql.NullString
-		mimeType sql.NullString
-		size     sql.NullInt64
-		status   sql.NullString
+		name      sql.NullString
+		mediaType sql.NullString
+		size      sql.NullInt64
+		status    sql.NullString
 	)
 	err := x.QueryRowContext(ctx, `
-		SELECT props->>'`+blobPropName+`', props->>'`+blobPropMimeType+`', (props->>'`+blobPropSize+`')::bigint, states->>'`+blobStateStatus+`'
+		SELECT props->>'`+blobPropName+`', props->>'`+blobPropMediaType+`', (props->>'`+blobPropSize+`')::bigint, states->>'`+blobStateStatus+`'
 		FROM records WHERE id = $1 AND kind = $2 AND deleted_at IS NULL`, digest, kindBlob).
-		Scan(&name, &mimeType, &size, &status)
+		Scan(&name, &mediaType, &size, &status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return m, nil
 	}
@@ -884,8 +884,8 @@ func (ds *dataset) blobManifest(ctx context.Context, x dbx, digest string) (map[
 	if name.Valid && name.String != "" {
 		m[blobPropName] = name.String
 	}
-	if mimeType.Valid && mimeType.String != "" {
-		m[blobPropMimeType] = mimeType.String
+	if mediaType.Valid && mediaType.String != "" {
+		m[blobPropMediaType] = mediaType.String
 	}
 	if size.Valid {
 		m[blobPropSize] = size.Int64

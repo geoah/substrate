@@ -31,7 +31,7 @@ export const RECORD_PATCH_REQUEST_KIND =
   "core.substrate.reamde.dev/recordpatchrequest"
 
 /** The field one `tools:` entry names its function under. Not `callable`: an
- * entry admits only a function (a sub-agent is named on `agents:`), and
+ * entry admits only a function (a sub-agent is named on `subagents:`), and
  * `callable` is the trigger's word, where a target really may be either. */
 export const TOOL_FUNCTION_FIELD = "function"
 

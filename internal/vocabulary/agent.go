@@ -15,7 +15,7 @@ import (
 // history — and everything else on it is references: one `provider`
 // data-record id plus the `model` it asks that provider for,
 // `tools:` (callable functions, the four host built-ins among them, each
-// optionally aliased for the agent's own prompt context), `agents:`
+// optionally aliased for the agent's own prompt context), `subagents:`
 // (sub-agents), `budgets:` and `permissions:`. Agents dispatch exactly like
 // functions — triggers, the call API, sub-agent calls — under their own actor,
 // `agent:<authority>:<name>`; the loop itself is host-side
@@ -122,8 +122,8 @@ type Agent struct {
 	Params map[string]any
 	// Tools lists what the model may call, in declaration order.
 	Tools []AgentTool
-	// Agents lists sub-agent identities the loop exposes as tools.
-	Agents []string
+	// Subagents lists sub-agent identities the loop exposes as tools.
+	Subagents []string
 	// Budgets bounds one invocation.
 	Budgets AgentBudgets
 	// Emit is `permissions.writes` parsed: every tool-call effect is held to it,
@@ -133,11 +133,11 @@ type Agent struct {
 	// Reads is `permissions.reads` parsed, scoping the `query` built-in exactly
 	// like a function's; nil means `query` is not granted.
 	Reads *FunctionReads
-	// SubagentOnly withholds the agent from the interactive chat surface: the
+	// HiddenFromChat withholds the agent from the interactive chat surface: the
 	// console keeps it off the chat list and ChatAgent refuses it. Everything
 	// else still dispatches it: sub-agent calls (the point, an llm-as-judge
 	// exists to be called by other agents), the call API, and triggers.
-	SubagentOnly bool
+	HiddenFromChat bool
 	// Resume says whether a resolution on this agent's thread-borne records
 	// (a decided proposal, an answered interaction) RESUMES the thread —
 	// "never" records the resolution row and stops there; "always" (and
@@ -161,7 +161,7 @@ type AgentTool struct {
 	Builtin string
 	// Callable is the identity `function:` names — always set, built-ins
 	// included. The authored key is `function` because an entry admits nothing
-	// else: a sub-agent is named on `agents:`, and `callable` is the TRIGGER's
+	// else: a sub-agent is named on `subagents:`, and `callable` is the TRIGGER's
 	// word, where a target really may be either.
 	Callable string
 	// Name is the model-facing tool name: the alias when declared, else the
@@ -210,8 +210,8 @@ var reToolName = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,63}$`)
 var agentDataKeys = map[string]bool{
 	"authority": true, "description": true, "prompt": true,
 	"provider": true, "model": true, "params": true,
-	"tools": true, "agents": true, "budgets": true, "permissions": true,
-	"subagentOnly": true, "resume": true,
+	"tools": true, "subagents": true, "budgets": true, "permissions": true,
+	"hiddenFromChat": true, "resume": true,
 }
 
 // deletedAgentKeys are the removed keys, each naming what replaced it. An
@@ -221,8 +221,9 @@ var agentDataKeys = map[string]bool{
 // written that way: the rung that did was deleted before the first release
 // (#217), so the store it comes from is refused at open.
 var deletedAgentKeys = map[string]string{
-	"emit":  "permissions.writes: the grants group under `permissions:`, and the permission to write is named for writing",
-	"reads": "permissions.reads: the grants group under `permissions:`",
+	"emit":   "permissions.writes: the grants group under `permissions:`, and the permission to write is named for writing",
+	"reads":  "permissions.reads: the grants group under `permissions:`",
+	"agents": "subagents: an agent names its sub-agents under `subagents`, the spelling the rest of the subagent vocabulary uses",
 }
 
 // agentPermissionKeys is the agent's grant object: a function's five minus the
@@ -241,7 +242,7 @@ var agentToolKeys = map[string]bool{
 
 // deletedAgentToolKeys are the retired keys of a tool ENTRY, each naming its
 // replacement. `callable` said the entry might name something other than a
-// function, and it never could: a sub-agent is named on `agents:`, and the word
+// function, and it never could: a sub-agent is named on `subagents:`, and the word
 // belongs to a trigger, whose target really is a function OR an agent.
 var deletedAgentToolKeys = map[string]string{
 	"callable": "function — a tool entry names a function, and only a function",
@@ -324,7 +325,7 @@ func (l *loader) parseAgent(d Document) *Agent {
 		l.errf("%s: data.model is required — the model id sent to the provider on every completion", where)
 		return nil
 	}
-	a.SubagentOnly = mbool(d.Data, "subagentOnly")
+	a.HiddenFromChat = mbool(d.Data, "hiddenFromChat")
 	a.Resume = mstr(d.Data, "resume")
 	if a.Resume != "" && a.Resume != AgentResumeAlways && a.Resume != AgentResumeNever {
 		l.errf("%s: data.resume: %q — \"always\" or \"never\" (absent means always)", where, a.Resume)
@@ -344,22 +345,22 @@ func (l *loader) parseAgent(d Document) *Agent {
 	for _, t := range a.Tools {
 		toolNames[t.Name] = true
 	}
-	for i, ident := range ReferentIDs(mslice(d.Data, "agents"), KindRef(AuthorityCore, DocAgent)) {
+	for i, ident := range ReferentIDs(mslice(d.Data, "subagents"), KindRef(AuthorityCore, DocAgent)) {
 		if !Qualified(ident) || strings.Contains(ident, "*") {
-			l.errf("%s: data.agents[%d]: %q — sub-agents are full agent identities, no globs", where, i, ident)
+			l.errf("%s: data.subagents[%d]: %q — sub-agents are full agent identities, no globs", where, i, ident)
 			continue
 		}
 		if ident == d.ID {
-			l.errf("%s: data.agents[%d]: an agent may not name itself — the depth cap is not a recursion license", where, i)
+			l.errf("%s: data.subagents[%d]: an agent may not name itself — the depth cap is not a recursion license", where, i)
 			continue
 		}
 		local := KindName(ident)
 		if toolNames[local] {
-			l.errf("%s: data.agents[%d]: %q collides with tool name %q — alias the tool", where, i, ident, local)
+			l.errf("%s: data.subagents[%d]: %q collides with tool name %q — alias the tool", where, i, ident, local)
 			continue
 		}
 		toolNames[local] = true
-		a.Agents = append(a.Agents, ident)
+		a.Subagents = append(a.Subagents, ident)
 	}
 	perms, ok := l.permissionsObject(where, d.Data, agentPermissionKeys)
 	if !ok {
@@ -492,7 +493,7 @@ func (l *loader) parseAgentParams(where string, data map[string]any, a *Agent) b
 // because it made the built-ins the ONE thing an agent could name that no record
 // declared, and it is gone now that they are records. And `{callable: x}` said
 // the entry might name something other than a function; it never could, since a
-// sub-agent is named on `agents:`. Nothing translates a stored row written any
+// sub-agent is named on `subagents:`. Nothing translates a stored row written any
 // of those ways: the rung that did was deleted before the first release
 // (#217), so the store it comes from is refused at open.
 func (l *loader) parseAgentTools(where string, data map[string]any, a *Agent) bool {
@@ -628,9 +629,9 @@ func (r *Registry) resolveAuthorityAgents(g *Authority) []string {
 				problems = append(problems, fmt.Sprintf("%s: data.tools.function: unknown function %q", where, t.Callable))
 			}
 		}
-		for _, ident := range a.Agents {
+		for _, ident := range a.Subagents {
 			if _, err := r.ResolveAgent(ident); err != nil {
-				problems = append(problems, fmt.Sprintf("%s: data.agents: unknown agent %q", where, ident))
+				problems = append(problems, fmt.Sprintf("%s: data.subagents: unknown agent %q", where, ident))
 			}
 		}
 	}

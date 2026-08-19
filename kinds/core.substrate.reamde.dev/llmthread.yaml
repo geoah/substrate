@@ -40,7 +40,10 @@ data:
   # `mode`, `status`, `agentDepth`, `startedAt`) are required. The `parent`
   # inverse label is `subagentThreads`, the spelling the rest of the subagent
   # vocabulary uses.
-  version: 10
+  # version 11: the record-delivery mode value is `record`, where it was
+  # `trigger`, matching the trigger source arm (record/schedule/webhook) the
+  # delivery came from; the `trigger` kind and actor prefix are unchanged.
+  version: 11
   names:
     singular: llmthread
   displayTemplate: "{agent}: {status}"
@@ -74,7 +77,7 @@ data:
       type: enum
       required: true
       values:
-        - trigger
+        - record
         - schedule
         - webhook
         - manual

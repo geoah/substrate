@@ -37,7 +37,7 @@
 # `changes`. `substrateArbiter` is the judge: point a trigger at fresh
 # recordpatchrequests and it accepts or rejects them through `mutate`.
 # `substrateEcho` demonstrates delegation, and `substrateSummarizer` is the
-# sub-agent it delegates to, marked `subagentOnly` so the chat list never
+# sub-agent it delegates to, marked `hiddenFromChat` so the chat list never
 # offers it: it exists to be called. For functions as tools, install the
 # notes example beside this one.
 kind: core.substrate.reamde.dev/authority
@@ -67,7 +67,11 @@ data:
   # version 10: the openai row names OpenAI's endpoint. There is no host
   # gateway left for an empty baseURL to mean, so the row that shipped without
   # one refused at dispatch until it was hand-edited.
-  version: 11
+  # version 12: the issue 51 renames reach this closure. An agent's sub-agent
+  # list is `subagents` (was `agents`), the chat-surface withholding is
+  # `hiddenFromChat` (was `subagentOnly`), and a provider row's human label is
+  # `label` (was `name`).
+  version: 12
 ---
 kind: core.substrate.reamde.dev/bundle
 metadata:
@@ -326,7 +330,7 @@ data:
     Escalate whenever you are unsure: a human reads escalations.
   provider: anthropic
   model: claude-sonnet-5
-  subagentOnly: true
+  hiddenFromChat: true
   budgets:
     maxTurns: 2
     maxToolCalls: 1
@@ -334,7 +338,7 @@ data:
 ---
 # ---- a SUB-AGENT: its own loop, its own budget, its own thread. It declares
 # no emit at all, so nothing it is asked to do can write a record; and it is
-# subagentOnly, so the chat list never offers it while the loop still
+# hiddenFromChat, so the chat list never offers it while the loop still
 # dispatches it when substrateEcho calls.
 kind: core.substrate.reamde.dev/agent
 metadata:
@@ -347,7 +351,7 @@ data:
     bullet points, no closing remark — the sentence alone.
   provider: anthropic
   model: claude-haiku-4-5
-  subagentOnly: true
+  hiddenFromChat: true
   budgets:
     maxTurns: 2
     maxToolCalls: 1
@@ -367,7 +371,7 @@ data:
     than summarizing yourself — the point is to show the call.
   provider: anthropic
   model: claude-haiku-4-5
-  agents: [llm.examples.substrate.reamde.dev/substrateSummarizer]
+  subagents: [llm.examples.substrate.reamde.dev/substrateSummarizer]
   budgets:
     maxTurns: 4
     maxToolCalls: 2

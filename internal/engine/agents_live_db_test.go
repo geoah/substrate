@@ -126,9 +126,9 @@ def main(input, host):
 				"Step 3: reply with DONE followed by the speller tool's answer, and nothing else.",
 				"Never do the arithmetic or the spelling yourself.",
 			}, "\n"),
-			"tools":   []any{map[string]any{"function": crewAuthority + "/add"}},
-			"agents":  []any{crewAuthority + "/speller"},
-			"budgets": map[string]any{"maxTurns": 6, "maxToolCalls": 4, "depth": 3, "deadlineSeconds": 120},
+			"tools":     []any{map[string]any{"function": crewAuthority + "/add"}},
+			"subagents": []any{crewAuthority + "/speller"},
+			"budgets":   map[string]any{"maxTurns": 6, "maxToolCalls": 4, "depth": 3, "deadlineSeconds": 120},
 		}),
 	}
 	if _, err := ds.ApplyVocabularyDocuments(ctx, substrate.ActorAPI, docs); err != nil {
@@ -167,7 +167,7 @@ def main(input, host):
 	msgs := threadMessages(t, ds, root["__id"].(string))
 	var addResult string
 	for _, m := range msgs {
-		if m["role"] == "tool" && m["tool"] == "add" {
+		if m["role"] == "tool" && m["name"] == "add" {
 			addResult, _ = m["content"].(string)
 			break
 		}

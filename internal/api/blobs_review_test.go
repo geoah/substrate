@@ -42,7 +42,7 @@ func (b *blockingBlobDS) PutBlob(_ context.Context, _ substrate.Actor, up substr
 	atomic.AddInt32(&b.inflight, -1)
 	return &substrate.BlobInfo{
 		Digest: substrate.BlobDigestPrefix + strings.Repeat("a", 64),
-		Size:   int64(len(data)), Name: up.Name, MimeType: up.MimeType,
+		Size:   int64(len(data)), Name: up.Name, MediaType: up.MediaType,
 		Status: substrate.BlobStored,
 	}, nil
 }

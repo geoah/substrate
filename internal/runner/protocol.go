@@ -69,8 +69,8 @@ const ProtocolVersion = 4
 
 // The invocation modes.
 const (
-	// ModeTrigger is a dispatched record delivery (moves the trigger cursor).
-	ModeTrigger = "trigger"
+	// ModeRecord is a dispatched record delivery (moves the trigger cursor).
+	ModeRecord = "record"
 	// ModeSchedule is a due RRULE fire (advances the trigger's fire state,
 	// no changelog row underneath).
 	ModeSchedule = "schedule"

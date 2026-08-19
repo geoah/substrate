@@ -46,7 +46,7 @@ func TestAgentLoopKindsResolveInCore(t *testing.T) {
 	// resolves on a fresh repository, and no row of it exists there.
 	row := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "core.substrate.reamde.dev/llmprovider", ID: "openai",
-		Properties: map[string]any{"name": "openai", "wire": "openai"},
+		Properties: map[string]any{"label": "openai", "wire": "openai"},
 	})
 	if row.Kind != "core.substrate.reamde.dev/llmprovider" {
 		t.Fatalf("llmprovider row kind = %q", row.Kind)

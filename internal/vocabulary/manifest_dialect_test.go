@@ -866,9 +866,9 @@ data:
 			agentMirror("  functions: [ag.example.com/annotate]\n"),
 			"key \"functions\" is deleted — the retired mirror: an agent names its callables under `tools`",
 		},
-		"the subagents mirror names agents": {
-			agentMirror("  subagents: [ag.example.com/sorter]\n"),
-			"key \"subagents\" is deleted — the retired mirror: an agent names its sub-agents under `agents`",
+		"the old agents key names subagents": {
+			agentMirror("  agents: [ag.example.com/sorter]\n"),
+			"key \"agents\" is deleted — subagents: an agent names its sub-agents under `subagents`",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

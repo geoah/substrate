@@ -460,7 +460,7 @@ loop:
 			// to sniff the failure envelope out of the payload, and a
 			// successful result carrying an `error` key would counterfeit it.
 			toolProps := map[string]any{
-				"role": "tool", "content": out, "toolCallId": tc.ID, "tool": tc.Name, "ok": ok,
+				"role": "tool", "content": out, "toolCallId": tc.ID, "name": tc.Name, "ok": ok,
 			}
 			// The dispatch's committed writes, as changelog addresses: what a
 			// reader resolves instead of parsing the payload. Only committed
@@ -864,7 +864,7 @@ func (l *agentLoop) buildTools() error {
 		tool := agentTool{fn: fn, builtin: t.Builtin}
 		add(t.Name, description, params, tool)
 	}
-	for _, ident := range l.ag.Agents {
+	for _, ident := range l.ag.Subagents {
 		sub, err := l.ds.registry().ResolveAgent(ident)
 		if err != nil {
 			return fmt.Errorf("%w: agent %s: sub-agent %s: %w", substrate.ErrValidation, l.ag.Identity(), ident, err)

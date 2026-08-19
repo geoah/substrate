@@ -74,8 +74,8 @@ func (h *handler) putBlob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	info, err := bs.PutBlob(ctx, ActorFrom(ctx), substrate.BlobUpload{
-		Name:     uploadName(r),
-		MimeType: r.Header.Get("Content-Type"),
+		Name:      uploadName(r),
+		MediaType: r.Header.Get("Content-Type"),
 	}, data, wantDigest)
 	if err != nil {
 		writeSubstrateError(w, err)
@@ -156,7 +156,7 @@ func (h *handler) getBlob(w http.ResponseWriter, r *http.Request) {
 	}
 	// The mime type is OPTIONAL on the manifest, so the read falls back to the
 	// honest "some bytes" rather than guessing from the content.
-	ct := info.MimeType
+	ct := info.MediaType
 	if ct == "" {
 		ct = "application/octet-stream"
 	}

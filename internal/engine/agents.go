@@ -153,11 +153,11 @@ func (ds *dataset) ChatAgent(ctx context.Context, actor substrate.Actor, name, t
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", substrate.ErrNotFound, err)
 	}
-	if ag.SubagentOnly {
-		// The declaration's own word: a subagent-only agent (an llm-as-judge)
+	if ag.HiddenFromChat {
+		// The declaration's own word: an agent hidden from chat (an llm-as-judge)
 		// exists to be called by other agents, and the chat surface says so
 		// instead of opening a thread the console would never have offered.
-		return nil, fmt.Errorf("%w: agent %s is subagent-only: call it from another agent, or drop data.subagentOnly from its declaration",
+		return nil, fmt.Errorf("%w: agent %s is hidden from chat: call it from another agent, or drop data.hiddenFromChat from its declaration",
 			substrate.ErrValidation, ag.Identity())
 	}
 	// Admission under the lifecycle fence, held through the whole chat turn's

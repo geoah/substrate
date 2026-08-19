@@ -66,7 +66,7 @@ func (p *postgresStore) PutTx(ctx context.Context, tx DB, b Blob) error {
 		INSERT INTO blobs (digest, name, mime_type, size, bytes)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (repository, digest) DO NOTHING`,
-		b.Digest, b.Name, b.MimeType, b.Size, b.Bytes)
+		b.Digest, b.Name, b.MediaType, b.Size, b.Bytes)
 	if err != nil {
 		return fmt.Errorf("blobbytes: store blob bytes: %w", err)
 	}

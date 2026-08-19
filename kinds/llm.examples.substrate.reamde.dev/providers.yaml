@@ -10,7 +10,7 @@ metadata:
   id: anthropic
 data:
   properties:
-    name: anthropic
+    label: anthropic
     wire: anthropic
     pricing:
       - model: claude-opus-5
@@ -35,7 +35,7 @@ metadata:
   id: openai
 data:
   properties:
-    name: openai
+    label: openai
     wire: openai
     baseURL: https://api.openai.com/v1
     pricing:

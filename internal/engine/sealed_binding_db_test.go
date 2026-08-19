@@ -24,7 +24,7 @@ func putProviderSecret(t *testing.T, ds *dataset, id, key string) string {
 	mustPutInternal(t, ds, substrate.PutInput{
 		Kind: bindingProviderKind, ID: id,
 		Properties: map[string]any{
-			"name": id, "wire": "openai",
+			"label": id, "wire": "openai",
 			"baseURL": "https://llm.example.com/v1", "apiKey": key,
 		},
 	})

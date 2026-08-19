@@ -28,7 +28,7 @@ func (b *echoBlobDS) PutBlob(_ context.Context, _ substrate.Actor, up substrate.
 	b.got = up
 	return &substrate.BlobInfo{
 		Digest: substrate.BlobDigestPrefix + strings.Repeat("b", 64),
-		Size:   int64(len(data)), Name: up.Name, MimeType: up.MimeType,
+		Size:   int64(len(data)), Name: up.Name, MediaType: up.MediaType,
 		Status: substrate.BlobStored,
 	}, nil
 }
@@ -36,7 +36,7 @@ func (b *echoBlobDS) PutBlob(_ context.Context, _ substrate.Actor, up substrate.
 func (b *echoBlobDS) GetBlob(_ context.Context, _ string) (*substrate.BlobInfo, []byte, error) {
 	return &substrate.BlobInfo{
 		Digest: substrate.BlobDigestPrefix + strings.Repeat("b", 64),
-		Size:   7, Name: b.got.Name, MimeType: b.got.MimeType,
+		Size:   7, Name: b.got.Name, MediaType: b.got.MediaType,
 		Status: substrate.BlobStored,
 	}, []byte("payload"), nil
 }
@@ -101,7 +101,7 @@ func TestBlobNameComesFromTheQueryOrTheDisposition(t *testing.T) {
 // The mime type is optional both ways: a PUT with no Content-Type stores
 // none, and the read falls back to application/octet-stream rather than
 // claiming a type nobody declared.
-func TestBlobMimeTypeIsOptional(t *testing.T) {
+func TestBlobMediaTypeIsOptional(t *testing.T) {
 	ds := &echoBlobDS{fakeDataset: newFakeDataset("geoah")}
 	h := &handler{}
 	ctx := withRequestAuth(context.Background(), ds, substrate.TokenInfo{}, substrate.ActorAPI)
@@ -114,8 +114,8 @@ func TestBlobMimeTypeIsOptional(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("put = %d, want 201: %s", rec.Code, rec.Body)
 	}
-	if ds.got.MimeType != "" {
-		t.Fatalf("store saw mime %q, want none", ds.got.MimeType)
+	if ds.got.MediaType != "" {
+		t.Fatalf("store saw mime %q, want none", ds.got.MediaType)
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/"+APIVersion+"/blobs/x", nil).WithContext(ctx)

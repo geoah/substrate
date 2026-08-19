@@ -30,7 +30,10 @@ data:
   # a delivery parked at the causal depth cap burns none. A display template
   # reads a random-id row as its outcome. `error` is renamed `reason`, the word
   # `llmthread` already uses for why a non-success run settled.
-  version: 13
+  # version 14: the record-delivery mode value is `record`, where it was
+  # `trigger`, matching the trigger source arm the delivery came from and the
+  # same rename on `llmthread.mode`.
+  version: 14
   names:
     singular: run
   displayTemplate: "{status}: {callable}"
@@ -51,7 +54,7 @@ data:
       type: enum
       required: true
       values:
-        - trigger
+        - record
         - schedule
         - webhook
         - manual

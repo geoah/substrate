@@ -314,7 +314,7 @@ func (ds *dataset) deliverWithRetry(ctx context.Context, tr *trigger, ch substra
 			}
 			if res.moved {
 				ds.recordRun(ctx, runRecord{
-					trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeTrigger,
+					trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeRecord,
 					seq: ch.Seq, recordID: ch.RecordID, status: runStatusOK,
 					attempt: attempt + 1, startedAt: started, effects: res.effects,
 					pages: res.pages,
@@ -382,7 +382,7 @@ func (ds *dataset) deliver(ctx context.Context, tr *trigger, ch substrate.Change
 		res.skipped = true
 		return res, nil
 	}
-	mode := runner.ModeTrigger
+	mode := runner.ModeRecord
 	if !advance {
 		mode = runner.ModeManual
 	}
@@ -505,7 +505,7 @@ func (ds *dataset) parkAndAdvance(ctx context.Context, tr *trigger, ch substrate
 			return err
 		}
 		if err := t.putRun(runRecord{
-			trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeTrigger,
+			trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeRecord,
 			seq: ch.Seq, recordID: ch.RecordID, status: runStatusParked,
 			attempt: attempts, startedAt: started, errMsg: cause.Error(),
 		}); err != nil {
@@ -526,7 +526,7 @@ func (ds *dataset) parkAndAdvance(ctx context.Context, tr *trigger, ch substrate
 func (ds *dataset) recordSkipAndAdvance(ctx context.Context, tr *trigger, ch substrate.Change, from int64, started time.Time) error {
 	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		if err := t.putRun(runRecord{
-			trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeTrigger,
+			trigger: tr.ID, callable: tr.CallableID, mode: runner.ModeRecord,
 			seq: ch.Seq, recordID: ch.RecordID, status: runStatusSkipped,
 			attempt: 1, startedAt: started,
 		}); err != nil {

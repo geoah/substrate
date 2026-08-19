@@ -54,7 +54,7 @@ func TestBlobFSRoundTrip(t *testing.T) {
 
 	data := []byte("an attachment that never enters WAL")
 	info, err := bs.PutBlob(ctx, owner, substrate.BlobUpload{
-		Name: "notes.txt", MimeType: "text/plain",
+		Name: "notes.txt", MediaType: "text/plain",
 	}, data, "")
 	if err != nil {
 		t.Fatalf("put blob: %v", err)
@@ -78,8 +78,8 @@ func TestBlobFSRoundTrip(t *testing.T) {
 	}
 	// The manifest is still the truth, so the metadata a read reports comes
 	// back whole even though the store holds nothing but bytes.
-	if got.Name != "notes.txt" || got.MimeType != "text/plain" || got.Size != int64(len(data)) {
-		t.Fatalf("manifest reports (%q, %q, %d)", got.Name, got.MimeType, got.Size)
+	if got.Name != "notes.txt" || got.MediaType != "text/plain" || got.Size != int64(len(data)) {
+		t.Fatalf("manifest reports (%q, %q, %d)", got.Name, got.MediaType, got.Size)
 	}
 	if got.Status != substrate.BlobStored {
 		t.Fatalf("status is %q, want stored", got.Status)
