@@ -51,7 +51,11 @@ func minioURL(t *testing.T) string {
 					"MINIO_ROOT_USER":     minioUser,
 					"MINIO_ROOT_PASSWORD": minioSecret,
 				},
-				WaitingFor: wait.ForHTTP("/minio/health/live").
+				// `/ready`, not `/live`: live returns 200 as soon as the process
+				// is up, while the S3 object layer is still initializing and a
+				// bucket op answers 503 XMinioServerNotInitialized. ready gates on
+				// the object layer, so CreateBucket cannot race the boot (#279).
+				WaitingFor: wait.ForHTTP("/minio/health/ready").
 					WithPort("9000/tcp").WithStartupTimeout(120 * time.Second),
 			},
 		})
