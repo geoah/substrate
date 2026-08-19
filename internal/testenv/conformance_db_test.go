@@ -36,11 +36,14 @@ const conformanceAuthority = "conformance.example.substrate.reamde.dev"
 // notesPath is the collection every record case writes to.
 const notesPath = "/api/v1/" + conformanceAuthority + "/note"
 
-// conformanceVocabulary declares the one kind the record cases use. Each
-// property is load-bearing: `subject` is required (a write that omits it is
-// the 422), `occurredAt` is a datetime (a year-0000 value is the second 422,
-// issue #170), and `phase` is a state machine (a put that moves it is the
-// 403 guard, since transitions are patch's job).
+// conformanceVocabulary declares the kind the record cases use and the
+// function the fault case calls. Each note property is load-bearing: `subject`
+// is required (a write that omits it is the 422), `occurredAt` is a datetime (a
+// year-0000 value is the second 422, issue #170), and `phase` is a state
+// machine (a put that moves it is the 403 guard, since transitions are patch's
+// job). The `faulting` function has a body that raises unconditionally, so a
+// call to it is the 500 function_failed case: the runner reaches the body and
+// it faults, which is ErrFunctionFault, not caller input the schema refuses.
 const conformanceVocabulary = `
 kind: core.substrate.reamde.dev/authority
 metadata:
@@ -73,6 +76,17 @@ data:
         - from: draft
           to: filed
       description: where the note sits in its life
+---
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: ` + conformanceAuthority + `/faulting
+data:
+  authority: ` + conformanceAuthority + `
+  description: a body that always raises, for the function_failed case
+  runtime: python
+  source: |
+    def main(input, host):
+        raise Exception("boom")
 `
 
 // codeCase is one request and the published code it must answer with. An
@@ -254,6 +268,20 @@ func conformanceCases() []codeCase {
 			status, body := e.Do(http.MethodGet,
 				"/api/v1/changes?from=-1", nil)
 			wantError(t, status, body, http.StatusGone, "compacted")
+		},
+	}, {
+		// A function whose body raises is a server-side execution fault, not
+		// bad caller input: the runner reaches the body and it throws, which is
+		// substrate.ErrFunctionFault (500), never the 422 an input-schema
+		// violation would be. The route is one path segment, so the call names
+		// the function by its bare name and the registry resolves it.
+		name: "a function whose body faults answers 500 function_failed",
+		code: "function_failed",
+		run: func(t *testing.T, e *testenv.Env) {
+			status, body := e.Do(http.MethodPost,
+				"/api/v1/core.substrate.reamde.dev/function/faulting/call",
+				map[string]any{"input": map[string]any{}})
+			wantError(t, status, body, http.StatusInternalServerError, "function_failed")
 		},
 	}, {
 		// LAST, and it must stay last: it closes the engine under the running
