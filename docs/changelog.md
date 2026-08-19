@@ -187,6 +187,37 @@ or it is a finding). A pinned head that stopped matching either matches a
 reseal epoch's recorded old head — reported, so you re-pin — or it is a
 plain finding.
 
+## The dialect a changelog is written in
+
+Each repository carries a **changelog dialect**: a monotonic integer naming the
+ops and fold effects a binary must understand to replay its entries. The claim
+rides the append: the first transaction a binary appends with writes the stamp
+alongside its entries, so the stamp covers every entry and no store is barred
+over entries nobody wrote. Opening only reads it, and a binary whose maximum is
+below the stored one refuses to open that repository, with the named error "the
+changelog speaks a newer dialect than this binary can replay". A request
+carrying a token then gets `503 repository temporarily unavailable` rather than
+an invalid-token 401, exactly like the
+[vocabulary dialect](vocabulary.md#vocabulary-evolution-and-the-dialect-contract)
+that governs stored declaration rows; sign-in, which opens the repository to
+mint a token, fails as an internal error.
+
+The refusal is the point. Without it an old binary opens a store it cannot
+replay, serves it for weeks, and fails only when somebody runs `repository
+rebuild`, the day the changelog had to be replayable. The changelog dialect is
+1 today, and a repository's stored dialect is never on the wire: what
+[API discovery](api.md#discovery) reports is the binary's maximum.
+
+`repository rebuild` and `repository reseal` read the stamp again, under the
+changelog lock and before they touch anything: one replays every entry and the
+other rewrites their payloads, and a process that opened the repository before
+another raised the stamp would be interpreting entries in a spelling it does
+not know.
+
+A repository written by a newer binary cannot be served by an older one again:
+downgrading means restoring a dump, the same as for a vocabulary promotion
+([upgrading the binary](operations.md#upgrading-the-binary)).
+
 ## Watching
 
 Any collection, and the changelog itself, streams with `?watch=1`:

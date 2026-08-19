@@ -549,7 +549,16 @@ func (s *service) openNew(ctx context.Context, repo Repository) (*dataset, error
 		watch: newBroadcaster(),
 		info:  repo.info(),
 	}
-	// The chain backfill runs FIRST: everything below appends, and an append
+	// The changelog dialect gate runs FIRST, ahead of every step that writes:
+	// a binary that cannot replay this history must not extend it either. It
+	// only reads; the claim is written by the first transaction that appends
+	// (changelogdialect.go). This is the entries' half of the downgrade gate,
+	// beside dialect.go's promoteSchemaDialect over the stored declaration rows.
+	if err := ds.gateChangelogDialect(ctx); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	// The chain backfill runs next: everything below appends, and an append
 	// needs a hashed head to chain from.
 	if err := ds.backfillChain(ctx); err != nil {
 		_ = db.Close()

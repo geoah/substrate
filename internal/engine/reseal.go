@@ -174,6 +174,13 @@ func (t *txn) reseal(report *ResealReport) error {
 	if err := t.lockKey(changelogLockKey); err != nil {
 		return err
 	}
+	// A reseal REWRITES entry payloads, so it reads the changelog dialect
+	// again here rather than trusting the open's (changelogdialect.go): a
+	// process that opened this repository before another raised the stamp
+	// would be rewriting entries in a spelling it does not know.
+	if err := t.refuseNewerChangelogDialect(); err != nil {
+		return err
+	}
 	// VERIFY FIRST, inside this transaction, under this lock (adversarial
 	// review, both passes): a reseal re-chains — and on a signed repository
 	// RE-SIGNS — whatever bytes are stored, so run over tampered history it
