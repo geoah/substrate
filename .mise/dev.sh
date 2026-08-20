@@ -142,7 +142,14 @@ server_pid() {
 }
 
 wait_healthy() {
+	local pid
+	pid="$(cat "$PIDFILE" 2>/dev/null)"
 	for _ in $(seq 1 60); do
+		# The pid first: a server that died at boot (say, the port was taken)
+		# must not be vouched for by whatever else answers /healthz there.
+		# Liveness, not the command name: right after the fork the child is
+		# still `env`, and failing on that would kill a healthy start.
+		[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || return 1
 		if curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1; then
 			return 0
 		fi
@@ -196,6 +203,13 @@ server_start() {
 	if server_pid >/dev/null; then
 		echo "dev: already running (pid $(server_pid)); mise run dev:restart"
 		return 0
+	fi
+	# A healthz answer with no pid of ours is a FOREIGN server on the port
+	# (another checkout's, usually). Starting would die on bind while the
+	# health poll blesses the squatter, so refuse while the port can be moved.
+	if curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1; then
+		echo "dev: something else answers on :${PORT} and it is not this tree's server; stop it or set SUBSTRATE_DEV_PORT" >&2
+		return 1
 	fi
 	mkdir -p "$STATE"
 	# env -S is not portable enough to be worth it; the list is short.

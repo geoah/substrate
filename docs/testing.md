@@ -15,6 +15,7 @@ suites are where most of the behaviour is actually pinned down.
 | Coverage | `mise run test:coverage` | the same as `test` | ~2 minutes |
 | Console | `mise run console:test` | pnpm | seconds |
 | Live | `mise run test:llm` | provider keys, money | ~1 minute |
+| End-to-end | `mise run test:e2e` | Docker; leaves data | ~1 minute |
 
 `mise run test` is the one to run before pushing. `mise run ci` is the whole
 pipeline as CI runs it, including the linters, the console and an image build.
@@ -266,6 +267,29 @@ is what `test:short` runs.
 So `mise run test` spends nothing even on a machine whose environment is full
 of keys — the live suite runs when you ask for it by name, and never as a side
 effect of running the tests.
+
+## The end-to-end suite
+
+`mise run test:e2e` drives the dev substrate over HTTP exactly as a client
+would: it rebuilds and restarts the server so the binary is this tree's,
+registers a fresh throwaway user through the real registration flow, and
+walks the implemented cases in
+[internal/e2e/CASES.md](../internal/e2e/CASES.md). Two things distinguish it
+from every other suite:
+
+- **It leaves its data.** The user and repository the run builds stay in
+  place, so a human can sign into the console (the report has the
+  credentials) or point `substratectl` at the server and review what the
+  suite actually did. `mise run dev:wipe` is the cleanup; each run registers
+  a new username, so runs never collide.
+- **It writes a report.** Every run writes `.dev/e2e/report-<username>.md`:
+  each case, what it tests, every step it took with the answering status, the
+  result, and an appendix showing the repository as it was left, changelog
+  included.
+
+The test itself (`internal/e2e`) skips wherever `SUBSTRATE_E2E_SERVER` is
+unset, so `mise run test` and CI never touch it, the same shape as the live
+suite's key gate.
 
 ## What CI runs
 
