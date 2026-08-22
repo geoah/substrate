@@ -630,8 +630,35 @@ depends = [
 description = "CI job `image builds` — the image builds from a clean tree"
 run = "docker build -t $IMAGE:ci ."
 
+[tasks."ci:llm"]
+description = "CI job `llm live` — the live suite, and the spend it booked"
+# DELIBERATELY NOT in `ci` below. Every other job is hermetic and runs on every
+# pull request; this one holds provider keys and buys real completions, so it
+# runs weekly and on demand and NEVER on a PR. A fork's pull request must not
+# be able to spend the project's money, and a provider outage must not be able
+# to redden somebody's merge.
+#
+# The `sed`/`awk` half is why this is a task and not two workflow steps: the
+# ledger prints its per-provider table between markers
+# (internal/llm/livespend_test.go), and what those markers mean belongs next to
+# the thing that lifts them, not in YAML. `|| status=$?` rather than a bare
+# pipeline because the summary is MOST wanted when the suite failed.
+run = """
+  set -o pipefail
+  log="$(mktemp)"
+  trap 'rm -f "$log"' EXIT
+  status=0
+  mise run test:llm 2>&1 | tee "$log" || status=$?
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    awk '/<!-- live-spend -->/,/<!-- \\/live-spend -->/' "$log" >>"$GITHUB_STEP_SUMMARY"
+  fi
+  exit "$status"
+  """
+
 [tasks.ci]
 description = "Every CI job, locally. This is the whole pipeline."
+# `ci:llm` is absent on purpose — see its own note. `mise run ci` on a laptop
+# is the PR pipeline, and the PR pipeline spends nothing.
 depends = [
   "ci:lint",
   "ci:cross",

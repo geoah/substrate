@@ -1,0 +1,135 @@
+# The live LLM suite, on a schedule and on demand. NEVER on a pull request.
+#
+# ci.yml is the PR gate and every job in it is hermetic. This one is not: it
+# holds provider keys and buys real completions, which makes it the wrong shape
+# for a merge gate three times over. A fork's PR would spend the project's
+# money. A provider outage would redden somebody's merge for a reason that is
+# not in their diff. And a key exposed to `pull_request` is a key exposed to
+# anyone who can open one.
+#
+# So the answer to "is the adapter still right about the wire" arrives weekly
+# instead of per-commit, and a failure opens an issue rather than blocking
+# anybody. That is the trade the ticket asked for and it is the right one: the
+# providers change under us on their clock, not ours, so a green PR from
+# Tuesday tells you nothing about Thursday anyway.
+#
+# Spend is bounded in THREE places, and the innermost is the one that matters:
+#   - the tests cap every request at 256 tokens and cap the pass at 24 requests
+#     and 20k tokens (internal/llm/livespend_test.go), refusing the request
+#     that would cross rather than reporting it afterwards;
+#   - this job runs once a week with a 20-minute timeout and no concurrency;
+#   - the keys themselves are dedicated CI keys with hard spend limits set
+#     PROVIDER-side (OpenAI project budget, Anthropic workspace cap), so a bug
+#     in the two layers above still cannot produce a surprising bill.
+# The last one is the only guardrail that survives a bug in the guardrails, and
+# it lives in a console rather than this repo — see docs/testing.md.
+#
+# Actions are pinned to a commit SHA with the version in a trailing comment,
+# for the reasons ci.yml states at length.
+name: llm live
+
+on:
+  schedule:
+    # Mondays, 07:00 UTC. Weekly is a deliberate floor, not a shrug: the thing
+    # under test is somebody else's deployed API, and a daily run would pay
+    # seven times over for the same answer.
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+# Never two at once: overlapping runs would double the spend and race on the
+# one tracking issue below.
+concurrency:
+  group: llm-live
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: llm live
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The keys live here, not in repository secrets: an environment can carry
+    # required reviewers and a branch restriction, so `workflow_dispatch` from
+    # an arbitrary ref cannot reach them.
+    environment: llm-live
+    permissions:
+      contents: read
+      # The failure path below opens and updates one tracking issue.
+      issues: write
+    # The chain half is a *_db_test.go and wants a database, exactly as the
+    # `go test` job's does; testdb picks this up through the same variable.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: substrate
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d substrate" --health-interval
+          5s --health-timeout 5s --health-retries 20
+    env:
+      SUBSTRATE_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/substrate?sslmode=disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          experimental: true
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-llm-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-go-llm-
+      # One task, like every job in ci.yml. It also writes the per-provider
+      # spend table into this run's summary — see `ci:llm` in .mise.toml.
+      - run: mise run ci:llm
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      # ONE tracking issue, reopened and commented rather than a new issue per
+      # failing week — an unattended weekly job that files a fresh issue every
+      # Monday teaches everyone to filter the label. These steps are `gh`
+      # rather than a mise task because they are CI plumbing with no laptop
+      # meaning, the same exception ci.yml makes for its cache steps.
+      #
+      # The run URL is assembled in the script from three short values: as one
+      # expression it is a line the YAML formatter wraps, and a wrapped
+      # `${{ }}` is a thing to have to reason about.
+      - if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          url="$SERVER/$REPO/actions/runs/$RUN_ID"
+          body=$(printf '%s\n\n%s\n' \
+            "The weekly live provider suite failed: $url" \
+            "This issue is reused by every failing run, so its comments are the history. It closes itself when the suite is green again.")
+          existing=$(gh issue list --state all --label llm-live --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue reopen "$existing" || true
+            gh issue comment "$existing" --body "$body"
+          else
+            gh label create llm-live --description "The weekly live provider suite" --color BFD4F2 || true
+            gh issue create --title "llm live: the live provider suite is failing" --label llm-live --body "$body"
+          fi
+
+      # Green closes it, so the issue's state IS the suite's state rather than
+      # a thing somebody has to remember to tidy.
+      - if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SERVER: ${{ github.server_url }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          open=$(gh issue list --state open --label llm-live --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue close "$open" --comment "The live suite is green again: $SERVER/$REPO/actions/runs/$RUN_ID"
+          fi
