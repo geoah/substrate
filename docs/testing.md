@@ -15,7 +15,7 @@ suites are where most of the behaviour is actually pinned down.
 | Coverage | `mise run test:coverage` | the same as `test` | ~2 minutes |
 | Console | `mise run console:test` | pnpm | seconds |
 | Live | `mise run test:llm` | provider keys, money | ~1 minute |
-| End-to-end | `mise run test:e2e` | Docker; leaves data | ~1 minute |
+| End-to-end | `mise run test:e2e` | Docker; leaves data | ~2 minutes |
 
 `mise run test` is the one to run before pushing. `mise run ci` is the whole
 pipeline as CI runs it, including the linters, the console and an image build.

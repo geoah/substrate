@@ -460,14 +460,29 @@ func (c *C) waitFor(what string, cond func() bool) {
 }
 
 // The quiet reads: no step recording, for use inside waitFor conditions.
+// quietList follows the cursor to exhaustion, so a count over a grown
+// collection is never silently one page of it.
 func (c *C) quietList(collection string) ([]record, error) {
-	var page struct {
-		Records []record `json:"records"`
+	var all []record
+	after := ""
+	for {
+		var page struct {
+			Records []record `json:"records"`
+			Cursor  string   `json:"cursor"`
+		}
+		path := collection + "?first=200"
+		if after != "" {
+			path += "&after=" + url.QueryEscape(after)
+		}
+		if err := c.r.fetch(path, &page); err != nil {
+			return nil, err
+		}
+		all = append(all, page.Records...)
+		if page.Cursor == "" {
+			return all, nil
+		}
+		after = page.Cursor
 	}
-	if err := c.r.fetch(collection+"?first=200", &page); err != nil {
-		return nil, err
-	}
-	return page.Records, nil
 }
 
 func (c *C) quietCount(collection string) int {

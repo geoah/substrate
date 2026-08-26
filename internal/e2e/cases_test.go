@@ -87,6 +87,11 @@ func TestE2E(t *testing.T) {
 		"Every changelog row is attributed to the owner, a bundle, or one of the four story callables; the "+
 			"signed chain verifies; a rebuild refolds the changelog into a byte-identical graph.",
 		caseStory06)
+
+	// Everything beyond the slice and the stories registers itself into the
+	// extra-case table (extra_test.go) and runs here, over the repository the
+	// stories left behind.
+	r.runExtraCases()
 }
 
 // record is the wire read shape, narrowed to what the cases assert on.

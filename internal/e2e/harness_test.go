@@ -138,6 +138,15 @@ func (c *C) stepf(format string, args ...any) {
 	c.cr.Steps = append(c.cr.Steps, fmt.Sprintf(format, args...))
 }
 
+// skipf ends the case as SKIP: the report must never show PASS for a case
+// whose preconditions kept it from asserting anything.
+func (c *C) skipf(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	c.cr.Result = "SKIP"
+	c.cr.Steps = append(c.cr.Steps, "SKIPPED: "+msg)
+	c.t.Skip(msg)
+}
+
 // require asserts; a failure is recorded in the report and ends the case.
 func (c *C) requiref(cond bool, format string, args ...any) {
 	c.t.Helper()
@@ -234,11 +243,14 @@ func (r *run) fetch(path string, out any) error {
 func (r *run) writeReport() (string, error) {
 	rep := r.rep
 	rep.Finished = time.Now()
-	passed, failed := 0, 0
+	passed, failed, skipped := 0, 0, 0
 	for _, cr := range rep.Cases {
-		if cr.Result == "PASS" {
+		switch cr.Result {
+		case "PASS":
 			passed++
-		} else {
+		case "SKIP":
+			skipped++
+		default:
 			failed++
 		}
 	}
@@ -262,7 +274,7 @@ func (r *run) writeReport() (string, error) {
 	}
 	fmt.Fprintf(&b, "| started | %s |\n", rep.Started.UTC().Format(time.RFC3339))
 	fmt.Fprintf(&b, "| finished | %s |\n", rep.Finished.UTC().Format(time.RFC3339))
-	fmt.Fprintf(&b, "| result | **%d passed, %d failed** |\n\n", passed, failed)
+	fmt.Fprintf(&b, "| result | **%d passed, %d failed, %d skipped** |\n\n", passed, failed, skipped)
 	if rep.Username != "" {
 		fmt.Fprintf(&b, "The repository is left in place for review: open the console at the\n")
 		fmt.Fprintf(&b, "server URL and sign in with the credentials above, or point substratectl\n")

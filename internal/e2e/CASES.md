@@ -42,66 +42,66 @@ the rows below into one coherent repository.
 | id | case | needs | status |
 | --- | --- | --- | --- |
 | AUTH-01 | register with the invite code, mint and use the first token, log in, revoke | | slice |
-| AUTH-02 | a wrong invite code is a 401; a closed door (no code configured) is a 501 | | planned |
+| AUTH-02 | a wrong invite code is a 401; a closed door (no code configured) is a 501 | | implemented |
 | AUTH-03 | a taken username is refused with a 422 naming it | | slice (in AUTH-01) |
-| AUTH-10 | a refused registration writes nothing: the loser's changelog gains no row | | planned |
-| AUTH-04 | a username outside `[a-z][a-z0-9]{1,29}` and an out-of-bounds password are refused at validation | | planned |
+| AUTH-10 | a refused registration writes nothing: the loser's changelog gains no row | | implemented |
+| AUTH-04 | a username outside `[a-z][a-z0-9]{1,29}` and an out-of-bounds password are refused at validation | | implemented |
 | AUTH-05 | full TOTP registration: enroll a seed, register with a live code, the code that registered cannot also log in | totp | planned |
 | AUTH-06 | password change with both factors; the old password stops working; bearer on `/password` is refused 403 | | planned |
 | AUTH-07 | TOTP swap: enroll a candidate seed, prove it, the old seed stops working | totp | planned |
 | AUTH-08 | recovery-key enrollment is one-shot: the second attempt is a conflict | | planned |
-| AUTH-09 | login failures are one indistinguishable 401 (unknown user, wrong password, wrong code) | | planned |
+| AUTH-09 | login failures are one indistinguishable 401 (unknown user, wrong password, wrong code) | | implemented |
 
 ## Tokens
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
 | TOK-01 | mint via `POST /tokens`, list, revoke; the revoked secret is a 401, the others survive | | slice (in AUTH-01) |
-| TOK-02 | a token with `expiresAt` in the past is refused at authenticate | | planned |
-| TOK-03 | tokens are records: `DELETE /api/v1/core.substrate.reamde.dev/token/{id}` revokes the same as `DELETE /tokens/{id}` | | planned |
-| TOK-04 | a garbage bearer is 401; a missing header is 401; the `X-Substrate-Actor` reserved spellings are 403 | | planned |
+| TOK-02 | a token with `expiresAt` in the past is refused at authenticate | | implemented |
+| TOK-03 | tokens are records: `DELETE /api/v1/core.substrate.reamde.dev/token/{id}` revokes the same as `DELETE /tokens/{id}` | | implemented |
+| TOK-04 | a garbage bearer is 401; a missing header is 401; the `X-Substrate-Actor` reserved spellings are 403 | | implemented |
 
 ## Records
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
 | REC-01 | the record lifecycle: create (201, version 1), read, put-merge (200, version up, nothing pruned), state transition with its stamp, delete (tombstone) | | slice |
-| REC-02 | `ifVersion` optimistic concurrency: a stale write is a conflict | | planned |
-| REC-03 | a PATCH with `null` deletes the property; a state property in a PATCH is a transition; an undeclared transition is refused | | planned |
-| REC-04 | a write with an undeclared property is refused naming it | | planned |
-| REC-05 | the title derives from the declared property through `displayTemplate`; a written `title` on such a kind is ignored | | planned |
-| REC-06 | client-chosen ids: POST with `id`, PUT at the id; the reserved ids `incoming` and `edges` are refused | | planned |
-| REC-07 | labels and annotations round-trip; annotations only appear with `withAnnotations=1` | | planned |
-| REC-08 | `propertyMeta` on a single GET names the managing actor and tier after two actors write the same property | | planned |
+| REC-02 | `ifVersion` optimistic concurrency: a stale write is a conflict | | implemented |
+| REC-03 | a PATCH with `null` deletes the property; a state property in a PATCH is a transition; an undeclared transition is refused | | implemented |
+| REC-04 | a write with an undeclared property is refused naming it | | implemented |
+| REC-05 | the title derives from the declared property through `displayTemplate`; a written `title` on such a kind is ignored | | implemented |
+| REC-06 | client-chosen ids: POST with `id`, PUT at the id; the reserved ids `incoming` and `edges` are refused | | implemented |
+| REC-07 | labels and annotations round-trip; annotations only appear with `withAnnotations=1` | | implemented |
+| REC-08 | `propertyMeta` on a single GET names the managing actor and tier after two actors write the same property | | implemented |
 
 ## Edges
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
-| EDGE-01 | link and unlink through `POST/DELETE …/{id}/edges/{rel}`; the edge appears with `withEdges=1` and on the target's `/incoming` | | planned |
+| EDGE-01 | link and unlink through `POST/DELETE …/{id}/edges/{rel}`; the edge appears with `withEdges=1` and on the target's `/incoming` | | implemented |
 | EDGE-02 | an edge write carrying a property the rel does not declare is refused | | story (in STORY-01) |
-| EDGE-03 | an edge outlives the target's tombstone and dies with its purge | | planned |
-| EDGE-04 | `/incoming` pages and narrows by `rel` and `fromKind` | | planned |
+| EDGE-03 | an edge outlives the target's tombstone and dies with its purge | | implemented |
+| EDGE-04 | `/incoming` pages and narrows by `rel` and `fromKind` | | implemented |
 
 ## Queries
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
-| QRY-01 | `filter` selects on properties; `orderBy` orders; `first`/`after` keyset-page without skips or repeats | | planned |
-| QRY-02 | `filter.kinds` on a collection list is a 400 (the path already names the kind) | | planned |
-| QRY-03 | an unknown query parameter is a 400 naming it, with the did-you-mean for singular/plural slips | | planned |
-| QRY-04 | list `head` hands off to `watch?from=head` with no skipped and no duplicated change | | planned |
+| QRY-01 | `filter` selects on properties; `orderBy` orders; `first`/`after` keyset-page without skips or repeats | | implemented |
+| QRY-02 | `filter.kinds` on a collection list is a 400 (the path already names the kind) | | implemented |
+| QRY-03 | an unknown query parameter is a 400 naming it, with the did-you-mean for singular/plural slips | | implemented |
+| QRY-04 | list `head` hands off to `watch?from=head` with no skipped and no duplicated change | | implemented |
 
 ## The changelog
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
 | LOG-01 | every write is a row: forward read, live watch delivery, resume from a seq, and the operator's chain verify | dsn | slice |
-| LOG-02 | the backward page (`before`/`first`) walks history newest-first to exhaustion | | planned |
-| LOG-03 | feed filters: `kinds`, `ops`, `actors` and their excludes; a singular spelling is a 400 naming the plural | | planned |
-| LOG-04 | the `recordId`+`recordKind` pair narrows to one record's history; either alone is a 400 | | planned |
-| LOG-05 | a per-collection watch delivers only that collection and refuses list parameters | | planned |
-| LOG-06 | heartbeats keep an idle stream alive; the terminal error travels as an error frame, not a silent EOF | | planned |
+| LOG-02 | the backward page (`before`/`first`) walks history newest-first to exhaustion | | implemented |
+| LOG-03 | feed filters: `kinds`, `ops`, `actors` and their excludes; a singular spelling is a 400 naming the plural | | implemented |
+| LOG-04 | the `recordId`+`recordKind` pair narrows to one record's history; either alone is a 400 | | implemented |
+| LOG-05 | a per-collection watch delivers only that collection and refuses list parameters | | implemented |
+| LOG-06 | heartbeats keep an idle stream alive (the error-frame framing is pinned by every feed reader, which fails on one) | | implemented |
 | LOG-07 | `repository rebuild` refolds the changelog into identical records | dsn | story (in STORY-06) |
 
 ## Vocabulary
@@ -109,10 +109,10 @@ the rows below into one coherent repository.
 | id | case | needs | status |
 | --- | --- | --- | --- |
 | VOC-01 | `vocabulary/apply` admits a new kind; records of it write and read | | story (in STORY-02) |
-| VOC-02 | an additive upgrade (new optional property, new enum value) lands; the version moves | | planned |
-| VOC-03 | a narrowing (drop, retype, add required) is refused while live records hold the old shape | | planned |
-| VOC-04 | an unknown dialect key quarantines the authority; the quarantine reason names it | | planned |
-| VOC-05 | a kind reference as a record id round-trips percent-encoded (`%2F`) | | planned |
+| VOC-02 | an additive upgrade (new optional property, new enum value) lands; the version moves | | implemented |
+| VOC-03 | a narrowing (drop, retype, add required) is refused while live records hold the old shape | | implemented |
+| VOC-04 | an unknown dialect key is refused at apply naming it (quarantine is the repository-open path, unreachable over the API) | | implemented |
+| VOC-05 | a kind reference as a record id round-trips percent-encoded (`%2F`) | | implemented |
 
 ## Bundles and the catalog
 
@@ -120,18 +120,18 @@ the rows below into one coherent repository.
 | --- | --- | --- | --- |
 | BUN-01 | the catalog lists the shipped closures; install admits one; the collection exists after and not before | | slice (in REC-01) |
 | BUN-02 | `requires:` ordering: installing a dependent before its dependency is refused naming what is missing | | slice (in REC-01) |
-| BUN-03 | disable, enable, uninstall, purge through the bundle PATCH lifecycle; records survive uninstall and die with purge | | planned |
-| BUN-04 | a bundle input binds through `…/bundle/{id}/bind`; resolution order is bound edge, the id `default`, then the sole record | | planned |
-| BUN-05 | re-installing a moved closure is the upgrade; the preview names the version motion | | planned |
-| BUN-06 | trait endpoints: `…/trait/{id}/implementors` and `…/trait/{id}/records` see through installed kinds | | planned |
+| BUN-03 | disable, enable, uninstall, purge through the bundle PATCH lifecycle; records survive uninstall and die with purge | | implemented |
+| BUN-04 | a bundle input binds through `…/bundle/{id}/bind`; resolution order is bound edge, the id `default`, then the sole record | | implemented |
+| BUN-05 | an up-to-date bundle offers no `upgrade`; a moved closure needs a second binary, which one live server cannot stage | | implemented (no-motion half) |
+| BUN-06 | trait endpoints: `…/trait/{id}/implementors` and `…/trait/{id}/records` see through installed kinds | | implemented |
 
 ## Functions
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
-| FN-01 | a python function declared in vocabulary runs via `…/function/{name}/call` and answers its output | | planned |
-| FN-02 | a raising function is a 500 `function_failed`; its stdout lands in the run record | | planned |
-| FN-03 | the host `query` function reads records; `propose`/`mutate` refuse the direct call | | planned |
+| FN-01 | a python function declared in vocabulary runs via `…/function/{name}/call` and answers its output | | implemented |
+| FN-02 | a raising function is a 500 `function_failed`; its stdout lands in the run record | | implemented |
+| FN-03 | the host `query` function reads records; `propose`/`mutate` refuse the direct call | | implemented |
 | FN-04 | a function's own egress is governed by the sandbox allowlist | egress | planned |
 
 ## Triggers
@@ -140,18 +140,18 @@ the rows below into one coherent repository.
 | --- | --- | --- | --- |
 | TRG-01 | a trigger on a kind fires its function on write; the run record shows the delivery | | story (in STORY-02) |
 | TRG-02 | `…/trigger/{id}/run` synthesizes one delivery; `wake` scans now instead of on the 5s tick | | story (in STORY-02) |
-| TRG-03 | a failing delivery parks; `…/parked/{fid}/retry` re-runs it | | planned |
-| TRG-04 | `replay` resets the cursor and re-delivers | | planned |
+| TRG-03 | a failing delivery parks; `…/parked/{fid}/retry` re-runs it | | implemented |
+| TRG-04 | `replay` resets the cursor and re-delivers | | implemented |
 
 ## Agents, against a fake LLM
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
 | AGN-01 | an `llmprovider` record pointing at a scripted OpenAI-wire stub resolves and the agent loop completes | egress | story (in STORY-03) |
-| AGN-02 | `…/agent/{name}/chat` streams ndjson events (`thread`, `delta`, `done`); the transcript persists as `llmthread`/`llmmessage` records | egress | planned |
+| AGN-02 | `…/agent/{name}/chat` streams ndjson events (`thread`, `delta`, `done`); the transcript persists as `llmthread`/`llmmessage` records | egress | implemented |
 | AGN-03 | a tool round-trip: the stub asks for a tool, the agent runs it, the second turn completes | egress | planned |
-| AGN-04 | without a resolvable provider the agent refuses at dispatch naming the row it wanted | | planned |
-| AGN-05 | the interaction records carry the priced usage from the stub's usage block | egress | planned |
+| AGN-04 | without a resolvable provider the agent refuses at dispatch naming the row it wanted | | implemented |
+| AGN-05 | the interaction records carry the priced usage from the stub's usage block | egress | implemented |
 
 ## OAuth, against a fake provider
 
@@ -165,22 +165,22 @@ the rows below into one coherent repository.
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
-| BLOB-01 | PUT bytes, read them back by digest with the `ETag`; a second PUT of the same bytes is the same digest | | planned |
-| BLOB-02 | a wrong-digest PUT at `/blobs/{digest}` is refused | | planned |
+| BLOB-01 | PUT bytes, read them back by digest with the `ETag`; a second PUT of the same bytes is the same digest | | implemented |
+| BLOB-02 | a wrong-digest PUT at `/blobs/{digest}` is refused | | implemented |
 
 ## GraphQL
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
 | GQL-01 | the generated per-repository schema answers a records query over an installed kind | | story (in STORY-06) |
-| GQL-02 | the schema follows a vocabulary apply: the new kind is queryable without a restart | | planned |
+| GQL-02 | the schema follows a vocabulary apply: the new kind is queryable without a restart | | implemented |
 
 ## Merge and split
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
-| MRG-01 | `/merge` folds two records of one kind; the loser's id becomes a `formerId` and reads land on the canonical record | | planned |
-| MRG-02 | `/split` reverses the merge | | planned |
+| MRG-01 | `/merge` folds two records of one kind; the loser's id becomes a `formerId` and reads land on the canonical record | | implemented |
+| MRG-02 | `/split` reverses the merge | | implemented |
 
 ## Errors and strictness
 
@@ -195,14 +195,14 @@ the rows below into one coherent repository.
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
-| RL-01 | a second auth attempt inside the window is a 429 with `Retry-After`; waiting it out succeeds | | planned |
+| RL-01 | a second auth attempt inside the window is a 429 with `Retry-After`; waiting it out succeeds | | implemented |
 
 ## Isolation and durability
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
-| ISO-01 | two registered users: each token reads and watches only its own repository, and neither sees the other's records or changelog | | planned |
-| ISO-02 | one user's vocabulary install does not appear in the other's collections or catalog `installed` flags | | planned |
+| ISO-01 | two registered users: each token reads only its own repository, and neither sees the other's records or changelog | | implemented |
+| ISO-02 | one user's vocabulary install does not appear in the other's collections or catalog `installed` flags | | implemented |
 | DUR-01 | a server restart loses nothing: the records, the changelog head and the signing key are identical before and after | dsn | planned |
 
 ## The operator hat
