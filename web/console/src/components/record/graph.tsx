@@ -1,12 +1,20 @@
 /** The Graph tab: what this record points at, what points back, and a way to
  * walk either direction without leaving the page.
  *
- * The tab used to be **Incoming** and showed the raw `rel` of every inbound
- * row. That reads BACKWARDS: `rel` is the relationship as the OTHER record
- * spells it, so standing on a thread the fan-in said "thread · llmmessage",
- * naming this record instead of what points at it. A group is headed by the
- * declaration's `inverse` now — `messages · llmmessage` — and falls back to
- * `<rel> of <kind>`, which is at least unambiguous, where nobody declared one.
+ * The LAYOUT is a hierarchy, not a wall of rows: the record on top, then one
+ * **Outgoing** and one **Incoming** section — direction is said once, at the
+ * section header, so the rows under it carry no per-row arrows. Inside a
+ * section, each group is a small uppercase label (the rel, or the inverse for
+ * fan-in) with the group's kind and count beside it, and every target renders
+ * as the RecordPill every other surface uses. A group that shares one kind
+ * never repeats it on its rows.
+ *
+ * The fan-in used to show the raw `rel` of every inbound row. That reads
+ * BACKWARDS: `rel` is the relationship as the OTHER record spells it, so
+ * standing on a thread the fan-in said "thread · llmmessage", naming this
+ * record instead of what points at it. A group is headed by the declaration's
+ * `inverse` — `messages · llmmessage` — and falls back to `<rel> of <kind>`,
+ * which is at least unambiguous, where nobody declared one.
  *
  * TWO DIRECTIONS, and only one of them is a query. Outgoing pointers are on
  * the record already (its edges, and its reference-typed properties), so
@@ -22,14 +30,15 @@
 
 import { useMemo, useState } from "react"
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
-import { Link } from "@tanstack/react-router"
 import {
   ArrowDownLeftIcon,
   ArrowUpRightIcon,
   ChevronRightIcon,
   NetworkIcon,
+  type LucideIcon,
 } from "lucide-react"
 
+import { RecordPill } from "@/components/record-pill"
 import { Button } from "@/components/ui/button"
 import {
   Empty,
@@ -45,7 +54,7 @@ import {
   recordQueryOptions,
 } from "@/lib/api/records"
 import type { IncomingEdge, KindInfo, SubstrateRecord } from "@/lib/api/types"
-import { cellValue, recordTitle, relativeTime } from "@/lib/format"
+import { recordTitle, relativeTime } from "@/lib/format"
 import {
   declaredPointers,
   inverseLabel,
@@ -79,37 +88,93 @@ function routeOf(kinds: KindInfo[], kind: string) {
   return { authority: splitKind(kind).authority, name: info.name }
 }
 
-function RecordLink({
-  node,
-  kinds,
-  className,
-}: {
-  node: NodeRef
-  kinds: KindInfo[]
-  className?: string
-}) {
-  const route = routeOf(kinds, node.kind)
-  const label = node.title || node.id
-  if (!route) {
-    return (
-      <span className={cn("truncate data", className)} title={label}>
-        {label}
-      </span>
-    )
-  }
+/** The node as a RecordPill — the one way a record is referenced anywhere.
+ * An uninstalled kind hands the pill an unroutable reference on purpose, so
+ * it renders its inert form instead of minting a dead link. */
+function NodePill({ node, kinds }: { node: NodeRef; kinds: KindInfo[] }) {
+  const routable = Boolean(routeOf(kinds, node.kind))
   return (
-    <Link
-      to="/data/$authority/$name/$id"
-      params={{ authority: route.authority, name: route.name, id: node.id }}
-      className={cn(
-        "truncate underline-offset-4 hover:underline",
-        !node.title && "data",
-        className
+    <RecordPill
+      kind={routable ? node.kind : ""}
+      id={node.id}
+      title={node.title}
+      className="min-w-0"
+    />
+  )
+}
+
+/** One direction of the graph, said ONCE: the header carries the arrow and
+ * the count, so no row under it needs its own. */
+function Section({
+  icon: Icon,
+  label,
+  hint,
+  count,
+  children,
+}: {
+  icon: LucideIcon
+  label: string
+  /** The direction spelled out, for the reader the arrow does not reach. */
+  hint: string
+  count?: number
+  children: React.ReactNode
+}) {
+  return (
+    <div className="min-w-0 pt-2 first:pt-0">
+      <div
+        className="flex cursor-default items-center gap-1.5 text-xs font-semibold"
+        title={hint}
+      >
+        <Icon className="size-3.5 text-muted-foreground" />
+        {label}
+        {count !== undefined && (
+          <span className="font-normal text-muted-foreground">
+            {count.toLocaleString()}
+          </span>
+        )}
+      </div>
+      <div className="min-w-0">{children}</div>
+    </div>
+  )
+}
+
+/** A group's heading: the rel as a small uppercase label, the kind the group
+ * shares, and how many rows it holds. The declaration's one-liner rides the
+ * label as a native title, not another line of text. */
+function GroupLabel({
+  rel,
+  kind,
+  count,
+  description,
+}: {
+  rel: string
+  kind?: string
+  count?: string
+  description?: string
+}) {
+  return (
+    <>
+      <span
+        className={cn(
+          "truncate text-[0.65rem] font-medium tracking-wider uppercase",
+          "text-muted-foreground",
+          description && "cursor-help"
+        )}
+        title={description}
+      >
+        {rel}
+      </span>
+      {kind && (
+        <span className="shrink-0 data text-[0.7rem] text-muted-foreground/70">
+          {kind}
+        </span>
       )}
-      title={`${node.kind}/${node.id}`}
-    >
-      {label}
-    </Link>
+      {count && (
+        <span className="shrink-0 text-[0.7rem] text-muted-foreground/70">
+          {count}
+        </span>
+      )}
+    </>
   )
 }
 
@@ -201,22 +266,24 @@ function OutgoingGroup({
   path: Set<string>
   depth: number
 }) {
+  // One kind across the group means the kind is the GROUP's fact; a mixed
+  // group (a reference that never declared its target) says it per row.
+  const shared = targets.every((t) => t.kind === targets[0].kind)
+    ? splitKind(targets[0].kind).name
+    : undefined
   return (
     <div className="min-w-0">
-      <div className="flex items-baseline gap-1.5 pt-1.5 text-xs">
-        <ArrowUpRightIcon className="size-3 shrink-0 text-muted-foreground" />
-        <span className="data">{pointer.name}</span>
-        <span className="truncate text-muted-foreground" title={pointer.to}>
-          {splitKind(pointer.to).name || pointer.to}
-        </span>
-        {pointer.description && (
-          <span
-            className="truncate text-muted-foreground/70"
-            title={pointer.description}
-          >
-            — {pointer.description}
-          </span>
-        )}
+      <div className="flex min-w-0 items-baseline gap-1.5 pt-1.5">
+        {/* The caret's width, so group labels align with expandable rows. */}
+        <span className="w-3.5 shrink-0" />
+        <GroupLabel
+          rel={pointer.name}
+          kind={shared ?? (splitKind(pointer.to).name || pointer.to)}
+          count={
+            targets.length > 1 ? targets.length.toLocaleString() : undefined
+          }
+          description={pointer.description}
+        />
       </div>
       <div className="ml-[0.44rem] border-l pl-3">
         {targets.map((target) => (
@@ -226,6 +293,7 @@ function OutgoingGroup({
             kinds={kinds}
             path={path}
             depth={depth}
+            showKind={!shared}
           />
         ))}
       </div>
@@ -233,13 +301,14 @@ function OutgoingGroup({
   )
 }
 
-/** One record in the tree: its line, and — expanded — its own graph. */
+/** One record in the tree: its pill, and — expanded — its own graph. */
 function NodeRow({
   node,
   kinds,
   path,
   depth,
   meta,
+  showKind,
 }: {
   node: NodeRef
   kinds: KindInfo[]
@@ -247,6 +316,8 @@ function NodeRow({
   depth: number
   /** A trailing note the row carries: how the pointer reaches it, and when. */
   meta?: React.ReactNode
+  /** Only a mixed group says the kind per row; a shared one said it above. */
+  showKind?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const route = routeOf(kinds, node.kind)
@@ -274,10 +345,12 @@ function NodeRow({
         ) : undefined
       }
     >
-      <RecordLink node={node} kinds={kinds} className="text-xs" />
-      <span className="shrink-0 text-[0.7rem] text-muted-foreground">
-        {splitKind(node.kind).name}
-      </span>
+      <NodePill node={node} kinds={kinds} />
+      {showKind && (
+        <span className="shrink-0 data text-[0.7rem] text-muted-foreground">
+          {splitKind(node.kind).name}
+        </span>
+      )}
       {meta}
       {cyclic && (
         <span className="shrink-0 text-[0.7rem] text-muted-foreground/70">
@@ -372,24 +445,16 @@ function IncomingGroupRow({
         </>
       }
     >
-      <ArrowDownLeftIcon className="size-3 shrink-0 text-muted-foreground" />
-      <span className="truncate text-xs">{named.label}</span>
-      <span className="shrink-0 data text-[0.7rem] text-muted-foreground">
-        {splitKind(fromKind).name}
-      </span>
-      <span className="shrink-0 text-[0.7rem] text-muted-foreground">
-        {total !== undefined
-          ? total.toLocaleString()
-          : `${seen.toLocaleString()}${partial ? "+" : ""}`}
-      </span>
-      {named.description && (
-        <span
-          className="truncate text-[0.7rem] text-muted-foreground/70"
-          title={named.description}
-        >
-          — {named.description}
-        </span>
-      )}
+      <GroupLabel
+        rel={named.label}
+        kind={splitKind(fromKind).name}
+        count={
+          total !== undefined
+            ? total.toLocaleString()
+            : `${seen.toLocaleString()}${partial ? "+" : ""}`
+        }
+        description={named.description}
+      />
     </Row>
   )
 }
@@ -397,9 +462,9 @@ function IncomingGroupRow({
 function MemberMeta({ row }: { row: IncomingEdge }) {
   return (
     <span className="ml-auto flex shrink-0 items-center gap-2 text-[0.7rem] text-muted-foreground">
-      {/* The mechanism is worth saying: the same relationship can arrive as an
-          edge on one row and a reference on the next, mid-migration. */}
-      <span className="data">{row.via ?? "edge"}</span>
+      {/* Only the unusual mechanism earns a word: mid-migration the same
+          relationship can arrive as a reference beside its edge siblings. */}
+      {row.via === "reference" && <span className="data">reference</span>}
       {row.createdAt && (
         <span className="data" title={row.createdAt}>
           {relativeTime(row.createdAt)}
@@ -486,41 +551,59 @@ function GraphNode({
 
   return (
     <div className="min-w-0">
-      {outgoing.map(({ pointer, targets }) => (
-        <OutgoingGroup
-          key={pointer.name}
-          pointer={pointer}
-          targets={targets}
-          kinds={kinds}
-          path={path}
-          depth={depth}
-        />
-      ))}
-      {groups.map((group) => (
-        <IncomingGroupRow
-          key={`${group.rel} ${group.kind}`}
-          authority={authority}
-          plural={plural}
-          id={id}
-          rel={group.rel}
-          fromKind={group.kind}
-          seen={group.rows.length}
-          partial={Boolean(incoming.hasNextPage)}
-          kinds={kinds}
-          path={path}
-          depth={depth}
-        />
-      ))}
-      {incoming.hasNextPage && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-6 px-1 text-xs font-normal text-muted-foreground"
-          onClick={() => void incoming.fetchNextPage()}
-          disabled={incoming.isFetchingNextPage}
+      {outgoing.length > 0 && (
+        <Section
+          icon={ArrowUpRightIcon}
+          label="Outgoing"
+          hint="What this record points at"
+          count={outgoing.reduce((n, g) => n + g.targets.length, 0)}
         >
-          {incoming.isFetchingNextPage ? "Loading…" : "More groups"}
-        </Button>
+          {outgoing.map(({ pointer, targets }) => (
+            <OutgoingGroup
+              key={pointer.name}
+              pointer={pointer}
+              targets={targets}
+              kinds={kinds}
+              path={path}
+              depth={depth}
+            />
+          ))}
+        </Section>
+      )}
+      {groups.length > 0 && (
+        <Section
+          icon={ArrowDownLeftIcon}
+          label="Incoming"
+          hint="What points at this record"
+          count={incoming.data?.pages[0]?.total}
+        >
+          {groups.map((group) => (
+            <IncomingGroupRow
+              key={`${group.rel} ${group.kind}`}
+              authority={authority}
+              plural={plural}
+              id={id}
+              rel={group.rel}
+              fromKind={group.kind}
+              seen={group.rows.length}
+              partial={Boolean(incoming.hasNextPage)}
+              kinds={kinds}
+              path={path}
+              depth={depth}
+            />
+          ))}
+          {incoming.hasNextPage && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-1 text-xs font-normal text-muted-foreground"
+              onClick={() => void incoming.fetchNextPage()}
+              disabled={incoming.isFetchingNextPage}
+            >
+              {incoming.isFetchingNextPage ? "Loading…" : "More groups"}
+            </Button>
+          )}
+        </Section>
       )}
     </div>
   )
@@ -585,11 +668,17 @@ export function GraphRail({
   }
 
   return (
-    <div className="min-w-0 px-4 py-2">
-      <p className="pb-1 text-xs text-muted-foreground">
-        {recordTitle(record.properties) || record.id} —{" "}
-        {cellValue(splitKind(record.kind).name)}
-      </p>
+    <div className="min-w-0 px-4 py-3">
+      {/* The record the graph hangs off, said the way the tree cannot: big.
+          Everything under it points away from or back at this line. */}
+      <div className="flex min-w-0 items-baseline gap-2 pb-2">
+        <span className="truncate text-sm font-semibold">
+          {recordTitle(record.properties) || record.id}
+        </span>
+        <span className="shrink-0 data text-xs text-muted-foreground">
+          {splitKind(record.kind).name}
+        </span>
+      </div>
       <GraphNode
         authority={authority}
         plural={plural}

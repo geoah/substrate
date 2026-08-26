@@ -5,7 +5,8 @@
  * (the YAML view, tinted, annotated and linkified: every key the kind
  * declares hovers with its DATATYPE and its one-liner, and references navigate
  * — edge ids, kinds, actors);
- * Activity, Graph and Provenance are their siblings, none stacked underneath.
+ * **Graph** sits beside Properties (both read the record as data, so they
+ * neighbor); Activity and Provenance follow, none stacked underneath.
  * The active tab lives in the URL (`?tab=`) so it is linkable and back-button
  * friendly. An **Edit** action opens the YAML editor for this record. The layout
  * is generic — functions, kinds, triggers, agents and data records all render
@@ -48,9 +49,9 @@ import { recordRoute } from "@/router"
  * `?tab=manifest` link still lands where it always did. */
 const TABS = [
   "properties",
+  "graph",
   "manifest",
   "activity",
-  "graph",
   "provenance",
 ] as const
 const tabParser = parseAsStringLiteral(TABS)
@@ -173,9 +174,9 @@ export function RecordPage() {
       >
         <TabsList variant="line" className="mx-4 shrink-0 justify-start">
           <TabsTrigger value="properties">Properties</TabsTrigger>
+          <TabsTrigger value="graph">Graph</TabsTrigger>
           <TabsTrigger value="manifest">Manifest</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
-          <TabsTrigger value="graph">Graph</TabsTrigger>
           <TabsTrigger value="provenance">Provenance</TabsTrigger>
         </TabsList>
 
@@ -184,6 +185,16 @@ export function RecordPage() {
             <PropertiesRail
               record={e}
               kind={kindInfo}
+              kinds={registry.data ?? []}
+            />
+          </ScrollArea>
+        </TabsContent>
+        <TabsContent value="graph" className="min-h-0 border-t">
+          <ScrollArea className="h-full">
+            <GraphRail
+              authority={authority}
+              plural={plural}
+              record={e}
               kinds={registry.data ?? []}
             />
           </ScrollArea>
@@ -198,16 +209,6 @@ export function RecordPage() {
         <TabsContent value="activity" className="min-h-0 border-t">
           <ScrollArea className="h-full">
             <ActivityRail record={e} />
-          </ScrollArea>
-        </TabsContent>
-        <TabsContent value="graph" className="min-h-0 border-t">
-          <ScrollArea className="h-full">
-            <GraphRail
-              authority={authority}
-              plural={plural}
-              record={e}
-              kinds={registry.data ?? []}
-            />
           </ScrollArea>
         </TabsContent>
         <TabsContent value="provenance" className="min-h-0 border-t">

@@ -155,7 +155,7 @@ describe("PropertiesRail", () => {
     expect(text).toContain("not set")
   })
 
-  it("links a reference to its referent's detail page", () => {
+  it("links a reference to its referent's detail page, as a RecordPill", () => {
     const { container } = renderRail()
     const link = [...container.querySelectorAll("a")].find(
       (a) => a.textContent === "t0"
@@ -163,6 +163,8 @@ describe("PropertiesRail", () => {
     expect(link?.getAttribute("href")).toBe(
       "/data/tasks.substrate.reamde.dev/task/t0"
     )
+    // The one way a record is referenced from elsewhere — not an ad-hoc link.
+    expect(link?.className).toContain("rounded-full")
   })
 
   it("lists a repeated property one item per line", () => {
@@ -242,7 +244,7 @@ describe("PropertiesRail", () => {
     expect(container.textContent).toContain("role: reviewer")
   })
 
-  it("lists edges with each target linked", () => {
+  it("lists edges with each target linked, as a RecordPill", () => {
     const { container } = renderRail()
     expect(container.textContent).toContain("assignee")
     const link = [...container.querySelectorAll("a")].find(
@@ -251,6 +253,17 @@ describe("PropertiesRail", () => {
     expect(link?.getAttribute("href")).toBe(
       "/data/people.substrate.reamde.dev/person/p1"
     )
+    expect(link?.className).toContain("rounded-full")
+  })
+
+  it("sizes a property's name at least as large as its value, and heavier", () => {
+    const { container } = renderRail()
+    const name = [...container.querySelectorAll("span")].find(
+      (el) => el.textContent === "summary"
+    )
+    // The header outranks its body: same text-sm, font-medium against normal.
+    expect(name?.className).toContain("text-sm")
+    expect(name?.className).toContain("font-medium")
   })
 
   it("still shows the data when the registry lacks the kind", () => {

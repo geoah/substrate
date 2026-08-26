@@ -2,19 +2,19 @@
  * of making a reader parse the manifest's YAML. Each declared property renders
  * through the shape its datatype earns: prose (`text`, `markdown`) as a
  * paragraph block, `json`/`object`/keyed maps as pretty-printed JSON, a
- * `reference` as a link to its referent, a `state` as its badge, an enum as
+ * `reference` as its referent's RecordPill, a `state` as its badge, an enum as
  * its authored label, a `datetime` as the console's stamp with the wire value
  * on hover, a `secret` as the redaction sentinel, and everything else as one
  * compact line. Declared-but-unset properties still show, saying "not set",
  * so the kind's whole shape is readable off one record; values the kind never
  * declared show too, marked as such, because hiding data a record carries
- * would make this view lie. Edges follow beneath, each target a peek-able
- * link. Read-only: Edit is the page's affordance, not this tab's. */
+ * would make this view lie. Edges follow beneath, each target the RecordPill
+ * every other surface uses. Read-only: Edit is the page's affordance, not
+ * this tab's. */
 
-import { Link } from "@tanstack/react-router"
 import { ListIcon } from "lucide-react"
 
-import { RecordPeek } from "@/components/record-peek"
+import { RecordPill } from "@/components/record-pill"
 import { StateBadge } from "@/components/state-badge"
 import {
   Empty,
@@ -83,9 +83,9 @@ function JsonBlock({ value }: { value: unknown }) {
   )
 }
 
-/** A stored reference read as the link it is: the referent's id, routed to its
- * detail page when the registry knows the kind; the raw value, inert, when it
- * does not (a reference may name a kind nobody installed). */
+/** A stored reference read as the link it is: the referent's RecordPill when
+ * the registry knows the kind; the raw value, inert, when it does not (a
+ * reference may name a kind nobody installed). */
 function ReferenceValue({
   value,
   kinds,
@@ -101,16 +101,7 @@ function ReferenceValue({
   if (!target || !info) {
     return <span className="data break-all">{value}</span>
   }
-  return (
-    <Link
-      to="/data/$authority/$name/$id"
-      params={{ authority: info.authority, name: info.name, id: target.id }}
-      className="data break-all underline-offset-4 hover:underline"
-      title={value}
-    >
-      {target.id}
-    </Link>
-  )
+  return <RecordPill kind={target.kind} id={target.id} />
 }
 
 /** One scalar, by its declared datatype. Containers are the caller's job. */
@@ -221,17 +212,26 @@ function Row({ row, kinds }: { row: PropertyRow; kinds: KindInfo[] }) {
     : undefined
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <div className="flex items-baseline gap-2 text-xs">
-        <span className={doc ? "cursor-help data" : "data"} title={doc}>
+      {/* The name heads its value: same size, heavier weight — a header that
+          renders smaller than its body reads as a footnote. */}
+      <div className="flex items-baseline gap-2">
+        <span
+          className={
+            doc
+              ? "cursor-help data text-sm font-medium"
+              : "data text-sm font-medium"
+          }
+          title={doc}
+        >
           {row.name}
         </span>
         {row.spec && (
-          <span className="truncate text-muted-foreground">
+          <span className="truncate text-xs text-muted-foreground">
             {typeLabel(row.spec)}
           </span>
         )}
         {row.undeclared && (
-          <span className="text-muted-foreground/70">undeclared</span>
+          <span className="text-xs text-muted-foreground/70">undeclared</span>
         )}
       </div>
       <div className="min-w-0 text-sm">
@@ -318,17 +318,23 @@ export function PropertiesRail({
       ))}
       {edges.length > 0 && (
         <div className="flex flex-col gap-3 border-t pt-4">
-          <h2 className="text-xs font-medium text-muted-foreground">Edges</h2>
+          {/* The section header outranks the rel headers under it, which in
+              turn outrank their rows — the same ladder the properties use. */}
+          <h2 className="text-sm font-semibold">Edges</h2>
           {edges.map(([rel, targets]) => (
             <div key={rel} className="flex min-w-0 flex-col gap-1">
-              <span className="data text-xs">{rel}</span>
-              <div className="flex min-w-0 flex-col gap-0.5 text-sm">
+              <span className="data text-sm font-medium">{rel}</span>
+              <div className="flex min-w-0 flex-col items-start gap-1 text-sm">
                 {(targets ?? []).map((target) => (
                   <span
                     key={`${target.kind} ${target.id}`}
-                    className="flex min-w-0 items-baseline gap-2"
+                    className="flex max-w-full min-w-0 items-center gap-2"
                   >
-                    <RecordPeek target={target} types={kinds} />
+                    <RecordPill
+                      kind={target.kind}
+                      id={target.id}
+                      title={target.title}
+                    />
                     {/* The EDGE's own properties ride the target on the wire;
                         dropping them would hide data the manifest shows. */}
                     {target.properties &&

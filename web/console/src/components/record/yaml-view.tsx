@@ -174,7 +174,9 @@ export function YamlView({
           </>
         )}
       </Button>
-      <pre className="overflow-x-auto p-4 data text-xs leading-relaxed">
+      {/* pre-wrap, not overflow-x: a long scalar (an agent's prompt) wraps
+          where the reader is, instead of hiding past the right edge. */}
+      <pre className="p-4 data text-xs leading-relaxed break-words whitespace-pre-wrap">
         {lines.map((line, i) => (
           <LineView
             key={i}
