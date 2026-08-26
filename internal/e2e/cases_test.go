@@ -61,9 +61,9 @@ func TestE2E(t *testing.T) {
 	// front; each story wires its own triggers.
 	r.stub = newLLMStub()
 	defer r.stub.close()
-	r.stub.respond("matcher", matcherResponder)
-	r.stub.respond("reflection", reflectionResponder(r))
-	r.stub.respond("arbiter", arbiterResponder)
+	r.stub.respond("transcriptMatcher", matcherResponder)
+	r.stub.respond("actionItemExtractor", reflectionResponder(r))
+	r.stub.respond("changeRequestReviewer", arbiterResponder)
 
 	r.runCase("STORY-02", "Attendee emails become people, deterministically",
 		"An imported event's raw emails resolve through a triggered python function: known people link, "+

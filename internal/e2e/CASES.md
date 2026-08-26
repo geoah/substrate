@@ -25,7 +25,7 @@ the rows below into one coherent repository.
 | --- | --- | --- | --- |
 | STORY-01 | the graph exists: owner, organizations, teams, people, projects, tasks, navigable from every end | | implemented |
 | STORY-02 | attendee emails become people deterministically; the meeting-room address never becomes a person | | implemented |
-| STORY-03 | a transcript finds its meeting: the matcher agent decides over a scoring function tool, writes its audit, and an unmatched one attaches to nothing | egress | implemented |
+| STORY-03 | a transcript finds its meeting: the `transcriptMatcher` agent decides over a scoring function tool, writes its audit, and an unmatched one attaches to nothing | egress | implemented |
 | STORY-04 | reflection: action items become sourced tasks through the decision loop; a sourceless proposal is refused | egress | implemented |
 | STORY-05 | the quiet window: a transcript with nothing in it proposes nothing, and the absence is asserted | egress | implemented |
 | STORY-06 | the world holds together: attribution audit, chain verify, rebuild refolds identically | dsn | implemented |
@@ -102,13 +102,13 @@ the rows below into one coherent repository.
 | LOG-04 | the `recordId`+`recordKind` pair narrows to one record's history; either alone is a 400 | | planned |
 | LOG-05 | a per-collection watch delivers only that collection and refuses list parameters | | planned |
 | LOG-06 | heartbeats keep an idle stream alive; the terminal error travels as an error frame, not a silent EOF | | planned |
-| LOG-07 | `repository rebuild` refolds the changelog into identical records | dsn | planned |
+| LOG-07 | `repository rebuild` refolds the changelog into identical records | dsn | story (in STORY-06) |
 
 ## Vocabulary
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
-| VOC-01 | `vocabulary/apply` admits a new kind; records of it write and read | | planned |
+| VOC-01 | `vocabulary/apply` admits a new kind; records of it write and read | | story (in STORY-02) |
 | VOC-02 | an additive upgrade (new optional property, new enum value) lands; the version moves | | planned |
 | VOC-03 | a narrowing (drop, retype, add required) is refused while live records hold the old shape | | planned |
 | VOC-04 | an unknown dialect key quarantines the authority; the quarantine reason names it | | planned |

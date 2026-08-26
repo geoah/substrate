@@ -89,7 +89,7 @@ re-delivery; changelog attribution to `function:<authority>:<name>`.
 happened, says why, and a transcript that matches nothing attaches to
 nothing.*
 
-The `matcher` agent, behind a trigger on `transcript` creates. It holds a
+The `transcriptMatcher` agent, behind a trigger on `transcript` creates. It holds a
 scoped `mutate` grant and carries one function tool: a story-local
 `scorecandidates` that scores every `calendarevent` within 90 minutes of the
 transcript's time on two weighted signals (start-time proximity 0.6, title
@@ -121,13 +121,13 @@ people, judgment calls wait for a decision, and no new record enters my
 world without a source.*
 
 The second agent in the chain: a trigger on the transcript's `meeting` edge
-landing (STORY-03's agent made that write) fires the `reflection` agent,
+landing (STORY-03's agent made that write) fires the `actionItemExtractor` agent,
 which reads via `graphql` and writes ONLY via `propose`. The kickoff
 transcript's text encodes one case per rule:
 
 1. "Nour will draft the new welcome flow by Friday": a proposed task,
    `project` to Onboarding revamp, `assignee` Nour, `dueAt`, `source` edge
-   to the transcript. High confidence; the arbiter accepts; it lands `open`.
+   to the transcript. High confidence; the reviewer accepts; it lands `open`.
 2. "Kai to profile the signup path": same shape, second assignee.
 3. "Someone should sync with Northwind about the pilot": nobody is named, so
    the task lands in state `proposed` with no assignee. Proposed work waits
@@ -135,7 +135,7 @@ transcript's text encodes one case per rule:
 4. The transcript says "Speaker 3" for an unidentified voice: the agent
    creates NO person for it. A speaker label is not an identity.
 5. A scripted turn proposes a task with NO `source` edge: the request is
-   filed, the arbiter REJECTS it, and the task never folds; the rejected
+   filed, the `changeRequestReviewer` REJECTS it, and the task never folds; the rejected
    request stays behind as the audit of the refusal. A task nobody can
    trace back to evidence is a bare claim, and the sharp assertion is the
    rejection leaving no task, not the presence of sources elsewhere.
@@ -207,7 +207,8 @@ say; each is a candidate for vocabulary work, not a test to force:
 ## Implementation notes (for when these are built)
 
 - The story-local declarations (the STORY-02 resolver function, the
-  `scorecandidates` tool, the `matcher` and `reflection` agents) live in one
+  `scorecandidates` tool, and the three agents (`transcriptMatcher`,
+  `actionItemExtractor`, `changeRequestReviewer`)) live in one
   story-local authority, applied via `POST /api/v1/vocabulary/apply` as test
   fixtures; they are not `kinds/` additions.
 - The fake LLM (stories 03, 04, 05) is one stub serving
@@ -216,13 +217,12 @@ say; each is a candidate for vocabulary work, not a test to force:
   The matcher's pick comes out of the scoring tool's actual answer; the
   JUDGMENTS (who spoke, what the action items are, silence on the quiet
   meeting) are scripted per delivery, because the model is the mock and the
-  machinery around it is what is under test. Matcher, reflection writer and
-  arbiter use different model ids so the distinct-actor assertions mean
+  machinery around it is what is under test. The three agents use different model ids so the distinct-actor assertions mean
   something.
 - Triggers are woken explicitly (`…/trigger/{id}/wake`), but the server's
   own dispatch tick races every wake, so the stories assert settled state
   (records, run rows, decisions) and never who delivered first.
-- The reflection agent declares `resume: never`: a decision resuming the
+- The `actionItemExtractor` agent declares `resume: never`: a decision resuming the
   proposing thread would re-enter the scripted model with a trimmed history,
   and the stories assert exact proposal counts.
 - Each story is one report case (STORY-01 … STORY-06) recorded like the

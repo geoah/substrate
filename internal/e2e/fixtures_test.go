@@ -24,9 +24,9 @@ const (
 	taskKind       = "tasks.substrate.reamde.dev/task"
 
 	actorResolver   = "function:" + storyAuthority + ":resolveattendees"
-	actorMatcher    = "agent:" + storyAuthority + ":matcher"
-	actorReflection = "agent:" + storyAuthority + ":reflection"
-	actorArbiter    = "agent:" + storyAuthority + ":arbiter"
+	actorMatcher    = "agent:" + storyAuthority + ":transcriptMatcher"
+	actorReflection = "agent:" + storyAuthority + ":actionItemExtractor"
+	actorArbiter    = "agent:" + storyAuthority + ":changeRequestReviewer"
 )
 
 // resolveAttendeesSource mirrors what a calendar importer's linker does:
@@ -219,14 +219,14 @@ func storyDocuments(providerID string) []map[string]any {
 			},
 			"source": scoreCandidatesSource,
 		}),
-		doc("core.substrate.reamde.dev/agent", storyAuthority+"/matcher", map[string]any{
+		doc("core.substrate.reamde.dev/agent", storyAuthority+"/transcriptMatcher", map[string]any{
 			"authority":   storyAuthority,
 			"description": "Attaches a transcript to the meeting that actually happened, or declines and says why.",
 			"prompt": "You attach one transcript per run. Call scorecandidates, pick the clear winner above the " +
 				"floor, link meeting and speakers with mutate, and write a matchverdict either way. " +
 				"A transcript that matches nothing attaches to nothing.",
 			"provider": providerID,
-			"model":    "matcher",
+			"model":    "transcriptMatcher",
 			"tools": []map[string]any{
 				{"function": "core.substrate.reamde.dev/graphql"},
 				{"function": "core.substrate.reamde.dev/mutate"},
@@ -237,7 +237,7 @@ func storyDocuments(providerID string) []map[string]any {
 			},
 			"budgets": map[string]any{"maxTurns": 8, "maxToolCalls": 12, "deadlineSeconds": 120},
 		}),
-		doc("core.substrate.reamde.dev/agent", storyAuthority+"/reflection", map[string]any{
+		doc("core.substrate.reamde.dev/agent", storyAuthority+"/actionItemExtractor", map[string]any{
 			"authority":   storyAuthority,
 			"description": "Reads a matched transcript and proposes the work it implies; writes nothing directly.",
 			"prompt": "You read one matched transcript per run and propose tasks for concrete action items only, " +
@@ -245,7 +245,7 @@ func storyDocuments(providerID string) []map[string]any {
 				"speaker label, and when the meeting decided a priority, propose that patch. " +
 				"When nothing was decided, propose nothing.",
 			"provider": providerID,
-			"model":    "reflection",
+			"model":    "actionItemExtractor",
 			// Decisions must not resume the proposing thread: a resumed turn
 			// re-enters the scripted model with a trimmed history, and the
 			// stories assert exact proposal counts.
@@ -259,14 +259,14 @@ func storyDocuments(providerID string) []map[string]any {
 			},
 			"budgets": map[string]any{"maxTurns": 10, "maxToolCalls": 12, "deadlineSeconds": 120},
 		}),
-		doc("core.substrate.reamde.dev/agent", storyAuthority+"/arbiter", map[string]any{
+		doc("core.substrate.reamde.dev/agent", storyAuthority+"/changeRequestReviewer", map[string]any{
 			"authority":   storyAuthority,
 			"description": "Decides one change request per run: work without provenance is rejected.",
 			"prompt": "You decide one recordpatchrequest per run, delivered in the envelope. Accept a proposal " +
 				"whose diff carries its source, reject one that carries none, with one mutate call patching " +
 				"the request's decision.",
 			"provider": providerID,
-			"model":    "arbiter",
+			"model":    "changeRequestReviewer",
 			"tools": []map[string]any{
 				{"function": "core.substrate.reamde.dev/graphql"},
 				{"function": "core.substrate.reamde.dev/mutate"},

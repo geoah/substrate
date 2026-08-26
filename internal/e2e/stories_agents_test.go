@@ -113,7 +113,7 @@ func caseStory03(c *C) {
 		"source": map[string]any{"record": map[string]any{
 			"kinds": []string{transcriptKind}, "ops": []string{"create"},
 		}},
-		"callable": "core.substrate.reamde.dev/agent/" + storyAuthority + "/matcher",
+		"callable": "core.substrate.reamde.dev/agent/" + storyAuthority + "/transcriptMatcher",
 	})
 
 	// The kickoff's transcript: title copied from the meeting (as recorders
@@ -170,21 +170,21 @@ func caseStory03(c *C) {
 // through the decision loop, and the arbiter (a different scripted model)
 // rejects the one proposal without provenance.
 func caseStory04(c *C) {
-	c.putTrigger("story-reflect", map[string]any{
+	c.putTrigger("story-extract-work", map[string]any{
 		"enabled": true,
 		"source": map[string]any{"record": map[string]any{
 			"kinds": []string{transcriptKind}, "ops": []string{"update"},
 			"when":     `record != null && "meeting" in record.edges && size(record.edges.meeting) > 0`,
 			"coalesce": true,
 		}},
-		"callable": "core.substrate.reamde.dev/agent/" + storyAuthority + "/reflection",
+		"callable": "core.substrate.reamde.dev/agent/" + storyAuthority + "/actionItemExtractor",
 	})
-	c.putTrigger("story-arbiter", map[string]any{
+	c.putTrigger("story-review-proposals", map[string]any{
 		"enabled": true,
 		"source": map[string]any{"record": map[string]any{
 			"kinds": []string{"core.substrate.reamde.dev/recordpatchrequest"}, "ops": []string{"create"},
 		}},
-		"callable": "core.substrate.reamde.dev/agent/" + storyAuthority + "/arbiter",
+		"callable": "core.substrate.reamde.dev/agent/" + storyAuthority + "/changeRequestReviewer",
 	})
 
 	// The matcher's meeting-edge write predates this trigger, so the cursor
@@ -193,9 +193,9 @@ func caseStory04(c *C) {
 	// one agent's write is another trigger's delivery. The wake races the
 	// server's own dispatch tick, so the assertions are on the settled
 	// state, never on who delivered first.
-	status, raw := c.do(http.MethodPost, triggerCollection+"/story-reflect/replay", map[string]any{"from": 0}, nil)
+	status, raw := c.do(http.MethodPost, triggerCollection+"/story-extract-work/replay", map[string]any{"from": 0}, nil)
 	c.requiref(status == http.StatusOK, "replaying story-reflect answered %d: %s", status, raw)
-	c.wake("story-reflect")
+	c.wake("story-extract-work")
 	c.waitFor("reflection's 5 proposals", func() bool { return c.quietCount(requestCollection) == 5 })
 
 	var requests struct {
@@ -207,7 +207,7 @@ func caseStory04(c *C) {
 	c.stepf("reflection proposed exactly 5 changes and wrote NOTHING directly")
 
 	// The arbiter decides each one; the sourceless proposal dies.
-	c.wake("story-arbiter")
+	c.wake("story-review-proposals")
 	c.waitFor("the arbiter's 5 decisions", func() bool {
 		reqs, err := c.quietList(requestCollection)
 		if err != nil || len(reqs) != 5 {
@@ -300,8 +300,8 @@ func caseStory05(c *C) {
 	r := c.r
 	requestsBefore := c.countRecords(requestCollection)
 	tasksBefore := c.countRecords(tasksCollection)
-	turnsBefore := r.stub.count("reflection")
-	runsBefore := c.quietRuns("story-reflect")
+	turnsBefore := r.stub.count("actionItemExtractor")
+	runsBefore := c.quietRuns("story-extract-work")
 
 	c.putRec(transcriptCollection, "tr-chitchat", map[string]any{
 		"name": "Billing migration sync", "source": "example-notetaker",
@@ -315,10 +315,10 @@ func caseStory05(c *C) {
 	})
 	c.stepf("the matcher attached the chitchat transcript to `ev-billing-sync`; the chain now hands it to reflection")
 
-	c.wake("story-reflect")
-	c.waitFor("reflection's quiet run to settle", func() bool { return c.quietRuns("story-reflect") > runsBefore })
+	c.wake("story-extract-work")
+	c.waitFor("reflection's quiet run to settle", func() bool { return c.quietRuns("story-extract-work") > runsBefore })
 
-	c.requiref(r.stub.count("reflection") > turnsBefore,
+	c.requiref(r.stub.count("actionItemExtractor") > turnsBefore,
 		"reflection never consulted its model; the silence must be the model's answer, not a skipped run")
 	c.requiref(c.countRecords(requestCollection) == requestsBefore,
 		"the quiet meeting grew the proposals from %d to %d", requestsBefore, c.countRecords(requestCollection))
