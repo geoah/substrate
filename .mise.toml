@@ -184,6 +184,7 @@ run = [
     SUBSTRATE_E2E_INVITE="${SUBSTRATE_INVITE_CODE:-let-me-in}" \
     SUBSTRATE_E2E_DSN="$(.mise/dev.sh dsn)" \
     SUBSTRATE_E2E_CTL="$PWD/bin/substratectl" \
+    SUBSTRATE_E2E_CREDENTIAL_KEY="$(cat .dev/credential.key 2>/dev/null || true)" \
     SUBSTRATE_E2E_REPORT_DIR="$PWD/.dev/e2e" \
     go test -count=1 -run '^TestE2E$' -v ./internal/e2e/
     """,

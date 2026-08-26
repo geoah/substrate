@@ -224,8 +224,10 @@ func caseStory01(c *C) {
 		"an assignee edge aimed at a team answered %d, want 422: %s", status, raw)
 	status, raw = c.do(http.MethodPost, tasksCollection, map[string]any{
 		"properties": map[string]any{"name": "A task with a chatty edge"},
-		"edges": []edge{{Rel: "project", To: edgeTarget{ID: "onboarding-revamp"},
-			Properties: map[string]any{"mood": "hopeful"}}},
+		"edges": []edge{{
+			Rel: "project", To: edgeTarget{ID: "onboarding-revamp"},
+			Properties: map[string]any{"mood": "hopeful"},
+		}},
 	}, nil)
 	c.requiref(status == http.StatusUnprocessableEntity && strings.Contains(string(raw), "mood"),
 		"an undeclared edge property answered %d without naming it: %s", status, raw)
@@ -237,4 +239,3 @@ func caseStory01(c *C) {
 func (r *run) kickoffAt() time.Time {
 	return r.rep.Started.UTC().Truncate(time.Minute).Add(-2 * time.Hour)
 }
-

@@ -55,6 +55,38 @@ func TestE2E(t *testing.T) {
 		"The owner describes their world once (organizations, teams, people, projects, tasks, a calendar) "+
 			"and every relationship is navigable from every end; mistyped edges and undeclared edge properties are refused.",
 		caseStory01)
+
+	// The automation stories: the model is a scripted stub the test hosts,
+	// the substrate is the real server. The responders are registered up
+	// front; each story wires its own triggers.
+	r.stub = newLLMStub()
+	defer r.stub.close()
+	r.stub.respond("matcher", matcherResponder)
+	r.stub.respond("reflection", reflectionResponder(r))
+	r.stub.respond("arbiter", arbiterResponder)
+
+	r.runCase("STORY-02", "Attendee emails become people, deterministically",
+		"An imported event's raw emails resolve through a triggered python function: known people link, "+
+			"the stranger is minted under the right organization, the meeting-room address mints nothing, "+
+			"and a re-delivery converges instead of duplicating.",
+		caseStory02)
+	r.runCase("STORY-03", "A transcript finds its meeting, or honestly does not",
+		"The matcher agent scores candidates through a function tool, links the winner and the people who "+
+			"actually spoke, writes its audit record, and attaches an unmatchable transcript to nothing.",
+		caseStory03)
+	r.runCase("STORY-04", "Reflection: what was said becomes work, with provenance",
+		"A trigger on the matcher's own write chains into the reflection agent, which only proposes; the "+
+			"arbiter (a different scripted model) accepts sourced work, leaves the unnamed item waiting, "+
+			"applies the priority patch, and rejects the sourceless proposal so it leaves nothing behind.",
+		caseStory04)
+	r.runCase("STORY-05", "The quiet window",
+		"A transcript with nothing in it flows through the whole chain; reflection consults its model and "+
+			"proposes nothing, and the repository gains no work. Absence is asserted, not assumed.",
+		caseStory05)
+	r.runCase("STORY-06", "The world holds together",
+		"Every changelog row is attributed to the owner, a bundle, or one of the four story callables; the "+
+			"signed chain verifies; a rebuild refolds the changelog into a byte-identical graph.",
+		caseStory06)
 }
 
 // record is the wire read shape, narrowed to what the cases assert on.

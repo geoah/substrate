@@ -23,12 +23,12 @@ the rows below into one coherent repository.
 
 | id | story | needs | status |
 | --- | --- | --- | --- |
-| STORY-01 | the graph exists: owner, organizations, teams, people, projects, tasks, navigable from every end | | planned |
-| STORY-02 | attendee emails become people deterministically; the meeting-room address never becomes a person | | planned |
-| STORY-03 | a transcript finds its meeting: the matcher agent decides over a scoring function tool, writes its audit, and an unmatched one attaches to nothing | egress | planned |
-| STORY-04 | reflection: action items become sourced tasks through the decision loop; a sourceless proposal is refused | egress | planned |
-| STORY-05 | the quiet window: a transcript with nothing in it proposes nothing, and the absence is asserted | egress | planned |
-| STORY-06 | the world holds together: attribution audit, chain verify, rebuild refolds identically | dsn | planned |
+| STORY-01 | the graph exists: owner, organizations, teams, people, projects, tasks, navigable from every end | | implemented |
+| STORY-02 | attendee emails become people deterministically; the meeting-room address never becomes a person | | implemented |
+| STORY-03 | a transcript finds its meeting: the matcher agent decides over a scoring function tool, writes its audit, and an unmatched one attaches to nothing | egress | implemented |
+| STORY-04 | reflection: action items become sourced tasks through the decision loop; a sourceless proposal is refused | egress | implemented |
+| STORY-05 | the quiet window: a transcript with nothing in it proposes nothing, and the absence is asserted | egress | implemented |
+| STORY-06 | the world holds together: attribution audit, chain verify, rebuild refolds identically | dsn | implemented |
 
 ## Discovery and health
 
@@ -79,7 +79,7 @@ the rows below into one coherent repository.
 | id | case | needs | status |
 | --- | --- | --- | --- |
 | EDGE-01 | link and unlink through `POST/DELETE …/{id}/edges/{rel}`; the edge appears with `withEdges=1` and on the target's `/incoming` | | planned |
-| EDGE-02 | an edge write carrying a property the rel does not declare is refused | | planned |
+| EDGE-02 | an edge write carrying a property the rel does not declare is refused | | story (in STORY-01) |
 | EDGE-03 | an edge outlives the target's tombstone and dies with its purge | | planned |
 | EDGE-04 | `/incoming` pages and narrows by `rel` and `fromKind` | | planned |
 
@@ -138,8 +138,8 @@ the rows below into one coherent repository.
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
-| TRG-01 | a trigger on a kind fires its function on write; `…/trigger/status` shows the delivery | | planned |
-| TRG-02 | `…/trigger/{id}/run` synthesizes one delivery; `wake` scans now instead of on the 5s tick | | planned |
+| TRG-01 | a trigger on a kind fires its function on write; the run record shows the delivery | | story (in STORY-02) |
+| TRG-02 | `…/trigger/{id}/run` synthesizes one delivery; `wake` scans now instead of on the 5s tick | | story (in STORY-02) |
 | TRG-03 | a failing delivery parks; `…/parked/{fid}/retry` re-runs it | | planned |
 | TRG-04 | `replay` resets the cursor and re-delivers | | planned |
 
@@ -147,7 +147,7 @@ the rows below into one coherent repository.
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
-| AGN-01 | an `llmprovider` record pointing at a scripted OpenAI-wire stub resolves; `…/agent/{name}/call` completes a turn | egress | planned |
+| AGN-01 | an `llmprovider` record pointing at a scripted OpenAI-wire stub resolves and the agent loop completes | egress | story (in STORY-03) |
 | AGN-02 | `…/agent/{name}/chat` streams ndjson events (`thread`, `delta`, `done`); the transcript persists as `llmthread`/`llmmessage` records | egress | planned |
 | AGN-03 | a tool round-trip: the stub asks for a tool, the agent runs it, the second turn completes | egress | planned |
 | AGN-04 | without a resolvable provider the agent refuses at dispatch naming the row it wanted | | planned |
@@ -172,7 +172,7 @@ the rows below into one coherent repository.
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
-| GQL-01 | the generated per-repository schema answers a records query over an installed kind | | planned |
+| GQL-01 | the generated per-repository schema answers a records query over an installed kind | | story (in STORY-06) |
 | GQL-02 | the schema follows a vocabulary apply: the new kind is queryable without a restart | | planned |
 
 ## Merge and split

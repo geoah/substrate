@@ -45,6 +45,8 @@ type run struct {
 	hc     *http.Client
 	rep    *report
 
+	stub *llmStub // the scripted OpenAI-wire model the story agents buy from
+
 	username   string
 	password   string
 	token      string // the first token's secret; every case call carries it

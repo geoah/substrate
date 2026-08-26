@@ -60,10 +60,11 @@ know are linked, the stranger is minted, and the meeting-room address never
 becomes a person.*
 
 The wiring is a story-local **python function** (applied via
-`vocabulary/apply`) behind a trigger on `calendarevent` creates. The event
-arrives as an importer leaves it: no edges, raw emails in an annotation:
-`sam@acme.example, nour@acme.example, priya@northwind.example,
-jordan@northwind.example, c_room7@resource.calendar.example`.
+`vocabulary/apply`) behind a trigger on the story's `eventimport` kind: the
+record an importer actually delivers, raw emails and all
+(`sam@acme.example, nour@acme.example, priya@northwind.example,
+jordan@northwind.example, c_room7@resource.calendar.example`), no edges
+anywhere. The function folds it into the real `calendarevent`.
 
 1. each email resolves against `person.emails`; three resolve;
 2. `jordan@northwind.example` resolves nowhere, so a person is minted, named
@@ -87,27 +88,26 @@ re-delivery; changelog attribution to `function:<authority>:<name>`.
 happened, says why, and a transcript that matches nothing attaches to
 nothing.*
 
-The `matcher` agent, behind a trigger on `transcript` creates. It reads via
-`graphql`, holds a `mutate` grant scoped to `calendar.substrate.reamde.dev/*`,
-and carries one optional function tool: a story-local `scorecandidates`
-that scores every `calendarevent` within 90 minutes of the transcript's time
-on three weighted signals (start-time proximity 0.40, attendee/speaker email
-overlap 0.30, title token overlap 0.30). The arithmetic is the tool's; the
+The `matcher` agent, behind a trigger on `transcript` creates. It holds a
+scoped `mutate` grant and carries one function tool: a story-local
+`scorecandidates` that scores every `calendarevent` within 90 minutes of the
+transcript's time on two weighted signals (start-time proximity 0.6, title
+token overlap 0.4) against a 0.4 floor. The arithmetic is the tool's; the
 decision is the agent's.
 
 1. The kickoff transcript (title copied from the meeting, as recorders do;
-   time 10 minutes off; speakers overlapping attendees): the scripted agent
-   calls `scorecandidates`, BOTH events come back scored, the kickoff wins
-   on title + attendees and the billing sync loses despite being inside the
-   time window. The agent links `meeting` and `speakers` and writes the
-   score breakdown into the transcript's annotations, so a wrong match is
-   debuggable from the record itself.
+   ten minutes of clock skew): the scripted agent calls `scorecandidates`,
+   BOTH events come back scored, the kickoff wins on time + title and the
+   billing sync loses despite being inside the window. The agent links
+   `meeting` and `speakers` and writes its audit as a `matchverdict` record
+   (verdict, score, reason, edges to both ends), so a wrong match is
+   debuggable from the repository itself.
 2. The orphan transcript (no event within 90 minutes, alien title): the tool
    answers with no candidate above the floor, and the agent declines: NO
-   `meeting` edge, an annotation saying why. Attaching to the least-wrong
-   meeting is worse than attaching to none.
-3. Speakers resolve by exact email match only; the attendee who said nothing
-   gets no `speakers` edge.
+   `meeting` edge, an `unmatched` verdict saying why. Attaching to the
+   least-wrong meeting is worse than attaching to none.
+3. The agent links as `speakers` only the people who actually spoke; the
+   attendee who said nothing gets no `speakers` edge.
 
 The agent's write is what fires STORY-04: the two agents form a chain, and
 the chain itself (a trigger firing on an agent's write, with both actors
@@ -137,11 +137,11 @@ transcript's text encodes one case per rule:
    REFUSED, not filed; the task never folds. A task nobody can trace back to
    evidence is a bare claim, and the sharp assertion is the refusal, not the
    presence of sources elsewhere.
-6. "Nour joins the onboarding squad": a membership change is a judgment
-   call, so it travels as a `recordpatchrequest` on the team's `members`
-   edge; the arbiter agent, a DIFFERENT scripted model id than the writer
-   (a writer grading itself is not a review), accepts it, and the edge lands
-   through `mutate`.
+6. "The invite flow redesign is now urgent": a prioritization is a judgment
+   call, so it travels as a proposed patch on the existing task; the arbiter
+   agent, a DIFFERENT scripted model id than the writer (a writer grading
+   itself is not a review), accepts it, and accepting is what applies the
+   diff.
 
 Asserted along the whole chain (source, run, proposal, judgment, decision,
 action): the transcript's `/incoming` shows the tasks pointing back through
@@ -189,9 +189,13 @@ say; each is a candidate for vocabulary work, not a test to force:
   synced evidence (a reply sent, a review submitted) cannot declare that,
   so nothing can close it deterministically; an agent opens obligations,
   and nothing should depend on an LLM noticing they were met.
-- **Match audit as declared properties**: STORY-03 parks its score
-  breakdown in annotations because the transcript kind declares no
-  confidence or signals properties.
+- **Match audit as declared properties**: STORY-03 mints a story-local
+  `matchverdict` kind because the transcript kind declares no confidence or
+  signals properties of its own.
+- **Proposals cannot carry edge changes on existing records**: a `propose`
+  diff admits edges only on a create, so a judgment call like "add this
+  person to that team" has no decision-loop path today; STORY-04's judgment
+  call is a property patch instead.
 - **Proposal legibility**: a `recordpatchrequest` reviewer must join their
   own context; the proposal record could resolve what the change is about
   and where it came from at propose time.
@@ -206,8 +210,12 @@ say; each is a candidate for vocabulary work, not a test to force:
   `POST /chat/completions` scripted per model id, the `fakeLLM` pattern from
   `internal/engine/agents_db_test.go`; matcher, reflection writer and judge
   use different model ids so the distinct-actor assertions mean something.
-- Triggers are woken explicitly (`…/trigger/{id}/wake`); completion is
-  observed through trigger status and the changelog, never sleeps.
+- Triggers are woken explicitly (`…/trigger/{id}/wake`), but the server's
+  own dispatch tick races every wake, so the stories assert settled state
+  (records, run rows, decisions) and never who delivered first.
+- The reflection agent declares `resume: never`: a decision resuming the
+  proposing thread would re-enter the scripted model with a trimmed history,
+  and the stories assert exact proposal counts.
 - Each story is one report case (STORY-01 … STORY-06) recorded like the
   slice cases; the ecosystem is shared state within a run.
 - Every assertion must be one that FAILS against a lazy implementation (the
