@@ -215,6 +215,11 @@ server_start() {
 	# env -S is not portable enough to be worth it; the list is short.
 	local web=()
 	[ -d "$WEB_DIR" ] && web=("WEB_DIR=${WEB_DIR}")
+	# Egress stays default-closed; the variable passes through only when the
+	# caller set one. The e2e suite needs loopback open, because its
+	# llmprovider rows point at a stub the test process hosts.
+	local egress=()
+	[ -n "${SUBSTRATE_EGRESS_ALLOW:-}" ] && egress=("SUBSTRATE_EGRESS_ALLOW=${SUBSTRATE_EGRESS_ALLOW}")
 	nohup env \
 		"DATABASE_URL=${DSN}" \
 		"PORT=${PORT}" \
@@ -223,6 +228,7 @@ server_start() {
 		"SUBSTRATE_CREDENTIAL_KEY=$(cred_key)" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
 		"${web[@]}" \
+		"${egress[@]}" \
 		bin/substrate >>"$LOGFILE" 2>&1 &
 	echo $! >"$PIDFILE"
 	if ! wait_healthy; then
@@ -272,6 +278,8 @@ cmd_run() {
 	urls
 	local web=()
 	[ -d "$WEB_DIR" ] && web=("WEB_DIR=${WEB_DIR}")
+	local egress=()
+	[ -n "${SUBSTRATE_EGRESS_ALLOW:-}" ] && egress=("SUBSTRATE_EGRESS_ALLOW=${SUBSTRATE_EGRESS_ALLOW}")
 	exec env \
 		"DATABASE_URL=${DSN}" \
 		"PORT=${PORT}" \
@@ -280,6 +288,7 @@ cmd_run() {
 		"SUBSTRATE_CREDENTIAL_KEY=$(cred_key)" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
 		"${web[@]}" \
+		"${egress[@]}" \
 		bin/substrate
 }
 

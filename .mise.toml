@@ -175,7 +175,10 @@ description = "The live end-to-end suite: a fresh user on the dev substrate, lef
 run = [
   "mise run build",
   "mise run build:cli",
-  ".mise/dev.sh restart",
+  # Loopback egress: the story agents buy completions from a scripted stub
+  # the test process hosts, and the server dials it through the same egress
+  # gate as any provider.
+  "SUBSTRATE_EGRESS_ALLOW=\"${SUBSTRATE_EGRESS_ALLOW:-127.0.0.0/8,::1/128}\" .mise/dev.sh restart",
   """
     SUBSTRATE_E2E_SERVER="http://127.0.0.1:${SUBSTRATE_DEV_PORT:-8080}" \
     SUBSTRATE_E2E_INVITE="${SUBSTRATE_INVITE_CODE:-let-me-in}" \

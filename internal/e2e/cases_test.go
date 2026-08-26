@@ -51,15 +51,20 @@ func TestE2E(t *testing.T) {
 		"Every write is a hashed changelog row; a live watch delivers a write as it lands; a resume from a "+
 			"seq replays exactly the rows after it; the operator's verify walks every hash and signature.",
 		caseChangelog)
+	r.runCase("STORY-01", "The graph exists",
+		"The owner describes their world once (organizations, teams, people, projects, tasks, a calendar) "+
+			"and every relationship is navigable from every end; mistyped edges and undeclared edge properties are refused.",
+		caseStory01)
 }
 
 // record is the wire read shape, narrowed to what the cases assert on.
 type record struct {
-	ID         string         `json:"id"`
-	Kind       string         `json:"kind"`
-	Version    int64          `json:"version"`
-	Properties map[string]any `json:"properties"`
-	DeletedAt  string         `json:"deletedAt"`
+	ID         string                  `json:"id"`
+	Kind       string                  `json:"kind"`
+	Version    int64                   `json:"version"`
+	Properties map[string]any          `json:"properties"`
+	Edges      map[string][]edgeTarget `json:"edges"`
+	DeletedAt  string                  `json:"deletedAt"`
 }
 
 func (r record) prop(name string) string {
