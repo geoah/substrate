@@ -16,6 +16,20 @@ only against the enforced door (`mise run dev:totp`), `egress` needs
 `SUBSTRATE_EGRESS_ALLOW` pointed at loopback on the server, `dsn` needs the
 operator hat (`SUBSTRATE_E2E_DSN` and a built `substratectl`).
 
+Beside these endpoint-level cases, [STORIES.md](STORIES.md) holds the
+story-level cases: whole user scenarios (people, teams, projects, calendar
+events and transcripts, with the automation over them) that compose many of
+the rows below into one coherent repository.
+
+| id | story | needs | status |
+| --- | --- | --- | --- |
+| STORY-01 | the graph exists: owner, organizations, teams, people, projects, tasks, navigable from every end | | planned |
+| STORY-02 | attendee emails become people deterministically; the meeting-room address never becomes a person | | planned |
+| STORY-03 | a transcript finds its meeting: the matcher agent decides over a scoring function tool, writes its audit, and an unmatched one attaches to nothing | egress | planned |
+| STORY-04 | reflection: action items become sourced tasks through the decision loop; a sourceless proposal is refused | egress | planned |
+| STORY-05 | the quiet window: a transcript with nothing in it proposes nothing, and the absence is asserted | egress | planned |
+| STORY-06 | the world holds together: attribution audit, chain verify, rebuild refolds identically | dsn | planned |
+
 ## Discovery and health
 
 | id | case | needs | status |
