@@ -202,6 +202,21 @@ func caseStory01(c *C) {
 		"nour's incoming edges miss the task or the team: %v", found)
 	c.stepf("incoming on `nour` names both ends: `assignee` from the task, `members` from the team (%d rows)", incoming.Total)
 
+	// A list opts into edges with withEdges=1.
+	var withEdges struct {
+		Records []record `json:"records"`
+	}
+	status, raw = c.do(http.MethodGet, tasksCollection+"?withEdges=1&first=50", nil, &withEdges)
+	c.requiref(status == http.StatusOK, "the withEdges list answered %d: %s", status, raw)
+	edged := 0
+	for _, rec := range withEdges.Records {
+		if len(rec.Edges) > 0 {
+			edged++
+		}
+	}
+	c.requiref(edged >= 5, "the withEdges list carries edges on %d of %d tasks", edged, len(withEdges.Records))
+	c.stepf("a `withEdges=1` list carries the edges inline on %d tasks", edged)
+
 	// One filtered list: open tasks assigned to Nour, ordered by dueAt.
 	filter := url.QueryEscape(`{"properties":{"status":{"eq":"open"}},"edge":{"rel":"assignee","to":"nour"}}`)
 	var page struct {

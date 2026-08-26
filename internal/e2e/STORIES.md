@@ -48,10 +48,11 @@ from every end.*
 
 Hand-written over the API, no automation. Installs `people`, `scheduling`,
 `tasks`, `calendar`; writes the ecosystem above; asserts the graph from both
-ends (`withEdges`, `/incoming`, filtered lists, one GraphQL join across
-person, team, task, project) and the refusals (an `assignee` edge aimed at a
-team, an undeclared edge property). Every later story builds on what this
-one leaves.
+ends (single-record edge reads, a `withEdges=1` list, `/incoming` on a
+person, a filtered and ordered list) and the refusals (an `assignee` edge
+aimed at a team, an undeclared edge property). The GraphQL read over the
+whole graph is STORY-06's, where it doubles as the rebuild comparison.
+Every later story builds on what this one leaves.
 
 ## STORY-02: attendee emails become people, deterministically
 
@@ -116,8 +117,8 @@ distinct in the changelog) is one of the assertions.
 ## STORY-04: reflection: what was said becomes work, with provenance
 
 *As the owner, a meeting's action items become tasks assigned to the right
-people, judgment calls wait for a decision, and nothing enters my world
-without a source.*
+people, judgment calls wait for a decision, and no new record enters my
+world without a source.*
 
 The second agent in the chain: a trigger on the transcript's `meeting` edge
 landing (STORY-03's agent made that write) fires the `reflection` agent,
@@ -133,10 +134,11 @@ transcript's text encodes one case per rule:
    for the owner; an agent that guesses an assignee is inventing a fact.
 4. The transcript says "Speaker 3" for an unidentified voice: the agent
    creates NO person for it. A speaker label is not an identity.
-5. A scripted turn proposes a task with NO `source` edge: the proposal is
-   REFUSED, not filed; the task never folds. A task nobody can trace back to
-   evidence is a bare claim, and the sharp assertion is the refusal, not the
-   presence of sources elsewhere.
+5. A scripted turn proposes a task with NO `source` edge: the request is
+   filed, the arbiter REJECTS it, and the task never folds; the rejected
+   request stays behind as the audit of the refusal. A task nobody can
+   trace back to evidence is a bare claim, and the sharp assertion is the
+   rejection leaving no task, not the presence of sources elsewhere.
 6. "The invite flow redesign is now urgent": a prioritization is a judgment
    call, so it travels as a proposed patch on the existing task; the arbiter
    agent, a DIFFERENT scripted model id than the writer (a writer grading
@@ -155,9 +157,11 @@ behind.
 
 The chitchat transcript (weather, lunch, no decisions, no commitments) goes
 through the same trigger chain. The scripted agent reads it and proposes
-nothing. Asserted: the trigger status shows a COMPLETED delivery, the run
-happened, and the changelog gained not one record from it. Silence is the
-pass condition, and absence is asserted, not assumed. This is the precision
+nothing. Asserted: the delivery settled OK, the model was actually consulted
+(a skipped run must not pass as silence), and the repository gained no work:
+not one proposal, not one task. The run's own bookkeeping (thread,
+transcript rows, the run record) is the only trace. Silence is the pass
+condition, and absence is asserted, not assumed. This is the precision
 control of the set: it has no happy path to hide behind, and it must keep
 passing forever.
 
@@ -207,9 +211,14 @@ say; each is a candidate for vocabulary work, not a test to force:
   story-local authority, applied via `POST /api/v1/vocabulary/apply` as test
   fixtures; they are not `kinds/` additions.
 - The fake LLM (stories 03, 04, 05) is one stub serving
-  `POST /chat/completions` scripted per model id, the `fakeLLM` pattern from
-  `internal/engine/agents_db_test.go`; matcher, reflection writer and judge
-  use different model ids so the distinct-actor assertions mean something.
+  `POST /chat/completions`, answered by per-model RESPONDERS: deterministic
+  functions of the message history, because request ids are server-assigned.
+  The matcher's pick comes out of the scoring tool's actual answer; the
+  JUDGMENTS (who spoke, what the action items are, silence on the quiet
+  meeting) are scripted per delivery, because the model is the mock and the
+  machinery around it is what is under test. Matcher, reflection writer and
+  arbiter use different model ids so the distinct-actor assertions mean
+  something.
 - Triggers are woken explicitly (`…/trigger/{id}/wake`), but the server's
   own dispatch tick races every wake, so the stories assert settled state
   (records, run rows, decisions) and never who delivered first.

@@ -29,6 +29,7 @@ type llmReq struct {
 
 type llmMessage struct {
 	Role    string `json:"role"`
+	Name    string `json:"name"`
 	Content string `json:"content"`
 }
 
@@ -140,4 +141,19 @@ func (r llmReq) assistantTurns() int {
 		}
 	}
 	return n
+}
+
+// lastToolResult decodes the newest tool answer with the given name, so a
+// responder's next move can depend on what the tool actually said.
+func (r llmReq) lastToolResult(name string) map[string]any {
+	for i := len(r.Messages) - 1; i >= 0; i-- {
+		if r.Messages[i].Role == "tool" && r.Messages[i].Name == name {
+			var out map[string]any
+			if json.Unmarshal([]byte(r.Messages[i].Content), &out) == nil {
+				return out
+			}
+			return nil
+		}
+	}
+	return nil
 }

@@ -46,7 +46,9 @@ def main(input, host):
     imp_id = rec.get("id") or ""
     event_id = "ev-" + imp_id.removeprefix("imp-")
 
-    people = host.records.list(["people.substrate.reamde.dev/person"], first=500) or {}
+    # The two lists together stay under the function's default 500-row read
+    # budget; the fixture world is dozens of records, not hundreds.
+    people = host.records.list(["people.substrate.reamde.dev/person"], first=300) or {}
     by_email = {}
     for p in people.get("records") or []:
         for e in (p.get("properties") or {}).get("emails") or []:
@@ -65,6 +67,8 @@ def main(input, host):
             continue
         pid = by_email.get(email)
         if not pid:
+            # Naive on purpose (the v0 rule): the id derives from the local
+            # part alone, so two strangers sharing one local part collide.
             local = email.split("@", 1)[0]
             pid = "person-" + "".join(ch if ch.isalnum() else "-" for ch in local)
             edges = {}

@@ -244,16 +244,18 @@ func (r *run) writeReport() (string, error) {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Substrate live e2e report\n\n")
-	fmt.Fprintf(&b, "The suite registered a fresh user on a live substrate and left the\n")
-	fmt.Fprintf(&b, "repository in place for review. Open the console at the server URL and\n")
-	fmt.Fprintf(&b, "sign in with the credentials below, or point substratectl at it.\n")
-	fmt.Fprintf(&b, "`mise run dev:wipe` deletes the database when the review is done.\n\n")
 	fmt.Fprintf(&b, "| | |\n| --- | --- |\n")
 	fmt.Fprintf(&b, "| server | %s |\n", rep.Server)
-	fmt.Fprintf(&b, "| username | `%s` |\n", rep.Username)
-	fmt.Fprintf(&b, "| password | `%s` (a dev throwaway, printed on purpose) |\n", rep.Password)
-	if rep.TOTPSecret != "" {
-		fmt.Fprintf(&b, "| totp seed | `%s` (enroll it to sign in; this server enforces the factor) |\n", rep.TOTPSecret)
+	if rep.Username == "" {
+		// Registration never completed: there is no repository and nothing
+		// to sign into, and the report must not pretend otherwise.
+		fmt.Fprintf(&b, "| registration | FAILED; no repository was created (see AUTH-01) |\n")
+	} else {
+		fmt.Fprintf(&b, "| username | `%s` |\n", rep.Username)
+		fmt.Fprintf(&b, "| password | `%s` (a dev throwaway, printed on purpose) |\n", rep.Password)
+		if rep.TOTPSecret != "" {
+			fmt.Fprintf(&b, "| totp seed | `%s` (enroll it to sign in; this server enforces the factor) |\n", rep.TOTPSecret)
+		}
 	}
 	if rep.SigningPublicKey != "" {
 		fmt.Fprintf(&b, "| signing public key | `%s` |\n", rep.SigningPublicKey)
@@ -261,6 +263,11 @@ func (r *run) writeReport() (string, error) {
 	fmt.Fprintf(&b, "| started | %s |\n", rep.Started.UTC().Format(time.RFC3339))
 	fmt.Fprintf(&b, "| finished | %s |\n", rep.Finished.UTC().Format(time.RFC3339))
 	fmt.Fprintf(&b, "| result | **%d passed, %d failed** |\n\n", passed, failed)
+	if rep.Username != "" {
+		fmt.Fprintf(&b, "The repository is left in place for review: open the console at the\n")
+		fmt.Fprintf(&b, "server URL and sign in with the credentials above, or point substratectl\n")
+		fmt.Fprintf(&b, "at it. `mise run dev:wipe` deletes the database when the review is done.\n\n")
+	}
 
 	fmt.Fprintf(&b, "## Cases\n\n| id | case | result | duration |\n| --- | --- | --- | --- |\n")
 	for _, cr := range rep.Cases {

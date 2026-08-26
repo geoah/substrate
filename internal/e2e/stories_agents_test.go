@@ -63,8 +63,11 @@ func caseStory02(c *C) {
 			"jordan@northwind.example", "c_room7@resource.calendar.example",
 		},
 	}, nil)
-	ran := c.wake("story-resolve-attendees")
-	c.requiref(ran == 1, "waking the resolver ran %d deliveries, want 1", ran)
+	c.wake("story-resolve-attendees")
+	c.waitFor("the resolver's event", func() bool {
+		rec, err := c.quietGet(eventCollection, "ev-kickoff")
+		return err == nil && len(rec.Edges["attendees"]) > 0
+	})
 
 	ev := c.getRec(eventCollection, "ev-kickoff")
 	c.requiref(sameIDs(edgeIDs(ev, "attendees"), "sam", "nour", "priya", "person-jordan"),
@@ -72,8 +75,10 @@ func caseStory02(c *C) {
 	c.requiref(sameIDs(edgeIDs(ev, "organizer"), "sam"), "ev-kickoff organizer: %v", edgeIDs(ev, "organizer"))
 	c.requiref(sameIDs(edgeIDs(ev, "calendar"), "work"), "ev-kickoff calendar: %v", edgeIDs(ev, "calendar"))
 	jordan := c.getRec(personCollection, "person-jordan")
-	c.requiref(jordan.prop("name") == "Jordan" && sameIDs(edgeIDs(jordan, "memberOf"), "northwind"),
-		"the minted stranger: name %q, memberOf %v", jordan.prop("name"), edgeIDs(jordan, "memberOf"))
+	emails, _ := jordan.Properties["emails"].([]any)
+	c.requiref(jordan.prop("name") == "Jordan" && sameIDs(edgeIDs(jordan, "memberOf"), "northwind") &&
+		len(emails) == 1 && emails[0] == "jordan@northwind.example",
+		"the minted stranger: name %q, emails %v, memberOf %v", jordan.prop("name"), emails, edgeIDs(jordan, "memberOf"))
 	after := c.countRecords(personCollection)
 	c.requiref(after == before+1,
 		"the resolver minted %d people, want exactly 1 (the room address mints nothing)", after-before)
@@ -87,8 +92,9 @@ func caseStory02(c *C) {
 		map[string]any{"kind": storyAuthority + "/eventimport", "id": "imp-kickoff"}, &reran)
 	c.requiref(status == http.StatusOK && reran.Ran == 1, "the synthetic re-delivery answered %d, ran %d: %s", status, reran.Ran, raw)
 	ev = c.getRec(eventCollection, "ev-kickoff")
-	c.requiref(len(ev.Edges["attendees"]) == 4 && c.countRecords(personCollection) == after,
-		"re-delivery duplicated something: %d attendee edges, %d people", len(ev.Edges["attendees"]), c.countRecords(personCollection))
+	c.requiref(sameIDs(edgeIDs(ev, "attendees"), "sam", "nour", "priya", "person-jordan") &&
+		c.countRecords(personCollection) == after,
+		"re-delivery changed the graph: attendees %v, %d people", edgeIDs(ev, "attendees"), c.countRecords(personCollection))
 	c.stepf("a second delivery of the same import converged: 4 attendee edges, %d people, nothing duplicated", after)
 
 	// The writes belong to the function, in the changelog's own words.
@@ -118,8 +124,11 @@ func caseStory03(c *C) {
 		"endsAt": r.kickoffAt().Add(40 * time.Minute).Format(time.RFC3339),
 		"text":   kickoffTranscript,
 	}, nil)
-	ran := c.wake("story-match-transcript")
-	c.requiref(ran == 1, "waking the matcher ran %d deliveries, want 1", ran)
+	c.wake("story-match-transcript")
+	c.waitFor("the kickoff transcript's verdict", func() bool {
+		_, err := c.quietGet(verdictCollection, "mv-tr-kickoff")
+		return err == nil
+	})
 
 	tr := c.getRec(transcriptCollection, "tr-kickoff")
 	c.requiref(sameIDs(edgeIDs(tr, "meeting"), "ev-kickoff"),
@@ -127,8 +136,10 @@ func caseStory03(c *C) {
 	c.requiref(sameIDs(edgeIDs(tr, "speakers"), "sam", "nour", "priya"),
 		"tr-kickoff speakers: %v (jordan attended silently and gets no edge)", edgeIDs(tr, "speakers"))
 	verdict := c.getRec(verdictCollection, "mv-tr-kickoff")
-	c.requiref(verdict.prop("verdict") == "matched" && sameIDs(edgeIDs(verdict, "event"), "ev-kickoff"),
-		"the kickoff verdict: %v -> %v", verdict.Properties, edgeIDs(verdict, "event"))
+	score, _ := verdict.Properties["score"].(float64)
+	c.requiref(verdict.prop("verdict") == "matched" && score > 0.4 && verdict.prop("reason") != "" &&
+		sameIDs(edgeIDs(verdict, "event"), "ev-kickoff") && sameIDs(edgeIDs(verdict, "transcript"), "tr-kickoff"),
+		"the kickoff verdict: %v -> event %v, transcript %v", verdict.Properties, edgeIDs(verdict, "event"), edgeIDs(verdict, "transcript"))
 	c.stepf("the matcher picked `ev-kickoff` over `ev-billing-sync`, linked the three people who spoke, and wrote its audit (`mv-tr-kickoff`)")
 
 	// The orphan: nothing within 90 minutes, an alien title. It attaches to
@@ -138,8 +149,11 @@ func caseStory03(c *C) {
 		"at":   r.kickoffAt().Add(-6 * time.Hour).Format(time.RFC3339),
 		"text": "Speaker 1: A long walk through next quarter, unrelated to any meeting on the calendar.",
 	}, nil)
-	ran = c.wake("story-match-transcript")
-	c.requiref(ran == 1, "waking the matcher for the orphan ran %d deliveries, want 1", ran)
+	c.wake("story-match-transcript")
+	c.waitFor("the orphan transcript's verdict", func() bool {
+		_, err := c.quietGet(verdictCollection, "mv-tr-orphan")
+		return err == nil
+	})
 	orphan := c.getRec(transcriptCollection, "tr-orphan")
 	c.requiref(len(orphan.Edges["meeting"]) == 0,
 		"the orphan transcript attached to %v; unmatched must attach to nothing", edgeIDs(orphan, "meeting"))
@@ -222,13 +236,17 @@ func caseStory04(c *C) {
 
 	// The accepted work landed, with its shape intact.
 	welcome := c.getRec(tasksCollection, "task-welcome-flow")
-	c.requiref(welcome.prop("status") == "open" &&
+	c.requiref(welcome.prop("status") == "open" && welcome.prop("dueAt") != "" &&
 		sameIDs(edgeIDs(welcome, "assignee"), "nour") &&
 		sameIDs(edgeIDs(welcome, "project"), "onboarding-revamp") &&
 		sameIDs(edgeIDs(welcome, "source"), "tr-kickoff"),
 		"task-welcome-flow landed wrong: %v %v", welcome.Properties, welcome.Edges)
 	profile := c.getRec(tasksCollection, "task-profile-signup")
-	c.requiref(sameIDs(edgeIDs(profile, "assignee"), "kai"), "task-profile-signup assignee: %v", edgeIDs(profile, "assignee"))
+	c.requiref(profile.prop("status") == "open" &&
+		sameIDs(edgeIDs(profile, "assignee"), "kai") &&
+		sameIDs(edgeIDs(profile, "project"), "onboarding-revamp") &&
+		sameIDs(edgeIDs(profile, "source"), "tr-kickoff"),
+		"task-profile-signup landed wrong: %v %v", profile.Properties, profile.Edges)
 	pilot := c.getRec(tasksCollection, "task-northwind-pilot")
 	c.requiref(pilot.prop("status") == "proposed" && len(pilot.Edges["assignee"]) == 0,
 		"the unnamed action item must wait `proposed` and unassigned: %v %v", pilot.prop("status"), edgeIDs(pilot, "assignee"))
@@ -238,31 +256,42 @@ func caseStory04(c *C) {
 	c.requiref(status == http.StatusNotFound, "the sourceless task exists (answered %d); the rejection must leave nothing behind", status)
 	c.stepf("2 sourced tasks landed assigned, the unnamed one waits `proposed`, the priority patch applied, and the sourceless proposal left no record behind")
 
-	// The transcript's incoming edges show the provenance from the other end.
+	// The transcript's incoming edges name exactly the three sourced tasks.
 	var incoming struct {
 		Incoming []struct {
-			Rel string `json:"rel"`
+			Rel  string `json:"rel"`
+			From struct {
+				ID string `json:"id"`
+			} `json:"from"`
 		} `json:"incoming"`
 	}
 	status, _ = c.do(http.MethodGet, transcriptCollection+"/tr-kickoff/incoming?rel=source", nil, &incoming)
-	c.requiref(status == http.StatusOK && len(incoming.Incoming) == 3,
-		"tr-kickoff has %d incoming source edges, want 3", len(incoming.Incoming))
-
-	// Writer and decider are distinct actors on the same request.
-	reqID := requests.Records[0].ID
-	rows := c.rowsFor(reqID)
-	var wrote, decided string
-	for _, row := range rows {
-		switch row.Op {
-		case "put":
-			wrote = row.Actor
-		case "patch":
-			decided = row.Actor
-		}
+	c.requiref(status == http.StatusOK, "incoming on tr-kickoff answered %d", status)
+	fromIDs := make([]string, 0, len(incoming.Incoming))
+	for _, in := range incoming.Incoming {
+		fromIDs = append(fromIDs, in.From.ID)
 	}
-	c.requiref(wrote == actorReflection && decided == actorArbiter,
-		"request %s: written by %q, decided by %q; the writer must never grade itself", reqID, wrote, decided)
-	c.stepf("on request `%s` the changelog shows writer `%s` and decider `%s`: distinct actors, distinct models", reqID, wrote, decided)
+	c.requiref(sameIDs(fromIDs, "task-welcome-flow", "task-profile-signup", "task-northwind-pilot"),
+		"tr-kickoff's incoming source edges: %v", fromIDs)
+
+	// Writer and decider are distinct actors on EVERY request: one pass over
+	// the feed, checked per request, so a self-graded decision anywhere fails.
+	byRecord := map[string]map[string]string{}
+	for _, row := range c.readChangesForward(0) {
+		if row.Kind != "core.substrate.reamde.dev/recordpatchrequest" {
+			continue
+		}
+		if byRecord[row.RecordID] == nil {
+			byRecord[row.RecordID] = map[string]string{}
+		}
+		byRecord[row.RecordID][row.Op] = row.Actor
+	}
+	for _, req := range requests.Records {
+		ops := byRecord[req.ID]
+		c.requiref(ops["put"] == actorReflection && ops["patch"] == actorArbiter,
+			"request %s: written by %q, decided by %q; the writer must never grade itself", req.ID, ops["put"], ops["patch"])
+	}
+	c.stepf("on all 5 requests the changelog shows writer `%s` and decider `%s`: distinct actors, distinct models", actorReflection, actorArbiter)
 }
 
 // caseStory05: the quiet window. A transcript with nothing in it flows
@@ -307,13 +336,17 @@ func caseStory06(c *C) {
 	rows := c.readChangesForward(0)
 	storyActors := map[string]int{}
 	for _, row := range rows {
-		ok := row.Actor == "api" || row.Actor == "substrate" || strings.HasPrefix(row.Actor, "bundle:")
+		// `substrate` may write only its own core records (registration,
+		// tokens, runs, threads): a task or a story record written as the
+		// system actor would be laundered attribution.
+		ok := row.Actor == "api" || strings.HasPrefix(row.Actor, "bundle:") ||
+			(row.Actor == "substrate" && strings.HasPrefix(row.Kind, "core.substrate.reamde.dev/"))
 		switch row.Actor {
 		case actorResolver, actorMatcher, actorReflection, actorArbiter:
 			ok = true
 			storyActors[row.Actor]++
 		}
-		c.requiref(ok, "changelog row %d carries an unaccounted actor %q", row.Seq, row.Actor)
+		c.requiref(ok, "changelog row %d (%s %s) carries an unaccounted actor %q", row.Seq, row.Op, row.Kind, row.Actor)
 	}
 	for _, actor := range []string{actorResolver, actorMatcher, actorReflection, actorArbiter} {
 		c.requiref(storyActors[actor] > 0, "no changelog row is attributed to %s", actor)
@@ -341,11 +374,17 @@ func caseStory06(c *C) {
 	c.stepf("repository rebuild refolded the changelog and the same GraphQL join answered byte-identically")
 }
 
-// graphJoin is the one fixed read STORY-06 compares across a rebuild.
+// graphJoin is the one fixed read STORY-06 compares across a rebuild: the
+// whole story graph, every kind the stories touched, with edges.
 func (c *C) graphJoin() []byte {
 	c.t.Helper()
-	query := `{ records(filter: {kinds: ["` + taskKind + `"]}, orderBy: [{property: "createdAt"}], first: 50) {
-		nodes { id properties edges { rel target { id kind } } } } }`
+	kinds := []string{
+		taskKind, projectKind, personKind, teamKind, orgKind,
+		eventKind, transcriptKind, storyAuthority + "/matchverdict",
+		"core.substrate.reamde.dev/recordpatchrequest",
+	}
+	query := `{ records(filter: {kinds: ["` + strings.Join(kinds, `", "`) + `"]}, orderBy: [{property: "createdAt"}], first: 200) {
+		nodes { id kind properties edges { rel target { id kind } } } } }`
 	status, raw := c.do(http.MethodPost, "/api/v1/graphql", map[string]any{"query": query}, nil)
 	c.requiref(status == http.StatusOK && !strings.Contains(string(raw), `"errors"`),
 		"the GraphQL join answered %d: %s", status, raw)
@@ -445,7 +484,8 @@ func (c *C) quietGet(collection, id string) (record, error) {
 	return rec, err
 }
 
-// quietRuns counts one trigger's settled run rows.
+// quietRuns counts one trigger's OK run rows. Parked and skipped runs do
+// not count: a delivery that died mid-loop must never satisfy a wait.
 func (c *C) quietRuns(trigger string) int {
 	recs, err := c.quietList(runCollection)
 	if err != nil {
@@ -453,7 +493,8 @@ func (c *C) quietRuns(trigger string) int {
 	}
 	n := 0
 	for _, rec := range recs {
-		if tr, _ := rec.Properties["trigger"].(string); strings.HasSuffix(tr, "/"+trigger) {
+		tr, _ := rec.Properties["trigger"].(string)
+		if strings.HasSuffix(tr, "/"+trigger) && rec.prop("status") == "ok" {
 			n++
 		}
 	}
@@ -485,37 +526,49 @@ func matcherResponder(llmReq llmReq) llmTurn {
 			"variables": map[string]any{"in": input},
 		}}
 	}
+	// The winner comes out of the TOOL'S answer, never out of this script:
+	// a scorer that returns nothing, or the wrong order, changes what the
+	// agent links, and the case's assertions catch it.
+	winner := func() (string, float64, bool) {
+		result := llmReq.lastToolResult("scorecandidates")
+		out, _ := result["output"].(map[string]any)
+		floor, _ := out["floor"].(float64)
+		candidates, _ := out["candidates"].([]any)
+		if len(candidates) == 0 {
+			return "", 0, false
+		}
+		best, _ := candidates[0].(map[string]any)
+		event, _ := best["event"].(string)
+		score, _ := best["score"].(float64)
+		return event, score, score >= floor
+	}
+	// Who spoke is the scripted judgment: the model "reads" the text.
+	speakers := map[string][]string{
+		"tr-kickoff":  {"sam", "nour", "priya"},
+		"tr-chitchat": {"rae", "kai"},
+	}
 	switch llmReq.assistantTurns() {
 	case 0:
 		return llmTurn{calls: []llmCall{{"scorecandidates", map[string]any{"transcript": tid}}}}
 	case 1:
-		switch tid {
-		case "tr-kickoff":
-			q := "mutation { " + link("m", "meeting", eventKind, "ev-kickoff") + " " +
-				link("s1", "speakers", personKind, "sam") + " " +
-				link("s2", "speakers", personKind, "nour") + " " +
-				link("s3", "speakers", personKind, "priya") + " }"
-			return llmTurn{calls: []llmCall{{"mutate", map[string]any{"query": q}}}}
-		case "tr-chitchat":
-			q := "mutation { " + link("m", "meeting", eventKind, "ev-billing-sync") + " " +
-				link("s1", "speakers", personKind, "rae") + " " +
-				link("s2", "speakers", personKind, "kai") + " }"
-			return llmTurn{calls: []llmCall{{"mutate", map[string]any{"query": q}}}}
-		default:
+		event, _, matched := winner()
+		if !matched {
 			return llmTurn{calls: []llmCall{verdict("unmatched", 0,
 				"no event within 90 minutes scored above the 0.4 floor", "")}}
 		}
+		q := "mutation { " + link("m", "meeting", eventKind, event)
+		for i, s := range speakers[tid] {
+			q += " " + link(fmt.Sprintf("s%d", i+1), "speakers", personKind, s)
+		}
+		q += " }"
+		return llmTurn{calls: []llmCall{{"mutate", map[string]any{"query": q}}}}
 	case 2:
-		switch tid {
-		case "tr-kickoff":
-			return llmTurn{calls: []llmCall{verdict("matched", 0.93,
-				"won on time and title; ev-billing-sync lost both signals", "ev-kickoff")}}
-		case "tr-chitchat":
-			return llmTurn{calls: []llmCall{verdict("matched", 0.97,
-				"five minutes of skew and an exact title", "ev-billing-sync")}}
-		default:
+		event, score, matched := winner()
+		if !matched {
 			return llmTurn{content: "Unmatched: attached to nothing, said why."}
 		}
+		return llmTurn{calls: []llmCall{verdict("matched", score,
+			fmt.Sprintf("%s won on time and title against every other candidate", event), event)}}
 	default:
 		return llmTurn{content: "Settled."}
 	}

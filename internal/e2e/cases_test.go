@@ -422,28 +422,37 @@ func caseChangelog(c *C) {
 	c.stepf("operator verify (`substratectl repository verify %s`): %s; the chain signs under the key /register returned", r.username, verifySummary(string(out)))
 }
 
-// readChangesForward reads the forward feed from a seq (exclusive) to its end.
+// readChangesForward reads the forward feed from a seq (exclusive) to its
+// end. One forward page holds at most 500 rows, so the read pages until a
+// page comes back empty; a story run's changelog outgrows one page.
 func (c *C) readChangesForward(from int64) []changeRow {
 	c.t.Helper()
-	path := fmt.Sprintf("/api/v1/changes?from=%d", from)
-	status, raw := c.do(http.MethodGet, path, nil, nil)
-	c.requiref(status == http.StatusOK, "GET %s answered %d: %s", path, status, raw)
 	var rows []changeRow
-	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
-		if line == "" {
-			continue
+	for {
+		path := fmt.Sprintf("/api/v1/changes?from=%d", from)
+		status, raw := c.do(http.MethodGet, path, nil, nil)
+		c.requiref(status == http.StatusOK, "GET %s answered %d: %s", path, status, raw)
+		page := 0
+		for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+			if line == "" {
+				continue
+			}
+			var row changeRow
+			c.requiref(json.Unmarshal([]byte(line), &row) == nil, "undecodable ndjson line: %s", line)
+			if row.Seq == 0 {
+				// A control frame: the bookmark or a heartbeat is fine, the
+				// reserved terminal error frame is a failure, never a skip.
+				c.requiref(!strings.Contains(line, `"error"`), "the feed ended with an error frame: %s", line)
+				continue
+			}
+			rows = append(rows, row)
+			page++
+			from = row.Seq
 		}
-		var row changeRow
-		c.requiref(json.Unmarshal([]byte(line), &row) == nil, "undecodable ndjson line: %s", line)
-		if row.Seq == 0 {
-			// A control frame: the bookmark or a heartbeat is fine, the
-			// reserved terminal error frame is a failure, never a skip.
-			c.requiref(!strings.Contains(line, `"error"`), "the feed ended with an error frame: %s", line)
-			continue
+		if page == 0 {
+			return rows
 		}
-		rows = append(rows, row)
 	}
-	return rows
 }
 
 // watchForWrite opens a live watch at from, runs the write, and returns the
@@ -580,11 +589,16 @@ func (r *run) appendix() {
 		b.WriteString("\nA tombstoned task is not listed: a tombstone leaves the fold. Its life stays in the changelog below.\n\n")
 	}
 
-	status, raw, err := httpJSON(r.hc, r.base, r.token, http.MethodGet, "/api/v1/changes?from=0", nil)
-	if err != nil || status != http.StatusOK {
-		fmt.Fprintf(&b, "Reading the changelog failed: status %d, %v\n\n", status, err)
-	} else {
-		b.WriteString("### The changelog\n\n| seq | op | kind | record | actor | hash |\n| --- | --- | --- | --- | --- | --- |\n")
+	b.WriteString("### The changelog\n\n| seq | op | kind | record | actor | hash |\n| --- | --- | --- | --- | --- | --- |\n")
+	from := int64(0)
+	for {
+		status, raw, err := httpJSON(r.hc, r.base, r.token, http.MethodGet,
+			fmt.Sprintf("/api/v1/changes?from=%d", from), nil)
+		if err != nil || status != http.StatusOK {
+			fmt.Fprintf(&b, "\nReading the changelog failed: status %d, %v\n", status, err)
+			break
+		}
+		page := 0
 		for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
 			var row changeRow
 			if json.Unmarshal([]byte(line), &row) != nil || row.Seq == 0 {
@@ -592,8 +606,13 @@ func (r *run) appendix() {
 			}
 			fmt.Fprintf(&b, "| %d | %s | %s | `%s` | %s | `%s` |\n",
 				row.Seq, row.Op, row.Kind, row.RecordID, row.Actor, prefix(row.Hash, 12))
+			page++
+			from = row.Seq
 		}
-		b.WriteString("\n")
+		if page == 0 {
+			break
+		}
 	}
+	b.WriteString("\n")
 	r.rep.Appendix = append(r.rep.Appendix, b.String())
 }
