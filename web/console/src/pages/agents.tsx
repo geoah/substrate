@@ -30,7 +30,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { agentsQueryOptions } from "@/lib/api/agents"
 import type { SubstrateRecord } from "@/lib/api/types"
-import { cellValue } from "@/lib/format"
+import { cellValue, recordTitle } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 /** A declaration row's properties ARE the declaration: `provider` and `model`
@@ -82,7 +82,10 @@ function agentColumns(): DataTableColumn<SubstrateRecord>[] {
   return [
     {
       id: "agent",
-      accessorFn: (a) => a.properties.name ?? a.id,
+      // The declaration has no `name` property (its local name is the id's
+      // last segment, which the title renders); the id is the honest fallback,
+      // and it survives as the tooltip.
+      accessorFn: (a) => recordTitle(a.properties) || a.id,
       enableSorting: false,
       enableHiding: false,
       header: ({ column }) => (
@@ -90,14 +93,14 @@ function agentColumns(): DataTableColumn<SubstrateRecord>[] {
       ),
       cell: ({ row }) => (
         <div className="min-w-0">
-          <div className="truncate font-medium">
-            {cellValue(row.original.properties.name) || row.original.id}
+          <div className="truncate font-medium" title={row.original.id}>
+            {recordTitle(row.original.properties) || row.original.id}
           </div>
           <div
-            className="truncate data text-xs text-muted-foreground"
-            title={row.original.id}
+            className="truncate text-xs text-muted-foreground"
+            title={declaredField(row.original, "description")}
           >
-            {row.original.id}
+            {declaredField(row.original, "description")}
           </div>
         </div>
       ),

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   decisionNoticeOf,
+  deliveryNoticeOf,
   interactionIdOf,
   interactionNoticeOf,
   proposedRequestId,
@@ -315,6 +316,100 @@ describe("requestIdOf", () => {
       })
     )
     expect(found).toBeUndefined()
+  })
+})
+
+describe("deliveryNoticeOf", () => {
+  const user = (content: string): TurnView => ({
+    key: "k",
+    role: "user",
+    content,
+    tools: [],
+  })
+
+  const envelope = {
+    change: {
+      actor: "agent:stories.e2e.example:matcher",
+      id: "tr-chitchat",
+      kind: "calendar.substrate.reamde.dev/transcript",
+      op: "update",
+      seq: 216,
+    },
+    record: {
+      id: "tr-chitchat",
+      kind: "calendar.substrate.reamde.dev/transcript",
+      properties: { title: "Billing migration sync" },
+      edges: {},
+    },
+    repository: { owner: "e2e" },
+  }
+
+  it("decodes a trigger's delivery envelope", () => {
+    const notice = deliveryNoticeOf(user(JSON.stringify(envelope)))
+    expect(notice).toEqual({
+      change: {
+        op: "update",
+        kind: "calendar.substrate.reamde.dev/transcript",
+        id: "tr-chitchat",
+        seq: 216,
+        actor: "agent:stories.e2e.example:matcher",
+      },
+      record: {
+        kind: "calendar.substrate.reamde.dev/transcript",
+        id: "tr-chitchat",
+        title: "Billing migration sync",
+      },
+    })
+  })
+
+  it("falls back to the record's name, and to no title at all", () => {
+    const named = {
+      ...envelope,
+      record: { ...envelope.record, properties: { name: "the sync" } },
+    }
+    expect(deliveryNoticeOf(user(JSON.stringify(named)))?.record.title).toBe(
+      "the sync"
+    )
+    const bare = {
+      ...envelope,
+      record: { ...envelope.record, properties: {} },
+    }
+    expect(
+      deliveryNoticeOf(user(JSON.stringify(bare)))?.record.title
+    ).toBeUndefined()
+  })
+
+  it("says nothing about a plain chat message, JSON-shaped or not", () => {
+    expect(deliveryNoticeOf(user("hello"))).toBeUndefined()
+    expect(deliveryNoticeOf(user('{"change":"soon"}'))).toBeUndefined()
+    expect(
+      deliveryNoticeOf(user('{"record":{"id":"x","kind":"a.dev/b"}}'))
+    ).toBeUndefined()
+    expect(deliveryNoticeOf(user("{oops"))).toBeUndefined()
+  })
+
+  it("refuses an envelope missing what the header must say", () => {
+    const noOp = {
+      ...envelope,
+      change: { ...envelope.change, op: undefined },
+    }
+    expect(deliveryNoticeOf(user(JSON.stringify(noOp)))).toBeUndefined()
+    const noRecordId = {
+      ...envelope,
+      record: { ...envelope.record, id: "" },
+    }
+    expect(deliveryNoticeOf(user(JSON.stringify(noRecordId)))).toBeUndefined()
+  })
+
+  it("says nothing about a non-user turn carrying the same shape", () => {
+    expect(
+      deliveryNoticeOf({
+        key: "k",
+        role: "assistant",
+        content: JSON.stringify(envelope),
+        tools: [],
+      })
+    ).toBeUndefined()
   })
 })
 

@@ -326,6 +326,69 @@ export function interactionNoticeOf(
   }
 }
 
+/** A triggered thread's opening message, decoded — the delivery envelope the
+ * trigger wrote as the first user turn (`{change, record, repository}`,
+ * internal/engine's trigger delivery). `undefined` for a user turn that is
+ * plain chat, which renders as the message it is. */
+export interface DeliveryNotice {
+  /** What fired: the changelog entry the trigger matched. */
+  change: {
+    op: string
+    kind: string
+    id: string
+    seq?: number
+    actor?: string
+  }
+  /** Which record was delivered, with its display title where the snapshot
+   * carried one. */
+  record: {
+    kind: string
+    id: string
+    title?: string
+  }
+}
+
+export function deliveryNoticeOf(turn: TurnView): DeliveryNotice | undefined {
+  if (turn.role !== "user" || !turn.content.trim().startsWith("{"))
+    return undefined
+  try {
+    const parsed: unknown = JSON.parse(turn.content)
+    if (typeof parsed !== "object" || parsed === null) return undefined
+    const env = parsed as Record<string, unknown>
+    if (typeof env.change !== "object" || env.change === null) return undefined
+    if (typeof env.record !== "object" || env.record === null) return undefined
+    const change = env.change as Record<string, unknown>
+    const record = env.record as Record<string, unknown>
+    const op = str(change.op)
+    const changeKind = str(change.kind)
+    const changeId = str(change.id)
+    const recordKind = str(record.kind)
+    const recordId = str(record.id)
+    if (!op || !changeKind || !changeId || !recordKind || !recordId)
+      return undefined
+    const properties =
+      typeof record.properties === "object" && record.properties !== null
+        ? (record.properties as Record<string, unknown>)
+        : {}
+    return {
+      change: {
+        op,
+        kind: changeKind,
+        id: changeId,
+        seq: typeof change.seq === "number" ? change.seq : undefined,
+        actor: str(change.actor) || undefined,
+      },
+      record: {
+        kind: recordKind,
+        id: recordId,
+        title: str(properties.title) || str(properties.name) || undefined,
+      },
+    }
+  } catch {
+    return undefined
+  }
+}
+
 export function decisionNoticeOf(turn: TurnView): DecisionNotice | undefined {
   if (turn.role !== "system" || !turn.content.trim().startsWith("{"))
     return undefined
