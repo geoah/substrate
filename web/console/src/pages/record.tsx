@@ -4,7 +4,7 @@
  * data field by field, not a YAML dump); **Manifest** is the document itself
  * (the YAML view, tinted, annotated and linkified: every key the kind
  * declares hovers with its DATATYPE and its one-liner, and references navigate
- * — edge ids, kinds, actors);
+ * — reference paths, kinds, actors);
  * **Graph** sits beside Properties (both read the record as data, so they
  * neighbor); Activity and Provenance follow, none stacked underneath.
  * The active tab lives in the URL (`?tab=`) so it is linkable and back-button

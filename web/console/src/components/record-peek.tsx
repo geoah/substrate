@@ -1,4 +1,4 @@
-/** The edge cell's HoverCard peek: the target's title where the cell shows
+/** A record cell's HoverCard peek: the target's title where the cell shows
  * it, and on hover — lazily, never before — the target record's path and one
  * or two facts. The peek is a preview, not a page: clicking the trigger
  * navigates to the real record route. */
@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/hover-card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { recordQueryOptions } from "@/lib/api/records"
-import type { EdgeTarget, KindInfo } from "@/lib/api/types"
+import type { KindInfo } from "@/lib/api/types"
 import { cellValue, recordTitle, referenceCell } from "@/lib/format"
 import {
   columnProperties,
@@ -24,11 +24,21 @@ import {
 } from "@/lib/definition"
 import { cn } from "@/lib/utils"
 
+/** What a peek needs to name a record: its kind reference and its id, plus
+ * whatever title the caller already had. A reference carries no display sugar,
+ * so the title is optional and the hover fetches the record for the rest. */
+export interface PeekTarget {
+  id: string
+  /** The record's kind REFERENCE. */
+  kind: string
+  title?: string
+}
+
 export function RecordPeek({
   target,
   types,
 }: {
-  target: EdgeTarget
+  target: PeekTarget
   /** The registry, so the peek can resolve the target's kind to a route. */
   types: KindInfo[]
 }) {

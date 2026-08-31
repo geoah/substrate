@@ -3,15 +3,14 @@ import { describe, expect, it } from "vitest"
 import type { KindInfo } from "@/lib/api/types"
 import {
   columnProperties,
-  declaredEdges,
   declaredProperties,
+  declaredReferences,
   describeKey,
-  edgeTypeLabel,
   filterableProperties,
   graphqlTypeName,
   propertyTypeLabel,
   kindByCollection,
-  resolveEdgeTarget,
+  resolveReferenceTarget,
   splitKind,
   stateProperties,
   temporalProperties,
@@ -43,12 +42,16 @@ const person: KindInfo = {
         initial: "utility",
         description: "utility until promoted",
       },
-    },
-    edges: {
       memberOf: {
-        to: "organization",
-        many: true,
+        type: "reference",
+        kind: "organization",
+        repeated: true,
+        mustExist: true,
         description: "the employer or workspace",
+        properties: {
+          role: { type: "string" },
+          since: { type: "date" },
+        },
       },
     },
   },
@@ -72,6 +75,7 @@ describe("declaredProperties", () => {
       "bio",
       "displayName",
       "emails",
+      "memberOf",
       "name",
       "phones",
       "prominence",
@@ -91,9 +95,12 @@ describe("declaredProperties", () => {
 describe("column and filter derivation", () => {
   it("columns drop opaque and long kinds; filters drop only opaque", () => {
     const cols = columnProperties(person).map((p) => p.name)
+    // A reference earns a column like any other property: its cell names the
+    // record it points at.
     expect(cols).toEqual([
       "displayName",
       "emails",
+      "memberOf",
       "name",
       "phones",
       "prominence",
@@ -167,28 +174,34 @@ describe("kind resolution", () => {
     ).toBeUndefined()
   })
 
-  it("resolves a bare edge target inside the declaring authority first", () => {
-    expect(resolveEdgeTarget(kinds, person, "organization")).toBe(org)
+  it("resolves a bare reference pin inside the declaring authority first", () => {
+    expect(resolveReferenceTarget(kinds, person, "organization")).toBe(org)
     expect(
-      resolveEdgeTarget(
+      resolveReferenceTarget(
         kinds,
         person,
         "people.substrate.reamde.dev/organization"
       )
     ).toBe(org)
-    expect(resolveEdgeTarget(kinds, person, "missing")).toBeUndefined()
+    expect(resolveReferenceTarget(kinds, person, "missing")).toBeUndefined()
   })
 
-  it("declaredEdges reads rel/to/many/required", () => {
-    expect(declaredEdges(person)).toEqual([
-      {
-        rel: "memberOf",
-        to: "organization",
-        many: true,
-        description: "the employer or workspace",
-        required: false,
-      },
-    ])
+  it("declaredReferences reads the pin, the container and what it holds", () => {
+    const refs = declaredReferences(person)
+    expect(refs.map((r) => r.name)).toEqual(["memberOf"])
+    expect(refs[0]).toMatchObject({
+      to: "organization",
+      repeated: true,
+      mustExist: true,
+      description: "the employer or workspace",
+      // The LINK DATA: `memberOf` is the one shipped reference that carries
+      // any, so a value there is `{ref, role, since}` and not a bare path.
+      linkProperties: ["role", "since"],
+    })
+  })
+
+  it("leaves a non-reference property out of declaredReferences", () => {
+    expect(declaredReferences(person).map((r) => r.name)).not.toContain("name")
   })
 })
 
@@ -218,8 +231,14 @@ describe("declaration detail", () => {
           kind: "people.substrate.reamde.dev/person",
         },
         plain: { type: "string" },
+        subject: {
+          type: "reference",
+          kind: "issue",
+          required: true,
+          mustExist: true,
+          subject: true,
+        },
       },
-      edges: { subject: { to: "issue", required: true } },
     },
   }
 
@@ -234,7 +253,14 @@ describe("declaration detail", () => {
     ])
     expect(by("plain").values).toBeUndefined()
     expect(by("owner").to).toBe("people.substrate.reamde.dev/person")
-    expect(declaredEdges(config)[0].required).toBe(true)
+    // A mapping's subject is a reference like any other, marked `subject`.
+    expect(by("subject")).toMatchObject({
+      required: true,
+      mustExist: true,
+      subject: true,
+    })
+    expect(by("owner").mustExist).toBe(false)
+    expect(by("owner").subject).toBe(false)
   })
 })
 
@@ -253,14 +279,8 @@ describe("type labels", () => {
         repeated: false,
       })
     ).toBe("reference → person")
-  })
-
-  it("spells an edge as an arrow at its target", () => {
-    expect(edgeTypeLabel(declaredEdges(person)[0])).toBe("→ organization[]")
-    expect(edgeTypeLabel({ rel: "owner", to: "person", many: false })).toBe(
-      "→ person"
-    )
-    expect(edgeTypeLabel({ rel: "loose", to: "", many: false })).toBe("edge")
+    // A repeated reference wears the container marker like any other property.
+    expect(propertyTypeLabel(by("memberOf"))).toBe("reference → organization[]")
   })
 })
 

@@ -52,7 +52,6 @@ export function mergeRequestsQueryOptions(opts: {
     // Newest write first: deciding IS the update, so the queue reads fresh
     // suggestions and fresh verdicts alike from the top.
     orderBy: "updatedAt:desc",
-    withEdges: true,
   })
 }
 

@@ -46,12 +46,10 @@ const ROW: ChangeRow = {
         delta: { created: true, set: { name: "Ada" }, del: ["nickname"] },
       },
       {
-        kind: "edge",
+        kind: "tombstone",
         ref: "people.substrate.reamde.dev/person",
-        id: "p1",
-        rel: "member",
-        dstType: "people.substrate.reamde.dev/organization",
-        dst: "o1",
+        id: "p2",
+        finalizer: "merge",
       },
     ],
   },
@@ -74,10 +72,8 @@ describe("ChangeDetail", () => {
     expect(container.textContent).toContain("2 changes")
     expect(container.textContent).toContain("created")
     expect(container.textContent).toContain("set name; cleared nickname")
-    expect(container.textContent).toContain("linked")
-    expect(container.textContent).toContain(
-      "member → people.substrate.reamde.dev/organization/o1"
-    )
+    expect(container.textContent).toContain("deleted")
+    expect(container.textContent).toContain("held by merge")
   })
 
   it("attributes the write to its actor", () => {

@@ -11,7 +11,6 @@ import {
   decisionOf,
   decisionPatch,
   deriveChangeRows,
-  describeProposedEdge,
   diffCannotApply,
   diffNamesNothing,
   effectiveCAS,
@@ -34,9 +33,12 @@ const taskKind: KindInfo = {
     properties: {
       summary: { type: "string", description: "what the task is" },
       status: { type: "state", states: ["open", "done"] },
-    },
-    edges: {
-      assignee: { to: "person", description: "who owns it" },
+      assignee: {
+        type: "reference",
+        kind: "person",
+        mustExist: true,
+        description: "who owns it",
+      },
     },
   },
 }
@@ -45,7 +47,6 @@ const taskKind: KindInfo = {
 function requestRecord(
   properties: Record<string, unknown>,
   opts: {
-    edges?: SubstrateRecord["edges"]
     annotations?: Record<string, unknown>
     meta?: Record<string, string>
     version?: number
@@ -60,7 +61,6 @@ function requestRecord(
     version: opts.version ?? 1,
     createdAt: "2026-08-14T00:00:00Z",
     updatedAt: "2026-08-14T00:00:00Z",
-    edges: opts.edges,
     propertyMeta: opts.meta
       ? Object.fromEntries(
           Object.entries(opts.meta).map(([k, manager]) => [
@@ -95,9 +95,9 @@ function targetRecord(
   }
 }
 
-const targetEdge = {
-  target: [{ id: "task-1", kind: TASK_KIND, title: "Ship the inbox" }],
-}
+/** The `target` REFERENCE as the wire stores it: the referent's whole record
+ * path, and nothing else — a reference carries no display sugar. */
+const targetRef = { target: `${TASK_KIND}/task-1` }
 
 // ── the op ──────────────────────────────────────────────────────────────────
 
@@ -122,37 +122,39 @@ describe("changeOp", () => {
 // ── the target ──────────────────────────────────────────────────────────────
 
 describe("changeTarget", () => {
-  it("reads a patch's target off the edge, title and all", () => {
-    const target = changeTarget(requestRecord({}, { edges: targetEdge }))
+  it("splits a patch's target off the `target` reference path", () => {
+    const target = changeTarget(requestRecord(targetRef))
     expect(target).toEqual({
       kind: TASK_KIND,
       id: "task-1",
-      title: "Ship the inbox",
-      via: "edge",
+      via: "reference",
     })
   })
 
-  it("reads a create's target off targetKind/targetId, which no edge can name", () => {
+  it("reads a target that carries link data by the path under `ref`", () => {
+    const target = changeTarget(
+      requestRecord({ target: { ref: `${TASK_KIND}/task-1`, note: "x" } })
+    )
+    expect(target).toMatchObject({ kind: TASK_KIND, id: "task-1" })
+  })
+
+  it("reads a create's target off targetKind/targetId, which nothing can point at", () => {
     const target = changeTarget(
       requestRecord({ op: "create", targetKind: TASK_KIND, targetId: "task-9" })
     )
     expect(target).toEqual({ kind: TASK_KIND, id: "task-9", via: "declared" })
   })
 
-  it("prefers the declared pair on a create and the edge on a patch", () => {
+  it("prefers the declared pair on a create and the reference on a patch", () => {
     const both = {
       targetKind: TASK_KIND,
       targetId: "task-9",
     }
     expect(
-      changeTarget(
-        requestRecord({ op: "create", ...both }, { edges: targetEdge })
-      )?.id
+      changeTarget(requestRecord({ op: "create", ...both, ...targetRef }))?.id
     ).toBe("task-9")
     expect(
-      changeTarget(
-        requestRecord({ op: "patch", ...both }, { edges: targetEdge })
-      )?.id
+      changeTarget(requestRecord({ op: "patch", ...both, ...targetRef }))?.id
     ).toBe("task-1")
   })
 
@@ -161,44 +163,30 @@ describe("changeTarget", () => {
     expect(
       changeTarget(requestRecord({ op: "create", targetKind: TASK_KIND }))
     ).toBeUndefined()
+    // A value that is not a record path names no record.
+    expect(changeTarget(requestRecord({ target: "task-1" }))).toBeUndefined()
   })
 })
 
 // ── the stored diff ─────────────────────────────────────────────────────────
 
 describe("proposedDiff", () => {
-  it("reads properties under properties, edges under edges", () => {
+  it("reads every proposed value under properties, pointers among them", () => {
     const diff = proposedDiff(
       requestRecord({
         op: "create",
         diff: {
-          properties: { summary: "Write it down" },
-          edges: [
-            {
-              rel: "assignee",
-              to: { kind: "people.substrate.reamde.dev/person", id: "p1" },
-              properties: { since: "2026-08-14" },
-            },
-            { rel: "blockedBy", to: { id: "task-2" } },
-          ],
+          properties: {
+            summary: "Write it down",
+            assignee: "people.substrate.reamde.dev/person/p1",
+          },
         },
       })
     )
-    expect(diff.properties).toEqual({ summary: "Write it down" })
-    expect(diff.edges).toEqual([
-      {
-        rel: "assignee",
-        kind: "people.substrate.reamde.dev/person",
-        id: "p1",
-        properties: { since: "2026-08-14" },
-      },
-      {
-        rel: "blockedBy",
-        kind: undefined,
-        id: "task-2",
-        properties: undefined,
-      },
-    ])
+    expect(diff.properties).toEqual({
+      summary: "Write it down",
+      assignee: "people.substrate.reamde.dev/person/p1",
+    })
     expect(diff.refused).toEqual([])
     expect(diff.unreadable).toBe(false)
   })
@@ -209,23 +197,14 @@ describe("proposedDiff", () => {
     expect(
       proposedDiff(requestRecord({ diff: { saved: true } })).refused
     ).toEqual(["saved"])
-    // `edges` decodes on a create (PutInput) and not on a patch (PatchInput).
+    // `edges` is refused on BOTH ops now: neither PutInput nor PatchInput
+    // carries the key, so a diff still writing one fails the decode.
     expect(
       proposedDiff(requestRecord({ diff: { edges: [] } })).refused
     ).toEqual(["edges"])
     expect(
       proposedDiff(requestRecord({ op: "create", diff: { edges: [] } })).refused
-    ).toEqual([])
-  })
-
-  it("drops edge entries that name no rel or no id", () => {
-    const diff = proposedDiff(
-      requestRecord({
-        op: "create",
-        diff: { edges: [{ rel: "assignee" }, { to: { id: "p1" } }, "junk"] },
-      })
-    )
-    expect(diff.edges).toEqual([])
+    ).toEqual(["edges"])
   })
 
   it("flags a diff that is not an object, and empties a missing one", () => {
@@ -239,7 +218,6 @@ describe("proposedDiff", () => {
       addFinalizers: [],
       removeFinalizers: [],
       ifVersion: undefined,
-      edges: [],
       refused: [],
       malformed: [],
       unreadable: false,
@@ -299,36 +277,6 @@ describe("proposedDiff", () => {
     expect(diff.refused).toEqual([])
     expect(diffCannotApply(diff)).toBe(true)
     expect(diffNamesNothing(diff)).toBe(true)
-  })
-
-  it("keeps an edges value that is not a list", () => {
-    const diff = proposedDiff(
-      requestRecord({ op: "create", diff: { edges: { assignee: "p1" } } })
-    )
-    expect(diff.edges).toEqual([])
-    expect(diff.malformed).toEqual([{ key: "edges", raw: { assignee: "p1" } }])
-    expect(diffCannotApply(diff)).toBe(true)
-  })
-
-  it("keeps a malformed edge ENTRY, with its index and its raw value", () => {
-    const diff = proposedDiff(
-      requestRecord({
-        op: "create",
-        diff: {
-          edges: [
-            { rel: "assignee", to: { id: "p1" } },
-            { rel: "blockedBy" },
-            "junk",
-          ],
-        },
-      })
-    )
-    expect(diff.edges).toHaveLength(1)
-    expect(diff.malformed).toEqual([
-      { key: "edges[1]", raw: { rel: "blockedBy" } },
-      { key: "edges[2]", raw: "junk" },
-    ])
-    expect(diffCannotApply(diff)).toBe(true)
   })
 
   it("a key the strict decode does not carry still reads as refused", () => {
@@ -465,21 +413,6 @@ describe("deriveChangeRows", () => {
   it("derives without a schema at all, every row undeclared", () => {
     const rows = deriveChangeRows({ summary: "x" }, targetRecord({}))
     expect(rows[0]).toMatchObject({ declared: false, description: undefined })
-  })
-})
-
-describe("describeProposedEdge", () => {
-  it("matches a proposed edge to its declaration", () => {
-    expect(
-      describeProposedEdge({ rel: "assignee", id: "p1" }, taskKind)
-    ).toEqual({ declared: true, description: "who owns it" })
-    expect(
-      describeProposedEdge({ rel: "mystery", id: "p1" }, taskKind)
-    ).toEqual({ declared: false, description: undefined })
-    expect(describeProposedEdge({ rel: "assignee", id: "p1" })).toEqual({
-      declared: false,
-      description: undefined,
-    })
   })
 })
 

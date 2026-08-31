@@ -25,9 +25,8 @@ import { describe, expect, it } from "vitest"
 import golden from "./wire.golden.json"
 import type {
   Change,
-  EdgeInput,
-  EdgeRef,
-  EdgeTarget,
+  IncomingReference,
+  IncomingSource,
   Occurrence,
   OccurrenceList,
   OccurrenceLog,
@@ -55,26 +54,20 @@ const substrateRecord: Keys<SubstrateRecord> = {
   updatedAt: true,
   deletedAt: true,
   finalizers: true,
-  edges: true,
   propertyMeta: true,
 }
 
-const edgeTarget: Keys<EdgeTarget> = {
+const incomingReference: Keys<IncomingReference> = {
+  property: true,
+  path: true,
+  from: true,
+  createdAt: true,
+}
+
+const incomingSource: Keys<IncomingSource> = {
   id: true,
   kind: true,
   title: true,
-  properties: true,
-}
-
-const edgeRef: Keys<EdgeRef> = {
-  kind: true,
-  id: true,
-}
-
-const edgeInput: Keys<EdgeInput> = {
-  rel: true,
-  to: true,
-  properties: true,
 }
 
 const propertyMeta: Keys<PropertyMeta> = {
@@ -99,7 +92,6 @@ const putInput: Keys<PutInput> = {
   properties: true,
   labels: true,
   annotations: true,
-  edges: true,
   ifVersion: true,
 }
 
@@ -151,9 +143,8 @@ const occurrenceList: Keys<OccurrenceList> = {
 
 const mirrors: Record<string, Record<string, true>> = {
   SubstrateRecord: substrateRecord,
-  EdgeTarget: edgeTarget,
-  EdgeRef: edgeRef,
-  EdgeInput: edgeInput,
+  IncomingReference: incomingReference,
+  IncomingSource: incomingSource,
   PropertyMeta: propertyMeta,
   PropertyAlternative: propertyAlternative,
   PutInput: putInput,

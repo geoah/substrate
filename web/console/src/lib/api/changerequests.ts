@@ -59,9 +59,6 @@ export function changeRequestsQueryOptions(opts: {
     // Newest write first: deciding IS the update, so the queue reads fresh
     // proposals and fresh decisions alike from the top.
     orderBy: "updatedAt:desc",
-    // The `target` edge is what a patch or a delete request points at, and the
-    // queue cannot name what a request would change without it.
-    withEdges: true,
   })
 }
 

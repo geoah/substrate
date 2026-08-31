@@ -339,7 +339,6 @@ describe("deliveryNoticeOf", () => {
       id: "tr-chitchat",
       kind: "calendar.substrate.reamde.dev/transcript",
       properties: { title: "Billing migration sync" },
-      edges: {},
     },
     repository: { owner: "e2e" },
   }

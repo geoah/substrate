@@ -22,7 +22,7 @@ import { useForm } from "react-hook-form"
 import { z } from "zod"
 
 import { ActorChip } from "@/components/actor-chip"
-import { RecordPeek } from "@/components/record-peek"
+import { RecordPeek, type PeekTarget } from "@/components/record-peek"
 import { StateBadge } from "@/components/state-badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -71,12 +71,13 @@ import {
   submitVerdict,
 } from "@/lib/api/mergerequests"
 import { kindsQueryOptions } from "@/lib/api/kinds"
-import type { EdgeTarget, SubstrateRecord, KindInfo } from "@/lib/api/types"
+import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import { cellValue, relativeTime } from "@/lib/format"
 import {
   DECISION_INITIAL,
   decisionOf,
   deriveDiff,
+  mergePair,
   verdictNote,
   type DiffPosture,
   type DiffRow,
@@ -87,7 +88,7 @@ import { cn } from "@/lib/utils"
 import { EvidenceChips } from "@/components/merge-request"
 import { mergeRequestDetailRoute } from "@/router"
 
-function refTitle(ref?: EdgeTarget): string {
+function refTitle(ref?: PeekTarget): string {
   return ref?.title || ref?.id || "unknown"
 }
 
@@ -106,11 +107,6 @@ const POSTURE_TEXT: Record<
     label: "recompute settles",
     explain:
       "Machine-held. Values never migrate in a merge — after it, the survivor re-derives this property from the union of both records' live sources.",
-  },
-  moves: {
-    label: "moves to survivor",
-    explain:
-      "The merged-away record's edges re-point at the survivor; a duplicate edge collapses into one.",
   },
 }
 
@@ -145,32 +141,9 @@ function PostureCell({ posture }: { posture: DiffPosture }) {
 
 // ── side-by-side ────────────────────────────────────────────────────────────
 
-function ValueCell({
-  row,
-  side,
-  types,
-}: {
-  row: DiffRow
-  side: "loser" | "winner"
-  types: KindInfo[]
-}) {
+function ValueCell({ row, side }: { row: DiffRow; side: "loser" | "winner" }) {
   const value = side === "loser" ? row.loser : row.winner
   const manager = side === "loser" ? row.loserManager : row.winnerManager
-
-  if (row.kind === "edge") {
-    const targets = (value as EdgeTarget[]) ?? []
-    if (!targets.length)
-      return <span className="data text-muted-foreground">—</span>
-    return (
-      <span className="flex min-w-0 flex-col gap-0.5">
-        {targets.map((t) => (
-          <span key={t.id} className="min-w-0 truncate data">
-            <RecordPeek target={t} types={types} />
-          </span>
-        ))}
-      </span>
-    )
-  }
 
   const text = value === undefined || value === null ? "" : cellValue(value)
   // A long repeated value truncates; the count says what the ellipsis hides
@@ -200,11 +173,11 @@ function ValueCell({
 /** The diff rides the table system's look (owner ruling, 2026-08-06): real
  * table anatomy — fixed columns, bordered rows, muted lowercase headers —
  * though it stays a comparison, not a list, so no column dropdown or pages. */
-function DiffRows({ rows, types }: { rows: DiffRow[]; types: KindInfo[] }) {
+function DiffRows({ rows }: { rows: DiffRow[] }) {
   return (
     <>
       {rows.map((row) => (
-        <TableRow key={`${row.kind}-${row.key}`} className="hover:bg-muted/30">
+        <TableRow key={row.key} className="hover:bg-muted/30">
           <TableCell className="pl-4 align-top">
             <Tooltip>
               <TooltipTrigger
@@ -221,19 +194,17 @@ function DiffRows({ rows, types }: { rows: DiffRow[]; types: KindInfo[] }) {
               ) : (
                 <TooltipContent>
                   {row.declared
-                    ? row.kind === "edge"
-                      ? "declared edge"
-                      : "declared property"
+                    ? "declared property"
                     : "not declared by the schema"}
                 </TooltipContent>
               )}
             </Tooltip>
           </TableCell>
           <TableCell className="align-top">
-            <ValueCell row={row} side="loser" types={types} />
+            <ValueCell row={row} side="loser" />
           </TableCell>
           <TableCell className="align-top">
-            <ValueCell row={row} side="winner" types={types} />
+            <ValueCell row={row} side="winner" />
           </TableCell>
           <TableCell className="pr-4 align-top">
             <PostureCell posture={row.posture} />
@@ -248,12 +219,10 @@ function SideBySide({
   loser,
   winner,
   type,
-  types,
 }: {
   loser: SubstrateRecord
   winner: SubstrateRecord
   type?: KindInfo
-  types: KindInfo[]
 }) {
   const rows = useMemo(
     () => deriveDiff(winner, loser, type),
@@ -314,7 +283,7 @@ function SideBySide({
         </TableHeader>
         <TableBody>
           {open.length > 0 ? (
-            <DiffRows rows={open} types={types} />
+            <DiffRows rows={open} />
           ) : (
             <TableRow className="hover:bg-transparent">
               <TableCell
@@ -347,7 +316,7 @@ function SideBySide({
               </TableCell>
             </TableRow>
           )}
-          {showEqual && <DiffRows rows={equal} types={types} />}
+          {showEqual && <DiffRows rows={equal} />}
         </TableBody>
       </Table>
     </div>
@@ -370,8 +339,8 @@ function VerdictDialog({
   onClose,
 }: {
   verdict: MergeVerdict
-  loser?: EdgeTarget
-  winner?: EdgeTarget
+  loser?: PeekTarget
+  winner?: PeekTarget
   busy: boolean
   onConfirm: (note?: string) => void
   onClose: () => void
@@ -420,8 +389,9 @@ function VerdictDialog({
                 <>
                   <span className="block">
                     The substrate applies the merge in the same transaction as
-                    this decision: the merged-away record's edges and sources
-                    move across, machine-held properties recompute from the
+                    this decision: the merged-away record is tombstoned behind
+                    the survivor's former-id trail, so every reference to it
+                    still resolves; machine-held properties recompute from the
                     union of both sides' live sources, and values you hold stand
                     untouched.
                   </span>
@@ -494,7 +464,7 @@ function conflictAnnotation(mr: SubstrateRecord): string | undefined {
 }
 
 function useSideQuery(
-  ref: EdgeTarget | undefined,
+  ref: PeekTarget | undefined,
   types: KindInfo[],
   enabled: boolean
 ) {
@@ -520,8 +490,11 @@ export function MergeRequestDetailPage() {
   const proposed = decision === "proposed"
   const types = registry.data ?? []
 
-  const winnerRef = mr.data?.edges?.winner?.[0]
-  const loserRef = mr.data?.edges?.loser?.[0]
+  // The pair rides `winner`/`loser` REFERENCE properties: the stored value is
+  // the referent's record path, and the peek fetches the rest.
+  const pair = mr.data ? mergePair(mr.data) : {}
+  const winnerRef = pair.winner
+  const loserRef = pair.loser
   const winnerSide = useSideQuery(winnerRef, types, proposed)
   const loserSide = useSideQuery(loserRef, types, proposed)
 
@@ -742,7 +715,6 @@ export function MergeRequestDetailPage() {
               loser={loserSide.query.data!}
               winner={winnerSide.query.data!}
               type={winnerSide.type}
-              types={types}
             />
           ) : sideError ? (
             <div className="mx-6 mb-4 rounded-md border px-4 py-3 text-sm text-muted-foreground">

@@ -1,12 +1,12 @@
 /** Record reads and writes: keyset-paged collection lists (server-side
  * filter/sort), a bounded size probe, single-record reads (the only wire
- * surface carrying `propertyMeta`), the record-57 incoming-edge pages, and the
+ * surface carrying `propertyMeta`), the record-57 incoming-reference pages, and the
  * change feed filtered to one record.
  *
  * A collection path IS the kind reference split into segments —
  * `/{authority}/{name}`, and every kind carries an authority (decision 0042,
  * `collectionPath`). The PUT/POST body carries the
- * authored envelope only (`{properties, labels, annotations, edges}`); the kind
+ * authored envelope only (`{properties, labels, annotations}`); the kind
  * is settled by the path, so the body never repeats it.
  *
  * PAGINATION: the list `cursor` is an OPAQUE keyset
@@ -20,10 +20,9 @@ import { fetchChangesPage } from "./changes"
 import { collectionPath, request, seg } from "./http"
 import type {
   ChangeRow,
-  EdgeRef,
   SubstrateRecord,
   RecordFilter,
-  IncomingEdge,
+  IncomingReference,
   IncomingPage,
   Page,
 } from "./types"
@@ -45,7 +44,6 @@ export interface ListParams {
   filter?: RecordFilter
   /** `"updatedAt:desc"` — the wire's compact orderBy spelling. */
   orderBy?: string
-  withEdges?: boolean
 }
 
 function hasFilter(filter?: RecordFilter): filter is RecordFilter {
@@ -53,8 +51,7 @@ function hasFilter(filter?: RecordFilter): filter is RecordFilter {
   return Boolean(
     filter.kinds?.length ||
     Object.keys(filter.properties ?? {}).length ||
-    Object.keys(filter.labels ?? {}).length ||
-    filter.edge
+    Object.keys(filter.labels ?? {}).length
   )
 }
 
@@ -64,7 +61,6 @@ export function listPath(p: ListParams): string {
   if (p.after) q.set("after", p.after)
   if (hasFilter(p.filter)) q.set("filter", JSON.stringify(p.filter))
   if (p.orderBy) q.set("orderBy", p.orderBy)
-  if (p.withEdges) q.set("withEdges", "1")
   return `${collectionPath(p.authority, p.name)}?${q}`
 }
 
@@ -79,7 +75,6 @@ export function recordsQueryOptions(p: ListParams) {
         after: p.after ?? null,
         filter: hasFilter(p.filter) ? p.filter : null,
         orderBy: p.orderBy ?? null,
-        withEdges: Boolean(p.withEdges),
       },
     ],
     queryFn: ({ signal }) =>
@@ -171,23 +166,15 @@ export function recordQueryOptions(
 
 // ── writes (bundle config + account records, integrations flow) ─────────────
 
-/** One edge on a write: `{rel, to: {kind, id}}`, plus the edge's own
- * properties where it has any. */
-export interface EdgeWrite {
-  rel: string
-  to: EdgeRef
-  properties?: Record<string, unknown>
-}
-
 /** A create/upsert write body (`substrate.PutInput`): authored properties,
- * labels, annotations and edges, plus an optional id (omit to let the
- * substrate mint one). The kind is settled by the collection path. */
+ * labels and annotations, plus an optional id (omit to let the substrate mint
+ * one). The kind is settled by the collection path, and a pointer at another
+ * record is a `reference` property like any other. */
 export interface RecordWrite {
   id?: string
   properties?: Record<string, unknown>
   labels?: Record<string, unknown>
   annotations?: Record<string, unknown>
-  edges?: EdgeWrite[]
   ifVersion?: number
 }
 
@@ -257,17 +244,18 @@ export async function deleteRecord(
   await request<void>("DELETE", `${collectionPath(authority, name)}/${seg(id)}`)
 }
 
-// ── incoming edges (record 57) ──────────────────────────────────────────────
+// ── incoming references (record 57) ─────────────────────────────────────────
 
-/** The fan-in of one record. `rel`/`fromKind` narrow it to ONE group, which
- * is how a drill-down expands a group without pulling every other pointer the
- * record has — and the page's total is then that group's, not the record's. */
+/** The fan-in of one record. `property`/`fromKind` narrow it to ONE group,
+ * which is how a drill-down expands a group without pulling every other
+ * pointer the record has — and the page's total is then that group's, not the
+ * record's. */
 export function incomingInfiniteOptions(
   authority: string,
   name: string,
   id: string,
   first = 50,
-  narrow: { rel?: string; fromKind?: string } = {}
+  narrow: { property?: string; fromKind?: string } = {}
 ) {
   return infiniteQueryOptions({
     queryKey: [
@@ -275,12 +263,16 @@ export function incomingInfiniteOptions(
       authority,
       name,
       id,
-      { rel: narrow.rel ?? null, fromKind: narrow.fromKind ?? null, first },
+      {
+        property: narrow.property ?? null,
+        fromKind: narrow.fromKind ?? null,
+        first,
+      },
     ],
     queryFn: ({ pageParam, signal }) => {
       const q = new URLSearchParams({ first: String(first) })
       if (pageParam) q.set("after", pageParam)
-      if (narrow.rel) q.set("rel", narrow.rel)
+      if (narrow.property) q.set("property", narrow.property)
       if (narrow.fromKind) q.set("fromKind", narrow.fromKind)
       return request<IncomingPage>(
         "GET",
@@ -294,26 +286,36 @@ export function incomingInfiniteOptions(
   })
 }
 
-/** One rel × source-kind bucket of the fan-in. The server orders by
- * (rel, kind, id), so buckets stay contiguous across pages and the grouping is
- * a stable fold, not a re-sort. */
+/** One property × source-kind bucket of the fan-in.
+ *
+ * The refs index keys on (src_kind, src, property, path, ord) and the read
+ * walks it in that order, so a bucket is NOT contiguous: two records of one
+ * kind pointing here under two properties interleave. The fold is therefore
+ * keyed rather than adjacent, and the buckets come back in (kind, property)
+ * order so a page arriving later lands where a reader already looked. */
 export interface IncomingGroup {
-  rel: string
+  property: string
   kind: string
-  rows: IncomingEdge[]
+  rows: IncomingReference[]
 }
 
-export function groupIncoming(rows: IncomingEdge[]): IncomingGroup[] {
-  const out: IncomingGroup[] = []
+export function groupIncoming(rows: IncomingReference[]): IncomingGroup[] {
+  const byKey = new Map<string, IncomingGroup>()
   for (const row of rows) {
-    const last = out[out.length - 1]
-    if (last && last.rel === row.rel && last.kind === row.from.kind) {
-      last.rows.push(row)
-    } else {
-      out.push({ rel: row.rel, kind: row.from.kind, rows: [row] })
-    }
+    const key = `${row.from.kind}\u0000${row.property}`
+    const group = byKey.get(key)
+    if (group) group.rows.push(row)
+    else
+      byKey.set(key, {
+        property: row.property,
+        kind: row.from.kind,
+        rows: [row],
+      })
   }
-  return out
+  return [...byKey.values()].sort(
+    (a, b) =>
+      a.kind.localeCompare(b.kind) || a.property.localeCompare(b.property)
+  )
 }
 
 // ── the change feed, filtered to one record ─────────────────────────────────

@@ -7,7 +7,7 @@
  *
  * TOP TABS, the record page's idiom (owner ask, 2026-08-12): **Records** is the
  * collection, **Definition** is the kind that shapes it — its declaration YAML
- * and the properties/edges it declares. The active tab lives in `?tab=` so it
+ * and the properties it declares. The active tab lives in `?tab=` so it
  * is linkable, and both tabs read the ONE kinds query this page already makes. */
 
 import { useEffect, useMemo, useState } from "react"
@@ -52,11 +52,7 @@ import {
   saveBrowsePrefs,
   toRecordFilter,
 } from "@/lib/filters"
-import {
-  declaredEdges,
-  filterableProperties,
-  kindByCollection,
-} from "@/lib/definition"
+import { filterableProperties, kindByCollection } from "@/lib/definition"
 import {
   buildColumns,
   columnIdOf,
@@ -157,7 +153,6 @@ export function KindBrowsePage() {
     after: cursorStack[pageIndex],
     filter: recordFilter,
     orderBy: sort,
-    withEdges: kindInfo ? declaredEdges(kindInfo).length > 0 : false,
   })
   const records = useQuery({ ...listOptions, enabled: Boolean(kindInfo) })
 
@@ -193,9 +188,8 @@ export function KindBrowsePage() {
   }
 
   const columns = useMemo(
-    () =>
-      kindInfo && registry.data ? buildColumns(kindInfo, registry.data) : [],
-    [kindInfo, registry.data]
+    () => (kindInfo ? buildColumns(kindInfo) : []),
+    [kindInfo]
   )
 
   const sorting = useMemo(() => parseSort(sort), [sort])

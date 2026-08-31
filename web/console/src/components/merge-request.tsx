@@ -3,21 +3,21 @@
  * lives here rather than on a page because there is no queue page any more —
  * the overview's zone and the request's own detail both read from it. */
 
-import { RecordPeek } from "@/components/record-peek"
+import { RecordPeek, type PeekTarget } from "@/components/record-peek"
 import { Badge } from "@/components/ui/badge"
-import type { EdgeTarget, SubstrateRecord, KindInfo } from "@/lib/api/types"
+import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import { splitKind } from "@/lib/definition"
 import { evidenceSignals, signalText } from "@/lib/mergerequests"
 
 /** The pair, direction first: who merges away → who survives. Each side
- * peeks and links like every edge cell in the console. */
+ * peeks and links like every record cell in the console. */
 export function MergePair({
   loser,
   winner,
   types,
 }: {
-  loser?: EdgeTarget
-  winner?: EdgeTarget
+  loser?: PeekTarget
+  winner?: PeekTarget
   types: KindInfo[]
 }) {
   return (
@@ -35,7 +35,7 @@ function PairSide({
   target,
   types,
 }: {
-  target?: EdgeTarget
+  target?: PeekTarget
   types: KindInfo[]
 }) {
   if (!target) return <span className="text-muted-foreground">unknown</span>

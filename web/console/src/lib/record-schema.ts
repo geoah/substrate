@@ -18,7 +18,13 @@
  *   deliberately the SAME shape of check, never a stricter one: the server is
  *   still the authority, and a check the server would pass must pass here. */
 
-import { parseEnumValues, type EnumValue, type KindInfo } from "@/lib/api/types"
+import {
+  parseEnumValues,
+  readReference,
+  REFERENCE_KEY,
+  type EnumValue,
+  type KindInfo,
+} from "@/lib/api/types"
 import { temporalProperties } from "@/lib/definition"
 import { coerceReferencePath, recordPath } from "@/lib/record-path"
 
@@ -82,6 +88,10 @@ export interface PropSpec {
   initial?: string
   /** `reference`: the kind this pointer is pinned to, or `any`. */
   to?: string
+  /** `reference`: the LINK DATA the declaration hangs off the pointer, each a
+   * property in its own right. A reference that declares these stores an
+   * object (`{ref, <prop>: <val>}`) where a plain one stores the path string. */
+  linkFields?: PropSpec[]
   /** `object`: the declared fields, each a property in its own right (a field
    * may narrow, range or enumerate exactly as a property does). Fields NEST:
    * a field may itself be an object with fields, and may be repeated or keyed,
@@ -224,9 +234,10 @@ function specOf(name: string, def: Record<string, unknown>): PropSpec {
     states: stringList(def.states),
     initial: typeof def.initial === "string" ? def.initial : undefined,
     // THE PIN. A reference property names the kind its value points at under
-    // `kind:`; `to:` is the EDGE's word for the far end of a traversable
-    // link, and a reference still spelling it is refused at the door.
+    // `kind:`, the one spelling the loader accepts.
     to: typeof def.kind === "string" ? def.kind : undefined,
+    linkFields:
+      def.type === "reference" ? fieldSpecs(def.properties) : undefined,
     fields: fieldSpecs(def.fields),
     min: numberOr(def.min),
     max: numberOr(def.max),
@@ -513,11 +524,35 @@ export function checkItem(spec: PropSpec, value: unknown): string | undefined {
   // the kind that completes it, and a value that reads two ways is refused
   // naming both rather than resolved by precedence.
   if (spec.kind === "reference") {
-    if (typeof value !== "string") {
-      return 'a reference is a "<kind>/<id>" path string'
-    }
     const pin = spec.to && spec.to !== TO_ANY ? spec.to : ""
-    return coerceReferencePath(pin, value.trim()).error
+    if (typeof value === "string") {
+      return coerceReferencePath(pin, value.trim()).error
+    }
+    // A reference that declares LINK DATA stores the pointer under the one
+    // reserved key with the link properties beside it. A bare string is still
+    // admissible there (every link property absent), which is why the string
+    // arm above runs first.
+    const held = readReference(value)
+    if (!held) {
+      return spec.linkFields?.length
+        ? `a reference with link data is a {${REFERENCE_KEY}: "<kind>/<id>", …} object or the path string alone`
+        : 'a reference is a "<kind>/<id>" path string'
+    }
+    const bad = coerceReferencePath(pin, held.path.trim()).error
+    if (bad) return bad
+    for (const [name, held_] of Object.entries(held.properties)) {
+      const declared = spec.linkFields?.find((f) => f.name === name)
+      if (!declared) return `\`${name}\` is not a declared link property`
+      const problem = checkValue(declared, held_)
+      if (problem) return underField(name, problem)
+    }
+    for (const declared of spec.linkFields ?? []) {
+      if (!declared.required) continue
+      if (isBlank(held.properties[declared.name])) {
+        return `\`${declared.name}\` is required`
+      }
+    }
+    return undefined
   }
 
   if (isBooleanKind(spec.kind)) {

@@ -27,6 +27,7 @@ import {
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import { relativeTime } from "@/lib/format"
 import { EvidenceChips, MergePair } from "@/components/merge-request"
+import { mergePair } from "@/lib/mergerequests"
 
 /** Evidence cards the zone shows; the queue holds the rest. */
 const TOP_N = 3
@@ -39,6 +40,7 @@ function PendingCard({
   kinds: KindInfo[]
 }) {
   const navigate = useNavigate()
+  const pair = mergePair(mr)
   return (
     <div
       role="link"
@@ -54,11 +56,7 @@ function PendingCard({
       }}
     >
       <span className="flex w-full items-center gap-3">
-        <MergePair
-          loser={mr.edges?.loser?.[0]}
-          winner={mr.edges?.winner?.[0]}
-          types={kinds}
-        />
+        <MergePair loser={pair.loser} winner={pair.winner} types={kinds} />
         <span
           className="ml-auto shrink-0 data text-muted-foreground"
           title={mr.createdAt}

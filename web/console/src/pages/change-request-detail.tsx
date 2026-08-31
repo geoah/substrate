@@ -89,7 +89,6 @@ import {
   decisionNote,
   decisionOf,
   deriveChangeRows,
-  describeProposedEdge,
   diffCannotApply,
   diffNamesNothing,
   proposedDiff,
@@ -101,7 +100,6 @@ import {
   type ChangeRow,
   type ChangeTargetRef,
   type ProposedDiff,
-  type ProposedEdge,
   type UnreadableField,
   type Verdict,
 } from "@/lib/changerequests"
@@ -111,7 +109,7 @@ import { cn } from "@/lib/utils"
 import { changeRequestDetailRoute } from "@/router"
 
 function targetLabel(target?: ChangeTargetRef): string {
-  return target?.title || target?.id || "unknown"
+  return target?.id || "unknown"
 }
 
 // ── effect voice ────────────────────────────────────────────────────────────
@@ -313,87 +311,15 @@ function BeforeAfter({
   )
 }
 
-/** One edge a create would write, with the EDGE's own properties beside it:
- * they are reviewed content like any value, and the accept writes them. */
-function EdgeRows({ edges, kind }: { edges: ProposedEdge[]; kind?: KindInfo }) {
-  return (
-    <>
-      {edges.map((edge) => {
-        const declaration = describeProposedEdge(edge, kind)
-        const props = Object.entries(edge.properties ?? {})
-        return (
-          <TableRow key={`edge-${edge.rel}-${edge.id}`}>
-            <TableCell className="pl-4 align-top">
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <span className="block truncate data text-muted-foreground" />
-                  }
-                >
-                  {edge.rel}
-                </TooltipTrigger>
-                <TooltipContent className="max-w-72">
-                  {declaration.description ??
-                    (declaration.declared
-                      ? "declared edge"
-                      : "not declared by the target's kind")}
-                </TooltipContent>
-              </Tooltip>
-            </TableCell>
-            <TableCell className="pr-4 align-top">
-              <span className="flex min-w-0 flex-col gap-1">
-                <span className="flex min-w-0 items-baseline gap-1.5">
-                  <span className="text-muted-foreground" aria-hidden>
-                    →
-                  </span>
-                  <span className="min-w-0 truncate data" title={edge.id}>
-                    {edge.id}
-                  </span>
-                  {edge.kind && (
-                    <span className="shrink-0 data text-xs text-muted-foreground">
-                      {splitKind(edge.kind).name}
-                    </span>
-                  )}
-                </span>
-                {props.length > 0 && (
-                  <span className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 pl-4 text-xs">
-                    {props.map(([key, value]) => (
-                      <span key={key} className="contents">
-                        <span className="max-w-40 truncate data text-muted-foreground">
-                          {key}
-                        </span>
-                        <span
-                          className="min-w-0 truncate data"
-                          title={cellValue(value)}
-                        >
-                          {value === null ? "removed" : cellValue(value)}
-                        </span>
-                      </span>
-                    ))}
-                  </span>
-                )}
-              </span>
-            </TableCell>
-          </TableRow>
-        )
-      })}
-    </>
-  )
-}
-
 /** The proposed values alone: the record a create would mint, and the fallback
  * whenever the live target cannot be read (a value with nothing to compare it
  * to must not be dressed up as a comparison). */
 function ProposedValues({
   rows,
-  edges,
-  kind,
   caption,
   emptyText,
 }: {
   rows: ChangeRow[]
-  edges: ProposedEdge[]
-  kind?: KindInfo
   caption: string
   /** What an EMPTY table means here, which is never simply "nothing": a
    * refused decode, or a change that lives in the labels/finalizers instead. */
@@ -411,7 +337,7 @@ function ProposedValues({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.length === 0 && edges.length === 0 && (
+          {rows.length === 0 && (
             <TableRow className="hover:bg-transparent">
               <TableCell
                 colSpan={2}
@@ -431,7 +357,6 @@ function ProposedValues({
               </TableCell>
             </TableRow>
           ))}
-          <EdgeRows edges={edges} kind={kind} />
         </TableBody>
       </Table>
     </div>
@@ -854,14 +779,8 @@ export function ChangeRequestDetailPage() {
               The diff names keys the substrate's decoder refuses (
               <span className="data">{diff.refused.join(", ")}</span>), so the
               accept fails whole. Property values belong under{" "}
-              <span className="data">properties</span>
-              {op === "create" ? (
-                <>
-                  {" "}
-                  and edges under <span className="data">edges</span>
-                </>
-              ) : null}
-              .
+              <span className="data">properties</span>, a pointer at another
+              record among them.
             </p>
           </Warning>
         )}
@@ -904,9 +823,9 @@ export function ChangeRequestDetailPage() {
               </p>
               <p>
                 The record is tombstoned: it stops answering reads and every
-                edge pointing at it dangles. The changelog keeps what it was, so
-                the history survives, but the record does not come back on its
-                own.
+                reference pointing at it dangles. The changelog keeps what it
+                was, so the history survives, but the record does not come back
+                on its own.
               </p>
             </Warning>
             {targetRecord && (
@@ -969,8 +888,6 @@ export function ChangeRequestDetailPage() {
         {!proposed && op !== "delete" && (
           <ProposedValues
             rows={deriveChangeRows(diff.properties, undefined, targetSide.kind)}
-            edges={op === "create" ? diff.edges : []}
-            kind={targetSide.kind}
             caption="proposed value"
             emptyText={emptyText}
           />
@@ -1052,13 +969,11 @@ function PatchBody({
               ? `The target didn't load, so the current values are unknown: ${error}`
               : kindMissing
                 ? "The target's kind isn't in this repository's registry, so its current values can't be read. The decision buttons still work."
-                : `This request names no target to compare against. A patch request carries one as its target edge; accepting is refused without it.`}
+                : `This request names no target to compare against. A patch request carries one in its \`target\` reference; accepting is refused without it.`}
           </p>
         </Warning>
         <ProposedValues
           rows={rows}
-          edges={[]}
-          kind={targetKind}
           caption="proposed value"
           emptyText={emptyText}
         />
@@ -1094,8 +1009,6 @@ function PatchBody({
       ) : (
         <ProposedValues
           rows={rows}
-          edges={op === "create" ? diff.edges : []}
-          kind={targetKind}
           caption={op === "create" ? "the accept writes" : "proposed value"}
           emptyText={emptyText}
         />

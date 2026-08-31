@@ -7,11 +7,11 @@
  * internal/engine/write.go): `op` is create|patch|delete and ABSENT MEANS
  * PATCH (an older request stores no op, so back-compat is by omission);
  * `targetKind`/`targetId` name a create's record, which nothing can point at
- * yet; the `target` edge names a patch's or a delete's; `targetVersion` is the
+ * yet; the `target` REFERENCE names a patch's or a delete's; `targetVersion` is the
  * version the diff was computed against, which the accept CAS's against unless
  * the diff carries its own `ifVersion`; `diff` is json, decoded STRICTLY as a
  * PatchInput (properties, labels, annotations, finalizers, ifVersion) or, for a
- * create, a PutInput (those plus `edges`). Accepting is what applies the
+ * create, a PutInput (the same set, minus the finalizers). Accepting is what applies the
  * change: the `decision` transition runs `applyDiff` in the same transaction,
  * and a decision on the human path must carry the REQUEST's `ifVersion`
  * (write.go refuses it otherwise), which is also what enforces the envelope the
@@ -22,8 +22,13 @@
  * same way today; neither guarantees the other's states, and their value
  * equality is genuinely different (see `sameApplied`). */
 
-import type { EdgeTarget, KindInfo, SubstrateRecord } from "@/lib/api/types"
-import { declaredEdges, declaredProperties } from "@/lib/definition"
+import {
+  readReference,
+  type KindInfo,
+  type SubstrateRecord,
+} from "@/lib/api/types"
+import { declaredProperties } from "@/lib/definition"
+import { splitRecordPath } from "@/lib/record-path"
 
 // ── the decision ────────────────────────────────────────────────────────────
 
@@ -97,28 +102,30 @@ export interface ChangeTargetRef {
   /** The target's kind reference. */
   kind: string
   id: string
-  /** Display sugar the `target` edge carries on the wire, when it does. */
-  title?: string
-  /** How the request names it: `edge` is the `target` edge (patch, delete),
-   * `declared` is a create's own targetKind/targetId, which no edge can point
-   * at because the record does not exist yet. */
-  via: "edge" | "declared"
+  /** How the request names it: `reference` is the `target` property (patch,
+   * delete), `declared` is a create's own targetKind/targetId, which no
+   * reference can point at because the record does not exist yet. */
+  via: "reference" | "declared"
 }
 
 export function changeTarget(r: SubstrateRecord): ChangeTargetRef | undefined {
-  const edge = edgeRef(r.edges?.target?.[0])
+  const pointed = referenceRef(r.properties.target)
   const declared = declaredRef(r)
-  return changeOp(r) === "create" ? (declared ?? edge) : (edge ?? declared)
+  return changeOp(r) === "create"
+    ? (declared ?? pointed)
+    : (pointed ?? declared)
 }
 
-function edgeRef(target?: EdgeTarget): ChangeTargetRef | undefined {
-  if (!target?.id) return undefined
-  return {
-    kind: target.kind,
-    id: target.id,
-    title: target.title,
-    via: "edge",
-  }
+/** The `target` reference read as its two halves. A reference stores the
+ * referent's whole record PATH, so the kind grammar splits it and the registry
+ * is never consulted. */
+function referenceRef(value: unknown): ChangeTargetRef | undefined {
+  const held = readReference(value)
+  if (!held) return undefined
+  const target = splitRecordPath(held.path)
+  return target
+    ? { kind: target.kind, id: target.id, via: "reference" }
+    : undefined
 }
 
 function declaredRef(r: SubstrateRecord): ChangeTargetRef | undefined {
@@ -129,23 +136,12 @@ function declaredRef(r: SubstrateRecord): ChangeTargetRef | undefined {
 
 // ── the stored diff ─────────────────────────────────────────────────────────
 
-/** One edge a create request would write, normalized off `diff.edges`
- * (`substrate.EdgeInput`: `{rel, to: {kind?, id}, properties?}`). `kind` is
- * absent where the declaration pins one target kind and the writer left it
- * implicit; `properties` are the EDGE's own, reviewed content like any other. */
-export interface ProposedEdge {
-  rel: string
-  kind?: string
-  id: string
-  properties?: Record<string, unknown>
-}
-
 /** A value the console cannot read where the decode expects a shape: kept
  * verbatim, because "the diff names nothing" and "the diff names something the
  * substrate will refuse" are opposite facts and the reviewer needs the second
  * one said out loud. */
 export interface UnreadableField {
-  /** The diff key, or `edges[2]` for one entry of the edge list. */
+  /** The diff key. */
   key: string
   /** What was actually there. */
   raw: unknown
@@ -164,13 +160,11 @@ export interface ProposedDiff {
    * `targetVersion` at accept (write.go: the stamp is only a fallback), so it
    * is what a drift warning must compare against. */
   ifVersion?: number
-  /** Create only: the edges the minted record is born with. */
-  edges: ProposedEdge[]
   /** Top-level keys the substrate's strict decode would refuse, so the surface
    * can say why an accept will fail before anybody presses the button. */
   refused: string[]
-  /** Keys whose value is the wrong SHAPE for the decode (`properties: []`,
-   * `edges: {}`, a malformed edge entry). The accept fails on these too. */
+  /** Keys whose value is the wrong SHAPE for the decode (`properties: []`).
+   * The accept fails on these too. */
   malformed: UnreadableField[]
   /** True when `diff` is present but is not an object at all. */
   unreadable: boolean
@@ -195,7 +189,6 @@ const CREATE_DIFF_KEYS = [
   "properties",
   "labels",
   "annotations",
-  "edges",
   "ifVersion",
 ]
 
@@ -205,7 +198,6 @@ export function proposedDiff(r: SubstrateRecord): ProposedDiff {
     properties: {},
     addFinalizers: [],
     removeFinalizers: [],
-    edges: [],
     refused: [],
     malformed: [],
     unreadable: false,
@@ -251,7 +243,6 @@ export function proposedDiff(r: SubstrateRecord): ProposedDiff {
     addFinalizers: strings("addFinalizers"),
     removeFinalizers: strings("removeFinalizers"),
     ifVersion,
-    edges: proposedEdges(diff, malformed),
     refused: Object.keys(diff)
       .filter((k) => !admitted.includes(k))
       .sort(),
@@ -268,36 +259,6 @@ function mapOf(value: unknown): Record<string, unknown> | undefined {
     return undefined
   }
   return value as Record<string, unknown>
-}
-
-function proposedEdges(
-  diff: Record<string, unknown>,
-  malformed: UnreadableField[]
-): ProposedEdge[] {
-  const value = diff.edges
-  if (value === undefined || value === null) return []
-  if (!Array.isArray(value)) {
-    malformed.push({ key: "edges", raw: value })
-    return []
-  }
-  const out: ProposedEdge[] = []
-  value.forEach((item, i) => {
-    const edge = mapOf(item)
-    const rel = str(edge?.rel)
-    const to = mapOf(edge?.to)
-    const id = str(to?.id)
-    if (!rel || !id) {
-      malformed.push({ key: `edges[${i}]`, raw: item })
-      return
-    }
-    out.push({
-      rel,
-      kind: str(to?.kind),
-      id,
-      properties: mapOf(edge?.properties),
-    })
-  })
-  return out
 }
 
 /** True when the substrate's strict decode will refuse this diff whole: an
@@ -317,8 +278,7 @@ export function diffNamesNothing(diff: ProposedDiff): boolean {
     Object.keys(diff.labels ?? {}).length === 0 &&
     Object.keys(diff.annotations ?? {}).length === 0 &&
     diff.addFinalizers.length === 0 &&
-    diff.removeFinalizers.length === 0 &&
-    diff.edges.length === 0
+    diff.removeFinalizers.length === 0
   )
 }
 
@@ -405,8 +365,8 @@ export function deriveChangeRows(
 }
 
 /** True when accepting would apply NOTHING even though the diff names things:
- * every named property already matches, and no label, annotation, finalizer or
- * edge rides along. The write path refuses that accept rather than recording a
+ * every named property already matches, and no label, annotation or finalizer
+ * rides along. The write path refuses that accept rather than recording a
  * decision that changed nothing, so the page says so before the button. Only
  * meaningful where the live target was read; a create has nothing to match. */
 export function appliesNothing(diff: ProposedDiff, rows: ChangeRow[]): boolean {
@@ -416,24 +376,8 @@ export function appliesNothing(diff: ProposedDiff, rows: ChangeRow[]): boolean {
     Object.keys(diff.labels ?? {}).length === 0 &&
     Object.keys(diff.annotations ?? {}).length === 0 &&
     diff.addFinalizers.length === 0 &&
-    diff.removeFinalizers.length === 0 &&
-    diff.edges.length === 0
+    diff.removeFinalizers.length === 0
   )
-}
-
-/** An edge a create would write, matched to its declaration so the preview can
- * say what the rel IS and whether the kind declares it at all. */
-export function describeProposedEdge(
-  edge: ProposedEdge,
-  kind?: KindInfo
-): { declared: boolean; description?: string } {
-  const declaration = kind
-    ? declaredEdges(kind).find((e) => e.rel === edge.rel)
-    : undefined
-  return {
-    declared: Boolean(declaration),
-    description: declaration?.description,
-  }
 }
 
 // ── the stale target ────────────────────────────────────────────────────────

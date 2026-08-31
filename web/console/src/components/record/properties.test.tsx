@@ -58,9 +58,19 @@ const task: KindInfo = {
       tags: { type: "string", repeated: true },
       payload: { type: "json" },
       parent: { type: "reference", kind: "tasks.substrate.reamde.dev/task" },
-    },
-    edges: {
-      assignee: { to: "person" },
+      // A reference carrying LINK DATA: its value is `{ref, role}`, not the
+      // bare path, and the link's own properties are data the record holds.
+      assignee: {
+        type: "reference",
+        kind: "people.substrate.reamde.dev/person",
+        mustExist: true,
+        properties: { role: { type: "string" } },
+      },
+      reviewers: {
+        type: "reference",
+        kind: "people.substrate.reamde.dev/person",
+        repeated: true,
+      },
     },
   },
 }
@@ -88,17 +98,17 @@ const record: SubstrateRecord = {
     tags: ["a", "b"],
     payload: { retries: 2 },
     parent: "tasks.substrate.reamde.dev/task/t0",
+    assignee: { ref: "people.substrate.reamde.dev/person/p1" },
+    reviewers: [
+      "people.substrate.reamde.dev/person/p2",
+      "people.substrate.reamde.dev/person/p3",
+    ],
     legacy: "still here",
   },
   labels: {},
   version: 3,
   createdAt: "2026-08-14T10:00:00Z",
   updatedAt: "2026-08-14T10:00:00Z",
-  edges: {
-    assignee: [
-      { id: "p1", kind: "people.substrate.reamde.dev/person", title: "Ada" },
-    ],
-  },
 }
 
 /** `null` means "the registry lacks the kind" — an explicit `undefined` would
@@ -147,7 +157,6 @@ describe("PropertiesRail", () => {
     const bare: SubstrateRecord = {
       ...record,
       properties: { summary: "just this" },
-      edges: {},
     }
     const { container } = renderRail(bare)
     const text = container.textContent ?? ""
@@ -217,7 +226,6 @@ describe("PropertiesRail", () => {
     const emptied: SubstrateRecord = {
       ...record,
       properties: { summary: "" },
-      edges: {},
     }
     const { container } = renderRail(emptied)
     const text = container.textContent ?? ""
@@ -226,34 +234,45 @@ describe("PropertiesRail", () => {
     expect(text).toContain("not set")
   })
 
-  it("shows an edge's own properties beside its target", () => {
-    const withEdgeProps: SubstrateRecord = {
+  it("renders a reference carrying link data as its pill plus the link's own properties", () => {
+    const linked: SubstrateRecord = {
       ...record,
-      edges: {
-        assignee: [
-          {
-            id: "p1",
-            kind: "people.substrate.reamde.dev/person",
-            title: "Ada",
-            properties: { role: "reviewer" },
-          },
-        ],
+      properties: {
+        ...record.properties,
+        assignee: {
+          ref: "people.substrate.reamde.dev/person/p1",
+          role: "reviewer",
+        },
       },
     }
-    const { container } = renderRail(withEdgeProps)
-    expect(container.textContent).toContain("role: reviewer")
-  })
-
-  it("lists edges with each target linked, as a RecordPill", () => {
-    const { container } = renderRail()
-    expect(container.textContent).toContain("assignee")
+    const { container } = renderRail(linked)
+    // The pointer still reads as the pill every other surface uses...
     const link = [...container.querySelectorAll("a")].find(
-      (a) => a.textContent === "Ada"
+      (a) => a.textContent === "p1"
     )
     expect(link?.getAttribute("href")).toBe(
       "/data/people.substrate.reamde.dev/person/p1"
     )
     expect(link?.className).toContain("rounded-full")
+    // ...and the link data rides beside it rather than being dropped.
+    expect(container.textContent).toContain("role: reviewer")
+  })
+
+  it("does not print a link-data reference as a JSON blob", () => {
+    const { container } = renderRail()
+    const pre = [...container.querySelectorAll("pre")].find((el) =>
+      el.textContent?.includes("ref")
+    )
+    expect(pre).toBeUndefined()
+  })
+
+  it("lists a repeated reference as a list of pills", () => {
+    const { container } = renderRail()
+    const hrefs = [...container.querySelectorAll("li a")].map((a) =>
+      a.getAttribute("href")
+    )
+    expect(hrefs).toContain("/data/people.substrate.reamde.dev/person/p2")
+    expect(hrefs).toContain("/data/people.substrate.reamde.dev/person/p3")
   })
 
   it("sizes a property's name at least as large as its value, and heavier", () => {
@@ -277,7 +296,6 @@ describe("PropertiesRail", () => {
     const empty: SubstrateRecord = {
       ...record,
       properties: {},
-      edges: {},
     }
     const { container } = renderRail(empty, {
       ...task,

@@ -170,7 +170,8 @@ function withoutManaged(
  * without the server-owned `status` block, and (when the kind is known)
  * without the managed properties a hand edit must not carry.
  * Order-preserving so the yaml serializes what the read served. Labels ride
- * in `metadata`; edge references travel whole as `{kind, id}`. */
+ * in `metadata`; a pointer at another record is a `reference` property, so it
+ * travels inside `data.properties` like every other value. */
 export function applyManifestOf(
   record: SubstrateRecord,
   kind?: KindInfo
@@ -186,16 +187,6 @@ export function applyManifestOf(
   if (Object.keys(properties).length) {
     data.properties = properties
   }
-  const edges = Object.entries(record.edges ?? {}).flatMap(([rel, targets]) =>
-    (targets ?? []).map((t) => {
-      const to = { kind: t.kind, id: t.id }
-      return t.properties && Object.keys(t.properties).length
-        ? { rel, properties: t.properties, to }
-        : { rel, to }
-    })
-  )
-  if (edges.length) data.edges = edges
-
   const doc: Record<string, unknown> = { kind: record.kind, metadata }
   if (Object.keys(data).length) doc.data = data
   return doc
@@ -221,7 +212,6 @@ export interface ApplyDoc {
   }
   data?: {
     properties?: Record<string, unknown>
-    edges?: unknown[]
   }
 }
 
@@ -298,62 +288,6 @@ function lineOfTopKey(text: string, key: string): number | undefined {
  * is not what the write lands on) — absent on a create. */
 export interface ApplyContext {
   record?: SubstrateRecord
-}
-
-function edgeProblems(raw: unknown, kind: KindInfo, text: string): Problem[] {
-  if (raw === undefined) return []
-  if (!Array.isArray(raw)) {
-    return [
-      {
-        severity: "error",
-        message: "`data.edges` must be a list of `{rel, to: {kind, id}}`.",
-        line: lineOfKey(text, "edges"),
-      },
-    ]
-  }
-  const declared = new Set(
-    Object.keys(
-      ((kind.definition ?? {}) as Record<string, unknown>).edges ??
-        ({} as Record<string, unknown>)
-    )
-  )
-  const problems: Problem[] = []
-  raw.forEach((item, i) => {
-    const at = `edges[${i}]`
-    if (!item || typeof item !== "object" || Array.isArray(item)) {
-      problems.push({
-        severity: "error",
-        message: `\`${at}\` must be a \`{rel, to: {kind, id}}\` mapping.`,
-        path: at,
-      })
-      return
-    }
-    const e = item as Record<string, unknown>
-    const rel = typeof e.rel === "string" ? e.rel : ""
-    const to = (e.to ?? {}) as Record<string, unknown>
-    if (!rel) {
-      problems.push({
-        severity: "error",
-        message: `\`${at}\` needs a \`rel\`.`,
-        path: at,
-      })
-    } else if (declared.size && !declared.has(rel)) {
-      problems.push({
-        severity: "warning",
-        message: `\`${rel}\` is not a declared edge of this kind.`,
-        path: at,
-        line: lineOfKey(text, "rel"),
-      })
-    }
-    if (typeof to.id !== "string" || !to.id.trim()) {
-      problems.push({
-        severity: "error",
-        message: `\`${at}\` needs a \`to.id\`.`,
-        path: at,
-      })
-    }
-  })
-  return problems
 }
 
 /** Validate the editor text against the kind's declaration. Returns every
@@ -498,8 +432,6 @@ export function validateApplyDoc(
     }
   }
 
-  problems.push(...edgeProblems(data?.edges, kind, text))
-
   return problems
 }
 
@@ -642,44 +574,11 @@ export function formatYAML(text: string): { text: string; error?: string } {
 
 // ── the write payload ────────────────────────────────────────────────────────
 
-/** One edge on a write, the envelope's own `{rel, to:{kind, id}}` shape. */
-export interface EdgeWrite {
-  rel: string
-  to: { kind?: string; id: string }
-  properties?: Record<string, unknown>
-}
-
 export interface PutInput {
   id?: string
   properties?: Record<string, unknown>
   labels?: Record<string, unknown>
   annotations?: Record<string, unknown>
-  edges?: EdgeWrite[]
-}
-
-function edgeWrites(raw: unknown): EdgeWrite[] | undefined {
-  if (!Array.isArray(raw)) return undefined
-  const out: EdgeWrite[] = []
-  for (const item of raw) {
-    if (!item || typeof item !== "object") continue
-    const e = item as Record<string, unknown>
-    const rel = typeof e.rel === "string" ? e.rel : undefined
-    const to = e.to as Record<string, unknown> | undefined
-    const id = to && typeof to.id === "string" ? to.id : undefined
-    if (!rel || !id) continue
-    out.push({
-      rel,
-      to: {
-        id,
-        kind: typeof to?.kind === "string" ? to.kind : undefined,
-      },
-      properties:
-        e.properties && typeof e.properties === "object"
-          ? (e.properties as Record<string, unknown>)
-          : undefined,
-    })
-  }
-  return out.length ? out : undefined
 }
 
 /** Datatypes where an empty string is a value somebody could mean. Everywhere
@@ -707,7 +606,7 @@ function pruneBlanks(
 }
 
 /** Coerce a parsed apply doc into the create/upsert write body: the authored
- * `properties`/`edges` under `data`, `labels`/`annotations` under `metadata`,
+ * `properties` under `data`, `labels`/`annotations` under `metadata`,
  * and `metadata.id` as the write's own key (omitted when blank, so the
  * substrate mints one on create). Pass the kind and blank lines the author
  * never filled in are left out of the write. */
@@ -729,7 +628,5 @@ export function toPutInput(doc: ApplyDoc, kind?: KindInfo): PutInput {
       kind
     )
   }
-  const edges = edgeWrites(data.edges)
-  if (edges) out.edges = edges
   return out
 }

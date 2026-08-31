@@ -62,17 +62,6 @@ export class ApiError extends Error {
   }
 }
 
-/** An outgoing edge target on the wire: id, the target's kind REFERENCE,
- * display sugar, and the EDGE's own properties (the wire hangs them off the
- * target the edge points at, not the target's own). */
-export interface EdgeTarget {
-  id: string
-  /** The target's kind reference (`people.substrate.reamde.dev/person`, or bare `task`). */
-  kind: string
-  title?: string
-  properties?: Record<string, unknown>
-}
-
 /** One record as every read serves it (`substrate.Record`). Everything authored
  * lives in `properties` (title/state included); `propertyMeta` arrives only on
  * a single-record read.
@@ -98,8 +87,47 @@ export interface SubstrateRecord {
   finalizers?: string[]
   /** The ids this record used to live under, left by merges and server-set. */
   formerIds?: string[]
-  edges?: Record<string, EdgeTarget[]>
   propertyMeta?: Record<string, PropertyMeta>
+}
+
+/** The one reserved key of a reference value that carries LINK DATA. A
+ * reference whose declaration has no `properties:` stores the flat
+ * `"<kind>/<id>"` path string; one that declares them stores an object with the
+ * path under `ref` and every declared link property beside it
+ * (`internal/engine/validate.go`). */
+export const REFERENCE_KEY = "ref"
+
+/** One reference value, either shape. A repeated reference is an array of
+ * these. */
+export type ReferenceValue = string | LinkedReference
+
+/** A reference value carrying link data: the referent's path under `ref`, the
+ * declaration's own link properties beside it. */
+export interface LinkedReference {
+  ref: string
+  [property: string]: unknown
+}
+
+/** Read one stored reference value as its path plus whatever link data rides
+ * with it. `undefined` for a value that is neither shape — a reader renders
+ * that raw rather than inventing a pointer. */
+export function readReference(
+  value: unknown
+): { path: string; properties: Record<string, unknown> } | undefined {
+  if (typeof value === "string") {
+    return value ? { path: value, properties: {} } : undefined
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined
+  }
+  const held = value as Record<string, unknown>
+  const path = held[REFERENCE_KEY]
+  if (typeof path !== "string" || !path) return undefined
+  const properties: Record<string, unknown> = {}
+  for (const [key, held_] of Object.entries(held)) {
+    if (key !== REFERENCE_KEY) properties[key] = held_
+  }
+  return { path, properties }
 }
 
 export interface PropertyMeta {
@@ -117,19 +145,6 @@ export interface PropertyAlternative {
   updatedAt: string
 }
 
-/** One edge reference as write INPUT: bare `{id}` is legal on an edge whose
- * declaration pins one target kind, else `{kind, id}`. */
-export interface EdgeRef {
-  kind?: string
-  id: string
-}
-
-export interface EdgeInput {
-  rel: string
-  to: EdgeRef
-  properties?: Record<string, unknown>
-}
-
 /** A create/upsert write body (`substrate.PutInput`). Everything authored
  * rides in `properties`, state properties included — and `put` refuses to move
  * one, so a transition travels as a `patch`. `kind` is implied by the
@@ -141,7 +156,6 @@ export interface PutInput {
   properties?: Record<string, unknown>
   labels?: Record<string, unknown>
   annotations?: Record<string, unknown>
-  edges?: EdgeInput[]
   ifVersion?: number
 }
 
@@ -195,7 +209,8 @@ export interface Change {
 
 /** One computed slot of a recurring record (`substrate.Occurrence`, decision
  * 0043): the occurrences read derives it from the stored rule. It is not a
- * record — no id of its own, no edges — so an agenda merges these with the
+ * record — no id of its own, nothing points at it — so an agenda merges these
+ * with the
  * temporal window query's rows on (kind, id, at). */
 export interface Occurrence {
   /** The recurring record whose rule names this instant. */
@@ -261,14 +276,6 @@ export interface Cond {
   exists?: boolean
 }
 
-/** The one-hop reverse predicate: records carrying an edge `rel` (omitted =
- * any rel) pointing at `to`. */
-export interface EdgeFilter {
-  rel?: string
-  to: string
-  toKind?: string
-}
-
 /** The subset of `substrate.Filter` the console writes (`?filter=` —
  * URL-encoded JSON). A state property filters through `properties` like any
  * other. `kinds` is refused on a collection read (the path names the kind) and
@@ -277,24 +284,31 @@ export interface RecordFilter {
   kinds?: string[]
   properties?: Record<string, Cond>
   labels?: Record<string, Cond>
-  edge?: EdgeFilter
 }
 
-/** One incoming edge (record-57 fan-in), served as its own paged resource.
- * `kind` is the pointing record's kind reference. */
-export interface IncomingEdge {
-  rel: string
-  from: { id: string; kind: string; title?: string }
-  /** HOW the source points here: a row in the edges table, or a reference
-   * property naming this record. One relationship to a reader, two mechanisms
-   * to the store — and a record can be reached both ways at once. */
-  via?: "edge" | "reference"
+/** One reverse pointer (`substrate.IncomingReference`): some other live
+ * record's reference property names this one. */
+export interface IncomingReference {
+  /** The declared name of the source's reference property. */
+  property: string
+  /** The dotted address of a NESTED reference site
+   * (`tools.fields.callable`), empty for a kind's own property. */
+  path?: string
+  from: IncomingSource
   /** The SOURCE record's creation, so a group reads newest first. */
   createdAt?: string
 }
 
+/** The record end of a reverse pointer, shallow by design. */
+export interface IncomingSource {
+  id: string
+  /** The pointing record's kind reference. */
+  kind: string
+  title?: string
+}
+
 export interface IncomingPage {
-  incoming: IncomingEdge[]
+  incoming: IncomingReference[]
   cursor?: string
   total: number
 }
@@ -356,7 +370,7 @@ export interface KindInfo {
    * read above the collection. Empty when the declaration carries none. */
   description?: string
   /** The reconciled declaration — the `data` of the `core.substrate.reamde.dev/kind`
-   * manifest that declares it (`authority`, `names`, `properties`, `edges`, …),
+   * manifest that declares it (`authority`, `names`, `properties`, …),
    * key order lost to jsonb. */
   definition?: Record<string, unknown>
 }
@@ -487,7 +501,7 @@ export interface CatalogBundle {
    * else. Optional on the wire read only because an older server may omit it. */
   vocabulary?: boolean
   /** The AUTHORITIES this closure declares against — the vocabulary its
-   * mappings, edges and trigger subscriptions point at. Admission REFUSES the
+   * mappings, references and trigger subscriptions point at. Admission REFUSES the
    * import while one of them is absent from the repository, naming what to
    * import first, so the console shows them before the button is pressed. */
   requires?: string[]
@@ -496,7 +510,7 @@ export interface CatalogBundle {
   upgrade?: BundleUpgrade
 }
 
-/** How an input's record was chosen: an explicit bind edge, the record named
+/** How an input's record was chosen: an explicit bound reference, the record named
  * `default`, or the sole live record of the kind. */
 export type InputVia = "bound" | "default" | "sole"
 
@@ -504,7 +518,8 @@ export type InputVia = "bound" | "default" | "sole"
  * order on the status. `record`/`via` are empty while unresolved, a
  * first-class state the status surfaces as a setup item, never tie-broken. */
 export interface InputStatus {
-  /** The input's declared name, also the edge rel the bind verb writes. */
+  /** The input's declared name, also the reference property the bind verb
+   * writes. */
   name: string
   /** Full identity of the kind whose records satisfy the input. */
   kind: string

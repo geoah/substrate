@@ -4,16 +4,21 @@
  *
  * `kind` is the record's kind REFERENCE — one key names the authority and the
  * name. `metadata` carries the id and the two authored key/value blocks
- * (`labels`, `annotations`); `data` is everything authored (`properties`,
- * `edges`); `status` is server-owned — version, stamps, and the §7.1 property
- * provenance (`status.properties`: manager + offers). An edge reference travels
- * whole — `{kind, id}`. */
+ * (`labels`, `annotations`); `data` is everything authored (`properties`);
+ * `status` is server-owned — version, stamps, and the §7.1 property
+ * provenance (`status.properties`: manager + offers). A pointer at another
+ * record is a `reference` property, so it rides inside `properties` as the
+ * referent's `<kind>/<id>` path. */
 
 import { stringify } from "yaml"
 
 import { CORE_AUTHORITY, joinKind } from "@/lib/api/http"
-import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
-import { declaredProperties, kindByIdentity } from "@/lib/definition"
+import {
+  readReference,
+  type SubstrateRecord,
+  type KindInfo,
+} from "@/lib/api/types"
+import { declaredReferences, kindByIdentity } from "@/lib/definition"
 import { splitRecordPath } from "@/lib/record-path"
 import type { YamlLinkTargets } from "@/lib/yaml-annotations"
 
@@ -32,16 +37,6 @@ export function manifestOf(record: SubstrateRecord): Record<string, unknown> {
   if (Object.keys(record.properties ?? {}).length) {
     data.properties = record.properties
   }
-  const edges = Object.entries(record.edges ?? {}).flatMap(([rel, targets]) =>
-    (targets ?? []).map((t) => {
-      const to = { kind: t.kind, id: t.id }
-      return t.properties && Object.keys(t.properties).length
-        ? { rel, properties: t.properties, to }
-        : { rel, to }
-    })
-  )
-  if (edges.length) data.edges = edges
-
   const status: Record<string, unknown> = {
     version: record.version,
     createdAt: record.createdAt,
@@ -81,7 +76,6 @@ const DECLARATION_ORDER = [
   "displayTemplate",
   "traits",
   "properties",
-  "edges",
 ]
 
 /** The kind's declaration folded back into the document that declared it —
@@ -125,10 +119,10 @@ export function kindLinkTargets(kinds: KindInfo[]): YamlLinkTargets {
   return { ids: {}, kinds: kindLinks }
 }
 
-/** The manifest's known references, each with its console address: edge target
- * ids, canonicalId/formerIds (the API resolves former ids to the canonical
- * row), the `kind:` references the record actually carries (its own and each
- * edge target's), and every registry kind. Feeds the YAML view's linkified
+/** The manifest's known references, each with its console address: the record
+ * PATHS its reference properties carry, canonicalId/formerIds (the API
+ * resolves former ids to the canonical row), the `kind:` references the record
+ * actually carries, and every registry kind. Feeds the YAML view's linkified
  * spans. */
 export function linkTargetsOf(
   record: SubstrateRecord,
@@ -152,26 +146,22 @@ export function linkTargetsOf(
     if (href && id) ids[id] = `${href}/${id}`
   }
 
-  for (const targets of Object.values(record.edges ?? {})) {
-    for (const t of targets ?? []) addFor(t.kind, t.id)
-  }
-
   // Reference-typed property values are typed POINTERS: each stored record
-  // PATH deep-links to the referent's detail page, exactly like an edge target
-  // id. It is keyed by the whole path because that is the text the document
-  // carries — the id alone never appears in it.
+  // PATH deep-links to the referent's detail page. It is keyed by the whole
+  // path because that is the text the document carries — the id alone never
+  // appears in it.
   const own = kindByIdentity(kinds, record.kind)
   if (own) {
-    for (const prop of declaredProperties(own)) {
-      if (prop.kind !== "reference") continue
+    for (const prop of declaredReferences(own)) {
       const raw = record.properties?.[prop.name]
       const refs = Array.isArray(raw) ? raw : raw == null ? [] : [raw]
       for (const ref of refs) {
-        if (typeof ref !== "string") continue
-        const target = splitRecordPath(ref)
+        const held = readReference(ref)
+        if (!held) continue
+        const target = splitRecordPath(held.path)
         if (!target) continue
         const href = hrefFor(target.kind)
-        if (href) ids[ref] = `${href}/${target.id}`
+        if (href) ids[held.path] = `${href}/${target.id}`
       }
     }
   }

@@ -1,7 +1,7 @@
 /** The manifest as the page: YAML tinted by shiki (lazy-loaded, css-variables
  * theme so it follows the app tokens), a copy affordance on hover (rule 10),
  * the kind's schema docs as Tooltips on the keys it declares — type AND the
- * record-56 one-liner — and references as real links: edge target ids,
+ * record-56 one-liner — and references as real links: reference paths,
  * canonicalId/formerIds, `kind:` references, and the provenance block's
  * manager/actor names all navigate (owner redline, 2026-08-06).
  *
