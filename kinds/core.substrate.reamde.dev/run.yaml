@@ -107,7 +107,7 @@ data:
       description: why a non-success run settled as it did; the last error
         on a parked run
     # The keys are the action words the effect applier names (put, patch,
-    # delete, link, unlink, merge, split), held to that set by the engine.
+    # delete, merge, split), held to that set by the engine.
     effects:
       type: int
       keyed: true

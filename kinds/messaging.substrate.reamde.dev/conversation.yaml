@@ -44,16 +44,17 @@ data:
       description: the platform's pinned flag, as synced
     # The account this conversation synced through. `trait: accountconfig` pins
     # any bundle's account kind rather than one, because a conversation is
-    # provider-agnostic; `ownerRef` collects it when that account disconnects
-    # (0034, 0032). Optional: a person may hand-author one.
+    # provider-agnostic; `onDelete: cascade` collects it when that account
+    # disconnects (0034, 0032). Optional: a person may hand-author one.
     account:
       type: reference
       trait: accountconfig
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the accountconfig record this conversation synced through
-  edges:
     participants:
-      to: person
-      many: true
+      type: reference
+      kind: person
+      repeated: true
+      mustExist: true
       description: the people in the conversation

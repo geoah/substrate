@@ -6,8 +6,8 @@ data:
   authority: food.substrate.reamde.dev
   description: >-
     One sitting on the timeline: what was eaten and when. Nutrition numbers
-    worth tracking are health observationlogs whose subject edge points at
-    the meal, so this record stays a diary line.
+    worth tracking are health observationlogs whose subject reference points
+    at the meal, so this record stays a diary line.
   names:
     singular: meal
   displayTemplate: "{name}"
@@ -30,7 +30,8 @@ data:
     details:
       type: markdown
       description: anything worth saying about this sitting, as prose
-  edges:
     recipe:
-      to: recipe
+      type: reference
+      kind: recipe
+      mustExist: true
       description: the recipe it was cooked from, when there is one

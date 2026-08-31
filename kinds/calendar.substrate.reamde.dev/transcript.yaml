@@ -11,7 +11,9 @@ data:
   # The declaration inherited the authority's version before this pin.
   # version 2: `name` is the heading, declared. A transcript used to hold it
   # in the built-in title slot, which is not a kind's storage (#123).
-  version: 3
+  # version 4: `meeting` and `speakers` are reference properties, carrying
+  # `mustExist: true`.
+  version: 4
   names:
     singular: transcript
   traits:
@@ -40,11 +42,14 @@ data:
       type: text
       embed: true
       description: the transcript's full text
-  edges:
     meeting:
-      to: calendarevent
+      type: reference
+      kind: calendarevent
+      mustExist: true
       description: the occurrence that actually happened
     speakers:
-      to: person
-      many: true
+      type: reference
+      kind: person
+      repeated: true
+      mustExist: true
       description: the people who spoke

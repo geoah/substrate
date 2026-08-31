@@ -38,9 +38,10 @@ data:
     details:
       type: markdown
       description: anything worth saying about this occurrence, as prose
-  edges:
     workout:
-      to: workout
+      type: reference
+      kind: workout
       required: true
-      ownerRef: true
+      mustExist: true
+      onDelete: cascade
       description: the recurring workout this log marks an occurrence of

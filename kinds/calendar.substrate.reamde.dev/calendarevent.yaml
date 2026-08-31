@@ -46,19 +46,26 @@ data:
       type: string
       description: the provider's event kind — default, outOfOffice, focusTime,
         workingLocation
-  edges:
     calendar:
-      to: calendar
+      type: reference
+      kind: calendar
       required: true
-      ownerRef: true
+      mustExist: true
+      onDelete: cascade
       description: the calendar this occurrence lives in
     series:
-      to: calendareventseries
+      type: reference
+      kind: calendareventseries
+      mustExist: true
       description: the recurring definition this occurrence was exploded from
     attendees:
-      to: person
-      many: true
+      type: reference
+      kind: person
+      repeated: true
+      mustExist: true
       description: the people attending
     organizer:
-      to: person
+      type: reference
+      kind: person
+      mustExist: true
       description: the person who organized it

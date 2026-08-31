@@ -4,7 +4,7 @@
 # timestamp. The amount and its currency stay two properties: a joined
 # "12.99 USD" string would be unfilterable and unsummable.
 #
-# `source: {to: any}` is the one untyped edge: an order is usually seen in
+# `source` is the one unpinned reference: an order is usually seen in
 # an email or a message, and naming each would couple this authority to
 # every other one.
 #
@@ -23,7 +23,10 @@ data:
   # move a migration. A repository that already holds float rows keeps the
   # version 2 declarations (the boot upgrade refuses the retype, loudly)
   # until the rows are rewritten or deleted.
-  version: 4
+  # version 5: every declared link in this closure is a reference property,
+  # carrying `mustExist: true` and `onDelete: cascade` where the referent
+  # owns the record.
+  version: 5
 ---
 # ---- the currency code, refined once and used by every money property -------
 kind: core.substrate.reamde.dev/propertytype

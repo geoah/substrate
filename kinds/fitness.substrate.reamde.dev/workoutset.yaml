@@ -43,12 +43,15 @@ data:
     rpe:
       type: float
       description: rate of perceived exertion, out of 10
-  edges:
     workout:
-      to: workout
+      type: reference
+      kind: workout
       required: true
-      ownerRef: true
+      mustExist: true
+      onDelete: cascade
       description: the workout this set belongs to
     exercise:
-      to: exercise
+      type: reference
+      kind: exercise
+      mustExist: true
       description: the movement performed

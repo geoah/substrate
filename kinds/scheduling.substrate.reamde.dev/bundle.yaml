@@ -3,7 +3,7 @@
 # the RRULE triple (recurrence, exdates, timezone); `occurrencelog` is the
 # done-or-skipped mark against one occurrence of a recurring thing. Neither
 # trait carries values, only property presence and datatype, so a binding kind
-# keeps its own enum states and its own owner edge.
+# keeps its own enum states and its own owner reference.
 #
 # It ships no kinds, only traits, so the five authorities that repeat things
 # (tasks, fitness, health, routines, calendar) `require` it and bind its traits

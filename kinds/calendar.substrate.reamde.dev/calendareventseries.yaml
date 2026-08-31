@@ -55,9 +55,10 @@ data:
     materializedUntil:
       type: datetime
       description: the instant occurrence rows stop before (exclusive)
-  edges:
     calendar:
-      to: calendar
+      type: reference
+      kind: calendar
       required: true
-      ownerRef: true
+      mustExist: true
+      onDelete: cascade
       description: the calendar the series lives in

@@ -26,8 +26,9 @@ data:
       type: markdown
       embed: true
       description: the plan's structure and intent, as prose
-  edges:
     exercises:
-      to: exercise
-      many: true
+      type: reference
+      kind: exercise
+      repeated: true
+      mustExist: true
       description: the movements the plan is built from

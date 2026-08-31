@@ -36,7 +36,10 @@ data:
   # the rows it synced (docs/decisions/0032).
   # version 7: the inline functions' `timeoutMs` (int ms) is `timeout`, the
   # duration datatype (ISO 8601); the retype rides core's function kind bump.
-  version: 7
+  # version 8: every account reference in this closure carries
+  # `onDelete: cascade`, so disconnecting an account collects the rows it
+  # synced.
+  version: 8
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members: the two config types,
@@ -295,7 +298,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this recovery was synced from
     cycleId:
@@ -342,7 +345,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this sleep was synced from
     start:
@@ -394,7 +397,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this workout was synced from
     start:

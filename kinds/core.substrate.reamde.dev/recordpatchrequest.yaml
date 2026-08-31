@@ -31,7 +31,9 @@ data:
   # gated request can write the selector that matches it.
   # version 12: a display template, and `targetVersion` carries `min: 1`, since
   # a record's first version is 1 and a CAS assertion below it names none.
-  version: 13
+  # version 14: `target` is an unpinned `type: reference` property with
+  # `mustExist: true`, so a request names any patchable record.
+  version: 14
   names:
     singular: recordpatchrequest
   displayTemplate: "{decision}: {target|targetId}"
@@ -43,7 +45,7 @@ data:
   # property carries create/delete now).
   #
   # The reviewed envelope is IMMUTABLE after propose (review-p0 #2): op,
-  # targetKind, targetId, diff and the target edge are enforced read-only by
+  # targetKind, targetId, diff and the target reference are enforced read-only by
   # the write path once the request exists, so the values the reviewer read
   # cannot be swapped under an undecided request. Deciding (the `decision`
   # transition) additionally requires the request's `ifVersion` on the
@@ -82,7 +84,7 @@ data:
       type: string
       description: "op create: a stable id for the new record"
     # the target version the diff was computed against; the patch path compares
-    # against it (§7). Stamped by the engine when the target edge is written.
+    # against it (§7). Stamped by the engine when the target reference is written.
     targetVersion:
       type: int
       min: 1
@@ -90,8 +92,8 @@ data:
     diff:
       type: json
       description: the proposed change, applied whole when the decision is
-        accepted — property values under `properties` (and, for create, edges
-        under `edges`)
+        accepted — property values under `properties`, a link to another record
+        among them
     rationale:
       type: string
       description: why the writer proposes this change
@@ -153,13 +155,13 @@ data:
           notifies: thread
           stamps:
             decidedAt: now
-  edges:
-    # `to: any`: anything patchable may be a target, and an edge is the one
-    # way one record points at another. NOT required: a create request names
-    # its target by `targetKind`/`targetId` (the record does not exist yet);
-    # patch and delete requests carry the edge, checked by the transition.
+    # Unpinned: anything patchable may be a target. NOT required: a create
+    # request names its target by `targetKind`/`targetId` (the record does not
+    # exist yet); patch and delete requests carry the reference, checked by
+    # the transition, which is also what makes it immutable after propose.
     target:
-      to: any
+      type: reference
       required: false
+      mustExist: true
       description: the record the change would patch or delete (patch/delete
         only)

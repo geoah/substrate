@@ -35,7 +35,9 @@ data:
   # follow core's declaration.
   # version 7: an agent's sub-agent list is `subagents`, where it was `agents`
   # (issue 51).
-  version: 7
+  # version 8: `page.source` is an unpinned `type: reference` property with
+  # `mustExist: true`, the link back to whatever carried the URL.
+  version: 8
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -104,8 +106,8 @@ data:
         accepted
 ---
 # ---- the page record type -------------------------------------------------
-# `title` is the reserved built-in (fetchpage writes it); `source` is a
-# `to: any` edge back at whatever message carried the URL.
+# `title` is the reserved built-in (fetchpage writes it); `source` is an
+# unpinned reference back at whatever message carried the URL.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: web.bundles.substrate.reamde.dev/page
@@ -134,9 +136,9 @@ data:
     saved:
       type: bool
       description: set true when an accepted reading-list proposal lands
-  edges:
     source:
-      to: any
+      type: reference
+      mustExist: true
       description: the record a URL was harvested from
 ---
 # ---- function: findurls ---------------------------------------------------
@@ -167,12 +169,12 @@ data:
         cfg = (((input.get("config") or {}).get("inputs") or {}).get("connector") or {}).get("properties") or {}
         deny = cfg.get("denyDomains") or []
         msg_id = record.get("id")
-        # The page.source edge is `to: any`, which needs the full reference:
-        # {kind, id}, exactly like every host.effects.* / host.records.*
-        # argument. The delivery envelope carries the kind whole — `change.kind`
-        # is the record's kind REFERENCE, authority included, and there is no
-        # second field beside it — so the reference is a straight copy.
-        source_ref = {"kind": change.get("kind") or "", "id": msg_id}
+        # page.source is an unpinned reference, so the value carries the kind
+        # too: a reference value is the flat "<kind>/<id>" path. The delivery
+        # envelope carries the kind whole — `change.kind` is the record's kind
+        # REFERENCE, authority included, and there is no second field beside
+        # it — so the path is a straight join.
+        source_ref = (change.get("kind") or "") + "/" + (msg_id or "")
         # The buffered-effects builder: each put is STAGED (host.effects.put),
         # not written mid-body — the runner returns the buffer as this
         # delivery's effect list, applied atomically. `if_absent` makes each
@@ -195,8 +197,9 @@ data:
                 seen.add(pid)
                 host.effects.put(
                     "web.bundles.substrate.reamde.dev/page", pid,
-                    properties={"url": url, "fetch": "pending"},
-                    edges={"source": source_ref}, if_absent=True)
+                    properties={"url": url, "fetch": "pending",
+                                "source": source_ref},
+                    if_absent=True)
                 minted += 1
         return {"output": {"minted": minted}}
 ---

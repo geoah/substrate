@@ -3,7 +3,7 @@
 # and its kind declares who it is for (a note to self, an instruction for an
 # agent, a reference) so a reader never has to guess intent from prose.
 #
-# `subjects: {to: any}` is this authority's one untyped edge: a note can be
+# `subjects` is this authority's one unpinned reference: a note can be
 # about a person, a project, a place or anything else, and naming each would
 # couple this authority to every other one.
 #
@@ -12,7 +12,9 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: journal.substrate.reamde.dev
 data:
-  version: 2
+  # version 3: every link is a `type: reference` property carrying
+  # `mustExist: true`.
+  version: 3
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.

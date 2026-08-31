@@ -21,9 +21,11 @@ data:
   # `medicationschedulelog` binds `occurrencelog`, moves its status states from
   # taken/skipped to done/skipped, and types `doseUnit` as the schedule's enum
   # (#122).
-  # version 5: `observationlog`'s edge `subject` is `derivedFrom` (#125).
+  # version 5: `observationlog`'s reference `subject` is `derivedFrom` (#125).
   # version 6: `rdates` lands with the `recurring` trait's move.
-  version: 6
+  # version 7: every link is a `type: reference` property carrying
+  # `mustExist: true`, and an owning one carries `onDelete: cascade`.
+  version: 7
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.

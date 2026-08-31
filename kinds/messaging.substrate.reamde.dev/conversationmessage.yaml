@@ -12,7 +12,10 @@ data:
   # The declaration inherited the authority's version before this pin.
   # version 2: `sentAt` is a declared property (datetime). The sent
   # transition stamped it as an undeclared string before.
-  version: 3
+  # version 4: `conversation`, `author`, `mentions`, `replyTo` and
+  # `threadRoot` are `type: reference` properties carrying `mustExist: true`,
+  # and `conversation` carries `onDelete: cascade`.
+  version: 4
   names:
     singular: conversationmessage
   traits:
@@ -71,23 +74,32 @@ data:
     sentAt:
       type: datetime
       description: when the send completed, stamped by the transition
-  edges:
     conversation:
-      to: conversation
+      type: reference
+      kind: conversation
       required: true
-      ownerRef: true
+      mustExist: true
+      onDelete: cascade
       description: the conversation this message belongs to
     author:
-      to: person
+      type: reference
+      kind: person
       required: true
+      mustExist: true
       description: the person who sent it
     mentions:
-      to: person
-      many: true
+      type: reference
+      kind: person
+      repeated: true
+      mustExist: true
       description: the people the message mentions
     replyTo:
-      to: conversationmessage
+      type: reference
+      kind: conversationmessage
+      mustExist: true
       description: the message this one replies to
     threadRoot:
-      to: conversationmessage
+      type: reference
+      kind: conversationmessage
+      mustExist: true
       description: the thread's first message, for cheap whole-thread queries

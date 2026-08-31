@@ -18,7 +18,10 @@ data:
   # `occurrencelog`, replacing the copied properties (#122).
   # version 5: `workoutset`'s float property `weight` is `weightKg` (#125).
   # version 6: `rdates` lands with the `recurring` trait's move.
-  version: 6
+  # version 7: every declared link in this closure is a reference property,
+  # carrying `mustExist: true` and `onDelete: cascade` where the referent
+  # owns the record.
+  version: 7
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.

@@ -23,7 +23,7 @@ issuessync (python / uv / Linear GraphQL)
       │  pages viewer.assignedIssues, off the causal chain
       ▼
 user ──mapping──▶ person      (match on email, or mint a shell)
-team ◀──team edge── issue ──mapping──▶ person (assignee)
+team ◀──team reference── issue ──mapping──▶ person (assignee)
       │                        │
       │                        ▼  linear-task-projection trigger
       │                  taskprojection ──▶ task  (read, diff, patch if_version)
@@ -53,19 +53,18 @@ hourly schedule ──▶ issuessync ──▶ every connected account due by it
   own shape, ids composed with `host.ids.external("linear", account,
   "user:|team:|issue:<uuid>")`. The issue carries `identifier`, `title` (the
   reserved built-in), `state` + `stateType`, `priority` (as its label), `url`,
-  the raw node, an `assignee` subject edge at person and a `team` edge at its
-  team mirror. The team edge is kept **current**: `team` is a single edge, so
-  the sync's re-link replaces a moved issue's previous team (the engine's
-  one-target-per-rel law), and an issue that lost its team upstream gets its
-  stale edge read back and unlinked.
+  the raw node, an `assignee` subject reference at person and a `team`
+  reference at its team mirror. The team reference is kept **current**: `team`
+  is not repeated, so a write replaces a moved issue's previous team, and an
+  issue that lost its team upstream gets its stale reference cleared.
 - **`userperson` / `issueperson`** (recordmappings): match on the
   login/assignee email against people's emails — exactly one live match links,
   zero-or-many mints a person shell. The user mapping copies names and unions
-  the address onto the person; the issue mapping only resolves the edge (an
+  the address onto the person; the issue mapping only resolves the reference (an
   issue describes work, not the human). When the workspace **hides the viewer's
   email** (admin-restricted visibility), the issues carry no probe value — and
   an empty probe would mint one person shell _per issue_ — so the sync instead
-  points each issue's `assignee` edge at the viewer's own `user` mirror and the
+  points each issue's `assignee` reference at the viewer's own `user` mirror and the
   engine's one-hop subject resolution lands it on the same person that record
   resolves to: one shell per login, never one per issue (logged once per run).
 - **`issuessync`** (python / PEP 723 / requests): reads the account's
@@ -179,7 +178,7 @@ shipped here):
 ## Tested
 
 `engine/linear_bundle_db_test.go` installs this closure from these very files:
-admission through the schema loader (traits, subject edges, both mappings, the
+admission through the schema loader (traits, subject references, both mappings, the
 install closure), the whole-closure install into a live repository (skips when uv
 cannot provision the PEP 723 body), and a FAKE-provider end-to-end sync —
 loopback OAuth + a loopback GraphQL stub — proving the mirrors and the person
@@ -187,6 +186,6 @@ land, the paging drains, and the joint-ownership policy holds: a task the
 owner marked done survives an idle re-sync untouched, an OPEN-FAMILY upstream
 move (started → backlog → started) leaves it untouched too — the folded-state
 regression — and an issue completed upstream still closes its task. The team
-edge stays current across a team move (exactly one edge, the new team) and a
-team removal (the stale edge unlinks). Real Linear API calls never run in
-tests.
+reference stays current across a team move (exactly one reference, the new
+team) and a team removal (the stale reference is cleared). Real Linear API
+calls never run in tests.

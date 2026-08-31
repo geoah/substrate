@@ -61,8 +61,8 @@ hourly schedule ──▶ messagessync ──▶ the ONE live account, when due
   name, the bridged `network` (derived from ghost-sender prefixes like
   `@whatsapp_…`), and per message the sender, msgtype, body, `sentAt` and the
   raw event. Ids are `host.ids.external("beeper", account, id)`; messages hang
-  off their room through a required `room` edge (`ownerRef`, so a deleted room
-  takes its mirror with it). Rooms are **mint-then-patch**: an incremental
+  off their room through a required `room` reference (`onDelete: cascade`, so a
+  deleted room takes its mirror with it). Rooms are **mint-then-patch**: an incremental
   `/sync` delta that omits a field (lazy-loaded state, an owner-only timeline
   window) patches only what it carried — it never erases a stored name or
   resets a stored network.
@@ -128,10 +128,10 @@ Both candidate mappings were checked against the messaging authority and
 deliberately skipped:
 
 - **message → conversationmessage**: `conversationmessage` requires a
-  `conversation` edge (ownerRef) and an `author` person edge at write — a
-  mapping mints property-only shells and could satisfy neither, and the type
-  carries no external-id property for `match` to probe, so every message would
-  try to mint and fail admission.
+  `conversation` reference (`onDelete: cascade`) and an `author` person
+  reference at write — a mapping mints property-only shells and could satisfy
+  neither, and the type carries no external-id property for `match` to probe,
+  so every message would try to mint and fail admission.
 - **sender → person**: a Beeper sender is a bridge ghost
   (`@whatsapp_15551234567:beeper.local`, `@telegram_…`); only some networks
   embed a phone worth matching, and a zero-match MINTS — every group chat

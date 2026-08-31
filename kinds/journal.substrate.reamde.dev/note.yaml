@@ -13,7 +13,9 @@ data:
   # version 2: `handledAt` is a declared property (datetime). The handled
   # transitions stamped it as an undeclared string before.
   # version 4: the enum property `kind` is `audience` (#125).
-  version: 4
+  # version 5: `subjects` is an unpinned, repeated `type: reference` property
+  # carrying `mustExist: true`.
+  version: 5
   names:
     singular: note
   displayTemplate: "{name}"
@@ -77,10 +79,10 @@ data:
       type: markdown
       embed: true
       description: the note itself, as prose
-  edges:
-    # untyped on purpose: a note can be about anything, and naming each
+    # unpinned on purpose: a note can be about anything, and naming each
     # possible subject would couple this authority to every other one.
     subjects:
-      to: any
-      many: true
+      type: reference
+      repeated: true
+      mustExist: true
       description: what the note is about

@@ -95,7 +95,13 @@ data:
   # `subagentOnly`->`hiddenFromChat`, blob `mimeType`->`mediaType`, llmprovider
   # `name`->`label`, llmmessage `tool`->`name`, and the record-delivery mode
   # value `trigger`->`record` on llmthread and run.
-  version: 14
+  # version 15: a reference is the only link between records. The declarations
+  # that carry no version of their own take this one: `recordmerge` and
+  # `recordsplit` carry their `winner`/`loser`/`merge` as reference properties,
+  # and the host function cards describe the list filter, the put input and
+  # the mutation roots without the retired link verbs. The pinned kinds bump
+  # their own.
+  version: 15
 ---
 # The substrate's own actors: the doors a human write comes through, and the
 # engine's own hand. Attribution, not authorization (§3). The machine hands

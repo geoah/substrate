@@ -14,7 +14,9 @@ data:
   # decision transitions stamped it as an undeclared string before.
   # version 11: a display template, so a random-id request reads as the
   # decision and the pair it proposes instead of its opaque id.
-  version: 12
+  # version 13: `winner` and `loser` are unpinned `type: reference` properties
+  # with `mustExist: true`, so a request names two records of any one kind.
+  version: 13
   names:
     singular: recordmergerequest
   displayTemplate: "{decision}: {winner} + {loser}"
@@ -61,14 +63,15 @@ data:
           to: rejected
           stamps:
             decidedAt: now
-  edges:
-    # `to: any` on both: anything mergeable may be named, and Merge itself
+    # Unpinned on both: anything mergeable may be named, and Merge itself
     # guards same-kind (and refuses core/system kinds) at apply.
     winner:
-      to: any
+      type: reference
       required: true
+      mustExist: true
       description: the record that survives the merge
     loser:
-      to: any
+      type: reference
       required: true
+      mustExist: true
       description: the record merged away into the winner

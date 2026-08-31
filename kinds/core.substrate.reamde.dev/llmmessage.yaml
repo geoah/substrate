@@ -23,7 +23,7 @@ data:
   # version 4: `toolCalls` is typed — a repeated {id, name, arguments} object
   # instead of a json blob; the arguments stay the verbatim wire string.
   # version 5: the thread pointer pins with `kind:`, the reference property's
-  # own word; `to:` stays the edge's.
+  # own word.
   # version 6: rows carry `changes` — the changelog entries their dispatch
   # wrote, stamped by the engine — and `system` joins the roles: the
   # substrate's own turns (a proposal decision), so a reader of the thread
@@ -40,7 +40,10 @@ data:
   # version 11: a tool row names the tool it answers for in `name`, where the
   # property was `tool`; the word matches `toolCalls.name`, the same tool name
   # on the assistant turn that dispatched the call.
-  version: 11
+  # version 12: `changes.op` declares the ops the changelog carries: put,
+  # patch, delete, merge and split. `link` and `unlink` are retired verbs, and
+  # no changelog a binary will replay stamps them.
+  version: 12
   names:
     singular: llmmessage
   displayTemplate: "{role} #{turn}"
@@ -114,8 +117,6 @@ data:
             - put
             - patch
             - delete
-            - link
-            - unlink
             - merge
             - split
           description: the changelog op the entry landed as, verbatim

@@ -40,9 +40,10 @@ data:
     details:
       type: markdown
       description: anything worth saying about this occurrence, as prose
-  edges:
     routine:
-      to: routine
+      type: reference
+      kind: routine
       required: true
-      ownerRef: true
+      mustExist: true
+      onDelete: cascade
       description: the routine this log marks an occurrence of

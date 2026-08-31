@@ -62,9 +62,10 @@ data:
     details:
       type: markdown
       description: anything worth saying about this one dose, as prose
-  edges:
     schedule:
-      to: medicationschedule
+      type: reference
+      kind: medicationschedule
       required: true
-      ownerRef: true
+      mustExist: true
+      onDelete: cascade
       description: the schedule this dose belongs to

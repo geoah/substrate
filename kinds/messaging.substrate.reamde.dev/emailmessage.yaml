@@ -7,7 +7,7 @@ data:
   description: >-
     One mail message in a thread: subject, preview, body, the provider's label
     ids, and the people it came from and went to. To, cc and bcc are not distinguished
-    — an edge carries no properties, so every addressee is a recipient.
+    — `recipients` declares no link data, so every addressee is a recipient.
   names:
     singular: emailmessage
   traits:
@@ -30,7 +30,7 @@ data:
       type: markdown
       embed: true
       description: the message body, as markdown
-    # the provider's label ids, verbatim (wave-2 GOOGLE.md §2.2): an edge to
+    # the provider's label ids, verbatim (wave-2 GOOGLE.md §2.2): a reference to
     # the connector's own label type would point core vocabulary at an authority
     # that only exists once a connector is installed, so the ids stay plain
     # strings and readers join on them.
@@ -41,18 +41,23 @@ data:
     read:
       type: bool
       description: the owner has read it, as the provider reports
-  edges:
     thread:
-      to: emailthread
+      type: reference
+      kind: emailthread
       required: true
-      ownerRef: true
+      mustExist: true
+      onDelete: cascade
       description: the thread this message belongs to
     sender:
-      to: person
+      type: reference
+      kind: person
+      mustExist: true
       description: the person the from header resolves to
-    # one edge for every addressee: to/cc/bcc is a distinction the substrate
-    # does not carry, because an edge holds no properties.
+    # one reference for every addressee: to/cc/bcc is a distinction the
+    # substrate does not carry, because `recipients` declares no link data.
     recipients:
-      to: person
-      many: true
+      type: reference
+      kind: person
+      repeated: true
+      mustExist: true
       description: every addressee; to/cc/bcc is not carried

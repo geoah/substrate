@@ -7,7 +7,8 @@ data:
   description: >-
     One blood draw: which lab, when it was drawn, and the report files. Individual
     markers worth tracking over time are observationlog entries whose derivedFrom
-    edge points back here, so a marker's history reads like any other observation's.
+    reference points back here, so a marker's history reads like any other
+    observation's.
   names:
     singular: bloodtest
   displayTemplate: "{name}"

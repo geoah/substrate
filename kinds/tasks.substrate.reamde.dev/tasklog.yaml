@@ -37,9 +37,10 @@ data:
     details:
       type: markdown
       description: anything worth saying about this occurrence, as prose
-  edges:
     task:
-      to: task
+      type: reference
+      kind: task
       required: true
-      ownerRef: true
+      mustExist: true
+      onDelete: cascade
       description: the recurring task this log marks an occurrence of
