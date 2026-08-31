@@ -562,6 +562,19 @@ func TestGoogleCalendarSeriesLinksMasters(t *testing.T) {
 	if got := series.Properties["startsAt"]; got != "2026-07-15T12:00:00Z" {
 		t.Fatalf("series startsAt = %v, want the master's start in UTC", got)
 	}
+	// The walk was token-less, so it stamps the span whose occurrences exist
+	// as rows; the occurrences read (decision 0043) expands the rule only
+	// outside it.
+	for _, key := range []string{"materializedFrom", "materializedUntil"} {
+		if got, _ := series.Properties[key].(string); got == "" {
+			t.Fatalf("a full walk left %s unstamped", key)
+		}
+	}
+	until, err := time.Parse(time.RFC3339, series.Properties["materializedUntil"].(string))
+	if err != nil || until.Before(time.Now().Add(360*24*time.Hour)) {
+		t.Fatalf("materializedUntil = %v, want the horizon about a year out",
+			series.Properties["materializedUntil"])
+	}
 	// `EXDATE;TZID=Europe/London:20260805T130000` is a local wall clock in a
 	// named zone; `RDATE:20260819T130000Z` is already UTC. Both land as UTC.
 	if got := gcalStrings(series.Properties["exdates"]); len(got) != 1 ||
@@ -689,6 +702,56 @@ func TestGoogleCalendarSeriesOffKeepsFlatView(t *testing.T) {
 	}
 	if got, _ := mirror.Properties["originalStartTime"].(string); got != slot {
 		t.Fatalf("mirror originalStartTime = %q, want Google's own %q", got, slot)
+	}
+}
+
+// TestGoogleCalendarSeriesStampHoldsAcrossDelta: only a token-less walk read
+// the whole [floor, ceil) window, so only it may move the materialized span.
+// A delta walk still re-stages the series (a rule edit lands that way) and
+// must leave the stamp exactly where the full read put it: a stamp advanced
+// past the rows would silence the occurrences read where no row answers.
+func TestGoogleCalendarSeriesStampHoldsAcrossDelta(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fake, ds := newCalendarFixture(t)
+	fake.masters = map[string]any{"master-1": gcalMaster("master-1", "Weekly sync")}
+	fake.pages = [][]any{{gcalRecurring("r1", "Weekly sync",
+		googleAhead(48*time.Hour), googleAhead(49*time.Hour), "master-1", "")}}
+
+	// Round one: the token-less full read stamps the span.
+	cfg := googleStepConfig(calStepProps(nil))
+	newGoogleStepper(t, ds, googleCalendarFn, cfg).drainApplying(nil)
+	calID := substratefn.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
+	seriesID := substratefn.ExternalID("gcal-series", calID, "master-1")
+	first, err := ds.Get(ctx, coreSeriesType, seriesID)
+	if err != nil {
+		t.Fatalf("the full walk wrote no series: %v", err)
+	}
+	from0, _ := first.Properties["materializedFrom"].(string)
+	until0, _ := first.Properties["materializedUntil"].(string)
+	if from0 == "" || until0 == "" {
+		t.Fatalf("the full walk left the span unstamped: %v", first.Properties)
+	}
+
+	// Round two: the held token makes this walk a delta, whose page carries a
+	// moved instance of the same master, so the series is re-staged.
+	fake.pages = [][]any{{gcalRecurring("r2", "Weekly sync",
+		googleAhead(72*time.Hour), googleAhead(73*time.Hour), "master-1",
+		googleAhead(96*time.Hour))}}
+	newGoogleStepper(t, ds, googleCalendarFn, cfg).drainApplying(nil)
+
+	second, err := ds.Get(ctx, coreSeriesType, seriesID)
+	if err != nil {
+		t.Fatalf("the delta walk lost the series: %v", err)
+	}
+	if len(second.Edges["calendar"]) != 1 {
+		t.Fatalf("the delta re-stage dropped the calendar edge: %v", second.Edges)
+	}
+	if got, _ := second.Properties["materializedFrom"].(string); got != from0 {
+		t.Fatalf("a delta walk moved materializedFrom: %q -> %q", from0, got)
+	}
+	if got, _ := second.Properties["materializedUntil"].(string); got != until0 {
+		t.Fatalf("a delta walk moved materializedUntil: %q -> %q", until0, got)
 	}
 }
 

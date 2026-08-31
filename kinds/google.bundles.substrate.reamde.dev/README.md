@@ -297,7 +297,12 @@ invocation.
   `cancelled` deletes the series row instead, and one with no RRULE line
   writes none. Each instance then carries the `series` edge, plus
   `originalStartAt` where Google's `originalStartTime` says the occurrence was
-  moved off the slot the rule produced.
+  moved off the slot the rule produced. A **token-less (full) walk** also
+  stamps the series with `materializedFrom` / `materializedUntil`, the
+  `[floor, ceil)` window whose occurrences exist as `calendarevent` rows, so
+  the occurrences read (decision 0043) expands the rule only outside it; a
+  delta walk leaves the stamp alone, because its window is whatever Google
+  remembered from the initial read.
 - **Masters are refetched every delivery, not tracked.** They do not appear in
   the incremental delta either, so the cache is per delivery (it rides in the
   paged cursor and clears per calendar): a rule edited at Google lands on

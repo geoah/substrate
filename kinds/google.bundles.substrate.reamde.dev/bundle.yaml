@@ -68,7 +68,11 @@ data:
   # its rule, its skipped and extra dates and its anchor; the instances carry
   # the `series` edge and `originalStartAt`; the account's `calendarSeries`
   # switch turns all of it off; the event mirror gains `originalStartTime`.
-  version: 11
+  # version 12: full (token-less) event reads stamp the series with
+  # `materializedFrom` / `materializedUntil`, the window whose occurrences
+  # exist as rows, so the occurrences read (decision 0043) expands the rule
+  # only outside it; delta walks leave the stamp alone.
+  version: 12
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -3511,9 +3515,10 @@ data:
         return ""
 
 
-    def _series_props(master, cal_zone):
+    def _series_props(master, cal_zone, span):
         """The calendareventseries a master yields, or None when it carries
-        no RRULE at all: the rule is the record's reason to exist."""
+        no RRULE at all: the rule is the record's reason to exist. `span` is
+        the full read's (floor, ceil) window, or None on a delta walk."""
         lines = master.get("recurrence") or []
         rule = _rrule(lines)
         if not rule:
@@ -3536,10 +3541,19 @@ data:
         starts = _instant(start, zone)
         if starts:
             props["startsAt"] = starts
+        if span is not None and span[1]:
+            # The rows are complete exactly inside the full read's window, and
+            # the stamp is what keeps the occurrences read silent there
+            # (decision 0043). Both ends write every time so a narrowed or
+            # widened backfill never leaves last year's stamp standing; the
+            # epoch stands in for an unbounded ("all") floor because a put
+            # merges and cannot unset a scalar.
+            props["materializedFrom"] = span[0] or "1970-01-01T00:00:00Z"
+            props["materializedUntil"] = span[1]
         return props
 
 
-    def _stage_series(host, token, cid, cref, mid, cal_zone):
+    def _stage_series(host, token, cid, cref, mid, cal_zone, span):
         """Fetch ONE recurring master and stage its series row. Returns the
         id instances link to, or "" when there is nothing to link: a master
         that is gone, unreadable, cancelled or ruleless."""
@@ -3564,7 +3578,7 @@ data:
             if ("%s|%s" % (CORE_SERIES, sref)) in live:
                 host.effects.delete(CORE_SERIES, sref)
             return ""
-        props = _series_props(master, cal_zone)
+        props = _series_props(master, cal_zone, span)
         if props is None:
             return ""
         host.effects.put(CORE_SERIES, sref, properties=props,
@@ -3694,12 +3708,20 @@ data:
         # consistent without a second sync token to expire.
         series = dict(cur.get("masters") or {}) if cur.get("series") else {}
         if cur.get("series"):
+            # Only a token-less walk read the whole [floor, ceil) window, so
+            # only it may move the materialized stamp: a delta's window is
+            # whatever Google remembered from the initial read, and a stamp
+            # advanced past the rows would silence the occurrences read
+            # (decision 0043) exactly where no row answers.
+            span = None
+            if not cur.get("syncToken"):
+                span = (cur.get("floor") or "", cur.get("ceil") or "")
             for entry in keeps:
                 mid = str(entry[1].get("recurringEventId") or "")
                 if not mid or mid in series:
                     continue
                 series[mid] = _stage_series(host, token, cid, cref, mid,
-                                            cal_zone)
+                                            cal_zone, span)
             cur["masters"] = dict(sorted(series.items())[:MASTER_CACHE])
         # Core RETRACTS rather than tombstones a cancellation: a reader never
         # filters cancelled events, so both halves go — but only the halves
