@@ -223,7 +223,7 @@ func xvCaseAdditiveUpgrade(c *C) {
 	c.stepf("applied a new authority `%s` at version 1: one kind `widget`, properties `name` and `size` (small, large)", xvAuthority)
 
 	small := c.putRec(xvWidgetCollection, "xv-widget-small",
-		map[string]any{"name": "The small widget", "size": "small"}, nil)
+		map[string]any{"name": "The small widget", "size": "small"})
 	c.requiref(small.prop("size") == "small" && small.Version == 1,
 		"the first widget landed wrong: size %q, version %d", small.prop("size"), small.Version)
 	c.stepf("wrote widget `%s` under version 1 of the declaration", small.ID)
@@ -261,7 +261,7 @@ func xvCaseAdditiveUpgrade(c *C) {
 	c.stepf("the widget written under version 1 reads back unchanged at record version %d: an additive upgrade rewrites no rows", reread.Version)
 
 	medium := c.putRec(xvWidgetCollection, "xv-widget-medium",
-		map[string]any{"name": "The medium widget", "size": "medium", "color": "teal"}, nil)
+		map[string]any{"name": "The medium widget", "size": "medium", "color": "teal"})
 	c.requiref(medium.prop("size") == "medium" && medium.prop("color") == "teal",
 		"the post-upgrade widget landed wrong: %v", medium.Properties)
 	c.stepf("wrote widget `%s` using both additions: `size: medium` and `color: teal` now land", medium.ID)
@@ -317,7 +317,7 @@ func xvCaseNarrowingRefused(c *C) {
 	c.requiref(c.xvDeclarationVersion(xvKindCollection, xvWidgetKind) == 2,
 		"a refused narrowing moved the widget declaration's stored version off 2")
 	still := c.putRec(xvWidgetCollection, "xv-widget-still-small",
-		map[string]any{"name": "Still small", "size": "small"}, nil)
+		map[string]any{"name": "Still small", "size": "small"})
 	c.requiref(still.prop("size") == "small", "a widget can no longer be written `small` after the refusals")
 	c.stepf("the stored vocabulary is untouched: both declarations are still version 2 and `%s` writes `size: small`", still.ID)
 }
@@ -541,7 +541,7 @@ func xvCaseBundleLifecycle(c *C) {
 
 	note := c.putRec(xvNoteCollection, "xv-note-one", map[string]any{
 		"text": "The lifecycle case wrote this note.", "noteTitle": "Lifecycle", "words": 6, "characters": 35,
-	}, nil)
+	})
 	c.requiref(note.prop("noteTitle") == "Lifecycle", "the note landed wrong: %v", note.Properties)
 
 	status, raw := c.xvCallStats("one two three")
@@ -567,7 +567,7 @@ func xvCaseBundleLifecycle(c *C) {
 	ref := c.xvRefused(raw)
 	c.requiref(ref.Code == "guard" && strings.Contains(ref.Message, "disabled") && strings.Contains(ref.Message, xvStatsFunction),
 		"the refusal does not name the disabled bundle and the function: %s", ref.Message)
-	quiet := c.putRec(xvNoteCollection, "xv-note-two", map[string]any{"text": "Written while disabled."}, nil)
+	quiet := c.putRec(xvNoteCollection, "xv-note-two", map[string]any{"text": "Written while disabled."})
 	var listed struct {
 		Records []record `json:"records"`
 	}
@@ -815,7 +815,7 @@ func xvCaseBundleInput(c *C) {
 
 	// One record, and the input resolves as the sole one.
 	sole := c.putRec(xvFirecrawlConfigs, "xv-firecrawl-key",
-		map[string]any{"apiKey": "fc-e2e-not-a-real-key", "baseUrl": "https://api.firecrawl.dev"}, nil)
+		map[string]any{"apiKey": "fc-e2e-not-a-real-key", "baseUrl": "https://api.firecrawl.dev"})
 	c.requiref(sole.prop("apiKey") == "<redacted>",
 		"the config's secret read back as %q; a secret property is never readable over the API", sole.prop("apiKey"))
 	in, steps = xvInput(c.xvStatus(xvFirecrawlBundle), "connector")
@@ -826,7 +826,7 @@ func xvCaseBundleInput(c *C) {
 
 	// A second record makes the choice ambiguous: the substrate refuses to
 	// tie-break, it does not pick one.
-	second := c.putRec(xvFirecrawlConfigs, "xv-firecrawl-spare", map[string]any{"apiKey": "fc-e2e-spare"}, nil)
+	second := c.putRec(xvFirecrawlConfigs, "xv-firecrawl-spare", map[string]any{"apiKey": "fc-e2e-spare"})
 	in, steps = xvInput(c.xvStatus(xvFirecrawlBundle), "connector")
 	c.requiref(in.Record == "" && in.Via == "", "with two records the input still resolves to %q via %q", in.Record, in.Via)
 	c.requiref(len(steps) == 1 && steps[0].Code == "ambiguous",
@@ -834,7 +834,7 @@ func xvCaseBundleInput(c *C) {
 	c.stepf("a second record `%s` makes it ambiguous: an unbound input with two candidates resolves to nothing rather than guessing", second.ID)
 
 	// The id `default` is the next step in the order.
-	byDefault := c.putRec(xvFirecrawlConfigs, "default", map[string]any{"apiKey": "fc-e2e-default"}, nil)
+	byDefault := c.putRec(xvFirecrawlConfigs, "default", map[string]any{"apiKey": "fc-e2e-default"})
 	in, _ = xvInput(c.xvStatus(xvFirecrawlBundle), "connector")
 	c.requiref(in.Record == byDefault.ID && in.Via == "default",
 		"the record named `default` resolved as record=%q via=%q", in.Record, in.Via)

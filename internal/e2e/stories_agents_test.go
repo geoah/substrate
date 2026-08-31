@@ -11,8 +11,6 @@ import (
 )
 
 const (
-	projectKind = "tasks.substrate.reamde.dev/project"
-
 	kickoffTranscript = `Sam Rivera: Welcome everyone, this is the onboarding revamp kickoff.
 Priya Sharma: From our side, the pilot needs to feel effortless on day one.
 Nour Haddad: I can draft the new welcome flow. I will have it ready by Friday.
@@ -39,7 +37,7 @@ func caseStory02(c *C) {
 	c.putRec(providerCollection, "storyllm", map[string]any{
 		"label": "the e2e scripted stub", "wire": "openai",
 		"baseURL": r.stub.url(), "apiKey": "story-key",
-	}, nil)
+	})
 	c.applyStoryVocabulary("storyllm")
 	c.putTrigger("story-resolve-attendees", map[string]any{
 		"enabled": true,
@@ -52,7 +50,7 @@ func caseStory02(c *C) {
 	before := c.countRecords(personCollection)
 
 	// The kickoff event, as the importer left it: raw emails, a meeting-room
-	// address among them, no edges anywhere.
+	// address among them, nothing pointing anywhere yet.
 	c.putRec(importCollection, "imp-kickoff", map[string]any{
 		"summary":        "Onboarding revamp kickoff",
 		"at":             r.kickoffAt().Format(time.RFC3339),
@@ -62,23 +60,29 @@ func caseStory02(c *C) {
 			"sam@acme.example", "nour@acme.example", "priya@northwind.example",
 			"jordan@northwind.example", "c_room7@resource.calendar.example",
 		},
-	}, nil)
+	})
 	c.wake("story-resolve-attendees")
 	c.waitFor("the resolver's event", func() bool {
 		rec, err := c.quietGet(eventCollection, "ev-kickoff")
-		return err == nil && len(rec.Edges["attendees"]) > 0
+		return err == nil && len(refPaths(rec, "attendees")) > 0
 	})
 
 	ev := c.getRec(eventCollection, "ev-kickoff")
-	c.requiref(sameIDs(edgeIDs(ev, "attendees"), "sam", "nour", "priya", "person-jordan"),
-		"ev-kickoff attendees: %v", edgeIDs(ev, "attendees"))
-	c.requiref(sameIDs(edgeIDs(ev, "organizer"), "sam"), "ev-kickoff organizer: %v", edgeIDs(ev, "organizer"))
-	c.requiref(sameIDs(edgeIDs(ev, "calendar"), "work"), "ev-kickoff calendar: %v", edgeIDs(ev, "calendar"))
+	wantAttendees := []string{
+		recPath(personKind, "sam"), recPath(personKind, "nour"),
+		recPath(personKind, "priya"), recPath(personKind, "person-jordan"),
+	}
+	c.requiref(sameSet(refPaths(ev, "attendees"), wantAttendees...),
+		"ev-kickoff attendees: %v", refPaths(ev, "attendees"))
+	c.requiref(sameSet(refPaths(ev, "organizer"), recPath(personKind, "sam")),
+		"ev-kickoff organizer: %v", refPaths(ev, "organizer"))
+	c.requiref(sameSet(refPaths(ev, "calendar"), recPath(calendarKind, "work")),
+		"ev-kickoff calendar: %v", refPaths(ev, "calendar"))
 	jordan := c.getRec(personCollection, "person-jordan")
 	emails, _ := jordan.Properties["emails"].([]any)
-	c.requiref(jordan.prop("name") == "Jordan" && sameIDs(edgeIDs(jordan, "memberOf"), "northwind") &&
+	c.requiref(jordan.prop("name") == "Jordan" && sameSet(refPaths(jordan, "memberOf"), recPath(orgKind, "northwind")) &&
 		len(emails) == 1 && emails[0] == "jordan@northwind.example",
-		"the minted stranger: name %q, emails %v, memberOf %v", jordan.prop("name"), emails, edgeIDs(jordan, "memberOf"))
+		"the minted stranger: name %q, emails %v, memberOf %v", jordan.prop("name"), emails, refPaths(jordan, "memberOf"))
 	after := c.countRecords(personCollection)
 	c.requiref(after == before+1,
 		"the resolver minted %d people, want exactly 1 (the room address mints nothing)", after-before)
@@ -92,10 +96,10 @@ func caseStory02(c *C) {
 		map[string]any{"kind": storyAuthority + "/eventimport", "id": "imp-kickoff"}, &reran)
 	c.requiref(status == http.StatusOK && reran.Ran == 1, "the synthetic re-delivery answered %d, ran %d: %s", status, reran.Ran, raw)
 	ev = c.getRec(eventCollection, "ev-kickoff")
-	c.requiref(sameIDs(edgeIDs(ev, "attendees"), "sam", "nour", "priya", "person-jordan") &&
+	c.requiref(sameSet(refPaths(ev, "attendees"), wantAttendees...) &&
 		c.countRecords(personCollection) == after,
-		"re-delivery changed the graph: attendees %v, %d people", edgeIDs(ev, "attendees"), c.countRecords(personCollection))
-	c.stepf("a second delivery of the same import converged: 4 attendee edges, %d people, nothing duplicated", after)
+		"re-delivery changed the graph: attendees %v, %d people", refPaths(ev, "attendees"), c.countRecords(personCollection))
+	c.stepf("a second delivery of the same import converged: 4 attendees, %d people, nothing duplicated", after)
 
 	// The writes belong to the function, in the changelog's own words.
 	c.requireActor("ev-kickoff", "put", actorResolver)
@@ -104,8 +108,8 @@ func caseStory02(c *C) {
 }
 
 // caseStory03: a transcript finds its meeting, or honestly does not. The
-// matcher agent scores candidates through a function tool, links the winner,
-// and writes its audit either way.
+// matcher agent scores candidates through a function tool, attaches the
+// winner, and writes its audit either way.
 func caseStory03(c *C) {
 	r := c.r
 	c.putTrigger("story-match-transcript", map[string]any{
@@ -117,13 +121,13 @@ func caseStory03(c *C) {
 	})
 
 	// The kickoff's transcript: title copied from the meeting (as recorders
-	// do), ten minutes of clock skew, no meeting edge.
+	// do), ten minutes of clock skew, no meeting named yet.
 	c.putRec(transcriptCollection, "tr-kickoff", map[string]any{
 		"name": "Onboarding revamp kickoff", "source": "example-notetaker",
 		"at":     r.kickoffAt().Add(10 * time.Minute).Format(time.RFC3339),
 		"endsAt": r.kickoffAt().Add(40 * time.Minute).Format(time.RFC3339),
 		"text":   kickoffTranscript,
-	}, nil)
+	})
 	c.wake("story-match-transcript")
 	c.waitFor("the kickoff transcript's verdict", func() bool {
 		_, err := c.quietGet(verdictCollection, "mv-tr-kickoff")
@@ -131,16 +135,18 @@ func caseStory03(c *C) {
 	})
 
 	tr := c.getRec(transcriptCollection, "tr-kickoff")
-	c.requiref(sameIDs(edgeIDs(tr, "meeting"), "ev-kickoff"),
-		"tr-kickoff meeting edges: %v (the billing sync was 30 minutes away and must lose)", edgeIDs(tr, "meeting"))
-	c.requiref(sameIDs(edgeIDs(tr, "speakers"), "sam", "nour", "priya"),
-		"tr-kickoff speakers: %v (jordan attended silently and gets no edge)", edgeIDs(tr, "speakers"))
+	c.requiref(sameSet(refPaths(tr, "meeting"), recPath(eventKind, "ev-kickoff")),
+		"tr-kickoff meeting: %v (the billing sync was 30 minutes away and must lose)", refPaths(tr, "meeting"))
+	c.requiref(sameSet(refPaths(tr, "speakers"),
+		recPath(personKind, "sam"), recPath(personKind, "nour"), recPath(personKind, "priya")),
+		"tr-kickoff speakers: %v (jordan attended silently and is named by nothing)", refPaths(tr, "speakers"))
 	verdict := c.getRec(verdictCollection, "mv-tr-kickoff")
 	score, _ := verdict.Properties["score"].(float64)
 	c.requiref(verdict.prop("verdict") == "matched" && score > 0.4 && verdict.prop("reason") != "" &&
-		sameIDs(edgeIDs(verdict, "event"), "ev-kickoff") && sameIDs(edgeIDs(verdict, "transcript"), "tr-kickoff"),
-		"the kickoff verdict: %v -> event %v, transcript %v", verdict.Properties, edgeIDs(verdict, "event"), edgeIDs(verdict, "transcript"))
-	c.stepf("the matcher picked `ev-kickoff` over `ev-billing-sync`, linked the three people who spoke, and wrote its audit (`mv-tr-kickoff`)")
+		sameSet(refPaths(verdict, "event"), recPath(eventKind, "ev-kickoff")) &&
+		sameSet(refPaths(verdict, "transcript"), recPath(transcriptKind, "tr-kickoff")),
+		"the kickoff verdict: %v -> event %v, transcript %v", verdict.Properties, refPaths(verdict, "event"), refPaths(verdict, "transcript"))
+	c.stepf("the matcher picked `ev-kickoff` over `ev-billing-sync`, named the three people who spoke in `speakers`, and wrote its audit (`mv-tr-kickoff`)")
 
 	// The orphan: nothing within 90 minutes, an alien title. It attaches to
 	// nothing, and the audit says so.
@@ -148,15 +154,15 @@ func caseStory03(c *C) {
 		"name": "Quarterly planning notes", "source": "example-notetaker",
 		"at":   r.kickoffAt().Add(-6 * time.Hour).Format(time.RFC3339),
 		"text": "Speaker 1: A long walk through next quarter, unrelated to any meeting on the calendar.",
-	}, nil)
+	})
 	c.wake("story-match-transcript")
 	c.waitFor("the orphan transcript's verdict", func() bool {
 		_, err := c.quietGet(verdictCollection, "mv-tr-orphan")
 		return err == nil
 	})
 	orphan := c.getRec(transcriptCollection, "tr-orphan")
-	c.requiref(len(orphan.Edges["meeting"]) == 0,
-		"the orphan transcript attached to %v; unmatched must attach to nothing", edgeIDs(orphan, "meeting"))
+	c.requiref(len(refPaths(orphan, "meeting")) == 0,
+		"the orphan transcript attached to %v; unmatched must attach to nothing", refPaths(orphan, "meeting"))
 	verdict = c.getRec(verdictCollection, "mv-tr-orphan")
 	c.requiref(verdict.prop("verdict") == "unmatched" && verdict.prop("reason") != "",
 		"the orphan verdict: %v", verdict.Properties)
@@ -174,7 +180,7 @@ func caseStory04(c *C) {
 		"enabled": true,
 		"source": map[string]any{"record": map[string]any{
 			"kinds": []string{transcriptKind}, "ops": []string{"update"},
-			"when":     `record != null && "meeting" in record.edges && size(record.edges.meeting) > 0`,
+			"when":     `record != null && "meeting" in record.properties && record.properties.meeting != ""`,
 			"coalesce": true,
 		}},
 		"callable": "core.substrate.reamde.dev/agent/" + storyAuthority + "/actionItemExtractor",
@@ -187,9 +193,9 @@ func caseStory04(c *C) {
 		"callable": "core.substrate.reamde.dev/agent/" + storyAuthority + "/changeRequestReviewer",
 	})
 
-	// The matcher's meeting-edge write predates this trigger, so the cursor
+	// The matcher's `meeting` write predates this trigger, so the cursor
 	// rewinds to the beginning; the guard and coalesce pick out exactly the
-	// kickoff transcript's edge landing. This is the agent-to-agent chain:
+	// kickoff transcript's attachment. This is the agent-to-agent chain:
 	// one agent's write is another trigger's delivery. The wake races the
 	// server's own dispatch tick, so the assertions are on the settled
 	// state, never on who delivered first.
@@ -237,42 +243,43 @@ func caseStory04(c *C) {
 	// The accepted work landed, with its shape intact.
 	welcome := c.getRec(tasksCollection, "task-welcome-flow")
 	c.requiref(welcome.prop("status") == "open" && welcome.prop("dueAt") != "" &&
-		sameIDs(edgeIDs(welcome, "assignee"), "nour") &&
-		sameIDs(edgeIDs(welcome, "project"), "onboarding-revamp") &&
-		sameIDs(edgeIDs(welcome, "source"), "tr-kickoff"),
-		"task-welcome-flow landed wrong: %v %v", welcome.Properties, welcome.Edges)
+		sameSet(refPaths(welcome, "assignee"), recPath(personKind, "nour")) &&
+		sameSet(refPaths(welcome, "project"), recPath(projectKind, "onboarding-revamp")) &&
+		sameSet(refPaths(welcome, "source"), recPath(transcriptKind, "tr-kickoff")),
+		"task-welcome-flow landed wrong: %v", welcome.Properties)
 	profile := c.getRec(tasksCollection, "task-profile-signup")
 	c.requiref(profile.prop("status") == "open" &&
-		sameIDs(edgeIDs(profile, "assignee"), "kai") &&
-		sameIDs(edgeIDs(profile, "project"), "onboarding-revamp") &&
-		sameIDs(edgeIDs(profile, "source"), "tr-kickoff"),
-		"task-profile-signup landed wrong: %v %v", profile.Properties, profile.Edges)
+		sameSet(refPaths(profile, "assignee"), recPath(personKind, "kai")) &&
+		sameSet(refPaths(profile, "project"), recPath(projectKind, "onboarding-revamp")) &&
+		sameSet(refPaths(profile, "source"), recPath(transcriptKind, "tr-kickoff")),
+		"task-profile-signup landed wrong: %v", profile.Properties)
 	pilot := c.getRec(tasksCollection, "task-northwind-pilot")
-	c.requiref(pilot.prop("status") == "proposed" && len(pilot.Edges["assignee"]) == 0,
-		"the unnamed action item must wait `proposed` and unassigned: %v %v", pilot.prop("status"), edgeIDs(pilot, "assignee"))
+	c.requiref(pilot.prop("status") == "proposed" && len(refPaths(pilot, "assignee")) == 0,
+		"the unnamed action item must wait `proposed` and unassigned: %v %v", pilot.prop("status"), refPaths(pilot, "assignee"))
 	invite := c.getRec(tasksCollection, "task-invite-flow")
 	c.requiref(invite.prop("priority") == "urgent", "the accepted priority patch did not land: %q", invite.prop("priority"))
 	status, _ = c.do(http.MethodGet, tasksCollection+"/task-sourceless", nil, nil)
 	c.requiref(status == http.StatusNotFound, "the sourceless task exists (answered %d); the rejection must leave nothing behind", status)
 	c.stepf("2 sourced tasks landed assigned, the unnamed one waits `proposed`, the priority patch applied, and the sourceless proposal left no record behind")
 
-	// The transcript's incoming edges name exactly the three sourced tasks.
+	// The references naming the transcript under `source` are exactly the
+	// three sourced tasks.
 	var incoming struct {
 		Incoming []struct {
-			Rel  string `json:"rel"`
-			From struct {
+			Property string `json:"property"`
+			From     struct {
 				ID string `json:"id"`
 			} `json:"from"`
 		} `json:"incoming"`
 	}
-	status, _ = c.do(http.MethodGet, transcriptCollection+"/tr-kickoff/incoming?rel=source", nil, &incoming)
+	status, _ = c.do(http.MethodGet, transcriptCollection+"/tr-kickoff/incoming?property=source", nil, &incoming)
 	c.requiref(status == http.StatusOK, "incoming on tr-kickoff answered %d", status)
 	fromIDs := make([]string, 0, len(incoming.Incoming))
 	for _, in := range incoming.Incoming {
 		fromIDs = append(fromIDs, in.From.ID)
 	}
-	c.requiref(sameIDs(fromIDs, "task-welcome-flow", "task-profile-signup", "task-northwind-pilot"),
-		"tr-kickoff's incoming source edges: %v", fromIDs)
+	c.requiref(sameSet(fromIDs, "task-welcome-flow", "task-profile-signup", "task-northwind-pilot"),
+		"the tasks whose `source` names tr-kickoff: %v", fromIDs)
 
 	// Writer and decider are distinct actors on EVERY request: one pass over
 	// the feed, checked per request, so a self-graded decision anywhere fails.
@@ -307,11 +314,11 @@ func caseStory05(c *C) {
 		"name": "Billing migration sync", "source": "example-notetaker",
 		"at":   r.kickoffAt().Add(35 * time.Minute).Format(time.RFC3339),
 		"text": chitchatTranscript,
-	}, nil)
+	})
 	c.wake("story-match-transcript")
-	c.waitFor("the chitchat transcript's meeting edge", func() bool {
+	c.waitFor("the chitchat transcript's meeting", func() bool {
 		rec, err := c.quietGet(transcriptCollection, "tr-chitchat")
-		return err == nil && sameIDs(edgeIDs(rec, "meeting"), "ev-billing-sync")
+		return err == nil && sameSet(refPaths(rec, "meeting"), recPath(eventKind, "ev-billing-sync"))
 	})
 	c.stepf("the matcher attached the chitchat transcript to `ev-billing-sync`; the chain now hands it to reflection")
 
@@ -354,7 +361,7 @@ func caseStory06(c *C) {
 	c.stepf("all %d changelog rows are attributed to the owner, the bundles, or the four story callables (%v)", len(rows), storyActors)
 
 	join := c.graphJoin()
-	c.stepf("the GraphQL join over tasks and their edges answers %d bytes", len(join))
+	c.stepf("the GraphQL join over the story graph answers %d bytes", len(join))
 
 	ctl, dsn := ctlEnv()
 	if ctl == "" || dsn == "" {
@@ -375,7 +382,9 @@ func caseStory06(c *C) {
 }
 
 // graphJoin is the one fixed read STORY-06 compares across a rebuild: the
-// whole story graph, every kind the stories touched, with edges.
+// whole story graph, every kind the stories touched. References ride in
+// `properties` like every other value, so there is no second selection to
+// ask for.
 func (c *C) graphJoin() []byte {
 	c.t.Helper()
 	kinds := []string{
@@ -384,7 +393,7 @@ func (c *C) graphJoin() []byte {
 		"core.substrate.reamde.dev/recordpatchrequest",
 	}
 	query := `{ records(filter: {kinds: ["` + strings.Join(kinds, `", "`) + `"]}, orderBy: [{property: "createdAt"}], first: 200) {
-		nodes { id kind properties edges { rel target { id kind } } } } }`
+		nodes { id kind properties } } }`
 	status, raw := c.do(http.MethodPost, "/api/v1/graphql", map[string]any{"query": query}, nil)
 	c.requiref(status == http.StatusOK && !strings.Contains(string(raw), `"errors"`),
 		"the GraphQL join answered %d: %s", status, raw)
@@ -518,27 +527,44 @@ func (c *C) quietRuns(trigger string) int {
 
 // --- the scripted models -----------------------------------------------
 
-// matcherResponder drives the matcher agent: score, decide, link, audit.
+// matcherResponder drives the matcher agent: score, decide, attach, audit.
+// There are no link verbs to reach for: attaching the transcript to its
+// meeting and its speakers is one patch of the transcript's own reference
+// properties, through the same mutate tool the audit goes through.
 func matcherResponder(llmReq llmReq) llmTurn {
 	rec := llmReq.deliveredRecord()
 	tid, _ := rec["id"].(string)
-	link := func(alias, rel, dstKind, dst string) string {
-		return fmt.Sprintf("%s: link(rel: %q, srcKind: %q, src: %q, dstKind: %q, dst: %q) { ok }",
-			alias, rel, transcriptKind, tid, dstKind, dst)
-	}
-	verdict := func(v string, score float64, reason, event string) llmCall {
-		input := map[string]any{
-			"kind": storyAuthority + "/matchverdict", "id": "mv-" + tid,
-			"properties": map[string]any{"verdict": v, "score": score, "reason": reason},
-			"edges":      []map[string]any{{"rel": "transcript", "to": map[string]any{"kind": transcriptKind, "id": tid}}},
-		}
-		if event != "" {
-			input["edges"] = append(input["edges"].([]map[string]any),
-				map[string]any{"rel": "event", "to": map[string]any{"kind": eventKind, "id": event}})
+	attach := func(event string, speakers []string) llmCall {
+		refs := make([]string, 0, len(speakers))
+		for _, s := range speakers {
+			refs = append(refs, recPath(personKind, s))
 		}
 		return llmCall{"mutate", map[string]any{
-			"query":     "mutation($in: JSON!) { put(input: $in) { id } }",
-			"variables": map[string]any{"in": input},
+			"query": fmt.Sprintf(
+				"mutation($id: ID!, $in: JSON!) { patch(kind: %q, id: $id, input: $in) { id } }", transcriptKind),
+			"variables": map[string]any{
+				"id": tid,
+				"in": map[string]any{"properties": map[string]any{
+					"meeting":  recPath(eventKind, event),
+					"speakers": refs,
+				}},
+			},
+		}}
+	}
+	verdict := func(v string, score float64, reason, event string) llmCall {
+		props := map[string]any{
+			"verdict": v, "score": score, "reason": reason,
+			"transcript": recPath(transcriptKind, tid),
+		}
+		if event != "" {
+			props["event"] = recPath(eventKind, event)
+		}
+		return llmCall{"mutate", map[string]any{
+			"query": "mutation($in: JSON!) { put(input: $in) { id } }",
+			"variables": map[string]any{"in": map[string]any{
+				"kind": storyAuthority + "/matchverdict", "id": "mv-" + tid,
+				"properties": props,
+			}},
 		}}
 	}
 	// The winner comes out of the TOOL'S answer, never out of this script:
@@ -571,12 +597,7 @@ func matcherResponder(llmReq llmReq) llmTurn {
 			return llmTurn{calls: []llmCall{verdict("unmatched", 0,
 				"no event within 90 minutes scored above the 0.4 floor", "")}}
 		}
-		q := "mutation { " + link("m", "meeting", eventKind, event)
-		for i, s := range speakers[tid] {
-			q += " " + link(fmt.Sprintf("s%d", i+1), "speakers", personKind, s)
-		}
-		q += " }"
-		return llmTurn{calls: []llmCall{{"mutate", map[string]any{"query": q}}}}
+		return llmTurn{calls: []llmCall{attach(event, speakers[tid])}}
 	case 2:
 		event, score, matched := winner()
 		if !matched {
@@ -597,44 +618,56 @@ func reflectionResponder(r *run) func(llmReq) llmTurn {
 		if tid, _ := rec["id"].(string); tid != "tr-kickoff" {
 			return llmTurn{content: "Nothing was decided and nobody committed to anything. Proposing nothing."}
 		}
-		source := map[string]any{"rel": "source", "to": map[string]any{"kind": transcriptKind, "id": "tr-kickoff"}}
-		onboarding := map[string]any{"rel": "project", "to": map[string]any{"kind": projectKind, "id": "onboarding-revamp"}}
-		assignee := func(id string) map[string]any {
-			return map[string]any{"rel": "assignee", "to": map[string]any{"kind": personKind, "id": id}}
-		}
+		// Provenance and placement are properties of the proposed task, so a
+		// proposal's whole diff is one `properties` map.
+		source := recPath(transcriptKind, "tr-kickoff")
+		onboarding := recPath(projectKind, "onboarding-revamp")
 		proposals := []llmCall{
 			{"propose", map[string]any{
 				"op": "create", "kind": taskKind, "id": "task-welcome-flow",
 				"diff": map[string]any{
 					"properties": map[string]any{
-						"name":  "Draft the new welcome flow",
-						"dueAt": r.kickoffAt().Add(96 * time.Hour).Format(time.RFC3339),
+						"name":     "Draft the new welcome flow",
+						"dueAt":    r.kickoffAt().Add(96 * time.Hour).Format(time.RFC3339),
+						"source":   source,
+						"project":  onboarding,
+						"assignee": recPath(personKind, "nour"),
 					},
-					"edges": []map[string]any{source, onboarding, assignee("nour")},
 				},
 				"rationale": "Nour committed to it in the kickoff, due Friday.",
 			}},
 			{"propose", map[string]any{
 				"op": "create", "kind": taskKind, "id": "task-profile-signup",
 				"diff": map[string]any{
-					"properties": map[string]any{"name": "Profile the signup path"},
-					"edges":      []map[string]any{source, onboarding, assignee("kai")},
+					"properties": map[string]any{
+						"name":     "Profile the signup path",
+						"source":   source,
+						"project":  onboarding,
+						"assignee": recPath(personKind, "kai"),
+					},
 				},
 				"rationale": "Sam asked Kai to profile before any redesign.",
 			}},
 			{"propose", map[string]any{
 				"op": "create", "kind": taskKind, "id": "task-northwind-pilot",
 				"diff": map[string]any{
-					"properties": map[string]any{"name": "Sync with Northwind about the pilot scope", "status": "proposed"},
-					"edges":      []map[string]any{source, onboarding},
+					"properties": map[string]any{
+						"name":    "Sync with Northwind about the pilot scope",
+						"status":  "proposed",
+						"source":  source,
+						"project": onboarding,
+					},
 				},
 				"rationale": "The meeting named the work but not the person; it waits for the owner.",
 			}},
 			{"propose", map[string]any{
 				"op": "create", "kind": taskKind, "id": "task-sourceless",
 				"diff": map[string]any{
-					"properties": map[string]any{"name": "A hunch with no evidence behind it"},
-					"edges":      []map[string]any{onboarding, assignee("sam")},
+					"properties": map[string]any{
+						"name":     "A hunch with no evidence behind it",
+						"project":  onboarding,
+						"assignee": recPath(personKind, "sam"),
+					},
 				},
 				"rationale": "No source cited; the arbiter should refuse this.",
 			}},
@@ -651,8 +684,8 @@ func reflectionResponder(r *run) func(llmReq) llmTurn {
 	}
 }
 
-// arbiterResponder decides one request per delivery: a create without a
-// source edge is rejected, everything else is accepted.
+// arbiterResponder decides one request per delivery: a create whose diff
+// names no `source` is rejected, everything else is accepted.
 func arbiterResponder(req llmReq) llmTurn {
 	if req.assistantTurns() > 0 {
 		return llmTurn{content: "Decided."}
@@ -675,11 +708,7 @@ func arbiterResponder(req llmReq) llmTurn {
 
 func diffCarriesSource(diff any) bool {
 	m, _ := diff.(map[string]any)
-	edges, _ := m["edges"].([]any)
-	for _, e := range edges {
-		if em, _ := e.(map[string]any); em != nil && em["rel"] == "source" {
-			return true
-		}
-	}
-	return false
+	props, _ := m["properties"].(map[string]any)
+	src, _ := props["source"].(string)
+	return src != ""
 }

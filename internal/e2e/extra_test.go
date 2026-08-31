@@ -8,7 +8,7 @@ import "sort"
 // run order stays deterministic whatever order the files compile in.
 //
 //	100 auth, tokens, rate limits, isolation
-//	200 records, edges, merge/split, error shapes
+//	200 records, references, merge/split, error shapes
 //	300 queries, changelog, blobs
 //	400 vocabulary upgrades, bundle lifecycle, GraphQL
 //	500 functions, triggers, agents

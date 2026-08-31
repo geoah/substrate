@@ -323,7 +323,7 @@ func xqCaseListGrammar(c *C) {
 		{"x-qry-third", "2027-03-03T09:00:00Z"},
 	}
 	for _, d := range due {
-		c.putRec(tasksCollection, d[0], map[string]any{"name": "QRY-01 " + d[0], "dueAt": d[1]}, nil)
+		c.putRec(tasksCollection, d[0], map[string]any{"name": "QRY-01 " + d[0], "dueAt": d[1]})
 	}
 	var done record
 	status, raw := c.do(http.MethodPatch, tasksCollection+"/x-qry-third",
@@ -462,7 +462,7 @@ func xqCaseListWatchHandoff(c *C) {
 	// The write lands with the stream already open, so what proves the handoff
 	// is a live delivery and never a backfill of rows that predate the watch.
 	const probe = "x-handoff"
-	c.putRec(tasksCollection, probe, map[string]any{"name": "The list-to-watch handoff"}, nil)
+	c.putRec(tasksCollection, probe, map[string]any{"name": "The list-to-watch handoff"})
 
 	var delivered []changeRow
 	var got changeRow
@@ -555,7 +555,7 @@ func xqCaseFeedFilters(c *C) {
 	// The case owns a delete, so the delete class is never empty whatever
 	// else ran first.
 	const doomed = "x-log-doomed"
-	c.putRec(tasksCollection, doomed, map[string]any{"name": "A task LOG-03 deletes"}, nil)
+	c.putRec(tasksCollection, doomed, map[string]any{"name": "A task LOG-03 deletes"})
 	status, raw := c.do(http.MethodDelete, tasksCollection+"/"+doomed, nil, nil)
 	c.requiref(status == http.StatusOK, "deleting `%s` answered %d: %s", doomed, status, raw)
 
@@ -688,9 +688,9 @@ func xqCaseCollectionWatch(c *C) {
 	// The person is written FIRST and lands at the lower seq: were the
 	// collection watch the whole feed, its row would arrive before the task's.
 	c.putRec(personCollection, "x-log-watcher",
-		map[string]any{"name": "Wren Watcher", "emails": []string{"wren@acme.example"}}, nil)
+		map[string]any{"name": "Wren Watcher", "emails": []string{"wren@acme.example"}})
 	const probe = "x-log-watched"
-	c.putRec(tasksCollection, probe, map[string]any{"name": "The collection watch probe"}, nil)
+	c.putRec(tasksCollection, probe, map[string]any{"name": "The collection watch probe"})
 
 	rows := 0
 	for {

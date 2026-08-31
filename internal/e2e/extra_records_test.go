@@ -10,8 +10,8 @@ import (
 	"strings"
 )
 
-// The record, edge, merge and split cases: CASES.md REC-02 through REC-08,
-// EDGE-01, EDGE-03, EDGE-04, MRG-01 and MRG-02. They run after the stories,
+// The record, reference, merge and split cases: CASES.md REC-02 through
+// REC-08, REF-01, REF-03, REF-04, MRG-01 and MRG-02. They run after the stories,
 // over the repository the stories built, and every record they write or
 // delete carries the `x-` id prefix so the acme world stays as it was left.
 // The one exception is REC-06, which has to write the reserved words
@@ -35,8 +35,8 @@ func init() {
 			"title at all.",
 		xrCaseTitleDerivation)
 	registerCase(240, "REC-06", "Client-chosen ids, and the two reserved words",
-		"A POST carrying an id lands at that id and a PUT lands at the path's id whatever the body says; the "+
-			"sub-resource words `incoming` and `edges` are refused as ids at the record path, in both directions.",
+		"A POST carrying an id lands at that id and a PUT lands at the path's id whatever the body says; "+
+			"`incoming` is refused as an id at the record path in both directions, and it is the only word that is.",
 		xrCaseChosenIDs)
 	registerCase(250, "REC-07", "Labels and annotations round-trip",
 		"Both maps demand namespaced `<actor>/<name>` keys; a list row carries the labels but never the "+
@@ -46,28 +46,28 @@ func init() {
 		"Two doors write two properties of one record; the single GET's propertyMeta attributes each property to "+
 			"the actor that last wrote it, at the owner tier, and a list row carries no propertyMeta at all.",
 		xrCasePropertyMeta)
-	registerCase(270, "EDGE-01", "The edge verbs link and unlink",
-		"POST and DELETE at `…/{id}/edges/{rel}` add and remove one edge; the target is the flattened `{id}` ref, "+
-			"a `{to:…}` body is a 400, an absent target is a 404, and the edge shows on the source's GET and the "+
-			"target's /incoming while it lives.",
-		xrCaseEdgeVerbs)
-	registerCase(280, "EDGE-03", "An edge outlives the target's tombstone",
-		"Deleting a person leaves every edge pointing at them standing: the holder's GET still names the target "+
-			"and renders its title, the tombstone still answers /incoming, and the holder's version never moves "+
-			"(decision 0027).",
-		xrCaseEdgeTombstone)
-	registerCase(285, "EDGE-04", "/incoming narrows and pages",
-		"`rel` narrows to one relationship, `fromKind` to one source kind, `first`+`after` walk the fan-in one "+
-			"distinct row at a time, and a list parameter the reverse read does not take is a 400 naming it.",
+	registerCase(270, "REF-01", "Writing, keeping and clearing a reference",
+		"A put writes `assignee` as an ordinary property and a second put that omits it keeps it (a put merges, "+
+			"never prunes), so clearing a pointer is an explicit `null` through patch; the reference reads from "+
+			"both ends while it is set, and the retired `…/{id}/edges/{rel}` route is gone.",
+		xrCaseReferenceWrites)
+	registerCase(280, "REF-03", "A reference outlives the target's tombstone",
+		"Deleting a person leaves every reference naming them standing: the holder's GET still spells the target "+
+			"path, the tombstone still answers /incoming, and the holder's version never moves (decision 0027).",
+		xrCaseReferenceTombstone)
+	registerCase(285, "REF-04", "/incoming narrows and pages",
+		"`property` narrows to one reference property, `fromKind` to one source kind, `first`+`after` walk the "+
+			"fan-in one distinct row at a time, and a parameter the reverse read does not take (`rel`, `orderBy`) "+
+			"is a 400 naming it.",
 		xrCaseIncoming)
 	registerCase(290, "MRG-01", "Merge folds two records into one",
 		"`POST /api/v1/merge` writes a `recordmerge` record; the loser's id keeps resolving, now answering the "+
-			"canonical record with the loser as a formerId, and the edge that pointed at the loser points at the "+
-			"winner.",
+			"canonical record with the loser as a formerId. Nothing repoints: the task's `assignee` still spells "+
+			"the loser, and the winner's /incoming finds it through the former id.",
 		xrCaseMerge)
 	registerCase(295, "MRG-02", "Split reverses the merge",
 		"`POST /api/v1/split` gives the loser its record back: no canonicalId, no formerId on the winner, the "+
-			"moved edge home again, and the merge record itself tombstoned.",
+			"task's unmoved `assignee` naming a live record again, and the merge record itself tombstoned.",
 		xrCaseSplit)
 }
 
@@ -84,9 +84,9 @@ const (
 	xrChosenGhost = "x-chosen-elsewhere"
 	xrMetaTask    = "x-rec-meta"
 	xrActorsTask  = "x-rec-actors"
-	xrEdgeTask    = "x-edge-task"
-	xrEdgeVictim  = "x-edge-victim"
-	xrEdgeHolder  = "x-edge-holder"
+	xrRefTask     = "x-ref-task"
+	xrRefVictim   = "x-ref-victim"
+	xrRefHolder   = "x-ref-holder"
 	xrDupWinner   = "x-dup-a"
 	xrDupLoser    = "x-dup-b"
 	xrDupTask     = "x-dup-task"
@@ -96,29 +96,19 @@ const (
 	xrSplitKind       = "core.substrate.reamde.dev/recordsplit"
 )
 
-// xrEdgeTarget is one traversed edge's far end as a READ answers it: the
-// write-side `edgeTarget` carries only what a writer supplies, and these
-// cases assert on the rendered title a tombstoned target still has.
-type xrEdgeTarget struct {
-	ID    string `json:"id"`
-	Kind  string `json:"kind"`
-	Title string `json:"title"`
-}
-
 // xrRecord is the read shape these cases assert on: the harness `record`
 // narrowed to what the stories needed, widened again by the fields the
 // metadata, provenance and merge cases are about.
 type xrRecord struct {
-	ID          string                    `json:"id"`
-	Kind        string                    `json:"kind"`
-	Version     int64                     `json:"version"`
-	CanonicalID string                    `json:"canonicalId"`
-	FormerIDs   []string                  `json:"formerIds"`
-	Properties  map[string]any            `json:"properties"`
-	Labels      map[string]any            `json:"labels"`
-	Annotations map[string]any            `json:"annotations"`
-	Edges       map[string][]xrEdgeTarget `json:"edges"`
-	DeletedAt   string                    `json:"deletedAt"`
+	ID          string         `json:"id"`
+	Kind        string         `json:"kind"`
+	Version     int64          `json:"version"`
+	CanonicalID string         `json:"canonicalId"`
+	FormerIDs   []string       `json:"formerIds"`
+	Properties  map[string]any `json:"properties"`
+	Labels      map[string]any `json:"labels"`
+	Annotations map[string]any `json:"annotations"`
+	DeletedAt   string         `json:"deletedAt"`
 
 	PropertyMeta map[string]struct {
 		Manager      string `json:"manager"`
@@ -140,14 +130,9 @@ func (r xrRecord) hasProp(name string) bool {
 	return ok
 }
 
-// xrEdgeIDs flattens one rel's targets, the read-side twin of edgeIDs.
-func xrEdgeIDs(rec xrRecord, rel string) []string {
-	ids := make([]string, 0, len(rec.Edges[rel]))
-	for _, to := range rec.Edges[rel] {
-		ids = append(ids, to.ID)
-	}
-	return ids
-}
+// xrRefPaths flattens one reference property, the wider shape's twin of
+// refPaths.
+func xrRefPaths(rec xrRecord, name string) []string { return refPathsOf(rec.Properties[name]) }
 
 // xrProblem is the error envelope every refusal in this file is pinned
 // against: the closed `code` set, the message, and the field-addressed
@@ -178,8 +163,8 @@ func xrTaskPath(id string) string { return tasksCollection + "/" + url.PathEscap
 // xrPersonPath addresses one person record.
 func xrPersonPath(id string) string { return personCollection + "/" + url.PathEscape(id) }
 
-// xrGet reads one record into the wider shape. Single GETs carry the edges,
-// the annotations and the propertyMeta a list omits.
+// xrGet reads one record into the wider shape. Single GETs carry the
+// annotations and the propertyMeta a list omits.
 func xrGet(c *C, path string) xrRecord {
 	c.t.Helper()
 	var rec xrRecord
@@ -439,21 +424,30 @@ func xrCaseChosenIDs(c *C) {
 	c.stepf("`POST` with `{\"id\":\"%s\"}` landed at that id; `PUT %s` landed at the path's id and the body's `%s` was ignored",
 		xrChosenPost, xrTaskPath(xrChosenPut), xrChosenGhost)
 
-	// `incoming` and `edges` are static sub-resource segments under a record,
-	// so no record may take either as an id. The record path refuses both
-	// directions, read and write, and writes nothing (decision 0033).
-	for _, id := range []string{"incoming", "edges"} {
-		status, raw = c.do(http.MethodPut, xrTaskPath(id),
-			map[string]any{"properties": map[string]any{"name": "A record named after a sub-resource"}}, nil)
-		c.requiref(status == http.StatusBadRequest, "PUT at the reserved id %q answered %d, want 400: %s", id, status, raw)
-		p := xrRefusal(c, raw)
-		c.requiref(p.Error.Code == "bad_request" && strings.Contains(p.Error.Message, "is reserved") &&
-			strings.Contains(p.Error.Message, id),
-			"the refusal of %q does not name the reserved id: %q", id, p.Error.Message)
-		status, raw = c.do(http.MethodDelete, xrTaskPath(id), nil, nil)
-		c.requiref(status == http.StatusBadRequest, "DELETE at the reserved id %q answered %d, want 400: %s", id, status, raw)
-	}
-	c.stepf("`PUT` and `DELETE` at the reserved ids `incoming` and `edges` are both 400 `bad_request` naming the id")
+	// `incoming` is the one static sub-resource segment under a record, so no
+	// record may take it as an id. The record path refuses both directions,
+	// read and write, and writes nothing (decision 0033).
+	status, raw = c.do(http.MethodPut, xrTaskPath("incoming"),
+		map[string]any{"properties": map[string]any{"name": "A record named after a sub-resource"}}, nil)
+	c.requiref(status == http.StatusBadRequest, "PUT at the reserved id answered %d, want 400: %s", status, raw)
+	refused := xrRefusal(c, raw)
+	c.requiref(refused.Error.Code == "bad_request" && strings.Contains(refused.Error.Message, "is reserved") &&
+		strings.Contains(refused.Error.Message, "incoming"),
+		"the refusal does not name the reserved id: %q", refused.Error.Message)
+	status, raw = c.do(http.MethodDelete, xrTaskPath("incoming"), nil, nil)
+	c.requiref(status == http.StatusBadRequest, "DELETE at the reserved id answered %d, want 400: %s", status, raw)
+	c.stepf("`PUT` and `DELETE` at the reserved id `incoming` are both 400 `bad_request` naming the id")
+
+	// `edges` is NOT reserved: the word names nothing on the wire any more,
+	// so a record may take it as an id like any other string. Asserted here
+	// rather than assumed, because a leftover reservation would refuse a
+	// perfectly ordinary id forever.
+	status, raw = c.do(http.MethodPut, xrTaskPath("edges"),
+		map[string]any{"properties": map[string]any{"name": "An ordinary record that happens to be called edges"}}, nil)
+	c.requiref(status == http.StatusCreated, "PUT at the id `edges` answered %d, want 201: %s", status, raw)
+	ordinary := xrGet(c, xrTaskPath("edges"))
+	c.requiref(ordinary.ID == "edges", "the record at the id `edges` reads back as %q", ordinary.ID)
+	c.stepf("`edges` is an ordinary record id now: the write is a 201 and the read answers it")
 
 	// The collection door does not pass through that check: the reservation
 	// lives on the record path, and a POST names its id in the BODY. What the
@@ -580,103 +574,124 @@ func xrCasePropertyMeta(c *C) {
 	c.stepf("the list row carries no propertyMeta at all")
 }
 
-// xrCaseEdgeVerbs: EDGE-01. A put can add an edge but never drop one, so the
-// link and unlink verbs live at the record.
-func xrCaseEdgeVerbs(c *C) {
-	status, raw := c.do(http.MethodPut, xrTaskPath(xrEdgeTask),
-		map[string]any{"properties": map[string]any{"name": "The edge probe"}}, nil)
-	c.requiref(status == http.StatusCreated, "creating %s answered %d: %s", xrEdgeTask, status, raw)
-	route := xrTaskPath(xrEdgeTask) + "/edges/assignee"
+// xrCaseReferenceWrites: REF-01. There are no link verbs: a reference is an
+// ordinary property, written by put and patch like every other one. What that
+// costs a client is the asymmetry pinned here — a put MERGES, so omitting a
+// pointer keeps it, and dropping one is an explicit null.
+func xrCaseReferenceWrites(c *C) {
+	status, raw := c.do(http.MethodPut, xrTaskPath(xrRefTask),
+		map[string]any{"properties": map[string]any{"name": "The reference probe"}}, nil)
+	c.requiref(status == http.StatusCreated, "creating %s answered %d: %s", xrRefTask, status, raw)
 
-	// The body is the edge target itself, flattened: `{"id":…}`, with `kind`
-	// beside it where the rel points at more than one kind. The put input's
-	// `{"to":…}` nesting is not this body's shape, and the strict decoder says
-	// so rather than dropping it.
-	status, raw = c.do(http.MethodPost, route, map[string]any{"to": map[string]any{"id": "sam"}}, nil)
-	c.requiref(status == http.StatusBadRequest, "a `to`-wrapped edge body answered %d, want 400: %s", status, raw)
-	c.requiref(strings.Contains(xrRefusal(c, raw).Error.Message, `unknown field "to"`),
-		"the refusal does not name the unknown field: %s", raw)
+	// The retired verbs are gone from the router, not merely deprecated.
+	status, raw = c.do(http.MethodPost, xrTaskPath(xrRefTask)+"/edges/assignee", map[string]any{"id": "sam"}, nil)
+	c.requiref(status == http.StatusNotFound, "the retired link route answered %d, want 404: %s", status, raw)
+	c.stepf("`POST …/edges/assignee` is a 404: the link verbs are gone, not deprecated")
 
-	// An edge is never born dangling: the target must exist at write.
-	status, raw = c.do(http.MethodPost, route, map[string]any{"id": "x-nobody-here"}, nil)
-	c.requiref(status == http.StatusNotFound, "an edge at an absent target answered %d, want 404: %s", status, raw)
-	c.stepf("the edge body is the flattened target ref: `{\"to\":…}` is a 400 naming the field, an absent target is a 404")
+	// A reference is never born dangling: `mustExist` refuses the write, at
+	// the property's own site.
+	status, raw = c.do(http.MethodPut, xrTaskPath(xrRefTask), map[string]any{
+		"properties": map[string]any{"assignee": recPath(personKind, "x-nobody-here")},
+	}, nil)
+	c.requiref(status == http.StatusNotFound, "an assignee at an absent person answered %d, want 404: %s", status, raw)
+	c.requiref(strings.Contains(xrRefusal(c, raw).Error.Message, "props.assignee"),
+		"the refusal does not address the property: %s", raw)
+	c.stepf("a reference at an absent target is a 404 addressed to `props.assignee`")
 
 	var linked xrRecord
-	status, raw = c.do(http.MethodPost, route, map[string]any{"id": "sam"}, &linked)
-	c.requiref(status == http.StatusOK, "the link answered %d, want 200: %s", status, raw)
-	c.requiref(len(linked.Edges["assignee"]) == 1 && linked.Edges["assignee"][0].ID == "sam",
-		"the link's answer does not carry the edge: %v", linked.Edges["assignee"])
-	c.requiref(linked.Version > 1, "the link left the version at %d; a link is a write", linked.Version)
-	c.stepf("`POST %s` with `{\"id\":\"sam\"}` linked the edge and answered the refreshed record at version %d", route, linked.Version)
+	status, raw = c.do(http.MethodPut, xrTaskPath(xrRefTask), map[string]any{
+		"properties": map[string]any{"assignee": "sam"},
+	}, &linked)
+	c.requiref(status == http.StatusOK, "writing the assignee answered %d, want 200: %s", status, raw)
+	c.requiref(sameSet(xrRefPaths(linked, "assignee"), recPath(personKind, "sam")),
+		"the write's answer does not carry the reference: %v", linked.Properties["assignee"])
+	c.requiref(linked.Version > 1, "the write left the version at %d", linked.Version)
+	c.stepf("a put of `{\"assignee\": \"sam\"}` stored the canonical `%s` at version %d: a pinned reference completes the bare id",
+		recPath(personKind, "sam"), linked.Version)
 
-	// The edge reads from both ends while it lives.
-	got := xrGet(c, xrTaskPath(xrEdgeTask))
-	c.requiref(sameIDs(xrEdgeIDs(got, "assignee"), "sam"),
-		"the source's GET does not carry the edge: %v", got.Edges["assignee"])
-	c.requiref(xrIncomingHas(c, xrPersonPath("sam")+"/incoming?rel=assignee", xrEdgeTask),
-		"sam's /incoming does not name %s under assignee", xrEdgeTask)
-	c.stepf("the edge reads from both ends: on the task's GET, and on `sam`'s /incoming under `assignee`")
+	// The reference reads from both ends while it is set.
+	got := xrGet(c, xrTaskPath(xrRefTask))
+	c.requiref(sameSet(xrRefPaths(got, "assignee"), recPath(personKind, "sam")),
+		"the source's GET does not carry the reference: %v", got.Properties["assignee"])
+	c.requiref(xrIncomingHas(c, xrPersonPath("sam")+"/incoming?property=assignee", xrRefTask),
+		"sam's /incoming does not name %s under assignee", xrRefTask)
+	c.stepf("the reference reads from both ends: on the task's GET, and on `sam`'s /incoming under `assignee`")
 
-	var unlinked xrRecord
-	status, raw = c.do(http.MethodDelete, route, map[string]any{"id": "sam"}, &unlinked)
-	c.requiref(status == http.StatusOK, "the unlink answered %d, want 200: %s", status, raw)
-	c.requiref(len(unlinked.Edges["assignee"]) == 0, "the unlink left the edge: %v", unlinked.Edges["assignee"])
-	c.requiref(!xrIncomingHas(c, xrPersonPath("sam")+"/incoming?rel=assignee", xrEdgeTask),
-		"sam's /incoming still names %s after the unlink", xrEdgeTask)
-	c.stepf("`DELETE` at the same route dropped the edge from both ends")
+	// A put that says nothing about the pointer keeps it: put merges, never
+	// prunes, and that is exactly why clearing needs a word of its own.
+	var kept xrRecord
+	status, raw = c.do(http.MethodPut, xrTaskPath(xrRefTask), map[string]any{
+		"properties": map[string]any{"name": "The reference probe, renamed"},
+	}, &kept)
+	c.requiref(status == http.StatusOK, "the second put answered %d: %s", status, raw)
+	c.requiref(sameSet(xrRefPaths(kept, "assignee"), recPath(personKind, "sam")),
+		"a put that omitted `assignee` pruned it: %v", kept.Properties["assignee"])
+	c.stepf("a put that omits `assignee` keeps it: a put merges and never prunes")
+
+	// The explicit null is the drop, and it drops it at both ends.
+	var cleared xrRecord
+	status, raw = c.do(http.MethodPatch, xrTaskPath(xrRefTask),
+		map[string]any{"properties": map[string]any{"assignee": nil}}, &cleared)
+	c.requiref(status == http.StatusOK, "the clearing patch answered %d, want 200: %s", status, raw)
+	c.requiref(len(xrRefPaths(cleared, "assignee")) == 0,
+		"the null left the reference standing: %v", cleared.Properties["assignee"])
+	c.requiref(!xrIncomingHas(c, xrPersonPath("sam")+"/incoming?property=assignee", xrRefTask),
+		"sam's /incoming still names %s after the clearing patch", xrRefTask)
+	c.stepf("`PATCH` with `{\"assignee\": null}` dropped the pointer from both ends")
 }
 
-// xrCaseEdgeTombstone: EDGE-03. A soft delete is reversible, so it may not
-// cascade: undelete would otherwise return a record stripped of every link it
-// had, with nothing to rebuild them from (decision 0027).
-func xrCaseEdgeTombstone(c *C) {
-	status, raw := c.do(http.MethodPut, xrPersonPath(xrEdgeVictim), map[string]any{
+// xrCaseReferenceTombstone: REF-03. A soft delete is reversible, so it may
+// not cascade: undelete would otherwise return a record every pointer at it
+// had been stripped from, with nothing to rebuild them from (decision 0027).
+func xrCaseReferenceTombstone(c *C) {
+	status, raw := c.do(http.MethodPut, xrPersonPath(xrRefVictim), map[string]any{
 		"properties": map[string]any{"name": "Robin Vale", "emails": []string{"robin.vale@acme.example"}},
 	}, nil)
-	c.requiref(status == http.StatusCreated, "creating %s answered %d: %s", xrEdgeVictim, status, raw)
+	c.requiref(status == http.StatusCreated, "creating %s answered %d: %s", xrRefVictim, status, raw)
 	var holder xrRecord
-	status, raw = c.do(http.MethodPut, xrTaskPath(xrEdgeHolder), map[string]any{
-		"properties": map[string]any{"name": "A task assigned to someone about to be deleted"},
-		"edges":      []edge{{Rel: "assignee", To: edgeTarget{ID: xrEdgeVictim}}},
+	status, raw = c.do(http.MethodPut, xrTaskPath(xrRefHolder), map[string]any{
+		"properties": map[string]any{
+			"name":     "A task assigned to someone about to be deleted",
+			"assignee": recPath(personKind, xrRefVictim),
+		},
 	}, &holder)
-	c.requiref(status == http.StatusCreated, "creating %s answered %d: %s", xrEdgeHolder, status, raw)
+	c.requiref(status == http.StatusCreated, "creating %s answered %d: %s", xrRefHolder, status, raw)
 	held := holder.Version
 
 	var tombstone xrRecord
-	status, raw = c.do(http.MethodDelete, xrPersonPath(xrEdgeVictim), nil, &tombstone)
+	status, raw = c.do(http.MethodDelete, xrPersonPath(xrRefVictim), nil, &tombstone)
 	c.requiref(status == http.StatusOK, "deleting the target answered %d: %s", status, raw)
 	c.requiref(tombstone.DeletedAt != "", "the delete's answer carries no deletedAt")
-	_, listed := xrListFind(c, personCollection+"?first=200", xrEdgeVictim)
+	_, listed := xrListFind(c, personCollection+"?first=200", xrRefVictim)
 	c.requiref(!listed, "the tombstoned person is still in the list; a tombstone leaves the fold")
-	c.stepf("deleted `%s`: the tombstone carries deletedAt=%s and leaves the person list", xrEdgeVictim, tombstone.DeletedAt)
+	c.stepf("deleted `%s`: the tombstone carries deletedAt=%s and leaves the person list", xrRefVictim, tombstone.DeletedAt)
 
-	// The edge is untouched, down to the title it renders for a target that
-	// no longer lives, and the holder's version never moved: the delete wrote
-	// the target, not the edge.
-	after := xrGet(c, xrTaskPath(xrEdgeHolder))
-	targets := after.Edges["assignee"]
-	c.requiref(len(targets) == 1 && targets[0].ID == xrEdgeVictim,
-		"the holder's edge did not survive the tombstone: %v", targets)
+	// The reference is untouched, and the holder's version never moved: the
+	// delete wrote the target, not the records naming it.
+	after := xrGet(c, xrTaskPath(xrRefHolder))
+	c.requiref(sameSet(xrRefPaths(after, "assignee"), recPath(personKind, xrRefVictim)),
+		"the holder's reference did not survive the tombstone: %v", after.Properties["assignee"])
 	c.requiref(after.Version == held, "the holder moved to version %d from %d; a tombstone must not write the holder", after.Version, held)
-	c.stepf("the holder still carries `assignee` at `%s`, rendered as %q, at the same version %d it had before the delete",
-		xrEdgeVictim, targets[0].Title, after.Version)
+	c.stepf("the holder still spells `assignee: %s`, at the same version %d it had before the delete",
+		recPath(personKind, xrRefVictim), after.Version)
 
 	// The reverse read answers for a tombstone too, which is what lets an
 	// undelete know what pointed at it.
-	c.requiref(xrIncomingHas(c, xrPersonPath(xrEdgeVictim)+"/incoming", xrEdgeHolder),
+	c.requiref(xrIncomingHas(c, xrPersonPath(xrRefVictim)+"/incoming", xrRefHolder),
 		"the tombstone's /incoming lost the holder")
-	c.stepf("the tombstone's own /incoming still names `%s`: the link survives the delete at both ends, and only a purge drops it (decision 0027)", xrEdgeHolder)
+	c.stepf("the tombstone's own /incoming still names `%s`: the reference survives the delete at both ends, and only a purge drops it (decision 0027)", xrRefHolder)
 }
 
 // xrIncomingRow is one reverse pointer, narrowed to what these cases assert.
+// There is one kind of pointer now, so the row says which PROPERTY names this
+// record and where inside it, and nothing about how.
 type xrIncomingRow struct {
-	Rel  string `json:"rel"`
-	From struct {
+	Property string `json:"property"`
+	Path     string `json:"path"`
+	From     struct {
 		ID   string `json:"id"`
 		Kind string `json:"kind"`
 	} `json:"from"`
-	Via string `json:"via"`
 }
 
 type xrIncomingPage struct {
@@ -704,32 +719,32 @@ func xrIncomingHas(c *C, path, from string) bool {
 	return false
 }
 
-// xrCaseIncoming: EDGE-04. The reverse read of a record with a wide fan-in is
+// xrCaseIncoming: REF-04. The reverse read of a record with a wide fan-in is
 // only usable if it narrows and pages, so both are pinned here against `sam`,
 // who the stories left pointed at by a task, a team, an event and a
 // transcript.
 func xrCaseIncoming(c *C) {
 	all := xrIncomingRead(c, xrPersonPath("sam")+"/incoming")
 	c.requiref(all.Total >= 4, "sam has %d incoming rows; the stories left at least four", all.Total)
-	rels := map[string]bool{}
+	props := map[string]bool{}
 	for _, row := range all.Incoming {
-		rels[row.Rel] = true
-		c.requiref(row.Via != "", "an incoming row does not say how it points here: %+v", row)
+		props[row.Property] = true
+		c.requiref(row.Property != "", "an incoming row does not name the property that points here: %+v", row)
 	}
-	c.requiref(rels["assignee"] && rels["members"], "sam's incoming rels are %v; want at least assignee and members", rels)
-	c.stepf("`sam`'s unnarrowed /incoming answers %d rows across %d relationships", all.Total, len(rels))
+	c.requiref(props["assignee"] && props["members"], "sam's incoming properties are %v; want at least assignee and members", props)
+	c.stepf("`sam`'s unnarrowed /incoming answers %d rows across %d reference properties", all.Total, len(props))
 
-	// `rel` narrows to one relationship.
-	byRel := xrIncomingRead(c, xrPersonPath("sam")+"/incoming?rel=assignee")
-	c.requiref(len(byRel.Incoming) > 0, "?rel=assignee answered nothing")
-	c.requiref(byRel.Total <= all.Total, "the narrowed total %d exceeds the whole fan-in %d", byRel.Total, all.Total)
+	// `property` narrows to one reference property.
+	byProp := xrIncomingRead(c, xrPersonPath("sam")+"/incoming?property=assignee")
+	c.requiref(len(byProp.Incoming) > 0, "?property=assignee answered nothing")
+	c.requiref(byProp.Total <= all.Total, "the narrowed total %d exceeds the whole fan-in %d", byProp.Total, all.Total)
 	found := false
-	for _, row := range byRel.Incoming {
-		c.requiref(row.Rel == "assignee", "?rel=assignee answered a %q row from %s", row.Rel, row.From.ID)
+	for _, row := range byProp.Incoming {
+		c.requiref(row.Property == "assignee", "?property=assignee answered a %q row from %s", row.Property, row.From.ID)
 		found = found || row.From.ID == "task-invite-flow"
 	}
-	c.requiref(found, "?rel=assignee lost the task the stories assigned to sam")
-	c.stepf("`?rel=assignee` narrowed %d rows to %d, all of them assignee rows, `task-invite-flow` among them", all.Total, byRel.Total)
+	c.requiref(found, "?property=assignee lost the task the stories assigned to sam")
+	c.stepf("`?property=assignee` narrowed %d rows to %d, all of them assignee rows, `task-invite-flow` among them", all.Total, byProp.Total)
 
 	// `fromKind` narrows to one source kind, by full identity.
 	byKind := xrIncomingRead(c, xrPersonPath("sam")+"/incoming?fromKind="+url.QueryEscape(teamKind))
@@ -759,7 +774,14 @@ func xrCaseIncoming(c *C) {
 	c.requiref(status == http.StatusBadRequest, "orderBy on /incoming answered %d, want 400: %s", status, raw)
 	c.requiref(strings.Contains(xrRefusal(c, raw).Error.Message, "orderBy is not supported on incoming"),
 		"the refusal does not name the parameter: %s", raw)
-	c.stepf("`?orderBy=createdAt` is a 400 naming the parameter: the reverse read takes first, after, rel and fromKind, and nothing else")
+
+	// The retired spelling of the narrowing parameter is refused too, rather
+	// than ignored into an unnarrowed answer that looks narrowed.
+	status, raw = c.do(http.MethodGet, xrPersonPath("sam")+"/incoming?rel=assignee", nil, nil)
+	c.requiref(status == http.StatusBadRequest, "the retired `rel` parameter answered %d, want 400: %s", status, raw)
+	c.requiref(strings.Contains(xrRefusal(c, raw).Error.Message, `rel`),
+		"the refusal of `rel` does not name it: %s", raw)
+	c.stepf("`?orderBy=createdAt` and the retired `?rel=` are both 400 naming the parameter: the reverse read takes first, after, property and fromKind, and nothing else")
 }
 
 // xrSeedDuplicates writes the two people a merge folds and the task pointing
@@ -774,8 +796,10 @@ func xrSeedDuplicates(c *C) {
 			"seeding %s answered %d: %s", id, status, raw)
 	}
 	status, raw := c.do(http.MethodPut, xrTaskPath(xrDupTask), map[string]any{
-		"properties": map[string]any{"name": "A task assigned to the duplicate"},
-		"edges":      []edge{{Rel: "assignee", To: edgeTarget{ID: xrDupLoser}}},
+		"properties": map[string]any{
+			"name":     "A task assigned to the duplicate",
+			"assignee": recPath(personKind, xrDupLoser),
+		},
 	}, nil)
 	c.requiref(status == http.StatusCreated || status == http.StatusOK,
 		"seeding %s answered %d: %s", xrDupTask, status, raw)
@@ -789,12 +813,11 @@ func xrFindMerge(c *C) xrRecord {
 	var page struct {
 		Records []xrRecord `json:"records"`
 	}
-	status, raw := c.do(http.MethodGet, xrMergeCollection+"?withEdges=1&first=200", nil, &page)
+	status, raw := c.do(http.MethodGet, xrMergeCollection+"?first=200", nil, &page)
 	c.requiref(status == http.StatusOK, "listing the merges answered %d: %s", status, raw)
 	for _, rec := range page.Records {
-		winners := xrEdgeIDs(rec, "winner")
-		losers := xrEdgeIDs(rec, "loser")
-		if sameIDs(winners, xrDupWinner) && sameIDs(losers, xrDupLoser) {
+		if sameSet(xrRefPaths(rec, "winner"), recPath(personKind, xrDupWinner)) &&
+			sameSet(xrRefPaths(rec, "loser"), recPath(personKind, xrDupLoser)) {
 			return rec
 		}
 	}
@@ -820,30 +843,33 @@ func xrCaseMerge(c *C) {
 	}, &merge)
 	c.requiref(status == http.StatusCreated, "the merge answered %d, want 201: %s", status, raw)
 	c.requiref(merge.Kind == xrMergeKind, "the merge answered a %s, want a %s", merge.Kind, xrMergeKind)
-	c.requiref(sameIDs(xrEdgeIDs(merge, "winner"), xrDupWinner) &&
-		sameIDs(xrEdgeIDs(merge, "loser"), xrDupLoser),
-		"the merge record's ends are %v", merge.Edges)
-	c.stepf("`POST /api/v1/merge` wrote merge record `%s`: the command IS a record, with `winner` and `loser` edges at its two ends", merge.ID)
+	c.requiref(sameSet(xrRefPaths(merge, "winner"), recPath(personKind, xrDupWinner)) &&
+		sameSet(xrRefPaths(merge, "loser"), recPath(personKind, xrDupLoser)),
+		"the merge record's ends are winner %v, loser %v", xrRefPaths(merge, "winner"), xrRefPaths(merge, "loser"))
+	c.stepf("`POST /api/v1/merge` wrote merge record `%s`: the command IS a record, naming its two ends in the `winner` and `loser` references", merge.ID)
 
 	// The loser's id keeps resolving, and says what it resolved to.
 	loser := xrGet(c, xrPersonPath(xrDupLoser))
 	c.requiref(loser.ID == xrDupWinner && loser.CanonicalID == xrDupWinner,
 		"reading the loser's id answered record %q with canonicalId %q, want the winner", loser.ID, loser.CanonicalID)
-	c.requiref(sameIDs(loser.FormerIDs, xrDupLoser), "the answer's formerIds are %v, want [%s]", loser.FormerIDs, xrDupLoser)
+	c.requiref(sameSet(loser.FormerIDs, xrDupLoser), "the answer's formerIds are %v, want [%s]", loser.FormerIDs, xrDupLoser)
 	winner := xrGet(c, xrPersonPath(xrDupWinner))
 	c.requiref(winner.CanonicalID == "", "the winner answers canonicalId %q; it IS the canonical record", winner.CanonicalID)
-	c.requiref(sameIDs(winner.FormerIDs, xrDupLoser), "the winner's formerIds are %v, want [%s]", winner.FormerIDs, xrDupLoser)
+	c.requiref(sameSet(winner.FormerIDs, xrDupLoser), "the winner's formerIds are %v, want [%s]", winner.FormerIDs, xrDupLoser)
 	c.stepf("`GET` at the loser's id answers the winner, with `canonicalId: %s` and `formerIds: [%s]`; the winner carries the same formerId and no canonicalId",
 		xrDupWinner, xrDupLoser)
 
-	// The edge that pointed at the loser points at the winner: the fan-in
-	// moved with the identity.
+	// NOTHING REPOINTS. The task's `assignee` is a value in the task's own
+	// properties and the merge never touched it, so it still spells the
+	// loser — and it resolves to the winner because the reverse read and the
+	// record read both follow the former-id trail.
 	task := xrGet(c, xrTaskPath(xrDupTask))
-	c.requiref(sameIDs(xrEdgeIDs(task, "assignee"), xrDupWinner),
-		"the task's assignee is %v, want the winner", xrEdgeIDs(task, "assignee"))
-	c.requiref(xrIncomingHas(c, xrPersonPath(xrDupWinner)+"/incoming?rel=assignee", xrDupTask),
-		"the winner's /incoming does not name the moved task")
-	c.stepf("the `assignee` edge moved with the identity: `%s` now points at `%s`", xrDupTask, xrDupWinner)
+	c.requiref(sameSet(xrRefPaths(task, "assignee"), recPath(personKind, xrDupLoser)),
+		"the task's assignee is %v; the merge must not rewrite a value in another record", xrRefPaths(task, "assignee"))
+	c.requiref(xrIncomingHas(c, xrPersonPath(xrDupWinner)+"/incoming?property=assignee", xrDupTask),
+		"the winner's /incoming does not name the task pointing at its former id")
+	c.stepf("the task still spells `assignee: %s` (a merge never rewrites another record), and the winner's /incoming finds it through the former id",
+		recPath(personKind, xrDupLoser))
 }
 
 // xrCaseSplit: MRG-02. The split undoes exactly what the merge moved, which
@@ -855,8 +881,8 @@ func xrCaseSplit(c *C) {
 	status, raw := c.do(http.MethodPost, "/api/v1/split", map[string]any{"merge": merge.ID}, &split)
 	c.requiref(status == http.StatusCreated, "the split answered %d, want 201: %s", status, raw)
 	c.requiref(split.Kind == xrSplitKind, "the split answered a %s, want a %s", split.Kind, xrSplitKind)
-	c.requiref(sameIDs(xrEdgeIDs(split, "merge"), merge.ID),
-		"the split record does not name the merge it reversed: %v", split.Edges)
+	c.requiref(sameSet(xrRefPaths(split, "merge"), recPath(xrMergeKind, merge.ID)),
+		"the split record does not name the merge it reversed: %v", xrRefPaths(split, "merge"))
 	c.stepf("`POST /api/v1/split` wrote split record `%s`, pointing at the merge `%s` it reversed", split.ID, merge.ID)
 
 	// The loser is a record again: its own id, its own name, no canonical
@@ -869,11 +895,14 @@ func xrCaseSplit(c *C) {
 	c.requiref(len(winner.FormerIDs) == 0, "the winner still carries formerIds %v after the split", winner.FormerIDs)
 	c.stepf("both people are their own records again: `%s` resolves to itself and `%s` carries no formerId", xrDupLoser, xrDupWinner)
 
-	// The moved edge went home with the identity.
+	// The task's pointer never moved, so the split has nothing to put back:
+	// the value it always held names a live record again.
 	task := xrGet(c, xrTaskPath(xrDupTask))
-	c.requiref(sameIDs(xrEdgeIDs(task, "assignee"), xrDupLoser),
-		"the task's assignee is %v after the split, want the loser again", xrEdgeIDs(task, "assignee"))
-	c.stepf("the `assignee` edge moved back to `%s`", xrDupLoser)
+	c.requiref(sameSet(xrRefPaths(task, "assignee"), recPath(personKind, xrDupLoser)),
+		"the task's assignee is %v after the split, want the loser it always spelled", xrRefPaths(task, "assignee"))
+	c.requiref(xrIncomingHas(c, xrPersonPath(xrDupLoser)+"/incoming?property=assignee", xrDupTask),
+		"the restored loser's /incoming does not name the task")
+	c.stepf("the task's `assignee` never moved and now names a live record again: `%s`", xrDupLoser)
 
 	// The merge record is spent, not erased: it stays addressable as a
 	// tombstone, so the trail of what happened survives the reversal.

@@ -400,7 +400,7 @@ func xfCaseTriggerPark(c *C) {
 		}},
 		"callable": "core.substrate.reamde.dev/function/" + xfAuthority + "/importbomb",
 	})
-	c.putRec(xfParkCollection, xfBaitID, map[string]any{"name": "The bait the bomb goes off on"}, nil)
+	c.putRec(xfParkCollection, xfBaitID, map[string]any{"name": "The bait the bomb goes off on"})
 
 	// The wake races the server's own dispatch tick, so the wait is on the
 	// settled state: the delivery retries, then parks, whoever ran it.
@@ -579,7 +579,7 @@ func xfCaseAgentCost(c *C) {
 		"pricing": []map[string]any{
 			{"model": "pricedagent", "inputPer1M": "1000000", "outputPer1M": "2000000"},
 		},
-	}, nil)
+	})
 	xfApply(c, xfAgentDoc("pricedagent", "pricedllm", "pricedagent",
 		"Answers once, so the run's tally is exactly one turn's usage.",
 		"You answer in one short sentence."))
