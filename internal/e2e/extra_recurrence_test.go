@@ -1,0 +1,453 @@
+package e2e
+
+import (
+	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+)
+
+// The 600 block: recurring calendars, played the way Google Calendar delivers
+// them. The substrate stores a recurrence rule and never expands it (decision
+// 0039): occurrences are calendarevent rows a CONNECTOR explodes, pointing at
+// their calendareventseries. These cases are that connector, note for note:
+// the rules Google emits, the instance overrides, the cancellations, and the
+// this-and-following split, each followed by the range queries a calendar
+// client would make.
+const (
+	seriesCollection = "/api/v1/calendar.substrate.reamde.dev/calendareventseries"
+	seriesKind       = "calendar.substrate.reamde.dev/calendareventseries"
+)
+
+func init() {
+	registerCase(600, "CAL-01", "Every rule Google Calendar emits is stored and parseable",
+		"The full RRULE matrix Google Calendar produces (daily, intervals, every weekday, Nth and last "+
+			"weekday of the month, month days, yearly, COUNT, UNTIL in both spellings, WKST, the RRULE: "+
+			"prefix) lands verbatim on a series and compiles under the engine's own RFC 5545 parser; the "+
+			"series type's lax gate and its gaps (RDATE, garbage FREQ values) are pinned by name.",
+		xcCaseRuleMatrix)
+	registerCase(610, "CAL-02", "A long weekday series with an override and a cancellation",
+		"A connector explodes three weeks of an every-weekday standup; one instance is moved and retitled "+
+			"in place (Google's single-instance override) and one is canceled (retracted, with the exdate "+
+			"on the series); window queries return exactly the surviving instants, the moved one at its new "+
+			"time only, and the canceled one only under deleted:true.",
+		xcCaseWeekdayStandup)
+	registerCase(620, "CAL-03", "Nth-weekday series resolve to the right instants",
+		"Every-2nd-Tuesday and last-Friday series live side by side for four months; each month window "+
+			"returns exactly one instance of each at the right date, the series records never appear in any "+
+			"time window (they are definitions, not occurrences), and /incoming on a series lists exactly "+
+			"its own occurrences.",
+		xcCaseNthWeekday)
+	registerCase(630, "CAL-04", "This-and-following: the split Google performs",
+		"Changing a weekly series from occurrence five onward is a split: the old series gains UNTIL and "+
+			"keeps occurrences one to four, a new series carries five to eight at the new time, the full "+
+			"window shows the time change at the boundary, and each series' /incoming holds exactly its half.",
+		xcCaseSeriesSplit)
+}
+
+// xcMonday anchors the whole block: the most recent Monday, 09:30 UTC, at
+// least two weeks back, so every case's arithmetic starts on a known weekday
+// and never collides with another case's instants.
+func xcMonday(r *run) time.Time {
+	base := r.rep.Started.UTC().Truncate(24*time.Hour).AddDate(0, 0, -14)
+	for base.Weekday() != time.Monday {
+		base = base.AddDate(0, 0, -1)
+	}
+	return base.Add(9*time.Hour + 30*time.Minute)
+}
+
+// xcSeries writes one recurring definition the way a connector would.
+func xcSeries(c *C, id, summary, rule string, exdates []string) record {
+	c.t.Helper()
+	props := map[string]any{"summary": summary, "recurrence": rule, "timezone": "Europe/London"}
+	if len(exdates) > 0 {
+		props["exdates"] = exdates
+	}
+	return c.putRec(seriesCollection, id, props, []edge{{Rel: "calendar", To: edgeTarget{ID: "work"}}})
+}
+
+// xcOccurrence explodes one instant of a series into a concrete event.
+func xcOccurrence(c *C, id, seriesID, summary string, at time.Time, length time.Duration) record {
+	c.t.Helper()
+	return c.putRec(eventCollection, id, map[string]any{
+		"summary": summary,
+		"at":      at.Format(time.RFC3339),
+		"endsAt":  at.Add(length).Format(time.RFC3339),
+	}, []edge{
+		{Rel: "calendar", To: edgeTarget{ID: "work"}},
+		{Rel: "series", To: edgeTarget{Kind: seriesKind, ID: seriesID}},
+	})
+}
+
+// xcWindow is the calendar client's read: live events in [from, to), by time.
+func xcWindow(c *C, from, to time.Time) []record {
+	c.t.Helper()
+	filter := fmt.Sprintf(`{"properties":{"at":{"gte":%q,"lt":%q}}}`,
+		from.Format(time.RFC3339), to.Format(time.RFC3339))
+	var page struct {
+		Records []record `json:"records"`
+	}
+	status, raw := c.do(http.MethodGet,
+		eventCollection+"?filter="+url.QueryEscape(filter)+"&orderBy=at&first=200&withEdges=1", nil, &page)
+	c.requiref(status == http.StatusOK, "the window query answered %d: %s", status, raw)
+	return page.Records
+}
+
+// xcWindowIDs are the window's record ids, in at order.
+func xcWindowIDs(c *C, from, to time.Time) []string {
+	c.t.Helper()
+	recs := xcWindow(c, from, to)
+	ids := make([]string, 0, len(recs))
+	for _, rec := range recs {
+		ids = append(ids, rec.ID)
+	}
+	return ids
+}
+
+// --- CAL-01 ---------------------------------------------------------------
+
+// xcGoogleRules is the matrix Google Calendar actually produces: the UI's
+// presets, its custom builder, and the two UNTIL spellings (datetime for
+// timed events, bare date for all-day ones). Every entry must parse under
+// rrule-go, the engine's own RFC 5545 parser, via a schedule trigger's
+// write-time compile.
+var xcGoogleRules = []struct {
+	name string
+	rule string
+}{
+	{"daily", "RRULE:FREQ=DAILY"},
+	{"every 2 days", "RRULE:FREQ=DAILY;INTERVAL=2"},
+	{"every weekday", "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"},
+	{"weekly on Tuesday", "RRULE:FREQ=WEEKLY;BYDAY=TU"},
+	{"every 2 weeks on Tuesday and Thursday", "RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,TH"},
+	{"monthly on the 2nd Tuesday", "RRULE:FREQ=MONTHLY;BYDAY=2TU"},
+	{"monthly on the last Friday", "RRULE:FREQ=MONTHLY;BYDAY=-1FR"},
+	{"monthly on day 15", "RRULE:FREQ=MONTHLY;BYMONTHDAY=15"},
+	{"yearly", "RRULE:FREQ=YEARLY"},
+	{"yearly on Aug 26", "RRULE:FREQ=YEARLY;BYMONTH=8;BYMONTHDAY=26"},
+	{"ends after 10", "RRULE:FREQ=WEEKLY;BYDAY=WE;COUNT=10"},
+	{"ends on a datetime", "RRULE:FREQ=DAILY;UNTIL=20270901T093000Z"},
+	{"ends on a date (all-day form)", "RRULE:FREQ=DAILY;UNTIL=20270901"},
+	{"week starts Sunday", "RRULE:FREQ=WEEKLY;WKST=SU;BYDAY=TU"},
+	{"bare spelling, no prefix", "FREQ=WEEKLY;BYDAY=MO"},
+}
+
+func xcCaseRuleMatrix(c *C) {
+	// Storage: every rule lands verbatim on a series and reads back.
+	for i, tc := range xcGoogleRules {
+		id := fmt.Sprintf("x-ser-matrix-%d", i)
+		rec := xcSeries(c, id, "Matrix: "+tc.name, tc.rule, nil)
+		c.requiref(rec.prop("recurrence") == tc.rule,
+			"%s: stored %q, want the verbatim %q", tc.name, rec.prop("recurrence"), tc.rule)
+	}
+	c.stepf("all %d Google-shaped rules stored verbatim on calendareventseries records", len(xcGoogleRules))
+
+	// Parseability: the engine's ONE real RRULE parser is the schedule
+	// trigger's write-time compile (rrule-go), so admitting each rule there
+	// proves the engine can actually expand it, not merely store it. The
+	// probe trigger is disabled and deleted after; its callable must merely
+	// resolve.
+	probe := func(rule string) (int, string) {
+		c.t.Helper()
+		status, raw := c.do(http.MethodPut, triggerCollection+"/x-rrule-probe", map[string]any{
+			"properties": map[string]any{
+				"enabled":  false,
+				"source":   map[string]any{"schedule": map[string]any{"recurrence": rule, "timezone": "Europe/London"}},
+				"callable": "core.substrate.reamde.dev/function/" + storyAuthority + "/resolveattendees",
+			},
+		}, nil)
+		return status, string(raw)
+	}
+	for _, tc := range xcGoogleRules {
+		rule := strings.TrimPrefix(tc.rule, "RRULE:")
+		status, raw := probe(rule)
+		c.requiref(status == http.StatusOK || status == http.StatusCreated,
+			"%s: the engine's RFC 5545 parser refused %q: %d %s", tc.name, rule, status, raw)
+	}
+	c.stepf("all %d rules compile under the engine's RFC 5545 parser (a schedule trigger's write-time gate)", len(xcGoogleRules))
+
+	// The gaps, pinned by name rather than papered over. The series type's
+	// own gate is lax: any string containing FREQ= is admitted, so a rule no
+	// parser accepts still lands on a series while the trigger gate refuses
+	// it.
+	garbage := "FREQ=NONSENSE;BYDAY=99XX"
+	rec := c.putRec(seriesCollection, "x-ser-garbage", map[string]any{
+		"summary": "Matrix: garbage the lax gate admits", "recurrence": garbage,
+	}, []edge{{Rel: "calendar", To: edgeTarget{ID: "work"}}})
+	c.requiref(rec.prop("recurrence") == garbage, "the lax gate rewrote the garbage rule: %q", rec.prop("recurrence"))
+	status, raw := probe(garbage)
+	c.requiref(status == http.StatusUnprocessableEntity,
+		"the schedule gate admitted a rule no parser accepts: %d %s", status, raw)
+	c.stepf("GAP pinned: the series `recurrence` gate is `contains FREQ=` only, so `%s` lands on a series while the schedule gate refuses it 422", garbage)
+
+	// A rule that is not an RRULE at all is refused on the series too.
+	notStatus, notRaw := c.do(http.MethodPut, seriesCollection+"/x-ser-notarule", map[string]any{
+		"properties": map[string]any{"summary": "no rule", "recurrence": "every tuesday"},
+		"edges":      []edge{{Rel: "calendar", To: edgeTarget{ID: "work"}}},
+	}, nil)
+	c.requiref(notStatus == http.StatusUnprocessableEntity && strings.Contains(string(notRaw), "RFC 5545"),
+		"a non-RRULE string answered %d, want the 422 naming RFC 5545: %s", notStatus, notRaw)
+
+	// RDATE has no home: Google's recurrence field is a LIST of lines (RRULE,
+	// RDATE, EXDATE) and the series holds ONE scalar rule plus an exdates
+	// datetime list, so extra RDATE occurrences cannot be expressed. The lax
+	// gate even admits the joined block; pinned as a gap, not a feature.
+	block := "RRULE:FREQ=WEEKLY;BYDAY=MO\nRDATE:20260915T093000Z"
+	rec = c.putRec(seriesCollection, "x-ser-rdate", map[string]any{
+		"summary": "Matrix: an RDATE block the model cannot hold", "recurrence": block,
+	}, []edge{{Rel: "calendar", To: edgeTarget{ID: "work"}}})
+	c.requiref(rec.prop("recurrence") == block, "the RDATE block was rewritten: %q", rec.prop("recurrence"))
+	c.stepf("GAP pinned: a multi-line RRULE+RDATE block is admitted as one opaque string; RDATE extras have no declared home (EXDATE does: the `exdates` list)")
+
+	// The probe trigger leaves with the case.
+	status, _ = c.do(http.MethodDelete, triggerCollection+"/x-rrule-probe", nil, nil)
+	c.requiref(status == http.StatusOK, "deleting the probe trigger answered %d", status)
+}
+
+// --- CAL-02 ---------------------------------------------------------------
+
+func xcCaseWeekdayStandup(c *C) {
+	r := c.r
+	monday := xcMonday(r)
+
+	// The definition: every weekday at 09:30 for a year, as Google emits it.
+	until := monday.AddDate(1, 0, 0).Format("20060102T150405Z")
+	xcSeries(c, "x-ser-standup", "Engineering standup",
+		"RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;UNTIL="+until, nil)
+
+	// The connector explodes three weeks: 15 weekday occurrences.
+	ids := make([]string, 0, 15)
+	for week := range 3 {
+		for day := range 5 {
+			at := monday.AddDate(0, 0, week*7+day)
+			id := fmt.Sprintf("x-cal-standup-%s", at.Format("20060102"))
+			xcOccurrence(c, id, "x-ser-standup", "Engineering standup", at, 15*time.Minute)
+			ids = append(ids, id)
+		}
+	}
+	c.stepf("exploded 3 weeks of the every-weekday series: 15 occurrences at 09:30, all edged to `x-ser-standup`")
+
+	// Google's single-instance override: week 2 Wednesday moves 2 hours later
+	// and gains a title, SAME instance id, everything else untouched.
+	movedID := fmt.Sprintf("x-cal-standup-%s", monday.AddDate(0, 0, 9).Format("20060102"))
+	movedAt := monday.AddDate(0, 0, 9).Add(2 * time.Hour)
+	moved := c.putRec(eventCollection, movedID, map[string]any{
+		"summary": "Engineering standup (moved for the all-hands)",
+		"at":      movedAt.Format(time.RFC3339),
+		"endsAt":  movedAt.Add(15 * time.Minute).Format(time.RFC3339),
+	}, nil)
+	c.requiref(sameIDs(edgeIDs(moved, "series"), "x-ser-standup"),
+		"the override lost its series edge: %v (an update must merge, never prune)", edgeIDs(moved, "series"))
+	c.stepf("overrode one instance in place: same id `%s`, new time +2h, new title; the series edge survived the update", movedID)
+
+	// Google's cancellation: the week 3 Friday instance is retracted (a
+	// canceled event is DELETED, never flagged) and the series gains the
+	// exdate.
+	canceledAt := monday.AddDate(0, 0, 18)
+	canceledID := fmt.Sprintf("x-cal-standup-%s", canceledAt.Format("20060102"))
+	status, raw := c.do(http.MethodDelete, eventCollection+"/"+canceledID, nil, nil)
+	c.requiref(status == http.StatusOK, "retracting the canceled instance answered %d: %s", status, raw)
+	series := c.putRec(seriesCollection, "x-ser-standup", map[string]any{
+		"exdates": []string{canceledAt.Format(time.RFC3339)},
+	}, nil)
+	exdates, _ := series.Properties["exdates"].([]any)
+	c.requiref(len(exdates) == 1, "the series carries %d exdates, want 1", len(exdates))
+	c.stepf("canceled one instance Google-style: the occurrence `%s` is retracted and the series carries its exdate", canceledID)
+
+	// The client's reads. Week 2 [Mon, Sat): five instances, the moved one at
+	// its new time, ordered by at.
+	week2 := xcWindowIDs(c, monday.AddDate(0, 0, 7), monday.AddDate(0, 0, 12))
+	c.requiref(len(week2) == 5 && week2[2] == movedID,
+		"week 2 window: %v (want 5 rows with the moved instance third by time)", week2)
+
+	// The moved instance answers at its NEW hour and is gone from the old.
+	oldSlot := xcWindowIDs(c, monday.AddDate(0, 0, 9), monday.AddDate(0, 0, 9).Add(time.Hour))
+	newSlot := xcWindowIDs(c, movedAt, movedAt.Add(time.Hour))
+	c.requiref(len(oldSlot) == 0 && len(newSlot) == 1 && newSlot[0] == movedID,
+		"the override still answers at the old slot (%v) or not at the new one (%v)", oldSlot, newSlot)
+
+	// The canceled day is empty live, and the tombstone shows under
+	// deleted:true only.
+	day := xcWindowIDs(c, canceledAt.Truncate(24*time.Hour), canceledAt.Truncate(24*time.Hour).AddDate(0, 0, 1))
+	c.requiref(len(day) == 0, "the canceled day still answers: %v", day)
+	filter := fmt.Sprintf(`{"deleted":true,"properties":{"at":{"gte":%q,"lt":%q}}}`,
+		canceledAt.Truncate(24*time.Hour).Format(time.RFC3339),
+		canceledAt.Truncate(24*time.Hour).AddDate(0, 0, 1).Format(time.RFC3339))
+	var tomb struct {
+		Records []record `json:"records"`
+	}
+	status, raw = c.do(http.MethodGet, eventCollection+"?filter="+url.QueryEscape(filter), nil, &tomb)
+	c.requiref(status == http.StatusOK && len(tomb.Records) == 1 && tomb.Records[0].ID == canceledID,
+		"deleted:true over the canceled day answered %d with %d rows: %s", status, len(tomb.Records), raw)
+
+	// Whole horizon: 14 live occurrences (15 minus the cancellation), never
+	// the series (a definition has no timeline instant to answer with). The
+	// window is shared with other cases' events, so the count is over this
+	// series' ids alone.
+	standups := 0
+	for _, id := range xcWindowIDs(c, monday.AddDate(0, 0, -1), monday.AddDate(0, 0, 21)) {
+		if strings.HasPrefix(id, "x-cal-standup-") {
+			standups++
+		}
+	}
+	c.requiref(standups == 14, "the full window holds %d live standups, want 14", standups)
+	c.stepf("window queries: week 2 has 5 (moved one at its new hour, third by time), the old slot is empty, the canceled day is empty live and one tombstone under deleted:true, the horizon holds 14")
+
+	_ = ids
+}
+
+// --- CAL-03 ---------------------------------------------------------------
+
+// xcNthWeekday computes the nth (1-based, or -1 for last) weekday of a month,
+// which is this case's independent oracle for what Google would explode.
+func xcNthWeekday(year int, month time.Month, weekday time.Weekday, n int) time.Time {
+	if n > 0 {
+		d := time.Date(year, month, 1, 13, 0, 0, 0, time.UTC)
+		for d.Weekday() != weekday {
+			d = d.AddDate(0, 0, 1)
+		}
+		return d.AddDate(0, 0, 7*(n-1))
+	}
+	d := time.Date(year, month, 1, 13, 0, 0, 0, time.UTC).AddDate(0, 1, -1)
+	for d.Weekday() != weekday {
+		d = d.AddDate(0, 0, -1)
+	}
+	return d
+}
+
+func xcCaseNthWeekday(c *C) {
+	r := c.r
+	start := xcMonday(r)
+
+	xcSeries(c, "x-ser-2tu", "Platform review (2nd Tuesday)", "RRULE:FREQ=MONTHLY;BYDAY=2TU", nil)
+	xcSeries(c, "x-ser-lastfri", "Retro (last Friday)", "RRULE:FREQ=MONTHLY;BYDAY=-1FR", nil)
+
+	// Four months of each, materialized off the case's own oracle.
+	type expect struct{ tu, fr string }
+	months := make([]expect, 0, 4)
+	for m := range 4 {
+		anchor := start.AddDate(0, m, 0)
+		tu := xcNthWeekday(anchor.Year(), anchor.Month(), time.Tuesday, 2)
+		fr := xcNthWeekday(anchor.Year(), anchor.Month(), time.Friday, -1)
+		tuID := "x-cal-2tu-" + tu.Format("20060102")
+		frID := "x-cal-lastfri-" + fr.Format("20060102")
+		xcOccurrence(c, tuID, "x-ser-2tu", "Platform review", tu, time.Hour)
+		xcOccurrence(c, frID, "x-ser-lastfri", "Retro", fr, time.Hour)
+		months = append(months, expect{tuID, frID})
+	}
+	c.stepf("exploded 4 months of `every 2nd Tuesday` and `last Friday`, dates computed by the case's own weekday oracle")
+
+	// Each calendar month window returns exactly one of each, on its date.
+	for m, want := range months {
+		anchor := start.AddDate(0, m, 0)
+		from := time.Date(anchor.Year(), anchor.Month(), 1, 0, 0, 0, 0, time.UTC)
+		got := xcWindowIDs(c, from, from.AddDate(0, 1, 0))
+		var tu, fr int
+		for _, id := range got {
+			if id == want.tu {
+				tu++
+			}
+			if id == want.fr {
+				fr++
+			}
+		}
+		c.requiref(tu == 1 && fr == 1,
+			"month %s window: %v misses the expected 2nd-Tuesday (%s) or last-Friday (%s) instance",
+			anchor.Format("2006-01"), got, want.tu, want.fr)
+	}
+	c.stepf("each month window answers exactly one 2nd-Tuesday and one last-Friday instance, on the oracle's dates")
+
+	// The definitions are never in a window: no temporal trait, no instant.
+	var page struct {
+		Records []record `json:"records"`
+	}
+	status, raw := c.do(http.MethodGet, seriesCollection+"?first=200", nil, &page)
+	c.requiref(status == http.StatusOK, "listing series answered %d: %s", status, raw)
+	for _, rec := range page.Records {
+		c.requiref(rec.Properties["at"] == nil, "series %s carries a timeline instant %v", rec.ID, rec.Properties["at"])
+	}
+
+	// The back-reference a calendar UI walks: /incoming on the series, rel
+	// `series`, is exactly its occurrences.
+	var incoming struct {
+		Total int `json:"total"`
+	}
+	status, _ = c.do(http.MethodGet, seriesCollection+"/x-ser-2tu/incoming?rel=series", nil, &incoming)
+	c.requiref(status == http.StatusOK && incoming.Total == 4,
+		"incoming on the 2nd-Tuesday series holds %d occurrences, want 4", incoming.Total)
+	c.stepf("the series never sits in a time window, and /incoming on it lists exactly its 4 occurrences")
+}
+
+// --- CAL-04 ---------------------------------------------------------------
+
+func xcCaseSeriesSplit(c *C) {
+	r := c.r
+	// A weekly Wednesday sync at 14:00, eight occurrences ahead.
+	wednesday := xcMonday(r).AddDate(0, 0, 2).Add(4*time.Hour + 30*time.Minute) // 14:00
+	xcSeries(c, "x-ser-sync-a", "Design sync", "RRULE:FREQ=WEEKLY;BYDAY=WE", nil)
+	for week := range 8 {
+		at := wednesday.AddDate(0, 0, 7*week)
+		xcOccurrence(c, "x-cal-sync-"+at.Format("20060102"), "x-ser-sync-a", "Design sync", at, 30*time.Minute)
+	}
+
+	// "From this event on, 15:00": Google splits. The old master gains UNTIL
+	// just before occurrence five; a NEW master carries the new time; the
+	// connector retracts the old instances five to eight and explodes the new
+	// ones. The instance ids change with the master, exactly as Google's
+	// master_yyyymmdd ids do.
+	splitAt := wednesday.AddDate(0, 0, 7*4)
+	until := splitAt.Add(-time.Second).Format("20060102T150405Z")
+	seriesA := c.putRec(seriesCollection, "x-ser-sync-a", map[string]any{
+		"recurrence": "RRULE:FREQ=WEEKLY;BYDAY=WE;UNTIL=" + until,
+	}, nil)
+	c.requiref(strings.Contains(seriesA.prop("recurrence"), "UNTIL="+until),
+		"the truncated series does not carry the UNTIL: %q", seriesA.prop("recurrence"))
+	xcSeries(c, "x-ser-sync-b", "Design sync", "RRULE:FREQ=WEEKLY;BYDAY=WE", nil)
+	for week := 4; week < 8; week++ {
+		oldAt := wednesday.AddDate(0, 0, 7*week)
+		status, raw := c.do(http.MethodDelete, eventCollection+"/x-cal-sync-"+oldAt.Format("20060102"), nil, nil)
+		c.requiref(status == http.StatusOK, "retracting old instance week %d answered %d: %s", week, status, raw)
+		newAt := oldAt.Add(time.Hour) // 15:00
+		xcOccurrence(c, "x-cal-syncb-"+newAt.Format("20060102"), "x-ser-sync-b", "Design sync", newAt, 30*time.Minute)
+	}
+	c.stepf("split from occurrence five: series A truncated with UNTIL=%s, series B minted, four old instances retracted, four new ones at 15:00", until)
+
+	// The whole window: eight live rows, 14:00 before the boundary edged to
+	// A, 15:00 after it edged to B, in one ordered read.
+	all := xcWindow(c, wednesday.AddDate(0, 0, -1), wednesday.AddDate(0, 0, 7*8))
+	var sync []record
+	for _, rec := range all {
+		if strings.HasPrefix(rec.ID, "x-cal-sync") {
+			sync = append(sync, rec)
+		}
+	}
+	c.requiref(len(sync) == 8, "the split series answers %d live occurrences, want 8", len(sync))
+	for i, rec := range sync {
+		at, err := time.Parse(time.RFC3339, rec.prop("at"))
+		c.requiref(err == nil, "occurrence %s carries an unparsable at: %q", rec.ID, rec.prop("at"))
+		wantAt, wantSeries := wednesday.AddDate(0, 0, 7*i), "x-ser-sync-a"
+		if i >= 4 {
+			wantAt, wantSeries = wantAt.Add(time.Hour), "x-ser-sync-b"
+		}
+		c.requiref(at.Equal(wantAt),
+			"occurrence %d (%s) sits at %s, want %s (the hour must move exactly at the split)", i, rec.ID, at, wantAt)
+		c.requiref(sameIDs(edgeIDs(rec, "series"), wantSeries),
+			"occurrence %d (%s) is edged to %v, want %s", i, rec.ID, edgeIDs(rec, "series"), wantSeries)
+	}
+	c.stepf("one ordered window shows the boundary: four at the old hour on series A, then four an hour later on series B")
+
+	// Each series' incoming holds exactly its half.
+	for _, tc := range []struct {
+		id   string
+		want int
+	}{{"x-ser-sync-a", 4}, {"x-ser-sync-b", 4}} {
+		var incoming struct {
+			Total int `json:"total"`
+		}
+		status, _ := c.do(http.MethodGet, seriesCollection+"/"+tc.id+"/incoming?rel=series", nil, &incoming)
+		c.requiref(status == http.StatusOK && incoming.Total == tc.want,
+			"incoming on %s holds %d, want %d", tc.id, incoming.Total, tc.want)
+	}
+	c.stepf("each half of the split accounts for exactly its four occurrences through /incoming")
+}
