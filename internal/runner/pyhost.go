@@ -210,6 +210,17 @@ func (r *Runner) provisionUV(ctx context.Context, hostFile, work, uvCache string
 	if err = err2; err != nil {
 		return "", fmt.Errorf("runner: uv is not on PATH: %w", err)
 	}
+	// PATH may hold a SYMLINK into a different tree (mise's `.mise-bins/uv`
+	// is one), and Landlock checks the RESOLVED file: a grant derived from
+	// the symlink's directory denies the exec of what it points at. The grant
+	// and the exec both name the target, the same reason pythonInterpreter
+	// asks python for sys.executable instead of trusting PATH. The basename
+	// check leaves a version manager's SHIM alone: that symlink resolves to
+	// the manager's own binary (mise's shims all point at `mise`), which only
+	// re-execs uv when invoked under uv's name.
+	if resolved, errLink := filepath.EvalSymlinks(uvBin); errLink == nil && filepath.Base(resolved) == "uv" {
+		uvBin = resolved
+	}
 	// The cache dir is created HERE, by the parent, because the confined
 	// resolve cannot make it: a Landlock rule names an existing path, and
 	// creating a directory needs the right on its PARENT, which uv is not
