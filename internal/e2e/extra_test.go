@@ -12,6 +12,7 @@ import "sort"
 //	300 queries, changelog, blobs
 //	400 vocabulary upgrades, bundle lifecycle, GraphQL
 //	500 functions, triggers, agents
+//	600 recurrence, the calendar, the occurrences read
 type extraCase struct {
 	order int
 	id    string

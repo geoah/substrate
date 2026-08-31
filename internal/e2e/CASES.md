@@ -207,10 +207,15 @@ the rows below into one coherent repository.
 
 ## Recurrence and the calendar
 
-The substrate stores a recurrence rule and never expands it (decision 0039):
-occurrences are `calendarevent` rows a connector explodes, pointing at their
-`calendareventseries`. These cases play that connector exactly the way Google
-Calendar behaves, and make the range queries a calendar client would.
+The substrate stores a recurrence rule and never expands it into rows
+(decision 0039). Occurrences reach a reader two ways: a connector explodes
+them as `calendarevent` rows pointing at their `calendareventseries`, and
+`GET /occurrences` computes the rest from the stored rules at read time
+(decision 0043), staying silent inside a series' stamped
+[`materializedFrom`, `materializedUntil`) span, where the rows are the truth.
+These cases play that connector exactly the way Google Calendar behaves, make
+the range queries a calendar client would, and read the computed half beside
+them.
 
 | id | case | needs | status |
 | --- | --- | --- | --- |

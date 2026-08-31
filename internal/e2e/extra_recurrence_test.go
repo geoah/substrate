@@ -9,12 +9,14 @@ import (
 )
 
 // The 600 block: recurring calendars, played the way Google Calendar delivers
-// them. The substrate stores a recurrence rule and never expands it (decision
-// 0039): occurrences are calendarevent rows a CONNECTOR explodes, pointing at
-// their calendareventseries. These cases are that connector, note for note:
-// the rules Google emits, the instance overrides, the cancellations, and the
+// them. The substrate stores a recurrence rule and never expands it into rows
+// (decision 0039); occurrences reach a reader as calendarevent rows a
+// CONNECTOR explodes, pointing at their calendareventseries, and as the
+// computed instants GET /occurrences derives from the stored rules (decision
+// 0043). These cases are that connector, note for note: the rules Google
+// emits, the instance overrides, the cancellations, and the
 // this-and-following split, each followed by the range queries a calendar
-// client would make.
+// client would make. OCC-01 is the computed half beside them.
 const (
 	seriesCollection = "/api/v1/calendar.substrate.reamde.dev/calendareventseries"
 	seriesKind       = "calendar.substrate.reamde.dev/calendareventseries"
