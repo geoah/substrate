@@ -1,18 +1,44 @@
 # substrate
 
-A personal data substrate: one place that holds everything you own, that other
-software talks to instead of keeping its own copy.
+A self-hosted store for one person's digital life. Mail, calendar, messages,
+people, tasks, notes and media become typed **records** in one
+Postgres-backed **repository**, behind one API, on a machine you run. Apps
+and assistants read those records and write back through the same API,
+instead of every app keeping its own silo.
 
-One invite code admits a person. Registering creates a **user** — username,
-password and TOTP — and that user's one **repository**. Everything they own
-lives in it: an append-only changelog is the source of truth, and the records
-you read are computed by replaying it, so what you see can never drift from
-what actually happened. Tokens and
-the login credential are records like any other.
+The source of truth is an append-only **changelog**: the records you read
+are computed by replaying it, so what you see cannot drift from what
+happened. Tokens, kind declarations, even the functions and agents that
+automate your data are records like any other.
 
-Records have a **kind**, kinds are declared in YAML, and a **bundle** installs
-a set of them — optionally with functions that sync a provider, so a calendar
-or a mailbox becomes records you own rather than an API you rent.
+## Features
+
+- **One user, one repository.** Registering creates a user and their one
+  repository, and everything they own lives in it. No roles, no scopes, no
+  sharing to configure. Isolation between repositories is Postgres row level
+  security, not query-layer discipline.
+- **Kinds declared in YAML.** A kind names its properties and edges,
+  validation runs on every write, and a vocabulary evolves by integer
+  versions without breaking the records underneath it.
+- **One small write API.** Seven mutations (`put`, `patch`, `delete`,
+  `link`, `unlink`, `merge`, `split`), over REST and GraphQL alike, with
+  full-text and vector search and a resumable `watch` stream beside them.
+- **Bundles.** Vocabulary, functions and agents install and uninstall as one
+  unit. The catalog compiled into the binary ships sync for Google, GitHub,
+  Linear, Notion, Beeper and Whoop, so a mailbox or a calendar becomes
+  records you own rather than an API you rent, plus Firecrawl functions
+  agents can call to search and read the web.
+- **Functions and triggers.** A function is real code, Python or Go, stored
+  in your repository and run by the substrate; a trigger fires it when a
+  matching record changes, on a schedule, or from a webhook. Automation
+  lives beside the data it manages, installed and removed with its bundle.
+- **Agents.** An LLM loop over your records, with threads, tool calls and
+  budgets visible in the console. Providers are records in your repository:
+  the key is a secret-typed property, redacted on every read, and the server
+  process holds no LLM key of its own.
+- **One thing to run.** One server process and one Postgres; the web console
+  is built into the server image and served at `/`, and `substratectl` is
+  the CLI for everything else.
 
 ## Quick start
 
@@ -20,39 +46,42 @@ or a mailbox becomes records you own rather than an API you rent.
 docker compose up
 ```
 
-That is the whole thing: Postgres, the API, and the console at
-<http://localhost:8080>. Every setting has a working default, so there is
-nothing to configure before the first run. Register with the invite code
-`let-me-in`.
+That is the whole thing: Postgres, the API and the console at
+<http://localhost:8080>. Every setting has a working default; the first start
+mints a credential key and tells you to back it up. Register with the invite
+code `let-me-in`.
 
-To talk to it from a terminal — register, teach the repository a vocabulary,
-write a record, watch it land:
+## Write your first record
+
+From a checkout of this repo, against the substrate above: register, install
+a vocabulary, write a task, complete it, and replay the changelog that
+recorded all of it. The CLI is built from the tree, so this path needs the
+[mise](https://mise.jdx.dev) toolchain: `mise install` once.
 
 ```bash
 mise run build:cli
 
-# Registration needs the invite code. This asks for a username and password,
-# prints a TOTP enrollment once for your authenticator, and ends logged in:
-# the token it mints is stored as a context in ~/.config/substratectl.
+# Asks for the invite code, a username and a password, then stores the
+# minted token as a context in ~/.config/substratectl.
 bin/substratectl register --server http://localhost:8080
 
-# A new repository holds the core vocabulary and nothing else — there is no
-# `tasks` collection to get yet. Install the bundle that ships one. This is
-# the same closure the catalog serves, applied from the tree. Tasks name an
-# assignee, so people comes first:
+# A fresh repository holds the core vocabulary and nothing else, so install
+# the bundle that declares tasks. It requires people (tasks name an
+# assignee) and scheduling (a task may repeat), so those two come first.
 bin/substratectl apply \
   -f kinds/people.substrate.reamde.dev/bundle.yaml \
   -f kinds/people.substrate.reamde.dev/organization.yaml \
   -f kinds/people.substrate.reamde.dev/person.yaml \
   -f kinds/people.substrate.reamde.dev/team.yaml
 bin/substratectl apply \
+  -f kinds/scheduling.substrate.reamde.dev/bundle.yaml \
+  -f kinds/scheduling.substrate.reamde.dev/recurring.yaml \
+  -f kinds/scheduling.substrate.reamde.dev/occurrencelog.yaml
+bin/substratectl apply \
   -f kinds/tasks.substrate.reamde.dev/bundle.yaml \
   -f kinds/tasks.substrate.reamde.dev/project.yaml \
   -f kinds/tasks.substrate.reamde.dev/task.yaml \
   -f kinds/tasks.substrate.reamde.dev/tasklog.yaml
-
-bin/substratectl kinds                   # what this repository knows now
-bin/substratectl get tasks               # empty, but the collection is there
 
 cat <<'EOF' | bin/substratectl apply -f -
 kind: tasks.substrate.reamde.dev/task
@@ -63,25 +92,138 @@ data:
 EOF
 
 bin/substratectl get tasks
-bin/substratectl patch tasks <id> --state status=done   # stamps completedAt
-bin/substratectl watch                   # the changelog, streaming
+
+# <id> is the record id `get tasks` printed. The done transition stamps
+# completedAt for you.
+bin/substratectl patch tasks <id> --state status=done
+
+# Replay the changelog (--from resumes after a sequence number), then keep
+# following it. Your task's create and its done transition land at the end.
+bin/substratectl watch --from 1
 ```
 
-The console's Registry page installs the same bundle from the catalog compiled
-into the binary, and so does
-`POST /api/v1/catalog/{id}/install`: all three run
-the same install path and validation, which
-[docs/vocabulary.md](docs/vocabulary.md#admission) calls admission.
-[`docs/getting-started.md`](docs/getting-started.md) walks
-the same path in full.
+The console's Registry page installs the same bundles from the compiled-in
+catalog, through the same validation.
+[docs/getting-started.md](docs/getting-started.md) walks this path in full.
 
-### Running an agent
+## Manage them with a function and an agent
 
-A fresh repository holds no LLM provider: a provider row carries the wire, the
-endpoint and the key, and a substrate cannot invent a key. Registry →
-**Examples** → the LLM example installs two keyless rows (`anthropic`,
-`openai`) and an agent chain that uses them, or apply the same closure from the
-tree:
+Automation is records too. One file declares a bundle of your own holding a
+**function** (real code the substrate runs) and an **agent** (an LLM loop
+with tools), both scoped to exactly the kinds they may touch:
+
+```yaml
+# chores.yaml
+kind: core.substrate.reamde.dev/authority
+metadata:
+  id: chores.example
+data:
+  version: 1
+---
+kind: core.substrate.reamde.dev/bundle
+metadata:
+  id: chores.example/chores
+data:
+  authority: chores.example
+  description: Task automations of my own.
+  requires:
+    - tasks.substrate.reamde.dev
+  installs:
+    - chores.example/triage
+    - chores.example/assistant
+---
+kind: core.substrate.reamde.dev/function
+metadata:
+  id: chores.example/triage
+data:
+  authority: chores.example
+  description: Raise every open task past its due date to urgent.
+  runtime: python
+  permissions:
+    reads:
+      kinds:
+        - tasks.substrate.reamde.dev/task
+    writes:
+      - tasks.substrate.reamde.dev/task
+  source: |
+    from datetime import datetime, timezone
+
+    def main(input, host):
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        page = host.records.list(["tasks.substrate.reamde.dev/task"],
+                                 where={"status": {"eq": "open"}})
+        raised = 0
+        for task in page.get("records") or []:
+            props = task.get("properties") or {}
+            due = props.get("dueAt")
+            if due and due < now and props.get("priority") != "urgent":
+                host.effects.patch("tasks.substrate.reamde.dev/task",
+                                   task["id"],
+                                   properties={"priority": "urgent"})
+                raised += 1
+        return {"output": {"raised": raised}}
+---
+kind: core.substrate.reamde.dev/agent
+metadata:
+  id: chores.example/assistant
+data:
+  authority: chores.example
+  description: Reads and updates my tasks on request.
+  prompt: |
+    You manage the user's tasks. Read them with the query tool; create,
+    complete and reprioritize them with mutate. Keep answers short.
+  provider: anthropic
+  model: claude-opus-5
+  tools:
+    - function: core.substrate.reamde.dev/query
+    - function: core.substrate.reamde.dev/mutate
+  budgets:
+    maxTurns: 8
+    maxToolCalls: 16
+  permissions:
+    reads:
+      kinds:
+        - tasks.substrate.reamde.dev/task
+    writes:
+      - tasks.substrate.reamde.dev/task
+```
+
+Apply it, then run the function by hand:
+
+```bash
+bin/substratectl apply -f chores.yaml
+bin/substratectl function call chores.example/triage
+```
+
+What usually runs it is a **trigger**, an ordinary record binding a source
+(a record change, a schedule, or a webhook) to a callable:
+
+```bash
+cat <<'EOF' | bin/substratectl apply -f -
+kind: core.substrate.reamde.dev/trigger
+metadata:
+  id: chores-triage-daily
+data:
+  properties:
+    enabled: true
+    source:
+      schedule:
+        recurrence: "FREQ=DAILY"
+        timezone: Europe/London
+        startsAt: "2026-01-01T07:00:00Z"
+    callable: core.substrate.reamde.dev/function/chores.example/triage
+EOF
+```
+
+[docs/functions.md](docs/functions.md) is the whole contract: the host SDK,
+permissions, triggers and the sandbox.
+
+## Give the agent a model
+
+A fresh repository holds no LLM provider, and a substrate cannot invent a
+key. The `assistant` above names the provider row `anthropic`; install the
+example provider rows from the tree (or from the console's Registry, under
+Examples):
 
 ```bash
 bin/substratectl apply \
@@ -89,141 +231,70 @@ bin/substratectl apply \
   -f kinds/llm.examples.substrate.reamde.dev/providers.yaml
 ```
 
-Then put a key on the row — it is an ordinary record write, and `apiKey` is
+Then put a key on the row. It is an ordinary record write, and `apiKey` is
 secret-typed, so it reads back redacted ever after:
 
 ```bash
 cat <<'EOF' | bin/substratectl apply -f -
 kind: core.substrate.reamde.dev/llmprovider
-metadata: {id: anthropic}
+metadata:
+  id: anthropic
 data:
-  properties: {apiKey: sk-ant-…}
+  properties:
+    apiKey: sk-ant-...
 EOF
 ```
 
-The console's **Agents** page then has something to chat with: a thread per
-run in the left rail, the transcript rebuilt from records, and every tool call
-expandable to its request and response.
-[`docs/agents.md`](docs/agents.md) has the rest — wires, pricing, sub-agents,
+The console's Agents page can then chat with `assistant`, which reads your
+tasks and writes them back through the same API as everything else.
+[docs/agents.md](docs/agents.md) has the rest: wires, pricing, sub-agents,
 budgets.
 
 ## Configuration
 
-| Env                            | Default                         | Notes                                                         |
-| ------------------------------ | ------------------------------- | ------------------------------------------------------------- |
-| `DATABASE_URL`                 | required                        | the one Postgres                                               |
-| `PORT`                         | `8080`                          |                                                                |
-| `LOG_LEVEL`                    | `info`                          | debug/info/warn/error                                          |
-| `WEB_DIR`                      | —                               | the built console, served at `/`; empty disables it            |
-| `SUBSTRATE_INVITE_CODE`        | — (unset ⇒ registration closed) | required by `POST /register`                                   |
-| `SUBSTRATE_CREDENTIAL_KEY`     | — (required)                    | seals the sealed store (provider tokens, every secret property's material) and every repository's changelog signing seed; base64 of exactly 32 bytes (`openssl rand -base64 32`), any other shape ⇒ the server refuses to boot |
-| `SUBSTRATE_INSECURE_DISABLE_TOTP` | `false`                      | **local development only**: stops verifying the second factor, so a password is the whole credential |
-| `SUBSTRATE_OAUTH_CALLBACK_URL` | —                               | the one redirect URI providers register                        |
-| `SUBSTRATE_OAUTH_STATE_KEY`    | —                               | signs OAuth flow state                                         |
-| `SUBSTRATE_CONSOLE_URL`        | —                               | postMessage origin for the OAuth return page                   |
-
-There is no LLM configuration here. Completions and embeddings alike are bought
-through a repository's own `llmprovider` records, which carry the wire, the
-endpoint, the key and (for embeddings) the model, so the process holds no
-bearer that could reach a repository-chosen endpoint. See
-[docs/agents.md](docs/agents.md#providers).
+Everything is an environment variable, and every one has a working default
+under `docker compose up`. Three matter before anyone else can reach your
+substrate: `DATABASE_URL` (the one Postgres), `SUBSTRATE_INVITE_CODE` (unset
+means registration is closed), and `SUBSTRATE_CREDENTIAL_KEY` (base64 of
+exactly 32 bytes; it seals every secret and every repository's changelog
+signing seed, and a server without it refuses to boot).
+[docs/operations.md](docs/operations.md) has the full table, blob stores and
+egress rules included.
 
 ## Development
 
-Toolchain is [mise](https://mise.jdx.dev). `mise install` once, then:
+Toolchain is [mise](https://mise.jdx.dev): `mise install` once, then:
 
 ```bash
 mise run dev            # Postgres in a container + the server on :8080
-mise run dev:totp       # the same, with the second factor enforced
-mise run dev:up         # dev, in the background
-mise run dev:status     # what is running, on which URLs, whether TOTP is enforced
-mise run dev:logs       # follow the background server
-mise run dev:restart    # rebuild and restart; the data stays
-mise run dev:stop       # stop the server and its Postgres; the data stays
-mise run dev:wipe       # delete the database — the next start is a fresh substrate
-```
-
-`docker compose up` builds an image; `mise run dev` runs the binary from the
-tree, so a change is a restart rather than a rebuild. The invite code is
-`let-me-in`, the database is a container of its own on `:5433`, and the pid and
-log live in `.dev/`.
-
-**A fresh substrate means deleting the database.** Registration is one-shot per
-user and there is no unregister, so testing registration twice means throwing
-the database away: `mise run dev:wipe` on this path, `docker compose down -v` on the compose
-one.
-
-**The second factor is off here, and nowhere else.** Every `mise run dev*`
-task except `dev:totp` sets `SUBSTRATE_INSECURE_DISABLE_TOTP=true`, so local
-registering and signing in take only a username and a password, and no
-authenticator entry is enrolled for a repository `dev:wipe` will delete
-tomorrow. Test a change to auth under `mise run dev:totp`, which runs the same
-substrate with the factor enforced. Never set the variable anywhere a
-substrate is reachable, where it would make a leaked password the account.
-[docs/auth.md](docs/auth.md#the-second-factor-can-be-switched-off-locally)
-says exactly what the switch does and does not change, including the reset a
-user registered without an authenticator needs.
-
-The server binds every interface, so anything on the same LAN or tailnet
-reaches it — `dev:status` prints the addresses it finds. That is the point when
-you are testing from a phone or a second laptop, and it also means the invite
-code is reachable by everyone on those networks: registration is open for as
-long as one is set. Set `SUBSTRATE_INVITE_CODE` to something of your own, or
-`mise run dev:stop` when you are done. None of it reaches the internet.
-
-The console is served at `/` once it is built, and `dev:restart` picks it up:
-
-```bash
-mise run console:build  # -> web/console/dist, served by the substrate at /
-mise run console:dev    # or the live one on :5173, proxying /api to :8080
-```
-
-Operator commands talk to Postgres directly over the DSN, never over HTTP:
-
-```bash
-bin/substratectl --dsn "$(mise run dev:dsn)" repository list
-mise run dev:psql       # or a psql shell straight into it
-```
-
-The rest:
-
-```bash
-mise run ci             # the whole pipeline — exactly what CI runs
-mise run test           # the Go suite
+mise run dev:wipe       # delete the database; the next start is fresh
+mise run console:dev    # the console on :5173, proxying /api to :8080
+mise run test           # the Go suite (Docker needed for the engine half)
+mise run ci             # every CI job, locally
 mise tasks              # everything else
 ```
 
-Docker is needed for the engine suite, which runs each case against a real
-Postgres in a throwaway container. `mise run test:llm` is the one suite that
-talks to real LLM providers; it skips itself without keys, and
-[docs/testing.md](docs/testing.md) says how to give it some.
+`docker compose up` builds an image; `mise run dev` runs the binary from the
+tree, so a change is a restart rather than a rebuild. Registration is
+one-shot per user, so testing it twice means `mise run dev:wipe`.
 
-## Changing a kind
+[AGENTS.md](AGENTS.md) is the working guide for anyone, person or agent,
+changing this code: the model in one paragraph, every task, and the house
+rules. [docs/testing.md](docs/testing.md) maps the test suites.
 
-Every declaration under `kinds/` carries a `version`, an incremental integer
-(1, 2, 3, ...), either its own `data.version` on a kind or the authority's in
-`bundle.yaml`. That version is the entire upgrade signal: a repository picks
-up a changed declaration only when its version moved, at boot for core and
-through the console's Registry for installed bundles. Through the API nobody
-bumps by hand: `/vocabulary/apply` honors an incoming version only when it
-moves past the stored one, lands a changed definition at stored+1, and keeps
-an unchanged one where it was. The shipped tree still pins versions
-explicitly, because the boot upgrade needs one total order across binaries,
-so the rule here is one sentence: **change a declaration's `data`, bump its
-version.** Adding a property or an enum value is a bump; removing or retyping
-one is a breaking change the server refuses while live records hold the old
-shape, so keep the old property and add a new one instead.
+## Where to read next
 
-CI enforces the rule (`mise run kinds:check`): a PR that edits a declaration
-without moving its version, or removes one without bumping its authority, does
-not merge.
-
-## Docs
-
-[`docs/`](docs/README.md) builds one thing — a to-do list — from registration
-through to the API call that completes a task: the
-[data model](docs/data-model.md), the [API](docs/api.md),
-[bundles](docs/bundles.md), [functions](docs/functions.md), and
-[running a substrate](docs/operations.md).
-
-`AGENTS.md` is the guide for anyone — person or agent — working on this code.
+| Where                                                | What                                                              |
+| ---------------------------------------------------- | ----------------------------------------------------------------- |
+| [docs/README.md](docs/README.md)                     | the documentation index; the pages build one running example      |
+| [docs/getting-started.md](docs/getting-started.md)   | register, log in, write a record                                  |
+| [docs/introduction.md](docs/introduction.md)         | the design, its terms, and what it borrows from Kubernetes        |
+| [docs/data-model.md](docs/data-model.md)             | the repository, its changelog, records, kinds and the envelope    |
+| [docs/api.md](docs/api.md)                           | REST, filters, mutations, errors                                  |
+| [docs/terms.md](docs/terms.md)                       | one word per thing, and the dead words each replaced              |
+| [docs/decisions](docs/decisions/README.md)           | the decision records: one short, dated page per choice            |
+| [kinds/](kinds)                                      | the shipped vocabulary, as YAML                                   |
+| [AGENTS.md](AGENTS.md)                               | how to work on this code                                          |
+| [SECURITY.md](SECURITY.md)                           | how to report a vulnerability                                     |
+| [CHANGELOG.md](CHANGELOG.md)                         | released versions                                                 |
+| [Issues](https://github.com/geoah/substrate/issues)  | known bugs and planned work                                       |
