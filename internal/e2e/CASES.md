@@ -218,6 +218,7 @@ Calendar behaves, and make the range queries a calendar client would.
 | CAL-02 | a long every-weekday series with a moved-and-retitled instance (override in place, `originalStartAt` naming the replaced slot) and a canceled one (retracted + exdate); windows return exactly the survivors | | implemented |
 | CAL-03 | every-2nd-Tuesday and last-Friday series resolve to the right instants per month window; definitions never appear in a time window; /incoming lists a series' occurrences | | implemented |
 | CAL-04 | this-and-following: the old series truncates with UNTIL, a new one carries the rest, the window shows the time change at the boundary | | implemented |
+| OCC-01 | the occurrences read (decision 0043): a daily-forever medication schedule computes its 7 slots a week beside the calendar's rows, stamped series stay silent inside their materialized span, a logged dose annotates without suppressing, and a travel week moves via exdates + rdates | | implemented |
 
 ## The operator hat
 

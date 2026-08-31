@@ -45,6 +45,14 @@ func init() {
 			"keeps occurrences one to four, a new series carries five to eight at the new time, the full "+
 			"window shows the time change at the boundary, and each series' /incoming holds exactly its half.",
 		xcCaseSeriesSplit)
+	registerCase(640, "OCC-01", "The occurrences read: a daily-forever dose beside the calendar",
+		"A medication taken every day forever is ONE schedule record whose RRULE the substrate stores and "+
+			"never expands (decision 0039); GET /occurrences computes its instants in any window (decision "+
+			"0043) beside the calendar's materialized rows, the connector-stamped series stay silent where "+
+			"their rows answer, a logged dose annotates its slot without suppressing it, and a travel week "+
+			"moves seven doses to another timezone with exdates plus rdates, the same mechanics a Google "+
+			"instance override uses.",
+		xoCaseMedicationWeek)
 }
 
 // xcMonday anchors the whole block: the most recent Monday, 09:30 UTC, at
@@ -58,10 +66,20 @@ func xcMonday(r *run) time.Time {
 	return base.Add(9*time.Hour + 30*time.Minute)
 }
 
-// xcSeries writes one recurring definition the way a connector would.
+// xcSeries writes one recurring definition the way a connector would: the
+// rule, its `startsAt` anchor, and the [materializedFrom, materializedUntil)
+// span these cases explode into rows themselves, so the occurrences read
+// (decision 0043) stays silent here the way it stays silent over a synced
+// Google window.
 func xcSeries(c *C, id, summary, rule string, exdates []string) record {
 	c.t.Helper()
-	props := map[string]any{"summary": summary, "recurrence": rule, "timezone": "Europe/London"}
+	base := xcMonday(c.r)
+	props := map[string]any{
+		"summary": summary, "recurrence": rule, "timezone": "Europe/London",
+		"startsAt":          base.Format(time.RFC3339),
+		"materializedFrom":  base.AddDate(0, 0, -30).Format(time.RFC3339),
+		"materializedUntil": base.AddDate(1, 0, 0).Format(time.RFC3339),
+	}
 	if len(exdates) > 0 {
 		props["exdates"] = exdates
 	}
@@ -466,4 +484,146 @@ func xcCaseSeriesSplit(c *C) {
 			"incoming on %s holds %d, want %d", tc.id, incoming.Total, tc.want)
 	}
 	c.stepf("each half of the split accounts for exactly its four occurrences through /incoming")
+}
+
+// --- OCC-01 ----------------------------------------------------------------
+
+const (
+	medCollection         = "/api/v1/health.substrate.reamde.dev/medication"
+	medScheduleCollection = "/api/v1/health.substrate.reamde.dev/medicationschedule"
+	medScheduleKind       = "health.substrate.reamde.dev/medicationschedule"
+	medLogCollection      = "/api/v1/health.substrate.reamde.dev/medicationschedulelog"
+)
+
+// xoList mirrors substrate.OccurrenceList, the computed half of an agenda.
+type xoList struct {
+	Occurrences []struct {
+		Kind  string `json:"kind"`
+		ID    string `json:"id"`
+		Title string `json:"title"`
+		At    string `json:"at"`
+		Log   *struct {
+			ID     string `json:"id"`
+			Status string `json:"status"`
+		} `json:"log"`
+	} `json:"occurrences"`
+	Truncated bool `json:"truncated"`
+	Problems  []struct {
+		Kind    string `json:"kind"`
+		ID      string `json:"id"`
+		Message string `json:"message"`
+	} `json:"problems"`
+}
+
+// xoRead is the agenda's computed half: what the stored rules name in the
+// window, which no row query can answer.
+func xoRead(c *C, from, to time.Time) xoList {
+	c.t.Helper()
+	var out xoList
+	status, raw := c.do(http.MethodGet, "/api/v1/occurrences?from="+
+		url.QueryEscape(from.Format(time.RFC3339))+"&to="+
+		url.QueryEscape(to.Format(time.RFC3339)), nil, &out)
+	c.requiref(status == http.StatusOK, "the occurrences read answered %d: %s", status, raw)
+	c.requiref(!out.Truncated, "the window is a few weeks; nothing may truncate")
+	c.requiref(len(out.Problems) == 0,
+		"every stored rule must expand cleanly, got problems %v", out.Problems)
+	return out
+}
+
+// xoDoses filters one schedule's slots out of the computed answer, in order.
+func xoDoses(list xoList, id string) []string {
+	var ats []string
+	for _, o := range list.Occurrences {
+		if o.Kind == medScheduleKind && o.ID == id {
+			ats = append(ats, o.At)
+		}
+	}
+	return ats
+}
+
+func xoCaseMedicationWeek(c *C) {
+	c.xvInstall("health.substrate.reamde.dev/health")
+	base := xcMonday(c.r).Truncate(24 * time.Hour) // the block's Monday, 00:00Z
+	dose := base.Add(6 * time.Hour)                // 09:00 Athens in summer
+	week2, week3, week4 := base.AddDate(0, 0, 7), base.AddDate(0, 0, 14), base.AddDate(0, 0, 21)
+
+	c.putRec(medCollection, "levothyroxine", map[string]any{"name": "Levothyroxine"}, nil)
+	c.putRec(medScheduleCollection, "levothyroxine-daily", map[string]any{
+		"doseAmount": 1, "doseUnit": "tablet",
+		"recurrence": "RRULE:FREQ=DAILY",
+		"timezone":   "Europe/Athens",
+		"at":         dose.Format(time.RFC3339), // the anchor: temporal(range)'s own start
+	}, []edge{{Rel: "medication", To: edgeTarget{ID: "levothyroxine"}}})
+	c.stepf("one schedule record holds the forever-daily rule, anchored %s", dose.Format(time.RFC3339))
+
+	// The agenda is two reads and a merge: rows in the window (the calendar
+	// events a connector materialized), and the computed occurrences beside
+	// them. A concrete event proves the row half answers the same window.
+	xcOccurrence(c, "x-occ-review", "x-ser-standup", "Quarterly review",
+		base.AddDate(0, 0, 1).Add(15*time.Hour), time.Hour)
+	rows := xcWindow(c, base, week2)
+	found := false
+	for _, rec := range rows {
+		found = found || rec.ID == "x-occ-review"
+	}
+	c.requiref(found, "the row half of the agenda lost the concrete event: %v", rows)
+
+	occs := xoRead(c, base, week2)
+	ats := xoDoses(occs, "levothyroxine-daily")
+	c.requiref(len(ats) == 7, "a daily rule names 7 instants in a week, got %v", ats)
+	for i, at := range ats {
+		want := dose.AddDate(0, 0, i).Format(time.RFC3339)
+		c.requiref(at == want, "dose %d computed at %s, want %s", i, at, want)
+	}
+	for _, o := range occs.Occurrences {
+		c.requiref(o.Kind != seriesKind,
+			"series %s leaked into the computed answer: its rows are the truth inside its stamp", o.ID)
+	}
+	c.stepf("the week answers 7 computed doses beside the calendar's rows, and no stamped series leaks a twin")
+
+	// A taken dose is an occurrencelog; it annotates the slot, never hides it.
+	tue := dose.AddDate(0, 0, 1)
+	c.putRec(medLogCollection, "x-occ-dose-tue", map[string]any{
+		"at":          tue.Add(20 * time.Minute).Format(time.RFC3339),
+		"scheduledAt": tue.Format(time.RFC3339),
+	}, []edge{{Rel: "schedule", To: edgeTarget{ID: "levothyroxine-daily"}}})
+	occs = xoRead(c, base, week2)
+	marked := 0
+	for _, o := range occs.Occurrences {
+		if o.ID != "levothyroxine-daily" {
+			continue
+		}
+		if o.At == tue.Format(time.RFC3339) {
+			c.requiref(o.Log != nil && o.Log.ID == "x-occ-dose-tue" && o.Log.Status == "done",
+				"Tuesday's slot must carry its log, got %+v", o.Log)
+			marked++
+		} else {
+			c.requiref(o.Log == nil, "an unlogged slot at %s grew a log", o.At)
+		}
+	}
+	c.requiref(marked == 1, "exactly one slot is logged, got %d", marked)
+	c.stepf("Tuesday's dose reads done; the other six stay bare, and absence still means missed")
+
+	// The travel week: home slots out via exdates, the moved instants in via
+	// rdates — 09:00 America/New_York written as instants, exactly how a
+	// Google override lands.
+	exdates, rdates := []string{}, []string{}
+	for i := range 7 {
+		exdates = append(exdates, dose.AddDate(0, 0, 7+i).Format(time.RFC3339))
+		rdates = append(rdates, base.AddDate(0, 0, 7+i).Add(13*time.Hour).Format(time.RFC3339))
+	}
+	status, raw := c.do(http.MethodPatch, medScheduleCollection+"/levothyroxine-daily",
+		map[string]any{"properties": map[string]any{"exdates": exdates, "rdates": rdates}}, nil)
+	c.requiref(status == http.StatusOK, "the travel-week override answered %d: %s", status, raw)
+
+	moved := xoDoses(xoRead(c, week2, week3), "levothyroxine-daily")
+	c.requiref(len(moved) == 7, "the travel week still doses daily, got %v", moved)
+	for i, at := range moved {
+		want := base.AddDate(0, 0, 7+i).Add(13 * time.Hour).Format(time.RFC3339)
+		c.requiref(at == want, "travel dose %d computed at %s, want %s (the moved slot)", i, at, want)
+	}
+	home := xoDoses(xoRead(c, week3, week4), "levothyroxine-daily")
+	c.requiref(len(home) == 7 && home[0] == dose.AddDate(0, 0, 14).Format(time.RFC3339),
+		"the week after the trip must dose at home time again, got %v", home)
+	c.stepf("the travel week reads 7 moved doses and week three is home time again — the rule itself never changed")
 }
