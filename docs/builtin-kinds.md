@@ -26,7 +26,7 @@ vocabulary you import.
 
 | Kind           | What it is                                                                                                                              |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `person`       | One human, one record: every edge that means "a person" lands here. What a single source holds about them is its own record, mapped on. |
+| `person`       | One human, one record: every pointer that means "a person" lands here. What a single source holds about them is its own record, mapped on. |
 | `organization` | An org a person belongs to: employer, workspace, publisher.                                                                             |
 | `team`         | A working group finer than an organization: members, leads, and nesting through `parent`.                                               |
 

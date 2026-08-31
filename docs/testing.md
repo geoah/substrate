@@ -122,7 +122,7 @@ confinement case runs in the short suite, which is also the only half of
 with Landlock left out of its `lsm=` list still runs the rest of the suite. On
 macOS there is no Landlock and no seccomp at all, so do not set it there. That
 those two tasks still set it, and still reach the suite through `run` rather
-than a `depends` edge (which mise gives an environment of its own), is what
+than a `depends` entry (which mise gives an environment of its own), is what
 `mise run lint:sandboxgate` holds: this gate's own failure mode is a green
 build, so it gets a guard.
 
@@ -207,7 +207,7 @@ real engine with no fakes anywhere: two `llmprovider` records (one per wire), a
 deterministic function tool, an OpenAI-backed sub-agent, and an
 Anthropic-backed root agent that calls the tool, delegates to the sub-agent and
 settles. What it asserts is durable state — the thread rows and their token and
-cost tallies, the child's `parent` edge, the tool result in the transcript, the
+cost tallies, the child's `parent` reference, the tool result in the transcript, the
 roll-up onto the root — never the model's prose, which is nobody's to promise.
 
 ### Running it

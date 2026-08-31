@@ -3,7 +3,7 @@
 `substratectl` is the command-line client: kubectl-shaped, speaking the
 [REST surface](api.md). Everything in a repository is a record of a declared
 kind, addressed as `{authority}/{kind}/{id}`, and the CLI mirrors that:
-kinds, get, apply, patch, delete, edit, link, unlink, watch. It lives in the
+kinds, get, apply, patch, delete, edit, watch. It lives in the
 same repository as the substrate (`cmd/substratectl`) and builds with Go.
 
 ```
@@ -112,10 +112,10 @@ output applies back unchanged.
 - `edit <plural> <id>` opens the manifest in `$EDITOR` and applies what comes
   back.
 - `delete <plural> <id>` tombstones; hard deletion waits on finalizers.
-- `link <plural> <id> <rel> <target>` / `unlink <plural> <id> <rel> <target>`
-  add and remove one outgoing edge. The target is a bare `id` where the edge
-  declaration pins one target kind, or a full record reference for a `to: any`
-  edge; `link` takes `--prop key=value` for edge properties.
+
+A pointer at another record is a property, so `apply` and `patch` write it like
+any other value: `--prop project=infra7` against a pinned declaration, or the
+full `<kind>/<id>` path where the declaration names no kind.
 
 ## Watching, triggers, and bundles
 

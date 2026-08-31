@@ -71,8 +71,8 @@ often than a deliberate name.
 Two more fields matter, both covered below. `inputs:` declares the bundle's
 configuration needs by name, each naming a kind whose records satisfy it. No
 cardinality is enforced on such a kind: any number of records may exist. The
-engine resolves one record per input, in order: the bound record (an edge
-written by the bind verb on the bundle's own row); else the record whose id is
+engine resolves one record per input, in order: the bound record (a reference
+the bind verb writes on the bundle's own row); else the record whose id is
 `default`; else the sole live record of the kind; else nothing. An unresolved
 input is a first-class state the bundle's status reports per input; the engine
 never tie-breaks. An input with `inject: functions` crosses
@@ -354,7 +354,7 @@ malformed one is dropped with a logged warning rather than failing the whole
 catalog.
 
 `requires` is the entry's declared vocabulary dependency: the authorities its
-mappings, edges and trigger subscriptions point at. Installing `google` into a
+mappings, references and trigger subscriptions point at. Installing `google` into a
 repository that has not imported `people` is **refused** by the ordinary
 admission, before anything is touched, with a problem naming what to import
 first. Nothing resolves the dependency for you — the order is yours.

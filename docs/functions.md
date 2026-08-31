@@ -248,16 +248,15 @@ record:
   kind: github.bundles.substrate.reamde.dev/account
   properties:
     tokenStatus: connected
-  edges: {}
 repository:
   owner: geoah
 ```
 
 `change` says what moved (`op` is `create`, `update` or `delete`, and
 `changed` names the properties when the payload carries them). `record` is the
-row's state **now**, not the old value, and is `null` after a delete. Its
-`edges` map each `rel` to a list of targets, each target carrying the same `id`
-and `kind` the record itself does, plus that target's `title`. A schedule or
+row's state **now**, not the old value, and is `null` after a delete, and its
+`properties` carry everything the record points at, as reference paths. A
+schedule or
 webhook delivery has no changelog entry underneath it, so its envelope carries
 `fire` (the fire's `id` and `at`) and `repository` in place of `change` and
 `record`.
@@ -274,7 +273,7 @@ envelope, the SDK's reads, the SDK's writes and an explicit
 source = {"kind": change["kind"], "id": change["id"]}
 ```
 
-That reference is what an edge target takes, and what a body compares against
+That reference is what a reference property holds, and what a body compares against
 to know whether a delivery is about the kind it cares about:
 
 ```python
@@ -413,21 +412,20 @@ body.
 
 ## Effects
 
-Effects are the ordinary [seven mutations](api.md#the-seven-mutations),
+Effects are the ordinary [five mutations](api.md#the-five-mutations),
 applied through the write path in the same transaction as the delivery's
 cursor advance, every one held to the write allowlist by the kind it names.
 Every effect names its target the same way, a `kind` carrying a kind
 reference:
 
-- **`put`** `{action: put, kind, id, ifAbsent?, ifVersion?, properties?,
-  edges?}`. `ifAbsent: true` is create-only: any existing row, live or
+- **`put`** `{action: put, kind, id, ifAbsent?, ifVersion?, properties?}`.
+  `ifAbsent: true` is create-only: any existing row, live or
   tombstoned, is a no-op, so a minting function never resets state a later
   stage owns. `ifAbsent` must be a boolean, and it cannot combine with
   `ifVersion` on one put (the version check would be silently dropped).
-  `edges` maps each `rel` to a target or a list of them, each one a bare id or
-  a `{kind, id}` reference that may also carry the edge row's own
-  `properties`. Those three keys are the whole set a target takes, and a
-  fourth is refused rather than dropped.
+  A pointer at another record is one of the `properties`, written as the
+  target's path or, where the declaration carries link properties, as the
+  `{ref, …}` object.
 - **`ifVersion`** (put and patch) is the optimistic-concurrency precondition: an
   integer the write applies against only if the stored version equals it (a
   non-existent record is version 0), else the whole delivery fails
@@ -435,9 +433,6 @@ reference:
 - **`patch`** `{action: patch, kind, id, properties}`. A state value among the
   properties is a transition; re-asserting the current state is a no-op.
 - **`delete`** `{action: delete, kind, id}` tombstones.
-- **`link` / `unlink`** `{action, kind, id, rel, to}`, where `id` is the source
-  record and `to` a bare id or a `{kind, id}` reference; `link` also takes
-  the edge's own `properties`. Emit gates by the source kind.
 - **`merge`** `{action: merge, kind, id, loser}` (`id` is the winner) and
   **`split`** `{action: split, kind, merge}`, both refused unless
   the `permissions.mutations` grant names them; the `*request` records stay the polite
@@ -446,7 +441,7 @@ reference:
 A put or patch addressed to a former id resolves onto the canonical winner
 instead of parking. Ids are required on every action but split (whose address
 is the merge record), and because a function composes the ids of what it
-writes, put/patch/delete/link/unlink replays are idempotent by construction.
+writes, put/patch/delete replays are idempotent by construction.
 Merge and split are replay-safe by verification instead: re-merging a loser
 already former to the winner, or re-splitting an already-tombstoned merge, is
 a verified no-op, and any other state is a conflict that parks.
@@ -458,12 +453,12 @@ namespaced surface in both runtimes, concept for concept; only the spelling
 follows each language, so a multi-field call takes Python keyword arguments
 where Go takes an option struct (`host.effects.put(kind, id, …)` against
 `host.Effects.Put(substratefn.PutEffect{…})`) while the fixed-arity ones stay
-positional in Go (`Get`, `Delete`, `Merge`, `Split`). Two names differ between
-the two: Python's `order` is Go's `OrderBy`, and Python's `with_edges` is Go's
-`WithEdges`. Go also adds typed read results Python has no need of.
+positional in Go (`Get`, `Delete`, `Merge`, `Split`). One name differs between
+the two: Python's `order` is Go's `OrderBy`. Go also adds typed read results
+Python has no need of.
 
 **Reads.** `host.records.get(kind, id)`,
-`host.records.list(kinds, where?, first?, after?, order?, with_edges?)`,
+`host.records.list(kinds, where?, first?, after?, order?)`,
 `host.records.search(q, kinds, k?, mode?)` (`mode` is `lexical`, `semantic`
 or `hybrid`, and defaults to `hybrid`), and
 `host.functions.call(function, input?)`. `get` addresses one record by its
@@ -480,14 +475,13 @@ CAS idiom `IfVersion: substratefn.Version(e.Version)` is writable straight off a
 read; in Python `host.version(record)` returns that integer.
 
 **Writes, the buffered-effects builder.** `host.effects.put(kind, id,
-properties?, edges?, if_absent?, if_version?)`, `.patch(kind, id, properties?,
-if_version?)`, `.delete(kind, id)`, `.link(kind, id, rel, to, properties?)`,
-`.unlink(kind, id, rel, to)`, `.merge(kind, id, loser)` and
+properties?, if_absent?, if_version?)`, `.patch(kind, id, properties?,
+if_version?)`, `.delete(kind, id)`, `.merge(kind, id, loser)` and
 `.split(kind, merge)` each append a staged effect to a write-only buffer and
 return a staged-effect handle, never a record and never a value to inspect.
 There is no `flush()`: the buffer is the return. The builder validates shape
 locally against the engine's own alphabets (a URL-safe id, a kind reference, a
-camelCase relation, a well-formed edge target, a boolean `if_absent`, a
+boolean `if_absent`, a
 non-negative integer `if_version`, no self-merge) and snapshot-copies caller
 maps through JSON, so a mistake is a clear body error rather than an engine
 park. The action needs no checking: it is the method you called. The engine

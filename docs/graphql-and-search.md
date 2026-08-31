@@ -50,9 +50,9 @@ identity is the (kind, id) pair, so `record` takes both:
 query { record(kind: "tasks.substrate.reamde.dev/task", id: "kq3v9x2m41pf") { id title } }
 ```
 
-Mutations are the seven — `put patch delete link unlink merge split`. `put`
+Mutations are the five: `put patch delete merge split`. `put`
 carries the whole record in its `input`; every other one names the kind beside
-the id, and the two ends of an edge each name their own:
+the id:
 
 ```graphql
 mutation ($k: String!, $id: ID!, $in: JSON!) {
@@ -63,9 +63,7 @@ mutation ($k: String!, $id: ID!, $in: JSON!) {
 ```
 
 `patch(kind, id, input, ifVersion)` and `delete(kind, id)` address one record;
-`link(rel, srcKind, src, dstKind, dst, props)` and its `unlink` twin take a
-kind reference per endpoint, `dstKind` required on a `to: any` edge and
-supplied by the declaration otherwise; `merge(kind, winner, loser)` joins two
+`merge(kind, winner, loser)` joins two
 records of one kind, and `split(mergeId)` undoes one by the `recordmerge`
 record's id.
 
@@ -89,7 +87,7 @@ trait adds none), and one per distinct state-property name
 Two kinds that still resolve to one name are **refused when the second is
 declared**, at the same moment every other narrowing refusal happens, and a
 kind whose computed name would land on a structural name (`Record`, `Change`,
-`Edge`, `Reference`, a scalar, an interface) is refused at schema build with a
+`Reference`, a scalar, an interface) is refused at schema build with a
 named error. Neither is ever silently renamed.
 
 `version` and `seq` (and the changelog resume seqs, `head` and `from`, and the

@@ -1,6 +1,7 @@
 ---
-status: accepted
-date: 2026-08-17
+status: superseded
+superseded-by: 0044
+date: 2026-08-31
 decision-makers: George Antoniadis (via the issue-111 agent session)
 ---
 
