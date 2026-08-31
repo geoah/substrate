@@ -1242,16 +1242,6 @@ func (t *txn) pruneSchemaRows(authorities, live map[string]bool) error {
 	return nil
 }
 
-// mapKeysOf lists a map's keys, for deterministic iteration through
-// sortedStrings.
-func mapKeysOf[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	return out
-}
-
 // --- rows back into documents -------------------------------------------------
 
 // vocabularyDocumentRows reads the touched authorities' schema record rows back as

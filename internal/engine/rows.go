@@ -358,13 +358,6 @@ func (t *txn) applyTombstone(ref eref, finalizer string) (bool, error) {
 	return n > 0, err
 }
 
-// bumpVersion moves a record's version without touching a column: a write
-// whose change is beside the row.
-func (t *txn) bumpVersion(ref eref) error {
-	_, err := t.fold(foldOp{Kind: foldBump, Ref: ref.Kind, ID: ref.ID})
-	return err
-}
-
 func (t *txn) applyBump(ref eref) (bool, error) {
 	res, err := t.exec(`UPDATE records SET version = version + 1, updated_at = $3 WHERE kind = $1 AND id = $2`,
 		ref.Kind, ref.ID, t.now)

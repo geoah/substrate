@@ -72,8 +72,8 @@ const (
 )
 
 // The capability-gated identity mutations (`permissions.mutations`). The
-// five ordinary effects — put, patch, delete, link, unlink — are granted by
-// `permissions.writes` alone; merge and split need this explicit grant.
+// ordinary effects (put, patch, delete) are granted by `permissions.writes`
+// alone; merge and split need this explicit grant.
 const (
 	MutationMerge = "merge"
 	MutationSplit = "split"
@@ -758,7 +758,7 @@ func (l *loader) parseFunctionCaps(where string, data map[string]any, fn *Functi
 	for i, mv := range mslice(perms, "mutations") {
 		m := fmt.Sprint(mv)
 		if !functionMutations[m] {
-			l.errf("%s: data.permissions.mutations[%d]: %q is not one of merge, split, the gated mutations; put/patch/delete/link/unlink ride permissions.writes alone", where, i, m)
+			l.errf("%s: data.permissions.mutations[%d]: %q is not one of merge, split, the gated mutations; put/patch/delete ride permissions.writes alone", where, i, m)
 			continue
 		}
 		fn.Caps.Mutations = append(fn.Caps.Mutations, m)

@@ -60,22 +60,6 @@ func (t *txn) validateReferences(ty *vocabulary.Kind, props map[string]any) erro
 	return nil
 }
 
-// referencePinsKind reports whether reference property p could point at a
-// record of the kind named `ident`: its `kind:` pin names that kind, or its
-// `trait:` pin names a trait that kind implements. It is the one reading the GC
-// cascade and the `incoming` view share, so a trait-pinned owner pointer is
-// enumerated the same way both walk a kind-pinned one.
-func referencePinsKind(reg *vocabulary.Registry, p *vocabulary.Property, ident string) bool {
-	if p.To == ident {
-		return true
-	}
-	if p.ToTrait == "" {
-		return false
-	}
-	k, ok := reg.ByIdentity(ident)
-	return ok && k.Implements(p.ToTrait)
-}
-
 // holdsReference reports whether a declaration carries a reference anywhere
 // inside it, so a plain object property is not walked at all.
 func holdsReference(p *vocabulary.Property) bool {

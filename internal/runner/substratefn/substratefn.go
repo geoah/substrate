@@ -121,8 +121,8 @@ type Budgets struct {
 	Rows  int `json:"rows"`
 }
 
-// Effect is one returned consequence. The seven actions are put, patch,
-// delete, link, unlink, merge and split; the host holds every effect to the
+// Effect is one returned consequence. The five actions are put, patch,
+// delete, merge and split; the host holds every effect to the
 // manifest's emit allowlist, and merge/split to its mutations grant. The id
 // is required on every action but split: functions are writers, and writers
 // control the ids of what they write — that is what makes replays and
@@ -512,9 +512,8 @@ func (s *Staged) ID() string     { return s.id }
 const maxIDLen = 128
 
 var (
-	reID    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$`)
-	reKind  = regexp.MustCompile(`^(?:[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+/)?[a-z][a-z0-9]*$`)
-	reIdent = regexp.MustCompile(`^[a-z][a-zA-Z0-9]*$`)
+	reID   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$`)
+	reKind = regexp.MustCompile(`^(?:[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+/)?[a-z][a-z0-9]*$`)
 )
 
 // Effects is the buffered-effects builder. Each method APPENDS a staged effect

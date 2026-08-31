@@ -109,8 +109,7 @@ func exactKeyCheck(raw []byte, v any) error {
 }
 
 // allowedKeys is the exact set of json object keys a struct accepts, following
-// anonymous embedded structs (edgeBody embeds EdgeRef, whose authority/type/id
-// flatten to the top level).
+// anonymous embedded structs, whose fields flatten to the top level.
 func allowedKeys(t reflect.Type) map[string]bool {
 	keys := map[string]bool{}
 	for i := range t.NumField() {

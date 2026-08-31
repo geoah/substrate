@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -352,40 +351,4 @@ func (t *txn) idsOf(ref eref) ([]string, error) {
 		ids = append(ids, former)
 	}
 	return ids, rows.Err()
-}
-
-// refTargetOf reads the single target of one top-level reference property,
-// VERBATIM: no canonicalization, because a merge record's `loser` names a
-// tombstone on purpose and resolving it forward would erase the record's whole
-// point.
-func (t *txn) refTargetOf(src eref, property string) (eref, error) {
-	var dst eref
-	err := t.row(`SELECT dst_kind, dst FROM refs
-		WHERE src_kind = $1 AND src = $2 AND property = $3 AND path = ''
-		ORDER BY ord LIMIT 1`, src.Kind, src.ID, property).Scan(&dst.Kind, &dst.ID)
-	if err == sql.ErrNoRows {
-		return eref{}, nil
-	}
-	return dst, err
-}
-
-// refTargetsOf lists every record one top-level reference property names, in
-// the order the property holds them.
-func (t *txn) refTargetsOf(src eref, property string) ([]eref, error) {
-	rows, err := t.query(`SELECT dst_kind, dst FROM refs
-		WHERE src_kind = $1 AND src = $2 AND property = $3 AND path = ''
-		ORDER BY ord`, src.Kind, src.ID, property)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []eref
-	for rows.Next() {
-		var dst eref
-		if err := rows.Scan(&dst.Kind, &dst.ID); err != nil {
-			return nil, err
-		}
-		out = append(out, dst)
-	}
-	return out, rows.Err()
 }

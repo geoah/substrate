@@ -235,7 +235,7 @@ func FireEnvelope(fireID string, at time.Time, repositoryOwner string) map[strin
 
 // OpOf maps a changelog row onto the create/update/delete vocabulary
 // trigger sources declare: a put whose payload says `created` is a create, delete
-// and gc are deletes, everything else — patch, link, unlink, merge, split,
+// and gc are deletes, everything else — patch, merge, split,
 // a restoring put — is an update.
 func OpOf(ch substrate.Change) string {
 	switch ch.Op {
