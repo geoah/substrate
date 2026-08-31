@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	rrule "github.com/teambition/rrule-go"
+
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -406,9 +408,14 @@ func coerceScalar(p *vocabulary.Property, v any) (any, error) {
 			return nil, fmt.Errorf("expected an IANA time zone name")
 		}
 	case vocabulary.DatatypeRecurrence:
+		// The whole rule must parse, not merely look ruleish: a stored
+		// recurrence is what a connector or a reader will one day expand, and
+		// a rule the parser refuses is a row nothing can ever act on. RDATE
+		// and EXDATE lines are refused here too — extra occurrences live in
+		// `rdates`, skipped ones in `exdates`, never inside the rule string.
 		body := strings.TrimPrefix(s, "RRULE:")
-		if !strings.Contains(body, "FREQ=") {
-			return nil, fmt.Errorf("expected an RFC 5545 RRULE string")
+		if _, err := rrule.StrToROption(body); err != nil {
+			return nil, fmt.Errorf("expected an RFC 5545 RRULE string: %w", err)
 		}
 	case vocabulary.DatatypeBlobRef:
 		// Shape only here; the txn checks the blob record exists

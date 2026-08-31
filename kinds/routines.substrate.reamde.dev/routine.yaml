@@ -51,6 +51,11 @@ data:
       type: datetime
       repeated: true
       description: occurrence datetimes the rule skips
+    rdates:
+      type: datetime
+      repeated: true
+      description: extra occurrence datetimes beside the rule (iCalendar's
+        RDATE)
     timezone:
       type: timezone
       description: the IANA zone a time-of-day rule resolves in

@@ -36,6 +36,12 @@ data:
       type: url
       description: the video-conference join link, when the event carries
         one
+    # Google's originalStartTime: which of the rule's slots this occurrence
+    # replaced, when a single instance was moved. Absent on an instance the
+    # rule placed where it sits.
+    originalStartAt:
+      type: datetime
+      description: the slot the rule produced before this occurrence was moved
     eventType:
       type: string
       description: the provider's event kind — default, outOfOffice, focusTime,

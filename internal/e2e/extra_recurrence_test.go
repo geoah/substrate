@@ -24,8 +24,9 @@ func init() {
 	registerCase(600, "CAL-01", "Every rule Google Calendar emits is stored and parseable",
 		"The full RRULE matrix Google Calendar produces (daily, intervals, every weekday, Nth and last "+
 			"weekday of the month, month days, yearly, COUNT, UNTIL in both spellings, WKST, the RRULE: "+
-			"prefix) lands verbatim on a series and compiles under the engine's own RFC 5545 parser; the "+
-			"series type's lax gate and its gaps (RDATE, garbage FREQ values) are pinned by name.",
+			"prefix) lands verbatim on a series and compiles under the engine's RFC 5545 parser, which now "+
+			"guards the series gate too: garbage rules and multi-line RDATE blocks are refused by name, and "+
+			"RDATE extras live in the declared `rdates` list beside `exdates` and the `startsAt` anchor.",
 		xcCaseRuleMatrix)
 	registerCase(610, "CAL-02", "A long weekday series with an override and a cancellation",
 		"A connector explodes three weeks of an every-weekday standup; one instance is moved and retitled "+
@@ -167,19 +168,19 @@ func xcCaseRuleMatrix(c *C) {
 	}
 	c.stepf("all %d rules compile under the engine's RFC 5545 parser (a schedule trigger's write-time gate)", len(xcGoogleRules))
 
-	// The gaps, pinned by name rather than papered over. The series type's
-	// own gate is lax: any string containing FREQ= is admitted, so a rule no
-	// parser accepts still lands on a series while the trigger gate refuses
-	// it.
+	// The gates agree: a rule no parser accepts is refused on a series and on
+	// a schedule alike, naming RFC 5545 and the parser's own reason.
 	garbage := "FREQ=NONSENSE;BYDAY=99XX"
-	rec := c.putRec(seriesCollection, "x-ser-garbage", map[string]any{
-		"summary": "Matrix: garbage the lax gate admits", "recurrence": garbage,
-	}, []edge{{Rel: "calendar", To: edgeTarget{ID: "work"}}})
-	c.requiref(rec.prop("recurrence") == garbage, "the lax gate rewrote the garbage rule: %q", rec.prop("recurrence"))
+	badStatus, badRaw := c.do(http.MethodPut, seriesCollection+"/x-ser-garbage", map[string]any{
+		"properties": map[string]any{"summary": "Matrix: garbage no parser accepts", "recurrence": garbage},
+		"edges":      []edge{{Rel: "calendar", To: edgeTarget{ID: "work"}}},
+	}, nil)
+	c.requiref(badStatus == http.StatusUnprocessableEntity && strings.Contains(string(badRaw), "RFC 5545"),
+		"a garbage rule answered %d on the series, want the 422 naming RFC 5545: %s", badStatus, badRaw)
 	status, raw := probe(garbage)
 	c.requiref(status == http.StatusUnprocessableEntity,
 		"the schedule gate admitted a rule no parser accepts: %d %s", status, raw)
-	c.stepf("GAP pinned: the series `recurrence` gate is `contains FREQ=` only, so `%s` lands on a series while the schedule gate refuses it 422", garbage)
+	c.stepf("`%s` is refused 422 on the series AND on a schedule: one parser guards both gates", garbage)
 
 	// A rule that is not an RRULE at all is refused on the series too.
 	notStatus, notRaw := c.do(http.MethodPut, seriesCollection+"/x-ser-notarule", map[string]any{
@@ -189,16 +190,28 @@ func xcCaseRuleMatrix(c *C) {
 	c.requiref(notStatus == http.StatusUnprocessableEntity && strings.Contains(string(notRaw), "RFC 5545"),
 		"a non-RRULE string answered %d, want the 422 naming RFC 5545: %s", notStatus, notRaw)
 
-	// RDATE has no home: Google's recurrence field is a LIST of lines (RRULE,
-	// RDATE, EXDATE) and the series holds ONE scalar rule plus an exdates
-	// datetime list, so extra RDATE occurrences cannot be expressed. The lax
-	// gate even admits the joined block; pinned as a gap, not a feature.
+	// Google's recurrence field is a LIST of lines. The rule string holds
+	// exactly one RRULE: a joined RRULE+RDATE block is refused, because RDATE
+	// extras have their own declared home now, the `rdates` datetime list
+	// beside `exdates`, and the rule's anchor lives in `startsAt`.
 	block := "RRULE:FREQ=WEEKLY;BYDAY=MO\nRDATE:20260915T093000Z"
-	rec = c.putRec(seriesCollection, "x-ser-rdate", map[string]any{
-		"summary": "Matrix: an RDATE block the model cannot hold", "recurrence": block,
+	blockStatus, blockRaw := c.do(http.MethodPut, seriesCollection+"/x-ser-rdate", map[string]any{
+		"properties": map[string]any{"summary": "Matrix: an RDATE block", "recurrence": block},
+		"edges":      []edge{{Rel: "calendar", To: edgeTarget{ID: "work"}}},
+	}, nil)
+	c.requiref(blockStatus == http.StatusUnprocessableEntity,
+		"a multi-line RRULE+RDATE block answered %d on the series, want 422: %s", blockStatus, blockRaw)
+	withExtras := c.putRec(seriesCollection, "x-ser-extras", map[string]any{
+		"summary":    "Matrix: rule plus RDATE extras and an anchor",
+		"recurrence": "RRULE:FREQ=WEEKLY;BYDAY=MO",
+		"rdates":     []string{"2026-09-15T09:30:00Z"},
+		"exdates":    []string{"2026-09-21T09:30:00Z"},
+		"startsAt":   "2026-08-31T09:30:00Z",
 	}, []edge{{Rel: "calendar", To: edgeTarget{ID: "work"}}})
-	c.requiref(rec.prop("recurrence") == block, "the RDATE block was rewritten: %q", rec.prop("recurrence"))
-	c.stepf("GAP pinned: a multi-line RRULE+RDATE block is admitted as one opaque string; RDATE extras have no declared home (EXDATE does: the `exdates` list)")
+	rdates, _ := withExtras.Properties["rdates"].([]any)
+	c.requiref(len(rdates) == 1 && withExtras.prop("startsAt") != "",
+		"the declared homes did not round-trip: rdates %v, startsAt %q", rdates, withExtras.prop("startsAt"))
+	c.stepf("a multi-line block is refused; RDATE extras live in `rdates`, skips in `exdates`, and the DTSTART anchor in `startsAt`, all round-tripping")
 
 	// The probe trigger leaves with the case.
 	status, _ = c.do(http.MethodDelete, triggerCollection+"/x-rrule-probe", nil, nil)
@@ -233,13 +246,16 @@ func xcCaseWeekdayStandup(c *C) {
 	movedID := fmt.Sprintf("x-cal-standup-%s", monday.AddDate(0, 0, 9).Format("20060102"))
 	movedAt := monday.AddDate(0, 0, 9).Add(2 * time.Hour)
 	moved := c.putRec(eventCollection, movedID, map[string]any{
-		"summary": "Engineering standup (moved for the all-hands)",
-		"at":      movedAt.Format(time.RFC3339),
-		"endsAt":  movedAt.Add(15 * time.Minute).Format(time.RFC3339),
+		"summary":         "Engineering standup (moved for the all-hands)",
+		"at":              movedAt.Format(time.RFC3339),
+		"endsAt":          movedAt.Add(15 * time.Minute).Format(time.RFC3339),
+		"originalStartAt": monday.AddDate(0, 0, 9).Format(time.RFC3339),
 	}, nil)
 	c.requiref(sameIDs(edgeIDs(moved, "series"), "x-ser-standup"),
 		"the override lost its series edge: %v (an update must merge, never prune)", edgeIDs(moved, "series"))
-	c.stepf("overrode one instance in place: same id `%s`, new time +2h, new title; the series edge survived the update", movedID)
+	c.requiref(moved.prop("originalStartAt") != "",
+		"the override does not record the slot it replaced (originalStartAt)")
+	c.stepf("overrode one instance in place: same id `%s`, new time +2h, new title, `originalStartAt` naming the slot it replaced; the series edge survived the update", movedID)
 
 	// Google's cancellation: the week 3 Friday instance is retracted (a
 	// canceled event is DELETED, never flagged) and the series gains the

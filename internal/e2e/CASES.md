@@ -214,8 +214,8 @@ Calendar behaves, and make the range queries a calendar client would.
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
-| CAL-01 | every rule Google Calendar emits stores verbatim and compiles under the engine's RFC 5545 parser; the series gate's laxness and the RDATE gap are pinned by name | | implemented |
-| CAL-02 | a long every-weekday series with a moved-and-retitled instance (override in place) and a canceled one (retracted + exdate); windows return exactly the survivors | | implemented |
+| CAL-01 | every rule Google Calendar emits stores verbatim and compiles under the engine's RFC 5545 parser, which guards the series gate too; RDATE extras live in `rdates`, the anchor in `startsAt` | | implemented |
+| CAL-02 | a long every-weekday series with a moved-and-retitled instance (override in place, `originalStartAt` naming the replaced slot) and a canceled one (retracted + exdate); windows return exactly the survivors | | implemented |
 | CAL-03 | every-2nd-Tuesday and last-Friday series resolve to the right instants per month window; definitions never appear in a time window; /incoming lists a series' occurrences | | implemented |
 | CAL-04 | this-and-following: the old series truncates with UNTIL, a new one carries the rest, the window shows the time change at the boundary | | implemented |
 

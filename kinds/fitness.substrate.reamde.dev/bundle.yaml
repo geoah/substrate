@@ -17,7 +17,8 @@ data:
   # version 3: `workout` binds `recurring` and `workoutlog` binds
   # `occurrencelog`, replacing the copied properties (#122).
   # version 5: `workoutset`'s float property `weight` is `weightKg` (#125).
-  version: 5
+  # version 6: `rdates` lands with the `recurring` trait's move.
+  version: 6
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.
