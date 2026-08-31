@@ -134,7 +134,8 @@ whichever stream finishes stamps them.
   and message mirrors plus core `messaging.substrate.reamde.dev/emailthread` and
   `emailmessage` rows; `calendarsync` drains each calendar's events on that
   calendar's own sync token into event mirrors plus core
-  `calendar.substrate.reamde.dev/calendar` and `calendarevent` rows; `contactsidmigration`
+  `calendar.substrate.reamde.dev/calendar`, `calendarevent` and
+  `calendareventseries` rows; `contactsidmigration`
   is a bounded, trigger-less callable that re-keys older ad-hoc contact ids onto
   the deterministic external-id scheme.
 - **Triggers (6)**: `google-contacts-on-connect`, `google-gmail-on-connect`,
@@ -166,10 +167,19 @@ a reconnect. `gmail.readonly` is one of Google's restricted scopes: a published
 client needs CASA verification, and an External plus Testing client has its
 refresh tokens revoked after seven days.
 
+**Recurring events get a series record.** The event walk keeps Google's
+`singleEvents=true` expansion, so every `calendarevent` is a concrete
+occurrence; beside it, `calendarsync` fetches each distinct recurring master by
+id and writes a `calendareventseries` holding one RRULE line, the EXDATE and
+RDATE dates it parses out, the DTSTART anchor and the zone. The occurrences
+carry the `series` edge, and one Google moved off its slot carries
+`originalStartAt`. The account property `calendarSeries` turns all of it off
+(the flat instance view, one events.get per master saved, and the rule stored
+nowhere).
+
 **What this slice does not do**: no attachment bytes (metadata and the
-attachment id only), no `calendareventseries` (every event row is a concrete
-occurrence, with the series id and recurrence rules kept on the mirror), no
-label kind (core keeps provider label ids as plain strings), and no writeback.
+attachment id only), no label kind (core keeps provider label ids as plain
+strings), and no writeback.
 
 ## GitHub
 

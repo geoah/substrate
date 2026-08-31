@@ -15,7 +15,8 @@ data:
   # version 2: `routine` binds `recurring` and `routinelog` binds
   # `occurrencelog`, replacing the copied properties (#122).
   # version 4: `routine`'s enum property `kind` is `category` (#125).
-  version: 4
+  # version 5: `rdates` lands with the `recurring` trait's move.
+  version: 5
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.

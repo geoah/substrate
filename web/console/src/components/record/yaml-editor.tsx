@@ -267,6 +267,9 @@ export function YamlEditor({
       yamlLanguage(),
       syntaxHighlighting(HIGHLIGHT),
       THEME,
+      // A long scalar (an agent's prompt) must wrap, not scroll sideways:
+      // the manifest view wraps, and the two surfaces read alike.
+      EditorView.lineWrapping,
       autocompletion({ override: [complete], icons: false }),
       linter(diagnostics, { delay: 250 }),
       hover,

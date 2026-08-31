@@ -142,7 +142,14 @@ server_pid() {
 }
 
 wait_healthy() {
+	local pid
+	pid="$(cat "$PIDFILE" 2>/dev/null)"
 	for _ in $(seq 1 60); do
+		# The pid first: a server that died at boot (say, the port was taken)
+		# must not be vouched for by whatever else answers /healthz there.
+		# Liveness, not the command name: right after the fork the child is
+		# still `env`, and failing on that would kill a healthy start.
+		[ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || return 1
 		if curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1; then
 			return 0
 		fi
@@ -197,10 +204,22 @@ server_start() {
 		echo "dev: already running (pid $(server_pid)); mise run dev:restart"
 		return 0
 	fi
+	# A healthz answer with no pid of ours is a FOREIGN server on the port
+	# (another checkout's, usually). Starting would die on bind while the
+	# health poll blesses the squatter, so refuse while the port can be moved.
+	if curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1; then
+		echo "dev: something else answers on :${PORT} and it is not this tree's server; stop it or set SUBSTRATE_DEV_PORT" >&2
+		return 1
+	fi
 	mkdir -p "$STATE"
 	# env -S is not portable enough to be worth it; the list is short.
 	local web=()
 	[ -d "$WEB_DIR" ] && web=("WEB_DIR=${WEB_DIR}")
+	# Egress stays default-closed; the variable passes through only when the
+	# caller set one. The e2e suite needs loopback open, because its
+	# llmprovider rows point at a stub the test process hosts.
+	local egress=()
+	[ -n "${SUBSTRATE_EGRESS_ALLOW:-}" ] && egress=("SUBSTRATE_EGRESS_ALLOW=${SUBSTRATE_EGRESS_ALLOW}")
 	nohup env \
 		"DATABASE_URL=${DSN}" \
 		"PORT=${PORT}" \
@@ -209,6 +228,7 @@ server_start() {
 		"SUBSTRATE_CREDENTIAL_KEY=$(cred_key)" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
 		"${web[@]}" \
+		"${egress[@]}" \
 		bin/substrate >>"$LOGFILE" 2>&1 &
 	echo $! >"$PIDFILE"
 	if ! wait_healthy; then
@@ -258,6 +278,8 @@ cmd_run() {
 	urls
 	local web=()
 	[ -d "$WEB_DIR" ] && web=("WEB_DIR=${WEB_DIR}")
+	local egress=()
+	[ -n "${SUBSTRATE_EGRESS_ALLOW:-}" ] && egress=("SUBSTRATE_EGRESS_ALLOW=${SUBSTRATE_EGRESS_ALLOW}")
 	exec env \
 		"DATABASE_URL=${DSN}" \
 		"PORT=${PORT}" \
@@ -266,6 +288,7 @@ cmd_run() {
 		"SUBSTRATE_CREDENTIAL_KEY=$(cred_key)" \
 		"LOG_LEVEL=${LOG_LEVEL:-info}" \
 		"${web[@]}" \
+		"${egress[@]}" \
 		bin/substrate
 }
 

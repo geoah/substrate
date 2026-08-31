@@ -23,6 +23,7 @@ import { Link } from "@tanstack/react-router"
 import { ArrowUpRightIcon, SendIcon } from "lucide-react"
 import { parseAsString, useQueryState } from "nuqs"
 
+import { AgentManifest } from "@/components/agent/agent-manifest"
 import { ThreadRail } from "@/components/agent/thread-rail"
 import { Transcript } from "@/components/agent/transcript"
 import { Button } from "@/components/ui/button"
@@ -353,6 +354,12 @@ function ChatSurface({ id }: { id: string }) {
           size="sm"
           render={<Link to="/agents">All agents</Link>}
         />
+      </div>
+
+      {/* The declaration behind the conversation: the prompt the loop sends
+          and the tools the model may call, collapsed until asked for. */}
+      <div className="shrink-0 px-6 pb-3">
+        <AgentManifest id={id} />
       </div>
 
       <div className="flex min-h-0 flex-1 border-t">

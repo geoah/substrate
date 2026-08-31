@@ -29,9 +29,32 @@ data:
       type: datetime
       repeated: true
       description: occurrence datetimes the rule skips
+    rdates:
+      type: datetime
+      repeated: true
+      description: extra occurrence datetimes beside the rule (iCalendar's
+        RDATE)
     timezone:
       type: timezone
       description: the IANA zone a time-of-day rule resolves in
+    # The rule alone names no instants: DTSTART is what anchors it, so a
+    # reader (or a connector re-deriving occurrences) can expand
+    # deterministically. Named like the trigger schedule's own anchor.
+    startsAt:
+      type: datetime
+      description: the instant the rule counts from (iCalendar's DTSTART)
+    # [materializedFrom, materializedUntil) is the span whose occurrences
+    # exist as calendarevent rows (decision 0043). The connector that writes
+    # the rows stamps it on every full fetch; the occurrences read expands
+    # the rule only OUTSIDE it, because inside the rows are the truth and a
+    # computed twin would double every synced event. Until is exclusive,
+    # Google's timeMax convention. Unset means no occurrence rows exist.
+    materializedFrom:
+      type: datetime
+      description: the instant occurrence rows are complete from
+    materializedUntil:
+      type: datetime
+      description: the instant occurrence rows stop before (exclusive)
   edges:
     calendar:
       to: calendar

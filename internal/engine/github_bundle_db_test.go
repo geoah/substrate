@@ -421,6 +421,13 @@ func githubSearchFloor(q string) string {
 	return rest
 }
 
+// githubPagedBase anchors the capped-window fixture RELATIVE TO NOW: the
+// bundle's first-seen floor is backfill-derived (now minus last30d), and the
+// fixed 2026-08-01 base this used to be rolled below that floor on
+// 2026-08-31, which silently defused the partition scenario. Ten days back
+// keeps every generated item inside the window whenever the test runs.
+var githubPagedBase = time.Now().UTC().AddDate(0, 0, -10).Truncate(time.Second)
+
 func newFakeGithub(t *testing.T) *fakeGithub {
 	t.Helper()
 	f := &fakeGithub{}
@@ -512,7 +519,7 @@ func newFakeGithub(t *testing.T) *fakeGithub {
 				"total_count": len(items), "incomplete_results": incomplete, "items": items,
 			})
 		}
-		base, _ := time.Parse(time.RFC3339, "2026-08-01T00:00:00Z")
+		base := githubPagedBase
 		switch {
 		case strings.Contains(q, "review-requested:"):
 			// The third search: PR 7 AGAIN (cross-search dedupe at the same
@@ -547,7 +554,8 @@ func newFakeGithub(t *testing.T) *fakeGithub {
 				reply(false, items...)
 				return
 			}
-			reply(false, issueItem("octocat/hello-world", 2000, "I_2000", "2026-08-01T01:00:00Z", "octocat"))
+			reply(false, issueItem("octocat/hello-world", 2000, "I_2000",
+				githubPagedBase.Add(time.Hour).Format("2006-01-02T15:04:05Z"), "octocat"))
 		}
 	})
 	f.ts = httptest.NewServer(mux)
@@ -965,8 +973,9 @@ func TestGithubBundleCursorAndWatermarks(t *testing.T) {
 			break
 		}
 		if next["stage"] == "issues" {
-			if pf, _ := next["pfloor"].(string); pf == "2026-08-01T00:16:39Z" {
-				// item 999's updated_at — the boundary of the full window.
+			// item 999's updated_at — the boundary of the full window.
+			boundary := githubPagedBase.Add(999 * time.Second).Format(time.RFC3339)
+			if pf, _ := next["pfloor"].(string); pf == boundary {
 				if pg, _ := next["page"].(float64); pg != 1 {
 					t.Fatalf("partition hop did not reset the page: %v", next["page"])
 				}

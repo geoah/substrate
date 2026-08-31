@@ -22,7 +22,8 @@ data:
   # taken/skipped to done/skipped, and types `doseUnit` as the schedule's enum
   # (#122).
   # version 5: `observationlog`'s edge `subject` is `derivedFrom` (#125).
-  version: 5
+  # version 6: `rdates` lands with the `recurring` trait's move.
+  version: 6
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.

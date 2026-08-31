@@ -28,6 +28,10 @@ import type {
   EdgeInput,
   EdgeRef,
   EdgeTarget,
+  Occurrence,
+  OccurrenceList,
+  OccurrenceLog,
+  OccurrenceProblem,
   OperationalList,
   PropertyAlternative,
   PropertyMeta,
@@ -119,6 +123,32 @@ const operationalList: Keys<OperationalList<unknown>> = {
   cursor: true,
 }
 
+const occurrence: Keys<Occurrence> = {
+  kind: true,
+  id: true,
+  title: true,
+  at: true,
+  log: true,
+}
+
+const occurrenceLog: Keys<OccurrenceLog> = {
+  kind: true,
+  id: true,
+  status: true,
+}
+
+const occurrenceProblem: Keys<OccurrenceProblem> = {
+  kind: true,
+  id: true,
+  message: true,
+}
+
+const occurrenceList: Keys<OccurrenceList> = {
+  occurrences: true,
+  truncated: true,
+  problems: true,
+}
+
 const mirrors: Record<string, Record<string, true>> = {
   SubstrateRecord: substrateRecord,
   EdgeTarget: edgeTarget,
@@ -129,6 +159,10 @@ const mirrors: Record<string, Record<string, true>> = {
   PutInput: putInput,
   Change: change,
   OperationalList: operationalList,
+  Occurrence: occurrence,
+  OccurrenceLog: occurrenceLog,
+  OccurrenceProblem: occurrenceProblem,
+  OccurrenceList: occurrenceList,
 }
 
 describe("wire types mirror the Go structs", () => {

@@ -148,4 +148,29 @@ describe("the tool card", () => {
     // The card itself still renders: only the proposal is withheld.
     expect(screen.getByText("query")).toBeTruthy()
   })
+
+  it("renders a mutate's stamped changes as op badge + record pill rows", () => {
+    const { container } = renderCard(
+      call({
+        name: "mutate",
+        output: '{"data":{"patch":{"id":"w1"}}}',
+        changes: [
+          { seq: 202, op: "patch", kind: "crew.test.dev/widget", id: "w1" },
+        ],
+      })
+    )
+    // The op, as the change-request voice's badge.
+    expect(screen.getByText("patch")).toBeTruthy()
+    // The record, as the pill: one link straight to the moved record.
+    const pill = container.querySelector(
+      'a[data-to="/data/$authority/$name/$id"]'
+    )
+    expect(JSON.parse(pill?.getAttribute("data-params") ?? "{}")).toEqual({
+      authority: "crew.test.dev",
+      name: "widget",
+      id: "w1",
+    })
+    // The seq stays addressable for a reader who wants the exact entry.
+    expect(screen.getByText("seq 202")).toBeTruthy()
+  })
 })

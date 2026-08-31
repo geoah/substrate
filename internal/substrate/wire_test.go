@@ -43,6 +43,10 @@ var wireTypes = map[string]any{
 	"PropertyAlternative": PropertyAlternative{},
 	"PutInput":            PutInput{},
 	"Change":              Change{},
+	"Occurrence":          Occurrence{},
+	"OccurrenceLog":       OccurrenceLog{},
+	"OccurrenceProblem":   OccurrenceProblem{},
+	"OccurrenceList":      OccurrenceList{},
 	// The operational-list envelope. Element type does not change the field
 	// names, so any instantiation pins items/cursor.
 	"OperationalList": OperationalList[TokenInfo]{},

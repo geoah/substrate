@@ -193,6 +193,44 @@ export interface Change {
   hash?: string
 }
 
+/** One computed slot of a recurring record (`substrate.Occurrence`, decision
+ * 0043): the occurrences read derives it from the stored rule. It is not a
+ * record — no id of its own, no edges — so an agenda merges these with the
+ * temporal window query's rows on (kind, id, at). */
+export interface Occurrence {
+  /** The recurring record whose rule names this instant. */
+  kind: string
+  id: string
+  title?: string
+  at: string
+  /** The occurrencelog row answering this slot, when one exists. */
+  log?: OccurrenceLog
+}
+
+/** The log record that marked an occurrence, with its state (done/skipped). */
+export interface OccurrenceLog {
+  kind: string
+  id: string
+  status?: string
+}
+
+/** One recurring record the expansion could not read (a rule too dense, an
+ * unknown timezone, an anchorless rule); the rest of the answer stands. */
+export interface OccurrenceProblem {
+  kind: string
+  id: string
+  message: string
+}
+
+/** The occurrences read's envelope. No cursor: a computed occurrence has no
+ * stable address to resume from, so a truncated answer means narrow the
+ * window. */
+export interface OccurrenceList {
+  occurrences: Occurrence[]
+  truncated: boolean
+  problems?: OccurrenceProblem[]
+}
+
 /** One row of the cross-collection change feed. The payload's `properties` key
  * names what moved without its values; the values ride with the write's
  * recorded EFFECTS, which the console reads through `changeEffects`

@@ -7,7 +7,7 @@ account over the host OAuth facility and syncs three streams into the graph.
 | -------- | ----------------- | ------------------- | -------------- | ------------------- | ----------------------------- |
 | Contacts | `enabledContacts` | `contacts.readonly` | `contactssync` | `contact`           | `person` (via mapping)        |
 | Gmail    | `enabledGmail`    | `gmail.readonly`    | `gmailsync`    | `thread`, `message` | `emailthread`, `emailmessage` |
-| Calendar | `enabledCalendar` | `calendar.readonly` | `calendarsync` | `calendar`, `event` | `calendar`, `calendarevent`   |
+| Calendar | `enabledCalendar` | `calendar.readonly` | `calendarsync` | `calendar`, `event` | `calendar`, `calendarevent`, `calendareventseries` |
 
 Each stream is a separate toggle, a separate scope, a separate function, a
 separate pair of triggers and a separate slice of connector state on the
@@ -80,7 +80,8 @@ contact and a mail sender therefore converge on **one** person.
   `default`, or a bound one); while it is unresolved or incomplete the bundle
   status carries a setup step and the OAuth flow refuses.
 - **`account`** (accountconfig): one connected account — `email`, the three
-  toggles, `syncFrequency`, `backfillDepth`, the host-written
+  toggles, `syncFrequency`, `backfillDepth`, `calendarSeries` (series linking,
+  on when absent), the host-written
   `tokenRef`/`tokenStatus`/`grantedScopes`, and connector state in **two
   tiers**:
   - **The rollup**, account-level and unprefixed: `lastSyncedAt` and
@@ -279,6 +280,39 @@ invocation.
 - **Every calendar except an `accessRole: freeBusyReader` share** is synced (a
   free/busy share carries no content). `selected` is recorded so a later slice
   can add per-calendar opt-out without a re-sync.
+- **The series slice, on unless `calendarSeries` is false.** A master never
+  appears in a `singleEvents` list, so each distinct `recurringEventId` a page
+  stages is fetched by id (`events.get`) and written as a
+  `calendareventseries` at
+  `ids.external("gcal-series", <the calendar's derived id>, masterId)`. Its
+  `recurrence` is the master's **one RRULE line with the `RRULE:` prefix
+  stripped**: core's `recurrence` property is a single rule the engine parses
+  with rrule-go, and handing it Google's whole `recurrence` list (EXDATE and
+  RDATE lines included) fails validation and rolls the page back. The other
+  lines are parsed into `exdates` and `rdates` as RFC3339 UTC, in both
+  spellings Google sends: `EXDATE;TZID=Europe/London:20260805T130000`, a wall
+  clock in a named zone, and `EXDATE:20260805T120000Z`, already UTC, each
+  comma-separated and over any number of lines. The master's start supplies
+  `startsAt` (the DTSTART anchor) and `timezone`. A master reported
+  `cancelled` deletes the series row instead, and one with no RRULE line
+  writes none. Each instance then carries the `series` edge, plus
+  `originalStartAt` where Google's `originalStartTime` says the occurrence was
+  moved off the slot the rule produced. A **token-less (full) walk** also
+  stamps the series with `materializedFrom` / `materializedUntil`, the
+  `[floor, ceil)` window whose occurrences exist as `calendarevent` rows, so
+  the occurrences read (decision 0043) expands the rule only outside it; a
+  delta walk leaves the stamp alone, because its window is whatever Google
+  remembered from the initial read.
+- **Masters are refetched every delivery, not tracked.** They do not appear in
+  the incremental delta either, so the cache is per delivery (it rides in the
+  paged cursor and clears per calendar): a rule edited at Google lands on
+  whichever later delivery carries an instance of it. That is eventual
+  consistency without a second sync token to expire.
+- **`calendarSeries: false` is the singleEvents-only switch.** The instance
+  walk is unchanged, and no master is fetched, no series record is written and
+  no instance carries the `series` edge or `originalStartAt`. The mirror keeps
+  `recurringEventId`, `recurrence` and `originalStartTime` either way, because
+  it is the verbatim record.
 
 Both stdlib bodies **origin-pin** every credentialed call to their provider
 host over https, or loopback (the test seam), **refuse to follow redirects**
@@ -296,10 +330,11 @@ Stated plainly, because a README that overclaims is worse than none:
   primitive (ticket 008), so `message.attachments` keeps metadata and the
   `attachmentId` a later slice can fetch by. `raw` has every base64 `data`
   field stripped.
-- **No `calendareventseries`.** `singleEvents=true` means every row is a
-  concrete occurrence, which is what core's `calendarevent` is documented to
-  be. `recurringEventId` and `recurrence` ride the mirror so the series slice
-  is a pure follow-up; core's `calendarevent.series` edge stays empty.
+- **No second view of a recurring event.** `singleEvents=true` stays, so every
+  `calendarevent` row is a concrete occurrence and the `calendareventseries`
+  beside it is the rule alone, never an occurrence: the substrate stores a
+  rule and does not expand it
+  ([0039](../../docs/decisions/0039-the-substrate-stores-a-recurrence-rule-and-never-expands-it.md)).
 - **No label type.** Core deliberately chose plain `labelIds` strings over an
   edge into a connector-owned label type, so there is no `label` mirror.
 - **Attendee `responseStatus`, `optional` and `resource` live on the mirror
@@ -482,6 +517,13 @@ observable:
   cancellation rather than a failure, a deleted calendar takes its whole event
   tree with it, and the sync token commits only from the page that omits
   `nextPageToken`;
+- a recurring master is fetched by id ONCE for a delivery that spans two
+  pages, its rule is stored as one prefix-stripped RRULE line with the EXDATE
+  and RDATE lines resolved to UTC, the instances carry the `series` edge and
+  the moved one carries `originalStartAt`
+  (`TestGoogleCalendarSeriesLinksMasters`); with `calendarSeries: false` no
+  master is fetched and no series row or edge exists
+  (`TestGoogleCalendarSeriesOffKeepsFlatView`);
 - a calendar failure is recorded even while gmail already owns the erroring
   rollup;
 - a tampered API base refuses to send the token and stamps `erroring` without

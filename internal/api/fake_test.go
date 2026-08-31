@@ -332,6 +332,10 @@ type fakeDataset struct {
 
 	// error injection, keyed by method name
 	errs map[string]error
+
+	// traits maps a trait identity to the kinds implementing it, mirroring
+	// the engine's Implements filter: unknown trait = validation error.
+	traits map[string][]string
 }
 
 func newFakeDataset(name string) *fakeDataset {
@@ -345,6 +349,7 @@ func newFakeDataset(name string) *fakeDataset {
 		trStates:   map[int64][]substrate.ChangeTrigger{},
 		signals:    make(chan int64, 8),
 		errs:       map[string]error{},
+		traits:     map[string][]string{},
 	}
 	return ds
 }
@@ -696,10 +701,23 @@ func (d *fakeDataset) List(_ context.Context, q substrate.Query) (*substrate.Pag
 		return nil, err
 	}
 	d.lastQuery = q
+	implementors := map[string]bool{}
+	if tr := q.Filter.Implements; tr != "" {
+		kinds, ok := d.traits[tr]
+		if !ok {
+			return nil, fmt.Errorf("%w: no type implements %q", substrate.ErrValidation, tr)
+		}
+		for _, k := range kinds {
+			implementors[k] = true
+		}
+	}
 	var out []*substrate.Record
 	for _, id := range sortedRecordIDs(d.records) {
 		e := d.records[id]
 		if len(q.Filter.Kinds) > 0 && !containsString(q.Filter.Kinds, e.Kind) {
+			continue
+		}
+		if q.Filter.Implements != "" && !implementors[e.Kind] {
 			continue
 		}
 		out = append(out, e)

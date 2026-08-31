@@ -161,6 +161,36 @@ description = "The LIVE suite: real completions from real providers, when the ke
 # but do not loop it.
 run = "go test -count=1 -run '^TestLive' -v ./internal/llm/... ./internal/engine/..."
 
+[tasks."test:e2e"]
+description = "The live end-to-end suite: a fresh user on the dev substrate, left in place for review"
+# Drives the dev substrate over HTTP exactly as a client would: registers a
+# throwaway user, walks the cases in internal/e2e/CASES.md, and writes a
+# markdown report of every step to .dev/e2e/. The repository the run builds is
+# LEFT IN PLACE on purpose, so a human can open the console or substratectl
+# and look at what the suite did; `mise run dev:wipe` is the cleanup. The
+# restart (not `up`) is what guarantees the server IS this tree's binary: an
+# `up` would happily reuse a running server built before your change and hand
+# you a false pass. The test itself skips everywhere SUBSTRATE_E2E_SERVER is
+# unset, so `mise run test` and CI never touch it.
+run = [
+  "mise run build",
+  "mise run build:cli",
+  # Loopback egress: the story agents buy completions from a scripted stub
+  # the test process hosts, and the server dials it through the same egress
+  # gate as any provider. A caller's own allowlist is appended, never
+  # substituted, so it cannot silently close the loopback the suite needs.
+  "SUBSTRATE_EGRESS_ALLOW=\"127.0.0.0/8,::1/128${SUBSTRATE_EGRESS_ALLOW:+,$SUBSTRATE_EGRESS_ALLOW}\" .mise/dev.sh restart",
+  """
+    SUBSTRATE_E2E_SERVER="http://127.0.0.1:${SUBSTRATE_DEV_PORT:-8080}" \
+    SUBSTRATE_E2E_INVITE="${SUBSTRATE_INVITE_CODE:-let-me-in}" \
+    SUBSTRATE_E2E_DSN="$(.mise/dev.sh dsn)" \
+    SUBSTRATE_E2E_CTL="$PWD/bin/substratectl" \
+    SUBSTRATE_E2E_CREDENTIAL_KEY="$(cat .dev/credential.key 2>/dev/null || true)" \
+    SUBSTRATE_E2E_REPORT_DIR="$PWD/.dev/e2e" \
+    go test -count=1 -run '^TestE2E$' -v ./internal/e2e/
+    """,
+]
+
 # =============================================================================
 # Lint and format
 # =============================================================================

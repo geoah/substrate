@@ -11,8 +11,10 @@ import { CheckCircle2Icon, XCircleIcon } from "lucide-react"
 
 import { ChangesList } from "@/components/agent/changes"
 import { ToolCallCard } from "@/components/agent/tool-call"
+import { TriggerContext } from "@/components/agent/trigger-context"
 import {
   decisionNoticeOf,
+  deliveryNoticeOf,
   interactionNoticeOf,
   type TurnView,
 } from "@/lib/api/transcript"
@@ -135,11 +137,20 @@ export function Transcript({
    * send and the first delta is the PREVIOUS run's settled answer. */
   liveKey?: string
 }) {
+  // A triggered thread opens with a delivery envelope as its first user turn;
+  // that turn renders as the trigger's context, not a JSON bubble. Only the
+  // FIRST turn is read this way: a later user message that happens to be JSON
+  // is a message somebody sent.
+  const delivery = turns.length > 0 ? deliveryNoticeOf(turns[0]) : undefined
   return (
     <>
-      {turns.map((turn) => (
-        <Turn key={turn.key} turn={turn} live={turn.key === liveKey} />
-      ))}
+      {turns.map((turn, i) =>
+        i === 0 && delivery ? (
+          <TriggerContext key={turn.key} turn={turn} notice={delivery} />
+        ) : (
+          <Turn key={turn.key} turn={turn} live={turn.key === liveKey} />
+        )
+      )}
     </>
   )
 }

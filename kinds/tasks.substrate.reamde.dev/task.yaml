@@ -16,7 +16,8 @@ data:
   # built-in title slot, which is not a kind's storage (#123).
   # version 5: binds the `recurring` trait, which contracts the
   # recurrence/exdates/timezone triple this kind already declared (#122).
-  version: 6
+  # version 7: `rdates` lands with the `recurring` trait's move.
+  version: 7
   names:
     singular: task
   traits:
@@ -74,6 +75,11 @@ data:
       type: datetime
       repeated: true
       description: occurrence datetimes the rule skips
+    rdates:
+      type: datetime
+      repeated: true
+      description: extra occurrence datetimes beside the rule (iCalendar's
+        RDATE)
     timezone:
       type: timezone
       description: the IANA zone a time-of-day rule resolves in

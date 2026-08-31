@@ -22,7 +22,14 @@ metadata:
 data:
   # version 3: `calendareventseries` binds `recurring`, replacing the copied
   # recurrence/exdates/timezone triple (#122).
-  version: 4
+  # version 5: the series slice's storage. `calendareventseries` gains
+  # `rdates` (the trait moved) and `startsAt` (the rule's DTSTART anchor);
+  # `calendarevent` gains `originalStartAt`, the instant the rule produced
+  # before a connector's override moved the occurrence.
+  # version 6: `calendareventseries` gains `materializedFrom` /
+  # `materializedUntil`, the span whose occurrences exist as rows, so the
+  # occurrences read (decision 0043) expands the rule only outside it.
+  version: 6
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A VOCABULARY bundle (see people.substrate.reamde.dev): kinds only, imported from the

@@ -5,13 +5,16 @@ import {
   getToken,
   hasSession,
   maskedToken,
+  saveSession,
   sessionExpired,
+  setSessionChangedHandler,
   setToken,
   setUnauthorizedHandler,
 } from "./session"
 
 describe("session", () => {
   beforeEach(() => {
+    setSessionChangedHandler(null)
     clearSession()
     setUnauthorizedHandler(null)
   })
@@ -38,6 +41,33 @@ describe("session", () => {
     setToken("substrate_tok_x")
     expect(() => sessionExpired()).not.toThrow()
     expect(getToken()).toBeNull()
+  })
+  // Every cached answer belongs to one repository and no query key names
+  // which, so signing in as somebody else must drop the cache. These pin the
+  // signal that does it: a sidebar built from the previous repository's kinds
+  // links collections this one never imported.
+  it("fires the session-changed handler on every identity write", () => {
+    const changed = vi.fn()
+    setSessionChangedHandler(changed)
+
+    setToken("substrate_tok_probe")
+    expect(changed).toHaveBeenCalledTimes(1)
+
+    saveSession("substrate_tok_second", "ada", "tok-1")
+    expect(changed).toHaveBeenCalledTimes(2)
+
+    clearSession()
+    expect(changed).toHaveBeenCalledTimes(3)
+  })
+
+  it("fires the session-changed handler when a 401 drops the session", () => {
+    saveSession("substrate_tok_first", "ada", "tok-1")
+    const changed = vi.fn()
+    setSessionChangedHandler(changed)
+
+    sessionExpired()
+    expect(changed).toHaveBeenCalledTimes(1)
+    expect(hasSession()).toBe(false)
   })
 })
 
