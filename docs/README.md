@@ -20,6 +20,8 @@ API call that completes a task. Start at the
 
 - [The data model](data-model.md) — the repository and its changelog, records and
   kinds, property types, traits, and validation
+- [Traits and interfaces](traits.md) — shared properties, declaring your own,
+  and the cross-kind queries binding unlocks
 - [Vocabulary as records](vocabulary.md) — the declarable kinds, admission,
   and how the vocabulary evolves
 - [Projection](projection.md) — record mappings, managed properties, and merges

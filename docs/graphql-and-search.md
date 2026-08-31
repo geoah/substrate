@@ -42,7 +42,7 @@ cursor), returns `{changes, from}`, and echoes the last seq back as `from`.
 
 Every declared kind gets a generated GraphQL type with its properties as
 fields; interfaces span authorities (`Temporal`, `HasStatus`: everything with
-that [trait](data-model.md#traits) or that state, so "everything with a
+that [trait](traits.md) or that state, so "everything with a
 status, anywhere" is one query). Single-record lookups are ref-addressed:
 identity is the (kind, id) pair, so `record` takes both:
 

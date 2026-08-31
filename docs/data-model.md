@@ -565,7 +565,9 @@ traits:
 Because implementing a trait is queryable, a client can page every record of
 a trait (`GET …/core.substrate.reamde.dev/trait/{id}/records`), which is what the
 console's connections view over `accountconfig` accounts is.
-[Bundles](bundles.md) puts these three interfaces to work.
+[Bundles](bundles.md) puts these three interfaces to work, and
+[traits and interfaces](traits.md) is the worked tour: declaring a trait of
+your own, and every query surface binding unlocks.
 
 ## Validation and state machines
 
