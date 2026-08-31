@@ -62,6 +62,7 @@ const (
 	coreMessageType  = "messaging.substrate.reamde.dev/emailmessage"
 	coreCalendarType = "calendar.substrate.reamde.dev/calendar"
 	coreEventType    = "calendar.substrate.reamde.dev/calendarevent"
+	coreSeriesType   = "calendar.substrate.reamde.dev/calendareventseries"
 )
 
 // TestGoogleContactsBundleAdmitsSchema loads the builtin schema, then installs

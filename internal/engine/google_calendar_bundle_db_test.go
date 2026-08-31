@@ -64,8 +64,9 @@ func TestGoogleCalendarBundleAdmitsSchema(t *testing.T) {
 	mustProps(t, evt, "account", "calendarId", "eventId", "icalUID",
 		"syncGeneration", "status", "summary", "description", "location",
 		"startAt", "endAt", "allDay", "timezone", "recurringEventId",
-		"recurrence", "meetingURL", "eventType", "transparency", "visibility",
-		"providerUpdatedAt", "organizer", "attendees", "raw")
+		"originalStartTime", "recurrence", "meetingURL", "eventType",
+		"transparency", "visibility", "providerUpdatedAt", "organizer",
+		"attendees", "raw")
 	// responseStatus rides the mirror because an EDGE carries no properties,
 	// so the core row's `attendees` edge cannot hold it.
 	att, _ := evt.Prop("attendees")
@@ -78,8 +79,9 @@ func TestGoogleCalendarBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("calendar sync %s did not register: %v", googleCalendarFn, err)
 	}
 	mustEmit(t, fn, googleCalendarType, googleEventType, googleAddressType,
-		googleAccountType, coreCalendarType, coreEventType)
-	mustRead(t, fn, googleCalendarType, googleEventType, coreCalendarType, coreEventType)
+		googleAccountType, coreCalendarType, coreEventType, coreSeriesType)
+	mustRead(t, fn, googleCalendarType, googleEventType, coreCalendarType,
+		coreEventType, coreSeriesType)
 	if strings.Contains(fn.Source, "# /// script") {
 		t.Fatalf("calendarsync declares PEP 723 dependencies — it is meant to run on the dependency-free fast path")
 	}
@@ -104,6 +106,19 @@ func TestGoogleCalendarBundleAdmitsSchema(t *testing.T) {
 	if _, ok := acct.Prop("calendarSyncToken"); ok {
 		t.Fatalf("the account carries a calendar sync token — it belongs on each calendar mirror")
 	}
+	// The series switch is the owner's, and it defaults ON: a create that
+	// says nothing gets series linking, and the body reads an ABSENT value
+	// (every account written before this property existed) as on too.
+	series, ok := acct.Prop("calendarSeries")
+	if !ok {
+		t.Fatalf("account misses calendarSeries")
+	}
+	if series.Writer != vocabulary.WriterOwner {
+		t.Fatalf("account.calendarSeries writer = %q, want owner", series.Writer)
+	}
+	if series.Default != true {
+		t.Fatalf("account.calendarSeries default = %v, want true", series.Default)
+	}
 }
 
 // --- the loopback Google Calendar -------------------------------------------
@@ -119,6 +134,9 @@ type fakeGCal struct {
 	// pages is the events walk for the primary calendar, one entry per page;
 	// the LAST page is the only one carrying nextSyncToken.
 	pages [][]any
+	// masters answers events.get by event id: a series master, which a
+	// singleEvents list never carries. An id with no entry answers 404.
+	masters map[string]any
 	// syncToken, once non-empty, is what the final page hands back.
 	syncToken string
 	// gone makes any request CARRYING a syncToken answer 410 GONE.
@@ -137,7 +155,29 @@ func (f *fakeGCal) seen() []string {
 // walked?" an assertion that could never fail.
 const calendarPath = "/calendar/v3/calendars/"
 
-func isEventsCall(q string) bool { return strings.HasPrefix(q, calendarPath) }
+// isEventsCall is the events LIST walk alone. An events.get for one master
+// shares the prefix and is a different question ("was this master fetched?"),
+// so it is asked separately: counting it as a walk would have made the
+// deleted-calendar assertion below fire on a series fetch.
+func isEventsCall(q string) bool {
+	return strings.HasPrefix(q, calendarPath) && !isMasterCall(q)
+}
+
+func isMasterCall(q string) bool {
+	return strings.HasPrefix(q, calendarPath) && masterIDOf(q) != ""
+}
+
+// masterIDOf reads the event id off an events.get path
+// (/calendar/v3/calendars/{calendarId}/events/{eventId}); the list path ends
+// at /events and yields "".
+func masterIDOf(pathOrQuery string) string {
+	path, _, _ := strings.Cut(pathOrQuery, "?")
+	_, id, ok := strings.Cut(path, "/events/")
+	if !ok {
+		return ""
+	}
+	return id
+}
 
 func newFakeGCal(t *testing.T) *fakeGCal {
 	t.Helper()
@@ -174,6 +214,17 @@ func newFakeGCal(t *testing.T) *fakeGCal {
 	})
 	mux.HandleFunc(calendarPath, func(w http.ResponseWriter, r *http.Request) {
 		record(r)
+		if mid := masterIDOf(r.URL.Path); mid != "" {
+			f.mu.Lock()
+			master := f.masters[mid]
+			f.mu.Unlock()
+			if master == nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			writeJSON(w, master)
+			return
+		}
 		q := r.URL.Query()
 		if f.gone && q.Get("syncToken") != "" {
 			w.WriteHeader(http.StatusGone)
@@ -240,6 +291,50 @@ func gcalEvent(id, summary, start, end string) map[string]any {
 			},
 		},
 	}
+}
+
+// gcalRecurring is gcalEvent plus what a singleEvents expansion carries for
+// an occurrence of a series: the master it came from and, when the occurrence
+// was MOVED, the slot the rule originally produced.
+func gcalRecurring(id, summary, start, end, masterID, originalStart string) map[string]any {
+	item := gcalEvent(id, summary, start, end)
+	item["recurringEventId"] = masterID
+	if originalStart != "" {
+		item["originalStartTime"] = map[string]any{"dateTime": originalStart}
+	}
+	return item
+}
+
+// gcalMaster is what events.get answers for a recurring master. A master never
+// appears in a singleEvents list, so this is the only place its rule exists,
+// and Google sends the rule, the skipped dates and the extra dates as ONE
+// list of iCalendar lines, in both the zoned and the UTC spelling.
+func gcalMaster(id, summary string) map[string]any {
+	return map[string]any{
+		"id": id, "status": "confirmed", "summary": summary,
+		"recurrence": []any{
+			"RRULE:FREQ=WEEKLY;BYDAY=WE",
+			"EXDATE;TZID=Europe/London:20260805T130000",
+			"RDATE:20260819T130000Z",
+		},
+		"start": map[string]any{
+			"dateTime": "2026-07-15T13:00:00+01:00", "timeZone": "Europe/London",
+		},
+		"end": map[string]any{
+			"dateTime": "2026-07-15T14:00:00+01:00", "timeZone": "Europe/London",
+		},
+	}
+}
+
+// gcalStrings reads a repeated property back as the strings it holds.
+func gcalStrings(value any) []string {
+	list, _ := value.([]any)
+	out := make([]string, 0, len(list))
+	for _, v := range list {
+		s, _ := v.(string)
+		out = append(out, s)
+	}
+	return out
 }
 
 func calStepProps(extra map[string]any) map[string]any {
@@ -415,6 +510,185 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 	}
 	if s, _ := stamp["calendarBackfillAnchorAt"].(string); s == "" {
 		t.Fatalf("calendarBackfillAnchorAt not stamped on the first run")
+	}
+}
+
+// TestGoogleCalendarSeriesLinksMasters drives the series slice over a walk
+// whose two pages both carry instances of ONE master: the master is fetched by
+// id (a singleEvents list never carries it) and fetched ONCE for the whole
+// delivery, its rule is stored as a single RRULE line with the prefix
+// stripped, its EXDATE and RDATE lines land as RFC3339 UTC from both
+// spellings, every instance carries the `series` edge, the MOVED instance
+// carries `originalStartAt`, and the mirror keeps Google's own
+// `originalStartTime` verbatim.
+func TestGoogleCalendarSeriesLinksMasters(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fake, ds := newCalendarFixture(t)
+	fake.masters = map[string]any{"master-1": gcalMaster("master-1", "Weekly sync")}
+	// The slot the rule produced, which this occurrence was dragged off.
+	slot := googleAhead(96 * time.Hour)
+	fake.pages = [][]any{
+		{
+			gcalEvent("e1", "Standup", googleAhead(24*time.Hour), googleAhead(25*time.Hour)),
+			gcalRecurring("r1", "Weekly sync", googleAhead(48*time.Hour),
+				googleAhead(49*time.Hour), "master-1", ""),
+		},
+		// The moved occurrence, on the SECOND page: the master must not be
+		// fetched again for it, which is what the delivery's cache is for.
+		{gcalRecurring("r2", "Weekly sync", googleAhead(72*time.Hour),
+			googleAhead(73*time.Hour), "master-1", slot)},
+	}
+
+	s := newGoogleStepper(t, ds, googleCalendarFn, googleStepConfig(calStepProps(nil)))
+	s.drainApplying(nil)
+
+	calID := substratefn.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
+	seriesID := substratefn.ExternalID("gcal-series", calID, "master-1")
+	series, err := ds.Get(ctx, coreSeriesType, seriesID)
+	if err != nil {
+		t.Fatalf("the recurring master wrote no series: %v", err)
+	}
+	// ONE rule, prefix stripped. The engine parses this property with
+	// rrule-go and refuses a multi-line block, so handing it Google's whole
+	// recurrence list would fail the page's transaction.
+	if got := series.Properties["recurrence"]; got != "FREQ=WEEKLY;BYDAY=WE" {
+		t.Fatalf("series recurrence = %v, want the RRULE line alone", got)
+	}
+	if got := series.Properties["timezone"]; got != "Europe/London" {
+		t.Fatalf("series timezone = %v", got)
+	}
+	// DTSTART, the anchor the rule counts from, resolved through the zone.
+	if got := series.Properties["startsAt"]; got != "2026-07-15T12:00:00Z" {
+		t.Fatalf("series startsAt = %v, want the master's start in UTC", got)
+	}
+	// `EXDATE;TZID=Europe/London:20260805T130000` is a local wall clock in a
+	// named zone; `RDATE:20260819T130000Z` is already UTC. Both land as UTC.
+	if got := gcalStrings(series.Properties["exdates"]); len(got) != 1 ||
+		got[0] != "2026-08-05T12:00:00Z" {
+		t.Fatalf("series exdates = %v, want the zoned EXDATE resolved to UTC", got)
+	}
+	if got := gcalStrings(series.Properties["rdates"]); len(got) != 1 ||
+		got[0] != "2026-08-19T13:00:00Z" {
+		t.Fatalf("series rdates = %v, want the UTC RDATE", got)
+	}
+	if targets := series.Edges["calendar"]; len(targets) != 1 || targets[0].ID != calID {
+		t.Fatalf("series calendar edge = %v", series.Edges["calendar"])
+	}
+
+	// Every instance of the master points at it; the one-off points at
+	// nothing.
+	for _, id := range []string{"r1", "r2"} {
+		row, err := ds.Get(ctx, coreEventType, substratefn.ExternalID("gcal-event", calID, id))
+		if err != nil {
+			t.Fatalf("core event %s did not sync: %v", id, err)
+		}
+		if targets := row.Edges["series"]; len(targets) != 1 || targets[0].ID != seriesID {
+			t.Fatalf("core event %s series edge = %v, want %s", id, row.Edges["series"], seriesID)
+		}
+	}
+	oneOff, err := ds.Get(ctx, coreEventType, substratefn.ExternalID("gcal-event", calID, "e1"))
+	if err != nil {
+		t.Fatalf("core event e1 did not sync: %v", err)
+	}
+	if len(oneOff.Edges["series"]) != 0 {
+		t.Fatalf("a one-off event was linked to a series: %v", oneOff.Edges["series"])
+	}
+
+	// The moved instance carries the slot in both halves: the resolved instant
+	// on core, Google's own value on the mirror.
+	r2 := substratefn.ExternalID("gcal-event", calID, "r2")
+	moved, err := ds.Get(ctx, coreEventType, r2)
+	if err != nil {
+		t.Fatalf("get the moved instance: %v", err)
+	}
+	if got, _ := moved.Properties["originalStartAt"].(string); got != slot {
+		t.Fatalf("core originalStartAt = %q, want the rule's slot %q", got, slot)
+	}
+	mirror, err := ds.Get(ctx, googleEventType, r2)
+	if err != nil {
+		t.Fatalf("get the moved instance's mirror: %v", err)
+	}
+	if got, _ := mirror.Properties["originalStartTime"].(string); got != slot {
+		t.Fatalf("mirror originalStartTime = %q, want Google's own %q", got, slot)
+	}
+	// An instance the rule placed where it sits carries no slot at all.
+	unmoved, err := ds.Get(ctx, coreEventType, substratefn.ExternalID("gcal-event", calID, "r1"))
+	if err != nil {
+		t.Fatalf("get the unmoved instance: %v", err)
+	}
+	if _, ok := unmoved.Properties["originalStartAt"]; ok {
+		t.Fatalf("an instance the rule placed carries originalStartAt: %v", unmoved.Properties)
+	}
+
+	// One events.get for the whole delivery, across both pages, and the
+	// instance list itself never stopped being a singleEvents walk.
+	var fetched int
+	for _, q := range fake.seen() {
+		if isMasterCall(q) {
+			fetched++
+			if got := masterIDOf(q); got != "master-1" {
+				t.Fatalf("an events.get asked for %q, want the master", got)
+			}
+		}
+		if isEventsCall(q) && !strings.Contains(q, "singleEvents=true") {
+			t.Fatalf("the series slice changed the instance list: %q", q)
+		}
+	}
+	if fetched != 1 {
+		t.Fatalf("the master was fetched %d times, want once per delivery: %v",
+			fetched, fake.seen())
+	}
+}
+
+// TestGoogleCalendarSeriesOffKeepsFlatView pins the switch: with
+// `calendarSeries` false the sync is the singleEvents-only view it was before
+// the series slice: no master fetched, no series record, no `series` edge and
+// no `originalStartAt`, while the mirror still keeps Google's verbatim fields.
+func TestGoogleCalendarSeriesOffKeepsFlatView(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fake, ds := newCalendarFixture(t)
+	fake.masters = map[string]any{"master-1": gcalMaster("master-1", "Weekly sync")}
+	slot := googleAhead(96 * time.Hour)
+	fake.pages = [][]any{{gcalRecurring("r2", "Weekly sync",
+		googleAhead(72*time.Hour), googleAhead(73*time.Hour), "master-1", slot)}}
+
+	props := calStepProps(map[string]any{"calendarSeries": false})
+	newGoogleStepper(t, ds, googleCalendarFn, googleStepConfig(props)).drainApplying(nil)
+
+	calID := substratefn.ExternalID("gcal-calendar", "acct-step", "primary@example.com")
+	seriesID := substratefn.ExternalID("gcal-series", calID, "master-1")
+	if _, err := ds.Get(ctx, coreSeriesType, seriesID); err == nil {
+		t.Fatal("a series record was written with series linking off")
+	}
+	for _, q := range fake.seen() {
+		if isMasterCall(q) {
+			t.Fatalf("a master was fetched with series linking off: %q", q)
+		}
+	}
+
+	r2 := substratefn.ExternalID("gcal-event", calID, "r2")
+	core, err := ds.Get(ctx, coreEventType, r2)
+	if err != nil {
+		t.Fatalf("the instance did not sync: %v", err)
+	}
+	if len(core.Edges["series"]) != 0 {
+		t.Fatalf("an instance carries a series edge with linking off: %v", core.Edges["series"])
+	}
+	if _, ok := core.Properties["originalStartAt"]; ok {
+		t.Fatalf("an instance carries originalStartAt with linking off: %v", core.Properties)
+	}
+	// The mirror is verbatim provenance either way.
+	mirror, err := ds.Get(ctx, googleEventType, r2)
+	if err != nil {
+		t.Fatalf("the instance mirror did not sync: %v", err)
+	}
+	if got, _ := mirror.Properties["recurringEventId"].(string); got != "master-1" {
+		t.Fatalf("mirror recurringEventId = %q", got)
+	}
+	if got, _ := mirror.Properties["originalStartTime"].(string); got != slot {
+		t.Fatalf("mirror originalStartTime = %q, want Google's own %q", got, slot)
 	}
 }
 

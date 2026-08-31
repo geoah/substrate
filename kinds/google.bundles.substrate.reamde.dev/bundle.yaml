@@ -63,7 +63,12 @@ data:
   # duration datatype (ISO 8601); the retype rides core's function kind bump.
   # version 10: the flattener cuts inline data: URIs before the source cap and
   # backs off out of a link label at the body cap.
-  version: 10
+  # version 11: the series slice. calendarsync fetches each recurring master
+  # beside the singleEvents instances and writes a calendareventseries with
+  # its rule, its skipped and extra dates and its anchor; the instances carry
+  # the `series` edge and `originalStartAt`; the account's `calendarSeries`
+  # switch turns all of it off; the event mirror gains `originalStartTime`.
+  version: 11
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -295,6 +300,24 @@ data:
       displayName: Backfill depth
       description: "how far back gmail and calendar backfill on their first
         run; contacts ignores it"
+    # The singleEvents-only switch. The instance list stays singleEvents=true
+    # either way (Google does the expanding); this decides whether the sync
+    # ALSO fetches each distinct recurring master and writes the series.
+    # ABSENT MEANS ON: the property landed after accounts existed, and a
+    # default fills a create, never a live row, so the body reads a missing
+    # value as true rather than dropping series linking for every account
+    # written before this version. Turning it OFF costs the link: two
+    # occurrences of one repeating event become unrelated rows, and the rule
+    # behind them is stored nowhere at all.
+    calendarSeries:
+      type: bool
+      default: true
+      writer: owner
+      displayName: Series linking
+      description: "write a calendareventseries per recurring master, one
+        events.get each per sync; off leaves the flat instance view, where
+        the RRULE, its EXDATEs, its RDATEs and the moved slots are stored
+        nowhere"
     # Connector STATE the sync bodies own (writer: connector — only installed
     # bundle code, a sync function, may set these; neither the owner nor
     # the OAuth facility writes them — review-google #2). Two tiers, and the
@@ -2928,13 +2951,13 @@ data:
 ---
 # ---- the calendar mirror: one event instance -------------------------------
 # `singleEvents=true`, so every row is a concrete OCCURRENCE, which is what
-# core's calendarevent is documented to be. Series masters are NOT expanded
-# into `calendareventseries` this slice (that needs a separate events.get per
-# distinct master and a second core type with its own required calendar edge);
-# `recurringEventId` and `recurrence` ride along so the series slice is a pure
-# follow-up. Attendee `responseStatus`, `optional` and `resource` stay HERE:
-# an edge carries no properties, so the core row's `attendees` edge cannot
-# hold them.
+# core's calendarevent is documented to be. The master an instance came from
+# is fetched separately and written as a `calendareventseries` (the account's
+# `calendarSeries` switch); `recurringEventId`, `recurrence` and
+# `originalStartTime` ride HERE verbatim, in Google's own spelling, beside the
+# resolved instants the core row carries. Attendee `responseStatus`,
+# `optional` and `resource` stay here too: an edge carries no properties, so
+# the core row's `attendees` edge cannot hold them.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: google.bundles.substrate.reamde.dev/event
@@ -3013,6 +3036,14 @@ data:
       displayName: Series ID
       description: the master event id when this instance was exploded from
         a series
+    # A string, not a datetime: the mirror keeps what Google sent, which is a
+    # date on an all-day series. The resolved instant is core's
+    # calendarevent.originalStartAt.
+    originalStartTime:
+      type: string
+      displayName: Original start
+      description: "the slot the rule produced before this instance was moved,
+        as Google sent it (a dateTime, or a date on an all-day series)"
     recurrence:
       type: string
       repeated: true
@@ -3092,17 +3123,20 @@ data:
       - google.bundles.substrate.reamde.dev/account
       - calendar.substrate.reamde.dev/calendar
       - calendar.substrate.reamde.dev/calendarevent
+      - calendar.substrate.reamde.dev/calendareventseries
     # The calendar mirror holds each calendar's own sync token; the event
     # mirror drives the sweep. The core types are read ONLY to prove a row
     # exists before retracting it — every delta carries `cancelled` entries
     # for events this window never stored, and deleting one that was never
-    # written is ErrNotFound and would fail the whole delivery.
+    # written is ErrNotFound and would fail the whole delivery. The series is
+    # read for the same reason, before a cancelled master's row is dropped.
     reads:
       kinds:
         - google.bundles.substrate.reamde.dev/calendar
         - google.bundles.substrate.reamde.dev/event
         - calendar.substrate.reamde.dev/calendar
         - calendar.substrate.reamde.dev/calendarevent
+        - calendar.substrate.reamde.dev/calendareventseries
       budgets:
         calls: 256
         rows: 10000
@@ -3128,6 +3162,17 @@ data:
     followed by a sweep scoped to the same window, which is what turns the
     deletes a full read cannot tombstone into actual retractions.
 
+    THE SERIES SLICE (the account's `calendarSeries` switch, on unless it is
+    explicitly false). The instance list stays singleEvents=true, so Google
+    keeps doing the expanding and overrides and cancellations behave exactly
+    as they did. Beside it, each distinct recurringEventId a page staged has
+    its MASTER fetched by id and written as a calendareventseries: the one
+    RRULE line, the EXDATE and RDATE lines parsed into `exdates`/`rdates`,
+    the DTSTART anchor and the zone. The instances then carry the `series`
+    edge and, where the master's slot was moved, `originalStartAt`. With the
+    switch off none of that is written and the core rows are the flat
+    instance view.
+
     Per-account isolation (F2/F3): the per-account drain is try/except; a
     failure stamps THAT account's rollup syncStatus "erroring: <reason>" once
     and leaves both lastSyncedAt and calendarLastSyncedAt alone.
@@ -3148,6 +3193,7 @@ data:
     EVENT_TYPE = AUTHORITY + "/event"
     CORE_CALENDAR = "calendar.substrate.reamde.dev/calendar"
     CORE_EVENT = "calendar.substrate.reamde.dev/calendarevent"
+    CORE_SERIES = "calendar.substrate.reamde.dev/calendareventseries"
 
     CAL_API = "https://www.googleapis.com"
     CAL_HOST = "www.googleapis.com"
@@ -3164,6 +3210,11 @@ data:
     # event exploded to 2099 would otherwise page forever.
     HORIZON_DAYS = 365
     REASON_MAX = 200
+    # How many fetched masters ride in the cursor. The cursor is checkpointed
+    # on every page, so this is what keeps it small: past the cap a master is
+    # fetched again on the next page, which costs one call and never
+    # correctness, since a series row is put in the same page as its edge.
+    MASTER_CACHE = 500
     BACKFILL_DAYS = {"none": 0, "last30d": 30, "last90d": 90, "last1y": 365}
     # The RFC 5322 dot-atom production, the same one gmailsync uses and for
     # the same reason: `emailaddress.address` is an `email`-kind property and
@@ -3240,6 +3291,12 @@ data:
         return "/calendar/v3/calendars/%s/events" % urllib.parse.quote(cid, safe="")
 
 
+    def _master_path(cid, mid):
+        # events.get: a series MASTER never appears in a singleEvents list, so
+        # the only way to it is by id.
+        return "%s/%s" % (_events_path(cid), urllib.parse.quote(mid, safe=""))
+
+
     def _calendar_id(host, aid, cid):
         return host.ids.external("gcal-calendar", aid, cid)
 
@@ -3251,6 +3308,12 @@ data:
         # id migration exists to undo. The calendar's own derived id is the
         # account component of the event's.
         return host.ids.external("gcal-event", cref, eid)
+
+
+    def _series_id(host, cref, mid):
+        # Nested on the calendar's derived id for the same reason an event is:
+        # a master id is unique per CALENDAR, not globally.
+        return host.ids.external("gcal-series", cref, mid)
 
 
     def _address_id(host, aid, addr):
@@ -3303,6 +3366,14 @@ data:
 
     def _wants(acct):
         return bool((acct.get("properties") or {}).get("enabledCalendar"))
+
+
+    def _series_on(props):
+        # ABSENT IS ON. `default: true` fills a create and never a live row,
+        # so an account written before this property existed reads as missing
+        # and must still get its series records.
+        wanted = props.get("calendarSeries")
+        return True if wanted is None else bool(wanted)
 
 
     def _due(props):
@@ -3386,6 +3457,121 @@ data:
         return ""
 
 
+    def _ical_instant(value, zone):
+        # iCalendar's own spellings, all three: 20260805T130000Z (UTC),
+        # 20260805T130000 (local to the line's TZID, or the calendar's zone)
+        # and 20260805 (an all-day series' date).
+        text = str(value or "").strip()
+        if text.endswith("Z"):
+            text, zone = text[:-1], _dt.timezone.utc
+        try:
+            stamp = _dt.datetime.strptime(
+                text, "%Y%m%dT%H%M%S" if "T" in text else "%Y%m%d")
+        except ValueError:
+            return ""
+        return _iso(stamp.replace(tzinfo=zone))
+
+
+    def _ical_dates(lines, keyword, default_zone):
+        """Every datetime an EXDATE or RDATE line carries, as RFC3339 UTC.
+        Both forms Google sends are read (`EXDATE;TZID=Europe/London:
+        20260805T130000` and `EXDATE:20260805T130000Z`), with
+        comma-separated values, over any number of lines."""
+        out = []
+        for line in lines or []:
+            head, sep, values = str(line).strip().partition(":")
+            if not sep:
+                continue
+            params = head.split(";")
+            if params[0].strip().upper() != keyword:
+                continue
+            zone = default_zone
+            for param in params[1:]:
+                name, _, value = param.partition("=")
+                if name.strip().upper() == "TZID":
+                    zone = _zone(value.strip())
+            for value in values.split(","):
+                stamp = _ical_instant(value, zone)
+                if stamp and stamp not in out:
+                    out.append(stamp)
+        return out
+
+
+    def _rrule(lines):
+        """The master's ONE RRULE line, with the `RRULE:` prefix STRIPPED.
+        core's `recurrence` holds a single RFC 5545 rule the engine parses
+        with rrule-go, and Google sends EXDATE and RDATE lines in the same
+        list: passing the block whole fails validation and takes the page's
+        whole transaction with it, so the other lines become `exdates` and
+        `rdates`. A second RRULE, which iCalendar deprecates, is ignored."""
+        for line in lines or []:
+            text = str(line).strip()
+            if text.upper().startswith("RRULE:"):
+                return text[len("RRULE:"):].strip()
+        return ""
+
+
+    def _series_props(master, cal_zone):
+        """The calendareventseries a master yields, or None when it carries
+        no RRULE at all: the rule is the record's reason to exist."""
+        lines = master.get("recurrence") or []
+        rule = _rrule(lines)
+        if not rule:
+            return None
+        start = master.get("start") or {}
+        tzname = _zone_name(start.get("timeZone"))
+        zone = _zone(tzname) if tzname else cal_zone
+        # Both lists are written on every pass, empty included: a put merges,
+        # so a skipped date the owner removed at Google would otherwise stand
+        # forever.
+        props = {"recurrence": rule,
+                 "exdates": _ical_dates(lines, "EXDATE", zone),
+                 "rdates": _ical_dates(lines, "RDATE", zone)}
+        if master.get("summary"):
+            props["summary"] = str(master["summary"])
+        if tzname:
+            props["timezone"] = tzname
+        # The rule alone names no instants: DTSTART is the anchor a reader
+        # expands from.
+        starts = _instant(start, zone)
+        if starts:
+            props["startsAt"] = starts
+        return props
+
+
+    def _stage_series(host, token, cid, cref, mid, cal_zone):
+        """Fetch ONE recurring master and stage its series row. Returns the
+        id instances link to, or "" when there is nothing to link: a master
+        that is gone, unreadable, cancelled or ruleless."""
+        sref = _series_id(host, cref, mid)
+        try:
+            master = _get(token, _master_path(cid, mid))
+        except urllib.error.HTTPError as e:
+            # A master the instance names but the API will not hand over is
+            # one missing link, not a failed delivery: the instances still
+            # sync. Anything but gone-or-forbidden still raises, because a 401
+            # is the dead grant every phase surfaces.
+            if _status(e) not in (403, 404, 410):
+                raise
+            host.log("google-calendar: master %s of %s unreadable (HTTP %s), "
+                     "its instances stay unlinked" % (mid, cid, _status(e)))
+            return ""
+        if str(master.get("status") or "") == "cancelled":
+            # The series is retracted like everything else core holds, and
+            # only if it is actually there: deleting a row that was never
+            # written is ErrNotFound and fails the whole delivery.
+            live = _live(host, (CORE_SERIES,), [sref])
+            if ("%s|%s" % (CORE_SERIES, sref)) in live:
+                host.effects.delete(CORE_SERIES, sref)
+            return ""
+        props = _series_props(master, cal_zone)
+        if props is None:
+            return ""
+        host.effects.put(CORE_SERIES, sref, properties=props,
+                         edges={"calendar": cref})
+        return sref
+
+
     def _event_props(host, aid, cid, item, cal_zone, generation):
         eid = str(item.get("id") or "")
         start, end = item.get("start") or {}, item.get("end") or {}
@@ -3407,6 +3593,14 @@ data:
                 props[dst] = str(item[src])
         if tzname:
             props["timezone"] = tzname
+        # The mirror keeps Google's own value, whatever shape it sent (a date
+        # on an all-day series); the resolved instant is core's
+        # originalStartAt below. Verbatim provenance is the mirror's job, so
+        # this is written whether or not series linking is on.
+        original = item.get("originalStartTime") or {}
+        verbatim = str(original.get("dateTime") or original.get("date") or "")
+        if verbatim:
+            props["originalStartTime"] = verbatim
         if item.get("recurrence"):
             props["recurrence"] = [str(r) for r in item["recurrence"]]
         updated = _parse(item.get("updated"))
@@ -3437,7 +3631,7 @@ data:
             attendees.append(party)
         if attendees:
             props["attendees"] = attendees
-        return props, starts, ends, organizer, attendees
+        return props, starts, ends, _instant(original, zone), organizer, attendees
 
 
     def _valid(party):
@@ -3461,10 +3655,12 @@ data:
         return found
 
 
-    def _stage_events(host, aid, cid, cref, items, cal_zone, generation):
-        """Stage one events page IN ORDER: the addresses first (an edge target
-        must exist when the row referencing it applies), then the deletes a
-        delta's `cancelled` entries mean, then the puts."""
+    def _stage_events(host, token, aid, cid, cref, items, cal_zone, cur):
+        """Stage one events page IN ORDER: the addresses and the series rows
+        first (an edge target must exist when the row referencing it
+        applies), then the deletes a delta's `cancelled` entries mean, then
+        the puts."""
+        generation = cur.get("generation") or ""
         addresses, drops, keeps = {}, [], []
         for item in items:
             eid = str(item.get("id") or "")
@@ -3475,7 +3671,7 @@ data:
                 continue
             parsed = _event_props(host, aid, cid, item, cal_zone, generation)
             keeps.append((eid,) + parsed)
-            props, _, _, organizer, attendees = parsed
+            props, _, _, _, organizer, attendees = parsed
             for party in ([organizer] if organizer else []) + attendees:
                 addr = _valid(party)
                 if not addr:
@@ -3489,6 +3685,22 @@ data:
                 props["displayName"] = addresses[addr]["name"]
             host.effects.put(ADDRESS_TYPE, _address_id(host, aid, addr),
                              properties=props)
+        # THE SERIES SLICE. A master never appears in a singleEvents list, so
+        # the distinct recurringEventIds this page staged are fetched by id.
+        # The cache is the DELIVERY's (it rides in the cursor and is cleared
+        # per calendar), so one master is fetched once per delivery and no
+        # further: a rule edited at Google lands on whichever later delivery
+        # carries an instance of it, which keeps the series eventually
+        # consistent without a second sync token to expire.
+        series = dict(cur.get("masters") or {}) if cur.get("series") else {}
+        if cur.get("series"):
+            for entry in keeps:
+                mid = str(entry[1].get("recurringEventId") or "")
+                if not mid or mid in series:
+                    continue
+                series[mid] = _stage_series(host, token, cid, cref, mid,
+                                            cal_zone)
+            cur["masters"] = dict(sorted(series.items())[:MASTER_CACHE])
         # Core RETRACTS rather than tombstones a cancellation: a reader never
         # filters cancelled events, so both halves go — but only the halves
         # that are actually there.
@@ -3499,7 +3711,7 @@ data:
                 host.effects.delete(CORE_EVENT, eref)
             if ("%s|%s" % (EVENT_TYPE, eref)) in live:
                 host.effects.delete(EVENT_TYPE, eref)
-        for eid, props, starts, ends, organizer, attendees in keeps:
+        for eid, props, starts, ends, original, organizer, attendees in keeps:
             eref = _event_id(host, cref, eid)
             host.effects.put(EVENT_TYPE, eref, properties=props)
             core = {}
@@ -3513,6 +3725,13 @@ data:
             if ends:
                 core["endsAt"] = ends
             edges = {"calendar": cref}
+            # The link and the moved-instance slot ride together: with the
+            # switch off the core row is the flat instance it always was.
+            sref = series.get(str(props.get("recurringEventId") or ""))
+            if sref:
+                edges["series"] = sref
+                if original:
+                    core["originalStartAt"] = original
             addr = _valid(organizer)
             if addr:
                 edges["organizer"] = _person_ref(host, aid, addr)
@@ -3553,6 +3772,10 @@ data:
                 "dead": [], "started": False, "syncToken": "",
                 "generation": "", "calTz": "", "floor": "", "ceil": "",
                 "after": "", "anchor": "", "sweep": False, "records": 0,
+                # The account's series switch, read once in `plan`, and the
+                # masters this delivery already fetched for the calendar it
+                # is walking.
+                "series": True, "masters": {},
                 # `cancelled` is the provider's own housekeeping — a delta
                 # ALWAYS carries cancellations — and `skipped` is a failure.
                 # Counting the first as the second made an ordinary calendar
@@ -3567,6 +3790,7 @@ data:
             cur["anchor"] = anchor
         cur["floor"] = _floor(props, anchor)
         cur["ceil"] = _iso(_now() + _dt.timedelta(days=HORIZON_DAYS))
+        cur["series"] = _series_on(props)
         cur["phase"] = "calendars"
         return cur
 
@@ -3668,9 +3892,11 @@ data:
 
 
     def _next_calendar(cur):
+        # `masters` is keyed by master id, which is unique per CALENDAR: it
+        # clears with the calendar, and the cursor stays small.
         cur.update({"cals": list(cur.get("cals") or [])[1:], "started": False,
                     "pageToken": "", "syncToken": "", "generation": "",
-                    "calTz": "", "sweep": False, "after": ""})
+                    "calTz": "", "sweep": False, "after": "", "masters": {}})
         cur["phase"] = "events" if cur["cals"] else "finish"
         return cur
 
@@ -3705,9 +3931,8 @@ data:
                         "pageToken": "", "sweep": True})
             resp = _get(token, _events_path(cid), _params(cur))
         cal_zone = _zone(cur.get("calTz") or "UTC")
-        kept, dropped = _stage_events(host, aid, cid, cref,
-                                      resp.get("items") or [], cal_zone,
-                                      cur.get("generation") or "")
+        kept, dropped = _stage_events(host, token, aid, cid, cref,
+                                      resp.get("items") or [], cal_zone, cur)
         cur["records"] = int(cur.get("records") or 0) + kept
         cur["cancelled"] = int(cur.get("cancelled") or 0) + dropped
         next_page = resp.get("nextPageToken") or ""
