@@ -11,6 +11,13 @@ are computed by replaying it, so what you see cannot drift from what
 happened. Tokens, kind declarations, even the functions and agents that
 automate your data are records like any other.
 
+It is, roughly, Kubernetes for your own data and the agents acting on it, and
+the borrowing is deliberate: the substrate is the API server, a kind is a
+declared type it validates every write against, and every app or agent is a
+controller that watches the ordered change feed and writes back through the
+same API. [docs/introduction.md](docs/introduction.md) draws the comparison
+out.
+
 ## Features
 
 - **One user, one repository.** Registering creates a user and their one
@@ -74,15 +81,15 @@ task, with typed properties, a state machine, and an edge between them:
 # chores.yaml
 kind: core.substrate.reamde.dev/authority
 metadata:
-  id: chores.example
+  id: geoah.me
 data:
   version: 1
 ---
 kind: core.substrate.reamde.dev/kind
 metadata:
-  id: chores.example/project
+  id: geoah.me/project
 data:
-  authority: chores.example
+  authority: geoah.me
   description: A group of tasks with one goal.
   names:
     singular: project
@@ -95,9 +102,9 @@ data:
 ---
 kind: core.substrate.reamde.dev/kind
 metadata:
-  id: chores.example/task
+  id: geoah.me/task
 data:
-  authority: chores.example
+  authority: geoah.me
   description: One thing to do, grouped under a project.
   names:
     singular: task
@@ -148,14 +155,14 @@ declared transitions:
 bin/substratectl apply -f chores.yaml
 
 cat <<'EOF' | bin/substratectl apply -f -
-kind: chores.example/project
+kind: geoah.me/project
 metadata:
   id: home
 data:
   properties:
     name: Home
 ---
-kind: chores.example/task
+kind: geoah.me/task
 metadata:
   id: milk
 data:
@@ -165,10 +172,10 @@ data:
   edges:
     - rel: project
       to:
-        kind: chores.example/project
+        kind: geoah.me/project
         id: home
 ---
-kind: chores.example/task
+kind: geoah.me/task
 metadata:
   id: plants
 data:
@@ -178,7 +185,7 @@ data:
   edges:
     - rel: project
       to:
-        kind: chores.example/project
+        kind: geoah.me/project
         id: home
 EOF
 
@@ -193,7 +200,7 @@ bin/substratectl patch tasks milk --state status=done  # stamps completedAt
 bin/substratectl watch --from 1
 ```
 
-The same records answer on REST at `/api/v1/chores.example/tasks`, on
+The same records answer on REST at `/api/v1/geoah.me/task`, on
 GraphQL at `/graphql`, and in full-text and semantic search:
 [docs/api.md](docs/api.md) and
 [docs/graphql-and-search.md](docs/graphql-and-search.md).
@@ -210,39 +217,39 @@ with tools), each scoped to exactly the kinds it may touch:
 ---
 kind: core.substrate.reamde.dev/function
 metadata:
-  id: chores.example/triage
+  id: geoah.me/triage
 data:
-  authority: chores.example
+  authority: geoah.me
   description: Raise every open task past its due date to urgent.
   runtime: python
   permissions:
     reads:
       kinds:
-        - chores.example/task
+        - geoah.me/task
     writes:
-      - chores.example/task
+      - geoah.me/task
   source: |
     from datetime import datetime, timezone
 
     def main(input, host):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        page = host.records.list(["chores.example/task"],
+        page = host.records.list(["geoah.me/task"],
                                  where={"status": {"eq": "open"}})
         raised = 0
         for task in page.get("records") or []:
             props = task.get("properties") or {}
             due = props.get("dueAt")
             if due and due < now and props.get("priority") != "urgent":
-                host.effects.patch("chores.example/task", task["id"],
+                host.effects.patch("geoah.me/task", task["id"],
                                    properties={"priority": "urgent"})
                 raised += 1
         return {"output": {"raised": raised}}
 ---
 kind: core.substrate.reamde.dev/agent
 metadata:
-  id: chores.example/assistant
+  id: geoah.me/assistant
 data:
-  authority: chores.example
+  authority: geoah.me
   description: Reads and updates my projects and tasks on request.
   prompt: |
     You manage the user's projects and tasks. Read them with the query
@@ -259,11 +266,11 @@ data:
   permissions:
     reads:
       kinds:
-        - chores.example/task
-        - chores.example/project
+        - geoah.me/task
+        - geoah.me/project
     writes:
-      - chores.example/task
-      - chores.example/project
+      - geoah.me/task
+      - geoah.me/project
 ```
 
 Apply the file again (re-applying a closure is how it evolves; the engine
@@ -272,7 +279,7 @@ open and past due, so it comes back urgent:
 
 ```bash
 bin/substratectl apply -f chores.yaml
-bin/substratectl function call chores.example/triage
+bin/substratectl function call geoah.me/triage
 bin/substratectl get tasks plants -o yaml
 ```
 
@@ -292,7 +299,7 @@ data:
         recurrence: "FREQ=DAILY"
         timezone: Europe/London
         startsAt: "2026-01-01T07:00:00Z"
-    callable: core.substrate.reamde.dev/function/chores.example/triage
+    callable: core.substrate.reamde.dev/function/geoah.me/triage
 EOF
 ```
 
