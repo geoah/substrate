@@ -43,7 +43,7 @@ curl -s -X POST "$SUBSTRATE_SERVER/api/v1/core.substrate.reamde.dev/agent/noteke
 It replies with the id and the title, having written one `note`:
 
 ```sh
-substratectl get notes my-note -o yaml
+substratectl get note my-note -o yaml
 ```
 
 ## Pointing it at Anthropic directly
@@ -59,7 +59,7 @@ metadata: {id: default}
 data:
   properties: {label: anthropic, wire: anthropic}
 YAML
-substratectl patch llmproviders default --prop apiKey="$ANTHROPIC_API_KEY"
+substratectl patch llmprovider default --prop apiKey="$ANTHROPIC_API_KEY"
 ```
 
 Two things then differ, both of them properties of the row rather than of this
@@ -77,7 +77,7 @@ bundle:
 ## What to look at afterwards
 
 ```sh
-substratectl get llmthreads
+substratectl get llmthread
 ```
 
 There are **two** threads, not one: the root `notekeeper` run and the `titler`

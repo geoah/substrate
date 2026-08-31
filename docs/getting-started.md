@@ -85,7 +85,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8080/api/v1/catalog/tasks.substrate.reamde.dev%2Ftasks/install
 
-substratectl get tasks                     # empty, but the collection is there
+substratectl get task                     # empty, but the collection is there
 ```
 
 The console does the same thing from the [Registry](console.md#registry) page,
@@ -125,8 +125,8 @@ Read it back, then complete it. A state change is a `patch`, and the
 declaration stamps `completedAt` for you:
 
 ```bash
-substratectl get tasks kq3v9x2m41pf -o yaml
-substratectl patch tasks kq3v9x2m41pf --state status=done
+substratectl get task kq3v9x2m41pf -o yaml
+substratectl patch task kq3v9x2m41pf --state status=done
 ```
 
 ## Watch the change stream

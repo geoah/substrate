@@ -205,7 +205,6 @@ data:
   authority: tasks.substrate.reamde.dev      # the authority being declared into
   names:
     singular: task
-    plural: tasks
   properties:
     description:
       type: markdown

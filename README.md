@@ -93,7 +93,6 @@ data:
   description: A group of tasks with one goal.
   names:
     singular: project
-    plural: projects
   displayTemplate: "{name}"
   properties:
     name:
@@ -108,7 +107,6 @@ data:
   description: One thing to do, grouped under a project.
   names:
     singular: task
-    plural: tasks
   displayTemplate: "{name}"
   properties:
     name:
@@ -189,11 +187,11 @@ data:
         id: home
 EOF
 
-bin/substratectl get tasks
-bin/substratectl get tasks milk -o yaml   # the full envelope, apply-able
-bin/substratectl get tasks --filter '{"properties":{"status":{"eq":"open"}}}'
+bin/substratectl get task
+bin/substratectl get task milk -o yaml   # the full envelope, apply-able
+bin/substratectl get task --filter '{"properties":{"status":{"eq":"open"}}}'
 
-bin/substratectl patch tasks milk --state status=done  # stamps completedAt
+bin/substratectl patch task milk --state status=done  # stamps completedAt
 
 # Replay the changelog (--from resumes after a sequence number), then keep
 # following it: every write above is in it.
@@ -280,7 +278,7 @@ open and past due, so it comes back urgent:
 ```bash
 bin/substratectl apply -f chores.yaml
 bin/substratectl function call geoah.me/triage
-bin/substratectl get tasks plants -o yaml
+bin/substratectl get task plants -o yaml
 ```
 
 What usually runs it is a **trigger**, an ordinary record binding a source

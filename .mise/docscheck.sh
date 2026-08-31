@@ -239,6 +239,12 @@ if grep_urls -rnE "[a-z0-9-]+(\.[a-z0-9-]+)*\.reamde\.dev/(${shipped_plurals})\b
   flag "a documented collection is addressed by its plural; the segment is the kind's name (decision 0033)"
 fi
 
+# The CLI addresses a collection the same way the URL does: by the kind's
+# name. A verb followed by a shipped plural is a paste that errors.
+if grep_urls -rnE "substratectl (get|patch|delete|link|unlink) (${shipped_plurals})\b"; then
+  flag "a CLI example addresses a collection by its plural; the argument is the kind's name (decision 0033)"
+fi
+
 # The non-record endpoints hang off the version root, never off an authority.
 repo_endpoints='vocabulary/apply|oauth/start|oauth/callback|catalog|changes|embeddings|recordmerges|recordsplits'
 if grep_urls -rnE "(/api/v[0-9]+|…)/core\.substrate\.reamde\.dev/(${repo_endpoints})\b"; then
