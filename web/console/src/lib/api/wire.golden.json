@@ -24,6 +24,28 @@
     "title",
     "properties"
   ],
+  "Occurrence": [
+    "kind",
+    "id",
+    "title",
+    "at",
+    "log"
+  ],
+  "OccurrenceList": [
+    "occurrences",
+    "truncated",
+    "problems"
+  ],
+  "OccurrenceLog": [
+    "kind",
+    "id",
+    "status"
+  ],
+  "OccurrenceProblem": [
+    "kind",
+    "id",
+    "message"
+  ],
   "OperationalList": [
     "items",
     "cursor"
