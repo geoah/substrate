@@ -7,7 +7,10 @@ import { NuqsAdapter } from "nuqs/adapters/tanstack-router"
 import "./index.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toast"
-import { setUnauthorizedHandler } from "@/lib/api/session"
+import {
+  setSessionChangedHandler,
+  setUnauthorizedHandler,
+} from "@/lib/api/session"
 import { ApiError } from "@/lib/api/types"
 import { installChunkReload } from "@/lib/chunk-reload"
 import { router } from "@/router"
@@ -41,6 +44,13 @@ const queryClient = new QueryClient({
       },
     },
   },
+})
+
+// A cached answer belongs to the repository whose token fetched it, and no
+// query key says which; signing in as anybody else drops the lot rather than
+// answering the new session out of the old one's cache.
+setSessionChangedHandler(() => {
+  queryClient.clear()
 })
 
 createRoot(document.getElementById("root")!).render(

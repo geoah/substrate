@@ -17,6 +17,13 @@ const USER_KEY = "substrate.username"
 const TOKEN_ID_KEY = "substrate.tokenid"
 
 let unauthorizedHandler: (() => void) | null = null
+// Every cached answer belongs to ONE repository, and no query key names which:
+// signing in as somebody else in the same tab would otherwise keep answering
+// from the previous repository's cache — a sidebar listing kinds this
+// repository never imported, whose collection then 404s as `unknown
+// collection`. The handler the app installs drops the cache; session.ts fires
+// it on every identity change and imports no cache itself.
+let sessionChangedHandler: (() => void) | null = null
 
 export function getToken(): string | null {
   try {
@@ -68,6 +75,7 @@ export function getTokenId(): string | null {
  * known, and the tests. `saveSession` is the full write. */
 export function setToken(token: string): void {
   localStorage.setItem(TOKEN_KEY, token)
+  sessionChanged()
 }
 
 /** The full sign-in write: the secret, the username, and the held token's id,
@@ -81,6 +89,7 @@ export function saveSession(
   localStorage.setItem(TOKEN_KEY, secret)
   localStorage.setItem(USER_KEY, username)
   localStorage.setItem(TOKEN_ID_KEY, tokenId)
+  sessionChanged()
 }
 
 /** Drops everything `hasSession` reads. */
@@ -92,10 +101,22 @@ export function clearSession(): void {
   } catch {
     /* storage disabled — nothing to drop */
   }
+  sessionChanged()
 }
 
 export function hasSession(): boolean {
   return getToken() !== null
+}
+
+/** Installed once at startup by whoever owns the query cache. It fires on
+ * every write below, so a new call site cannot forget to drop the previous
+ * repository's answers. */
+export function setSessionChangedHandler(handler: (() => void) | null): void {
+  sessionChangedHandler = handler
+}
+
+function sessionChanged(): void {
+  sessionChangedHandler?.()
 }
 
 /** Installed once at startup with a router-aware redirect; the fetch layer
