@@ -33,6 +33,11 @@ func TestApplyNamesTheReplacementForEveryRenamedKey(t *testing.T) {
 			"writes `spec`, which is `data`",
 		},
 		{
+			"data.edges",
+			"kind: tasks.substrate.reamde.dev/task\nmetadata: {id: t1}\ndata:\n  edges:\n    - rel: source\n      to: {id: f81k}\n",
+			"writes `data.edges`, which is gone",
+		},
+		{
 			"metadata.name",
 			"kind: tasks.substrate.reamde.dev/task\nmetadata: {name: t1}\ndata: {}\n",
 			"writes `metadata.name`, which is `metadata.id`",

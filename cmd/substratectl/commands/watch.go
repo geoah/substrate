@@ -55,7 +55,7 @@ and every printed line starts with the sequence it can be resumed from.`,
 	f := cmd.Flags()
 	f.Int64Var(&from, "from", 0, "resume after this changelog sequence")
 	f.StringSliceVar(&kinds, "kinds", nil, "only these kind identities")
-	f.StringSliceVar(&ops, "ops", nil, "only these ops (put, patch, delete, link, unlink, merge, split, gc)")
+	f.StringSliceVar(&ops, "ops", nil, "only these ops (put, patch, delete, merge, split, gc)")
 	f.StringSliceVar(&actors, "actors", nil, "only these actors")
 	return cmd
 }

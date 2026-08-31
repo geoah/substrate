@@ -35,9 +35,9 @@ type fakeSubstrate struct {
 	// asymmetry is the contract, so the fake keeps it.
 	propertyMeta map[string]map[string]statusProperty
 
-	// incoming is the reverse-edge block per record, served on a
+	// incoming is the reverse-pointer block per record, served on a
 	// single-record GET and NEVER on a list, exactly like propertyMeta.
-	incoming map[string][]substrate.IncomingEdge
+	incoming map[string][]substrate.IncomingReference
 
 	// extraTypes are registry rows appended to fakeRegistry on the types read.
 	// Empty by default so the golden `types` table is unaffected; the
@@ -74,7 +74,7 @@ func newFake(t *testing.T) (*fakeSubstrate, *httptest.Server) {
 		records:      map[string]*substrate.Record{},
 		formerIDs:    map[string]string{},
 		propertyMeta: map[string]map[string]statusProperty{},
-		incoming:     map[string][]substrate.IncomingEdge{},
+		incoming:     map[string][]substrate.IncomingReference{},
 	}
 	srv := httptest.NewServer(f.handler())
 	t.Cleanup(srv.Close)
@@ -95,7 +95,7 @@ func (f *fakeSubstrate) seedMeta(id string, meta map[string]statusProperty) {
 }
 
 // seedIncoming records a legacy incoming block on a single-record GET.
-func (f *fakeSubstrate) seedIncoming(id string, in []substrate.IncomingEdge) {
+func (f *fakeSubstrate) seedIncoming(id string, in []substrate.IncomingReference) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.incoming[id] = in
@@ -630,7 +630,8 @@ func (f *fakeSubstrate) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Detail-only fields ride alongside the record's own fields in this fake.
-	// Incoming is included only to exercise compatibility with an older server.
+	// Incoming is included only to prove the manifest ignores a server that
+	// answers with one.
 	body, _ := json.Marshal(e)
 	var out map[string]any
 	_ = json.Unmarshal(body, &out)
