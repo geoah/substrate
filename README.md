@@ -51,12 +51,11 @@ That is the whole thing: Postgres, the API and the console at
 mints a credential key and tells you to back it up. Register with the invite
 code `let-me-in`.
 
-## Write your first record
+## Declare your own kinds
 
-From a checkout of this repo, against the substrate above: register, install
-a vocabulary, write a task, complete it, and replay the changelog that
-recorded all of it. The CLI is built from the tree, so this path needs the
-[mise](https://mise.jdx.dev) toolchain: `mise install` once.
+From a checkout of this repo, against the substrate above. The CLI is built
+from the tree, so this path needs the [mise](https://mise.jdx.dev)
+toolchain: `mise install` once.
 
 ```bash
 mise run build:cli
@@ -64,53 +63,12 @@ mise run build:cli
 # Asks for the invite code, a username and a password, then stores the
 # minted token as a context in ~/.config/substratectl.
 bin/substratectl register --server http://localhost:8080
-
-# A fresh repository holds the core vocabulary and nothing else, so install
-# the bundle that declares tasks. It requires people (tasks name an
-# assignee) and scheduling (a task may repeat), so those two come first.
-bin/substratectl apply \
-  -f kinds/people.substrate.reamde.dev/bundle.yaml \
-  -f kinds/people.substrate.reamde.dev/organization.yaml \
-  -f kinds/people.substrate.reamde.dev/person.yaml \
-  -f kinds/people.substrate.reamde.dev/team.yaml
-bin/substratectl apply \
-  -f kinds/scheduling.substrate.reamde.dev/bundle.yaml \
-  -f kinds/scheduling.substrate.reamde.dev/recurring.yaml \
-  -f kinds/scheduling.substrate.reamde.dev/occurrencelog.yaml
-bin/substratectl apply \
-  -f kinds/tasks.substrate.reamde.dev/bundle.yaml \
-  -f kinds/tasks.substrate.reamde.dev/project.yaml \
-  -f kinds/tasks.substrate.reamde.dev/task.yaml \
-  -f kinds/tasks.substrate.reamde.dev/tasklog.yaml
-
-cat <<'EOF' | bin/substratectl apply -f -
-kind: tasks.substrate.reamde.dev/task
-data:
-  properties:
-    name: Buy milk
-    dueAt: 2026-08-13T09:00:00Z
-EOF
-
-bin/substratectl get tasks
-
-# <id> is the record id `get tasks` printed. The done transition stamps
-# completedAt for you.
-bin/substratectl patch tasks <id> --state status=done
-
-# Replay the changelog (--from resumes after a sequence number), then keep
-# following it. Your task's create and its done transition land at the end.
-bin/substratectl watch --from 1
 ```
 
-The console's Registry page installs the same bundles from the compiled-in
-catalog, through the same validation.
-[docs/getting-started.md](docs/getting-started.md) walks this path in full.
-
-## Manage them with a function and an agent
-
-Automation is records too. One file declares a bundle of your own holding a
-**function** (real code the substrate runs) and an **agent** (an LLM loop
-with tools), both scoped to exactly the kinds they may touch:
+A fresh repository holds the core vocabulary and nothing else. Teach it
+yours: kinds are declared in YAML under an authority you name, and a
+declaration is itself a record write. One file declares a project and a
+task, with typed properties, a state machine, and an edge between them:
 
 ```yaml
 # chores.yaml
@@ -120,17 +78,135 @@ metadata:
 data:
   version: 1
 ---
-kind: core.substrate.reamde.dev/bundle
+kind: core.substrate.reamde.dev/kind
 metadata:
-  id: chores.example/chores
+  id: chores.example/project
 data:
   authority: chores.example
-  description: Task automations of my own.
-  requires:
-    - tasks.substrate.reamde.dev
-  installs:
-    - chores.example/triage
-    - chores.example/assistant
+  description: A group of tasks with one goal.
+  names:
+    singular: project
+    plural: projects
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      description: what the project is called
+---
+kind: core.substrate.reamde.dev/kind
+metadata:
+  id: chores.example/task
+data:
+  authority: chores.example
+  description: One thing to do, grouped under a project.
+  names:
+    singular: task
+    plural: tasks
+  displayTemplate: "{name}"
+  properties:
+    name:
+      type: string
+      description: what to do
+    dueAt:
+      type: datetime
+      description: when it is due
+    priority:
+      type: enum
+      description: how urgent it is
+      default: normal
+      values:
+        - normal
+        - urgent
+    status:
+      type: state
+      description: open until done
+      states:
+        - open
+        - done
+      initial: open
+      transitions:
+        - from: open
+          to: done
+          stamps:
+            completedAt: now
+        - from: done
+          to: open
+    completedAt:
+      type: datetime
+      description: when it was done, stamped by the transition
+  edges:
+    project:
+      to: project
+      description: the project this task groups under
+```
+
+Apply it, write records against it, and query them back. Every write is
+validated against the declaration, and a state moves only along its
+declared transitions:
+
+```bash
+bin/substratectl apply -f chores.yaml
+
+cat <<'EOF' | bin/substratectl apply -f -
+kind: chores.example/project
+metadata:
+  id: home
+data:
+  properties:
+    name: Home
+---
+kind: chores.example/task
+metadata:
+  id: milk
+data:
+  properties:
+    name: Buy milk
+    dueAt: 2026-08-30T09:00:00Z
+  edges:
+    - rel: project
+      to:
+        kind: chores.example/project
+        id: home
+---
+kind: chores.example/task
+metadata:
+  id: plants
+data:
+  properties:
+    name: Water the plants
+    dueAt: 2026-08-29T09:00:00Z
+  edges:
+    - rel: project
+      to:
+        kind: chores.example/project
+        id: home
+EOF
+
+bin/substratectl get tasks
+bin/substratectl get tasks milk -o yaml   # the full envelope, apply-able
+bin/substratectl get tasks --filter '{"properties":{"status":{"eq":"open"}}}'
+
+bin/substratectl patch tasks milk --state status=done  # stamps completedAt
+
+# Replay the changelog (--from resumes after a sequence number), then keep
+# following it: every write above is in it.
+bin/substratectl watch --from 1
+```
+
+The same records answer on REST at `/api/v1/chores.example/tasks`, on
+GraphQL at `/graphql`, and in full-text and semantic search:
+[docs/api.md](docs/api.md) and
+[docs/graphql-and-search.md](docs/graphql-and-search.md).
+[docs/getting-started.md](docs/getting-started.md) is the longer
+walkthrough.
+
+## Manage them with a function and an agent
+
+Automation is records too. Append two more documents to `chores.yaml`: a
+**function** (real code the substrate runs) and an **agent** (an LLM loop
+with tools), each scoped to exactly the kinds it may touch:
+
+```yaml
 ---
 kind: core.substrate.reamde.dev/function
 metadata:
@@ -142,23 +218,22 @@ data:
   permissions:
     reads:
       kinds:
-        - tasks.substrate.reamde.dev/task
+        - chores.example/task
     writes:
-      - tasks.substrate.reamde.dev/task
+      - chores.example/task
   source: |
     from datetime import datetime, timezone
 
     def main(input, host):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        page = host.records.list(["tasks.substrate.reamde.dev/task"],
+        page = host.records.list(["chores.example/task"],
                                  where={"status": {"eq": "open"}})
         raised = 0
         for task in page.get("records") or []:
             props = task.get("properties") or {}
             due = props.get("dueAt")
             if due and due < now and props.get("priority") != "urgent":
-                host.effects.patch("tasks.substrate.reamde.dev/task",
-                                   task["id"],
+                host.effects.patch("chores.example/task", task["id"],
                                    properties={"priority": "urgent"})
                 raised += 1
         return {"output": {"raised": raised}}
@@ -168,10 +243,11 @@ metadata:
   id: chores.example/assistant
 data:
   authority: chores.example
-  description: Reads and updates my tasks on request.
+  description: Reads and updates my projects and tasks on request.
   prompt: |
-    You manage the user's tasks. Read them with the query tool; create,
-    complete and reprioritize them with mutate. Keep answers short.
+    You manage the user's projects and tasks. Read them with the query
+    tool; create, complete and reprioritize them with mutate. Keep
+    answers short.
   provider: anthropic
   model: claude-opus-5
   tools:
@@ -183,16 +259,21 @@ data:
   permissions:
     reads:
       kinds:
-        - tasks.substrate.reamde.dev/task
+        - chores.example/task
+        - chores.example/project
     writes:
-      - tasks.substrate.reamde.dev/task
+      - chores.example/task
+      - chores.example/project
 ```
 
-Apply it, then run the function by hand:
+Apply the file again (re-applying a closure is how it evolves; the engine
+versions the changes itself), then run the function by hand. `plants` is
+open and past due, so it comes back urgent:
 
 ```bash
 bin/substratectl apply -f chores.yaml
 bin/substratectl function call chores.example/triage
+bin/substratectl get tasks plants -o yaml
 ```
 
 What usually runs it is a **trigger**, an ordinary record binding a source
@@ -220,10 +301,14 @@ permissions, triggers and the sandbox.
 
 ## Give the agent a model
 
-A fresh repository holds no LLM provider, and a substrate cannot invent a
-key. The `assistant` above names the provider row `anthropic`; install the
-example provider rows from the tree (or from the console's Registry, under
-Examples):
+The agent loop is core: the `agent` kind, its built-in tools and the
+console's chat all ship in the engine, which is why `assistant` needed
+nothing installed. The one thing a substrate cannot invent is an LLM
+provider key. Providers are `llmprovider` records, and the catalog ships a
+**bundle** with two keyless rows (`anthropic`, `openai`) and example agents
+beside them. A bundle is the install unit: a closure like `chores.yaml`,
+installed and removed as one thing, from the console's Registry page or
+from the files under [kinds/](kinds):
 
 ```bash
 bin/substratectl apply \
@@ -231,8 +316,8 @@ bin/substratectl apply \
   -f kinds/llm.examples.substrate.reamde.dev/providers.yaml
 ```
 
-Then put a key on the row. It is an ordinary record write, and `apiKey` is
-secret-typed, so it reads back redacted ever after:
+Then put a key on the row `assistant` names. It is an ordinary record
+write, and `apiKey` is secret-typed, so it reads back redacted ever after:
 
 ```bash
 cat <<'EOF' | bin/substratectl apply -f -
@@ -248,7 +333,11 @@ EOF
 The console's Agents page can then chat with `assistant`, which reads your
 tasks and writes them back through the same API as everything else.
 [docs/agents.md](docs/agents.md) has the rest: wires, pricing, sub-agents,
-budgets.
+budgets. The same catalog carries the provider sync bundles (Google,
+GitHub, Linear, Notion, Beeper, Whoop) and vocabularies (tasks, people,
+calendar, messaging and more): [docs/bundles.md](docs/bundles.md) is the
+model, [docs/bundles-catalog.md](docs/bundles-catalog.md) what ships
+today.
 
 ## Configuration
 
