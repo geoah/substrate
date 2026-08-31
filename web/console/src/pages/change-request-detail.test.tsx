@@ -385,7 +385,11 @@ describe("ChangeRequestDetailPage", () => {
               {
                 rel: "assignee",
                 to: { id: "p1" },
-                properties: { since: "2026-08-14" },
+                // Distinct from every fixture timestamp: the record's own
+                // createdAt renders as a bare date too once it ages past the
+                // relative-format window, and an equal string makes
+                // getByText ambiguous the day the calendar rolls.
+                properties: { since: "2024-02-29" },
               },
             ],
           },
@@ -396,7 +400,7 @@ describe("ChangeRequestDetailPage", () => {
 
     await screen.findByText("assignee")
     expect(screen.getByText("since")).toBeTruthy()
-    expect(screen.getByText("2026-08-14")).toBeTruthy()
+    expect(screen.getByText("2024-02-29")).toBeTruthy()
   })
 
   it("says a malformed wrapper is unreadable instead of showing an empty diff", async () => {
