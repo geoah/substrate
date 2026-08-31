@@ -166,7 +166,7 @@ func (t *txn) recordProposalConflict(req *erow, reason string) error {
 	return nil
 }
 
-// requestTarget resolves what a request would change: the target edge on a
+// requestTarget resolves what a request would change: the `target` reference on a
 // patch/delete, the named identity on a create.
 func (t *txn) requestTarget(req *erow) (eref, error) {
 	if requestOp(req.Props) == opCreate {
@@ -177,7 +177,7 @@ func (t *txn) requestTarget(req *erow) (eref, error) {
 		}
 		return eref{}, nil
 	}
-	return t.edgeTargetOf(req.ref(), propTarget)
+	return referenceTargetOf(req, propTarget), nil
 }
 
 // putThreadSystemRow writes one `system` llmmessage into a thread: the

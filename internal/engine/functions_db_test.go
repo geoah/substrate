@@ -116,9 +116,10 @@ func fnConnector(triggers []enginetest.Trigger, fns ...map[string]any) enginetes
 				"count":  map[string]any{"type": "float"},
 				"wire":   map[string]any{"type": "string", "fts": false},
 				"target": map[string]any{"type": "string", "fts": false},
-			},
-			"edges": map[string]any{
-				"widget": map[string]any{"to": widgetType, "description": "the widget this gadget belongs to"},
+				"widget": map[string]any{
+					"type": "reference", "kind": widgetType, "mustExist": true,
+					"description": "the widget this gadget belongs to",
+				},
 			},
 		}),
 	}

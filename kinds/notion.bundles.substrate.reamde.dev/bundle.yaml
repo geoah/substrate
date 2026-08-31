@@ -330,6 +330,7 @@ data:
     # pages have none. UNPINNED because the parent is a page OR a database.
     parent:
       type: reference
+      displayName: Parent
       mustExist: true
       description: the mirrored parent page or data source, when the parent
         is shared with the integration

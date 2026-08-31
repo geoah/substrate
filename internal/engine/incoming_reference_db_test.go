@@ -1,19 +1,18 @@
 package engine_test
 
-// The reverse read answers for BOTH mechanisms: an edge row pointing here, and
-// a reference property naming this record. They are one relationship to a
-// reader and two mechanisms to the store, so a row says which via `via`.
+// The reverse read: who points at this record. There is ONE mechanism now — a
+// reference value — and the refs index is keyed on the target, so `incoming`
+// answers whatever shape the declaration takes: pinned or unpinned, single,
+// repeated or nested inside an object.
 //
-// The cursor is what these mostly pin. The union's order is
-// (rel, src_kind, via, created_at DESC, src_id) and every component of it rides
-// the token — a page boundary that drops or repeats a row is the failure this
-// suite exists to catch, so the fixtures deliberately put ties in every
-// component that can tie.
+// The cursor is what these mostly pin. The order is the index's own key,
+// (src_kind, src, property, path, ord), and every component of it rides the
+// token — a page boundary that drops or repeats a row is the failure this suite
+// exists to catch, so the fixtures deliberately tie every component that can.
 
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -21,10 +20,11 @@ import (
 
 const graphAuthority = "graph.example.substrate.reamde.dev"
 
-// graphVocabulary declares a hub and two kinds pointing at it — one by
-// reference, one by edge — so a single hub is reachable both ways.
+// graphVocabulary declares a hub and four kinds pointing at it: pinned,
+// unpinned, repeated, and one whose pointer sits inside an object.
 func graphVocabulary(t *testing.T, ds substrate.Dataset) {
 	t.Helper()
+	hub := graphAuthority + "/hub"
 	docs := []map[string]any{
 		vocabulary.AuthorityManifest(graphAuthority, 0),
 		vocabulary.KindManifest(graphAuthority,
@@ -33,21 +33,34 @@ func graphVocabulary(t *testing.T, ds substrate.Dataset) {
 		vocabulary.KindManifest(graphAuthority,
 			map[string]any{"singular": "spoke", "plural": "spokes"},
 			map[string]any{"properties": map[string]any{
-				"hub": map[string]any{
-					"type": "reference", "kind": graphAuthority + "/hub", "inverse": "spokes",
-				},
+				"hub": map[string]any{"type": "reference", "kind": hub, "inverse": "spokes"},
 			}}),
-		vocabulary.KindManifest(graphAuthority,
-			map[string]any{"singular": "linked", "plural": "linkeds"},
-			map[string]any{"edges": map[string]any{
-				"hub": map[string]any{"to": graphAuthority + "/hub", "inverse": "linked"},
-			}}),
-		// An unconstrained pointer: it names no target kind, so the registry
-		// cannot say it points HERE without reading every row of every kind.
+		// An UNCONSTRAINED pointer. The edge-and-probe union this replaced could
+		// not see one: it named no target kind, so the registry could not say it
+		// pointed here without reading every row of every kind. The index is
+		// keyed on the target, so there is nothing to enumerate.
 		vocabulary.KindManifest(graphAuthority,
 			map[string]any{"singular": "loose", "plural": "looses"},
 			map[string]any{"properties": map[string]any{
 				"anything": map[string]any{"type": "reference", "kind": "any"},
+			}}),
+		vocabulary.KindManifest(graphAuthority,
+			map[string]any{"singular": "fan", "plural": "fans"},
+			map[string]any{"properties": map[string]any{
+				"hubs": map[string]any{"type": "reference", "kind": hub, "repeated": true},
+			}}),
+		// A pointer INSIDE an object: the reverse row names the property and the
+		// path to the site, so a nested pointer does not read as a second
+		// property of the same name.
+		vocabulary.KindManifest(graphAuthority,
+			map[string]any{"singular": "nester", "plural": "nesters"},
+			map[string]any{"properties": map[string]any{
+				"tool": map[string]any{
+					"type": "object",
+					"fields": map[string]any{
+						"callable": map[string]any{"type": "reference", "kind": hub},
+					},
+				},
 			}}),
 	}
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
@@ -64,56 +77,63 @@ func incoming(t *testing.T, ds substrate.Dataset, id string, opts substrate.Inco
 	return page
 }
 
-func TestIncomingReadsReferencesAndEdgesAsOne(t *testing.T) {
+func TestIncomingReadsEveryReferenceShape(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
+	hub := graphAuthority + "/hub"
 
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/hub", ID: "h1", Properties: map[string]any{"name": "Hub"},
+		Kind: hub, ID: "h1", Properties: map[string]any{"name": "Hub"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: graphAuthority + "/spoke", ID: "s1", Properties: map[string]any{"hub": "h1"},
 	})
-	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/linked", ID: "l1",
-		Edges: []substrate.EdgeInput{{Rel: "hub", To: substrate.EdgeRef{ID: "h1"}}},
-	})
 	// Points at a DIFFERENT hub: the reverse read must not gather it.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/hub", ID: "h2", Properties: map[string]any{"name": "Other"},
+		Kind: hub, ID: "h2", Properties: map[string]any{"name": "Other"},
 	})
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: graphAuthority + "/spoke", ID: "s2", Properties: map[string]any{"hub": "h2"},
 	})
-	// An unconstrained reference at the hub: left out deliberately, because
-	// finding it would mean reading every row of every kind.
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: graphAuthority + "/loose", ID: "x1",
-		Properties: map[string]any{
-			"anything": vocabulary.RecordPath(graphAuthority+"/hub", "h1"),
-		},
+		Properties: map[string]any{"anything": vocabulary.RecordPath(hub, "h1")},
+	})
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: graphAuthority + "/fan", ID: "f1",
+		Properties: map[string]any{"hubs": []any{"h2", "h1"}},
+	})
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: graphAuthority + "/nester", ID: "n1",
+		Properties: map[string]any{"tool": map[string]any{"callable": "h1"}},
 	})
 
 	page := incoming(t, ds, "h1", substrate.IncomingOptions{})
-	if page.Total != 2 {
-		t.Fatalf("total = %d, want the reference and the edge", page.Total)
+	if page.Total != 4 {
+		t.Fatalf("total = %d, want the spoke, the unpinned pointer, the repeated one and the nested one: %+v",
+			page.Total, page.Incoming)
 	}
-	by := map[string]substrate.IncomingEdge{}
+	by := map[string]substrate.IncomingReference{}
 	for _, row := range page.Incoming {
 		by[row.From.ID] = row
 	}
-	if got := by["s1"]; got.Via != substrate.ViaReference || got.Rel != "hub" {
-		t.Fatalf("the reference row reads %+v", got)
+	if got := by["s1"]; got.Property != "hub" || got.Path != "" {
+		t.Fatalf("the pinned pointer reads %+v", got)
 	}
-	if got := by["l1"]; got.Via != substrate.ViaEdge || got.Rel != "hub" {
-		t.Fatalf("the edge row reads %+v", got)
+	if got := by["x1"]; got.Property != "anything" || got.Path != "" {
+		t.Fatalf("the unpinned pointer reads %+v", got)
+	}
+	if got := by["f1"]; got.Property != "hubs" || got.Path != "" {
+		t.Fatalf("the repeated pointer reads %+v", got)
+	}
+	// The nested site names its property AND the address inside it.
+	if got := by["n1"]; got.Property != "tool" || got.Path != "callable" {
+		t.Fatalf("the nested pointer reads %+v", got)
 	}
 	if by["s1"].CreatedAt.IsZero() {
 		t.Fatal("a reverse row must carry the source's creation")
 	}
-	_ = ctx
 }
 
 func TestIncomingNarrowsToOneGroup(t *testing.T) {
@@ -128,8 +148,7 @@ func TestIncomingNarrowsToOneGroup(t *testing.T) {
 		})
 	}
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/linked", ID: "l1",
-		Edges: []substrate.EdgeInput{{Rel: "hub", To: substrate.EdgeRef{ID: "h1"}}},
+		Kind: graphAuthority + "/fan", ID: "f1", Properties: map[string]any{"hubs": []any{"h1"}},
 	})
 
 	// A drill-down expands ONE group: the total is that group's, not the
@@ -143,8 +162,35 @@ func TestIncomingNarrowsToOneGroup(t *testing.T) {
 			t.Fatalf("fromKind leaked %s", row.From.Kind)
 		}
 	}
-	if page := incoming(t, ds, "h1", substrate.IncomingOptions{Rel: "nothing"}); page.Total != 0 {
-		t.Fatalf("an unclaimed rel must find nothing, got %d", page.Total)
+	if page := incoming(t, ds, "h1", substrate.IncomingOptions{Property: "hubs"}); page.Total != 1 {
+		t.Fatalf("property must narrow to the repeated pointer, got %d", page.Total)
+	}
+	if page := incoming(t, ds, "h1", substrate.IncomingOptions{Property: "nothing"}); page.Total != 0 {
+		t.Fatalf("an unclaimed property must find nothing, got %d", page.Total)
+	}
+}
+
+func TestIncomingExcludesADeletedSource(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, ds := newDataset(t)
+	graphVocabulary(t, ds)
+
+	mustPut(t, ds, owner, substrate.PutInput{Kind: graphAuthority + "/hub", ID: "h1"})
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: graphAuthority + "/spoke", ID: "s1", Properties: map[string]any{"hub": "h1"},
+	})
+	if page := incoming(t, ds, "h1", substrate.IncomingOptions{}); page.Total != 1 {
+		t.Fatalf("incoming before the delete = %+v", page)
+	}
+	if _, err := ds.Delete(ctx, owner, graphAuthority+"/spoke", "s1"); err != nil {
+		t.Fatalf("delete the source: %v", err)
+	}
+	// The tombstone keeps its rows in the index (a delete touches `records`
+	// alone), so this is the JOIN doing the filtering: a deleted record points
+	// at nothing.
+	if page := incoming(t, ds, "h1", substrate.IncomingOptions{}); page.Total != 0 {
+		t.Fatalf("incoming after the delete = %+v", page)
 	}
 }
 
@@ -168,15 +214,15 @@ func TestIncomingFindsAPointerWrittenUnderAFormerID(t *testing.T) {
 		t.Fatalf("merge: %v", err)
 	}
 
-	// A merge repoints EDGES but leaves reference values alone — they resolve
-	// through the former-id trail. A reverse read that asked only for the
-	// canonical id would lose this pointer entirely.
+	// A merge REPOINTS NOTHING: reference values resolve forward through the
+	// former-id trail on read. A reverse read that asked only for the canonical
+	// id would lose this pointer entirely.
 	//
-	// The merge also leaves its own `recordmerge` row naming the winner, which
+	// The merge also leaves its own `recordmerge` row naming both sides, which
 	// is why this looks for the spoke rather than counting: that row is the
 	// merge's audit trail and belongs in the fan-in.
 	page := incoming(t, ds, "h1", substrate.IncomingOptions{})
-	var found *substrate.IncomingEdge
+	var found *substrate.IncomingReference
 	for i, row := range page.Incoming {
 		if row.From.ID == "s1" {
 			found = &page.Incoming[i]
@@ -185,34 +231,49 @@ func TestIncomingFindsAPointerWrittenUnderAFormerID(t *testing.T) {
 	if found == nil {
 		t.Fatalf("the pointer written under the former id must still be found, got %+v", page.Incoming)
 	}
-	if found.Via != substrate.ViaReference || found.Rel != "hub" {
+	if found.Property != "hub" || found.Path != "" {
 		t.Fatalf("the recovered pointer reads %+v", *found)
+	}
+	// And the stored value still spells the loser's id: nothing rewrote it.
+	if got := refPathValue(mustGet(t, ds, graphAuthority+"/spoke", "s1"), "hub"); got !=
+		vocabulary.RecordPath(graphAuthority+"/hub", "h2") {
+		t.Fatalf("the merge rewrote a reference value: hub = %q", got)
 	}
 }
 
-func TestIncomingPagesCleanlyAcrossTiedTimestamps(t *testing.T) {
+func TestIncomingPagesCleanlyAcrossEveryTie(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
 
 	mustPut(t, ds, owner, substrate.PutInput{Kind: graphAuthority + "/hub", ID: "h1"})
-	// Every spoke of one kind, one rel, one via: the leading three components
-	// of the order tie for all of them, so the page boundary rests entirely on
-	// (created_at DESC, src_id) — and these rows are written fast enough that
-	// their timestamps can tie too.
-	want := map[string]bool{}
+	// Five spokes of one kind under one property: the leading components of the
+	// key tie for all of them, so the boundary rests on `src` alone.
+	want := map[string]int{}
 	for _, id := range []string{"s1", "s2", "s3", "s4", "s5"} {
 		mustPut(t, ds, owner, substrate.PutInput{
 			Kind: graphAuthority + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
 		})
-		want[id] = true
+		want[id]++
 	}
+	// One record pointing at the hub TWICE from two sites: (property, path)
+	// separates them, and a boundary that read only the source would collapse
+	// the pair into one row.
 	mustPut(t, ds, owner, substrate.PutInput{
-		Kind: graphAuthority + "/linked", ID: "l1",
-		Edges: []substrate.EdgeInput{{Rel: "hub", To: substrate.EdgeRef{ID: "h1"}}},
+		Kind: graphAuthority + "/nester", ID: "n1",
+		Properties: map[string]any{"tool": map[string]any{"callable": "h1"}},
 	})
-	want["l1"] = true
+	want["n1"]++
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: graphAuthority + "/loose", ID: "x1",
+		Properties: map[string]any{"anything": vocabulary.RecordPath(graphAuthority+"/hub", "h1")},
+	})
+	want["x1"]++
 
+	total := 0
+	for _, n := range want {
+		total += n
+	}
 	seen := map[string]int{}
 	after := ""
 	for pages := 0; ; pages++ {
@@ -220,8 +281,8 @@ func TestIncomingPagesCleanlyAcrossTiedTimestamps(t *testing.T) {
 			t.Fatal("the cursor never terminated")
 		}
 		page := incoming(t, ds, "h1", substrate.IncomingOptions{First: 2, After: after})
-		if page.Total != len(want) {
-			t.Fatalf("total = %d, want %d", page.Total, len(want))
+		if page.Total != total {
+			t.Fatalf("total = %d, want %d", page.Total, total)
 		}
 		for _, row := range page.Incoming {
 			seen[row.From.ID]++
@@ -231,51 +292,50 @@ func TestIncomingPagesCleanlyAcrossTiedTimestamps(t *testing.T) {
 		}
 		after = page.Cursor
 	}
-	for id := range want {
-		switch seen[id] {
-		case 1:
-		case 0:
+	for id, n := range want {
+		switch {
+		case seen[id] == n:
+		case seen[id] == 0:
 			t.Errorf("%s was dropped between pages", id)
 		default:
-			t.Errorf("%s was returned %d times", id, seen[id])
+			t.Errorf("%s was returned %d times, want %d", id, seen[id], n)
 		}
 	}
 }
 
-func TestIncomingOrdersAGroupNewestFirst(t *testing.T) {
+func TestIncomingOrdersByTheIndexKey(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
 
 	mustPut(t, ds, owner, substrate.PutInput{Kind: graphAuthority + "/hub", ID: "h1"})
-	for _, id := range []string{"s1", "s2", "s3"} {
+	// Written out of id order, so the ordering under test is the index's and
+	// not the writing order's.
+	for _, id := range []string{"s3", "s1", "s2"} {
 		mustPut(t, ds, owner, substrate.PutInput{
 			Kind: graphAuthority + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
 		})
-		// Distinct stamps, so the ordering under test is the timestamps' and
-		// not the tie-break's.
-		time.Sleep(2 * time.Millisecond)
 	}
 
-	page := incoming(t, ds, "h1", substrate.IncomingOptions{})
-	var last time.Time
-	for i, row := range page.Incoming {
-		if i > 0 && row.CreatedAt.After(last) {
-			t.Fatalf("row %d (%s) is newer than the one before it", i, row.From.ID)
-		}
-		last = row.CreatedAt
+	page := incoming(t, ds, "h1", substrate.IncomingOptions{FromKind: graphAuthority + "/spoke"})
+	var got []string
+	for _, row := range page.Incoming {
+		got = append(got, row.From.ID)
+	}
+	if len(got) != 3 || got[0] != "s1" || got[1] != "s2" || got[2] != "s3" {
+		t.Fatalf("rows came back %v, want the index's (src_kind, src, ...) order", got)
 	}
 }
 
-func TestIncomingRefusesACursorFromTheOldOrder(t *testing.T) {
+func TestIncomingRefusesACursorFromAnotherOrder(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
 	graphVocabulary(t, ds)
 	mustPut(t, ds, owner, substrate.PutInput{Kind: graphAuthority + "/hub", ID: "h1"})
 
-	// The order gained `via` and `createdAt`, so a token minted under the old
-	// three-key signature describes a different sort. Refused, because
-	// replaying it would silently mis-page.
+	// The order is the refs index's key now, so a token minted under any other
+	// signature describes a different sort. Refused, because replaying it would
+	// silently mis-page.
 	_, err := ds.Incoming(context.Background(), graphAuthority+"/hub", "h1",
 		substrate.IncomingOptions{After: "not-a-cursor"})
 	wantErr(t, err, substrate.ErrValidation, "cursor")

@@ -187,9 +187,8 @@ func (ds *dataset) runJudge(ctx context.Context, req *substrate.Record, rule *po
 		envelope["targetKind"] = tk
 		envelope["targetId"] = req.Properties["targetId"]
 	}
-	for _, e := range req.Edges[propTarget] {
-		envelope["target"] = vocabulary.RecordPath(e.Kind, e.ID)
-		break
+	if target := referencePathOf(req.Properties[propTarget]); target != "" {
+		envelope["target"] = target
 	}
 	if rule.criteria != "" {
 		envelope["criteria"] = rule.criteria
@@ -280,13 +279,13 @@ func (ds *dataset) decideAsPolicy(ctx context.Context, req *substrate.Record, ru
 }
 
 // requestTargetKind resolves the kind an accept would write: targetKind on a
-// create, the target edge's kind otherwise.
+// create, the kind the `target` reference names otherwise.
 func (ds *dataset) requestTargetKind(ctx context.Context, req *substrate.Record) (string, error) {
 	if tk, _ := req.Properties["targetKind"].(string); tk != "" {
 		return tk, nil
 	}
-	for _, e := range req.Edges[propTarget] {
-		return e.Kind, nil
+	if kind, _, ok := vocabulary.SplitRecordPath(referencePathOf(req.Properties[propTarget])); ok {
+		return kind, nil
 	}
 	return "", fmt.Errorf("%w: the request names no target to bound the decision by", substrate.ErrValidation)
 }

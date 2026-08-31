@@ -9,11 +9,10 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 )
 
-// An owner pointer has two spellings and one meaning: an `ownerRef` edge and an
-// `ownerRef` reference. The edge half is held by TestFinalizersAndOwnerRefGC in
-// sync_db_test.go; this file holds the reference half, and the three ways it
-// must NOT fire — a pointer at another owner, a reference the declaration did
-// not mark `ownerRef`, and a plain string carrying the same value.
+// An owner pointer is a reference declaring `onDelete: cascade`: collecting the
+// referent collects the record that names it. This file holds the cascade and
+// the three ways it must NOT fire — a pointer at another owner, a reference the
+// declaration did not mark, and a plain string carrying the same value.
 
 // mirrorAuthority is a provider bundle's shape in miniature: three kinds that
 // name an account three different ways, so one delete separates them.
@@ -47,9 +46,9 @@ func mirrorManifest() enginetest.Manifest {
 			// The owner pointer under test.
 			kind(mirrorAuthority+"/owned", map[string]any{
 				"type": "reference", "kind": enginetest.AccountType,
-				"required": true, "ownerRef": true,
+				"required": true, "onDelete": "cascade",
 			}),
-			// The same pin, the same value, no `ownerRef`: provenance, and the
+			// The same pin, the same value, no `onDelete:`: provenance, and the
 			// sweep must leave it alone. Without this the test would pass on a
 			// cascade that collected every reference at the owner's kind.
 			kind(mirrorAuthority+"/pointer", map[string]any{
@@ -128,13 +127,13 @@ func TestOwnerRefReferenceCascade(t *testing.T) {
 		t.Fatal("the account should be hard-deleted")
 	}
 	if mustGet(t, ds, synced.Kind, synced.ID).DeletedAt == nil {
-		t.Fatal("the ownerRef reference should have tombstoned the synced record")
+		t.Fatal("the cascading reference should have tombstoned the synced record")
 	}
 	if mustGet(t, ds, elsewhere.Kind, elsewhere.ID).DeletedAt != nil {
 		t.Fatal("a record pointing at another account was collected")
 	}
 	if mustGet(t, ds, provenance.Kind, provenance.ID).DeletedAt != nil {
-		t.Fatal("a reference without ownerRef was collected")
+		t.Fatal("a reference without onDelete: cascade was collected")
 	}
 	if mustGet(t, ds, legacy.Kind, legacy.ID).DeletedAt != nil {
 		t.Fatal("a string property was collected")

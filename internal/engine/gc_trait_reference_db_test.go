@@ -10,7 +10,7 @@ import (
 )
 
 // A shared kind (calendar, conversation, emailthread) owns its account through a
-// TRAIT-pinned `ownerRef` reference, not a kind-pinned one: two providers each
+// TRAIT-pinned cascading reference, not a kind-pinned one: two providers each
 // declare their own account kind, and pinning one would tie the shared kind to
 // one provider (0034). This holds the two halves that pin buys: the write path
 // refuses a referent whose kind does not implement the trait, and the GC cascade
@@ -20,7 +20,7 @@ const traitMirrorAuthority = "traitmirror.example.com"
 
 // traitMirrorManifest declares a `connected` trait, two account kinds that
 // implement it (two providers), a `session` kind whose account is a trait-pinned
-// ownerRef reference, and a `stranger` kind that implements nothing — so a
+// cascading reference, and a `stranger` kind that implements nothing — so a
 // session pointing at a stranger is refused.
 func traitMirrorManifest() enginetest.Manifest {
 	kind := func(id string, extra map[string]any) map[string]any {
@@ -82,11 +82,11 @@ func traitMirrorManifest() enginetest.Manifest {
 				"properties": map[string]any{
 					"label": map[string]any{"type": "string"},
 					"account": map[string]any{
-						"type": "reference", "trait": "connected", "ownerRef": true,
+						"type": "reference", "trait": "connected", "onDelete": "cascade",
 					},
 				},
 			}),
-			// Same trait pin, no `ownerRef`: the sweep must leave it alone.
+			// Same trait pin, no `onDelete:`: the sweep must leave it alone.
 			kind(traitMirrorAuthority+"/pointer", map[string]any{
 				"properties": map[string]any{
 					"label": map[string]any{"type": "string"},
@@ -156,19 +156,19 @@ func TestOwnerRefTraitReferenceCascade(t *testing.T) {
 		t.Fatal("account A should be hard-deleted")
 	}
 	if _, err := ds.Get(ctx, synced.Kind, synced.ID); err == nil {
-		t.Fatal("the trait-pinned ownerRef should have collected the session on account A")
+		t.Fatal("the trait-pinned cascade should have collected the session on account A")
 	}
 	if _, err := ds.Get(ctx, elsewhere.Kind, elsewhere.ID); err != nil {
 		t.Fatalf("the session on account B should stand: %v", err)
 	}
 	if mustGet(t, ds, provenance.Kind, provenance.ID).DeletedAt != nil {
-		t.Fatal("a trait reference without ownerRef was collected")
+		t.Fatal("a trait reference without onDelete: cascade was collected")
 	}
 }
 
 // `incoming` enumerates a trait pin the same way the cascade does: standing on
 // an account, the reverse read lists the session that names it through the
-// trait-pinned reference, labeled ViaReference. Enumerability is what `ownerRef`
+// trait-pinned reference. Enumerability is what `onDelete: cascade`
 // requires, so this is the other half of the same registry read.
 func TestIncomingOverTraitReference(t *testing.T) {
 	t.Parallel()
@@ -194,7 +194,7 @@ func TestIncomingOverTraitReference(t *testing.T) {
 		if row.From.ID != sess.ID {
 			continue
 		}
-		if row.Via != substrate.ViaReference || row.Rel != "account" {
+		if row.Property != "account" || row.Path != "" {
 			t.Fatalf("the trait-pinned reference row reads %+v", row)
 		}
 		found = true

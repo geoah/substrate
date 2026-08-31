@@ -316,6 +316,7 @@ data:
     # at person — left empty on write so the substrate resolves it.
     person:
       type: reference
+      displayName: Person
       kind: people.substrate.reamde.dev/person
       required: true
       mustExist: true
@@ -445,6 +446,7 @@ data:
     # at person — left empty on write so the substrate resolves it.
     assignee:
       type: reference
+      displayName: Assignee
       kind: people.substrate.reamde.dev/person
       required: true
       mustExist: true
@@ -452,6 +454,7 @@ data:
       description: the human this issue is assigned to
     team:
       type: reference
+      displayName: Team
       kind: linear.bundles.substrate.reamde.dev/team
       mustExist: true
       description: the Linear team this issue belongs to
@@ -1005,7 +1008,7 @@ data:
                 desired["name"] = title
             if url and tprops.get("url") != url:
                 desired["url"] = url
-            # STATUS IS THE SHARP EDGE (the v4 policy): it moves only when
+            # STATUS IS THE DELICATE FIELD (the v4 policy): it moves only when
             # the upstream state actually departed from the adopted baseline
             # — compared FOLDED, because raw stateType granularity would call
             # backlog -> started a departure and reopen an owner-done task on

@@ -186,17 +186,18 @@ func TestBeeperBundleAdmitsSchema(t *testing.T) {
 		}
 	}
 
-	// The message mirror hangs off its room: required, single, ownerRef.
+	// The message mirror hangs off its room: required, single, cascading.
 	msg, ok := reg.ByIdentity(beeperMessageType)
 	if !ok {
 		t.Fatalf("message type %s missing", beeperMessageType)
 	}
-	ed, ok := msg.Edge("room")
-	if !ok {
-		t.Fatalf("message declares no `room` edge")
+	ed, ok := msg.Prop("room")
+	if !ok || ed.Datatype != vocabulary.DatatypeReference {
+		t.Fatalf("message declares no `room` reference")
 	}
-	if ed.To != beeperRoomType || !ed.Required || ed.Many {
-		t.Fatalf("room edge shape wrong: to=%q required=%v many=%v", ed.To, ed.Required, ed.Many)
+	if ed.To != beeperRoomType || !ed.Required || ed.Repeated || !ed.Cascades() {
+		t.Fatalf("room reference shape wrong: kind=%q required=%v repeated=%v cascades=%v",
+			ed.To, ed.Required, ed.Repeated, ed.Cascades())
 	}
 
 	// NO mapping registers from either mirror type — bridged-sender identity

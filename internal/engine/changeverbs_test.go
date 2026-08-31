@@ -99,7 +99,6 @@ func TestMessageChangeOpsAreTheChangelogsOwn(t *testing.T) {
 		fieldValues(t, seedKind(t, typeMessage), "changes", "op"),
 		[]string{
 			string(substrate.OpPut), string(substrate.OpPatch), string(substrate.OpDelete),
-			string(substrate.OpLink), string(substrate.OpUnlink),
 			string(substrate.OpMerge), string(substrate.OpSplit),
 		})
 }

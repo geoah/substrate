@@ -323,6 +323,17 @@ func (ds *dataset) applyVocabularyBatch(ctx context.Context, actor substrate.Act
 		for k, e := range got {
 			written[k] = e
 		}
+		// The refs index is the reverse projection of stored reference values
+		// against the DECLARATION (refs.go), so a declaration that adds, drops
+		// or re-points one changes what the same stored properties project to.
+		// Re-derived here, in the apply's own transaction, against the candidate
+		// closure: an index left alone would answer for a declaration that is
+		// gone. The narrowing guards above have already refused every change
+		// that would strand a LIVE value, so what this reaches is the additive
+		// case and the tombstones the counts deliberately do not see.
+		if err := t.reprojectRefs(candidate, st.reprojected); err != nil {
+			return err
+		}
 		if b.extra != nil {
 			if err := b.extra(t, candidate); err != nil {
 				return err
@@ -378,7 +389,13 @@ type vocabularyStage struct {
 	touched          map[string]bool
 	droppedTypes     []string
 	droppedCallables []droppedCallable
-	narrowings       []narrowing
+	// reprojected names the kinds whose REFERENCE declarations moved, so the
+	// refs index is re-derived for their records in the apply's transaction
+	// (refs.go). It is the kinds the change can be SEEN through, not every
+	// touched kind: a declaration whose reference sites are identical projects
+	// the same rows it already holds.
+	reprojected []string
+	narrowings  []narrowing
 }
 
 // stageVocabularyBatch builds the batch's candidate registry and classifies
@@ -547,6 +564,7 @@ func (ds *dataset) stageVocabularyBatch(ctx context.Context, current *vocabulary
 		// callable loudly.
 		droppedTypes:     droppedTypes,
 		droppedCallables: droppedBundleCallables(current, candidate, touched),
+		reprojected:      reprojectedKinds(current, candidate, touched),
 		// Evolution-with-data: a NARROWING definition
 		// diff — property dropped/renamed/kind-changed, enum value or state
 		// removed, required added — is classified here against the currently
@@ -1201,23 +1219,19 @@ func (t *txn) pruneSchemaRows(authorities, live map[string]bool) error {
 	for _, s := range gone {
 		ref := eref{Kind: s.typ, ID: s.id}
 		if s.typ == kindBundle {
-			// The bundle row's outgoing edges are its input BINDINGS
-			// (inputs.go). A tombstone leaves edges standing, so without
-			// this a later re-install of the same bundle would resurrect a
-			// binding the uninstall was supposed to clear — fresh install,
-			// stale explicit choice. The deletes ride the tombstone's own
-			// changelog entry, so a rebuild replays them.
-			edges, err := t.edgesOf(ref)
+			// The bundle row's `bindings` are its input choices (inputs.go). A
+			// tombstone leaves the property standing, so without this a later
+			// re-install of the same bundle would resurrect a binding the
+			// uninstall was supposed to clear — fresh install, stale explicit
+			// choice. It is cleared by WRITING the row, in this transaction, so
+			// the delta rides the changelog and a rebuild replays it.
+			row, err := t.loadRow(ref, true)
 			if err != nil {
 				return err
 			}
-			rels := mapKeysOf(edges)
-			sort.Strings(rels)
-			for _, rel := range rels {
-				for _, dst := range edges[rel] {
-					if _, err := t.deleteEdge(rel, ref, dst); err != nil {
-						return fmt.Errorf("substrate/engine: prune bundle binding %s: %w", rel, err)
-					}
+			if len(bindingsOf(row)) > 0 {
+				if err := t.writeBindings(ref, map[string]any{}); err != nil {
+					return fmt.Errorf("substrate/engine: clear bundle bindings: %w", err)
 				}
 			}
 		}
@@ -1913,6 +1927,76 @@ func checkDeclarationWrite(ty *vocabulary.Kind, short string, existing *substrat
 	}
 	if len(problems) > 0 {
 		return &substrate.ValidationError{Problems: problems}
+	}
+	return nil
+}
+
+// reprojectedKinds lists the touched authorities' kinds whose reference
+// declarations differ between the stored closure and the candidate — added,
+// dropped, re-shaped or given link data. A kind the candidate drops entirely is
+// in the list too: its records' rows must go with the declaration that
+// described them.
+func reprojectedKinds(current, candidate *vocabulary.Registry, touched map[string]bool) []string {
+	sites := func(reg *vocabulary.Registry, ident string) string {
+		ty, ok := reg.ByIdentity(ident)
+		if !ok {
+			return ""
+		}
+		var b strings.Builder
+		for _, name := range ty.PropOrder {
+			appendReferenceShape(&b, name, ty.Props[name])
+		}
+		return b.String()
+	}
+	seen := map[string]bool{}
+	var out []string
+	for aname := range touched {
+		for _, reg := range []*vocabulary.Registry{current, candidate} {
+			g, ok := reg.AuthorityByName(aname)
+			if !ok || g == nil {
+				continue
+			}
+			for _, tn := range g.KindOrder {
+				ident := g.Kinds[tn].Identity
+				if seen[ident] {
+					continue
+				}
+				seen[ident] = true
+				if sites(current, ident) != sites(candidate, ident) {
+					out = append(out, ident)
+				}
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// appendReferenceShape writes the part of one declaration that the refs
+// derivation reads: where a reference sits, in which container, and which link
+// properties travel with it. Two declarations with the same string project the
+// same rows from the same stored values.
+func appendReferenceShape(b *strings.Builder, path string, p *vocabulary.Property) {
+	if p.Datatype == vocabulary.DatatypeReference {
+		fmt.Fprintf(b, "%s|%v|%v|%s;", path, p.Repeated, p.Keyed, strings.Join(p.PropertyOrder, ","))
+	}
+	for _, fn := range p.FieldOrder {
+		appendReferenceShape(b, path+"."+fn, p.Fields[fn])
+	}
+}
+
+// reprojectRefs re-derives the refs index for the kinds whose reference
+// declarations moved, against the CANDIDATE closure: the candidate is what the
+// committed rows must project against, and the live registry does not hold it
+// until the publish.
+func (t *txn) reprojectRefs(candidate *vocabulary.Registry, kinds []string) error {
+	prev := t.writeReg
+	t.writeReg = candidate
+	defer func() { t.writeReg = prev }()
+	for _, ident := range kinds {
+		if err := t.syncRefsOfKind(ident); err != nil {
+			return err
+		}
 	}
 	return nil
 }

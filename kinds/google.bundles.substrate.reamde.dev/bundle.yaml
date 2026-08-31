@@ -526,6 +526,7 @@ data:
     # on write so the substrate resolves it.
     person:
       type: reference
+      displayName: Person
       kind: people.substrate.reamde.dev/person
       required: true
       mustExist: true
@@ -1287,6 +1288,7 @@ data:
     # EMPTY on write so the mapping resolves it.
     person:
       type: reference
+      displayName: Person
       kind: people.substrate.reamde.dev/person
       required: true
       mustExist: true

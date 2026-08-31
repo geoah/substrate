@@ -4,8 +4,8 @@ package engine
 // BundleInput), each naming a kind; records of that kind are ordinary and
 // unbounded, and resolution picks ONE per input, in a fixed order:
 //
-//   1. the BOUND record — an edge on the bundle's own record row,
-//      rel = the input name, written by the bind verb;
+//   1. the BOUND record — an entry in the bundle row's own `bindings`, a keyed
+//      reference whose key is the input name, written by the bind verb;
 //   2. the record whose id is "default" — a well-known NAME, never a
 //      marker property, so two records can never both be "the default";
 //   3. the sole live record of the kind, so the one-record case needs
@@ -17,17 +17,15 @@ package engine
 // their contradictory defaulting rules.
 //
 // A binding's lifetime tracks its record's. While the bound record is only
-// TOMBSTONED (resurrectable by split), the edge stands and the input reads
-// DANGLING — the choice is preserved because the record may come back. When
-// GC hard-deletes the record, its edges go with it (applyPurge deletes by
-// dst), the choice has nothing left to honor, and resolution returns to the
-// default rules like any never-bound input. That is deliberate, not
-// papering-over: a permanently gone record leaves no choice to keep.
+// TOMBSTONED (resurrectable by split), the binding stands and the input reads
+// DANGLING — the choice is preserved because the record may come back. Once GC
+// hard-deletes the record the binding names nothing, and the input reads
+// dangling until somebody rebinds or unbinds it: the pointer is a value on the
+// bundle row, and a purge at the far end does not reach into another record's
+// properties to erase what it says.
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -72,18 +70,12 @@ func (ds *dataset) resolveBundleInput(ctx context.Context, b *vocabulary.Bundle,
 	}
 	ri := resolvedInput{Name: name, Input: in}
 
-	// 1. The bound record: the bind verb wrote an edge off the bundle row.
-	var dst eref
-	err := ds.db.QueryRowContext(ctx, `
-		SELECT dst_kind, dst FROM edges
-		WHERE src_kind = $1 AND src = $2 AND rel = $3
-		ORDER BY created_at, dst_kind, dst LIMIT 1`,
-		kindBundle, b.Identity(), name).Scan(&dst.Kind, &dst.ID)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-	case err != nil:
+	// 1. The bound record, read off the bundle row's own `bindings`.
+	bundleRow, err := ds.loadRowDB(ctx, eref{Kind: kindBundle, ID: b.Identity()})
+	if err != nil {
 		return ri, err
-	default:
+	}
+	if dst, bound := bindingOf(bundleRow, name); bound {
 		row, err := ds.loadRowDB(ctx, dst)
 		if err != nil {
 			return ri, err
@@ -129,14 +121,53 @@ func (ds *dataset) resolveBundleInput(ctx context.Context, b *vocabulary.Bundle,
 	return ri, nil
 }
 
-// BindBundleInput points a bundle's input at a chosen record (the edge the
+// propBindings is the bundle row's keyed reference holding one binding per
+// input name. It is `managed:`, so only these verbs write it and an install
+// that rewrites the declaration leaves the owner's choices alone.
+const propBindings = "bindings"
+
+// bindingOf reads one input's bound record off a bundle row, and whether the
+// input is bound at all. An unbound input and one bound to nothing are the same
+// answer, so a caller never has to tell them apart.
+func bindingOf(bundle *erow, input string) (eref, bool) {
+	if bundle == nil {
+		return eref{}, false
+	}
+	m, ok := bundle.Props[propBindings].(map[string]any)
+	if !ok {
+		return eref{}, false
+	}
+	kind, id, ok := vocabulary.SplitRecordPath(referencePathOf(m[input]))
+	if !ok {
+		return eref{}, false
+	}
+	return eref{Kind: kind, ID: id}, true
+}
+
+// bindingsOf copies a bundle row's whole binding map, ready to be written back
+// with one key changed. Never the stored map itself: the row the write path
+// diffs against must not move under it.
+func bindingsOf(bundle *erow) map[string]any {
+	out := map[string]any{}
+	if bundle == nil {
+		return out
+	}
+	if m, ok := bundle.Props[propBindings].(map[string]any); ok {
+		for k, v := range m {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// BindBundleInput points a bundle's input at a chosen record (the binding the
 // resolver's first step reads), or clears the choice when recordID is empty.
-// The bundle row is a system kind the generic link path refuses (and its kind
-// declares no edges), so this verb is the one door: it validates the input
-// exists and the record is live and of the input's kind, then writes the edge
-// through the fold as the system actor — a changelog entry like any write, so
-// a rebuild replays it. A disabled bundle's configuration is frozen, and
-// bind IS configuration, so it refuses like any input-record write would.
+// `bindings` is a managed property, so an ordinary write cannot touch it and
+// this verb is the one door: it validates the input exists and the record is
+// live and of the input's kind, then writes the bundle row as the system actor
+// — a changelog entry like any write, so a rebuild replays it. A disabled
+// bundle's configuration is frozen, and bind IS configuration, so it refuses
+// like any input-record write would.
 func (ds *dataset) BindBundleInput(ctx context.Context, bundleID, input, recordID string) error {
 	b, err := ds.bundleByID(bundleID)
 	if err != nil {
@@ -157,8 +188,8 @@ func (ds *dataset) BindBundleInput(ctx context.Context, bundleID, input, recordI
 	src := eref{Kind: kindBundle, ID: b.Identity()}
 	if recordID == "" {
 		return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-			// Lock the bundle row so an unbind cannot interleave a
-			// concurrent uninstall's teardown or another bind.
+			// Lock the bundle row so an unbind cannot interleave a concurrent
+			// uninstall's teardown or another bind.
 			srcRow, err := t.loadRow(src, true)
 			if err != nil {
 				return err
@@ -166,28 +197,22 @@ func (ds *dataset) BindBundleInput(ctx context.Context, bundleID, input, recordI
 			if srcRow == nil || srcRow.DeletedAt != nil {
 				return fmt.Errorf("%w: bundle %s", substrate.ErrNotFound, bundleID)
 			}
-			cur, err := t.edgeTargetOf(src, input)
-			if err != nil || cur.ID == "" {
-				return err
+			if _, bound := bindingOf(srcRow, input); !bound {
+				return nil
 			}
-			changed, err := t.deleteEdge(input, src, cur)
-			if err != nil || !changed {
-				return err
-			}
-			if err := t.bumpVersion(src); err != nil {
-				return err
-			}
-			return t.appendChange(substrate.ActorSystem, substrate.OpUnlink, src.ID, src.Kind, map[string]any{
-				"rel": input, "dst": cur.ID, "dstType": cur.Kind,
-			})
+			bindings := bindingsOf(srcRow)
+			// A keyed map drops the key its value is null at (coerceKeyed), so
+			// this is the unbind — the key goes, not its value.
+			bindings[input] = nil
+			return t.writeBindings(src, bindings)
 		})
 	}
 	dst := eref{Kind: in.Kind, ID: recordID}
 	return ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
-		// Both ends are validated UNDER the transaction's locks (the same
-		// ascending order link takes), so a bind can neither race the
-		// target's delete into a dangling edge nor race an uninstall into an
-		// edge off a gone bundle row.
+		// Both ends are validated UNDER the transaction's locks (the ascending
+		// (kind, id) order every multi-record path takes), so a bind can neither
+		// race the target's delete into a dangling binding nor race an uninstall
+		// into a binding on a gone bundle row.
 		lsrc, ldst, err := t.lockCanonicalPair(src, dst)
 		if err != nil {
 			return err
@@ -206,24 +231,21 @@ func (ds *dataset) BindBundleInput(ctx context.Context, bundleID, input, recordI
 		if dstRow == nil || dstRow.DeletedAt != nil {
 			return fmt.Errorf("%w: no live %s record %q to bind input %q to", substrate.ErrNotFound, in.Kind, recordID, input)
 		}
-		// Bind is single-target by meaning: replace-then-put keeps exactly
-		// one edge per input rel, so a re-bind needs no separate unbind.
-		cleared, err := t.replaceSingleEdge(input, lsrc, ldst)
-		if err != nil {
-			return err
-		}
-		put, err := t.putEdge(input, lsrc, ldst, nil, false)
-		if err != nil {
-			return err
-		}
-		if !cleared && !put {
-			return nil
-		}
-		if err := t.bumpVersion(lsrc); err != nil {
-			return err
-		}
-		return t.appendChange(substrate.ActorSystem, substrate.OpLink, lsrc.ID, lsrc.Kind, map[string]any{
-			"rel": input, "dst": ldst.ID, "dstType": ldst.Kind,
-		})
+		// Bind is single-valued by meaning: one key, one pointer, so a re-bind
+		// needs no separate unbind.
+		bindings := bindingsOf(srcRow)
+		bindings[input] = vocabulary.RecordPath(ldst.Kind, ldst.ID)
+		return t.writeBindings(lsrc, bindings)
 	})
+}
+
+// writeBindings puts the bundle row's whole binding map through the ordinary
+// write path: no-op suppression holds, the refs index re-derives with the row,
+// and the changelog carries the delta a rebuild replays.
+func (t *txn) writeBindings(src eref, bindings map[string]any) error {
+	was := t.internal
+	t.internal = true
+	defer func() { t.internal = was }()
+	_, err := t.patch(src, substrate.PatchInput{Properties: map[string]any{propBindings: bindings}})
+	return err
 }

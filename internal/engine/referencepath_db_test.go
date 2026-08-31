@@ -72,6 +72,7 @@ func TestReferencePathAuthoredStoredAndReadBack(t *testing.T) {
 	}
 
 	target := vocabulary.RecordPath(pathAuthority+"/target", "a")
+	otherTarget := vocabulary.RecordPath(pathAuthority+"/target", "b")
 	// A DECLARATION record's id is a kind reference, so this path has FOUR
 	// segments and the id half keeps its slash. It is the case the grammar
 	// exists for.
@@ -110,9 +111,12 @@ func TestReferencePathAuthoredStoredAndReadBack(t *testing.T) {
 			stored:   vocabulary.RecordPath(pathAuthority+"/target", "foo.bar/baz/qux"),
 		},
 		// Containers carry the same rule elementwise, at every declared depth.
+		// A repeated reference holds each record ONCE, so the two spellings
+		// name two records: the point is that both forms coerce, not that they
+		// can name the same row twice.
 		"repeated, mixed forms": {
-			authored: []any{"a", target},
-			stored:   []any{target, target},
+			authored: []any{"a", otherTarget},
+			stored:   []any{target, otherTarget},
 		},
 		"keyed, mixed forms": {
 			authored: map[string]any{"one": "a", "two": target},
@@ -182,14 +186,7 @@ func TestReferencePathRefusals(t *testing.T) {
 			prop: "free", value: "a",
 			want: []string{"any kind", "full", `"a"`},
 		},
-		"a path contradicting the pin": {
-			prop:  "pinned",
-			value: vocabulary.RecordPath("core.substrate.reamde.dev/kind", pathAuthority+"/target"),
-			want: []string{
-				"core.substrate.reamde.dev/kind",
-				pathAuthority + "/target",
-			},
-		},
+
 		"a pointer at a kind nothing declares": {
 			prop: "free", value: "nosuch.example.com/thing/x",
 			want: []string{"unknown"},
@@ -201,15 +198,24 @@ func TestReferencePathRefusals(t *testing.T) {
 			want: []string{"retired", "migrates"},
 		},
 		// THE AMBIGUOUS CORNER. Under a pin, a value that parses as a path whose
-		// kind is not the pin reads two ways, and both are named rather than one
-		// being guessed.
+		// kind is not the pin reads two ways, and the REGISTRY settles it:
+		// coercion carries the value through, and the resolution pass refuses
+		// naming both readings — because a path at a kind the registry knows may
+		// be the one admitted mapping hop (references.go subjectHop), and
+		// refusing at coercion would close that door.
 		"a slash-bearing id that also parses as a path": {
 			prop: "pinned", value: "foo.bar/baz/qux",
+			want: []string{"unknown", "foo.bar/baz"},
+		},
+		// The same corner with a KNOWN kind that is not a mapping source for the
+		// pin: refused, with both readings named.
+		"a path at a known kind the pin does not admit": {
+			prop:  "pinned",
+			value: vocabulary.RecordPath("core.substrate.reamde.dev/kind", pathAuthority+"/target"),
 			want: []string{
-				"ambiguous",
-				"a pointer at foo.bar/baz",
-				vocabulary.RecordPath(pathAuthority+"/target", "foo.bar/baz/qux"),
 				"the declaration pins " + pathAuthority + "/target",
+				"the bare id",
+				"core.substrate.reamde.dev/kind/" + pathAuthority + "/target",
 			},
 		},
 		// Empty-id shapes name no record, pinned or not.

@@ -1,23 +1,28 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// validateReferences is the existence gate for reference-typed properties
-// , the twin of validateBlobRefs: coercion checked the SHAPE and
-// left the value a record PATH, and this registry-aware pass —
-// taken inside the write transaction — resolves the referent KIND, refuses an
-// unknown one, refuses a pin mismatch, and rewrites the stored value to the
-// canonical path. It does NOT require the referent RECORD
-// to exist: a reference is a typed POINTER, not a graph edge, so it may name a
-// row that is not present yet (a trigger's `callable` names a function the
-// same batch installs; the trigger's OWN admission resolves the callable
-// record separately). Mutating props here, before the row's property map is
-// built, is what makes the stored value canonical on every write path.
+// validateReferences is the registry-aware gate for reference-typed
+// properties, the twin of validateBlobRefs: coercion checked the SHAPE and left
+// the value a record PATH, and this pass — taken inside the write transaction —
+// resolves the referent KIND, refuses an unknown one, refuses a pin mismatch,
+// resolves the one admitted hop through a mapping subject, refuses a repeated
+// reference that names one record twice, enforces `mustExist:`, and rewrites the
+// stored value to the canonical path. Mutating props here, before the row's
+// property map is built, is what makes the stored value canonical on every write
+// path.
+//
+// EXISTENCE IS OPT-IN. Without `mustExist: true` a reference is a plain pointer
+// and may name a row that is not present yet: a trigger's `callable` names a
+// function the same batch installs, and the trigger's OWN admission resolves
+// that record separately. With it, the referent must be there — a tombstone
+// counts, because the record exists and a split can bring it back.
 //
 // It reaches every POSITION a reference is declared at, not only a kind's own
 // properties: inside an object, inside a repeated object's elements, inside a
@@ -26,6 +31,8 @@ import (
 // a resolved identity.
 func (t *txn) validateReferences(ty *vocabulary.Kind, props map[string]any) error {
 	var problems []string
+	t.refMissing = nil
+	defer func() { t.refMissing = nil }()
 	for _, name := range sortedKeys(props) {
 		p, ok := ty.Prop(name)
 		if !ok || !holdsReference(p) {
@@ -40,6 +47,14 @@ func (t *txn) validateReferences(ty *vocabulary.Kind, props map[string]any) erro
 		props[name] = nv
 	}
 	if len(problems) > 0 {
+		// A `mustExist:` miss is a NOT FOUND, not a shape problem, and it
+		// carries that sentinel out whole: it is the same refusal an addressed
+		// read of the referent would give, which is what the door in front of
+		// this maps to a 404. A problem list would flatten it to a 422 and the
+		// caller would have to read the prose to tell the two apart.
+		if len(t.refMissing) > 0 {
+			return t.refMissing[0]
+		}
 		return &substrate.ValidationError{Problems: problems}
 	}
 	return nil
@@ -105,6 +120,14 @@ func (t *txn) normalizeReferencesIn(p *vocabulary.Property, v any, where string)
 			problems = append(problems, probs...)
 			list[i] = nv
 		}
+		// A repeated reference is an ORDERED SET of targets: naming one record
+		// twice says nothing a single entry does not, and the refs index — whose
+		// key is (property, path, ord) — would carry the same pointer under two
+		// ordinals, so a reverse read would report it twice. Refused at the
+		// write, where the author can see which value to drop.
+		if p.Datatype == vocabulary.DatatypeReference {
+			problems = append(problems, duplicateRefs(list, where)...)
+		}
 		return list, problems
 	}
 	return t.normalizeReferenceValue(p, v, where)
@@ -119,6 +142,9 @@ func (t *txn) normalizeReferenceValue(p *vocabulary.Property, v any, where strin
 	if p.Datatype == vocabulary.DatatypeReference {
 		nv, err := t.normalizeReference(p, v)
 		if err != nil {
+			if errors.Is(err, substrate.ErrNotFound) {
+				t.refMissing = append(t.refMissing, fmt.Errorf("%s: %w", where, err))
+			}
 			return v, []string{fmt.Sprintf("%s: %v", where, err)}
 		}
 		return nv, nil
@@ -162,17 +188,38 @@ func storedReferencePath(v any) string {
 	return ""
 }
 
-// normalizeReference resolves one reference value's referent kind against the
-// registry, checks the declaration's `kind:` pin, and returns the canonical
-// RECORD PATH — "<authority>/<kind>/<id>", one flat string. Coercion already
-// produced a qualified path (a full path, or a pin-completed bare id), so the
-// stored path is spelled one way whatever the writer typed.
+// duplicateRefs names every record a repeated reference lists more than once,
+// in the order the duplicates appear.
+func duplicateRefs(list []any, where string) []string {
+	seen := map[string]bool{}
+	reported := map[string]bool{}
+	var problems []string
+	for _, item := range list {
+		path := referencePathOf(item)
+		if path == "" {
+			continue
+		}
+		if seen[path] && !reported[path] {
+			reported[path] = true
+			problems = append(problems, fmt.Sprintf("%s: names %s twice — a repeated reference holds each record once", where, path))
+		}
+		seen[path] = true
+	}
+	return problems
+}
+
+// normalizeReference resolves ONE reference value: its referent kind against the
+// registry, the declaration's pin, the one admitted mapping hop, and
+// `mustExist:`. It returns the value in its stored shape — the canonical RECORD
+// PATH "<authority>/<kind>/<id>", or that path under `ref` when the declaration
+// carries link data. Coercion already produced a qualified path (a full path, or
+// a pin-completed bare id), so the stored path is spelled one way whatever the
+// writer typed.
 func (t *txn) normalizeReference(p *vocabulary.Property, v any) (any, error) {
-	s, ok := v.(string)
-	if !ok || s == "" {
+	s := referencePathOf(v)
+	if s == "" {
 		return nil, fmt.Errorf(`a reference is a "<kind>/<id>" path string`)
 	}
-	pinned := p.To != "" && p.To != vocabulary.ToAny
 	// This pass RESOLVES; it does not re-decide what the writer meant. Coercion
 	// already turned the authored value into a path — refusing the ambiguous
 	// spellings at that one door — and reading it a second time as an authored
@@ -186,16 +233,101 @@ func (t *txn) normalizeReference(p *vocabulary.Property, v any) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("referent kind %q is unknown", kind)
 	}
-	// Both sides get named: the pin says one kind and the value spells another,
-	// and a message carrying only one of them leaves the writer to guess which
-	// end to change.
-	if pinned && rt.Identity != p.To {
-		return nil, fmt.Errorf("reference points at %s, but the declaration pins %s", rt.Identity, p.To)
+	target := eref{Kind: rt.Identity, ID: id}
+	if !referenceAdmits(t.ds.registry(), p, rt) {
+		hopped, err := t.subjectHop(p, target, rt)
+		if err != nil {
+			return nil, err
+		}
+		target = hopped
 	}
-	// A trait pin admits any kind that implements the trait. The check names the
-	// trait so the writer sees which contract the referent kind is missing.
-	if p.ToTrait != "" && !rt.Implements(p.ToTrait) {
-		return nil, fmt.Errorf("reference points at %s, which does not implement the pinned trait %s", rt.Identity, p.ToTrait)
+	if p.MustExist {
+		row, err := t.loadRow(target, false)
+		if err != nil {
+			return nil, err
+		}
+		// A TOMBSTONE counts as existing. The record is there, a split can bring
+		// it back, and refusing a pointer at one would make deleting a referent
+		// silently break every later write to the records naming it.
+		if row == nil {
+			return nil, fmt.Errorf("%w: reference names %s, which does not exist",
+				substrate.ErrNotFound, vocabulary.RecordPath(target.Kind, target.ID))
+		}
 	}
-	return vocabulary.RecordPath(rt.Identity, id), nil
+	path := vocabulary.RecordPath(target.Kind, target.ID)
+	if len(p.Properties) == 0 {
+		return path, nil
+	}
+	// The link data was coerced with the value; only the pointer moved.
+	out := map[string]any{}
+	if m, ok := v.(map[string]any); ok {
+		for k, kv := range m {
+			out[k] = kv
+		}
+	}
+	out[vocabulary.ReferenceValueKey] = path
+	return out, nil
+}
+
+// referenceAdmits reports whether a kind satisfies a reference's pin: no pin
+// admits everything, a `kind:` pin names the kind, a `trait:` pin names a
+// contract the kind implements.
+func referenceAdmits(reg *vocabulary.Registry, p *vocabulary.Property, rt *vocabulary.Kind) bool {
+	if p.ToTrait != "" {
+		return rt.Implements(p.ToTrait)
+	}
+	if p.To == "" || p.To == vocabulary.ToAny {
+		return true
+	}
+	return p.To == rt.Identity
+}
+
+// subjectHop is the ONE hop a pinned reference is allowed, and it exists because
+// a sync body holds a MIRROR and not the thing: google writes an emailaddress
+// path into a person-pinned reference, linear writes a user mirror into its
+// assignee. Both mirrors are recordmapping SOURCES whose mapping targets the
+// pinned kind, so the record the writer means is the source's own subject, and
+// resolving it here is what lets a connector name what it actually has.
+//
+// ONE HOP, never a chain: the value's kind must itself be a mapping source for
+// the pin, and the subject it resolves to is stored as written. A source record
+// with no subject yet gets one here (matchOrMint, the same probe-or-mint every
+// source write runs), and the subject recomputes from it — the source row is
+// already stored, because this only ever runs inside somebody else's write.
+func (t *txn) subjectHop(p *vocabulary.Property, target eref, rt *vocabulary.Kind) (eref, error) {
+	mismatch := func() error {
+		if p.ToTrait != "" {
+			return fmt.Errorf("reference points at %s, which does not implement the pinned trait %s", rt.Identity, p.ToTrait)
+		}
+		// BOTH READINGS get named. The value parsed as a path at a kind the pin
+		// does not admit, and it could equally have been meant as a bare id the
+		// pin completes; coercion carried it here rather than guessing, and a
+		// message naming one reading would leave the writer to find the other.
+		return fmt.Errorf(
+			"reference points at %s, but the declaration pins %s — write a %s path, or the bare id %q if that is what was meant",
+			rt.Identity, p.To, p.To, vocabulary.RecordPath(target.Kind, target.ID))
+	}
+	m, isSource := t.ds.registry().MappingFor(rt.Identity)
+	if !isSource {
+		return eref{}, mismatch()
+	}
+	to, known := t.ds.registry().ByIdentity(m.To)
+	if !known || !referenceAdmits(t.ds.registry(), p, to) {
+		return eref{}, mismatch()
+	}
+	// The hop reads a record, so the source has to be there whatever `mustExist`
+	// says: there is no subject to resolve on a row that does not exist.
+	row, err := t.loadRow(target, false)
+	if err != nil {
+		return eref{}, err
+	}
+	if row == nil {
+		return eref{}, fmt.Errorf("%w: reference names %s, which does not exist",
+			substrate.ErrNotFound, vocabulary.RecordPath(target.Kind, target.ID))
+	}
+	id, err := t.subjectOf(row, rt)
+	if err != nil {
+		return eref{}, err
+	}
+	return eref{Kind: m.To, ID: id}, nil
 }

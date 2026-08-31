@@ -23,7 +23,7 @@ import (
 // on: a new one that forgets its `repository` column, its policy or its FORCE
 // flag fails here rather than in production.
 var repositoryScopedTables = []string{
-	"records", "edges", "former_ids", "annotations", "property_managers",
+	"records", "refs", "former_ids", "annotations", "property_managers",
 	"property_offers", "changelog", "embeddings", "embed_queue", "trigger_cursors",
 	"trigger_failures", "trigger_schedule", "sealed", "oauth_flows",
 	"paged_cursors", "blobs", "vocabulary_dialect", "vocabulary_promotions",

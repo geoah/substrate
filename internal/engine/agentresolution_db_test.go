@@ -101,9 +101,7 @@ func TestSelfResolutionDoesNotResumeOwnThread(t *testing.T) {
 		Properties: map[string]any{
 			"diff":   map[string]any{"properties": map[string]any{"name": "better"}},
 			"thread": first.Thread,
-		},
-		Edges: []substrate.EdgeInput{
-			{Rel: "target", To: substrate.EdgeRef{Kind: crewAuthority + "/widget", ID: "w-selfish"}},
+			"target": vocabulary.RecordPath(crewAuthority+"/widget", "w-selfish"),
 		},
 	}); err != nil {
 		t.Fatalf("put request: %v", err)

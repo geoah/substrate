@@ -171,12 +171,11 @@ func feedMessage(t *testing.T, ds *dataset, id, personID, convID, text string) *
 	t.Helper()
 	return mustPutInternal(t, ds, substrate.PutInput{
 		Kind: convMsgType, ID: id,
-		Properties: map[string]any{"text": text, "at": "2026-08-08T10:00:00Z"},
-		Edges: []substrate.EdgeInput{
-			// Single-target edges: the declaration supplies the type, so a bare
-			// id resolves.
-			{Rel: "conversation", To: substrate.EdgeRef{ID: convID}},
-			{Rel: "author", To: substrate.EdgeRef{ID: personID}},
+		// The two references are pinned, so a bare id resolves: the
+		// declaration supplies the kind the value omits.
+		Properties: map[string]any{
+			"text": text, "at": "2026-08-08T10:00:00Z",
+			"conversation": convID, "author": personID,
 		},
 	})
 }
@@ -349,7 +348,8 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		t.Fatalf("proposal authored by %q, not the reading-list agent", reqActor)
 	}
 	var target string
-	if err := ds.db.QueryRowContext(ctx, `SELECT dst FROM edges WHERE rel = 'target' AND src = $1`, reqID).Scan(&target); err != nil {
+	if err := ds.db.QueryRowContext(ctx,
+		`SELECT dst FROM refs WHERE property = 'target' AND path = '' AND src = $1`, reqID).Scan(&target); err != nil {
 		t.Fatal(err)
 	}
 	if target != blogPage {
@@ -564,7 +564,8 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		  AND props->>'rationale' = 'weekly digest'`, vocabulary.KindRecordPatchRequest).Scan(&digestReq); err != nil {
 		t.Fatalf("the weekly digest proposal: %v", err)
 	}
-	if err := ds.db.QueryRowContext(ctx, `SELECT dst FROM edges WHERE rel = 'target' AND src = $1`, digestReq).Scan(&digestTarget); err != nil {
+	if err := ds.db.QueryRowContext(ctx,
+		`SELECT dst FROM refs WHERE property = 'target' AND path = '' AND src = $1`, digestReq).Scan(&digestTarget); err != nil {
 		t.Fatal(err)
 	}
 	if digestTarget != cfg.ID {

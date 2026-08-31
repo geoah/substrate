@@ -340,6 +340,10 @@ type txn struct {
 	// own replay disagree: a replay reads the registry the rebuild holds, which is
 	// the declaration the row ended up under.
 	writeReg *vocabulary.Registry
+	// refMissing collects the `mustExist:` misses of the reference pass, so the
+	// refusal leaves as the not-found it is rather than as a shape problem
+	// (references.go validateReferences).
+	refMissing []error
 	// recomputing marks a mapping recompute's own write (§7.1): recompute
 	// never triggers recompute, and the manager ledger records the winning
 	// contributor's actor — recomputeManagers, per accepted property —

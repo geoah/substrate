@@ -133,7 +133,7 @@ func TestGoogleGmailBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("enabledGmail scopes = %v, want the single gmail.readonly", scopes)
 	}
 
-	// The shared people source: a required, single, non-ownerRef subject edge
+	// The shared people source: a required, single, non-cascading subject reference
 	// and a mapping with a live match probe. Without the probe every address
 	// would mint its own person shell.
 	addr, ok := reg.ByIdentity(googleAddressType)
@@ -141,20 +141,20 @@ func TestGoogleGmailBundleAdmitsSchema(t *testing.T) {
 		t.Fatalf("source type %s missing", googleAddressType)
 	}
 	mustProps(t, addr, "account", "address", "displayName")
-	ed, ok := addr.Edge("person")
+	ed, ok := addr.Prop("person")
 	if !ok {
 		t.Fatalf("emailaddress declares no `person` edge")
 	}
-	if ed.To != googlePersonType || !ed.Required || ed.Many || ed.OwnerRef {
-		t.Fatalf("person edge shape wrong: to=%q required=%v many=%v ownerRef=%v",
-			ed.To, ed.Required, ed.Many, ed.OwnerRef)
+	if ed.To != googlePersonType || !ed.Required || ed.Repeated || ed.Cascades() {
+		t.Fatalf("person reference shape wrong: kind=%q required=%v repeated=%v cascades=%v",
+			ed.To, ed.Required, ed.Repeated, ed.Cascades())
 	}
 	m, ok := reg.MappingFor(googleAddressType)
 	if !ok {
 		t.Fatalf("no mapping registered from %s", googleAddressType)
 	}
-	if m.To != googlePersonType || m.Edge != "person" {
-		t.Fatalf("mapping resolves wrong: to=%q edge=%q", m.To, m.Edge)
+	if m.To != googlePersonType || m.Property != "person" {
+		t.Fatalf("mapping resolves wrong: to=%q edge=%q", m.To, m.Property)
 	}
 	if len(m.Match) == 0 {
 		t.Fatalf("the address mapping ships no match probe — every sender would mint a shell")
@@ -624,11 +624,11 @@ func googlePersonOf(t *testing.T, ds *dataset, typ, id string) string {
 	if err != nil {
 		t.Fatalf("get %s %s: %v", typ, id, err)
 	}
-	targets := row.Edges["person"]
-	if len(targets) != 1 {
-		t.Fatalf("%s %s points at %d persons, want 1", typ, id, len(targets))
+	ids := refIDs(row, "person")
+	if len(ids) != 1 {
+		t.Fatalf("%s %s points at %d persons, want 1", typ, id, len(ids))
 	}
-	return targets[0].ID
+	return ids[0]
 }
 
 // googleAccountStamp finds the connector stamp patch in a run's effects.
@@ -645,7 +645,7 @@ func googleAccountStamp(t *testing.T, effects []effect, id string) map[string]an
 }
 
 // googleSeedAccount creates the connection record the core rows point at:
-// emailthread.account and calendar.account are trait-pinned ownerRef references
+// emailthread.account and calendar.account are trait-pinned cascading references
 // (0034). A reference does not refuse a missing target at write, but the
 // account must exist for the cascade to collect the rows it owns and for a read
 // to resolve the pointer, so the sync seeds it. The injected config carries the
@@ -787,30 +787,31 @@ func TestGoogleGmailFakeSyncMirrors(t *testing.T) {
 		t.Fatalf("core emailmessage did not sync: %v", err)
 	}
 	threadID := substratefn.ExternalID("gmail-thread", "acct-step", "t-m1")
-	if targets := core.Edges["thread"]; len(targets) != 1 || targets[0].ID != threadID {
-		t.Fatalf("core message thread edge = %v, want %s", core.Edges["thread"], threadID)
+	if got := refIDs(core, "thread"); len(got) != 1 || got[0] != threadID {
+		t.Fatalf("core message thread = %v, want %s", got, threadID)
 	}
 	if _, err := ds.Get(ctx, coreThreadType, threadID); err != nil {
 		t.Fatalf("core emailthread did not sync: %v", err)
 	}
 
 	// The one-hop resolution: the body referenced the emailaddress RECORD and
-	// the engine landed the stored edge on the PERSON its mapping resolved.
-	senders := core.Edges["sender"]
+	// reference normalization stored the PERSON its mapping resolved.
+	senders := refPaths(core, "sender")
 	if len(senders) != 1 {
 		t.Fatalf("core message has %d senders, want 1", len(senders))
 	}
-	if senders[0].Kind != googlePersonType {
-		t.Fatalf("sender edge landed on %s, want %s", senders[0].Kind, googlePersonType)
+	senderKind, senderID, _ := vocabulary.SplitRecordPath(senders[0])
+	if senderKind != googlePersonType {
+		t.Fatalf("sender landed on %s, want %s", senderKind, googlePersonType)
 	}
 	addrID := substratefn.ExternalID("google-address", "acct-step", "alice@example.com")
 	addrRow, err := ds.Get(ctx, googleAddressType, addrID)
 	if err != nil {
 		t.Fatalf("emailaddress record did not sync: %v", err)
 	}
-	if got := addrRow.Edges["person"]; len(got) != 1 || got[0].ID != senders[0].ID {
-		t.Fatalf("the sender edge and the address record resolved different people: %v vs %v",
-			got, senders[0])
+	if got := refIDs(addrRow, "person"); len(got) != 1 || got[0] != senderID {
+		t.Fatalf("the message's sender and the address record resolved different people: %v vs %v",
+			got, senderID)
 	}
 
 	// Newest-wins on the thread: m2 is the later message, so its subject and
@@ -1549,7 +1550,7 @@ func TestGoogleGmailMalformedAddressSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("core emailmessage did not sync: %v", err)
 	}
-	if n := len(core.Edges["recipients"]); n != 1 {
+	if n := len(refPaths(core, "recipients")); n != 1 {
 		t.Fatalf("core message has %d recipients, want only the parseable one", n)
 	}
 	for _, bad := range []string{"a..b@example.com", ".a@example.com", "a.@example.com"} {
@@ -1599,8 +1600,8 @@ func TestGoogleGmailRecipientCap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("core emailmessage did not sync: %v", err)
 	}
-	if n := len(core.Edges["recipients"]); n != 3 {
-		t.Fatalf("core message has %d recipient edges, want the cap's 3", n)
+	if n := len(refPaths(core, "recipients")); n != 3 {
+		t.Fatalf("core message has %d recipients, want the cap's 3", n)
 	}
 	mirror, err := ds.Get(ctx, googleMessageType, msgID)
 	if err != nil {

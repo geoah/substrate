@@ -66,22 +66,23 @@ func fullSync(t *testing.T, ds substrate.Dataset) {
 	for i, chat := range []string{"c1", "c2"} {
 		conv := mustPut(t, ds, beeper, substrate.PutInput{
 			Kind: "conversation", ID: extID("slack.channel", chat),
-			Properties: map[string]any{"category": "direct", "account": enginetest.AccountType + "/" + beeperAcc.ID},
-			Edges: []substrate.EdgeInput{
-				{Rel: "participants", To: substrate.EdgeRef{ID: humans["alex@acme.com"]}},
+			Properties: map[string]any{
+				"category": "direct", "account": enginetest.AccountType + "/" + beeperAcc.ID,
+				"participants": []any{humans["alex@acme.com"]},
 			},
 		})
 		for j := range 3 {
 			mustPut(t, ds, beeper, substrate.PutInput{
-				Kind:       "conversationmessage",
-				ID:         extID("slack.msg", fmt.Sprintf("%s/%d", chat, j)),
-				Properties: map[string]any{"at": fmt.Sprintf("2026-08-0%dT1%d:00:00Z", i+1, j), "text": fmt.Sprintf("message %s %d", chat, j)},
-				Labels:     map[string]any{"connector:beeper/synced": true},
-				Edges: []substrate.EdgeInput{
-					{Rel: "conversation", To: substrate.EdgeRef{ID: conv.ID}},
-					{Rel: "author", To: substrate.EdgeRef{ID: humans["alex@acme.com"]}},
-					{Rel: "mentions", To: substrate.EdgeRef{ID: humans["nina@acme.com"]}},
+				Kind: "conversationmessage",
+				ID:   extID("slack.msg", fmt.Sprintf("%s/%d", chat, j)),
+				Properties: map[string]any{
+					"at":           fmt.Sprintf("2026-08-0%dT1%d:00:00Z", i+1, j),
+					"text":         fmt.Sprintf("message %s %d", chat, j),
+					"conversation": conv.ID,
+					"author":       humans["alex@acme.com"],
+					"mentions":     []any{humans["nina@acme.com"]},
 				},
+				Labels: map[string]any{"connector:beeper/synced": true},
 			})
 		}
 	}
@@ -92,19 +93,21 @@ func fullSync(t *testing.T, ds substrate.Dataset) {
 	})
 	series := mustPut(t, ds, gcal, substrate.PutInput{
 		Kind: "calendareventseries", ID: "gcal-series:standup",
-		Properties: map[string]any{"summary": "Standup", "recurrence": "FREQ=WEEKLY;BYDAY=WE"},
-		Edges:      []substrate.EdgeInput{{Rel: "calendar", To: substrate.EdgeRef{ID: cal.ID}}},
+		Properties: map[string]any{
+			"summary": "Standup", "recurrence": "FREQ=WEEKLY;BYDAY=WE",
+			"calendar": cal.ID,
+		},
 	})
 	for i, day := range []string{"05", "12"} {
 		mustPut(t, ds, gcal, substrate.PutInput{
 			Kind: "calendarevent", ID: extID("gcal.event", "standup_"+day),
-			Properties: map[string]any{"at": "2026-08-" + day + "T13:00:00Z", "endsAt": "2026-08-" + day + "T13:30:00Z", "summary": "Standup", "location": "Meet", "description": "Weekly sync"},
-			Edges: []substrate.EdgeInput{
-				{Rel: "calendar", To: substrate.EdgeRef{ID: cal.ID}},
-				{Rel: "series", To: substrate.EdgeRef{ID: series.ID}},
-				{Rel: "attendees", To: substrate.EdgeRef{ID: humans["alex@acme.com"]}},
-				{Rel: "attendees", To: substrate.EdgeRef{ID: humans["nina@acme.com"]}},
-				{Rel: "organizer", To: substrate.EdgeRef{ID: humans["alex@acme.com"]}},
+			Properties: map[string]any{
+				"at": "2026-08-" + day + "T13:00:00Z", "endsAt": "2026-08-" + day + "T13:30:00Z",
+				"summary": "Standup", "location": "Meet", "description": "Weekly sync",
+				"calendar":  cal.ID,
+				"series":    series.ID,
+				"attendees": []any{humans["alex@acme.com"], humans["nina@acme.com"]},
+				"organizer": humans["alex@acme.com"],
 			},
 		})
 		_ = i
@@ -152,7 +155,6 @@ func TestWriterKeyDeterminismAndRefinements(t *testing.T) {
 	_, ds := newDataset(t)
 	installShelf(t, ds)
 	work := mustPut(t, ds, owner, substrate.PutInput{Kind: "book", Properties: map[string]any{"title": "Piranesi"}})
-	toWork := []substrate.EdgeInput{{Rel: "work", To: substrate.EdgeRef{ID: work.ID}}}
 	editionID := extID("audible.asin", "B0123ABCDE")
 	a := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "bookedition",
@@ -161,8 +163,8 @@ func TestWriterKeyDeterminismAndRefinements(t *testing.T) {
 			"title": "Piranesi", "asin": "B0123ABCDE", "isbn": "9781635575637",
 			"format": "audiobook", "mediaRef": "https://example.com/a.m4b",
 			"duration": "PT6H47M12S",
+			"work":     work.ID,
 		},
-		Edges: toWork,
 	})
 	if a.ID != editionID {
 		t.Fatalf("id = %q, want the writer's own %q", a.ID, editionID)
@@ -174,8 +176,7 @@ func TestWriterKeyDeterminismAndRefinements(t *testing.T) {
 	}
 	b := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "bookedition", ID: editionID,
-		Properties: map[string]any{"mediaRef": "https://example.com/a.m4b"},
-		Edges:      toWork,
+		Properties: map[string]any{"mediaRef": "https://example.com/a.m4b", "work": work.ID},
 	})
 	if b.ID != a.ID {
 		t.Fatalf("a writer's own key is the upsert key: %s vs %s", a.ID, b.ID)
@@ -187,8 +188,7 @@ func TestWriterKeyDeterminismAndRefinements(t *testing.T) {
 	for prop, bad := range map[string]string{"asin": "nope", "isbn": "12345"} {
 		if _, err := ds.Put(ctx, owner, substrate.PutInput{
 			Kind:       "bookedition",
-			Properties: map[string]any{prop: bad},
-			Edges:      toWork,
+			Properties: map[string]any{prop: bad, "work": work.ID},
 		}); err == nil {
 			t.Fatalf("expected a %s pattern violation", prop)
 		} else {
@@ -197,7 +197,7 @@ func TestWriterKeyDeterminismAndRefinements(t *testing.T) {
 	}
 	// So is the format enum: there is no `audiobook` type, only this value.
 	if _, err := ds.Put(ctx, owner, substrate.PutInput{
-		Kind: "bookedition", Properties: map[string]any{"format": "vinyl"}, Edges: toWork,
+		Kind: "bookedition", Properties: map[string]any{"format": "vinyl", "work": work.ID},
 	}); err == nil {
 		t.Fatal("expected an enum violation")
 	}
@@ -215,7 +215,7 @@ func TestWriterKeyDeterminismAndRefinements(t *testing.T) {
 	}
 }
 
-func TestFinalizersAndOwnerRefGC(t *testing.T) {
+func TestFinalizersAndCascadeGC(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -233,10 +233,10 @@ func TestFinalizersAndOwnerRefGC(t *testing.T) {
 	})
 	msg := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "conversationmessage", ID: "slack-msg:m1",
-		Properties: map[string]any{"at": "2026-08-01T10:00:00Z", "text": "hi"},
-		Edges: []substrate.EdgeInput{
-			{Rel: "conversation", To: substrate.EdgeRef{ID: conv.ID}},
-			{Rel: "author", To: substrate.EdgeRef{ID: personIDFor(t, ds, "alex@acme.com", "Alex")}},
+		Properties: map[string]any{
+			"at": "2026-08-01T10:00:00Z", "text": "hi",
+			"conversation": conv.ID,
+			"author":       personIDFor(t, ds, "alex@acme.com", "Alex"),
 		},
 	})
 	// The connector holds a finalizer while it manages the conversation.
@@ -273,7 +273,7 @@ func TestFinalizersAndOwnerRefGC(t *testing.T) {
 	}
 	held := mustGet(t, ds, conv.Kind, conv.ID)
 	if held.DeletedAt == nil {
-		t.Fatal("owner-ref cascade should tombstone the conversation")
+		t.Fatal("the onDelete: cascade should tombstone the conversation")
 	}
 	if mustGet(t, ds, msg.Kind, msg.ID).DeletedAt != nil {
 		t.Fatal("the finalizer should hold the cascade at the conversation")
@@ -299,34 +299,42 @@ func TestFinalizersAndOwnerRefGC(t *testing.T) {
 	}
 }
 
-func TestLinkUnlink(t *testing.T) {
+// Pointing, re-pointing at the same record and clearing are one verb: a
+// reference is a property value, so the write path's own no-op suppression
+// covers a repeated sync.
+func TestPointingAndClearingAReference(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	c := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "Alex"}})
 	team := mustPut(t, ds, owner, substrate.PutInput{Kind: "organization", Properties: map[string]any{"name": "Acme"}})
 
-	if err := ds.Link(ctx, owner, c.Kind, c.ID, "memberOf", substrate.EdgeRef{ID: team.ID}, nil); err != nil {
+	point := substrate.PatchInput{Properties: map[string]any{"memberOf": []any{team.ID}}}
+	if _, err := ds.Patch(ctx, owner, c.Kind, c.ID, point); err != nil {
 		t.Fatal(err)
 	}
 	e := mustGet(t, ds, c.Kind, c.ID)
-	if len(e.Edges["memberOf"]) != 1 {
-		t.Fatalf("edges = %+v", e.Edges)
+	if got, _ := e.Properties["memberOf"].([]any); len(got) != 1 {
+		t.Fatalf("memberOf = %+v", e.Properties["memberOf"])
 	}
 	before := maxSeq(t, ds)
-	if err := ds.Link(ctx, owner, c.Kind, c.ID, "memberOf", substrate.EdgeRef{ID: team.ID}, nil); err != nil {
+	if _, err := ds.Patch(ctx, owner, c.Kind, c.ID, point); err != nil {
 		t.Fatal(err)
 	}
 	if rows := changesSince(t, ds, before); len(rows) != 0 {
-		t.Fatalf("re-link logged %d rows", len(rows))
+		t.Fatalf("re-pointing at the same record logged %d rows", len(rows))
 	}
-	if err := ds.Unlink(ctx, owner, c.Kind, c.ID, "memberOf", substrate.EdgeRef{ID: team.ID}); err != nil {
+	if _, err := ds.Patch(ctx, owner, c.Kind, c.ID, substrate.PatchInput{
+		Properties: map[string]any{"memberOf": nil},
+	}); err != nil {
 		t.Fatal(err)
 	}
-	if len(mustGet(t, ds, c.Kind, c.ID).Edges["memberOf"]) != 0 {
-		t.Fatal("unlink did not remove the edge")
+	if got := mustGet(t, ds, c.Kind, c.ID).Properties["memberOf"]; got != nil {
+		t.Fatalf("clearing left %+v", got)
 	}
-	if err := ds.Link(ctx, owner, c.Kind, c.ID, "nosuch", substrate.EdgeRef{ID: team.ID}, nil); err == nil {
-		t.Fatal("expected an undeclared-edge error")
+	if _, err := ds.Patch(ctx, owner, c.Kind, c.ID, substrate.PatchInput{
+		Properties: map[string]any{"nosuch": team.ID},
+	}); err == nil {
+		t.Fatal("expected an undeclared-property error")
 	}
 }

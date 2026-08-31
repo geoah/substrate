@@ -3,6 +3,9 @@ package engine
 import (
 	"crypto/rand"
 	"encoding/base64"
+
+	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // TestCredentialKey is a conforming credential key: standard-base64 of 32
@@ -38,3 +41,49 @@ func SealedAAD(ref, recordKind, recordID string) []byte { return sealedAAD(ref, 
 
 // DEKAAD builds the additional data the control-plane DEK wrap binds to.
 func DEKAAD(repoID string) []byte { return dekAAD(repoID) }
+
+// refPaths reads a record's reference property as the record paths it names, in
+// order. It is the tests' one reader of a stored reference, so a test asserting
+// on a pointer does not have to know whether the declaration carries link data:
+// both shapes answer here.
+func refPaths(e *substrate.Record, name string) []string {
+	v := e.Properties[name]
+	list, repeated := v.([]any)
+	if !repeated {
+		list = []any{v}
+	}
+	var out []string
+	for _, item := range list {
+		if p := referencePathOf(item); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// refPath is refPaths for a single-valued reference, "" when it names nothing.
+func refPath(e *substrate.Record, name string) string {
+	if paths := refPaths(e, name); len(paths) > 0 {
+		return paths[0]
+	}
+	return ""
+}
+
+// refIDs is refPaths with the kind stripped off each path.
+func refIDs(e *substrate.Record, name string) []string {
+	paths := refPaths(e, name)
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		_, id, _ := vocabulary.SplitRecordPath(p)
+		out = append(out, id)
+	}
+	return out
+}
+
+// refID is refIDs for a single-valued reference, "" when it names nothing.
+func refID(e *substrate.Record, name string) string {
+	if ids := refIDs(e, name); len(ids) > 0 {
+		return ids[0]
+	}
+	return ""
+}

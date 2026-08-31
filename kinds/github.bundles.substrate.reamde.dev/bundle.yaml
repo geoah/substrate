@@ -368,6 +368,7 @@ data:
     person:
       type: reference
       kind: people.substrate.reamde.dev/person
+      displayName: Person
       required: true
       mustExist: true
       subject: true
@@ -507,6 +508,7 @@ data:
       description: the raw search item as fetched (body omitted), for provenance
     repository:
       type: reference
+      displayName: Repository
       kind: github.bundles.substrate.reamde.dev/repository
       required: true
       mustExist: true
@@ -585,6 +587,7 @@ data:
       description: the raw search item as fetched (body omitted), for provenance
     repository:
       type: reference
+      displayName: Repository
       kind: github.bundles.substrate.reamde.dev/repository
       required: true
       mustExist: true

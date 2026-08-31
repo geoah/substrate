@@ -211,7 +211,6 @@ type schemaBuilder struct {
 	types []substrate.KindInfo
 
 	changeType *graphql.Object
-	edgeType   *graphql.Object
 	recordIF   *graphql.Interface
 
 	traitIF   map[string]*graphql.Interface
@@ -256,22 +255,11 @@ func (b *schemaBuilder) build() (graphql.Schema, error) {
 		},
 	})
 
-	// Edge and Record are mutually recursive: the object is created first so
-	// recordFields can reference it, and its target field is attached once
-	// the interface exists.
-	b.edgeType = graphql.NewObject(graphql.ObjectConfig{
-		Name: "Edge",
-		Fields: graphql.Fields{
-			"rel":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"properties": &graphql.Field{Type: jsonScalar},
-		},
-	})
 	b.recordIF = graphql.NewInterface(graphql.InterfaceConfig{
 		Name:        "Record",
 		Fields:      b.recordFields(),
 		ResolveType: b.resolveType,
 	})
-	b.edgeType.AddFieldConfig("target", &graphql.Field{Type: b.recordIF, Resolve: resolveEdgeTarget})
 
 	b.collectInterfaces()
 	if err := b.buildObjects(); err != nil {
@@ -324,17 +312,9 @@ func (b *schemaBuilder) recordFields() graphql.Fields {
 		// alternatives. Non-null only on single-record reads — record(id) —
 		// because only those assemble it.
 		"propertyMeta": &graphql.Field{Type: jsonScalar, Resolve: resolvePropertyMeta},
-		// Reverse edges are NOT on the record manifest: they are a
+		// Reverse pointers are NOT on the record manifest: they are a
 		// derived, separately paged resource (REST GET …/{id}/incoming) so an
 		// unbounded reverse fan-out never inflates the canonical document.
-		"edges": &graphql.Field{
-			Type: graphql.NewList(graphql.NewNonNull(b.edgeType)),
-			Args: graphql.FieldConfigArgument{
-				"rel":   &graphql.ArgumentConfig{Type: graphql.String},
-				"first": &graphql.ArgumentConfig{Type: graphql.Int},
-			},
-			Resolve: resolveEdges,
-		},
 		"history": &graphql.Field{
 			Type: graphql.NewList(graphql.NewNonNull(b.changeType)),
 			Args: graphql.FieldConfigArgument{
@@ -657,12 +637,6 @@ func (b *schemaBuilder) queryType() *graphql.Object {
 }
 
 func (b *schemaBuilder) mutationType() *graphql.Object {
-	mergeResult := graphql.NewObject(graphql.ObjectConfig{
-		Name: "EdgeResult",
-		Fields: graphql.Fields{
-			"ok": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-		},
-	})
 	return graphql.NewObject(graphql.ObjectConfig{
 		Name: "Mutation",
 		Fields: graphql.Fields{
@@ -688,31 +662,6 @@ func (b *schemaBuilder) mutationType() *graphql.Object {
 					"id":   &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
 				},
 				Resolve: resolveDelete,
-			},
-			"link": &graphql.Field{
-				Type: mergeResult,
-				Args: graphql.FieldConfigArgument{
-					"rel":     &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
-					"srcKind": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
-					"src":     &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
-					// dstType is required on a `to: any` edge; a single-target
-					// declaration supplies it.
-					"dstKind": &graphql.ArgumentConfig{Type: graphql.String},
-					"dst":     &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
-					"props":   &graphql.ArgumentConfig{Type: jsonScalar},
-				},
-				Resolve: resolveLink,
-			},
-			"unlink": &graphql.Field{
-				Type: graphql.Boolean,
-				Args: graphql.FieldConfigArgument{
-					"rel":     &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
-					"srcKind": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
-					"src":     &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
-					"dstKind": &graphql.ArgumentConfig{Type: graphql.String},
-					"dst":     &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
-				},
-				Resolve: resolveUnlink,
 			},
 			"merge": &graphql.Field{
 				Type: b.recordIF,
@@ -839,67 +788,6 @@ func resolveState(name string) graphql.FieldResolveFn {
 		s, _ := e.Properties[name].(string)
 		return s, nil
 	}
-}
-
-type edgeRow struct {
-	Rel        string               `json:"rel"`
-	Properties map[string]any       `json:"properties"`
-	Target     substrate.EdgeTarget `json:"target"`
-}
-
-func resolveEdges(p graphql.ResolveParams) (any, error) {
-	e := recordOf(p)
-	if e == nil {
-		return nil, nil
-	}
-	edges := e.Edges
-	if edges == nil {
-		ds, _, err := datasetOf(p.Context)
-		if err != nil {
-			return nil, err
-		}
-		full, err := ds.Get(p.Context, e.Kind, e.ID)
-		if err != nil {
-			return nil, err
-		}
-		edges = full.Edges
-	}
-	want, _ := p.Args["rel"].(string)
-	rels := make([]string, 0, len(edges))
-	for rel := range edges {
-		rels = append(rels, rel)
-	}
-	sort.Strings(rels)
-	out := []edgeRow{}
-	for _, rel := range rels {
-		if want != "" && rel != want {
-			continue
-		}
-		for _, t := range edges[rel] {
-			out = append(out, edgeRow{Rel: rel, Properties: t.Properties, Target: t})
-		}
-	}
-	if first, ok := p.Args["first"].(int); ok && first > 0 && first < len(out) {
-		out = out[:first]
-	}
-	return out, nil
-}
-
-func resolveEdgeTarget(p graphql.ResolveParams) (any, error) {
-	row, ok := p.Source.(edgeRow)
-	if !ok {
-		return nil, nil
-	}
-	shallow := &substrate.Record{ID: row.Target.ID, Kind: row.Target.Kind, Title: row.Target.Title}
-	ds, _, err := datasetOf(p.Context)
-	if err != nil {
-		return shallow, nil
-	}
-	full, err := ds.Get(p.Context, row.Target.Kind, row.Target.ID)
-	if err != nil || full == nil {
-		return shallow, nil
-	}
-	return full, nil
 }
 
 func resolveHistory(p graphql.ResolveParams) (any, error) {
@@ -1052,35 +940,6 @@ func resolveDelete(p graphql.ResolveParams) (any, error) {
 	}
 	typ := p.Args["kind"].(string)
 	return ds.Delete(p.Context, actor, typ, p.Args["id"].(string))
-}
-
-func resolveLink(p graphql.ResolveParams) (any, error) {
-	ds, actor, err := datasetOf(p.Context)
-	if err != nil {
-		return nil, err
-	}
-	props, _ := p.Args["props"].(map[string]any)
-	dstType, _ := p.Args["dstKind"].(string)
-	to := substrate.EdgeRef{Kind: dstType, ID: p.Args["dst"].(string)}
-	srcType := p.Args["srcKind"].(string)
-	if err := ds.Link(p.Context, actor, srcType, p.Args["src"].(string), p.Args["rel"].(string), to, props); err != nil {
-		return nil, err
-	}
-	return map[string]any{"ok": true}, nil
-}
-
-func resolveUnlink(p graphql.ResolveParams) (any, error) {
-	ds, actor, err := datasetOf(p.Context)
-	if err != nil {
-		return nil, err
-	}
-	dstType, _ := p.Args["dstKind"].(string)
-	to := substrate.EdgeRef{Kind: dstType, ID: p.Args["dst"].(string)}
-	srcType := p.Args["srcKind"].(string)
-	if err := ds.Unlink(p.Context, actor, srcType, p.Args["src"].(string), p.Args["rel"].(string), to); err != nil {
-		return nil, err
-	}
-	return true, nil
 }
 
 func resolveMerge(p graphql.ResolveParams) (any, error) {

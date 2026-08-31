@@ -164,7 +164,7 @@ func (ds *dataset) Search(ctx context.Context, in substrate.SearchInput) ([]subs
 		if err != nil {
 			continue
 		}
-		e, err := ds.hydrate(ctx, ds.db, row, false, false)
+		e, err := ds.hydrate(ctx, ds.db, row, false)
 		if err != nil {
 			return nil, err
 		}

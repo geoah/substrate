@@ -170,17 +170,17 @@ func TestLinearBundleAdmitsSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("mirror type %s missing", linearUserType)
 	}
-	if ed, ok := user.Edge("person"); !ok || ed.To != linearPersonType || !ed.Required || ed.Many {
+	if ed, ok := user.Prop("person"); !ok || ed.To != linearPersonType || !ed.Required || ed.Repeated {
 		t.Fatalf("user person edge shape wrong: %+v (ok=%v)", ed, ok)
 	}
 	issue, ok := reg.ByIdentity(linearIssueType)
 	if !ok {
 		t.Fatalf("mirror type %s missing", linearIssueType)
 	}
-	if ed, ok := issue.Edge("assignee"); !ok || ed.To != linearPersonType || !ed.Required || ed.Many {
+	if ed, ok := issue.Prop("assignee"); !ok || ed.To != linearPersonType || !ed.Required || ed.Repeated {
 		t.Fatalf("issue assignee edge shape wrong: %+v (ok=%v)", ed, ok)
 	}
-	if ed, ok := issue.Edge("team"); !ok || ed.To != linearTeamType || ed.Required {
+	if ed, ok := issue.Prop("team"); !ok || ed.To != linearTeamType || ed.Required {
 		t.Fatalf("issue team edge shape wrong: %+v (ok=%v)", ed, ok)
 	}
 
@@ -190,15 +190,15 @@ func TestLinearBundleAdmitsSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("no mapping registered from %s", linearUserType)
 	}
-	if um.To != linearPersonType || um.Edge != "person" || len(um.Match) == 0 {
-		t.Fatalf("user mapping resolves wrong: to=%q edge=%q match=%d", um.To, um.Edge, len(um.Match))
+	if um.To != linearPersonType || um.Property != "person" || len(um.Match) == 0 {
+		t.Fatalf("user mapping resolves wrong: to=%q edge=%q match=%d", um.To, um.Property, len(um.Match))
 	}
 	im, ok := reg.MappingFor(linearIssueType)
 	if !ok {
 		t.Fatalf("no mapping registered from %s", linearIssueType)
 	}
-	if im.To != linearPersonType || im.Edge != "assignee" || len(im.Match) == 0 {
-		t.Fatalf("issue mapping resolves wrong: to=%q edge=%q match=%d", im.To, im.Edge, len(im.Match))
+	if im.To != linearPersonType || im.Property != "assignee" || len(im.Match) == 0 {
+		t.Fatalf("issue mapping resolves wrong: to=%q edge=%q match=%d", im.To, im.Property, len(im.Match))
 	}
 
 	// Both functions are members of the authority.
@@ -649,21 +649,21 @@ func TestLinearBundleFakeSyncJointOwnership(t *testing.T) {
 			t.Fatalf("issue mirror %s = %v, want %v", k, got, want)
 		}
 	}
-	if tg := issueA.Edges["team"]; len(tg) != 1 || tg[0].ID != teamID {
-		t.Fatalf("issue team edge = %+v, want %s", tg, teamID)
+	if tg := refIDs(issueA, "team"); len(tg) != 1 || tg[0] != teamID {
+		t.Fatalf("issue team = %+v, want %s", tg, teamID)
 	}
 	if got := linearGet(t, ds, linearTeamType, teamID).Properties["name"]; got != "Engineering" {
 		t.Fatalf("team mirror name = %v", got)
 	}
 
-	// Identity: the viewer's user matched-or-minted a person, and the
-	// issue's assignee edge resolved onto the SAME human.
+	// Identity: the viewer's user matched-or-minted a person, and the issue's
+	// assignee resolved onto the SAME human.
 	user := linearGet(t, ds, linearUserType, userID)
-	pe := user.Edges["person"]
+	pe := refIDs(user, "person")
 	if len(pe) != 1 {
-		t.Fatalf("user person edge unresolved: %+v", user.Edges)
+		t.Fatalf("user person unresolved: %+v", user.Properties)
 	}
-	personID := pe[0].ID
+	personID := pe[0]
 	person := linearGet(t, ds, linearPersonType, personID)
 	emails, _ := person.Properties["emails"].([]any)
 	found := false
@@ -675,8 +675,8 @@ func TestLinearBundleFakeSyncJointOwnership(t *testing.T) {
 	if !found {
 		t.Fatalf("the mapped person carries no %s: %v", linearViewerEmail, person.Properties["emails"])
 	}
-	if ae := issueA.Edges["assignee"]; len(ae) != 1 || ae[0].ID != personID {
-		t.Fatalf("issue assignee edge = %+v, want person %s", ae, personID)
+	if ae := refIDs(issueA, "assignee"); len(ae) != 1 || ae[0] != personID {
+		t.Fatalf("issue assignee = %+v, want person %s", ae, personID)
 	}
 
 	// The projection minted both tasks open, headed off the issues: the
@@ -762,24 +762,24 @@ func TestLinearBundleFakeSyncJointOwnership(t *testing.T) {
 	}
 
 	// Provider-owned edge hygiene: issue B moves to another team. `team` is
-	// a SINGLE edge, so the sync's re-link must leave exactly ONE edge — the
-	// new team — never an accumulated pair.
+	// a SINGLE reference, so the sync's re-write must leave exactly ONE target
+	// — the new team — never an accumulated pair.
 	team2ID := substratefn.ExternalID("linear", account.ID, "team:uuid-t2")
 	api.moveIssueBTeam(map[string]any{"id": "uuid-t2", "key": "OPS", "name": "Operations"})
 	linearResync(t, ds, account.ID)
 	movedB := linearGet(t, ds, linearIssueType, issueBID)
-	if tg := movedB.Edges["team"]; len(tg) != 1 || tg[0].ID != team2ID {
-		t.Fatalf("team move did not stay current: edges=%+v, want exactly %s", tg, team2ID)
+	if tg := refIDs(movedB, "team"); len(tg) != 1 || tg[0] != team2ID {
+		t.Fatalf("team move did not stay current: team=%+v, want exactly %s", tg, team2ID)
 	}
 	if got := linearGet(t, ds, linearTeamType, team2ID).Properties["name"]; got != "Operations" {
 		t.Fatalf("the new team did not mirror: name=%v", got)
 	}
-	// ...and an issue that LOST its team upstream sheds the stale edge (a
-	// patch cannot clear an edge; the sync reads the mirror and unlinks).
+	// ...and an issue that LOST its team upstream sheds the stale pointer: the
+	// sync writes the property null, which is what clears a reference.
 	api.moveIssueBTeam(nil)
 	linearResync(t, ds, account.ID)
-	if tg := linearGet(t, ds, linearIssueType, issueBID).Edges["team"]; len(tg) != 0 {
-		t.Fatalf("a stale team edge survived the team's removal: %+v", tg)
+	if tg := refIDs(linearGet(t, ds, linearIssueType, issueBID), "team"); len(tg) != 0 {
+		t.Fatalf("a stale team reference survived the team's removal: %+v", tg)
 	}
 
 	// And through it all, the owner's task A stayed theirs...

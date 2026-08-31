@@ -214,12 +214,12 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("source type %s missing", githubUserType)
 	}
-	ed, ok := user.Edge("person")
+	ed, ok := user.Prop("person")
 	if !ok {
 		t.Fatalf("%s declares no `person` edge", githubUserType)
 	}
-	if ed.To != "people.substrate.reamde.dev/person" || !ed.Required || ed.Many {
-		t.Fatalf("person edge shape wrong: to=%q required=%v many=%v", ed.To, ed.Required, ed.Many)
+	if ed.To != "people.substrate.reamde.dev/person" || !ed.Required || ed.Repeated {
+		t.Fatalf("person edge shape wrong: to=%q required=%v many=%v", ed.To, ed.Required, ed.Repeated)
 	}
 
 	// The issue and pull-request mirrors each carry a required, single
@@ -234,12 +234,12 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 		if !ok {
 			t.Fatalf("mirror type %s missing", id)
 		}
-		re, ok := ty.Edge("repository")
+		re, ok := ty.Prop("repository")
 		if !ok {
 			t.Fatalf("%s declares no `repository` edge", id)
 		}
-		if re.To != githubRepoType || !re.Required || re.Many {
-			t.Fatalf("%s repository edge shape wrong: to=%q required=%v many=%v", id, re.To, re.Required, re.Many)
+		if re.To != githubRepoType || !re.Required || re.Repeated {
+			t.Fatalf("%s repository edge shape wrong: to=%q required=%v many=%v", id, re.To, re.Required, re.Repeated)
 		}
 	}
 
@@ -260,8 +260,8 @@ func TestGithubBundleAdmitsSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("no mapping registered from %s", githubUserType)
 	}
-	if m.To != "people.substrate.reamde.dev/person" || m.Edge != "person" {
-		t.Fatalf("mapping resolves wrong: to=%q edge=%q", m.To, m.Edge)
+	if m.To != "people.substrate.reamde.dev/person" || m.Property != "person" {
+		t.Fatalf("mapping resolves wrong: to=%q edge=%q", m.To, m.Property)
 	}
 	if len(m.Match) == 0 {
 		t.Fatalf("mapping ships no match probe — identity would never link on email")

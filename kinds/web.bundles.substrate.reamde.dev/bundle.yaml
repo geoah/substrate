@@ -138,6 +138,7 @@ data:
       description: set true when an accepted reading-list proposal lands
     source:
       type: reference
+      displayName: Source
       mustExist: true
       description: the record a URL was harvested from
 ---

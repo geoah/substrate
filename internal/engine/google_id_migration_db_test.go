@@ -125,11 +125,23 @@ func (h *migrationHarness) personOf(id string) string {
 	if err != nil {
 		h.t.Fatalf("get %s: %v", id, err)
 	}
-	targets := e.Edges["person"]
-	if len(targets) != 1 {
-		h.t.Fatalf("%s carries %d person edges, want 1", id, len(targets))
+	ids := refIDs(e, "person")
+	if len(ids) != 1 {
+		h.t.Fatalf("%s names %d persons, want 1", id, len(ids))
 	}
-	return targets[0].ID
+	return ids[0]
+}
+
+// canonicalPersonOf is personOf resolved forward through the former-id trail:
+// a merge leaves reference VALUES alone, so the id a source spells is the one
+// it was written with and the trail is what says who that is now.
+func (h *migrationHarness) canonicalPersonOf(id string) string {
+	h.t.Helper()
+	person, err := h.ds.Get(h.ctx, googlePersonType, h.personOf(id))
+	if err != nil {
+		h.t.Fatalf("resolve the person of %s: %v", id, err)
+	}
+	return person.ID
 }
 
 // migrationResult is one call's decoded output.
@@ -417,8 +429,10 @@ func TestGoogleContactsIDMigrationAbsorbedMerge(t *testing.T) {
 	if folded.ID != p1 {
 		t.Fatalf("the shell %s resolves to %s, want the original person %s", p2, folded.ID, p1)
 	}
-	// The surviving new-id row hangs off the ORIGINAL person.
-	if got := h.personOf(newShell); got != p1 {
+	// The surviving new-id row hangs off the ORIGINAL person. It still SPELLS
+	// the shell's id, because a merge repoints nothing; the id resolves forward
+	// through the former-id trail, which is what "hangs off" means now.
+	if got := h.canonicalPersonOf(newShell); got != p1 {
 		t.Fatalf("absorbed row %s points at %s, want the original person %s", newShell, got, p1)
 	}
 	if got := countLiveOf(t, ds, googlePersonType); got != 2 {
@@ -426,7 +440,7 @@ func TestGoogleContactsIDMigrationAbsorbedMerge(t *testing.T) {
 	}
 
 	// The email-matched pair absorbed without touching P3.
-	if got := h.personOf(newMatched); got != p3 {
+	if got := h.canonicalPersonOf(newMatched); got != p3 {
 		t.Fatalf("absorbed row %s points at %s, want %s", newMatched, got, p3)
 	}
 	// Both old rows tombstoned; the two new rows are the live book.

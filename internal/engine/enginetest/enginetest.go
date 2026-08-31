@@ -15,7 +15,7 @@
 //
 //   - AccountType / AccountManifest give tests a stand-in for the removed
 //     connectoraccount core kind: a plain installable account type they link
-//     the shipped `account` edge (now `to: any`) at.
+//     the shipped `account` reference (now unpinned) at.
 //
 //   - ImportVocabulary / SeededRegistry stand in for the creation seed's lost
 //     half: repository creation seeds CORE ALONE now, and the shipped
@@ -111,7 +111,7 @@ func ImportVocabulary(ctx context.Context, ds substrate.Dataset, names ...string
 // ShelfAuthority is the fixture vocabulary InstallShelf brings: the shapes the
 // engine suite exercises that no shipped vocabulary carries any more (the
 // media bundle used to, until decision record 0015 held it out of the tree).
-// `book` is a mapping target, so its id is server-assigned and edges into it
+// `book` is a mapping target, so its id is server-assigned and pointers into it
 // resolve canonically; `bookedition` carries the refinement-typed asin/isbn
 // pair, an enum and the writer's own id; `description` is the one embeddable
 // property.
@@ -119,7 +119,7 @@ const ShelfAuthority = "shelf.test.dev"
 
 // InstallShelf installs the shelf fixture vocabulary through the same batch
 // apply an import rides, under its own bundle actor. It requires people:
-// the author and narrator edges land on person.
+// the author and narrator references land on person.
 func InstallShelf(ctx context.Context, ds substrate.Dataset) error {
 	sa, ok := ds.(substrate.VocabularyApplier)
 	if !ok {
@@ -153,9 +153,10 @@ func InstallShelf(ctx context.Context, ds substrate.Dataset) error {
 				"properties": map[string]any{
 					"subtitle":    map[string]any{"type": "string"},
 					"description": map[string]any{"type": "markdown", "embed": true},
-				},
-				"edges": map[string]any{
-					"author": map[string]any{"to": "people.substrate.reamde.dev/person", "many": true},
+					"author": map[string]any{
+						"type": "reference", "kind": "people.substrate.reamde.dev/person",
+						"repeated": true, "mustExist": true,
+					},
 				},
 			}),
 		vocabulary.KindManifest(ShelfAuthority,
@@ -168,14 +169,20 @@ func InstallShelf(ctx context.Context, ds substrate.Dataset) error {
 					"isbn":     map[string]any{"type": "isbn"},
 					"mediaRef": map[string]any{"type": "url"},
 					"duration": map[string]any{"type": "duration"},
-				},
-				"edges": map[string]any{
-					"work":     map[string]any{"to": ShelfAuthority + "/book", "required": true},
-					"narrator": map[string]any{"to": "people.substrate.reamde.dev/person"},
+					// The mapping's subject: single, required, and the referent
+					// must exist, which is what a mapping source promises.
+					"work": map[string]any{
+						"type": "reference", "kind": ShelfAuthority + "/book",
+						"required": true, "mustExist": true, "subject": true,
+					},
+					"narrator": map[string]any{
+						"type": "reference", "kind": "people.substrate.reamde.dev/person",
+						"mustExist": true,
+					},
 				},
 			}),
 		vocabulary.MappingManifest(ShelfAuthority, "bookeditionwork", map[string]any{
-			"from": ShelfAuthority + "/bookedition", "to": ShelfAuthority + "/book", "edge": "work",
+			"from": ShelfAuthority + "/bookedition", "to": ShelfAuthority + "/book", "property": "work",
 		}),
 	}
 	if _, err := sa.ApplyVocabularyDocuments(ctx, substrate.BundleActor(ShelfAuthority), docs); err != nil {
@@ -350,7 +357,7 @@ func Install(ctx context.Context, ds substrate.Dataset, actor substrate.Actor, m
 // connectoraccount core kind: a plain installable account type. Tests that
 // modeled a synced provider account as a connectoraccount install this type
 // (InstallAccountType) and use AccountType in its place; the shipped `account`
-// edge is now `to: any`, so it links here fine.
+// reference is unpinned now, so it points here fine.
 const (
 	AccountAuthority = "testacct.example.com"
 	AccountType      = "testacct.example.com/account"

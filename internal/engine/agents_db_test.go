@@ -565,7 +565,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	}
 	var target string
 	if err := ds.db.QueryRowContext(ctx, `
-		SELECT dst FROM edges WHERE rel = 'target' AND src = $1`, reqID).Scan(&target); err != nil {
+		SELECT dst FROM refs WHERE property = 'target' AND path = '' AND src = $1`, reqID).Scan(&target); err != nil {
 		t.Fatal(err)
 	}
 	if target != "w-fixed" {
@@ -1401,13 +1401,13 @@ func TestProposeCoercesBareDiffAndCreates(t *testing.T) {
 		  AND props->>'op' = 'create'`, vocabulary.KindRecordPatchRequest).Scan(&createID); err != nil {
 		t.Fatalf("no op=create request landed: %v", err)
 	}
-	var targetEdges int
+	var targets int
 	if err := ds.db.QueryRowContext(ctx, `
-		SELECT count(*) FROM edges WHERE rel = 'target' AND src = $1`, createID).Scan(&targetEdges); err != nil {
+		SELECT count(*) FROM refs WHERE property = 'target' AND path = '' AND src = $1`, createID).Scan(&targets); err != nil {
 		t.Fatal(err)
 	}
-	if targetEdges != 0 {
-		t.Fatalf("a create request carries a target edge")
+	if targets != 0 {
+		t.Fatalf("a create request names a target it does not have yet")
 	}
 	// Accept the create request: the widget is minted exactly once.
 	createEnt, err := ds.Get(ctx, vocabulary.KindRecordPatchRequest, createID)
@@ -1486,8 +1486,9 @@ func TestProposeDiffValidation(t *testing.T) {
 	// #5b: an undeclared nested field inside an object property is refused.
 	refused("undeclared nested field", map[string]any{"properties": map[string]any{"pricing": map[string]any{"bogusField": 1}}}, opPatch)
 
-	// #5c: a create diff naming an edge the type does not declare is refused.
-	refused("undeclared create edge", map[string]any{
+	// #5c: a create diff carrying the retired `edges` key is refused. A link is
+	// a property now, so the key names nothing the accept could apply.
+	refused("retired edges key", map[string]any{
 		"properties": map[string]any{"model": "gpt"},
 		"edges":      []any{map[string]any{"rel": "bogus", "to": map[string]any{"id": "x"}}},
 	}, opCreate)

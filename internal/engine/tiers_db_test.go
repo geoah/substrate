@@ -87,13 +87,14 @@ func newTierDataset(t *testing.T) *dataset {
 					"properties": map[string]any{
 						"name":  map[string]any{"type": "string"},
 						"email": map[string]any{"type": "email"},
-					},
-					"edges": map[string]any{
-						"profile": map[string]any{"to": typeTierProfile, "required": true},
+						"profile": map[string]any{
+							"type": "reference", "kind": typeTierProfile,
+							"required": true, "mustExist": true, "subject": true,
+						},
 					},
 				}),
 			vocabulary.MappingManifest(tierAuthority, "recordprofile", map[string]any{
-				"from": typeTierRecord, "to": typeTierProfile, "edge": "profile",
+				"from": typeTierRecord, "to": typeTierProfile, "property": "profile",
 				"match": []any{map[string]any{"from": "email", "to": "emails"}},
 				"map": map[string]any{
 					"name":   map[string]any{"path": "name"},
@@ -126,11 +127,11 @@ func tierProfileOf(t *testing.T, ds *dataset, recordID string) string {
 	if err != nil {
 		t.Fatalf("get %s: %v", recordID, err)
 	}
-	targets := rec.Edges["profile"]
-	if len(targets) != 1 {
-		t.Fatalf("%s points at %d profiles, want 1", recordID, len(targets))
+	ids := refIDs(rec, "profile")
+	if len(ids) != 1 {
+		t.Fatalf("%s points at %d profiles, want 1", recordID, len(ids))
 	}
-	return targets[0].ID
+	return ids[0]
 }
 
 func tierGet(t *testing.T, ds *dataset, id string) *substrate.Record {

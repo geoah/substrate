@@ -42,7 +42,6 @@ type applySpec struct {
 	// arrive in the properties map and are split out here, because storage
 	// keeps them in their own column.
 	states map[string]string
-	edges  []substrate.EdgeInput
 
 	addFinalizers    []string
 	removeFinalizers []string
@@ -101,16 +100,6 @@ func (c *effectCeiling) stamp(t *txn) {
 	t.setEffectEmit(c.emit)
 	t.changeSink = c.changes
 	t.policyDecision = c.policyDecision
-}
-
-// stampChanges attaches ONLY the change collector: the door for Link/Unlink,
-// which deliberately carry no emit ceiling (an edge write drives no state
-// machine) but whose entries a dispatch still records.
-func (c *effectCeiling) stampChanges(t *txn) {
-	if c == nil {
-		return
-	}
-	t.changeSink = c.changes
 }
 
 func (ds *dataset) Put(ctx context.Context, actor substrate.Actor, in substrate.PutInput) (*substrate.Record, error) {
@@ -233,7 +222,7 @@ func (t *txn) putSpec(ty *vocabulary.Kind, in substrate.PutInput) (*applySpec, e
 		props: props, labels: labels, annotations: in.Annotations,
 		at: hot.at, endsAt: hot.endsAt, dueAt: hot.dueAt,
 		clearHot: hot.clear,
-		states:   states, edges: in.Edges,
+		states:   states,
 		// A put onto a TOMBSTONE restores that record: same id, same row,
 		// undeleted. It is not id reuse, so the canonical-id contract is
 		// untouched — and deletion stays explicit, because only `delete`
@@ -635,7 +624,7 @@ func isTransitionOnly(in substrate.PatchInput, rest map[string]any, hot hotProps
 		len(in.AddFinalizers) == 0 && len(in.RemoveFinalizers) == 0
 }
 
-// apply is the single write path: machines, metadata, edges, then one
+// apply is the single write path: machines, metadata, references, then one
 // no-op-suppressed row write and at most one changelog row.
 //
 // NOTHING RANKS WRITERS: any actor's direct write overwrites
@@ -658,7 +647,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// A change request is admitted at PROPOSE time and frozen afterwards: the
 	// creating write has its diff validated against the kind the accept would
 	// write, and every later write must leave the reviewed
-	// envelope — op/targetKind/targetId/diff and the target edge — exactly as
+	// envelope — op/targetKind/targetId/diff and the target — exactly as
 	// the reviewer read it, so nothing swaps a harmless patch for an arbitrary
 	// delete under an undecided request.
 	if sp.ty.Identity == vocabulary.KindRecordPatchRequest {
@@ -704,7 +693,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// mapped target it is the release trigger recompute refills from.
 	deleted := map[string]bool{}
 	// srcMapping is non-nil when this type is a source record (§6.1): its
-	// subject edge is guarded, ensured, and recomputed through.
+	// subject reference is guarded, ensured, and recomputed through.
 	srcMapping, _ := t.ds.registry().MappingFor(sp.ty.Identity)
 
 	// A blob-ref must name a known blob: the shape passed
@@ -803,16 +792,12 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	}
 
 	// An accepted edit is CAS'd against the version its diff was computed
-	// against, and the target is an EDGE (MODEL §11.5): the version it had
-	// when this write pointed at it is read below, once the edges are
-	// resolved. What it pointed at BEFORE is read here, because the edge
-	// write is about to overwrite it.
+	// against, and the target is a reference PROPERTY: what it pointed at
+	// BEFORE is read here, off the loaded row, because the property loop below
+	// is about to overwrite it.
 	var prevTarget eref
 	if appliesDiff(sp.ty) && !create {
-		var err error
-		if prevTarget, err = t.edgeTargetOf(sp.ref(), propTarget); err != nil {
-			return nil, err
-		}
+		prevTarget = referenceTargetOf(sp.existing, propTarget)
 	}
 
 	// Properties.
@@ -909,49 +894,29 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 
 	subChanged := false
 
-	// Edges.
-	var newTarget eref
-	for _, e := range sp.edges {
-		ed, ok := sp.ty.Edge(e.Rel)
-		if !ok {
-			return nil, fmt.Errorf("%w: %s declares no edge %q", substrate.ErrValidation, sp.ty.Name, e.Rel)
-		}
-		props, err := coerceEdgeProps(sp.ty, ed, e.Properties)
-		if err != nil {
-			return nil, err
-		}
-		dst, err := t.resolveEdgeRef(ed, e.To)
-		if err != nil {
-			return nil, err
-		}
-		// The reviewed target of a change request is immutable after propose:
-		// a re-sync of the SAME target is a harmless no-op, but a swap to
-		// another (version-matching) record would smuggle a different
-		// operation past the reviewer's decision.
-		if sp.ty.Identity == vocabulary.KindRecordPatchRequest && !create && e.Rel == propTarget && dst != prevTarget {
-			return nil, fmt.Errorf("%w: the target edge is immutable on a change request — the reviewed target is fixed at propose time",
-				substrate.ErrForbidden)
-		}
-		isSubject := srcMapping != nil && e.Rel == srcMapping.Edge
-		if isSubject {
-			if err := t.checkSubjectWrite(sp, e.Rel, dst); err != nil {
+	// The reviewed target of a change request is immutable after propose: a
+	// re-assertion of the SAME target is a harmless no-op, but a swap to another
+	// (version-matching) record would smuggle a different operation past the
+	// reviewer's decision.
+	newTarget := referenceTargetOf(row, propTarget)
+	if sp.ty.Identity == vocabulary.KindRecordPatchRequest && !create &&
+		named(sp.props, propTarget) && newTarget != prevTarget {
+		return nil, fmt.Errorf("%w: the target is immutable on a change request — the reviewed target is fixed at propose time",
+			substrate.ErrForbidden)
+	}
+
+	// A SUBJECT reference is set when the record is created and moved only by
+	// merge and split, so a generic put or patch may not re-point it. The marker
+	// is on the declaration (`subject: true`), which is what lets this refuse
+	// without consulting the mapping set.
+	if !t.internal && !create {
+		for _, name := range sp.ty.PropOrder {
+			if !sp.ty.Props[name].Subject || !named(sp.props, name) {
+				continue
+			}
+			if err := t.checkSubjectWrite(sp, name, referenceTargetOf(row, name)); err != nil {
 				return nil, err
 			}
-		}
-		if !ed.Many {
-			cleared, err := t.replaceSingleEdge(e.Rel, sp.ref(), dst)
-			if err != nil {
-				return nil, err
-			}
-			subChanged = subChanged || cleared
-		}
-		ok2, err := t.putEdge(e.Rel, sp.ref(), dst, props, isSubject)
-		if err != nil {
-			return nil, err
-		}
-		subChanged = subChanged || ok2
-		if e.Rel == propTarget {
-			newTarget = dst
 		}
 	}
 
@@ -964,25 +929,24 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 		}
 	}
 
-	// A source record is never left unlinked: whatever the
-	// write carried, it ends pointing at a subject — the one it named, one a
-	// match probe found, or a shell born here.
+	// A source record never ends without a subject: whatever the write carried,
+	// it ends pointing at one — the one it named, one a match probe found, or a
+	// shell born here. The subject is one of its own properties, so the pointer
+	// lands in the row about to be folded.
 	if srcMapping != nil {
-		if err := t.ensureSubject(sp, row, srcMapping); err != nil {
+		set, err := t.ensureSubject(sp, row, srcMapping)
+		if err != nil {
 			return nil, err
+		}
+		if set {
+			accepted = append(accepted, srcMapping.Property)
 		}
 	}
 
 	// `required` is a statement about the RECORD: the merged row is what has to
-	// satisfy it, so this runs on every write. Required edges are birth-only
-	// (checkRequiredEdges).
+	// satisfy it, so this runs on every write, references included.
 	if err := t.checkRequiredProps(sp, row); err != nil {
 		return nil, err
-	}
-	if create {
-		if err := t.checkRequiredEdges(sp); err != nil {
-			return nil, err
-		}
 	}
 
 	// Annotations.
@@ -1091,9 +1055,9 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 
 	// The record lands through the fold, as a delta carrying its values: the
 	// same effect the changelog entry below will hold, applied by the same function a
-	// rebuild replays it with (fold.go). `force` is the edge/annotation change
-	// that must move the row even though no column of it did; `restored` lifts
-	// the tombstone the put landed on.
+	// rebuild replays it with (fold.go). `force` is the annotation change that
+	// must move the row even though no column of it did; `restored` lifts the
+	// tombstone the put landed on.
 	res, err := t.foldRow(before, row, subChanged, sp.resurrect)
 	if err != nil {
 		return nil, err
@@ -1102,7 +1066,6 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	if res.row != nil {
 		row = res.row
 	}
-
 	// A write that changed nothing writes no changelog row: re-syncing
 	// identical data must stay silent.
 	if changed {
@@ -1252,9 +1215,7 @@ func appliesDiff(ty *vocabulary.Kind) bool {
 }
 
 // stampTargetVersion records the target's current version on the write that
-// points an edit at it, unless the writer asserted one itself. The target
-// itself is an edge now (MODEL §11.5); only the version it was read at is a
-// property.
+// points an edit at it, unless the writer asserted one itself.
 func (t *txn) stampTargetVersion(sp *applySpec, row *erow, target eref, accepted *[]string) error {
 	if !appliesDiff(sp.ty) {
 		return nil
@@ -1360,38 +1321,6 @@ func hotColumnOf(row *erow, name string) *time.Time {
 		return row.EndsAt
 	case substrate.PropDueAt:
 		return row.DueAt
-	}
-	return nil
-}
-
-// checkRequiredEdges asserts every declared required EDGE is present on a
-// freshly created record: a record is created with them or not at all, and a
-// later patch that does not touch them is unaffected. Edges are birth-only
-// because nothing about a patch can clear one: unlink is its own verb.
-func (t *txn) checkRequiredEdges(sp *applySpec) error {
-	var required []string
-	for _, name := range sp.ty.EdgeOrder {
-		if sp.ty.Edges[name].Required {
-			required = append(required, name)
-		}
-	}
-	if len(required) == 0 {
-		return nil
-	}
-	edges, err := t.edgesOf(sp.ref())
-	if err != nil {
-		return err
-	}
-	var problems []string
-	for _, name := range required {
-		if len(edges[name]) == 0 {
-			problems = append(problems, fmt.Sprintf("edges.%s: %s requires this edge", name, sp.ty.Name))
-		}
-	}
-	if len(problems) > 0 {
-		// A ValidationError, so the 422 carries the same `problems` array a
-		// required PROPERTY answers with: one refusal shape for one rule.
-		return &substrate.ValidationError{Problems: problems}
 	}
 	return nil
 }
@@ -1703,11 +1632,7 @@ func (t *txn) canonicalizeResubmittedDiff(sp *applySpec) error {
 	if op == opCreate {
 		ident, _ = sp.existing.Props["targetKind"].(string)
 	} else {
-		target, err := t.edgeTargetOf(sp.ref(), propTarget)
-		if err != nil {
-			return err
-		}
-		ident = target.Kind
+		ident = referenceTargetOf(sp.existing, propTarget).Kind
 	}
 	var ty *vocabulary.Kind
 	if ident != "" {
@@ -1735,8 +1660,8 @@ func (t *txn) canonicalizeResubmittedDiff(sp *applySpec) error {
 // (the state) and `rationale` stay mutable — deciding is the whole point, and a
 // note is harmless. The stored value may be re-asserted identically (an
 // idempotent re-put, in whichever input shape the writer spells it —
-// canonicalizeResubmittedDiff runs first), but never changed. The target EDGE is
-// guarded in the edge loop, where the write's resolved target can be compared to
+// canonicalizeResubmittedDiff runs first), but never changed. The `target`
+// reference is guarded in apply, where the write's resolved target is compared to
 // the current one (a re-sync of the same target is fine; a swap is not).
 func guardImmutableEnvelope(sp *applySpec) error {
 	for _, name := range []string{"op", "targetKind", "targetId", "diff", "policy", "policyRevision", msgRelThread} {
@@ -1793,20 +1718,12 @@ func sensitiveProp(ty *vocabulary.Kind, name string) bool {
 // re-judges stored rows.
 func (t *txn) admitRequestDiff(sp *applySpec) error {
 	op := requestOp(sp.props)
-	targets := requestTargetEdges(sp)
-	// ONE request, ONE target, whatever the op. A create names the record it
-	// would mint by targetKind/targetId — that record does not exist yet, so a
-	// target EDGE on one points at something else entirely — and a patch or a
-	// delete names exactly one, because the write loop below keeps the LAST entry
-	// it is handed for a single-valued edge: a second target would have the diff
-	// admitted against a record the request does not end up pointing at.
-	if op == opCreate {
-		if len(targets) > 0 {
-			return fmt.Errorf("%w: a create request names its target by targetKind/targetId, never by a target edge — the record does not exist yet",
-				substrate.ErrValidation)
-		}
-	} else if len(targets) > 1 {
-		return fmt.Errorf("%w: a change request names ONE target — this write names several",
+	target := requestTarget(sp)
+	// A create names the record it would mint by targetKind/targetId — that
+	// record does not exist yet, so a `target` pointer on one names something
+	// else entirely.
+	if op == opCreate && target != "" {
+		return fmt.Errorf("%w: a create request names its target by targetKind/targetId, never by the target reference — the record does not exist yet",
 			substrate.ErrValidation)
 	}
 	if op == opDelete {
@@ -1837,13 +1754,13 @@ func (t *txn) admitRequestDiff(sp *applySpec) error {
 		}
 		return t.storeNormalizedDiff(sp, ty, diff, opCreate)
 	}
-	// A patch's diff is checked against the kind of the target its edge names. A
-	// TARGETLESS patch request is legal storage (the edge is not required) whose
-	// accept annotates "no target"; its diff is admitted by SHAPE alone, since
-	// only the property-level checks need a kind.
+	// A patch's diff is checked against the kind its `target` names. A TARGETLESS
+	// patch request is legal storage (the property is not required) whose accept
+	// annotates "no target"; its diff is admitted by SHAPE alone, since only the
+	// property-level checks need a kind.
 	var ty *vocabulary.Kind
-	if len(targets) == 1 {
-		if ty, err = t.requestTargetKind(sp, targets[0]); err != nil {
+	if target != "" {
+		if ty, err = t.requestTargetKind(target); err != nil {
 			return err
 		}
 	}
@@ -1876,27 +1793,17 @@ func requestDiffMap(props map[string]any) (map[string]any, error) {
 	return m, nil
 }
 
-// requestTargetEdges are the `target` entries a write carries.
-func requestTargetEdges(sp *applySpec) []substrate.EdgeInput {
-	var out []substrate.EdgeInput
-	for _, e := range sp.edges {
-		if e.Rel == propTarget {
-			out = append(out, e)
-		}
-	}
-	return out
+// requestTarget is the record path this write's `target` reference names, ""
+// when it names none. Coercion has already run, so the value is a full path.
+func requestTarget(sp *applySpec) string {
+	return referencePathOf(sp.props[propTarget])
 }
 
-// requestTargetKind resolves the kind of the target a creating change request
-// points at, or (nil, nil) where the request kind declares no such edge.
-func (t *txn) requestTargetKind(sp *applySpec, target substrate.EdgeInput) (*vocabulary.Kind, error) {
-	ed, declared := sp.ty.Edge(propTarget)
-	if !declared {
+// requestTargetKind resolves the kind a change request's target names.
+func (t *txn) requestTargetKind(target string) (*vocabulary.Kind, error) {
+	ident, _, ok := vocabulary.SplitRecordPath(target)
+	if !ok {
 		return nil, nil
-	}
-	ident, err := t.edgeTargetType(ed, target.To)
-	if err != nil {
-		return nil, err
 	}
 	return t.ds.resolveType(ident)
 }
@@ -1937,9 +1844,8 @@ func normalizeDiffFor(ty *vocabulary.Kind, diff map[string]any, op string) (map[
 
 // diffTopKeys are the top-level keys a stored diff may carry for an op:
 // `properties` (the change itself) beside the envelope fields the accept path's
-// own input shape declares — a create's `edges`, a patch's `ifVersion` and
-// finalizer lists. `kind` and `id` are NOT among them although PutInput declares
-// both: a create request names what it mints in targetKind/targetId, and a
+// own input shape declares — a patch's `ifVersion` and finalizer lists. `kind`
+// and `id` are NOT among them although PutInput declares both: a create request names what it mints in targetKind/targetId, and a
 // second spelling inside the diff would be silently overridden at accept.
 // `ifVersion` is a PATCH key for the same reason: a create is
 // create-if-absent (existingSatisfiesCreate decides a collision by shape, not by
@@ -1948,7 +1854,6 @@ func normalizeDiffFor(ty *vocabulary.Kind, diff map[string]any, op string) (map[
 func diffTopKeys(op string) map[string]bool {
 	top := map[string]bool{"properties": true, "labels": true, "annotations": true}
 	if op == opCreate {
-		top["edges"] = true
 		return top
 	}
 	top["ifVersion"] = true
@@ -2043,11 +1948,10 @@ func normalizeDiff(ty *vocabulary.Kind, diff map[string]any, op string) (map[str
 		return nil, fmt.Errorf("%w: %s", substrate.ErrValidation, strings.Join(problems, "; "))
 	}
 	out["properties"] = propsRaw
-	// Full value/edge validation against the schema, in a NON-writing pass:
-	// strictly decode the operation-specific shape, then run the ordinary
-	// property coercion and edge declaration/shape checks, so a wrong-typed
-	// value, an undeclared nested field or an undeclared create edge is
-	// refused at PROPOSE time instead of only at accept.
+	// Full value validation against the schema, in a NON-writing pass: strictly
+	// decode the operation-specific shape, then run the ordinary property
+	// coercion, so a wrong-typed value or an undeclared nested field is refused
+	// at PROPOSE time instead of only at accept.
 	if err := validateDiffShape(ty, out, op); err != nil {
 		return nil, err
 	}
@@ -2055,8 +1959,8 @@ func normalizeDiff(ty *vocabulary.Kind, diff map[string]any, op string) (map[str
 }
 
 // validateDiffShape strictly decodes a normalised diff into its
-// operation-specific input shape and validates every value and edge WITHOUT
-// writing anything. A nil ty runs the DECODE alone — the half that needs no
+// operation-specific input shape and validates every value WITHOUT writing
+// anything. A nil ty runs the DECODE alone — the half that needs no
 // schema, for the targetless request whose properties nothing can be checked
 // against.
 func validateDiffShape(ty *vocabulary.Kind, norm map[string]any, op string) error {
@@ -2102,10 +2006,9 @@ func validatePatchShape(ty *vocabulary.Kind, in substrate.PatchInput) error {
 	return nil
 }
 
-// validateCreateShape coerces a proposed create's properties and labels and
-// checks every named edge is declared and well-shaped, without writing. Target
-// EXISTENCE is an accept-time concern (the record a create edge points at may
-// be minted alongside it), so only declaration and reference shape are checked
+// validateCreateShape coerces a proposed create's properties and labels without
+// writing. Target EXISTENCE is an accept-time concern (the record a proposed
+// reference points at may be minted alongside it), so only shape is checked
 // here.
 func validateCreateShape(ty *vocabulary.Kind, in substrate.PutInput) error {
 	authored, _, _, err := splitProps(ty, in.Properties)
@@ -2115,26 +2018,8 @@ func validateCreateShape(ty *vocabulary.Kind, in substrate.PutInput) error {
 	if _, err := coerceProps(ty, authored); err != nil {
 		return err
 	}
-	if _, err := coerceLabels(substrate.ActorAPI, in.Labels); err != nil {
-		return err
-	}
-	for _, e := range in.Edges {
-		ed, ok := ty.Edge(e.Rel)
-		if !ok {
-			return fmt.Errorf("%w: %s declares no edge %q", substrate.ErrValidation, ty.Name, e.Rel)
-		}
-		if e.To.ID == "" {
-			return fmt.Errorf("%w: edge %q target needs an id", substrate.ErrValidation, e.Rel)
-		}
-		if e.To.Identity() == "" && ed.To == "any" {
-			return fmt.Errorf("%w: edge %q is polymorphic — it needs the full {authority, type, id} reference",
-				substrate.ErrValidation, e.Rel)
-		}
-		if _, err := coerceEdgeProps(ty, ed, e.Properties); err != nil {
-			return err
-		}
-	}
-	return nil
+	_, err = coerceLabels(substrate.ActorAPI, in.Labels)
+	return err
 }
 
 // setEffectEmit marks this transaction as EXTENSION DISPATCH: it records the
@@ -2197,7 +2082,7 @@ func isRequestRefusal(err error) bool {
 // and every failure a visible transition failure (a rolled-back diffConflict),
 // never a silent green accept. Every deterministic refusal from the op branch
 // is centralized into a diffConflict here, so a missing target,
-// a vanished edge target, an authz refusal and a divergent create all annotate
+// a vanished target, an authz refusal and a divergent create all annotate
 // the request instead of failing the transaction with a bare error.
 func (t *txn) applyEditDiff(edit *erow) error {
 	err := t.materializeAccepted(edit)
@@ -2241,17 +2126,13 @@ func diffEmpty(in substrate.PatchInput) bool {
 }
 
 // applyPatchRequest applies an accepted patch request's stored diff to its
-// target, CAS'd against the version the request recorded. The target is read
-// from the edge that names it (MODEL §11.5). The decode is STRICT
+// target, CAS'd against the version the request recorded. The decode is STRICT
 // (DisallowUnknownFields) and the diff is checked for emptiness and for
 // applying no change: a wrapper-less `{saved:true}` fails to decode, an empty
 // `{properties:{}}` fails the emptiness check, and a diff the target already
 // satisfies fails the no-op check — none of them a silent success.
 func (t *txn) applyPatchRequest(edit *erow) error {
-	target, err := t.edgeTargetOf(edit.ref(), propTarget)
-	if err != nil {
-		return err
-	}
+	target := referenceTargetOf(edit, propTarget)
 	if target.ID == "" {
 		return fmt.Errorf("%w: patch request %s has no target", substrate.ErrValidation, edit.ID)
 	}
@@ -2356,7 +2237,7 @@ func (t *txn) applyCreateRequest(edit *erow) error {
 	// Under the advisory lock the check-then-put is atomic. A create against an
 	// id that is already taken is idempotent — a verified no-op — ONLY when the
 	// live existing record is the very thing the request would mint: same type,
-	// and every proposed property and edge already matches. Any
+	// and every proposed property already matches. Any
 	// other collision — a divergent shape or a tombstone — is a diffConflict,
 	// never a green accept that materialized nothing.
 	row, err := t.loadRow(canon, true)
@@ -2383,7 +2264,7 @@ func (t *txn) applyCreateRequest(edit *erow) error {
 
 // existingSatisfiesCreate reports whether a live record already IS what a
 // create request would mint: the proposed type, and every proposed property,
-// hot column, state and edge already present with the proposed value. A
+// hot column and state already present with the proposed value. A
 // tombstoned or wrong-type row never matches — a create neither resurrects nor
 // overwrites. The proposal is coerced the way the write path would coerce it,
 // so the comparison is against normalised values.
@@ -2426,38 +2307,12 @@ func (t *txn) existingSatisfiesCreate(row *erow, ty *vocabulary.Kind, in substra
 			return false, nil
 		}
 	}
-	if len(in.Edges) > 0 {
-		edges, err := t.edgesOf(row.ref())
-		if err != nil {
-			return false, err
-		}
-		for _, e := range in.Edges {
-			ed, ok := ty.Edge(e.Rel)
-			if !ok {
-				return false, nil
-			}
-			dst, err := t.resolveEdgeRef(ed, e.To)
-			if err != nil {
-				return false, err
-			}
-			present := false
-			for _, have := range edges[e.Rel] {
-				if have == dst {
-					present = true
-					break
-				}
-			}
-			if !present {
-				return false, nil
-			}
-		}
-	}
 	return true, nil
 }
 
 // decodeCreate decodes a create request's stored diff into a PutInput —
-// `{properties:{…}, edges:[…]}` — with unknown fields refused, the same
-// strictness the patch path uses.
+// `{properties:{…}}` — with unknown fields refused, the same strictness the
+// patch path uses.
 func decodeCreate(edit *erow) (substrate.PutInput, error) {
 	var in substrate.PutInput
 	raw, err := json.Marshal(edit.Props["diff"])
@@ -2468,7 +2323,7 @@ func decodeCreate(edit *erow) (substrate.PutInput, error) {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&in); err != nil {
 		return in, fmt.Errorf(
-			"%w: the create shape is undecodable (%w) — wrap properties under \"properties\" and edges under \"edges\"", substrate.ErrValidation, err)
+			"%w: the create shape is undecodable (%w) — wrap properties under \"properties\"", substrate.ErrValidation, err)
 	}
 	return in, nil
 }
@@ -2477,10 +2332,7 @@ func decodeCreate(edit *erow) (substrate.PutInput, error) {
 // soft-delete path, idempotent on replay: an already-gone target
 // is a verified no-op.
 func (t *txn) applyDeleteRequest(edit *erow) error {
-	target, err := t.edgeTargetOf(edit.ref(), propTarget)
-	if err != nil {
-		return err
-	}
+	target := referenceTargetOf(edit, propTarget)
 	if target.ID == "" {
 		return fmt.Errorf("%w: delete request %s has no target", substrate.ErrValidation, edit.ID)
 	}
@@ -2509,20 +2361,13 @@ func (t *txn) applyDeleteRequest(edit *erow) error {
 }
 
 // applyMergeRequest performs an accepted merge request: winner and loser come
-// from the request's edges and Merge's OWN guards re-run here, in the
-// transition's transaction. A refused merge — already merged away (the loser
-// edge then points at the winner and the merge is self-into-self), deleted,
-// type mismatch — fails the transition whole; the caller rolls back and
-// annotates the request, exactly the applyDiff conflict pattern.
+// from the request's own `winner`/`loser` references and Merge's OWN guards
+// re-run here, in the transition's transaction. A refused merge — already
+// merged away, deleted, kind mismatch — fails the transition whole; the caller
+// rolls back and annotates the request, exactly the applyDiff conflict pattern.
 func (t *txn) applyMergeRequest(req *erow) error {
-	winner, err := t.edgeTargetOf(req.ref(), "winner")
-	if err != nil {
-		return err
-	}
-	loser, err := t.edgeTargetOf(req.ref(), "loser")
-	if err != nil {
-		return err
-	}
+	winner := referenceTargetOf(req, "winner")
+	loser := referenceTargetOf(req, "loser")
 	if winner.ID == "" || loser.ID == "" {
 		return fmt.Errorf("%w: merge request %s names no winner/loser", substrate.ErrValidation, req.ID)
 	}
@@ -2644,274 +2489,6 @@ func (t *txn) softDelete(ref eref) (*substrate.Record, error) {
 	return t.record(row, ty)
 }
 
-func (ds *dataset) Link(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef, props map[string]any) error {
-	return ds.linkBounded(ctx, actor, srcType, src, rel, to, props, nil)
-}
-
-// linkBounded is Link with an optional ceiling, of which only the change
-// collector applies: an edge write drives no state machine, so the emit set
-// stays out on purpose.
-func (ds *dataset) linkBounded(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef, props map[string]any, ceiling *effectCeiling) error {
-	return ds.inTx(ctx, actor, false, func(t *txn) error {
-		ceiling.stampChanges(t)
-		ty, err := t.ds.resolveType(srcType)
-		if err != nil {
-			return err
-		}
-		return t.link(rel, eref{Kind: ty.Identity, ID: src}, to, props)
-	})
-}
-
-// link writes one edge inside the caller's transaction — the Link mutation's
-// body, shared with a function's link effect. Both ends canonicalize: an
-// edge written at a former id belongs to the record that id now denotes,
-// whichever end carried it. Both ends lock BEFORE resolving (in ascending
-// (type, id) order, merge's own order), so the addressing cannot race a
-// merge. The target reference is `{authority, type, id}`; bare `{id}` is legal
-// only where the declaration pins a single target type.
-func (t *txn) link(rel string, src eref, to substrate.EdgeRef, props map[string]any) error {
-	if to.ID == "" {
-		return fmt.Errorf("%w: edge target needs an id", substrate.ErrValidation)
-	}
-	ty, err := t.ds.resolveType(src.Kind)
-	if err != nil {
-		return err
-	}
-	if err := t.forbidSystemKind(ty, substrate.OpLink); err != nil {
-		return err
-	}
-	ed, ok := ty.Edge(rel)
-	if !ok {
-		return fmt.Errorf("%w: %s declares no edge %q", substrate.ErrValidation, ty.Name, rel)
-	}
-	// The reviewed target of a change request is immutable after propose: a
-	// generic Link must not restamp the single `target` edge under an
-	// undecided request and slip a version-matching substitute past the
-	// accept's CAS.
-	if ty.Identity == vocabulary.KindRecordPatchRequest && rel == propTarget {
-		return fmt.Errorf("%w: the target edge is immutable on a change request — the reviewed target is fixed at propose time",
-			substrate.ErrForbidden)
-	}
-	if err := t.refuseSubjectRel(ty, rel, substrate.OpLink); err != nil {
-		return err
-	}
-	props, err = coerceEdgeProps(ty, ed, props)
-	if err != nil {
-		return err
-	}
-	dstType, err := t.edgeTargetType(ed, to)
-	if err != nil {
-		return err
-	}
-	src, dst, err := t.lockCanonicalPair(src, eref{Kind: dstType, ID: to.ID})
-	if err != nil {
-		return err
-	}
-	srcRow, err := t.loadRow(src, true)
-	if err != nil {
-		return err
-	}
-	if srcRow == nil {
-		return fmt.Errorf("%w: record %s", substrate.ErrNotFound, src.ID)
-	}
-	dstRow, err := t.loadRow(dst, false)
-	if err != nil {
-		return err
-	}
-	if dstRow == nil {
-		return fmt.Errorf("%w: record %s", substrate.ErrNotFound, dst.ID)
-	}
-	changed := false
-	if !ed.Many {
-		cleared, err := t.replaceSingleEdge(rel, src, dst)
-		if err != nil {
-			return err
-		}
-		changed = cleared
-	}
-	// The subject rel is refused above, so a raw link never writes a
-	// subject row.
-	ok2, err := t.putEdge(rel, src, dst, props, false)
-	if err != nil {
-		return err
-	}
-	if !changed && !ok2 {
-		return nil
-	}
-	if err := t.bumpVersion(src); err != nil {
-		return err
-	}
-	return t.appendChange(t.actor, substrate.OpLink, src.ID, srcRow.Kind, map[string]any{
-		"rel": rel, "dst": dst.ID, "dstType": dst.Kind,
-	})
-}
-
-func (ds *dataset) Unlink(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef) error {
-	return ds.unlinkBounded(ctx, actor, srcType, src, rel, to, nil)
-}
-
-// unlinkBounded is Unlink with an optional ceiling — the change collector
-// alone, exactly as linkBounded.
-func (ds *dataset) unlinkBounded(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef, ceiling *effectCeiling) error {
-	return ds.inTx(ctx, actor, false, func(t *txn) error {
-		ceiling.stampChanges(t)
-		ty, err := t.ds.resolveType(srcType)
-		if err != nil {
-			return err
-		}
-		return t.unlink(rel, eref{Kind: ty.Identity, ID: src}, to)
-	})
-}
-
-// unlink removes one edge inside the caller's transaction — the Unlink
-// mutation's body, shared with a function's unlink effect. Both ends lock
-// before resolving, exactly as link does.
-func (t *txn) unlink(rel string, src eref, to substrate.EdgeRef) error {
-	if to.ID == "" {
-		return fmt.Errorf("%w: edge target needs an id", substrate.ErrValidation)
-	}
-	ty, err := t.ds.resolveType(src.Kind)
-	if err != nil {
-		return err
-	}
-	if err := t.forbidSystemKind(ty, substrate.OpUnlink); err != nil {
-		return err
-	}
-	if ty.Identity == vocabulary.KindRecordPatchRequest && rel == propTarget {
-		return fmt.Errorf("%w: the target edge is immutable on a change request — the reviewed target is fixed at propose time",
-			substrate.ErrForbidden)
-	}
-	dstType := ""
-	if ed, ok := ty.Edge(rel); ok {
-		if err := t.refuseSubjectRel(ty, rel, substrate.OpUnlink); err != nil {
-			return err
-		}
-		dstType, err = t.edgeTargetType(ed, to)
-		if err != nil {
-			return err
-		}
-	} else {
-		if named := to.Identity(); named != "" {
-			want, err := t.ds.resolveType(named)
-			if err != nil {
-				return err
-			}
-			dstType = want.Identity
-		} else {
-			return fmt.Errorf("%w: %s declares no edge %q — the target needs the full {authority, type, id} reference",
-				substrate.ErrValidation, ty.Name, rel)
-		}
-	}
-	src, dst, err := t.lockCanonicalPair(src, eref{Kind: dstType, ID: to.ID})
-	if err != nil {
-		return err
-	}
-	srcRow, err := t.loadRow(src, true)
-	if err != nil {
-		return err
-	}
-	if srcRow == nil {
-		return fmt.Errorf("%w: record %s", substrate.ErrNotFound, src.ID)
-	}
-	removed, err := t.deleteEdge(rel, src, dst)
-	if err != nil || !removed {
-		return err
-	}
-	// Unlink is the verb that clears an edge, so it is where a required one is
-	// defended: creation asserts it and nothing else could remove it, which
-	// leaves this call the only way a live record loses the edge its
-	// declaration requires. Counted AFTER the delete, so unlinking one target of
-	// a required many-edge that still has others is untouched.
-	if ed, declared := ty.Edge(rel); declared && ed.Required {
-		edges, err := t.edgesOf(src)
-		if err != nil {
-			return err
-		}
-		if len(edges[rel]) == 0 {
-			return &substrate.ValidationError{Problems: []string{
-				fmt.Sprintf("edges.%s: %s requires this edge, and it has no other target", rel, ty.Name),
-			}}
-		}
-	}
-	if err := t.bumpVersion(src); err != nil {
-		return err
-	}
-	return t.appendChange(t.actor, substrate.OpUnlink, src.ID, srcRow.Kind, map[string]any{
-		"rel": rel, "dst": dst.ID, "dstType": dst.Kind,
-	})
-}
-
-// edgeTargetType resolves the TYPE an edge reference names: the reference's
-// own {authority, type} when it carries one (checked against the declaration),
-// else the declaration's single target type. A bare {id} on a `to: any` edge
-// is refused — the full form is required there.
-func (t *txn) edgeTargetType(ed *vocabulary.Edge, ref substrate.EdgeRef) (string, error) {
-	named := ref.Identity()
-	if named != "" {
-		want, err := t.ds.resolveType(named)
-		if err != nil {
-			return "", err
-		}
-		if ed.To != "any" && want.Identity != ed.To {
-			// The one-hop resolution (resolveEdgeRef) may still land this on
-			// the declared type; here the named type is simply returned and the
-			// caller decides.
-			return want.Identity, nil
-		}
-		return want.Identity, nil
-	}
-	if ed.To == "any" {
-		return "", fmt.Errorf("%w: a polymorphic edge needs the full {authority, type, id} reference",
-			substrate.ErrValidation)
-	}
-	return ed.To, nil
-}
-
-// resolveEdgeRef turns a write's edge target into a full (type, id) identity.
-// A reference is `{authority, type, id}`; a bare `{id}` is shorthand on a
-// single-target edge, where the declaration supplies the type — resolution
-// scopes to that type — and `to: any` requires the full form. ONE HOP is
-// allowed: where the edge declares a type T and the reference names a record
-// whose own subject edge points at a T, the stored edge lands on that T.
-func (t *txn) resolveEdgeRef(ed *vocabulary.Edge, ref substrate.EdgeRef) (eref, error) {
-	if ref.ID == "" {
-		return eref{}, fmt.Errorf("%w: edge target needs an id", substrate.ErrValidation)
-	}
-	named, err := t.edgeTargetType(ed, ref)
-	if err != nil {
-		return eref{}, err
-	}
-	// Lock, then resolve: an edge target addressed by a former id must not
-	// race the merge that made it one.
-	target, err := t.lockCanonical(eref{Kind: named, ID: ref.ID})
-	if err != nil {
-		return eref{}, err
-	}
-	row, err := t.loadRow(target, false)
-	if err != nil {
-		return eref{}, err
-	}
-	if row == nil {
-		return eref{}, fmt.Errorf("%w: edge target %s %s", substrate.ErrNotFound, named, ref.ID)
-	}
-	if ed.To == "any" || row.Kind == ed.To {
-		return target, nil
-	}
-	// One hop: the reference may name a source record for the declared type.
-	ty, err := t.ds.resolveType(row.Kind)
-	if err != nil {
-		return eref{}, err
-	}
-	if m, ok := t.ds.registry().MappingFor(ty.Identity); ok && m.To == ed.To {
-		id, err := t.subjectOf(row, ty)
-		if err != nil {
-			return eref{}, err
-		}
-		return eref{Kind: m.To, ID: id}, nil
-	}
-	return eref{}, fmt.Errorf("%w: edge points at %s, not %s", substrate.ErrValidation, ed.To, row.Kind)
-}
-
 // --- shared helpers ---
 
 func (t *txn) forbidSystemKind(ty *vocabulary.Kind, op substrate.Op) error {
@@ -2996,4 +2573,12 @@ func jsonEqual(a, b any) bool {
 		return false
 	}
 	return bytes.Equal(ra, rb)
+}
+
+// named reports whether a write MENTIONED a property, which is not the same as
+// carrying a value for it: a null names the property and deletes it, and a
+// guard about changing something has to fire on both.
+func named(props map[string]any, name string) bool {
+	_, ok := props[name]
+	return ok
 }

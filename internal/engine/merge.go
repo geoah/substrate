@@ -146,21 +146,13 @@ func (t *txn) mergeRecord(winnerRef, loserRef eref) (*substrate.Record, error) {
 	}
 	moved["formerIds"] = movedFormer
 
-	// Subject edges re-point at the winner FIRST, and as a move rather
-	// than a copy: a source record holds exactly one, so inserting the
-	// winner's before deleting the loser's would collide with the very index
-	// that guarantees it.
-	subjects, err := t.moveSubjects(loserRef, winnerRef)
-	if err != nil {
-		return nil, err
-	}
-	moved["subjects"] = subjects
-
-	movedEdges, err := t.moveEdges(loserRef, winnerRef)
-	if err != nil {
-		return nil, err
-	}
-	moved["edges"] = movedEdges
+	// NOTHING REPOINTS. Every pointer at the loser — a source record's subject,
+	// an ordinary reference, an owner pointer — is a value in some other
+	// record's own properties, and it goes on resolving to the winner through
+	// the former-id trail on read (query.go Incoming, gc.go cascadeChildren,
+	// mapping.go subjectSourcesOf all match the trail). Rewriting those values
+	// would be this verb reaching into records it was not asked about, and split
+	// would then have to put every one of them back.
 
 	// Properties do NOT migrate: the winner now has more
 	// sources pointing at it, so §7.1 recomputes them — through the same
@@ -218,7 +210,7 @@ func (t *txn) mergeRecord(winnerRef, loserRef eref) (*substrate.Record, error) {
 	// statements, which no delta describes. The resync effect carries the
 	// after-state of every side-store row keyed on the affected records, so the
 	// entry the next line appends is one a rebuild can replay (fold.go).
-	if err := t.recordResync(mergeScope(winnerRef, loserRef, subjects)); err != nil {
+	if err := t.recordResync([]eref{winnerRef, loserRef}); err != nil {
 		return nil, err
 	}
 	if err := t.appendChange(t.actor, substrate.OpMerge, winnerID, winner.Kind, map[string]any{
@@ -226,50 +218,34 @@ func (t *txn) mergeRecord(winnerRef, loserRef eref) (*substrate.Record, error) {
 	}); err != nil {
 		return nil, err
 	}
+	// The trail goes down BEFORE the recompute: nothing repoints, so every
+	// source that named the loser still names it, and the recompute finds those
+	// sources by walking the winner's former ids (mapping.go subjectSourcesOf).
+	// Written after the entry above, so it rides that entry's effects.
+	if err := t.recordFormerID(ty.Identity, loserID, winnerID); err != nil {
+		return nil, err
+	}
 	// The winner's source set just grew: recompute it.
 	if err := t.recompute(winnerRef); err != nil {
 		return nil, err
 	}
-	// The record names both sides with EDGES (MODEL §11.5), written before
-	// the former-id trail exists: a `loser` edge that canonicalized forward
-	// would point at the winner and erase the only record of what happened.
+	// The record names both sides with unpinned references. Nothing here
+	// canonicalizes — a reference stores the id it was written with — so the
+	// `loser` value keeps naming the loser even though the trail above now
+	// resolves that id forward on read. Unpinned, so each value carries its
+	// kind.
 	rec, err := t.ds.putIn(t, substrate.PutInput{
-		Kind:       kindRecordMerge,
-		Properties: map[string]any{"moved": moved},
-		Edges: []substrate.EdgeInput{
-			// `winner`/`loser` are `kind: any`, so the reference carries the
-			// type it names.
-			{Rel: "winner", To: substrate.EdgeRef{Kind: winner.Kind, ID: winnerID}},
-			{Rel: "loser", To: substrate.EdgeRef{Kind: loser.Kind, ID: loserID}},
+		Kind: kindRecordMerge,
+		Properties: map[string]any{
+			"moved":  moved,
+			"winner": vocabulary.RecordPath(winner.Kind, winnerID),
+			"loser":  vocabulary.RecordPath(loser.Kind, loserID),
 		},
 	})
 	if err != nil {
 		return nil, err
 	}
-	// Every old reference still resolves — within the type.
-	if err := t.recordFormerID(ty.Identity, loserID, winnerID); err != nil {
-		return nil, err
-	}
 	return rec, nil
-}
-
-// mergeScope names the records a merge's — or a split's — rewrite touched, so
-// the resync effect can re-state them (fold.go): the pair itself, and every
-// source record whose subject edge was re-pointed. The sources belong in it
-// because `repoint` deletes by (src, rel), which can carry off an edge whose
-// far end is neither winner nor loser; a replay that did not name the source
-// would leave that edge standing.
-func mergeScope(winnerRef, loserRef eref, subjects []map[string]any) []eref {
-	scope := []eref{winnerRef, loserRef}
-	for _, b := range subjects {
-		kind, _ := b["kind"].(string)
-		id, _ := b["source"].(string)
-		if kind == "" || id == "" {
-			continue
-		}
-		scope = append(scope, eref{Kind: kind, ID: id})
-	}
-	return scope
 }
 
 // guardMergeType keeps the substrate's own state out of the generic merge
@@ -303,8 +279,8 @@ func (t *txn) recordOf(ref eref) (*substrate.Record, error) {
 // record, "" when it was never split.
 func (t *txn) splitRecordOf(mergeID string) (string, error) {
 	var rec string
-	err := t.row(`SELECT e.src FROM edges e JOIN records x ON x.kind = e.src_kind AND x.id = e.src
-		WHERE e.rel = 'merge' AND e.dst_kind = $3 AND e.dst = $1 AND x.kind = $2
+	err := t.row(`SELECT r.src FROM refs r JOIN records x ON x.kind = r.src_kind AND x.id = r.src
+		WHERE r.property = 'merge' AND r.path = '' AND r.dst_kind = $3 AND r.dst = $1 AND x.kind = $2
 		ORDER BY x.created_at DESC, x.id LIMIT 1`, mergeID, kindRecordSplit, kindRecordMerge).Scan(&rec)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
@@ -312,154 +288,19 @@ func (t *txn) splitRecordOf(mergeID string) (string, error) {
 	return rec, err
 }
 
-// openMergeOf returns the merge record that merged this record away and has
-// not been split, if any. The record names its loser with an edge, so this
-// asks the graph rather than a property (MODEL §11.5).
+// openMergeOf returns the merge record that merged this record away and has not
+// been split, if any. The merge record names its loser with a reference, and the
+// refs index is what makes that reverse read one statement.
 func (t *txn) openMergeOf(ref eref) (string, error) {
 	var rec string
-	err := t.row(`SELECT e.src FROM edges e JOIN records x ON x.kind = e.src_kind AND x.id = e.src
-		WHERE e.rel = 'loser' AND e.dst_kind = $1 AND e.dst = $2 AND x.kind = $3 AND x.deleted_at IS NULL
+	err := t.row(`SELECT r.src FROM refs r JOIN records x ON x.kind = r.src_kind AND x.id = r.src
+		WHERE r.property = 'loser' AND r.path = '' AND r.dst_kind = $1 AND r.dst = $2
+		  AND x.kind = $3 AND x.deleted_at IS NULL
 		ORDER BY x.created_at, x.id LIMIT 1`, ref.Kind, ref.ID, kindRecordMerge).Scan(&rec)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
 	return rec, err
-}
-
-// moveEdges repoints the loser's edges at the winner, deduping collisions.
-// Every moved edge is recorded — collisions with a flag, the far end's TYPE
-// beside its id — so split restores the loser's graph exactly.
-func (t *txn) moveEdges(loserRef, winnerRef eref) ([]map[string]any, error) {
-	var out []map[string]any
-	type edge struct {
-		rel      string
-		other    eref
-		props    []byte
-		outgoing bool
-	}
-	var edges []edge
-	rows, err := t.query(`SELECT rel, dst_kind, dst, props FROM edges WHERE src_kind = $1 AND src = $2`,
-		loserRef.Kind, loserRef.ID)
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		var e edge
-		e.outgoing = true
-		if err := rows.Scan(&e.rel, &e.other.Kind, &e.other.ID, &e.props); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		edges = append(edges, e)
-	}
-	_ = rows.Close()
-	rows, err = t.query(`SELECT rel, src_kind, src, props FROM edges WHERE dst_kind = $1 AND dst = $2`,
-		loserRef.Kind, loserRef.ID)
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		var e edge
-		if err := rows.Scan(&e.rel, &e.other.Kind, &e.other.ID, &e.props); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		edges = append(edges, e)
-	}
-	_ = rows.Close()
-
-	for _, e := range edges {
-		// The loser's own props travel in the record, not just the fact of
-		// the edge: on a collision the winner's props stay put, so split
-		// has nowhere else to read the loser's from.
-		rec := map[string]any{
-			"rel": e.rel, "other": e.other.ID, "otherType": e.other.Kind, "outgoing": e.outgoing,
-			"inserted": false, "props": rawJSON(e.props),
-		}
-		if e.other == loserRef || e.other == winnerRef {
-			// An edge inside the merged pair has nowhere to move to; it is
-			// recorded so split can put it back, and dropped below.
-			out = append(out, rec)
-			continue
-		}
-		src, dst := winnerRef, e.other
-		if !e.outgoing {
-			src, dst = e.other, winnerRef
-		}
-		var one int
-		err := t.row(`
-			INSERT INTO edges (rel, src_kind, src, dst_kind, dst, props, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
-			ON CONFLICT (repository, rel, src_kind, src, dst_kind, dst) DO NOTHING RETURNING 1`,
-			e.rel, src.Kind, src.ID, dst.Kind, dst.ID, e.props, t.now).Scan(&one)
-		switch {
-		case err == nil:
-			rec["inserted"] = true
-		case errors.Is(err, sql.ErrNoRows):
-			// Collision with an edge the winner already has: dedupe, but
-			// remember so split does not strip the winner's own edge.
-		default:
-			return nil, err
-		}
-		out = append(out, rec)
-	}
-	if _, err := t.exec(`DELETE FROM edges WHERE (src_kind = $1 AND src = $2) OR (dst_kind = $1 AND dst = $2)`,
-		loserRef.Kind, loserRef.ID); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// moveSubjects re-points every source record mapped onto the loser at the
-// winner and records the move, so a split can put each one back. The re-point
-// is an UPDATE: the row is the record's, and it moves with the subject rather
-// than being copied and collected.
-func (t *txn) moveSubjects(loserRef, winnerRef eref) ([]map[string]any, error) {
-	rows, err := t.query(`
-		SELECT e.rel, x.id, x.kind FROM edges e JOIN records x ON x.kind = e.src_kind AND x.id = e.src
-		WHERE e.dst_kind = $1 AND e.dst = $2 AND e.subject ORDER BY x.kind, x.id`,
-		loserRef.Kind, loserRef.ID)
-	if err != nil {
-		return nil, err
-	}
-	var out []map[string]any
-	for rows.Next() {
-		var rel, id, typ string
-		if err := rows.Scan(&rel, &id, &typ); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		out = append(out, map[string]any{"rel": rel, "source": id, "kind": typ})
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, err
-	}
-	_ = rows.Close()
-	for _, b := range out {
-		src := eref{Kind: b["kind"].(string), ID: b["source"].(string)}
-		if err := t.repoint(src, b["rel"].(string), winnerRef); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
-}
-
-// repoint moves a source record's subject edge — by (src, rel), because
-// that pair IS the edge, and a re-point that misses the row it meant to move
-// leaves two.
-//
-// Both halves are FOLD EFFECTS, and in this order. The clear has to be
-// described or a replay would insert the new subject edge beside the old one
-// and break the partial unique index that says a source has exactly one; and
-// it has to be described BEFORE the insert, because that is the order the live
-// statements run in.
-func (t *txn) repoint(src eref, rel string, target eref) error {
-	if _, err := t.replaceSingleEdge(rel, src, target); err != nil {
-		return err
-	}
-	_, err := t.putEdge(rel, src, target, nil, true)
-	return err
 }
 
 // moveManagers copies the loser's property-manager rows onto the winner
@@ -615,14 +456,8 @@ func (t *txn) split(mergeID string) (*substrate.Record, error) {
 		}
 		return nil, fmt.Errorf("%w: merge record %s is deleted", substrate.ErrConflict, mergeID)
 	}
-	winnerRef, err := t.edgeTargetOf(rec.ref(), "winner")
-	if err != nil {
-		return nil, err
-	}
-	loserRef, err := t.edgeTargetOf(rec.ref(), "loser")
-	if err != nil {
-		return nil, err
-	}
+	winnerRef := referenceTargetOf(rec, "winner")
+	loserRef := referenceTargetOf(rec, "loser")
 	moved, _ := rec.Props["moved"].(map[string]any)
 	if winnerRef.ID == "" || loserRef.ID == "" {
 		return nil, fmt.Errorf("%w: merge record %s is incomplete", substrate.ErrValidation, mergeID)
@@ -670,60 +505,6 @@ func (t *txn) split(mergeID string) (*substrate.Record, error) {
 		if _, err := t.exec(`
 			UPDATE former_ids SET record_id = $3 WHERE record_kind = $1 AND former_id = $2 AND record_id = $4`,
 			loserRef.Kind, former, loserID, winnerID); err != nil {
-			return nil, err
-		}
-	}
-	for _, e := range mapsOf(moved["edges"]) {
-		rel, _ := e["rel"].(string)
-		otherID, _ := e["other"].(string)
-		otherType, _ := e["otherType"].(string)
-		if otherType == "" {
-			// Records from before the re-key carried no far-end type; those
-			// merges predate the deploy wipe, so nothing to restore.
-			continue
-		}
-		other := eref{Kind: otherType, ID: otherID}
-		outgoing, _ := e["outgoing"].(bool)
-		inserted, _ := e["inserted"].(bool)
-		src, dst := loserRef, other
-		wsrc, wdst := winnerRef, other
-		if !outgoing {
-			src, dst = other, loserRef
-			wsrc, wdst = other, winnerRef
-		}
-		raw, err := jsonb(e["props"])
-		if err != nil {
-			return nil, err
-		}
-		if _, err := t.exec(`
-			INSERT INTO edges (rel, src_kind, src, dst_kind, dst, props, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
-			ON CONFLICT (repository, rel, src_kind, src, dst_kind, dst) DO NOTHING`,
-			rel, src.Kind, src.ID, dst.Kind, dst.ID, raw, t.now); err != nil {
-			return nil, err
-		}
-		if !inserted {
-			// Either the winner had this edge before the merge, or the edge
-			// stayed inside the pair: leave the winner's side alone.
-			continue
-		}
-		if _, err := t.exec(`DELETE FROM edges WHERE rel = $1 AND src_kind = $2 AND src = $3 AND dst_kind = $4 AND dst = $5`,
-			rel, wsrc.Kind, wsrc.ID, wdst.Kind, wdst.ID); err != nil {
-			return nil, err
-		}
-	}
-	// The source records the merge moved go back, by (src, rel): whatever
-	// each one points at now — a later merge may have moved it on again —
-	// one row is deleted and one is written, so a split can never leave a
-	// record wearing two subject edges.
-	for _, b := range movedSubjects(moved) {
-		srcID, _ := b["source"].(string)
-		srcType, _ := b["kind"].(string)
-		rel, _ := b["rel"].(string)
-		if srcID == "" || srcType == "" || rel == "" {
-			continue
-		}
-		if err := t.repoint(eref{Kind: srcType, ID: srcID}, rel, loserRef); err != nil {
 			return nil, err
 		}
 	}
@@ -852,14 +633,14 @@ func (t *txn) split(mergeID string) (*substrate.Record, error) {
 	}
 	// The undo is a rewrite too, over the same scope the merge named: the
 	// entry carries the graph it put back (fold.go).
-	if err := t.recordResync(mergeScope(winnerRef, loserRef, movedSubjects(moved))); err != nil {
+	if err := t.recordResync([]eref{winnerRef, loserRef}); err != nil {
 		return nil, err
 	}
 	if err := t.appendChange(t.actor, substrate.OpSplit, loserID, loser.Kind, result); err != nil {
 		return nil, err
 	}
-	// The subject edges went back with the edges: both sides recompute
-	// from the source sets they now have.
+	// The loser answers to its own id again, so the sources that name it are its
+	// own once more: both sides recompute from the sets they now have.
 	for _, ref := range []eref{winnerRef, loserRef} {
 		if err := t.recompute(ref); err != nil {
 			return nil, err
@@ -869,36 +650,12 @@ func (t *txn) split(mergeID string) (*substrate.Record, error) {
 		return nil, err
 	}
 	return t.ds.putIn(t, substrate.PutInput{
-		Kind:       kindRecordSplit,
-		Properties: map[string]any{"result": result},
-		Edges: []substrate.EdgeInput{
-			{Rel: "merge", To: substrate.EdgeRef{Kind: kindRecordMerge, ID: mergeID}},
+		Kind: kindRecordSplit,
+		Properties: map[string]any{
+			"result": result,
+			"merge":  vocabulary.RecordPath(kindRecordMerge, mergeID),
 		},
 	})
-}
-
-// movedSubjects reads a merge record's moved subject edges. Records written
-// by earlier builds spell the key `projects` or `bindings` (the latter names
-// the source `rep`); a split that skipped those would leave the graph
-// corrupted instead of failing, so every shape is read here.
-func movedSubjects(moved map[string]any) []map[string]any {
-	rows := mapsOf(moved["subjects"])
-	if len(rows) == 0 {
-		rows = mapsOf(moved["projects"])
-	}
-	if len(rows) == 0 {
-		rows = mapsOf(moved["bindings"])
-	}
-	out := make([]map[string]any, 0, len(rows))
-	for _, r := range rows {
-		if _, ok := r["source"]; !ok {
-			if legacy, had := r["rep"]; had {
-				r["source"] = legacy
-			}
-		}
-		out = append(out, r)
-	}
-	return out
 }
 
 // annotationIs reports whether the stored annotation is still byte-for-byte

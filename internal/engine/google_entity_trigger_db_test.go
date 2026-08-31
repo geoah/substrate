@@ -66,7 +66,6 @@ func TestGoogleRecordTriggerSyncsOnlyTheNamedAccount(t *testing.T) {
 		"record": map[string]any{
 			"id": "acct-named", "kind": googleAuthority + "/account",
 			"properties": gmailStepProps(nil),
-			"edges":      map[string]any{},
 		},
 		"repository": map[string]any{"owner": "test"},
 	}

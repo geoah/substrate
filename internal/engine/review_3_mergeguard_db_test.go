@@ -122,12 +122,12 @@ func TestSk3MergeOfOneType(t *testing.T) {
 	author := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "alex"}})
 	mk := func(ext, text string) *substrate.Record {
 		return mustPut(t, ds, owner, substrate.PutInput{
-			Kind:       "messaging.substrate.reamde.dev/conversationmessage",
-			ID:         extID("slack.msg", ext),
-			Properties: map[string]any{"at": "2026-01-01T10:00:00Z", "text": text},
-			Edges: []substrate.EdgeInput{
-				{Rel: "conversation", To: substrate.EdgeRef{ID: conv.ID}},
-				{Rel: "author", To: substrate.EdgeRef{ID: author.ID}},
+			Kind: "messaging.substrate.reamde.dev/conversationmessage",
+			ID:   extID("slack.msg", ext),
+			Properties: map[string]any{
+				"at": "2026-01-01T10:00:00Z", "text": text,
+				"conversation": conv.ID,
+				"author":       author.ID,
 			},
 		})
 	}

@@ -95,7 +95,7 @@ func TestNoopSuppressionAcrossRecords(t *testing.T) {
 		Properties: map[string]any{"category": "direct", "name": "Alex", "account": enginetest.AccountType + "/" + acc.ID},
 	})
 
-	// Labels, edges and annotations are all no-op suppressed.
+	// Labels, references and annotations are all no-op suppressed.
 	mustPatch(t, ds, owner, conv.Kind, conv.ID, substrate.PatchInput{
 		Labels:      map[string]any{"owner/pinned": true},
 		Annotations: map[string]any{"owner/note": map[string]any{"a": 1}},
@@ -299,9 +299,9 @@ func TestMutationRequestApplyDiff(t *testing.T) {
 				"properties": map[string]any{"description": "due Friday"},
 				"ifVersion":  task.Version,
 			},
+			// The target is an unpinned reference (MODEL §11.5).
+			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
 		},
-		// The target is an EDGE (MODEL §11.5).
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
 	})
 	if req.Properties["decision"] != "proposed" {
 		t.Fatalf("req states = %v", req.Properties)
@@ -321,9 +321,9 @@ func TestMutationRequestApplyDiff(t *testing.T) {
 	needsVersion := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
-			"diff": map[string]any{"properties": map[string]any{"description": "later"}, "ifVersion": task.Version + 1},
+			"diff":   map[string]any{"properties": map[string]any{"description": "later"}, "ifVersion": task.Version + 1},
+			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
 		},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
 	})
 	if _, err := ds.Patch(ctx, owner, needsVersion.Kind, needsVersion.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"},
@@ -350,8 +350,8 @@ func TestMutationRequestApplyDiff(t *testing.T) {
 				"properties": map[string]any{"description": "due Monday"},
 				"ifVersion":  1,
 			},
+			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
 		},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
 	})
 	if _, err := ds.Patch(ctx, owner, stale.Kind, stale.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(stale.Version),
@@ -393,9 +393,9 @@ func TestAcceptedNoOpDiffFailsTransition(t *testing.T) {
 	bare := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
-			"diff": map[string]any{"description": "wrapper-less"},
+			"diff":   map[string]any{"description": "wrapper-less"},
+			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
 		},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
 	})
 	if _, err := ds.Patch(ctx, owner, bare.Kind, bare.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(bare.Version),
@@ -414,9 +414,9 @@ func TestAcceptedNoOpDiffFailsTransition(t *testing.T) {
 	noop := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
-			"diff": map[string]any{"properties": map[string]any{"description": "already here"}},
+			"diff":   map[string]any{"properties": map[string]any{"description": "already here"}},
+			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", settled.ID),
 		},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: settled.ID}}},
 	})
 	if _, err := ds.Patch(ctx, owner, noop.Kind, noop.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(noop.Version),
@@ -582,9 +582,11 @@ func TestChangeRequestDeleteTombstones(t *testing.T) {
 
 	task := mustPut(t, ds, owner, substrate.PutInput{Kind: "task", Properties: map[string]any{"name": "throwaway"}})
 	req := mustPut(t, ds, engram, substrate.PutInput{
-		Kind:       "recordpatchrequest",
-		Properties: map[string]any{"op": "delete", "rationale": "duplicate"},
-		Edges:      []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
+		Kind: "recordpatchrequest",
+		Properties: map[string]any{
+			"op": "delete", "rationale": "duplicate",
+			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
+		},
 	})
 	if _, err := ds.Patch(ctx, owner, req.Kind, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(req.Version),
@@ -596,9 +598,11 @@ func TestChangeRequestDeleteTombstones(t *testing.T) {
 	}
 	// Replay: a second delete request on the already-gone target is a no-op.
 	replay := mustPut(t, ds, engram, substrate.PutInput{
-		Kind:       "recordpatchrequest",
-		Properties: map[string]any{"op": "delete"},
-		Edges:      []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
+		Kind: "recordpatchrequest",
+		Properties: map[string]any{
+			"op":     "delete",
+			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
+		},
 	})
 	if _, err := ds.Patch(ctx, owner, replay.Kind, replay.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(replay.Version),
@@ -713,8 +717,8 @@ func TestPutResurrectsATombstone(t *testing.T) {
 		Kind: "calendarevent", ID: "gcal:evt-1",
 		Properties: map[string]any{
 			"summary": "Standup", "at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T13:30:00Z",
+			"calendar": cal.ID,
 		},
-		Edges: []substrate.EdgeInput{{Rel: "calendar", To: substrate.EdgeRef{ID: cal.ID}}},
 	})
 
 	// The provider cancels it.
@@ -731,8 +735,8 @@ func TestPutResurrectsATombstone(t *testing.T) {
 		Kind: "calendarevent", ID: "gcal:evt-1",
 		Properties: map[string]any{
 			"summary": "Standup", "at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T13:30:00Z",
+			"calendar": cal.ID,
 		},
-		Edges: []substrate.EdgeInput{{Rel: "calendar", To: substrate.EdgeRef{ID: cal.ID}}},
 	})
 	if back.ID != event.ID {
 		t.Fatalf("restore minted %s, want the same record %s", back.ID, event.ID)
@@ -787,10 +791,10 @@ func TestResurrectDoesNotCascade(t *testing.T) {
 	})
 	msg := mustPut(t, ds, beeper, substrate.PutInput{
 		Kind: "conversationmessage", ID: "beeper:m1",
-		Properties: map[string]any{"text": "hi", "at": "2026-08-05T09:00:00Z"},
-		Edges: []substrate.EdgeInput{
-			{Rel: "conversation", To: substrate.EdgeRef{ID: conv.ID}},
-			{Rel: "author", To: substrate.EdgeRef{ID: author.ID}},
+		Properties: map[string]any{
+			"text": "hi", "at": "2026-08-05T09:00:00Z",
+			"conversation": conv.ID,
+			"author":       author.ID,
 		},
 	})
 	for _, e := range []*substrate.Record{msg, conv} {
@@ -844,10 +848,10 @@ func TestClientIDIsACreateRule(t *testing.T) {
 	}
 }
 
-// The substrate's own machinery is not editable through the generic graph
-// verbs: rewriting a recordmerge's edges would make a split tombstone the
-// wrong record and lose the real loser.
-func TestLinkUnlinkRefuseSystemTypes(t *testing.T) {
+// The substrate's own machinery is not editable through the generic write
+// verbs: rewriting a recordmerge's `loser` pointer would make a split tombstone
+// the wrong record and lose the real loser.
+func TestWritesRefuseSystemTypes(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -858,15 +862,20 @@ func TestLinkUnlinkRefuseSystemTypes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	if err := ds.Link(ctx, owner, rec.Kind, rec.ID, "loser", substrate.EdgeRef{Kind: a.Kind, ID: a.ID}, nil); err == nil {
-		t.Fatal("link rewrote a merge record")
+	if _, err := ds.Patch(ctx, owner, rec.Kind, rec.ID, substrate.PatchInput{
+		Properties: map[string]any{"loser": vocabulary.RecordPath(a.Kind, a.ID)},
+	}); err == nil {
+		t.Fatal("a patch rewrote a merge record's pointer")
 	} else {
-		wantErr(t, err, substrate.ErrForbidden, "link on a system type")
+		wantErr(t, err, substrate.ErrForbidden, "patch on a system type")
 	}
-	if err := ds.Unlink(ctx, owner, rec.Kind, rec.ID, "loser", substrate.EdgeRef{Kind: b.Kind, ID: b.ID}); err == nil {
-		t.Fatal("unlink stripped a merge record's edge")
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: rec.Kind, ID: rec.ID,
+		Properties: map[string]any{"loser": nil},
+	}); err == nil {
+		t.Fatal("a put stripped a merge record's pointer")
 	} else {
-		wantErr(t, err, substrate.ErrForbidden, "unlink on a system type")
+		wantErr(t, err, substrate.ErrForbidden, "put on a system type")
 	}
 	// The record is intact, so the merge is still reversible.
 	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
@@ -974,8 +983,9 @@ def main(input, host):
 }
 
 // review-p0 #6: deterministic accept failures that are NOT a diff CAS — a
-// targetless patch and a create whose edge target does not exist — must still
-// annotate the still-proposed request, so the inbox shows why.
+// targetless patch and a create whose reference names a record that does not
+// exist — must still annotate the still-proposed request, so the inbox shows
+// why.
 func TestAcceptFailuresAnnotateConflict(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -1002,28 +1012,28 @@ func TestAcceptFailuresAnnotateConflict(t *testing.T) {
 		t.Fatalf("targetless patch should stay proposed + annotated: %+v", after.Properties)
 	}
 
-	// A create whose edge target does not exist: ErrNotFound at accept must
-	// annotate too, not roll back silently.
-	missingEdge := mustPut(t, ds, engram, substrate.PutInput{
+	// A create whose `project` reference names a record that does not exist:
+	// `mustExist` refuses it, and ErrNotFound at accept must annotate too, not
+	// roll back silently.
+	missingRef := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
 			"op": "create", "targetKind": "tasks.substrate.reamde.dev/task", "targetId": "orphan-task",
 			"diff": map[string]any{
-				"properties": map[string]any{"name": "needs a project"},
-				"edges":      []any{map[string]any{"rel": "project", "to": map[string]any{"id": "ghost-project"}}},
+				"properties": map[string]any{"name": "needs a project", "project": "ghost-project"},
 			},
 		},
 	})
-	if _, err := ds.Patch(ctx, owner, missingEdge.Kind, missingEdge.ID, substrate.PatchInput{
-		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(missingEdge.Version),
+	if _, err := ds.Patch(ctx, owner, missingRef.Kind, missingRef.ID, substrate.PatchInput{
+		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(missingRef.Version),
 	}); err == nil {
-		t.Fatal("a create with a missing edge target accepted green")
+		t.Fatal("a create naming a missing referent accepted green")
 	} else {
-		wantErr(t, err, substrate.ErrConflict, "missing edge target")
+		wantErr(t, err, substrate.ErrConflict, "missing referent")
 	}
-	if after := mustGet(t, ds, missingEdge.Kind, missingEdge.ID); after.Properties["decision"] != "proposed" ||
+	if after := mustGet(t, ds, missingRef.Kind, missingRef.ID); after.Properties["decision"] != "proposed" ||
 		after.Annotations["substrate/conflict"] == nil {
-		t.Fatalf("missing-edge create should stay proposed + annotated: %+v", after.Properties)
+		t.Fatalf("the create should stay proposed + annotated: %+v", after.Properties)
 	}
 	if _, err := ds.Get(ctx, "tasks.substrate.reamde.dev/task", "orphan-task"); !errors.Is(err, substrate.ErrNotFound) {
 		t.Fatalf("the orphan task should not exist: %v", err)

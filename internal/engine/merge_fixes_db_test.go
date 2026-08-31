@@ -159,9 +159,9 @@ func TestMergeRejectsSystemTypes(t *testing.T) {
 	}
 }
 
-// A collision on (rel, src, dst) keeps the winner's props; the loser's own
-// travel in the merge record so split gives them back.
-func TestMergeSplitRestoresLoserEdgeProps(t *testing.T) {
+// Merge moves no link data. The winner keeps its own, the loser keeps its own
+// on the tombstone, and a split hands the loser back with it intact.
+func TestMergeSplitLeavesLinkDataWhereItIs(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -169,45 +169,49 @@ func TestMergeSplitRestoresLoserEdgeProps(t *testing.T) {
 	team := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "organization", Properties: map[string]any{"name": "Platform"},
 	})
+	teamRef := vocabulary.RecordPath(team.Kind, team.ID)
 	winner := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "Nina Ray"},
-		Edges: []substrate.EdgeInput{{
-			Rel: "memberOf", To: substrate.EdgeRef{ID: team.ID},
-			Properties: map[string]any{"role": "guest"},
-		}},
+		Kind: "person", Properties: map[string]any{
+			"name": "Nina Ray",
+			"memberOf": []any{map[string]any{
+				vocabulary.ReferenceValueKey: teamRef, "role": "guest",
+			}},
+		},
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "N. Ray"},
-		Edges: []substrate.EdgeInput{{
-			Rel: "memberOf", To: substrate.EdgeRef{ID: team.ID},
-			Properties: map[string]any{"role": "admin", "since": "2019-04-01"},
-		}},
+		Kind: "person", Properties: map[string]any{
+			"name": "N. Ray",
+			"memberOf": []any{map[string]any{
+				vocabulary.ReferenceValueKey: teamRef, "role": "admin", "since": "2019-04-01",
+			}},
+		},
 	})
 	rec, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID)
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	if p := edgePropsOf(t, ds, winner.Kind, winner.ID, "memberOf", team.ID); p["role"] != "guest" {
-		t.Fatalf("merge overwrote the winner's edge props: %v", p)
+	if p := linkDataOf(t, ds, winner.Kind, winner.ID, "memberOf", team.ID); p["role"] != "guest" {
+		t.Fatalf("merge rewrote the winner's link data: %v", p)
 	}
 	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
 		t.Fatalf("split: %v", err)
 	}
-	back := edgePropsOf(t, ds, loser.Kind, loser.ID, "memberOf", team.ID)
+	back := linkDataOf(t, ds, loser.Kind, loser.ID, "memberOf", team.ID)
 	if back == nil {
-		t.Fatal("the loser's edge is gone")
+		t.Fatal("the loser's pointer is gone")
 	}
 	if back["role"] != "admin" || back["since"] != "2019-04-01" {
-		t.Fatalf("the loser's edge props came back as %v", back)
+		t.Fatalf("the loser's link data came back as %v", back)
 	}
-	if p := edgePropsOf(t, ds, winner.Kind, winner.ID, "memberOf", team.ID); p["role"] != "guest" {
-		t.Fatalf("the winner's edge props changed: %v", p)
+	if p := linkDataOf(t, ds, winner.Kind, winner.ID, "memberOf", team.ID); p["role"] != "guest" {
+		t.Fatalf("the winner's link data changed: %v", p)
 	}
 }
 
-// An edge between the winner and the loser has nowhere to move to; it is
-// recorded with its props so split can put it back.
-func TestMergeSplitRestoresPairInternalEdge(t *testing.T) {
+// A reference from the loser to the winner survives the pair being merged and
+// split: it is a value in the loser's own properties, which the merge never
+// reaches into and the split restores whole.
+func TestMergeSplitKeepsThePairInternalReference(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -222,16 +226,19 @@ func TestMergeSplitRestoresPairInternalEdge(t *testing.T) {
 				map[string]any{"singular": "node", "plural": "nodes"},
 				map[string]any{
 					"displayTemplate": "{label}",
-					"properties":      map[string]any{"label": map[string]any{"type": "string"}},
-					"edges": map[string]any{"peer": map[string]any{
-						"to": "node",
-						// Declared, because an undeclared edge property is
-						// refused: the props this test carries through merge
-						// and split have to be props a write would accept.
-						"properties": map[string]any{
-							"src": map[string]any{"type": "string"},
+					"properties": map[string]any{
+						"label": map[string]any{"type": "string"},
+						"peer": map[string]any{
+							"type": "reference",
+							"kind": "node",
+							// Declared, because an undeclared link property is
+							// refused: the link data this test carries through
+							// merge and split has to be data a write would accept.
+							"properties": map[string]any{
+								"src": map[string]any{"type": "string"},
+							},
 						},
-					}},
+					},
 				}),
 		},
 	}); err != nil {
@@ -242,11 +249,12 @@ func TestMergeSplitRestoresPairInternalEdge(t *testing.T) {
 		Kind: nodeType, Properties: map[string]any{"label": "w"},
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: nodeType, Properties: map[string]any{"label": "l"},
-		Edges: []substrate.EdgeInput{{
-			Rel: "peer", To: substrate.EdgeRef{ID: winner.ID},
-			Properties: map[string]any{"src": "beeper"},
-		}},
+		Kind: nodeType, Properties: map[string]any{
+			"label": "l",
+			"peer": map[string]any{
+				vocabulary.ReferenceValueKey: winner.ID, "src": "beeper",
+			},
+		},
 	})
 	rec, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID)
 	if err != nil {
@@ -255,27 +263,15 @@ func TestMergeSplitRestoresPairInternalEdge(t *testing.T) {
 	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
 		t.Fatalf("split: %v", err)
 	}
-	back := edgePropsOf(t, ds, loser.Kind, loser.ID, "peer", winner.ID)
-	if back == nil {
-		t.Fatal("the winner<->loser edge is gone after merge+split")
+	// `peer` is single-valued, so its whole value is the object: the pointer
+	// under `ref` and the link data beside it.
+	back, _ := mustGet(t, ds, loser.Kind, loser.ID).Properties["peer"].(map[string]any)
+	if back[vocabulary.ReferenceValueKey] != vocabulary.RecordPath(nodeType, winner.ID) {
+		t.Fatalf("the loser->winner pointer is gone after merge+split: %v", back)
 	}
 	if back["src"] != "beeper" {
-		t.Fatalf("the winner<->loser edge props came back as %v", back)
+		t.Fatalf("the loser->winner link data came back as %v", back)
 	}
-}
-
-func edgePropsOf(t *testing.T, ds substrate.Dataset, typ, id, rel, other string) map[string]any {
-	t.Helper()
-	e := mustGet(t, ds, typ, id)
-	for _, tgt := range e.Edges[rel] {
-		if tgt.ID == other {
-			if tgt.Properties == nil {
-				return map[string]any{}
-			}
-			return tgt.Properties
-		}
-	}
-	return nil
 }
 
 func stringSet(v any) map[string]bool {
@@ -290,45 +286,4 @@ func stringSet(v any) map[string]bool {
 		}
 	}
 	return out
-}
-
-// A merge performed by the DEPLOYED build spells its moved set `bindings` and
-// names the source `rep`. Splitting one has to re-point those edges: skipping
-// them would leave the graph pointing at a resurrected loser's winner, which
-// is corruption rather than a clean failure.
-func TestSplitReadsTheLegacyMovedSet(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	ds, raw, _ := newDatasetWithDB(t)
-	installPeopleSources(t, ds)
-
-	g := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
-	s := syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "alex"})
-	winner, loser := personOf(t, ds, g), personOf(t, ds, s)
-
-	rec, err := ds.Merge(ctx, owner, typePerson, winner, loser)
-	if err != nil {
-		t.Fatalf("merge: %v", err)
-	}
-	// Rewrite the record into the shape the deployed build wrote.
-	if _, err := raw.ExecContext(ctx, `
-		UPDATE records
-		SET props = jsonb_set(
-			props #- '{moved,subjects}',
-			'{moved,bindings}',
-			(SELECT jsonb_agg(jsonb_build_object('rel', e->>'rel', 'rep', e->>'source', 'kind', e->>'kind'))
-			 FROM jsonb_array_elements(props->'moved'->'subjects') AS e))
-		WHERE id = $1`, rec.ID); err != nil {
-		t.Fatalf("rewrite the merge record: %v", err)
-	}
-
-	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
-		t.Fatalf("split: %v", err)
-	}
-	if got := personOf(t, ds, s); got != loser {
-		t.Fatalf("the legacy moved set was skipped: the slack record points at %s, want %s", got, loser)
-	}
-	if got := personOf(t, ds, g); got != winner {
-		t.Fatalf("the winner's own source moved: %s", got)
-	}
 }

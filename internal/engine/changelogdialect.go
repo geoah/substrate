@@ -28,11 +28,21 @@ package engine
 // replayer needs), and the stamped column is what makes that refinement
 // possible later without guessing at unstamped history.
 //
-// THE LADDER HAS ONE RUNG. Dialect 1 is the changelog as it stands: the ops in
-// substrate.Change and the fold effects in fold.go. A change that teaches the
-// writer a spelling an older binary's fold would refuse or misread (a new fold
-// effect kind, a new op, a payload shape an old decoder reads differently)
-// bumps maxChangelogDialect in the same commit, and
+// THE LADDER HAS TWO RUNGS. Dialect 1 was the changelog while edges existed:
+// `link`/`unlink` ops and `edge`/`unedge`/`edge1` fold effects. Dialect 2 is the
+// changelog as it stands, after references absorbed the edge (decision 0044): those
+// five spellings are gone and this binary refuses any entry carrying one
+// (fold.go foldRefuses), because a reference's meaning now lives in the source
+// record's own properties, which no such entry carries.
+//
+// The gate itself still only refuses a store written ABOVE this binary's
+// maximum, which is the downgrade question it answers. A dialect-1 store opens,
+// and its history stops the day somebody rebuilds — the same day the refusal
+// would have been the only honest answer anyway.
+//
+// A change that teaches the writer a spelling an older binary's fold would
+// refuse or misread (a new fold effect kind, a new op, a payload shape an old
+// decoder reads differently) bumps maxChangelogDialect in the same commit, and
 // changelogdialect_internal_test.go is what makes the first two say so: it
 // reads the declared ops and effect kinds and fails on any the rung does not
 // list.
@@ -56,7 +66,7 @@ var ErrChangelogDialectNewer = errors.New("substrate/engine: the changelog speak
 // maxChangelogDialect is the newest changelog dialect this binary can replay.
 // It is what this binary stamps when it appends; a repository stored above it
 // refuses to open.
-const maxChangelogDialect = 1
+const maxChangelogDialect = 2
 
 // MaxChangelogDialect is the newest changelog dialect this binary can replay,
 // the value GET /.well-known/substrate/server.json reports as the binary

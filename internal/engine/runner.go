@@ -37,7 +37,7 @@ func (ds *dataset) deliveryEnvelope(ctx context.Context, ch substrate.Change) (m
 	}
 	var e *substrate.Record
 	if row != nil && row.DeletedAt == nil {
-		if e, err = ds.hydrate(ctx, ds.db, row, true, false); err != nil {
+		if e, err = ds.hydrate(ctx, ds.db, row, false); err != nil {
 			return nil, err
 		}
 	}

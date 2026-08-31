@@ -414,7 +414,7 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 	if core.Properties["name"] != "Work" || core.Properties["timezone"] != "Europe/London" {
 		t.Fatalf("core calendar = %v", core.Properties)
 	}
-	// `account` is a trait-pinned ownerRef reference (0034): the body writes the
+	// `account` is a trait-pinned cascading reference (0034): the body writes the
 	// full account path as a property, not an edge.
 	if got := core.Properties["account"]; got != googleAccountType+"/acct-step" {
 		t.Fatalf("core calendar account = %v, want %s/acct-step", got, googleAccountType)
@@ -443,25 +443,25 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("core calendarevent %s did not sync: %v", id, err)
 		}
-		if targets := row.Edges["calendar"]; len(targets) != 1 || targets[0].ID != calID {
-			t.Fatalf("core event %s calendar edge = %v", id, row.Edges["calendar"])
+		if got := refIDs(row, "calendar"); len(got) != 1 || got[0] != calID {
+			t.Fatalf("core event %s calendar = %v", id, got)
 		}
 		if row.At == nil || row.EndsAt == nil {
 			t.Fatalf("core event %s missing the temporal(range) columns: at=%v endsAt=%v",
 				id, row.At, row.EndsAt)
 		}
-		// One hop: the body referenced the emailaddress RECORD, the engine
-		// landed the edge on the person its mapping resolved.
-		organizers := row.Edges["organizer"]
-		if len(organizers) != 1 || organizers[0].Kind != googlePersonType {
-			t.Fatalf("core event %s organizer edge = %v", id, organizers)
+		// One hop: the body referenced the emailaddress RECORD, and reference
+		// normalization stored the person its mapping resolved.
+		organizer := refPath(row, "organizer")
+		if kind, _, _ := vocabulary.SplitRecordPath(organizer); kind != googlePersonType {
+			t.Fatalf("core event %s organizer = %q, want a %s", id, organizer, googlePersonType)
 		}
-		if len(row.Edges["attendees"]) != 2 {
-			t.Fatalf("core event %s has %d attendees, want 2", id, len(row.Edges["attendees"]))
+		if got := refPaths(row, "attendees"); len(got) != 2 {
+			t.Fatalf("core event %s has %d attendees, want 2", id, len(got))
 		}
 	}
 
-	// responseStatus is on the MIRROR, because an edge carries no properties.
+	// responseStatus is on the MIRROR, where the per-attendee answer belongs.
 	e1 := substratefn.ExternalID("gcal-event", calID, "e1")
 	evt, err := ds.Get(ctx, googleEventType, e1)
 	if err != nil {
@@ -585,8 +585,8 @@ func TestGoogleCalendarSeriesLinksMasters(t *testing.T) {
 		got[0] != "2026-08-19T13:00:00Z" {
 		t.Fatalf("series rdates = %v, want the UTC RDATE", got)
 	}
-	if targets := series.Edges["calendar"]; len(targets) != 1 || targets[0].ID != calID {
-		t.Fatalf("series calendar edge = %v", series.Edges["calendar"])
+	if got := refIDs(series, "calendar"); len(got) != 1 || got[0] != calID {
+		t.Fatalf("series calendar = %v", got)
 	}
 
 	// Every instance of the master points at it; the one-off points at
@@ -596,16 +596,16 @@ func TestGoogleCalendarSeriesLinksMasters(t *testing.T) {
 		if err != nil {
 			t.Fatalf("core event %s did not sync: %v", id, err)
 		}
-		if targets := row.Edges["series"]; len(targets) != 1 || targets[0].ID != seriesID {
-			t.Fatalf("core event %s series edge = %v, want %s", id, row.Edges["series"], seriesID)
+		if got := refIDs(row, "series"); len(got) != 1 || got[0] != seriesID {
+			t.Fatalf("core event %s series = %v, want %s", id, got, seriesID)
 		}
 	}
 	oneOff, err := ds.Get(ctx, coreEventType, substratefn.ExternalID("gcal-event", calID, "e1"))
 	if err != nil {
 		t.Fatalf("core event e1 did not sync: %v", err)
 	}
-	if len(oneOff.Edges["series"]) != 0 {
-		t.Fatalf("a one-off event was linked to a series: %v", oneOff.Edges["series"])
+	if got := refPaths(oneOff, "series"); len(got) != 0 {
+		t.Fatalf("a one-off event names a series: %v", got)
 	}
 
 	// The moved instance carries the slot in both halves: the resolved instant
@@ -686,8 +686,8 @@ func TestGoogleCalendarSeriesOffKeepsFlatView(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the instance did not sync: %v", err)
 	}
-	if len(core.Edges["series"]) != 0 {
-		t.Fatalf("an instance carries a series edge with linking off: %v", core.Edges["series"])
+	if got := refPaths(core, "series"); len(got) != 0 {
+		t.Fatalf("an instance names a series with linking off: %v", got)
 	}
 	if _, ok := core.Properties["originalStartAt"]; ok {
 		t.Fatalf("an instance carries originalStartAt with linking off: %v", core.Properties)
@@ -744,8 +744,8 @@ func TestGoogleCalendarSeriesStampHoldsAcrossDelta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the delta walk lost the series: %v", err)
 	}
-	if len(second.Edges["calendar"]) != 1 {
-		t.Fatalf("the delta re-stage dropped the calendar edge: %v", second.Edges)
+	if got := refPaths(second, "calendar"); len(got) != 1 {
+		t.Fatalf("the delta re-stage dropped the calendar reference: %v", second.Properties)
 	}
 	if got, _ := second.Properties["materializedFrom"].(string); got != from0 {
 		t.Fatalf("a delta walk moved materializedFrom: %q -> %q", from0, got)

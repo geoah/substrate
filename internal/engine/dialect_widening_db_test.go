@@ -347,8 +347,9 @@ func TestDerivedTitleTokens(t *testing.T) {
 				"displayTemplate": "{localName}",
 				"properties":      map[string]any{"localName": map[string]any{"type": "string"}},
 			}),
-		// And a kind whose EDGE takes the name. One name is one pointer, so the
-		// token means the edge here — the same thing the bare form would mean.
+		// And a kind whose REFERENCE takes the name. One name is one pointer, so
+		// the token means that reference here, the same thing the bare form would
+		// mean.
 		vocabulary.KindManifest(dtAuthority,
 			map[string]any{"singular": "named", "plural": "nameds"},
 			map[string]any{
@@ -356,10 +357,12 @@ func TestDerivedTitleTokens(t *testing.T) {
 				"properties":      map[string]any{"name": map[string]any{"type": "string"}},
 			}),
 		vocabulary.KindManifest(dtAuthority,
-			map[string]any{"singular": "edgeclaimer", "plural": "edgeclaimers"},
+			map[string]any{"singular": "refclaimer", "plural": "refclaimers"},
 			map[string]any{
 				"displayTemplate": "{localName}",
-				"edges":           map[string]any{"localName": map[string]any{"to": "named"}},
+				"properties": map[string]any{
+					"localName": map[string]any{"type": "reference", "kind": "named"},
+				},
 			}),
 	}
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(context.Background(), owner, docs); err != nil {
@@ -410,30 +413,29 @@ func TestDerivedTitleTokens(t *testing.T) {
 		t.Fatalf("a declared-but-empty property must not fall back to the derived value, got %q", empty.Title)
 	}
 
-	// A declared EDGE of the token's name wins too, and renders what a bare token
-	// would: the target's title. Rendering the id's last segment here would say
-	// the record's own name where the model points at another record's.
+	// A declared REFERENCE of the token's name wins too, and renders what a bare
+	// token would: the target's title. Rendering the id's last segment here would
+	// say the record's own name where the model points at another record's.
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: dtAuthority + "/named", ID: "n1", Properties: map[string]any{"name": "Ada"},
 	})
-	viaEdge := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dtAuthority + "/edgeclaimer", ID: "people.example.com/person",
-		Edges: []substrate.EdgeInput{{
-			Rel: "localName",
-			To:  substrate.EdgeRef{Kind: dtAuthority + "/named", ID: "n1"},
-		}},
+	viaRef := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: dtAuthority + "/refclaimer", ID: "people.example.com/person",
+		Properties: map[string]any{
+			"localName": vocabulary.RecordPath(dtAuthority+"/named", "n1"),
+		},
 	})
-	if viaEdge.Title != "Ada" {
-		t.Fatalf("a declared edge must win over the derived token, got %q", viaEdge.Title)
+	if viaRef.Title != "Ada" {
+		t.Fatalf("a declared reference must win over the derived token, got %q", viaRef.Title)
 	}
-	// With the edge unset it renders empty, exactly as a declared-but-empty
+	// With the reference unset it renders empty, exactly as a declared-but-empty
 	// property does: the declaration decides the meaning, the row decides the
 	// value.
-	noEdge := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: dtAuthority + "/edgeclaimer", ID: "people.example.com/other",
+	noRef := mustPut(t, ds, owner, substrate.PutInput{
+		Kind: dtAuthority + "/refclaimer", ID: "people.example.com/other",
 	})
-	if noEdge.Title != "" {
-		t.Fatalf("an unset declared edge must not fall back to the derived value, got %q", noEdge.Title)
+	if noRef.Title != "" {
+		t.Fatalf("an unset declared reference must not fall back to the derived value, got %q", noRef.Title)
 	}
 }
 

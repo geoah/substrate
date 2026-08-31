@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The suggestion flow's engine half (GO.md stage 1): recordmergerequest's
@@ -26,10 +27,8 @@ func mergeRequest(t *testing.T, ds substrate.Dataset, id, winner, loser string) 
 		Properties: map[string]any{
 			"rationale": "they look like one person",
 			"evidence":  map[string]any{"signals": []any{map[string]any{"signal": "email"}}},
-		},
-		Edges: []substrate.EdgeInput{
-			{Rel: "winner", To: substrate.EdgeRef{Kind: "people.substrate.reamde.dev/person", ID: winner}},
-			{Rel: "loser", To: substrate.EdgeRef{Kind: "people.substrate.reamde.dev/person", ID: loser}},
+			"winner":    vocabulary.RecordPath(typePerson, winner),
+			"loser":     vocabulary.RecordPath(typePerson, loser),
 		},
 	})
 }
@@ -116,10 +115,10 @@ func TestManagedStampIsEngineWritten(t *testing.T) {
 	// A creating write may not supply the stamp.
 	_, err := ds.Put(ctx, owner, substrate.PutInput{
 		Kind: requestType, ID: "forged-create",
-		Properties: map[string]any{"decidedAt": "2020-01-01T00:00:00Z"},
-		Edges: []substrate.EdgeInput{
-			{Rel: "winner", To: substrate.EdgeRef{Kind: "people.substrate.reamde.dev/person", ID: a.ID}},
-			{Rel: "loser", To: substrate.EdgeRef{Kind: "people.substrate.reamde.dev/person", ID: b.ID}},
+		Properties: map[string]any{
+			"decidedAt": "2020-01-01T00:00:00Z",
+			"winner":    vocabulary.RecordPath(typePerson, a.ID),
+			"loser":     vocabulary.RecordPath(typePerson, b.ID),
 		},
 	})
 	wantErr(t, err, substrate.ErrValidation, "creating with a forged decidedAt")
@@ -163,15 +162,16 @@ func TestMergeRequestStaleFailsWholeAndAnnotates(t *testing.T) {
 
 	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "A"}})
 	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "B"}})
+	other := mustPut(t, ds, owner, substrate.PutInput{Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "C"}})
 	first := mergeRequest(t, ds, "req-first", winner.ID, loser.ID)
-	second := mergeRequest(t, ds, "req-second", winner.ID, loser.ID)
+	second := mergeRequest(t, ds, "req-second", other.ID, loser.ID)
 
 	if _, err := decide(ds, first.ID, "accepted"); err != nil {
 		t.Fatalf("accept first: %v", err)
 	}
-	// The pair is already merged: the second request's loser edge was
-	// re-pointed at the winner by the merge, so applying it is a self-merge
-	// — refused, and the refusal fails the TRANSITION whole.
+	// The second request still names the loser it was written against — nothing
+	// repoints — and that record has been merged away, so applying it is
+	// refused, and the refusal fails the TRANSITION whole.
 	_, err := decide(ds, second.ID, "accepted")
 	wantErr(t, err, substrate.ErrConflict, "accepting a stale merge request")
 
@@ -187,10 +187,9 @@ func TestMergeRequestStaleFailsWholeAndAnnotates(t *testing.T) {
 		t.Fatalf("conflict not annotated: %+v", got.Annotations)
 	}
 	// The annotation records the REFUSAL (the applyDiff pattern): here the
-	// stale request's loser edge already canonicalized onto the winner, so
-	// the re-run guard sees a self-merge.
+	// re-run guard sees a loser another merge already tombstoned.
 	reason, _ := note["reason"].(string)
-	if !strings.Contains(reason, "cannot merge") {
+	if !strings.Contains(reason, "merge needs two live records") {
 		t.Fatalf("annotation reason: %q", reason)
 	}
 }
@@ -204,9 +203,9 @@ func TestMergeRequestRefusesDifferentTypes(t *testing.T) {
 	req := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: requestType,
 		ID:   "req-cross",
-		Edges: []substrate.EdgeInput{
-			{Rel: "winner", To: substrate.EdgeRef{Kind: "people.substrate.reamde.dev/person", ID: person.ID}},
-			{Rel: "loser", To: substrate.EdgeRef{Kind: taskType, ID: task.ID}},
+		Properties: map[string]any{
+			"winner": vocabulary.RecordPath(typePerson, person.ID),
+			"loser":  vocabulary.RecordPath(taskType, task.ID),
 		},
 	})
 

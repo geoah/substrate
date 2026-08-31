@@ -6,11 +6,12 @@ import (
 
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// Skeptic probe A: collision on (rel, src, dst) during merge — does the
-// loser's edge props survive the round trip?
-func TestSkepticMergeSplitEdgePropsCollision(t *testing.T) {
+// Skeptic probe A: two records pointing at one organization with DIFFERENT link
+// data — does each side's link data survive a merge and a split?
+func TestSkepticMergeSplitLinkDataCollision(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -18,50 +19,50 @@ func TestSkepticMergeSplitEdgePropsCollision(t *testing.T) {
 	team := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "organization", Properties: map[string]any{"name": "Acme"},
 	})
+	teamRef := vocabulary.RecordPath(team.Kind, team.ID)
 	winner := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "W"},
-		Edges: []substrate.EdgeInput{{
-			Rel: "memberOf", To: substrate.EdgeRef{ID: team.ID},
-			Properties: map[string]any{"role": "guest"},
-		}},
+		Kind: "person", Properties: map[string]any{
+			"name": "W",
+			"memberOf": []any{map[string]any{
+				vocabulary.ReferenceValueKey: teamRef, "role": "guest",
+			}},
+		},
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "person", Properties: map[string]any{"name": "L"},
-		Edges: []substrate.EdgeInput{{
-			Rel: "memberOf", To: substrate.EdgeRef{ID: team.ID},
-			Properties: map[string]any{"role": "admin"},
-		}},
+		Kind: "person", Properties: map[string]any{
+			"name": "L",
+			"memberOf": []any{map[string]any{
+				vocabulary.ReferenceValueKey: teamRef, "role": "admin",
+			}},
+		},
 	})
 
 	rec, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID)
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	t.Logf("merge record props: %+v", rec.Properties)
-
-	afterMerge := mustGet(t, ds, winner.Kind, winner.ID)
-	t.Logf("winner edges after merge: %+v", afterMerge.Edges["memberOf"])
+	if got := linkDataOf(t, ds, winner.Kind, winner.ID, "memberOf", team.ID); got["role"] != "guest" {
+		t.Fatalf("the merge moved link data onto the winner: %+v", got)
+	}
 
 	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
 		t.Fatalf("split: %v", err)
 	}
-	back := mustGet(t, ds, loser.Kind, loser.ID)
-	t.Logf("loser edges after split: %+v", back.Edges["memberOf"])
-	if len(back.Edges["memberOf"]) != 1 {
-		t.Fatalf("loser edge not restored at all: %+v", back.Edges)
+	back := linkDataOf(t, ds, loser.Kind, loser.ID, "memberOf", team.ID)
+	if back == nil {
+		t.Fatalf("the loser's pointer is not restored at all")
 	}
-	if got := back.Edges["memberOf"][0].Properties["role"]; got != "admin" {
-		t.Fatalf("DEFECT CONFIRMED: loser edge props role = %v, want admin", got)
+	if back["role"] != "admin" {
+		t.Fatalf("loser link data role = %v, want admin", back["role"])
 	}
-	w := mustGet(t, ds, winner.Kind, winner.ID)
-	if got := w.Edges["memberOf"][0].Properties["role"]; got != "guest" {
-		t.Fatalf("winner edge props role = %v, want guest", got)
+	if got := linkDataOf(t, ds, winner.Kind, winner.ID, "memberOf", team.ID); got["role"] != "guest" {
+		t.Fatalf("winner link data role = %v, want guest", got["role"])
 	}
 }
 
-// Skeptic probe B: an edge between the winner and the loser (self-referential
-// rel) — recorded? restored?
-func TestSkepticMergeSplitWinnerLoserEdge(t *testing.T) {
+// Skeptic probe B: a reference from the loser to the winner (one kind pointing
+// at itself) — does it survive merge and split?
+func TestSkepticMergeSplitWinnerLoserReference(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -82,24 +83,24 @@ func TestSkepticMergeSplitWinnerLoserEdge(t *testing.T) {
 	})
 	m1 := mustPut(t, ds, slack, substrate.PutInput{
 		Kind: "conversationmessage", ID: "slack-msg:T1:C1:1",
-		Properties: map[string]any{"at": "2026-08-03T10:00:00Z", "text": "root"},
-		Edges: []substrate.EdgeInput{
-			{Rel: "conversation", To: substrate.EdgeRef{ID: conv.ID}},
-			{Rel: "author", To: substrate.EdgeRef{ID: author.ID}},
+		Properties: map[string]any{
+			"at": "2026-08-03T10:00:00Z", "text": "root",
+			"conversation": conv.ID,
+			"author":       author.ID,
 		},
 	})
 	m2 := mustPut(t, ds, slack, substrate.PutInput{
 		Kind: "conversationmessage", ID: "slack-msg:T1:C1:2",
-		Properties: map[string]any{"at": "2026-08-03T10:01:00Z", "text": "reply"},
-		Edges: []substrate.EdgeInput{
-			{Rel: "conversation", To: substrate.EdgeRef{ID: conv.ID}},
-			{Rel: "author", To: substrate.EdgeRef{ID: author.ID}},
-			{Rel: "replyTo", To: substrate.EdgeRef{ID: m1.ID}},
+		Properties: map[string]any{
+			"at": "2026-08-03T10:01:00Z", "text": "reply",
+			"conversation": conv.ID,
+			"author":       author.ID,
+			"replyTo":      m1.ID,
 		},
 	})
-	pre := mustGet(t, ds, m2.Kind, m2.ID)
-	if len(pre.Edges["replyTo"]) != 1 {
-		t.Fatalf("setup: replyTo edge missing: %+v", pre.Edges)
+	wantReplyTo := vocabulary.RecordPath(m1.Kind, m1.ID)
+	if pre := mustGet(t, ds, m2.Kind, m2.ID); pre.Properties["replyTo"] != wantReplyTo {
+		t.Fatalf("setup: replyTo missing: %+v", pre.Properties)
 	}
 
 	rec, err := ds.Merge(ctx, owner, m1.Kind, m1.ID, m2.ID)
@@ -109,9 +110,7 @@ func TestSkepticMergeSplitWinnerLoserEdge(t *testing.T) {
 	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
 		t.Fatalf("split: %v", err)
 	}
-	back := mustGet(t, ds, m2.Kind, m2.ID)
-	t.Logf("loser edges: %+v", back.Edges)
-	if len(back.Edges["replyTo"]) != 1 || back.Edges["replyTo"][0].ID != m1.ID {
-		t.Fatalf("winner<->loser edge lost across merge+split: %+v", back.Edges["replyTo"])
+	if back := mustGet(t, ds, m2.Kind, m2.ID); back.Properties["replyTo"] != wantReplyTo {
+		t.Fatalf("the loser->winner pointer is lost across merge+split: %+v", back.Properties["replyTo"])
 	}
 }

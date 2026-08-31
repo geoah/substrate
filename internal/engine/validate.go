@@ -76,37 +76,36 @@ func coerceProps(ty *vocabulary.Kind, in map[string]any) (map[string]any, error)
 	return out, nil
 }
 
-// coerceEdgeProps validates ONE edge write's properties against what the rel
-// declares (`edges.<rel>.properties`) and returns them in their stored form.
-// The declaration is the whole admission: an undeclared name is refused, and a
-// rel that declares no block accepts no properties at all.
+// coerceLinkProps validates ONE reference value's LINK DATA against what the
+// reference declares (`properties:` on the declaration) and returns it in
+// stored form. The declaration is the whole admission: an undeclared name is
+// refused, and a reference that declares no block accepts no link data at all.
 //
-// An edge's props are REPLACED wholesale by every write of that edge (the
-// upsert in applyEdgePut sets `props = EXCLUDED.props`), so there is no merge
-// to reason about and no delete marker: a name the write omits is a name the
-// stored row will not carry. That is also what makes `required:` mean one
-// thing here — every stored edge row of the rel carries the property, because
-// the write that produced it was refused otherwise.
+// A reference value is written WHOLE — a write replaces the property, it does
+// not reach inside the value — so there is no merge to reason about and no
+// delete marker: a name the write omits is a name the stored value will not
+// carry. That is also what makes `required:` mean one thing here: every stored
+// value of the reference carries the property, because the write that produced
+// it was refused otherwise.
 //
 // A nil value is dropped rather than stored, for the same reason: writing
-// `{since: null}` and omitting `since` have to leave the same row behind.
-func coerceEdgeProps(ty *vocabulary.Kind, ed *vocabulary.Edge, in map[string]any) (map[string]any, error) {
+// `{since: null}` and omitting `since` have to leave the same value behind.
+func coerceLinkProps(p *vocabulary.Property, in map[string]any) (map[string]any, error) {
 	var problems []string
 	var out map[string]any
 	for _, name := range sortedKeys(in) {
-		p := ed.Props[name]
-		if p == nil {
-			problems = append(problems, fmt.Sprintf("edges.%s.properties.%s: not declared on %s's %q edge",
-				ed.Name, name, ty.Identity, ed.Name))
+		lp := p.Properties[name]
+		if lp == nil {
+			problems = append(problems, fmt.Sprintf("link property %q is not declared", name))
 			continue
 		}
 		v := in[name]
 		if v == nil {
 			continue
 		}
-		cv, err := coerceValue(p, v)
+		cv, err := coerceValue(lp, v)
 		if err != nil {
-			problems = append(problems, fmt.Sprintf("edges.%s.properties.%s: %v", ed.Name, name, err))
+			problems = append(problems, fmt.Sprintf("link property %q: %v", name, err))
 			continue
 		}
 		if out == nil {
@@ -114,17 +113,16 @@ func coerceEdgeProps(ty *vocabulary.Kind, ed *vocabulary.Edge, in map[string]any
 		}
 		out[name] = cv
 	}
-	for _, name := range ed.PropOrder {
-		if !ed.Props[name].Required {
+	for _, name := range p.PropertyOrder {
+		if !p.Properties[name].Required {
 			continue
 		}
 		if _, held := out[name]; !held {
-			problems = append(problems, fmt.Sprintf("edges.%s.properties.%s: %s's %q edge requires a value",
-				ed.Name, name, ty.Identity, ed.Name))
+			problems = append(problems, fmt.Sprintf("link property %q requires a value", name))
 		}
 	}
 	if len(problems) > 0 {
-		return nil, &substrate.ValidationError{Problems: problems}
+		return nil, fmt.Errorf("%s", strings.Join(problems, "; "))
 	}
 	return out, nil
 }
@@ -236,19 +234,20 @@ func coerceObject(p *vocabulary.Property, v any) (any, error) {
 //   - a full path ("core.substrate.reamde.dev/llmprovider/claude"), left alone;
 //   - the AUTHORED SHORT FORM, a bare record id, ONLY when `kind:` pins a
 //     concrete kind, which then supplies what the value omits, mirroring a
-//     single-target edge's shorthand.
+//     which supplies what the value omits.
 //
 // Which of the two a string is, is decided by the value's own SHAPE against the
 // pin and never by the registry, so an authored value means the same thing on
 // every path that reads it.
 //
-// AN AMBIGUOUS VALUE IS REFUSED, NEVER GUESSED. Under a pin, a value that
-// parses as a full path whose kind is NOT the pin has two live readings — that
-// pointer, or a bare id the pin would complete — and they name different
-// records. "foo.bar/baz/qux" under a pin at `p/target` is the case: a pointer at
-// `foo.bar/baz`, or an id `foo.bar/baz/qux`. Both are refused together, naming
-// both readings, because picking one silently is how a pointer ends up at the
-// wrong row.
+// AN AMBIGUOUS VALUE IS REFUSED, NEVER GUESSED — but the REGISTRY settles it,
+// one layer later. Under a pin, a value that parses as a full path whose kind is
+// NOT the pin has two live readings: that pointer, or a bare id the pin would
+// complete. Coercion cannot choose, because a full path whose kind is a
+// recordmapping SOURCE for the pin is the ordinary way a connector names what it
+// actually holds (references.go subjectHop). So the path is carried through
+// UNCHANGED and normalizeReference decides against the registry: the hop, or a
+// refusal naming both readings. Nothing is guessed at either door.
 //
 // A value that does NOT parse as a path is unambiguous even carrying slashes,
 // and that is deliberate: a kind or function IDENTITY is the ordinary short form
@@ -256,28 +255,78 @@ func coerceObject(p *vocabulary.Property, v any) (any, error) {
 // core's `kind`), and it cannot be read as a path because nothing is left for an
 // id. Only empty-segment shapes are refused there, since "target/" is an id of
 // nothing.
+// A reference that declares LINK DATA stores an object: the pointer under the
+// one reserved key `ref`, every declared link property beside it. A bare string
+// is accepted there too and normalizes to the object with no link properties
+// set, so re-writing a reference whose link data is all optional needs no
+// knowledge of the shape.
 func coerceReference(p *vocabulary.Property, v any) (any, error) {
 	pin := p.To
 	if pin == vocabulary.ToAny {
 		pin = ""
 	}
+	linked := len(p.Properties) > 0
 	switch t := v.(type) {
 	case string:
-		return coerceReferencePath(pin, t)
+		path, err := coerceReferencePath(pin, t)
+		if err != nil || !linked {
+			return path, err
+		}
+		props, err := coerceLinkProps(p, nil)
+		if err != nil {
+			return nil, err
+		}
+		return linkValue(path, props), nil
 	case map[string]any:
-		// The retired dialect-1 shape, refused BY NAME rather than folded. No
-		// release ever stored one and no rung translates one (#217), so a pair
-		// arriving here is an author writing the dead shape, and quietly
-		// accepting it would keep the old spelling alive in a dialect that says
-		// it is gone.
-		kind, _ := t["kind"].(string)
-		id, _ := t["id"].(string)
-		return nil, fmt.Errorf(
-			"a reference is a %q path string; the {kind: %q, id: %q} pair is the retired shape, and nothing migrates a stored one",
-			"<kind>/<id>", kind, id)
+		if !linked {
+			// The retired dialect-1 shape, refused BY NAME rather than folded. No
+			// release ever stored one and no rung translates one (#217), so a pair
+			// arriving here is an author writing the dead shape, and quietly
+			// accepting it would keep the old spelling alive in a dialect that says
+			// it is gone.
+			kind, _ := t["kind"].(string)
+			id, _ := t["id"].(string)
+			return nil, fmt.Errorf(
+				"a reference is a %q path string; the {kind: %q, id: %q} pair is the retired shape, and nothing migrates a stored one",
+				"<kind>/<id>", kind, id)
+		}
+		raw, held := t[vocabulary.ReferenceValueKey]
+		if !held {
+			return nil, fmt.Errorf(
+				"%q carries link data, so its value is an object with the referent under %q",
+				p.Name, vocabulary.ReferenceValueKey)
+		}
+		s, ok := raw.(string)
+		if !ok {
+			return nil, fmt.Errorf(`%q is a "<kind>/<id>" path string`, vocabulary.ReferenceValueKey)
+		}
+		path, err := coerceReferencePath(pin, s)
+		if err != nil {
+			return nil, err
+		}
+		rest := make(map[string]any, len(t))
+		for k, kv := range t {
+			if k != vocabulary.ReferenceValueKey {
+				rest[k] = kv
+			}
+		}
+		props, err := coerceLinkProps(p, rest)
+		if err != nil {
+			return nil, err
+		}
+		return linkValue(path, props), nil
 	default:
 		return nil, fmt.Errorf(`a reference is a "<kind>/<id>" path string`)
 	}
+}
+
+// linkValue assembles the stored object shape: the pointer, then the link data.
+func linkValue(path any, props map[string]any) map[string]any {
+	out := map[string]any{vocabulary.ReferenceValueKey: path}
+	for k, v := range props {
+		out[k] = v
+	}
+	return out
 }
 
 // coerceReferencePath holds one authored string to the value model: the whole
@@ -287,7 +336,7 @@ func coerceReferencePath(pin, s string) (any, error) {
 	if s == "" {
 		return nil, fmt.Errorf("a reference needs an id")
 	}
-	kind, id, isPath := vocabulary.SplitRecordPath(s)
+	_, id, isPath := vocabulary.SplitRecordPath(s)
 	if pin == "" {
 		// Unpinned there is no kind to borrow, so only a full
 		// "<authority>/<kind>/<id>" path says what this names. Every kind
@@ -304,16 +353,10 @@ func coerceReferencePath(pin, s string) (any, error) {
 		return s, nil
 	}
 	if isPath {
-		if kind == pin {
-			if hasEmptySegment(id) {
-				return nil, fmt.Errorf("reference %q has an empty id segment", s)
-			}
-			return s, nil
+		if hasEmptySegment(id) {
+			return nil, fmt.Errorf("reference %q has an empty id segment", s)
 		}
-		// Both readings, named, because either end may be the one to change.
-		return nil, fmt.Errorf(
-			"reference %q is ambiguous: it reads as a pointer at %s, or as a bare id the pin would complete to %q — and the declaration pins %s, so write that path in full",
-			s, kind, vocabulary.RecordPath(pin, s), pin)
+		return s, nil
 	}
 	if hasEmptySegment(s) {
 		return nil, fmt.Errorf("reference %q has an empty segment, so it names no record", s)
@@ -689,12 +732,11 @@ func coerceLabels(actor substrate.Actor, in map[string]any) (map[string]any, err
 // --- derived title, snippet, FTS bands ---
 
 // titleResolver renders a type's display_template against a stored row,
-// following declared edges to their first target.
+// following a declared reference to its referent.
 type titleResolver struct {
-	t     *txn
-	ty    *vocabulary.Kind
-	row   *erow
-	edges map[string][]eref
+	t   *txn
+	ty  *vocabulary.Kind
+	row *erow
 }
 
 func (r *titleResolver) Prop(name string) string {
@@ -708,8 +750,7 @@ func (r *titleResolver) Prop(name string) string {
 		// A reference is a record PATH, which scalarString would render
 		// verbatim — a title reading "core.substrate.reamde.dev/agent/x"
 		// names the pointer, not the thing. It follows the pointer instead,
-		// exactly as a bare edge token does, and
-		// falls back to the id when the referent is not there to read: a
+		// and falls back to the id when the referent is not there to read: a
 		// reference may name a row that does not exist (references.go).
 		if p, ok := r.ty.Prop(name); ok && p.Datatype == vocabulary.DatatypeReference {
 			return r.reference(name, "")
@@ -722,26 +763,20 @@ func (r *titleResolver) Prop(name string) string {
 	return ""
 }
 
-// Declares reports whether the kind declares a property OR an edge of that name,
-// which is what a derived token yields to. An edge counts because a bare token
-// means either one and the loader refuses a kind that declares both under one
-// name: without it, `{localName}` on a kind whose EDGE is `localName` would
-// render the id's last segment where the model says the target's title.
+// Declares reports whether the kind declares a property of that name, which is
+// what a derived token yields to.
 //
-// A sensitive property counts as declared too: Prop renders it empty on purpose,
-// and answering with the id-derived value instead would put something in a title
-// the declaration meant to keep out of one.
+// A sensitive property counts as declared: Prop renders it empty on purpose, and
+// answering with the id-derived value instead would put something in a title the
+// declaration meant to keep out of one.
 func (r *titleResolver) Declares(name string) bool {
-	if _, ok := r.ty.Prop(name); ok {
-		return true
-	}
-	_, ok := r.ty.Edge(name)
+	_, ok := r.ty.Prop(name)
 	return ok
 }
 
 // reference renders a reference property: the referent's title, or the named
 // property of it. Repeated references render each, comma-joined, the way a
-// many-edge does.
+// repeated reference renders each, comma-joined.
 func (r *titleResolver) reference(name, prop string) string {
 	refs := referenceTargets(r.row.Props[name])
 	if len(refs) == 0 {
@@ -779,7 +814,7 @@ func (r *titleResolver) referenceProp(ref eref, prop string) string {
 	}
 	// The loader cannot check the referent's property across kinds (load.go
 	// inspects only the referencing kind's own properties), so the sensitive
-	// skip is enforced here, exactly as targetProp does for an edge hop: a
+	// skip is enforced here: a
 	// value every read surface redacts must not land in the unsealed,
 	// FTS-indexed title.
 	if ty, terr := r.t.ds.resolveType(row.Kind); terr == nil && ty != nil {
@@ -804,34 +839,40 @@ func referenceID(v any) string {
 }
 
 // referenceTargets reads the stored shape of a reference property — one
-// canonical record PATH, or a list of them when repeated. A stored value is
-// always a full path (normalizeReference wrote it), so a string that does not
-// split is not a reference and yields nothing rather than a kindless target.
+// canonical record PATH, or a list of them when repeated, in either value shape
+// (the flat path, or the `{ref, <props>...}` object a declaration with link data
+// stores). A stored value is always a full path (normalizeReference wrote it),
+// so a value that does not split is not a reference and yields nothing rather
+// than a kindless target.
 func referenceTargets(v any) []eref {
-	one := func(s string) (eref, bool) {
-		kind, id, ok := vocabulary.SplitRecordPath(s)
-		if !ok {
-			return eref{}, false
-		}
-		return eref{Kind: kind, ID: id}, true
-	}
-	switch t := v.(type) {
-	case string:
-		if ref, ok := one(t); ok {
-			return []eref{ref}
-		}
-	case []any:
+	if list, repeated := v.([]any); repeated {
 		var out []eref
-		for _, item := range t {
-			if s, ok := item.(string); ok {
-				if ref, ok := one(s); ok {
-					out = append(out, ref)
-				}
+		for _, item := range list {
+			if ref, _, ok := splitReferenceValue(item); ok {
+				out = append(out, ref)
 			}
 		}
 		return out
 	}
+	if ref, _, ok := splitReferenceValue(v); ok {
+		return []eref{ref}
+	}
 	return nil
+}
+
+// referenceTargetOf reads ONE top-level reference property off a stored row as
+// the record it names, VERBATIM: no canonicalization, because a merge record's
+// `loser` names a tombstone on purpose and resolving it forward would erase the
+// record's whole point. The zero eref when the property names nothing.
+func referenceTargetOf(row *erow, property string) eref {
+	if row == nil {
+		return eref{}
+	}
+	refs := referenceTargets(row.Props[property])
+	if len(refs) == 0 {
+		return eref{}
+	}
+	return refs[0]
 }
 
 // Derived renders a derived token from the row itself. {localName} is the id's
@@ -867,69 +908,27 @@ func localNameOf(id string) string {
 	return trimmed
 }
 
-func (r *titleResolver) Edge(rel, prop string) string {
-	// A dotted token whose head is an OBJECT PROPERTY reads its field
-	//: `{name.displayName}` renders one level into the object,
-	// empty when the property or field is absent. The loader has already
-	// checked the token names a declared edge or field, so the two forms
-	// cannot collide.
+// Reference renders a dotted or bare template token that reads THROUGH a
+// declared property: `{name.displayName}` one level into an object,
+// `{agent.model}` one hop through a reference, `{agent}` the referent's own
+// title. The loader has checked the head names a declared object or reference,
+// so the two forms cannot collide.
+func (r *titleResolver) Reference(name, prop string) string {
 	if prop != "" {
-		if p, ok := r.ty.Props[rel]; ok && p.Datatype == vocabulary.DatatypeObject {
+		if p, ok := r.ty.Props[name]; ok && p.Datatype == vocabulary.DatatypeObject {
 			if p.Repeated {
 				return ""
 			}
-			if m, ok := r.row.Props[rel].(map[string]any); ok {
+			if m, ok := r.row.Props[name].(map[string]any); ok {
 				return scalarString(m[prop])
 			}
 			return ""
 		}
-		// A dotted token whose head is a REFERENCE reads that property off the
-		// referent, the same hop a dotted edge token takes. No shipped
-		// declaration spells one: llmthread titled itself `{agent.name}` until
-		// core/agent stopped declaring `name`, and the bare `{agent}` that
-		// replaced it renders the referent's own TITLE instead (Prop, above).
-		// The loader has checked the head names a declared edge, object or
-		// reference, so the three forms cannot collide.
-		if p, ok := r.ty.Prop(rel); ok && p.Datatype == vocabulary.DatatypeReference {
-			return r.reference(rel, prop)
-		}
 	}
-	targets := r.edges[rel]
-	if len(targets) == 0 {
+	if p, ok := r.ty.Prop(name); !ok || p.Datatype != vocabulary.DatatypeReference {
 		return ""
 	}
-	if prop == "" {
-		var titles []string
-		for _, ref := range targets {
-			if tt := r.targetProp(ref, ""); tt != "" {
-				titles = append(titles, tt)
-			}
-		}
-		return strings.Join(titles, ", ")
-	}
-	return r.targetProp(targets[0], prop)
-}
-
-func (r *titleResolver) targetProp(ref eref, prop string) string {
-	row, err := r.t.loadRow(ref, false)
-	if err != nil || row == nil {
-		return ""
-	}
-	if prop == "" {
-		return row.Title
-	}
-	// The loader cannot check an edge target's property (the target is
-	// another type's business, and `to: any` has no target at all), so the
-	// sensitive skip is enforced here.
-	if ty, terr := r.t.ds.resolveType(row.Kind); terr == nil && ty != nil {
-		if p, ok := ty.Prop(prop); ok && p.Sensitive() {
-			return ""
-		}
-	}
-	if v, ok := row.Props[prop]; ok {
-		return scalarString(v)
-	}
-	return ""
+	return r.reference(name, prop)
 }
 
 func scalarString(v any) string {
@@ -996,11 +995,7 @@ func (t *txn) deriveTitle(ty *vocabulary.Kind, row *erow) (string, error) {
 	if ty.Template == nil {
 		return row.Title, nil
 	}
-	edges, err := t.edgesOf(row.ref())
-	if err != nil {
-		return "", err
-	}
-	return ty.Template.Render(&titleResolver{t: t, ty: ty, row: row, edges: edges}), nil
+	return ty.Template.Render(&titleResolver{t: t, ty: ty, row: row}), nil
 }
 
 // ftsBands splits a row into the three weighted search bands: title (A),

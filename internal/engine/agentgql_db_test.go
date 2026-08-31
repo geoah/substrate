@@ -202,9 +202,9 @@ func putRequest(t *testing.T, ds *dataset, id, targetKind, targetID string, diff
 	t.Helper()
 	e, err := ds.Put(context.Background(), substrate.ActorAPI, substrate.PutInput{
 		Kind: vocabulary.KindRecordPatchRequest, ID: id,
-		Properties: map[string]any{"diff": map[string]any{"properties": diff}},
-		Edges: []substrate.EdgeInput{
-			{Rel: "target", To: substrate.EdgeRef{Kind: targetKind, ID: targetID}},
+		Properties: map[string]any{
+			"diff":   map[string]any{"properties": diff},
+			"target": vocabulary.RecordPath(targetKind, targetID),
 		},
 	})
 	if err != nil {

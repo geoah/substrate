@@ -190,7 +190,7 @@ func Deterministic(err error) bool {
 // Envelope assembles the level-triggered envelope for one delivery: the
 // change (op, changed property names), the record's CURRENT state — nil
 // after a delete — and the repository. Only the record's trimmed shape
-// crosses: id, kind reference, properties and shallow edges. The `when:` guard
+// crosses: id, kind reference and properties. The `when:` guard
 // binds this map directly; the runner marshals it to the body.
 func Envelope(ch substrate.Change, e *substrate.Record, repositoryOwner string) map[string]any {
 	change := map[string]any{
@@ -213,21 +213,10 @@ func Envelope(ch substrate.Change, e *substrate.Record, repositoryOwner string) 
 	if e == nil {
 		return envelope
 	}
-	edges := map[string]any{}
-	for rel, targets := range e.Edges {
-		list := make([]any, 0, len(targets))
-		for _, tgt := range targets {
-			list = append(list, map[string]any{
-				"id": tgt.ID, "kind": tgt.Kind, "title": tgt.Title,
-			})
-		}
-		edges[rel] = list
-	}
 	envelope["record"] = map[string]any{
 		"id":         e.ID,
 		"kind":       e.Kind,
 		"properties": e.Properties,
-		"edges":      edges,
 	}
 	return envelope
 }

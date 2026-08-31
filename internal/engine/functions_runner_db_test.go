@@ -14,7 +14,7 @@ import (
 // registration, cached binary, same protocol), the capability-scoped host
 // reads with their allowlist and budget parking immediately, per-invocation
 // timeouts riding the retries, the upgraded effect vocabulary — ifAbsent,
-// former-id resolution, link/unlink, capability-gated merge/split — and the
+// former-id resolution, capability-gated merge/split — and the
 // callable contract: input/output schemas, mode call, host Call with its
 // gates.
 
@@ -300,10 +300,11 @@ func TestTriggerEffectResolvesFormerID(t *testing.T) {
 	}
 }
 
-func TestTriggerEffectLinkUnlink(t *testing.T) {
+func TestTriggerEffectWiresAReference(t *testing.T) {
 	t.Parallel()
-	// The gadget declares a `widget` edge; the function wires and unwires it
-	// by effect, driven by the gadget's own properties.
+	// The gadget declares a `widget` reference; the function points it and
+	// clears it with patch effects, driven by the gadget's own properties.
+	// Pointing and clearing are the SAME verb: a reference is a property value.
 	ds, ops := newFnDataset(t,
 		[]enginetest.Trigger{trigOn("wirer", map[string]any{
 			"kinds": []any{gadgetType},
@@ -312,26 +313,27 @@ func TestTriggerEffectLinkUnlink(t *testing.T) {
 		pyFn("wirer", map[string]any{}, []any{gadgetType}, `
 def main(input, host):
     e = input["envelope"]["record"]
-    action = e["properties"]["wire"]
-    return {"effects": [{"action": action, "kind": "widgets.test.dev/gadget",
-                         "id": e["id"], "rel": "widget",
-                         "to": e["properties"]["target"]}]}
+    p = e["properties"]
+    target = p["target"] if p["wire"] == "point" else None
+    return {"effects": [{"action": "patch", "kind": "widgets.test.dev/gadget",
+                         "id": e["id"], "properties": {"widget": target}}]}
 `))
 	ctx := context.Background()
 
 	w := mustPut(t, ds, fnActor, substrate.PutInput{Kind: widgetType, Properties: map[string]any{"name": "w"}})
 	g := mustPut(t, ds, fnActor, substrate.PutInput{Kind: gadgetType})
 
-	mustPatch(t, ds, fnActor, g.Kind, g.ID, substrate.PatchInput{Properties: map[string]any{"wire": "link", "target": w.ID}})
+	mustPatch(t, ds, fnActor, g.Kind, g.ID, substrate.PatchInput{Properties: map[string]any{"wire": "point", "target": w.ID}})
 	process(t, ops)
-	if got := mustGet(t, ds, g.Kind, g.ID); len(got.Edges["widget"]) != 1 || got.Edges["widget"][0].ID != w.ID {
-		t.Fatalf("link effect did not land: %v", got.Edges)
+	want := vocabulary.RecordPath(widgetType, w.ID)
+	if got := mustGet(t, ds, g.Kind, g.ID); got.Properties["widget"] != want {
+		t.Fatalf("the effect did not point the reference: %v", got.Properties)
 	}
 
-	mustPatch(t, ds, fnActor, g.Kind, g.ID, substrate.PatchInput{Properties: map[string]any{"wire": "unlink"}})
+	mustPatch(t, ds, fnActor, g.Kind, g.ID, substrate.PatchInput{Properties: map[string]any{"wire": "clear"}})
 	process(t, ops)
-	if got := mustGet(t, ds, g.Kind, g.ID); len(got.Edges["widget"]) != 0 {
-		t.Fatalf("unlink effect did not land: %v", got.Edges)
+	if got := mustGet(t, ds, g.Kind, g.ID); got.Properties["widget"] != nil {
+		t.Fatalf("the effect did not clear the reference: %v", got.Properties)
 	}
 	if parked, err := ops.TriggerFailures(ctx, trigID("wirer")); err != nil || len(parked) != 0 {
 		t.Fatalf("parked: %v %v", parked, err)

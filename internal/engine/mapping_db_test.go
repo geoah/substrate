@@ -51,13 +51,18 @@ func googleManifest() enginetest.Manifest {
 						"photoURL": map[string]any{"type": "url"},
 						"etag":     map[string]any{"type": "string"},
 						"raw":      map[string]any{"type": "json"},
-					},
-					"edges": map[string]any{
-						"person": map[string]any{"to": typePerson, "required": true},
+						// The mapping's SUBJECT: a single, required reference
+						// whose referent must exist, marked so the write path
+						// can refuse a generic re-point without consulting the
+						// mapping set.
+						"person": map[string]any{
+							"type": "reference", "kind": typePerson,
+							"required": true, "mustExist": true, "subject": true,
+						},
 					},
 				}),
 			vocabulary.MappingManifest(googleAuthority, "contactperson", map[string]any{
-				"from": typeGoogleContact, "to": typePerson, "edge": "person",
+				"from": typeGoogleContact, "to": typePerson, "property": "person",
 				"match": []any{
 					map[string]any{"from": "emails[].value", "to": "emails"},
 					map[string]any{"from": "phones[].canonical", "to": "phones"},
@@ -90,13 +95,14 @@ func slackManifest() enginetest.Manifest {
 						"avatarURL":   map[string]any{"type": "url"},
 						"email":       map[string]any{"type": "email"},
 						"raw":         map[string]any{"type": "json"},
-					},
-					"edges": map[string]any{
-						"person": map[string]any{"to": typePerson, "required": true},
+						"person": map[string]any{
+							"type": "reference", "kind": typePerson,
+							"required": true, "mustExist": true, "subject": true,
+						},
 					},
 				}),
 			vocabulary.MappingManifest(slackAuthority, "slackuserperson", map[string]any{
-				"from": typeSlackUser, "to": typePerson, "edge": "person",
+				"from": typeSlackUser, "to": typePerson, "property": "person",
 				"match": []any{map[string]any{"from": "email", "to": "emails"}},
 				"map": map[string]any{
 					"name":        map[string]any{"path": "realName"},
@@ -148,9 +154,13 @@ func syncSource(t *testing.T, ds substrate.Dataset, actor substrate.Actor, typ, 
 	props map[string]any, person ...string,
 ) *substrate.Record {
 	t.Helper()
-	in := substrate.PutInput{Kind: typ, ID: id, Properties: props}
+	in := substrate.PutInput{Kind: typ, ID: id, Properties: map[string]any{}}
+	for k, v := range props {
+		in.Properties[k] = v
+	}
 	for _, p := range person {
-		in.Edges = append(in.Edges, substrate.EdgeInput{Rel: "person", To: substrate.EdgeRef{ID: p}})
+		// The subject is a pinned reference, so a bare id resolves.
+		in.Properties["person"] = p
 	}
 	return mustPut(t, ds, actor, in)
 }
@@ -174,11 +184,11 @@ func newConversation(t *testing.T, ds substrate.Dataset) *substrate.Record {
 func personOf(t *testing.T, ds substrate.Dataset, src *substrate.Record) string {
 	t.Helper()
 	full := mustGet(t, ds, src.Kind, src.ID)
-	targets := full.Edges["person"]
-	if len(targets) != 1 {
-		t.Fatalf("%s points at %d persons, want 1", src.ID, len(targets))
+	kind, id, ok := vocabulary.SplitRecordPath(refPathValue(full, "person"))
+	if !ok || kind != typePerson {
+		t.Fatalf("%s names no person: %v", src.ID, full.Properties["person"])
 	}
-	return targets[0].ID
+	return id
 }
 
 func livePersons(t *testing.T, ds substrate.Dataset) []*substrate.Record {
@@ -357,14 +367,25 @@ func TestNoMatchCreatesShell(t *testing.T) {
 	if shell.Properties["name"] != "Nameless Ned" {
 		t.Fatalf("the shell did not recompute: %v", shell.Properties)
 	}
-	// The link is a changelog event of its own, visible inside the sync.
-	links, err := ds.Changes(context.Background(), 0,
-		substrate.ChangeFilter{Ops: []substrate.Op{substrate.OpLink}, RecordID: lonely.ID}, 10)
+	// The subject is one of the source record's own properties, so resolving it
+	// travels in that record's own delta: the sync's put is the entry, and
+	// `person` is among the properties it accepted.
+	entries, err := ds.Changes(context.Background(), 0,
+		substrate.ChangeFilter{Ops: []substrate.Op{substrate.OpPut}, RecordID: lonely.ID}, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(links) != 1 || links[0].Payload["subject"] != true {
-		t.Fatalf("the subject link should append its own change: %+v", links)
+	if len(entries) != 1 {
+		t.Fatalf("the sync wrote %d entries for the source, want one: %+v", len(entries), entries)
+	}
+	named := false
+	for _, p := range entries[0].Payload["properties"].([]any) {
+		if p == "person" {
+			named = true
+		}
+	}
+	if !named {
+		t.Fatalf("the entry does not name the subject it resolved: %+v", entries[0].Payload)
 	}
 }
 
@@ -624,13 +645,14 @@ func TestStatesAreNeverRecomputed(t *testing.T) {
 					"properties": map[string]any{
 						"name":       map[string]any{"type": "string"},
 						"prominence": map[string]any{"type": "string"},
-					},
-					"edges": map[string]any{
-						"person": map[string]any{"to": typePerson, "required": true},
+						"person": map[string]any{
+							"type": "reference", "kind": typePerson,
+							"required": true, "mustExist": true, "subject": true,
+						},
 					},
 				}),
 			vocabulary.MappingManifest(authority, "promoterrowperson", map[string]any{
-				"from": authority + "/promoterrow", "to": typePerson, "edge": "person",
+				"from": authority + "/promoterrow", "to": typePerson, "property": "person",
 				"map": map[string]any{
 					"name":       map[string]any{"path": "name"},
 					"prominence": map[string]any{"path": "prominence"},
@@ -665,7 +687,7 @@ func TestStatesAreNeverRecomputed(t *testing.T) {
 	}
 }
 
-// The subject edge is set when the record is created and moved only by merge
+// The subject is set when the record is created and moved only by merge
 // and split.
 func TestSubjectEdgeIsCreateTimeOnly(t *testing.T) {
 	t.Parallel()
@@ -680,33 +702,30 @@ func TestSubjectEdgeIsCreateTimeOnly(t *testing.T) {
 	// Re-asserting the same target is what every re-sync does.
 	syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")}, pid)
 
-	// Re-pointing it is not a write.
+	// Re-pointing it is not a write. The refusal is the same whichever generic
+	// verb asks: put and patch both reach apply's subject guard.
 	if _, err := ds.Put(ctx, people, substrate.PutInput{
 		Kind: typeGoogleContact, ID: "g-c1",
-		Edges: []substrate.EdgeInput{{Rel: "person", To: substrate.EdgeRef{ID: other.ID}}},
+		Properties: map[string]any{"person": other.ID},
 	}); err == nil {
-		t.Fatal("a put should not re-point a subject edge")
+		t.Fatal("a put should not re-point a subject")
 	} else {
-		wantErr(t, err, substrate.ErrGuard, "re-point by put")
+		wantErr(t, err, substrate.ErrGuard, "split + merge")
 	}
-	// Nor is link/unlink.
-	if err := ds.Link(ctx, owner, g.Kind, g.ID, "person", substrate.EdgeRef{ID: other.ID}, nil); err == nil {
-		t.Fatal("link should not move a subject edge")
+	if _, err := ds.Patch(ctx, people, typeGoogleContact, "g-c1", substrate.PatchInput{
+		Properties: map[string]any{"person": other.ID},
+	}); err == nil {
+		t.Fatal("a patch should not re-point a subject")
 	} else {
-		wantErr(t, err, substrate.ErrGuard, "link a subject edge")
-	}
-	if err := ds.Unlink(ctx, owner, g.Kind, g.ID, "person", substrate.EdgeRef{ID: pid}); err == nil {
-		t.Fatal("unlink should not break a subject edge")
-	} else {
-		wantErr(t, err, substrate.ErrGuard, "unlink a subject edge")
+		wantErr(t, err, substrate.ErrGuard, "split + merge")
 	}
 	if got := personOf(t, ds, g); got != pid {
-		t.Fatalf("the subject edge moved after all: %s", got)
+		t.Fatalf("the subject moved after all: %s", got)
 	}
 }
 
-// ONE HOP (§6.2): an edge declared `to: person` accepts the slackuser the
-// connector actually has, and the stored edge lands on the person.
+// ONE HOP (§6.2): a reference pinned at `person` accepts the slackuser the
+// connector actually has, and the stored value lands on the person.
 func TestOneHopResolution(t *testing.T) {
 	t.Parallel()
 	_, ds := newDataset(t)
@@ -717,15 +736,14 @@ func TestOneHopResolution(t *testing.T) {
 	conv := newConversation(t, ds)
 	msg := mustPut(t, ds, slack, substrate.PutInput{
 		Kind: "conversationmessage", ID: "s-msg-1",
-		Properties: map[string]any{"text": "hi", "at": "2026-08-03T10:00:00Z"},
-		Edges: []substrate.EdgeInput{
-			{Rel: "conversation", To: substrate.EdgeRef{ID: conv.ID}},
-			{Rel: "author", To: substrate.EdgeRef{Kind: slackAuthority + "/slackuser", ID: s.ID}},
+		Properties: map[string]any{
+			"text": "hi", "at": "2026-08-03T10:00:00Z", "conversation": conv.ID,
+			"author": vocabulary.RecordPath(slackAuthority+"/slackuser", s.ID),
 		},
 	})
-	authors := mustGet(t, ds, msg.Kind, msg.ID).Edges["author"]
-	if len(authors) != 1 || authors[0].ID != pid {
-		t.Fatalf("author should resolve to the person: %+v", authors)
+	author := refPathValue(mustGet(t, ds, msg.Kind, msg.ID), "author")
+	if author != vocabulary.RecordPath(typePerson, pid) {
+		t.Fatalf("author should resolve to the person, got %q", author)
 	}
 }
 
@@ -741,9 +759,13 @@ func TestUnlinkedSourceGetsAShell(t *testing.T) {
 	g := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
 	pid := personOf(t, ds, g)
 
-	// Strip the edge behind the engine's back, as a bad migration would.
-	if _, err := raw.ExecContext(ctx, `DELETE FROM edges WHERE src = $1 AND rel = 'person'`, g.ID); err != nil {
-		t.Fatalf("unlink: %v", err)
+	// Strip the pointer behind the engine's back, as a bad migration would: the
+	// property AND its projection in the refs index.
+	if _, err := raw.ExecContext(ctx, `UPDATE records SET props = props - 'person' WHERE id = $1`, g.ID); err != nil {
+		t.Fatalf("strip the subject: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx, `DELETE FROM refs WHERE src = $1 AND property = 'person'`, g.ID); err != nil {
+		t.Fatalf("strip the subject from the index: %v", err)
 	}
 	if _, err := ds.Delete(ctx, owner, typePerson, pid); err != nil {
 		t.Fatalf("delete the orphaned person: %v", err)
@@ -752,17 +774,18 @@ func TestUnlinkedSourceGetsAShell(t *testing.T) {
 	// Resolving through the record links a new shell in line.
 	msg := mustPut(t, ds, slack, substrate.PutInput{
 		Kind: "conversationmessage", ID: "s-msg-1",
-		Properties: map[string]any{"text": "hi", "at": "2026-08-03T10:00:00Z"},
-		Edges: []substrate.EdgeInput{
-			{Rel: "conversation", To: substrate.EdgeRef{ID: newConversation(t, ds).ID}},
-			{Rel: "author", To: substrate.EdgeRef{Kind: googleAuthority + "/contact", ID: g.ID}},
+		Properties: map[string]any{
+			"text": "hi", "at": "2026-08-03T10:00:00Z",
+			"conversation": newConversation(t, ds).ID,
+			"author":       vocabulary.RecordPath(googleAuthority+"/contact", g.ID),
 		},
 	})
-	authors := mustGet(t, ds, msg.Kind, msg.ID).Edges["author"]
-	if len(authors) != 1 {
-		t.Fatalf("author edge = %+v", authors)
+	authorKind, authorID, ok := vocabulary.SplitRecordPath(
+		refPathValue(mustGet(t, ds, msg.Kind, msg.ID), "author"))
+	if !ok {
+		t.Fatalf("author did not resolve at all")
 	}
-	shell := mustGet(t, ds, authors[0].Kind, authors[0].ID)
+	shell := mustGet(t, ds, authorKind, authorID)
 	if shell.Kind != typePerson || shell.ID == pid {
 		t.Fatalf("expected a fresh shell person, got %s (%s)", shell.ID, shell.Kind)
 	}
@@ -882,9 +905,9 @@ func TestResurrectedSourceRecomputes(t *testing.T) {
 	}
 }
 
-// A nested merge followed by an out-of-order split must never leave a record
-// wearing two subject edges.
-func TestNestedMergeSplitKeepsOneSubjectEdge(t *testing.T) {
+// A nested merge followed by an out-of-order split must never leave a source
+// record naming two subjects.
+func TestNestedMergeSplitKeepsOneSubject(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -899,29 +922,34 @@ func TestNestedMergeSplitKeepsOneSubjectEdge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("merge a into b: %v", err)
 	}
-	if got := personOf(t, ds, src); got != b.ID {
-		t.Fatalf("edge after the first merge = %s", got)
+	// NOTHING REPOINTS: the source still names the person it was resolved to,
+	// and that id resolves forward through the former-id trail on read.
+	if got := personOf(t, ds, src); got != a {
+		t.Fatalf("the merge rewrote the source's subject: %s", got)
+	}
+	if got := mustGet(t, ds, typePerson, a).CanonicalID; got != b.ID {
+		t.Fatalf("the source's subject resolves to %q, want the winner %s", got, b.ID)
 	}
 	m2, err := ds.Merge(ctx, owner, c.Kind, c.ID, b.ID)
 	if err != nil {
 		t.Fatalf("merge b into c: %v", err)
 	}
-	if got := personOf(t, ds, src); got != c.ID {
-		t.Fatalf("edge after the nested merge = %s", got)
+	if got := personOf(t, ds, src); got != a {
+		t.Fatalf("the nested merge rewrote the source's subject: %s", got)
 	}
 
 	// Split the OUTER merge first — the order nothing forbids.
 	if _, err := ds.Split(ctx, owner, m1.ID); err != nil {
 		t.Fatalf("split the first merge: %v", err)
 	}
-	// personOf fails outright on a second row.
+	// personOf fails outright on a second value.
 	first := personOf(t, ds, src)
 	if _, err := ds.Split(ctx, owner, m2.ID); err != nil {
 		t.Fatalf("split the nested merge: %v", err)
 	}
 	second := personOf(t, ds, src)
 	t.Logf("targets after out-of-order splits: %s then %s", first, second)
-	// And a re-sync still works, whichever person it ended on: one edge, no
+	// And a re-sync still works, whichever person it ended on: one value, no
 	// guard.
 	syncSource(t, ds, slack, typeSlackUser, "s-U1", map[string]any{"realName": "Ada"})
 }
@@ -936,8 +964,13 @@ func TestConcurrentShellBirthMintsOneShell(t *testing.T) {
 	installPeopleSources(t, ds)
 
 	src := syncSource(t, ds, people, typeGoogleContact, "g-c1", map[string]any{"name": aname("Alex")})
-	if _, err := raw.ExecContext(ctx, `DELETE FROM edges WHERE src = $1 AND rel = 'person'`, src.ID); err != nil {
-		t.Fatalf("unlink: %v", err)
+	// Strip the subject behind the engine's back, as a bad migration would: the
+	// property AND its projection in the refs index.
+	if _, err := raw.ExecContext(ctx, `UPDATE records SET props = props - 'person' WHERE id = $1`, src.ID); err != nil {
+		t.Fatalf("strip the subject: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx, `DELETE FROM refs WHERE src = $1 AND property = 'person'`, src.ID); err != nil {
+		t.Fatalf("strip the subject from the index: %v", err)
 	}
 	conv := newConversation(t, ds)
 
@@ -946,10 +979,9 @@ func TestConcurrentShellBirthMintsOneShell(t *testing.T) {
 		go func() {
 			_, err := ds.Put(ctx, slack, substrate.PutInput{
 				Kind: "conversationmessage", ID: "s-msg-" + string(rune('a'+i)),
-				Properties: map[string]any{"text": "hi"},
-				Edges: []substrate.EdgeInput{
-					{Rel: "conversation", To: substrate.EdgeRef{ID: conv.ID}},
-					{Rel: "author", To: substrate.EdgeRef{Kind: googleAuthority + "/contact", ID: src.ID}},
+				Properties: map[string]any{
+					"text": "hi", "conversation": conv.ID,
+					"author": vocabulary.RecordPath(googleAuthority+"/contact", src.ID),
 				},
 			})
 			errs <- err
@@ -962,7 +994,7 @@ func TestConcurrentShellBirthMintsOneShell(t *testing.T) {
 	}
 	var rows int
 	if err := raw.QueryRowContext(ctx,
-		`SELECT count(*) FROM edges WHERE src = $1 AND rel = 'person'`, src.ID).Scan(&rows); err != nil {
+		`SELECT count(*) FROM refs WHERE src = $1 AND property = 'person'`, src.ID).Scan(&rows); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if rows != 1 {
@@ -1095,13 +1127,14 @@ func TestHotMapTargets(t *testing.T) {
 					"properties": map[string]any{
 						"subtitle": map[string]any{"type": "string"},
 						"body":     map[string]any{"type": "text"},
-					},
-					"edges": map[string]any{
-						"work": map[string]any{"to": authority + "/work", "required": true},
+						"work": map[string]any{
+							"type": "reference", "kind": authority + "/work",
+							"required": true, "mustExist": true, "subject": true,
+						},
 					},
 				}),
 			vocabulary.MappingManifest(authority, "libraryrowwork", map[string]any{
-				"from": authority + "/libraryrow", "to": authority + "/work", "edge": "work",
+				"from": authority + "/libraryrow", "to": authority + "/work", "property": "work",
 				"map": map[string]any{
 					"title":    map[string]any{"path": "title"},
 					"body":     map[string]any{"path": "body"},
@@ -1121,7 +1154,8 @@ func TestHotMapTargets(t *testing.T) {
 		},
 	})
 	full := mustGet(t, ds, row.Kind, row.ID)
-	work := mustGet(t, ds, full.Edges["work"][0].Kind, full.Edges["work"][0].ID)
+	workKind, workID, _ := vocabulary.SplitRecordPath(refPathValue(full, "work"))
+	work := mustGet(t, ds, workKind, workID)
 	if work.Properties["title"] != "Piranesi" {
 		t.Fatalf("title did not land: %v", work.Properties["title"])
 	}
@@ -1161,14 +1195,14 @@ func TestReRegistrationValidatesTheChangedManifest(t *testing.T) {
 		wantErr(t, err, substrate.ErrValidation, "changed manifest")
 	}
 
-	// An edge pointing at a mapped source type is refused the same way:
+	// A reference pinned at a mapped source type is refused the same way:
 	// resolution stays one hop deep.
 	alsoBroken := googleManifest()
 	data, _ = alsoBroken.Manifests[2]["data"].(map[string]any)
-	edges, _ := data["edges"].(map[string]any)
-	edges["friend"] = map[string]any{"to": "contact"}
+	alsoProps, _ := data["properties"].(map[string]any)
+	alsoProps["friend"] = map[string]any{"type": "reference", "kind": "contact"}
 	if err := enginetest.Install(ctx, ds, substrate.ActorSystem, alsoBroken); err == nil {
-		t.Fatal("an edge at a mapped source type must not register")
+		t.Fatal("a reference at a mapped source type must not register")
 	}
 
 	// And the good one still re-registers.

@@ -56,12 +56,12 @@ def main(input, host):
         {"action": "put", "kind": "core.substrate.reamde.dev/recordpatchrequest",
          "id": "req-wrapped",
          "properties": {"rationale": "the widget says so",
-                        "diff": {"properties": {"description": "wrapped"}}},
-         "edges": {"target": {"kind": "tasks.substrate.reamde.dev/task", "id": "t-wrapped"}}},
+                        "diff": {"properties": {"description": "wrapped"}},
+                        "target": "tasks.substrate.reamde.dev/task/t-wrapped"}},
         {"action": "put", "kind": "core.substrate.reamde.dev/recordpatchrequest",
          "id": "req-bare",
-         "properties": {"diff": {"description": "bare"}},
-         "edges": {"target": {"kind": "tasks.substrate.reamde.dev/task", "id": "t-bare"}}}
+         "properties": {"diff": {"description": "bare"},
+                        "target": "tasks.substrate.reamde.dev/task/t-bare"}}
     ]}
 `
 	ds, ops := newFnDataset(t,
@@ -117,8 +117,8 @@ def main(input, host):
     return {"effects": [
         {"action": "put", "kind": "core.substrate.reamde.dev/recordpatchrequest",
          "id": "req-badshape",
-         "properties": {"diff": {"properties": "not a map"}},
-         "edges": {"target": {"kind": "tasks.substrate.reamde.dev/task", "id": "t-victim"}}}
+         "properties": {"diff": {"properties": "not a map"},
+                        "target": "tasks.substrate.reamde.dev/task/t-victim"}}
     ]}
 `
 	const badCreate = `
@@ -177,7 +177,7 @@ func TestAPIProposalDiffAdmission(t *testing.T) {
 	task := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: taskType, Properties: map[string]any{"name": "draft"},
 	})
-	target := []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: taskType, ID: task.ID}}}
+	target := vocabulary.RecordPath(taskType, task.ID)
 
 	for _, c := range []struct {
 		what  string
@@ -187,26 +187,35 @@ func TestAPIProposalDiffAdmission(t *testing.T) {
 		{
 			what: "properties is not an object",
 			in: substrate.PutInput{
-				Kind: requestKind, Edges: target,
-				Properties: map[string]any{"diff": map[string]any{"properties": "nope"}},
+				Kind: requestKind,
+				Properties: map[string]any{
+					"target": target,
+					"diff":   map[string]any{"properties": "nope"},
+				},
 			},
 			names: "diff.properties must be an object",
 		},
 		{
 			what: "an undeclared property",
 			in: substrate.PutInput{
-				Kind: requestKind, Edges: target,
-				Properties: map[string]any{"diff": map[string]any{"properties": map[string]any{"bogus": "x"}}},
+				Kind: requestKind,
+				Properties: map[string]any{
+					"target": target,
+					"diff":   map[string]any{"properties": map[string]any{"bogus": "x"}},
+				},
 			},
 			names: "is not a property of",
 		},
 		{
 			what: "an unknown top-level key",
 			in: substrate.PutInput{
-				Kind: requestKind, Edges: target,
-				Properties: map[string]any{"diff": map[string]any{
-					"properties": map[string]any{"description": "x"}, "sideEffects": true,
-				}},
+				Kind: requestKind,
+				Properties: map[string]any{
+					"target": target,
+					"diff": map[string]any{
+						"properties": map[string]any{"description": "x"}, "sideEffects": true,
+					},
+				},
 			},
 			names: "unknown top-level key",
 		},
@@ -224,38 +233,45 @@ func TestAPIProposalDiffAdmission(t *testing.T) {
 		{
 			what: "a wrong-typed value",
 			in: substrate.PutInput{
-				Kind: requestKind, Edges: target,
-				Properties: map[string]any{"diff": map[string]any{
-					"properties": map[string]any{"dueAt": "not a date"},
-				}},
+				Kind: requestKind,
+				Properties: map[string]any{
+					"target": target,
+					"diff": map[string]any{
+						"properties": map[string]any{"dueAt": "not a date"},
+					},
+				},
 			},
 			names: "dueAt",
 		},
 		{
 			what: "a diff that is not an object",
 			in: substrate.PutInput{
-				Kind: requestKind, Edges: target,
-				Properties: map[string]any{"diff": "description: x"},
+				Kind:       requestKind,
+				Properties: map[string]any{"target": target, "diff": "description: x"},
 			},
 			names: "the diff must be an object",
 		},
 		{
 			what: "a diff naming no property",
 			in: substrate.PutInput{
-				Kind: requestKind, Edges: target,
-				Properties: map[string]any{"diff": map[string]any{
-					"properties": map[string]any{}, "labels": map[string]any{"seen": true},
-				}},
+				Kind: requestKind,
+				Properties: map[string]any{
+					"target": target,
+					"diff": map[string]any{
+						"properties": map[string]any{}, "labels": map[string]any{"seen": true},
+					},
+				},
 			},
 			names: "names no property to change",
 		},
 		{
 			what: "a delete carrying a diff",
 			in: substrate.PutInput{
-				Kind: requestKind, Edges: target,
+				Kind: requestKind,
 				Properties: map[string]any{
-					"op":   "delete",
-					"diff": map[string]any{"properties": map[string]any{"description": "why"}},
+					"target": target,
+					"op":     "delete",
+					"diff":   map[string]any{"properties": map[string]any{"description": "why"}},
 				},
 			},
 			names: "op delete proposes no values",
@@ -265,35 +281,37 @@ func TestAPIProposalDiffAdmission(t *testing.T) {
 			// about the proposal.
 			what: "a delete carrying an empty diff",
 			in: substrate.PutInput{
-				Kind: requestKind, Edges: target,
-				Properties: map[string]any{"op": "delete", "diff": map[string]any{}},
+				Kind:       requestKind,
+				Properties: map[string]any{"target": target, "op": "delete", "diff": map[string]any{}},
 			},
 			names: "op delete proposes no values",
 		},
 		{
+			// `target` is single-valued, so two of them is not a request-shaped
+			// mistake but a value-shaped one: the pointer holds one path.
 			what: "a delete naming several targets",
 			in: substrate.PutInput{
 				Kind: requestKind,
-				Edges: []substrate.EdgeInput{
-					{Rel: "target", To: substrate.EdgeRef{Kind: taskType, ID: task.ID}},
-					{Rel: "target", To: substrate.EdgeRef{Kind: taskType, ID: "t-other"}},
+				Properties: map[string]any{
+					"op":     "delete",
+					"target": []any{target, vocabulary.RecordPath(taskType, "t-other")},
 				},
-				Properties: map[string]any{"op": "delete"},
 			},
-			names: "names ONE target",
+			names: `a reference is a "<kind>/<id>" path string`,
 		},
 		{
-			// A create's target does not exist yet, so a target EDGE on one points
-			// at something else entirely.
-			what: "a create carrying a target edge",
+			// A create's target does not exist yet, so a `target` REFERENCE on one
+			// points at something else entirely.
+			what: "a create carrying a target reference",
 			in: substrate.PutInput{
-				Kind: requestKind, Edges: target,
+				Kind: requestKind,
 				Properties: map[string]any{
-					"op": "create", "targetKind": taskType, "targetId": "t-fresh",
+					"target": target,
+					"op":     "create", "targetKind": taskType, "targetId": "t-fresh",
 					"diff": map[string]any{"properties": map[string]any{"name": "new"}},
 				},
 			},
-			names: "never by a target edge",
+			names: "never by the target reference",
 		},
 		{
 			// A create is create-if-absent: a precondition inside its diff would
@@ -356,11 +374,14 @@ func TestAPIProposalDiffAdmission(t *testing.T) {
 	// decodes ifVersion, so admission admits it and the stale one still loses
 	// its CAS at accept.
 	fresh := mustPut(t, ds, engram, substrate.PutInput{
-		Kind: requestKind, Edges: target,
-		Properties: map[string]any{"diff": map[string]any{
-			"properties": map[string]any{"description": "with a precondition"},
-			"ifVersion":  task.Version,
-		}},
+		Kind: requestKind,
+		Properties: map[string]any{
+			"target": target,
+			"diff": map[string]any{
+				"properties": map[string]any{"description": "with a precondition"},
+				"ifVersion":  task.Version,
+			},
+		},
 	})
 	if err := accept(t, ds, fresh.ID); err != nil {
 		t.Fatalf("a diff with its own ifVersion did not apply: %v", err)
@@ -370,11 +391,12 @@ func TestAPIProposalDiffAdmission(t *testing.T) {
 	}
 }
 
-// A change request names ONE target. Two `target` entries in one write would
-// have the diff validated against the first kind and stored against the last —
-// the write loop keeps the last entry for a single-valued edge — which is how a
-// raw secret value would reach a stored request's json diff past the
-// sensitive-property check. Both doors refuse it, and nothing lands.
+// A change request names ONE target. A second `target` would have the diff
+// validated against one kind and stored against another, which is how a raw
+// secret value would reach a stored request's json diff past the
+// sensitive-property check. `target` is a single-valued reference, so the value
+// model refuses the pair outright, and the write it was hiding behind is
+// refused on its own terms. Nothing lands either way.
 func TestTwoTargetsSmuggleNothing(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -403,19 +425,21 @@ func TestTwoTargetsSmuggleNothing(t *testing.T) {
 
 	_, err := ds.Put(ctx, engram, substrate.PutInput{
 		Kind: requestKind, ID: "req-smuggle",
-		Properties: map[string]any{"diff": map[string]any{
-			"properties": map[string]any{"apiKey": "sk-smuggled"},
-		}},
-		Edges: []substrate.EdgeInput{
-			{Rel: "target", To: substrate.EdgeRef{Kind: safe.Kind, ID: safe.ID}},
-			{Rel: "target", To: substrate.EdgeRef{Kind: secret.Kind, ID: secret.ID}},
+		Properties: map[string]any{
+			"target": []any{
+				vocabulary.RecordPath(safe.Kind, safe.ID),
+				vocabulary.RecordPath(secret.Kind, secret.ID),
+			},
+			"diff": map[string]any{
+				"properties": map[string]any{"apiKey": "sk-smuggled"},
+			},
 		},
 	})
 	if err == nil {
 		t.Fatal("a request naming two targets was admitted")
 	}
 	wantErr(t, err, substrate.ErrValidation, "two targets")
-	if !strings.Contains(err.Error(), "names ONE target") {
+	if !strings.Contains(err.Error(), `a reference is a "<kind>/<id>" path string`) {
 		t.Fatalf("refusal does not name the rule: %v", err)
 	}
 	if _, err := ds.Get(ctx, requestKind, "req-smuggle"); !errors.Is(err, substrate.ErrNotFound) {
@@ -426,10 +450,12 @@ func TestTwoTargetsSmuggleNothing(t *testing.T) {
 	// the secret gauge's apiKey may never sit in a request's diff.
 	if _, err := ds.Put(ctx, engram, substrate.PutInput{
 		Kind: requestKind, ID: "req-direct",
-		Properties: map[string]any{"diff": map[string]any{
-			"properties": map[string]any{"apiKey": "sk-smuggled"},
-		}},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: secret.Kind, ID: secret.ID}}},
+		Properties: map[string]any{
+			"target": vocabulary.RecordPath(secret.Kind, secret.ID),
+			"diff": map[string]any{
+				"properties": map[string]any{"apiKey": "sk-smuggled"},
+			},
+		},
 	}); err == nil {
 		t.Fatal("a raw secret in a proposed diff was admitted")
 	} else if !strings.Contains(err.Error(), "sensitive") {
@@ -483,8 +509,8 @@ def main(input, host):
 	}
 }
 
-// A targetless patch request stays legal storage — the target edge is not
-// required, and its accept annotates "no target" — but its diff is still held to
+// A targetless patch request stays legal storage — the `target` reference is
+// not required, and its accept annotates "no target" — but its diff is held to
 // the wrapper SHAPE, and a bare one lands wrapped like any other.
 func TestTargetlessRequestKeepsItsShape(t *testing.T) {
 	t.Parallel()
@@ -527,10 +553,12 @@ func TestStoredMalformedRequestStillFailsAtAccept(t *testing.T) {
 	})
 	req := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: requestKind,
-		Properties: map[string]any{"diff": map[string]any{
-			"properties": map[string]any{"description": "well-formed at propose"},
-		}},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: taskType, ID: task.ID}}},
+		Properties: map[string]any{
+			"target": vocabulary.RecordPath(taskType, task.ID),
+			"diff": map[string]any{
+				"properties": map[string]any{"description": "well-formed at propose"},
+			},
+		},
 	})
 	// The row a pre-admission binary could leave behind: a diff the accept
 	// path's strict decode refuses. Written straight to `records` because no
