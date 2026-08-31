@@ -10,10 +10,10 @@ same repository as the substrate (`cmd/substratectl`) and builds with Go.
 substratectl register --server https://substrate.example --username ada
 substratectl login --username ada
 substratectl kinds                        # every declared kind
-substratectl get tasks                    # list a collection
-substratectl get tasks t9 -o yaml         # one record, apply-able envelope
+substratectl get task                    # list a collection
+substratectl get task t9 -o yaml         # one record, apply-able envelope
 substratectl apply -f task.yaml           # put: merge, never prune
-substratectl patch tasks t9 --state status=done
+substratectl patch task t9 --state status=done
 substratectl watch                        # resumable change stream
 ```
 

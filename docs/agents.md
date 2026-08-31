@@ -475,7 +475,7 @@ data:
 writing the sentinel back is a round trip, so
 
 ```sh
-substratectl get llmproviders -o yaml
+substratectl get llmprovider -o yaml
 ```
 
 is both a safe way to read the rows and directly `apply -f`-able — an edit of
@@ -551,7 +551,7 @@ The id carries a `/`, so the path segment spells it `%2F`. The answer carries
 `reply` and the `thread` id, and the thread is the durable half:
 
 ```sh
-substratectl get llmthreads <thread> -o yaml
+substratectl get llmthread <thread> -o yaml
 ```
 
 `status: ok` with a `turns`/`promptTokens`/`completionTokens` tally is a
