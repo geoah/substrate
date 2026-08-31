@@ -39,7 +39,7 @@ const (
 
 // problemDetail is the field-addressable form of one validation problem. The
 // engine emits problems as "path: message" strings (`props.name: required`,
-// `edges.peer.properties.role: requires a value`); this splits each on its
+// `props.peer.role: requires a value`); this splits each on its
 // first ": " so a form or SDK maps a problem to the input it concerns without
 // parsing prose. It is ADDITIVE: the `problems` string list stays for readers
 // that do not need the split.

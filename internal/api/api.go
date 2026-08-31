@@ -285,8 +285,8 @@ func (h *handler) mountResources(r chi.Router) {
 			// COLLECTION-level verb (`bundle/status`, `trigger/status`) does sit
 			// where an id would, so it shadows a record with that id — but the
 			// bundle and trigger kinds are system-managed and refuse a generic
-			// write, so no unreadable row can land there. The record sub-resource
-			// words `incoming` and `edges` are reserved as ids on every kind
+			// write, so no unreadable row can land there. The record
+			// sub-resource word `incoming` is reserved as an id on every kind
 			// (rest.go, reservedRecordID), which is what keeps that corner
 			// symmetric rather than a write-only trap.
 			//
@@ -344,22 +344,15 @@ func (h *handler) mountResources(r chi.Router) {
 			r.Patch("/{a1}/{a2}/{a3}", h.patchResource)
 			r.Delete("/{a1}/{a2}/{a3}", h.deleteResource)
 
-			// Record sub-resources hang one level below the id
+			// The record's one sub-resource hangs a level below the id
 			// (`/{authority}/{kind}/{id}/incoming`). A static segment beats a
 			// parameter in chi's tree, so a record whose id is literally
-			// `incoming` or `edges` is shadowed by the sub-resource route a
-			// level up and is refused as an id in both directions
-			// (`reservedRecordID`), keeping the corner symmetric (decision
-			// 0033). The two-segment routes below hold that shadow.
+			// `incoming` is shadowed by the sub-resource route a level up and
+			// is refused as an id in both directions (`reservedRecordID`),
+			// keeping the corner symmetric (decision 0033). The two-segment
+			// route below holds that shadow.
 			r.Get("/{a1}/{a2}/incoming", h.getIncoming)
-			r.Post("/{a1}/{a2}/edges/{rel}", h.linkEdge)
-			r.Delete("/{a1}/{a2}/edges/{rel}", h.unlinkEdge)
 			r.Get("/{a1}/{a2}/{a3}/incoming", h.getIncoming)
-			// Edge mutation lives at the record: link and unlink an outgoing
-			// edge {rel} with an EdgeRef body. A put could add an edge but never
-			// remove one; DELETE closes that gap.
-			r.Post("/{a1}/{a2}/{a3}/edges/{rel}", h.linkEdge)
-			r.Delete("/{a1}/{a2}/{a3}/edges/{rel}", h.unlinkEdge)
 		})
 	}
 }

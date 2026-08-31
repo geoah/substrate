@@ -11,13 +11,14 @@ import (
 
 	"github.com/geoah/substrate/internal/occurrence"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The occurrences read (decision 0043): the one place a stored recurrence
 // rule turns into instants. It is served here, in the API layer, and never by
 // the engine — the fold and the generic records query stay expander-free —
-// and it writes nothing: a computed occurrence has no id, no edges and no
-// changelog entry.
+// and it writes nothing: a computed occurrence has no id and no changelog
+// entry.
 
 const (
 	traitRecurring     = "scheduling.substrate.reamde.dev/recurring"
@@ -92,8 +93,7 @@ func (h *handler) getOccurrences(w http.ResponseWriter, r *http.Request) {
 				Lt:  to.UTC().Format(time.RFC3339Nano),
 			}},
 		},
-		First:     occurrencePageSize,
-		WithEdges: true,
+		First: occurrencePageSize,
 	})
 	if err != nil && !errors.Is(err, substrate.ErrValidation) {
 		writeSubstrateError(w, err)
@@ -160,10 +160,10 @@ func ruleOf(props map[string]any) (occurrence.Rule, bool) {
 	return rule, rule.Recurrence == "" && len(rule.RDates) == 0
 }
 
-// indexLogs keys every occurrencelog row by the recurring record its owner
-// edge names and the slot its scheduledAt answers. The rel's name is each
-// kind's own (schedule, routine, task), so any edge matches: identity is the
-// (kind, id) pair, and the slot pins the rest.
+// indexLogs keys every occurrencelog row by the recurring record its reference
+// names and the slot its scheduledAt answers. The property's name is each
+// kind's own (schedule, routine, task), so every reference the log carries is
+// keyed: identity is the (kind, id) pair, and the slot pins the rest.
 func indexLogs(logs []*substrate.Record) map[string]*substrate.OccurrenceLog {
 	marks := make(map[string]*substrate.OccurrenceLog)
 	for _, l := range logs {
@@ -172,13 +172,39 @@ func indexLogs(logs []*substrate.Record) map[string]*substrate.OccurrenceLog {
 			continue
 		}
 		mark := &substrate.OccurrenceLog{Kind: l.Kind, ID: l.ID, Status: propString(l.Properties, "status")}
-		for _, targets := range l.Edges {
-			for _, tgt := range targets {
-				marks[markKey(tgt.Kind, tgt.ID, at)] = mark
+		for _, v := range l.Properties {
+			for _, path := range referencePaths(v) {
+				if kind, id, ok := vocabulary.SplitRecordPath(path); ok {
+					marks[markKey(kind, id, at)] = mark
+				}
 			}
 		}
 	}
 	return marks
+}
+
+// referencePaths reads the record paths a property value holds, whichever
+// shape the declaration gives it: a plain reference is the path itself, a
+// reference carrying link data is an object under the reserved `ref` key, and
+// a repeated one is a list of either. A value that is neither is not a
+// reference and yields nothing — the kind declaration is not on this side of
+// the seam, so the VALUE's shape is what says whether it points anywhere.
+func referencePaths(v any) []string {
+	switch v := v.(type) {
+	case string:
+		return []string{v}
+	case map[string]any:
+		if s, ok := v[vocabulary.ReferenceValueKey].(string); ok {
+			return []string{s}
+		}
+	case []any:
+		var out []string
+		for _, item := range v {
+			out = append(out, referencePaths(item)...)
+		}
+		return out
+	}
+	return nil
 }
 
 func markKey(kind, id string, at time.Time) string {

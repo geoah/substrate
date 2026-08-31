@@ -222,6 +222,11 @@ type schemaBuilder struct {
 	objects   map[string]*graphql.Object // by type identity
 	objByName map[string]string          // GraphQL name -> identity
 	generic   *graphql.Object
+	// refObjects holds the generated object type of every reference property
+	// that carries link data, by GraphQL name. One per (kind, property), built
+	// once and reused, so a repeated reference's list wraps the same type its
+	// single-valued twin would.
+	refObjects map[string]*graphql.Object
 }
 
 // BuildSchema generates the repository's schema from its type registry.
@@ -237,6 +242,7 @@ func BuildSchema(types []substrate.KindInfo) (graphql.Schema, error) {
 		machineStamps: map[string][]string{},
 		objects:       map[string]*graphql.Object{},
 		objByName:     map[string]string{},
+		refObjects:    map[string]*graphql.Object{},
 	}
 	return b.build()
 }
@@ -410,7 +416,7 @@ func (b *schemaBuilder) buildObjects() error {
 				fname += "Prop" // e.g. type.core's version vs Record.version Int!
 			}
 			fields[fname] = &graphql.Field{
-				Type:    b.propertyType(t.Definition, p),
+				Type:    b.propertyType(t, p),
 				Resolve: resolveProp(p),
 			}
 		}
@@ -459,22 +465,21 @@ func (b *schemaBuilder) buildObjects() error {
 }
 
 // reservedNames is the closed set of GraphQL names a registry type may not
-// claim: the structural types and scalars, plus the capability and machine
-// interfaces derived from this registry. A collision is a schema-build error,
-// not a silent rename.
+// claim: the structural types and scalars, the capability and machine
+// interfaces derived from this registry, and the object type every
+// link-carrying reference property generates. A collision is a schema-build
+// error, not a silent rename.
 func (b *schemaBuilder) reservedNames() map[string]string {
 	r := map[string]string{
 		"Record":           "the Record interface",
 		"GenericRecord":    "the fallback record type",
 		"Change":           "the Change type",
-		"Edge":             "the Edge type",
-		"Reference":        "the Reference type",
+		"Reference":        "the Reference scalar",
 		"RecordConnection": "the list connection type",
 		"SearchHit":        "the search hit type",
 		"ChangePage":       "the changelog page type",
 		"Query":            "the query root",
 		"Mutation":         "the mutation root",
-		"EdgeResult":       "the edge-mutation result type",
 		"JSON":             "the JSON scalar",
 		"Long":             "the Long scalar",
 	}
@@ -483,6 +488,21 @@ func (b *schemaBuilder) reservedNames() map[string]string {
 	}
 	for _, iface := range b.machineIF {
 		r[iface.Name()] = "a machine interface"
+	}
+	// The generated reference objects are named from (kind, property) before
+	// any object is built, so a kind whose own name lands on one is refused
+	// here rather than colliding inside graphql-go's type map.
+	for _, t := range b.types {
+		for _, p := range declaredProperties(t.Definition) {
+			pd := propertyDef(t.Definition, p)
+			if kind, _ := pd["type"].(string); kind != "reference" {
+				continue
+			}
+			if len(linkProperties(pd)) == 0 {
+				continue
+			}
+			r[referenceObjectName(t, p)] = "the reference type of " + t.Identity + "." + p
+		}
 	}
 	return r
 }
@@ -733,6 +753,50 @@ func resolveProp(name string) graphql.FieldResolveFn {
 		}
 		return e.Properties[name], nil
 	}
+}
+
+// referenceValue reads the source of a generated reference object's field. The
+// stored value is an object keyed by `ref`, and a bare path is accepted too:
+// coercion normalizes a props-less write to the object shape, so the string is
+// what a value written before that normalization still reads as.
+func referenceValue(source any) (path string, props map[string]any) {
+	switch v := source.(type) {
+	case string:
+		return v, nil
+	case map[string]any:
+		s, _ := v[vocabulary.ReferenceValueKey].(string)
+		return s, v
+	}
+	return "", nil
+}
+
+func resolveReferencePath(p graphql.ResolveParams) (any, error) {
+	path, _ := referenceValue(p.Source)
+	return path, nil
+}
+
+func resolveLinkProp(name string) graphql.FieldResolveFn {
+	return func(p graphql.ResolveParams) (any, error) {
+		_, props := referenceValue(p.Source)
+		return props[name], nil
+	}
+}
+
+// resolveReferenceTarget follows the pointer. A reference outlives its target
+// (a purge leaves the value behind), and an unpinned one may name a kind this
+// repository never declared, so a target that does not resolve is null rather
+// than an error: the `ref` field still answers where it pointed.
+func resolveReferenceTarget(p graphql.ResolveParams) (any, error) {
+	path, _ := referenceValue(p.Source)
+	kind, id, ok := vocabulary.SplitRecordPath(path)
+	if !ok {
+		return nil, nil
+	}
+	ds, _, err := datasetOf(p.Context)
+	if err != nil {
+		return nil, err
+	}
+	return nilOnNotFound(ds.Get(p.Context, kind, id))
 }
 
 func resolveTimeProp(name string) graphql.FieldResolveFn {

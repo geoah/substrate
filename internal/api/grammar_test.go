@@ -101,17 +101,18 @@ func TestReservedRecordIdsRefuseBothDirections(t *testing.T) {
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
 
-	for _, id := range []string{"incoming", "edges"} {
-		ds.lastPut = substrate.PutInput{}
-		put := env.do(t, http.MethodPut, peoplePath+"/"+id, tok,
-			map[string]any{"properties": map[string]any{"name": "x"}})
-		wantErrorCode(t, put, http.StatusBadRequest, codeBadRequest)
-		if ds.lastPut.Kind != "" {
-			t.Fatalf("PUT %s/%s wrote %+v; a reserved id is refused, not written", peoplePath, id, ds.lastPut)
-		}
-		del := env.do(t, http.MethodDelete, peoplePath+"/"+id, tok, nil)
-		wantErrorCode(t, del, http.StatusBadRequest, codeBadRequest)
+	// `incoming` is the record's one sub-resource, so it is the one reserved
+	// id: `edges` went back to being an ordinary id when its routes died.
+	const id = "incoming"
+	ds.lastPut = substrate.PutInput{}
+	put := env.do(t, http.MethodPut, peoplePath+"/"+id, tok,
+		map[string]any{"properties": map[string]any{"name": "x"}})
+	wantErrorCode(t, put, http.StatusBadRequest, codeBadRequest)
+	if ds.lastPut.Kind != "" {
+		t.Fatalf("PUT %s/%s wrote %+v; a reserved id is refused, not written", peoplePath, id, ds.lastPut)
 	}
+	del := env.do(t, http.MethodDelete, peoplePath+"/"+id, tok, nil)
+	wantErrorCode(t, del, http.StatusBadRequest, codeBadRequest)
 }
 
 // A one-segment path names no kind: every kind carries an authority, so the

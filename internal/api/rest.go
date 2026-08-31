@@ -50,17 +50,11 @@ func (a address) path() string {
 }
 
 // reservedRecordID reports whether an id collides with a record sub-resource
-// segment. `incoming` and `edges` are static routes below a record
-// (`…/{id}/incoming`, `…/{id}/edges/{rel}`), so an id spelled either way is
-// refused as a record id, both read and write, keeping the shadow corner
-// symmetric (decision 0033).
+// segment. `incoming` is a static route below a record (`…/{id}/incoming`), so
+// an id spelled that way is refused as a record id, both read and write,
+// keeping the shadow corner symmetric (decision 0033).
 func reservedRecordID(id string) bool {
-	switch id {
-	case "incoming", "edges":
-		return true
-	default:
-		return false
-	}
+	return id == "incoming"
 }
 
 // addressed reads what a REST path addresses, by SEGMENT COUNT alone: three
@@ -108,8 +102,8 @@ func (h *handler) collection(w http.ResponseWriter, r *http.Request, wantID bool
 				" creates one, PUT "+addr.path()+" writes this record")
 		return nil, substrate.KindInfo{}, address{}, false
 	}
-	// A record id may not be a sub-resource word. `…/{kind}/{id}/incoming` and
-	// `…/{kind}/{id}/edges/{rel}` are static routes, so a published record whose
+	// A record id may not be a sub-resource word. `…/{kind}/{id}/incoming` is a
+	// static route, so a published record whose
 	// id is `incoming` reads through the sub-resource handler and 405s while a
 	// PUT to the same path creates it — a write-only row nothing can read. The
 	// reservation refuses BOTH directions, on every kind, so the word means the
@@ -172,12 +166,12 @@ func (h *handler) listCollection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// A collection watch is the changelog tail scoped to this type. The list
-	// query grammar does not apply to it — filter/orderBy/first/after/withEdges/
+	// query grammar does not apply to it — filter/orderBy/first/after/
 	// withAnnotations are silently meaningless on a watch — so their presence is
 	// a bad_request naming the param, never silent success. `from`
 	// (the transparent resume seq) IS honored.
 	if r.URL.Query().Get("watch") == "1" {
-		if bad := rejectParams(r, "filter", "orderBy", "first", "after", "withEdges", "withAnnotations"); bad != "" {
+		if bad := rejectParams(r, "filter", "orderBy", "first", "after", "withAnnotations"); bad != "" {
 			writeError(w, http.StatusBadRequest, codeBadRequest, bad+" is not supported with watch=1")
 			return
 		}
@@ -320,11 +314,11 @@ func (h *handler) deleteResource(w http.ResponseWriter, r *http.Request) {
 // silently ignored parameter returns UNFILTERED rows that look filtered.
 var (
 	// listParams is the list query grammar: the filter document, the order, the
-	// keyset page, the heavy-data opt-ins, and the mode switch itself.
-	listParams = []string{"filter", "orderBy", "first", "after", "withEdges", "withAnnotations", "watch"}
+	// keyset page, the heavy-data opt-in, and the mode switch itself.
+	listParams = []string{"filter", "orderBy", "first", "after", "withAnnotations", "watch"}
 	// incomingParams is the reverse read's grammar: the keyset page, and the
 	// two narrowings a drill-down expands one group with.
-	incomingParams = []string{"first", "after", "rel", "fromKind"}
+	incomingParams = []string{"first", "after", "property", "fromKind"}
 	// watchParams is a collection watch: the mode switch and the resume cursor.
 	// The list grammar does not apply, and rejectParams names those keys with a
 	// message of their own before this set is consulted.
@@ -391,7 +385,7 @@ func rejectParams(r *http.Request, names ...string) string {
 }
 
 // parseQuery reads the list parameters: filter (URL-encoded JSON), orderBy
-// ("at:desc,createdAt" or JSON), first/after, and the heavy-data opt-ins.
+// ("at:desc,createdAt" or JSON), first/after, and the heavy-data opt-in.
 func parseQuery(r *http.Request) (substrate.Query, error) {
 	v := r.URL.Query()
 	var q substrate.Query
@@ -418,7 +412,6 @@ func parseQuery(r *http.Request) (substrate.Query, error) {
 		q.First = n
 	}
 	q.After = v.Get("after")
-	q.WithEdges = v.Get("withEdges") == "1"
 	q.WithAnnotations = v.Get("withAnnotations") == "1"
 	return q, nil
 }

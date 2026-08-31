@@ -137,10 +137,9 @@ func TestSupportedListParamsStillWork(t *testing.T) {
 		"?first=5",
 		"?after=",
 		"?orderBy=updatedAt:desc",
-		"?withEdges=1",
 		"?withAnnotations=1",
 		`?filter={"properties":{"name":{"eq":"Ada"}}}`,
-		"?first=5&orderBy=createdAt&withEdges=1&withAnnotations=1",
+		"?first=5&orderBy=createdAt&withAnnotations=1",
 	} {
 		rec := env.do(t, http.MethodGet, peoplePath+query, tok, nil)
 		wantStatus(t, rec, http.StatusOK)

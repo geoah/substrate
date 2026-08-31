@@ -13,13 +13,13 @@ func (h *handler) getIncoming(w http.ResponseWriter, r *http.Request) {
 	}
 	id := addr.id
 	// Incoming is a fixed-order reverse read: it honors first/after, plus the
-	// two narrowings a drill-down needs — `rel` (one relationship) and
-	// `fromKind` (one source kind), which are what let a client expand ONE
+	// two narrowings a drill-down needs — `property` (one reference property)
+	// and `fromKind` (one source kind), which are what let a client expand ONE
 	// group without pulling every inbound pointer the record has.
 	//
-	// filter/orderBy/withEdges/withAnnotations still do not apply, so their
-	// presence is a bad_request naming the param rather than a silent drop.
-	if bad := rejectParams(r, "filter", "orderBy", "withEdges", "withAnnotations"); bad != "" {
+	// filter/orderBy/withAnnotations still do not apply, so their presence is a
+	// bad_request naming the param rather than a silent drop.
+	if bad := rejectParams(r, "filter", "orderBy", "withAnnotations"); bad != "" {
 		writeError(w, http.StatusBadRequest, codeBadRequest, bad+" is not supported on incoming")
 		return
 	}
@@ -38,7 +38,7 @@ func (h *handler) getIncoming(w http.ResponseWriter, r *http.Request) {
 	page, err := ds.Incoming(r.Context(), ti.Identity, id, substrate.IncomingOptions{
 		First:    q.First,
 		After:    q.After,
-		Rel:      r.URL.Query().Get("rel"),
+		Property: r.URL.Query().Get("property"),
 		FromKind: r.URL.Query().Get("fromKind"),
 	})
 	if err != nil {

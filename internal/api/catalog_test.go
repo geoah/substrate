@@ -232,7 +232,7 @@ func TestCatalogListReturnsShippedBundles(t *testing.T) {
 	for _, item := range body.Items {
 		if item.ID == webBundleID {
 			found = true
-			if item.Name != "web" || item.Authority != "web.bundles.substrate.reamde.dev" || item.Version != 7 {
+			if item.Name != "web" || item.Authority != "web.bundles.substrate.reamde.dev" || item.Version != 8 {
 				t.Errorf("web entry fields = %+v", item)
 			}
 			if item.Installed {

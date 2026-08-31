@@ -51,13 +51,13 @@ func TestStrictDecodeNamesUnknownBodyKey(t *testing.T) {
 	}
 }
 
-// The edge-verb body S6 left non-strict is strict now too.
-func TestStrictDecodeNamesUnknownEdgeKey(t *testing.T) {
+// The patch body is strict the same way: a near-miss key is named, never
+// dropped, because a dropped `properties` writes nothing and answers 200.
+func TestStrictDecodeNamesUnknownPatchKey(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodPost, peoplePath+"/p1/edges/member_of", tok, map[string]any{
-		"id":    "org1",
-		"props": map[string]any{"role": "admin"}, // it is `properties`, not `props`
+	rec := env.do(t, http.MethodPatch, peoplePath+"/p1", tok, map[string]any{
+		"props": map[string]any{"name": "Ada"}, // it is `properties`, not `props`
 	})
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 	if body := rec.Body.String(); !strings.Contains(body, "props") {

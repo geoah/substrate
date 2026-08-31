@@ -41,9 +41,12 @@ func seedRecurring(ds *fakeDataset) {
 	}
 	ds.records["log1"] = &substrate.Record{
 		ID: "log1", Kind: kindMedLog,
-		Properties: map[string]any{"scheduledAt": "2026-07-02T06:00:00Z", "status": "done"},
-		Edges: map[string][]substrate.EdgeTarget{
-			"schedule": {{ID: "meds", Kind: kindMedSchedule}},
+		// The log names the recurring record it marks with a reference
+		// property of its own name (`schedule` here, `routine` or `task`
+		// elsewhere), holding the full record path.
+		Properties: map[string]any{
+			"scheduledAt": "2026-07-02T06:00:00Z", "status": "done",
+			"schedule": kindMedSchedule + "/meds",
 		},
 	}
 }

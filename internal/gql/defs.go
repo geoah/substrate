@@ -11,6 +11,7 @@ import (
 
 	"github.com/geoah/substrate/internal/strictjson"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // WHAT THIS READS. `KindInfo.Definition` is the kind's DECLARATION as the loader
@@ -100,7 +101,9 @@ func typeMachines(def map[string]any) map[string][]string {
 // Refined string types (email, url, asin, …) render as String; secrets are
 // String too — the engine redacts the value, the shape stays stable. A
 // `reference` renders as the Reference scalar — the referent's "<kind>/<id>"
-// path, one string, which is exactly the stored value. An
+// path, one string, which is exactly the stored value. A reference that
+// declares link `properties:` stores an object instead, so it renders as its
+// own generated object type (referenceObject). An
 // `object` property carries inline structured data: it renders as
 // the JSON scalar, lossless, rather than flattening to String.
 //
@@ -112,8 +115,8 @@ func typeMachines(def map[string]any) map[string][]string {
 // A `keyed: true` property is a name-keyed MAP, and its stored value is a JSON
 // object whatever its values are: it renders as the JSON scalar, because typing
 // it as its value type would make every read of it a serialization error.
-func (b *schemaBuilder) propertyType(def map[string]any, prop string) graphql.Output {
-	pd := propertyDef(def, prop)
+func (b *schemaBuilder) propertyType(t substrate.KindInfo, prop string) graphql.Output {
+	pd := propertyDef(t.Definition, prop)
 	kind, _ := pd["type"].(string)
 	repeated, _ := pd["repeated"].(bool)
 	if keyed, _ := pd["keyed"].(bool); keyed {
@@ -121,32 +124,102 @@ func (b *schemaBuilder) propertyType(def map[string]any, prop string) graphql.Ou
 	}
 
 	var elem graphql.Output
-	switch kind {
-	case "int", "integer":
-		elem = graphql.Int
-	case "long", "int64":
-		elem = longScalar
-	case "float", "number":
-		elem = graphql.Float
-	case "decimal":
-		// The stored value IS the exact digit string; Float would round it,
-		// which is the one thing the datatype exists to refuse.
-		elem = graphql.String
-	case "bool", "boolean":
-		elem = graphql.Boolean
-	case "datetime":
-		elem = graphql.DateTime
-	case "json", "object":
-		elem = jsonScalar
-	case "reference":
-		elem = referenceScalar
-	default:
-		elem = graphql.String
+	if kind == "reference" {
+		elem = b.referenceType(t, prop, pd)
+	} else {
+		elem = scalarType(kind)
 	}
 	if repeated {
 		return graphql.NewList(elem)
 	}
 	return elem
+}
+
+// scalarType maps a datatype name onto the scalar that carries it. Link
+// properties go through it too: their grammar admits the flat datatypes only,
+// so the same table answers both.
+func scalarType(kind string) graphql.Output {
+	switch kind {
+	case "int", "integer":
+		return graphql.Int
+	case "long", "int64":
+		return longScalar
+	case "float", "number":
+		return graphql.Float
+	case "decimal":
+		// The stored value IS the exact digit string; Float would round it,
+		// which is the one thing the datatype exists to refuse.
+		return graphql.String
+	case "bool", "boolean":
+		return graphql.Boolean
+	case "datetime":
+		return graphql.DateTime
+	case "json", "object":
+		return jsonScalar
+	default:
+		return graphql.String
+	}
+}
+
+// linkProperties returns the names of a reference declaration's link
+// properties, sorted. Empty for a plain reference, which is what decides
+// between the Reference scalar and a generated object type.
+func linkProperties(pd map[string]any) []string {
+	return sortedKeys(definitionMap(pd, "properties"))
+}
+
+// referenceObjectName is the GraphQL name of a reference property's generated
+// object type: the kind's own object name, the property, and the `Reference`
+// suffix — "PersonMemberOfReference". It is a pure function of (kind,
+// property), so the name never depends on which OTHER kinds are in the
+// registry, and it is reserved against kind names for the same reason every
+// structural name is.
+func referenceObjectName(t substrate.KindInfo, prop string) string {
+	return graphqlTypeName(t) + titleCase(prop) + "Reference"
+}
+
+// referenceType is a reference property's output type: the Reference scalar
+// when the declaration carries no link data, and a generated object otherwise.
+// The object is `{ref, <link properties>, target}` — `ref` is the same path
+// the scalar would have carried, the link properties are typed, and `target`
+// resolves the referent through the registry (null when it dangles).
+func (b *schemaBuilder) referenceType(t substrate.KindInfo, prop string, pd map[string]any) graphql.Output {
+	props := linkProperties(pd)
+	if len(props) == 0 {
+		return referenceScalar
+	}
+	name := referenceObjectName(t, prop)
+	if obj, built := b.refObjects[name]; built {
+		return obj
+	}
+	fields := graphql.Fields{
+		vocabulary.ReferenceValueKey: &graphql.Field{
+			Type:        graphql.NewNonNull(referenceScalar),
+			Description: `The referent's path, "<kind>/<id>".`,
+			Resolve:     resolveReferencePath,
+		},
+		"target": &graphql.Field{
+			Type: b.recordIF,
+			Description: "The referent itself, null when the pointer dangles: a reference " +
+				"survives its target's purge, so a reader gets the path either way.",
+			Resolve: resolveReferenceTarget,
+		},
+	}
+	for _, lp := range props {
+		lpd, _ := definitionMap(pd, "properties")[lp].(map[string]any)
+		datatype, _ := lpd["type"].(string)
+		fields[camelCase(lp)] = &graphql.Field{
+			Type:    scalarType(datatype),
+			Resolve: resolveLinkProp(lp),
+		}
+	}
+	obj := graphql.NewObject(graphql.ObjectConfig{
+		Name:        name,
+		Description: t.Identity + "." + prop + ": a reference carrying link data.",
+		Fields:      fields,
+	})
+	b.refObjects[name] = obj
+	return obj
 }
 
 // ---- small helpers ------------------------------------------------------

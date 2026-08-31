@@ -13,6 +13,7 @@ import (
 	"filippo.io/age"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The api package is developed against this hand-written fake rather than
@@ -302,8 +303,8 @@ type fakeDataset struct {
 	// meta is per-record property provenance, attached by Get and ONLY by
 	// Get — lists never carry it, exactly like the engine.
 	meta map[string]map[string]substrate.PropertyMeta
-	// incoming backs the separate paginated reverse-edge resource.
-	incoming map[string][]substrate.IncomingEdge
+	// incoming backs the separate paginated reverse-reference resource.
+	incoming map[string][]substrate.IncomingReference
 	// formers maps a merged-away id to the record that now wears its data.
 	formers map[string]string
 	changes []substrate.Change
@@ -344,7 +345,7 @@ func newFakeDataset(name string) *fakeDataset {
 		types:      testTypes(),
 		records:    map[string]*substrate.Record{},
 		meta:       map[string]map[string]substrate.PropertyMeta{},
-		incoming:   map[string][]substrate.IncomingEdge{},
+		incoming:   map[string][]substrate.IncomingReference{},
 		formers:    map[string]string{},
 		trStates:   map[int64][]substrate.ChangeTrigger{},
 		signals:    make(chan int64, 8),
@@ -365,11 +366,10 @@ func testTypes() []substrate.KindInfo {
 					"name":    map[string]any{"type": "string"},
 					"company": map[string]any{"type": "string"},
 					"emails":  map[string]any{"kind": "[string]"},
-					// A reference property: the GraphQL Reference
-					// object renders the stored {authority, type, id} triple.
-					"manager": map[string]any{"type": "reference", "kind": "any"},
+					// An unpinned reference: the GraphQL Reference scalar
+					// carries the stored "<kind>/<id>" path.
+					"manager": map[string]any{"type": "reference"},
 				},
-				"edges": map[string]any{"member_of": map[string]any{"to": "organization"}},
 			},
 		},
 		{
@@ -395,9 +395,22 @@ func testTypes() []substrate.KindInfo {
 			Authority: "messaging.substrate.reamde.dev",
 			Version:   1, Plural: "conversationmessages", Source: "builtin",
 			Definition: map[string]any{
-				"plural":     "conversationmessages",
-				"traits":     []any{"temporal(point)"},
-				"properties": map[string]any{"text": map[string]any{"type": "markdown"}},
+				"plural": "conversationmessages",
+				"traits": []any{"temporal(point)"},
+				"properties": map[string]any{
+					"text": map[string]any{"type": "markdown"},
+					// A reference CARRYING LINK DATA: the declaration's
+					// `properties` are what turn the Reference scalar into a
+					// generated object type, `{ref, since, target}`.
+					"author": map[string]any{
+						"type":      "reference",
+						"kind":      "people.substrate.reamde.dev/person",
+						"mustExist": true,
+						"properties": map[string]any{
+							"since": map[string]any{"type": "int"},
+						},
+					},
+				},
 			},
 		},
 		{
@@ -552,61 +565,18 @@ func (d *fakeDataset) Delete(ctx context.Context, _ substrate.Actor, typ, id str
 	return e, nil
 }
 
-func (d *fakeDataset) Link(ctx context.Context, actor substrate.Actor, _, src, rel string, to substrate.EdgeRef, props map[string]any) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if err := d.fail("Link"); err != nil {
-		return err
-	}
-	d.lastActor = actor
-	d.lastPrincipal = substrate.PrincipalFrom(ctx)
-	e, ok := d.records[src]
-	if !ok {
-		return fmt.Errorf("%w: %s", substrate.ErrNotFound, src)
-	}
-	if e.Edges == nil {
-		e.Edges = map[string][]substrate.EdgeTarget{}
-	}
-	e.Edges[rel] = append(e.Edges[rel], substrate.EdgeTarget{ID: to.ID, Kind: to.Identity(), Properties: props})
-	return nil
-}
-
-func (d *fakeDataset) Unlink(ctx context.Context, actor substrate.Actor, _, src, rel string, to substrate.EdgeRef) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	if err := d.fail("Unlink"); err != nil {
-		return err
-	}
-	d.lastActor = actor
-	d.lastPrincipal = substrate.PrincipalFrom(ctx)
-	e, ok := d.records[src]
-	if !ok {
-		return fmt.Errorf("%w: %s", substrate.ErrNotFound, src)
-	}
-	var kept []substrate.EdgeTarget
-	for _, t := range e.Edges[rel] {
-		if t.ID != to.ID {
-			kept = append(kept, t)
-		}
-	}
-	if len(kept) == 0 {
-		delete(e.Edges, rel)
-	} else {
-		e.Edges[rel] = kept
-	}
-	return nil
-}
-
 func (d *fakeDataset) Merge(_ context.Context, _ substrate.Actor, typ, winner, loser string) (*substrate.Record, error) {
 	if err := d.fail("Merge"); err != nil {
 		return nil, err
 	}
-	// The record names both sides with EDGES (MODEL §11.5).
+	// The merge record names both sides with REFERENCE properties, each the
+	// loser's and the winner's full record path, exactly as the engine writes
+	// them.
 	return &substrate.Record{
 		ID: "merge1", Kind: coreAuthority + "/recordmerge",
-		Edges: map[string][]substrate.EdgeTarget{
-			"winner": {{ID: winner}},
-			"loser":  {{ID: loser}},
+		Properties: map[string]any{
+			"winner": vocabulary.RecordPath(typ, winner),
+			"loser":  vocabulary.RecordPath(typ, loser),
 		},
 	}, nil
 }
@@ -617,7 +587,9 @@ func (d *fakeDataset) Split(_ context.Context, _ substrate.Actor, mergeID string
 	}
 	return &substrate.Record{
 		ID: "split1", Kind: coreAuthority + "/recordsplit",
-		Edges: map[string][]substrate.EdgeTarget{"merge": {{ID: mergeID}}},
+		Properties: map[string]any{
+			"merge": vocabulary.RecordPath(coreAuthority+"/recordmerge", mergeID),
+		},
 	}, nil
 }
 
@@ -661,10 +633,10 @@ func (d *fakeDataset) Incoming(_ context.Context, typ, id string, opts substrate
 	rows := d.incoming[id]
 	// The narrowings a drill-down sends, honored so a handler test can assert
 	// that one group's expansion asks for that group alone.
-	if opts.Rel != "" || opts.FromKind != "" {
-		var kept []substrate.IncomingEdge
+	if opts.Property != "" || opts.FromKind != "" {
+		var kept []substrate.IncomingReference
 		for _, row := range rows {
-			if opts.Rel != "" && row.Rel != opts.Rel {
+			if opts.Property != "" && row.Property != opts.Property {
 				continue
 			}
 			if opts.FromKind != "" && row.From.Kind != opts.FromKind {
@@ -685,7 +657,7 @@ func (d *fakeDataset) Incoming(_ context.Context, typ, id string, opts substrate
 	start = min(start, len(rows))
 	end := min(start+first, len(rows))
 	page := &substrate.IncomingPage{
-		Incoming: append([]substrate.IncomingEdge(nil), rows[start:end]...),
+		Incoming: append([]substrate.IncomingReference(nil), rows[start:end]...),
 		Total:    len(rows),
 	}
 	if end < len(rows) {
