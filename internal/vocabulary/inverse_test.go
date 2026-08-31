@@ -1,9 +1,8 @@
 package vocabulary_test
 
 // `inverse:` names a relationship as the TARGET reads it — `thread` on a
-// message is `messages` on the thread — on an edge and on a reference alike,
-// because which of the two a declaration uses is a storage choice and the
-// reader standing on the target sees the same relationship either way.
+// message is `messages` on the thread — so a reader standing on the referent
+// can say what points at it in the model's own words.
 //
 // It is a LABEL, never an identifier. Nothing resolves through it, so a
 // collision between two AUTHORITIES is legal and reads as two groups sharing a
@@ -19,7 +18,7 @@ import (
 )
 
 // inverseFixture builds a one-authority tree: a `thing`, and a `pointer` whose
-// edge and reference are declared by the caller.
+// references are declared by the caller.
 func inverseFixture(authority, pointerBody string) string {
 	return `kind: core.substrate.reamde.dev/authority
 metadata: {id: ` + authority + `}
@@ -50,24 +49,24 @@ func loadInverse(t *testing.T, files map[string]string) (*vocabulary.Registry, e
 	return vocabulary.LoadFS(fsys)
 }
 
-func TestInverseIsCarriedByEdgesAndReferences(t *testing.T) {
-	r := loadFixture(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  edges:
+func TestInverseIsCarriedByAReference(t *testing.T) {
+	r := loadFixture(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  properties:
     owner:
-      to: thing
+      type: reference
+      kind: thing
       inverse: owned
       inverseDescription: what this thing owns
-  properties:
     seen:
       type: reference
       kind: thing
       inverse: seenBy
 `)})
 	p, _ := r.ByIdentity("a.example.com/pointer")
-	if got := p.Edges["owner"].Inverse; got != "owned" {
-		t.Fatalf("edge inverse = %q", got)
+	if got := p.Props["owner"].Inverse; got != "owned" {
+		t.Fatalf("inverse = %q", got)
 	}
-	if got := p.Edges["owner"].InverseDescription; got != "what this thing owns" {
-		t.Fatalf("edge inverse description = %q", got)
+	if got := p.Props["owner"].InverseDescription; got != "what this thing owns" {
+		t.Fatalf("inverse description = %q", got)
 	}
 	if got := p.Props["seen"].Inverse; got != "seenBy" {
 		t.Fatalf("reference inverse = %q", got)
@@ -75,8 +74,8 @@ func TestInverseIsCarriedByEdgesAndReferences(t *testing.T) {
 }
 
 func TestInverseMustBeSpelledLikeADeclaredName(t *testing.T) {
-	_, err := loadInverse(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  edges:
-    owner: {to: thing, inverse: not_camel}
+	_, err := loadInverse(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  properties:
+    owner: {type: reference, kind: thing, inverse: not_camel}
 `)})
 	if err == nil || !strings.Contains(err.Error(), "inverse") {
 		t.Fatalf("a snake-cased inverse must be refused, got %v", err)
@@ -84,8 +83,8 @@ func TestInverseMustBeSpelledLikeADeclaredName(t *testing.T) {
 }
 
 func TestInverseDescriptionWithoutAnInverseIsRefused(t *testing.T) {
-	_, err := loadInverse(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  edges:
-    owner: {to: thing, inverseDescription: describes nothing}
+	_, err := loadInverse(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  properties:
+    owner: {type: reference, kind: thing, inverseDescription: describes nothing}
 `)})
 	if err == nil || !strings.Contains(err.Error(), "inverseDescription") {
 		t.Fatalf("a description of an undeclared inverse must be refused, got %v", err)
@@ -93,9 +92,8 @@ func TestInverseDescriptionWithoutAnInverseIsRefused(t *testing.T) {
 }
 
 func TestInverseCollisionInsideOneAuthorityIsRefused(t *testing.T) {
-	_, err := loadInverse(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  edges:
-    owner: {to: thing, inverse: related}
-  properties:
+	_, err := loadInverse(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  properties:
+    owner: {type: reference, kind: thing, inverse: related}
     seen:
       type: reference
       kind: thing
@@ -161,7 +159,8 @@ data:
 }
 
 func TestInverseOnAnUnconstrainedPointerCannotCollide(t *testing.T) {
-	// `to: any` names no target, so two of them share no key to collide on.
+	// `kind: any` names no referent kind, so two of them share no key to collide
+	// on.
 	r := loadFixture(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  properties:
     one:
       type: reference
@@ -178,24 +177,19 @@ func TestInverseOnAnUnconstrainedPointerCannotCollide(t *testing.T) {
 	}
 }
 
+// One name is one property: a kind's `properties:` block is a YAML mapping, so
+// two declarations of one name cannot both survive the parse, and the
+// relationship a name points at is whatever that one declaration says.
 func TestOneNameIsOnePointer(t *testing.T) {
-	// A kind declaring an edge AND a property under one name leaves every
-	// reader to guess which it meant, and they do not agree. Refused, which is
-	// what keeps "an edge and a reference are one relationship differently
-	// stored" true — two of them under one name is two relationships.
-	_, err := loadInverse(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  edges:
-    owner: {to: thing}
-  properties:
+	r := loadFixture(t, map[string]string{"a.yaml": inverseFixture("a.example.com", `  properties:
     owner:
       type: reference
       kind: thing
+      inverse: owned
 `)})
-	if err == nil {
-		t.Fatal("one name declared as both an edge and a property must be refused")
-	}
-	for _, want := range []string{"owner", "both an edge and a property"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("the refusal must name %q, got: %v", want, err)
-		}
+	p, _ := r.ByIdentity("a.example.com/pointer")
+	owner, ok := p.Prop("owner")
+	if !ok || owner.Datatype != vocabulary.DatatypeReference || owner.Inverse != "owned" {
+		t.Fatalf("owner = %+v", owner)
 	}
 }

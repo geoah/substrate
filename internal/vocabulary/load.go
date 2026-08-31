@@ -25,7 +25,7 @@ var reCapBinding = regexp.MustCompile(`^([a-z][a-zA-Z0-9]*)(?:\(\s*([a-z][a-zA-Z
 
 // LoadFS parses every .yaml document under fsys into one registry. The unit
 // is the document, not the file: manifests are grouped by `data.authority`, and
-// all authorities are built before any edge or cross-authority trait is resolved,
+// all authorities are built before any pin or cross-authority trait is resolved,
 // so files may reference each other in any order.
 func LoadFS(fsys fs.FS) (*Registry, error) {
 	docs, err := readDocuments(fsys)
@@ -488,7 +488,7 @@ func (l *loader) buildAuthority(name string, gd *authorityDocs, source string) *
 	sort.Strings(g.MappingOrder)
 
 	// Functions: CEL compiles at parse; emit and exact trigger types resolve
-	// against the registry in Finalize/Install, like edge targets.
+	// against the registry in Finalize/Install, like a reference pin.
 	sortDocs(gd.functions)
 	for _, d := range gd.functions {
 		fn := l.parseFunction(d)
@@ -704,10 +704,16 @@ var deletedDataKeys = map[string]string{
 	"id":                 "a writer supplies metadata.id; there are no id strategies",
 	"merge":              "merge is manual and owner-driven",
 	"llm":                "provider + model — an llmprovider record id and the model string sent on every completion",
-	"binding":            "an ordinary edge plus a recordmapping document (record 50)",
-	"projects":           "an ordinary edge plus a recordmapping document (record 50)",
+	"binding":            "a `type: reference` property plus a recordmapping document (record 50)",
+	"projects":           "a `type: reference` property plus a recordmapping document (record 50)",
 	"actor":              "transitions carry no guard — anyone may perform any of them",
-	"configType":         "inputs — named configuration needs, each naming a kind; resolution is bound edge, the id \"default\", then the sole live record",
+	"configType":         "inputs — named configuration needs, each naming a kind; resolution is a bound reference, the id \"default\", then the sole live record",
+	// A reference absorbed the edge: one declaration, one stored value, one
+	// word. `data.edges` names nothing, and nothing translates a stored kind
+	// that carries it — a repository holding one is refused at open rather than
+	// half-read.
+	"edges": "`properties` with `type: reference` — a reference carries `repeated`, `mustExist`, `onDelete` and its own `properties`",
+	"edge":  "property — a recordmapping names the `subject: true` reference on its source kind",
 
 	"definition": "the retired blob: a declaration carries its own properties now, one key per authored field",
 	"name":       "the retired mirror: a declaration's local name is metadata.id",
@@ -729,7 +735,7 @@ func sortDocs(docs []Document) {
 
 var typeDataKeys = map[string]bool{
 	"authority": true, "names": true, "displayTemplate": true, "properties": true,
-	"edges": true, "traits": true, "indices": true,
+	"traits": true, "indices": true,
 	"description": true, "version": true,
 }
 
@@ -776,7 +782,6 @@ func (l *loader) parseType(doc Document) *Kind {
 		Source:      g.Source,
 		Description: description,
 		Props:       map[string]*Property{},
-		Edges:       map[string]*Edge{},
 		Machines:    map[string]*Machine{},
 		HotColumns:  map[string]bool{},
 		Definition:  d,
@@ -862,57 +867,6 @@ func (l *loader) parseType(doc Document) *Kind {
 		}
 	}
 
-	// edges
-	if _, isList := d["edges"].([]any); isList {
-		l.errf("%s: data.edges: a mapping of rel → target, not a list", where)
-	}
-	for ename, edef := range mmap(d, "edges") {
-		if !ValidCamel(ename) {
-			l.errf("%s: data.edges.%s: must be %s", where, ename, camelRule)
-			continue
-		}
-		ed := asMap(edef)
-		l.checkKeys(fmt.Sprintf("%s: data.edges.%s", where, ename), ed, edgeKeys)
-		to := mstr(ed, "to")
-		if to == "" {
-			l.errf("%s: data.edges.%s: to is required", where, ename)
-			continue
-		}
-		ewhere := fmt.Sprintf("%s: data.edges.%s", where, ename)
-		inverse, inverseDesc := l.parseInverse(ewhere, ed)
-		e := &Edge{
-			Name:               ename,
-			Description:        l.parseDescription(ewhere, ed),
-			To:                 to,
-			Many:               mbool(ed, "many"),
-			Required:           mbool(ed, "required"),
-			OwnerRef:           mbool(ed, "ownerRef"),
-			Inverse:            inverse,
-			InverseDescription: inverseDesc,
-			Deprecated:         mbool(ed, "deprecated"),
-		}
-		if e.Deprecated && e.Required {
-			l.errf("%s: an edge is deprecated or required, never both: a client cannot stop offering a link a creation is refused without", ewhere)
-		}
-		e.Props, e.PropOrder = l.parseEdgeProps(ewhere, ed)
-		t.Edges[ename] = e
-	}
-	for n := range t.Edges {
-		t.EdgeOrder = append(t.EdgeOrder, n)
-	}
-	sort.Strings(t.EdgeOrder)
-	// One name, one pointer. A kind declaring an edge AND a property under one
-	// name leaves every reader to pick which it meant, and they do not agree:
-	// a display template resolves the edge, the graph emits both, the write
-	// path writes one and validates the other. Cheap to refuse, and refusing
-	// keeps "an edge and a reference are the same relationship differently
-	// stored" true — two of them under one name is two relationships.
-	for _, n := range t.EdgeOrder {
-		if _, dup := t.Props[n]; dup {
-			l.errf("%s: %q is declared as both an edge and a property — one name is one pointer", where, n)
-		}
-	}
-
 	// traits
 	for _, cv := range mslice(d, "traits") {
 		s := fmt.Sprint(cv)
@@ -991,72 +945,65 @@ func (l *loader) parseType(doc Document) *Kind {
 
 // checkTemplate validates a display template's tokens against the type's own
 // declarations, so a typo fails at load and not as an empty title. A bare
-// token is a property, an edge, a column-backed property or a DERIVED token
-// ({snippet}, {localName}, {id}); a dotted one is an edge's property — the
-// target is another type's business — or one level into an object property's
-// declared fields.
+// token is a property, a column-backed property or a DERIVED token
+// ({snippet}, {localName}, {id}); a dotted one reads a property of the record a
+// reference names — the referent is another kind's business — or one level into
+// an object property's declared fields.
 func (l *loader) checkTemplate(where string, t *Kind, tmpl *Template) {
 	for _, ref := range tmpl.Refs() {
 		switch {
 		// A derived token needs no declaration to check against: it is computed
-		// from the record. But a kind MAY declare a property or an edge of the
-		// token's name, and then the declaration is what renders
-		// (Template.Render), so the token is held to the same rules the bare form
-		// gets — a sensitive property must not reach a title by wearing a derived
-		// token's name. The answer is discarded on purpose: undeclared is legal
-		// here and nowhere else.
+		// from the record. But a kind MAY declare a property of the token's
+		// name, and then the declaration is what renders (Template.Render), so
+		// the token is held to the same rules the bare form gets — a sensitive
+		// property must not reach a title by wearing a derived token's name. The
+		// answer is discarded on purpose: undeclared is legal here and nowhere
+		// else.
 		case ref.Derived != "":
 			l.ownToken(where, t, ref.Derived)
-		case ref.Edge != "":
-			if _, ok := t.Edges[ref.Edge]; ok {
+		case ref.Ref != "":
+			// A dotted token over a REFERENCE reads the referent's property. The
+			// property it names belongs to the referent's kind, which `kind:`
+			// may not even pin, so it is not checkable here; the renderer
+			// answers "" for one that is absent.
+			if p, ok := t.Props[ref.Ref]; ok && p.Datatype == DatatypeReference {
 				continue
 			}
-			// A dotted token over a REFERENCE reads the referent's property,
-			// the same hop an edge takes — the head is a pointer either way,
-			// and only the storage differs. The property it names belongs to
-			// the referent's kind, which `to:` may not even pin, so it is not
-			// checkable here; the renderer answers "" for one that is absent.
-			if p, ok := t.Props[ref.Edge]; ok && p.Datatype == DatatypeReference {
-				continue
-			}
-			if p, ok := t.Props[ref.Edge]; ok && p.Datatype == DatatypeObject {
+			if p, ok := t.Props[ref.Ref]; ok && p.Datatype == DatatypeObject {
 				if _, ok := p.Fields[ref.Prop]; ok {
 					continue
 				}
 				l.errf("%s: data.displayTemplate: {%s.%s}: %s has no field %q",
-					where, ref.Edge, ref.Prop, ref.Edge, ref.Prop)
+					where, ref.Ref, ref.Prop, ref.Ref, ref.Prop)
 				continue
 			}
-			l.errf("%s: data.displayTemplate: {%s.%s}: %s declares no edge, reference or object property %q",
-				where, ref.Edge, ref.Prop, t.Name, ref.Edge)
+			l.errf("%s: data.displayTemplate: {%s.%s}: %s declares no reference or object property %q",
+				where, ref.Ref, ref.Prop, t.Name, ref.Ref)
 		default:
 			if l.ownToken(where, t, ref.Prop) {
 				continue
 			}
-			l.errf("%s: data.displayTemplate: {%s}: %s declares no property or edge %q",
+			l.errf("%s: data.displayTemplate: {%s}: %s declares no property %q",
 				where, ref.Prop, t.Name, ref.Prop)
 		}
 	}
 }
 
 // ownToken resolves a BARE token against the kind's own declarations and reports
-// whether anything declared the name: a property, an edge, or one of the
-// column-backed properties every record carries. It is where the refusals that
-// belong to a bare token live, so the derived tokens get them too.
+// whether anything declared the name: a property, or one of the column-backed
+// properties every record carries. It is where the refusals that belong to a
+// bare token live, so the derived tokens get them too.
 //
 // A title is an unredacted, FTS-indexed column, so a sensitive property rendered
 // into one would leak around every read-surface redaction. The runtime resolver
-// skips them as well (edge targets and legacy vocabularies), but a declaration
-// should fail loudly rather than render empty.
+// skips them as well (a referent's properties and legacy vocabularies), but a
+// declaration should fail loudly rather than render empty.
 func (l *loader) ownToken(where string, t *Kind, name string) bool {
 	if p, ok := t.Props[name]; ok {
 		if p.Sensitive() {
 			l.errf("%s: data.displayTemplate: {%s}: %s is %s-typed and a sensitive value never renders into a title",
 				where, name, name, p.Datatype)
 		}
-		return true
-	}
-	if _, ok := t.Edges[name]; ok {
 		return true
 	}
 	_, reserved := reservedProps[name]
@@ -1079,65 +1026,56 @@ func mapOfAny[V any](m map[string]V) map[string]any {
 // `endsAt`, `icalUID`. The snake spellings are not aliases, they are errors:
 // a silently-false `owner_ref` is exactly the failure this strictness exists
 // to prevent.
-var edgeKeys = map[string]bool{
-	"to": true, "many": true, "required": true, "ownerRef": true,
-	"description": true, "inverse": true, "inverseDescription": true,
-	// `deprecated` is the RESERVED marker every declaration carries;
-	// `properties` declares what an edge ROW may hold, and an edge write is
-	// held to it. See Edge.Deprecated and Edge.Props.
-	"deprecated": true, "properties": true,
-}
-
-// edgePropKeys is the closed key set of ONE declared edge property: the scalar
-// half of propKeys and nothing else.
+// linkPropKeys is the closed key set of ONE declared link property — a name
+// under a reference's `properties:` — and it is the scalar half of propKeys and
+// nothing else.
 //
-// What is missing is the point. `repeated`/`keyed` are containers, and an edge
+// What is missing is the point. `repeated`/`keyed` are containers, and a link
 // property is one flat value; `fts`/`embed` are index placement on a record's
-// own columns, which an edge row does not have; `managed`/`writer` name a
-// stamping engine and a restricted writer, neither of which reaches an edge
-// row; `default` would need a `json` field in core's `kind` declaration, which
-// the dialect refuses inside an object; `renamedFrom` and `unique` are
-// evolution and identity, both of which belong to the record the edge hangs
-// off. Every one of them can be added later, as the ordinary coordinated
-// event a new dialect key always is (record 0020).
-var edgePropKeys = map[string]bool{
+// own columns, which link data does not have; `managed`/`writer` name a
+// stamping engine and a restricted writer, neither of which reaches link data;
+// `default` would need a `json` field in core's `kind` declaration, which the
+// dialect refuses inside an object; `renamedFrom` and `unique` are evolution and
+// identity, both of which belong to the record the reference hangs off. Every
+// one of them can be added later, as the ordinary coordinated event a new
+// dialect key always is (record 0020).
+var linkPropKeys = map[string]bool{
 	"type": true, "description": true, "displayName": true,
 	"required": true, "deprecated": true,
 	"values": true, "pattern": true, "min": true, "max": true,
 }
 
-// edgePropForbiddenKinds are the datatypes an edge property may never be, each
-// saying why. The rule behind the list: an edge row is a LINK with a few flat
-// values on it, and anything that needs a shape, a machine, a resolver or a
-// lifecycle of its own is a record: declare the record and hang two edges off
-// it.
-var edgePropForbiddenKinds = map[Datatype]string{
-	DatatypeObject:    "an edge property is a flat value; a shape with fields is a record, with an edge at each end",
-	DatatypeJSON:      "`json` is a shape we do not own, and an edge row is not a place to hide one",
-	DatatypeState:     "a machine belongs to a record, which can be transitioned; an edge row cannot",
+// linkPropForbiddenKinds are the datatypes a link property may never be, each
+// saying why. The rule behind the list: link data is a few flat values beside a
+// pointer, and anything that needs a shape, a machine, a resolver or a lifecycle
+// of its own is a record: declare the record and give it a reference at each
+// end.
+var linkPropForbiddenKinds = map[Datatype]string{
+	DatatypeObject:    "a link property is a flat value; a shape with fields is a record, with a reference at each end",
+	DatatypeJSON:      "`json` is a shape we do not own, and link data is not a place to hide one",
+	DatatypeState:     "a machine belongs to a record, which can be transitioned; link data cannot",
 	DatatypeSecret:    "a secret is a property of a record, sealed and read through its own path",
 	DatatypeDigest:    "a digest is minted onto a record",
-	DatatypeBlobRef:   "a blob-ref resolves on a record's read path, which an edge row does not have",
-	DatatypeReference: "the edge IS the pointer, and a second one on the same row is a record with two ends",
+	DatatypeBlobRef:   "a blob-ref resolves on a record's read path, which link data does not have",
+	DatatypeReference: "the reference IS the pointer, and a second one beside it is a record with two ends",
 }
 
-// parseEdgeProps reads the `edges.<rel>.properties` block: the properties an
-// edge row of this rel may carry, and the whole set it may carry. This is the
-// declaration door; the write door is the engine's coerceEdgeProps, which
+// parseLinkProps reads a reference's `properties:` block: the link data a value
+// of this reference may carry, and the whole set it may carry. This is the
+// declaration door; the write door is the engine's reference coercion, which
 // refuses a name this block does not hold.
 //
 // Each entry parses through parseProperty, so a refinement resolves, an enum
 // gets its values and a pattern compiles exactly as they do on a record's own
-// property. The narrower key set is checked FIRST, so `repeated: true` on an
-// edge property is named as the key it is rather than parsed and then
-// contradicted.
-func (l *loader) parseEdgeProps(where string, ed map[string]any) (map[string]*Property, []string) {
+// property. The narrower key set is checked FIRST, so `repeated: true` on a link
+// property is named as the key it is rather than parsed and then contradicted.
+func (l *loader) parseLinkProps(where string, ed map[string]any) (map[string]*Property, []string) {
 	if _, declared := ed["properties"]; !declared {
 		return nil, nil
 	}
 	raw := mmap(ed, "properties")
 	if len(raw) == 0 {
-		l.errf("%s.properties: an edge declares the properties its rows carry; drop the key rather than declaring none", where)
+		l.errf("%s.properties: a reference declares the link data its values carry; drop the key rather than declaring none", where)
 		return nil, nil
 	}
 	out := map[string]*Property{}
@@ -1147,23 +1085,29 @@ func (l *loader) parseEdgeProps(where string, ed map[string]any) (map[string]*Pr
 			l.errf("%s: must be %s", pwhere, camelRule)
 			continue
 		}
+		if pname == ReferenceValueKey {
+			// The one reserved key of a reference value: `ref` holds the path,
+			// so link data may not also claim the word.
+			l.errf("%s: %q is the reserved key holding the referent's path", pwhere, ReferenceValueKey)
+			continue
+		}
 		pd := asMapOrNil(pdef)
 		if pd == nil {
 			// No bare-datatype shorthand here, and that is deliberate: the
-			// shorthand belongs to an object's `fields:`, and what an edge
+			// shorthand belongs to an object's `fields:`, and what a reference
 			// declares has to survive the round trip into core's `kind` row,
-			// which holds each edge property as a mapping.
-			l.errf("%s: an edge property is a mapping, `{type: int}`, not a bare datatype", pwhere)
+			// which holds each link property as a mapping.
+			l.errf("%s: a link property is a mapping, `{type: int}`, not a bare datatype", pwhere)
 			continue
 		}
-		l.checkKeys(pwhere, pd, edgePropKeys)
+		l.checkKeys(pwhere, pd, linkPropKeys)
 		// Refused by name before the parse: a state declaration would otherwise
 		// fail on its missing machine first, and an object on its missing fields.
-		if reason, bad := edgePropForbiddenKinds[Datatype(mstr(pd, "type"))]; bad {
+		if reason, bad := linkPropForbiddenKinds[Datatype(mstr(pd, "type"))]; bad {
 			l.errf("%s: %s", pwhere, reason)
 			continue
 		}
-		// MaxFieldDepth, not 1: an edge property declares no fields, and a depth
+		// MaxFieldDepth, not 1: a link property declares no fields, and a depth
 		// at the floor means any nesting that ever reached here is refused by the
 		// same guard a record's own properties are held to.
 		p := l.parseProperty(pwhere, pname, pd, true, MaxFieldDepth)
@@ -1172,20 +1116,20 @@ func (l *loader) parseEdgeProps(where string, ed map[string]any) (map[string]*Pr
 		}
 		// A refinement resolves to its base datatype, so the rule holds through
 		// one: `type: isbn` is a string here and `type: someObject` is refused.
-		if reason, bad := edgePropForbiddenKinds[p.Datatype]; bad {
+		if reason, bad := linkPropForbiddenKinds[p.Datatype]; bad {
 			l.errf("%s: %s", pwhere, reason)
 			continue
 		}
 		// THE AUTHORED BLOCK IS THE STORED BLOCK, and this is what keeps it so.
 		// A record property may write `values: [low, high]`, but core's `kind`
-		// holds an edge property's values as {value, label} objects, so
+		// holds a link property's values as {value, label} objects, so
 		// admitting the bare word here would mean rewriting somebody's
 		// declaration on its way into the row: the row would then differ from
 		// the document that produced it, which is how a byte-identical re-apply
 		// starts bumping a version every time.
 		for _, v := range mslice(pd, "values") {
 			if asMapOrNil(v) == nil {
-				l.errf("%s.values: an edge property spells a value as a mapping, `{value: %v}`, never a bare word", pwhere, v)
+				l.errf("%s.values: a link property spells a value as a mapping, `{value: %v}`, never a bare word", pwhere, v)
 			}
 		}
 		out[pname] = p
@@ -1589,7 +1533,7 @@ func (l *loader) parseMachine(where, name string, d map[string]any) *Machine {
 }
 
 // propKeys is the closed key set of an ordinary property. `ref` is gone with
-// the kind it constrained (MODEL §11.5): edges are the one way to point at
+// the kind it constrained: `type: reference` is the one way to point at
 // another record. `fields` is only meaningful on `type: object` and gets a
 // targeted error anywhere else.
 var propKeys = map[string]bool{
@@ -1664,16 +1608,18 @@ var objectPropKeys = map[string]bool{
 // apply to a pointer. `repeated: true` gives a list of references, and a
 // reference is admitted inside an object or a keyed map like any other field.
 //
-// The pin is `kind:`, not `to:`, because the two words say different things.
-// `to:` is the EDGE's: the far end of a traversable relationship. A reference
-// property is data that NAMES A RECORD, and what a reader needs from the
-// declaration is which kind's records those are — that is the word a picker
-// keys on. A reference still spelling `to:` is refused by name
-// (deletedReferencePropKeys).
+// The pin is `kind:` because that is what a reader needs from the declaration:
+// which kind's records the value names, and it is the word a picker keys on.
+//
+// `mustExist`, `onDelete`, `properties` and `subject` are the four keys that
+// carry what a declared relationship needs beyond the pointer: the referent has
+// to exist, the referent owns this record, the link carries data of its own,
+// and the reference is a recordmapping's subject.
 var referencePropKeys = map[string]bool{
 	"type": true, "kind": true, "trait": true, "repeated": true, "description": true,
 	"displayName": true, "required": true, "renamedFrom": true,
-	"inverse": true, "inverseDescription": true, "ownerRef": true,
+	"inverse": true, "inverseDescription": true,
+	"mustExist": true, "onDelete": true, "properties": true, "subject": true,
 	"keyed": true, "keyPattern": true, "managed": true,
 	// `unique` on a pointer is the one-to-one link: at most one live record may
 	// name any given referent. Reserved like everywhere else: nothing enforces
@@ -1682,10 +1628,10 @@ var referencePropKeys = map[string]bool{
 }
 
 // deletedReferencePropKeys are the reference declaration's retired keys, each
-// naming its replacement. There is one, and it is a rename rather than a
-// removal: the pin outlived the word.
+// naming its replacement.
 var deletedReferencePropKeys = map[string]string{
-	"to": "kind — `to:` is the EDGE's word; a reference property pins the kind whose records it names",
+	"to":       "kind — a reference property pins the kind whose records it names",
+	"ownerRef": "`onDelete: cascade` — one key says what happens to this record when the referent dies",
 }
 
 // fieldForbiddenKinds are the kinds an object field may not be, at any level:
@@ -1813,7 +1759,7 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 	// `kind:` (which kind's records it names) and never the string-family
 	// refinements (pattern/min/max/values/fts/embed have no meaning on a record
 	// reference). The pin resolves from a bare name to a full identity in
-	// Finalize, exactly as an edge's `to:` does.
+	// Finalize.
 	if kind == DatatypeReference {
 		for k := range d {
 			if replacement, gone := deletedReferencePropKeys[k]; gone {
@@ -1840,26 +1786,21 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 			p.ToTrait = traitPin
 		}
 		p.Required = mbool(d, "required")
-		p.OwnerRef = mbool(d, "ownerRef")
-		if p.OwnerRef {
-			// An owner pointer names ONE owner, and the GC has to find every
-			// record that names a given one. Both constraints are checked here
-			// rather than left to the sweep, where a declaration that cannot be
-			// swept would simply never collect anything and say nothing.
+		p.MustExist = mbool(d, "mustExist")
+		l.parseOnDelete(where, d, p, depth)
+		l.parseSubject(where, d, p, depth)
+		if props, order := l.parseLinkProps(where, d); props != nil {
+			// Both refusals are about where the link data can be found again: a
+			// keyed reference's map values and a pointer inside an object are
+			// addressed by a path the refs index does not carry, so their link
+			// data would be declared and never read back.
 			switch {
+			case p.Keyed:
+				l.errf("%s: a keyed reference holds a map of pointers — link data is declarable on a single or repeated reference", where)
 			case depth > 1:
-				// The sweep reads a kind's OWN properties, so an owner pointer
-				// buried in an object would be declared and never followed.
-				l.errf("%s: ownerRef is a kind's own property, never an object field", where)
-			case p.Repeated || p.Keyed:
-				l.errf("%s: ownerRef names ONE owner — drop `repeated`/`keyed` or drop `ownerRef`", where)
-			case (p.To == "" || p.To == ToAny) && p.ToTrait == "":
-				// Unpinned would still cascade (the stored path names one
-				// record), but `incoming` cannot enumerate an unpinned pointer,
-				// so the owner could not see what deleting it would take. A
-				// `trait:` pin is enumerable — the kinds implementing a trait are
-				// a finite set — so it is admitted here as `kind:` is.
-				l.errf("%s: ownerRef needs `kind:` or `trait:` pinned — an unpinned owner pointer is invisible to the owner's incoming read", where)
+				l.errf("%s: link data is a kind's own reference, never an object field", where)
+			default:
+				p.Properties, p.PropertyOrder = props, order
 			}
 		}
 		p.Inverse, p.InverseDescription = l.parseInverse(where, d)
@@ -1965,6 +1906,52 @@ func (l *loader) parseProperty(where, name string, d map[string]any, allowRefine
 	}
 	l.parseReservedMarkers(where, name, d, p)
 	return p
+}
+
+// parseOnDelete reads a reference's `onDelete:`: what becomes of the record
+// declaring it when the referent dies. Both constraints are checked here rather
+// than left to the sweep, where a declaration the sweep cannot reach would
+// simply never collect anything and say nothing.
+func (l *loader) parseOnDelete(where string, d map[string]any, p *Property, depth int) {
+	raw := mstr(d, "onDelete")
+	if raw == "" {
+		return
+	}
+	if raw != OnDeleteCascade {
+		l.errf("%s.onDelete: %q is not a behavior — %q, or drop the key and the value detaches", where, raw, OnDeleteCascade)
+		return
+	}
+	switch {
+	case depth > 1:
+		// The sweep reads a kind's OWN properties, so a cascade buried in an
+		// object would be declared and never followed.
+		l.errf("%s.onDelete: cascade is a kind's own property, never an object field", where)
+	case p.Repeated || p.Keyed:
+		l.errf("%s.onDelete: cascade names ONE owner — drop `repeated`/`keyed` or drop `onDelete`", where)
+	default:
+		p.OnDelete = OnDeleteCascade
+	}
+}
+
+// parseSubject reads a reference's `subject:`, the marker on the one property a
+// recordmapping's source record points at. The mapping checks the rest of the
+// shape — required, mustExist, and the pin agreeing with its `to` — because
+// only the mapping knows what the subject is for; this is the half that holds
+// without one.
+func (l *loader) parseSubject(where string, d map[string]any, p *Property, depth int) {
+	if !mbool(d, "subject") {
+		return
+	}
+	switch {
+	case depth > 1:
+		l.errf("%s.subject: a subject is a kind's own property, never an object field", where)
+	case p.Repeated || p.Keyed:
+		l.errf("%s.subject: a source record describes ONE subject — a record that describes two things is two records", where)
+	case p.Cascades():
+		l.errf("%s.subject: a subject is never `onDelete: cascade` — deleting the subject must not collect the records that describe it", where)
+	default:
+		p.Subject = true
+	}
 }
 
 // parseReservedMarkers reads the three RESERVED property keys the scalar and
@@ -2161,7 +2148,7 @@ func (r *Registry) add(g *Authority) error {
 	return nil
 }
 
-// Finalize resolves every authority's edge targets and trait contracts.
+// Finalize resolves every authority's reference pins and trait contracts.
 func (r *Registry) Finalize() error {
 	r.mu.RLock()
 	authorities := make([]*Authority, 0, len(r.order))
@@ -2192,7 +2179,7 @@ func (r *Registry) Install(g *Authority) error {
 	}
 	problems := r.resolveAuthority(g)
 	// The registry-wide mapping invariants re-run whole: a re-registration
-	// may add a mapping whose violation lives on an already-loaded edge.
+	// may add a mapping whose violation lives on an already-loaded kind.
 	problems = append(problems, r.mappingInvariantProblems()...)
 	if len(problems) > 0 {
 		r.remove(g.Name)
@@ -2299,10 +2286,6 @@ func (r *Registry) checkAuthorityInverses(g *Authority) []string {
 	for _, tn := range g.KindOrder {
 		t := g.Kinds[tn]
 		where := DocKind + " " + t.Identity
-		for _, en := range t.EdgeOrder {
-			e := t.Edges[en]
-			take(where+": data.edges."+en, e.To, e.Inverse, claim{t.Name, en})
-		}
 		// A KIND'S OWN reference properties, and deliberately not the reference
 		// FIELDS inside its objects.
 		//
@@ -2366,33 +2349,10 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 	for _, tn := range g.KindOrder {
 		t := g.Kinds[tn]
 		where := DocKind + " " + t.Identity
-		for _, en := range t.EdgeOrder {
-			e := t.Edges[en]
-			if e.To == "any" {
-				continue
-			}
-			if Qualified(e.To) {
-				if _, ok := r.ByIdentity(e.To); !ok {
-					problems = append(problems, fmt.Sprintf("%s: data.edges.%s: unknown target type %q", where, en, e.To))
-				}
-				continue
-			}
-			// Short names resolve in-authority first, then uniquely across authorities.
-			if local, ok := g.Kinds[e.To]; ok {
-				e.To = local.Identity
-				continue
-			}
-			resolved, err := r.Resolve(e.To)
-			if err != nil {
-				problems = append(problems, fmt.Sprintf("%s: data.edges.%s: %v", where, en, err))
-				continue
-			}
-			e.To = resolved.Identity
-		}
-		// Reference properties resolve their `to:` the same way an edge does:
-		// a bare name to a full identity, in-authority first then uniquely across
-		// authorities; `any` (and absent) stay unconstrained. Every admitted
-		// depth, not just the kind's own properties: an unresolved `to:` on a
+		// A reference property resolves its `kind:` pin from a bare name to a
+		// full identity, in-authority first then uniquely across authorities;
+		// `any` (and absent) stay unconstrained. Every admitted
+		// depth, not just the kind's own properties: an unresolved pin on a
 		// nested reference would compare a bare name against a full identity on
 		// every write and refuse the value the declaration asked for.
 		for _, site := range referenceSites(t) {
@@ -2421,7 +2381,7 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 			}
 			if Qualified(p.To) {
 				if _, ok := r.ByIdentity(p.To); !ok {
-					problems = append(problems, fmt.Sprintf("%s: data.properties.%s.to: unknown referent type %q", where, site.Path, p.To))
+					problems = append(problems, fmt.Sprintf("%s: data.properties.%s.kind: unknown referent kind %q", where, site.Path, p.To))
 				}
 				continue
 			}
@@ -2431,7 +2391,7 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 			}
 			resolved, err := r.Resolve(p.To)
 			if err != nil {
-				problems = append(problems, fmt.Sprintf("%s: data.properties.%s.to: %v", where, site.Path, err))
+				problems = append(problems, fmt.Sprintf("%s: data.properties.%s.kind: %v", where, site.Path, err))
 				continue
 			}
 			p.To = resolved.Identity
@@ -2464,8 +2424,8 @@ func (r *Registry) resolveAuthority(g *Authority) []string {
 		}
 	}
 	problems = append(problems, r.checkAuthorityInverses(g)...)
-	// Mappings, once the authority's edge targets are resolved identities: the
-	// registry-wide invariants (bipartite, one mapping per source, no edge
+	// Mappings, once the authority's reference pins are resolved identities: the
+	// registry-wide invariants (bipartite, one mapping per source, no reference
 	// onto a source type) run after every authority has, in Finalize and Install.
 	for _, mn := range g.MappingOrder {
 		problems = append(problems, r.resolveMapping(g.Mappings[mn])...)

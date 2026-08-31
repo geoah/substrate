@@ -219,8 +219,8 @@ func TestNestedReferenceFieldsResolveTheirTarget(t *testing.T) {
 	}
 }
 
-// An unresolvable `to:` on a nested reference fails at LOAD, naming the path —
-// the same refusal a top-level reference gets.
+// An unresolvable `kind:` pin on a nested reference fails at LOAD, naming the
+// path — the same refusal a top-level reference gets.
 func TestNestedReferenceTargetMustExist(t *testing.T) {
 	_, err := dialectLoad(t, `  properties:
     tools: {type: object, fields: {callable: {type: reference, kind: nosuchkind}}}
@@ -228,7 +228,7 @@ func TestNestedReferenceTargetMustExist(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a load error")
 	}
-	if !strings.Contains(err.Error(), "tools.fields.callable.to") {
+	if !strings.Contains(err.Error(), "tools.fields.callable.kind") {
 		t.Fatalf("the refusal must name the field's path, got: %v", err)
 	}
 }
@@ -312,14 +312,14 @@ func TestDerivedTemplateTokensNeedNoDeclaration(t *testing.T) {
 			t.Fatalf("%s: no parsed template", tmpl)
 		}
 	}
-	// A kind that DECLARES the token's name — as a property or as an edge — is
-	// legal, and the declaration is what renders.
+	// A kind that DECLARES the token's name is legal, and the declaration is
+	// what renders.
 	for name, body := range map[string]string{
 		"property": `  displayTemplate: "{localName}"
   properties: {localName: {type: string}}
 `,
-		"edge": `  displayTemplate: "{localName}"
-  edges: {localName: {to: target}}
+		"reference": `  displayTemplate: "{localName}"
+  properties: {localName: {type: reference, kind: target}}
 `,
 	} {
 		if _, err := dialectLoad(t, body); err != nil {
@@ -384,18 +384,18 @@ func TestDerivedTokenYieldsToADeclaredProperty(t *testing.T) {
 	}); got != "people.example.com/person" {
 		t.Fatalf("an empty alternative must yield to the next, got %q", got)
 	}
-	// A declared EDGE of the token's name wins the same way a property does, and
-	// resolves as the bare form: property first, then the edge's targets. One name
-	// is one pointer, so a token cannot mean the id here and the edge there.
+	// A declared REFERENCE of the token's name wins the same way a property
+	// does, and resolves as the bare form: the property's own value first, then
+	// the referents' titles.
 	localName, err := vocabulary.ParseTemplate("{localName}")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	if got := localName.Render(testResolver{
-		edges:   map[string]string{vocabulary.DerivedLocalName: "Ada"},
+		refs:    map[string]string{vocabulary.DerivedLocalName: "Ada"},
 		derived: derived,
 	}); got != "Ada" {
-		t.Fatalf("a declared edge must win over the derived token, got %q", got)
+		t.Fatalf("a declared reference must win over the derived token, got %q", got)
 	}
 }
 

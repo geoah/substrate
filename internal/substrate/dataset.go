@@ -6,7 +6,7 @@ import (
 )
 
 // Dataset is one repository's fully isolated dataset — every operation of the
-// seven-mutation write surface and four-query read surface, plus the
+// five-mutation write surface and four-query read surface, plus the
 // system seams (tokens, GC, embeddings) the service loops need.
 // Implementations are safe for concurrent use.
 //
@@ -21,7 +21,7 @@ import (
 // and every implementation asserts each seam it satisfies at compile time
 // (`var _ substrate.BundleOps = (*dataset)(nil)`) — otherwise renaming a
 // method turns a whole endpoint family into a 501 with a green build.
-// The seven mutations and four reads below are the part meant to freeze at v1;
+// The five mutations and four reads below are the part meant to freeze at v1;
 // the HTTP paths that serve them are not frozen yet, which is why no discovery
 // feature reports stable (stability.go).
 type Dataset interface {
@@ -35,7 +35,7 @@ type Dataset interface {
 	// this resolves — routing needs no plural lookup (decision 0033).
 	KindByRef(ctx context.Context, ref string) (KindInfo, error)
 
-	// --- the seven mutations ---
+	// --- the five mutations ---
 	// Record identity is the FULL (type, id) pair: every
 	// addressed mutation names the type beside the id — a bare id names
 	// nothing. `typ` accepts a full type identity or an unambiguous local
@@ -43,11 +43,6 @@ type Dataset interface {
 	Put(ctx context.Context, actor Actor, in PutInput) (*Record, error)
 	Patch(ctx context.Context, actor Actor, typ, id string, in PatchInput) (*Record, error)
 	Delete(ctx context.Context, actor Actor, typ, id string) (*Record, error)
-	// Link/Unlink address the source by (srcType, src); the target reference
-	// is `{authority, type, id}` — bare `{id}` is legal only where the edge
-	// declaration pins a single target type.
-	Link(ctx context.Context, actor Actor, srcType, src, rel string, to EdgeRef, props map[string]any) error
-	Unlink(ctx context.Context, actor Actor, srcType, src, rel string, to EdgeRef) error
 	// Merge/Split return the command-as-record record
 	// (core.substrate.reamde.dev/recordmerge / core.substrate.reamde.dev/recordsplit); creating the
 	// record performs the operation. Merge joins two records of ONE type.
@@ -56,9 +51,9 @@ type Dataset interface {
 
 	// --- reads ---
 	// Get returns the full record by its (type, id) identity: properties,
-	// labels, annotations, machine states, and one hop of edges (both
-	// directions are the API layer's concern; Edges holds declared outgoing
-	// rels). A former id resolves within the type.
+	// labels, annotations and machine states. A reference property carries the
+	// records this one points at; what points BACK is Incoming. A former id
+	// resolves within the type.
 	Get(ctx context.Context, typ, id string) (*Record, error)
 	List(ctx context.Context, q Query) (*Page, error)
 	Search(ctx context.Context, in SearchInput) ([]Hit, error)
@@ -82,11 +77,9 @@ type Dataset interface {
 	MintToken(ctx context.Context, label string, expiresAt *time.Time) (TokenInfo, string, error)
 	Tokens(ctx context.Context) ([]TokenInfo, error)
 
-	// Incoming pages what points at one record — edges and reference
-	// properties alike, narrowable to one relationship or one source kind so a
-	// drill-down expands a group without pulling the rest. A reference with no
-	// declared target kind names nothing the registry can search for, so those
-	// are outside what this answers.
+	// Incoming pages the reference properties naming one record, narrowable to
+	// one property or one source kind so a drill-down expands a group without
+	// pulling the rest.
 	Incoming(ctx context.Context, typ, id string, opts IncomingOptions) (*IncomingPage, error)
 
 	// --- background loops (service wiring calls these) ---

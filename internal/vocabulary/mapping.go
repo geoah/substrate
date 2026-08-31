@@ -6,12 +6,13 @@ import (
 	"strings"
 )
 
-// A recordmapping is the sixth manifest kind: it says how one
-// source-record type's properties reach the subject its edge points at. The
-// edge itself stays an ordinary declared edge — the mapping, not a flag, is
-// what the engine recognizes — and everything record 33 ruled about it stands,
-// restated here: created with its record, moved only by merge and split,
-// never ownerRef, and no other edge may land on a mapped source type.
+// A recordmapping is the sixth manifest kind: it says how one source-record
+// kind's properties reach the subject one of its reference properties names.
+// That reference declares `subject: true` and the mapping names it, so the
+// write path can refuse to move a subject without reading the mapping set.
+// Everything record 33 ruled about it stands, restated here: created with its
+// record, moved only by merge and split, never `onDelete: cascade`, and no
+// reference anywhere else may land on a mapped source kind.
 
 // Merge is how one target property combines contributions (§7.1): atomic —
 // one source's value wins whole — or union, the deduped union of every live
@@ -21,15 +22,15 @@ const (
 	MergeUnion  = "union"
 )
 
-// Mapping is one parsed recordmapping. From is a type declared in Authority; To
-// is a full type name, resolved like an edge target; Edge names the declared
-// edge on From that records the link.
+// Mapping is one parsed recordmapping. From is a kind declared in Authority; To
+// is a full kind reference, resolved like a reference pin; Property names the
+// declared `subject: true` reference on From that points at the subject.
 type Mapping struct {
 	Name      string
 	Authority string
 	From      string
 	To        string
-	Edge      string
+	Property  string
 	// Match is the ordered identifier probes (§6.1): when a source record
 	// arrives without a subject, the first probe whose values find candidates
 	// decides — exactly one candidate links, zero or several create a fresh
@@ -158,7 +159,7 @@ func PathProperty(t *Kind, p Path) (*Property, bool, error) {
 // --- the loader's half ----------------------------------------------------
 
 var mappingDataKeys = map[string]bool{
-	"authority": true, "from": true, "to": true, "edge": true,
+	"authority": true, "from": true, "to": true, "property": true,
 	"match": true, "map": true, "description": true,
 }
 
@@ -167,9 +168,9 @@ var matchRuleKeys = map[string]bool{"from": true, "to": true}
 var mapRuleKeys = map[string]bool{"path": true, "merge": true}
 
 // parseMapping parses one recordmapping document. Everything that needs the
-// target type — the edge's shape, path type-checks, the bipartite rule — is
-// deferred to Finalize/Install, like edge targets: `to` may name a type in a
-// authority that has not loaded yet.
+// target kind — the subject reference's shape, path type-checks, the bipartite
+// rule — is deferred to Finalize/Install, like a reference pin: `to` may name a
+// kind in an authority that has not loaded yet.
 func (l *loader) parseMapping(d Document) *Mapping {
 	g := l.authority
 	where := DocRecordMapping + " " + d.ID
@@ -182,7 +183,7 @@ func (l *loader) parseMapping(d Document) *Mapping {
 		Name: local, Authority: g.Name,
 		From:       ReferentID(d.Data["from"], KindRef(AuthorityCore, DocKind)),
 		To:         ReferentID(d.Data["to"], KindRef(AuthorityCore, DocKind)),
-		Edge:       mstr(d.Data, "edge"),
+		Property:   mstr(d.Data, "property"),
 		Map:        map[string]*MapRule{},
 		Definition: d.Data,
 	}
@@ -211,8 +212,8 @@ func (l *loader) parseMapping(d Document) *Mapping {
 		l.errf("%s: data.to is a full type name (\"people.substrate.reamde.dev/person\"), never a bare one (§6.1)", where)
 		return nil
 	}
-	if m.Edge == "" {
-		l.errf("%s: data.edge is required — the declared edge on %s that records the link", where, m.From)
+	if m.Property == "" {
+		l.errf("%s: data.property is required — the `subject: true` reference on %s that names the subject", where, m.From)
 		return nil
 	}
 	if _, isMap := d.Data["match"].(map[string]any); isMap {
@@ -276,10 +277,10 @@ func (l *loader) parseMapping(d Document) *Mapping {
 	return m
 }
 
-// resolveMapping validates one mapping once every edge target is a resolved
-// identity: the edge's shape, and every path against both declared types, so
-// a disagreement fails on the manifest that caused it and not on the first
-// sync that hits it (§7.1).
+// resolveMapping validates one mapping once every reference pin is a resolved
+// identity: the subject reference's shape, and every path against both declared
+// kinds, so a disagreement fails on the manifest that caused it and not on the
+// first sync that hits it (§7.1).
 func (r *Registry) resolveMapping(m *Mapping) []string {
 	var problems []string
 	where := DocRecordMapping + " " + m.Identity()
@@ -295,23 +296,32 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 		errf("%s: data.to: unknown type %q", where, m.To)
 		return problems
 	}
-	// The subject edge's shape (§6.1): declared on the source, single,
-	// required, never ownerRef, pointing exactly at data.to.
-	ed, ok := from.Edge(m.Edge)
+	// The subject reference's shape (§6.1): a kind's own reference property,
+	// marked `subject: true`, single, required, mustExist, never cascading, and
+	// pinned exactly at data.to.
+	sp, ok := from.Props[m.Property]
 	switch {
 	case !ok:
-		errf("%s: data.edge: %s declares no edge %q", where, m.From, m.Edge)
-	case ed.To != m.To:
-		errf("%s: data.edge: %s.%s points at %s, not data.to %s", where, m.From, m.Edge, ed.To, m.To)
+		errf("%s: data.property: %s declares no property %q", where, m.From, m.Property)
+	case sp.Datatype != DatatypeReference:
+		errf("%s: data.property: %s.%s is %s — a subject is a `type: reference` property", where, m.From, m.Property, sp.Datatype)
+	case sp.To != m.To:
+		errf("%s: data.property: %s.%s points at %q, not data.to %s", where, m.From, m.Property, sp.To, m.To)
 	default:
-		if !ed.Required {
-			errf("%s: data.edge: the subject edge is required: true — a source record without its subject cannot exist", where)
+		if !sp.Subject {
+			errf("%s: data.property: %s.%s is missing `subject: true` — the write path reads the marker, not this document", where, m.From, m.Property)
 		}
-		if ed.Many {
-			errf("%s: data.edge: the subject edge is single-target (many: false) — a record that describes two things is two records", where)
+		if !sp.Required {
+			errf("%s: data.property: the subject reference is required: true — a source record without its subject cannot exist", where)
 		}
-		if ed.OwnerRef {
-			errf("%s: data.edge: the subject edge is never ownerRef — deleting the subject must not GC the records that describe it (§6.1)", where)
+		if !sp.MustExist {
+			errf("%s: data.property: the subject reference is mustExist: true — a source record describes a subject that exists", where)
+		}
+		if sp.Repeated || sp.Keyed {
+			errf("%s: data.property: the subject reference is single-valued — a record that describes two things is two records", where)
+		}
+		if sp.Cascades() {
+			errf("%s: data.property: the subject reference never cascades — deleting the subject must not collect the records that describe it (§6.1)", where)
 		}
 	}
 	// Match probes are identifier lookups: both ends stay in the short-string
@@ -381,10 +391,10 @@ func (r *Registry) resolveMapping(m *Mapping) []string {
 }
 
 // mappingInvariantProblems checks the registry-wide rules a mapping carries
-// , once every edge target is resolved: exactly one mapping per
-// source type, the source→subject graph stays bipartite — a mapping's `to`
-// may never itself be any mapping's `from` — and no edge anywhere may land on
-// a mapped source type, which keeps resolution one hop deep (§6.2). Registry-
+// , once every reference pin is resolved: exactly one mapping per
+// source kind, the source→subject graph stays bipartite — a mapping's `to`
+// may never itself be any mapping's `from` — and no reference anywhere may land
+// on a mapped source kind, which keeps resolution one hop deep (§6.2). Registry-
 // wide, because a mapping installs with its connector long after the
 // vocabulary that names its target was loaded.
 func (r *Registry) mappingInvariantProblems() []string {
@@ -406,16 +416,17 @@ func (r *Registry) mappingInvariantProblems() []string {
 				DocRecordMapping, m.Identity(), m.To, other.Identity()))
 		}
 	}
+	// Every declared reference site, nested ones included: a pointer at a source
+	// kind is a second hop whichever level it sits at.
 	for _, t := range r.Kinds() {
-		for _, en := range t.EdgeOrder {
-			e := t.Edges[en]
-			m, ok := byFrom[e.To]
+		for _, site := range referenceSites(t) {
+			m, ok := byFrom[site.Prop.To]
 			if !ok {
 				continue
 			}
 			problems = append(problems, fmt.Sprintf(
-				"%s %s: data.edges.%s: no edge may target %s, the source type of mapping %s — point it at %s",
-				DocKind, t.Identity, en, e.To, m.Identity(), m.To))
+				"%s %s: data.properties.%s: no reference may name %s, the source kind of mapping %s — pin it at %s",
+				DocKind, t.Identity, site.Path, site.Prop.To, m.Identity(), m.To))
 		}
 	}
 	return problems
@@ -436,9 +447,10 @@ func (r *Registry) Mappings() []*Mapping {
 	return out
 }
 
-// MappingFor returns the one mapping whose source is the given type identity.
-// A type carrying one is a source record: its id is the provider's key, its
-// subject edge is create-time only, and its writes recompute the subject.
+// MappingFor returns the one mapping whose source is the given kind identity.
+// A kind carrying one is a source record: its id is the provider's key, its
+// subject reference is set at creation and moved only by merge and split, and
+// its writes recompute the subject.
 func (r *Registry) MappingFor(from string) (*Mapping, bool) {
 	for _, m := range r.Mappings() {
 		if m.From == from {

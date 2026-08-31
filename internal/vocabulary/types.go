@@ -61,14 +61,11 @@ const (
 	// DatatypeBlobRef references a content-addressed blob by its digest (the blob
 	// record's id). The stored value is the digest string; reads resolve it to
 	// the blob's manifest ({digest, mediaType, size, status}), never the bytes
-	// inline. Edges point at records; a blob-ref points at bytes.
+	// inline. A reference points at a record; a blob-ref points at bytes.
 	DatatypeBlobRef Datatype = "blobref"
 	// DatatypeState is a state machine declared as a property: states, initial
 	// and transitions live on the property, its current value is the record's
-	// current state (MODEL §11.4). MODEL §11.5 once said edges were the ONE way
-	// to point at another record; ticket 033 qualified that. An edge is still
-	// the only TRAVERSABLE relationship, but a stored typed pointer is
-	// DatatypeReference below.
+	// current state (MODEL §11.4).
 	DatatypeState Datatype = "state"
 	// DatatypeObject is an inline structured property: named fields declared
 	// right on the property, each a scalar, a reference or another object, to
@@ -77,29 +74,32 @@ const (
 	// is never a refinement base, never a capability property, and its parse
 	// branch owns its own key set.
 	DatatypeObject Datatype = "object"
-	// DatatypeReference is a typed POINTER stored as a property value: ONE flat
-	// string, the referent's record PATH ("<kind>/<id>"), a stored value rather
-	// than a graph edge. An EDGE is a traversable relationship (incoming views,
-	// subject resolution); a `reference` is data — a declaration field that names
-	// another record (a trigger's `callable`). Its optional `kind:` PIN says
-	// which kind's records it names (`kind: any`, or absent, leaves it
-	// unconstrained), which is what lets a client offer a picker and what
-	// supplies the kind an authored bare id omits — an id with no slash in it,
-	// because a slash-bearing one is written in full path form or refused
-	// (SplitRecordPath says why). Validation checks shape + that
-	// the referent KIND exists; the referent RECORD is NOT required to exist at
-	// write time — a reference is a pointer, like an edge target may be a bare id
-	// the target's own admission resolves. Its own parse branch owns its key set.
-	// Not in builtinKinds: never a refinement base and never an object field.
+	// DatatypeReference is the one way a record points at another record: a
+	// stored value naming the referent's record PATH ("<kind>/<id>"), flat when
+	// the declaration carries no link `properties:` and `{ref: "<kind>/<id>",
+	// ...}` when it does. Its optional `kind:` PIN says which kind's records it
+	// names (`kind: any`, or absent, leaves it unconstrained), which is what
+	// lets a client offer a picker and what supplies the kind an authored bare
+	// id omits — an id with no slash in it, because a slash-bearing one is
+	// written in full path form or refused (SplitRecordPath says why).
+	// Validation checks shape + that the referent KIND exists; the referent
+	// RECORD has to exist only under `mustExist:`. Its own parse branch owns
+	// its key set. Not in builtinKinds: never a refinement base and never an
+	// object field.
 	DatatypeReference Datatype = "reference"
 )
 
 // ToAny is the unconstrained pin: any kind is an admissible referent, and the
 // value must then be a FULL path, since there is no pin to supply the kind a
-// bare id leaves out. It is spelled `kind: any` on a reference property and
-// `to: any` on an edge — one word each, for the two things they are — and an
-// absent pin on a reference reads the same.
+// bare id leaves out. It is spelled `kind: any`, and an absent pin reads the
+// same.
 const ToAny = "any"
+
+// OnDeleteCascade is the one declared `onDelete:` behavior: the referent OWNS
+// this record, so collecting the referent collects this record too. An absent
+// `onDelete:` detaches — the value stays and dangles once the referent is
+// purged.
+const OnDeleteCascade = "cascade"
 
 var builtinKinds = map[Datatype]bool{
 	DatatypeString: true, DatatypeText: true, DatatypeMarkdown: true, DatatypeInt: true,
@@ -215,21 +215,49 @@ type Property struct {
 	// Machine is the state machine a `type: state` property declares; nil
 	// for every other kind.
 	Machine *Machine
-	// OwnerRef marks a `reference` property whose referent OWNS this record:
-	// collecting the referent tombstones every record that names it, the same
-	// sweep an `ownerRef` edge gets (internal/engine/gc.go). It is only
-	// declarable on a kind's own single-valued reference pinned at one kind
-	// (`kind:`) or at one trait (`trait:`) — the loader refuses the other
-	// shapes, because a repeated pointer names no single owner and an unpinned
-	// one cannot be enumerated by the owner's `incoming` read. A trait pin is
-	// enumerable because the kinds implementing a trait are a finite set.
-	OwnerRef bool
-	// To is a `reference` property's optional referent-type constraint
-	//, the twin of an edge's `to:`: a resolved full type
-	// identity a value must name, ToAny ("any") for unconstrained, or empty
-	// when no `to:` was declared (also unconstrained). Resolved from a bare
-	// name to a full identity in Finalize, exactly like an edge target. Empty
-	// for every non-reference kind.
+	// MustExist requires the referent RECORD to exist when the value is written
+	// (a tombstoned row counts as existing); a value naming no record is
+	// refused with the same not-found any addressed read gives. Absent, the
+	// default, leaves a reference a plain pointer, which is what lets a write
+	// name a record a later sync creates. It needs no pin: the stored value
+	// carries the kind.
+	MustExist bool
+	// OnDelete says what becomes of THIS record when the referent dies:
+	// OnDeleteCascade collects it in the same sweep (internal/engine/gc.go),
+	// empty detaches. Declarable on a kind's OWN single-valued reference only —
+	// a list or a map names no single owner, and a pointer inside an object is
+	// not a kind's own property — so the loader refuses the other shapes rather
+	// than leaving a declaration the sweep would silently never reach. No pin
+	// is required: the refs index finds the sources naming a referent whether
+	// or not the declaration pins a kind.
+	OnDelete string
+	// Properties is the LINK DATA declared beside the pointer
+	// (`properties:` on a reference): the value becomes an object, `{ref:
+	// "<kind>/<id>", <name>: <value>}`, and this map is the WHOLE admission —
+	// a write naming anything it does not hold is refused. PropertyOrder holds
+	// the sorted names. Legal on a single or repeated reference, never on a
+	// keyed one and never inside an object.
+	//
+	// Each entry is a FLAT SINGLE VALUE: one scalar, enum or refinement, never
+	// a list, a map, an object, a machine or a pointer
+	// (linkPropForbiddenKinds). That is what keeps the block declarable in
+	// core's own `kind` declaration, where the recursion a property block
+	// admits could not be typed; anything that needs more than that is a
+	// record with a reference at each end.
+	Properties    map[string]*Property
+	PropertyOrder []string
+	// Subject marks the reference a recordmapping's source record points at:
+	// the one property whose referent the source record describes (mapping.go).
+	// The mapping document names the property and this marker is what the write
+	// path reads, so a generic put or patch can refuse to move a subject
+	// without consulting the mapping set. Only merge, split and the creating
+	// write set it.
+	Subject bool
+	// To is a `reference` property's optional referent-kind constraint: a
+	// resolved full type identity a value must name, ToAny ("any") for
+	// unconstrained, or empty when no `kind:` was declared (also
+	// unconstrained). Resolved from a bare name to a full identity in
+	// Finalize. Empty for every non-reference kind.
 	To string
 	// ToTrait is a `reference` property's optional TRAIT pin: a resolved full
 	// trait identity ("core.substrate.reamde.dev/accountconfig") the referent
@@ -237,8 +265,8 @@ type Property struct {
 	// `kind:` (To) or `trait:` (ToTrait), never both. It is what lets a
 	// provider-agnostic kind own its account without naming one provider's
 	// account kind: any record whose kind implements the trait is an admissible
-	// referent, and an `ownerRef` trait reference is enumerable because the set
-	// of kinds implementing a trait is finite (the registry's Implementing).
+	// referent, and the set of kinds implementing a trait is finite (the
+	// registry's Implementing).
 	// Resolved from a bare name to a full identity in Finalize. Empty for every
 	// non-reference kind and for a kind-pinned reference. A trait pin supplies no
 	// kind for a bare id, so its value is a full "<kind>/<id>" path, like `any`.
@@ -432,6 +460,10 @@ func (p *Property) ValueStrings() []string {
 // IsState reports whether the property is a state machine.
 func (p *Property) IsState() bool { return p.Datatype == DatatypeState }
 
+// Cascades reports whether the referent of this reference owns the record that
+// declares it: collecting the referent collects this record too.
+func (p *Property) Cascades() bool { return p.OnDelete == OnDeleteCascade }
+
 // Secret reports whether the property is confidential MATERIAL: the stored
 // value is a ref into the sealed store and the material is scrubbed at the
 // runner boundary. Every secret is also Sensitive.
@@ -443,46 +475,6 @@ func (p *Property) Secret() bool { return p.Datatype == DatatypeSecret }
 // no business on any wire either.
 func (p *Property) Sensitive() bool {
 	return p.Datatype == DatatypeSecret || p.Datatype == DatatypeDigest
-}
-
-// Edge is one declared relationship on a type. Nothing here marks a subject
-// edge: a recordmapping names it, so the edge declaration stays ordinary and
-// a connector's types never need a vocabulary change (§6.1, record 50).
-type Edge struct {
-	Name string
-	// Description is the declared one-sentence explanation, same rule as a
-	// property's.
-	Description string
-	To          string // resolved type identity, or "any"
-	Many        bool
-	Required    bool
-	OwnerRef    bool
-	// Inverse names this relationship as the TARGET reads it: `thread` on a
-	// message is `messages` on the thread. See Inverse on Property — the rule
-	// is one rule, and it is written there.
-	Inverse            string
-	InverseDescription string
-	// Deprecated is the RESERVED add-and-deprecate marker, the same one a
-	// property carries: the edge still resolves and still stores, and a client
-	// should stop offering it. A deprecated edge may not also be `required:`.
-	Deprecated bool
-	// Props declares what an edge ROW of this rel may carry
-	// (`edges.<rel>.properties`), keyed by property name, with PropOrder
-	// holding the sorted names. It is the WHOLE admission: an edge write
-	// carrying a name this map does not hold is refused, and a rel that
-	// declares no block accepts no properties at all (engine's
-	// coerceEdgeProps). A `required:` edge property is enforced at the write,
-	// which it can be because an edge write replaces the row's whole props
-	// map, so every stored row of the rel carries one.
-	//
-	// An edge property is a FLAT SINGLE VALUE: one scalar, enum or refinement,
-	// never a list, a map, an object, a machine or a pointer
-	// (edgePropForbiddenKinds). That is what keeps the block declarable in
-	// core's own `kind` declaration, where the recursion a property block
-	// admits could not be typed; anything an edge cannot hold under that rule
-	// is a record wearing a link's clothes.
-	Props     map[string]*Property
-	PropOrder []string
 }
 
 // Transition is one legal machine move. It carries no guard: anyone may
@@ -603,8 +595,6 @@ type Kind struct {
 
 	Props     map[string]*Property
 	PropOrder []string
-	Edges     map[string]*Edge
-	EdgeOrder []string
 	// Machines indexes the state properties by name — the same machinery the
 	// deleted `machines:` key used to fill (MODEL §11.4).
 	Machines map[string]*Machine
@@ -631,12 +621,6 @@ type Kind struct {
 func (t *Kind) Prop(name string) (*Property, bool) {
 	p, ok := t.Props[name]
 	return p, ok
-}
-
-// Edge returns the declared edge, if any.
-func (t *Kind) Edge(name string) (*Edge, bool) {
-	e, ok := t.Edges[name]
-	return e, ok
 }
 
 // UsesHot reports whether a capability binds the given hot property.
@@ -872,7 +856,7 @@ func (r *Registry) PropertyTypes() []*PropertyType {
 }
 
 // ResolveTrait finds a trait by bare name, in authority first and then
-// uniquely across authorities — the same rule short edge targets follow.
+// uniquely across authorities — the same rule a short `kind:` pin follows.
 func (r *Registry) ResolveTrait(authority, name string) (*Trait, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

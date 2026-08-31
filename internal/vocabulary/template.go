@@ -8,9 +8,9 @@ import (
 // Template is a parsed display_template: literal text interleaved with
 // tokens. A token is a pipe-separated list of alternatives, the first
 // non-empty one rendering ({name|participants}). An alternative is a
-// property name, an edge name (renders the targets' titles), a dotted
-// edge.property (renders the first target's property), or one of the DERIVED
-// tokens ({snippet}, {localName}, {id}).
+// property name, a reference property's name (renders the referents' titles), a
+// dotted reference.property (renders the first referent's property), or one of
+// the DERIVED tokens ({snippet}, {localName}, {id}).
 type Template struct {
 	Raw   string
 	Parts []TemplatePart
@@ -24,8 +24,11 @@ type TemplatePart struct {
 
 // TemplateRef is one alternative inside a token.
 type TemplateRef struct {
-	Edge string // edge name, "" for own property
-	Prop string // property name, "" when the ref is a bare edge
+	// Ref is the HEAD of a dotted alternative: the reference or object property
+	// the token reads through, "" when the alternative names the record's own
+	// property.
+	Ref  string
+	Prop string // property name, "" when the alternative is a bare head
 	// Derived names a token computed from the record itself rather than read off
 	// a declared property, so it needs no declaration to check against. Every
 	// derived token except {snippet} yields to a REAL property of the same name
@@ -54,10 +57,10 @@ func (r TemplateRef) String() string {
 	switch {
 	case r.Derived != "":
 		return r.Derived
-	case r.Edge != "" && r.Prop != "":
-		return r.Edge + "." + r.Prop
-	case r.Edge != "":
-		return r.Edge
+	case r.Ref != "" && r.Prop != "":
+		return r.Ref + "." + r.Prop
+	case r.Ref != "":
+		return r.Ref
 	default:
 		return r.Prop
 	}
@@ -116,9 +119,9 @@ func parseToken(body string) (TemplatePart, error) {
 		name, prop, dotted := strings.Cut(alt, ".")
 		if dotted {
 			if !ValidCamel(name) || !ValidCamel(prop) {
-				return part, fmt.Errorf("%q is not edge.property", alt)
+				return part, fmt.Errorf("%q is not reference.property", alt)
 			}
-			part.Alts = append(part.Alts, TemplateRef{Edge: name, Prop: prop})
+			part.Alts = append(part.Alts, TemplateRef{Ref: name, Prop: prop})
 			continue
 		}
 		if !ValidCamel(alt) {
@@ -138,16 +141,17 @@ func (t *Template) Refs() []TemplateRef {
 	return out
 }
 
-// EdgeRefs lists the distinct edge names the template traverses.
-func (t *Template) EdgeRefs() []string {
+// RefHeads lists the distinct property names the template reads THROUGH: the
+// head of every dotted alternative.
+func (t *Template) RefHeads() []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, r := range t.Refs() {
-		if r.Edge == "" || seen[r.Edge] {
+		if r.Ref == "" || seen[r.Ref] {
 			continue
 		}
-		seen[r.Edge] = true
-		out = append(out, r.Edge)
+		seen[r.Ref] = true
+		out = append(out, r.Ref)
 	}
 	return out
 }
@@ -158,17 +162,17 @@ type Resolver interface {
 	// Prop renders a declared property of the record itself.
 	Prop(name string) string
 	// Declares reports whether the kind DECLARES anything of that name — a
-	// property or an edge, the two things a bare token can mean — whatever the row
+	// property of that name, whatever the row
 	// holds for it. A derived token turns on the declaration and not on the value:
 	// `{localName}` on a kind that declares an optional `localName` must render
 	// that property's value — including nothing, when the row left it empty —
 	// because falling back to the derived value would make an empty property look
-	// like a filled one. An EDGE of that name counts for the same reason: one name
-	// is one pointer, and a token cannot mean the declaration sometimes.
+	// like a filled one.
 	Declares(name string) bool
-	// Edge renders an edge: prop == "" asks for the targets' titles, a
-	// named prop asks for that property of the first target.
-	Edge(rel, prop string) string
+	// Reference renders through a reference property: prop == "" asks for the
+	// referents' titles, a named prop asks for that property of the first
+	// referent.
+	Reference(name, prop string) string
 	// Derived renders a derived token (DerivedSnippet, DerivedLocalName,
 	// DerivedID) from the record itself.
 	Derived(token string) string
@@ -191,11 +195,11 @@ func (t *Template) Render(r Resolver) string {
 			case alt.Derived != "":
 				// A REAL declaration of the token's name wins, by DECLARATION and
 				// not by having a value: a kind that declares `localName` means its
-				// own property or edge every time it is rendered, and only a kind
-				// that declares neither gets the derived one. Declared, the token
-				// resolves exactly as the bare identifier below does — property,
-				// then edge — because a derived token that skipped the edge would
-				// render an id where the model says a target's title.
+				// own property every time it is rendered, and only a kind that
+				// declares none gets the derived one. Declared, the token resolves
+				// exactly as the bare identifier below does — the property's value,
+				// then the referents' titles — because a derived token that skipped
+				// that hop would render an id where the model says a referent's title.
 				//
 				// {snippet} predates the rule and keeps its old meaning: it has
 				// always been derived-only, and a kind declaring `snippet` would
@@ -203,15 +207,15 @@ func (t *Template) Render(r Resolver) string {
 				if !r.Declares(alt.Derived) {
 					v = r.Derived(alt.Derived)
 				} else if v = r.Prop(alt.Derived); v == "" {
-					v = r.Edge(alt.Derived, "")
+					v = r.Reference(alt.Derived, "")
 				}
-			case alt.Edge != "":
-				v = r.Edge(alt.Edge, alt.Prop)
+			case alt.Ref != "":
+				v = r.Reference(alt.Ref, alt.Prop)
 			default:
-				// A bare identifier is a property or, failing that, an
-				// edge ("{name|participants}").
+				// A bare identifier is a property's own value or, failing that,
+				// the titles a reference property names ("{name|participants}").
 				if v = r.Prop(alt.Prop); v == "" {
-					v = r.Edge(alt.Prop, "")
+					v = r.Reference(alt.Prop, "")
 				}
 			}
 			if v != "" {

@@ -20,7 +20,7 @@ type KindInfo struct {
 	// line a reader gets above the collection, empty when undeclared.
 	Description string `json:"description"`
 	// Definition is the kind's DECLARATION, rendered from the parsed one: the
-	// authored data map (names, properties, edges, traits, indices), which is also
+	// authored data map (names, properties, traits, indices), which is also
 	// what the declaration's row stores as its properties. It is not a stored
 	// `definition` blob — that spelling is refused everywhere now — and the name
 	// survives here because a client reading a kind's shape is reading the same

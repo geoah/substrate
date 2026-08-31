@@ -15,14 +15,21 @@ import (
 // Every kind carries an authority (decision 0042): the authority is a DNS name
 // and therefore always carries a dot, the name never does, and neither part can
 // carry a "/". A bare name (`task`) is not a stored identity but load-time
-// SHORTHAND — an edge `to:`, a trigger source, a permission allowlist entry —
-// that resolves against the declaring authority to a qualified identity before
+// SHORTHAND — a reference `kind:` pin, a trigger source, a permission allowlist
+// entry — that resolves against the declaring authority to a qualified identity before
 // it is stored or addressed. The helpers below still render and split the bare
 // form because that shorthand relies on them; nothing stores it.
 //
 // A RECORD PATH is the qualified kind reference plus the id:
 // "<authority>/<kind>/<id>". It is the whole stored value of a `reference`
-// property — one flat string, not a pair.
+// property — one flat string, not a pair — until the declaration carries link
+// data, where the same path sits under ReferenceValueKey in an object.
+
+// ReferenceValueKey is the one reserved key of a reference value that carries
+// link data: `ref` holds the referent's record path and every other key is a
+// declared link property. It is reserved in the declaration too, so a link
+// property can never shadow the pointer itself.
+const ReferenceValueKey = "ref"
 
 // KindRef renders a kind reference from its parts. An empty authority renders
 // the bare shorthand form — there is no `local/` prefix.

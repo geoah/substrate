@@ -2,8 +2,8 @@ package substrate
 
 import "time"
 
-// Record is the wire shape of one stored record. Annotations and Edges are
-// populated only when requested (list calls omit them by default).
+// Record is the wire shape of one stored record. Annotations are populated
+// only when requested (list calls omit them by default).
 //
 // EVERYTHING AUTHORED IS A PROPERTY: `title`, `body` and the
 // temporal properties read back inside Properties beside the declared ones,
@@ -43,8 +43,6 @@ type Record struct {
 	UpdatedAt  time.Time  `json:"updatedAt"`
 	DeletedAt  *time.Time `json:"deletedAt,omitempty"`
 	Finalizers []string   `json:"finalizers,omitempty"`
-
-	Edges map[string][]EdgeTarget `json:"edges,omitempty"`
 
 	// PropertyMeta is per-property provenance: the manager
 	// the ledger names, when it changed, and the live offers whose value

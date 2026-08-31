@@ -605,7 +605,7 @@ var functionReadsKeys = map[string]bool{"kinds": true, "budgets": true}
 var functionBudgetKeys = map[string]bool{"calls": true, "rows": true}
 
 // parseFunction parses one function document. Emit, reads and call targets
-// resolve against the registry in Finalize/Install, like edge targets.
+// resolve against the registry in Finalize/Install, like a reference pin.
 func (l *loader) parseFunction(d Document) *Function {
 	g := l.authority
 	where := DocFunction + " " + d.ID
@@ -617,7 +617,7 @@ func (l *loader) parseFunction(d Document) *Function {
 	}
 	l.checkKeys(where, d.Data, functionDataKeys)
 	if _, has := d.Data["after"]; has {
-		l.errf("%s: data.after is reserved and unimplemented — order is never implied, and no dependency edge exists yet", where)
+		l.errf("%s: data.after is reserved and unimplemented — order is never implied, and nothing declares a dependency yet", where)
 		return nil
 	}
 	local, ok := l.localName(where, d.ID, g.Name)
