@@ -59,12 +59,16 @@ GET /api/v1/core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev%2Ftask
 
 Incoming references are a derived view of their own, paged separately so a
 popular record's fan-in never inflates its document. The response is
-`{"incoming": [{"property": …, "path": …, "createdAt": …,
+`{"incoming": [{"property": …, "path": …,
 "from": {"id", "kind", "title"}}], "cursor": …, "total": n}`, ordered by
 source kind, then source record, then the property and its position within
 it. `property` names the reference the source points with, and `path` locates
 it where the reference sits inside an object or a keyed map, empty at the top
-level. Every reference answers here, pinned or not.
+level. Every reference answers here, pinned or not. The `cursor` belongs to the
+read that minted it: replaying one with a different `property`, `fromKind` or
+target record is a `400`, not a short page. A merge INTO the target refuses
+outstanding cursors the same way, because the merged-away record's pointers
+join the order mid-walk; start the walk again.
 
 ## The flat record
 

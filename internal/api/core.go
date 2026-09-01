@@ -75,6 +75,16 @@ func decodeBody(r *http.Request, v any) error {
 	return decodeJSONStrict(http.MaxBytesReader(nil, r.Body, maxRequestBody), v)
 }
 
+// decodeRecordBody is decodeBody for a RECORD ENVELOPE (a put or a patch): the
+// same strict decode, plus the replacement for a key the envelope retired.
+// `edges` is a key somebody had reason to write, and a bare `unknown field
+// "edges"` tells them the spelling is wrong without saying where a pointer goes
+// now. Only the envelope decodes wrap: the same message on a filter or a login
+// body would be advice about a document that caller is not writing.
+func decodeRecordBody(r *http.Request, v any) error {
+	return strictjson.NameRetiredKeys(decodeBody(r, v))
+}
+
 // decodeJSONStrict decodes exactly one JSON value into v with unknown fields
 // REFUSED, then requires the stream to end. A misspelled top-level
 // key — a dropped `ifVersion` CAS precondition, a broadened `filter` — is a

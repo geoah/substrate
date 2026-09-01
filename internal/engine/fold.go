@@ -288,12 +288,22 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 		// `fts` and unlike everything else here: derived from the folded
 		// properties and the kind's declaration (refs.go), never from an effect
 		// of its own. Deriving it HERE is what makes a rebuild reproduce it
-		// byte for byte — the entry's timestamp is the transaction's clock, so
-		// a replayed pointer is stamped with the moment the live write stamped
-		// it, and a pointer that came through unchanged keeps its own.
+		// byte for byte — every column is a function of those two inputs, and
+		// no column of it reads the clock.
+		//
+		// A KIND WITH NO REFERENCE SITE IS SKIPPED. It derives no rows from any
+		// value, so the delete-and-re-derive would be two statements per write
+		// that can only ever find nothing — paid on the hot sync paths (mail,
+		// calendar), whose kinds point at nothing. A kind this binary no longer
+		// DECLARES is not skipped: its stored rows project a declaration that is
+		// gone, and syncRefs is what removes them. A declaration that stops
+		// carrying a reference is covered by reprojectRefs, which re-derives
+		// every record of the kinds whose reference shape moved.
 		ty, _ := t.declarations().ByIdentity(row.Kind)
-		if err := t.syncRefs(ref, ty, row.Props); err != nil {
-			return foldResult{}, err
+		if ty == nil || declaresReference(ty) {
+			if err := t.syncRefs(ref, ty, row.Props); err != nil {
+				return foldResult{}, err
+			}
 		}
 	}
 	return foldResult{changed: changed, created: created, row: row}, nil

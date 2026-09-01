@@ -61,7 +61,6 @@ const incomingReference: Keys<IncomingReference> = {
   property: true,
   path: true,
   from: true,
-  createdAt: true,
 }
 
 const incomingSource: Keys<IncomingSource> = {

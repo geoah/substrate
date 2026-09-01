@@ -27,6 +27,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -75,7 +76,17 @@ func (ds *dataset) resolveBundleInput(ctx context.Context, b *vocabulary.Bundle,
 	if err != nil {
 		return ri, err
 	}
-	if dst, bound := bindingOf(bundleRow, name); bound {
+	if written, bound := bindingOf(bundleRow, name); bound {
+		// THE BINDING FOLLOWS A MERGE. Nothing repoints a stored reference when
+		// a record loses a merge (decision 0044), so the binding keeps naming
+		// the id its author wrote and the former-id trail is what says where
+		// that record lives now. Resolving before the liveness check is what
+		// keeps merging two account records from breaking every bundle bound to
+		// the loser.
+		dst, err := ds.canonicalOf(ctx, ds.db, written)
+		if err != nil {
+			return ri, err
+		}
 		row, err := ds.loadRowDB(ctx, dst)
 		if err != nil {
 			return ri, err
@@ -84,8 +95,13 @@ func (ds *dataset) resolveBundleInput(ctx context.Context, b *vocabulary.Bundle,
 			// The binding outlived its record (or the kind drifted under an
 			// upgrade). A dangling explicit choice is a problem to show,
 			// never silently papered over by the default rules below.
+			//
+			// It names the written id AND, where the trail moved, the record it
+			// resolves to: an owner told only "bound to <loser>, which no longer
+			// resolves" after a merge has to walk the trail by hand to find out
+			// what actually went wrong with the winner.
 			ri.Problem = substrate.SetupDangling
-			ri.Detail = fmt.Sprintf("bound to %s/%s, which no longer resolves — rebind or unbind the input", dst.Kind, dst.ID)
+			ri.Detail = danglingDetail(written, dst, row, in.Kind)
 			return ri, nil
 		}
 		ri.Row, ri.Via = row, substrate.InputViaBound
@@ -119,6 +135,28 @@ func (ds *dataset) resolveBundleInput(ctx context.Context, b *vocabulary.Bundle,
 			len(rows), in.Kind, inputDefaultID)
 	}
 	return ri, nil
+}
+
+// danglingDetail says what the binding names, where the former-id trail takes
+// it, and what is wrong at the far end: gone, deleted, or a record of another
+// kind after an upgrade moved the input. `row` is what `dst` loaded, nil when
+// nothing is there.
+func danglingDetail(written, dst eref, row *erow, want string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "bound to %s/%s", written.Kind, written.ID)
+	if dst != written {
+		fmt.Fprintf(&b, ", which merged into %s/%s", dst.Kind, dst.ID)
+	}
+	switch {
+	case row == nil:
+		b.WriteString(", which no longer exists")
+	case row.DeletedAt != nil:
+		b.WriteString(", which is deleted")
+	default:
+		fmt.Fprintf(&b, ", which is a %s and the input takes a %s", dst.Kind, want)
+	}
+	b.WriteString(" — rebind or unbind the input")
+	return b.String()
 }
 
 // propBindings is the bundle row's keyed reference holding one binding per

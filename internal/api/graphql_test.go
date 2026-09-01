@@ -637,6 +637,45 @@ func TestGraphQLReservedNameCollisionIsRefused(t *testing.T) {
 	}
 }
 
+// TWO REFERENCE PROPERTIES CANNOT SHARE A GENERATED NAME.
+// `<Kind><Property>Reference` is a pure function of (kind, property), so
+// `task`.`noteX` and `taskNote`.`x` both spell `TaskNoteXReference`. The build
+// refuses the pair: one generated object would otherwise carry one pair's link
+// fields and serve both properties, silently, and nothing in the loader keeps
+// kind names to the single lowercase word that made the collision unreachable.
+func TestGraphQLReferenceNameCollisionIsRefused(t *testing.T) {
+	reference := func(prop string) map[string]any {
+		return map[string]any{"properties": map[string]any{
+			prop: map[string]any{"type": "reference", "kind": "people.substrate.reamde.dev/person"},
+		}}
+	}
+	task := substrate.KindInfo{
+		Identity: "tasks.substrate.reamde.dev/task", Name: "task", Authority: "tasks.substrate.reamde.dev",
+		Version: 1, Plural: "tasks", Source: "builtin", Definition: reference("noteX"),
+	}
+	taskNote := substrate.KindInfo{
+		Identity: "tasks.substrate.reamde.dev/taskNote", Name: "taskNote", Authority: "tasks.substrate.reamde.dev",
+		Version: 1, Plural: "taskNotes", Source: "builtin", Definition: reference("x"),
+	}
+
+	_, err := gql.BuildSchema([]substrate.KindInfo{task, taskNote})
+	if err == nil {
+		t.Fatal("two reference properties minting one name must be refused")
+	}
+	for _, want := range []string{"TaskNoteXReference", "tasks.substrate.reamde.dev/task.noteX"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the error must name %s: %v", want, err)
+		}
+	}
+
+	// The same pair, one property renamed, builds: the refusal is the
+	// collision and not the shape.
+	taskNote.Definition = reference("y")
+	if _, err := gql.BuildSchema([]substrate.KindInfo{task, taskNote}); err != nil {
+		t.Fatalf("two distinct reference names must build: %v", err)
+	}
+}
+
 // Record.version and Change.seq are 64-bit (Long scalar): a value past 2^31
 // round-trips through GraphQL instead of overflowing GraphQL's 32-bit Int.
 func TestGraphQLLongScalarRoundTripsPast2e31(t *testing.T) {

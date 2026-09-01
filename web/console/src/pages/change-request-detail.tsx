@@ -27,6 +27,7 @@ import { z } from "zod"
 
 import { ActorChip } from "@/components/actor-chip"
 import { ChangeTarget, OpBadge } from "@/components/change-request"
+import { ReferenceValue } from "@/components/record/reference-value"
 import { StateBadge } from "@/components/state-badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -104,7 +105,7 @@ import {
   type Verdict,
 } from "@/lib/changerequests"
 import { kindByIdentity, splitKind } from "@/lib/definition"
-import { cellValue, relativeTime } from "@/lib/format"
+import { cellValue, referenceObjects, relativeTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { changeRequestDetailRoute } from "@/router"
 
@@ -168,16 +169,33 @@ function ValueCell({
   value,
   absent,
   manager,
+  kinds,
 }: {
   value: unknown
   /** True when the record simply has no key here: the empty-cell glyph, never a
    * rendering of `undefined`. */
   absent: boolean
   manager?: string
+  kinds: KindInfo[]
 }) {
   if (absent) return <span className="data text-muted-foreground">—</span>
   if (value === null) {
     return <span className="data text-destructive">removed</span>
+  }
+  // `diff` is a `json` property, so nothing coerces what is inside it and the
+  // cell has no declaration to read. A served reference value is recognizable
+  // on its own (issue #332), and rendering `{"ref":"…"}` as literal text would
+  // hide a record the reviewer can open.
+  const references = referenceObjects(value)
+  if (references) {
+    return (
+      <span className="flex min-w-0 flex-col items-start gap-1">
+        {references.map((one, at) => (
+          <ReferenceValue key={at} value={one} kinds={kinds} />
+        ))}
+        {manager && <ActorChip actor={manager} />}
+      </span>
+    )
   }
   const text = cellValue(value)
   // A long repeated value truncates; the count says what the ellipsis hides,
@@ -231,9 +249,12 @@ function BeforeAfter({
   rows,
   target,
   emptyText,
+  kinds,
 }: {
   rows: ChangeRow[]
   target?: ChangeTargetRef
+  /** The registry, so a reference value renders as its referent's pill. */
+  kinds: KindInfo[]
   /** What an EMPTY table means here, which is never simply "nothing": a
    * refused decode, or a change that lives in the labels/finalizers instead. */
   emptyText: string
@@ -295,10 +316,11 @@ function BeforeAfter({
                   value={row.before}
                   absent={row.before === undefined}
                   manager={row.effect === "unchanged" ? undefined : row.manager}
+                  kinds={kinds}
                 />
               </TableCell>
               <TableCell className="align-top">
-                <ValueCell value={row.after} absent={false} />
+                <ValueCell value={row.after} absent={false} kinds={kinds} />
               </TableCell>
               <TableCell className="pr-4 align-top">
                 <EffectCell effect={row.effect} />
@@ -318,9 +340,12 @@ function ProposedValues({
   rows,
   caption,
   emptyText,
+  kinds,
 }: {
   rows: ChangeRow[]
   caption: string
+  /** The registry, so a reference value renders as its referent's pill. */
+  kinds: KindInfo[]
   /** What an EMPTY table means here, which is never simply "nothing": a
    * refused decode, or a change that lives in the labels/finalizers instead. */
   emptyText: string
@@ -353,7 +378,7 @@ function ProposedValues({
                 <FieldCell row={row} />
               </TableCell>
               <TableCell className="pr-4 align-top">
-                <ValueCell value={row.after} absent={false} />
+                <ValueCell value={row.after} absent={false} kinds={kinds} />
               </TableCell>
             </TableRow>
           ))}
@@ -847,6 +872,7 @@ export function ChangeRequestDetailPage() {
             error={targetSide.query.error?.message}
             kindMissing={Boolean(target && !targetSide.kind)}
             emptyText={emptyText}
+            kinds={types}
           />
         )}
 
@@ -890,6 +916,7 @@ export function ChangeRequestDetailPage() {
             rows={deriveChangeRows(diff.properties, undefined, targetSide.kind)}
             caption="proposed value"
             emptyText={emptyText}
+            kinds={types}
           />
         )}
 
@@ -926,6 +953,7 @@ function PatchBody({
   error,
   kindMissing,
   emptyText,
+  kinds,
 }: {
   request: SubstrateRecord
   diff: ProposedDiff
@@ -938,6 +966,8 @@ function PatchBody({
   error?: string
   kindMissing: boolean
   emptyText: string
+  /** The registry, so a reference value renders as its referent's pill. */
+  kinds: KindInfo[]
 }) {
   const rows = useMemo(
     () =>
@@ -976,6 +1006,7 @@ function PatchBody({
           rows={rows}
           caption="proposed value"
           emptyText={emptyText}
+          kinds={kinds}
         />
       </>
     )
@@ -1005,12 +1036,18 @@ function PatchBody({
           the console cannot read, show the proposed values alone rather than
           dressing them up as a comparison with nothing. */}
       {op === "patch" ? (
-        <BeforeAfter rows={rows} target={target} emptyText={emptyText} />
+        <BeforeAfter
+          rows={rows}
+          target={target}
+          emptyText={emptyText}
+          kinds={kinds}
+        />
       ) : (
         <ProposedValues
           rows={rows}
           caption={op === "create" ? "the accept writes" : "proposed value"}
           emptyText={emptyText}
+          kinds={kinds}
         />
       )}
     </>

@@ -188,9 +188,14 @@ func referenceObjectName(t substrate.KindInfo, prop string) string {
 // scalar field with an object field, which is a breaking schema change for a
 // purely additive declaration edit. A client that wants the old string selects
 // `{ ref }`.
+// The cache is keyed by the OWNING (kind, property), never by the generated
+// name: a name is shared only by a colliding pair, which buildObjects refuses
+// before it gets here, and keying by name would have handed the second pair the
+// first one's fields instead.
 func (b *schemaBuilder) referenceType(t substrate.KindInfo, prop string, pd map[string]any) graphql.Output {
 	name := referenceObjectName(t, prop)
-	if obj, built := b.refObjects[name]; built {
+	owner := t.Identity + "." + prop
+	if obj, built := b.refObjects[owner]; built {
 		return obj
 	}
 	fields := graphql.Fields{
@@ -222,7 +227,7 @@ func (b *schemaBuilder) referenceType(t substrate.KindInfo, prop string, pd map[
 		Description: t.Identity + "." + prop + ": a pointer at another record.",
 		Fields:      fields,
 	})
-	b.refObjects[name] = obj
+	b.refObjects[owner] = obj
 	return obj
 }
 

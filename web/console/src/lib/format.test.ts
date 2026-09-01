@@ -8,6 +8,7 @@ import {
   cellValue,
   referenceCell,
   referenceID,
+  referenceObjects,
   shortDate,
   tableDateTime,
 } from "./format"
@@ -99,5 +100,30 @@ describe("referenceID / referenceCell", () => {
     // cellValue is datatype-blind, so it must leave a URL (and any other
     // slashed string) whole rather than reading it as a path.
     expect(cellValue("https://example.com/x")).toBe("https://example.com/x")
+  })
+})
+
+describe("referenceObjects", () => {
+  it("reads the served object, one or repeated", () => {
+    const one = { ref: "tasks.example.com/task/a" }
+    expect(referenceObjects(one)).toEqual([one])
+    const link = { ref: "tasks.example.com/task/a", round: 2 }
+    expect(referenceObjects(link)).toEqual([link])
+    expect(referenceObjects([one, link])).toEqual([one, link])
+  })
+
+  it("refuses everything a declaration would have had to vouch for", () => {
+    // A bare path string: undeclared, it is a string with slashes in it.
+    expect(referenceObjects("tasks.example.com/task/a")).toBeUndefined()
+    // An object that names no path, and a `ref` that is not one.
+    expect(referenceObjects({ kind: "task", id: "a" })).toBeUndefined()
+    expect(referenceObjects({ ref: "claude" })).toBeUndefined()
+    // One non-reference element disqualifies the whole list: half a column of
+    // pills and half of JSON would read as two different datatypes.
+    expect(
+      referenceObjects([{ ref: "tasks.example.com/task/a" }, { n: 1 }])
+    ).toBeUndefined()
+    expect(referenceObjects([])).toBeUndefined()
+    expect(referenceObjects(null)).toBeUndefined()
   })
 })

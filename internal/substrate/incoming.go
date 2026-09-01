@@ -1,7 +1,5 @@
 package substrate
 
-import "time"
-
 // IncomingReference is one reverse pointer: some other live record's reference
 // property names this record. Property is that property's declared name and
 // Path addresses the site inside it, so a nested pointer says where it sits
@@ -12,11 +10,10 @@ type IncomingReference struct {
 	// ("tools.fields.callable"), empty for a kind's own property.
 	Path string `json:"path,omitempty"`
 	// From is the source record, shallow by design: a reverse row names what
-	// points here, and the reader fetches it if they want more.
+	// points here, and the reader fetches it if they want more. A reader that
+	// wants the source's timestamps reads the source: the reverse row carries
+	// no time of its own, because the refs index stores none (migration 0011).
 	From IncomingSource `json:"from"`
-	// CreatedAt is the SOURCE record's creation, so a reverse read can be
-	// ordered by when the thing that points here came into being.
-	CreatedAt time.Time `json:"createdAt"`
 }
 
 // IncomingSource is the record end of a reverse pointer, shallow by design.

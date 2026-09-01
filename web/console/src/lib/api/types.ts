@@ -301,8 +301,6 @@ export interface IncomingReference {
    * (`tools.fields.callable`), empty for a kind's own property. */
   path?: string
   from: IncomingSource
-  /** The SOURCE record's creation, so a group reads newest first. */
-  createdAt?: string
 }
 
 /** The record end of a reverse pointer, shallow by design. */

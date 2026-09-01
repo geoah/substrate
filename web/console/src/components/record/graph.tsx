@@ -59,7 +59,7 @@ import {
   type KindInfo,
   type SubstrateRecord,
 } from "@/lib/api/types"
-import { recordTitle, relativeTime } from "@/lib/format"
+import { recordTitle } from "@/lib/format"
 import {
   declaredReferences,
   inverseLabel,
@@ -462,21 +462,17 @@ function IncomingGroupRow({
   )
 }
 
+/** A NESTED reference site says where inside the property it sits; a kind's
+ * own property has nothing more to say, so the row carries no trailing note.
+ * The source's creation stamp is not served here (issue #323) and the row does
+ * not invent one. */
 function MemberMeta({ row }: { row: IncomingReference }) {
+  if (!row.path) return null
   return (
     <span className="ml-auto flex shrink-0 items-center gap-2 text-[0.7rem] text-muted-foreground">
-      {/* A NESTED reference site says where inside the property it sits;
-          a kind's own property has nothing more to say. */}
-      {row.path && (
-        <span className="data" title={`nested at ${row.path}`}>
-          {row.path}
-        </span>
-      )}
-      {row.createdAt && (
-        <span className="data" title={row.createdAt}>
-          {relativeTime(row.createdAt)}
-        </span>
-      )}
+      <span className="data" title={`nested at ${row.path}`}>
+        {row.path}
+      </span>
     </span>
   )
 }

@@ -424,6 +424,43 @@ describe("ChangeRequestDetailPage", () => {
     expect(screen.queryByText(/names nothing at all/)).toBeNull()
   })
 
+  it("renders a reference value in the diff as the referent's pill", async () => {
+    serve(
+      request({
+        properties: {
+          targetVersion: 3,
+          target: { ref: `${TASK_KIND}/task-1` },
+          // `diff` is a `json` property, so the value is stored exactly as the
+          // proposer wrote it: an agent copying a served reference stores the
+          // `{ref, …}` object (issue #332).
+          diff: {
+            properties: {
+              blocks: { ref: `${TASK_KIND}/task-42`, note: "waits on it" },
+              payload: { shape: "opaque", n: 2 },
+            },
+          },
+        },
+      }),
+      { target }
+    )
+    renderPage(<ChangeRequestDetailPage />)
+
+    // The pill, routed at the referent, not the literal `{"ref":"…"}` text.
+    const pill = await screen.findByText("task-42")
+    expect(pill.closest("a")?.getAttribute("data-params")).toBe(
+      JSON.stringify({
+        authority: "tasks.substrate.reamde.dev",
+        name: "task",
+        id: "task-42",
+      })
+    )
+    // The link data the reference carries beside it stays visible.
+    expect(screen.getByText("note: waits on it")).toBeTruthy()
+    expect(screen.queryByText(/\{"ref"/)).toBeNull()
+    // An object that is not a reference is still summarized as its keys.
+    expect(screen.getByText("{shape, n}")).toBeTruthy()
+  })
+
   it("names the diff keys the substrate's strict decode would refuse", async () => {
     serve(request({ properties: { diff: { saved: true } } }), { target })
     renderPage(<ChangeRequestDetailPage />)

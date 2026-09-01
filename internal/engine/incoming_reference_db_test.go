@@ -131,9 +131,6 @@ func TestIncomingReadsEveryReferenceShape(t *testing.T) {
 	if got := by["n1"]; got.Property != "tool" || got.Path != "callable" {
 		t.Fatalf("the nested pointer reads %+v", got)
 	}
-	if by["s1"].CreatedAt.IsZero() {
-		t.Fatal("a reverse row must carry the source's creation")
-	}
 }
 
 func TestIncomingNarrowsToOneGroup(t *testing.T) {
@@ -339,4 +336,126 @@ func TestIncomingRefusesACursorFromAnotherOrder(t *testing.T) {
 	_, err := ds.Incoming(context.Background(), graphAuthority+"/hub", "h1",
 		substrate.IncomingOptions{After: "not-a-cursor"})
 	wantErr(t, err, substrate.ErrValidation, "cursor")
+}
+
+// A CURSOR BELONGS TO ONE READ. Its key addresses a row in the index, not a
+// row in this page's match set, so replaying it under a different narrowing
+// used to seek past unrelated keys and answer a short page that read as a
+// complete one. The target, the `property` and the `fromKind` are stamped into
+// the cursor, and a mismatch is the same refusal a token from another order
+// gets.
+func TestIncomingRefusesACursorReplayedWithAnotherNarrowing(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+	graphVocabulary(t, ds)
+	ctx := context.Background()
+
+	for _, id := range []string{"h1", "h2"} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: graphAuthority + "/hub", ID: id})
+	}
+	for _, id := range []string{"s1", "s2", "s3"} {
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: graphAuthority + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
+		})
+	}
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: graphAuthority + "/loose", ID: "x1",
+		Properties: map[string]any{"anything": vocabulary.RecordPath(graphAuthority+"/hub", "h1")},
+	})
+
+	minted := incoming(t, ds, "h1", substrate.IncomingOptions{
+		First: 1, Property: "hub", FromKind: graphAuthority + "/spoke",
+	})
+	if minted.Cursor == "" {
+		t.Fatal("the first page minted no cursor")
+	}
+	// The same cursor, still good for the read it came from.
+	next := incoming(t, ds, "h1", substrate.IncomingOptions{
+		First: 1, Property: "hub", FromKind: graphAuthority + "/spoke", After: minted.Cursor,
+	})
+	if len(next.Incoming) != 1 || next.Incoming[0].From.ID != "s2" {
+		t.Fatalf("the second page of the same read = %+v", next.Incoming)
+	}
+
+	for name, opts := range map[string]substrate.IncomingOptions{
+		"another property": {First: 1, Property: "anything", FromKind: graphAuthority + "/spoke"},
+		"another source kind": {
+			First: 1, Property: "hub", FromKind: graphAuthority + "/loose",
+		},
+		"no narrowing at all": {First: 1},
+	} {
+		opts.After = minted.Cursor
+		if _, err := ds.Incoming(ctx, graphAuthority+"/hub", "h1", opts); err == nil {
+			t.Fatalf("%s replayed the cursor instead of refusing it", name)
+		} else {
+			wantErr(t, err, substrate.ErrValidation, "cursor")
+		}
+	}
+	// And a cursor minted at one target says nothing about another.
+	_, err := ds.Incoming(ctx, graphAuthority+"/hub", "h2", substrate.IncomingOptions{
+		First: 1, Property: "hub", FromKind: graphAuthority + "/spoke", After: minted.Cursor,
+	})
+	wantErr(t, err, substrate.ErrValidation, "cursor")
+}
+
+// A MERGE INTO THE TARGET MID-WALK INVALIDATES THE CURSOR. The loser's id joins
+// the match, so pointers stored against it appear in the middle of the order —
+// including before the cursor, where the rest of the walk would never look at
+// them again. The cursor is stamped with the target's whole id set, so the
+// merge refuses the outstanding cursor and the client restarts on a complete
+// answer instead of paging through a silently short one.
+func TestIncomingRefusesACursorAfterAMergeIntoTheTarget(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+	graphVocabulary(t, ds)
+	ctx := context.Background()
+
+	for _, id := range []string{"h1", "h2"} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: graphAuthority + "/hub", ID: id})
+	}
+	// s2 and s3 point at the winner; s1 points at the hub about to lose the
+	// merge, and sorts FIRST — the row a cursor minted before the merge would
+	// carry the walk straight past.
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: graphAuthority + "/spoke", ID: "s1", Properties: map[string]any{"hub": "h2"},
+	})
+	for _, id := range []string{"s2", "s3"} {
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: graphAuthority + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
+		})
+	}
+
+	minted := incoming(t, ds, "h1", substrate.IncomingOptions{First: 1})
+	if minted.Cursor == "" || len(minted.Incoming) != 1 || minted.Incoming[0].From.ID != "s2" {
+		t.Fatalf("the first page = %+v", minted.Incoming)
+	}
+
+	if _, err := ds.Merge(ctx, owner, graphAuthority+"/hub", "h1", "h2"); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	_, err := ds.Incoming(ctx, graphAuthority+"/hub", "h1",
+		substrate.IncomingOptions{First: 1, After: minted.Cursor})
+	wantErr(t, err, substrate.ErrValidation, "cursor")
+
+	// Restarting answers with everything, s1 among it.
+	seen := map[string]bool{}
+	after := ""
+	for pages := 0; ; pages++ {
+		if pages > 5 {
+			t.Fatal("the restarted walk never terminated")
+		}
+		page := incoming(t, ds, "h1", substrate.IncomingOptions{First: 2, After: after})
+		for _, row := range page.Incoming {
+			seen[row.From.ID] = true
+		}
+		if page.Cursor == "" {
+			break
+		}
+		after = page.Cursor
+	}
+	for _, id := range []string{"s1", "s2", "s3"} {
+		if !seen[id] {
+			t.Fatalf("the restarted walk missed %s: saw %v", id, seen)
+		}
+	}
 }

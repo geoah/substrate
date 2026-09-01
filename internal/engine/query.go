@@ -2,11 +2,14 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -103,21 +106,18 @@ func (ds *dataset) Incoming(ctx context.Context, typ, id string, opts substrate.
 	if err != nil {
 		return nil, err
 	}
-	rawIDs, err := json.Marshal(ids)
-	if err != nil {
-		return nil, err
-	}
 
 	// KEYSET continuation over the index's OWN key: (src_kind, src, property,
 	// path, ord) addresses one row and nothing else, so a page boundary can
 	// neither drop nor repeat.
+	signature := incomingSignature(canonical, ids, opts)
 	var seek *incomingSeek
 	if opts.After != "" {
 		tok, err := decodeKeyset(opts.After)
 		if err != nil {
 			return nil, err
 		}
-		if tok.O != incomingOrder || len(tok.K) != 5 {
+		if tok.O != signature || len(tok.K) != 5 {
 			return nil, fmt.Errorf("%w: bad cursor", substrate.ErrValidation)
 		}
 		for _, k := range tok.K {
@@ -136,20 +136,15 @@ func (ds *dataset) Incoming(ctx context.Context, typ, id string, opts substrate.
 	}
 
 	countB := &builder{}
-	countWhere := ds.incomingWhere(countB, canonical, rawIDs, opts, nil)
+	countWhere := ds.incomingWhere(countB, canonical, ids, opts, nil)
 	var total int
 	if err := ds.db.QueryRowContext(ctx,
-		`SELECT count(*) FROM refs r JOIN records s ON s.kind = r.src_kind AND s.id = r.src`+
-			countWhere, countB.args...).Scan(&total); err != nil {
+		`SELECT count(*) FROM `+incomingFromSQL+countWhere, countB.args...).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	b := &builder{}
-	where := ds.incomingWhere(b, canonical, rawIDs, opts, seek)
-	rows, err := ds.db.QueryContext(ctx,
-		`SELECT r.property, r.path, r.ord, s.id, s.kind, s.title, s.created_at`+
-			` FROM refs r JOIN records s ON s.kind = r.src_kind AND s.id = r.src`+
-			where+` ORDER BY `+incomingOrderSQL+` LIMIT `+b.arg(first+1), b.args...)
+	rows, err := ds.db.QueryContext(ctx, ds.incomingPageSQL(b, canonical, ids, opts, seek, first+1), b.args...)
 	if err != nil {
 		return nil, err
 	}
@@ -162,15 +157,14 @@ func (ds *dataset) Incoming(ctx context.Context, typ, id string, opts substrate.
 	for rows.Next() {
 		var in substrate.IncomingReference
 		var ord int
-		if err := rows.Scan(&in.Property, &in.Path, &ord, &in.From.ID, &in.From.Kind, &in.From.Title,
-			&in.CreatedAt); err != nil {
+		if err := rows.Scan(&in.Property, &in.Path, &ord, &in.From.ID, &in.From.Kind,
+			&in.From.Title); err != nil {
 			return nil, err
 		}
 		if len(page.Incoming) == first {
-			page.Cursor = encodeKeyset(incomingOrder, lastKey, 0)
+			page.Cursor = encodeKeyset(signature, lastKey, 0)
 			break
 		}
-		in.CreatedAt = in.CreatedAt.UTC()
 		lastKey = []*string{
 			ptrTo(in.From.Kind), ptrTo(in.From.ID), ptrTo(in.Property), ptrTo(in.Path),
 			ptrTo(strconv.Itoa(ord)),
@@ -218,14 +212,84 @@ const (
 	incomingOrder    = "incoming:srcKind,src,property,path,ord"
 )
 
+// incomingSignature is what the cursor is stamped with: the order AND THE READ
+// IT WAS MINTED AGAINST — the target's whole id set, the `property` narrowing
+// and the `fromKind` narrowing. The key alone identifies a row in the index,
+// not a row in THIS page's match set, so a cursor from a `property=a` page
+// replayed with `property=b`, another source kind or another target used to
+// seek past unrelated keys and return a short page that looked complete. A
+// mismatch is the same bad-cursor refusal a token from another order gets.
+//
+// THE ID SET, not the canonical id alone. A merge INTO the target mid-walk adds
+// the loser's id to the match, and every pointer stored against the loser that
+// sorts before the cursor would be skipped for the rest of the walk — a page
+// that is short and says nothing about it. Digesting the set means the merge
+// invalidates outstanding cursors, and a client that restarts gets a complete
+// answer. The set is sorted first, because idsOf's order is the trail's and not
+// a property of the match.
+//
+// Everything travels through a JSON array and a digest rather than a joined
+// string: the narrowings are caller input, and a `property` holding the
+// separator could otherwise spell another read's signature. The digest is not a
+// SECRET — a cursor carries the reader's own repository-scoped data, so forging
+// one grants nothing — it is only a compact way to say which set was matched.
+func incomingSignature(canonical eref, ids []string, opts substrate.IncomingOptions) string {
+	sorted := append([]string(nil), ids...)
+	sort.Strings(sorted)
+	digest := sha256.Sum256(mustJSON(sorted))
+	raw, _ := json.Marshal([]string{
+		canonical.Kind, canonical.ID, opts.Property, opts.FromKind,
+		hex.EncodeToString(digest[:8]),
+	})
+	return incomingOrder + ":" + string(raw)
+}
+
+// incomingFromSQL is the reverse read's source: the index, joined to its live
+// sources. The page read and the count read stand on the same one.
+const incomingFromSQL = `refs r JOIN records s ON s.kind = r.src_kind AND s.id = r.src`
+
+// incomingPageSQL is THE page statement, so the plan a test explains is the
+// plan production runs. It fills b with the statement's arguments.
+func (ds *dataset) incomingPageSQL(
+	b *builder, canonical eref, ids []string, opts substrate.IncomingOptions, seek *incomingSeek, limit int,
+) string {
+	where := ds.incomingWhere(b, canonical, ids, opts, seek)
+	return `SELECT r.property, r.path, r.ord, s.id, s.kind, s.title FROM ` + incomingFromSQL +
+		where + ` ORDER BY ` + incomingOrderSQL + ` LIMIT ` + b.arg(limit)
+}
+
 // incomingWhere renders the reverse read's predicate: the target (over every id
 // it has ever had), a live source, the caller's narrowing and the keyset seek.
+//
+// ONE ID IS BOUND AS A SCALAR, and that is a plan decision, not a spelling
+// preference. `r.dst IN (SELECT jsonb_array_elements_text($n))` is a semi-join
+// against a set the planner cannot see the size of, and it will not walk
+// refs_dst_idx in key order for it: a target with tens of thousands of pointers
+// top-N sorts the whole match set for every page (~109ms against 30k rows,
+// versus ~0.2ms for plain equality). `r.dst = $n` pins the index prefix and the
+// page becomes an index-ordered scan.
+//
+// A record with a former-id trail keeps the set form, and that shape MAY still
+// sort. It is rare by construction — the trail grows one id per merge, and a
+// record that has been merged into is not the fan-in hot spot — and correctness
+// is what the set is there for: a pointer written before a merge names an id
+// the record no longer answers to, and dropping those rows would silently lose
+// them from the graph.
 func (ds *dataset) incomingWhere(
-	b *builder, canonical eref, rawIDs []byte, opts substrate.IncomingOptions, seek *incomingSeek,
+	b *builder, canonical eref, ids []string, opts substrate.IncomingOptions, seek *incomingSeek,
 ) string {
+	// Only the branch that is rendered binds its argument: a placeholder the
+	// statement does not carry is a parameter Postgres refuses to type.
+	var target string
+	if len(ids) == 1 {
+		target = `r.dst = ` + b.arg(ids[0])
+	} else {
+		rawIDs, _ := json.Marshal(ids) // a []string always marshals
+		target = `r.dst IN (SELECT jsonb_array_elements_text(` + b.arg(rawIDs) + `::jsonb))`
+	}
 	where := []string{
 		`r.dst_kind = ` + b.arg(canonical.Kind),
-		`r.dst IN (SELECT jsonb_array_elements_text(` + b.arg(rawIDs) + `::jsonb))`,
+		target,
 		`s.deleted_at IS NULL`,
 	}
 	if opts.Property != "" {

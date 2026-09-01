@@ -114,6 +114,26 @@ export function referenceCell(value: unknown): string {
   return referenceID(value)
 }
 
+/** The reference objects a value carries, or `undefined` when it carries
+ * none: one `{ref}` object, or an array where every element is one. A surface
+ * with NO declaration to read (a `type: json` value, so a change request's
+ * `diff`) asks this before it renders the value as data.
+ *
+ * OBJECT SHAPE ONLY, and the path must split. `readReference` also reads the
+ * authored string shorthand, which only a declaration can tell from an
+ * ordinary string: undeclared, every slashed string in a JSON blob would
+ * linkify. */
+export function referenceObjects(value: unknown): unknown[] | undefined {
+  const many = Array.isArray(value) ? value : [value]
+  if (!many.length) return undefined
+  const referential = many.every((one) => {
+    if (!one || typeof one !== "object" || Array.isArray(one)) return false
+    const held = readReference(one)
+    return Boolean(held && splitRecordPath(held.path))
+  })
+  return referential ? many : undefined
+}
+
 /** One property value flattened into a cell: arrays join, objects summarize,
  * scalars pass through. The cell truncates; this only has to be honest. */
 export function cellValue(value: unknown): string {

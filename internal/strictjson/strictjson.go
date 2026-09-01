@@ -192,6 +192,45 @@ func cleanDecodeError(err error) error {
 	return err
 }
 
+// retiredKeys maps a key the RECORD ENVELOPE no longer accepts onto the
+// spelling that took its job. A caller who writes one is not guessing at the
+// grammar, they are working from something that used to be true, so the refusal
+// says where the data goes now instead of leaving them to diff two documents.
+// substratectl says the same thing about a YAML document
+// (commands/document.go); this is the half a raw HTTP client meets.
+var retiredKeys = map[string]string{
+	"edges": "a pointer at another record is a `type: reference` property, " +
+		"so it travels in `properties` (`data.properties` in a document) " +
+		`as "<kind>/<id>", a list for a repeated one`,
+}
+
+// NameRetiredKeys adds the replacement to an unknown-field refusal for a key
+// the record envelope retired, and returns every other error untouched.
+//
+// It is the ENVELOPE decodes' wrapper, not part of DecodeBytes, because the
+// advice is only true there. The same decoder reads a `filter`, an agent loop's
+// tool arguments and a login body, and telling one of those callers that their
+// key belongs in `data.properties` would be advice about a document they are
+// not writing.
+func NameRetiredKeys(err error) error {
+	if err == nil {
+		return nil
+	}
+	key, ok := strings.CutPrefix(err.Error(), `unknown field "`)
+	if !ok {
+		return err
+	}
+	key, ok = strings.CutSuffix(key, `"`)
+	if !ok {
+		return err
+	}
+	to, retired := retiredKeys[key]
+	if !retired {
+		return err
+	}
+	return fmt.Errorf("unknown field %q: %s", key, to)
+}
+
 // checkArrayKeys applies the object check to every element of a JSON array
 // (the orderBy list of Order objects).
 func checkArrayKeys(raw []byte, allowed map[string]bool) error {

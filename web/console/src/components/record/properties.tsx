@@ -14,7 +14,7 @@
 
 import { ListIcon } from "lucide-react"
 
-import { RecordPill } from "@/components/record-pill"
+import { ReferenceValue } from "@/components/record/reference-value"
 import { StateBadge } from "@/components/state-badge"
 import {
   Empty,
@@ -23,14 +23,8 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
-import {
-  readReference,
-  type KindInfo,
-  type SubstrateRecord,
-} from "@/lib/api/types"
-import { kindByIdentity } from "@/lib/definition"
-import { cellValue, shortDateTime } from "@/lib/format"
-import { splitRecordPath } from "@/lib/record-path"
+import { type KindInfo, type SubstrateRecord } from "@/lib/api/types"
+import { shortDateTime } from "@/lib/format"
 import {
   REDACTED,
   elementSpec,
@@ -84,51 +78,6 @@ function JsonBlock({ value }: { value: unknown }) {
     <pre className="overflow-x-auto rounded-lg border bg-muted/30 px-3 py-2 data text-xs break-words whitespace-pre-wrap">
       {JSON.stringify(value, null, 2)}
     </pre>
-  )
-}
-
-/** A stored reference read as the pointer it is: the referent's RecordPill
- * when the registry knows the kind; the raw value, inert, when it does not (a
- * reference may name a kind nobody installed).
- *
- * A reference whose declaration carries LINK DATA stores `{ref, <prop>: …}`
- * rather than the bare path, and the link's properties render beside the pill:
- * dropping them would hide data the record carries. */
-function ReferenceValue({
-  value,
-  kinds,
-}: {
-  value: unknown
-  kinds: KindInfo[]
-}) {
-  const held = readReference(value)
-  if (!held) {
-    return (
-      <span className="data break-words">
-        {typeof value === "object" ? JSON.stringify(value) : String(value)}
-      </span>
-    )
-  }
-  const target = splitRecordPath(held.path)
-  const info = target ? kindByIdentity(kinds, target.kind) : undefined
-  const pill =
-    target && info ? (
-      <RecordPill kind={target.kind} id={target.id} />
-    ) : (
-      <span className="data break-all">{held.path}</span>
-    )
-  const link = Object.entries(held.properties)
-  if (!link.length) return pill
-  return (
-    <span className="flex max-w-full min-w-0 items-center gap-2">
-      {pill}
-      <span
-        className="truncate data text-xs text-muted-foreground"
-        title={JSON.stringify(held.properties)}
-      >
-        {link.map(([key, held_]) => `${key}: ${cellValue(held_)}`).join(" · ")}
-      </span>
-    </span>
   )
 }
 

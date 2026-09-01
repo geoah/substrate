@@ -1,6 +1,7 @@
 package strictjson
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -46,5 +47,35 @@ func TestKeysUnwrapsPointersAndSlices(t *testing.T) {
 	}
 	if Keys("not a struct") != nil {
 		t.Fatal("a non-struct has no wire keys")
+	}
+}
+
+// NameRetiredKeys enriches the refusal for a key the RECORD ENVELOPE retired,
+// and leaves every other error exactly as it was — it is wrapped around the
+// envelope decodes alone, so anything it does to another surface's error is
+// damage.
+func TestNameRetiredKeysOnlyTouchesARetiredKey(t *testing.T) {
+	retired := NameRetiredKeys(errors.New(`unknown field "edges"`))
+	if retired == nil {
+		t.Fatal("a retired key must still be an error")
+	}
+	for _, want := range []string{`unknown field "edges"`, "data.properties", "type: reference"} {
+		if !strings.Contains(retired.Error(), want) {
+			t.Fatalf("the refusal must name %q: %q", want, retired)
+		}
+	}
+
+	for _, msg := range []string{
+		`unknown field "at"`,          // an ordinary misspelling
+		`duplicate field "edges"`,     // a different refusal for the same key
+		`unknown field "edges" extra`, // not the exact refusal shape
+		"unexpected trailing data after the JSON value",
+	} {
+		if got := NameRetiredKeys(errors.New(msg)); got.Error() != msg {
+			t.Fatalf("NameRetiredKeys rewrote %q as %q", msg, got)
+		}
+	}
+	if NameRetiredKeys(nil) != nil {
+		t.Fatal("a nil error must stay nil")
 	}
 }
