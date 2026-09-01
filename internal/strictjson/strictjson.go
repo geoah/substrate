@@ -165,7 +165,7 @@ func checkObjectKeys(raw []byte, allowed map[string]bool) error {
 			return nil
 		}
 		if !allowed[key] {
-			return fmt.Errorf("unknown field %q", key)
+			return unknownField(key)
 		}
 		if seen[key] {
 			return fmt.Errorf("duplicate field %q", key)
@@ -181,15 +181,44 @@ func checkObjectKeys(raw []byte, allowed map[string]bool) error {
 
 // cleanDecodeError trims the encoding/json prefix so the wire message reads
 // `unknown field "ifversion"` — naming the key the caller must fix — rather
-// than the raw `json: …`. Everything else passes through unchanged.
+// than the raw `json: …`. A RETIRED key is named as such here too, so the
+// struct decoder's refusal reads the same as the exact-key check's. Everything
+// else passes through unchanged.
 func cleanDecodeError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if msg, ok := strings.CutPrefix(err.Error(), "json: "); ok {
-		return errors.New(msg)
+	msg, ok := strings.CutPrefix(err.Error(), "json: ")
+	if !ok {
+		return err
 	}
-	return err
+	if key, quoted := strings.CutPrefix(msg, `unknown field "`); quoted {
+		if key, closed := strings.CutSuffix(key, `"`); closed {
+			return unknownField(key)
+		}
+	}
+	return errors.New(msg)
+}
+
+// retiredKeys maps a key the wire no longer accepts onto the spelling that took
+// its job. A caller who writes one is not guessing at the grammar, they are
+// working from something that used to be true, so the refusal says where the
+// data goes now instead of leaving them to diff two documents. substratectl
+// says the same thing about a YAML document (commands/document.go); this is the
+// half a raw HTTP client meets.
+var retiredKeys = map[string]string{
+	"edges": "a pointer at another record is a `type: reference` property, " +
+		"so it travels in `properties` (`data.properties` in a document) " +
+		`as "<kind>/<id>", a list for a repeated one`,
+}
+
+// unknownField is the one refusal for a key the decode does not accept: the key
+// verbatim, and what replaced it when the wire once had it.
+func unknownField(key string) error {
+	if to, retired := retiredKeys[key]; retired {
+		return fmt.Errorf("unknown field %q: %s", key, to)
+	}
+	return fmt.Errorf("unknown field %q", key)
 }
 
 // checkArrayKeys applies the object check to every element of a JSON array

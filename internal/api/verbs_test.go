@@ -78,18 +78,27 @@ func TestRESTEdgesIsAnOrdinaryRecordID(t *testing.T) {
 }
 
 // A body that still writes `edges` beside `properties` is refused NAMING the
-// key: the strict decode is what stops a pointer write from landing under a
-// spelling nothing reads.
-func TestRESTPutRefusesAnEdgesKey(t *testing.T) {
+// key AND what replaced it: the strict decode is what stops a pointer write
+// from landing under a spelling nothing reads, and a raw HTTP client has no
+// substratectl to tell it where the data goes now. Both write verbs, because
+// only one of them was pinned and the two decode the same body.
+func TestRESTRefusesAnEdgesKeyNamingItsReplacement(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
-	rec := env.do(t, http.MethodPut, peopleV1+"/p1", tok, map[string]any{
-		"properties": map[string]any{"name": "Sam"},
-		"edges":      map[string]any{"member_of": []any{map[string]any{"id": "org1"}}},
-	})
-	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
-	if msg := decodeJSON[errorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "edges") {
-		t.Fatalf("error must name the refused key: %q", msg)
+	edges := map[string]any{"member_of": []any{map[string]any{"id": "org1"}}}
+
+	for _, method := range []string{http.MethodPut, http.MethodPatch} {
+		rec := env.do(t, method, peopleV1+"/p1", tok, map[string]any{
+			"properties": map[string]any{"name": "Sam"},
+			"edges":      edges,
+		})
+		wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+		msg := decodeJSON[errorEnvelope](t, rec).Error.Message
+		for _, want := range []string{`"edges"`, "data.properties", "type: reference"} {
+			if !strings.Contains(msg, want) {
+				t.Fatalf("%s error must name %s: %q", method, want, msg)
+			}
+		}
 	}
 }
 
