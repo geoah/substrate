@@ -60,6 +60,22 @@ func (t *txn) validateReferences(ty *vocabulary.Kind, props map[string]any) erro
 	return nil
 }
 
+// declaresReference reports whether a KIND has a reference site anywhere: one
+// walk over its properties, each to the depth holdsReference reaches. A kind
+// that has none derives no rows from any value, which is what lets the write
+// path skip the index entirely.
+func declaresReference(ty *vocabulary.Kind) bool {
+	if ty == nil {
+		return false
+	}
+	for _, name := range ty.PropOrder {
+		if holdsReference(ty.Props[name]) {
+			return true
+		}
+	}
+	return false
+}
+
 // holdsReference reports whether a declaration carries a reference anywhere
 // inside it, so a plain object property is not walked at all.
 func holdsReference(p *vocabulary.Property) bool {

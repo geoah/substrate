@@ -280,6 +280,65 @@ func TestReDeriveFollowsTheOrdinals(t *testing.T) {
 	}
 }
 
+// A KIND WITH NO REFERENCE SITE ISSUES NO REFS STATEMENTS. Every write used to
+// delete by source and re-derive, so a mail message — a kind that points at
+// nothing — paid two statements per write on the substrate's hottest path.
+//
+// The proof is a STATEMENT-level trigger that raises: it fires once per
+// statement even when the statement matches no row, which a row count could not
+// tell from silence. The reference-bearing write at the end is what shows the
+// instrument works rather than the trigger being unreachable.
+func TestAReferenceFreeKindIssuesNoRefsStatements(t *testing.T) {
+	t.Parallel()
+	ds, _, dsn := newDatasetWithDB(t)
+	ctx := context.Background()
+	const note = refsAuthority + "/note"
+	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+		vocabulary.AuthorityManifest(refsAuthority, 0),
+		vocabulary.KindManifest(refsAuthority,
+			map[string]any{"singular": "hub", "plural": "hubs"},
+			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
+		vocabulary.KindManifest(refsAuthority,
+			map[string]any{"singular": "spoke", "plural": "spokes"},
+			map[string]any{"properties": map[string]any{
+				"hub": map[string]any{"type": "reference", "kind": refsHub},
+			}}),
+		vocabulary.KindManifest(refsAuthority,
+			map[string]any{"singular": "note", "plural": "notes"},
+			map[string]any{"properties": map[string]any{"text": map[string]any{"type": "string"}}}),
+	}); err != nil {
+		t.Fatalf("install the vocabulary: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: "h1"})
+
+	admin, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatalf("open the schema owner's connection: %v", err)
+	}
+	defer func() { _ = admin.Close() }()
+	if _, err := admin.ExecContext(ctx, `
+		CREATE FUNCTION refs_statement_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN RAISE EXCEPTION 'a refs statement was issued'; END $$;
+		CREATE TRIGGER refs_statement_guard AFTER INSERT OR DELETE ON refs
+		FOR EACH STATEMENT EXECUTE FUNCTION refs_statement_guard();`); err != nil {
+		t.Fatalf("arm the refs statement guard: %v", err)
+	}
+
+	// A kind with no reference site: the write must not reach the table.
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: note, ID: "n1", Properties: map[string]any{"text": "hello"},
+	}); err != nil {
+		t.Fatalf("a reference-free write paid refs bookkeeping: %v", err)
+	}
+	// A kind with one: the same guard fires, so the silence above was the skip
+	// and not a disarmed trigger.
+	if _, err := ds.Put(ctx, owner, substrate.PutInput{
+		Kind: refsSpoke, ID: "s1", Properties: map[string]any{"hub": "h1"},
+	}); err == nil {
+		t.Fatal("the guard did not fire on a reference-bearing write")
+	}
+}
+
 // A CONTAINER FLIP ABOVE A NESTED REFERENCE re-projects the kind. deriveRefs
 // addresses a nested pointer through its ANCESTORS — an object property that
 // gains `repeated: true` moves the pointer inside it from `callable` to
