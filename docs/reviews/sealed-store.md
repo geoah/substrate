@@ -1,5 +1,7 @@
 # Sealed store review: keys, sealing, secret read paths, write path, recovery
 
+*Predates decision 0044: edges have since been replaced by reference properties.*
+
 Date: 2026-08-17. Scope: the sealed store as one system, for
 [#99](https://github.com/geoah/substrate/issues/99), read against `main` at
 `1c134b4`. Method: one reader, working through the five areas #99 names,

@@ -1,5 +1,7 @@
 # Plan: typed core declarations, host functions, and the console that follows
 
+*Predates decision 0044: edges have since been replaced by reference properties.*
+
 Status: design settled through review round 5 (three reviewers, adjudicated,
 load-bearing claims verified against the code). This file is the working plan
 for the three stacked PRs and is updated as work lands. It is a plan, not a
