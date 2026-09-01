@@ -443,8 +443,8 @@ would reset `enabled: true`, so the upgrade apply is `bundle.yaml` alone):
 
 ```sh
 # 1. pause the contacts stream: both its triggers off
-substratectl patch triggers google-contacts-on-connect -p '{"properties":{"enabled":false}}'
-substratectl patch triggers google-contacts-scheduled -p '{"properties":{"enabled":false}}'
+substratectl patch trigger google-contacts-on-connect -p '{"properties":{"enabled":false}}'
+substratectl patch trigger google-contacts-scheduled -p '{"properties":{"enabled":false}}'
 
 # 2. the upgrade: the schema closure only (NOT triggers.yaml — that would
 #    re-enable the sync mid-migration)
@@ -461,8 +461,8 @@ substratectl function call google.bundles.substrate.reamde.dev/contactsidmigrati
 # listing). Loop until it is EMPTY, nothing else.
 
 # 4. resume the contacts stream: both triggers back on
-substratectl patch triggers google-contacts-on-connect -p '{"properties":{"enabled":true}}'
-substratectl patch triggers google-contacts-scheduled -p '{"properties":{"enabled":true}}'
+substratectl patch trigger google-contacts-on-connect -p '{"properties":{"enabled":true}}'
+substratectl patch trigger google-contacts-scheduled -p '{"properties":{"enabled":true}}'
 ```
 
 Run the loop **before** the first post-upgrade sync gets to full-read the

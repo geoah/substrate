@@ -173,7 +173,6 @@ data:
   authority: enrich.example.com
   names:
     singular: enrichment
-    plural: enrichments
   properties:
     name:
       type: string

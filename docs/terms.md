@@ -4,9 +4,10 @@ One word per thing. If a word is not here, it is not a term — and where these
 pages and the code disagree, the code is right.
 
 Dead words, and what replaced them: **entity** → record, **group** → authority,
-**type** → kind (or *plural*, for the path segment), **capability** → trait,
+**type** → kind, **capability** → trait,
 **schema** → vocabulary, **log** → changelog, **extension** → bundle,
-**relationship** and **edge** → reference, **tenant** and **identity** →
+**relationship** and **edge** → reference, **plural** → the kind's name, which
+is the collection segment (decision 0033), **tenant** and **identity** →
 nothing, there are none.
 
 ## The shape of things
@@ -17,7 +18,6 @@ nothing, there are none.
 | **record** | One typed thing. Identity is `(kind, id)` within a repository. It is the only thing the substrate stores. |
 | **kind** | What a record is, written `<authority>/<name>`; every kind carries an authority. A kind declares the properties its records may carry. |
 | **authority** | The DNS-style label that publishes a set of kinds and decides who may write their declarations. One path segment: `/api/v1/{authority}/{kind}`. |
-| **plural** | A kind's collection segment in a path — `people` for `people.substrate.reamde.dev/person`. |
 | **property** | A named, typed value on a record, declared by its kind. |
 | **property type** | A named refinement of a base type plus its validations, declared by an authority and reusable across its kinds. |
 | **trait** | A contract a kind implements: a set of properties a kind promises to declare, so unrelated kinds can be treated alike. |
