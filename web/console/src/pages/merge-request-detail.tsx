@@ -500,7 +500,7 @@ function useSideQuery(
   return {
     type,
     query: useQuery({
-      ...recordQueryOptions(authority, type?.plural ?? "", ref?.id ?? ""),
+      ...recordQueryOptions(authority, type?.name ?? "", ref?.id ?? ""),
       enabled: enabled && Boolean(ref && type),
     }),
   }
