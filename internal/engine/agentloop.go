@@ -591,9 +591,8 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 		}
 		l.threadID = id
 		props := map[string]any{
-			// `agent` and `parent` are REFERENCES: a bare id, which each `kind:` pin
-			// resolves to the kind it pins, the same shorthand a single-target
-			// edge took.
+			// `agent` and `parent` are REFERENCES: a bare id, which each `kind:`
+			// pin completes to the kind it pins.
 			"agent": l.ag.Identity(), "provider": l.provider.id, "model": l.model, "mode": l.in.mode,
 			"status": threadRunning, "agentDepth": l.in.depth,
 			"startedAt":  nowUTC().Format(time.RFC3339Nano),
@@ -629,7 +628,7 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 // thread with nothing new stays settled.
 func (l *agentLoop) recheckResolutions(ctx context.Context) {
 	probe, err := json.Marshal(map[string]any{
-		msgRelThread: vocabulary.RecordPath(typeThread, l.threadID),
+		msgRelThread: referenceValueOf(vocabulary.RecordPath(typeThread, l.threadID)),
 		"role":       msgRoleSystem,
 	})
 	if err != nil {
@@ -698,7 +697,7 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 // not context — so the replay stays robust against tool renames.
 func (l *agentLoop) loadHistory(ctx context.Context) ([]llm.Message, int, error) {
 	probe, err := json.Marshal(map[string]any{
-		msgRelThread: vocabulary.RecordPath(typeThread, l.threadID),
+		msgRelThread: referenceValueOf(vocabulary.RecordPath(typeThread, l.threadID)),
 	})
 	if err != nil {
 		return nil, 0, err
@@ -757,8 +756,7 @@ func (l *agentLoop) putMessage(ctx context.Context, actor substrate.Actor, props
 	}
 	props["turn"] = l.turn
 	l.turn++
-	// The thread is a REFERENCE now: a bare id, which the `kind:` pin resolves, the same
-	// shorthand a single-target edge took.
+	// The thread is a REFERENCE: a bare id, which the `kind:` pin completes.
 	props[msgRelThread] = l.threadID
 	return l.putRow(ctx, actor, substrate.PutInput{
 		Kind: typeMessage, ID: id, Properties: props,
@@ -1095,7 +1093,10 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (s
 	if rationale != "" {
 		props["rationale"] = rationale
 	}
-	var edges []substrate.EdgeInput
+	// The target is one of the request's own properties now, so it travels in
+	// `props` with the rest. targetPath is kept beside it for the policy lookup
+	// below, which needs the kind and not the pointer.
+	targetPath := ""
 
 	switch op {
 	case opPatch:
@@ -1120,7 +1121,8 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (s
 			return toolError(err.Error()), false
 		}
 		props["diff"] = norm
-		edges = []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: row.Kind, ID: row.ID}}}
+		targetPath = vocabulary.RecordPath(row.Kind, row.ID)
+		props[propTarget] = targetPath
 
 	case opCreate:
 		typeIdent, _ := args["kind"].(string)
@@ -1164,7 +1166,8 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (s
 		if row == nil || row.DeletedAt != nil {
 			return toolError("target " + target + " does not exist"), false
 		}
-		edges = []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: row.Kind, ID: row.ID}}}
+		targetPath = vocabulary.RecordPath(row.Kind, row.ID)
+		props[propTarget] = targetPath
 
 	default:
 		return toolError("propose op must be one of create, patch, delete"), false
@@ -1182,7 +1185,7 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (s
 		t.causedBy = l.in.causedBy
 		t.changeSink = &l.dispatchChanges
 		_, err := t.put(substrate.PutInput{
-			Kind: vocabulary.KindRecordPatchRequest, ID: id, Properties: props, Edges: edges,
+			Kind: vocabulary.KindRecordPatchRequest, ID: id, Properties: props,
 		})
 		return err
 	})
@@ -1200,10 +1203,10 @@ func (l *agentLoop) dispatchPropose(ctx context.Context, args map[string]any) (s
 	case opDelete:
 		proposeOp = policyOpDelete
 	}
-	if targetKind, ok := props["targetKind"].(string); ok || len(edges) > 0 {
+	if targetKind, ok := props["targetKind"].(string); ok || targetPath != "" {
 		kindForPolicy := targetKind
-		if kindForPolicy == "" && len(edges) > 0 {
-			kindForPolicy = edges[0].To.Kind
+		if kindForPolicy == "" {
+			kindForPolicy, _, _ = vocabulary.SplitRecordPath(targetPath)
 		}
 		if verdict, rule, perr := l.ds.policyVerdict(ctx, kindForPolicy, proposeOp, l.ag.Identity()); perr == nil &&
 			verdict == policyGate {

@@ -52,16 +52,18 @@ data:
       type: markdown
       embed: true
       description: anything worth saying about this one entry, as prose
-  edges:
     observation:
-      to: observation
+      type: reference
+      kind: observation
       required: true
-      ownerRef: true
+      mustExist: true
+      onDelete: cascade
       description: the observation this entry records a value of
-    # untyped on purpose: an entry can be derived from a meal, a workout or
+    # unpinned on purpose: an entry can be derived from a meal, a workout or
     # a blood test, and naming each would couple this authority to every
     # other one.
     derivedFrom:
-      to: any
+      type: reference
+      mustExist: true
       description: the meal, workout or blood test this entry was derived
         from

@@ -19,6 +19,14 @@ func assertDeepEqual(t *testing.T, where string, got, want any) {
 
 const pathAuthority = "paths.example.substrate.reamde.dev"
 
+// refValue is THE stored shape of a reference (decision 0044): the object, with
+// the referent's canonical path under `ref`, whether or not the declaration
+// carries link properties. The bare path string is write-time shorthand, which
+// is why it appears in this file's `authored` column and never in `stored`.
+func refValue(path string) map[string]any {
+	return map[string]any{vocabulary.ReferenceValueKey: path}
+}
+
 // pathDocs installs one authority reaching every POSITION a reference is
 // declared at, each pinned or unpinned on purpose: a scalar, an unconstrained
 // scalar, a repeated one, a keyed map of them, one inside an object, one inside
@@ -72,6 +80,7 @@ func TestReferencePathAuthoredStoredAndReadBack(t *testing.T) {
 	}
 
 	target := vocabulary.RecordPath(pathAuthority+"/target", "a")
+	otherTarget := vocabulary.RecordPath(pathAuthority+"/target", "b")
 	// A DECLARATION record's id is a kind reference, so this path has FOUR
 	// segments and the id half keeps its slash. It is the case the grammar
 	// exists for.
@@ -83,48 +92,55 @@ func TestReferencePathAuthoredStoredAndReadBack(t *testing.T) {
 	}{
 		// A pinned scalar: the bare id is the authored short form, and the pin
 		// supplies the kind the value omits.
-		"pinned, authored bare":      {authored: "a", stored: target},
-		"pinned, authored full path": {authored: target, stored: target},
+		"pinned, authored bare":      {authored: "a", stored: refValue(target)},
+		"pinned, authored full path": {authored: target, stored: refValue(target)},
 		// A BARE pin (`kind: target`) resolves against the declaring authority
 		// to the full identity, so the stored path is spelled one way whatever
 		// the writer typed.
-		"local pin, authored bare": {authored: "a", stored: target},
+		"local pin, authored bare": {authored: "a", stored: refValue(target)},
 		// Unpinned: no kind to borrow, so only a full path says what it names.
-		"unpinned, authored full path": {authored: target, stored: target},
+		"unpinned, authored full path": {authored: target, stored: refValue(target)},
 		// The four-segment case, both ways round. The bare form here CARRIES A
 		// SLASH and is still unambiguous: a kind identity cannot be read as a
 		// path, because splitting it leaves nothing for the id. This is the
 		// ordinary spelling for every property that names a kind or a function.
-		"declaration pin, authored bare": {authored: pathAuthority + "/target", stored: declared},
-		"declaration pin, authored path": {authored: declared, stored: declared},
+		"declaration pin, authored bare": {authored: pathAuthority + "/target", stored: refValue(declared)},
+		"declaration pin, authored path": {authored: declared, stored: refValue(declared)},
 		// An id that is EQUAL to a kind identity works on purpose, not by
 		// accident: same reasoning, pinned at an ordinary kind this time.
 		"pinned, id equal to a kind identity": {
 			authored: "core.substrate.reamde.dev/kind",
-			stored:   vocabulary.RecordPath(pathAuthority+"/target", "core.substrate.reamde.dev/kind"),
+			stored:   refValue(vocabulary.RecordPath(pathAuthority+"/target", "core.substrate.reamde.dev/kind")),
 		},
 		// A slash-bearing id that WOULD parse as a path is refused as a short
 		// form (below) and accepted written out in full.
 		"pinned, slash-bearing id in full path form": {
 			authored: vocabulary.RecordPath(pathAuthority+"/target", "foo.bar/baz/qux"),
-			stored:   vocabulary.RecordPath(pathAuthority+"/target", "foo.bar/baz/qux"),
+			stored:   refValue(vocabulary.RecordPath(pathAuthority+"/target", "foo.bar/baz/qux")),
 		},
 		// Containers carry the same rule elementwise, at every declared depth.
+		// A repeated reference holds each record ONCE, so the two spellings
+		// name two records: the point is that both forms coerce, not that they
+		// can name the same row twice.
 		"repeated, mixed forms": {
-			authored: []any{"a", target},
-			stored:   []any{target, target},
+			authored: []any{"a", otherTarget},
+			stored:   []any{refValue(target), refValue(otherTarget)},
 		},
 		"keyed, mixed forms": {
 			authored: map[string]any{"one": "a", "two": target},
-			stored:   map[string]any{"one": target, "two": target},
+			stored:   map[string]any{"one": refValue(target), "two": refValue(target)},
 		},
+		// The object FIELD here is itself spelled `ref`, so the stored value
+		// nests: the field named `ref` holds the reference object, which holds
+		// the path under its own `ref`. A coincidence of naming, and the case
+		// that proves the wrapper is applied to the value and not to the field.
 		"inside an object": {
 			authored: map[string]any{"ref": "a"},
-			stored:   map[string]any{"ref": target},
+			stored:   map[string]any{"ref": refValue(target)},
 		},
 		"inside a repeated object": {
 			authored: []any{map[string]any{"ref": "a"}},
-			stored:   []any{map[string]any{"ref": target}},
+			stored:   []any{map[string]any{"ref": refValue(target)}},
 		},
 	} {
 		prop := map[string]string{
@@ -182,14 +198,7 @@ func TestReferencePathRefusals(t *testing.T) {
 			prop: "free", value: "a",
 			want: []string{"any kind", "full", `"a"`},
 		},
-		"a path contradicting the pin": {
-			prop:  "pinned",
-			value: vocabulary.RecordPath("core.substrate.reamde.dev/kind", pathAuthority+"/target"),
-			want: []string{
-				"core.substrate.reamde.dev/kind",
-				pathAuthority + "/target",
-			},
-		},
+
 		"a pointer at a kind nothing declares": {
 			prop: "free", value: "nosuch.example.com/thing/x",
 			want: []string{"unknown"},
@@ -201,15 +210,24 @@ func TestReferencePathRefusals(t *testing.T) {
 			want: []string{"retired", "migrates"},
 		},
 		// THE AMBIGUOUS CORNER. Under a pin, a value that parses as a path whose
-		// kind is not the pin reads two ways, and both are named rather than one
-		// being guessed.
+		// kind is not the pin reads two ways, and the REGISTRY settles it:
+		// coercion carries the value through, and the resolution pass refuses
+		// naming both readings — because a path at a kind the registry knows may
+		// be the one admitted mapping hop (references.go subjectHop), and
+		// refusing at coercion would close that door.
 		"a slash-bearing id that also parses as a path": {
 			prop: "pinned", value: "foo.bar/baz/qux",
+			want: []string{"unknown", "foo.bar/baz"},
+		},
+		// The same corner with a KNOWN kind that is not a mapping source for the
+		// pin: refused, with both readings named.
+		"a path at a known kind the pin does not admit": {
+			prop:  "pinned",
+			value: vocabulary.RecordPath("core.substrate.reamde.dev/kind", pathAuthority+"/target"),
 			want: []string{
-				"ambiguous",
-				"a pointer at foo.bar/baz",
-				vocabulary.RecordPath(pathAuthority+"/target", "foo.bar/baz/qux"),
 				"the declaration pins " + pathAuthority + "/target",
+				"the bare id",
+				"core.substrate.reamde.dev/kind/" + pathAuthority + "/target",
 			},
 		},
 		// Empty-id shapes name no record, pinned or not.

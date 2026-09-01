@@ -47,9 +47,9 @@ export function ChangeTarget({
   return (
     <span className="inline-flex min-w-0 items-baseline gap-1.5">
       <span className="min-w-0 truncate font-medium">
-        {target.via === "edge" ? (
+        {target.via === "reference" ? (
           <RecordPeek
-            target={{ id: target.id, kind: target.kind, title: target.title }}
+            target={{ id: target.id, kind: target.kind }}
             types={types}
           />
         ) : (

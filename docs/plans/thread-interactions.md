@@ -400,11 +400,12 @@ harness follows (deny outranks ask outranks allow). No priority integer to
 misorder; the audit records every match and which one governed. Two rules with
 the same action are separated by which can land the write without the owner:
 the governing rule carries the judge, so a rule with no judge to auto-accept on
-outranks one that has, and the id only breaks what is left. Edge writes
-(`link`/`unlink`) are not in the selector on purpose: the request kind
-cannot express them, so they stay governed by the emit ceiling alone until
-an edge op exists (a policy wanting to stop an agent's links names the
-kind's writes generally, or the grant comes off the agent).
+outranks one that has, and the id only breaks what is left. Link writes
+(then the `link`/`unlink` ops, since replaced by reference properties) were
+not in the selector on purpose: the request kind could not express them, so
+they stayed governed by the emit ceiling alone (a policy wanting to stop an
+agent's links names the kind's writes generally, or the grant comes off the
+agent).
 
 ### At the write door: allow, gate, or refuse (deterministic)
 
@@ -591,7 +592,7 @@ with the judge behind it, no ADK migration. Divergences, and the rulings:
   status duplicates what a query over pending interactions answers. "Is
   anything waiting on me" stays DERIVED (the inbox); the delivery
   hardening above is what actually guarantees consumption, not a status.
-- **`originMessage`/`answerMessage` correlation edges.** Set aside: the
+- **`originMessage`/`answerMessage` correlation references.** Set aside: the
   tool row's engine-stamped `changes` already names the interaction record
   it created (that is how proposal cards attach today), and the resolution
   row is the notification itself.

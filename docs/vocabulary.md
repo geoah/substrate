@@ -13,7 +13,7 @@ Nine kinds declare everything:
 | Kind                           | Declares                                              | Taught on                                         |
 | ------------------------------ | ----------------------------------------------------- | ------------------------------------------------- |
 | `core.substrate.reamde.dev/authority`     | one authority: the DNS name that publishes kinds      | [Data model](data-model.md#kinds-and-references) |
-| `core.substrate.reamde.dev/kind`          | one kind: its properties and edges                    | [Data model](data-model.md#kinds-and-references) |
+| `core.substrate.reamde.dev/kind`          | one kind: the properties its records carry            | [Data model](data-model.md#kinds-and-references) |
 | `core.substrate.reamde.dev/propertytype`  | one custom property type: a refinement of a base type | [Data model](data-model.md#property-types)       |
 | `core.substrate.reamde.dev/trait`         | one trait, bound by kinds                             | [Data model](data-model.md#traits)               |
 | `core.substrate.reamde.dev/recordmapping` | how a source record's properties reach its subject    | [Projection](projection.md)                      |
@@ -144,8 +144,9 @@ The loader's rules are hard errors, never warnings. The load-bearing ones:
 - **Unknown keys anywhere in `data` are refused**, so a typo cannot be
   silently ignored.
 - **Mapping constraints**: at most one `recordmapping` per `from` kind; its
-  `edge` must be declared on the from-kind, `required`, not `many`, not
-  `ownerRef`, and its `to` matches the mapping's `to`; a mapping's `to` kind
+  `property` names a reference the from-kind declares `subject: true`, which
+  must be single-valued, `required: true`, `mustExist: true`, never
+  `onDelete: cascade`, and pinned at the mapping's `to`; a mapping's `to` kind
   may not itself be any mapping's `from` (bipartite, one level). Every `map`
   path type-checks against both declared kinds at load, so a disagreement
   fails on the manifest that caused it, never on the first sync that hits it.
@@ -207,9 +208,9 @@ once. The narrowing diffs that refuse:
   and no stored value converts between them
 - removing an enum value a record still holds
 - removing a state a record still occupies
-- narrowing a `reference` property's `kind:` pin while records point outside
-  the new one (unconstrained to a kind, or one kind to another; widening back
-  to `any` narrows nothing)
+- narrowing a `reference` property's `kind:` or `trait:` pin while records
+  point outside the new one (unconstrained to a pin, or one pin to another;
+  widening back to `any` narrows nothing)
 - tightening a keyed map's `keyPattern:` while records hold a key the new
   contract refuses, since a key is not rewritable in place
 - every one of those inside an object property's declared `fields:`, at each
@@ -219,11 +220,11 @@ once. The narrowing diffs that refuse:
 - adding `required:` to a property a record lacks, and declaring a **new**
   property `required:`, which strands every live record at once: none of them
   can carry a property no declaration had
-- dropping an edge, taking `many:` off an edge a record holds several rows of,
-  and narrowing an edge's `to:` while stored edges point elsewhere
-- the same four shapes on a declared [edge property](#edge-properties)
-  (dropped, retyped, an enum value removed, `required:` added), counted over
-  the stored edge rows rather than the records
+- adding `mustExist:` to a reference whose stored values name records that are
+  not there
+- the same four shapes on a reference's own
+  [link properties](#reference-properties) (dropped, retyped, an enum value
+  removed, `required:` added), counted over the stored values that carry them
 
 Widening diffs (a new kind, a new optional property, a new enum value, a new
 state or transition, removing `required:`) always admit. The guard counts, it
@@ -247,9 +248,8 @@ create that omits the property is refused with `422`, and so is a patch that
 clears it, while a patch that never mentions it is not. An empty value is no
 value: `""`, `[]` and `{}` are refused exactly as an absent property is. On a
 declared object's `fields:` the same rule holds against the object the write
-stores, since an object value is written whole. A required **edge** is asserted
-when the record is created and defended by `unlink`, which refuses to remove the
-last target of one.
+stores, since an object value is written whole. A required reference is no
+different: every write leaves the record carrying one, or it is refused.
 
 A `default:` beside it is what a create that does not name the property stores,
 materialized into the row and the changelog entry at the write. It is a
@@ -304,8 +304,8 @@ refused. It is refused where it could not be stated: on a `repeated:` or
 police.
 
 **`deprecated:` marks what a client should stop offering.** A property, an
-object property, a state property, a reference, an edge and a single enum
-value each take it:
+object property, a state property, a reference and a single enum value each
+take it:
 
 ```yaml
 properties:
@@ -318,9 +318,8 @@ properties:
       - sweet
       - value: salty
         deprecated: true
-edges:
   predecessor:
-    to: any
+    type: reference
     deprecated: true
 ```
 
@@ -331,16 +330,18 @@ and the marker is what makes the deprecated half tellable from the live one. A
 `deprecated:` declaration may not also be `required:`, because a form cannot
 both stop offering a value and refuse to submit without it.
 
-## Edge properties
+## Reference properties
 
-An edge row can carry values of its own: where a link sits in a list, what
-role it names, when it started. They are declared per rel, and what is not
-declared is refused:
+A link can carry values of its own: where it sits in a list, what role it
+names, when it started. They are declared under the reference's own
+`properties:`, and what is not declared is refused:
 
 ```yaml
-edges:
+properties:
   author:
-    to: person
+    type: reference
+    kind: person
+    repeated: true
     properties:
       order:
         type: int
@@ -352,33 +353,36 @@ edges:
           - value: editor
 ```
 
-A write of that edge sends its values under the edge's `properties`, and the
-engine coerces each one exactly as it coerces a record's own property, against
-the declared datatype, enum set, pattern and bounds. An undeclared name
-answers `422`, and so does any property at all on a rel that declares no
-block. A rel's stored properties are REPLACED by every write of that edge, so
-a name the write leaves out is a name the row stops carrying, and `required:`
-on an edge property therefore means every stored row of the rel has one.
+A write sends them beside the value's `ref` key, and the engine coerces each
+one exactly as it coerces a record's own property, against the declared
+datatype, enum set, pattern and bounds. An undeclared name answers `422`, on
+every reference: `ref` alone is always legal, because it is what a read serves,
+and a reference declaring no block admits nothing beside it. The value is
+written whole, like every property value, so a name the write leaves out is a
+name the link stops carrying, and `required:` here means every stored value of
+the property has one.
 
-An edge property is a flat single value: one scalar, enum or refinement, and
-never a list, a map, an object, a machine or a reference. That bound is what
-lets core's own `kind` declaration state the block field by field, and it is
-the line the dialect draws: anything an edge cannot hold under it is a record
-with an edge at each end.
+A link property is a flat single value: one scalar, enum or refinement, and
+never a list, a map, an object, a machine or another reference. The block is
+legal on a single or a `repeated:` reference and refused on a `keyed:` one,
+where the map key already carries what distinguishes the entries. That bound is
+what lets core's own `kind` declaration state the block field by field, and it
+is the line the dialect draws: anything a link cannot hold under it is a record
+with a reference at each end.
 
 Two spellings a record property takes are refused here, both because the
-stored row has to be the document that was written. A value is a mapping
+stored value has to be the document that was written. A value is a mapping
 (`{value: writer}`), never the bare word `writer`, and a property is a mapping
 (`{type: int}`), never a bare datatype.
 
 The block evolves under the
 [narrowing](#vocabulary-evolution-and-the-dialect-contract) guards, counted
-over stored edge rows rather than records: dropping a declared edge property,
+over the stored values that carry them: dropping a declared link property,
 retyping one, removing an enum value it holds, and adding `required:` are each
-refused while live edges would be stranded. The edge itself is classified the
-same way. Dropping an edge, taking `many:` off one that holds several rows per
-record, and repointing `to:` at a narrower kind all count the rows they would
-strand.
+refused while live values would be stranded. The reference itself is classified
+the same way. Dropping it, taking `repeated:` off one that holds several
+targets, repointing its pin at a narrower kind and adding `mustExist:` all
+count the values they would strand.
 
 ## Quarantine
 

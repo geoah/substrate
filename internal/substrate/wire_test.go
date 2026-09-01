@@ -36,9 +36,8 @@ const goldenPath = "../../web/console/src/lib/api/wire.golden.json"
 // because TypeScript already owns `Record<K, V>`.
 var wireTypes = map[string]any{
 	"SubstrateRecord":     Record{},
-	"EdgeTarget":          EdgeTarget{},
-	"EdgeRef":             EdgeRef{},
-	"EdgeInput":           EdgeInput{},
+	"IncomingReference":   IncomingReference{},
+	"IncomingSource":      IncomingSource{},
 	"PropertyMeta":        PropertyMeta{},
 	"PropertyAlternative": PropertyAlternative{},
 	"PutInput":            PutInput{},

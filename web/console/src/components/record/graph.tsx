@@ -4,24 +4,24 @@
  * The LAYOUT is a hierarchy, not a wall of rows: the record on top, then one
  * **Outgoing** and one **Incoming** section — direction is said once, at the
  * section header, so the rows under it carry no per-row arrows. Inside a
- * section, each group is a small uppercase label (the rel, or the inverse for
- * fan-in) with the group's kind and count beside it, and every target renders
- * as the RecordPill every other surface uses. A group that shares one kind
- * never repeats it on its rows.
+ * section, each group is a small uppercase label (the reference property, or
+ * the inverse for fan-in) with the group's kind and count beside it, and every
+ * target renders as the RecordPill every other surface uses. A group that
+ * shares one kind never repeats it on its rows.
  *
- * The fan-in used to show the raw `rel` of every inbound row. That reads
- * BACKWARDS: `rel` is the relationship as the OTHER record spells it, so
+ * The fan-in used to show the raw property name of every inbound row. That
+ * reads BACKWARDS: the name is the pointer as the OTHER record spells it, so
  * standing on a thread the fan-in said "thread · llmmessage", naming this
  * record instead of what points at it. A group is headed by the declaration's
- * `inverse` — `messages · llmmessage` — and falls back to `<rel> of <kind>`,
- * which is at least unambiguous, where nobody declared one.
+ * `inverse` — `messages · llmmessage` — and falls back to
+ * `<property> of <kind>`, which is at least unambiguous, where nobody declared
+ * one.
  *
- * TWO DIRECTIONS, and only one of them is a query. Outgoing pointers are on
- * the record already (its edges, and its reference-typed properties), so
- * `thread → agent` costs nothing to show — and could not be answered by the
- * fan-in reader at all, which only ever looks the other way. Incoming groups
- * come from `/incoming`, narrowed per group so expanding one pulls that group
- * alone.
+ * TWO DIRECTIONS, and only one of them is a query. Outgoing pointers are the
+ * record's own reference-typed properties, so `thread → agent` costs nothing
+ * to show — and could not be answered by the fan-in reader at all, which only
+ * ever looks the other way. Incoming groups come from `/incoming`, narrowed
+ * per group so expanding one pulls that group alone.
  *
  * A member expands IN PLACE into the same component, so the graph is walkable
  * to any depth. `path` carries the (kind, id) pairs already open above a node:
@@ -53,14 +53,19 @@ import {
   incomingInfiniteOptions,
   recordQueryOptions,
 } from "@/lib/api/records"
-import type { IncomingEdge, KindInfo, SubstrateRecord } from "@/lib/api/types"
+import {
+  readReference,
+  type IncomingReference,
+  type KindInfo,
+  type SubstrateRecord,
+} from "@/lib/api/types"
 import { recordTitle, relativeTime } from "@/lib/format"
 import {
-  declaredPointers,
+  declaredReferences,
   inverseLabel,
   kindByIdentity,
   splitKind,
-  type DeclaredPointer,
+  type DeclaredProperty,
 } from "@/lib/definition"
 import { splitRecordPath } from "@/lib/record-path"
 import { cn } from "@/lib/utils"
@@ -138,16 +143,16 @@ function Section({
   )
 }
 
-/** A group's heading: the rel as a small uppercase label, the kind the group
- * shares, and how many rows it holds. The declaration's one-liner rides the
- * label as a native title, not another line of text. */
+/** A group's heading: the pointer's name as a small uppercase label, the kind
+ * the group shares, and how many rows it holds. The declaration's one-liner
+ * rides the label as a native title, not another line of text. */
 function GroupLabel({
-  rel,
+  name,
   kind,
   count,
   description,
 }: {
-  rel: string
+  name: string
   kind?: string
   count?: string
   description?: string
@@ -162,7 +167,7 @@ function GroupLabel({
         )}
         title={description}
       >
-        {rel}
+        {name}
       </span>
       {kind && (
         <span className="shrink-0 data text-[0.7rem] text-muted-foreground/70">
@@ -223,30 +228,28 @@ function Row({
   )
 }
 
-/** The pointers a record HOLDS, read straight off it — no query, and the only
- * direction the fan-in reader cannot answer. */
+/** The pointers a record HOLDS: its declared reference properties, read
+ * straight off it — no query, and the only direction the fan-in reader cannot
+ * answer. */
 function outgoingOf(
   record: SubstrateRecord,
   kind: KindInfo | undefined
-): { pointer: DeclaredPointer; targets: NodeRef[] }[] {
+): { pointer: DeclaredProperty; targets: NodeRef[] }[] {
   if (!kind) return []
-  const out: { pointer: DeclaredPointer; targets: NodeRef[] }[] = []
-  for (const pointer of declaredPointers(kind)) {
+  const out: { pointer: DeclaredProperty; targets: NodeRef[] }[] = []
+  for (const pointer of declaredReferences(kind)) {
     const targets: NodeRef[] = []
-    if (pointer.via === "edge") {
-      for (const target of record.edges?.[pointer.name] ?? []) {
-        targets.push({ id: target.id, kind: target.kind, title: target.title })
-      }
-    } else {
-      const value = record.properties[pointer.name]
-      for (const one of Array.isArray(value) ? value : [value]) {
-        if (typeof one !== "string") continue
-        // A stored reference is the referent's whole record path, and the kind
-        // grammar is what splits it — the registry is not consulted, so a
-        // pointer at a kind nobody installed still draws its row.
-        const target = splitRecordPath(one)
-        if (target) targets.push(target)
-      }
+    const value = record.properties[pointer.name]
+    for (const one of Array.isArray(value) ? value : [value]) {
+      // Either value shape: the flat path, or the object a reference with link
+      // data stores.
+      const held = readReference(one)
+      if (!held) continue
+      // A stored reference is the referent's whole record path, and the kind
+      // grammar is what splits it — the registry is not consulted, so a
+      // pointer at a kind nobody installed still draws its row.
+      const target = splitRecordPath(held.path)
+      if (target) targets.push(target)
     }
     if (targets.length) out.push({ pointer, targets })
   }
@@ -260,7 +263,7 @@ function OutgoingGroup({
   path,
   depth,
 }: {
-  pointer: DeclaredPointer
+  pointer: DeclaredProperty
   targets: NodeRef[]
   kinds: KindInfo[]
   path: Set<string>
@@ -277,8 +280,8 @@ function OutgoingGroup({
         {/* The caret's width, so group labels align with expandable rows. */}
         <span className="w-3.5 shrink-0" />
         <GroupLabel
-          rel={pointer.name}
-          kind={shared ?? (splitKind(pointer.to).name || pointer.to)}
+          name={pointer.name}
+          kind={shared ?? (splitKind(pointer.to ?? "").name || pointer.to)}
           count={
             targets.length > 1 ? targets.length.toLocaleString() : undefined
           }
@@ -367,7 +370,7 @@ function IncomingGroupRow({
   authority,
   plural,
   id,
-  rel,
+  property,
   fromKind,
   seen,
   partial,
@@ -378,7 +381,7 @@ function IncomingGroupRow({
   authority: string
   plural: string
   id: string
-  rel: string
+  property: string
   fromKind: string
   seen: number
   partial: boolean
@@ -388,12 +391,12 @@ function IncomingGroupRow({
 }) {
   const [open, setOpen] = useState(false)
   const named = useMemo(
-    () => inverseLabel(kinds, fromKind, rel),
-    [kinds, fromKind, rel]
+    () => inverseLabel(kinds, fromKind, property),
+    [kinds, fromKind, property]
   )
   const rows = useInfiniteQuery({
     ...incomingInfiniteOptions(authority, plural, id, GROUP_PAGE, {
-      rel,
+      property,
       fromKind,
     }),
     enabled: open,
@@ -419,7 +422,7 @@ function IncomingGroupRow({
           )}
           {members.map((row) => (
             <NodeRow
-              key={`${row.via}:${row.from.kind}:${row.from.id}`}
+              key={`${row.from.kind}:${row.from.id}:${row.path ?? ""}`}
               node={{
                 id: row.from.id,
                 kind: row.from.kind,
@@ -446,7 +449,7 @@ function IncomingGroupRow({
       }
     >
       <GroupLabel
-        rel={named.label}
+        name={named.label}
         kind={splitKind(fromKind).name}
         count={
           total !== undefined
@@ -459,12 +462,16 @@ function IncomingGroupRow({
   )
 }
 
-function MemberMeta({ row }: { row: IncomingEdge }) {
+function MemberMeta({ row }: { row: IncomingReference }) {
   return (
     <span className="ml-auto flex shrink-0 items-center gap-2 text-[0.7rem] text-muted-foreground">
-      {/* Only the unusual mechanism earns a word: mid-migration the same
-          relationship can arrive as a reference beside its edge siblings. */}
-      {row.via === "reference" && <span className="data">reference</span>}
+      {/* A NESTED reference site says where inside the property it sits;
+          a kind's own property has nothing more to say. */}
+      {row.path && (
+        <span className="data" title={`nested at ${row.path}`}>
+          {row.path}
+        </span>
+      )}
       {row.createdAt && (
         <span className="data" title={row.createdAt}>
           {relativeTime(row.createdAt)}
@@ -506,9 +513,9 @@ function GraphNode({
   const incoming = useInfiniteQuery(
     incomingInfiniteOptions(authority, plural, id, 200)
   )
-  // The server orders by (rel, src_kind, …), so a bucket stays contiguous
-  // across pages and grouping is a fold rather than a re-sort — which is what
-  // `groupIncoming` already is, tested across a page boundary.
+  // The refs index walks (src_kind, src, property, …), so a bucket is not
+  // contiguous and `groupIncoming` folds by key — which is what makes a group
+  // whole across a page boundary.
   const groups = useMemo(
     () =>
       groupIncoming(
@@ -531,8 +538,9 @@ function GraphNode({
     )
   }
   if (!record) {
-    // A reference may name a row that is not there — the one thing an edge
-    // cannot do — so this is an ordinary state of the graph, not an error.
+    // A reference may name a row that is not there (only `mustExist` bars it
+    // at write, and a purge can still take the target), so this is an ordinary
+    // state of the graph, not an error.
     return (
       <p className="py-1 text-xs text-muted-foreground">
         This record is not here — a reference may name one that does not exist.
@@ -579,11 +587,11 @@ function GraphNode({
         >
           {groups.map((group) => (
             <IncomingGroupRow
-              key={`${group.rel} ${group.kind}`}
+              key={`${group.property} ${group.kind}`}
               authority={authority}
               plural={plural}
               id={id}
-              rel={group.rel}
+              property={group.property}
               fromKind={group.kind}
               seen={group.rows.length}
               partial={Boolean(incoming.hasNextPage)}

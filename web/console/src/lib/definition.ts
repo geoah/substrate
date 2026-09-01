@@ -30,24 +30,23 @@ export interface DeclaredProperty {
   required?: boolean
   /** An enum's admitted set, declaration order — absent on every other kind. */
   values?: EnumValue[]
-  /** `reference`-datatype only: the referent kind this pointer is pinned to. */
+  /** `reference`-datatype only: the referent kind this reference is pinned to.
+   * Absent on an UNPINNED reference, whose value carries the kind. */
   to?: string
+  /** `reference`: the target must exist at write time. */
+  mustExist?: boolean
+  /** `reference`: `cascade` collects this record when the target dies. Absent
+   * means detach — the value stays and dangles after a purge. */
+  onDelete?: string
+  /** `reference`: this property is a record mapping's SUBJECT. */
+  subject?: boolean
+  /** `reference`: the LINK DATA the declaration hangs off the pointer, by
+   * property name. A reference declaring these stores `{ref, <prop>: <val>}`
+   * instead of the flat path string. */
+  linkProperties?: string[]
   /** What this pointer is called from the OTHER side, where the declaration
    * named it — `thread` on a message is `messages` on the thread. A label the
    * graph reads, never an identifier. */
-  inverse?: string
-  inverseDescription?: string
-}
-
-export interface DeclaredEdge {
-  rel: string
-  /** The declared target: a bare singular (`person`) or a full kind reference
-   * (`people.substrate.reamde.dev/person`). */
-  to: string
-  many: boolean
-  description?: string
-  required?: boolean
-  /** What this edge is called from the OTHER side; see DeclaredProperty. */
   inverse?: string
   inverseDescription?: string
 }
@@ -58,12 +57,6 @@ export interface DeclaredEdge {
 export function propertyTypeLabel(p: DeclaredProperty): string {
   const base = p.to ? `${p.kind} → ${p.to}` : p.kind
   return p.repeated ? `${base}[]` : base
-}
-
-/** How an edge reads in the same places: an arrow at its declared target,
- * `[]`-suffixed when it fans out. */
-export function edgeTypeLabel(e: DeclaredEdge): string {
-  return e.to ? `→ ${e.to}${e.many ? "[]" : ""}` : "edge"
 }
 
 type Definition = Record<string, unknown>
@@ -90,10 +83,13 @@ export function declaredProperties(k: KindInfo): DeclaredProperty[] {
       initial: typeof def.initial === "string" ? def.initial : undefined,
       required: def.required === true,
       values: parseEnumValues(def.values),
-      // A reference property pins its target under `kind:`; `to:` is the
-      // EDGE's word for the far end of a traversable link, and reading it
-      // here left every pointer looking unpinned on the read surfaces.
+      // A reference pins its target under `kind:`, the one spelling the loader
+      // accepts.
       to: typeof def.kind === "string" ? def.kind : undefined,
+      mustExist: def.mustExist === true,
+      onDelete: typeof def.onDelete === "string" ? def.onDelete : undefined,
+      subject: def.subject === true,
+      linkProperties: linkPropertyNames(def.properties),
       inverse: typeof def.inverse === "string" ? def.inverse : undefined,
       inverseDescription:
         typeof def.inverseDescription === "string"
@@ -103,26 +99,13 @@ export function declaredProperties(k: KindInfo): DeclaredProperty[] {
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
-export function declaredEdges(k: KindInfo): DeclaredEdge[] {
-  const edges = (definitionOf(k).edges ?? {}) as Record<
-    string,
-    Record<string, unknown>
-  >
-  return Object.entries(edges)
-    .map(([rel, def]) => ({
-      rel,
-      to: typeof def.to === "string" ? def.to : "",
-      many: def.many === true,
-      description:
-        typeof def.description === "string" ? def.description : undefined,
-      required: def.required === true,
-      inverse: typeof def.inverse === "string" ? def.inverse : undefined,
-      inverseDescription:
-        typeof def.inverseDescription === "string"
-          ? def.inverseDescription
-          : undefined,
-    }))
-    .sort((a, b) => a.rel.localeCompare(b.rel))
+/** The LINK DATA a reference declaration hangs off the pointer, by name. The
+ * block is flat and single-valued by grammar, so the names are all a read
+ * surface needs to say what rides along. */
+function linkPropertyNames(raw: unknown): string[] | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined
+  const names = Object.keys(raw as Record<string, unknown>).sort()
+  return names.length ? names : undefined
 }
 
 /** The hot columns a kind's traits bind: `temporal(point)` → `at`,
@@ -173,13 +156,10 @@ export function filterableProperties(k: KindInfo): DeclaredProperty[] {
   return declaredProperties(k).filter((p) => !OPAQUE_KINDS.has(p.kind))
 }
 
-/** The record-56 one-liner for a property or edge key, feeding every hover:
+/** The record-56 one-liner for a declared property, feeding every hover:
  * column headers, YAML keys, filter builders. */
 export function describeKey(k: KindInfo, key: string): string | undefined {
-  const prop = declaredProperties(k).find((p) => p.name === key)
-  if (prop?.description) return prop.description
-  const edge = declaredEdges(k).find((e) => e.rel === key)
-  return edge?.description
+  return declaredProperties(k).find((p) => p.name === key)?.description
 }
 
 export function kindByIdentity(
@@ -197,10 +177,10 @@ export function kindByCollection(
   return kinds.find((k) => k.authority === authority && k.name === name)
 }
 
-/** Resolve an edge declaration's target. A bare singular (`person`) resolves
- * inside the declaring kind's authority first, then anywhere it is
+/** Resolve a reference declaration's `kind:` pin. A bare singular (`person`)
+ * resolves inside the declaring kind's authority first, then anywhere it is
  * unambiguous; a full kind reference (with a `/`) resolves directly. */
-export function resolveEdgeTarget(
+export function resolveReferenceTarget(
   kinds: KindInfo[],
   from: KindInfo,
   to: string
@@ -238,45 +218,13 @@ function pascal(word: string): string {
   return word ? word.charAt(0).toUpperCase() + word.slice(1) : word
 }
 
-/** One POINTER a kind declares, whichever way it is stored: an edge or a
- * reference property. The graph reads both as the same thing — a named,
- * directed link — because to a reader they are, and only the storage differs. */
-export interface DeclaredPointer {
-  name: string
-  to: string
-  many: boolean
-  description?: string
-  inverse?: string
-  inverseDescription?: string
-  via: "edge" | "reference"
+/** The kind's `reference`-typed properties: every named, directed link it
+ * declares, and the ONE thing that points at another record. */
+export function declaredReferences(k: KindInfo): DeclaredProperty[] {
+  return declaredProperties(k).filter((p) => p.kind === "reference")
 }
 
-export function declaredPointers(k: KindInfo): DeclaredPointer[] {
-  const out: DeclaredPointer[] = declaredEdges(k).map((e) => ({
-    name: e.rel,
-    to: e.to,
-    many: e.many,
-    description: e.description,
-    inverse: e.inverse,
-    inverseDescription: e.inverseDescription,
-    via: "edge" as const,
-  }))
-  for (const p of declaredProperties(k)) {
-    if (p.kind !== "reference") continue
-    out.push({
-      name: p.name,
-      to: p.to ?? "",
-      many: p.repeated,
-      description: p.description,
-      inverse: p.inverse,
-      inverseDescription: p.inverseDescription,
-      via: "reference",
-    })
-  }
-  return out.sort((a, b) => a.name.localeCompare(b.name))
-}
-
-/** What the far side of an incoming pointer is CALLED here. The name a
+/** What the far side of an incoming reference is CALLED here. The name a
  * fan-in row carries is written from the source's side (`thread`, on a
  * message), which reads backwards standing on the target — so the label is
  * the declaration's `inverse` where its author wrote one, and an honest
@@ -284,17 +232,17 @@ export function declaredPointers(k: KindInfo): DeclaredPointer[] {
 export function inverseLabel(
   kinds: KindInfo[],
   fromKind: string,
-  rel: string
+  property: string
 ): { label: string; description?: string } {
   const source = kindByIdentity(kinds, fromKind)
-  const pointer = source
-    ? declaredPointers(source).find((p) => p.name === rel)
+  const declared = source
+    ? declaredReferences(source).find((p) => p.name === property)
     : undefined
-  if (pointer?.inverse) {
-    return { label: pointer.inverse, description: pointer.inverseDescription }
+  if (declared?.inverse) {
+    return { label: declared.inverse, description: declared.inverseDescription }
   }
   return {
-    label: `${rel} of ${splitKind(fromKind).name}`,
-    description: pointer?.description,
+    label: `${property} of ${splitKind(fromKind).name}`,
+    description: declared?.description,
   }
 }

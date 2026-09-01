@@ -3,10 +3,12 @@ package engine_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sort"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The canonical-id contract, conformance-shaped:
@@ -49,9 +51,11 @@ func TestCanonicalIDReadByFormerID(t *testing.T) {
 	}
 }
 
-// §4.1 — edge resolution by a former id lands on the canonical record, so a
-// connector holding a stale id cannot re-attach the graph to a tombstone.
-func TestCanonicalIDEdgeResolution(t *testing.T) {
+// §4.1 — a reference written at a former id keeps that id as its value and
+// still resolves to the canonical record on the reverse read, so a connector
+// holding a stale id neither re-attaches the graph to a tombstone nor has its
+// pointer rewritten behind its back.
+func TestCanonicalIDReferenceResolution(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -64,12 +68,25 @@ func TestCanonicalIDEdgeResolution(t *testing.T) {
 	}
 
 	book := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{"title": "Piranesi"},
-		Edges: []substrate.EdgeInput{{Rel: "author", To: substrate.EdgeRef{ID: loser.ID}}},
+		Kind: "book", Properties: map[string]any{
+			"title":  "Piranesi",
+			"author": []any{loser.ID},
+		},
 	})
-	authors := mustGet(t, ds, book.Kind, book.ID).Edges["author"]
-	if len(authors) != 1 || authors[0].ID != winner.ID {
-		t.Fatalf("an edge written at a former id = %+v", authors)
+	// The stored value is what the writer typed, canonicalized only in its
+	// spelling: the former id stands. Each entry is the object holding its path
+	// under `ref` (decision 0044), so the comparison reads the paths out.
+	want := []string{vocabulary.RecordPath(typePerson, loser.ID)}
+	if got := storedRefPaths(mustGet(t, ds, book.Kind, book.ID).Properties["author"]); !reflect.DeepEqual(got, want) {
+		t.Fatalf("author = %+v, want the former id kept verbatim %+v", got, want)
+	}
+	// The reverse read is where the trail resolves: the winner sees the book.
+	page, err := ds.Incoming(ctx, winner.Kind, winner.ID, substrate.IncomingOptions{Property: "author"})
+	if err != nil {
+		t.Fatalf("incoming: %v", err)
+	}
+	if page.Total != 1 || page.Incoming[0].From.ID != book.ID {
+		t.Fatalf("the winner's incoming `author` = %+v", page.Incoming)
 	}
 	// A write addressed at a former id lands on the winner too.
 	if got := mustPatch(t, ds, owner, loser.Kind, loser.ID, substrate.PatchInput{
@@ -82,8 +99,10 @@ func TestCanonicalIDEdgeResolution(t *testing.T) {
 	}
 }
 
-// §4.2 — merge rewrites EVERY stored edge to the winner, in both directions.
-func TestCanonicalIDMergeRewritesEveryEdge(t *testing.T) {
+// §4.2 — merge REPOINTS NOTHING. Every pointer at the loser keeps naming the
+// loser's id and the reverse read resolves it forward through the trail; the
+// loser's own outbound pointers stay on its tombstone.
+func TestCanonicalIDMergeRepointsNothing(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -96,45 +115,61 @@ func TestCanonicalIDMergeRewritesEveryEdge(t *testing.T) {
 	// Outgoing from the loser…
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: "person", ID: loser.ID,
-		Edges: []substrate.EdgeInput{{Rel: "memberOf", To: substrate.EdgeRef{ID: org.ID}}},
+		Properties: map[string]any{"memberOf": []any{org.ID}},
 	})
 	// …and incoming to it.
 	book := mustPut(t, ds, owner, substrate.PutInput{
-		Kind: "book", Properties: map[string]any{"title": "Piranesi"},
-		Edges: []substrate.EdgeInput{{Rel: "author", To: substrate.EdgeRef{ID: loser.ID}}},
+		Kind: "book", Properties: map[string]any{
+			"title":  "Piranesi",
+			"author": []any{loser.ID},
+		},
 	})
 
 	if _, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	if got := mustGet(t, ds, book.Kind, book.ID).Edges["author"]; len(got) != 1 || got[0].ID != winner.ID {
-		t.Fatalf("incoming edge not rewritten: %+v", got)
+	wantAuthor := []string{vocabulary.RecordPath(typePerson, loser.ID)}
+	if got := storedRefPaths(mustGet(t, ds, book.Kind, book.ID).Properties["author"]); !reflect.DeepEqual(got, wantAuthor) {
+		t.Fatalf("the merge rewrote an inbound pointer: %+v", got)
 	}
-	if got := mustGet(t, ds, winner.Kind, winner.ID).Edges["memberOf"]; len(got) != 1 || got[0].ID != org.ID {
-		t.Fatalf("outgoing edge not rewritten: %+v", got)
+	// Nothing migrated onto the winner either: its own properties are what they
+	// were before the merge.
+	if got := mustGet(t, ds, winner.Kind, winner.ID).Properties["memberOf"]; got != nil {
+		t.Fatalf("the merge moved an outbound pointer onto the winner: %+v", got)
 	}
-	page, err := ds.List(ctx, substrate.Query{
-		Filter: substrate.Filter{Edge: &substrate.EdgeFilter{To: loser.ID}},
-	})
-	if err != nil {
-		t.Fatal(err)
+	// The reverse read at the winner sees every pointer into the pair: the
+	// book's author, plus the merge record's own `winner` and `loser`, which name
+	// both sides deliberately and are what make the merge splittable
+	// (MODEL §11.5).
+	page := readIncoming(t, ds, winner.Kind, winner.ID, 50, "")
+	if page.Total != 3 {
+		t.Fatalf("incoming at the winner = %+v", page.Incoming)
 	}
-	// One edge still names the loser, deliberately: the merge record's own
-	// `loser` edge, which is what makes the merge splittable (MODEL §11.5).
-	if len(page.Records) != 1 || page.Records[0].Kind != "core.substrate.reamde.dev/recordmerge" {
-		t.Fatalf("edges still pointing at the loser: %+v", page.Records)
+	var books, merges int
+	for _, in := range page.Incoming {
+		switch in.From.Kind {
+		case book.Kind:
+			books++
+		case "core.substrate.reamde.dev/recordmerge":
+			merges++
+		}
 	}
-	// …and none leave it either: the loser is out of the graph in both
-	// directions, not just the one a reader happens to check.
+	if books != 1 || merges != 2 {
+		t.Fatalf("incoming at the winner = %+v", page.Incoming)
+	}
+	// The loser's own outbound pointer is still on its tombstone: a merge takes
+	// the record out of every LIVE read, and puts none of its values anywhere.
 	dead, err := ds.List(ctx, substrate.Query{
-		Filter:    substrate.Filter{IDs: []string{loser.ID}, Deleted: ptr(true)},
-		WithEdges: true,
+		Filter: substrate.Filter{IDs: []string{loser.ID}, Deleted: ptr(true)},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(dead.Records) != 1 || len(dead.Records[0].Edges) != 0 {
-		t.Fatalf("the loser still has outgoing edges: %+v", dead.Records)
+	wantMember := []any{map[string]any{
+		vocabulary.ReferenceValueKey: vocabulary.RecordPath("people.substrate.reamde.dev/organization", org.ID),
+	}}
+	if len(dead.Records) != 1 || !reflect.DeepEqual(dead.Records[0].Properties["memberOf"], wantMember) {
+		t.Fatalf("the loser's own pointer did not stay on its tombstone: %+v", dead.Records)
 	}
 }
 
@@ -260,10 +295,11 @@ func TestCanonicalIDDeleteByFormerID(t *testing.T) {
 	}
 }
 
-// §4.1 — link and unlink canonicalize BOTH ends. An edge written at a former
-// id belongs to the record that id now denotes; writing it onto the tombstone
-// puts it somewhere no read will ever look.
-func TestCanonicalIDLinkUnlinkBothEnds(t *testing.T) {
+// §4.1 — a reference write addressed at a former id canonicalizes the SOURCE
+// end and leaves the value's own end alone. Writing onto the tombstone would
+// put the pointer somewhere no read will ever look; rewriting the value would
+// be the write repointing a record it was not asked about.
+func TestCanonicalIDReferenceWriteAtFormerIDs(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -279,21 +315,38 @@ func TestCanonicalIDLinkUnlinkBothEnds(t *testing.T) {
 		t.Fatalf("merge orgs: %v", err)
 	}
 
-	// Both ends addressed by their former ids — full identities, ticket 001.
-	if err := ds.Link(ctx, owner, "person", loser.ID, "memberOf",
-		substrate.EdgeRef{Kind: "organization", ID: orgLoser.ID}, nil); err != nil {
-		t.Fatalf("link: %v", err)
+	// Both ends addressed by their former ids. A PATCH resolves the addressed
+	// record forward (a put with a supplied id is refused outright: an id is
+	// the writer's own key and a former one is never reused), and the VALUE is
+	// left exactly as written.
+	if _, err := ds.Patch(ctx, owner, "person", loser.ID, substrate.PatchInput{
+		Properties: map[string]any{"memberOf": []any{orgLoser.ID}},
+	}); err != nil {
+		t.Fatalf("patch at a former id: %v", err)
 	}
-	edges := mustGet(t, ds, winner.Kind, winner.ID).Edges["memberOf"]
-	if len(edges) != 1 || edges[0].ID != org.ID {
-		t.Fatalf("link at former ids landed on %+v", edges)
+	want := []any{map[string]any{
+		vocabulary.ReferenceValueKey: vocabulary.RecordPath("people.substrate.reamde.dev/organization", orgLoser.ID),
+	}}
+	got := mustGet(t, ds, winner.Kind, winner.ID).Properties["memberOf"]
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("a write at a former id landed on %+v, want the winner holding %+v", got, want)
 	}
-	if err := ds.Unlink(ctx, owner, "person", loser.ID, "memberOf",
-		substrate.EdgeRef{Kind: "organization", ID: orgLoser.ID}); err != nil {
-		t.Fatalf("unlink: %v", err)
+	// The value names a tombstone, and the surviving organization still sees it.
+	page, err := ds.Incoming(ctx, org.Kind, org.ID, substrate.IncomingOptions{Property: "memberOf"})
+	if err != nil {
+		t.Fatalf("incoming: %v", err)
 	}
-	if edges := mustGet(t, ds, winner.Kind, winner.ID).Edges["memberOf"]; len(edges) != 0 {
-		t.Fatalf("unlink at former ids left %+v", edges)
+	if page.Total != 1 || page.Incoming[0].From.ID != winner.ID {
+		t.Fatalf("the surviving organization's incoming `memberOf` = %+v", page.Incoming)
+	}
+	// Clearing is writing the property away; there is no second verb.
+	if _, err := ds.Patch(ctx, owner, "person", loser.ID, substrate.PatchInput{
+		Properties: map[string]any{"memberOf": nil},
+	}); err != nil {
+		t.Fatalf("clear at a former id: %v", err)
+	}
+	if got := mustGet(t, ds, winner.Kind, winner.ID).Properties["memberOf"]; got != nil {
+		t.Fatalf("clearing at a former id left %+v", got)
 	}
 }
 

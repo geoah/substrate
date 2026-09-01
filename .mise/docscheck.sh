@@ -46,7 +46,7 @@ grep_docs() {
 # envelope), so they are the reading pass's, not this script's.
 #
 # terms.md itself is exempt: it names the dead words on purpose, to retire them.
-dead='entit(y|ies)|tenants?|relationships?|singletons?|config[ -]?[Tt]ype'
+dead='entit(y|ies)|tenants?|relationships?|singletons?|config[ -]?[Tt]ype|edges?'
 if grep_docs -rniE "\b(${dead})\b" | grep -v '^docs/terms.md:'; then
   flag "a dead word survives; docs/terms.md names the live one"
 fi

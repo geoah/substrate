@@ -83,7 +83,7 @@ export function threadMessagesQueryOptions(threadId: string) {
       authority: CORE_AUTHORITY,
       name: "llmmessage",
       first: TRANSCRIPT_WINDOW,
-      // `thread` is a REFERENCE on the message now, not an edge.
+      // `thread` is a REFERENCE property on the message.
       filter: { properties: { thread: { eq: threadId } } },
       // DESCENDING, then reversed by the reader: the page cap is a cap, and a
       // long conversation must lose its oldest turns rather than the reply

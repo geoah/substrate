@@ -70,18 +70,22 @@ the rows below into one coherent repository.
 | REC-03 | a PATCH with `null` deletes the property; a state property in a PATCH is a transition; an undeclared transition is refused | | implemented |
 | REC-04 | a write with an undeclared property is refused naming it | | implemented |
 | REC-05 | the title derives from the declared property through `displayTemplate`; a written `title` on such a kind is ignored | | implemented |
-| REC-06 | client-chosen ids: POST with `id`, PUT at the id; the reserved ids `incoming` and `edges` are refused | | implemented |
+| REC-06 | client-chosen ids: POST with `id`, PUT at the id; `incoming` is refused as an id and is the only reserved word left | | implemented |
 | REC-07 | labels and annotations round-trip; annotations only appear with `withAnnotations=1` | | implemented |
 | REC-08 | `propertyMeta` on a single GET names the managing actor and tier after two actors write the same property | | implemented |
 
-## Edges
+## References
+
+A reference is an ordinary property whose value is a `<kind>/<id>` path, so
+there are no link verbs: put and patch write pointers the way they write
+strings, and every list carries them inline.
 
 | id | case | needs | status |
 | --- | --- | --- | --- |
-| EDGE-01 | link and unlink through `POST/DELETE …/{id}/edges/{rel}`; the edge appears with `withEdges=1` and on the target's `/incoming` | | implemented |
-| EDGE-02 | an edge write carrying a property the rel does not declare is refused | | story (in STORY-01) |
-| EDGE-03 | an edge outlives the target's tombstone and dies with its purge | | implemented |
-| EDGE-04 | `/incoming` pages and narrows by `rel` and `fromKind` | | implemented |
+| REF-01 | a put writes a reference and a put that omits it keeps it, so a `null` in a PATCH is what clears one; the retired `…/{id}/edges/{rel}` route is a 404 | | implemented |
+| REF-02 | a reference carrying a link property its declaration does not declare is refused naming it | | story (in STORY-01) |
+| REF-03 | a reference outlives the target's tombstone and dies with its purge | | implemented |
+| REF-04 | `/incoming` pages and narrows by `property` and `fromKind`; the retired `rel` parameter is a 400 | | implemented |
 
 ## Queries
 
@@ -121,7 +125,7 @@ the rows below into one coherent repository.
 | BUN-01 | the catalog lists the shipped closures; install admits one; the collection exists after and not before | | slice (in REC-01) |
 | BUN-02 | `requires:` ordering: installing a dependent before its dependency is refused naming what is missing | | slice (in REC-01) |
 | BUN-03 | disable, enable, uninstall, purge through the bundle PATCH lifecycle; records survive uninstall and die with purge | | implemented |
-| BUN-04 | a bundle input binds through `…/bundle/{id}/bind`; resolution order is bound edge, the id `default`, then the sole record | | implemented |
+| BUN-04 | a bundle input binds through `…/bundle/{id}/bind`; resolution order is the bound reference, the id `default`, then the sole record | | implemented |
 | BUN-05 | an up-to-date bundle offers no `upgrade`; a moved closure needs a second binary, which one live server cannot stage | | implemented (no-motion half) |
 | BUN-06 | trait endpoints: `…/trait/{id}/implementors` and `…/trait/{id}/records` see through installed kinds | | implemented |
 

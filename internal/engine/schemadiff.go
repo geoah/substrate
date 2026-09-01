@@ -21,9 +21,9 @@ package engine
 //     `required` on the merged row, and a declared `default` does not
 //     backfill, so the rows that lack it now would be nonconforming and
 //     unpatchable);
-//   - an edge dropped, an edge losing `many:`, an edge repointing `to:`, and
-//     the same four shapes again on a declared edge property — each counted
-//     over the `edges` table (edgeNarrowings).
+//   - a reference repointing its pin, gaining `mustExist:`, or narrowing one of
+//     its declared link properties — each counted over the refs index
+//     (referenceNarrowings), which reads every value shape and every depth.
 //
 // Additive changes — new type, new optional property, new enum value, new
 // state, new transition, required removed, presentational keys — admit
@@ -290,12 +290,14 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 			// or one type → another) strands stored references pointing elsewhere
 			//.
 			if curP.Datatype == vocabulary.DatatypeReference && refTargetNarrows(curP.To, candP.To) {
-				q, args := refOutsidePath(ident, containerPath(nil, curP, pname), candP.To)
 				out = append(out, narrowing{
 					format: fmt.Sprintf("type %s: reference %q narrows its target to %s while %%d live records point elsewhere — repoint them first",
 						ident, pname, candP.To),
-					query: q, args: args,
+					query: countRefOffTargetQuery, args: []any{ident, pname, candP.To},
 				})
+			}
+			if curP.Datatype == vocabulary.DatatypeReference {
+				out = append(out, referenceNarrowings(ident, pname, curP, candP)...)
 			}
 			if keyPatternTightens(curP, candP) {
 				q, args := keysOutsidePattern(ident, mapPath(nil, pname),
@@ -327,10 +329,6 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 	// exist before never reached it. Live rows cannot carry a property no
 	// declaration had, so every one of them is missing it the moment it is
 	// declared required.
-	//
-	// This is how a link that MOVES — an edge becoming a required reference —
-	// announces itself from the reference's side. The edge's own side is
-	// edgeNarrowings, below.
 	for _, pname := range candT.PropOrder {
 		candP := candT.Props[pname]
 		if !candP.Required || candP.IsState() {
@@ -346,208 +344,174 @@ func typeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
 			query: q, args: args,
 		})
 	}
-	// A relationship that MOVES from an edge to a reference of the same name
-	// strands every row holding it the old way, whether or not the reference is
-	// required: the new reference is an absent property on those rows, and the
-	// dropped edge is caught by edgeNarrowings below, but the move itself needs
-	// its own count. The shared kinds' `account` is exactly this move (0034),
-	// and it is OPTIONAL, so the added-as-required guard above never fires. Count
-	// the live rows still carrying the old edge and refuse until they are
-	// migrated, matching the datatype-flip narrowings beside it.
-	for _, pname := range candT.PropOrder {
-		candP := candT.Props[pname]
-		if candP.Datatype != vocabulary.DatatypeReference {
-			continue
-		}
-		if _, wasEdge := curT.Edge(pname); !wasEdge {
-			continue
-		}
+	return out
+}
+
+// LINK COUNTS run over the `refs` index joined back to the SOURCE record, so a
+// stranded value is counted the same way a stranded property value is: once per
+// live record that holds it. The index is the faithful projection of the stored
+// reference values (refs.go), which is what lets a count reach INSIDE a
+// reference — at its link data, at what it points at — without a jsonb walk per
+// declaration shape.
+//
+// The join names `repository` on both sides because the vocabulary door is also
+// reachable on the maintenance role, which bypasses row level security; every
+// other predicate here would then be right and the count would still be wrong.
+//
+// `path = ”` narrows to a kind's OWN reference, which is the only place link
+// data may be declared (the loader refuses it inside an object).
+const linkFrom = `FROM refs r
+	JOIN records x ON x.repository = r.repository AND x.kind = r.src_kind AND x.id = r.src
+	WHERE r.src_kind = $1 AND r.property = $2 AND r.path = '' AND x.deleted_at IS NULL`
+
+// countLinkPropQuery counts live references carrying a value for one declared
+// link property.
+const countLinkPropQuery = `SELECT count(*) ` + linkFrom + ` AND r.props ? $3`
+
+// countMissingLinkPropQuery counts live references NOT carrying it.
+const countMissingLinkPropQuery = `SELECT count(*) ` + linkFrom + ` AND NOT r.props ? $3`
+
+// countLinkPropValuesQuery counts live references whose value for one link
+// property is in a set ($4 is a JSON array of the values).
+const countLinkPropValuesQuery = `SELECT count(*) ` + linkFrom + `
+	AND r.props ? $3 AND $4::jsonb @> jsonb_build_array(r.props->$3)`
+
+// countLinkPropOutsideValuesQuery is its complement: the references holding a
+// value the candidate's set does NOT admit.
+const countLinkPropOutsideValuesQuery = `SELECT count(*) ` + linkFrom + `
+	AND r.props ? $3 AND NOT ($4::jsonb @> jsonb_build_array(r.props->$3))`
+
+// countLinkPropNonIntQuery counts live references whose value for a link
+// property is not an integral number — the ones a retype to `int` strands.
+const countLinkPropNonIntQuery = `SELECT count(*) ` + linkFrom + `
+	AND r.props ? $3
+	AND (jsonb_typeof(r.props->$3) <> 'number' OR (r.props->>$3)::numeric <> floor((r.props->>$3)::numeric))`
+
+// countDanglingRefQuery counts live records whose reference names a record that
+// is not there — exactly the rows `mustExist: true` would refuse from then on.
+// It does NOT filter on `path`, because mustExist is declarable at every shape
+// and depth a reference is.
+// countRefOffTargetQuery counts the live records whose reference names a kind
+// the candidate pin does not admit. It reads the refs INDEX rather than probing
+// `props`, which is what lets one query answer for both value shapes (a bare
+// path and the object a link-data reference stores) and for every depth: the
+// index is the derivation of all of them.
+const countRefOffTargetQuery = `SELECT count(DISTINCT r.src) FROM refs r
+	JOIN records x ON x.repository = r.repository AND x.kind = r.src_kind AND x.id = r.src
+	WHERE r.src_kind = $1 AND r.property = $2 AND x.deleted_at IS NULL
+	  AND r.dst_kind <> $3`
+
+const countDanglingRefQuery = `SELECT count(*) FROM refs r
+	JOIN records x ON x.repository = r.repository AND x.kind = r.src_kind AND x.id = r.src
+	WHERE r.src_kind = $1 AND r.property = $2 AND x.deleted_at IS NULL
+	  AND NOT EXISTS (
+		SELECT 1 FROM records t
+		WHERE t.repository = r.repository AND t.kind = r.dst_kind AND t.id = r.dst)`
+
+// referenceNarrowings classifies the diff of one reference's OWN keys: the link
+// data it declares, and `mustExist`.
+//
+// `onDelete:` is deliberately absent. Adding, dropping or changing it strands
+// nothing: it says what a future GC sweep does with the record, not what values
+// are admissible, so every stored row stays exactly as writable as it was.
+//
+// Dropping the reference, taking `repeated:` away and repointing `kind:` are
+// classified by the ordinary property loop this is called from: a reference is
+// a property, and a container flip is a container flip.
+func referenceNarrowings(ident, pname string, curP, candP *vocabulary.Property) []narrowing {
+	var out []narrowing
+	out = append(out, linkPropNarrowings(ident, pname, curP, candP)...)
+	// `mustExist` added is a narrowing with a real count behind it: the
+	// declaration admits only pointers at records that exist, and a stored
+	// pointer at a record that never arrived (or was purged) is one no later
+	// write to that row could re-assert.
+	if !curP.MustExist && candP.MustExist {
 		out = append(out, narrowing{
-			format: fmt.Sprintf("type %s: relationship %q moves from an edge to a reference while %%d live records still hold it as an edge — migrate them first",
+			format: fmt.Sprintf("type %s: reference %q requires its target to exist while %%d live references name a record that does not — repoint or clear them first",
 				ident, pname),
-			query: countEdgeRelQuery, args: []any{ident, pname},
+			query: countDanglingRefQuery, args: []any{ident, pname},
 		})
 	}
-	out = append(out, edgeNarrowings(curT, candT)...)
 	return out
 }
 
-// Edge counts run over the `edges` table joined back to the SOURCE record, so
-// a stranded row is counted the same way a stranded property value is: once
-// per live record that holds it. The join names `repository` on both sides
-// because the vocabulary door is also reachable on the maintenance role, which
-// bypasses row level security; every other predicate here would then be right
-// and the count would still be wrong.
-const edgeFrom = `FROM edges e
-	JOIN records r ON r.repository = e.repository AND r.kind = e.src_kind AND r.id = e.src
-	WHERE e.src_kind = $1 AND e.rel = $2 AND r.deleted_at IS NULL`
-
-// countEdgeRelQuery counts live records of a kind that still hold an edge on a
-// given rel, the stranding count when that rel moves from an edge to a
-// reference of the same name.
-const countEdgeRelQuery = `SELECT count(*) FROM records r WHERE r.kind = $1 AND r.deleted_at IS NULL AND EXISTS (SELECT 1 FROM edges e WHERE e.src_kind = r.kind AND e.src = r.id AND e.rel = $2)`
-
-// countEdgeQuery counts live edge rows of one rel off one kind.
-const countEdgeQuery = `SELECT count(*) ` + edgeFrom
-
-// countEdgeSourcesOverOneQuery counts the live records that hold MORE THAN ONE
-// row of a rel — the rows an edge losing `many:` strands, counted per record
-// because that is what the writer has to go and fix.
-const countEdgeSourcesOverOneQuery = `SELECT count(*) FROM (
-	SELECT e.src ` + edgeFrom + `
-	GROUP BY e.src_kind, e.src HAVING count(*) > 1) x`
-
-// countEdgeOffTargetQuery counts live edge rows pointing at a kind other than
-// the one the candidate declares.
-const countEdgeOffTargetQuery = `SELECT count(*) ` + edgeFrom + ` AND e.dst_kind <> $3`
-
-// countEdgePropQuery counts live edge rows carrying a value for one declared
-// edge property.
-const countEdgePropQuery = `SELECT count(*) ` + edgeFrom + ` AND e.props ? $3`
-
-// countMissingEdgePropQuery counts live edge rows NOT carrying it.
-const countMissingEdgePropQuery = `SELECT count(*) ` + edgeFrom + ` AND NOT e.props ? $3`
-
-// countEdgePropValuesQuery counts live edge rows whose value for one property
-// is in a set ($4 is a JSON array of the values).
-const countEdgePropValuesQuery = `SELECT count(*) ` + edgeFrom + `
-	AND e.props ? $3 AND $4::jsonb @> jsonb_build_array(e.props->$3)`
-
-// countEdgePropOutsideValuesQuery is its complement: the rows holding a value
-// the candidate's set does NOT admit.
-const countEdgePropOutsideValuesQuery = `SELECT count(*) ` + edgeFrom + `
-	AND e.props ? $3 AND NOT ($4::jsonb @> jsonb_build_array(e.props->$3))`
-
-// countEdgePropNonIntQuery counts live edge rows whose value for a property is
-// not an integral number — the rows a retype to `int` actually strands.
-const countEdgePropNonIntQuery = `SELECT count(*) ` + edgeFrom + `
-	AND e.props ? $3
-	AND (jsonb_typeof(e.props->$3) <> 'number' OR (e.props->>$3)::numeric <> floor((e.props->>$3)::numeric))`
-
-// edgeNarrowings classifies one kind's EDGE diff. Edges were classified by
-// nothing before this: dropping an edge, taking `many:` away and repointing
-// `to:` all landed silently, leaving stored rows in the `edges` table that no
-// declaration described and no read could reach.
-//
-// The four shapes are the property loop's, read against a link: an edge
-// dropped is a property dropped, `many: true` → single is a container flip,
-// `to:` repointed is a reference narrowing its pin, and an edge property is a
-// property.
-//
-// What is deliberately NOT here is an edge ADDED as required. A narrowing
-// counts STORED ROWS the new declaration would not admit, and a record that
-// predates a newly required edge holds no row of that rel at all: there is
-// nothing in the `edges` table for a count to find. Required-edge enforcement
-// only ever constrains a record that HAS the edge (checkRequiredPointers, on a
-// create), which leaves an older record nonconforming and still writable.
-func edgeNarrowings(curT, candT *vocabulary.Kind) []narrowing {
-	var out []narrowing
-	ident := curT.Identity
-	for _, rel := range curT.EdgeOrder {
-		curE, candE := curT.Edges[rel], candT.Edges[rel]
-		if candE == nil {
-			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: edge %q dropped while %%d live edges still stand — unlink them first", ident, rel),
-				query:  countEdgeQuery, args: []any{ident, rel},
-			})
-			continue
-		}
-		if curE.Many && !candE.Many {
-			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: edge %q stops being many while %%d live records carry more than one — unlink the extras first",
-					ident, rel),
-				query: countEdgeSourcesOverOneQuery, args: []any{ident, rel},
-			})
-		}
-		if refTargetNarrows(curE.To, candE.To) {
-			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: edge %q narrows its target to %s while %%d live edges point elsewhere — relink them first",
-					ident, rel, candE.To),
-				query: countEdgeOffTargetQuery, args: []any{ident, rel, candE.To},
-			})
-		}
-		out = append(out, edgePropNarrowings(ident, curE, candE)...)
-	}
-	return out
-}
-
-// edgePropNarrowings classifies the declared `edges.<rel>.properties` diff. An
-// edge property is a flat single value by construction (parseEdgeProps), so
-// this is the property loop without the containers, the states and the object
-// recursion: dropped, retyped, an enum value removed, required added.
+// linkPropNarrowings classifies the declared `properties:` diff of one
+// reference. A link property is a flat single value by construction (the
+// loader's linkProp grammar), so this is the property loop without the
+// containers, the states and the object recursion: dropped, retyped, an enum
+// value removed, required added.
 //
 // The two retypes the record loop counts BY VALUE rather than by presence are
-// counted by value here too, and for the same reason: a backfill can rewrite
-// the stored values first and the declaration then follows them, which is the
-// evolution path the declaration-version migration needed. An edge property
+// counted by value here too, and for the same reason: a backfill can rewrite the
+// stored values first and the declaration then follows them. A link property
 // held to a stricter rule than the identical record property would be a
 // difference with nothing behind it.
-func edgePropNarrowings(ident string, curE, candE *vocabulary.Edge) []narrowing {
+func linkPropNarrowings(ident, pname string, curP, candP *vocabulary.Property) []narrowing {
 	var out []narrowing
-	for _, pname := range curE.PropOrder {
-		curP, candP := curE.Props[pname], candE.Props[pname]
-		if candP == nil {
+	for _, lname := range curP.PropertyOrder {
+		curL, candL := curP.Properties[lname], candP.Properties[lname]
+		if candL == nil {
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: edge %q drops property %q while %%d live edges still carry it — null it on them first",
-					ident, curE.Name, pname),
-				query: countEdgePropQuery, args: []any{ident, curE.Name, pname},
+				format: fmt.Sprintf("type %s: reference %q drops link property %q while %%d live references still carry it — null it on them first",
+					ident, pname, lname),
+				query: countLinkPropQuery, args: []any{ident, pname, lname},
 			})
 			continue
 		}
-		if curP.Datatype != candP.Datatype {
+		if curL.Datatype != candL.Datatype {
 			switch {
-			case candP.Datatype == vocabulary.DatatypeInt:
+			case candL.Datatype == vocabulary.DatatypeInt:
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: edge %q changes property %q from %s to int while %%d live edges hold values that are not integers — migrate them first",
-						ident, curE.Name, pname, curP.Datatype),
-					query: countEdgePropNonIntQuery, args: []any{ident, curE.Name, pname},
+					format: fmt.Sprintf("type %s: reference %q changes link property %q from %s to int while %%d live references hold values that are not integers — migrate them first",
+						ident, pname, lname, curL.Datatype),
+					query: countLinkPropNonIntQuery, args: []any{ident, pname, lname},
 				})
-			case stringToEnum(curP, candP):
+			case stringToEnum(curL, candL):
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: edge %q changes property %q from string to enum while %%d live edges hold a value outside %s; rewrite them first",
-						ident, curE.Name, pname, quotedList(candP.ValueStrings())),
-					query: countEdgePropOutsideValuesQuery,
-					args:  []any{ident, curE.Name, pname, jsonArray(candP.ValueStrings())},
+					format: fmt.Sprintf("type %s: reference %q changes link property %q from string to enum while %%d live references hold a value outside %s; rewrite them first",
+						ident, pname, lname, quotedList(candL.ValueStrings())),
+					query: countLinkPropOutsideValuesQuery,
+					args:  []any{ident, pname, lname, jsonArray(candL.ValueStrings())},
 				})
 			default:
 				out = append(out, narrowing{
-					format: fmt.Sprintf("type %s: edge %q changes property %q from %s to %s while %%d live edges hold values of the old kind — migrate them first",
-						ident, curE.Name, pname, curP.Datatype, candP.Datatype),
-					query: countEdgePropQuery, args: []any{ident, curE.Name, pname},
+					format: fmt.Sprintf("type %s: reference %q changes link property %q from %s to %s while %%d live references hold values of the old kind — migrate them first",
+						ident, pname, lname, curL.Datatype, candL.Datatype),
+					query: countLinkPropQuery, args: []any{ident, pname, lname},
 				})
 			}
 			continue
 		}
-		if removed := removedStrings(curP.ValueStrings(), candP.ValueStrings()); len(removed) > 0 {
+		if removed := removedStrings(curL.ValueStrings(), candL.ValueStrings()); len(removed) > 0 {
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: edge %q removes value(s) %s from property %q while %%d live edges hold one — rewrite them first",
-					ident, curE.Name, quotedList(removed), pname),
-				query: countEdgePropValuesQuery, args: []any{ident, curE.Name, pname, jsonArray(removed)},
+				format: fmt.Sprintf("type %s: reference %q removes value(s) %s from link property %q while %%d live references hold one — rewrite them first",
+					ident, pname, quotedList(removed), lname),
+				query: countLinkPropValuesQuery, args: []any{ident, pname, lname, jsonArray(removed)},
 			})
 		}
-		if !curP.Required && candP.Required {
+		if !curL.Required && candL.Required {
 			out = append(out, narrowing{
-				format: fmt.Sprintf("type %s: edge %q makes property %q required while %%d live edges lack it — backfill them first",
-					ident, curE.Name, pname),
-				query: countMissingEdgePropQuery, args: []any{ident, curE.Name, pname},
+				format: fmt.Sprintf("type %s: reference %q makes link property %q required while %%d live references lack it — backfill them first",
+					ident, pname, lname),
+				query: countMissingLinkPropQuery, args: []any{ident, pname, lname},
 			})
 		}
 	}
-	// A property the candidate ADDS as required strands every stored row, for
-	// the same reason it does on a record: an edge write is refused without it
-	// and no live row can carry a name no declaration had. The loop above walks
-	// the CURRENT declaration, so a new name never reaches it.
-	for _, pname := range candE.PropOrder {
-		if !candE.Props[pname].Required {
+	// A link property the candidate ADDS as required strands every stored value,
+	// for the same reason it does on a record: a write is refused without it and
+	// no live value can carry a name no declaration had. The loop above walks the
+	// CURRENT declaration, so a new name never reaches it.
+	for _, lname := range candP.PropertyOrder {
+		if !candP.Properties[lname].Required {
 			continue
 		}
-		if _, existed := curE.Props[pname]; existed {
+		if _, existed := curP.Properties[lname]; existed {
 			continue
 		}
 		out = append(out, narrowing{
-			format: fmt.Sprintf("type %s: edge %q adds property %q as required while %%d live edges lack it — unlink them or drop the requirement",
-				ident, curE.Name, pname),
-			query: countMissingEdgePropQuery, args: []any{ident, curE.Name, pname},
+			format: fmt.Sprintf("type %s: reference %q adds link property %q as required while %%d live references lack it — clear them or drop the requirement",
+				ident, pname, lname),
+			query: countMissingLinkPropQuery, args: []any{ident, pname, lname},
 		})
 	}
 	return out
@@ -735,15 +699,26 @@ func fieldPresence(ident string, path []fieldStep, key string) (string, []any) {
 // string test buys: a missing value is jsonb NULL, whose jsonb_typeof is not
 // 'string', so it is not counted.
 //
-// A stored reference is ONE flat path ("<kind>/<id>", references.go), so
-// "points at the target" is a PREFIX: the value begins with the target kind and
-// a slash. Compared with `left(…)` rather than LIKE because a kind reference is
+// A stored reference is the OBJECT `{ref: "<kind>/<id>"}` (decision 0044), and a
+// row written before that rule holds the bare path string. The path is read out
+// of whichever shape is there, so one query answers for both, exactly as
+// splitReferenceValue does in Go; reading only the string counted nothing once
+// the object landed, and every pin narrowing was admitted with its stranded rows
+// invisible.
+//
+// "Points at the target" is a PREFIX: the path begins with the target kind and a
+// slash. Compared with `left(…)` rather than LIKE because a kind reference is
 // data here — no pattern of the target's can leak into the operator.
 func refOutsidePath(ident string, path []fieldStep, target string) (string, []any) {
 	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
 		arg := a.add(target)
-		return fmt.Sprintf("jsonb_typeof(%s) = 'string' AND left(%s #>> '{}', length(%s) + 1) <> %s || '/'",
-			expr, expr, arg, arg)
+		// `->>` on a jsonb scalar answers NULL rather than erroring, so the
+		// coalesce is safe to evaluate against either shape.
+		held := fmt.Sprintf(
+			"coalesce(%s->>%s, CASE WHEN jsonb_typeof(%s) = 'string' THEN %s #>> '{}' END)",
+			expr, sqlLiteral(vocabulary.ReferenceValueKey), expr, expr)
+		return fmt.Sprintf("%s IS NOT NULL AND left(%s, length(%s) + 1) <> %s || '/'",
+			held, held, arg, arg)
 	})
 }
 

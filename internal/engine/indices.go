@@ -82,6 +82,15 @@ func indexExpr(t *vocabulary.Kind, name string) (string, error) {
 	if !vocabulary.ValidCamel(name) {
 		return "", fmt.Errorf("%w: %q is not an indexable column", substrate.ErrValidation, name)
 	}
+	// A REFERENCE indexes the PATH it points at, not the value's JSON text. Its
+	// stored value is the object `{ref: …}` (decision 0044), so `props->>` would
+	// build an index on a serialized object that no query asks for: every read
+	// of a reference goes through referencePathSQL, and an index keyed on a
+	// different expression is one Postgres can never use. `kinds/` declares one
+	// today, `run`'s `[trigger, status]`.
+	if p, ok := t.Prop(name); ok && p.Datatype == vocabulary.DatatypeReference && !p.Repeated && !p.Keyed {
+		return `(` + referencePathSQL("props", name) + `)`, nil
+	}
 	return `(props->>` + sqlLiteral(name) + `)`, nil
 }
 

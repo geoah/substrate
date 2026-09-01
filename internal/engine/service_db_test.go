@@ -271,7 +271,7 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 	if authority.Kind != "core.substrate.reamde.dev/authority" {
 		t.Fatalf("authority projection type = %q", authority.Kind)
 	}
-	if v, _ := vocabulary.VersionValue(authority.Properties["version"]); v != 2 || authority.Properties["source"] != "builtin" {
+	if v, _ := vocabulary.VersionValue(authority.Properties["version"]); v != 3 || authority.Properties["source"] != "builtin" {
 		t.Fatalf("authority projection = %v", authority.Properties)
 	}
 	// A vocabulary authority declares no actors of its own; core's three are the
@@ -328,9 +328,9 @@ func TestSchemaMetaModelProjections(t *testing.T) {
 		t.Fatalf("mapping projection: %v", err)
 	}
 	if mp.Kind != "core.substrate.reamde.dev/recordmapping" ||
-		mp.Properties["from"] != vocabulary.RecordPath("core.substrate.reamde.dev/kind", shelf+"/bookedition") ||
-		mp.Properties["to"] != vocabulary.RecordPath("core.substrate.reamde.dev/kind", shelf+"/book") ||
-		mp.Properties["edge"] != "work" {
+		refPathValue(mp, "from") != vocabulary.RecordPath("core.substrate.reamde.dev/kind", shelf+"/bookedition") ||
+		refPathValue(mp, "to") != vocabulary.RecordPath("core.substrate.reamde.dev/kind", shelf+"/book") ||
+		mp.Properties["property"] != "work" {
 		t.Fatalf("mapping projection = %v", mp.Properties)
 	}
 	// Mappings shed their sourceYAML first; record 61 extended

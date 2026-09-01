@@ -26,9 +26,10 @@ data:
     productURL:
       type: url
       description: the item's product page
-  edges:
     order:
-      to: order
+      type: reference
+      kind: order
       required: true
-      ownerRef: true
+      mustExist: true
+      onDelete: cascade
       description: the order this line belongs to

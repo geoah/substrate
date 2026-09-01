@@ -5,15 +5,12 @@
 /** The per-kind column factory (the official pattern's `columns.tsx`, made
  * schema-driven because ONE generic table covers every kind): `title` +
  * temporal always, declared properties after in schema casing with record-56
- * descriptions on the headers, declared edges as HoverCard peeks, `updated`
- * on the right. Rule 6: the first and last columns carry the page gutter. */
+ * descriptions on the headers, `updated` on the right. Rule 6: the first and last columns carry the page gutter. */
 
 import type { DataTableColumn } from "@/components/data-table/data-table"
 
 import { DataTableColumnHeader } from "@/components/data-table/data-table-column-header"
-import { RecordPeek } from "@/components/record-peek"
 import { StateBadge } from "@/components/state-badge"
-import { Badge } from "@/components/ui/badge"
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import {
   cellValue,
@@ -24,7 +21,6 @@ import {
 } from "@/lib/format"
 import {
   columnProperties,
-  declaredEdges,
   temporalProperties,
   type DeclaredProperty,
 } from "@/lib/definition"
@@ -140,8 +136,7 @@ function propertySizing(prop: DeclaredProperty): PropertySizing {
 }
 
 export function buildColumns(
-  kind: KindInfo,
-  kinds: KindInfo[]
+  kind: KindInfo
 ): DataTableColumn<SubstrateRecord>[] {
   const columns: DataTableColumn<SubstrateRecord>[] = []
 
@@ -212,41 +207,6 @@ export function buildColumns(
       ),
       cell: ({ getValue }) => propertyCell(prop, getValue()),
       meta: { label: prop.name, ...propertySizing(prop) },
-    })
-  }
-
-  // declared edges: target title + HoverCard peek; fan-out shows "+N".
-  for (const edge of declaredEdges(kind)) {
-    columns.push({
-      id: `edge:${edge.rel}`,
-      enableSorting: false,
-      header: ({ column }) => (
-        <DataTableColumnHeader
-          column={column}
-          title={edge.rel}
-          description={edge.description}
-        />
-      ),
-      cell: ({ row }) => {
-        const targets = row.original.edges?.[edge.rel] ?? []
-        if (!targets.length) return <Muted>—</Muted>
-        return (
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span className="min-w-0 truncate">
-              <RecordPeek target={targets[0]} types={kinds} />
-            </span>
-            {targets.length > 1 && (
-              <Badge
-                variant="secondary"
-                className="shrink-0 px-1.5 font-normal"
-              >
-                +{targets.length - 1}
-              </Badge>
-            )}
-          </span>
-        )
-      },
-      meta: { label: edge.rel, size: { min: 140, max: 260, weight: 1 } },
     })
   }
 

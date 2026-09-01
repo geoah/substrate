@@ -85,19 +85,19 @@ func xcSeries(c *C, id, summary, rule string, exdates []string) record {
 	if len(exdates) > 0 {
 		props["exdates"] = exdates
 	}
-	return c.putRec(seriesCollection, id, props, []edge{{Rel: "calendar", To: edgeTarget{ID: "work"}}})
+	props["calendar"] = recPath(calendarKind, "work")
+	return c.putRec(seriesCollection, id, props)
 }
 
 // xcOccurrence explodes one instant of a series into a concrete event.
 func xcOccurrence(c *C, id, seriesID, summary string, at time.Time, length time.Duration) record {
 	c.t.Helper()
 	return c.putRec(eventCollection, id, map[string]any{
-		"summary": summary,
-		"at":      at.Format(time.RFC3339),
-		"endsAt":  at.Add(length).Format(time.RFC3339),
-	}, []edge{
-		{Rel: "calendar", To: edgeTarget{ID: "work"}},
-		{Rel: "series", To: edgeTarget{Kind: seriesKind, ID: seriesID}},
+		"summary":  summary,
+		"at":       at.Format(time.RFC3339),
+		"endsAt":   at.Add(length).Format(time.RFC3339),
+		"calendar": recPath(calendarKind, "work"),
+		"series":   recPath(seriesKind, seriesID),
 	})
 }
 
@@ -110,7 +110,7 @@ func xcWindow(c *C, from, to time.Time) []record {
 		Records []record `json:"records"`
 	}
 	status, raw := c.do(http.MethodGet,
-		eventCollection+"?filter="+url.QueryEscape(filter)+"&orderBy=at&first=200&withEdges=1", nil, &page)
+		eventCollection+"?filter="+url.QueryEscape(filter)+"&orderBy=at&first=200", nil, &page)
 	c.requiref(status == http.StatusOK, "the window query answered %d: %s", status, raw)
 	return page.Records
 }
@@ -192,8 +192,7 @@ func xcCaseRuleMatrix(c *C) {
 	// a schedule alike, naming RFC 5545 and the parser's own reason.
 	garbage := "FREQ=NONSENSE;BYDAY=99XX"
 	badStatus, badRaw := c.do(http.MethodPut, seriesCollection+"/x-ser-garbage", map[string]any{
-		"properties": map[string]any{"summary": "Matrix: garbage no parser accepts", "recurrence": garbage},
-		"edges":      []edge{{Rel: "calendar", To: edgeTarget{ID: "work"}}},
+		"properties": map[string]any{"summary": "Matrix: garbage no parser accepts", "recurrence": garbage, "calendar": recPath(calendarKind, "work")},
 	}, nil)
 	c.requiref(badStatus == http.StatusUnprocessableEntity && strings.Contains(string(badRaw), "RFC 5545"),
 		"a garbage rule answered %d on the series, want the 422 naming RFC 5545: %s", badStatus, badRaw)
@@ -204,8 +203,7 @@ func xcCaseRuleMatrix(c *C) {
 
 	// A rule that is not an RRULE at all is refused on the series too.
 	notStatus, notRaw := c.do(http.MethodPut, seriesCollection+"/x-ser-notarule", map[string]any{
-		"properties": map[string]any{"summary": "no rule", "recurrence": "every tuesday"},
-		"edges":      []edge{{Rel: "calendar", To: edgeTarget{ID: "work"}}},
+		"properties": map[string]any{"summary": "no rule", "recurrence": "every tuesday", "calendar": recPath(calendarKind, "work")},
 	}, nil)
 	c.requiref(notStatus == http.StatusUnprocessableEntity && strings.Contains(string(notRaw), "RFC 5545"),
 		"a non-RRULE string answered %d, want the 422 naming RFC 5545: %s", notStatus, notRaw)
@@ -216,8 +214,7 @@ func xcCaseRuleMatrix(c *C) {
 	// beside `exdates`, and the rule's anchor lives in `startsAt`.
 	block := "RRULE:FREQ=WEEKLY;BYDAY=MO\nRDATE:20260915T093000Z"
 	blockStatus, blockRaw := c.do(http.MethodPut, seriesCollection+"/x-ser-rdate", map[string]any{
-		"properties": map[string]any{"summary": "Matrix: an RDATE block", "recurrence": block},
-		"edges":      []edge{{Rel: "calendar", To: edgeTarget{ID: "work"}}},
+		"properties": map[string]any{"summary": "Matrix: an RDATE block", "recurrence": block, "calendar": recPath(calendarKind, "work")},
 	}, nil)
 	c.requiref(blockStatus == http.StatusUnprocessableEntity,
 		"a multi-line RRULE+RDATE block answered %d on the series, want 422: %s", blockStatus, blockRaw)
@@ -227,7 +224,8 @@ func xcCaseRuleMatrix(c *C) {
 		"rdates":     []string{"2026-09-15T09:30:00Z"},
 		"exdates":    []string{"2026-09-21T09:30:00Z"},
 		"startsAt":   "2026-08-31T09:30:00Z",
-	}, []edge{{Rel: "calendar", To: edgeTarget{ID: "work"}}})
+		"calendar":   recPath(calendarKind, "work"),
+	})
 	rdates, _ := withExtras.Properties["rdates"].([]any)
 	c.requiref(len(rdates) == 1 && withExtras.prop("startsAt") != "",
 		"the declared homes did not round-trip: rdates %v, startsAt %q", rdates, withExtras.prop("startsAt"))
@@ -259,7 +257,7 @@ func xcCaseWeekdayStandup(c *C) {
 			ids = append(ids, id)
 		}
 	}
-	c.stepf("exploded 3 weeks of the every-weekday series: 15 occurrences at 09:30, all edged to `x-ser-standup`")
+	c.stepf("exploded 3 weeks of the every-weekday series: 15 occurrences at 09:30, every one naming `x-ser-standup` as its series")
 
 	// Google's single-instance override: week 2 Wednesday moves 2 hours later
 	// and gains a title, SAME instance id, everything else untouched.
@@ -270,12 +268,12 @@ func xcCaseWeekdayStandup(c *C) {
 		"at":              movedAt.Format(time.RFC3339),
 		"endsAt":          movedAt.Add(15 * time.Minute).Format(time.RFC3339),
 		"originalStartAt": monday.AddDate(0, 0, 9).Format(time.RFC3339),
-	}, nil)
-	c.requiref(sameIDs(edgeIDs(moved, "series"), "x-ser-standup"),
-		"the override lost its series edge: %v (an update must merge, never prune)", edgeIDs(moved, "series"))
+	})
+	c.requiref(sameSet(refPaths(moved, "series"), recPath(seriesKind, "x-ser-standup")),
+		"the override lost its series reference: %v (an update must merge, never prune)", refPaths(moved, "series"))
 	c.requiref(moved.prop("originalStartAt") != "",
 		"the override does not record the slot it replaced (originalStartAt)")
-	c.stepf("overrode one instance in place: same id `%s`, new time +2h, new title, `originalStartAt` naming the slot it replaced; the series edge survived the update", movedID)
+	c.stepf("overrode one instance in place: same id `%s`, new time +2h, new title, `originalStartAt` naming the slot it replaced; the series reference survived the update", movedID)
 
 	// Google's cancellation: the week 3 Friday instance is retracted (a
 	// canceled event is DELETED, never flagged) and the series gains the
@@ -286,7 +284,7 @@ func xcCaseWeekdayStandup(c *C) {
 	c.requiref(status == http.StatusOK, "retracting the canceled instance answered %d: %s", status, raw)
 	series := c.putRec(seriesCollection, "x-ser-standup", map[string]any{
 		"exdates": []string{canceledAt.Format(time.RFC3339)},
-	}, nil)
+	})
 	exdates, _ := series.Properties["exdates"].([]any)
 	c.requiref(len(exdates) == 1, "the series carries %d exdates, want 1", len(exdates))
 	c.stepf("canceled one instance Google-style: the occurrence `%s` is retracted and the series carries its exdate", canceledID)
@@ -404,12 +402,12 @@ func xcCaseNthWeekday(c *C) {
 		c.requiref(rec.Properties["at"] == nil, "series %s carries a timeline instant %v", rec.ID, rec.Properties["at"])
 	}
 
-	// The back-reference a calendar UI walks: /incoming on the series, rel
-	// `series`, is exactly its occurrences.
+	// The back-reference a calendar UI walks: /incoming on the series,
+	// narrowed to the `series` property, is exactly its occurrences.
 	var incoming struct {
 		Total int `json:"total"`
 	}
-	status, _ = c.do(http.MethodGet, seriesCollection+"/x-ser-2tu/incoming?rel=series", nil, &incoming)
+	status, _ = c.do(http.MethodGet, seriesCollection+"/x-ser-2tu/incoming?property=series", nil, &incoming)
 	c.requiref(status == http.StatusOK && incoming.Total == 4,
 		"incoming on the 2nd-Tuesday series holds %d occurrences, want 4", incoming.Total)
 	c.stepf("the series never sits in a time window, and /incoming on it lists exactly its 4 occurrences")
@@ -436,7 +434,7 @@ func xcCaseSeriesSplit(c *C) {
 	until := splitAt.Add(-time.Second).Format("20060102T150405Z")
 	seriesA := c.putRec(seriesCollection, "x-ser-sync-a", map[string]any{
 		"recurrence": "RRULE:FREQ=WEEKLY;BYDAY=WE;UNTIL=" + until,
-	}, nil)
+	})
 	c.requiref(strings.Contains(seriesA.prop("recurrence"), "UNTIL="+until),
 		"the truncated series does not carry the UNTIL: %q", seriesA.prop("recurrence"))
 	xcSeries(c, "x-ser-sync-b", "Design sync", "RRULE:FREQ=WEEKLY;BYDAY=WE", nil)
@@ -449,8 +447,8 @@ func xcCaseSeriesSplit(c *C) {
 	}
 	c.stepf("split from occurrence five: series A truncated with UNTIL=%s, series B minted, four old instances retracted, four new ones at 15:00", until)
 
-	// The whole window: eight live rows, 14:00 before the boundary edged to
-	// A, 15:00 after it edged to B, in one ordered read.
+	// The whole window: eight live rows, 14:00 before the boundary naming
+	// series A, 15:00 after it naming series B, in one ordered read.
 	all := xcWindow(c, wednesday.AddDate(0, 0, -1), wednesday.AddDate(0, 0, 7*8))
 	var sync []record
 	for _, rec := range all {
@@ -468,8 +466,8 @@ func xcCaseSeriesSplit(c *C) {
 		}
 		c.requiref(at.Equal(wantAt),
 			"occurrence %d (%s) sits at %s, want %s (the hour must move exactly at the split)", i, rec.ID, at, wantAt)
-		c.requiref(sameIDs(edgeIDs(rec, "series"), wantSeries),
-			"occurrence %d (%s) is edged to %v, want %s", i, rec.ID, edgeIDs(rec, "series"), wantSeries)
+		c.requiref(sameSet(refPaths(rec, "series"), recPath(seriesKind, wantSeries)),
+			"occurrence %d (%s) names series %v, want %s", i, rec.ID, refPaths(rec, "series"), wantSeries)
 	}
 	c.stepf("one ordered window shows the boundary: four at the old hour on series A, then four an hour later on series B")
 
@@ -481,7 +479,7 @@ func xcCaseSeriesSplit(c *C) {
 		var incoming struct {
 			Total int `json:"total"`
 		}
-		status, _ := c.do(http.MethodGet, seriesCollection+"/"+tc.id+"/incoming?rel=series", nil, &incoming)
+		status, _ := c.do(http.MethodGet, seriesCollection+"/"+tc.id+"/incoming?property=series", nil, &incoming)
 		c.requiref(status == http.StatusOK && incoming.Total == tc.want,
 			"incoming on %s holds %d, want %d", tc.id, incoming.Total, tc.want)
 	}
@@ -549,13 +547,14 @@ func xoCaseMedicationWeek(c *C) {
 	dose := base.Add(6 * time.Hour)                // 09:00 Athens in summer
 	week2, week3, week4 := base.AddDate(0, 0, 7), base.AddDate(0, 0, 14), base.AddDate(0, 0, 21)
 
-	c.putRec(medCollection, "levothyroxine", map[string]any{"name": "Levothyroxine"}, nil)
+	c.putRec(medCollection, "levothyroxine", map[string]any{"name": "Levothyroxine"})
 	c.putRec(medScheduleCollection, "levothyroxine-daily", map[string]any{
 		"doseAmount": 1, "doseUnit": "tablet",
 		"recurrence": "RRULE:FREQ=DAILY",
 		"timezone":   "Europe/Athens",
 		"at":         dose.Format(time.RFC3339), // the anchor: temporal(range)'s own start
-	}, []edge{{Rel: "medication", To: edgeTarget{ID: "levothyroxine"}}})
+		"medication": "health.substrate.reamde.dev/medication/levothyroxine",
+	})
 	c.stepf("one schedule record holds the forever-daily rule, anchored %s", dose.Format(time.RFC3339))
 
 	// The agenda is two reads and a merge: rows in the window (the calendar
@@ -588,7 +587,8 @@ func xoCaseMedicationWeek(c *C) {
 	c.putRec(medLogCollection, "x-occ-dose-tue", map[string]any{
 		"at":          tue.Add(20 * time.Minute).Format(time.RFC3339),
 		"scheduledAt": tue.Format(time.RFC3339),
-	}, []edge{{Rel: "schedule", To: edgeTarget{ID: "levothyroxine-daily"}}})
+		"schedule":    "health.substrate.reamde.dev/medicationschedule/levothyroxine-daily",
+	})
 	occs = xoRead(c, base, week2)
 	marked := 0
 	for _, o := range occs.Occurrences {

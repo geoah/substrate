@@ -6,9 +6,9 @@ data:
   authority: people.substrate.reamde.dev
   description: >-
     A working group finer than an organization: the people who share a backlog.
-    Teams nest through the parent edge, and leadership is the leads edge rather
-    than a flag on the member, so one person can lead one team and merely
-    sit on another.
+    Teams nest through the parent reference, and leadership is the leads reference
+    rather than a flag on the member, so one person can lead one team and
+    merely sit on another.
   names:
     singular: team
   displayTemplate: "{name}"
@@ -24,15 +24,20 @@ data:
       type: markdown
       embed: true
       description: what the team owns and how it works, as prose
-  edges:
     parent:
-      to: team
+      type: reference
+      kind: team
+      mustExist: true
       description: the team this one nests under
     members:
-      to: person
-      many: true
+      type: reference
+      kind: person
+      repeated: true
+      mustExist: true
       description: the people on the team
     leads:
-      to: person
-      many: true
+      type: reference
+      kind: person
+      repeated: true
+      mustExist: true
       description: the people who lead it; leading is not membership

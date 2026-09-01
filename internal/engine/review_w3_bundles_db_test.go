@@ -697,14 +697,21 @@ func TestW3SplitInputTurnsAmbiguous(t *testing.T) {
 	// arrived here.
 	const rec = "w3fabmerge00"
 	if _, err := db.Exec(`
-		INSERT INTO records (id, kind, props) VALUES ($1, 'core.substrate.reamde.dev/recordmerge', '{"moved": {}}'::jsonb)`,
-		rec); err != nil {
+		INSERT INTO records (id, kind, props)
+		VALUES ($1, 'core.substrate.reamde.dev/recordmerge',
+			jsonb_build_object('moved', '{}'::jsonb, 'winner', $2::text, 'loser', $3::text))`,
+		rec, mbConfigType+"/"+c2.ID, mbConfigType+"/"+c1.ID); err != nil {
 		t.Fatalf("insert merge record: %v", err)
 	}
-	for rel, dst := range map[string]string{"winner": c2.ID, "loser": c1.ID} {
-		if _, err := db.Exec(`INSERT INTO edges (rel, src_kind, src, dst_kind, dst) VALUES ($1, 'core.substrate.reamde.dev/recordmerge', $2, $3, $4)`,
-			rel, rec, mbConfigType, dst); err != nil {
-			t.Fatalf("insert %s edge: %v", rel, err)
+	// The row is planted behind the engine's back, so its projection in the
+	// refs index has to be planted with it: split reads the pair off the record
+	// and the reverse reads read the index.
+	for property, dst := range map[string]string{"winner": c2.ID, "loser": c1.ID} {
+		if _, err := db.Exec(`
+			INSERT INTO refs (src_kind, src, property, path, ord, dst_kind, dst)
+			VALUES ('core.substrate.reamde.dev/recordmerge', $1, $2, '', 0, $3, $4)`,
+			rec, property, mbConfigType, dst); err != nil {
+			t.Fatalf("insert the %s row: %v", property, err)
 		}
 	}
 

@@ -34,7 +34,6 @@ const DOCS: KeyDocs = {
     },
     wire: { type: "string" },
   },
-  edges: {},
 }
 
 const TARGETS = {

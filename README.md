@@ -24,11 +24,11 @@ out.
   repository, and everything they own lives in it. No roles, no scopes, no
   sharing to configure. Isolation between repositories is Postgres row level
   security, not query-layer discipline.
-- **Kinds declared in YAML.** A kind names its properties and edges,
-  validation runs on every write, and a vocabulary evolves by integer
+- **Kinds declared in YAML.** A kind names its properties, including the
+  references that point at other records; validation runs on every write, and a vocabulary evolves by integer
   versions without breaking the records underneath it.
-- **One small write API.** Seven mutations (`put`, `patch`, `delete`,
-  `link`, `unlink`, `merge`, `split`), over REST and GraphQL alike, with
+- **One small write API.** Five mutations (`put`, `patch`, `delete`,
+  `merge`, `split`), over REST and GraphQL alike, with
   full-text and vector search and a resumable `watch` stream beside them.
 - **Bundles.** Vocabulary, functions and agents install and uninstall as one
   unit. The catalog compiled into the binary ships sync for Google, GitHub,
@@ -75,7 +75,7 @@ bin/substratectl register --server http://localhost:8080
 A fresh repository holds the core vocabulary and nothing else. Teach it
 yours: kinds are declared in YAML under an authority you name, and a
 declaration is itself a record write. One file declares a project and a
-task, with typed properties, a state machine, and an edge between them:
+task, with typed properties, a state machine, and a reference between them:
 
 ```yaml
 # chores.yaml
@@ -139,9 +139,10 @@ data:
     completedAt:
       type: datetime
       description: when it was done, stamped by the transition
-  edges:
     project:
-      to: project
+      type: reference
+      kind: project
+      mustExist: true
       description: the project this task groups under
 ```
 
@@ -167,11 +168,7 @@ data:
   properties:
     name: Buy milk
     dueAt: 2026-08-30T09:00:00Z
-  edges:
-    - rel: project
-      to:
-        kind: geoah.me/project
-        id: home
+    project: geoah.me/project/home
 ---
 kind: geoah.me/task
 metadata:
@@ -180,11 +177,7 @@ data:
   properties:
     name: Water the plants
     dueAt: 2026-08-29T09:00:00Z
-  edges:
-    - rel: project
-      to:
-        kind: geoah.me/project
-        id: home
+    project: geoah.me/project/home
 EOF
 
 bin/substratectl get task

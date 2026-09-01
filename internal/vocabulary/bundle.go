@@ -81,7 +81,7 @@ type Bundle struct {
 	Description string
 	// Inputs are the bundle's declared configuration needs, by name: each
 	// names a KIND whose records satisfy it, and the engine resolves one
-	// record per input (bound edge, the id `default`, or the sole live
+	// record per input (a bound reference, the id `default`, or the sole live
 	// record — in that order). No cardinality is enforced on the kind
 	// itself: any number of records may exist, resolution picks one.
 	// A bundle with no needs declares no inputs, and nothing anywhere
@@ -96,12 +96,12 @@ type Bundle struct {
 	// The loader holds it equal to the authority's declared members.
 	Installs []string
 	// Requires names the AUTHORITIES this bundle's closure declares against —
-	// the vocabulary its mappings, edges and trigger subscriptions point at.
+	// the vocabulary its mappings, references and trigger subscriptions point at.
 	// Vocabulary is imported now rather than seeded, so a bundle that maps
 	// google contacts onto `people.substrate.reamde.dev/person` cannot assume people is
 	// there. resolveBundle refuses the install when one is absent, naming what
 	// to import first, instead of letting the closure fail on an unresolvable
-	// edge target.
+	// reference pin.
 	Requires []string
 	// Vocabulary marks a VOCABULARY bundle: one that owns a BARE authority
 	// under the org domain ("people.substrate.reamde.dev") and ships kinds and nothing
@@ -682,7 +682,7 @@ func (r *Registry) resolveBundle(g *Authority) []string {
 	// THE REQUIRES CHECK. Vocabulary is imported, not seeded, so a closure
 	// that declares against another authority says so and is refused here when
 	// that authority is absent — one legible problem naming what to import
-	// first, instead of an unresolvable edge target or mapping `to:` deeper in
+	// first, instead of an unresolvable reference pin or mapping `to:` deeper in
 	// the same admission.
 	for _, req := range b.Requires {
 		if _, ok := r.AuthorityByName(req); !ok {

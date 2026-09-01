@@ -3,7 +3,7 @@
 # of this file). Small on purpose — a task, the thing it groups under, and
 # the log that marks a recurring task's occurrences off.
 #
-# `source: {to: any}` is untyped for the usual reason: a task can come from
+# `source` is an unpinned reference for the usual reason: a task can come from
 # a message, a mail, an event or a transcript, and naming each would make
 # this authority depend on every other one.
 #
@@ -26,11 +26,13 @@ data:
   # is `done`, matching the task's own terminal state.
   # version 4: `tasklog` binds `occurrencelog`. The `task` kind pins its own
   # version for its `recurring` binding (#122).
-  version: 5
+  # version 6: every link is a `type: reference` property carrying
+  # `mustExist: true`, and an owning one carries `onDelete: cascade`.
+  version: 6
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A VOCABULARY bundle (see people.substrate.reamde.dev): kinds only, imported from the
-# registry rather than seeded. The assignee edge lands on person, so it
+# registry rather than seeded. The assignee reference lands on person, so it
 # requires that authority to be present first.
 kind: core.substrate.reamde.dev/bundle
 metadata:
@@ -39,8 +41,8 @@ data:
   authority: tasks.substrate.reamde.dev
   description: >-
     Tasks and the projects they sit under — what is owed, with priority, an
-    optional repeat rule marked off by tasklogs, and the untyped `source`
-    edge back to whatever asked for it.
+    optional repeat rule marked off by tasklogs, and the unpinned `source`
+    reference back to whatever asked for it.
   requires:
     - people.substrate.reamde.dev
     - scheduling.substrate.reamde.dev

@@ -37,8 +37,6 @@ func TestOpOfFoldsTheChangelogOntoThreeChangeClasses(t *testing.T) {
 			vocabulary.FunctionOpUpdate, "a restore is not a create: the id existed before",
 		},
 		{"a patch", substrate.Change{Op: substrate.OpPatch}, vocabulary.FunctionOpUpdate, ""},
-		{"a link", substrate.Change{Op: substrate.OpLink}, vocabulary.FunctionOpUpdate, ""},
-		{"an unlink", substrate.Change{Op: substrate.OpUnlink}, vocabulary.FunctionOpUpdate, ""},
 		{
 			"a merge",
 			substrate.Change{Op: substrate.OpMerge},

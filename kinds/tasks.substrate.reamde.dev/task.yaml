@@ -17,7 +17,9 @@ data:
   # version 5: binds the `recurring` trait, which contracts the
   # recurrence/exdates/timezone triple this kind already declared (#122).
   # version 7: `rdates` lands with the `recurring` trait's move.
-  version: 7
+  # version 8: `project`, `assignee` and `source` are reference properties
+  # now, each with `mustExist: true`.
+  version: 8
   names:
     singular: task
   traits:
@@ -49,8 +51,8 @@ data:
       embed: true
       description: what the task involves, as prose
     # where the task lives outside the substrate — the GitHub issue, the
-    # ticket, the thread. The `source` edge names the rep record; this is the
-    # provider's own link, so a client can jump straight out.
+    # ticket, the thread. The `source` reference names the rep record; this
+    # is the provider's own link, so a client can jump straight out.
     url:
       type: url
       description: where this task lives outside the substrate
@@ -111,13 +113,17 @@ data:
     completedAt:
       type: datetime
       description: when the task was done, stamped by the transition
-  edges:
     project:
-      to: project
+      type: reference
+      kind: project
+      mustExist: true
       description: the project this task groups under
     assignee:
-      to: person
+      type: reference
+      kind: person
+      mustExist: true
       description: the person the task is on; absent means the owner
     source:
-      to: any
+      type: reference
+      mustExist: true
       description: the message, mail, event or transcript the task came from

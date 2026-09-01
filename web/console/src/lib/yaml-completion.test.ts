@@ -1,7 +1,7 @@
 /** What the YAML lens offers, and where. The rules are the declaration's: the
  * envelope's own keys at the top, the declared properties inside
  * `data.properties`, an enum's admitted values after its key, a state machine's
- * states, the declared edge rels after `rel:` — and never a property the
+ * states, a reference's worked path — and never a property the
  * document already writes. */
 
 import { describe, expect, it } from "vitest"
@@ -44,10 +44,10 @@ const taskKind: KindInfo = {
           outputPer1M: { type: "float", min: 0 },
         },
       },
-    },
-    edges: {
       assignee: {
-        to: "people.substrate.reamde.dev/person",
+        type: "reference",
+        kind: "people.substrate.reamde.dev/person",
+        mustExist: true,
         description: "who is on it",
       },
     },
@@ -97,7 +97,7 @@ describe("completionsAt", () => {
   it("offers the envelope's own keys at the top", () => {
     expect(labels("k")).toEqual(["kind", "metadata", "data"])
     expect(labels("metadata:\n  ")).toEqual(["id", "labels", "annotations"])
-    expect(labels("data:\n  ")).toEqual(["properties", "edges"])
+    expect(labels("data:\n  ")).toEqual(["properties"])
   })
 
   it("offers the declared properties inside the properties block", () => {
@@ -149,12 +149,19 @@ describe("completionsAt", () => {
     expect(labels("kind: ")).toEqual(["tasks.substrate.reamde.dev/task"])
   })
 
-  it("offers the declared edge rels after a `rel:`", () => {
-    const found = at("data:\n  edges:\n    - rel: ")
-    expect(found?.options.map((o) => o.label)).toEqual(["assignee"])
-    expect(found?.options[0].detail).toBe(
-      "→ people.substrate.reamde.dev/person"
+  it("offers a reference alongside every other declared property", () => {
+    const found = at("data:\n  properties:\n    a")
+    const assignee = found?.options.find((o) => o.label === "assignee")
+    expect(assignee?.detail).toBe(
+      "reference → people.substrate.reamde.dev/person"
     )
+    expect(assignee?.info).toBe("who is on it")
+  })
+
+  it("offers a worked path after a reference's key", () => {
+    expect(labels("data:\n  properties:\n    assignee: ")).toEqual([
+      "people.substrate.reamde.dev/person/some-id",
+    ])
   })
 
   it("offers an object's declared fields inside its block", () => {

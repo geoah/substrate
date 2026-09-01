@@ -43,16 +43,9 @@ const (
 	foldTombstone foldKind = "tombstone"
 	// foldPurge hard-deletes a record and everything hanging off it (gc).
 	foldPurge foldKind = "purge"
-	// foldBump moves a record's version without touching its columns: the
-	// link/unlink write, whose change is an edge.
+	// foldBump moves a record's version without touching its columns: an
+	// annotation-only write, whose change is beside the row.
 	foldBump foldKind = "bump"
-
-	foldEdgePut foldKind = "edge"
-	foldEdgeDel foldKind = "unedge"
-	// foldEdgeOnly clears every other target of a single-valued rel — the
-	// `many: false` replacement, recorded because a replay must clear the same
-	// rows in the same order.
-	foldEdgeOnly foldKind = "edge1"
 
 	foldAnnotation foldKind = "annotation"
 	foldManager    foldKind = "manager"
@@ -76,7 +69,7 @@ const (
 type rowDelta struct {
 	// Created marks the entry that brought the record into being, Restored the
 	// one that lifted a tombstone, Force an upsert that must touch the row even
-	// when no column moved (its change was an edge or an annotation).
+	// when no column moved (its change was an annotation).
 	Created  bool `json:"created,omitempty"`
 	Restored bool `json:"restored,omitempty"`
 	Force    bool `json:"force,omitempty"`
@@ -109,12 +102,6 @@ type foldOp struct {
 
 	// Finalizer is the hold a tombstone adds as it lands (merge's).
 	Finalizer string `json:"finalizer,omitempty"`
-
-	Rel     string         `json:"rel,omitempty"`
-	DstType string         `json:"dstType,omitempty"`
-	Dst     string         `json:"dst,omitempty"`
-	Props   map[string]any `json:"props,omitempty"`
-	Subject bool           `json:"subject,omitempty"`
 
 	// Key/Value carry an annotation. Value is a POINTER because an annotation
 	// may legitimately be `false`, `0` or `""`: an absent value has to mean the
@@ -232,15 +219,6 @@ func (t *txn) foldOne(op foldOp) (foldResult, error) {
 	case foldBump:
 		changed, err := t.applyBump(op.ref())
 		return foldResult{changed: changed}, err
-	case foldEdgePut:
-		changed, err := t.applyEdgePut(op.Rel, op.ref(), eref{Kind: op.DstType, ID: op.Dst}, op.Props, op.Subject)
-		return foldResult{changed: changed}, err
-	case foldEdgeDel:
-		changed, err := t.applyEdgeDelete(op.Rel, op.ref(), eref{Kind: op.DstType, ID: op.Dst})
-		return foldResult{changed: changed}, err
-	case foldEdgeOnly:
-		changed, err := t.applyEdgeReplaceSingle(op.Rel, op.ref(), eref{Kind: op.DstType, ID: op.Dst})
-		return foldResult{changed: changed}, err
 	case foldAnnotation:
 		var value any
 		if op.Value != nil {
@@ -306,6 +284,17 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 		if op.Delta.Restored {
 			row.DeletedAt = nil
 		}
+		// The refs index is a PROJECTION of the row that just landed, like
+		// `fts` and unlike everything else here: derived from the folded
+		// properties and the kind's declaration (refs.go), never from an effect
+		// of its own. Deriving it HERE is what makes a rebuild reproduce it
+		// byte for byte — the entry's timestamp is the transaction's clock, so
+		// a replayed pointer is stamped with the moment the live write stamped
+		// it, and a pointer that came through unchanged keeps its own.
+		ty, _ := t.declarations().ByIdentity(row.Kind)
+		if err := t.syncRefs(ref, ty, row.Props); err != nil {
+			return foldResult{}, err
+		}
 	}
 	return foldResult{changed: changed, created: created, row: row}, nil
 }
@@ -332,8 +321,8 @@ func (t *txn) foldFTS(row *erow) [3]string {
 
 // --- the resync effect (merge and split) ---
 //
-// Merge and split do not move one row at a time. They REWRITE the graph around
-// the pair they join — every edge, annotation, manager row and former-id trail
+// Merge and split do not move one row at a time. They REWRITE the side stores
+// around the pair they join — every annotation, manager row and former-id trail
 // hanging off either — with set-shaped statements, and the entry they wrote
 // carried the moved SETS, which exist for split's undo and describe the
 // operation in reverse. A fold cannot replay a reverse set, so a repository
@@ -342,15 +331,16 @@ func (t *txn) foldFTS(row *erow) [3]string {
 // The resync effect closes that. Instead of describing each row it moved, a
 // merge names a SCOPE of records and carries the side-store rows that hold
 // AFTER the rewrite. Replaying it deletes every row keyed on a scope record —
-// the same four statements a purge uses — and writes the recorded ones back,
-// so the graph lands exactly where the merge left it whatever route the live
+// the same statements a purge uses — and writes the recorded ones back, so the
+// stores land exactly where the merge left them whatever route the live
 // statements took to get there.
 //
 // THE SCOPE IS THE CONTRACT. Every row the rewrite touches must be keyed on a
-// record in the scope, or the replay will neither delete nor restate it. That
-// is the pair itself plus every source record whose subject edge was
-// re-pointed: `repoint` deletes by (src, rel), which can reach an edge whose
-// far end is neither the winner nor the loser.
+// record in the scope, or the replay will neither delete nor restate it.
+//
+// The refs index is NOT in it, and needs no effect of its own: it is derived
+// from the source records' own properties (refs.go), which travel as deltas, so
+// a replay that reproduces the properties reproduces the index.
 //
 // It is the ONE effect that is a snapshot rather than a delta, and it is the
 // only one RECORDED WITHOUT BEING APPLIED: the capture reads the tables, so
@@ -368,26 +358,14 @@ type foldRef struct {
 // foldRows is the after-state a resync writes back: every side-store row, with
 // every column, so a replay reproduces the rows and not merely their shape.
 type foldRows struct {
-	Edges       []foldEdgeRow       `json:"edges,omitempty"`
 	Annotations []foldAnnotationRow `json:"annotations,omitempty"`
 	Managers    []foldManagerRow    `json:"managers,omitempty"`
 	FormerIDs   []foldFormerRow     `json:"formerIds,omitempty"`
 }
 
-// The timestamps travel because they are the row: `created_at` on an edge and
-// `updated_at` on an annotation are what the live write stamped, and a replay
-// under its own clock would reproduce the graph but not the store.
-type foldEdgeRow struct {
-	Rel       string          `json:"rel"`
-	SrcKind   string          `json:"srcKind"`
-	Src       string          `json:"src"`
-	DstKind   string          `json:"dstKind"`
-	Dst       string          `json:"dst"`
-	Props     json.RawMessage `json:"props,omitempty"`
-	Subject   bool            `json:"subject,omitempty"`
-	CreatedAt time.Time       `json:"createdAt"`
-}
-
+// The timestamp travels because it is the row: an annotation's `updated_at` is
+// what the live write stamped, and a replay under its own clock would reproduce
+// the value and not the row.
 type foldAnnotationRow struct {
 	Kind      string          `json:"kind"`
 	ID        string          `json:"id"`
@@ -432,7 +410,7 @@ func (t *txn) recordResync(scope []eref) error {
 
 // resyncOf reads the scope's whole side-store state into one effect. Rows are
 // read in a fixed order and de-duplicated, because two scope records share the
-// edges between them and a former-id row can match both ends.
+// rows between them and a former-id row can match both ends.
 func (t *txn) resyncOf(scope []eref) (foldOp, error) {
 	op := foldOp{Kind: foldResync, Rows: &foldRows{}}
 	seen := map[eref]bool{}
@@ -445,29 +423,8 @@ func (t *txn) resyncOf(scope []eref) (foldOp, error) {
 		refs = append(refs, ref)
 		op.Scope = append(op.Scope, foldRef(ref))
 	}
-	edgeSeen := map[[5]string]bool{}
 	formerSeen := map[[2]string]bool{}
 	for _, ref := range refs {
-		if err := t.scanInto(`
-			SELECT rel, src_kind, src, dst_kind, dst, props, subject, created_at FROM edges
-			WHERE (src_kind = $1 AND src = $2) OR (dst_kind = $1 AND dst = $2)
-			ORDER BY rel, src_kind, src, dst_kind, dst`, ref, func(rows *sql.Rows) error {
-			var e foldEdgeRow
-			var props []byte
-			if err := rows.Scan(&e.Rel, &e.SrcKind, &e.Src, &e.DstKind, &e.Dst, &props, &e.Subject, &e.CreatedAt); err != nil {
-				return err
-			}
-			key := [5]string{e.Rel, e.SrcKind, e.Src, e.DstKind, e.Dst}
-			if edgeSeen[key] {
-				return nil
-			}
-			edgeSeen[key] = true
-			e.Props, e.CreatedAt = json.RawMessage(props), e.CreatedAt.UTC()
-			op.Rows.Edges = append(op.Rows.Edges, e)
-			return nil
-		}); err != nil {
-			return foldOp{}, err
-		}
 		if err := t.scanInto(`
 			SELECT key, value, updated_at FROM annotations
 			WHERE record_kind = $1 AND record_id = $2 ORDER BY key`, ref, func(rows *sql.Rows) error {
@@ -536,12 +493,11 @@ func (t *txn) scanInto(query string, ref eref, fn func(*sql.Rows) error) error {
 
 // applyResync replays one: clear every side-store row keyed on a scope record,
 // then write the recorded rows back. The clear runs over the WHOLE scope before
-// the first insert, so a subject edge that moved between two scope records
-// cannot collide with the partial unique index on its way past.
+// the first insert, so a row that moved between two scope records cannot meet
+// its own old copy on the way past.
 func (t *txn) applyResync(op foldOp) error {
 	for _, ref := range op.Scope {
 		for _, q := range []string{
-			`DELETE FROM edges WHERE (src_kind = $1 AND src = $2) OR (dst_kind = $1 AND dst = $2)`,
 			`DELETE FROM annotations WHERE record_kind = $1 AND record_id = $2`,
 			`DELETE FROM property_managers WHERE record_kind = $1 AND record_id = $2`,
 			`DELETE FROM former_ids WHERE record_kind = $1 AND (record_id = $2 OR former_id = $2)`,
@@ -553,14 +509,6 @@ func (t *txn) applyResync(op foldOp) error {
 	}
 	if op.Rows == nil {
 		return nil
-	}
-	for _, e := range op.Rows.Edges {
-		if _, err := t.exec(`
-			INSERT INTO edges (rel, src_kind, src, dst_kind, dst, props, subject, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)`,
-			e.Rel, e.SrcKind, e.Src, e.DstKind, e.Dst, rawOrEmptyObject(e.Props), e.Subject, e.CreatedAt); err != nil {
-			return fmt.Errorf("substrate/engine: resync edge %s %s/%s: %w", e.Rel, e.SrcKind, e.Src, err)
-		}
 	}
 	for _, a := range op.Rows.Annotations {
 		if _, err := t.exec(`
@@ -588,15 +536,8 @@ func (t *txn) applyResync(op foldOp) error {
 	return nil
 }
 
-// rawOrEmptyObject and rawOrNull keep the two jsonb NOT NULL columns honest
-// when an effect arrives with the field omitted.
-func rawOrEmptyObject(raw json.RawMessage) []byte {
-	if len(raw) == 0 {
-		return []byte(`{}`)
-	}
-	return raw
-}
-
+// rawOrNull keeps the jsonb column honest when an effect arrives with the
+// field omitted.
 func rawOrNull(raw json.RawMessage) []byte {
 	if len(raw) == 0 {
 		return []byte(`null`)
@@ -762,10 +703,9 @@ func nonNilMap(m map[string]any) map[string]any {
 // --- replay ---
 
 // foldEntry applies one changelog entry to the fold tables. The entry's timestamp
-// becomes the transaction's clock, because `created_at`, `updated_at`,
-// `deleted_at` and an edge's `created_at` are all the writing transaction's
-// `now` — replaying under the replay's own clock would reproduce the values
-// and not the row.
+// becomes the transaction's clock, because `created_at`, `updated_at` and
+// `deleted_at` are all the writing transaction's `now` — replaying under the
+// replay's own clock would reproduce the values and not the row.
 func (t *txn) foldEntry(ch substrate.Change) error {
 	t.now = ch.TS.UTC()
 	ops, err := foldOpsOf(ch)
@@ -838,22 +778,40 @@ func forEachRecordDeltaSet(payload map[string]any, fn func(kindRef, recordID str
 // foldRefuses reports an entry the fold cannot faithfully replay, so a rebuild
 // stops instead of producing a fold that is quietly not the changelog's.
 //
-// Every ordinary operation (put, patch, delete, link, unlink, gc) is a delta
-// and replays. Merge and split rewrite the graph around the pair they join, and
-// they replay through the RESYNC effect they now carry — so what is refused
-// here is a merge or split entry WITHOUT one: an entry that describes the moved
-// sets for split's undo and nothing the fold can act on. It is refused rather
+// Two entries are refused.
+//
+// A MERGE OR SPLIT WITHOUT A RESYNC EFFECT. Merge and split rewrite the side
+// stores around the pair they join, and an entry that describes the moved sets
+// for split's undo carries nothing the fold can act on. It is refused rather
 // than replayed into a silent difference.
+//
+// AN ENTRY FROM BEFORE REFERENCES ABSORBED THE EDGE (decision 0044, changelog
+// dialect 1). `link` and `unlink` were ops and `edge`/`unedge`/`edge1` were
+// fold effects; both are gone, and their meaning lives in the source record's
+// own properties now, which no such entry carries. There is no translation and
+// no migration path: the rebuild refuses the entry by name, so the operator
+// reads which spelling stopped it instead of watching a replay reconstruct a
+// record with no pointers on it.
 //
 // An effect the fold does not know at all is refused by foldOne, one layer
 // down, where the same rule holds for every operation.
 func foldRefuses(ch substrate.Change) bool {
-	switch ch.Op {
-	case substrate.OpMerge, substrate.OpSplit:
-		ops, err := foldOpsOf(ch)
-		if err != nil {
+	switch string(ch.Op) {
+	case opLinkRetired, opUnlinkRetired:
+		return true
+	}
+	ops, err := foldOpsOf(ch)
+	if err != nil {
+		return true
+	}
+	for _, op := range ops {
+		switch string(op.Kind) {
+		case foldEdgePutRetired, foldEdgeDelRetired, foldEdgeOnlyRetired:
 			return true
 		}
+	}
+	switch ch.Op {
+	case substrate.OpMerge, substrate.OpSplit:
 		for _, op := range ops {
 			if op.Kind == foldResync {
 				return false
@@ -863,3 +821,15 @@ func foldRefuses(ch substrate.Change) bool {
 	}
 	return false
 }
+
+// The dialect-1 spellings this binary refuses. They are named as constants and
+// not as bare literals so the refusal is greppable from the words a stored
+// payload actually holds.
+const (
+	opLinkRetired   = "link"
+	opUnlinkRetired = "unlink"
+
+	foldEdgePutRetired  = "edge"
+	foldEdgeDelRetired  = "unedge"
+	foldEdgeOnlyRetired = "edge1"
+)

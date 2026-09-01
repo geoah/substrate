@@ -195,7 +195,7 @@ export function rootPath(...segments: string[]): string {
 
 /** A sub-resource or action of one record: the record's path, then the
  * sub-resource segments, one level below the id where no id can collide with
- * them (`.../{id}/incoming`, `.../{id}/edges/{rel}`, `.../{name}/call`). */
+ * them (`.../{id}/incoming`, `.../{name}/call`). */
 export function recordSubPath(
   authority: string,
   name: string,

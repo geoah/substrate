@@ -8,12 +8,17 @@
  * carries `decision` (state: proposed → accepted|rejected, accepting runs
  * `applyMerge` in the same transaction), `rationale` (string), `evidence`
  * (json: `{signals: [{signal, value?, jaccard?}], winner, loser}`) and the
- * `winner`/`loser` edges. The verdict is the ordinary transition patch —
+ * `winner`/`loser` REFERENCE properties. The verdict is the ordinary transition patch —
  * `PATCH {properties: {decision}}` — with the optional note riding the same
  * atomic write as the `owner/note` annotation. */
 
-import type { EdgeTarget, SubstrateRecord, KindInfo } from "@/lib/api/types"
-import { declaredEdges, declaredProperties } from "@/lib/definition"
+import {
+  readReference,
+  type SubstrateRecord,
+  type KindInfo,
+} from "@/lib/api/types"
+import { declaredProperties } from "@/lib/definition"
+import { splitRecordPath, type RecordPathParts } from "@/lib/record-path"
 
 // ── decisions ───────────────────────────────────────────────────────────────
 
@@ -27,6 +32,27 @@ export type MergeVerdict = "accepted" | "rejected"
 export function decisionOf(mr: SubstrateRecord): Decision {
   const d = mr.properties.decision
   return d === "accepted" || d === "rejected" ? d : "proposed"
+}
+
+// ── the pair ────────────────────────────────────────────────────────────────
+
+/** The two records a request names, each read off its `winner`/`loser`
+ * REFERENCE property: the stored value is the referent's whole record path, so
+ * the kind grammar splits it and the registry is never consulted. Either side
+ * is undefined when the request carries no readable pointer there. */
+export function mergePair(mr: SubstrateRecord): {
+  winner?: RecordPathParts
+  loser?: RecordPathParts
+} {
+  return {
+    winner: pairSide(mr.properties.winner),
+    loser: pairSide(mr.properties.loser),
+  }
+}
+
+function pairSide(value: unknown): RecordPathParts | undefined {
+  const held = readReference(value)
+  return held ? splitRecordPath(held.path) : undefined
 }
 
 // ── evidence ────────────────────────────────────────────────────────────────
@@ -97,14 +123,15 @@ export function signalText(s: EvidenceSignal): string {
  *   choose (edit after the merge if the other value was the right one).
  * - `recompute`: differing and machine-held — values never migrate; the
  *   winner recomputes from the union of live sources after the merge.
- * - `moves`: a differing edge — the loser's edges re-point at the winner,
- *   colliding duplicates dedupe.
- * - `equal`: both sides already agree; the merge changes nothing here. */
-export type DiffPosture = "choice" | "recompute" | "moves" | "equal"
+ * - `equal`: both sides already agree; the merge changes nothing here.
+ *
+ * There is no row posture for a pointer moving: nothing re-points at a merge.
+ * A reference at the loser resolves to the winner through the former-id trail,
+ * so the value stays exactly as written. */
+export type DiffPosture = "choice" | "recompute" | "equal"
 
 export interface DiffRow {
   key: string
-  kind: "property" | "edge"
   /** False for a property present on a record but absent from the schema. */
   declared: boolean
   /** The record-56 one-liner, when the schema carries one. */
@@ -137,21 +164,16 @@ function canonical(v: unknown): string {
   return JSON.stringify(v) ?? "undefined"
 }
 
-function edgeIds(targets: EdgeTarget[] | undefined): string[] {
-  return (targets ?? []).map((t) => t.id).sort()
-}
-
 const POSTURE_ORDER: Record<DiffPosture, number> = {
   choice: 0,
   recompute: 1,
-  moves: 2,
-  equal: 3,
+  equal: 2,
 }
 
 /** The field-by-field comparison the detail page renders: every declared
- * property and edge of the pair's type, plus anything either record actually
- * carries that the schema does not declare (honesty over tidiness). Rows
- * order by posture — what needs the owner first — then by name. */
+ * property of the pair's kind, plus anything either record actually carries
+ * that the declaration does not name (honesty over tidiness). Rows order by
+ * posture — what needs the owner first — then by name. */
 export function deriveDiff(
   winner: SubstrateRecord,
   loser: SubstrateRecord,
@@ -177,7 +199,6 @@ export function deriveDiff(
     const ownerHeld = winnerManager === "owner" || loserManager === "owner"
     rows.push({
       key,
-      kind: "property",
       declared: declaredPropNames.has(key),
       description: declaredProps.find((p) => p.name === key)?.description,
       winner: w,
@@ -185,27 +206,6 @@ export function deriveDiff(
       winnerManager,
       loserManager,
       posture: equal ? "equal" : ownerHeld ? "choice" : "recompute",
-    })
-  }
-
-  const declaredRels = kind ? declaredEdges(kind) : []
-  const relNames = new Set(declaredRels.map((e) => e.rel))
-  for (const rel of Object.keys(winner.edges ?? {})) relNames.add(rel)
-  for (const rel of Object.keys(loser.edges ?? {})) relNames.add(rel)
-
-  for (const rel of relNames) {
-    const w = winner.edges?.[rel]
-    const l = loser.edges?.[rel]
-    if (!w?.length && !l?.length) continue
-    const equal = sameValue(edgeIds(w), edgeIds(l))
-    rows.push({
-      key: rel,
-      kind: "edge",
-      declared: declaredRels.some((e) => e.rel === rel),
-      description: declaredRels.find((e) => e.rel === rel)?.description,
-      winner: w ?? [],
-      loser: l ?? [],
-      posture: equal ? "equal" : "moves",
     })
   }
 

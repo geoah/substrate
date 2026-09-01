@@ -32,8 +32,8 @@ no field of its own on the wire; a write's recorded effects name it beside
 each property manager they set. A write no token stands behind — the seed, the
 boot upgrade, a background worker, registration and login — carries an empty
 principal. `op` is the mutation
-that made the row (`put`, `patch`, `delete`,
-`link`, `unlink`, `merge`, `split`, plus the engine's own housekeeping), and
+that made the row (`put`, `patch`, `delete`, `merge`, `split`, plus the
+engine's own housekeeping), and
 `kind` plus `recordId` are the record's full identity. The readable half of
 `payload` names what changed rather than repeating it: `created` on first
 write, `restored` on an undelete, the list of accepted `properties`, the
@@ -69,7 +69,7 @@ writes a rule that matches nothing. Here is one act across all four:
 | The act                       | Changelog `op`                                     | `recordpatchpolicy.selector.ops` | `recordpatchrequest.op` | `trigger.source.record.ops` |
 | ----------------------------- | -------------------------------------------------- | -------------------------------- | ----------------------- | --------------------------- |
 | a record comes into existence | `put`, with `created: true` in the payload         | `put`, `patch`                   | `create`                | `create`                    |
-| an existing record changes    | `put`, `patch`, `link`, `unlink`, `merge`, `split` | `put`, `patch`                   | `patch`                 | `update`                    |
+| an existing record changes    | `put`, `patch`, `merge`, `split`                   | `put`, `patch`                   | `patch`                 | `update`                    |
 | a record goes away            | `delete`, and `gc` on the collector's pass         | `delete`                         | `delete`                | `delete`                    |
 
 Merge and split are the two rows the table cannot hold. A merge tombstones the
@@ -89,14 +89,14 @@ Each column answers a different question.
   tool call, a function tool's write effect (one gated effect holds the whole
   batch) and a `propose` carrying a `create`, `patch` or `delete`, which is
   matched as the `put`, `patch` or `delete` it stands for and consults the
-  policy's judge only. Policy evaluation only ever sees those three verbs, so an
-  agent's `link` and `unlink`, and a function effect's `merge` and `split`, are
-  bounded by the emit ceiling alone and no selector matches them.
+  policy's judge only. Policy evaluation only ever sees those three verbs, so a
+  function effect's `merge` and `split` are bounded by the emit ceiling alone
+  and no selector matches them.
 - **A request's `op` says what accepting will do.** The gate resolves the verb
   against the target as it converts the write, and it resolves `put` and
   `patch` the same way: with no live target the request reads `op: create` and
   names the record by `targetKind` and `targetId`, and with one it reads
-  `op: patch` and carries the `target` edge. So a selector matching either verb
+  `op: patch` and carries the `target` reference. So a selector matching either verb
   can produce `op: create` on the request it gates, and gating `patch` is not
   edit-only review. A selector written `ops: [create]` is refused.
 - **A trigger says what happened to the record**, whatever verb the writer

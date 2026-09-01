@@ -173,10 +173,10 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0024](0024-the-credential-key-is-key-material-not-a-passphrase.md) | `SUBSTRATE_CREDENTIAL_KEY` is key material, not a passphrase | accepted |
 | [0025](0025-an-actor-carries-the-full-authority.md) | An actor carries the full authority, and `connector:` is retired | accepted |
 | [0026](0026-embedding-vectors-are-1536-wide-or-refused.md) | Embedding vectors are 1536 wide or the provider row is refused | accepted |
-| [0027](0027-an-edge-outlives-a-tombstone-and-dies-with-a-purge.md) | An edge needs its target at write, outlives a tombstone, and dies with a purge | accepted |
+| [0027](0027-an-edge-outlives-a-tombstone-and-dies-with-a-purge.md) | An edge needs its target at write, outlives a tombstone, and dies with a purge | superseded |
 | [0030](0030-a-blob-outside-postgres-settles-after-its-bytes.md) | A blob outside Postgres settles after its bytes, behind a pending manifest | accepted |
 | [0031](0031-blob-bytes-outside-postgres-are-stored-plaintext.md) | Blob bytes outside Postgres are stored plaintext | accepted |
-| [0032](0032-an-owner-pointer-may-be-a-reference-and-a-mirror-account-is-one.md) | An owner pointer may be a reference, and a mirror's `account` is one | accepted |
+| [0032](0032-an-owner-pointer-may-be-a-reference-and-a-mirror-account-is-one.md) | An owner pointer may be a reference, and a mirror's `account` is one | superseded |
 | [0033](0033-the-path-grammar-has-no-separators.md) | The path grammar carries no separators; a record's URL is its reference | accepted |
 | [0034](0034-a-reference-may-pin-a-trait-not-only-a-kind.md) | A reference may pin a trait, not only a kind | accepted |
 | [0035](0035-a-network-body-connect-is-filtered-by-destination.md) | A network-granted body's connect is filtered by destination | accepted |
@@ -188,3 +188,4 @@ Those are a reviewer's, which is where `docscheck.sh` already draws its line.
 | [0041](0041-body-is-a-declarable-property-and-fts-is-per-property.md) | Body is a declarable, column-backed text property; FTS follows the property `fts` flag | accepted |
 | [0042](0042-every-kind-carries-an-authority.md) | Every kind carries an authority; the URL disambiguates by segment count | accepted |
 | [0043](0043-occurrences-expand-at-read-in-the-api-layer.md) | Occurrences expand at read, in the API layer, never in the engine | accepted |
+| [0044](0044-a-reference-is-the-only-link-between-records.md) | A reference is the only link between records; `data.edges` is removed | accepted |

@@ -4,12 +4,7 @@
  * into the docs those hovers read. */
 
 import type { KindInfo } from "@/lib/api/types"
-import {
-  declaredEdges,
-  declaredProperties,
-  propertyTypeLabel,
-  edgeTypeLabel,
-} from "@/lib/definition"
+import { declaredProperties, propertyTypeLabel } from "@/lib/definition"
 import { splitRecordPath } from "@/lib/record-path"
 import type { PropSpec } from "@/lib/record-schema"
 
@@ -19,7 +14,8 @@ import type { PropSpec } from "@/lib/record-schema"
  * description of one of the properties"). */
 export interface KeyDoc {
   /** The declared datatype as the schema spells it, `[]`-suffixed when the
-   * property is repeated (`email[]`); an edge reads `→ organization`. */
+   * property is repeated (`email[]`); a reference names its target
+   * (`reference → organization`). */
   type?: string
   description?: string
 }
@@ -27,49 +23,35 @@ export interface KeyDoc {
 export interface KeyDocs {
   /** Property name → its doc. */
   properties: Record<string, KeyDoc>
-  /** Edge rel → its doc (edges render as `- rel: <name>` rows). */
-  edges: Record<string, KeyDoc>
 }
 
-export const NO_DOCS: KeyDocs = { properties: {}, edges: {} }
+export const NO_DOCS: KeyDocs = { properties: {} }
 
-/** The kind's declaration as the hover vocabulary: every declared property and
- * edge that says anything at all. Built from the SAME registry query the page
+/** The kind's declaration as the hover vocabulary: every declared property
+ * that says anything at all. Built from the SAME registry query the page
  * already holds — a hover never fetches (rule: one kinds query, reused). */
 export function keyDocsOf(kind: KindInfo | undefined): KeyDocs {
   if (!kind) return NO_DOCS
-  const docs: KeyDocs = { properties: {}, edges: {} }
+  const docs: KeyDocs = { properties: {} }
   for (const prop of declaredProperties(kind)) {
     docs.properties[prop.name] = {
       type: propertyTypeLabel(prop),
       description: prop.description,
     }
   }
-  for (const edge of declaredEdges(kind)) {
-    docs.edges[edge.rel] = {
-      type: edgeTypeLabel(edge),
-      description: edge.description,
-    }
-  }
   return docs
 }
 
 /** What in this line deserves a schema hover: the key of an indented `name:`
- * row when the kind declares that property, or the value of a `rel:` row when
- * it declares that edge. Top-level envelope keys (kind, metadata, data…) never
- * match — properties sit at depth ≥ 2. */
+ * row when the kind declares that property. Top-level envelope keys (kind,
+ * metadata, data…) never match — properties sit at depth ≥ 2. */
 export function describableSpan(
   line: string,
   docs: KeyDocs
 ): { text: string; doc: KeyDoc } | null {
-  const m = line.match(/^(\s*)(?:- )?([\w.]+):(.*)$/)
+  const m = line.match(/^(\s*)(?:- )?([\w.]+):/)
   if (!m) return null
-  const [, indent, key, rest] = m
-  if (key === "rel") {
-    const rel = rest.trim()
-    const doc = docs.edges[rel]
-    return doc ? { text: rel, doc } : null
-  }
+  const [, indent, key] = m
   if (indent.length < 4) return null
   const doc = docs.properties[key]
   return doc ? { text: key, doc } : null
@@ -96,15 +78,15 @@ export function specOnLine(
  * over arbitrary text (LinkedYaml's discipline): only exact values in the
  * right key positions become links. */
 export interface YamlLinkTargets {
-  /** Exact reference ids (edge targets, canonicalId, formerIds) and reference
-   * property values (the referent's whole `<kind>/<id>` path) → href. An id is
+  /** Exact record ids (canonicalId, formerIds) and reference property values
+   * (the referent's whole `<kind>/<id>` path) → href. An id is
    * matched as the value of `id:`/`canonicalId:` rows and bare `- id` list
    * items — an id inside a title is a word, not a link; a PATH is matched
    * under whatever key the declaration gave the property. */
   ids: Record<string, string>
   /** Kind reference (`<authority>/<name>`) → that kind's browse page. Matched
-   * only as the value of a `kind:` key — the top-level envelope `kind:` and an
-   * edge target's `to.kind:`; a `calendar` in prose is not the kind. */
+   * only as the value of a `kind:` key — the envelope's own; a `calendar` in
+   * prose is not the kind. */
   kinds: Record<string, string>
 }
 

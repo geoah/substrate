@@ -2,6 +2,7 @@
  * temporality, compact absolute stamps for detail contexts, and the flat
  * rendering of a property value into a table cell. */
 
+import { readReference } from "@/lib/api/types"
 import { splitRecordPath } from "@/lib/record-path"
 
 const MINUTE = 60_000
@@ -98,7 +99,10 @@ export function timeRange(oldestISO: string, newestISO: string): string {
  * that KNOW a property is a reference call this instead of `cellValue`: the
  * datatype is what tells a path from a string that merely has slashes in it. */
 export function referenceID(value: unknown): string {
-  return typeof value === "string" ? (splitRecordPath(value)?.id ?? "") : ""
+  // Either value shape: the flat path, or the `{ref, …}` object a reference
+  // that declares link data stores.
+  const held = readReference(value)
+  return held ? (splitRecordPath(held.path)?.id ?? "") : ""
 }
 
 /** A reference PROPERTY's value in a cell: the id it names, and a repeated one

@@ -37,8 +37,8 @@ sync (python / uv / GitHub REST)
       ▼
 user ──recordmapping──▶ person   (match on public email, or mint a shell)
 repository
-issue ────repository edge──▶ repository
-pullrequest ──repository edge──▶ repository
+issue ────repository reference──▶ repository
+pullrequest ──repository reference──▶ repository
       │
       └─ final stage stamps the account: syncCursor (per-stage watermarks,
          → incremental next run) + login + lastSyncedAt + syncStatus
@@ -61,21 +61,21 @@ hourly schedule ──▶ sync ──▶ every connected account due by its sync
   connector-stamped `login` when GitHub exposes no public email.
 - **`user`** (mirror + mapped source type): one row per (account, login). The
   connected user's row is written whole off `GET /user`; issue and PR authors
-  land as create-only stubs. Its required `person` subject edge is left empty
+  land as create-only stubs. Its required `person` subject reference is left empty
   on write — the mapping resolves it.
 - **`repository`** (mirror): written whole off `GET /user/repos` under
   `enabledRepos`; issues and PRs also mint create-only stubs for repositories
-  outside that listing, so their required parent edge always resolves.
+  outside that listing, so their required parent reference always resolves.
 - **`issue` / `pullrequest`** (mirrors): the provider's shape, plainly —
   `state` is a plain string (the PR state folds merged / closed / draft / open
   the way v4 did), `title` rides the built-in column and `body` is a declared
   property mapped to it (body truncated at 4000 chars, and dropped from `raw` to
   keep a 100-item page inside the frame cap), `authorLogin`, `labels`,
   `htmlURL`, the provider timestamps, and `raw`.
-  Each carries a required `repository` edge. There is deliberately NO edge at
-  `user`: it is a mapped source type, and the bipartite rule (record 50)
-  forbids any edge landing on one — the human behind `authorLogin` is reached
-  through the user mirror and its person mapping.
+  Each carries a required `repository` reference. There is deliberately NO
+  reference at `user`: it is a mapped source type, and the bipartite rule
+  (record 50) forbids any reference landing on one — the human behind
+  `authorLogin` is reached through the user mirror and its person mapping.
 - **`githubsync`** (python / PEP 723): reads the account's host-resolved access token
   off the injected config, walks the stages **pinned at queue-head** (a toggle
   flipped mid-drain can neither crash nor shift the walk), and pages the REST

@@ -9,10 +9,10 @@ import {
   listPath,
   patchRecord,
 } from "./records"
-import type { IncomingEdge } from "./types"
+import type { IncomingReference } from "./types"
 
 describe("listPath", () => {
-  it("carries first, the opaque cursor verbatim, filter, orderBy and withEdges", () => {
+  it("carries first, the opaque cursor verbatim, filter and orderBy", () => {
     // The server's own keyset token — a JSON blob, base64url — resent as-is.
     const cursor = "eyJrIjpbIjIwMjYtMDgtMDYiXSwiaWQiOiJhYmMifQ"
     const path = listPath({
@@ -22,7 +22,6 @@ describe("listPath", () => {
       after: cursor,
       filter: { properties: { prominence: { eq: "known" } } },
       orderBy: "updatedAt:desc",
-      withEdges: true,
     })
     const url = new URL(path, "http://x")
     expect(url.pathname).toBe("/api/v1/people.substrate.reamde.dev/person")
@@ -32,7 +31,9 @@ describe("listPath", () => {
       properties: { prominence: { eq: "known" } },
     })
     expect(url.searchParams.get("orderBy")).toBe("updatedAt:desc")
-    expect(url.searchParams.get("withEdges")).toBe("1")
+    // `withEdges` is gone with the edges it asked for: a pointer at another
+    // record is a property, and every read already carries the properties.
+    expect(url.searchParams.has("withEdges")).toBe(false)
   })
 
   it("addresses a collection by its authority and kind name", () => {
@@ -192,22 +193,42 @@ describe("formatCount", () => {
 })
 
 describe("groupIncoming", () => {
-  const row = (rel: string, kind: string, id: string): IncomingEdge => ({
-    rel,
+  const row = (
+    property: string,
+    kind: string,
+    id: string
+  ): IncomingReference => ({
+    property,
     from: { id, kind },
   })
 
-  it("folds server-ordered rows into rel × kind buckets", () => {
+  it("folds rows into property × kind buckets, kind then property", () => {
     const groups = groupIncoming([
       row("author", "github.bundles.substrate.reamde.dev/pr", "1"),
       row("author", "github.bundles.substrate.reamde.dev/pr", "2"),
       row("author", "github.bundles.substrate.reamde.dev/issue", "3"),
       row("subject", "google.bundles.substrate.reamde.dev/contact", "4"),
     ])
-    expect(groups.map((g) => [g.rel, g.kind, g.rows.length])).toEqual([
-      ["author", "github.bundles.substrate.reamde.dev/pr", 2],
+    expect(groups.map((g) => [g.property, g.kind, g.rows.length])).toEqual([
       ["author", "github.bundles.substrate.reamde.dev/issue", 1],
+      ["author", "github.bundles.substrate.reamde.dev/pr", 2],
       ["subject", "google.bundles.substrate.reamde.dev/contact", 1],
+    ])
+  })
+
+  it("collects a bucket the refs order interleaves", () => {
+    // The index walks (src_kind, src, property, …), so one source record's two
+    // properties come back adjacent and the two sources of one property do
+    // not. An adjacency fold would emit `author` twice.
+    const groups = groupIncoming([
+      row("author", "github.bundles.substrate.reamde.dev/pr", "1"),
+      row("reviewer", "github.bundles.substrate.reamde.dev/pr", "1"),
+      row("author", "github.bundles.substrate.reamde.dev/pr", "2"),
+      row("reviewer", "github.bundles.substrate.reamde.dev/pr", "2"),
+    ])
+    expect(groups.map((g) => [g.property, g.rows.length])).toEqual([
+      ["author", 2],
+      ["reviewer", 2],
     ])
   })
 

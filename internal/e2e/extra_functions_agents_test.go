@@ -16,7 +16,7 @@ import (
 const (
 	xfAuthority = "extras.e2e.example"
 
-	xfParkKind       = xfAuthority + "/parkbait"
+	xfParkKind       = xfAuthority + "/triggerbait"
 	xfParkCollection = "/api/v1/" + xfParkKind
 
 	xfFunctionPath = "/api/v1/core.substrate.reamde.dev/function/"
@@ -137,12 +137,12 @@ func xfAgentDoc(name, provider, model, description, prompt string) map[string]an
 	})
 }
 
-// xfParkBaitKind is the kind TRG-03's trigger fires on: a name to write and a
+// xfTriggerBaitKind is the kind TRG-03's trigger fires on: a name to write and a
 // stamp for the function to put back.
-func xfParkBaitKind() map[string]any {
+func xfTriggerBaitKind() map[string]any {
 	return xfDoc("core.substrate.reamde.dev/kind", xfParkKind, map[string]any{
 		"authority":       xfAuthority,
-		"names":           map[string]any{"singular": "parkbait"},
+		"names":           map[string]any{"singular": "triggerbait"},
 		"description":     "A record whose only job is to make a trigger fire.",
 		"displayTemplate": "{name}",
 		"properties": map[string]any{
@@ -229,7 +229,7 @@ func xfRunsFor(c *C, callable string) int {
 	c.requiref(err == nil, "listing the run records: %v", err)
 	n := 0
 	for _, rec := range recs {
-		if rec.prop("callable") == callable {
+		if refPath(rec.Properties["callable"]) == callable {
 			n++
 		}
 	}
@@ -388,7 +388,7 @@ func xfCaseHostFunctions(c *C) {
 // --- TRG-03 -------------------------------------------------------------
 
 func xfCaseTriggerPark(c *C) {
-	xfApply(c, xfParkBaitKind(), xfFunctionDoc("importbomb", map[string]any{
+	xfApply(c, xfTriggerBaitKind(), xfFunctionDoc("importbomb", map[string]any{
 		"description": "A delivery that raises, so its trigger parks it.",
 		"permissions": map[string]any{"writes": []string{xfParkKind}},
 		"source":      xfImportBombSource,
@@ -400,7 +400,7 @@ func xfCaseTriggerPark(c *C) {
 		}},
 		"callable": "core.substrate.reamde.dev/function/" + xfAuthority + "/importbomb",
 	})
-	c.putRec(xfParkCollection, xfBaitID, map[string]any{"name": "The bait the bomb goes off on"}, nil)
+	c.putRec(xfParkCollection, xfBaitID, map[string]any{"name": "The bait the bomb goes off on"})
 
 	// The wake races the server's own dispatch tick, so the wait is on the
 	// settled state: the delivery retries, then parks, whoever ran it.
@@ -579,7 +579,7 @@ func xfCaseAgentCost(c *C) {
 		"pricing": []map[string]any{
 			{"model": "pricedagent", "inputPer1M": "1000000", "outputPer1M": "2000000"},
 		},
-	}, nil)
+	})
 	xfApply(c, xfAgentDoc("pricedagent", "pricedllm", "pricedagent",
 		"Answers once, so the run's tally is exactly one turn's usage.",
 		"You answer in one short sentence."))

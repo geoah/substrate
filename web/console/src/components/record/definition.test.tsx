@@ -58,11 +58,11 @@ const llmprovider: KindInfo = {
         states: ["draft", "live"],
         initial: "draft",
       },
-    },
-    edges: {
       billedTo: {
-        to: "account",
-        many: false,
+        type: "reference",
+        kind: "account",
+        mustExist: true,
+        onDelete: "cascade",
         description: "who pays for the calls",
       },
     },
@@ -134,10 +134,10 @@ describe("KindDefinition", () => {
     expect(hoverable).toContain("state")
   })
 
-  it("links an edge's target to that collection", () => {
+  it("lists the references, linking each pin to that collection", () => {
     const { container } = renderDefinition()
     const text = container.textContent ?? ""
-    expect(text).toContain("Edges")
+    expect(text).toContain("References")
     expect(text).toContain("billedTo")
     expect(text).toContain("who pays for the calls")
     const link = [...container.querySelectorAll("a")].find(
@@ -146,6 +146,13 @@ describe("KindDefinition", () => {
     expect(link?.getAttribute("href")).toBe(
       "/data/core.substrate.reamde.dev/account"
     )
+  })
+
+  it("says what a reference holds a writer to, key by key", () => {
+    const { container } = renderDefinition()
+    const text = container.textContent ?? ""
+    expect(text).toContain("mustExist")
+    expect(text).toContain("onDelete: cascade")
   })
 
   it("says so plainly when the registry stored no declaration", () => {

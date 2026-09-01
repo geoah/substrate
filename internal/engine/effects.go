@@ -10,7 +10,7 @@ import (
 // The effect vocabulary: a function body returns a list of effect values and
 // the host applies them through the ordinary write path, transactionally with
 // the cursor CAS. All seven Dataset mutations are reachable — put, patch,
-// delete, link, unlink, merge, split — every one held to the manifest's
+// delete, merge, split — every one held to the manifest's
 // `permissions.writes` allowlist, merge/split additionally to its
 // `permissions.mutations` grant. Two contract rules live here: `ifAbsent`
 // makes a put create-only (a minting function never resets state owned by
@@ -38,10 +38,6 @@ type effect struct {
 	// version 0.
 	IfVersion  *int64
 	Properties map[string]any
-	Edges      []substrate.EdgeInput
-	// Rel/To shape link and unlink; ID is the source record.
-	Rel string
-	To  substrate.EdgeRef
 	// Loser rides a merge (ID is the winner); MergeID rides a split.
 	Loser   string
 	MergeID string
@@ -51,8 +47,6 @@ const (
 	effectPut    = "put"
 	effectPatch  = "patch"
 	effectDelete = "delete"
-	effectLink   = "link"
-	effectUnlink = "unlink"
 	effectMerge  = "merge"
 	effectSplit  = "split"
 )
@@ -61,11 +55,9 @@ const (
 // "offer" — solely so the decode error can name its removal instead of
 // reporting an anonymous unknown key.
 var effectKeys = map[string]map[string]bool{
-	effectPut:    {"action": true, "kind": true, "id": true, "ifAbsent": true, "ifVersion": true, "properties": true, "edges": true},
+	effectPut:    {"action": true, "kind": true, "id": true, "ifAbsent": true, "ifVersion": true, "properties": true},
 	effectPatch:  {"action": true, "kind": true, "id": true, "properties": true, "offer": true, "ifVersion": true},
 	effectDelete: {"action": true, "kind": true, "id": true},
-	effectLink:   {"action": true, "kind": true, "id": true, "rel": true, "to": true, "properties": true},
-	effectUnlink: {"action": true, "kind": true, "id": true, "rel": true, "to": true},
 	effectMerge:  {"action": true, "kind": true, "id": true, "loser": true},
 	effectSplit:  {"action": true, "kind": true, "merge": true},
 }
@@ -98,7 +90,7 @@ func (ds *dataset) decodeEffect(fn *vocabulary.Function, v any) (effect, error) 
 	ef.Action, _ = m["action"].(string)
 	allowed, known := effectKeys[ef.Action]
 	if !known {
-		return ef, fmt.Errorf("action %q is not put, patch, delete, link, unlink, merge or split", ef.Action)
+		return ef, fmt.Errorf("action %q is not put, patch, delete, merge or split", ef.Action)
 	}
 	for k := range m {
 		if !allowed[k] {
@@ -148,13 +140,6 @@ func (ds *dataset) decodeEffect(fn *vocabulary.Function, v any) (effect, error) 
 			// rather than let ifAbsent quietly win.
 			return ef, fmt.Errorf("put: ifAbsent and ifVersion cannot combine — ifAbsent makes an existing row a no-op before the version check; pick one")
 		}
-		if raw, ok := m["edges"]; ok {
-			edges, err := decodeEffectEdges(raw)
-			if err != nil {
-				return ef, err
-			}
-			ef.Edges = edges
-		}
 	case effectPatch:
 		if err := decodeIfVersion(m, &ef); err != nil {
 			return ef, err
@@ -165,16 +150,6 @@ func (ds *dataset) decodeEffect(fn *vocabulary.Function, v any) (effect, error) 
 			// an intended contribution into a pinning direct write.
 			return ef, fmt.Errorf("patch: offer was removed in v1; contribute via a source type + recordmapping")
 		}
-	case effectLink, effectUnlink:
-		ef.Rel, _ = m["rel"].(string)
-		if ef.Rel == "" {
-			return ef, fmt.Errorf("%s: rel is required", ef.Action)
-		}
-		ref, err := decodeEdgeRef(m["to"])
-		if err != nil {
-			return ef, fmt.Errorf("%s: to: %w", ef.Action, err)
-		}
-		ef.To = ref
 	case effectMerge:
 		if !fn.Caps.AllowsMutation(vocabulary.MutationMerge) {
 			return ef, fmt.Errorf("merge needs the permissions.mutations grant %s lacks", fn.Identity())
@@ -221,87 +196,11 @@ func emitAllows(fn *vocabulary.Function, ident string) bool {
 	return false
 }
 
-// decodeEffectEdges reads a put effect's edges: rel → a target or a list of
-// targets, each a bare id string or a {kind, id} reference that may also carry
-// the edge row's own `properties`. The properties are validated against the
-// rel's declaration by the write, exactly as an API write's are.
-func decodeEffectEdges(raw any) ([]substrate.EdgeInput, error) {
-	m, ok := raw.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("edges is a map of rel → target, got %T", raw)
-	}
-	var out []substrate.EdgeInput
-	for _, rel := range sortedKeys(m) {
-		targets, ok := m[rel].([]any)
-		if !ok {
-			targets = []any{m[rel]}
-		}
-		for _, tv := range targets {
-			ref, props, err := decodeEdgeTarget(tv)
-			if err != nil {
-				return nil, fmt.Errorf("edges.%s: %w", rel, err)
-			}
-			out = append(out, substrate.EdgeInput{Rel: rel, To: ref, Properties: props})
-		}
-	}
-	return out, nil
-}
-
-// edgeTargetKeys is the closed key set of one effect edge target. It is closed
-// for the reason decodeEffect's own sets are: an ignored key is a write the
-// author asked for and did not get. `properties` was exactly that, dropped in
-// silence while every other surface answers 422 for one it cannot honor.
-var edgeTargetKeys = map[string]bool{"kind": true, "id": true, "properties": true}
-
-// decodeEdgeTarget reads a target in either form and returns the reference and
-// the edge row's properties, which only the mapping form can carry.
-func decodeEdgeTarget(v any) (substrate.EdgeRef, map[string]any, error) {
-	m, ok := v.(map[string]any)
-	if !ok {
-		ref, err := decodeEdgeRef(v)
-		return ref, nil, err
-	}
-	for k := range m {
-		if !edgeTargetKeys[k] {
-			return substrate.EdgeRef{}, nil, fmt.Errorf("an edge target: unknown key %q", k)
-		}
-	}
-	ref, err := decodeEdgeRef(m)
-	if err != nil {
-		return ref, nil, err
-	}
-	if raw, has := m["properties"]; has {
-		props, ok := raw.(map[string]any)
-		if !ok {
-			return ref, nil, fmt.Errorf("an edge target's properties is a map, got %T", raw)
-		}
-		return ref, props, nil
-	}
-	return ref, nil, nil
-}
-
-func decodeEdgeRef(v any) (substrate.EdgeRef, error) {
-	switch t := v.(type) {
-	case string:
-		return substrate.EdgeRef{ID: t}, nil
-	case map[string]any:
-		ref := substrate.EdgeRef{}
-		ref.Kind, _ = t["kind"].(string)
-		ref.ID, _ = t["id"].(string)
-		if ref.ID == "" {
-			return ref, fmt.Errorf("an edge target needs an id")
-		}
-		return ref, nil
-	default:
-		return substrate.EdgeRef{}, fmt.Errorf("an edge target is an id or a {kind, id} reference, got %T", v)
-	}
-}
-
 // lockEffectTargets takes the advisory locks an accumulated effect list needs
 // BEFORE any effect applies, in ONE global order (the contract:
 // registry-dep < subject-type < record). Two lock families live here:
 //
-//   - SUBJECT-TYPE locks. A put/patch/link effect on a mapping-SOURCE type
+//   - SUBJECT-TYPE locks. A put or patch effect on a mapping-SOURCE type
 //     resolves or mints its subject under `subject|<targetKind>` (mapping.go).
 //     Taken here — before any record lock, matching the ordinary source write
 //     (write.go preRecordLocks) — it closes the effect-prelock ↔ mapping
@@ -310,7 +209,7 @@ func decodeEdgeRef(v any) (substrate.EdgeRef, error) {
 //     subject|<type> and reaches for x.
 //
 //   - RECORD locks, one per statically addressed record — effect ids, merge
-//     losers, link/unlink far ends, put edge targets — UNIONED with each
+//     losers, and every record a written reference names — UNIONED with each
 //     address's canonical target. A former id `a`→`x` in the list would
 //     otherwise lock only `a` here and discover `x` when the effect applies,
 //     so two lists naming a former id and its canonical id in opposite
@@ -334,30 +233,15 @@ func (t *txn) lockEffectTargets(effects []effect) error {
 			ids[ref.key()] = ref
 		}
 	}
-	// refType resolves the TYPE a statically addressed edge reference names:
-	// its own named type, else the declared single target of (srcType, rel).
-	// An untypeable reference is skipped here — the effect's own apply
-	// resolves (and refuses) it authoritatively under its locks.
-	refType := func(srcType, rel string, ref substrate.EdgeRef) string {
-		if named := ref.Identity(); named != "" {
-			if ty, err := t.ds.resolveType(named); err == nil {
-				return ty.Identity
-			}
-			return ""
-		}
-		if ty, ok := reg.ByIdentity(srcType); ok {
-			if ed, ok := ty.Edge(rel); ok && ed.To != "any" {
-				return ed.To
-			}
-		}
-		return ""
-	}
 	for _, ef := range effects {
 		note(eref{Kind: ef.Type, ID: ef.ID})
 		note(eref{Kind: ef.Type, ID: ef.Loser})
-		note(eref{Kind: refType(ef.Type, ef.Rel, ef.To), ID: ef.To.ID})
-		for _, e := range ef.Edges {
-			note(eref{Kind: refType(ef.Type, e.Rel, e.To), ID: e.To.ID})
+		// Every record the effect's own reference values name. The value is
+		// AUTHORED here (coercion runs at the write), so only a value the
+		// declaration's pin can complete is typeable; the rest are skipped, and
+		// the effect's own apply resolves and refuses them under its locks.
+		for _, ref := range effectReferenceTargets(reg, ef) {
+			note(ref)
 		}
 		if m, ok := reg.MappingFor(ef.Type); ok {
 			subjects["subject|"+m.To] = true
@@ -420,8 +304,7 @@ func (t *txn) applyEffect(ef effect) error {
 			}
 		}
 		_, err = t.put(substrate.PutInput{
-			Kind: ef.Type, ID: ref.ID, Properties: ef.Properties, Edges: ef.Edges,
-			IfVersion: ef.IfVersion,
+			Kind: ef.Type, ID: ref.ID, Properties: ef.Properties, IfVersion: ef.IfVersion,
 		})
 		return err
 	case effectPatch:
@@ -431,24 +314,6 @@ func (t *txn) applyEffect(ef effect) error {
 	case effectDelete:
 		_, err := t.softDelete(eref{Kind: ef.Type, ID: ef.ID})
 		return err
-	case effectLink, effectUnlink:
-		// Lock, then resolve — t.link/t.unlink re-lock the pair, and the
-		// advisory locks are reentrant within the transaction.
-		src, err := t.lockCanonical(eref{Kind: ef.Type, ID: ef.ID})
-		if err != nil {
-			return err
-		}
-		srcRow, err := t.loadRow(src, true)
-		if err != nil {
-			return err
-		}
-		if srcRow == nil {
-			return fmt.Errorf("%w: record %s", substrate.ErrNotFound, ef.ID)
-		}
-		if ef.Action == effectLink {
-			return t.link(ef.Rel, src, ef.To, ef.Properties)
-		}
-		return t.unlink(ef.Rel, src, ef.To)
 	case effectMerge:
 		winner := eref{Kind: ef.Type, ID: ef.ID}
 		row, err := t.loadRow(winner, false)
@@ -461,12 +326,13 @@ func (t *txn) applyEffect(ef effect) error {
 		_, err = t.mergeRecord(winner, eref{Kind: ef.Type, ID: ef.Loser})
 		return err
 	case effectSplit:
-		// The effect's `type` names the merged records' type; verify it
-		// against the record's winner edge before splitting.
-		winner, err := t.edgeTargetOf(eref{Kind: kindRecordMerge, ID: ef.MergeID}, "winner")
+		// The effect's `type` names the merged records' type; verify it against
+		// the merge record's own `winner` reference before splitting.
+		rec, err := t.loadRow(eref{Kind: kindRecordMerge, ID: ef.MergeID}, false)
 		if err != nil {
 			return err
 		}
+		winner := referenceTargetOf(rec, "winner")
 		if winner.ID != "" && winner.Kind != ef.Type {
 			return fmt.Errorf("%w: %s merged a %s, not the %s the effect names",
 				substrate.ErrValidation, ef.MergeID, winner.Kind, ef.Type)
@@ -476,4 +342,42 @@ func (t *txn) applyEffect(ef effect) error {
 	default:
 		return fmt.Errorf("%w: effect action %q", substrate.ErrValidation, ef.Action)
 	}
+}
+
+// effectReferenceTargets lists the records an effect's own property values
+// name, so the pre-lock pass can take their record locks in the one global
+// order. It reads the AUTHORED value against the declaration: a full path
+// names its kind, a bare id needs the declaration's `kind:` pin to complete it,
+// and anything else is left to the effect's own apply, which resolves and
+// refuses it under the locks it holds.
+func effectReferenceTargets(reg *vocabulary.Registry, ef effect) []eref {
+	ty, ok := reg.ByIdentity(ef.Type)
+	if !ok || len(ef.Properties) == 0 {
+		return nil
+	}
+	var out []eref
+	for _, name := range sortedKeys(ef.Properties) {
+		p, declared := ty.Prop(name)
+		if !declared || p.Datatype != vocabulary.DatatypeReference {
+			continue
+		}
+		values, isList := ef.Properties[name].([]any)
+		if !isList {
+			values = []any{ef.Properties[name]}
+		}
+		for _, v := range values {
+			path := referencePathOf(v)
+			if path == "" {
+				continue
+			}
+			if kind, id, isPath := vocabulary.SplitRecordPath(path); isPath {
+				out = append(out, eref{Kind: kind, ID: id})
+				continue
+			}
+			if p.To != "" && p.To != vocabulary.ToAny {
+				out = append(out, eref{Kind: p.To, ID: path})
+			}
+		}
+	}
+	return out
 }

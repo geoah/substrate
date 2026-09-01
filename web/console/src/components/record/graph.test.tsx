@@ -41,22 +41,20 @@ vi.mock("@/lib/api/http", async (importOriginal) => {
         return Promise.resolve({
           incoming: [
             {
-              rel: "task",
+              property: "task",
               from: {
                 id: "c1",
                 kind: "notes.substrate.reamde.dev/comment",
                 title: "First",
               },
-              via: "edge",
             },
             {
-              rel: "task",
+              property: "task",
               from: {
                 id: "c2",
                 kind: "notes.substrate.reamde.dev/comment",
                 title: "Second",
               },
-              via: "edge",
             },
           ],
           total: 2,
@@ -78,8 +76,15 @@ const task: KindInfo = {
   plural: "tasks",
   source: "installed",
   definition: {
-    properties: { summary: { type: "string" } },
-    edges: { assignee: { to: "person", many: true } },
+    properties: {
+      summary: { type: "string" },
+      assignee: {
+        type: "reference",
+        kind: "person",
+        repeated: true,
+        mustExist: true,
+      },
+    },
   },
 }
 
@@ -96,17 +101,21 @@ const record: SubstrateRecord = {
   id: "t1",
   kind: "tasks.substrate.reamde.dev/task",
   // `title` is the server-derived heading `recordTitle` reads.
-  properties: { summary: "Ship the console", title: "Ship the console" },
+  properties: {
+    summary: "Ship the console",
+    title: "Ship the console",
+    // The pointers ARE properties now: the graph reads them off the record
+    // with no query, and a reference carries no title, so the pill renders
+    // the referent's id until the record is opened.
+    assignee: [
+      "people.substrate.reamde.dev/person/p1",
+      "people.substrate.reamde.dev/person/p2",
+    ],
+  },
   labels: {},
   version: 1,
   createdAt: "2026-08-14T10:00:00Z",
   updatedAt: "2026-08-14T10:00:00Z",
-  edges: {
-    assignee: [
-      { id: "p1", kind: "people.substrate.reamde.dev/person", title: "Ada" },
-      { id: "p2", kind: "people.substrate.reamde.dev/person", title: "Bob" },
-    ],
-  },
 }
 
 function renderRail() {
@@ -148,11 +157,11 @@ describe("GraphRail", () => {
 
   it("renders every target as a RecordPill that routes to the record", async () => {
     const { container } = renderRail()
-    const ada = [...container.querySelectorAll("a")].find(
-      (a) => a.textContent === "Ada"
+    const first = [...container.querySelectorAll("a")].find(
+      (a) => a.textContent === "p1"
     )
-    expect(ada?.className).toContain("rounded-full")
-    expect(ada?.getAttribute("href")).toBe(
+    expect(first?.className).toContain("rounded-full")
+    expect(first?.getAttribute("href")).toBe(
       "/data/people.substrate.reamde.dev/person/p1"
     )
     await waitFor(() => {
@@ -172,5 +181,39 @@ describe("GraphRail", () => {
     expect(text).toContain("2")
     // The fan-in group is named from this record's side, with its own count.
     expect(text).toContain("task of comment")
+  })
+
+  it("reads a reference carrying link data by the path under `ref`", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const linked: SubstrateRecord = {
+      ...record,
+      properties: {
+        ...record.properties,
+        assignee: [
+          { ref: "people.substrate.reamde.dev/person/p1", role: "owner" },
+        ],
+      },
+    }
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <GraphRail
+          authority="tasks.substrate.reamde.dev"
+          plural="task"
+          record={linked}
+          kinds={[task, person]}
+        />
+      </QueryClientProvider>
+    )
+    await waitFor(() => {
+      expect(container.textContent).toContain("Incoming")
+    })
+    const pill = [...container.querySelectorAll("a")].find(
+      (a) => a.textContent === "p1"
+    )
+    expect(pill?.getAttribute("href")).toBe(
+      "/data/people.substrate.reamde.dev/person/p1"
+    )
   })
 })

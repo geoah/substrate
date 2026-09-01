@@ -29,7 +29,10 @@ data:
   # version 6: `calendareventseries` gains `materializedFrom` /
   # `materializedUntil`, the span whose occurrences exist as rows, so the
   # occurrences read (decision 0043) expands the rule only outside it.
-  version: 6
+  # version 7: every declared link in this closure is a reference property,
+  # carrying `mustExist: true` and `onDelete: cascade` where the referent
+  # owns the record.
+  version: 7
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A VOCABULARY bundle (see people.substrate.reamde.dev): kinds only, imported from the

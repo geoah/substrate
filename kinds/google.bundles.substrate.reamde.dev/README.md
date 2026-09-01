@@ -31,7 +31,7 @@ Everything else is the same primitive set the harvester uses:
 
 Mirror types hold Google's own shape. The sync functions **also emit the core
 row for the same logical object directly**, under the **same derived id**, with
-its required edges supplied explicitly. Recordmappings resolve **people** and
+its required references supplied explicitly. Recordmappings resolve **people** and
 nothing else.
 
 ```
@@ -53,21 +53,22 @@ cannot, today, and saying so is part of the contract:
 
 - A type any mapping points at gets **server-assigned ids**
   (`checkCreateID`), so no connector could ever name one.
-- A mapping's only creator is its **shell mint**, a bare row with no edges,
-  and every candidate target declares a **required** edge (`emailmessage.thread`,
-  `emailthread.account`, `calendarevent.calendar`), so the mint would fail
-  validation and take the source record's write down with it.
-- A mapping carries **properties only, never edges**, so even a successful
-  mint would be structurally empty.
+- A mapping's only creator is its **shell mint**, a bare row with no
+  references, and every candidate target declares a **required** reference
+  (`emailmessage.thread`, `emailthread.account`, `calendarevent.calendar`), so
+  the mint would fail validation and take the source record's write down with
+  it.
+- A mapping carries **plain properties only, never references**, so even a
+  successful mint would be structurally empty.
 
 `person.people.substrate.reamde.dev` is mappable precisely because it declares no
-required edges, which is why every mapping in the fleet targets it. The
+required references, which is why every mapping in the fleet targets it. The
 general capability is filed as ticket 041, "structural recordmappings".
 
 The `emailaddress` record is the bridge: the sync writes one per address it
-sees, its mapping matches or mints the person, and the core rows reference the
-**record** in their `sender`/`recipients`/`organizer`/`attendees` edges. The
-engine's one-hop rule lands the stored edge on the person. An address-book
+sees, its mapping matches or mints the person, and the core rows name the
+**record** in their `sender`/`recipients`/`organizer`/`attendees` references.
+The engine's one-hop rule lands the stored reference on the person. An address-book
 contact and a mail sender therefore converge on **one** person.
 
 ## The pieces
@@ -114,7 +115,7 @@ contact and a mail sender therefore converge on **one** person.
 - **`contact`** (source type): what Google holds about one contact, in
   Google's own shape. Its id is
   `ids.external("google-contacts", account, resourceName)`. Its `person`
-  subject edge is left empty on write; the mapping resolves it.
+  subject reference is left empty on write; the mapping resolves it.
 - **`emailaddress`** (source type): one address, keyed by
   `ids.external("google-address", account, address)`. Written by both
   `gmailsync` and `calendarsync`, mapped onto `person`.
@@ -242,9 +243,10 @@ One provider page, or one hydrate batch of 25 `messages.get`, per invocation.
   message already synced under an earlier version keeps the `text` it was
   written with until Gmail reports a change to it. Clearing the account's
   `gmailHistoryId` forces the windowed re-read that rewrites them.
-- **Person edges are capped at 200 per message and per thread.** Every edge
-  target is locked in the page's one transaction, and a 1,000-recipient list
-  across a 25-message hydrate batch is 25,000 of them. The mirror keeps the
+- **Person references are capped at 200 per message and per thread.** Every
+  reference target is locked in the page's one transaction, and a
+  1,000-recipient list across a 25-message hydrate batch is 25,000 of them.
+  The mirror keeps the
   whole `to`/`cc`/`bcc` header and the whole participant union, so nothing is
   lost; the truncation is logged.
 
@@ -295,7 +297,7 @@ invocation.
   comma-separated and over any number of lines. The master's start supplies
   `startsAt` (the DTSTART anchor) and `timezone`. A master reported
   `cancelled` deletes the series row instead, and one with no RRULE line
-  writes none. Each instance then carries the `series` edge, plus
+  writes none. Each instance then carries the `series` reference, plus
   `originalStartAt` where Google's `originalStartTime` says the occurrence was
   moved off the slot the rule produced. A **token-less (full) walk** also
   stamps the series with `materializedFrom` / `materializedUntil`, the
@@ -310,7 +312,7 @@ invocation.
   consistency without a second sync token to expire.
 - **`calendarSeries: false` is the singleEvents-only switch.** The instance
   walk is unchanged, and no master is fetched, no series record is written and
-  no instance carries the `series` edge or `originalStartAt`. The mirror keeps
+  no instance carries the `series` reference or `originalStartAt`. The mirror keeps
   `recurringEventId`, `recurrence` and `originalStartTime` either way, because
   it is the verbatim record.
 
@@ -336,9 +338,9 @@ Stated plainly, because a README that overclaims is worse than none:
   rule and does not expand it
   ([0039](../../docs/decisions/0039-the-substrate-stores-a-recurrence-rule-and-never-expands-it.md)).
 - **No label type.** Core deliberately chose plain `labelIds` strings over an
-  edge into a connector-owned label type, so there is no `label` mirror.
+  reference into a connector-owned label type, so there is no `label` mirror.
 - **Attendee `responseStatus`, `optional` and `resource` live on the mirror
-  only.** An edge carries no properties, so the core row's `attendees` edge
+  only.** Core's `attendees` reference declares no link data, so the core row
   cannot hold them.
 - **No writeback.** Every stream is read-only.
 - **Deletes reconcile only where the provider says so.** Gmail's history
@@ -407,7 +409,7 @@ the migration loop right after the upgrade.
 The migration is **batched**: one call examines at most 200 contacts
 (`{limit?, cursor?}` in — the input is an object, so pass at least `{}`),
 re-puts each old-scheme row under its new id carrying its existing `person`
-edge, tombstones the old row, and returns
+reference, tombstones the old row, and returns
 `{migrated, absorbed, skipped, nextCursor}`. Feed `nextCursor` back as
 `cursor` until it comes back **empty** — that bound is what keeps every
 response frame (the `raw` People payloads included) well under the runner's
@@ -417,7 +419,7 @@ What the counts mean:
 
 - **`migrated`** — re-keyed rows: new id created (guarded create-only, so a
   racing write turns the batch into a clean conflict re-run, never a
-  clobber), person edge carried, old id tombstoned. Person records are
+  clobber), person reference carried, old id tombstoned. Person records are
   untouched: no shell is minted, no mapping re-match happens, owner edits
   and offers stand.
 - **`absorbed`** — a sync already wrote the contact under its new id: the
@@ -493,7 +495,7 @@ through the runner against a loopback provider, so the paged cursor itself is
 observable:
 
 - the mirrors and the core rows land under the same derived ids, with the
-  required edges filled and the addresses resolved to people one hop away;
+  required references filled and the addresses resolved to people one hop away;
 - the stamp carries the **run-start** watermark, not the completion clock;
 - only a Gmail 404 (and only a Calendar 410) drops to a full re-read — a 400
   surfaces as `erroring` instead;
@@ -519,10 +521,10 @@ observable:
   `nextPageToken`;
 - a recurring master is fetched by id ONCE for a delivery that spans two
   pages, its rule is stored as one prefix-stripped RRULE line with the EXDATE
-  and RDATE lines resolved to UTC, the instances carry the `series` edge and
+  and RDATE lines resolved to UTC, the instances carry the `series` reference and
   the moved one carries `originalStartAt`
   (`TestGoogleCalendarSeriesLinksMasters`); with `calendarSeries: false` no
-  master is fetched and no series row or edge exists
+  master is fetched and no series row or reference exists
   (`TestGoogleCalendarSeriesOffKeepsFlatView`);
 - a calendar failure is recorded even while gmail already owns the erroring
   rollup;

@@ -85,11 +85,8 @@ data:
     description: the oat kind
     status: open                  # a state property, see Validation below
     dueAt: 2026-08-13T09:00:00Z
-  edges:
-    - rel: project
-      to:
-        kind: tasks.substrate.reamde.dev/project
-        id: infra7
+    project:                      # a reference, always an object
+      ref: tasks.substrate.reamde.dev/project/infra7
 status:                           # server-set, ignored on input
   version: 4
   createdAt: "2026-08-04T09:00:00Z"
@@ -100,9 +97,9 @@ Three rules make the envelope predictable:
 
 - **`kind` is the record's kind reference**, and it is the only place the kind
   appears. Nothing splits it into parts.
-- **`data` carries two keys and no others**, `properties` and `edges`.
-  Everything authored, the built-in `body` and the temporal properties
-  included, lives in `data.properties`, so nothing needs a reserved list to
+- **`data` carries one key, `properties`.** Everything authored, the built-in
+  `body`, the temporal properties and every pointer at another record
+  included, lives there, so nothing needs a reserved list to
   name a property. (`title` sits there too, on a kind that does not derive it
   from a [`displayTemplate`](vocabulary.md#admission); `task` derives it from
   `name`, which is why the example above writes that.)
@@ -110,23 +107,21 @@ Three rules make the envelope predictable:
   edit, and re-apply means exactly what it looks like: the block you carried
   along is dropped rather than fought over.
 
-A property is one key under `data.properties`. An edge is one entry under
-`data.edges`, naming its `rel` and its target record. Edge targets are
-written `{kind, id}`, the record reference split into its two parts. A bare
-`{id}` is accepted as shorthand only where the declaration already fixes the
-target kind: the reference resolves within that one kind and nowhere else,
-because ids are unique per kind. A polymorphic edge (`to: any`) always requires
-the full form. Declarations may name their target by bare kind name too
-(`to: project`): a bare name resolves in the declaring authority first, then
-uniquely across all authorities, and a name that stays ambiguous refuses to
-load.
+A property is one key under `data.properties`, and a pointer at another record
+is one of them: a property of `type: reference` holding the target's path,
+`<kind>/<id>`, under the reserved key `ref`. Writing the bare path instead is
+accepted as shorthand and stored as the object. Against a pinned declaration a
+bare id is accepted as the authored short form, because ids are unique per kind;
+unpinned, the value carries the kind or it is refused. Declarations may name
+their pin by bare kind
+name (`kind: project`): a bare name resolves in the declaring authority first,
+then uniquely across all authorities, and a name that stays ambiguous refuses
+to load. [References](#property-types) below has the rest.
 
 The envelope is the one canonical representation. The flat JSON that the
 [API](api.md#the-canonical-envelope) returns is a lossless view of it: the
-same `properties` and `edges` under `data`, the same server-set fields under
-`status`. Edges are a **list** in the canonical envelope, one entry per target;
-the flat read form groups them by `rel` into a map for convenience, and
-the two convert without loss. Because the mapping round-trips, a document you
+same `properties` under `data`, the same server-set fields under
+`status`. Because the mapping round-trips, a document you
 read applies back unchanged, which is what makes `substratectl get -o yaml | substratectl
 apply` a no-op on a record that has not changed.
 
@@ -155,8 +150,9 @@ importantly, who may change that kind's declaration: shipped vocabulary is the
 substrate's to write, and an installed bundle's kinds belong to that bundle.
 
 A **record reference** writes kind and id together:
-`tasks.substrate.reamde.dev/task/t9`. That is the string form; on REST the same
-reference is split into path segments
+`tasks.substrate.reamde.dev/task/t9`. That is the path form, which a reference
+property carries under `ref`; on REST the same reference is split into path
+segments
 (`/api/v1/tasks.substrate.reamde.dev/task/t9`), and on GraphQL it travels as two
 arguments.
 
@@ -167,8 +163,8 @@ mneme-ported `health`, `fitness`, `routines`, `journal`, `places`, `food`
 and `commerce` under the same domain — each a bundle you
 **import** — and `core.substrate.reamde.dev` for the substrate's own machinery, which is the
 only one a new repository is seeded with. Authorities namespace names; they
-never partition the data: an edge crosses authorities as easily as it stays
-inside one.
+never partition the data: a reference crosses authorities as easily as it
+stays inside one.
 
 A **kind declaration is itself a record**, living in the repository's own changelog
 like everything else, whatever authority it declares into. Your repository was
@@ -178,7 +174,7 @@ declarations are rows in your repository, not a file the server reads at query
 time. [Vocabulary as records](vocabulary.md) is that whole story.
 
 The to-do list needs two kinds. **`people.substrate.reamde.dev/person` ships built in**,
-one record per human, the target of every "a person" edge in the system:
+one record per human, the target of every pointer that means "a person":
 
 ```yaml
 kind: people.substrate.reamde.dev/person
@@ -231,11 +227,12 @@ data:
             completedAt: now
         - from: done
           to: open
-  edges:
     project:
-      to: project
+      type: reference
+      kind: project               # a bare name resolves in this authority
+      mustExist: true             # refuse a task filed under no project
     source:
-      to: any                     # the message, mail, or issue the task came from
+      type: reference             # unpinned: the message, mail, or issue it came from
 ```
 
 A declaration record's id **is** a kind reference
@@ -374,10 +371,12 @@ repeated, never both, and a map whose values are themselves a map is not
 declarable — flatten it, or make the inner level a repeated list of variants.
 Like objects, keyed maps stay out of search and the filter grammar.
 
-**References.** A `reference` is a typed pointer stored as a property value:
-one record **path**, `<kind>/<id>`, which is data rather than a graph edge.
-Reach for it where a declaration field needs to **name** another record, like a
-trigger's `callable`:
+**References.** A `reference` is a typed pointer at another record, stored as a
+property value: one record **path**, `<kind>/<id>`. It is the only link between
+records
+([decision record 0044](decisions/0044-a-reference-is-the-only-link-between-records.md)),
+so everything one record says about another is a property, declared beside the
+rest and written in `data.properties`. A trigger names its callable this way:
 
 ```yaml
 callable:
@@ -385,21 +384,37 @@ callable:
   kind: any
 ```
 
-The **pin** is `kind:`, and it says which kind's records this property names —
-`kind: any` (and an absent pin) leaves it unconstrained, and then the value must
-carry an explicit kind. The word is `kind:` and not `to:` on purpose: `to:`
-belongs to the edge, where it names the far end of a traversable link, while a
-reference is data naming a record, and which kind's records it names is exactly
-what a client needs to offer a picker. A reference still spelling `to:` is
-refused naming the pin.
+The **pin** is `kind:` or `trait:`, and it says which records this property may
+name. `kind: any`, and an absent pin, leave it unconstrained, and then the
+value must carry an explicit kind. Which records a property may name is exactly
+what a client needs to offer a picker. A declaration spelling `to:` is refused
+naming the pin.
 
-A value is ONE FLAT STRING, the referent's path:
-`core.substrate.reamde.dev/llmprovider/claude`. Against a concrete pin a bare
-record id is accepted as the authored short form and canonicalized to the full
-path on write, so `provider: default` stores as
-`core.substrate.reamde.dev/llmprovider/default`; unpinned, a bare id names no
-kind and is refused. A path that contradicts its pin is refused naming both
-ends.
+A value is ONE OBJECT, holding the referent's path under the reserved key
+`ref`:
+
+```yaml
+provider:
+  ref: core.substrate.reamde.dev/llmprovider/claude
+```
+
+That is the shape every read serves and every row stores, whether or not the
+declaration carries link properties
+([decision 0044](decisions/0044-a-reference-is-the-only-link-between-records.md)).
+It is one shape so that a reference can gain an attribute without a response
+changing shape: adding `properties:` adds a key beside `ref`, and nothing that
+already reads the pointer moves.
+
+**A bare path string is write-time shorthand.** `provider:
+core.substrate.reamde.dev/llmprovider/claude` applies and is stored as the
+object above, so a hand-written document stays short. Nothing serves the
+shorthand back.
+
+Against a concrete pin a bare record id is accepted as the authored short form
+too, and canonicalized to the full path on write, so `provider: default` stores
+as `{ref: core.substrate.reamde.dev/llmprovider/default}`; unpinned, a bare id
+names no kind and is refused. A path that contradicts its pin is refused naming
+both ends.
 
 Splitting a path back into its two halves needs no registry, because an
 authority always carries a dot and a kind name never does, and every kind
@@ -410,35 +425,69 @@ included, since a declaration record's id is itself a kind reference
 (`core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev/task` names one
 record).
 
-Validation checks the shape and that the referent
-**kind** exists; the referent **record** need not exist at write time, because a
-reference is a pointer, not an edge. `repeated: true` holds a list of
-references, and a reference is admitted inside an object or a keyed map at any
-declared depth. The [console](console.md) renders a reference as a link to the
-referent's detail page.
+Validation checks the shape and that the referent **kind** exists. The referent
+**record** need not exist, unless the declaration says `mustExist: true`, which
+refuses a write whose target is absent. Existence, not liveness: a tombstoned
+record still exists and may still be pointed at, so a delete that may yet be
+undone does not invalidate the pointers into it.
 
-A reference may own. `ownerRef: true` says the referent OWNS this record, so
-collecting the referent tombstones everything that names it, exactly as an
-`ownerRef` edge does. It is declarable only on a kind's own single-valued
-reference pinned at one kind (`kind:`) or at one trait (`trait:`): a repeated
-pointer names no single owner, and an unpinned one cannot be enumerated, so the
-owner could not see what deleting it would take. A trait pin is enumerable
-because the kinds implementing a trait are a fixed set, which is what lets a
-provider-agnostic kind own any account: the mirror kinds pin their bundle's own
-`account` kind, and `calendar`, `conversation` and `emailthread` pin the
-`accountconfig` trait every account kind implements
+`repeated: true` holds a list of references, ordered as authored and refusing a
+duplicate target; `keyed: true` holds a map of them; and a reference is
+admitted inside an object or a keyed map at any declared depth. The
+[console](console.md) renders a reference as a link to the referent's detail
+page.
+
+**Data on the link.** A reference may declare `properties:`, a flat block of
+scalars describing the link rather than either end. A person's membership of an
+organization is the shipped example: the role and the start date belong to
+neither the person nor the organization.
+
+```yaml
+memberOf:
+  type: reference
+  kind: organization
+  repeated: true
+  properties:
+    role:
+      type: string
+    since:
+      type: date
+```
+
+The link properties are the value's other keys, beside the `ref` every
+reference already carries:
+
+```yaml
+memberOf:
+  - ref: people.substrate.reamde.dev/organization/acme
+    role: staff engineer
+    since: 2024-03-01
+```
+
+The shorthand works here too: a bare path normalizes to the object with every
+link property absent, so re-writing a reference whose link data is all optional
+needs no knowledge of the shape. Link properties are single scalars, optional or
+required: no
+objects, no state machines, no secrets, no nested references, and none on a
+keyed reference.
+
+**Ownership.** `onDelete: cascade` says the referent OWNS this record, so
+collecting the referent tombstones everything that names it. Absent, a
+reference detaches: the value stays, and it dangles once the referent is
+purged. Cascade is declarable on a kind's own single-valued, top-level
+reference, pinned or not: a repeated or keyed pointer names no single owner,
+and a pointer nested in an object is a field of a value rather than the
+record's own claim. A `trait:` pin is what lets a provider-agnostic kind own
+any account: the mirror kinds pin their bundle's own `account` kind, and
+`calendar`, `conversation` and `emailthread` pin the `accountconfig` trait
+every account kind implements
 ([decision record 0034](decisions/0034-a-reference-may-pin-a-trait-not-only-a-kind.md)).
 
-A reference is not an edge, and which to reach for is
-[decision record 0032](decisions/0032-an-owner-pointer-may-be-a-reference-and-a-mirror-account-is-one.md).
-Both are named, directed pointers, both answer
-[incoming views](api.md#rest-resources), and both take `ownerRef`. Four things
-live only on the edge: the link's own properties, its part in
-[record mapping](projection.md) subject resolution, `link`/`unlink` writing it
-without writing the record, and a merge repointing it. A reference is a value
-in `data.properties`, so it travels in the change delta, round-trips through
-`get -o yaml | apply -f` and filters as a scalar. Use an edge when the LINK is
-a thing; use a reference when the pointer is part of what the record is.
+**Reading backwards.** Every reference answers in reverse, pinned or not:
+`GET …/incoming` lists the records pointing at this one, narrowable by the
+property name and the source kind ([the API](api.md#rest-resources)). A
+`subject: true` reference is the one a [record mapping](projection.md)
+projects along.
 
 **Blob references.** A `blobref` names stored bytes by their digest. The bytes
 live in the repository's content-addressed blob store

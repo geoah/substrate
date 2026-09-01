@@ -55,8 +55,8 @@ data:
             # A CHANGE CLASS, not a write verb: what happened to the record,
             # whatever op the writer called. runner.OpOf folds the changelog
             # onto these three. A put whose payload says `created` is a create,
-            # delete and gc are deletes, and every other op (patch, link,
-            # unlink, merge, split, a restoring put) is an update. So a policy
+            # delete and gc are deletes, and every other op (patch, merge,
+            # split, a restoring put) is an update. So a policy
             # selector matching the same write spells it `put` or `patch`;
             # docs/changelog.md#change-verbs holds the mapping.
             ops:

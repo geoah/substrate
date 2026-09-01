@@ -10,38 +10,87 @@ import (
 
 const peopleV1 = "/api/v1/people.substrate.reamde.dev/person"
 
-// TestRESTEdgeLinkUnlinkRoundTrip is ruling A8's edge verbs: a REST client can
-// now REMOVE an edge, not only add one on a put. POST …/{id}/edges/{rel} links,
-// DELETE unlinks, and each returns the refreshed source record.
-func TestRESTEdgeLinkUnlinkRoundTrip(t *testing.T) {
+// A reference is written like every other property: one put carries the
+// pointer, and a second put drops it by writing null. There is no link verb
+// and no unlink verb, so a put is the whole mutation surface for a pointer.
+func TestRESTReferenceIsWrittenAsAProperty(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
 	ds.records["p1"] = &substrate.Record{
-		ID: "p1", Kind: "people.substrate.reamde.dev/person", Properties: map[string]any{"name": "Sam"},
+		ID: "p1", Kind: "people.substrate.reamde.dev/person", Version: 1,
+		Properties: map[string]any{"name": "Sam"},
 	}
 
-	rec := env.do(t, http.MethodPost, peopleV1+"/p1/edges/member_of", tok, map[string]any{"id": "org1"})
+	rec := env.do(t, http.MethodPut, peopleV1+"/p1", tok, map[string]any{
+		"properties": map[string]any{"name": "Sam", "manager": "people.substrate.reamde.dev/person/p2"},
+	})
 	wantStatus(t, rec, http.StatusOK)
 	e := decodeJSON[substrate.Record](t, rec)
-	if len(e.Edges["member_of"]) != 1 || e.Edges["member_of"][0].ID != "org1" {
-		t.Fatalf("after link, edges = %+v", e.Edges)
+	// The put sent the bare path (write-time shorthand) and the read serves
+	// the object it normalized to (0044).
+	manager, _ := e.Properties["manager"].(map[string]any)
+	if manager["ref"] != "people.substrate.reamde.dev/person/p2" {
+		t.Fatalf("after the put, properties = %+v", e.Properties)
 	}
 
-	rec = env.do(t, http.MethodDelete, peopleV1+"/p1/edges/member_of", tok, map[string]any{"id": "org1"})
+	rec = env.do(t, http.MethodPatch, peopleV1+"/p1", tok, map[string]any{
+		"properties": map[string]any{"manager": nil},
+	})
 	wantStatus(t, rec, http.StatusOK)
-	e = decodeJSON[substrate.Record](t, rec)
-	if len(e.Edges["member_of"]) != 0 {
-		t.Fatalf("after unlink, edges = %+v", e.Edges)
+	if got := ds.lastPatch.Properties["manager"]; got != nil {
+		t.Fatalf("the patch must carry the null that drops the pointer, got %v", got)
 	}
 }
 
-func TestRESTEdgeLinkNeedsATarget(t *testing.T) {
+// The edge routes are GONE, not tombstoned: no route binds
+// `…/{id}/edges/{rel}` in either method, so the path is the router's 404.
+func TestRESTEdgeRoutesAreGone(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 	env.svc.datasets["geoah"].records["p1"] = &substrate.Record{ID: "p1", Kind: "people.substrate.reamde.dev/person"}
-	rec := env.do(t, http.MethodPost, peopleV1+"/p1/edges/member_of", tok, map[string]any{})
+
+	for _, method := range []string{http.MethodPost, http.MethodDelete} {
+		rec := env.do(t, method, peopleV1+"/p1/edges/member_of", tok, map[string]any{"id": "org1"})
+		wantStatus(t, rec, http.StatusNotFound)
+	}
+}
+
+// `edges` no longer names a sub-resource, so it is no longer a reserved record
+// id: a record may be called `edges` and read back at its own path.
+func TestRESTEdgesIsAnOrdinaryRecordID(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+
+	rec := env.do(t, http.MethodPut, peopleV1+"/edges", tok, map[string]any{
+		"properties": map[string]any{"name": "Sam"},
+	})
+	wantStatus(t, rec, http.StatusCreated)
+	rec = env.do(t, http.MethodGet, peopleV1+"/edges", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	if e := decodeJSON[substrate.Record](t, rec); e.ID != "edges" {
+		t.Fatalf("record = %+v", e)
+	}
+
+	// `incoming` still IS one, in both directions.
+	rec = env.do(t, http.MethodPut, peopleV1+"/incoming", tok, map[string]any{"properties": map[string]any{}})
 	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+}
+
+// A body that still writes `edges` beside `properties` is refused NAMING the
+// key: the strict decode is what stops a pointer write from landing under a
+// spelling nothing reads.
+func TestRESTPutRefusesAnEdgesKey(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+	rec := env.do(t, http.MethodPut, peopleV1+"/p1", tok, map[string]any{
+		"properties": map[string]any{"name": "Sam"},
+		"edges":      map[string]any{"member_of": []any{map[string]any{"id": "org1"}}},
+	})
+	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
+	if msg := decodeJSON[errorEnvelope](t, rec).Error.Message; !strings.Contains(msg, "edges") {
+		t.Fatalf("error must name the refused key: %q", msg)
+	}
 }
 
 // TestTriggerVerbsLiveUnderCore is ruling A8's verb placement: the trigger

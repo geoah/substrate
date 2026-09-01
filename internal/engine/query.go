@@ -48,13 +48,13 @@ func (ds *dataset) Get(ctx context.Context, typ, id string) (*substrate.Record, 
 	if err != nil {
 		return nil, err
 	}
-	e, err := ds.hydrate(ctx, ds.db, row, true, true)
+	e, err := ds.hydrate(ctx, ds.db, row, true)
 	if err != nil {
 		return nil, err
 	}
-	// Single-record reads carry property provenance. Reverse
-	// edges are a separate paged read: they are derived graph state, and an
-	// record can have an unbounded number of them.
+	// Single-record reads carry property provenance. Reverse pointers are a
+	// separate paged read: they are derived state, and a record can have an
+	// unbounded number of them.
 	if e.PropertyMeta, err = ds.propertyMeta(ctx, e); err != nil {
 		return nil, err
 	}
@@ -64,33 +64,25 @@ func (ds *dataset) Get(ctx context.Context, typ, id string) (*substrate.Record, 
 	return e, nil
 }
 
-// Incoming reads a page of reverse pointers, joined to their live sources. TWO
-// mechanisms answer as one relationship —
+// Incoming reads a page of reverse pointers, joined to their live sources. ONE
+// query over the refs index (refs.go), which is the reverse projection of every
+// reference value in the repository — so `incoming` answers for a pointer
+// whatever shape its declaration takes: pinned or unpinned, single, repeated or
+// keyed, a kind's own property or one nested inside an object.
 //
-//   - an EDGE row whose dst is this record, and
-//   - a REFERENCE property on some other kind whose `kind:` pins this kind and
-//     whose stored value names this id,
+// UNPINNED POINTERS ARE VISIBLE. The union of arms this replaced could
+// not see them: an unconstrained reference names no target kind, so the registry
+// could not say it pointed here without reading every row of every kind that
+// declared one. The index is keyed on the target, so there is nothing to
+// enumerate and nothing to leave out.
 //
-// — because which of the two a declaration uses is a storage choice, and a
-// reader standing on the target sees the same thing pointing at it either way.
-// A row carries `via` saying which, since one record can be reached both ways
-// at once while a kind is mid-migration.
+// FORMER IDS. A merge does not repoint reference values — they keep resolving
+// through the former-id trail on read — so the match is against the canonical id
+// OR any id this record used to live under, or every pointer written before a
+// merge silently disappears from the graph.
 //
-// NOT everything, and the gap is deliberate: an UNCONSTRAINED reference
-// (`kind: any`, or none) names no target kind, so the registry cannot say it
-// points here without reading every row of every kind that declares one. Those
-// are left out — of the page and of the total alike, so the two agree — rather
-// than turning a graph expansion into a table scan.
-//
-// A tombstoned source still holds its edge row until GC, but a deleted record
-// no longer points at anything.
-//
-// FORMER IDS. Merging repoints edges at the winner (merge.go moveEdges) but
-// deliberately leaves reference VALUES alone — they keep resolving through the
-// former-id trail on read. So the edge arm matches the canonical id and the
-// reference arms must match the canonical id OR any id this record used to
-// live under, or every pointer written before a merge silently disappears from
-// the graph.
+// A tombstoned source still holds its rows until GC, but a deleted record no
+// longer points at anything, so the join to `records` is what filters it out.
 func (ds *dataset) Incoming(ctx context.Context, typ, id string, opts substrate.IncomingOptions) (*substrate.IncomingPage, error) {
 	ty, err := ds.resolveType(typ)
 	if err != nil {
@@ -111,12 +103,14 @@ func (ds *dataset) Incoming(ctx context.Context, typ, id string, opts substrate.
 	if err != nil {
 		return nil, err
 	}
+	rawIDs, err := json.Marshal(ids)
+	if err != nil {
+		return nil, err
+	}
 
-	// KEYSET continuation over the union's FULL order — every component, or a
-	// page boundary drops or repeats rows. `via` is in the key because an edge
-	// and a reference of the same name from the same source are two distinct
-	// rows sharing (rel, kind, id), and a strict > over the other four would
-	// treat them as one.
+	// KEYSET continuation over the index's OWN key: (src_kind, src, property,
+	// path, ord) addresses one row and nothing else, so a page boundary can
+	// neither drop nor repeat.
 	var seek *incomingSeek
 	if opts.After != "" {
 		tok, err := decodeKeyset(opts.After)
@@ -131,44 +125,55 @@ func (ds *dataset) Incoming(ctx context.Context, typ, id string, opts substrate.
 				return nil, fmt.Errorf("%w: bad cursor", substrate.ErrValidation)
 			}
 		}
+		ord, err := strconv.Atoi(*tok.K[4])
+		if err != nil {
+			return nil, fmt.Errorf("%w: bad cursor", substrate.ErrValidation)
+		}
 		seek = &incomingSeek{
-			rel: *tok.K[0], kind: *tok.K[1], via: *tok.K[2],
-			createdAt: *tok.K[3], id: *tok.K[4],
+			srcKind: *tok.K[0], src: *tok.K[1],
+			property: *tok.K[2], path: *tok.K[3], ord: ord,
 		}
 	}
 
 	countB := &builder{}
-	countArms := ds.incomingArms(countB, canonical, ids, opts, nil, 0)
+	countWhere := ds.incomingWhere(countB, canonical, rawIDs, opts, nil)
 	var total int
 	if err := ds.db.QueryRowContext(ctx,
-		`SELECT count(*) FROM (`+strings.Join(countArms, " UNION ALL ")+`) x`,
-		countB.args...).Scan(&total); err != nil {
+		`SELECT count(*) FROM refs r JOIN records s ON s.kind = r.src_kind AND s.id = r.src`+
+			countWhere, countB.args...).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	b := &builder{}
-	arms := ds.incomingArms(b, canonical, ids, opts, seek, first+1)
+	where := ds.incomingWhere(b, canonical, rawIDs, opts, seek)
 	rows, err := ds.db.QueryContext(ctx,
-		`SELECT rel, src_id, src_kind, title, created_at, via FROM (`+
-			strings.Join(arms, " UNION ALL ")+`) x ORDER BY `+incomingOrderSQL+
-			` LIMIT `+b.arg(first+1), b.args...)
+		`SELECT r.property, r.path, r.ord, s.id, s.kind, s.title, s.created_at`+
+			` FROM refs r JOIN records s ON s.kind = r.src_kind AND s.id = r.src`+
+			where+` ORDER BY `+incomingOrderSQL+` LIMIT `+b.arg(first+1), b.args...)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	page := &substrate.IncomingPage{Incoming: []substrate.IncomingEdge{}, Total: total}
+	page := &substrate.IncomingPage{Incoming: []substrate.IncomingReference{}, Total: total}
+	// The key of the last row ON THE PAGE, which is what the next seek starts
+	// strictly after. The (first+1)-th row only says a next page exists; minting
+	// the cursor from IT would skip it.
+	var lastKey []*string
 	for rows.Next() {
-		var in substrate.IncomingEdge
-		if err := rows.Scan(&in.Rel, &in.From.ID, &in.From.Kind, &in.From.Title, &in.CreatedAt, &in.Via); err != nil {
+		var in substrate.IncomingReference
+		var ord int
+		if err := rows.Scan(&in.Property, &in.Path, &ord, &in.From.ID, &in.From.Kind, &in.From.Title,
+			&in.CreatedAt); err != nil {
 			return nil, err
 		}
 		if len(page.Incoming) == first {
-			last := page.Incoming[first-1]
-			rel, sk, via := last.Rel, last.From.Kind, last.Via
-			at := last.CreatedAt.UTC().Format(time.RFC3339Nano)
-			sid := last.From.ID
-			page.Cursor = encodeKeyset(incomingOrder, []*string{&rel, &sk, &via, &at, &sid}, 0)
+			page.Cursor = encodeKeyset(incomingOrder, lastKey, 0)
 			break
+		}
+		in.CreatedAt = in.CreatedAt.UTC()
+		lastKey = []*string{
+			ptrTo(in.From.Kind), ptrTo(in.From.ID), ptrTo(in.Property), ptrTo(in.Path),
+			ptrTo(strconv.Itoa(ord)),
 		}
 		page.Incoming = append(page.Incoming, in)
 	}
@@ -181,7 +186,7 @@ func (ds *dataset) Incoming(ctx context.Context, typ, id string, opts substrate.
 func (ds *dataset) idsOf(ctx context.Context, canonical eref) ([]string, error) {
 	ids := []string{canonical.ID}
 	rows, err := ds.db.QueryContext(ctx,
-		`SELECT former_id FROM former_ids WHERE record_kind = $1 AND record_id = $2`,
+		`SELECT former_id FROM former_ids WHERE record_kind = $1 AND record_id = $2 ORDER BY former_id`,
 		canonical.Kind, canonical.ID)
 	if err != nil {
 		return nil, err
@@ -198,150 +203,43 @@ func (ds *dataset) idsOf(ctx context.Context, canonical eref) ([]string, error) 
 }
 
 // incomingSeek is a decoded reverse cursor: the last row of the previous page,
-// in the union's order.
-type incomingSeek struct{ rel, kind, via, createdAt, id string }
-
-// incomingCols names one arm's expressions for the ordering columns, because a
-// WHERE clause cannot reference a SELECT alias — a reference arm's `rel` is a
-// bound constant while the edge arm's is a column.
-type incomingCols struct{ rel, kind, via, createdAt, id string }
-
-// order renders the arm's own ORDER BY: the union's order restricted to the
-// components that are COLUMNS here. A component the arm holds constant — a
-// reference arm's rel is a bound parameter, `via` is a literal — is not just
-// redundant in the sort, it is a syntax error: Postgres reads a bare constant
-// in ORDER BY as a column POSITION. Dropping them is sound because a constant
-// cannot distinguish two rows of the same arm.
-func (c incomingCols) order() string {
-	var parts []string
-	for _, expr := range []string{c.rel, c.kind, c.via} {
-		if isColumn(expr) {
-			parts = append(parts, expr)
-		}
-	}
-	return strings.Join(append(parts, c.createdAt+` DESC`, c.id), ", ")
+// in the index's own key order.
+type incomingSeek struct {
+	srcKind, src, property, path string
+	ord                          int
 }
 
-// isColumn distinguishes a column expression from a bound parameter (`$3`) or
-// a SQL literal (`'edge'`).
-func isColumn(expr string) bool {
-	return expr != "" && expr[0] != '$' && expr[0] != '\''
-}
-
-// after renders the keyset predicate. created_at descends while everything
-// else ascends, so the row-value comparison SQL offers cannot express it and
-// the comparison is spelled out: strictly past the leading triple, or level
-// with it and strictly past the (createdAt DESC, id ASC) pair.
-func (c incomingCols) after(b *builder, s *incomingSeek) string {
-	lead := `(` + c.rel + `, ` + c.kind + `, ` + c.via + `) > (` +
-		b.arg(s.rel) + `, ` + b.arg(s.kind) + `, ` + b.arg(s.via) + `)`
-	level := `(` + c.rel + `, ` + c.kind + `, ` + c.via + `) = (` +
-		b.arg(s.rel) + `, ` + b.arg(s.kind) + `, ` + b.arg(s.via) + `)`
-	at := b.arg(s.createdAt)
-	tail := `(` + c.createdAt + ` < ` + at + `::timestamptz OR (` +
-		c.createdAt + ` = ` + at + `::timestamptz AND ` + c.id + ` > ` + b.arg(s.id) + `))`
-	return `(` + lead + ` OR (` + level + ` AND ` + tail + `))`
-}
-
-// incomingOrderSQL is the union's order, and incomingOrder its signature —
+// incomingOrderSQL is the index's key order, and incomingOrder its signature —
 // stamped into the cursor so a list cursor cannot be replayed against the
-// reverse reader, and versioned so a cursor minted under the old three-key
-// order is refused rather than silently mis-paged.
+// reverse reader, and versioned so a cursor minted under an older order is
+// refused rather than silently mis-paged.
 const (
-	incomingOrderSQL = `rel, src_kind, via, created_at DESC, src_id`
-	incomingOrder    = "incoming:rel,srcKind,via,createdAt,srcId"
+	incomingOrderSQL = `r.src_kind, r.src, r.property, r.path, r.ord`
+	incomingOrder    = "incoming:srcKind,src,property,path,ord"
 )
 
-// incomingArms builds one SELECT per mechanism. On the PAGE path each arm
-// carries the seek and its own LIMIT, so the outer merge picks among
-// (arms × first) rows rather than sorting every inbound pointer in the
-// repository. The COUNT path passes neither — a total is a total, and it costs
-// one full pass over the same arms.
-func (ds *dataset) incomingArms(
-	b *builder, canonical eref, ids []string,
-	opts substrate.IncomingOptions, seek *incomingSeek, limit int,
-) []string {
-	var arms []string
-	tail := func(cols incomingCols, where []string) string {
-		if seek != nil {
-			where = append(where, cols.after(b, seek))
-		}
-		out := ` WHERE ` + strings.Join(where, " AND ")
-		if limit > 0 {
-			out += ` ORDER BY ` + cols.order() + ` LIMIT ` + b.arg(limit)
-		}
-		return out
+// incomingWhere renders the reverse read's predicate: the target (over every id
+// it has ever had), a live source, the caller's narrowing and the keyset seek.
+func (ds *dataset) incomingWhere(
+	b *builder, canonical eref, rawIDs []byte, opts substrate.IncomingOptions, seek *incomingSeek,
+) string {
+	where := []string{
+		`r.dst_kind = ` + b.arg(canonical.Kind),
+		`r.dst IN (SELECT jsonb_array_elements_text(` + b.arg(rawIDs) + `::jsonb))`,
+		`s.deleted_at IS NULL`,
 	}
-
-	// The edge arm. Edges are repointed by a merge, so the canonical id is the
-	// whole of what they can name.
-	{
-		cols := incomingCols{
-			rel: `e.rel`, kind: `s.kind`, via: `'` + substrate.ViaEdge + `'`,
-			createdAt: `s.created_at`, id: `s.id`,
-		}
-		where := []string{
-			`e.dst_kind = ` + b.arg(canonical.Kind),
-			`e.dst = ` + b.arg(canonical.ID),
-			`s.deleted_at IS NULL`,
-		}
-		if opts.Rel != "" {
-			where = append(where, `e.rel = `+b.arg(opts.Rel))
-		}
-		if opts.FromKind != "" {
-			where = append(where, `s.kind = `+b.arg(opts.FromKind))
-		}
-		arms = append(arms, `(SELECT e.rel AS rel, s.id AS src_id, s.kind AS src_kind, s.title AS title,`+
-			` s.created_at AS created_at, '`+substrate.ViaEdge+`'::text AS via`+
-			` FROM edges e JOIN records s ON s.kind = e.src_kind AND s.id = e.src`+
-			tail(cols, where)+`)`)
+	if opts.Property != "" {
+		where = append(where, `r.property = `+b.arg(opts.Property))
 	}
-
-	// One arm per reference property pinned at this kind. An unconstrained
-	// pointer (`kind: any`, or none) names no target kind, so the registry cannot
-	// say it points HERE without reading every row of every kind — those are
-	// left out rather than answered with a scan. A `trait:` pin names a finite
-	// set of kinds, so a reference pinned at a trait this kind implements is
-	// enumerated the same way a kind pin is (referencePinsKind).
-	reg := ds.registry()
-	for _, k := range reg.Kinds() {
-		if opts.FromKind != "" && k.Identity != opts.FromKind {
-			continue
-		}
-		for _, pname := range k.PropOrder {
-			p := k.Props[pname]
-			if p.Datatype != vocabulary.DatatypeReference || !referencePinsKind(reg, p, canonical.Kind) {
-				continue
-			}
-			if opts.Rel != "" && pname != opts.Rel {
-				continue
-			}
-			probes := make([]string, 0, len(ids))
-			for _, one := range ids {
-				raw, err := referenceValue(pname, p, vocabulary.RecordPath(canonical.Kind, one))
-				if err != nil {
-					continue
-				}
-				probes = append(probes, `s.props @> `+b.arg(raw)+`::jsonb`)
-			}
-			if len(probes) == 0 {
-				continue
-			}
-			cols := incomingCols{
-				rel: b.arg(pname), kind: `s.kind`, via: `'` + substrate.ViaReference + `'`,
-				createdAt: `s.created_at`, id: `s.id`,
-			}
-			where := []string{
-				`s.kind = ` + b.arg(k.Identity),
-				`s.deleted_at IS NULL`,
-				`(` + strings.Join(probes, " OR ") + `)`,
-			}
-			arms = append(arms, `(SELECT `+cols.rel+`::text AS rel, s.id AS src_id, s.kind AS src_kind,`+
-				` s.title AS title, s.created_at AS created_at, '`+substrate.ViaReference+`'::text AS via`+
-				` FROM records s`+tail(cols, where)+`)`)
-		}
+	if opts.FromKind != "" {
+		where = append(where, `r.src_kind = `+b.arg(opts.FromKind))
 	}
-	return arms
+	if seek != nil {
+		where = append(where, `(r.src_kind, r.src, r.property, r.path, r.ord) > (`+
+			b.arg(seek.srcKind)+`, `+b.arg(seek.src)+`, `+b.arg(seek.property)+`, `+
+			b.arg(seek.path)+`, `+b.arg(seek.ord)+`)`)
+	}
+	return ` WHERE ` + strings.Join(where, " AND ")
 }
 
 // propertyMeta assembles one record's per-property provenance: the manager
@@ -419,15 +317,15 @@ func (ds *dataset) propertyMeta(ctx context.Context, e *substrate.Record) (map[s
 
 // record is the in-transaction projection every mutation returns.
 func (t *txn) record(row *erow, ty *vocabulary.Kind) (*substrate.Record, error) {
-	return t.ds.hydrateWithType(t.ctx, t.tx, row, ty, true, true)
+	return t.ds.hydrateWithType(t.ctx, t.tx, row, ty, true)
 }
 
-func (ds *dataset) hydrate(ctx context.Context, x dbx, row *erow, withEdges, withAnnotations bool) (*substrate.Record, error) {
+func (ds *dataset) hydrate(ctx context.Context, x dbx, row *erow, withAnnotations bool) (*substrate.Record, error) {
 	ty, _ := ds.registry().ByIdentity(row.Kind)
-	return ds.hydrateWithType(ctx, x, row, ty, withEdges, withAnnotations)
+	return ds.hydrateWithType(ctx, x, row, ty, withAnnotations)
 }
 
-func (ds *dataset) hydrateWithType(ctx context.Context, x dbx, row *erow, ty *vocabulary.Kind, withEdges, withAnnotations bool) (*substrate.Record, error) {
+func (ds *dataset) hydrateWithType(ctx context.Context, x dbx, row *erow, ty *vocabulary.Kind, withAnnotations bool) (*substrate.Record, error) {
 	e := recordOf(ty, row)
 	// Former ids are the record's own discarded names, server-set.
 	former, err := loadFormerIDs(ctx, x, row.ref())
@@ -435,13 +333,6 @@ func (ds *dataset) hydrateWithType(ctx context.Context, x dbx, row *erow, ty *vo
 		return nil, err
 	}
 	e.FormerIDs = former
-	if withEdges {
-		edges, err := loadEdges(ctx, x, row.ref())
-		if err != nil {
-			return nil, err
-		}
-		e.Edges = edges
-	}
 	if withAnnotations {
 		ann, err := loadAnnotations(ctx, x, row.ref())
 		if err != nil {
@@ -484,42 +375,6 @@ func loadAnnotations(ctx context.Context, x dbx, ref eref) (map[string]any, erro
 	return out, rows.Err()
 }
 
-func loadEdges(ctx context.Context, x dbx, ref eref) (map[string][]substrate.EdgeTarget, error) {
-	rows, err := x.QueryContext(ctx, `
-		SELECT e.rel, e.props, t.id, t.kind, t.title
-		FROM edges e JOIN records t ON t.kind = e.dst_kind AND t.id = e.dst
-		WHERE e.src_kind = $1 AND e.src = $2
-		ORDER BY e.rel, e.created_at, e.dst_kind, e.dst`, ref.Kind, ref.ID)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	out := map[string][]substrate.EdgeTarget{}
-	for rows.Next() {
-		var rel string
-		var raw []byte
-		var tgt substrate.EdgeTarget
-		if err := rows.Scan(&rel, &raw, &tgt.ID, &tgt.Kind, &tgt.Title); err != nil {
-			return nil, err
-		}
-		props := map[string]any{}
-		if len(raw) > 0 {
-			_ = json.Unmarshal(raw, &props)
-		}
-		if len(props) > 0 {
-			tgt.Properties = props
-		}
-		out[rel] = append(out[rel], tgt)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	if len(out) == 0 {
-		return nil, nil
-	}
-	return out, nil
-}
-
 // --- the one generic list query ---
 
 type builder struct {
@@ -541,7 +396,7 @@ func (b *builder) jsonArray(vals []string) string {
 
 func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
 	b := &builder{}
-	if err := ds.buildFilter(b, q.Filter); err != nil {
+	if err := ds.buildFilter(ctx, b, q.Filter); err != nil {
 		return nil, err
 	}
 	terms, err := ds.orderTerms(q.OrderBy)
@@ -674,7 +529,7 @@ func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page
 		page.Cursor = encodeKeyset(order, got[len(got)-1].keys, page.Head)
 	}
 	for _, s := range got {
-		e, err := ds.hydrate(ctx, tx, s.row, q.WithEdges, q.WithAnnotations)
+		e, err := ds.hydrate(ctx, tx, s.row, q.WithAnnotations)
 		if err != nil {
 			return nil, err
 		}
@@ -692,7 +547,7 @@ func listSQL(where string, keyCols []string, order, limitArg string) string {
 		` FROM records WHERE ` + where + ` ORDER BY ` + order + ` LIMIT ` + limitArg
 }
 
-func (ds *dataset) buildFilter(b *builder, f substrate.Filter) error {
+func (ds *dataset) buildFilter(ctx context.Context, b *builder, f substrate.Filter) error {
 	reg := ds.registry()
 	var types []*vocabulary.Kind
 	seen := map[string]bool{}
@@ -761,7 +616,7 @@ func (ds *dataset) buildFilter(b *builder, f substrate.Filter) error {
 		b.add(`deleted_at IS NOT NULL`)
 	}
 	for _, name := range sortedKeys(f.Properties) {
-		if err := ds.condProp(b, types, name, f.Properties[name]); err != nil {
+		if err := ds.condProp(ctx, b, types, name, f.Properties[name]); err != nil {
 			return err
 		}
 	}
@@ -769,25 +624,6 @@ func (ds *dataset) buildFilter(b *builder, f substrate.Filter) error {
 		if err := condJSON(b, `labels`, name, f.Labels[name], ""); err != nil {
 			return err
 		}
-	}
-	if f.Edge != nil {
-		if f.Edge.To == "" {
-			return fmt.Errorf("%w: edge filter needs a target", substrate.ErrValidation)
-		}
-		// The target matches by id; ToType narrows it to one type when two
-		// types hold the same id (identity is the (type, id) pair).
-		clause := `EXISTS (SELECT 1 FROM edges x WHERE x.src_kind = records.kind AND x.src = records.id AND x.dst = ` + b.arg(f.Edge.To)
-		if f.Edge.ToKind != "" {
-			ty, err := reg.Resolve(f.Edge.ToKind)
-			if err != nil {
-				return fmt.Errorf("%w: %w", substrate.ErrValidation, err)
-			}
-			clause += ` AND x.dst_kind = ` + b.arg(ty.Identity)
-		}
-		if f.Edge.Rel != "" {
-			clause += ` AND x.rel = ` + b.arg(f.Edge.Rel)
-		}
-		b.add(clause + `)`)
 	}
 	return nil
 }
@@ -819,7 +655,7 @@ func columnFor(name string) (string, error) {
 	return "", nil
 }
 
-func (ds *dataset) condProp(b *builder, types []*vocabulary.Kind, name string, c substrate.Cond) error {
+func (ds *dataset) condProp(ctx context.Context, b *builder, types []*vocabulary.Kind, name string, c substrate.Cond) error {
 	col, err := columnFor(name)
 	if err != nil {
 		return err
@@ -835,13 +671,13 @@ func (ds *dataset) condProp(b *builder, types []*vocabulary.Kind, name string, c
 	if ds.sensitiveProp(types, name) {
 		return fmt.Errorf("%w: %s is sensitive and cannot be filtered", substrate.ErrValidation, name)
 	}
-	// A reference is a {kind, id} OBJECT, so the generic text comparison
-	// (`props->>'x'` against the value's Go spelling) can never match one. It
-	// filters by CONTAINMENT instead — which is also the only jsonb operator
-	// `records_props_idx` indexes, so a reverse lookup by pointer is
-	// index-backed without any per-kind declaration.
+	// A reference value is the object holding a path under `ref`, or the bare
+	// path string a pre-0044 row still holds. It filters by CONTAINMENT, which
+	// reaches into both shapes and is also the only jsonb operator
+	// `records_props_idx` indexes, so a lookup by pointer is index-backed
+	// without any per-kind declaration.
 	if shapes := ds.referenceShapes(types, name); len(shapes) > 0 {
-		return condReference(b, name, shapes, c)
+		return ds.condReference(ctx, b, name, shapes, c)
 	}
 	kind := vocabulary.Datatype("")
 	for _, t := range types {
@@ -878,6 +714,11 @@ func (ds *dataset) referenceShapes(types []*vocabulary.Kind, name string) []*voc
 		if !ok || p.Datatype != vocabulary.DatatypeReference {
 			continue
 		}
+		// LINK DATA is NOT part of the shape. Which of the two stored spellings
+		// a value carries is a fact about the row, not about the declaration
+		// that is live now (refs.go splitReferenceValue), so the filter probes
+		// for both whatever the declaration says and two declarations differing
+		// only in `properties:` need one probe set.
 		key := p.To + "\x00" + strconv.FormatBool(p.Repeated)
 		if seen[key] {
 			continue
@@ -888,49 +729,94 @@ func (ds *dataset) referenceShapes(types []*vocabulary.Kind, name string) []*voc
 	return out
 }
 
-// referenceValue renders one filter value as the containment probe for a
-// reference property: `{"agent": "core.substrate.reamde.dev/agent/x"}`, wrapped
-// in an array when the property is repeated (containment reaches inside an
-// array, so one shape answers "holds this reference" for both).
+// referenceFilterIDs expands one filter path into every path the same record is
+// stored under: its canonical id first, then every id it used to live under. A
+// merge repoints no stored value (decision 0044), so a filter naming the winner
+// must still match the rows written before the merge, and one naming a loser
+// must match the rows written after it — the same trail `Get`, `Incoming` and
+// the GC cascade already follow.
 //
-// A stored reference is ONE flat path, so a probe is an exact value and the
-// filter admits exactly what a WRITE admits: a full path, or the authored bare
-// id when `kind:` pins a concrete kind to complete it (validate.go
-// coerceReference). Unpinned, a bare id names no kind and therefore no record —
-// it is refused rather than answered by a scan of every kind that might hold
-// the id, which containment on a flat string cannot express anyway.
-func referenceValue(name string, p *vocabulary.Property, v any) (any, error) {
-	s, ok := v.(string)
+// An unresolvable path is its own answer: a kind this repository never declared
+// has no trail, and the filter still means the literal pointer.
+func (ds *dataset) referenceFilterIDs(ctx context.Context, path string) ([]string, error) {
+	kind, id, ok := vocabulary.SplitRecordPath(path)
 	if !ok {
-		return nil, fmt.Errorf(`%w: %s is a reference — filter it by its "<kind>/<id>" path`, substrate.ErrValidation, name)
+		return []string{path}, nil
 	}
-	if s == "" {
-		return nil, fmt.Errorf("%w: %s: a reference filter needs an id", substrate.ErrValidation, name)
-	}
-	path := s
-	if _, _, isPath := vocabulary.SplitRecordPath(s); !isPath {
-		if p.To == "" || p.To == vocabulary.ToAny {
-			return nil, fmt.Errorf(`%w: %s points at any kind — filter it by a full "<kind>/<id>" path, not the bare id %q`,
-				substrate.ErrValidation, name, s)
-		}
-		path = vocabulary.RecordPath(p.To, s)
-	}
-	var inner any = path
-	if p.Repeated {
-		inner = []any{path}
-	}
-	raw, err := json.Marshal(map[string]any{name: inner})
+	canonical, err := ds.canonicalOf(ctx, ds.db, eref{Kind: kind, ID: id})
 	if err != nil {
 		return nil, err
 	}
-	return string(raw), nil
+	ids, err := ds.idsOf(ctx, canonical)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(ids))
+	for _, one := range ids {
+		out = append(out, vocabulary.RecordPath(canonical.Kind, one))
+	}
+	return out, nil
+}
+
+// referenceFilterPath reads one filter value as the record path it names.
+//
+// The filter admits exactly what a WRITE admits: a full path, or the authored
+// bare id when `kind:` pins a concrete kind to complete it (validate.go
+// coerceReference). Unpinned, a bare id names no kind and therefore no record —
+// it is refused rather than answered by a scan of every kind that might hold
+// the id, which containment on a flat string cannot express anyway.
+func referenceFilterPath(name string, p *vocabulary.Property, v any) (string, error) {
+	s, ok := v.(string)
+	if !ok {
+		return "", fmt.Errorf(`%w: %s is a reference — filter it by its "<kind>/<id>" path`, substrate.ErrValidation, name)
+	}
+	if s == "" {
+		return "", fmt.Errorf("%w: %s: a reference filter needs an id", substrate.ErrValidation, name)
+	}
+	if _, _, isPath := vocabulary.SplitRecordPath(s); isPath {
+		return s, nil
+	}
+	if p.To == "" || p.To == vocabulary.ToAny {
+		return "", fmt.Errorf(`%w: %s points at any kind — filter it by a full "<kind>/<id>" path, not the bare id %q`,
+			substrate.ErrValidation, name, s)
+	}
+	return vocabulary.RecordPath(p.To, s), nil
+}
+
+// referenceValue renders one path as the containment probes for a reference
+// property: `{"agent": "core.substrate.reamde.dev/agent/x"}` and
+// `{"agent": {"ref": "core.substrate.reamde.dev/agent/x"}}`, each wrapped in an
+// array when the property is repeated (containment reaches inside an array, so
+// one shape answers "holds this reference" for both). jsonb containment is
+// recursive over objects, so a probe names the pointer and says nothing about
+// the link properties beside it — which is what eq on a reference means.
+//
+// BOTH SHAPES, ALWAYS. Every write stores the object (decision 0044), and a row
+// written before that rule holds the bare path; nothing rewrites one when the
+// rule changes. A reader that consulted the current declaration to pick one
+// probe would stop matching those rows (refs.go splitReferenceValue states the
+// rule), so the filter probes both and unions them.
+func referenceValue(name string, p *vocabulary.Property, path string) ([]string, error) {
+	shapes := []any{path, map[string]any{vocabulary.ReferenceValueKey: path}}
+	out := make([]string, 0, len(shapes))
+	for _, inner := range shapes {
+		if p.Repeated {
+			inner = []any{inner}
+		}
+		raw, err := json.Marshal(map[string]any{name: inner})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, string(raw))
+	}
+	return out, nil
 }
 
 // condReference filters a reference property. Only the predicates a POINTER
 // answers are admitted: it names a record or it does not, so equality,
 // membership and presence are the whole grammar — an ordering or a prefix over
 // a record path would be comparing its spelling, not the thing.
-func condReference(b *builder, name string, shapes []*vocabulary.Property, c substrate.Cond) error {
+func (ds *dataset) condReference(ctx context.Context, b *builder, name string, shapes []*vocabulary.Property, c substrate.Cond) error {
 	// A SLICE, not a map: two violated predicates in one filter must name the
 	// same one every time, or the error depends on map iteration order.
 	for _, p := range []struct {
@@ -944,16 +830,37 @@ func condReference(b *builder, name string, shapes []*vocabulary.Property, c sub
 				substrate.ErrValidation, name, p.label)
 		}
 	}
-	// One value, every declared shape, OR-ed: a filter naming several kinds is
-	// asking each of them — in ITS OWN shape — whether it points here.
+	// One value, every declared shape, every id the named record has ever had,
+	// every stored spelling, all OR-ed: a filter naming several kinds is asking
+	// each of them — in ITS OWN shape — whether it points here, and a record
+	// merged since the pointer was written is named by more than one path.
+	//
+	// The trail is read once per distinct PATH: several shapes completing one
+	// bare id the same way share the read.
+	trail := map[string][]string{}
 	probeAll := func(v any) (string, error) {
-		clauses := make([]string, 0, len(shapes))
+		var clauses []string
 		for _, p := range shapes {
-			probe, err := referenceValue(name, p, v)
+			path, err := referenceFilterPath(name, p, v)
 			if err != nil {
 				return "", err
 			}
-			clauses = append(clauses, `props @> `+b.arg(probe)+`::jsonb`)
+			paths, cached := trail[path]
+			if !cached {
+				if paths, err = ds.referenceFilterIDs(ctx, path); err != nil {
+					return "", err
+				}
+				trail[path] = paths
+			}
+			for _, one := range paths {
+				probes, err := referenceValue(name, p, one)
+				if err != nil {
+					return "", err
+				}
+				for _, probe := range probes {
+					clauses = append(clauses, `props @> `+b.arg(probe)+`::jsonb`)
+				}
+			}
 		}
 		return `(` + strings.Join(clauses, " OR ") + `)`, nil
 	}
@@ -1025,6 +932,27 @@ func (ds *dataset) datetimeProp(name string) bool {
 			continue
 		}
 		if p.Repeated || (p.Datatype != vocabulary.DatatypeDatetime && p.Datatype != vocabulary.DatatypeDate) {
+			return false
+		}
+		found = true
+	}
+	return found
+}
+
+// referenceProp reports whether EVERY loaded kind that declares this property
+// declares it as a single reference, under numericProp's every-not-any rule: a
+// name that is a reference on one kind and text on another has no one
+// expression that reads both, so a disagreement keeps the text ordering.
+//
+// Repeated and keyed are excluded because there is no single path to order by.
+func (ds *dataset) referenceProp(name string) bool {
+	found := false
+	for _, t := range ds.registry().Kinds() {
+		p, ok := t.Prop(name)
+		if !ok {
+			continue
+		}
+		if p.Repeated || p.Keyed || p.Datatype != vocabulary.DatatypeReference {
 			return false
 		}
 		found = true
@@ -1276,6 +1204,14 @@ func (ds *dataset) orderExpr(property string) (string, error) {
 		// tiebreak, so the order stays strict and paging is unaffected.
 		if ds.datetimeProp(property) {
 			return `(props->>` + sqlLiteral(property) + `)::timestamptz`, nil
+		}
+		// A REFERENCE sorts by the path it points at. Its stored value is the
+		// object `{ref: …}` (decision 0044), so `props->>` is the serialized
+		// object text: rows would order by a JSON spelling nobody asked for,
+		// and silently. referencePathSQL reads the path out of either shape,
+		// the same expression the filters use.
+		if ds.referenceProp(property) {
+			return referencePathSQL("props", property), nil
 		}
 		return `props->>` + sqlLiteral(property), nil
 	default:

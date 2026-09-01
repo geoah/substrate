@@ -358,7 +358,7 @@ func TestShippedCallableActorsAreDistinct(t *testing.T) {
 // reached a release refusing to install. Requires go first, into ONE seed
 // registry, through the same BuildAuthorities+InstallAll pair admission runs,
 // so the whole shipped set also has to coexist (GraphQL names, bundle names,
-// cross-authority edges) without a database.
+// cross-authority references) without a database.
 func TestShippedBundlesInstallOnTheSeed(t *testing.T) {
 	cat, err := catalog.Load(kinds.Bundles())
 	if err != nil {

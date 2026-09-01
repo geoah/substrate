@@ -71,30 +71,29 @@ def main(input, host):
             # part alone, so two strangers sharing one local part collide.
             local = email.split("@", 1)[0]
             pid = "person-" + "".join(ch if ch.isalnum() else "-" for ch in local)
-            edges = {}
+            person = {"name": local.replace(".", " ").title(), "emails": [email]}
             org = by_domain.get(email.split("@", 1)[-1])
             if org:
-                edges["memberOf"] = [{"kind": "people.substrate.reamde.dev/organization", "id": org}]
+                # memberOf carries link data, so the org sits under "ref".
+                person["memberOf"] = [{"ref": "people.substrate.reamde.dev/organization/" + org}]
             host.effects.put(
                 "people.substrate.reamde.dev/person", pid,
-                properties={"name": local.replace(".", " ").title(), "emails": [email]},
-                edges=edges or None, if_absent=True)
+                properties=person, if_absent=True)
             by_email[email] = pid
         if pid not in attendees:
             attendees.append(pid)
 
-    edges = {
-        "calendar": [{"kind": "calendar.substrate.reamde.dev/calendar", "id": "work"}],
-        "attendees": [{"kind": "people.substrate.reamde.dev/person", "id": p} for p in attendees],
+    event = {
+        "summary": props.get("summary") or "",
+        "at": props.get("at"),
+        "endsAt": props.get("endsAt"),
+        "calendar": "calendar.substrate.reamde.dev/calendar/work",
+        "attendees": ["people.substrate.reamde.dev/person/" + p for p in attendees],
     }
     organizer = (props.get("organizerEmail") or "").strip().lower()
     if organizer and not automated(organizer) and by_email.get(organizer):
-        edges["organizer"] = [{"kind": "people.substrate.reamde.dev/person", "id": by_email[organizer]}]
-    host.effects.put(
-        "calendar.substrate.reamde.dev/calendarevent", event_id,
-        properties={"summary": props.get("summary") or "",
-                    "at": props.get("at"), "endsAt": props.get("endsAt")},
-        edges=edges)
+        event["organizer"] = "people.substrate.reamde.dev/person/" + by_email[organizer]
+    host.effects.put("calendar.substrate.reamde.dev/calendarevent", event_id, properties=event)
     return {"output": {"event": event_id, "attendees": len(attendees)}}
 `
 
@@ -166,7 +165,7 @@ func storyDocuments(providerID string) []map[string]any {
 			"version": 1,
 		}),
 		kindDoc("eventimport", map[string]any{
-			"description":     "A calendar event as an importer delivers it: raw emails, no edges yet.",
+			"description":     "A calendar event as an importer delivers it: raw emails, nothing resolved yet.",
 			"displayTemplate": "{summary}",
 			"traits":          []string{"temporal(range)"},
 			"properties": map[string]any{
@@ -182,10 +181,14 @@ func storyDocuments(providerID string) []map[string]any {
 				"verdict": map[string]any{"type": "enum", "values": []string{"matched", "unmatched"}, "description": "what the matcher decided"},
 				"score":   map[string]any{"type": "float", "description": "the winning candidate's score, 0 when unmatched"},
 				"reason":  map[string]any{"type": "string", "description": "the decision, in one line"},
-			},
-			"edges": map[string]any{
-				"transcript": map[string]any{"to": "transcript", "description": "the transcript this verdict is about"},
-				"event":      map[string]any{"to": "calendarevent", "description": "the event it attached to, when matched"},
+				"transcript": map[string]any{
+					"type": "reference", "kind": transcriptKind, "mustExist": true,
+					"description": "the transcript this verdict is about",
+				},
+				"event": map[string]any{
+					"type": "reference", "kind": eventKind, "mustExist": true,
+					"description": "the event it attached to, when matched",
+				},
 			},
 		}),
 		doc("core.substrate.reamde.dev/function", storyAuthority+"/resolveattendees", map[string]any{
@@ -241,7 +244,8 @@ func storyDocuments(providerID string) []map[string]any {
 			"authority":   storyAuthority,
 			"description": "Reads a matched transcript and proposes the work it implies; writes nothing directly.",
 			"prompt": "You read one matched transcript per run and propose tasks for concrete action items only, " +
-				"every one carrying its source edge. Never guess an assignee, never invent a person from a " +
+				"every one naming the transcript it came from in `source`. Never guess an assignee, never " +
+				"invent a person from a " +
 				"speaker label, and when the meeting decided a priority, propose that patch. " +
 				"When nothing was decided, propose nothing.",
 			"provider": providerID,

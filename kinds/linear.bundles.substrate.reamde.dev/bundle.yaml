@@ -54,7 +54,11 @@ data:
   # the rows it synced (docs/decisions/0032).
   # version 9: the inline functions' `timeoutMs` (int ms) is `timeout`, the
   # duration datatype (ISO 8601); the retype rides core's function kind bump.
-  version: 9
+  # version 10: every link is a `type: reference` property. `user.person` and
+  # `issue.assignee` are `subject: true` references the two mappings name with
+  # `property:`, `issue.team` carries `mustExist: true`, and every account
+  # reference carries `onDelete: cascade`.
+  version: 10
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -262,8 +266,8 @@ data:
 # One user per connected account's viewer (the login the issues are assigned
 # to), in Linear's own shape. Its id is the provider key —
 # host.ids.external("linear", account, "user:<uuid>"). The `person` subject
-# edge is left EMPTY on write; the mapping below matches or mints the person
-# and links it in the same transaction.
+# reference is left EMPTY on write; the mapping below matches or mints the
+# person and links it in the same transaction.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: linear.bundles.substrate.reamde.dev/user
@@ -285,7 +289,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this user was synced from
     providerId:
@@ -308,17 +312,20 @@ data:
       type: url
       displayName: URL
       description: the user's Linear profile URL
-  edges:
-    # The subject edge (§6.1): required, single, not ownerRef, pointing at
-    # person — left empty on write so the substrate resolves it.
+    # The subject reference (§6.1): required, single, never cascading, pointing
+    # at person — left empty on write so the substrate resolves it.
     person:
-      to: people.substrate.reamde.dev/person
+      type: reference
+      displayName: Person
+      kind: people.substrate.reamde.dev/person
       required: true
+      mustExist: true
+      subject: true
       description: the human this Linear login belongs to
 ---
 # ---- mirror: one Linear team ------------------------------------------------
-# Teams arrive as the issues' team refs — enough to hang the issue→team edge
-# off. Id: host.ids.external("linear", account, "team:<uuid>").
+# Teams arrive as the issues' team refs — enough to hang the issue→team
+# reference off. Id: host.ids.external("linear", account, "team:<uuid>").
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: linear.bundles.substrate.reamde.dev/team
@@ -336,7 +343,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this team was synced from
     providerId:
@@ -355,10 +362,10 @@ data:
 # ---- mirror: what Linear holds about one issue ------------------------------
 # One issue per assigned issue, in Linear's own shape (record 53). Id:
 # host.ids.external("linear", account, "issue:<uuid>"). The `assignee` subject
-# edge is left EMPTY on write (the mapping resolves it from assigneeEmail);
-# the `team` edge is set directly by the sync, which knows the mirror id it
-# just minted. `title` is the reserved built-in — the sync writes it, no
-# declaration here.
+# reference is left EMPTY on write (the mapping resolves it from
+# assigneeEmail); the `team` reference is set directly by the sync, which knows
+# the mirror id it just minted. `title` is the reserved built-in — the sync
+# writes it, no declaration here.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: linear.bundles.substrate.reamde.dev/issue
@@ -376,7 +383,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this issue was synced from
     providerId:
@@ -435,15 +442,21 @@ data:
       type: json
       displayName: Raw
       description: the raw issue node as fetched, for provenance
-  edges:
-    # The subject edge (§6.1): required, single, not ownerRef, pointing at
-    # person — left empty on write so the substrate resolves it.
+    # The subject reference (§6.1): required, single, never cascading, pointing
+    # at person — left empty on write so the substrate resolves it.
     assignee:
-      to: people.substrate.reamde.dev/person
+      type: reference
+      displayName: Assignee
+      kind: people.substrate.reamde.dev/person
       required: true
+      mustExist: true
+      subject: true
       description: the human this issue is assigned to
     team:
-      to: linear.bundles.substrate.reamde.dev/team
+      type: reference
+      displayName: Team
+      kind: linear.bundles.substrate.reamde.dev/team
+      mustExist: true
       description: the Linear team this issue belongs to
 ---
 # ---- the sync function: one page of assigned issues per invocation ---------
@@ -464,11 +477,10 @@ data:
 # Per-account isolation (F2/F3): one account's provider failure stamps ITS
 # syncStatus "erroring: <reason>" and the queue drains on behind it — a
 # poisoned head never parks the chain. The incremental floor is the RUN-START
-# watermark captured in the page cursor (F5), never the completion clock. The
-# `reads` capability exists for edge hygiene: `link` on the single team edge
-# already replaces a moved issue's previous team (engine single-edge law),
-# but an issue that LOST its team needs the mirror read back to know which
-# stale target to unlink.
+# watermark captured in the page cursor (F5), never the completion clock.
+# `team` is an ordinary reference property: a moved issue is one patch that
+# replaces the value, and an issue that LOST its team is the same patch writing
+# it null. No read-back, no second write.
 #
 # SYNC-ONLY: no mutation ever goes to Linear (writeback waits on the outbound
 # outbox, issue 009). Deleted/unassigned issues are not swept — their mirrors
@@ -489,12 +501,6 @@ data:
       - linear.bundles.substrate.reamde.dev/team
       - linear.bundles.substrate.reamde.dev/user
       - linear.bundles.substrate.reamde.dev/account
-    reads:
-      kinds:
-        - linear.bundles.substrate.reamde.dev/issue
-      budgets:
-        calls: 128
-        rows: 256
     network:
       - "api.linear.app"
   source: |
@@ -684,13 +690,13 @@ data:
         return body.get("data") or {}
 
 
-    def _mirror(host, type_id, mid, props, edges=None):
-        # Mint-then-update: put-if-absent creates the row (edges included, the
-        # subject edge left empty for the mapping), the patch merges updates
+    def _mirror(host, type_id, mid, props):
+        # Mint-then-update: put-if-absent creates the row (references included,
+        # the subject one left empty for the mapping), the patch merges updates
         # WITHOUT replacing the property set — so projection state parked on
         # the mirror (projectedState) survives, and an identical patch is
         # no-op-suppressed (an idle re-sync writes no changelog at all).
-        host.effects.put(type_id, mid, properties=props, edges=edges, if_absent=True)
+        host.effects.put(type_id, mid, properties=props, if_absent=True)
         host.effects.patch(type_id, mid, properties=props)
 
 
@@ -725,7 +731,6 @@ data:
         for key in ("identifier", "url", "dueDate", "updatedAt"):
             if issue.get(key):
                 props[key] = issue[key]
-        edges = {}
         viewer_email = str(viewer.get("email") or "").strip().lower()
         vid = viewer.get("id") or ""
         if viewer_email:
@@ -736,15 +741,20 @@ data:
             # The viewer's address is hidden (admin-restricted visibility).
             # An EMPTY probe would mint one person shell PER ISSUE — the
             # mapping mints whenever nothing decides — so point the subject
-            # edge at the viewer's own user mirror instead: the
+            # at the viewer's own user mirror instead: the
             # engine's one-hop resolution lands it on the SAME person that
             # record resolves to. A hidden address costs one shell per
             # login, never one per issue.
+            # The value is the user mirror's flat `<kind>/<id>` path, the same
+            # one-hop shape google's mirrors write: this body names the user
+            # RECORD and never a person.
             if not noted.get("hidden"):
                 noted["hidden"] = True
                 host.log("linear-issues: viewer email hidden for %s — "
                          "assignees resolve through the viewer's mirror" % aid)
-            edges["assignee"] = host.ids.external("linear", aid, "user:" + vid)
+            props["assignee"] = (USER_TYPE + "/"
+                                 + host.ids.external("linear", aid,
+                                                     "user:" + vid))
         else:
             # No address AND no viewer id: nothing to hang identity on, and
             # staging would spray person shells. Skip the issue, loudly, once.
@@ -764,24 +774,17 @@ data:
                 if team.get("name"):
                     tprops["name"] = team["name"]
                 _mirror(host, TEAM_TYPE, tid, tprops)
-            edges["team"] = tid
-        iid = host.ids.external("linear", aid, "issue:" + pid)
-        _mirror(host, ISSUE_TYPE, iid, props, edges=edges or None)
-        if team.get("id"):
-            # put-if-absent set the edge at mint; on an existing row this
-            # link keeps a moved issue's team current — `team` is a SINGLE
-            # edge, so the engine's link REPLACES any previous target (one
-            # target per rel is the single-edge law; edges never accumulate).
-            host.effects.link(ISSUE_TYPE, iid, "team", edges["team"])
+            # `team` is an ordinary single reference, so the mirror's patch
+            # carries it: writing the property replaces whatever the row
+            # pointed at, which is how a moved issue lands on its new team.
+            props["team"] = tid
         else:
-            # The issue LOST its team upstream. A patch cannot clear an edge
-            # and link needs a target, so read the mirror back and unlink
-            # whatever stale team it still carries (a fresh mint reads None
-            # and stages nothing).
-            cur = host.records.get(ISSUE_TYPE, iid)
-            for ref in ((cur or {}).get("edges") or {}).get("team") or []:
-                if ref.get("id"):
-                    host.effects.unlink(ISSUE_TYPE, iid, "team", ref["id"])
+            # The issue LOST its team upstream. A null clears a stored
+            # property, so the same patch drops the stale pointer; on a fresh
+            # mint there is nothing to clear and it stages nothing.
+            props["team"] = None
+        iid = host.ids.external("linear", aid, "issue:" + pid)
+        _mirror(host, ISSUE_TYPE, iid, props)
         return 1
 
 
@@ -947,10 +950,12 @@ data:
 
 
     def _account_id(value):
-        # `account` is a reference, so the STORED value is the record path. The
-        # task id composes off the bare account id the sync passes, so the
-        # path's prefix comes off before it is hashed.
-        v = str(value or "")
+        # `account` is a reference, STORED as the object {"ref": "<kind>/<id>"};
+        # a bare path string is the write-time shorthand a pre-0044 row may
+        # still hold, so both are read. str() of the dict would hash the whole
+        # serialized object into the task id. The task id composes off the bare
+        # account id, so the path's prefix comes off before it is hashed.
+        v = str(value.get("ref") or "") if isinstance(value, dict) else str(value or "")
         return v[len(ACCOUNT_PREFIX):] if v.startswith(ACCOUNT_PREFIX) else v
 
 
@@ -1005,7 +1010,7 @@ data:
                 desired["name"] = title
             if url and tprops.get("url") != url:
                 desired["url"] = url
-            # STATUS IS THE SHARP EDGE (the v4 policy): it moves only when
+            # STATUS IS THE DELICATE FIELD (the v4 policy): it moves only when
             # the upstream state actually departed from the adopted baseline
             # — compared FOLDED, because raw stateType granularity would call
             # backlog -> started a departure and reopen an owner-done task on
@@ -1037,7 +1042,7 @@ data:
         return {"output": {"task": task_id}}
 ---
 # ---- mapping: user → person -------------------------------------------------
-# The record's `person` edge, and how its properties reach the human (§6.1/
+# The record's `person` reference, and how its properties reach the human (§6.1/
 # §7.1). match probes the login address against people's emails: exactly one
 # live match links it, zero-or-many mints a person shell. map copies the names
 # and unions the address onto the person (machine-managed, yielding to any
@@ -1049,7 +1054,7 @@ data:
   authority: linear.bundles.substrate.reamde.dev
   from: linear.bundles.substrate.reamde.dev/user
   to: people.substrate.reamde.dev/person
-  edge: person
+  property: person
   match:
     - from: email
       to: emails
@@ -1063,7 +1068,7 @@ data:
       merge: union
 ---
 # ---- mapping: issue → person ------------------------------------------------
-# The issue's `assignee` subject edge: match the assignee's address against
+# The issue's `assignee` subject reference: match the assignee's address against
 # people's emails (the viewer's user record has usually already minted the
 # person, so this resolves to the same human). No map block — an issue
 # describes work, not the person; nothing of it belongs on the human.
@@ -1074,7 +1079,7 @@ data:
   authority: linear.bundles.substrate.reamde.dev
   from: linear.bundles.substrate.reamde.dev/issue
   to: people.substrate.reamde.dev/person
-  edge: assignee
+  property: assignee
   match:
     - from: assigneeEmail
       to: emails

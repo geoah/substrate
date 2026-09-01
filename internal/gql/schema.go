@@ -51,12 +51,26 @@ var referenceScalar = graphql.NewScalar(graphql.ScalarConfig{
 
 // coerceReferencePath passes a path through and answers nil for anything else,
 // which is how a scalar says "not this type" in graphql-go.
+//
+// A STORED VALUE COMES IN EITHER SHAPE. A reference declared with `properties:`
+// stores `{ref, …}` and one declared without stores the flat path, and which a
+// row holds was decided when it was written: dropping `properties:` from a live
+// declaration leaves every stored value an object, and reading only the string
+// would answer null for a pointer that is plainly there. The scalar therefore
+// reads `ref` out of an object rather than consulting the declaration
+// (engine/refs.go splitReferenceValue states the rule).
 func coerceReferencePath(value any) any {
-	s, ok := value.(string)
-	if !ok {
-		return nil
+	switch v := value.(type) {
+	case string:
+		return v
+	case map[string]any:
+		s, ok := v[vocabulary.ReferenceValueKey].(string)
+		if !ok {
+			return nil
+		}
+		return s
 	}
-	return s
+	return nil
 }
 
 func parseReferenceLiteral(valueAST ast.Value) any {
@@ -211,7 +225,6 @@ type schemaBuilder struct {
 	types []substrate.KindInfo
 
 	changeType *graphql.Object
-	edgeType   *graphql.Object
 	recordIF   *graphql.Interface
 
 	traitIF   map[string]*graphql.Interface
@@ -223,6 +236,11 @@ type schemaBuilder struct {
 	objects   map[string]*graphql.Object // by type identity
 	objByName map[string]string          // GraphQL name -> identity
 	generic   *graphql.Object
+	// refObjects holds the generated object type of every reference property
+	// that carries link data, by GraphQL name. One per (kind, property), built
+	// once and reused, so a repeated reference's list wraps the same type its
+	// single-valued twin would.
+	refObjects map[string]*graphql.Object
 }
 
 // BuildSchema generates the repository's schema from its type registry.
@@ -238,6 +256,7 @@ func BuildSchema(types []substrate.KindInfo) (graphql.Schema, error) {
 		machineStamps: map[string][]string{},
 		objects:       map[string]*graphql.Object{},
 		objByName:     map[string]string{},
+		refObjects:    map[string]*graphql.Object{},
 	}
 	return b.build()
 }
@@ -256,22 +275,11 @@ func (b *schemaBuilder) build() (graphql.Schema, error) {
 		},
 	})
 
-	// Edge and Record are mutually recursive: the object is created first so
-	// recordFields can reference it, and its target field is attached once
-	// the interface exists.
-	b.edgeType = graphql.NewObject(graphql.ObjectConfig{
-		Name: "Edge",
-		Fields: graphql.Fields{
-			"rel":        &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-			"properties": &graphql.Field{Type: jsonScalar},
-		},
-	})
 	b.recordIF = graphql.NewInterface(graphql.InterfaceConfig{
 		Name:        "Record",
 		Fields:      b.recordFields(),
 		ResolveType: b.resolveType,
 	})
-	b.edgeType.AddFieldConfig("target", &graphql.Field{Type: b.recordIF, Resolve: resolveEdgeTarget})
 
 	b.collectInterfaces()
 	if err := b.buildObjects(); err != nil {
@@ -324,17 +332,9 @@ func (b *schemaBuilder) recordFields() graphql.Fields {
 		// alternatives. Non-null only on single-record reads — record(id) —
 		// because only those assemble it.
 		"propertyMeta": &graphql.Field{Type: jsonScalar, Resolve: resolvePropertyMeta},
-		// Reverse edges are NOT on the record manifest: they are a
+		// Reverse pointers are NOT on the record manifest: they are a
 		// derived, separately paged resource (REST GET …/{id}/incoming) so an
 		// unbounded reverse fan-out never inflates the canonical document.
-		"edges": &graphql.Field{
-			Type: graphql.NewList(graphql.NewNonNull(b.edgeType)),
-			Args: graphql.FieldConfigArgument{
-				"rel":   &graphql.ArgumentConfig{Type: graphql.String},
-				"first": &graphql.ArgumentConfig{Type: graphql.Int},
-			},
-			Resolve: resolveEdges,
-		},
 		"history": &graphql.Field{
 			Type: graphql.NewList(graphql.NewNonNull(b.changeType)),
 			Args: graphql.FieldConfigArgument{
@@ -430,7 +430,7 @@ func (b *schemaBuilder) buildObjects() error {
 				fname += "Prop" // e.g. type.core's version vs Record.version Int!
 			}
 			fields[fname] = &graphql.Field{
-				Type:    b.propertyType(t.Definition, p),
+				Type:    b.propertyType(t, p),
 				Resolve: resolveProp(p),
 			}
 		}
@@ -479,22 +479,20 @@ func (b *schemaBuilder) buildObjects() error {
 }
 
 // reservedNames is the closed set of GraphQL names a registry type may not
-// claim: the structural types and scalars, plus the capability and machine
-// interfaces derived from this registry. A collision is a schema-build error,
-// not a silent rename.
+// claim: the structural types and scalars, the capability and machine
+// interfaces derived from this registry, and the object type EVERY reference
+// property generates. A collision is a schema-build error, not a silent rename.
 func (b *schemaBuilder) reservedNames() map[string]string {
 	r := map[string]string{
 		"Record":           "the Record interface",
 		"GenericRecord":    "the fallback record type",
 		"Change":           "the Change type",
-		"Edge":             "the Edge type",
-		"Reference":        "the Reference type",
+		"Reference":        "the Reference scalar",
 		"RecordConnection": "the list connection type",
 		"SearchHit":        "the search hit type",
 		"ChangePage":       "the changelog page type",
 		"Query":            "the query root",
 		"Mutation":         "the mutation root",
-		"EdgeResult":       "the edge-mutation result type",
 		"JSON":             "the JSON scalar",
 		"Long":             "the Long scalar",
 	}
@@ -503,6 +501,18 @@ func (b *schemaBuilder) reservedNames() map[string]string {
 	}
 	for _, iface := range b.machineIF {
 		r[iface.Name()] = "a machine interface"
+	}
+	// The generated reference objects are named from (kind, property) before
+	// any object is built, so a kind whose own name lands on one is refused
+	// here rather than colliding inside graphql-go's type map.
+	for _, t := range b.types {
+		for _, p := range declaredProperties(t.Definition) {
+			pd := propertyDef(t.Definition, p)
+			if kind, _ := pd["type"].(string); kind != "reference" {
+				continue
+			}
+			r[referenceObjectName(t, p)] = "the reference type of " + t.Identity + "." + p
+		}
 	}
 	return r
 }
@@ -657,12 +667,6 @@ func (b *schemaBuilder) queryType() *graphql.Object {
 }
 
 func (b *schemaBuilder) mutationType() *graphql.Object {
-	mergeResult := graphql.NewObject(graphql.ObjectConfig{
-		Name: "EdgeResult",
-		Fields: graphql.Fields{
-			"ok": &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-		},
-	})
 	return graphql.NewObject(graphql.ObjectConfig{
 		Name: "Mutation",
 		Fields: graphql.Fields{
@@ -688,31 +692,6 @@ func (b *schemaBuilder) mutationType() *graphql.Object {
 					"id":   &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
 				},
 				Resolve: resolveDelete,
-			},
-			"link": &graphql.Field{
-				Type: mergeResult,
-				Args: graphql.FieldConfigArgument{
-					"rel":     &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
-					"srcKind": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
-					"src":     &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
-					// dstType is required on a `to: any` edge; a single-target
-					// declaration supplies it.
-					"dstKind": &graphql.ArgumentConfig{Type: graphql.String},
-					"dst":     &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
-					"props":   &graphql.ArgumentConfig{Type: jsonScalar},
-				},
-				Resolve: resolveLink,
-			},
-			"unlink": &graphql.Field{
-				Type: graphql.Boolean,
-				Args: graphql.FieldConfigArgument{
-					"rel":     &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
-					"srcKind": &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.String)},
-					"src":     &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
-					"dstKind": &graphql.ArgumentConfig{Type: graphql.String},
-					"dst":     &graphql.ArgumentConfig{Type: graphql.NewNonNull(graphql.ID)},
-				},
-				Resolve: resolveUnlink,
 			},
 			"merge": &graphql.Field{
 				Type: b.recordIF,
@@ -786,6 +765,50 @@ func resolveProp(name string) graphql.FieldResolveFn {
 	}
 }
 
+// referenceValue reads the source of a generated reference object's field. The
+// stored value is an object keyed by `ref`, and a bare path is accepted too:
+// coercion normalizes a props-less write to the object shape, so the string is
+// what a value written before that normalization still reads as.
+func referenceValue(source any) (path string, props map[string]any) {
+	switch v := source.(type) {
+	case string:
+		return v, nil
+	case map[string]any:
+		s, _ := v[vocabulary.ReferenceValueKey].(string)
+		return s, v
+	}
+	return "", nil
+}
+
+func resolveReferencePath(p graphql.ResolveParams) (any, error) {
+	path, _ := referenceValue(p.Source)
+	return path, nil
+}
+
+func resolveLinkProp(name string) graphql.FieldResolveFn {
+	return func(p graphql.ResolveParams) (any, error) {
+		_, props := referenceValue(p.Source)
+		return props[name], nil
+	}
+}
+
+// resolveReferenceTarget follows the pointer. A reference outlives its target
+// (a purge leaves the value behind), and an unpinned one may name a kind this
+// repository never declared, so a target that does not resolve is null rather
+// than an error: the `ref` field still answers where it pointed.
+func resolveReferenceTarget(p graphql.ResolveParams) (any, error) {
+	path, _ := referenceValue(p.Source)
+	kind, id, ok := vocabulary.SplitRecordPath(path)
+	if !ok {
+		return nil, nil
+	}
+	ds, _, err := datasetOf(p.Context)
+	if err != nil {
+		return nil, err
+	}
+	return nilOnNotFound(ds.Get(p.Context, kind, id))
+}
+
 func resolveTimeProp(name string) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (any, error) {
 		e := recordOf(p)
@@ -839,67 +862,6 @@ func resolveState(name string) graphql.FieldResolveFn {
 		s, _ := e.Properties[name].(string)
 		return s, nil
 	}
-}
-
-type edgeRow struct {
-	Rel        string               `json:"rel"`
-	Properties map[string]any       `json:"properties"`
-	Target     substrate.EdgeTarget `json:"target"`
-}
-
-func resolveEdges(p graphql.ResolveParams) (any, error) {
-	e := recordOf(p)
-	if e == nil {
-		return nil, nil
-	}
-	edges := e.Edges
-	if edges == nil {
-		ds, _, err := datasetOf(p.Context)
-		if err != nil {
-			return nil, err
-		}
-		full, err := ds.Get(p.Context, e.Kind, e.ID)
-		if err != nil {
-			return nil, err
-		}
-		edges = full.Edges
-	}
-	want, _ := p.Args["rel"].(string)
-	rels := make([]string, 0, len(edges))
-	for rel := range edges {
-		rels = append(rels, rel)
-	}
-	sort.Strings(rels)
-	out := []edgeRow{}
-	for _, rel := range rels {
-		if want != "" && rel != want {
-			continue
-		}
-		for _, t := range edges[rel] {
-			out = append(out, edgeRow{Rel: rel, Properties: t.Properties, Target: t})
-		}
-	}
-	if first, ok := p.Args["first"].(int); ok && first > 0 && first < len(out) {
-		out = out[:first]
-	}
-	return out, nil
-}
-
-func resolveEdgeTarget(p graphql.ResolveParams) (any, error) {
-	row, ok := p.Source.(edgeRow)
-	if !ok {
-		return nil, nil
-	}
-	shallow := &substrate.Record{ID: row.Target.ID, Kind: row.Target.Kind, Title: row.Target.Title}
-	ds, _, err := datasetOf(p.Context)
-	if err != nil {
-		return shallow, nil
-	}
-	full, err := ds.Get(p.Context, row.Target.Kind, row.Target.ID)
-	if err != nil || full == nil {
-		return shallow, nil
-	}
-	return full, nil
 }
 
 func resolveHistory(p graphql.ResolveParams) (any, error) {
@@ -1052,35 +1014,6 @@ func resolveDelete(p graphql.ResolveParams) (any, error) {
 	}
 	typ := p.Args["kind"].(string)
 	return ds.Delete(p.Context, actor, typ, p.Args["id"].(string))
-}
-
-func resolveLink(p graphql.ResolveParams) (any, error) {
-	ds, actor, err := datasetOf(p.Context)
-	if err != nil {
-		return nil, err
-	}
-	props, _ := p.Args["props"].(map[string]any)
-	dstType, _ := p.Args["dstKind"].(string)
-	to := substrate.EdgeRef{Kind: dstType, ID: p.Args["dst"].(string)}
-	srcType := p.Args["srcKind"].(string)
-	if err := ds.Link(p.Context, actor, srcType, p.Args["src"].(string), p.Args["rel"].(string), to, props); err != nil {
-		return nil, err
-	}
-	return map[string]any{"ok": true}, nil
-}
-
-func resolveUnlink(p graphql.ResolveParams) (any, error) {
-	ds, actor, err := datasetOf(p.Context)
-	if err != nil {
-		return nil, err
-	}
-	dstType, _ := p.Args["dstKind"].(string)
-	to := substrate.EdgeRef{Kind: dstType, ID: p.Args["dst"].(string)}
-	srcType := p.Args["srcKind"].(string)
-	if err := ds.Unlink(p.Context, actor, srcType, p.Args["src"].(string), p.Args["rel"].(string), to); err != nil {
-		return nil, err
-	}
-	return true, nil
 }
 
 func resolveMerge(p graphql.ResolveParams) (any, error) {

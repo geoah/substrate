@@ -90,9 +90,9 @@ const patchRequest = request({
     rationale: "The title moved in the source.",
     targetVersion: 3,
     diff: { properties: { summary: "New summary", note: null } },
-  },
-  edges: {
-    target: [{ id: "task-1", kind: TASK_KIND, title: "Ship the inbox" }],
+    // The `target` REFERENCE, as served: the referent's whole record path
+    // under `ref`.
+    target: { ref: `${TASK_KIND}/task-1` },
   },
 })
 
@@ -239,16 +239,21 @@ describe("ChangeRequestDetailPage", () => {
     expect(screen.getByText("applyDiff on cr-1: stale")).toBeTruthy()
   })
 
-  it("previews the record a create would mint, edges and all", async () => {
+  it("previews the record a create would mint, its pointers among the values", async () => {
     serve(
       request({
         properties: {
           op: "create",
           targetKind: TASK_KIND,
           targetId: "task-9",
+          // `diff` is a `json` property, so nothing normalizes the values
+          // inside it: they are the write this request proposes, where the
+          // bare path is legal shorthand.
           diff: {
-            properties: { summary: "Write it down" },
-            edges: [{ rel: "assignee", to: { id: "p1" } }],
+            properties: {
+              summary: "Write it down",
+              assignee: "people.substrate.reamde.dev/person/p1",
+            },
           },
         },
       })
@@ -258,8 +263,11 @@ describe("ChangeRequestDetailPage", () => {
     await screen.findByText(/Accepting mints/)
     expect(screen.getByText("create")).toBeTruthy()
     expect(screen.getByText("Write it down")).toBeTruthy()
+    // A pointer is a proposed value like any other, on its own property row.
     expect(screen.getByText("assignee")).toBeTruthy()
-    expect(screen.getByText("p1")).toBeTruthy()
+    expect(
+      screen.getByText("people.substrate.reamde.dev/person/p1")
+    ).toBeTruthy()
     // Nothing exists yet, so there is no before column to compare with.
     expect(screen.queryByText("the accept")).toBeNull()
   })
@@ -267,9 +275,10 @@ describe("ChangeRequestDetailPage", () => {
   it("is unmistakable about a delete, and summarizes what would go", async () => {
     serve(
       request({
-        properties: { op: "delete", targetVersion: 3 },
-        edges: {
-          target: [{ id: "task-1", kind: TASK_KIND, title: "Ship the inbox" }],
+        properties: {
+          op: "delete",
+          targetVersion: 3,
+          target: { ref: `${TASK_KIND}/task-1` },
         },
       }),
       { target }
@@ -327,9 +336,7 @@ describe("ChangeRequestDetailPage", () => {
             addFinalizers: ["owner/hold"],
             removeFinalizers: ["app/lock"],
           },
-        },
-        edges: {
-          target: [{ id: "task-1", kind: TASK_KIND, title: "Ship the inbox" }],
+          target: { ref: `${TASK_KIND}/task-1` },
         },
       }),
       { target }
@@ -372,7 +379,9 @@ describe("ChangeRequestDetailPage", () => {
     ).toBeTruthy()
   })
 
-  it("renders a create edge's own properties, which the accept writes", async () => {
+  it("names `edges` as a key the decoder refuses, on either op", async () => {
+    // The key is gone from PutInput and PatchInput alike, so a diff still
+    // writing one fails the accept whole rather than being ignored.
     serve(
       request({
         properties: {
@@ -381,34 +390,24 @@ describe("ChangeRequestDetailPage", () => {
           targetId: "task-9",
           diff: {
             properties: { summary: "Write it down" },
-            edges: [
-              {
-                rel: "assignee",
-                to: { id: "p1" },
-                // Distinct from every fixture timestamp: the record's own
-                // createdAt renders as a bare date too once it ages past the
-                // relative-format window, and an equal string makes
-                // getByText ambiguous the day the calendar rolls.
-                properties: { since: "2024-02-29" },
-              },
-            ],
+            edges: [{ rel: "assignee", to: { id: "p1" } }],
           },
         },
       })
     )
     renderPage(<ChangeRequestDetailPage />)
 
-    await screen.findByText("assignee")
-    expect(screen.getByText("since")).toBeTruthy()
-    expect(screen.getByText("2024-02-29")).toBeTruthy()
+    await screen.findByText(/the substrate's decoder refuses/)
+    expect(screen.getByText("edges")).toBeTruthy()
   })
 
   it("says a malformed wrapper is unreadable instead of showing an empty diff", async () => {
     serve(
       request({
-        properties: { targetVersion: 3, diff: { properties: [] } },
-        edges: {
-          target: [{ id: "task-1", kind: TASK_KIND, title: "Ship the inbox" }],
+        properties: {
+          targetVersion: 3,
+          diff: { properties: [] },
+          target: { ref: `${TASK_KIND}/task-1` },
         },
       }),
       { target }

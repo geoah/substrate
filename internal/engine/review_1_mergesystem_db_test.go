@@ -107,10 +107,11 @@ func TestSk1MergeNonFusingTypes(t *testing.T) {
 	author := mustPut(t, ds, owner, substrate.PutInput{Kind: "person", Properties: map[string]any{"name": "A"}})
 	mk := func(ext string) *substrate.Record {
 		return mustPut(t, ds, owner, substrate.PutInput{
-			Kind: "conversationmessage", Properties: map[string]any{"text": "hi " + ext},
-			Edges: []substrate.EdgeInput{
-				{Rel: "conversation", To: substrate.EdgeRef{ID: conv.ID}},
-				{Rel: "author", To: substrate.EdgeRef{ID: author.ID}},
+			Kind: "conversationmessage",
+			Properties: map[string]any{
+				"text":         "hi " + ext,
+				"conversation": conv.ID,
+				"author":       author.ID,
 			},
 		})
 	}

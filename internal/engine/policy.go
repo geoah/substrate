@@ -327,7 +327,6 @@ type gatedWrite struct {
 func (ds *dataset) convertToRequest(ctx context.Context, actor substrate.Actor, causedBy int64, sink *[]changeEntry, gw *gatedWrite) (string, error) {
 	requestID := derivedID("gate", gw.key)
 	props := map[string]any{}
-	var edges []substrate.EdgeInput
 	op := gw.op
 	if op == policyOpPut || op == policyOpPatch {
 		existing, err := ds.loadRowDB(ctx, eref{Kind: gw.kind.Identity, ID: gw.id})
@@ -344,7 +343,7 @@ func (ds *dataset) convertToRequest(ctx context.Context, actor substrate.Actor, 
 			props["targetId"] = gw.id
 		} else {
 			op = opPatch
-			edges = []substrate.EdgeInput{{Rel: propTarget, To: substrate.EdgeRef{Kind: existing.Kind, ID: existing.ID}}}
+			props[propTarget] = vocabulary.RecordPath(existing.Kind, existing.ID)
 		}
 		norm, err := normalizeDiff(gw.kind, map[string]any{"properties": gw.props}, op)
 		if err != nil {
@@ -356,7 +355,7 @@ func (ds *dataset) convertToRequest(ctx context.Context, actor substrate.Actor, 
 		props["diff"] = norm
 	} else {
 		op = opDelete
-		edges = []substrate.EdgeInput{{Rel: propTarget, To: substrate.EdgeRef{Kind: gw.kind.Identity, ID: gw.id}}}
+		props[propTarget] = vocabulary.RecordPath(gw.kind.Identity, gw.id)
 	}
 	props["op"] = op
 	if gw.thread != "" {
@@ -375,8 +374,7 @@ func (ds *dataset) convertToRequest(ctx context.Context, actor substrate.Actor, 
 			t.changeSink = sink
 		}
 		_, err := t.put(substrate.PutInput{
-			Kind: vocabulary.KindRecordPatchRequest, ID: requestID,
-			Properties: props, Edges: edges,
+			Kind: vocabulary.KindRecordPatchRequest, ID: requestID, Properties: props,
 		})
 		return err
 	})

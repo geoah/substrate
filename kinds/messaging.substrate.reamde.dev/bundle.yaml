@@ -8,10 +8,10 @@
 #
 # People and plumbing live elsewhere: authors and participants are `person`
 # in people.substrate.reamde.dev, the account is a bundle-owned accountconfig record (ruling A12; the
-# retired `connectoraccount` core kind is gone). Those edges
+# retired `connectoraccount` core kind is gone). Those references
 # name the person; a reference naming a source record instead — a `slackuser`,
 # say — lands on the person that record points at, in one hop (§6.2). The
-# structural edges stay in the family — a message to its conversation or
+# structural references stay in the family — a message to its conversation or
 # thread, a reply to its parent.
 #
 # no new actors: the doors and the substrate ship with core; an installed
@@ -23,7 +23,9 @@ metadata:
   id: messaging.substrate.reamde.dev
 data:
   # version 4: `conversation`'s enum property `kind` is `category` (#125).
-  version: 4
+  # version 5: every link is a `type: reference` property carrying
+  # `mustExist: true`, and an owning one carries `onDelete: cascade`.
+  version: 5
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A VOCABULARY bundle (see people.substrate.reamde.dev): kinds only, imported from the

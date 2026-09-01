@@ -113,7 +113,7 @@ data:
         ops: [update]
         when: 'record != null && record.properties.fetch == "fetched" && !("class"
           in record.properties)'
-    callable: {kind: core.substrate.reamde.dev/agent, id: web.bundles.substrate.reamde.dev/pageclassifier}
+    callable: core.substrate.reamde.dev/agent/web.bundles.substrate.reamde.dev/pageclassifier
 ```
 
 Because vocabulary is records, a parsed agent projects to a row the console
@@ -167,7 +167,7 @@ entry could name only a function.
   named kinds under a row budget; use `graphql` when the agent's job is the
   graph itself.
 - **`core.substrate.reamde.dev/mutate`** executes GraphQL mutations (`put`,
-  `patch`, `delete`, `link`, `unlink`) through the same resolvers, and requires
+  `patch`, `delete`) through the same resolvers, and requires
   a non-empty `permissions.writes` (a load error otherwise). Every written kind is resolved
   and held to the agent's **effective** emit before the write applies, so a
   sub-agent's ceiling narrows it like any other effect; `merge` and `split`
@@ -240,7 +240,7 @@ nothing.
 ## Sub-agents, budgets, and the emit ceiling
 
 Sub-agents are child invocations with their own budgets and a child thread
-carrying the `parent` edge. `agentDepth` is 0 at the root and increments per
+carrying the `parent` reference. `agentDepth` is 0 at the root and increments per
 hop, checked against the calling agent's `budgets.depth` (hard-capped at 3), so
 the default chain refuses the hop that would run at depth 4, as a tool error
 the caller sees. It is a separate counter from causal depth: an agent hop never
@@ -315,9 +315,9 @@ the engine-stamped `changes`, and the required `thread` it belongs to.
 Self-actor exclusion covers the transcript, so an agent's own trigger never
 redelivers its thread and message writes.
 
-`agent`, `parent` and `thread` are **references**, not edges: a thread is the
-audit row of a run and has to keep naming the agent that ran it, and an edge
-would be deleted along with its target. Each declares its `inverse`, so the
+`agent`, `parent` and `thread` are references that never cascade: a thread is
+the audit row of a run and has to keep naming the agent that ran it, so
+deleting the agent leaves the row standing. Each declares its `inverse`, so the
 graph reads the same link from the other side — an agent's `threads`,
 a thread's `messages` and its `subagentThreads`.
 

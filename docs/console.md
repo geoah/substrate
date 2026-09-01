@@ -44,7 +44,7 @@ document is the apply-able [envelope](data-model.md#the-envelope).
   the kind. **Completion** offers what may be written where the cursor is (the
   envelope's keys, the declared properties with their datatype and one-liner
   and never one already written, an enum's admitted values, a state machine's
-  states, the declared edge rels), **diagnostics** underline a refused value on
+  states, the kinds a reference may name), **diagnostics** underline a refused value on
   the line it sits on and mark it in the gutter, and **hovering** a property
   line shows what the kind says about it. There is a formatter, and the tint
   is the manifest view's own colours.
@@ -52,7 +52,7 @@ document is the apply-able [envelope](data-model.md#the-envelope).
 Both lenses edit the same text, so switching loses nothing and a hand-written
 comment survives being edited on the form. Everything is checked against the
 declaration **as you type** — the datatypes, required properties, unknown keys,
-the edge list's shape, and the two rules that belong to the write rather than
+the shape of a reference value, and the two rules that belong to the write rather than
 the value: a `put` may not move a state (that transition is a `patch`), and the
 id in the document is not a rename. Problems key to their line, the gutter
 marks them, and Save is barred while an error stands.
@@ -62,14 +62,14 @@ A record opens on five tabs:
 - **Properties**: the declared properties rendered by type, the read view the
   editor opens from.
 - **Manifest**: the [envelope](data-model.md#the-envelope), with every kind
-  reference and every edge target rendered as a link you can follow.
+  reference and every record reference rendered as a link you can follow.
 - **Activity**: this record's own slice of [the changelog](changelog.md), with the
   actor on every row and each trigger's delivery state beside it.
 - **Graph**: what this record points at and what points back, as a tree you
-  drill into. Outgoing pointers — edges and reference properties alike — read
-  straight off the record; inbound ones are grouped and paged as the API pages
+  drill into. Outgoing pointers read
+  straight off the record's references; inbound ones are grouped and paged as the API pages
   them, each group headed by the name the **declaration** gives that side
-  (`messages · llmmessage`, from `inverse:`) rather than the raw `rel`, which
+  (`messages · llmmessage`, from `inverse:`) rather than the raw property name, which
   is the same link as the *other* record spells it. A member expands in
   place into its own graph, so a thread → its messages → the record a tool
   wrote is three clicks without leaving the page.

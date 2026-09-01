@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"sort"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -13,22 +12,6 @@ import (
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/vocabulary"
 )
-
-// edgeRefDoc is an edge target: {kind, id} — a record reference. Bare {id} is
-// accepted as input shorthand on a single-target edge, where the declaration
-// supplies the kind; a `to: any` edge needs the kind (FORMAT.md §3). Reads
-// always render it whole.
-type edgeRefDoc struct {
-	Kind string `yaml:"kind,omitempty" json:"kind,omitempty"`
-	ID   string `yaml:"id" json:"id"`
-}
-
-type edgeDoc struct {
-	Rel string     `yaml:"rel" json:"rel"`
-	To  edgeRefDoc `yaml:"to" json:"to"`
-	// The EDGE's properties, not the target's.
-	Properties map[string]any `yaml:"properties,omitempty" json:"properties,omitempty"`
-}
 
 // document is one manifest in the pinned envelope
 // : kind, metadata, data,
@@ -54,21 +37,21 @@ type documentMeta struct {
 	IfVersion *int64 `yaml:"ifVersion,omitempty" json:"ifVersion,omitempty"`
 }
 
-// documentData is everything authored, which is properties and edges and
-// nothing else. Everything authored IS a property: `title`, `body` and the
-// temporal properties sit in Properties beside the declared ones, and so does
-// a state's current value — moving one is a patch rather than an apply.
+// documentData is everything authored, which is properties and nothing else.
+// Everything authored IS a property: `title`, `body`, the temporal properties
+// and every pointer at another record sit in Properties beside the declared
+// ones, and so does a state's current value — moving one is a patch rather
+// than an apply.
 type documentData struct {
 	Properties map[string]any `yaml:"properties,omitempty" json:"properties,omitempty"`
-	Edges      []edgeDoc      `yaml:"edges,omitempty" json:"edges,omitempty"`
 }
 
 // documentStatus is the server-set block: never sent back on apply. FormerIDs
 // is the merge trail — the ids this record used to answer to, which is store
 // bookkeeping. Properties is the managed-property bookkeeping a single-record
 // read carries (wire `propertyMeta`), absent on lists and when nothing manages
-// anything. Reverse edges are not part of the document; they use their own
-// paged graph resource.
+// anything. Incoming references are not part of the document; they page on
+// their own resource.
 type documentStatus struct {
 	Version    int64                     `yaml:"version" json:"version"`
 	CreatedAt  time.Time                 `yaml:"createdAt" json:"createdAt"`
@@ -113,17 +96,6 @@ func (d *document) putInput() (substrate.PutInput, error) {
 		Annotations: d.Metadata.Annotations,
 		IfVersion:   d.Metadata.IfVersion,
 	}
-	for _, e := range d.Data.Edges {
-		if e.Rel == "" {
-			return substrate.PutInput{}, fmt.Errorf("edge without a `rel`")
-		}
-		if e.To.ID == "" {
-			return substrate.PutInput{}, fmt.Errorf(
-				"edge %q has no target: write `to: {kind, id}`, or bare `to: {id}` on a single-target edge", e.Rel)
-		}
-		ref := substrate.EdgeRef{Kind: e.To.Kind, ID: e.To.ID}
-		in.Edges = append(in.Edges, substrate.EdgeInput{Rel: e.Rel, To: ref, Properties: e.Properties})
-	}
 	return in, nil
 }
 
@@ -154,22 +126,6 @@ func recordDocument(e *substrate.Record, meta map[string]statusProperty) *docume
 			FormerIDs:  e.FormerIDs,
 			Properties: normalizeMeta(meta),
 		},
-	}
-	rels := make([]string, 0, len(e.Edges))
-	for rel := range e.Edges {
-		rels = append(rels, rel)
-	}
-	sort.Strings(rels)
-	for _, rel := range rels {
-		targets := append([]substrate.EdgeTarget(nil), e.Edges[rel]...)
-		sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })
-		for _, t := range targets {
-			ref := edgeRefDoc{Kind: t.Kind, ID: t.ID}
-			// t.Properties are the EDGE's; dropping them here would make a
-			// get|apply round trip wipe them server-side (put overwrites the
-			// edge row's properties with what the input carries).
-			d.Data.Edges = append(d.Data.Edges, edgeDoc{Rel: rel, To: ref, Properties: normalizeMap(t.Properties)})
-		}
 	}
 	return d
 }
@@ -332,7 +288,7 @@ func normalizeMeta(meta map[string]statusProperty) map[string]statusProperty {
 // marshalDocument renders one manifest at the two-space indent the format's
 // examples are written in. It takes `any` because a declaration renders
 // through declarationDocument, whose `data` is the authored map rather than
-// the record document's properties/edges pair.
+// the record document's property block.
 func marshalDocument(d any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
@@ -404,6 +360,11 @@ func nodeDocument(node *yaml.Node, where string) (*document, error) {
 	}
 	if hasKey(dataNode, "props") {
 		return nil, fmt.Errorf("%s writes `data.props`, which is `data.properties`; rename the key", where)
+	}
+	if hasKey(dataNode, "edges") {
+		return nil, fmt.Errorf("%s writes `data.edges`, which is gone:\n"+
+			"a pointer at another record is a `type: reference` property, so it lives in\n"+
+			"`data.properties` as `<name>: <kind>/<id>` (a list for a repeated one)", where)
 	}
 	if hasKey(dataNode, "states") {
 		return nil, fmt.Errorf("%s writes `data.states`, which is not a block:\n"+

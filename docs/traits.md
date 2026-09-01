@@ -25,8 +25,8 @@ core's `temporal` without redeclaring it, by bare name while that name is
 unique and by full identity always.
 
 A trait contracts **presence and datatype only**. It carries no cardinality
-(a binding kind adds its own `repeated: true`), no state values (each binding
-kind declares its own machine), and no edges. That is deliberate: the trait
+(a binding kind adds its own `repeated: true`) and no state values (each
+binding kind declares its own machine). That is deliberate: the trait
 is the shared question, and each kind keeps its own answer's shape.
 
 ## Declaring one

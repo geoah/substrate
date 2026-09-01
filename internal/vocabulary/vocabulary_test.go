@@ -69,7 +69,7 @@ status:
   observedGeneration: 3
 `
 
-// vocabDocs is a vocabulary authority: refinements, cross-authority edges, a bound
+// vocabDocs is a vocabulary authority: refinements, cross-authority references, a bound
 // capability with a hot-property remap, a source record with its mapping,
 // object properties and a machine.
 const vocabDocs = `kind: core.substrate.reamde.dev/authority
@@ -107,7 +107,7 @@ data:
     company: {type: string}
     emails: {type: email, repeated: true}
 ---
-# one source's record of a contact: an ordinary edge points at the contact,
+# one source's record of a contact: a subject reference points at the contact,
 # and the mapping beside it says how these properties reach it (§6.1)
 kind: core.substrate.reamde.dev/kind
 metadata:
@@ -127,8 +127,12 @@ data:
       repeated: true
       # a bare kind is shorthand for {type: kind}
       fields: {value: email, primary: bool}
-  edges:
-    contact: {to: contact, required: true}
+    contact:
+      type: reference
+      kind: contact
+      required: true
+      mustExist: true
+      subject: true
 ---
 # how googlecontact's properties reach the contact (record 50)
 kind: core.substrate.reamde.dev/recordmapping
@@ -138,7 +142,7 @@ data:
   authority: vocab.example.com
   from: vocab.example.com/googlecontact
   to: vocab.example.com/contact
-  edge: contact
+  property: contact
   match:
     - {from: "emails[].value", to: emails}
   map:
@@ -158,9 +162,13 @@ data:
     format: {type: enum, values: [print, ebook, audio]}
     blurb: {type: markdown, embed: true}
     secretKey: {type: secret}
-  edges:
-    author: {to: contact, many: true}
-    account: {to: account, required: true, ownerRef: true}
+    author: {type: reference, kind: contact, repeated: true, mustExist: true}
+    account:
+      type: reference
+      kind: account
+      required: true
+      mustExist: true
+      onDelete: cascade
 ---
 # one task; temporal(point: dueAt) remaps the capability's hot property
 kind: core.substrate.reamde.dev/kind
@@ -253,13 +261,14 @@ func TestLoadManifestStream(t *testing.T) {
 	if book.Version != 1 {
 		t.Fatalf("version = %d (the authority's, unless the type overrides it)", book.Version)
 	}
-	// Edges: in-authority short name, and a cross-authority one.
-	if got := book.Edges["author"].To; got != "vocab.example.com/contact" {
-		t.Fatalf("author edge = %q", got)
+	// Reference pins: an in-authority short name, and a cross-authority one.
+	author, _ := book.Prop("author")
+	if author.To != "vocab.example.com/contact" || !author.Repeated || !author.MustExist {
+		t.Fatalf("book.author = %+v", author)
 	}
-	acct := book.Edges["account"]
-	if acct.To != "core.example.com/account" || !acct.Required || !acct.OwnerRef {
-		t.Fatalf("account edge = %+v", acct)
+	acct, _ := book.Prop("account")
+	if acct.To != "core.example.com/account" || !acct.Required || !acct.Cascades() {
+		t.Fatalf("book.account = %+v", acct)
 	}
 	// Refinements survive the property that names them.
 	if p, _ := book.Prop("asin"); p.Refined != "asin" || p.Pattern == nil {
@@ -435,9 +444,9 @@ func TestDefinitionIsTheData(t *testing.T) {
 	}
 }
 
-// Descriptions: a declared one-sentence explanation on property
-// and edge declarations, carried structurally so the kind mirrors — and
-// the console's hover tooltips — serve it without parsing comments.
+// Descriptions: a declared one-sentence explanation on every property
+// declaration, carried structurally so the kind mirrors — and the console's
+// hover tooltips — serve it without parsing comments.
 func TestDescriptions(t *testing.T) {
 	mk := func(body string) map[string]string {
 		return map[string]string{"d.example.com/authority.yaml": `kind: core.substrate.reamde.dev/authority
@@ -470,8 +479,7 @@ data:
       fields:
         width: {type: int, description: "millimeters across"}
         height: int
-  edges:
-    parent: {to: widget, description: "the widget this one hangs off"}
+    parent: {type: reference, kind: widget, description: "the widget this one hangs off"}
 `))
 	w, _ := r.ByIdentity("d.example.com/widget")
 	if p, _ := w.Prop("name"); p.Description != "what the widget is called" {
@@ -490,21 +498,20 @@ data:
 	if f := dims.Fields["height"]; f.Description != "" {
 		t.Errorf("bare-kind field grew a description: %q", f.Description)
 	}
-	if e, _ := w.Edge("parent"); e.Description != "the widget this one hangs off" {
-		t.Errorf("edge description = %q", e.Description)
+	if p, _ := w.Prop("parent"); p.Description != "the widget this one hangs off" {
+		t.Errorf("reference description = %q", p.Description)
 	}
 
 	// The mirror shape: the definition IS the data map, so the console reads
-	// definition.properties.<name>.description / definition.edges.<rel>.description.
+	// definition.properties.<name>.description.
 	props, _ := w.Definition["properties"].(map[string]any)
 	name, _ := props["name"].(map[string]any)
 	if name["description"] != "what the widget is called" {
 		t.Errorf("definition.properties.name.description = %v", name["description"])
 	}
-	edges, _ := w.Definition["edges"].(map[string]any)
-	parent, _ := edges["parent"].(map[string]any)
+	parent, _ := props["parent"].(map[string]any)
 	if parent["description"] != "the widget this one hangs off" {
-		t.Errorf("definition.edges.parent.description = %v", parent["description"])
+		t.Errorf("definition.properties.parent.description = %v", parent["description"])
 	}
 
 	// One rule: a description is a single short sentence — a tooltip, not
@@ -513,8 +520,8 @@ data:
 	for what, body := range map[string]string{
 		"newline": "    name: {type: string, description: \"two\\nlines\"}\n",
 		"long":    "    name: {type: string, description: \"" + long + "\"}\n",
-		"edge": "    name: {type: string}\n  edges:\n" +
-			"    parent: {to: widget, description: \"" + long + "\"}\n",
+		"reference": "    name: {type: string}\n" +
+			"    parent: {type: reference, kind: widget, description: \"" + long + "\"}\n",
 	} {
 		fsys := fstest.MapFS{}
 		for fname, fbody := range mk(body) {
@@ -607,7 +614,7 @@ func TestSourceYAMLIsTheDocument(t *testing.T) {
 	if !strings.HasPrefix(book.SourceYAML, wantHead) {
 		t.Fatalf("book source:\n%s\nwant prefix:\n%s", book.SourceYAML, wantHead)
 	}
-	if !strings.HasSuffix(book.SourceYAML, "    account: {to: account, required: true, ownerRef: true}") {
+	if !strings.HasSuffix(book.SourceYAML, "      onDelete: cascade") {
 		t.Fatalf("book source ends:\n%s", book.SourceYAML)
 	}
 	for _, leak := range []string{"contact.vocab", "task.vocab", "---"} {
@@ -726,9 +733,10 @@ func gmailManifest() vocabulary.Manifest {
 
 // --- resolution rules ----------------------------------------------------
 
-// Edge targets resolve in-authority first, then uniquely across authorities, and an
-// ambiguous short name is a load error rather than an arbitrary pick.
-func TestEdgeTargetResolutionRules(t *testing.T) {
+// A reference's `kind:` pin resolves in-authority first, then uniquely across
+// authorities, and an ambiguous short name is a load error rather than an
+// arbitrary pick.
+func TestReferencePinResolutionRules(t *testing.T) {
 	authority := func(name string) string {
 		return `kind: core.substrate.reamde.dev/authority
 metadata: {id: ` + name + `}
@@ -750,11 +758,12 @@ data:
 		r := loadFixture(t, map[string]string{
 			"a.yaml": alpha,
 			"b.yaml": authority("b.example.com") +
-				typ("b.example.com", "beta", "  edges:\n    target: {to: alpha}\n"),
+				typ("b.example.com", "beta", "  properties:\n    target: {type: reference, kind: alpha}\n"),
 		})
 		beta, _ := r.ByIdentity("b.example.com/beta")
-		if got := beta.Edges["target"].To; got != "a.example.com/alpha" {
-			t.Fatalf("edge target = %q", got)
+		target, _ := beta.Prop("target")
+		if target.To != "a.example.com/alpha" {
+			t.Fatalf("reference pin = %q", target.To)
 		}
 	})
 
@@ -779,17 +788,19 @@ data:
 			return r
 		}
 		r := install(t, authority("b.example.com")+typ("b.example.com", "alpha", "")+
-			typ("b.example.com", "beta", "  edges:\n    target: {to: alpha}\n"))
+			typ("b.example.com", "beta", "  properties:\n    target: {type: reference, kind: alpha}\n"))
 		beta, _ := r.ByIdentity("b.example.com/beta")
-		if got := beta.Edges["target"].To; got != "b.example.com/alpha" {
-			t.Fatalf("edge target = %q, want the in-authority alpha", got)
+		target, _ := beta.Prop("target")
+		if target.To != "b.example.com/alpha" {
+			t.Fatalf("reference pin = %q, want the in-authority alpha", target.To)
 		}
 		// The full reference always addresses the other authority's kind.
 		r2 := install(t, authority("b.example.com")+typ("b.example.com", "alpha", "")+
-			typ("b.example.com", "beta", "  edges:\n    target: {to: a.example.com/alpha}\n"))
+			typ("b.example.com", "beta", "  properties:\n    target: {type: reference, kind: a.example.com/alpha}\n"))
 		beta2, _ := r2.ByIdentity("b.example.com/beta")
-		if got := beta2.Edges["target"].To; got != "a.example.com/alpha" {
-			t.Fatalf("qualified edge target = %q", got)
+		target2, _ := beta2.Prop("target")
+		if target2.To != "a.example.com/alpha" {
+			t.Fatalf("qualified reference pin = %q", target2.To)
 		}
 	})
 
@@ -798,7 +809,7 @@ data:
 			"a.yaml": {Data: []byte(alpha)},
 			"b.yaml": {Data: []byte(authority("b.example.com") + typ("b.example.com", "alpha", ""))},
 			"c.yaml": {Data: []byte(authority("c.example.com") +
-				typ("c.example.com", "gamma", "  edges:\n    target: {to: alpha}\n"))},
+				typ("c.example.com", "gamma", "  properties:\n    target: {type: reference, kind: alpha}\n"))},
 		})
 		if err == nil {
 			t.Fatal("expected an ambiguity error")
@@ -812,33 +823,41 @@ data:
 		}
 	})
 
-	t.Run("unknown target", func(t *testing.T) {
+	t.Run("unknown referent kind", func(t *testing.T) {
 		_, err := vocabulary.LoadFS(fstest.MapFS{
 			"a.yaml": {Data: []byte(alpha)},
 			"c.yaml": {Data: []byte(authority("c.example.com") +
-				typ("c.example.com", "gamma", "  edges:\n    target: {to: a.example.com/nosuch}\n"))},
+				typ("c.example.com", "gamma", "  properties:\n    target: {type: reference, kind: a.example.com/nosuch}\n"))},
 		})
-		if err == nil || !strings.Contains(err.Error(), "unknown target type") {
+		if err == nil || !strings.Contains(err.Error(), "unknown referent kind") {
 			t.Fatalf("error = %v", err)
 		}
 	})
 
-	t.Run("edges are a mapping", func(t *testing.T) {
+	// `data.edges` is gone with the edge, and the refusal names what replaced
+	// it: a declaration still carrying the key would otherwise read as an
+	// unknown key and leave the author guessing.
+	t.Run("data.edges names its replacement", func(t *testing.T) {
 		_, err := vocabulary.LoadFS(fstest.MapFS{
 			"a.yaml": {Data: []byte(alpha)},
 			"c.yaml": {Data: []byte(authority("c.example.com") +
-				typ("c.example.com", "gamma", "  edges:\n    - {rel: target, to: alpha}\n"))},
+				typ("c.example.com", "gamma", "  edges:\n    target: {to: alpha}\n"))},
 		})
-		if err == nil || !strings.Contains(err.Error(), "not a list") {
-			t.Fatalf("error = %v", err)
+		if err == nil {
+			t.Fatal("expected data.edges to be refused")
+		}
+		for _, want := range []string{`key "edges" is deleted`, "`properties` with `type: reference`"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("the refusal must carry %q, got: %v", want, err)
+			}
 		}
 	})
 }
 
 // TestReferencePropertyType covers the reference property kind:
-// `type: reference` is admitted, a `to:` constraint resolves like an edge
-// target (bare name to full identity), `to: any` and absent leave it
-// unconstrained, and an unknown `to:` is a load error.
+// `type: reference` is admitted, a `kind:` pin resolves from a bare name to a
+// full identity, `kind: any` and absent leave it unconstrained, and an unknown
+// pin is a load error.
 func TestReferencePropertyType(t *testing.T) {
 	authority := func(name string) string {
 		return `kind: core.substrate.reamde.dev/authority
@@ -1063,8 +1082,11 @@ func TestInstallBumpsVersion(t *testing.T) {
 	// Its one type reaches into another authority for its owner.
 	m.Manifests = append(m.Manifests, vocabulary.KindManifest(m.Authority,
 		map[string]any{"singular": "label", "plural": "labels"},
-		map[string]any{"edges": map[string]any{
-			"account": map[string]any{"to": "account", "required": true, "ownerRef": true},
+		map[string]any{"properties": map[string]any{
+			"account": map[string]any{
+				"type": "reference", "kind": "account",
+				"required": true, "mustExist": true, "onDelete": "cascade",
+			},
 		}}))
 	g, err := vocabulary.ParseManifest(m)
 	if err != nil {
@@ -1083,8 +1105,9 @@ func TestInstallBumpsVersion(t *testing.T) {
 	if ty.Source != vocabulary.SourceInstalled {
 		t.Fatalf("source = %q", ty.Source)
 	}
-	if got := ty.Edges["account"].To; got != "core.example.com/account" {
-		t.Fatalf("cross-authority edge = %q", got)
+	account, _ := ty.Prop("account")
+	if account.To != "core.example.com/account" || !account.Cascades() {
+		t.Fatalf("cross-authority reference = %+v", account)
 	}
 	if !contains(r.Actors(), "connector:gmail") {
 		t.Fatal("installed actor missing")
@@ -1113,9 +1136,10 @@ func TestInstalledMapping(t *testing.T) {
 						"properties": map[string]any{
 							"realName": map[string]any{"type": "string"},
 							"email":    map[string]any{"type": "email"},
-						},
-						"edges": map[string]any{
-							"person": map[string]any{"to": "vocab.example.com/contact", "required": true},
+							"person": map[string]any{
+								"type": "reference", "kind": "vocab.example.com/contact",
+								"required": true, "mustExist": true, "subject": true,
+							},
 						},
 					}),
 				mapping,
@@ -1127,9 +1151,9 @@ func TestInstalledMapping(t *testing.T) {
 		return g
 	}
 	good := vocabulary.MappingManifest(authority, "slackusercontact", map[string]any{
-		"from": authority + "/slackuser",
-		"to":   "vocab.example.com/contact",
-		"edge": "person",
+		"from":     authority + "/slackuser",
+		"to":       "vocab.example.com/contact",
+		"property": "person",
 		"match": []any{
 			map[string]any{"from": "email", "to": "emails"},
 		},
@@ -1168,9 +1192,9 @@ func TestInstalledMapping(t *testing.T) {
 	// A mapping onto a source type violates the bipartite rule at INSTALL:
 	// googlecontact is already a mapping's from.
 	bad := vocabulary.MappingManifest("bad.connectors.example.com", "usergooglecontact", map[string]any{
-		"from": "bad.connectors.example.com/user",
-		"to":   "vocab.example.com/googlecontact",
-		"edge": "record",
+		"from":     "bad.connectors.example.com/user",
+		"to":       "vocab.example.com/googlecontact",
+		"property": "record",
 	})
 	g, err := vocabulary.ParseManifest(vocabulary.Manifest{
 		Name: "bad", Authority: "bad.connectors.example.com",
@@ -1178,8 +1202,11 @@ func TestInstalledMapping(t *testing.T) {
 			vocabulary.AuthorityManifest("bad.connectors.example.com", 1),
 			vocabulary.KindManifest("bad.connectors.example.com",
 				map[string]any{"singular": "user", "plural": "users"},
-				map[string]any{"edges": map[string]any{
-					"record": map[string]any{"to": "vocab.example.com/googlecontact", "required": true},
+				map[string]any{"properties": map[string]any{
+					"record": map[string]any{
+						"type": "reference", "kind": "vocab.example.com/googlecontact",
+						"required": true, "mustExist": true, "subject": true,
+					},
 				}}),
 			bad,
 		},
@@ -1320,7 +1347,7 @@ func TestMappings(t *testing.T) {
 		t.Fatal("googlecontact carries a mapping")
 	}
 	if m.Identity() != "vocab.example.com/googlecontactcontact" ||
-		m.From != g.Identity || m.To != c.Identity || m.Edge != "contact" {
+		m.From != g.Identity || m.To != c.Identity || m.Property != "contact" {
 		t.Fatalf("mapping = %+v", m)
 	}
 	if _, ok := r.MappingFor(c.Identity); ok {
@@ -1346,8 +1373,8 @@ func TestMappings(t *testing.T) {
 	if rule := m.Map["emails"]; rule.Merge != vocabulary.MergeUnion || !rule.Path.OverList {
 		t.Fatalf("map.emails = %+v", rule)
 	}
-	if m.Definition["edge"] != "contact" {
-		t.Fatalf("the mapping's own data map lost its edge: %+v", m)
+	if m.Definition["property"] != "contact" {
+		t.Fatalf("the mapping's own data map lost its subject property: %+v", m)
 	}
 
 	// The target side.
@@ -1415,8 +1442,8 @@ func TestParsePath(t *testing.T) {
 	}
 }
 
-// A mapping's rules are loader-enforced: the edge's shape, every
-// path against both declared types, one mapping per source type, and the
+// A mapping's rules are loader-enforced: the subject reference's shape, every
+// path against both declared kinds, one mapping per source kind, and the
 // registry-wide bipartite rule.
 func TestMappingRules(t *testing.T) {
 	head := `kind: core.substrate.reamde.dev/authority
@@ -1453,9 +1480,14 @@ data:
       repeated: true
       fields: {value: email}
     count: {type: int}
-  edges:
-    person: {to: person, required: true}
-    other: {to: person}
+    person:
+      type: reference
+      kind: person
+      required: true
+      mustExist: true
+      subject: true
+    other: {type: reference, kind: person}
+    unmarked: {type: reference, kind: person, required: true, mustExist: true}
 `
 	mapping := func(name, body string) string {
 		return head + `---
@@ -1468,39 +1500,45 @@ data:
 	recperson := func(rules string) string {
 		return mapping("recperson", `  from: x.example.com/rec
   to: x.example.com/person
-  edge: person
+  property: person
 `+rules)
 	}
 	bad := map[string]string{
-		"missing edge": mapping("recperson", `  from: x.example.com/rec
+		"missing property": mapping("recperson", `  from: x.example.com/rec
   to: x.example.com/person
-  edge: nosuch
+  property: nosuch
 `),
-		// `other` points at person, but the mapping's edge must be the one
+		// `other` points at person, but the mapping's property must be the one
 		// the data.to names AND carry the subject shape.
-		"optional edge": mapping("recperson", `  from: x.example.com/rec
+		"optional property": mapping("recperson", `  from: x.example.com/rec
   to: x.example.com/person
-  edge: other
+  property: other
 `),
-		"wrong edge target": mapping("recperson", `  from: x.example.com/rec
+		// The marker is what the write path reads, so a subject-shaped
+		// reference that does not declare it is still refused.
+		"subject marker missing": mapping("recperson", `  from: x.example.com/rec
+  to: x.example.com/person
+  property: unmarked
+`),
+		"wrong referent kind": mapping("recperson", `  from: x.example.com/rec
   to: x.example.com/rec
-  edge: person
+  property: person
 `),
 		"from not in authority": mapping("recperson", `  from: x.example.com/nosuch
   to: x.example.com/person
-  edge: person
+  property: person
 `),
 		"from must be full": mapping("recperson", `  from: rec
   to: x.example.com/person
-  edge: person
+  property: person
 `),
 		"to must be full": mapping("recperson", `  from: x.example.com/rec
   to: person
-  edge: person
+  property: person
 `),
 		"unknown to type": mapping("recperson", `  from: x.example.com/rec
   to: y.example.com/nosuch
-  edge: person
+  property: person
 `),
 		"union onto scalar": recperson(`  map:
     name: {path: name.displayName, merge: union}
@@ -1544,7 +1582,7 @@ data:
   authority: x.example.com
   from: x.example.com/rec
   to: x.example.com/person
-  edge: person
+  property: person
 `,
 		// person is recperson's `to` AND personorg's `from`: the
 		// source→subject graph stays bipartite.
@@ -1562,17 +1600,17 @@ data:
   authority: x.example.com
   from: x.example.com/person
   to: x.example.com/org
-  edge: employer
+  property: employer
 `,
-		// No edge anywhere may land on a mapped source type: resolution
+		// No reference anywhere may name a mapped source kind: resolution
 		// stays one hop deep (§6.2).
-		"edge onto a source record": recperson("") + `---
+		"reference onto a source record": recperson("") + `---
 kind: core.substrate.reamde.dev/kind
 metadata: {id: x.example.com/note}
 data:
   authority: x.example.com
   names: {singular: note, plural: notes}
-  edges: {about: {to: rec}}
+  properties: {about: {type: reference, kind: rec}}
 `,
 		"unknown mapping key": recperson(`  fuse: true
 `),
@@ -1597,7 +1635,7 @@ metadata: {id: x.example.com/two}
 data:
   authority: x.example.com
   names: {singular: two, plural: twos}
-  edges: {person: {to: person, required: true, projects: true}}
+  properties: {person: {type: reference, kind: person, projects: true}}
 `
 		fsys := fstest.MapFS{"x.example.com/all.yaml": &fstest.MapFile{Data: []byte(src)}}
 		_, err := vocabulary.LoadFS(fsys)
@@ -1611,7 +1649,7 @@ data:
 	})
 
 	// Empty match and map are legal: a link-only mapping (bookedition→book)
-	// still makes the from a source record and pins the subject edge.
+	// still makes the from a source record and pins the subject reference.
 	t.Run("link-only mapping", func(t *testing.T) {
 		fsys := fstest.MapFS{"x.example.com/all.yaml": &fstest.MapFile{Data: []byte(recperson(""))}}
 		r, err := vocabulary.LoadFS(fsys)
@@ -1631,14 +1669,14 @@ func TestTemplates(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := tpl.Render(testResolver{
-		edges:   map[string]string{"author.name": "Alex"},
+		refs:    map[string]string{"author.name": "Alex"},
 		snippet: "hello there",
 	})
 	if got != "Alex: hello there" {
 		t.Fatalf("render = %q", got)
 	}
-	if refs := tpl.EdgeRefs(); len(refs) != 1 || refs[0] != "author" {
-		t.Fatalf("edge refs = %v", refs)
+	if heads := tpl.RefHeads(); len(heads) != 1 || heads[0] != "author" {
+		t.Fatalf("ref heads = %v", heads)
 	}
 
 	fallback, err := vocabulary.ParseTemplate("{name|participants}")
@@ -1648,7 +1686,7 @@ func TestTemplates(t *testing.T) {
 	if got := fallback.Render(testResolver{props: map[string]string{"name": "#general"}}); got != "#general" {
 		t.Fatalf("render = %q", got)
 	}
-	if got := fallback.Render(testResolver{edges: map[string]string{"participants": "Alex, Nina"}}); got != "Alex, Nina" {
+	if got := fallback.Render(testResolver{refs: map[string]string{"participants": "Alex, Nina"}}); got != "Alex, Nina" {
 		t.Fatalf("fallback render = %q", got)
 	}
 	if got := fallback.Render(testResolver{}); got != "" {
@@ -1667,10 +1705,10 @@ func TestTemplates(t *testing.T) {
 }
 
 // Template tokens validate against the type's own declarations at load: a
-// bare token is a property, an edge or a column-backed property; a dotted one
-// is an edge's property or ONE LEVEL into an object property's declared
-// fields — so `{name.displayName}` works and a typo fails on the
-// manifest, not as an empty title.
+// bare token is a property or a column-backed property; a dotted one reads a
+// property of the record a reference names, or ONE LEVEL into an object
+// property's declared fields — so `{name.displayName}` works and a typo fails
+// on the manifest, not as an empty title.
 func TestTemplateTokensValidate(t *testing.T) {
 	typ := func(template string) string {
 		return `kind: core.substrate.reamde.dev/authority
@@ -1689,8 +1727,7 @@ data:
     name:
       type: object
       fields: {displayName: {type: string}}
-  edges:
-    owner: {to: card}
+    owner: {type: reference, kind: card}
 `
 	}
 	load := func(src string) error {
@@ -1701,9 +1738,9 @@ data:
 	for name, good := range map[string]string{
 		"declared property":   "{label}",
 		"object field":        "{name.displayName}",
-		"edge property":       "{owner.label}",
+		"referent property":   "{owner.label}",
 		"column-backed":       "{title|body}",
-		"edge titles":         "{owner}",
+		"referent titles":     "{owner}",
 		"snippet":             "{snippet}",
 		"fallback into field": "{label|name.displayName}",
 	} {
@@ -1712,9 +1749,9 @@ data:
 		}
 	}
 	for name, bad := range map[string]string{
-		"undeclared property": "{nope}",
-		"undeclared field":    "{name.nope}",
-		"undeclared edge":     "{friend.label}",
+		"undeclared property":  "{nope}",
+		"undeclared field":     "{name.nope}",
+		"undeclared reference": "{friend.label}",
 	} {
 		err := load(typ(bad))
 		if err == nil {
@@ -1728,7 +1765,7 @@ data:
 
 type testResolver struct {
 	props   map[string]string
-	edges   map[string]string
+	refs    map[string]string
 	snippet string
 	derived map[string]string
 	// declares is the kind's declared property set where it differs from the
@@ -1742,7 +1779,7 @@ func (r testResolver) Declares(n string) bool {
 	if _, ok := r.props[n]; ok {
 		return true
 	}
-	if _, ok := r.edges[n]; ok {
+	if _, ok := r.refs[n]; ok {
 		return true
 	}
 	return slices.Contains(r.declares, n)
@@ -1755,11 +1792,11 @@ func (r testResolver) Derived(token string) string {
 	return r.derived[token]
 }
 
-func (r testResolver) Edge(rel, prop string) string {
+func (r testResolver) Reference(name, prop string) string {
 	if prop == "" {
-		return r.edges[rel]
+		return r.refs[name]
 	}
-	return r.edges[rel+"."+prop]
+	return r.refs[name+"."+prop]
 }
 
 // --- strictness ----------------------------------------------------------
@@ -1900,8 +1937,8 @@ data: {authority: x.example.com}
 		"snake property": typ(`  names: {singular: contact, plural: contacts}
   properties: {first_name: {type: string}}
 `),
-		"snake edge": typ(`  names: {singular: contact, plural: contacts}
-  edges: {work_place: {to: contact}}
+		"snake reference": typ(`  names: {singular: contact, plural: contacts}
+  properties: {work_place: {type: reference, kind: contact}}
 `),
 		"snake stamp": typ(`  names: {singular: contact, plural: contacts}
   properties: {m: {type: state, states: [a, b], transitions: [{from: a, to: b, stamps: {done_at: now}}]}}
@@ -1970,8 +2007,8 @@ data:
 		"snake onEnter value": typ(`  names: {singular: contact, plural: contacts}
   properties: {m: {type: state, states: [a, b], transitions: [{from: a, to: b, onEnter: apply_diff}]}}
 `),
-		"snake ownerRef": typ(`  names: {singular: contact, plural: contacts}
-  edges: {org: {to: contact, owner_ref: true}}
+		"snake onDelete": typ(`  names: {singular: contact, plural: contacts}
+  properties: {org: {type: reference, kind: contact, on_delete: cascade}}
 `),
 		// A list is `repeated: true`; the bracketed spelling is deleted.
 		"bracketed list type": typ(`  names: {singular: contact, plural: contacts}
@@ -2376,17 +2413,12 @@ func TestShippedSchemaLoads(t *testing.T) {
 		if ty.SourceYAML == "" {
 			t.Errorf("%s carries no source", ty.Identity)
 		}
-		// Every shipped property and edge carries a description:
-		// the console's hover tooltip, one short sentence. Implicit properties
-		// (machine stamps) are declared by a transition, not an author.
+		// Every shipped property carries a description: the console's hover
+		// tooltip, one short sentence. Implicit properties (machine stamps) are
+		// declared by a transition, not an author.
 		for _, pn := range ty.PropOrder {
 			if p := ty.Props[pn]; !p.Implicit && p.Description == "" {
 				t.Errorf("%s.%s carries no description", ty.Identity, pn)
-			}
-		}
-		for _, en := range ty.EdgeOrder {
-			if ty.Edges[en].Description == "" {
-				t.Errorf("%s.%s (edge) carries no description", ty.Identity, en)
 			}
 		}
 	}

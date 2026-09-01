@@ -8,9 +8,9 @@
  * compact line. Declared-but-unset properties still show, saying "not set",
  * so the kind's whole shape is readable off one record; values the kind never
  * declared show too, marked as such, because hiding data a record carries
- * would make this view lie. Edges follow beneath, each target the RecordPill
- * every other surface uses. Read-only: Edit is the page's affordance, not
- * this tab's. */
+ * would make this view lie. A reference carrying LINK DATA renders the
+ * referent's pill with the link's own properties beside it. Read-only: Edit is
+ * the page's affordance, not this tab's. */
 
 import { ListIcon } from "lucide-react"
 
@@ -23,7 +23,11 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
-import type { KindInfo, SubstrateRecord } from "@/lib/api/types"
+import {
+  readReference,
+  type KindInfo,
+  type SubstrateRecord,
+} from "@/lib/api/types"
 import { kindByIdentity } from "@/lib/definition"
 import { cellValue, shortDateTime } from "@/lib/format"
 import { splitRecordPath } from "@/lib/record-path"
@@ -83,9 +87,13 @@ function JsonBlock({ value }: { value: unknown }) {
   )
 }
 
-/** A stored reference read as the link it is: the referent's RecordPill when
- * the registry knows the kind; the raw value, inert, when it does not (a
- * reference may name a kind nobody installed). */
+/** A stored reference read as the pointer it is: the referent's RecordPill
+ * when the registry knows the kind; the raw value, inert, when it does not (a
+ * reference may name a kind nobody installed).
+ *
+ * A reference whose declaration carries LINK DATA stores `{ref, <prop>: …}`
+ * rather than the bare path, and the link's properties render beside the pill:
+ * dropping them would hide data the record carries. */
 function ReferenceValue({
   value,
   kinds,
@@ -93,15 +101,35 @@ function ReferenceValue({
   value: unknown
   kinds: KindInfo[]
 }) {
-  if (typeof value !== "string" || !value) {
-    return <span className="data break-words">{String(value)}</span>
+  const held = readReference(value)
+  if (!held) {
+    return (
+      <span className="data break-words">
+        {typeof value === "object" ? JSON.stringify(value) : String(value)}
+      </span>
+    )
   }
-  const target = splitRecordPath(value)
+  const target = splitRecordPath(held.path)
   const info = target ? kindByIdentity(kinds, target.kind) : undefined
-  if (!target || !info) {
-    return <span className="data break-all">{value}</span>
-  }
-  return <RecordPill kind={target.kind} id={target.id} />
+  const pill =
+    target && info ? (
+      <RecordPill kind={target.kind} id={target.id} />
+    ) : (
+      <span className="data break-all">{held.path}</span>
+    )
+  const link = Object.entries(held.properties)
+  if (!link.length) return pill
+  return (
+    <span className="flex max-w-full min-w-0 items-center gap-2">
+      {pill}
+      <span
+        className="truncate data text-xs text-muted-foreground"
+        title={JSON.stringify(held.properties)}
+      >
+        {link.map(([key, held_]) => `${key}: ${cellValue(held_)}`).join(" · ")}
+      </span>
+    </span>
+  )
 }
 
 /** One scalar, by its declared datatype. Containers are the caller's job. */
@@ -114,6 +142,8 @@ function ScalarValue({
   value: unknown
   kinds: KindInfo[]
 }) {
+  // Before the object arm: a reference carrying link data IS an object, and
+  // rendering it as JSON would bury the pointer in a blob.
   if (spec.kind === "reference") {
     return <ReferenceValue value={value} kinds={kinds} />
   }
@@ -287,15 +317,12 @@ export function PropertiesRail({
   /** The record's own declaration; undefined when the registry lacks it, in
    * which case every value renders off its shape alone. */
   kind?: KindInfo
-  /** The registry, so a reference and an edge target resolve to routes. */
+  /** The registry, so a reference resolves to a route. */
   kinds: KindInfo[]
 }) {
   const rows = rowsOf(record, kind)
-  const edges = Object.entries(record.edges ?? {})
-    .filter(([, targets]) => (targets ?? []).length > 0)
-    .sort(([a], [b]) => a.localeCompare(b))
 
-  if (!rows.length && !edges.length) {
+  if (!rows.length) {
     return (
       <Empty className="py-10">
         <EmptyHeader>
@@ -304,7 +331,7 @@ export function PropertiesRail({
           </EmptyMedia>
           <EmptyTitle>No data</EmptyTitle>
           <EmptyDescription>
-            This record carries no properties and no edges.
+            This record carries no properties.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -316,45 +343,6 @@ export function PropertiesRail({
       {rows.map((row) => (
         <Row key={row.name} row={row} kinds={kinds} />
       ))}
-      {edges.length > 0 && (
-        <div className="flex flex-col gap-3 border-t pt-4">
-          {/* The section header outranks the rel headers under it, which in
-              turn outrank their rows — the same ladder the properties use. */}
-          <h2 className="text-sm font-semibold">Edges</h2>
-          {edges.map(([rel, targets]) => (
-            <div key={rel} className="flex min-w-0 flex-col gap-1">
-              <span className="data text-sm font-medium">{rel}</span>
-              <div className="flex min-w-0 flex-col items-start gap-1 text-sm">
-                {(targets ?? []).map((target) => (
-                  <span
-                    key={`${target.kind} ${target.id}`}
-                    className="flex max-w-full min-w-0 items-center gap-2"
-                  >
-                    <RecordPill
-                      kind={target.kind}
-                      id={target.id}
-                      title={target.title}
-                    />
-                    {/* The EDGE's own properties ride the target on the wire;
-                        dropping them would hide data the manifest shows. */}
-                    {target.properties &&
-                      Object.keys(target.properties).length > 0 && (
-                        <span
-                          className="truncate data text-xs text-muted-foreground"
-                          title={JSON.stringify(target.properties)}
-                        >
-                          {Object.entries(target.properties)
-                            .map(([k, v]) => `${k}: ${cellValue(v)}`)
-                            .join(" · ")}
-                        </span>
-                      )}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

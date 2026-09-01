@@ -82,7 +82,7 @@ func TestAgentKeyNeverReachesThreadRecordOrError(t *testing.T) {
 	// lands in the changelog and survives.
 	rows, qerr := ds.db.QueryContext(ctx, `
 		SELECT props->>'status', props->>'reason' FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props->>'agent' = $2`,
+		WHERE kind = $1 AND deleted_at IS NULL AND `+referencePathSQL("props", "agent")+` = $2`,
 		typeThread, vocabulary.RecordPath(kindAgent, authority+"/leaker"))
 	if qerr != nil {
 		t.Fatalf("query threads: %v", qerr)

@@ -324,7 +324,7 @@ func (s *service) sweepOrphans(ctx context.Context) error {
 // in 0005 and changelog_dialect in 0009). A rollback that missed one would
 // leave rows nothing can ever reach again.
 var repositoryScopedTables = []string{
-	"records", "edges", "former_ids", "annotations", "property_managers",
+	"records", "refs", "former_ids", "annotations", "property_managers",
 	"property_offers", "changelog", "chain_epochs", "embeddings", "embed_queue",
 	"trigger_cursors", "trigger_failures", "trigger_schedule", "sealed",
 	"oauth_flows", "paged_cursors", "blobs", "vocabulary_dialect",

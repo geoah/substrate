@@ -5,12 +5,12 @@
 # `primitives` tier here; a person is no more primitive than a conversation.
 #
 # This authority holds the human and nothing source-shaped. `person` is one record
-# per human, with a server-assigned id, and every vocabulary edge that means
+# per human, with a server-assigned id, and every vocabulary reference that means
 # "a human" lands on it. What one source holds about a person —
 # `google.bundles.substrate.reamde.dev/contact`, `user.slack.bundles.substrate.reamde.dev` — lives
 # in the bundle authority that installs it, carries the provider's own key as
-# its id, and points at a person through an ordinary edge. The bundle's
-# recordmapping (§6.1) names that edge and says how the record's properties
+# its id, and points at a person through an ordinary reference. The bundle's
+# recordmapping (§6.1) names that reference and says how the record's properties
 # reach the person (§7.1). Nothing in this bundle is single-writer;
 # everything in a bundle authority is.
 #
@@ -19,9 +19,10 @@
 # manual merge (§6.4).
 #
 # Two types and no more: a role (author, narrator, attendee, speaker) is a
-# property of the RELATION, never a second kind of person, so every edge that
-# means "a human" lands on `person`. Edges from messaging, calendar and tasks
-# all cross into this one; authorities namespace names, never the graph.
+# property of the RELATION, never a second kind of person, so every reference
+# that means "a human" lands on `person`. References from messaging, calendar
+# and tasks all cross into this one; authorities namespace names, never the
+# graph.
 #
 # no new actors: the doors and the substrate ship with core; an installed
 # authority's writes arrive under the actor of whatever runs — a bundle
@@ -31,7 +32,9 @@ kind: core.substrate.reamde.dev/authority
 metadata:
   id: people.substrate.reamde.dev
 data:
-  version: 2
+  # version 3: every link is a `type: reference` property carrying
+  # `mustExist: true`.
+  version: 3
 ---
 # ---- the bundle document: the import unit -------------------------------------
 # A VOCABULARY bundle: a bare authority the substrate publishes, delivered

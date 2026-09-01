@@ -17,8 +17,6 @@ type PutInput struct {
 	Labels      map[string]any `json:"labels,omitempty"`
 	Annotations map[string]any `json:"annotations,omitempty"`
 
-	Edges []EdgeInput `json:"edges,omitempty"`
-
 	IfVersion *int64 `json:"ifVersion,omitempty"`
 }
 

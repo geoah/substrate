@@ -141,11 +141,14 @@ func installContactSource(t *testing.T, ds *dataset) {
 					"properties": map[string]any{
 						"email": map[string]any{"type": "email"},
 						"name":  map[string]any{"type": "string"},
+						"person": map[string]any{
+							"type": "reference", "kind": subjPerson,
+							"required": true, "mustExist": true, "subject": true,
+						},
 					},
-					"edges": map[string]any{"person": map[string]any{"to": subjPerson, "required": true}},
 				}),
 			vocabulary.MappingManifest(csrcAuthority, "contactperson", map[string]any{
-				"from": csrcContact, "to": subjPerson, "edge": "person",
+				"from": csrcContact, "to": subjPerson, "property": "person",
 				"match": []any{map[string]any{"from": "email", "to": "emails"}},
 				"map": map[string]any{
 					"name":   map[string]any{"path": "name"},
@@ -163,8 +166,8 @@ func personOfContact(t *testing.T, ds *dataset, contactID string) string {
 	t.Helper()
 	var dst string
 	if err := ds.db.QueryRowContext(context.Background(),
-		`SELECT dst FROM edges WHERE src = $1 AND rel = 'person'`, contactID).Scan(&dst); err != nil {
-		t.Fatalf("read subject edge: %v", err)
+		`SELECT dst FROM refs WHERE src = $1 AND property = 'person' AND path = ''`, contactID).Scan(&dst); err != nil {
+		t.Fatalf("read the subject: %v", err)
 	}
 	return dst
 }

@@ -150,12 +150,12 @@ whichever stream finishes stamps them.
 
 **Mirrors plus direct core emission.** Provider records are mirrored in
 Google's own shape, and the sync functions also emit the core row for the same
-logical object under the same derived id, with its required edges filled in.
-The mappings resolve people and nothing else, because a mapping mints shells
-that carry no edges and so could never satisfy the required `thread`, `account`
-and `calendar` edges the core mail and calendar kinds declare. The
-`emailaddress` record is the bridge: the core rows reference it, and the
-engine's one-hop resolution lands the stored edge on the person its mapping
+logical object under the same derived id, with its required references filled
+in. The mappings resolve people and nothing else, because a mapping mints
+shells that point at nothing and so could never satisfy the required `thread`,
+`account` and `calendar` references the core mail and calendar kinds declare.
+The `emailaddress` record is the bridge: the core rows point at it, and the
+engine's one-hop resolution lands the stored value on the person its mapping
 resolved.
 
 **All three scopes are wired.** `enabledContacts` maps to `contacts.readonly`,
@@ -172,7 +172,7 @@ refresh tokens revoked after seven days.
 occurrence; beside it, `calendarsync` fetches each distinct recurring master by
 id and writes a `calendareventseries` holding one RRULE line, the EXDATE and
 RDATE dates it parses out, the DTSTART anchor and the zone. The occurrences
-carry the `series` edge, and one Google moved off its slot carries
+carry the `series` reference, and one Google moved off its slot carries
 `originalStartAt`. The account property `calendarSeries` turns all of it off
 (the flat instance view, one events.get per master saved, and the rule stored
 nowhere).
@@ -220,7 +220,7 @@ issues assigned to you and projects them onto jointly-owned tasks.
   `taskprojection` on every `issue` change.
 - **Mappings (2)**: `userperson` folds `user` onto `people.substrate.reamde.dev/person`
   (match on email, map names and emails), and `issueperson` resolves an issue's
-  `assignee` edge onto a person by the assignee's email.
+  `assignee` reference onto a person by the assignee's email.
 
 This is the one integration that both mirrors a provider and projects into the
 shipped `tasks.substrate.reamde.dev` vocabulary, so a Linear issue and a hand-written task

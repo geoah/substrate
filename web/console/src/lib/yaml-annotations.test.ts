@@ -20,10 +20,8 @@ const docs: KeyDocs = {
     // a property the kind declares but never described: its TYPE is still an
     // answer, so it still earns a hover.
     raw: { type: "json" },
-  },
-  edges: {
     memberOf: {
-      type: "→ organization[]",
+      type: "reference → organization[]",
       description: "the employer or workspace",
     },
   },
@@ -51,15 +49,17 @@ describe("describableSpan", () => {
     })
   })
 
-  it("describes the rel VALUE of an edge row, not the rel key", () => {
-    expect(describableSpan("    - rel: memberOf", docs)).toEqual({
+  it("describes a reference property by its key, like any other", () => {
+    expect(describableSpan("    memberOf: org/o-1", docs)).toEqual({
       text: "memberOf",
       doc: {
-        type: "→ organization[]",
+        type: "reference → organization[]",
         description: "the employer or workspace",
       },
     })
-    expect(describableSpan("    - rel: unknownRel", docs)).toBeNull()
+    // `ref` is the reserved key INSIDE a reference value carrying link data,
+    // never a property of the kind, so it earns no hover of its own.
+    expect(describableSpan("      ref: org/o-1", docs)).toBeNull()
   })
 
   it("hovers a declared property that carries only a type", () => {
@@ -87,11 +87,10 @@ describe("keyDocsOf", () => {
       properties: {
         name: { type: "string", description: "the full name, one string" },
         emails: { type: "email", repeated: true },
-      },
-      edges: {
         memberOf: {
-          to: "organization",
-          many: true,
+          type: "reference",
+          kind: "organization",
+          repeated: true,
           description: "the employer",
         },
       },
@@ -108,14 +107,14 @@ describe("keyDocsOf", () => {
       type: "email[]",
       description: undefined,
     })
-    expect(built.edges.memberOf).toEqual({
-      type: "→ organization[]",
+    expect(built.properties.memberOf).toEqual({
+      type: "reference → organization[]",
       description: "the employer",
     })
   })
 
   it("is empty for a kind the registry has not resolved yet", () => {
-    expect(keyDocsOf(undefined)).toEqual({ properties: {}, edges: {} })
+    expect(keyDocsOf(undefined)).toEqual({ properties: {} })
   })
 })
 
@@ -157,7 +156,7 @@ describe("linkableSpan", () => {
   })
 
   it("links a kind reference value in its key position only", () => {
-    // The top-level envelope `kind:` and an edge target's indented `to.kind:`.
+    // The top-level envelope `kind:` alone.
     expect(
       linkableSpan("kind: people.substrate.reamde.dev/person", targets)
     ).toEqual({

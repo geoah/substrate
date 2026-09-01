@@ -28,11 +28,26 @@ package engine
 // replayer needs), and the stamped column is what makes that refinement
 // possible later without guessing at unstamped history.
 //
-// THE LADDER HAS ONE RUNG. Dialect 1 is the changelog as it stands: the ops in
-// substrate.Change and the fold effects in fold.go. A change that teaches the
-// writer a spelling an older binary's fold would refuse or misread (a new fold
-// effect kind, a new op, a payload shape an old decoder reads differently)
-// bumps maxChangelogDialect in the same commit, and
+// THE LADDER HAS TWO RUNGS. Dialect 1 was the changelog while edges existed:
+// `link`/`unlink` ops and `edge`/`unedge`/`edge1` fold effects. Dialect 2 is the
+// changelog as it stands, after references absorbed the edge (decision 0044): those
+// five spellings are gone and this binary refuses any entry carrying one
+// (fold.go foldRefuses), because a reference's meaning now lives in the source
+// record's own properties, which no such entry carries.
+//
+// A STORE BELOW THE MAXIMUM IS PROBED, NOT ASSUMED. Migration 0010 drops the
+// edges table, so a store whose changelog holds `link`/`unlink` entries has
+// already lost the rows those entries fold into: opening it would serve a
+// repository whose links are gone and whose history no binary can replay
+// (fold.go foldRefuses). Decision 0044 says such a store refuses to OPEN, so
+// the gate asks the changelog directly for a retired op and refuses there,
+// rather than leaving the discovery to the day somebody rebuilds. The probe is
+// one indexed-free `LIMIT 1` on a store that is below the maximum, which after
+// this release is only ever a fresh, unstamped one.
+//
+// A change that teaches the writer a spelling an older binary's fold would
+// refuse or misread (a new fold effect kind, a new op, a payload shape an old
+// decoder reads differently) bumps maxChangelogDialect in the same commit, and
 // changelogdialect_internal_test.go is what makes the first two say so: it
 // reads the declared ops and effect kinds and fails on any the rung does not
 // list.
@@ -53,10 +68,18 @@ import (
 // un-wrapped and the API maps it to `503` with Retry-After.
 var ErrChangelogDialectNewer = errors.New("substrate/engine: the changelog speaks a newer dialect than this binary can replay")
 
+// ErrChangelogPredatesReferences is the upgrade-side refusal: the repository's
+// changelog still holds the `link`/`unlink` ops that dialect 1 wrote, and the
+// edges those entries fold into no longer exist (migration 0010 drops the
+// table). There is no rung that translates them — a reference's meaning lives in
+// the source record's own properties, which no such entry carries — so the open
+// refuses instead of serving a repository whose links are silently gone.
+var ErrChangelogPredatesReferences = errors.New("substrate/engine: the changelog predates reference-only links")
+
 // maxChangelogDialect is the newest changelog dialect this binary can replay.
 // It is what this binary stamps when it appends; a repository stored above it
 // refuses to open.
-const maxChangelogDialect = 1
+const maxChangelogDialect = 2
 
 // MaxChangelogDialect is the newest changelog dialect this binary can replay,
 // the value GET /.well-known/substrate/server.json reports as the binary
@@ -84,8 +107,27 @@ func (ds *dataset) gateChangelogDialect(ctx context.Context) error {
 	// upsert for a claim already on the row.
 	if stored == maxChangelogDialect {
 		ds.changelogStamped.Store(true)
+		return nil
 	}
-	return nil
+	return ds.refuseRetiredLinkEntries(ctx)
+}
+
+// refuseRetiredLinkEntries refuses a changelog that still holds a dialect-1
+// `link` or `unlink` entry. It only READS, like the rest of the gate, and it
+// runs on the dataset's pool inside the repository's scope, so the statement
+// sees this repository's changelog and no other.
+func (ds *dataset) refuseRetiredLinkEntries(ctx context.Context) error {
+	var one int
+	err := ds.db.QueryRowContext(ctx,
+		`SELECT 1 FROM changelog WHERE op IN ($1, $2) LIMIT 1`, opLinkRetired, opUnlinkRetired).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("substrate/engine: probe retired link entries: %w", err)
+	}
+	return fmt.Errorf("%w: repository %s holds `%s`/`%s` changelog entries, which dialect 1 wrote and migration 0010 left nothing to fold into; there is no rung that translates them (decision 0044), so wipe the store: mise run dev:wipe in development, and restore a dump taken before the upgrade anywhere else",
+		ErrChangelogPredatesReferences, ds.info.Name, opLinkRetired, opUnlinkRetired)
 }
 
 // refuseNewerChangelogDialect re-reads the stamp inside the caller's

@@ -309,7 +309,7 @@ func KindManifest(authority string, names, data map[string]any) map[string]any {
 
 // MappingManifest renders a recordmapping document: the identity
 // derives from the name and the authority so a caller cannot spell them
-// inconsistently. data carries from/to/edge and the optional match and map.
+// inconsistently. data carries from/to/property and the optional match and map.
 func MappingManifest(authority, name string, data map[string]any) map[string]any {
 	full := map[string]any{"authority": authority}
 	for _, k := range sortedKeys(data) {

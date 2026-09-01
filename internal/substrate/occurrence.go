@@ -4,7 +4,7 @@ import "time"
 
 // Occurrence is one computed slot of a recurring record (decision 0043): the
 // API derives it from the stored rule at read time. It is not a record — no
-// id of its own, no edges, never in the changelog — so a consumer building an
+// id of its own, nothing pointing at it, never in the changelog — so a consumer building an
 // agenda merges these with the temporal window query's rows on the source
 // record and the instant.
 type Occurrence struct {

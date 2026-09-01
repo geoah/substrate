@@ -32,19 +32,30 @@ func TestIncomingIsSeparateAndPaged(t *testing.T) {
 		"realName": "Sam J", "email": "sam@acme.com",
 	})
 
-	// The record manifest never carries incoming edges: the
-	// Record.Incoming field was removed at the v1 freeze, so the
-	// reverse fan-out is reachable only through the paged resource below.
+	// The record manifest never carries its reverse pointers: they are derived
+	// state, and a record can have an unbounded number of them, so the fan-out
+	// is reachable only through the paged resource below.
 	first := readIncoming(t, ds, sam.Kind, sam.ID, 1, "")
 	if len(first.Incoming) != 1 || first.Total != 2 || first.Cursor == "" {
 		t.Fatalf("first page = %+v", first)
 	}
-	if row := first.Incoming[0]; row.Rel != "person" || row.From.ID != g.ID || row.From.Title != "Samuel Jones" {
+	if row := first.Incoming[0]; row.Property != "person" || row.Path != "" {
 		t.Fatalf("first incoming row = %+v", row)
 	}
 	second := readIncoming(t, ds, sam.Kind, sam.ID, 1, first.Cursor)
-	if len(second.Incoming) != 1 || second.Incoming[0].From.ID != s.ID || second.Cursor != "" {
+	if len(second.Incoming) != 1 || second.Cursor != "" {
 		t.Fatalf("second page = %+v", second)
+	}
+	// The page order is the index's own key, (srcKind, src, property, path,
+	// ord), so the two sources land in kind order; the pair is what matters.
+	got := map[string]bool{first.Incoming[0].From.ID: true, second.Incoming[0].From.ID: true}
+	if !got[g.ID] || !got[s.ID] {
+		t.Fatalf("the two pages named %v, want the google contact %s and the slack user %s", got, g.ID, s.ID)
+	}
+	for _, row := range []substrate.IncomingReference{first.Incoming[0], second.Incoming[0]} {
+		if row.From.ID == g.ID && row.From.Title != "Samuel Jones" {
+			t.Fatalf("the google contact's title did not travel: %+v", row)
+		}
 	}
 }
 

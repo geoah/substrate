@@ -118,7 +118,7 @@ func TestRESTGetOneCarriesPropertyMeta(t *testing.T) {
 	}
 }
 
-// Reverse edges page independently from the canonical record read.
+// Incoming references page independently from the canonical record read.
 func TestRESTIncomingIsSeparateAndPaged(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
@@ -128,15 +128,18 @@ func TestRESTIncomingIsSeparateAndPaged(t *testing.T) {
 		ID: "p1", Kind: "people.substrate.reamde.dev/person",
 		Properties: map[string]any{"name": "Sam"},
 	}
-	ds.incoming["p1"] = []substrate.IncomingEdge{
-		{Rel: "person", From: substrate.EdgeTarget{
+	ds.incoming["p1"] = []substrate.IncomingReference{
+		{Property: "person", From: substrate.IncomingSource{
 			ID: "people-c1001", Kind: "google.connectors.substrate.reamde.dev/contact", Title: "Samuel Jones",
+		}},
+		{Property: "manager", From: substrate.IncomingSource{
+			ID: "p2", Kind: "people.substrate.reamde.dev/person", Title: "Ada",
 		}},
 	}
 
 	rec := env.do(t, http.MethodGet, peoplePath+"/p1", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
-	// The record manifest never carries reverse edges: the
+	// The record manifest never carries incoming references: the
 	// Record.Incoming field was removed at the v1 freeze; the
 	// paged resource below is the only way to read them.
 	_ = decodeJSON[substrate.Record](t, rec)
@@ -144,9 +147,24 @@ func TestRESTIncomingIsSeparateAndPaged(t *testing.T) {
 	rec = env.do(t, http.MethodGet, peoplePath+"/p1/incoming?first=1", tok, nil)
 	wantStatus(t, rec, http.StatusOK)
 	page := decodeJSON[substrate.IncomingPage](t, rec)
-	if page.Total != 1 || len(page.Incoming) != 1 || page.Incoming[0].From.ID != "people-c1001" {
+	if page.Total != 2 || len(page.Incoming) != 1 || page.Incoming[0].From.ID != "people-c1001" {
 		t.Fatalf("incoming page = %+v", page)
 	}
+
+	// The drill-down narrows by PROPERTY (the reference's declared name, was
+	// `rel`) and by source kind, so expanding one group asks for that group
+	// alone.
+	rec = env.do(t, http.MethodGet, peoplePath+"/p1/incoming?property=manager", tok, nil)
+	wantStatus(t, rec, http.StatusOK)
+	page = decodeJSON[substrate.IncomingPage](t, rec)
+	if page.Total != 1 || page.Incoming[0].From.ID != "p2" {
+		t.Fatalf("property-narrowed incoming page = %+v", page)
+	}
+
+	// `rel` is gone with the edges it named: an unknown parameter is a
+	// bad_request naming it, never a silently unnarrowed fan-in.
+	rec = env.do(t, http.MethodGet, peoplePath+"/p1/incoming?rel=manager", tok, nil)
+	wantErrorCode(t, rec, http.StatusBadRequest, codeBadRequest)
 }
 
 func TestRESTListForcesTheCollectionType(t *testing.T) {

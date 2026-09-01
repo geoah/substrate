@@ -2,14 +2,16 @@
 # eaten. A recipe is the instructions; a meal is one sitting on the
 # timeline, optionally pointing at the recipe it came from. Nutrition
 # numbers are not modeled here: a macro worth tracking is a health
-# observationlog whose subject edge points at the meal.
+# observationlog whose subject reference points at the meal.
 #
 # no new actors: writes arrive under the actor of whatever runs.
 kind: core.substrate.reamde.dev/authority
 metadata:
   id: food.substrate.reamde.dev
 data:
-  version: 2
+  # version 3: `meal.recipe` is a reference property, carrying
+  # `mustExist: true`.
+  version: 3
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.

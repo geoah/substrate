@@ -13,99 +13,174 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// The subject edge and its mapping. A
+// The subject reference and its mapping. A
 // type carrying a recordmapping records what ONE SOURCE holds; the record its
-// declared edge points at is the subject those records describe, and
-// recompute carries the mapped properties onto it — yielding to any manager
+// declared subject reference points at is the subject those records describe,
+// and recompute carries the mapped properties onto it — yielding to any manager
 // row above the machine tier (primitives §6), so a hand edit — the owner's
 // or a bundle's — survives a sync, legibly.
 
 // --- subject resolution -----------------------------------------------------
 
-// subjectTargetOf reads the LIVE record a source record points at, "" when it
-// points at nothing. A tombstoned target counts as unlinked: the owner deleted
-// that person, and a source record must not go on resolving to a dead id or
-// refusing every later sync because of one. The ORDER BY is determinism
-// insurance — the partial unique index makes a second row impossible, and if
-// one ever exists again, every reader must at least agree which it is.
-func (t *txn) subjectTargetOf(src eref, rel string) (eref, error) {
-	var dst eref
+// subjectTargetOf reads the LIVE record a source record's subject reference
+// names, "" when it names nothing. It reads the refs index rather than the
+// property, so the stored destination is one statement away.
+//
+// THE STORED ID IS RESOLVED, NOT TRUSTED. A merge repoints nothing: the value
+// keeps naming the loser and resolution runs on read (decision 0044), so
+// liveness is asked of the CANONICAL record the stored id now denotes. Asking
+// the literal id would call a merged-away subject unpointed and let the next
+// sync mint a duplicate.
+//
+// A tombstoned canonical target counts as unpointed: the owner deleted that
+// person, and a source record must not go on resolving to a dead id or refusing
+// every later sync because of one. The returned eref is the canonical one; the
+// stored value stays as written.
+func (t *txn) subjectTargetOf(src eref, property string) (eref, error) {
+	var stored eref
 	err := t.row(`
-		SELECT e.dst_kind, e.dst FROM edges e JOIN records x ON x.kind = e.dst_kind AND x.id = e.dst
-		WHERE e.src_kind = $1 AND e.src = $2 AND e.rel = $3 AND x.deleted_at IS NULL
-		ORDER BY e.created_at, e.dst_kind, e.dst LIMIT 1`, src.Kind, src.ID, rel).Scan(&dst.Kind, &dst.ID)
+		SELECT r.dst_kind, r.dst FROM refs r
+		WHERE r.src_kind = $1 AND r.src = $2 AND r.property = $3 AND r.path = ''
+		ORDER BY r.ord LIMIT 1`, src.Kind, src.ID, property).Scan(&stored.Kind, &stored.ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return eref{}, nil
 	}
-	return dst, err
+	if err != nil {
+		return eref{}, err
+	}
+	return t.liveCanonical(stored)
 }
 
-// subjectOf resolves the record a source record describes, matching or
-// creating the subject an unlinked record implies and linking it in line
-// (proposal §6.2 — every source record has its subject from the first
-// moment). It is the ONE HOP edge resolution is allowed: an edge declared
-// `to: person` accepts a reference to a record whose own subject edge points
-// at a person.
+// liveCanonical resolves a stored destination through the former-id trail and
+// reports the canonical record when it is live, the zero eref when it is a
+// tombstone or absent. A plain tombstone with no trail behind it resolves to
+// itself and is therefore not live, which is what makes a deleted target
+// re-resolvable.
+func (t *txn) liveCanonical(stored eref) (eref, error) {
+	canon, err := t.canonicalOf(stored)
+	if err != nil {
+		return eref{}, err
+	}
+	row, err := t.loadRow(canon, false)
+	if err != nil || row == nil || row.DeletedAt != nil {
+		return eref{}, err
+	}
+	return canon, nil
+}
+
+// subjectOf resolves the record a source record describes, matching or minting
+// the subject an unpointed record implies and storing the pointer in line
+// (proposal §6.2: every source record has its subject from the first moment).
+//
+// It runs OUT OF BAND — inside somebody else's write, when a reference names
+// this record and the declaration pins the subject's kind (references.go
+// subjectHop) — so the source row is already stored and the pointer is written
+// through the ordinary path, as the engine's own hand.
 func (t *txn) subjectOf(src *erow, srcTy *vocabulary.Kind) (string, error) {
 	m, ok := t.ds.registry().MappingFor(srcTy.Identity)
 	if !ok {
 		return src.ID, nil
 	}
-	// Two writers resolving the same unlinked record must not each mint a
+	// Two writers resolving the same unpointed record must not each mint a
 	// shell: take the record's lock before looking.
 	if err := t.lockRecord(src.ref()); err != nil {
 		return "", err
 	}
-	linked, err := t.subjectTargetOf(src.ref(), m.Edge)
+	linked, err := t.subjectTargetOf(src.ref(), m.Property)
 	if err != nil {
 		return "", err
 	}
 	if linked.ID != "" {
-		canon, err := t.canonicalOf(linked)
-		if err != nil {
-			return "", err
-		}
-		return canon.ID, nil
+		// Already canonical: subjectTargetOf resolves the stored id.
+		return linked.ID, nil
 	}
-	target, err := t.matchOrLink(src, srcTy, m)
+	target, err := t.matchOrMint(src, srcTy, m)
 	if err != nil {
 		return "", err
 	}
-	// A new subject edge is a recompute trigger: the subject takes its
-	// properties from the record that just resolved through it. The source
-	// row is already stored here — this path only runs during somebody
-	// else's write — so recompute sees it.
+	if err := t.writeSubject(src.ref(), m.Property, eref{Kind: m.To, ID: target}); err != nil {
+		return "", err
+	}
+	// A new subject pointer is a recompute trigger: the subject takes its
+	// properties from the record that just resolved through it.
 	if err := t.recompute(eref{Kind: m.To, ID: target}); err != nil {
 		return "", err
 	}
 	return target, nil
 }
 
-// ensureSubject gives a source record the subject proposal §6.2 promises it,
-// on its OWN write: a record whose provider carries nothing shared — a
-// contact with neither email nor phone — still describes a person, and
-// refusing the write would lose the record instead of the link. A record
-// whose target was deleted is linked again the same way. Called after the
-// write's own edges, so an explicit link wins; the caller recomputes the
-// subject after the row is stored, so no recompute happens here.
-func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) error {
-	if err := t.lockRecord(sp.ref()); err != nil {
-		return err
-	}
-	linked, err := t.subjectTargetOf(sp.ref(), m.Edge)
-	if err != nil || linked.ID != "" {
-		return err
-	}
-	_, err = t.matchOrLink(row, sp.ty, m)
+// writeSubject stores a source record's subject pointer through the ordinary
+// write path, as the engine's own hand: the subject is one of the record's own
+// properties, so the change travels in that record's delta and a rebuild
+// replays it. Internal, because put and patch refuse to move a subject
+// (write.go) and this IS the move that creates one.
+func (t *txn) writeSubject(src eref, property string, target eref) error {
+	was := t.internal
+	t.internal = true
+	defer func() { t.internal = was }()
+	_, err := t.patch(src, substrate.PatchInput{Properties: map[string]any{
+		property: vocabulary.RecordPath(target.Kind, target.ID),
+	}})
 	return err
 }
 
-// matchOrLink resolves an unlinked source record to its subject: the match
+// ensureSubject gives a source record the subject proposal §6.2 promises it, on
+// its OWN write: a record whose provider carries nothing shared — a contact
+// with neither email nor phone — still describes a person, and refusing the
+// write would lose the record instead of the link. A record whose target was
+// deleted is pointed again the same way.
+//
+// It writes the value INTO THE ROW the caller is about to fold, and never
+// through a nested write: the subject is one of the source record's own
+// properties now, so it travels in that record's delta like every other value.
+// The write's own value wins — a caller that named a subject reaches here with
+// the property already set — and the caller recomputes the subject after the
+// row is stored, so no recompute happens here. It reports whether it set the
+// property, so the caller can credit the write in the manager ledger.
+func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (bool, error) {
+	if err := t.lockRecord(sp.ref()); err != nil {
+		return false, err
+	}
+	if path := referencePathOf(row.Props[m.Property]); path != "" {
+		// A value naming a live record stands, and the id it names is RESOLVED
+		// first: a merge repoints nothing, so a subject that was merged away
+		// still spells the loser and asking the literal id for liveness would
+		// call the record unpointed and mint a duplicate over the merge. The
+		// stored value is left exactly as written; resolution stays read-side.
+		//
+		// One naming a tombstone with no trail behind it (or nothing) is
+		// re-resolved, exactly as an unset property is.
+		if kind, id, ok := vocabulary.SplitRecordPath(path); ok {
+			live, err := t.liveCanonical(eref{Kind: kind, ID: id})
+			if err != nil {
+				return false, err
+			}
+			if live.ID != "" {
+				return false, nil
+			}
+		}
+	}
+	target, err := t.matchOrMint(row, sp.ty, m)
+	if err != nil {
+		return false, err
+	}
+	// THE STORED SHAPE, not the bare path. This runs AFTER coercion (write.go
+	// ensureSubject), so nothing downstream normalizes what it writes: a bare
+	// string here would be the one value in the store that the one-shape rule
+	// does not hold for (decision 0044), readable only because every reader
+	// still tolerates the old spelling.
+	row.Props[m.Property] = referenceValueOf(vocabulary.RecordPath(m.To, target))
+	return true, nil
+}
+
+// matchOrMint resolves an unpointed source record to its subject: the match
 // probes run in order, and the first probe whose values find candidates
-// decides — exactly one links, zero or several mint a fresh subject (§6.2).
+// decides — exactly one is taken, zero or several mint a fresh subject (§6.2).
 // A shared family address matching two people creates a third rather than
-// guessing; a probe never merges. The caller holds the record's lock.
-func (t *txn) matchOrLink(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping) (string, error) {
+// guessing; a probe never merges. It returns the subject's id and writes
+// nothing onto the source: the caller stores the pointer. The caller holds the
+// record's lock.
+func (t *txn) matchOrMint(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mapping) (string, error) {
 	// Concurrent resolution serializes per subject type: two syncs racing
 	// the same new person must probe one after the other, so the second
 	// finds the shell the first minted. Coarse, and fine at personal scale.
@@ -126,9 +201,6 @@ func (t *txn) matchOrLink(src *erow, srcTy *vocabulary.Kind, m *vocabulary.Mappi
 			return "", fmt.Errorf("substrate/engine: shell subject for %s: %w", src.ID, err)
 		}
 		target = shell.ID
-	}
-	if err := t.linkSubject(src.ref(), m.Edge, eref{Kind: m.To, ID: target}); err != nil {
-		return "", err
 	}
 	return target, nil
 }
@@ -242,57 +314,28 @@ func (t *txn) probeCandidates(toIdentity string, tp *vocabulary.Property, values
 	return out, nil
 }
 
-// linkSubject writes a source record's subject edge and records it: the link
-// is a graph event the changelog must carry, even when it happens inside
-// somebody else's write. Whatever the record pointed at before goes — one
-// subject row per record, always.
-func (t *txn) linkSubject(src eref, rel string, target eref) error {
-	if _, err := t.replaceSingleEdge(rel, src, target); err != nil {
-		return err
-	}
-	if _, err := t.putEdge(rel, src, target, nil, true); err != nil {
-		return err
-	}
-	if err := t.bumpVersion(src); err != nil {
-		return err
-	}
-	return t.appendChange(t.actor, substrate.OpLink, src.ID, src.Kind, map[string]any{
-		"rel": rel, "dst": target.ID, "dstType": target.Kind, "subject": true,
-	})
-}
-
-// refuseSubjectRel rejects the raw link/unlink verbs on a subject edge: it is
-// created with its source record and moved only by merge and split, so
-// re-pointing runs through the machinery that rewrites every stored edge and
-// keeps the former-id trails correct.
-func (t *txn) refuseSubjectRel(ty *vocabulary.Kind, rel string, op substrate.Op) error {
-	m, ok := t.ds.registry().MappingFor(ty.Identity)
-	if !ok || m.Edge != rel {
-		return nil
-	}
-	return fmt.Errorf("%w: %s is %s's subject edge — %s does not move it; split and merge do",
-		substrate.ErrGuard, rel, ty.Name, op)
-}
-
-// checkSubjectWrite enforces proposal §6.1: a subject edge is set when the
+// checkSubjectWrite enforces proposal §6.1: a subject reference is set when the
 // record is created, and moved only by merge and split. Re-asserting the same
-// target is what every re-sync does, so only a DIFFERENT LIVE target is
-// refused — the stored dst is compared canonically, because a merge moves the
-// subject out from under a connector that is still syncing the id it first
-// saw, and a tombstoned target is no link at all.
-func (t *txn) checkSubjectWrite(sp *applySpec, rel string, dst eref) error {
+// target is what every re-sync does, so only a DIFFERENT LIVE target is refused.
+// BOTH SIDES are resolved through the former-id trail before they are compared,
+// because a merge moves the subject out from under a connector that is still
+// syncing the id it first saw: the stored pointer and the incoming one may spell
+// one record two ways. A tombstoned target is no pointer at all.
+func (t *txn) checkSubjectWrite(sp *applySpec, property string, dst eref) error {
 	if sp.existing == nil {
 		return nil
 	}
-	cur, err := t.subjectTargetOf(sp.ref(), rel)
+	cur, err := t.subjectTargetOf(sp.ref(), property)
 	if err != nil {
 		return err
 	}
 	if cur.ID == "" {
 		return nil
 	}
-	if cur, err = t.canonicalOf(cur); err != nil {
-		return err
+	if dst.ID != "" {
+		if dst, err = t.canonicalOf(dst); err != nil {
+			return err
+		}
 	}
 	if cur == dst {
 		return nil
@@ -378,7 +421,7 @@ func evalPath(row *erow, p vocabulary.Path) any {
 // --- recompute ---------------------------------------------------------------
 
 // mappedSource is one live source record joined to the target being
-// recomputed via its subject edge.
+// recomputed, joined through its own mapping's subject reference.
 type mappedSource struct {
 	row *erow
 	m   *vocabulary.Mapping
@@ -490,22 +533,38 @@ func (t *txn) recompute(target eref) error {
 }
 
 // subjectSourcesOf loads the live records mapped onto a record, each joined
-// through its own mapping's subject edge — an ordinary edge with the same
-// name but a different declaring type is not one.
+// through its own mapping's declared subject PROPERTY — an ordinary reference
+// with the same name on a different declaring kind is not one.
+//
+// It matches every id the target has ever had, not only the canonical one: a
+// merge does not repoint reference values (they resolve forward through the
+// former-id trail on read), so a source synced before its subject won a merge
+// still names the loser id, and recomputing from the canonical id alone would
+// drop that source's contributions on the floor.
 func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]mappedSource, error) {
 	byFrom := map[string]*vocabulary.Mapping{}
 	for _, m := range mappings {
 		byFrom[m.From] = m
 	}
+	ids, err := t.idsOf(target)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(ids)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := t.query(`
-		SELECT e.rel, x.id, x.kind FROM edges e JOIN records x ON x.kind = e.src_kind AND x.id = e.src
-		WHERE e.dst_kind = $1 AND e.dst = $2 AND e.subject AND x.deleted_at IS NULL ORDER BY x.kind, x.id`,
-		target.Kind, target.ID)
+		SELECT r.property, x.id, x.kind FROM refs r JOIN records x ON x.kind = r.src_kind AND x.id = r.src
+		WHERE r.dst_kind = $1 AND r.dst IN (SELECT jsonb_array_elements_text($2::jsonb))
+		  AND r.path = '' AND x.deleted_at IS NULL ORDER BY x.kind, x.id`,
+		target.Kind, raw)
 	if err != nil {
 		return nil, err
 	}
 	type candidate struct{ rel, id, typ string }
 	var found []candidate
+	seen := map[eref]bool{}
 	for rows.Next() {
 		var c candidate
 		if err := rows.Scan(&c.rel, &c.id, &c.typ); err != nil {
@@ -513,9 +572,10 @@ func (t *txn) subjectSourcesOf(target eref, mappings []*vocabulary.Mapping) ([]m
 			return nil, err
 		}
 		m, ok := byFrom[c.typ]
-		if !ok || m.Edge != c.rel {
+		if !ok || m.Property != c.rel || seen[eref{Kind: c.typ, ID: c.id}] {
 			continue
 		}
+		seen[eref{Kind: c.typ, ID: c.id}] = true
 		found = append(found, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -786,11 +846,8 @@ func (t *txn) managersOf(ref eref) (map[string]managerRow, error) {
 // when the write was a no-op re-sync — and because recompute itself flows
 // through the ordinary write path, an unchanged recompute writes nothing.
 func (t *txn) recomputeSubjectOf(src eref, m *vocabulary.Mapping) error {
-	target, err := t.subjectTargetOf(src, m.Edge)
+	target, err := t.subjectTargetOf(src, m.Property)
 	if err != nil || target.ID == "" {
-		return err
-	}
-	if target, err = t.canonicalOf(target); err != nil {
 		return err
 	}
 	return t.recompute(target)

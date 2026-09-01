@@ -12,7 +12,9 @@ data:
   # The declaration inherited the authority's version before this pin.
   # version 4: `shippedAt` and `deliveredAt` are declared properties
   # (datetime). The transitions stamped them as undeclared strings before.
-  version: 5
+  # version 6: `source` is an unpinned reference property, carrying
+  # `mustExist: true`.
+  version: 6
   names:
     singular: order
   displayTemplate: "{name}"
@@ -86,10 +88,10 @@ data:
     details:
       type: markdown
       description: anything worth saying about the purchase, as prose
-  edges:
-    # untyped on purpose: an order is usually first seen in an email or a
+    # unpinned on purpose: an order is usually first seen in an email or a
     # message, and naming each source would couple this authority to every
     # other one.
     source:
-      to: any
+      type: reference
+      mustExist: true
       description: the email or message the order was seen in

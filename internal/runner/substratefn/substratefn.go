@@ -105,17 +105,9 @@ type Change struct {
 // Record is the bound record: the trimmed shape the envelope carries, not
 // the full wire record (host reads return that one).
 type Record struct {
-	ID         string                  `json:"id"`
-	Kind       string                  `json:"kind"`
-	Properties map[string]any          `json:"properties"`
-	Edges      map[string][]EdgeTarget `json:"edges"`
-}
-
-// EdgeTarget is one edge destination as the envelope carries it.
-type EdgeTarget struct {
-	ID    string `json:"id"`
-	Kind  string `json:"kind"`
-	Title string `json:"title"`
+	ID         string         `json:"id"`
+	Kind       string         `json:"kind"`
+	Properties map[string]any `json:"properties"`
 }
 
 // Repository carries the repository's owner, for "assigned to me" guards.
@@ -129,8 +121,8 @@ type Budgets struct {
 	Rows  int `json:"rows"`
 }
 
-// Effect is one returned consequence. The seven actions are put, patch,
-// delete, link, unlink, merge and split; the host holds every effect to the
+// Effect is one returned consequence. The five actions are put, patch,
+// delete, merge and split; the host holds every effect to the
 // manifest's emit allowlist, and merge/split to its mutations grant. The id
 // is required on every action but split: functions are writers, and writers
 // control the ids of what they write — that is what makes replays and
@@ -148,12 +140,6 @@ type Effect struct {
 	// conflict. The safe read-then-conditional-write primitive.
 	IfVersion  *int64         `json:"ifVersion,omitempty"`
 	Properties map[string]any `json:"properties,omitempty"`
-	// Edges only apply on put: rel → an id, a {authority, type, id} reference,
-	// or a list of either.
-	Edges map[string]any `json:"edges,omitempty"`
-	// Rel and To shape link/unlink; ID is the source record.
-	Rel string `json:"rel,omitempty"`
-	To  any    `json:"to,omitempty"`
 	// Loser rides a merge (ID is the winner); Merge rides a split (the merge
 	// record's id).
 	Loser string `json:"loser,omitempty"`
@@ -374,13 +360,12 @@ type Records struct{ host *Host }
 // `IfVersion: substratefn.Version(e.Version)` is writable off a read. Reads see
 // COMMITTED state — never this delivery's staged effects.
 type ReadRecord struct {
-	ID          string                  `json:"id"`
-	Kind        string                  `json:"kind"`
-	CanonicalID string                  `json:"canonicalId,omitempty"`
-	Version     int64                   `json:"version"`
-	Properties  map[string]any          `json:"properties"`
-	Labels      map[string]any          `json:"labels,omitempty"`
-	Edges       map[string][]EdgeTarget `json:"edges,omitempty"`
+	ID          string         `json:"id"`
+	Kind        string         `json:"kind"`
+	CanonicalID string         `json:"canonicalId,omitempty"`
+	Version     int64          `json:"version"`
+	Properties  map[string]any `json:"properties"`
+	Labels      map[string]any `json:"labels,omitempty"`
 }
 
 // ReadPage is a typed list page.
@@ -419,12 +404,11 @@ func (e *Records) GetRaw(kind, id string) (map[string]any, error) { return e.hos
 
 // ListQuery is a kind-scoped list; Kinds is required (an unscoped read trips).
 type ListQuery struct {
-	Kinds     []string
-	Where     map[string]any // property conditions, e.g. {"account": {"eq": id}}
-	First     int
-	After     string
-	OrderBy   []map[string]any
-	WithEdges bool
+	Kinds   []string
+	Where   map[string]any // property conditions, e.g. {"account": {"eq": id}}
+	First   int
+	After   string
+	OrderBy []map[string]any
 }
 
 func (q ListQuery) params() map[string]any {
@@ -441,9 +425,6 @@ func (q ListQuery) params() map[string]any {
 	}
 	if len(q.OrderBy) > 0 {
 		params["orderBy"] = q.OrderBy
-	}
-	if q.WithEdges {
-		params["withEdges"] = true
 	}
 	return params
 }
@@ -531,9 +512,8 @@ func (s *Staged) ID() string     { return s.id }
 const maxIDLen = 128
 
 var (
-	reID    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$`)
-	reKind  = regexp.MustCompile(`^(?:[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+/)?[a-z][a-z0-9]*$`)
-	reIdent = regexp.MustCompile(`^[a-z][a-zA-Z0-9]*$`)
+	reID   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~:@/-]*$`)
+	reKind = regexp.MustCompile(`^(?:[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+/)?[a-z][a-z0-9]*$`)
 )
 
 // Effects is the buffered-effects builder. Each method APPENDS a staged effect
@@ -542,7 +522,7 @@ var (
 // a body that also sets Result.Effects while the buffer is non-empty is refused
 // at return (the two apply orders are unrelated and can self-conflict under
 // CAS). There is no flush — the buffer IS the return. Shapes are validated here
-// (a known action, a well-formed id/kind/rel/edge, a non-negative IfVersion)
+// (a known action, a well-formed id and kind, a non-negative IfVersion)
 // and caller maps are SNAPSHOT-copied through JSON, so a mistake is a clear
 // body error and a reused map is not aliased; the first error fails the whole
 // delivery. The engine stays authoritative for the emit ceiling and kind
@@ -568,7 +548,6 @@ type PutEffect struct {
 	Kind       string
 	ID         string
 	Properties map[string]any
-	Edges      map[string]any
 	IfAbsent   bool
 	IfVersion  *int64
 }
@@ -593,13 +572,9 @@ func (e *Effects) Put(p PutEffect) *Staged {
 	if err != nil {
 		return e.fail(err)
 	}
-	edges, err := cloneEdges("put", p.Edges)
-	if err != nil {
-		return e.fail(err)
-	}
 	return e.add(Effect{
 		Action: "put", Kind: p.Kind, ID: p.ID, Properties: props,
-		Edges: edges, IfAbsent: p.IfAbsent, IfVersion: p.IfVersion,
+		IfAbsent: p.IfAbsent, IfVersion: p.IfVersion,
 	})
 }
 
@@ -642,70 +617,6 @@ func (e *Effects) Delete(kind, id string) *Staged {
 		return e.fail(err)
 	}
 	return e.add(Effect{Action: "delete", Kind: kind, ID: id})
-}
-
-// LinkEffect stages an edge write; To is a bare id string or a
-// map[string]any{authority, type, id} reference. ID is the source record.
-type LinkEffect struct {
-	Kind       string
-	ID         string
-	Rel        string
-	To         any
-	Properties map[string]any
-}
-
-// Link stages a link effect.
-func (e *Effects) Link(l LinkEffect) *Staged {
-	if err := validKind("link", l.Kind); err != nil {
-		return e.fail(err)
-	}
-	if err := validID("link", "id", l.ID); err != nil {
-		return e.fail(err)
-	}
-	if err := validRel("link", l.Rel); err != nil {
-		return e.fail(err)
-	}
-	if err := validEdgeTarget("to", l.To); err != nil {
-		return e.fail(fmt.Errorf("effects.link: %w", err))
-	}
-	to, err := jsonClone("link", "to", l.To)
-	if err != nil {
-		return e.fail(err)
-	}
-	props, err := cloneMap("link", "properties", l.Properties)
-	if err != nil {
-		return e.fail(err)
-	}
-	return e.add(Effect{Action: "link", Kind: l.Kind, ID: l.ID, Rel: l.Rel, To: to, Properties: props})
-}
-
-// UnlinkEffect stages an edge removal.
-type UnlinkEffect struct {
-	Kind string
-	ID   string
-	Rel  string
-	To   any
-}
-
-// Unlink stages an unlink effect.
-func (e *Effects) Unlink(u UnlinkEffect) *Staged {
-	if err := validKind("unlink", u.Kind); err != nil {
-		return e.fail(err)
-	}
-	if err := validID("unlink", "id", u.ID); err != nil {
-		return e.fail(err)
-	}
-	if err := validRel("unlink", u.Rel); err != nil {
-		return e.fail(err)
-	}
-	if err := validEdgeTarget("to", u.To); err != nil {
-		return e.fail(fmt.Errorf("effects.unlink: %w", err))
-	}
-	to, err := jsonClone("unlink", "to", u.To)
-	if err != nil {
-		return e.fail(err)
-	}
-	return e.add(Effect{Action: "unlink", Kind: u.Kind, ID: u.ID, Rel: u.Rel, To: to})
 }
 
 // Merge stages a merge (id is the winner, loser is folded into it); needs the
@@ -764,7 +675,7 @@ type ProposeEffect struct {
 // of KindRecordPatchRequest, held to `permissions.writes` by that kind like any
 // other, so a proposing function names the request kind in its emit and needs
 // nothing else. A patch or delete points at its target through the request's
-// `target` edge; a create names targetKind/targetId, because the record it
+// `target` reference; a create names targetKind/targetId, because the record it
 // would mint does not exist yet.
 func (e *Effects) Propose(p ProposeEffect) *Staged {
 	op := p.Op
@@ -807,15 +718,15 @@ func (e *Effects) Propose(p ProposeEffect) *Staged {
 	if diff != nil {
 		props["diff"] = diff
 	}
-	var edges map[string]any
 	if op == "create" {
 		props["targetKind"], props["targetId"] = p.TargetKind, p.TargetID
 	} else {
-		edges = map[string]any{"target": map[string]any{"kind": p.TargetKind, "id": p.TargetID}}
+		// The request names its target with an unpinned reference, so the value
+		// is the referent's full "<kind>/<id>" path.
+		props["target"] = p.TargetKind + "/" + p.TargetID
 	}
 	return e.add(Effect{
-		Action: "put", Kind: KindRecordPatchRequest, ID: p.ID,
-		Properties: props, Edges: edges,
+		Action: "put", Kind: KindRecordPatchRequest, ID: p.ID, Properties: props,
 	})
 }
 
@@ -839,39 +750,6 @@ func validID(action, field, s string) error {
 		return fmt.Errorf("effects.%s: %s %q is not a record id (URL-path-safe, at most %d characters)", action, field, s, maxIDLen)
 	}
 	return nil
-}
-
-func validRel(action, s string) error {
-	if s == "" {
-		return fmt.Errorf("effects.%s: rel is required", action)
-	}
-	if !reIdent.MatchString(s) {
-		return fmt.Errorf("effects.%s: %q is not a relation name", action, s)
-	}
-	return nil
-}
-
-// validEdgeTarget accepts a bare non-empty id string or a full {authority, type,
-// id} reference (all three required — the partial ref the engine would later
-// reject on a polymorphic edge is caught here).
-func validEdgeTarget(label string, to any) error {
-	switch v := to.(type) {
-	case string:
-		if v == "" {
-			return fmt.Errorf("%s id is empty", label)
-		}
-		return nil
-	case map[string]any:
-		for _, k := range []string{"kind", "id"} {
-			s, _ := v[k].(string)
-			if s == "" {
-				return fmt.Errorf("%s reference needs a kind and an id", label)
-			}
-		}
-		return nil
-	default:
-		return fmt.Errorf("%s is an id or a {kind, id} reference", label)
-	}
 }
 
 // cloneMap deep-copies a caller map through JSON (a snapshot, so a body reusing
@@ -906,29 +784,6 @@ func jsonClone(action, field string, v any) (any, error) {
 		return nil, fmt.Errorf("effects.%s: %s: %w", action, field, err)
 	}
 	return out, nil
-}
-
-// cloneEdges validates each put edge (a relation name and a well-formed target,
-// recursively) and snapshots the map.
-func cloneEdges(action string, edges map[string]any) (map[string]any, error) {
-	if edges == nil {
-		return nil, nil
-	}
-	for rel, targets := range edges {
-		if err := validRel(action, rel); err != nil {
-			return nil, err
-		}
-		items, ok := targets.([]any)
-		if !ok {
-			items = []any{targets}
-		}
-		for _, t := range items {
-			if err := validEdgeTarget("edges."+rel, t); err != nil {
-				return nil, fmt.Errorf("effects.%s: %w", action, err)
-			}
-		}
-	}
-	return cloneMap(action, "edges", edges)
 }
 
 // IDs mints deterministic, URL-safe, hash-backed ids. A function composes the

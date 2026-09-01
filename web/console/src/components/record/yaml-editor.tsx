@@ -5,7 +5,7 @@
  *   is: the envelope's own keys at the top, the declared properties under
  *   `data.properties` (each with its datatype and one-liner, and never one that
  *   is already written), an enum's admitted values after its key, a state
- *   machine's states, the declared edge rels after a `rel:`. Typing raises it;
+ *   machine's states, a reference's worked path. Typing raises it;
  *   Ctrl-Space asks for it.
  * - **Diagnostics** are `validateApplyDoc`'s problems, underlined on the line
  *   they belong to and marked in the gutter, so a bad datatype is a squiggle

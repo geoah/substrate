@@ -17,12 +17,12 @@
 # MIRRORED in Google's own shape inside this authority, and the sync ALSO emits the
 # core vocabulary row for the same logical object (emailthread, emailmessage,
 # calendar.substrate.reamde.dev/calendar, calendarevent) under the SAME derived id, with
-# its required edges supplied explicitly. Recordmappings resolve PEOPLE and
+# its required references supplied explicitly. Recordmappings resolve PEOPLE and
 # nothing else: an `emailaddress` record per address seen, mapped onto
 # `person`, which the core rows then reference one hop away. A mapping cannot
 # target emailmessage/emailthread/calendarevent at all — those types are
-# externally named and carry required edges a mapping's shell mint cannot fill
-# (ticket 041 has the three engine blocks written down).
+# externally named and carry required references a mapping's shell mint
+# cannot fill (ticket 041 has the three engine blocks written down).
 #
 # Install:  substratectl apply -f bundle.yaml -f triggers.yaml
 # Configure: create a config record — ONLY the Google OAuth client id +
@@ -57,8 +57,7 @@ data:
   # reference instead of a string, so disconnecting an account collects
   # the rows it synced (docs/decisions/0032).
   # version 7: gmailsync and calendarsync write the shared kinds' `account`
-  # as the reference property, not the edge that kind no longer declares
-  # (docs/decisions/0034).
+  # as the reference property that kind declares (docs/decisions/0034).
   # version 9: the inline functions' `timeoutMs` (int ms) is `timeout`, the
   # duration datatype (ISO 8601); the retype rides core's function kind bump.
   # version 10: the flattener cuts inline data: URIs before the source cap and
@@ -66,13 +65,18 @@ data:
   # version 11: the series slice. calendarsync fetches each recurring master
   # beside the singleEvents instances and writes a calendareventseries with
   # its rule, its skipped and extra dates and its anchor; the instances carry
-  # the `series` edge and `originalStartAt`; the account's `calendarSeries`
+  # the `series` reference and `originalStartAt`; the account's `calendarSeries`
   # switch turns all of it off; the event mirror gains `originalStartTime`.
   # version 12: full (token-less) event reads stamp the series with
   # `materializedFrom` / `materializedUntil`, the window whose occurrences
   # exist as rows, so the occurrences read (decision 0043) expands the rule
   # only outside it; delta walks leave the stamp alone.
-  version: 12
+  # version 13: every link is a `type: reference` property. The contact and
+  # emailaddress subjects are `subject: true` references with
+  # `mustExist: true`, every account reference carries `onDelete: cascade`, and
+  # the syncs write the core rows' calendar, series, thread, sender,
+  # recipients, organizer, attendees and participants as ordinary properties.
+  version: 13
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -432,7 +436,7 @@ data:
 # One contact per address-book connection, in Google's own shape (record 53).
 # Its id is derived from the provider key — ids.external("google-contacts",
 # account, resourceName) — supplied by the sync (legal: a source type is its
-# own subject, never a mapping's `to`). The `person` subject edge is left
+# own subject, never a mapping's `to`). The `person` subject reference is left
 # EMPTY on write; the mapping below matches or mints the person and links it
 # in the same transaction.
 kind: core.substrate.reamde.dev/kind
@@ -451,15 +455,16 @@ data:
     # The account this contact belongs to: the mark-and-sweep filters this
     # account's rows without touching another connected account's, and it keeps
     # per-account resource-name collisions legible (review-google #6).
-    # `ownerRef` is what makes disconnecting the account collect the contacts it
-    # synced — every `account:` in this closure is the same owner pointer
-    # (docs/decisions/0032). A filter or a write may still spell it as the bare
-    # account id: the pin supplies the kind, and the stored value is the path.
+    # `onDelete: cascade` is what makes disconnecting the account collect the
+    # contacts it synced — every `account:` in this closure is the same owner
+    # pointer (docs/decisions/0032). A filter or a write may still spell it as
+    # the bare account id: the pin supplies the kind, and the stored value is
+    # the path.
     account:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this contact was synced from
     # The full-sync generation this row was last seen in: after a full read
@@ -516,13 +521,16 @@ data:
     raw:
       type: json
       description: the raw People person as fetched, for provenance and writeback
-  edges:
-    # The subject edge (§6.1): an ordinary declared edge the mapping names.
-    # Required, single, not ownerRef, pointing at person — left empty on write
-    # so the substrate resolves it.
+    # The subject reference (§6.1): an ordinary declared reference the mapping
+    # names. Required, single, never cascading, pointing at person, left empty
+    # on write so the substrate resolves it.
     person:
-      to: people.substrate.reamde.dev/person
+      type: reference
+      displayName: Person
+      kind: people.substrate.reamde.dev/person
       required: true
+      mustExist: true
+      subject: true
       description: the human this contact record describes
 ---
 # ---- the sync function: the connector runtime's showcase -------------------
@@ -747,7 +755,7 @@ data:
         if person.get("etag"):
             props["etag"] = person["etag"]
         props["raw"] = person
-        # Subject edge omitted: the mapping matches or mints the person.
+        # Subject reference omitted: the mapping matches or mints the person.
         out.append({"action": "put", "kind": CONTACT_TYPE, "id": cid,
                     "properties": props})
         return out
@@ -956,9 +964,9 @@ data:
 # the operator loops until nextCursor comes back empty (fleet review: a
 # whole-book effect list breached the runner's 8 MiB frame; `raw` survives,
 # the batch is what stays small). Each old row is re-put under its new id
-# CARRYING ITS PERSON EDGE — the mapping's email probe would re-link most
+# CARRYING ITS PERSON REFERENCE — the mapping's email probe would re-link most
 # contacts, but an email-less contact would mint a fresh person shell and
-# orphan its old one; an explicit subject edge at create is legal (only
+# orphan its old one; an explicit subject reference at create is legal (only
 # re-POINTING an existing row's subject is refused). Every batch is a FRESH
 # read; a target a sync already wrote is absorbed, not clobbered — and when
 # the raced row re-minted a DIFFERENT person, a person MERGE folds the new
@@ -974,8 +982,8 @@ data:
   authority: google.bundles.substrate.reamde.dev
   description: >-
     Bounded re-key of contact rows onto ids.external: one batch per call,
-    person edges carried, raced re-mints merged back into their original persons;
-    loop with nextCursor until empty.
+    person references carried, raced re-mints merged back into their original
+    persons; loop with nextCursor until empty.
   runtime: python
   timeout: PT1M
   arguments:
@@ -1038,8 +1046,8 @@ data:
     Per old-scheme row, against a FRESH host.get of the target id:
       absent     -> put guarded ifVersion:0 (create-only: a sync racing the
                     commit fails the batch as a clean conflict for a re-run,
-                    never a clobber) carrying the person edge, then the old
-                    row tombstones. Counted `migrated`.
+                    never a clobber) carrying the person reference, then the
+                    old row tombstones. Counted `migrated`.
       live       -> absorbed: the fresher row and its data stand, the old row
                     only tombstones — and when the two rows resolved
                     DIFFERENT persons (a raced sync re-minted a shell for an
@@ -1058,16 +1066,26 @@ data:
     """
     CONTACT_TYPE = "google.bundles.substrate.reamde.dev/contact"
     PERSON_TYPE = "people.substrate.reamde.dev/person"
+    PERSON_PREFIX = PERSON_TYPE + "/"
     ACCOUNT_PREFIX = "google.bundles.substrate.reamde.dev/account/"
     MAX_BATCH = 200
     LIST_PAGE = 200
 
 
+    def _ref_path(value):
+        # A reference is STORED as the object {"ref": "<kind>/<id>"}, and a
+        # bare path string is the write-time shorthand a pre-0044 row may
+        # still hold. Read both: str() of the dict would hash the whole
+        # serialized object into an id.
+        if isinstance(value, dict):
+            return str(value.get("ref") or "")
+        return str(value or "")
+
+
     def _account_id(value):
-        # `account` is a reference, so the STORED value is the record path. The
-        # id composed into a contact id is the bare account id the sync passes,
-        # so the path's prefix comes off before it is hashed.
-        v = str(value or "")
+        # The id composed into a contact id is the bare account id the sync
+        # passes, so the path's prefix comes off before it is hashed.
+        v = _ref_path(value)
         return v[len(ACCOUNT_PREFIX):] if v.startswith(ACCOUNT_PREFIX) else v
 
 
@@ -1080,10 +1098,10 @@ data:
 
 
     def _person_of(record):
-        targets = ((record or {}).get("edges") or {}).get("person") or []
-        if not targets:
-            return ""
-        return (targets[0] or {}).get("id") or ""
+        # `person` is a reference, so the STORED value is ONE pointer and not a
+        # list of targets; the merge effect names the bare id.
+        v = _ref_path(((record or {}).get("properties") or {}).get("person"))
+        return v[len(PERSON_PREFIX):] if v.startswith(PERSON_PREFIX) else v
 
 
     def _cursor(args):
@@ -1111,7 +1129,7 @@ data:
             page = host.records.list(
                 CONTACT_TYPE,
                 order=[{"property": "createdAt"}, {"property": "id"}],
-                first=LIST_PAGE, after=after or None, with_edges=True)
+                first=LIST_PAGE, after=after or None)
             rows = page.get("records") or []
             for row in rows:
                 if to_skip > 0:
@@ -1183,13 +1201,11 @@ data:
                 continue
             # Target absent on the fresh read: create-only re-put (ifVersion
             # 0 conflicts the whole batch if a sync lands the id between this
-            # read and the commit — a clean re-run, never a stale clobber),
-            # carrying the person edge so no shell re-mints.
+            # read and the commit — a clean re-run, never a stale clobber).
+            # `person` is an ordinary property now, so `props` already carries
+            # the reference and no shell re-mints.
             put = {"action": "put", "kind": CONTACT_TYPE, "id": new_id,
                    "properties": props, "ifVersion": 0}
-            person = _person_of(r)
-            if person:
-                put["edges"] = {"person": person}
             effects.append(put)
             effects.append({"action": "delete", "kind": CONTACT_TYPE,
                             "id": old_id})
@@ -1202,7 +1218,7 @@ data:
                            "skipped": skipped, "nextCursor": next_cursor}}
 ---
 # ---- the mapping: contact → person ----------------------------------------
-# The record's `person` edge, and how its properties reach the human (§6.1/
+# The record's `person` reference, and how its properties reach the human (§6.1/
 # §7.1). match probes the contact's emails against people's emails: exactly one
 # live match links it, zero-or-many mints a person shell — mirroring the old
 # connectors googlepeople identity logic. map copies the name and unions the
@@ -1214,7 +1230,7 @@ data:
   authority: google.bundles.substrate.reamde.dev
   from: google.bundles.substrate.reamde.dev/contact
   to: people.substrate.reamde.dev/person
-  edge: person
+  property: person
   match:
     # Block style, and the paths quoted: `[]` is a flow-sequence opener in
     # YAML flow context, so `{from: emails[].value}` would not parse.
@@ -1239,10 +1255,10 @@ data:
 # the mapping below matches it onto a person or mints a shell, exactly as
 # contact→person does, so an address-book contact and a mail sender converge
 # on ONE person. The core rows then reference the RECORD (`{authority, type, id}`)
-# and the engine's one-hop rule (§6.2) lands the stored edge on the person.
+# and the engine's one-hop rule (§6.2) lands the stored reference on the person.
 #
-# Nothing declares an edge TO this type: a mapping's source may never be an
-# edge target (record 50), which is exactly why the mirrors below carry
+# Nothing declares a reference TO this type: a mapping's source may never be a
+# reference target (record 50), which is exactly why the mirrors below carry
 # addresses as object PROPERTIES instead.
 kind: core.substrate.reamde.dev/kind
 metadata:
@@ -1262,7 +1278,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this address was first seen through
     # `email`-kind, and the syncs only ever write an address that parses as an
@@ -1277,12 +1293,15 @@ data:
       displayName: Display name
       description: the name the header or the attendee list carried, when
         it carried one
-  edges:
-    # The subject edge (§6.1): required, single, not ownerRef, left EMPTY on
-    # write so the mapping resolves it.
+    # The subject reference (§6.1): required, single, never cascading, left
+    # EMPTY on write so the mapping resolves it.
     person:
-      to: people.substrate.reamde.dev/person
+      type: reference
+      displayName: Person
+      kind: people.substrate.reamde.dev/person
       required: true
+      mustExist: true
+      subject: true
       description: the human this address belongs to
 ---
 # ---- the mapping: emailaddress → person -----------------------------------
@@ -1298,7 +1317,7 @@ data:
   authority: google.bundles.substrate.reamde.dev
   from: google.bundles.substrate.reamde.dev/emailaddress
   to: people.substrate.reamde.dev/person
-  edge: person
+  property: person
   match:
     - from: address
       to: emails
@@ -1335,7 +1354,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this thread was synced from
     threadId:
@@ -1397,7 +1416,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this message was synced from
     messageId:
@@ -1776,12 +1795,12 @@ data:
 
 
     def _person_ref(host, aid, addr):
-        # The ONE-HOP reference (§6.2): the core edge declares `person`, this
-        # names the emailaddress RECORD, and the engine lands the stored edge
-        # on whatever person that record's mapping resolved. This body never
+        # The ONE-HOP reference (§6.2): the core property declares `person`,
+        # this names the emailaddress RECORD as the flat `<kind>/<id>` path a
+        # reference value is, and the engine lands the stored reference on
+        # whatever person that record's mapping resolved. This body never
         # mints a person and never names one.
-        return {"kind": AUTHORITY + "/emailaddress",
-                "id": _address_id(host, aid, addr)}
+        return AUTHORITY + "/emailaddress/" + _address_id(host, aid, addr)
 
 
     def _now():
@@ -2233,9 +2252,9 @@ data:
 
     def _plan(host, aid, msgs):
         """Turn a hydrate batch into ORDERED write intents: the addresses, one
-        aggregate per thread, then the messages. Nothing stages here — an edge
-        target must already exist when the row referencing it applies, and the
-        effect list applies in order."""
+        aggregate per thread, then the messages. Nothing stages here — a
+        reference target must already exist when the row referencing it
+        applies, and the effect list applies in order."""
         addresses, threads, records = {}, {}, []
         for msg in msgs:
             mid = str(msg.get("id") or "")
@@ -2317,27 +2336,27 @@ data:
                 props["preview"] = agg["preview"]
                 props["lastMessageAt"] = agg["lastMessageAt"]
             host.effects.put(THREAD_TYPE, tref, properties=props)
-            # `account` is a trait-pinned ownerRef REFERENCE on the shared kind
-            # (0034), so it is a property carrying the full account path, not an
-            # edge. A trait pin completes no bare id, so the value is written in
-            # full. `participants` stays an edge.
+            # `account` is a trait-pinned cascading REFERENCE on the shared
+            # kind (0034), and a trait pin completes no bare id, so the value
+            # is written as the full account path. `participants` is a
+            # reference too, written beside it.
             core = {"account": ACCOUNT_TYPE + "/" + aid}
             if subject:
                 core["subject"] = subject
-            # Same edge cap as the message recipients, and for the same
-            # reason: the mirror's `participants` property keeps the whole
-            # union, the core edge is bounded.
+            # Same cap as the message recipients, and for the same reason: the
+            # mirror's `participants` property keeps the whole union, the core
+            # reference is bounded.
             everyone = sorted(people)
             if len(everyone) > MAX_RECIPIENTS:
                 host.log("google-gmail: thread %s has %d participants past "
-                         "the %d-edge cap for %s — the mirror keeps them all"
+                         "the %d-reference cap for %s — the mirror keeps "
+                         "them all"
                          % (tid, len(everyone) - MAX_RECIPIENTS,
                             MAX_RECIPIENTS, aid))
                 everyone = everyone[:MAX_RECIPIENTS]
-            host.effects.put(
-                CORE_THREAD, tref, properties=core,
-                edges={"participants": [_person_ref(host, aid, a)
-                                        for a in everyone]})
+            core["participants"] = [_person_ref(host, aid, a)
+                                    for a in everyone]
+            host.effects.put(CORE_THREAD, tref, properties=core)
 
 
     def _stage_messages(host, aid, records, generation):
@@ -2367,12 +2386,13 @@ data:
             if rec["sentAt"]:
                 # `at` is the temporal(point) trait's own column.
                 core["at"] = rec["sentAt"]
-            # `thread` is single-target, so a bare id names it; `sender` and
-            # `recipients` declare `person` and take the one-hop record ref.
-            edges = {"thread": tref}
+            # `thread` is a kind-pinned reference, so a bare id names it;
+            # `sender` and `recipients` declare `person` and take the one-hop
+            # record path.
+            core["thread"] = tref
             sender = rec["from"]
             if sender and _RE_ADDR.match(sender["address"]):
-                edges["sender"] = _person_ref(host, aid, sender["address"])
+                core["sender"] = _person_ref(host, aid, sender["address"])
             recipients, seen, over = [], set(), 0
             for item in rec["to"] + rec["cc"] + rec["bcc"]:
                 a = item["address"]
@@ -2380,21 +2400,21 @@ data:
                     continue
                 seen.add(a)
                 if len(recipients) >= MAX_RECIPIENTS:
-                    # BOUNDED FRAMES: every edge target is locked in the page's
-                    # ONE transaction, so a 1,000-recipient list across a
-                    # 25-message hydrate is 25,000 locked targets. The mirror
+                    # BOUNDED FRAMES: every reference target is locked in the
+                    # page's ONE transaction, so a 1,000-recipient list across
+                    # a 25-message hydrate is 25,000 locked targets. The mirror
                     # keeps the full to/cc/bcc lists — nothing is lost, the
-                    # core edge is capped — and the truncation is logged.
+                    # core reference is capped — and the truncation is logged.
                     over += 1
                     continue
                 recipients.append(_person_ref(host, aid, a))
             if over:
                 host.log("google-gmail: message %s has %d recipients past the "
-                         "%d-edge cap for %s — the mirror keeps them all"
+                         "%d-reference cap for %s — the mirror keeps them all"
                          % (rec["id"], over, MAX_RECIPIENTS, aid))
             if recipients:
-                edges["recipients"] = recipients
-            host.effects.put(CORE_MESSAGE, mref, properties=core, edges=edges)
+                core["recipients"] = recipients
+            host.effects.put(CORE_MESSAGE, mref, properties=core)
 
 
     def _live(host, types, ids):
@@ -2812,7 +2832,7 @@ data:
         if cur.get("sweep"):
             # A full re-read happened: the deletes it could not tombstone are
             # the rows this generation never stamped. Threads first — a
-            # deleted core thread GCs its messages through the ownerRef.
+            # deleted core thread GCs its messages through the cascade.
             cur.update({"phase": "sweepthreads", "after": "", "sweep": False})
             return {"more": host.page.more(cur)}
         return _stamp(host, aid, acct, cur)
@@ -2908,7 +2928,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this calendar was synced from
     calendarId:
@@ -2960,8 +2980,8 @@ data:
 # `calendarSeries` switch); `recurringEventId`, `recurrence` and
 # `originalStartTime` ride HERE verbatim, in Google's own spelling, beside the
 # resolved instants the core row carries. Attendee `responseStatus`,
-# `optional` and `resource` stay here too: an edge carries no properties, so
-# the core row's `attendees` edge cannot hold them.
+# `optional` and `resource` stay here too: the core row's `attendees`
+# reference declares no link data, so it cannot hold them.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: google.bundles.substrate.reamde.dev/event
@@ -2970,8 +2990,8 @@ data:
   description: >-
     One Google calendar event, always a concrete occurrence — the sync expands
     single events. Attendee response status and the recurrence fields stay
-    here, because the core record reaches attendees by edge and an edge carries
-    no properties.
+    here, because the core record reaches attendees by a reference that declares
+    no link data.
   names:
     singular: event
   displayTemplate: "{summary|eventId}"
@@ -2980,7 +3000,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this event was synced from
     calendarId:
@@ -3085,7 +3105,7 @@ data:
       type: object
       repeated: true
       displayName: Attendees
-      description: "attendees with the fields an edge cannot carry (responseStatus,
+      description: "attendees with the fields a reference cannot carry (responseStatus,
         optional, resource)"
       fields:
         address: string
@@ -3173,8 +3193,8 @@ data:
     its MASTER fetched by id and written as a calendareventseries: the one
     RRULE line, the EXDATE and RDATE lines parsed into `exdates`/`rdates`,
     the DTSTART anchor and the zone. The instances then carry the `series`
-    edge and, where the master's slot was moved, `originalStartAt`. With the
-    switch off none of that is written and the core rows are the flat
+    reference and, where the master's slot was moved, `originalStartAt`. With
+    the switch off none of that is written and the core rows are the flat
     instance view.
 
     Per-account isolation (F2/F3): the per-account drain is try/except; a
@@ -3217,7 +3237,8 @@ data:
     # How many fetched masters ride in the cursor. The cursor is checkpointed
     # on every page, so this is what keeps it small: past the cap a master is
     # fetched again on the next page, which costs one call and never
-    # correctness, since a series row is put in the same page as its edge.
+    # correctness, since a series row is put in the same page as the
+    # reference naming it.
     MASTER_CACHE = 500
     BACKFILL_DAYS = {"none": 0, "last30d": 30, "last90d": 90, "last1y": 365}
     # The RFC 5322 dot-atom production, the same one gmailsync uses and for
@@ -3325,11 +3346,11 @@ data:
 
 
     def _person_ref(host, aid, addr):
-        # The ONE-HOP reference (§6.2): the core edge declares `person`, this
-        # names the emailaddress RECORD, and the engine lands the stored edge
-        # on whatever person that record's mapping resolved.
-        return {"kind": AUTHORITY + "/emailaddress",
-                "id": _address_id(host, aid, addr)}
+        # The ONE-HOP reference (§6.2): the core property declares `person`,
+        # this names the emailaddress RECORD as the flat `<kind>/<id>` path a
+        # reference value is, and the engine lands the stored reference on
+        # whatever person that record's mapping resolved.
+        return AUTHORITY + "/emailaddress/" + _address_id(host, aid, addr)
 
 
     def _now():
@@ -3581,8 +3602,8 @@ data:
         props = _series_props(master, cal_zone, span)
         if props is None:
             return ""
-        host.effects.put(CORE_SERIES, sref, properties=props,
-                         edges={"calendar": cref})
+        props["calendar"] = cref
+        host.effects.put(CORE_SERIES, sref, properties=props)
         return sref
 
 
@@ -3671,7 +3692,7 @@ data:
 
     def _stage_events(host, token, aid, cid, cref, items, cal_zone, cur):
         """Stage one events page IN ORDER: the addresses and the series rows
-        first (an edge target must exist when the row referencing it
+        first (a reference target must exist when the row referencing it
         applies), then the deletes a delta's `cancelled` entries mean, then
         the puts."""
         generation = cur.get("generation") or ""
@@ -3746,27 +3767,27 @@ data:
                 core["at"] = starts
             if ends:
                 core["endsAt"] = ends
-            edges = {"calendar": cref}
+            core["calendar"] = cref
             # The link and the moved-instance slot ride together: with the
             # switch off the core row is the flat instance it always was.
             sref = series.get(str(props.get("recurringEventId") or ""))
             if sref:
-                edges["series"] = sref
+                core["series"] = sref
                 if original:
                     core["originalStartAt"] = original
             addr = _valid(organizer)
             if addr:
-                edges["organizer"] = _person_ref(host, aid, addr)
-            refs, seen = [], set()
+                core["organizer"] = _person_ref(host, aid, addr)
+            parties, seen = [], set()
             for party in attendees:
                 addr = _valid(party)
                 if not addr or addr in seen:
                     continue
                 seen.add(addr)
-                refs.append(_person_ref(host, aid, addr))
-            if refs:
-                edges["attendees"] = refs
-            host.effects.put(CORE_EVENT, eref, properties=core, edges=edges)
+                parties.append(_person_ref(host, aid, addr))
+            if parties:
+                core["attendees"] = parties
+            host.effects.put(CORE_EVENT, eref, properties=core)
         return len(keeps), len(drops)
 
 
@@ -3856,9 +3877,9 @@ data:
             # A put MERGES and never prunes, so this calendar's stored
             # syncToken and syncGeneration survive the refresh.
             host.effects.put(CALENDAR_TYPE, cref, properties=props)
-            # `account` is a trait-pinned ownerRef REFERENCE on the shared kind
-            # (0034): a property carrying the full account path, not an edge. A
-            # trait pin completes no bare id, so the value is written in full.
+            # `account` is a trait-pinned cascading REFERENCE on the shared
+            # kind (0034), and a trait pin completes no bare id, so the value
+            # is written as the full account path.
             core = {"name": summary, "account": ACCOUNT_TYPE + "/" + aid}
             if tzname:
                 core["timezone"] = tzname

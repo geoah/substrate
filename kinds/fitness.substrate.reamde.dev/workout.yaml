@@ -59,7 +59,8 @@ data:
       type: markdown
       embed: true
       description: how the session went, as prose
-  edges:
     template:
-      to: workouttemplate
+      type: reference
+      kind: workouttemplate
+      mustExist: true
       description: the template this session was started from

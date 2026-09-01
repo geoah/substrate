@@ -68,10 +68,10 @@ func TestPolicyGatesAMutateIntoARequest(t *testing.T) {
 	if req.Properties["op"] != "create" || req.Properties["targetId"] != "w-held" {
 		t.Fatalf("request: %+v", req.Properties)
 	}
-	if got := req.Properties["thread"]; got != vocabulary.RecordPath(typeThread, res.Thread) {
+	if got := storedReferencePath(req.Properties["thread"]); got != vocabulary.RecordPath(typeThread, res.Thread) {
 		t.Fatalf("request thread = %v", got)
 	}
-	if got := req.Properties["policy"]; got != vocabulary.RecordPath(vocabulary.KindRecordPatchPolicy, policy.ID) {
+	if got := storedReferencePath(req.Properties["policy"]); got != vocabulary.RecordPath(vocabulary.KindRecordPatchPolicy, policy.ID) {
 		t.Fatalf("request policy = %v", got)
 	}
 	if rev, _ := anyFloat(req.Properties["policyRevision"]); int64(rev) != policy.Version {
@@ -474,7 +474,7 @@ func TestConfirmationFloorGatesFunctionEffects(t *testing.T) {
 	if req.Properties["policy"] != nil {
 		t.Fatalf("a floor cited a policy: %v", req.Properties["policy"])
 	}
-	if got := req.Properties["thread"]; got != vocabulary.RecordPath(typeThread, res.Thread) {
+	if got := storedReferencePath(req.Properties["thread"]); got != vocabulary.RecordPath(typeThread, res.Thread) {
 		t.Fatalf("request thread = %v", got)
 	}
 	// Accepting materializes the held effect.

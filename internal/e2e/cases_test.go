@@ -53,7 +53,8 @@ func TestE2E(t *testing.T) {
 		caseChangelog)
 	r.runCase("STORY-01", "The graph exists",
 		"The owner describes their world once (organizations, teams, people, projects, tasks, a calendar) "+
-			"and every relationship is navigable from every end; mistyped edges and undeclared edge properties are refused.",
+			"and every reference is navigable from both ends; a mistyped target, a dangling one and an "+
+			"undeclared link property are refused.",
 		caseStory01)
 
 	// The automation stories: the model is a scripted stub the test hosts,
@@ -94,14 +95,15 @@ func TestE2E(t *testing.T) {
 	r.runExtraCases()
 }
 
-// record is the wire read shape, narrowed to what the cases assert on.
+// record is the wire read shape, narrowed to what the cases assert on. Every
+// pointer this suite follows is a reference property, so Properties is the
+// whole of the record's data.
 type record struct {
-	ID         string                  `json:"id"`
-	Kind       string                  `json:"kind"`
-	Version    int64                   `json:"version"`
-	Properties map[string]any          `json:"properties"`
-	Edges      map[string][]edgeTarget `json:"edges"`
-	DeletedAt  string                  `json:"deletedAt"`
+	ID         string         `json:"id"`
+	Kind       string         `json:"kind"`
+	Version    int64          `json:"version"`
+	Properties map[string]any `json:"properties"`
+	DeletedAt  string         `json:"deletedAt"`
 }
 
 func (r record) prop(name string) string {

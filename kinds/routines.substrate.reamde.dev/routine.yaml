@@ -69,10 +69,10 @@ data:
       type: markdown
       embed: true
       description: what doing it well looks like, as prose
-  edges:
-    # untyped on purpose: a routine can wrap a medication, a workout
+    # unpinned on purpose: a routine can wrap a medication, a workout
     # template or a project, and naming each would couple this authority to
     # every other one.
     subject:
-      to: any
+      type: reference
+      mustExist: true
       description: the richer record this routine wraps, when there is one

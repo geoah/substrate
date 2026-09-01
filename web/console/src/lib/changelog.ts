@@ -45,8 +45,6 @@ export function verbOf(row: ChangeRow): string {
       return row.payload?.created === true ? "created" : "updated"
     case "patch":
       return "updated"
-    case "link":
-      return "linked"
     case "delete":
       return "deleted"
     case "merge":
@@ -96,7 +94,7 @@ export function changeSummary(row: ChangeRow): string {
 // ── the effects ─────────────────────────────────────────────────────────────
 //
 // Every committed write records, in order, the EFFECTS it applied — record
-// deltas with their values, tombstones, edge changes, manager rows — because
+// deltas with their values, tombstones, manager rows — because
 // the log is the truth and the records table is a fold of it, and a rebuild
 // replays exactly these (engine/fold.go).
 //
@@ -134,9 +132,6 @@ interface ChangeEffect {
     finalizers?: string[]
   }
   finalizer?: string
-  rel?: string
-  dstType?: string
-  dst?: string
   key?: string
   value?: unknown
   property?: string
@@ -145,7 +140,6 @@ interface ChangeEffect {
   formerId?: string
   scope?: { kind?: string; id?: string }[]
   rows?: {
-    edges?: unknown[]
     annotations?: unknown[]
     managers?: unknown[]
     formerIds?: unknown[]
@@ -157,7 +151,7 @@ interface ChangeEffect {
  * the effect has nothing more to say. `actor` is the row's, not the effect's:
  * the log attributes a whole write, not each effect inside it. */
 export interface EffectLine {
-  /** What happened, e.g. `updated` / `linked` / `deleted`. */
+  /** What happened, e.g. `updated` / `restored` / `deleted`. */
   verb: string
   /** The record it happened to, `<kind>/<id>`, or "" when the effect names no
    * single record (a resync names a scope). */
@@ -208,7 +202,6 @@ function resyncDetail(effect: ChangeEffect): string {
     const n = list?.length ?? 0
     if (n) counted.push(`${n} ${label}${n === 1 ? "" : "s"}`)
   }
-  count("edge", rows.edges)
   count("annotation", rows.annotations)
   count("manager row", rows.managers)
   count("former id", rows.formerIds)
@@ -244,25 +237,6 @@ export function effectLine(effect: ChangeEffect): EffectLine {
       return { verb: "purged", target, detail: "and everything hanging off it" }
     case "bump":
       return { verb: "touched", target, detail: "version only" }
-    case "edge":
-      return {
-        verb: "linked",
-        target,
-        detail: `${effect.rel ?? "?"} → ${refJoin(effect.dstType, effect.dst)}`,
-      }
-    case "unedge":
-      return {
-        verb: "unlinked",
-        target,
-        detail: `${effect.rel ?? "?"} → ${refJoin(effect.dstType, effect.dst)}`,
-      }
-    case "edge1":
-      return {
-        verb: "relinked",
-        target,
-        // The single-valued replacement: every other target of the rel goes.
-        detail: `${effect.rel ?? "?"} now points only at ${refJoin(effect.dstType, effect.dst)}`,
-      }
     case "annotation":
       // The engine carries the value as a POINTER precisely so `false`, `0`
       // and `""` stay values: only an ABSENT value is the deletion. JSON
@@ -305,11 +279,6 @@ export function effectLine(effect: ChangeEffect): EffectLine {
         detail: "",
       }
   }
-}
-
-function refJoin(kind: string | undefined, id: string | undefined): string {
-  if (kind && id) return `${kind}/${id}`
-  return id || kind || "?"
 }
 
 /** The write's effects, in the order it applied them, each said in English.
@@ -392,7 +361,7 @@ export function mergeFeed(
 
 // ── facets → wire ───────────────────────────────────────────────────────────
 
-export const CHANGE_OPS = ["put", "patch", "link", "delete", "merge", "gc"]
+export const CHANGE_OPS = ["put", "patch", "delete", "merge", "split", "gc"]
 
 /** `Date.parse`-able input; "2026-08-05 22:00" style included. */
 export function parseTimeInput(raw: string): number | undefined {

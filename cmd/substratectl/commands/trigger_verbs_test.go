@@ -89,49 +89,12 @@ func TestTriggerVerbsRideTheCorePath(t *testing.T) {
 	}
 }
 
-// --- help examples name edges that exist -----------------------------------
+// --- help examples name properties that exist ------------------------------
 
-// The examples in `link`/`unlink --help` are the first thing a person copies,
-// so every relation they name MUST be one the shipped vocabulary declares.
-// `assignee` and `employer` were neither, and a copied example failed with an
-// undeclared-edge error against a clean install.
-func TestEdgeExamplesNameDeclaredEdges(t *testing.T) {
-	declared := shippedTypes(t)
-	a := &app{}
-	for _, cmd := range []string{"link", "unlink"} {
-		var example string
-		switch cmd {
-		case "link":
-			example = a.linkCommand().Example
-		case "unlink":
-			example = a.unlinkCommand().Example
-		}
-		if strings.TrimSpace(example) == "" {
-			t.Fatalf("%s has no examples", cmd)
-		}
-		for _, line := range strings.Split(example, "\n") {
-			// "substratectl link <kind> <id> <rel> <target>"
-			fields := strings.Fields(line)
-			if len(fields) < 6 {
-				continue
-			}
-			kind, rel := fields[2], fields[4]
-			ty, ok := declared[kind]
-			if !ok {
-				t.Errorf("%s example names collection %q, which the shipped schema does not declare", cmd, kind)
-				continue
-			}
-			if !ty.edges[rel] {
-				t.Errorf("%s example names edge %q on %q; declared edges are %v",
-					cmd, rel, kind, sortedSet(ty.edges))
-			}
-		}
-	}
-}
-
-// The `patch --help` examples are copied just as often, so the properties they
-// name must exist too — on a clean install, `--prop detail=…` on a task wrote a
-// property the shipped type never declared.
+// The `patch --help` examples are the first thing a person copies, so every
+// property they name MUST be one the shipped vocabulary declares: on a clean
+// install, `--prop detail=…` on a task wrote a property the shipped kind never
+// declared.
 func TestPatchExamplesNameDeclaredProperties(t *testing.T) {
 	declared := shippedTypes(t)
 	example := (&app{}).patchCommand().Example
@@ -164,10 +127,9 @@ func TestPatchExamplesNameDeclaredProperties(t *testing.T) {
 	}
 }
 
-// shippedType is one declaration's surface: the edge relations and the
-// property names it declares, plus the properties every record carries.
+// shippedType is one declaration's surface: the property names it declares,
+// plus the properties every record carries.
 type shippedType struct {
-	edges      map[string]bool
 	properties map[string]bool
 }
 
@@ -220,7 +182,6 @@ func shippedTypes(t *testing.T) map[string]shippedType {
 					Names struct {
 						Singular string `yaml:"singular"`
 					} `yaml:"names"`
-					Edges      map[string]any `yaml:"edges"`
 					Properties map[string]any `yaml:"properties"`
 				} `yaml:"data"`
 			}
@@ -232,16 +193,13 @@ func shippedTypes(t *testing.T) map[string]shippedType {
 			}
 			ty, ok := out[doc.Data.Names.Singular]
 			if !ok {
-				ty = shippedType{edges: map[string]bool{}, properties: map[string]bool{}}
+				ty = shippedType{properties: map[string]bool{}}
 				// Every record carries these whatever it declares (FORMAT.md
 				// §3): they are properties like any other.
 				for _, name := range []string{"title", "body", "at", "endsAt", "dueAt"} {
 					ty.properties[name] = true
 				}
 				out[doc.Data.Names.Singular] = ty
-			}
-			for rel := range doc.Data.Edges {
-				ty.edges[rel] = true
 			}
 			for name := range doc.Data.Properties {
 				ty.properties[name] = true

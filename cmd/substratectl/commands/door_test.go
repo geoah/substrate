@@ -82,7 +82,7 @@ func TestCollectionPathIsTheKindReference(t *testing.T) {
 			[]string{"tasks.substrate.reamde.dev/task"},
 			"/api/v1/core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev%2Ftask",
 		},
-		{"tasks.substrate.reamde.dev", "task", []string{"t9", "edges", "source"}, "/api/v1/tasks.substrate.reamde.dev/task/t9/edges/source"},
+		{"tasks.substrate.reamde.dev", "task", []string{"t9", "incoming"}, "/api/v1/tasks.substrate.reamde.dev/task/t9/incoming"},
 	}
 	for _, tc := range cases {
 		if got := collectionPath(tc.authority, tc.kind, tc.id...); got != tc.want {

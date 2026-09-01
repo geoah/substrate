@@ -26,9 +26,7 @@ GET    /api/v1/{authority}/{kind}/{id}
 PATCH  /api/v1/{authority}/{kind}/{id}       # patch, including state transitions
 PUT    /api/v1/{authority}/{kind}/{id}       # upsert at the given id
 DELETE /api/v1/{authority}/{kind}/{id}       # soft delete
-GET    /api/v1/{authority}/{kind}/{id}/incoming        # paged reverse edges
-POST   /api/v1/{authority}/{kind}/{id}/edges/{rel}     # add one outgoing edge
-DELETE /api/v1/{authority}/{kind}/{id}/edges/{rel}     # remove one
+GET    /api/v1/{authority}/{kind}/{id}/incoming       # who points at this record
 ```
 
 A method sent to the wrong shape answers `405` naming the spelling that works,
@@ -59,16 +57,19 @@ decodes it exactly once:
 GET /api/v1/core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev%2Ftask
 ```
 
-Reverse edges are a derived view of their own, paged separately so a popular
-record's fan-in never inflates its document. The response is
-`{"incoming": [{"rel": …, "via": "edge" | "reference", "createdAt": …,
+Incoming references are a derived view of their own, paged separately so a
+popular record's fan-in never inflates its document. The response is
+`{"incoming": [{"property": …, "path": …, "createdAt": …,
 "from": {"id", "kind", "title"}}], "cursor": …, "total": n}`, ordered by
-`rel`, then source kind, then `via`, then newest first.
+source kind, then source record, then the property and its position within
+it. `property` names the reference the source points with, and `path` locates
+it where the reference sits inside an object or a keyed map, empty at the top
+level. Every reference answers here, pinned or not.
 
 ## The flat record
 
 Requests and responses carry the **flat record**: one JSON object with
-`properties`, `edges`, and the server-set fields at the top level. The
+`properties` and the server-set fields at the top level. The
 four-key [envelope](data-model.md#the-envelope) is the YAML document form;
 REST never wraps. `title`, `body`, and the temporal properties appear inside
 `properties` and nowhere else, so `PutInput` and `PatchInput` accept them only
@@ -128,24 +129,27 @@ GET /api/v1/people.substrate.reamde.dev/person/9f2k
                        "updatedAt": "2026-08-04T08:00:00Z"}]}}}
 ```
 
-## The seven mutations
+## The five mutations
 
 The complete write surface, for every actor, forever. Each one addresses its
 target by **full identity**: the kind beside the id (on REST the path's
 `{authority}/{kind}` names the kind; on GraphQL the kind travels in the
-mutation's arguments, as `kind` on `patch`, `delete` and `merge`, as
-`srcKind`/`dstKind` on `link` and `unlink`, and inside `input` on `put`),
-because an id is unique per kind, never per repository:
+mutation's arguments, as `kind` on `patch`, `delete` and `merge`, and inside
+`input` on `put`), because an id is unique per kind, never per repository:
 
 | Mutation | What it does                                                                                                                                                        |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `put`    | Create or upsert. Merges and never prunes: what the document omits is left alone. Accepts inline edges, so a record and its edges commit as one unit.               |
+| `put`    | Create or upsert. Merges and never prunes: what the document omits is left alone.                                                                                   |
 | `patch`  | Edit in place: properties, labels, annotations. A null value deletes a key. State [transitions](data-model.md#validation-and-state-machines) travel only this way. |
 | `delete` | Soft delete: tombstones the record; hard deletion waits for finalizers to release.                                                                                  |
-| `link`   | Add one edge between two records.                                                                                                                                   |
-| `unlink` | Remove one edge. Both refuse a mapping's subject edge, which only create-time resolution, `merge`, and `split` may move.                                            |
 | `merge`  | Join two records of one kind; the loser's id resolves to the winner forever ([merges](projection.md#merges)).                                                      |
 | `split`  | Reverse one merge, restoring the loser from the merge record.                                                                                                       |
+
+A pointer at another record is a property, so it is written by `put` and
+`patch` like every other value, and a record and everything it points at commit
+as one write. A mapping's subject reference is the one a generic write may not
+change once the record exists; create-time resolution, `merge` and `split` are
+what move it.
 
 A `put` onto a tombstone restores that record: same id, same row, one
 changelog row saying so. It is undelete, not id reuse.
@@ -155,23 +159,10 @@ addressed record's stored version equals it (a non-existent record is version
 0), else the whole write fails a `conflict`. It is the safe
 read-then-conditional-write primitive.
 
-**Edges over REST.** `link` and `unlink` are first-class REST verbs, not
-GraphQL-only, so an edge change is a request against the resource whose edge it
-is:
-
-```http
-POST   /api/v1/{authority}/{kind}/{id}/edges/{rel}
-DELETE /api/v1/{authority}/{kind}/{id}/edges/{rel}
-```
-
-The body is an edge reference: `{kind, id}`, or a bare `{id}` where the
-edge declaration already pins one target kind. A `link` body may also carry the
-edge's own `properties`. Both return the refreshed source record. A `put` could
-always add an edge inline; `DELETE` is how a REST client removes one.
-`substratectl` has matching `link` and `unlink` commands.
-
-This follows one rule, written into the contract: **a resource's operational
-verbs live at the resource**, its own `{authority}/{kind}/{id}` path. That is
+A record's own derived views hang off its path too, which is where
+`…/{id}/incoming` sits. That follows one rule, written into the contract: **a
+resource's operational verbs live at the resource**, its own
+`{authority}/{kind}/{id}` path. That is
 also why the trigger verbs live under `core.substrate.reamde.dev/trigger/…` — trigger
 records are core's, so their verbs sit beside them.
 
@@ -212,8 +203,9 @@ and passed whole to GraphQL's `filter` argument:
 - `kinds` names kinds by reference (implied by the path on a REST collection).
 - `properties` carries one condition per property. The operator set is one
   rule, not a per-type table: `secret` and `digest` properties refuse
-  filtering entirely, `reference` takes `eq`, `in`, `contains` and `exists`,
-  and every other declared property takes the full grammar (`eq`, `gt`,
+  filtering entirely, `reference` takes `eq`, `in`, `contains` and `exists`
+  and is filtered by the PATH string it points at (not by the object the read
+  serves), and every other declared property takes the full grammar (`eq`, `gt`,
   `gte`, `lt`, `lte`, `in`, `prefix`, `contains`, `exists`), compared as its
   declared [property type](data-model.md#property-types). State properties
   filter here like any other.
@@ -221,8 +213,6 @@ and passed whole to GraphQL's `filter` argument:
   objects** a property does: `{"owner/starred": {"eq": true}}`, never a bare
   value.
 - `ids` narrows to a list of ids within the kinds already selected.
-- `edge` is the one-hop edge predicate: `{"rel", "to", "toKind"}`, records
-  carrying an edge `rel` (omit it for any `rel`) at that target.
 - `deleted` picks the tombstones: absent or `false` lists only live records,
   `true` lists only soft-deleted ones.
 - `implements` selects every kind carrying one [trait](data-model.md#traits),
@@ -232,9 +222,9 @@ and passed whole to GraphQL's `filter` argument:
   GraphQL's `records` for the cross-kind query. A pair that can match nothing
   is a `validation` error naming the mismatch, not an empty page.
 
-A list also takes two shaping parameters beside the grammar: `withEdges=1`
-adds each row's `edges` map, and `withAnnotations=1` adds its `annotations`.
-Both are off by default so a list of a fanned-out record stays small.
+A list also takes one shaping parameter beside the grammar:
+`withAnnotations=1` adds each row's `annotations`. It is off by default so a
+list of a heavily annotated record stays small.
 
 Ordering is `orderBy` with camelCase columns (`dueAt`, `at:desc,createdAt`).
 Only declared properties filter and order: **filterable, indexed, and declared
@@ -245,8 +235,8 @@ A list parameter a given mode does not honor is a `bad_request` that names it,
 never a silent success. On a collection list the path names the kind, so an
 explicit `filter.kinds` conflicts and is refused (drop it, or list a different
 collection). A `watch=1` stream ignores the list-query grammar, so
-`filter`/`orderBy`/`first`/`after`/`withEdges`/`withAnnotations` alongside it
-are refused. A reverse-edge (`incoming`) read honors `first`/`after` and the `rel` and
+`filter`/`orderBy`/`first`/`after`/`withAnnotations` alongside it
+are refused. An `incoming` read honors `first`/`after` and the `property` and
 `fromKind` narrowings; `filter`/`orderBy` are refused. A misspelled ordering column is refused naming
 the camelCase replacement, and a malformed filter document is refused naming
 the field that would not decode.
@@ -282,8 +272,8 @@ thing, there is no next page.
 Two continuation styles exist, and the parameter name says which you are
 holding. The changelog uses real sequence numbers, `from` forward and `before`
 backward, because a seq is a meaningful ordinal (its history response returns
-a `cursor` seq to pass as the next `before`). Record lists and reverse-edge
-(`incoming`) lists use an opaque cursor, passed back as `after`.
+a `cursor` seq to pass as the next `before`). Record lists and `incoming`
+lists use an opaque cursor, passed back as `after`.
 
 Every list response also carries the changelog **head** seq captured at the snapshot
 it was served from, pinned once at the walk's start and carried through the
@@ -407,7 +397,7 @@ collection segment is the kind's name on the same route pattern.
 repository. Installing a bundle adds types and fields and uninstalling one
 takes them away, so the schema is whatever that repository's installed kinds
 declare right now, and a client reads it by introspection instead of pinning
-it. The structural half (the four reads, the seven mutations, `Record`'s own
+it. The structural half (the four reads, the five mutations, `Record`'s own
 fields, the scalars) follows the same additive rule REST does, `@deprecated`
 with a sunset window before anything leaves. The generated half carries only
 the [declaration's own upgrade
@@ -418,13 +408,13 @@ The two also do not serve the same set. Discovery says which serves what
 
 | Operation | REST | GraphQL |
 | --------- | ---- | ------- |
-| Records of every kind: read, list, filter, and the seven mutations | yes | yes |
+| Records of every kind: read, list, filter, and the five mutations | yes | yes |
 | Ranked search, and its semantic (embedding) arm | no route | `search(q, mode, kinds, k)` |
 | Changelog, forward from a seq | `GET …/changes?from=` | `changelog(from, filter, first)` |
 | Changelog, newest-first backward page | `GET …/changes?before=` | no field |
 | The live tail | `?watch=1` on a collection or on `…/changes`, ndjson | no subscription |
 | One record's own history | `GET …/changes?recordKind=&recordId=` | `history(first)` on the record |
-| Reverse edges | `GET …/{id}/incoming` | no field |
+| Incoming references | `GET …/{id}/incoming` | no field |
 | Per-property provenance, `propertyMeta` | single-record reads only | single-record reads only |
 | Operational verbs: triggers, bundles, catalog, blobs, vocabulary apply, function and agent calls | yes | none |
 
@@ -493,18 +483,18 @@ rules, who writes at which tier, and how recompute yields to them.
 
 The [document envelope](data-model.md#the-envelope) (kind, metadata, data,
 status) is the one canonical representation of a record. The flat JSON that
-REST and GraphQL carry is a lossless view of it: `properties` and `edges`
-land under `data`, `metadata` holds the id and the authored key spaces, and the
+REST and GraphQL carry is a lossless view of it: `properties`
+lands under `data`, `metadata` holds the id and the authored key spaces, and the
 server-set fields (version, timestamps, provenance) land under `status`. The
 mapping round-trips exactly, so `substratectl get -o yaml` output applies back with no
 edit, and a generic client can read, modify, and write the same object.
 
-Edges are one shape in the canonical envelope, a **list** of
-`{rel, to, properties}` in both directions. The flat read record groups the
-same edges into a `rel`-keyed map for convenience; that map converts to
-and from the list without loss (the list is the map flattened, one entry per
-target, in a stable order), and the list is what a write carries. So a
-read-modify-write of a record with edges is a fixed point.
+A reference is a property value like any other, so it round-trips the same way:
+the object `{ref: "<kind>/<id>"}`, with any declared
+[link properties](vocabulary.md#reference-properties) beside `ref`. That is what
+a read serves, whether or not the declaration carries link properties; a bare
+path string is accepted on the way in and stored as the object. A
+read-modify-write of a record that points at others is a fixed point.
 
 Every versioned write body and every filter document is decoded **strictly**.
 An unknown key, a miscased key (a lowercase `ifversion` is not `ifVersion`), or
@@ -551,7 +541,7 @@ The code set is closed. The client-error codes:
 | `bad_request`  | 400  | A malformed request, an unknown field, or an unsupported list parameter.                         |
 | `validation`   | 422  | An undeclared property, a malformed value, a type mismatch.                                      |
 | `conflict`     | 409  | A version check failed (`ifVersion`); re-read and retry.                                         |
-| `guard`        | 403  | A refused state transition, or a protected operation (a subject edge, a kind with live records). |
+| `guard`        | 403  | A refused state transition, or a protected operation (a subject reference, a kind with live records). |
 | `forbidden`    | 403  | The caller may not do this at all.                                                               |
 | `auth`         | 401  | Missing, invalid, or expired token, or a refused login.                                          |
 | `not_found`    | 404  | No such record; a former id is not this, it resolves ([merges](projection.md#merges)).          |

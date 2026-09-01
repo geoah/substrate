@@ -132,6 +132,9 @@ describe("the effects a write recorded", () => {
           { kind: "tombstone", ref: "k", id: "a", finalizer: "merge" },
           { kind: "purge", ref: "k", id: "b" },
           { kind: "bump", ref: "k", id: "c" },
+          // The edge effects the fold no longer writes. A console that still
+          // rendered one would be claiming a mechanism this substrate does
+          // not have, so they degrade to the unrecognized line.
           {
             kind: "edge",
             ref: "k",
@@ -139,22 +142,6 @@ describe("the effects a write recorded", () => {
             rel: "member",
             dstType: "o",
             dst: "o1",
-          },
-          {
-            kind: "unedge",
-            ref: "k",
-            id: "e",
-            rel: "member",
-            dstType: "o",
-            dst: "o1",
-          },
-          {
-            kind: "edge1",
-            ref: "k",
-            id: "f",
-            rel: "owner",
-            dstType: "p",
-            dst: "p1",
           },
           {
             kind: "annotation",
@@ -184,13 +171,7 @@ describe("the effects a write recorded", () => {
         detail: "and everything hanging off it",
       },
       { verb: "touched", target: "k/c", detail: "version only" },
-      { verb: "linked", target: "k/d", detail: "member → o/o1" },
-      { verb: "unlinked", target: "k/e", detail: "member → o/o1" },
-      {
-        verb: "relinked",
-        target: "k/f",
-        detail: "owner now points only at p/p1",
-      },
+      { verb: "edge (unrecognized)", target: "k/d", detail: "" },
       { verb: "annotated", target: "k/g", detail: "owner/note" },
       { verb: "un-annotated", target: "k/h", detail: "owner/note" },
       { verb: "reassigned", target: "k/i", detail: "name → sync (bundle)" },
@@ -210,7 +191,6 @@ describe("the effects a write recorded", () => {
               { kind: "people.substrate.reamde.dev/person", id: "loser" },
             ],
             rows: {
-              edges: [{}, {}],
               annotations: [{}],
               formerIds: [{}],
             },
@@ -222,7 +202,7 @@ describe("the effects a write recorded", () => {
         verb: "restated",
         target: "",
         detail:
-          "2 edges, 1 annotation, 1 former id — on people.substrate.reamde.dev/person/winner, people.substrate.reamde.dev/person/loser",
+          "1 annotation, 1 former id — on people.substrate.reamde.dev/person/winner, people.substrate.reamde.dev/person/loser",
       },
     ])
   })
@@ -278,10 +258,12 @@ describe("the summary voice", () => {
     )
     expect(verbOf(row({ seq: 1, op: "put" }))).toBe("updated")
     expect(verbOf(row({ seq: 1, op: "patch" }))).toBe("updated")
-    expect(verbOf(row({ seq: 1, op: "link" }))).toBe("linked")
     expect(verbOf(row({ seq: 1, op: "merge" }))).toBe("merged")
     expect(verbOf(row({ seq: 1, op: "delete" }))).toBe("deleted")
     expect(verbOf(row({ seq: 1, op: "gc" }))).toBe("collected")
+    // `link` is not an op any more; an op with no voice of its own says its
+    // own name rather than being dropped.
+    expect(verbOf(row({ seq: 1, op: "link" }))).toBe("link")
   })
 
   it("names the touched properties, count first", () => {

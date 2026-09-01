@@ -44,7 +44,11 @@ data:
   # docs/decisions/0041). An additive property, so the upgrade is clean.
   # version 8: the inline functions' `timeoutMs` (int ms) is `timeout`, the
   # duration datatype (ISO 8601); the retype rides core's function kind bump.
-  version: 8
+  # version 9: every link is a `type: reference` property. `user.person` is a
+  # `subject: true` reference the mapping names with `property:`, the issue
+  # and pullrequest `repository` references carry `mustExist: true`, and every
+  # account reference carries `onDelete: cascade`.
+  version: 9
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members (every kind but the
@@ -305,8 +309,8 @@ data:
 # One user per (account, login), in GitHub's own shape. The connected user's
 # row is written whole off GET /user; issue and PR authors land as create-only
 # stubs (login + profile URL) so the graph knows who wrote what. The `person`
-# subject edge is left EMPTY on write; the mapping below matches a person on
-# the public email or mints a shell in the same transaction.
+# subject reference is left EMPTY on write; the mapping below matches a person
+# on the public email or mints a shell in the same transaction.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: github.bundles.substrate.reamde.dev/user
@@ -328,7 +332,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this user was synced through
     login:
@@ -356,21 +360,25 @@ data:
       type: json
       displayName: Raw payload
       description: the raw /user payload as fetched, for provenance
-  edges:
-    # The subject edge (§6.1): required, single, not ownerRef, pointing at
-    # person — left empty on write so the substrate resolves it. NOTE the
+    # The subject reference (§6.1): required, single, never cascading, pointing
+    # at person — left empty on write so the substrate resolves it. NOTE the
     # bipartite rule (record 50): because user is a mapped source type,
-    # no other edge anywhere may point at it — issues and pull requests carry
-    # authorLogin as a property and reach the human THROUGH this record.
+    # no other reference anywhere may point at it — issues and pull requests
+    # carry authorLogin as a property and reach the human THROUGH this record.
     person:
-      to: people.substrate.reamde.dev/person
+      type: reference
+      kind: people.substrate.reamde.dev/person
+      displayName: Person
       required: true
+      mustExist: true
+      subject: true
       description: the human this GitHub profile describes
 ---
 # ---- mirror: one repository -------------------------------------------------
 # Written whole off GET /user/repos when enabledRepos; issues and PRs also
 # mint create-only stubs for repositories the repo listing did not cover
-# (a PR in someone else's repo), so the required parent edge always resolves.
+# (a PR in someone else's repo), so the required parent reference always
+# resolves.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: github.bundles.substrate.reamde.dev/repository
@@ -379,7 +387,7 @@ data:
   description: >-
     One GitHub repository as GitHub describes it — full name, visibility,
     default branch, page URL. Issues and pull requests hang off it, and a
-    stub is minted for repositories the listing never covered, so that edge
+    stub is minted for repositories the listing never covered, so that reference
     always resolves.
   names:
     singular: repository
@@ -389,7 +397,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this repository was synced through
     fullName:
@@ -453,7 +461,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this issue was synced through
     number:
@@ -498,10 +506,12 @@ data:
       type: json
       displayName: Raw payload
       description: the raw search item as fetched (body omitted), for provenance
-  edges:
     repository:
-      to: github.bundles.substrate.reamde.dev/repository
+      type: reference
+      displayName: Repository
+      kind: github.bundles.substrate.reamde.dev/repository
       required: true
+      mustExist: true
       description: the repository this issue belongs to
 ---
 # ---- mirror: one pull request ------------------------------------------------
@@ -524,7 +534,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this pull request was synced through
     number:
@@ -575,10 +585,12 @@ data:
       type: json
       displayName: Raw payload
       description: the raw search item as fetched (body omitted), for provenance
-  edges:
     repository:
-      to: github.bundles.substrate.reamde.dev/repository
+      type: reference
+      displayName: Repository
+      kind: github.bundles.substrate.reamde.dev/repository
       required: true
+      mustExist: true
       description: the repository this pull request belongs to
 ---
 # ---- the sync function: mirrors, one REST page per invocation ---------------
@@ -999,11 +1011,12 @@ data:
             # id — re-syncing the same item (or the same PR arriving over both
             # the involves: and review-requested: searches) upserts, never
             # duplicates.
+            props = _item_props(aid, full, it, pull)
+            props["repository"] = rid
             host.effects.put(
                 PULL_TYPE if pull else ISSUE_TYPE,
                 _item_id(host, aid, "pull" if pull else "issue", full, number),
-                properties=_item_props(aid, full, it, pull),
-                edges={"repository": rid})
+                properties=props)
             updated = it.get("updated_at") or ""
             if updated > newest:
                 newest = updated
@@ -1173,7 +1186,7 @@ data:
             return {"output": {"account": aid, "error": msg}}
 ---
 # ---- the mapping: user → person ---------------------------------------------
-# The record's `person` edge, and how its properties reach the human (§6.1/
+# The record's `person` reference, and how its properties reach the human (§6.1/
 # §7.1). match probes the profile's PUBLIC email against people's emails:
 # exactly one live match links it, zero-or-many mints a person shell (a bare
 # author stub carries no email, so its probe extracts nothing and a shell is
@@ -1188,7 +1201,7 @@ data:
   authority: github.bundles.substrate.reamde.dev
   from: github.bundles.substrate.reamde.dev/user
   to: people.substrate.reamde.dev/person
-  edge: person
+  property: person
   match:
     - from: email
       to: emails

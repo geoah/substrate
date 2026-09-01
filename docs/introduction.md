@@ -18,8 +18,8 @@ answer to "many semi-trusted programs cooperating over shared typed state":
 - every application and integration is a **controller**: it watches, decides,
   and writes back through the same public API;
 - behavior lives in **declarations** (kinds, states, mappings, functions),
-  not in bespoke endpoints. The write API is seven generic mutations,
-  forever: `put`, `patch`, `delete`, `link`, `unlink`, `merge`, `split`;
+  not in bespoke endpoints. The write API is five generic mutations,
+  forever: `put`, `patch`, `delete`, `merge`, `split`;
 - a closure of those declarations installs and uninstalls as one unit, a
   **bundle**, which is how a provider integration or an automation reaches
   the data without a substrate code change.
@@ -39,9 +39,9 @@ Like Kubernetes, the whole system is rules about a handful of primitives.
 | **Repository** | Everything a user has: one append-only changelog, the records computed from it, and the blobs and sealed secrets beside them. Nothing crosses from one to another. |
 | **Changelog**        | The repository's append-only, strictly sequential list of every change. It is the source of truth: replaying it rebuilds the records ([data model](data-model.md)). |
 | **Record**     | One instance of a kind, and the only thing there is. Tasks, people, tokens, and kind declarations are all records. Its identity is the pair `(kind, id)`.    |
-| **Kind**       | What a record is: `task` when it is yours alone, `tasks.substrate.reamde.dev/task` when an authority publishes it. A kind declares its properties and its edges.        |
+| **Kind**       | What a record is: `task` when it is yours alone, `tasks.substrate.reamde.dev/task` when an authority publishes it. A kind declares the properties its records carry.        |
 | **Property**   | A named, typed value slot on a record: `name`, `dueAt`. Declared on the kind, validated on every write.                                                     |
-| **Edge**       | A named, directed link from one record to another, and the only traversable link between records. Declared on the kind it points from.               |
+| **Reference**  | A property whose value is another record's path, and the only link between records. Declared on the kind it points from, like every other property.          |
 
 Two supporting words appear constantly. An **authority** is the DNS name that
 publishes a kind and decides who may change its declaration. An **actor** is

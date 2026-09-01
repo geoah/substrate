@@ -133,10 +133,10 @@ func seedTask(h *harness) {
 			UpdatedAt: testNow.Add(-4 * time.Hour),
 		},
 	})
-	// A legacy server may still return incoming on the record. The document
-	// must ignore it because reverse edges now use their own paged resource.
-	h.fake.seedIncoming("t9", []substrate.IncomingEdge{
-		{Rel: "person", From: substrate.EdgeTarget{
+	// A server may still answer with an incoming block on the record. The
+	// document must ignore it: incoming references page on their own resource.
+	h.fake.seedIncoming("t9", []substrate.IncomingReference{
+		{Property: "person", From: substrate.IncomingSource{
 			ID: "people-c1001", Kind: "google.connectors.substrate.reamde.dev/contact", Title: "Alex Chen",
 		}},
 	})
@@ -1100,7 +1100,7 @@ func TestGetRendersManagedPropertiesInStatus(t *testing.T) {
 	}
 }
 
-func TestGetOmitsLegacyIncomingFromManifest(t *testing.T) {
+func TestGetOmitsIncomingFromManifest(t *testing.T) {
 	h := newHarness(t)
 	h.writeConfig()
 	seedTask(h)
@@ -1256,9 +1256,7 @@ data:
   properties:
     title: addressed by id
     detail: rack layout
-  edges:
-    - rel: source
-      to: {authority: calendar.substrate.reamde.dev, type: transcript, id: f81k}
+    source: calendar.substrate.reamde.dev/transcript/f81k
 ---
 # a trailing separator is an empty document, not an error
 `)

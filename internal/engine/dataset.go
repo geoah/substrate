@@ -340,6 +340,10 @@ type txn struct {
 	// own replay disagree: a replay reads the registry the rebuild holds, which is
 	// the declaration the row ended up under.
 	writeReg *vocabulary.Registry
+	// refMissing collects the `mustExist:` misses of the reference pass, so the
+	// refusal leaves as the not-found it is rather than as a shape problem
+	// (references.go validateReferences).
+	refMissing []error
 	// recomputing marks a mapping recompute's own write (§7.1): recompute
 	// never triggers recompute, and the manager ledger records the winning
 	// contributor's actor — recomputeManagers, per accepted property —
@@ -362,6 +366,12 @@ type txn struct {
 	// deputy for an arbitrary create/delete.
 	effEmit    []string
 	effEmitSet bool
+	// heldRegistryDep records that this transaction already took the SHARED
+	// registry-dependency lock, so the several doors that need it (the write's
+	// entry, preRecordLocks, trigger and policy admission) can each ask without
+	// a round trip per ask. An advisory lock is transaction-scoped and released
+	// at commit, so "taken once" is "held to the end".
+	heldRegistryDep bool
 }
 
 func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal bool, fn func(*txn) error) error {

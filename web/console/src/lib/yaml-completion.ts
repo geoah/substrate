@@ -5,9 +5,9 @@
  * The document has a fixed shape (`kind` / `metadata` / `data`), so knowing
  * WHERE the cursor is means knowing what may be written there: the envelope's
  * own keys at the top, the declared properties under `data.properties`, an
- * enum's admitted values after its key, a state machine's states, the declared
- * edge rels after a `rel:`. Everything offered is something the substrate will
- * accept, which is the point: the editor stops being a guess. */
+ * enum's admitted values after its key, a state machine's states. Everything
+ * offered is something the substrate will accept, which is the point: the
+ * editor stops being a guess. */
 
 import type { KindInfo } from "@/lib/api/types"
 import {
@@ -46,7 +46,7 @@ const ENVELOPE: Record<string, { keys: Suggestion[] }> = {
     keys: [
       { label: "kind", type: "key", info: "the record's kind reference" },
       { label: "metadata", type: "key", info: "id, labels and annotations" },
-      { label: "data", type: "key", info: "properties and edges" },
+      { label: "data", type: "key", info: "the record's properties" },
     ],
   },
   metadata: {
@@ -59,7 +59,6 @@ const ENVELOPE: Record<string, { keys: Suggestion[] }> = {
   data: {
     keys: [
       { label: "properties", type: "key", info: "the declared properties" },
-      { label: "edges", type: "key", info: "a list of {rel, to: {kind, id}}" },
     ],
   },
 }
@@ -76,8 +75,8 @@ function contentIndent(line: string): number {
 
 /** The mapping keys the cursor line sits under, outermost first: the line
  * `    title: x` inside `data:` → `properties:` answers `["data",
- * "properties"]`. A list item (`- rel: x`) belongs to the key that opened the
- * list. */
+ * "properties"]`. A list item (`- name: x`) belongs to the key that opened
+ * the list. */
 export function pathAt(lines: string[], line: number): string[] {
   const path: string[] = []
   let want = contentIndent(lines[line] ?? "")
@@ -176,7 +175,7 @@ export function writtenFields(lines: string[], line: number): Set<string> {
     if (contentIndent(text) < want) return "stop"
     if (contentIndent(text) > want) return "skip"
     // A new list item at this depth starts a new row.
-    return /^\s*- +/.test(text) ? "edge" : "take"
+    return /^\s*- +/.test(text) ? "boundary" : "take"
   }
   const read = (i: number) => {
     const key = /^\s*(?:- +)?([\w.]+):/.exec(lines[i])?.[1]
@@ -190,12 +189,12 @@ export function writtenFields(lines: string[], line: number): Set<string> {
     if (at === "skip") continue
     if (at === "stop") break
     read(i)
-    if (at === "edge") break
+    if (at === "boundary") break
   }
   for (let i = line + 1; i < lines.length; i++) {
     const at = bounds(i)
     if (at === "skip") continue
-    if (at === "stop" || at === "edge") break
+    if (at === "stop" || at === "boundary") break
     read(i)
   }
   return taken
@@ -235,20 +234,6 @@ export function completionsAt(
           },
         ],
       }
-    }
-    if (key === "rel") {
-      const edges = (kind.definition ?? {}) as Record<string, unknown>
-      const declared = (edges.edges ?? {}) as Record<
-        string,
-        { to?: string; description?: string }
-      >
-      const options = Object.entries(declared).map(([rel, def]) => ({
-        label: rel,
-        detail: def?.to ? `→ ${def.to}` : undefined,
-        info: def?.description,
-        type: "value" as const,
-      }))
-      return options.length ? { from, options } : null
     }
     const object = objectAt(path, byName)
     const spec = inProperties(path)

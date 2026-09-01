@@ -59,9 +59,10 @@ data:
     details:
       type: markdown
       description: prescriber notes, with food, taper plan, as prose
-  edges:
     medication:
-      to: medication
+      type: reference
+      kind: medication
       required: true
-      ownerRef: true
+      mustExist: true
+      onDelete: cascade
       description: the medication this schedule doses

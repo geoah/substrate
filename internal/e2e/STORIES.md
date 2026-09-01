@@ -34,10 +34,10 @@ transcripts.
 | --- | --- |
 | the owner | a `person` for the owner, the `me` of the graph |
 | organizations | `acme` (the owner's, domain `acme.example`) and `northwind` (a client, domain `northwind.example`) |
-| teams | Product and Engineering, Platform under Engineering (`parent`), `members`/`leads` edges |
-| people | five coworkers `@acme.example` (each with `emails` and an `org` edge carrying `role`), one client contact `@northwind.example` |
+| teams | Product and Engineering, Platform under Engineering (`parent`), `members`/`leads` references |
+| people | five coworkers `@acme.example` (each with `emails` and a `memberOf` reference carrying `role` as link data), one client contact `@northwind.example` |
 | projects | Onboarding revamp (active), Billing migration (active) |
-| tasks | a few per project with `project`/`assignee` edges, one with `dueAt` |
+| tasks | a few per project with `project`/`assignee` references, one with `dueAt` |
 | calendar | one `calendar`; a kickoff `calendarevent` and a billing-sync event 30 minutes apart |
 | transcripts | the kickoff's transcript from a fictional notetaker, later a chitchat transcript and an orphan one |
 
@@ -48,38 +48,40 @@ from every end.*
 
 Hand-written over the API, no automation. Installs `people`, `scheduling`,
 `tasks`, `calendar`; writes the ecosystem above; asserts the graph from both
-ends (single-record edge reads, a `withEdges=1` list, `/incoming` on a
-person, a filtered and ordered list) and the refusals (an `assignee` edge
-aimed at a team, an undeclared edge property). The GraphQL read over the
-whole graph is STORY-06's, where it doubles as the rebuild comparison.
-Every later story builds on what this one leaves.
+ends (references read back canonical on a single GET and inline on a plain
+list, `/incoming` on a person, a filtered and ordered list) and the refusals
+(an `assignee` naming a team, an `assignee` at a person who does not exist,
+a link property `memberOf` does not declare, and a body still writing
+`edges`). The GraphQL read over the whole graph is STORY-06's, where it
+doubles as the rebuild comparison. Every later story builds on what this one
+leaves.
 
 ## STORY-02: attendee emails become people, deterministically
 
 *As the owner, when an event lands with raw attendee emails, the people I
-know are linked, the stranger is minted, and the meeting-room address never
+know are named, the stranger is minted, and the meeting-room address never
 becomes a person.*
 
 The wiring is a story-local **python function** (applied via
 `vocabulary/apply`) behind a trigger on the story's `eventimport` kind: the
 record an importer actually delivers, raw emails and all
 (`sam@acme.example, nour@acme.example, priya@northwind.example,
-jordan@northwind.example, c_room7@resource.calendar.example`), no edges
+jordan@northwind.example, c_room7@resource.calendar.example`), nothing
 anywhere. The function folds it into the real `calendarevent`.
 
 1. each email resolves against `person.emails`; three resolve;
 2. `jordan@northwind.example` resolves nowhere, so a person is minted, named
-   from the email's local part, one email, an `org` edge to Northwind by
-   `domain`;
+   from the email's local part, one email, a `memberOf` reference to
+   Northwind by `domain`;
 3. the `c_room7@resource.calendar.example` automated address is filtered and
    minted as NOTHING: room and group addresses are how a contact list fills
    with furniture, so the negative assertion is the point;
-4. `attendees` and `organizer` edges land;
+4. the `attendees` and `organizer` references land;
 5. run twice: the second delivery converges on the same graph, no duplicate
-   person, no duplicate edges. The function writes by chosen record ids, so
-   re-delivery is idempotent by construction.
+   person, no duplicate pointers. The function writes by chosen record ids,
+   so re-delivery is idempotent by construction.
 
-Asserted: the four attendee edges and organizer; the minted `jordan` record's
+Asserted: the four attendees and the organizer; the minted `jordan` record's
 exact shape; no record whose email is the resource address; idempotent
 re-delivery; changelog attribution to `function:<authority>:<name>`.
 
@@ -99,16 +101,17 @@ decision is the agent's.
 1. The kickoff transcript (title copied from the meeting, as recorders do;
    ten minutes of clock skew): the scripted agent calls `scorecandidates`,
    BOTH events come back scored, the kickoff wins on time + title and the
-   billing sync loses despite being inside the window. The agent links
-   `meeting` and `speakers` and writes its audit as a `matchverdict` record
-   (verdict, score, reason, edges to both ends), so a wrong match is
-   debuggable from the repository itself.
+   billing sync loses despite being inside the window. The agent patches
+   `meeting` and `speakers` onto the transcript through its `mutate` tool
+   (there are no link verbs to reach for) and writes its audit as a
+   `matchverdict` record (verdict, score, reason, and a reference to each
+   end), so a wrong match is debuggable from the repository itself.
 2. The orphan transcript (no event within 90 minutes, alien title): the tool
-   answers with no candidate above the floor, and the agent declines: NO
-   `meeting` edge, an `unmatched` verdict saying why. Attaching to the
+   answers with no candidate above the floor, and the agent declines: no
+   `meeting` at all, an `unmatched` verdict saying why. Attaching to the
    least-wrong meeting is worse than attaching to none.
-3. The agent links as `speakers` only the people who actually spoke; the
-   attendee who said nothing gets no `speakers` edge.
+3. The agent names as `speakers` only the people who actually spoke; the
+   attendee who said nothing is in no `speakers` list.
 
 The agent's write is what fires STORY-04: the two agents form a chain, and
 the chain itself (a trigger firing on an agent's write, with both actors
@@ -120,21 +123,22 @@ distinct in the changelog) is one of the assertions.
 people, judgment calls wait for a decision, and no new record enters my
 world without a source.*
 
-The second agent in the chain: a trigger on the transcript's `meeting` edge
-landing (STORY-03's agent made that write) fires the `actionItemExtractor` agent,
-which reads via `graphql` and writes ONLY via `propose`. The kickoff
-transcript's text encodes one case per rule:
+The second agent in the chain: a trigger on the transcript's `meeting`
+property landing (STORY-03's agent made that write) fires the
+`actionItemExtractor` agent, which reads via `graphql` and writes ONLY via
+`propose`. The kickoff transcript's text encodes one case per rule:
 
 1. "Nour will draft the new welcome flow by Friday": a proposed task,
-   `project` to Onboarding revamp, `assignee` Nour, `dueAt`, `source` edge
-   to the transcript. High confidence; the reviewer accepts; it lands `open`.
+   `project` to Onboarding revamp, `assignee` Nour, `dueAt`, and `source`
+   naming the transcript. High confidence; the reviewer accepts; it lands
+   `open`.
 2. "Kai to profile the signup path": same shape, second assignee.
 3. "Someone should sync with Northwind about the pilot": nobody is named, so
    the task lands in state `proposed` with no assignee. Proposed work waits
    for the owner; an agent that guesses an assignee is inventing a fact.
 4. The transcript says "Speaker 3" for an unidentified voice: the agent
    creates NO person for it. A speaker label is not an identity.
-5. A scripted turn proposes a task with NO `source` edge: the request is
+5. A scripted turn proposes a task with no `source` at all: the request is
    filed, the `changeRequestReviewer` REJECTS it, and the task never folds; the rejected
    request stays behind as the audit of the refusal. A task nobody can
    trace back to evidence is a bare claim, and the sharp assertion is the
@@ -196,10 +200,10 @@ say; each is a candidate for vocabulary work, not a test to force:
 - **Match audit as declared properties**: STORY-03 mints a story-local
   `matchverdict` kind because the transcript kind declares no confidence or
   signals properties of its own.
-- **Proposals cannot carry edge changes on existing records**: a `propose`
-  diff admits edges only on a create, so a judgment call like "add this
-  person to that team" has no decision-loop path today; STORY-04's judgment
-  call is a property patch instead.
+- **No case covers a proposed pointer change**: a reference is a property,
+  so a proposed patch can change one and "add this person to that team" has
+  a decision-loop path. STORY-04's judgment call is a plain property patch,
+  and nothing exercises the pointer version.
 - **Proposal legibility**: a `recordpatchrequest` reviewer must join their
   own context; the proposal record could resolve what the change is about
   and where it came from at propose time.

@@ -94,8 +94,9 @@ export function purgeBundle(id: string): Promise<{ purged: number }> {
   return patchBundleState<{ purged: number }>(id, "purging", true)
 }
 
-/** Bind one input to a record (an edge on the bundle's record row, rel = the
- * input name); an empty record unbinds. Answers with the refreshed status. */
+/** Bind one input to a record (a reference on the bundle's record row, named
+ * for the input); an empty record unbinds. Answers with the refreshed
+ * status. */
 export function bindBundleInput(
   id: string,
   input: string,

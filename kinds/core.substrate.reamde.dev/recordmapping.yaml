@@ -1,5 +1,5 @@
 # one declared mapping: how a source record's properties reach the subject
-# its edge points at (§6.1, record 50)
+# its `subject: true` reference names (§6.1, record 50)
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: core.substrate.reamde.dev/recordmapping
@@ -7,7 +7,7 @@ data:
   authority: core.substrate.reamde.dev
   description: >-
     One declared mapping: how a source record's properties reach the subject
-    its edge points at, so a Google contact keeps a person up to date. One
+    its reference names, so a Google contact keeps a person up to date. One
     mapping per source kind, declared by the authority that owns that kind.
   # version 2: the display template dropped the authority. A declaration's
   # identity is `<authority>/<name>` and the dotted composite it used to render
@@ -20,7 +20,10 @@ data:
   # string went with the blob.
   # version 6: the declaration's own `version` became an incremental
   # integer, maintained by the engine.
-  version: 7
+  # version 8: the mapping names its subject with `property`. The subject is a
+  # `subject: true` reference on the source kind, so what the mapping names is
+  # a property.
+  version: 8
   names:
     singular: recordmapping
   # id = "<authority>/<name>". A mapping is authority-local like a property type: its
@@ -62,12 +65,14 @@ data:
       kind: core.substrate.reamde.dev/kind
       required: true
       description: the subject kind, always a full kind reference
-    # the declared edge on `from` that records the link — ordinary in its own
-    # declaration; the mapping, not a flag, is what the engine recognizes.
-    edge:
+    # the `subject: true` reference on `from` that records the link. The
+    # marker is on the property; this names which one, and the write path
+    # reads the marker rather than this document.
+    property:
       type: string
       required: true
-      description: the declared edge on the source kind that records the link
+      description: the subject reference on the source kind that records the
+        link
     # An ORDERED list: which probe decides is the order it is written in.
     match:
       type: object

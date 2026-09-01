@@ -11,6 +11,7 @@ import (
 	"github.com/geoah/substrate/internal/engine"
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // The changelog is the truth and the records table is a fold of it. These tests hold
@@ -85,11 +86,11 @@ func writeSomeHistory(t *testing.T, ds substrate.Dataset) {
 	mustPatch(t, ds, owner, first.Kind, first.ID, substrate.PatchInput{
 		Properties: map[string]any{"status": "done"},
 	})
-	// An edge, written by the link verb rather than inside a put.
-	if err := ds.Link(ctx, owner, second.Kind, second.ID, "source",
-		substrate.EdgeRef{Kind: first.Kind, ID: first.ID}, nil); err != nil {
-		t.Fatalf("link: %v", err)
-	}
+	// A reference, written by a patch rather than at the record's creation, so
+	// the replay has to reach the refs index through a delta and not a birth.
+	mustPatch(t, ds, owner, second.Kind, second.ID, substrate.PatchInput{
+		Properties: map[string]any{"source": vocabulary.RecordPath(first.Kind, first.ID)},
+	})
 	// A delete, and the put that brings the record back.
 	if _, err := ds.Delete(ctx, owner, third.Kind, third.ID); err != nil {
 		t.Fatalf("delete: %v", err)
@@ -282,9 +283,6 @@ func writeAMergeablePair(t *testing.T, ds substrate.Dataset) mergedPair {
 		Properties:  map[string]any{"title": "Notes on the Engine", "subtitle": "a winner"},
 		Labels:      map[string]any{"owner/shelf": "analytical"},
 		Annotations: map[string]any{"owner/note": "the winner's own"},
-		Edges: []substrate.EdgeInput{
-			{Rel: "author", To: substrate.EdgeRef{Kind: author.Kind, ID: author.ID}},
-		},
 	})
 	loser := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: shelf + "/book",
@@ -300,14 +298,15 @@ func writeAMergeablePair(t *testing.T, ds substrate.Dataset) mergedPair {
 	if _, err := ds.Merge(ctx, owner, loser.Kind, loser.ID, older.ID); err != nil {
 		t.Fatalf("the first merge: %v", err)
 	}
-	// A source record whose SUBJECT edge names the loser: the merge re-points
-	// it at the winner, and it is why the resync's scope is more than the pair.
+	// A source record whose SUBJECT names the loser. The merge leaves it exactly
+	// where it was written — nothing repoints — and the rebuild has to reproduce
+	// both the value and its row in the refs index.
 	edition := mustPut(t, ds, owner, substrate.PutInput{
-		Kind:       shelf + "/bookedition",
-		Properties: map[string]any{"format": "print", "language": "en"},
-		Edges: []substrate.EdgeInput{
-			{Rel: "work", To: substrate.EdgeRef{Kind: loser.Kind, ID: loser.ID}},
-			{Rel: "narrator", To: substrate.EdgeRef{Kind: author.Kind, ID: author.ID}},
+		Kind: shelf + "/bookedition",
+		Properties: map[string]any{
+			"format": "print", "language": "en",
+			"work":     vocabulary.RecordPath(loser.Kind, loser.ID),
+			"narrator": vocabulary.RecordPath(author.Kind, author.ID),
 		},
 	})
 	return mergedPair{winner: winner, loser: loser, edition: edition, author: author}
@@ -327,11 +326,12 @@ func TestRebuildReproducesAMerge(t *testing.T) {
 	if _, err := ds.Merge(ctx, owner, pair.winner.Kind, pair.winner.ID, pair.loser.ID); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	// The merge moved what the test claims it moved, or the rebuild below
-	// would be reproducing an empty rewrite.
+	// The merge REPOINTS NOTHING: the edition still names the loser, and the
+	// rebuild has to reproduce that value and its row in the refs index rather
+	// than a rewrite that never happened.
 	ed := mustGet(t, ds, pair.edition.Kind, pair.edition.ID)
-	if work := edgeTarget(ed, "work"); work != pair.winner.ID {
-		t.Fatalf("the merge left the edition's subject on %q, want the winner %q", work, pair.winner.ID)
+	if work := refTarget(ed, "work"); work != pair.loser.ID {
+		t.Fatalf("the merge moved the edition's subject to %q; nothing repoints", work)
 	}
 
 	before := foldOf(t, ds)
@@ -370,7 +370,7 @@ func TestRebuildReproducesASplit(t *testing.T) {
 		t.Fatalf("split: %v", err)
 	}
 	ed := mustGet(t, ds, pair.edition.Kind, pair.edition.ID)
-	if work := edgeTarget(ed, "work"); work != pair.loser.ID {
+	if work := refTarget(ed, "work"); work != pair.loser.ID {
 		t.Fatalf("the split left the edition's subject on %q, want the loser %q", work, pair.loser.ID)
 	}
 
@@ -458,12 +458,11 @@ func repositoryIDOf(t *testing.T, ds substrate.Dataset) string {
 	return ""
 }
 
-// edgeTarget reads the single target of one rel off a projected record.
-func edgeTarget(e *substrate.Record, rel string) string {
-	for _, ref := range e.Edges[rel] {
-		return ref.ID
-	}
-	return ""
+// refTarget reads the id a single-valued reference names off a projected
+// record.
+func refTarget(e *substrate.Record, property string) string {
+	_, id, _ := vocabulary.SplitRecordPath(refPathValue(e, property))
+	return id
 }
 
 // recordDeltaOf lifts the `set` half of an entry's record effect: the changed

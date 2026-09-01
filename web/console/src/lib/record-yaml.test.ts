@@ -45,6 +45,12 @@ const agentKind: KindInfo = {
       subagents: { type: "string", repeated: true },
       maxTurns: { type: "int", default: 8 },
       enabled: { type: "bool", required: true },
+      uses: {
+        type: "reference",
+        kind: "core.substrate.reamde.dev/function",
+        repeated: true,
+        mustExist: true,
+      },
     },
   },
 }
@@ -279,20 +285,16 @@ describe("applyManifestYAML (edit seed)", () => {
   const record: SubstrateRecord = {
     id: "contactssync.google",
     kind: "crew.test.dev/agent",
-    properties: { prompt: "sync my contacts", enabled: true, model: "opus" },
+    properties: {
+      prompt: "sync my contacts",
+      enabled: true,
+      model: "opus",
+      uses: ["core.substrate.reamde.dev/function/gcal.fn"],
+    },
     labels: { tier: "core" },
     version: 4,
     createdAt: "2026-08-05T16:26:27.161544Z",
     updatedAt: "2026-08-06T10:00:00.000000Z",
-    edges: {
-      uses: [
-        {
-          id: "gcal.fn",
-          kind: "core.substrate.reamde.dev/function",
-          title: "gcal",
-        },
-      ],
-    },
     propertyMeta: {
       prompt: { manager: "owner", tier: "owner", updatedAt: "x" },
     },
@@ -306,10 +308,12 @@ describe("applyManifestYAML (edit seed)", () => {
     expect(doc.data.properties.prompt).toBe("sync my contacts")
     // Labels ride in metadata now (the v1 envelope).
     expect(doc.metadata.labels).toMatchObject({ tier: "core" })
-    expect(doc.data.edges[0]).toMatchObject({
-      rel: "uses",
-      to: { kind: "core.substrate.reamde.dev/function", id: "gcal.fn" },
-    })
+    // A pointer at another record rides `properties` as the referent's path;
+    // there is no second block for it to live in.
+    expect(doc.data).not.toHaveProperty("edges")
+    expect(doc.data.properties.uses).toEqual([
+      "core.substrate.reamde.dev/function/gcal.fn",
+    ])
     // status / propertyMeta / version never seed the editor.
     expect(doc).not.toHaveProperty("status")
     expect(yaml).not.toContain("propertyMeta")
@@ -338,30 +342,32 @@ describe("applyManifestYAML (edit seed)", () => {
 })
 
 describe("toPutInput", () => {
-  it("extracts id, properties, labels and edges from a parsed doc", () => {
+  it("extracts id, properties (references among them) and labels", () => {
     const yaml = applyManifestYAML({
       id: "e1",
       kind: "crew.test.dev/agent",
-      properties: { prompt: "hi", enabled: true },
+      properties: {
+        prompt: "hi",
+        enabled: true,
+        // A served reference: the path under `ref`, which the seed carries
+        // through the document and back onto the wire unchanged.
+        uses: [{ ref: "core.substrate.reamde.dev/function/t1" }],
+      },
       labels: { a: "b" },
       version: 1,
       createdAt: "x",
       updatedAt: "x",
-      edges: {
-        uses: [{ id: "t1", kind: "core.substrate.reamde.dev/function" }],
-      },
     })
     const parsed = parseApplyDoc(yaml)
     const input = toPutInput(parsed.value!)
     expect(input.id).toBe("e1")
-    expect(input.properties).toMatchObject({ prompt: "hi", enabled: true })
+    expect(input.properties).toMatchObject({
+      prompt: "hi",
+      enabled: true,
+      uses: [{ ref: "core.substrate.reamde.dev/function/t1" }],
+    })
     expect(input.labels).toMatchObject({ a: "b" })
-    expect(input.edges).toEqual([
-      {
-        rel: "uses",
-        to: { id: "t1", kind: "core.substrate.reamde.dev/function" },
-      },
-    ])
+    expect(input).not.toHaveProperty("edges")
   })
 
   it("omits a blank metadata.id so the substrate mints one on create", () => {
@@ -408,9 +414,18 @@ const taskKind: KindInfo = {
         states: ["proposed", "open", "done"],
         initial: "open",
       },
-    },
-    edges: {
-      assignee: { to: "people.substrate.reamde.dev/person" },
+      assignee: {
+        type: "reference",
+        kind: "people.substrate.reamde.dev/person",
+        mustExist: true,
+      },
+      // The one reference here that carries LINK DATA. Every reference serves
+      // the `ref` object; this one serves declared properties beside it.
+      reviewer: {
+        type: "reference",
+        kind: "people.substrate.reamde.dev/person",
+        properties: { round: { type: "int" } },
+      },
     },
   },
 }
@@ -485,14 +500,59 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
     expect(problem?.message).toContain("t1")
   })
 
-  it("checks the edge list's shape and warns on an undeclared rel", () => {
-    const yaml =
-      "data:\n  properties:\n    title: hi\n  edges:\n    - rel: assignee\n      to: {id: p1}\n    - rel: bogus\n      to: {id: p2}\n    - rel: assignee\n      to: {}\n"
-    const problems = validateApplyDoc(yaml, taskKind)
-    expect(problems.find((p) => p.path === "edges[1]")?.severity).toBe(
-      "warning"
+  it("checks a reference value against its pin, both shapes", () => {
+    const path = "people.substrate.reamde.dev/person/p1"
+    // The served shape, on the reference that declares no link property and on
+    // the one that declares `round`.
+    const clean =
+      `data:\n  properties:\n    title: hi\n    assignee:\n      ref: ${path}\n` +
+      `    reviewer:\n      ref: ${path}\n      round: 2\n`
+    expect(
+      validateApplyDoc(clean, taskKind).filter((p) => p.severity === "error")
+    ).toHaveLength(0)
+
+    // The bare path is write-time shorthand and validates on input.
+    const flat = `data:\n  properties:\n    title: hi\n    assignee: ${path}\n`
+    expect(
+      validateApplyDoc(flat, taskKind).filter((p) => p.severity === "error")
+    ).toHaveLength(0)
+
+    // A bare id under a pin is the authored short form and completes.
+    const short = "data:\n  properties:\n    title: hi\n    assignee: p1\n"
+    expect(
+      validateApplyDoc(short, taskKind).filter((p) => p.severity === "error")
+    ).toHaveLength(0)
+
+    // A path at a DIFFERENT kind reads two ways under a pin, so it is refused
+    // rather than guessed.
+    const wrong =
+      "data:\n  properties:\n    title: hi\n    assignee: crm.example.com/lead/p1\n"
+    const ambiguous = validateApplyDoc(wrong, taskKind).find(
+      (p) => p.path === "assignee"
     )
-    expect(problems.find((p) => p.path === "edges[2]")?.severity).toBe("error")
+    expect(ambiguous?.severity).toBe("error")
+    expect(ambiguous?.message).toContain("ambiguous")
+  })
+
+  it("refuses a link property the reference does not declare", () => {
+    const yaml =
+      "data:\n  properties:\n    title: hi\n    reviewer:\n" +
+      "      ref: people.substrate.reamde.dev/person/p1\n      bogus: 1\n"
+    const problem = validateApplyDoc(yaml, taskKind).find(
+      (p) => p.path === "reviewer"
+    )
+    expect(problem?.severity).toBe("error")
+    expect(problem?.message).toContain("not a declared link property")
+  })
+
+  it("refuses an object with no `ref` under a reference", () => {
+    const yaml =
+      "data:\n  properties:\n    title: hi\n    assignee:\n      round: 2\n"
+    const problem = validateApplyDoc(yaml, taskKind).find(
+      (p) => p.path === "assignee"
+    )
+    expect(problem?.severity).toBe("error")
+    expect(problem?.message).toContain("ref")
   })
 })
 

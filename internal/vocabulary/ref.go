@@ -15,14 +15,30 @@ import (
 // Every kind carries an authority (decision 0042): the authority is a DNS name
 // and therefore always carries a dot, the name never does, and neither part can
 // carry a "/". A bare name (`task`) is not a stored identity but load-time
-// SHORTHAND — an edge `to:`, a trigger source, a permission allowlist entry —
-// that resolves against the declaring authority to a qualified identity before
+// SHORTHAND — a reference `kind:` pin, a trigger source, a permission allowlist
+// entry — that resolves against the declaring authority to a qualified identity before
 // it is stored or addressed. The helpers below still render and split the bare
 // form because that shorthand relies on them; nothing stores it.
 //
 // A RECORD PATH is the qualified kind reference plus the id:
-// "<authority>/<kind>/<id>". It is the whole stored value of a `reference`
-// property — one flat string, not a pair.
+// "<authority>/<kind>/<id>". It is what a `reference` property points with, and
+// it sits under ReferenceValueKey inside the object that IS the stored value
+// (decision 0044). A bare path string is accepted at the write as shorthand and
+// normalized to that object; nothing stores it and nothing serves it.
+
+// ReferenceValueKey is the one reserved key of a reference value: `ref` holds
+// the referent's record path and every other key is a declared link property.
+// It is reserved in the declaration too, so a link property can never shadow
+// the pointer itself.
+const ReferenceValueKey = "ref"
+
+// ReferenceTargetField is the second reserved link-property name. It is not a
+// key of the stored value: the GraphQL object generated for a reference carries
+// `ref` (the path) beside `target` (the referent record itself), and the
+// declared link properties are written into that same object. A link property
+// spelled `target` would replace the referent field with its own value, so it is
+// refused in the declaration, where the author can rename it.
+const ReferenceTargetField = "target"
 
 // KindRef renders a kind reference from its parts. An empty authority renders
 // the bare shorthand form — there is no `local/` prefix.
@@ -109,22 +125,37 @@ func SplitRecordPath(path string) (kind, id string, ok bool) {
 
 // ReferentID reads a reference property's value as the referent's own id.
 //
-// A reference is stored as the full "<kind>/<id>" path, but a manifest AUTHORS
-// the bare id against a pinned declaration, and the loader sees both: the
-// authored value when a closure is installed from files, the canonical path
+// IT READS BOTH SHAPES, and it has to. A STORED value is the object, with the
+// full "<kind>/<id>" path under `ref`; a MANIFEST authors the bare id, or the
+// path, as a plain string against a pinned declaration. The loader sees all
+// three: the authored value when a closure is installed from files, the object
 // when the same declaration is read back off its row. They have to mean the
 // same thing, or a declaration would parse one way in a manifest and another
-// way in the row it becomes.
+// way in the row it becomes, which is exactly how an agent would lose its
+// provider and a mapping its `to` on the first read-back.
 //
 // A value that does not carry the pin's prefix is handed back UNTOUCHED, so the
 // caller's own validator is what refuses it and names it. This never guesses:
 // stripping the pin is the whole operation.
 func ReferentID(v any, pin string) string {
-	s, _ := v.(string)
+	s := referentPath(v)
 	if id, cut := strings.CutPrefix(s, pin+"/"); cut {
 		return id
 	}
 	return s
+}
+
+// referentPath reads the path out of a reference value in either shape: the
+// object every write stores, or the bare string a manifest authors.
+func referentPath(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case map[string]any:
+		s, _ := t[ReferenceValueKey].(string)
+		return s
+	}
+	return ""
 }
 
 // ReferentIDs is ReferentID over a repeated reference's stored list.

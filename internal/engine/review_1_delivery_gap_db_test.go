@@ -39,10 +39,10 @@ func TestZZSK1DeliveryGap(t *testing.T) {
 	newMsg := func(actor substrate.Actor, ext, text, delivery string) *substrate.Record {
 		return mustPut(t, ds, actor, substrate.PutInput{
 			Kind: "conversationmessage", ID: extID("slack.msg", ext),
-			Properties: map[string]any{"at": "2026-08-03T10:00:00Z", "text": text, "delivery": delivery},
-			Edges: []substrate.EdgeInput{
-				{Rel: "conversation", To: substrate.EdgeRef{ID: conv.ID}},
-				{Rel: "author", To: substrate.EdgeRef{ID: author.ID}},
+			Properties: map[string]any{
+				"at": "2026-08-03T10:00:00Z", "text": text, "delivery": delivery,
+				"conversation": conv.ID,
+				"author":       author.ID,
 			},
 		})
 	}

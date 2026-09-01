@@ -824,7 +824,7 @@ func (t *txn) pruneRuns(triggerID string) error {
 	rows, err := t.query(`
 		SELECT id FROM records
 		WHERE kind = $1 AND deleted_at IS NULL
-		  AND props->>'trigger' = $2 AND props->>'status' <> $3
+		  AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' <> $3
 		ORDER BY created_at DESC, id DESC OFFSET $4`,
 		typeRun, vocabulary.RecordPath(typeTrigger, triggerID), runStatusParked, runRetention)
 	if err != nil {

@@ -171,12 +171,11 @@ func feedMessage(t *testing.T, ds *dataset, id, personID, convID, text string) *
 	t.Helper()
 	return mustPutInternal(t, ds, substrate.PutInput{
 		Kind: convMsgType, ID: id,
-		Properties: map[string]any{"text": text, "at": "2026-08-08T10:00:00Z"},
-		Edges: []substrate.EdgeInput{
-			// Single-target edges: the declaration supplies the type, so a bare
-			// id resolves.
-			{Rel: "conversation", To: substrate.EdgeRef{ID: convID}},
-			{Rel: "author", To: substrate.EdgeRef{ID: personID}},
+		// The two references are pinned, so a bare id resolves: the
+		// declaration supplies the kind the value omits.
+		Properties: map[string]any{
+			"text": text, "at": "2026-08-08T10:00:00Z",
+			"conversation": convID, "author": personID,
 		},
 	})
 }
@@ -291,7 +290,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT props->>'status' FROM records
 		WHERE kind = $1 AND deleted_at IS NULL
-		  AND props->>'trigger' = $2 AND props->>'record' = $3
+		  AND `+referencePathSQL("props", "trigger")+` = $2 AND `+referencePathSQL("props", "record")+` = $3
 		ORDER BY created_at DESC, id DESC LIMIT 1`,
 		typeRun, vocabulary.RecordPath(typeTrigger, "web-findurls-on-message"),
 		denyMsg.ID).Scan(&denyStatus); err != nil {
@@ -349,7 +348,8 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		t.Fatalf("proposal authored by %q, not the reading-list agent", reqActor)
 	}
 	var target string
-	if err := ds.db.QueryRowContext(ctx, `SELECT dst FROM edges WHERE rel = 'target' AND src = $1`, reqID).Scan(&target); err != nil {
+	if err := ds.db.QueryRowContext(ctx,
+		`SELECT dst FROM refs WHERE property = 'target' AND path = '' AND src = $1`, reqID).Scan(&target); err != nil {
 		t.Fatal(err)
 	}
 	if target != blogPage {
@@ -373,7 +373,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	// the model saw, and NOTHING may have landed on the config.
 	var childThread string
 	if err := ds.db.QueryRowContext(ctx, `
-		SELECT id FROM records WHERE kind = $1 AND deleted_at IS NULL AND props->>'agent' = $2
+		SELECT id FROM records WHERE kind = $1 AND deleted_at IS NULL AND `+referencePathSQL("props", "agent")+` = $2
 		ORDER BY created_at DESC, id DESC LIMIT 1`,
 		typeThread, vocabulary.RecordPath(kindAgent, webAuthority+"/readinglistagent")).Scan(&childThread); err != nil {
 		t.Fatalf("the reading-list child thread: %v", err)
@@ -404,7 +404,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		var oks int
 		if err := ds.db.QueryRowContext(ctx, `
 			SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL
-			  AND props->>'trigger' = $2 AND props->>'status' = 'ok'`,
+			  AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' = 'ok'`,
 			typeRun, vocabulary.RecordPath(typeTrigger, trID)).Scan(&oks); err != nil {
 			t.Fatal(err)
 		}
@@ -532,7 +532,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 				count(*) FILTER (WHERE e.props->>'status' IN ('ok','skipped')),
 				count(*) FILTER (WHERE e.props->>'status' = 'parked')
 			FROM records e JOIN changelog c ON c.record_id = e.id AND c.op = 'put'
-			WHERE e.kind = $1 AND e.deleted_at IS NULL AND e.props->>'trigger' = $2 AND c.seq > $3`,
+			WHERE e.kind = $1 AND e.deleted_at IS NULL AND `+referencePathSQL("e.props", "trigger")+` = $2 AND c.seq > $3`,
 			typeRun, vocabulary.RecordPath(typeTrigger, trID), runsHeadBefore).Scan(&settled, &parked); err != nil {
 			t.Fatal(err)
 		}
@@ -564,7 +564,8 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 		  AND props->>'rationale' = 'weekly digest'`, vocabulary.KindRecordPatchRequest).Scan(&digestReq); err != nil {
 		t.Fatalf("the weekly digest proposal: %v", err)
 	}
-	if err := ds.db.QueryRowContext(ctx, `SELECT dst FROM edges WHERE rel = 'target' AND src = $1`, digestReq).Scan(&digestTarget); err != nil {
+	if err := ds.db.QueryRowContext(ctx,
+		`SELECT dst FROM refs WHERE property = 'target' AND path = '' AND src = $1`, digestReq).Scan(&digestTarget); err != nil {
 		t.Fatal(err)
 	}
 	if digestTarget != cfg.ID {
@@ -573,7 +574,7 @@ func TestURLHarvesterBundleConformance(t *testing.T) {
 	var rollupOK int
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL
-		  AND props->>'trigger' = $2 AND props->>'status' = 'ok'`,
+		  AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' = 'ok'`,
 		typeRun, vocabulary.RecordPath(typeTrigger, "web-rollup-weekly")).Scan(&rollupOK); err != nil {
 		t.Fatal(err)
 	}

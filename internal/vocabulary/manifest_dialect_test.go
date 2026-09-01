@@ -485,8 +485,12 @@ data:
       type: object
       repeated: true
       fields: {value: email}
-  edges:
-    person: {to: person, required: true}
+    person:
+      type: reference
+      kind: person
+      required: true
+      mustExist: true
+      subject: true
 ---
 kind: core.substrate.reamde.dev/recordmapping
 metadata: {id: m.example.com/rowperson}
@@ -494,7 +498,7 @@ data:
   authority: m.example.com
   from: m.example.com/row
   to: m.example.com/person
-  edge: person
+  property: person
   map:
 `
 

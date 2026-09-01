@@ -20,17 +20,17 @@ data:
   # carries the new columns into repositories that stored the authority's
   # version 2 projection.
   # version 4: `agent` and `parent` became REFERENCES. A thread is the audit row
-  # of a run and must keep naming the agent that ran it, which an edge cannot
-  # do — a purge deletes edges by either endpoint, so deleting an agent would
-  # erase every thread's record of what ran. A reference survives as a dangling
-  # pointer, and the graph reads it in reverse either way.
+  # of a run and must keep naming the agent that ran it, which the link of the
+  # day could not do: a purge collected the link from either end, so deleting
+  # an agent erased every thread's record of what ran. A reference survives as
+  # a dangling pointer, and the graph reads it in reverse either way.
   # version 5: the index names its properties, the declared spelling.
   # version 6: the title FOLLOWS the reference instead of reading a property off
   # the referent. core/agent stopped declaring `name`, so `{agent.name}` read
   # nothing and every thread titled ": running"; a bare token on a reference
   # renders the referent's own title, which is agent's `{localName}`.
   # version 7: the agent and parent pointers pin with `kind:`, the reference
-  # property's own word; `to:` stays the edge's.
+  # property's own word.
   # version 8: `mode` and `status` become enums, the loop's own closed sets
   # (agentloop.go). `judge` joins mode: the loop already mints it (judge.go),
   # the old prose just never named it.

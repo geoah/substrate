@@ -34,7 +34,9 @@ data:
   # version 12: `selector.kinds` takes the trigger source's glob grammar
   # (`<authority>/*` and `*`), `action` is required by the write door, and the
   # two judge thresholds say which verdict each one reads.
-  version: 13
+  # version 14: `selector.ops` says which write verbs sit outside policy, now
+  # that merge and split are the only two.
+  version: 14
   names:
     singular: recordpatchpolicy
   displayTemplate: "{action}: {localName}"
@@ -42,10 +44,9 @@ data:
     # Which writes this policy speaks for. Empty lists match everything of
     # their dimension, so `{}` with action gate is "gate every agent write
     # policy evaluation sees", which is the three record verbs below and
-    # nothing else. A mutate tool's `link` and `unlink` (agentgql.go) and a
-    # function effect's `merge` and `split` (agentloop.go dispatchFunction,
-    # whose op switch continues past them) never reach policyVerdict, so an
-    # empty selector does not cover any of the four.
+    # nothing else. A function effect's `merge` and `split` (agentloop.go
+    # dispatchFunction, whose op switch continues past them) never reach
+    # policyVerdict, so an empty selector does not cover either of them.
     selector:
       type: object
       description: the writes this policy speaks for; empty lists match all
@@ -84,9 +85,8 @@ data:
             - patch
             - delete
           description: 'the write verb matched: put, patch or delete, the
-            three policy evaluates (link, unlink, merge and split are outside
-            it), never a trigger''s create/update/delete; empty means all
-            three'
+            three policy evaluates (merge and split are outside it), never
+            a trigger''s create/update/delete; empty means all three'
         agents:
           type: string
           repeated: true

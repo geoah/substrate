@@ -136,3 +136,29 @@ func (t *txn) lockKeyShared(key string) error {
 	_, err := t.exec(`SELECT pg_advisory_xact_lock_shared(hashtext($1)::bigint)`, t.ds.scope.lockKey(key))
 	return err
 }
+
+// lockRegistryDepShared takes the SHARED registry-dependency lock (bundles.go
+// registryDepKey) once per transaction and remembers it. Every data write takes
+// it before it resolves its kind, and holds it to commit, so the declaration the
+// write validates against is the declaration its refs rows project against.
+//
+// FIRST IN THE ORDER. The lock order this tree holds is registry-dep <
+// subject-type < record, so this is taken before any of the write's own locks;
+// taking it at the write's entry rather than after the kind is resolved is what
+// makes "the declaration cannot move under this write" true of the resolution
+// too.
+//
+// A vocabulary apply holds the EXCLUSIVE side of the same key and writes rows
+// inside its own transaction (the projection, a bundle's data documents), which
+// reach this. Re-requesting a lock the same transaction already holds always
+// succeeds in Postgres, so no self-deadlock is possible.
+func (t *txn) lockRegistryDepShared() error {
+	if t.heldRegistryDep {
+		return nil
+	}
+	if err := t.lockKeyShared(registryDepKey(t.ds)); err != nil {
+		return err
+	}
+	t.heldRegistryDep = true
+	return nil
+}

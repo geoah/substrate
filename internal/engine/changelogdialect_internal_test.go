@@ -18,15 +18,18 @@ import (
 	"testing"
 )
 
-// dialectOneOps and dialectOneEffects are the changelog vocabulary at
-// maxChangelogDialect == 1.
+// dialectTwoOps and dialectTwoEffects are the changelog vocabulary at
+// maxChangelogDialect == 2, where references absorbed edges (decision 0044):
+// `link` and `unlink` stopped being ops and `edge`/`unedge`/`edge1` stopped
+// being effects. Dialect 1 entries carrying any of the five are refused at the
+// fold by name (fold.go foldRefuses) rather than replayed into a store with no
+// pointers in it.
 var (
-	dialectOneOps = []string{
-		"put", "patch", "delete", "link", "unlink", "merge", "split", "gc",
+	dialectTwoOps = []string{
+		"put", "patch", "delete", "merge", "split", "gc",
 	}
-	dialectOneEffects = []string{
+	dialectTwoEffects = []string{
 		"record", "tombstone", "purge", "bump",
-		"edge", "unedge", "edge1",
 		"annotation", "manager", "former", "resync",
 	}
 )
@@ -39,8 +42,8 @@ func TestChangelogDialectCoversTheChangelogVocabulary(t *testing.T) {
 		typeName string
 		want     []string
 	}{
-		{"changelog ops", "../substrate/change.go", "Op", dialectOneOps},
-		{"fold effects", "fold.go", "foldKind", dialectOneEffects},
+		{"changelog ops", "../substrate/change.go", "Op", dialectTwoOps},
+		{"fold effects", "fold.go", "foldKind", dialectTwoEffects},
 	} {
 		got := declaredStrings(t, c.file, c.typeName)
 		if len(got) != len(c.want) {

@@ -64,7 +64,7 @@ func ValidAuthority(s string) bool { return reAuthority.MatchString(s) }
 // ValidName reports whether s is a legal kind name.
 func ValidName(s string) bool { return reWord.MatchString(s) }
 
-// ValidCamel reports whether s is a legal declared name — property, edge or
+// ValidCamel reports whether s is a legal declared name — a property or a
 // stamp. One rule: camelCase with initialisms uppercase (`displayName`,
 // `endsAt`, `icalUID`).
 func ValidCamel(s string) bool { return reCamel.MatchString(s) }

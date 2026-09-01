@@ -23,7 +23,7 @@ one `data_source` object per source, each naming its **containing database**:
   — a multi-source database yields one mirror per source, all sharing the same
   `databaseId`;
 - pages inside a database report a `data_source_id` parent, so their `parent`
-  edge points at the data-source mirror.
+  reference points at the data-source mirror.
 
 ## One account per repository
 
@@ -83,10 +83,10 @@ workspacesync (python / uv / Notion search API, three resumable phases)
       │           the account stamps when the walk concludes
       │  blocks — a bounded batch of block-tree walks per invocation, each
       │           patching its page's `content`
-      │  links  — deferred parent edges; unresolved targets stay stored as
+      │  links  — deferred parent references; unresolved targets stay stored as
       │           pendingParent on the child, repaired by a later sync
       ▼
-page mirrors (title, url, normalized content, raw, parent edge)
+page mirrors (title, url, normalized content, raw, parent reference)
 database mirrors (one per data source: title, url, databaseId, raw)
 
 hourly schedule ──▶ workspacesync ──▶ the primary account, when due by its
@@ -109,7 +109,7 @@ hourly schedule ──▶ workspacesync ──▶ the primary account, when due 
   `content` (the block tree normalized to markdown-ish text: headings, lists,
   to-dos, quotes, code fences, bookmarks — capped at 500 blocks, depth 2),
   `pendingParent` (a parent reference awaiting its mirror), `raw` (the page
-  object verbatim), and an optional `parent` edge to the mirrored parent page
+  object verbatim), and an optional `parent` reference to the mirrored parent page
   or data source.
 - **`database`**: one row per **data source** — title (the built-in),
   `dataSourceId` (the key), `databaseId` (the containing database, modeled
@@ -146,7 +146,7 @@ skip: no block fetch, no staged effect, no changelog noise. Notion's search
 has no incremental sync token, so every run walks the search feed — the
 short-circuit is what makes steady state cheap. Two repairs run
 **independently of the skip**: a stored `pendingParent` whose target has
-since been shared gets its edge, and a mirror whose blocks phase never
+since been shared gets its reference, and a mirror whose blocks phase never
 completed (content absent) re-queues its content walk.
 
 **Content lands in two steps.** The search phase puts the page row (title,
@@ -191,7 +191,7 @@ substratectl apply -f bundle.yaml -f triggers.yaml
   run re-walks the (descending) search feed until it drains or passes the
   backfill cutoff.
 - **A parent that is never shared** with the integration stays a stored
-  `pendingParent` — the edge exists only between mirrored rows.
+  `pendingParent` — the reference exists only between mirrored rows.
 - **`database_id`-typed page parents** (rare under 2025-09-03, which reports
   data-source parents for database rows) resolve only if a matching mirror
   exists; otherwise they stay pending.
@@ -229,7 +229,7 @@ against a **fake Notion API** (`httptest`, reached through the config's
 loopback `apiBase` seam, holding the body to `Notion-Version: 2025-09-03`):
 a mid-drain account disable ends the drain with fresh state (no stale search
 cursor, nothing parked); the full first sync lands data-source and page
-mirrors with normalized content, inline and deferred parent edges, a stored
+mirrors with normalized content, inline and deferred parent references, a stored
 `pendingParent`, and the stamp; a direct-call re-sync proves the delta
 short-circuit (no block fetches, versions untouched); a later sync repairs
 the `pendingParent` once the parent is shared; a below-cutoff result stops

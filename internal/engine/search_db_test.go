@@ -27,18 +27,27 @@ func TestLexicalSearch(t *testing.T) {
 	})
 	titled := mustPut(t, ds, gcal, substrate.PutInput{
 		Kind: "calendarevent", ID: "gcal-event:e1",
-		Properties: map[string]any{"at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T14:00:00Z", "summary": "Rack layout review", "description": "Weekly sync"},
-		Edges:      []substrate.EdgeInput{{Rel: "calendar", To: substrate.EdgeRef{ID: cal.ID}}},
+		Properties: map[string]any{
+			"at": "2026-08-05T13:00:00Z", "endsAt": "2026-08-05T14:00:00Z",
+			"summary": "Rack layout review", "description": "Weekly sync",
+			"calendar": cal.ID,
+		},
 	})
 	bodied := mustPut(t, ds, gcal, substrate.PutInput{
 		Kind: "calendarevent", ID: "gcal-event:e2",
-		Properties: map[string]any{"at": "2026-08-06T13:00:00Z", "endsAt": "2026-08-06T14:00:00Z", "summary": "Standup", "description": "we will discuss the rack layout"},
-		Edges:      []substrate.EdgeInput{{Rel: "calendar", To: substrate.EdgeRef{ID: cal.ID}}},
+		Properties: map[string]any{
+			"at": "2026-08-06T13:00:00Z", "endsAt": "2026-08-06T14:00:00Z",
+			"summary": "Standup", "description": "we will discuss the rack layout",
+			"calendar": cal.ID,
+		},
 	})
 	mustPut(t, ds, gcal, substrate.PutInput{
 		Kind: "calendarevent", ID: "gcal-event:e3",
-		Properties: map[string]any{"at": "2026-08-07T13:00:00Z", "endsAt": "2026-08-07T14:00:00Z", "summary": "Lunch", "description": "food"},
-		Edges:      []substrate.EdgeInput{{Rel: "calendar", To: substrate.EdgeRef{ID: cal.ID}}},
+		Properties: map[string]any{
+			"at": "2026-08-07T13:00:00Z", "endsAt": "2026-08-07T14:00:00Z",
+			"summary": "Lunch", "description": "food",
+			"calendar": cal.ID,
+		},
 	})
 
 	hits, err := ds.Search(ctx, substrate.SearchInput{Q: "rack layout", Mode: substrate.SearchLexical})
@@ -96,8 +105,11 @@ func TestEmbedQueueAndHybridSearch(t *testing.T) {
 	newEvent := func(ext, summary, desc, day string) *substrate.Record {
 		return mustPut(t, ds, gcal, substrate.PutInput{
 			Kind: "calendarevent", ID: extID("gcal.event", ext),
-			Properties: map[string]any{"at": "2026-08-" + day + "T13:00:00Z", "endsAt": "2026-08-" + day + "T14:00:00Z", "summary": summary, "description": desc},
-			Edges:      []substrate.EdgeInput{{Rel: "calendar", To: substrate.EdgeRef{ID: cal.ID}}},
+			Properties: map[string]any{
+				"at": "2026-08-" + day + "T13:00:00Z", "endsAt": "2026-08-" + day + "T14:00:00Z",
+				"summary": summary, "description": desc,
+				"calendar": cal.ID,
+			},
 		})
 	}
 	wanted := newEvent("e1", "Standup", "we will discuss the datacentre rack layout", "05")

@@ -334,77 +334,6 @@ func (t *txn) appendChange(actor substrate.Actor, op substrate.Op, recordID, typ
 	return nil
 }
 
-// --- edges ---
-
-// putEdge writes one edge, both endpoints named in full. subject marks the
-// row as the source record's subject edge, which the partial unique index on
-// (src_kind, src, rel) polices.
-func (t *txn) putEdge(rel string, src, dst eref, props map[string]any, subject bool) (bool, error) {
-	res, err := t.fold(foldOp{
-		Kind: foldEdgePut, Ref: src.Kind, ID: src.ID,
-		Rel: rel, DstType: dst.Kind, Dst: dst.ID, Props: props, Subject: subject,
-	})
-	return res.changed, err
-}
-
-func (t *txn) applyEdgePut(rel string, src, dst eref, props map[string]any, subject bool) (bool, error) {
-	if props == nil {
-		props = map[string]any{}
-	}
-	raw, err := jsonb(props)
-	if err != nil {
-		return false, err
-	}
-	var one int
-	err = t.row(`
-		INSERT INTO edges (rel, src_kind, src, dst_kind, dst, props, subject, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $8, $7)
-		ON CONFLICT (repository, rel, src_kind, src, dst_kind, dst) DO UPDATE SET props = EXCLUDED.props, subject = EXCLUDED.subject
-		WHERE edges.props IS DISTINCT FROM EXCLUDED.props OR edges.subject IS DISTINCT FROM EXCLUDED.subject
-		RETURNING 1`, rel, src.Kind, src.ID, dst.Kind, dst.ID, raw, t.now, subject).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	return err == nil, err
-}
-
-func (t *txn) deleteEdge(rel string, src, dst eref) (bool, error) {
-	res, err := t.fold(foldOp{
-		Kind: foldEdgeDel, Ref: src.Kind, ID: src.ID,
-		Rel: rel, DstType: dst.Kind, Dst: dst.ID,
-	})
-	return res.changed, err
-}
-
-func (t *txn) applyEdgeDelete(rel string, src, dst eref) (bool, error) {
-	res, err := t.exec(`DELETE FROM edges WHERE rel = $1 AND src_kind = $2 AND src = $3 AND dst_kind = $4 AND dst = $5`,
-		rel, src.Kind, src.ID, dst.Kind, dst.ID)
-	if err != nil {
-		return false, err
-	}
-	n, err := res.RowsAffected()
-	return n > 0, err
-}
-
-// replaceSingleEdge enforces many:false — one target per rel.
-func (t *txn) replaceSingleEdge(rel string, src, dst eref) (bool, error) {
-	res, err := t.fold(foldOp{
-		Kind: foldEdgeOnly, Ref: src.Kind, ID: src.ID,
-		Rel: rel, DstType: dst.Kind, Dst: dst.ID,
-	})
-	return res.changed, err
-}
-
-func (t *txn) applyEdgeReplaceSingle(rel string, src, dst eref) (bool, error) {
-	res, err := t.exec(`DELETE FROM edges WHERE rel = $1 AND src_kind = $2 AND src = $3 AND NOT (dst_kind = $4 AND dst = $5)`,
-		rel, src.Kind, src.ID, dst.Kind, dst.ID)
-	if err != nil {
-		return false, err
-	}
-	n, _ := res.RowsAffected()
-	return n > 0, nil
-}
-
 // tombstone soft-deletes a record: the delete verb's effect, GC's cascade and
 // the merge loser's, which also lands a finalizer that holds GC off until a
 // split puts it back.
@@ -429,13 +358,6 @@ func (t *txn) applyTombstone(ref eref, finalizer string) (bool, error) {
 	return n > 0, err
 }
 
-// bumpVersion moves a record's version without touching a column: the
-// link/unlink write, whose change is an edge.
-func (t *txn) bumpVersion(ref eref) error {
-	_, err := t.fold(foldOp{Kind: foldBump, Ref: ref.Kind, ID: ref.ID})
-	return err
-}
-
 func (t *txn) applyBump(ref eref) (bool, error) {
 	res, err := t.exec(`UPDATE records SET version = version + 1, updated_at = $3 WHERE kind = $1 AND id = $2`,
 		ref.Kind, ref.ID, t.now)
@@ -444,39 +366,6 @@ func (t *txn) applyBump(ref eref) (bool, error) {
 	}
 	n, err := res.RowsAffected()
 	return n > 0, err
-}
-
-// edgeTargetOf reads the single target of one rel, verbatim: no
-// canonicalization, because the merge record's `loser` edge names a tombstone
-// on purpose and resolving it forward would erase the record's whole point.
-func (t *txn) edgeTargetOf(src eref, rel string) (eref, error) {
-	var dst eref
-	err := t.row(`SELECT dst_kind, dst FROM edges WHERE src_kind = $1 AND src = $2 AND rel = $3
-		ORDER BY created_at, dst_kind, dst LIMIT 1`,
-		src.Kind, src.ID, rel).Scan(&dst.Kind, &dst.ID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return eref{}, nil
-	}
-	return dst, err
-}
-
-func (t *txn) edgesOf(src eref) (map[string][]eref, error) {
-	rows, err := t.query(`SELECT rel, dst_kind, dst FROM edges WHERE src_kind = $1 AND src = $2
-		ORDER BY rel, created_at, dst_kind, dst`, src.Kind, src.ID)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	out := map[string][]eref{}
-	for rows.Next() {
-		var rel string
-		var dst eref
-		if err := rows.Scan(&rel, &dst.Kind, &dst.ID); err != nil {
-			return nil, err
-		}
-		out[rel] = append(out[rel], dst)
-	}
-	return out, rows.Err()
 }
 
 // --- former ids (merge trails, proposal §6.3) ---
@@ -733,7 +622,13 @@ func (t *txn) hardDelete(ref eref) error {
 
 func (t *txn) applyPurge(ref eref) error {
 	for _, q := range []string{
-		`DELETE FROM edges WHERE (src_kind = $1 AND src = $2) OR (dst_kind = $1 AND dst = $2)`,
+		// The record's OWN rows, and only those. The index is derived from the
+		// SOURCE record's properties, so deleting by `dst` would erase rows
+		// belonging to records that still name this one — and a rebuild, which
+		// re-derives from those properties, would put them straight back. A
+		// pointer at a purged record dangles; that is what an absent
+		// `onDelete:` means.
+		`DELETE FROM refs WHERE src_kind = $1 AND src = $2`,
 		`DELETE FROM former_ids WHERE record_kind = $1 AND (record_id = $2 OR former_id = $2)`,
 		`DELETE FROM annotations WHERE record_kind = $1 AND record_id = $2`,
 		`DELETE FROM property_managers WHERE record_kind = $1 AND record_id = $2`,

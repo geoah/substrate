@@ -73,7 +73,7 @@ func TestHostFunctionsAreSeededAsRecords(t *testing.T) {
 	// caller's.
 	perms, _ := rows[vocabulary.HostFunctionPropose].Properties["permissions"].(map[string]any)
 	if writes, _ := perms["writes"].([]any); len(writes) != 1 ||
-		writes[0] != vocabulary.RecordPath(kindKind, vocabulary.KindRecordPatchRequest) {
+		storedReferencePath(writes[0]) != vocabulary.RecordPath(kindKind, vocabulary.KindRecordPatchRequest) {
 		t.Fatalf("propose permissions = %v", rows[vocabulary.HostFunctionPropose].Properties["permissions"])
 	}
 	if _, has := rows[vocabulary.HostFunctionMutate].Properties["permissions"]; has {

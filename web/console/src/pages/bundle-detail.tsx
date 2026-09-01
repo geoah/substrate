@@ -210,8 +210,8 @@ function RequiresNote({ requirements }: { requirements: Requirement[] }) {
               .map((r) => r.authority)
               .join(
                 ", "
-              )}. This bundle's mappings and edges point at it — re-import that authority's bundle from the registry.`
-          : "The vocabulary this bundle's mappings, edges and trigger subscriptions point at. All of it is imported."}
+              )}. This bundle's mappings and references point at it — re-import that authority's bundle from the registry.`
+          : "The vocabulary this bundle's mappings, references and trigger subscriptions point at. All of it is imported."}
       </p>
     </div>
   )

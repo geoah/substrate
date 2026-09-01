@@ -21,8 +21,9 @@ import (
 // write and therefore the ones the changelog can say again:
 //
 //	records            the fold itself
-//	edges              written by the same entries
-//	annotations        ditto
+//	refs               the reverse projection of the records' reference values,
+//	                   re-derived by the same record effect that produces them
+//	annotations        written by the same entries
 //	property_managers  ditto — who last had a write accepted, per property
 //	former_ids         ditto — merge's trail
 //
@@ -65,7 +66,7 @@ type RebuildReport struct {
 // foldTables are cleared and replayed, in this order: a purge effect walks the
 // same list, and nothing here is referenced by anything else.
 var foldTables = []string{
-	"edges", "former_ids", "annotations", "property_managers", "records",
+	"refs", "former_ids", "annotations", "property_managers", "records",
 }
 
 // rebuildBatch bounds one page of the replay: a transaction cannot iterate a
@@ -243,9 +244,9 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 				SELECT kind, id, title, body, states, at, ends_at, due_at, props, labels,
 					version, created_at, updated_at, deleted_at, finalizers, fts::text
 				FROM records ORDER BY kind, id) r`,
-		"edges": `SELECT to_jsonb(e) FROM (
-				SELECT rel, src_kind, src, dst_kind, dst, props, subject, created_at
-				FROM edges ORDER BY rel, src_kind, src, dst_kind, dst) e`,
+		"refs": `SELECT to_jsonb(r) FROM (
+				SELECT src_kind, src, property, path, ord, dst_kind, dst, props, created_at
+				FROM refs ORDER BY src_kind, src, property, path, ord) r`,
 		"annotations": `SELECT to_jsonb(a) FROM (
 				SELECT record_kind, record_id, key, value, updated_at
 				FROM annotations ORDER BY record_kind, record_id, key) a`,

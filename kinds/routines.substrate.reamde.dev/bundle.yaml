@@ -1,8 +1,8 @@
 # Shipped vocabulary ported from mneme v4: the things done on a
 # schedule that are not calendar events. A routine is the generic recurring
 # obligation (a chore, a habit, hygiene, taking out the bins); when it wraps
-# something richer (a medication, a workout template, a project) the untyped
-# `subject` edge points at it without coupling this authority to those.
+# something richer (a medication, a workout template, a project) the unpinned
+# `subject` reference points at it without coupling this authority to those.
 #
 # The recurrence stance is the substrate's: the RRULE is stored and never
 # expanded, and an occurrence exists only when a routinelog marks it.
@@ -16,7 +16,9 @@ data:
   # `occurrencelog`, replacing the copied properties (#122).
   # version 4: `routine`'s enum property `kind` is `category` (#125).
   # version 5: `rdates` lands with the `recurring` trait's move.
-  version: 5
+  # version 6: every link is a `type: reference` property carrying
+  # `mustExist: true`, and an owning one carries `onDelete: cascade`.
+  version: 6
 ---
 # ---- the bundle document: the import unit -----------------------------------
 # A VOCABULARY bundle: kinds only, imported from the registry.

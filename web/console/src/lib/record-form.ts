@@ -29,6 +29,7 @@
  *   sends `null` to delete the key; a merely-blank field is left untouched. */
 
 import type { SubstrateRecord, EnumValue, KindInfo } from "@/lib/api/types"
+import { readReference } from "@/lib/api/types"
 import { coerceReferencePath, splitRecordPath } from "@/lib/record-path"
 import type { EditPath as DocumentPath } from "@/lib/record-yaml"
 import {
@@ -384,13 +385,16 @@ function refValue(ref: RefValue): FieldValue {
   return coerceReferencePath(ref.kind.trim(), id)
 }
 
-/** One pointer, seeded from its stored PATH. A stored value is always a full
- * path; anything short of one is the authored short form, which only the pin
- * can complete. */
+/** One pointer, seeded from its stored value. A served reference is the object
+ * `{ref: "<kind>/<id>", …}`, so the path is read through `readReference` rather
+ * than off the value: reading only the string arm seeded the form BLANK from
+ * every real record and wiped the pointer on the next save. A value short of a
+ * full path is the authored short form, which only the pin can complete. */
 function seedRef(field: FormField, stored: unknown): RefValue {
   const pinned = field.spec.to && field.spec.to !== TO_ANY ? field.spec.to : ""
-  if (typeof stored !== "string" || !stored) return { kind: pinned, id: "" }
-  return splitRecordPath(stored) ?? { kind: pinned, id: stored }
+  const held = readReference(stored)
+  if (!held) return { kind: pinned, id: "" }
+  return splitRecordPath(held.path) ?? { kind: pinned, id: held.path }
 }
 
 /** One object row, coerced field by field. A field that fails its datatype

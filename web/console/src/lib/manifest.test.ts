@@ -18,20 +18,19 @@ const record: SubstrateRecord = {
     phones: ["+306973328908"],
     prominence: "known",
     title: "Tasos Aggelis",
+    // A reference carrying LINK DATA: the pointer under `ref`, the link's own
+    // properties beside it.
+    memberOf: [
+      {
+        ref: "people.substrate.reamde.dev/organization/org1",
+        role: "founder",
+      },
+    ],
   },
   labels: {},
   version: 3,
   createdAt: "2026-08-05T16:26:27.161544Z",
   updatedAt: "2026-08-05T16:26:27.310967Z",
-  edges: {
-    memberOf: [
-      {
-        id: "org1",
-        kind: "people.substrate.reamde.dev/organization",
-        title: "Acme",
-      },
-    ],
-  },
   propertyMeta: {
     name: {
       manager: "people.google.bundles.substrate.reamde.dev",
@@ -49,12 +48,14 @@ describe("manifestOf", () => {
     expect(m.metadata).toEqual({ id: "32llel6yd5bs" })
   })
 
-  it("renders edges as rel/to rows carrying the whole {kind, id} reference", () => {
+  it("carries a pointer inside properties, never a block of its own", () => {
     const data = manifestOf(record).data as Record<string, unknown>
-    expect(data.edges).toEqual([
+    expect(data).not.toHaveProperty("edges")
+    const properties = data.properties as Record<string, unknown>
+    expect(properties.memberOf).toEqual([
       {
-        rel: "memberOf",
-        to: { kind: "people.substrate.reamde.dev/organization", id: "org1" },
+        ref: "people.substrate.reamde.dev/organization/org1",
+        role: "founder",
       },
     ])
   })
@@ -66,12 +67,11 @@ describe("manifestOf", () => {
     expect(status).not.toHaveProperty("deletedAt")
   })
 
-  it("omits empty labels (metadata) and empty edges (data) rather than printing {}", () => {
-    const bare = manifestOf({ ...record, edges: {}, labels: {} })
+  it("omits empty labels and an empty data block rather than printing {}", () => {
+    const bare = manifestOf({ ...record, properties: {}, labels: {} })
     const metadata = bare.metadata as Record<string, unknown>
-    const data = bare.data as Record<string, unknown>
     expect(metadata).not.toHaveProperty("labels")
-    expect(data).not.toHaveProperty("edges")
+    expect(bare).not.toHaveProperty("data")
   })
 })
 
@@ -117,17 +117,17 @@ const registry: KindInfo[] = [
 ]
 
 describe("linkTargetsOf", () => {
-  it("maps edge target ids and the referenced kind refs", () => {
+  it("maps every registry kind by its reference", () => {
     const t = linkTargetsOf(record, registry)
-    expect(t.ids.org1).toBe(
-      "/data/people.substrate.reamde.dev/organization/org1"
-    )
     expect(t.kinds["people.substrate.reamde.dev/organization"]).toBe(
       "/data/people.substrate.reamde.dev/organization"
     )
     expect(t.kinds["people.substrate.reamde.dev/person"]).toBe(
       "/data/people.substrate.reamde.dev/person"
     )
+    // The bare id is never in the document — a reference carries the whole
+    // path — so nothing links it.
+    expect(t.ids.org1).toBeUndefined()
   })
 
   it("maps canonicalId and formerIds into the record's own collection", () => {
@@ -156,7 +156,7 @@ describe("linkTargetsOf", () => {
           properties: {
             manager: {
               type: "reference",
-              to: "people.substrate.reamde.dev/person",
+              kind: "people.substrate.reamde.dev/person",
             },
           },
         },
@@ -178,19 +178,50 @@ describe("linkTargetsOf", () => {
     expect(t.ids.boss1).toBeUndefined()
   })
 
-  it("does not link an edge target whose kind is not in the registry", () => {
+  it("links a reference carrying link data by the path under `ref`", () => {
+    const withPointer: KindInfo[] = [
+      {
+        ...registry[0],
+        definition: {
+          properties: {
+            memberOf: {
+              type: "reference",
+              kind: "people.substrate.reamde.dev/organization",
+              repeated: true,
+              properties: { role: { type: "string" } },
+            },
+          },
+        },
+      },
+      ...registry.slice(1),
+    ]
+    const t = linkTargetsOf(record, withPointer)
+    expect(t.ids["people.substrate.reamde.dev/organization/org1"]).toBe(
+      "/data/people.substrate.reamde.dev/organization/org1"
+    )
+  })
+
+  it("does not link a reference whose kind is not in the registry", () => {
     const stray: SubstrateRecord = {
       ...record,
-      edges: {
-        memberOf: [
-          { id: "org2", kind: "crm.substrate.reamde.dev/organization" },
-        ],
+      properties: {
+        ...record.properties,
+        manager: "crm.substrate.reamde.dev/organization/org2",
       },
     }
-    const t = linkTargetsOf(stray, registry)
+    const withPointer: KindInfo[] = [
+      {
+        ...registry[0],
+        definition: {
+          properties: { manager: { type: "reference" } },
+        },
+      },
+      ...registry.slice(1),
+    ]
+    const t = linkTargetsOf(stray, withPointer)
     expect(t.kinds["crm.substrate.reamde.dev/organization"]).toBeUndefined()
-    // The id is only linked once its kind resolves — an unknown kind carries none.
-    expect(t.ids.org2).toBeUndefined()
+    // The path is only linked once its kind resolves.
+    expect(t.ids["crm.substrate.reamde.dev/organization/org2"]).toBeUndefined()
   })
 })
 

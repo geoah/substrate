@@ -147,19 +147,18 @@ func TestGraphQLPutPatchRecordRoundTrip(t *testing.T) {
 	}
 }
 
-// A reference property renders through the GraphQL Reference
-// object type: the stored {kind, id} record reference survives put and reads back
-// through its subfields — the GraphQL half of the wire round-trip.
+// A reference property renders through its generated GraphQL object type, and
+// it does so with NO link properties declared: `manager` is a plain reference,
+// and it still selects as `{ ref }`. The write sends the bare path (the
+// shorthand) and the read hands back the object, which is the round trip
+// decision 0044 asks for.
 func TestGraphQLReferenceRoundTrip(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 
-	// A reference is ONE flat path, so it selects as a scalar: asking for
-	// `manager { kind id }` is now a query error, which is the schema saying the
-	// pair is gone rather than answering half of it.
 	const path = "people.substrate.reamde.dev/person/boss1"
 	put := env.gql(t, tok,
-		`mutation ($in: JSON!) { put(input: $in) { id ... on Person { manager } } }`,
+		`mutation ($in: JSON!) { put(input: $in) { id ... on Person { manager { ref } } } }`,
 		map[string]any{"in": map[string]any{
 			"kind": "people.substrate.reamde.dev/person",
 			"properties": map[string]any{
@@ -168,23 +167,41 @@ func TestGraphQLReferenceRoundTrip(t *testing.T) {
 			},
 		}})
 	created, _ := put.Data["put"].(map[string]any)
-	if created["manager"] != path {
-		t.Fatalf("manager reference = %v, want the flat path %q", created["manager"], path)
+	ref, _ := created["manager"].(map[string]any)
+	if ref == nil || ref["ref"] != path {
+		t.Fatalf("manager reference = %v, want an object holding ref %q", created["manager"], path)
 	}
 }
 
-// A Reference is a SCALAR, and a client that still asks for its fields is told
-// so at query time rather than handed a null.
-func TestGraphQLReferenceRefusesASubSelection(t *testing.T) {
+// A reference is an OBJECT even with no link properties, so selecting it bare
+// is the query error: the mirror of the old rule, and the check that the
+// one-shape decision reaches the schema and not only the stored value.
+func TestGraphQLReferenceRequiresASubSelection(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+
+	res := env.gqlRaw(t, tok,
+		`query { records(first: 1) { nodes { ... on Person { manager } } } }`, nil)
+	if len(res.Errors) == 0 {
+		t.Fatalf("a bare selection of a reference object must be a query error, got %+v", res.Data)
+	}
+	if !strings.Contains(res.Errors[0].Message, "must have a sub selection") {
+		t.Fatalf("error = %q", res.Errors[0].Message)
+	}
+}
+
+// The retired {kind, id} pair is not what the object carries: a client asking
+// for it is told at query time rather than handed two nulls.
+func TestGraphQLReferenceRefusesTheRetiredPair(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 
 	res := env.gqlRaw(t, tok,
 		`query { records(first: 1) { nodes { ... on Person { manager { kind id } } } } }`, nil)
 	if len(res.Errors) == 0 {
-		t.Fatalf("a sub-selection on a scalar Reference must be a query error, got %+v", res.Data)
+		t.Fatalf("selecting kind/id on a reference must be a query error, got %+v", res.Data)
 	}
-	if !strings.Contains(res.Errors[0].Message, "must not have a sub selection") {
+	if !strings.Contains(res.Errors[0].Message, `Cannot query field "kind"`) {
 		t.Fatalf("error = %q", res.Errors[0].Message)
 	}
 }
@@ -370,7 +387,10 @@ func TestGraphQLSchemaIsCachedPerRegistryFingerprint(t *testing.T) {
 	}
 }
 
-func TestGraphQLEdgesHistoryAndCapabilityInterfaces(t *testing.T) {
+// A reference that carries link data projects as an object type of its own:
+// the path under `ref`, the declared link properties typed beside it, and
+// `target` resolving the referent through the registry.
+func TestGraphQLReferenceHistoryAndCapabilityInterfaces(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 	ds := env.svc.datasets["geoah"]
@@ -382,9 +402,9 @@ func TestGraphQLEdgesHistoryAndCapabilityInterfaces(t *testing.T) {
 	}
 	ds.records["msg1"] = &substrate.Record{
 		ID: "msg1", Kind: "messaging.substrate.reamde.dev/conversationmessage", Title: "hi", At: &at,
-		Properties: map[string]any{"text": "hi"},
-		Edges: map[string][]substrate.EdgeTarget{
-			"author": {{ID: "team1", Kind: "people.substrate.reamde.dev/person", Title: "Analytical", Properties: map[string]any{"since": 2020}}},
+		Properties: map[string]any{
+			"text":   "hi",
+			"author": map[string]any{"ref": "people.substrate.reamde.dev/person/team1", "since": 2020},
 		},
 	}
 	ds.changes = append(ds.changes, substrate.Change{
@@ -396,7 +416,9 @@ func TestGraphQLEdgesHistoryAndCapabilityInterfaces(t *testing.T) {
 		record(kind: "messaging.substrate.reamde.dev/conversationmessage", id: "msg1") {
 			id
 			... on Temporal { at endsAt }
-			edges(rel: "author") { rel properties target { id ... on Person { name } } }
+			... on Conversationmessage {
+				author { ref since target { id ... on Person { name } } }
+			}
 			history(first: 5) { seq op }
 		}
 	}`, nil)
@@ -404,18 +426,74 @@ func TestGraphQLEdgesHistoryAndCapabilityInterfaces(t *testing.T) {
 	if ent["at"] == nil {
 		t.Fatalf("Temporal.at not resolved: %v", ent)
 	}
-	edges, _ := ent["edges"].([]any)
-	if len(edges) != 1 {
-		t.Fatalf("edges = %v", edges)
+	author, _ := ent["author"].(map[string]any)
+	target, _ := author["target"].(map[string]any)
+	if author["ref"] != "people.substrate.reamde.dev/person/team1" || author["since"] != float64(2020) {
+		t.Fatalf("author = %v", author)
 	}
-	edge, _ := edges[0].(map[string]any)
-	target, _ := edge["target"].(map[string]any)
-	if edge["rel"] != "author" || target["name"] != "Analytical" {
-		t.Fatalf("edge = %v", edge)
+	if target["id"] != "team1" || target["name"] != "Analytical" {
+		t.Fatalf("author target = %v", target)
 	}
 	history, _ := ent["history"].([]any)
 	if len(history) != 1 {
 		t.Fatalf("history = %v", history)
+	}
+}
+
+// The generated object is named from (kind, property) and never depends on
+// which other kinds are in the registry; a plain reference stays the Reference
+// scalar rather than growing an object of its own.
+func TestGraphQLLinkDataReferenceIsItsOwnType(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+
+	res := env.gql(t, tok, `{
+		message: __type(name: "Conversationmessage") { fields { name type { name kind } } }
+		ref: __type(name: "ConversationmessageAuthorReference") {
+			fields { name type { name kind ofType { name } } }
+		}
+		person: __type(name: "Person") { fields { name type { name kind } } }
+	}`, nil)
+
+	refType, _ := res.Data["ref"].(map[string]any)
+	if refType == nil {
+		t.Fatalf("no generated type for the link-carrying reference: %v", res.Data)
+	}
+	got := map[string]string{}
+	for _, f := range refType["fields"].([]any) {
+		field, _ := f.(map[string]any)
+		typ, _ := field["type"].(map[string]any)
+		name, _ := typ["name"].(string)
+		if name == "" { // NON_NULL wrapper
+			inner, _ := typ["ofType"].(map[string]any)
+			name, _ = inner["name"].(string)
+		}
+		got[field["name"].(string)] = name
+	}
+	for field, want := range map[string]string{"ref": "Reference", "since": "Int", "target": "Record"} {
+		if got[field] != want {
+			t.Fatalf("%s field %q = %q, want %q", "ConversationmessageAuthorReference", field, got[field], want)
+		}
+	}
+
+	// A reference that declares NO link data generates a type too (0044): the
+	// value has one shape, so the schema has one shape, and adding a link
+	// property later adds a field instead of replacing a scalar with an object.
+	person, _ := res.Data["person"].(map[string]any)
+	var seen bool
+	for _, f := range person["fields"].([]any) {
+		field, _ := f.(map[string]any)
+		if field["name"] != "manager" {
+			continue
+		}
+		seen = true
+		typ, _ := field["type"].(map[string]any)
+		if typ["name"] != "PersonManagerReference" || typ["kind"] != "OBJECT" {
+			t.Fatalf("a reference without link data must still be its own object type: %v", typ)
+		}
+	}
+	if !seen {
+		t.Fatal("Person declares no manager field")
 	}
 }
 
@@ -459,7 +537,7 @@ func TestGraphQLPropertyMeta(t *testing.T) {
 	}
 }
 
-// Reverse edges do not inflate GraphQL record reads. The dedicated REST
+// Incoming references do not inflate GraphQL record reads. The dedicated REST
 // resource owns their pagination.
 func TestGraphQLIncomingIsNotOnRecord(t *testing.T) {
 	env := newTestEnv(t)
@@ -470,8 +548,8 @@ func TestGraphQLIncomingIsNotOnRecord(t *testing.T) {
 		ID: "p1", Kind: "people.substrate.reamde.dev/person",
 		Properties: map[string]any{"name": "Sam"},
 	}
-	ds.incoming["p1"] = []substrate.IncomingEdge{
-		{Rel: "person", From: substrate.EdgeTarget{
+	ds.incoming["p1"] = []substrate.IncomingReference{
+		{Property: "person", From: substrate.IncomingSource{
 			ID: "people-c1001", Kind: "google.connectors.substrate.reamde.dev/contact", Title: "Samuel Jones",
 		}},
 	}

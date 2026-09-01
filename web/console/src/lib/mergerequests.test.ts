@@ -4,6 +4,7 @@ import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
 import {
   decisionOf,
   deriveDiff,
+  mergePair,
   evidenceSignals,
   sameValue,
   signalText,
@@ -100,9 +101,13 @@ const personType: KindInfo = {
       name: { type: "string", description: "the person's name" },
       emails: { type: "email", repeated: true },
       prominence: { type: "state", states: ["known", "utility"] },
-    },
-    edges: {
-      memberOf: { to: "organization", description: "organizations joined" },
+      memberOf: {
+        type: "reference",
+        kind: "organization",
+        repeated: true,
+        mustExist: true,
+        description: "organizations joined",
+      },
     },
   },
 }
@@ -110,8 +115,7 @@ const personType: KindInfo = {
 function person(
   id: string,
   properties: Record<string, unknown>,
-  meta?: Record<string, string>,
-  edges?: SubstrateRecord["edges"]
+  meta?: Record<string, string>
 ): SubstrateRecord {
   return {
     id,
@@ -121,7 +125,6 @@ function person(
     version: 1,
     createdAt: "2026-08-05T00:00:00Z",
     updatedAt: "2026-08-05T00:00:00Z",
-    edges,
     propertyMeta: meta
       ? Object.fromEntries(
           Object.entries(meta).map(([k, manager]) => [
@@ -132,6 +135,40 @@ function person(
       : undefined,
   }
 }
+
+describe("mergePair", () => {
+  const request = (properties: Record<string, unknown>): SubstrateRecord => ({
+    id: "mr-1",
+    kind: "core.substrate.reamde.dev/recordmergerequest",
+    properties,
+    labels: {},
+    version: 1,
+    createdAt: "2026-08-05T00:00:00Z",
+    updatedAt: "2026-08-05T00:00:00Z",
+  })
+
+  it("splits both sides off their reference paths", () => {
+    expect(
+      mergePair(
+        request({
+          winner: { ref: "people.substrate.reamde.dev/person/w" },
+          loser: { ref: "people.substrate.reamde.dev/person/l" },
+        })
+      )
+    ).toEqual({
+      winner: { kind: "people.substrate.reamde.dev/person", id: "w" },
+      loser: { kind: "people.substrate.reamde.dev/person", id: "l" },
+    })
+  })
+
+  it("leaves a side undefined when nothing readable points there", () => {
+    // A bare id is no path: unpinned, only a full path says what it names.
+    expect(mergePair(request({ winner: "w" }))).toEqual({
+      winner: undefined,
+      loser: undefined,
+    })
+  })
+})
 
 describe("deriveDiff", () => {
   it("classifies equal, machine-held differing, and owner-held differing", () => {
@@ -188,51 +225,48 @@ describe("deriveDiff", () => {
     expect(phones?.posture).toBe("recompute")
   })
 
-  it("diffs edges by target id set and postures a difference as moves", () => {
-    const winner = person("w", {}, undefined, {
-      memberOf: [
-        { id: "org1", kind: "people.substrate.reamde.dev/organization" },
-      ],
+  it("diffs a reference property like any other, machine-held", () => {
+    // A pointer is a property now, so a differing one is a `recompute` row —
+    // there is nothing left that "moves to the survivor", because a reference
+    // at the loser resolves through the former-id trail untouched.
+    const winner = person("w", {
+      memberOf: ["people.substrate.reamde.dev/organization/org1"],
     })
-    const loser = person("l", {}, undefined, {
+    const loser = person("l", {
       memberOf: [
-        { id: "org1", kind: "people.substrate.reamde.dev/organization" },
-        { id: "org2", kind: "people.substrate.reamde.dev/organization" },
+        "people.substrate.reamde.dev/organization/org1",
+        "people.substrate.reamde.dev/organization/org2",
       ],
     })
     const rows = deriveDiff(winner, loser, personType)
-    const edge = rows.find((r) => r.key === "memberOf")
-    expect(edge?.kind).toBe("edge")
-    expect(edge?.posture).toBe("moves")
-    expect(edge?.description).toBe("organizations joined")
+    const pointer = rows.find((r) => r.key === "memberOf")
+    expect(pointer?.declared).toBe(true)
+    expect(pointer?.posture).toBe("recompute")
+    expect(pointer?.description).toBe("organizations joined")
   })
 
   it("orders what needs the owner first, equal rows last", () => {
     const winner = person(
       "w",
-      { name: "A", emails: ["a@x.gr"], prominence: "known" },
-      { name: "owner" },
       {
-        memberOf: [
-          { id: "org1", kind: "people.substrate.reamde.dev/organization" },
-        ],
-      }
+        name: "A",
+        emails: ["a@x.gr"],
+        prominence: "known",
+        memberOf: ["people.substrate.reamde.dev/organization/org1"],
+      },
+      { name: "owner" }
     )
-    const loser = person(
-      "l",
-      { name: "B", emails: ["b@x.gr"], prominence: "known" },
-      undefined,
-      {
-        memberOf: [
-          { id: "org2", kind: "people.substrate.reamde.dev/organization" },
-        ],
-      }
-    )
+    const loser = person("l", {
+      name: "B",
+      emails: ["b@x.gr"],
+      prominence: "known",
+      memberOf: ["people.substrate.reamde.dev/organization/org2"],
+    })
     const rows = deriveDiff(winner, loser, personType)
     expect(rows.map((r) => r.posture)).toEqual([
       "choice",
       "recompute",
-      "moves",
+      "recompute",
       "equal",
     ])
   })

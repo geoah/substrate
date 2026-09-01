@@ -303,9 +303,9 @@ func TestApplyDiffChecksTargetVersion(t *testing.T) {
 	req := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
-			"diff": map[string]any{"properties": map[string]any{"description": "due Friday"}},
+			"diff":   map[string]any{"properties": map[string]any{"description": "due Friday"}},
+			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
 		},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
 	})
 
 	// The owner moves on before deciding.
@@ -337,9 +337,9 @@ func TestApplyDiffChecksTargetVersion(t *testing.T) {
 	resynced := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest", ID: req.ID,
 		Properties: map[string]any{
-			"diff": map[string]any{"properties": map[string]any{"description": "due Friday"}},
+			"diff":   map[string]any{"properties": map[string]any{"description": "due Friday"}},
+			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
 		},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
 	})
 	if _, err := ds.Patch(ctx, owner, req.Kind, req.ID, substrate.PatchInput{
 		Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(resynced.Version),
@@ -351,9 +351,9 @@ func TestApplyDiffChecksTargetVersion(t *testing.T) {
 	fresh := mustPut(t, ds, engram, substrate.PutInput{
 		Kind: "recordpatchrequest",
 		Properties: map[string]any{
-			"diff": map[string]any{"properties": map[string]any{"description": "due Tuesday"}},
+			"diff":   map[string]any{"properties": map[string]any{"description": "due Tuesday"}},
+			"target": vocabulary.RecordPath("tasks.substrate.reamde.dev/task", task.ID),
 		},
-		Edges: []substrate.EdgeInput{{Rel: "target", To: substrate.EdgeRef{Kind: "tasks.substrate.reamde.dev/task", ID: task.ID}}},
 	})
 	mustPatch(t, ds, owner, fresh.Kind, fresh.ID, substrate.PatchInput{Properties: map[string]any{"decision": "accepted"}, IfVersion: ptr(fresh.Version)})
 	if got := mustGet(t, ds, task.Kind, task.ID); got.Properties["description"] != "due Tuesday" {
@@ -361,8 +361,8 @@ func TestApplyDiffChecksTargetVersion(t *testing.T) {
 	}
 }
 
-// required:true on an edge is enforced when the record is created.
-func TestRequiredEdgesEnforcedOnCreate(t *testing.T) {
+// required:true on a reference is enforced when the record is created.
+func TestRequiredReferencesEnforcedOnCreate(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
@@ -377,9 +377,9 @@ func TestRequiredEdgesEnforcedOnCreate(t *testing.T) {
 	if err == nil {
 		t.Fatal("message created with neither conversation nor author")
 	}
-	wantErr(t, err, substrate.ErrValidation, "missing required edges")
+	wantErr(t, err, substrate.ErrValidation, "missing required references")
 	if !strings.Contains(err.Error(), "author") || !strings.Contains(err.Error(), "conversation") {
-		t.Fatalf("error should name the missing rels: %v", err)
+		t.Fatalf("error should name the missing properties: %v", err)
 	}
 
 	acc := mustPut(t, ds, owner, substrate.PutInput{
@@ -395,30 +395,30 @@ func TestRequiredEdgesEnforcedOnCreate(t *testing.T) {
 	})
 	msg := mustPut(t, ds, slack, substrate.PutInput{
 		Kind: "conversationmessage", ID: "slack:T1:C1:1",
-		Properties: map[string]any{"text": "hello"},
-		Edges: []substrate.EdgeInput{
-			{Rel: "conversation", To: substrate.EdgeRef{ID: conv.ID}},
-			{Rel: "author", To: substrate.EdgeRef{ID: author.ID}},
+		Properties: map[string]any{
+			"text":         "hello",
+			"conversation": conv.ID,
+			"author":       author.ID,
 		},
 	})
 
-	// A patch that does not touch edges must not fail.
+	// A patch that does not touch the references must not fail.
 	if _, err := ds.Patch(ctx, slack, msg.Kind, msg.ID, substrate.PatchInput{
 		Properties: map[string]any{"text": "hello there"},
 	}); err != nil {
-		t.Fatalf("edge-free patch rejected: %v", err)
+		t.Fatalf("reference-free patch rejected: %v", err)
 	}
-	// An edge naming an id nothing holds is a not-found, never a silent stub:
-	// there is no resolve-by-value any more.
+	// A `mustExist` reference naming an id nothing holds is a not-found, never a
+	// silent stub: there is no resolve-by-value any more.
 	if _, err := ds.Put(ctx, slack, substrate.PutInput{
 		Kind: "conversationmessage", ID: "slack:T1:C1:2",
-		Edges: []substrate.EdgeInput{
-			{Rel: "conversation", To: substrate.EdgeRef{ID: "slack:T1:C2"}},
-			{Rel: "author", To: substrate.EdgeRef{ID: author.ID}},
+		Properties: map[string]any{
+			"conversation": "slack:T1:C2",
+			"author":       author.ID,
 		},
 	}); err == nil {
-		t.Fatal("an edge at an id nothing holds must not create one")
+		t.Fatal("a reference at an id nothing holds must not create one")
 	} else {
-		wantErr(t, err, substrate.ErrNotFound, "edge at an unheld id")
+		wantErr(t, err, substrate.ErrNotFound, "reference at an unheld id")
 	}
 }

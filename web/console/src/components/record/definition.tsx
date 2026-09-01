@@ -4,8 +4,9 @@
  *
  * Three readings of one thing, top to bottom: the declaration YAML through the
  * SAME renderer the record manifest uses (shiki, lazy, css-variables), then
- * the declared properties and edges on THE table system — name, type,
- * description, required, and a state machine's states where there is one. No
+ * the declared properties on THE table system — name, type, description,
+ * required, and a state machine's states where there is one — then the
+ * REFERENCES among them again, with what each one holds the writer to. No
  * fetch of its own: the kind and the registry both ride the kinds query the
  * browse page already holds. */
 
@@ -33,12 +34,10 @@ import {
 import type { KindInfo } from "@/lib/api/types"
 import { kindLinkTargets, kindManifestYAML } from "@/lib/manifest"
 import {
-  declaredEdges,
   declaredProperties,
-  edgeTypeLabel,
+  declaredReferences,
   propertyTypeLabel,
-  resolveEdgeTarget,
-  type DeclaredEdge,
+  resolveReferenceTarget,
   type DeclaredProperty,
 } from "@/lib/definition"
 import { keyDocsOf } from "@/lib/yaml-annotations"
@@ -167,19 +166,22 @@ function propertyColumns(): DataTableColumn<DeclaredProperty>[] {
   ]
 }
 
-/** The edge's declared target, linked to that collection when the registry can
- * resolve it (a bare singular resolves inside the declaring authority first). */
+/** The reference's declared target, linked to that collection when the
+ * registry can resolve it (a bare singular resolves inside the declaring
+ * authority first). An UNPINNED reference names no kind: its value carries
+ * one, so there is nothing here to link. */
 function TargetCell({
-  edge,
+  reference,
   kind,
   kinds,
 }: {
-  edge: DeclaredEdge
+  reference: DeclaredProperty
   kind: KindInfo
   kinds: KindInfo[]
 }) {
-  const target = resolveEdgeTarget(kinds, kind, edge.to)
-  const label = edgeTypeLabel(edge)
+  const pin = reference.to ?? ""
+  const target = pin ? resolveReferenceTarget(kinds, kind, pin) : undefined
+  const label = pin ? `→ ${pin}${reference.repeated ? "[]" : ""}` : "any kind"
   if (!target) {
     return (
       <span className="block truncate data text-muted-foreground" title={label}>
@@ -199,58 +201,80 @@ function TargetCell({
   )
 }
 
-function edgeColumns(
+/** What a reference declaration holds a writer to, past its target: the badges
+ * are the keys that change what a write may do, said in the declaration's own
+ * words. `onDelete` absent means detach, which is the default and says
+ * nothing. */
+function HoldsCell({ reference }: { reference: DeclaredProperty }) {
+  const holds: string[] = []
+  if (reference.required) holds.push("required")
+  if (reference.mustExist) holds.push("mustExist")
+  if (reference.onDelete) holds.push(`onDelete: ${reference.onDelete}`)
+  if (reference.subject) holds.push("subject")
+  if (reference.linkProperties?.length) {
+    holds.push(`link data: ${reference.linkProperties.join(", ")}`)
+  }
+  if (!holds.length) return <Muted>—</Muted>
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-1">
+      {holds.map((held) => (
+        <Badge
+          key={held}
+          variant="secondary"
+          className="px-1.5 data font-normal"
+        >
+          {held}
+        </Badge>
+      ))}
+    </span>
+  )
+}
+
+function referenceColumns(
   kind: KindInfo,
   kinds: KindInfo[]
-): DataTableColumn<DeclaredEdge>[] {
+): DataTableColumn<DeclaredProperty>[] {
   return [
     {
-      id: "edge",
-      accessorFn: (e) => e.rel,
+      id: "reference",
+      accessorFn: (p) => p.name,
       enableSorting: false,
       enableHiding: false,
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="edge" />
+        <DataTableColumnHeader column={column} title="reference" />
       ),
       cell: ({ row }) => (
-        <span className="block truncate data" title={row.original.rel}>
-          {row.original.rel}
+        <span className="block truncate data" title={row.original.name}>
+          {row.original.name}
         </span>
       ),
-      meta: { label: "edge", size: { min: 140, max: 260, weight: 1 } },
+      meta: { label: "reference", size: { min: 140, max: 260, weight: 1 } },
     },
     {
-      id: "to",
-      accessorFn: (e) => e.to,
+      id: "kind",
+      accessorFn: (p) => p.to ?? "",
       enableSorting: false,
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="to" />
+        <DataTableColumnHeader column={column} title="kind" />
       ),
       cell: ({ row }) => (
-        <TargetCell edge={row.original} kind={kind} kinds={kinds} />
+        <TargetCell reference={row.original} kind={kind} kinds={kinds} />
       ),
-      meta: { label: "to", size: { min: 120, max: 220, weight: 0.75 } },
+      meta: { label: "kind", size: { min: 120, max: 220, weight: 0.75 } },
     },
     {
-      id: "required",
-      accessorFn: (e) => e.required === true,
+      id: "holds",
+      accessorFn: (p) => [p.required, p.mustExist, p.onDelete, p.subject],
       enableSorting: false,
       header: ({ column }) => (
-        <DataTableColumnHeader column={column} title="required" />
+        <DataTableColumnHeader column={column} title="holds" />
       ),
-      cell: ({ row }) =>
-        row.original.required ? (
-          <Badge variant="secondary" className="px-1.5 font-normal">
-            required
-          </Badge>
-        ) : (
-          <Muted>—</Muted>
-        ),
-      meta: { label: "required", width: 96 },
+      cell: ({ row }) => <HoldsCell reference={row.original} />,
+      meta: { label: "holds", size: { min: 160, max: 300, weight: 1 } },
     },
     {
       id: "description",
-      accessorFn: (e) => e.description,
+      accessorFn: (p) => p.description,
       enableSorting: false,
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title="description" />
@@ -286,18 +310,28 @@ function PropertyTable({ kind }: { kind: KindInfo }) {
   )
 }
 
-function EdgeTable({ kind, kinds }: { kind: KindInfo; kinds: KindInfo[] }) {
-  const rows = useMemo(() => declaredEdges(kind), [kind])
-  const columns = useMemo(() => edgeColumns(kind, kinds), [kind, kinds])
+/** The kind's pointers at other records, listed again with what each one holds
+ * a writer to. They are properties, so the table above already carries them;
+ * this is where `mustExist`, `onDelete` and a mapping subject are readable
+ * without opening the YAML. */
+function ReferenceTable({
+  kind,
+  kinds,
+}: {
+  kind: KindInfo
+  kinds: KindInfo[]
+}) {
+  const rows = useMemo(() => declaredReferences(kind), [kind])
+  const columns = useMemo(() => referenceColumns(kind, kinds), [kind, kinds])
   const table = useDataTable({
     columns,
     data: rows,
-    getRowId: (row) => row.rel,
-    prefsKey: "kind-definition-edges",
+    getRowId: (row) => row.name,
+    prefsKey: "kind-definition-references",
   })
   if (!rows.length) return null
   return (
-    <Section title="Edges" count={rows.length}>
+    <Section title="References" count={rows.length}>
       <DataTable table={table} density="compact" />
     </Section>
   )
@@ -320,7 +354,7 @@ export function KindDefinition({
   kinds,
 }: {
   kind: KindInfo
-  /** The registry, so an edge target resolves to a real collection. */
+  /** The registry, so a reference's target resolves to a real collection. */
   kinds: KindInfo[]
 }) {
   const yaml = useMemo(() => kindManifestYAML(kind), [kind])
@@ -355,7 +389,7 @@ export function KindDefinition({
         </div>
       </Section>
       <PropertyTable kind={kind} />
-      <EdgeTable kind={kind} kinds={kinds} />
+      <ReferenceTable kind={kind} kinds={kinds} />
     </div>
   )
 }

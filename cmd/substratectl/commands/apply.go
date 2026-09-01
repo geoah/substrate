@@ -34,11 +34,7 @@ Every document wears the envelope — kind, metadata, data:
       name: Send rack layout to Alex
       dueAt: 2026-08-08T00:00:00Z
       detail: "rack layout"
-    edges:
-      - rel: source
-        to:
-          kind: calendar.substrate.reamde.dev/transcript
-          id: f81k
+      source: calendar.substrate.reamde.dev/transcript/f81k
 
 A qualified kind resolves outright; a bare one resolves against the kind
 registry, and a name several authorities declare (every bundle installs a
@@ -55,9 +51,11 @@ does a state's current value — which apply cannot move: a transition is
 ` + "`displayTemplate`" + ` renders its title instead (` + "`task`" + ` from
 ` + "`name`" + `, above) and drops a written one.
 
-An edge target is ` + "`{authority, type, id}`" + `; bare ` + "`{id}`" + ` is the
-shorthand on a single-target edge. ` + "`metadata.ifVersion`" + ` refuses the
-write unless the stored version is that one.
+A pointer at another record is a property too: a ` + "`type: reference`" + `
+property holds the target's ` + "`<kind>/<id>`" + ` path (` + "`source`" + `,
+above), or a list of them where the declaration says ` + "`repeated`" + `.
+` + "`metadata.ifVersion`" + ` refuses the write unless the stored version is
+that one.
 
 Schema documents apply too (schema is records): a document declared into
 core with one of the nine schema kinds (authority, kind, trait,

@@ -8,8 +8,8 @@ data:
     absence of a log is what missed means"
   # ABSENCE MEANS MISSED: an occurrence exists only when a log marks it. There
   # is deliberately no missed state, so a reader computes missed by expanding
-  # the rule and subtracting the logs. A binding kind adds its own owner edge
-  # to the recurring record it logs against.
+  # the rule and subtracting the logs. A binding kind adds its own owner
+  # reference to the recurring record it logs against.
   #
   # The trait contracts presence and datatype only, never the state VALUES: a
   # trait carries no values, so each binding kind declares its own flip machine

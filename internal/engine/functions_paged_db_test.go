@@ -437,7 +437,7 @@ func okRunPages(t *testing.T, ds *dataset, triggerID string) int {
 	err := ds.db.QueryRowContext(context.Background(), `
 		SELECT props->'pages' FROM records
 		WHERE kind = $1 AND deleted_at IS NULL
-		  AND props->>'trigger' = $2 AND props->>'status' = 'ok'
+		  AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' = 'ok'
 		ORDER BY created_at DESC, id DESC LIMIT 1`,
 		typeRun, vocabulary.RecordPath(typeTrigger, triggerID)).Scan(&raw)
 	if err != nil {

@@ -166,7 +166,7 @@ func (t *txn) recordProposalConflict(req *erow, reason string) error {
 	return nil
 }
 
-// requestTarget resolves what a request would change: the target edge on a
+// requestTarget resolves what a request would change: the `target` reference on a
 // patch/delete, the named identity on a create.
 func (t *txn) requestTarget(req *erow) (eref, error) {
 	if requestOp(req.Props) == opCreate {
@@ -177,7 +177,7 @@ func (t *txn) requestTarget(req *erow) (eref, error) {
 		}
 		return eref{}, nil
 	}
-	return t.edgeTargetOf(req.ref(), propTarget)
+	return referenceTargetOf(req, propTarget), nil
 }
 
 // putThreadSystemRow writes one `system` llmmessage into a thread: the
@@ -215,7 +215,7 @@ func (t *txn) putThreadSystemRow(threadID string, env map[string]any, wrote []ch
 // orders by creation, and the ordinal is display.
 func (t *txn) nextThreadTurn(threadID string) (int64, error) {
 	probe, err := json.Marshal(map[string]any{
-		msgRelThread: vocabulary.RecordPath(typeThread, threadID),
+		msgRelThread: referenceValueOf(vocabulary.RecordPath(typeThread, threadID)),
 	})
 	if err != nil {
 		return 0, err
@@ -290,7 +290,7 @@ func (ds *dataset) admitResume(ctx context.Context, threadID string, decider sub
 // often a transition cycle can wake the agent.
 func (ds *dataset) systemRowsInLastHour(ctx context.Context, threadID string) (int, error) {
 	probe, err := json.Marshal(map[string]any{
-		msgRelThread: vocabulary.RecordPath(typeThread, threadID),
+		msgRelThread: referenceValueOf(vocabulary.RecordPath(typeThread, threadID)),
 		"role":       msgRoleSystem,
 	})
 	if err != nil {
@@ -349,7 +349,7 @@ func (ds *dataset) SweepResolutions(ctx context.Context) (int, error) {
 		    SELECT 1 FROM records m
 		    WHERE m.kind = $2 AND m.deleted_at IS NULL
 		      AND m.props->>'role' = 'system'
-		      AND m.props->>'thread' = 'core.substrate.reamde.dev/llmthread/' || t.id
+		      AND `+referencePathSQL("m.props", msgRelThread)+` = 'core.substrate.reamde.dev/llmthread/' || t.id
 		      AND m.created_at > (t.props->>'finishedAt')::timestamptz
 		  )`,
 		typeThread, typeMessage)

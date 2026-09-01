@@ -12,8 +12,6 @@ const (
 	OpPut    Op = "put"
 	OpPatch  Op = "patch"
 	OpDelete Op = "delete"
-	OpLink   Op = "link"
-	OpUnlink Op = "unlink"
 	OpMerge  Op = "merge"
 	OpSplit  Op = "split"
 	OpGC     Op = "gc"

@@ -1,24 +1,27 @@
-# one human, one record: every edge that means "a person" lands here. What a
-# single source holds about them — Google's `contact`, Slack's `user` — is its
-# own type in that connector's authority, pointing here through an ordinary edge
-# whose recordmapping (§6.1) says how the record's properties reach the person, so
-# most of the properties below are machine-managed (§7.1) rather than written
-# by hand — and any of them yields to you the moment you write it.
+# one human, one record: every reference that means "a person" lands here. What
+# a single source holds about them — Google's `contact`, Slack's `user` — is its
+# own type in that connector's authority, pointing here through an ordinary
+# reference whose recordmapping (§6.1) says how the record's properties reach
+# the person, so most of the properties below are machine-managed (§7.1) rather
+# than written by hand — and any of them yields to you the moment you write it.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: people.substrate.reamde.dev/person
 data:
   authority: people.substrate.reamde.dev
   description: >-
-    One human, one record: every edge in every authority that means "a person"
-    lands here. What one source holds about them — a Google contact, a GitHub
-    user — is that bundle's own record pointing here, so a person carries
-    many provider identities and stays one row.
+    One human, one record: every reference in every authority that means "a
+    person" lands here. What one source holds about them — a Google contact,
+    a GitHub user — is that bundle's own record pointing here, so a person
+    carries many provider identities and stays one row.
   # version 2: the first version this kind pins itself, above the 1 it took
   # from the authority. `memberOf` gained a declared `properties` block (issue
   # 111): additive, and the first shipped use of the block.
   # version 3: `names.plural` retired (issue 253, decision 0033).
-  version: 3
+  # version 4: `memberOf` is a repeated `type: reference` property with
+  # `mustExist: true`; the role and start date it carries are the reference's
+  # own `properties` block.
+  version: 4
   names:
     singular: person
   # what a human recognizes first is the friendly name; the full name is the
@@ -56,7 +59,7 @@ data:
       description: free text, never an enum; empty means unknown, use they/them
     # no `author` here: a role (author, narrator, attendee) is a property of
     # the RELATION, per this bundle's own rule, so the authority that owns the
-    # work carries it as an edge into `person`.
+    # work carries it as a reference into `person`.
     relationship:
       type: enum
       description: how this person relates to the owner
@@ -93,12 +96,13 @@ data:
           to: known
         - from: known
           to: utility
-  edges:
-    # the employer is an edge; there is no `company` property here. The flat
-    # string a provider holds stays on that provider's own type.
+    # the employer is a reference; there is no `company` property here. The
+    # flat string a provider holds stays on that provider's own type.
     memberOf:
-      to: organization
-      many: true
+      type: reference
+      kind: organization
+      repeated: true
+      mustExist: true
       description: the employer or workspace; there is no company property
       # What the membership itself is, as opposed to what either end is. Both
       # are optional, because a provider that syncs an org rarely knows the

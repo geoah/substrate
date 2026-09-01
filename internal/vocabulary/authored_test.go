@@ -68,8 +68,12 @@ data:
   names: {singular: row, plural: rows}
   properties:
     label: {type: string}
-  edges:
-    widget: {to: widget, required: true}
+    widget:
+      type: reference
+      kind: widget
+      required: true
+      mustExist: true
+      subject: true
 ---
 kind: core.substrate.reamde.dev/recordmapping
 metadata: {id: a.example.com/rowwidget}
@@ -77,7 +81,7 @@ data:
   authority: a.example.com
   from: a.example.com/row
   to: a.example.com/widget
-  edge: widget
+  property: widget
   map:
     status: {path: label}
 ---

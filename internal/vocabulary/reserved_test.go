@@ -1,15 +1,17 @@
 package vocabulary_test
 
-// The reserved dialect keys (issue 110): `unique`, `deprecated` and an edge's
-// `properties` block. Each is admitted, validated and stored, and NONE of them
-// changes a write: no index polices `unique`, no path reads `deprecated`, and
-// an edge write still carries whatever props it likes.
+// The reserved dialect keys (issue 110): `unique` and `deprecated`. Each is
+// admitted, validated and stored, and NEITHER changes a write: no index
+// polices `unique` and no path reads `deprecated`.
 //
 // They are reserved rather than implemented because a declaration key set is
 // CLOSED: an unknown key quarantines the authority that ships it, and fails
 // the open for core, so every added key is a coordinated upgrade of every
 // binary that might read the closure. Landing the keys inert costs one such
 // event and buys the implementations after it none.
+//
+// A reference's `properties:` block sits below them, and it is NOT inert: the
+// declaration is the whole admission a link value is held to.
 
 import (
 	"strings"
@@ -155,10 +157,9 @@ func TestDeprecatedReserved(t *testing.T) {
       values:
         - value: sweet
         - {value: salty, deprecated: true}
-  edges:
-    author: {to: any, deprecated: true}
+    author: {type: reference, deprecated: true}
 `)
-		for _, name := range []string{"size", "spec", "owner", "status"} {
+		for _, name := range []string{"size", "spec", "owner", "status", "author"} {
 			if !ty.Props[name].Deprecated {
 				t.Errorf("%s: deprecated not parsed", name)
 			}
@@ -166,9 +167,6 @@ func TestDeprecatedReserved(t *testing.T) {
 		values := ty.Props["flavor"].Values
 		if len(values) != 2 || values[0].Deprecated || !values[1].Deprecated {
 			t.Errorf("enum values: %+v", values)
-		}
-		if !ty.Edges["author"].Deprecated {
-			t.Error("edge: deprecated not parsed")
 		}
 		props, _ := ty.Definition["properties"].(map[string]any)
 		size, _ := props["size"].(map[string]any)
@@ -186,21 +184,19 @@ func TestDeprecatedReserved(t *testing.T) {
 `, "deprecated or required, never both")
 		loadThingErr(t, `  properties:
     label: {type: string}
-  edges:
-    author: {to: any, deprecated: true, required: true}
+    author: {type: reference, deprecated: true, required: true}
 `, "deprecated or required, never both")
 	})
 }
 
-// --- edges.<rel>.properties ------------------------------------------------
+// --- a reference's properties block -----------------------------------------
 
-func TestEdgePropertiesReserved(t *testing.T) {
+func TestReferencePropertiesBlock(t *testing.T) {
 	t.Run("admitted, parsed and stored", func(t *testing.T) {
 		ty := loadThing(t, `  properties:
     label: {type: string}
-  edges:
     author:
-      to: any
+      type: reference
       properties:
         order: {type: int, description: where this one sits in the list}
         role:
@@ -210,36 +206,35 @@ func TestEdgePropertiesReserved(t *testing.T) {
             - {value: editor}
         since: {type: datetime, deprecated: true}
 `)
-		e := ty.Edges["author"]
-		if got, want := e.PropOrder, []string{"order", "role", "since"}; strings.Join(got, ",") != strings.Join(want, ",") {
-			t.Fatalf("PropOrder = %v, want %v", got, want)
+		p := ty.Props["author"]
+		if got, want := p.PropertyOrder, []string{"order", "role", "since"}; strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("PropertyOrder = %v, want %v", got, want)
 		}
-		if got := e.Props["order"].Datatype; got != vocabulary.DatatypeInt {
+		if got := p.Properties["order"].Datatype; got != vocabulary.DatatypeInt {
 			t.Errorf("order datatype = %q", got)
 		}
-		if got := e.Props["role"].ValueStrings(); strings.Join(got, ",") != "writer,editor" {
+		if got := p.Properties["role"].ValueStrings(); strings.Join(got, ",") != "writer,editor" {
 			t.Errorf("role values = %v", got)
 		}
-		if !e.Props["since"].Deprecated {
+		if !p.Properties["since"].Deprecated {
 			t.Error("since: deprecated not parsed")
 		}
-		edges, _ := ty.Definition["edges"].(map[string]any)
-		author, _ := edges["author"].(map[string]any)
+		props, _ := ty.Definition["properties"].(map[string]any)
+		author, _ := props["author"].(map[string]any)
 		if _, stored := author["properties"]; !stored {
-			t.Errorf("definition edge = %v", author)
+			t.Errorf("definition reference = %v", author)
 		}
 	})
 
 	t.Run("a bare-word value is an error, and the mapping is stored verbatim", func(t *testing.T) {
-		// core's `kind` holds an edge property's values as {value, label}
+		// core's `kind` holds a link property's values as {value, label}
 		// objects. Admitting the bare word a record property takes would mean
 		// rewriting the author's block on its way into the row, so it is
 		// refused by name instead and the stored block is what was written.
 		loadThingErr(t, `  properties:
     label: {type: string}
-  edges:
     author:
-      to: any
+      type: reference
       properties:
         role:
           type: enum
@@ -248,9 +243,8 @@ func TestEdgePropertiesReserved(t *testing.T) {
 
 		ty := loadThing(t, `  properties:
     label: {type: string}
-  edges:
     author:
-      to: any
+      type: reference
       properties:
         role:
           type: enum
@@ -258,13 +252,13 @@ func TestEdgePropertiesReserved(t *testing.T) {
             - {value: writer}
             - {value: editor, label: Editor, deprecated: true}
 `)
-		if got := ty.Edges["author"].Props["role"].ValueStrings(); strings.Join(got, ",") != "writer,editor" {
+		if got := ty.Props["author"].Properties["role"].ValueStrings(); strings.Join(got, ",") != "writer,editor" {
 			t.Fatalf("role values = %v", got)
 		}
-		edges, _ := ty.Definition["edges"].(map[string]any)
-		author, _ := edges["author"].(map[string]any)
-		props, _ := author["properties"].(map[string]any)
-		role, _ := props["role"].(map[string]any)
+		props, _ := ty.Definition["properties"].(map[string]any)
+		author, _ := props["author"].(map[string]any)
+		link, _ := author["properties"].(map[string]any)
+		role, _ := link["role"].(map[string]any)
 		values, _ := role["values"].([]any)
 		first, _ := values[0].(map[string]any)
 		if len(values) != 2 || len(first) != 1 {
@@ -276,41 +270,22 @@ func TestEdgePropertiesReserved(t *testing.T) {
 
 	t.Run("a bare datatype is an error", func(t *testing.T) {
 		// The `fields:` shorthand does not reach here: the stored row holds
-		// each edge property as a mapping.
+		// each link property as a mapping.
 		loadThingErr(t, `  properties:
     label: {type: string}
-  edges:
     author:
-      to: any
+      type: reference
       properties:
         order: int
-`, "an edge property is a mapping")
+`, "a link property is a mapping")
 	})
 
-	t.Run("nothing validates an edge write against it", func(t *testing.T) {
-		// The reservation's whole point: the block is a declaration and not yet
-		// a contract (issue 111). Held here as the loader's own statement; the
-		// write path is tested where it lives.
-		ty := loadThing(t, `  properties:
-    label: {type: string}
-  edges:
-    author:
-      to: any
-      properties:
-        order: {type: int}
-`)
-		if ty.Edges["author"].Props["order"].Managed {
-			t.Error("an edge property claimed the engine stamps it")
-		}
-	})
-
-	t.Run("a container or a shape is an error", func(t *testing.T) {
+	t.Run("a container key is an error", func(t *testing.T) {
 		mk := func(prop string) string {
 			return `  properties:
     label: {type: string}
-  edges:
     author:
-      to: any
+      type: reference
       properties:
         ` + prop + "\n"
 		}
@@ -319,21 +294,13 @@ func TestEdgePropertiesReserved(t *testing.T) {
 		loadThingErr(t, mk(`when: {type: string, fts: true}`), `unknown key "fts"`)
 		loadThingErr(t, mk(`when: {type: string, managed: true}`), `unknown key "managed"`)
 		loadThingErr(t, mk(`when: {type: string, unique: true}`), `unknown key "unique"`)
-		loadThingErr(t, mk(`when: {type: object, fields: {a: {type: string}}}`), "a shape with fields is a record")
-		loadThingErr(t, mk(`when: {type: reference, kind: any}`), "the edge IS the pointer")
-		loadThingErr(t, mk(`when: {type: json}`), "not a place to hide one")
-		loadThingErr(t, mk(`when: {type: secret}`), "a secret is a property of a record")
-		loadThingErr(t, mk(`when: {type: state, states: [a, b]}`), "a machine belongs to a record")
-		loadThingErr(t, mk(`when: {type: blobref}`), "a blob-ref resolves on a record's read path")
-		loadThingErr(t, mk(`when: {type: digest}`), "a digest is minted onto a record")
 	})
 
 	t.Run("a refinement resolves, and resolves to the same rule", func(t *testing.T) {
 		body := `  properties:
     label: {type: string}
-  edges:
     author:
-      to: any
+      type: reference
       properties:
         isbn: {type: isbn}
 `
@@ -359,7 +326,7 @@ data:
 			t.Fatalf("load: %v", err)
 		}
 		ty, _ := r.ByIdentity("g.example.com/thing")
-		p := ty.Edges["author"].Props["isbn"]
+		p := ty.Props["author"].Properties["isbn"]
 		if p.Datatype != vocabulary.DatatypeString || p.Pattern == nil {
 			t.Fatalf("refinement did not resolve: %+v", p)
 		}
@@ -368,21 +335,10 @@ data:
 	t.Run("a name that is not camelCase is an error", func(t *testing.T) {
 		loadThingErr(t, `  properties:
     label: {type: string}
-  edges:
     author:
-      to: any
+      type: reference
       properties:
         Order: {type: int}
 `, "camelCase")
-	})
-
-	t.Run("an empty block is an error", func(t *testing.T) {
-		loadThingErr(t, `  properties:
-    label: {type: string}
-  edges:
-    author:
-      to: any
-      properties: {}
-`, "drop the key rather than declaring none")
 	})
 }

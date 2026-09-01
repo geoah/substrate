@@ -8,8 +8,7 @@ package engine_test
 //     and lock every later write to them out;
 //   - `required` inside an object's declared fields was declarable and
 //     unenforced, on a shipped kind (`agent.tools[].function`) among others;
-//   - `unlink` is the verb that clears an edge, and it took no notice of a
-//     required one.
+//   - clearing a reference took no notice of the declaration requiring it.
 
 import (
 	"context"
@@ -121,51 +120,62 @@ func TestRequiredObjectFieldIsEnforced(t *testing.T) {
 	}})
 }
 
-// Unlink is the verb that clears an edge, so it is where a required edge has to
-// be defended: birth-only enforcement leaves the record one call away from
-// standing without the edge its declaration requires.
-func TestUnlinkRefusesToClearARequiredEdge(t *testing.T) {
+// Clearing is writing the property away, so that is where a required reference
+// has to be defended: `required` is checked on the merged row after EVERY
+// write, never only at birth, or the record stands one patch away from lacking
+// the pointer its declaration requires.
+func TestClearingARequiredReferenceIsRefused(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	_, ds := newDataset(t)
 	docs := []map[string]any{
-		vocabulary.AuthorityManifest(reviewAuthority+".edges", 0),
-		vocabulary.KindManifest(reviewAuthority+".edges",
+		vocabulary.AuthorityManifest(reviewAuthority+".refs", 0),
+		vocabulary.KindManifest(reviewAuthority+".refs",
 			map[string]any{"singular": "owner", "plural": "owners"},
 			map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
-		vocabulary.KindManifest(reviewAuthority+".edges",
+		vocabulary.KindManifest(reviewAuthority+".refs",
 			map[string]any{"singular": "asset", "plural": "assets"},
 			map[string]any{
-				"properties": map[string]any{"name": map[string]any{"type": "string"}},
-				"edges": map[string]any{
-					"holder": map[string]any{"to": reviewAuthority + ".edges/owner", "required": true},
-					"seenBy": map[string]any{"to": reviewAuthority + ".edges/owner", "many": true},
+				"properties": map[string]any{
+					"name": map[string]any{"type": "string"},
+					"holder": map[string]any{
+						"type": "reference", "kind": reviewAuthority + ".refs/owner",
+						"required": true, "mustExist": true,
+					},
+					"seenBy": map[string]any{
+						"type": "reference", "kind": reviewAuthority + ".refs/owner",
+						"repeated": true, "mustExist": true,
+					},
 				},
 			}),
 	}
 	if _, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, docs); err != nil {
-		t.Fatalf("apply the edge declaration: %v", err)
+		t.Fatalf("apply the reference declaration: %v", err)
 	}
-	ownerKind, assetKind := reviewAuthority+".edges/owner", reviewAuthority+".edges/asset"
+	ownerKind, assetKind := reviewAuthority+".refs/owner", reviewAuthority+".refs/asset"
 	mustPut(t, ds, owner, substrate.PutInput{Kind: ownerKind, ID: "ada", Properties: map[string]any{"name": "Ada"}})
 	mustPut(t, ds, owner, substrate.PutInput{
 		Kind: assetKind, ID: "a1",
-		Properties: map[string]any{"name": "press"},
-		Edges: []substrate.EdgeInput{
-			{Rel: "holder", To: substrate.EdgeRef{ID: "ada"}},
-			{Rel: "seenBy", To: substrate.EdgeRef{ID: "ada"}},
+		Properties: map[string]any{
+			"name":   "press",
+			"holder": "ada",
+			"seenBy": []any{"ada"},
 		},
 	})
 
-	err := ds.Unlink(ctx, owner, assetKind, "a1", "holder", substrate.EdgeRef{ID: "ada"})
+	_, err := ds.Patch(ctx, owner, assetKind, "a1", substrate.PatchInput{
+		Properties: map[string]any{"holder": nil},
+	})
 	if err == nil {
-		t.Fatal("unlinking the last target of a required edge must be refused")
+		t.Fatal("clearing a required reference must be refused")
 	}
 	wantProblem(t, err, "holder")
 
-	// An edge that is not required still unlinks.
-	if err := ds.Unlink(ctx, owner, assetKind, "a1", "seenBy", substrate.EdgeRef{ID: "ada"}); err != nil {
-		t.Fatalf("unlink an optional edge: %v", err)
+	// A reference that is not required still clears.
+	if _, err := ds.Patch(ctx, owner, assetKind, "a1", substrate.PatchInput{
+		Properties: map[string]any{"seenBy": nil},
+	}); err != nil {
+		t.Fatalf("clear an optional reference: %v", err)
 	}
 }
 

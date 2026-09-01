@@ -145,3 +145,15 @@ data:
       managed: true
       description: set while a purge runs — enable refuses it; an interrupted
         purge leaves it standing until a purge completes
+    # The owner's explicit choice per input, keyed by the input's name. It is
+    # runtime state the bind verb owns, not part of the declaration, which is
+    # what `managed` says: an install that rewrites this row leaves the choices
+    # alone. Unpinned, because an input names any kind, so each value is a full
+    # "<kind>/<id>" path.
+    bindings:
+      type: reference
+      keyed: true
+      keyPattern: camel
+      managed: true
+      description: the record chosen for each input, keyed by the input's
+        name; written by the bind verb

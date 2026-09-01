@@ -180,12 +180,14 @@ func TestNotionBundleAdmitsSchema(t *testing.T) {
 	if !ok {
 		t.Fatalf("page type %s missing", notionPageType)
 	}
-	ed, ok := page.Edge("parent")
+	ed, ok := page.Prop("parent")
 	if !ok {
-		t.Fatalf("%s declares no `parent` edge", notionPageType)
+		t.Fatalf("%s declares no `parent` reference", notionPageType)
 	}
-	if ed.To != "any" || ed.Required || ed.Many {
-		t.Fatalf("parent edge shape wrong: to=%q required=%v many=%v", ed.To, ed.Required, ed.Many)
+	// UNPINNED: a page's parent is a page or a data source, so the declaration
+	// names no kind and the value carries one.
+	if ed.To != "" || ed.Required || ed.Repeated {
+		t.Fatalf("parent reference shape wrong: kind=%q required=%v repeated=%v", ed.To, ed.Required, ed.Repeated)
 	}
 	if _, ok := reg.ByIdentity(notionDBType); !ok {
 		t.Fatalf("database type %s missing", notionDBType)
@@ -583,15 +585,15 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	if !strings.Contains(content, "# Heading") || !strings.Contains(content, "Some paragraph text.") {
 		t.Fatalf("pg1 content not normalized: %q", content)
 	}
-	if p1.Properties["account"] != notionAccountType+"/"+acct.ID || p1.Properties["archived"] != false {
+	if storedReferencePath(p1.Properties["account"]) != notionAccountType+"/"+acct.ID || p1.Properties["archived"] != false {
 		t.Fatalf("pg1 props wrong: account=%v archived=%v", p1.Properties["account"], p1.Properties["archived"])
 	}
 	if _, ok := p1.Properties["lastEditedAt"]; !ok {
 		t.Fatalf("pg1 carries no lastEditedAt")
 	}
 	// pg1's parent (the data source) appeared BEFORE it in the feed: inline edge.
-	if tg := parentEdge(p1); tg == nil || tg.ID != db {
-		t.Fatalf("pg1 parent edge = %+v, want the data-source mirror %s", tg, db)
+	if tg := parentRef(p1); tg != vocabulary.RecordPath(notionDBType, db) {
+		t.Fatalf("pg1 parent = %q, want the data-source mirror %s", tg, db)
 	}
 
 	// pg2's parent (pg1) appeared AFTER it in the feed: the deferred links
@@ -601,8 +603,8 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("page mirror pg2 did not land: %v", err)
 	}
-	if tg := parentEdge(p2); tg == nil || tg.ID != pg1 {
-		t.Fatalf("pg2 parent edge = %+v, want the page mirror %s", tg, pg1)
+	if tg := parentRef(p2); tg != notionPageRef(pg1) {
+		t.Fatalf("pg2 parent = %q, want the page mirror %s", tg, pg1)
 	}
 	if _, ok := p2.Properties["pendingParent"]; ok {
 		t.Fatalf("pg2 still carries pendingParent after its edge resolved: %v", p2.Properties["pendingParent"])
@@ -614,8 +616,8 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("page mirror pg4 did not land: %v", err)
 	}
-	if tg := parentEdge(p4); tg != nil {
-		t.Fatalf("pg4 has a parent edge %+v with its parent unshared", tg)
+	if tg := parentRef(p4); tg != "" {
+		t.Fatalf("pg4 has a parent %q with its parent unshared", tg)
 	}
 	// The stored kind is the FULL type identity: it is fed straight back to
 	// host.records.get on the repair pass, which accepts nothing less.
@@ -682,8 +684,8 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 		t.Fatalf("pg5 did not mirror once shared: %v", err)
 	}
 	p4Fixed := mustGetInternal(t, ds, notionPageType, pg4)
-	if tg := parentEdge(p4Fixed); tg == nil || tg.ID != pg5 {
-		t.Fatalf("pg4 parent edge = %+v after repair, want %s", tg, pg5)
+	if tg := parentRef(p4Fixed); tg != notionPageRef(pg5) {
+		t.Fatalf("pg4 parent = %q after repair, want %s", tg, pg5)
 	}
 	if _, ok := p4Fixed.Properties["pendingParent"]; ok {
 		t.Fatalf("pg4 pendingParent survived its repair: %v", p4Fixed.Properties["pendingParent"])
@@ -859,8 +861,8 @@ func TestNotionSyncResolvesParentsBesideASecondPageType(t *testing.T) {
 	pg4 := substratefn.ExternalID("notion", acct.ID, notionPg4ID)
 	pg5 := substratefn.ExternalID("notion", acct.ID, notionPg5ID)
 
-	if tg := parentEdge(mustGetInternal(t, ds, notionPageType, pg2)); tg == nil || tg.ID != pg1 {
-		t.Fatalf("pg2 parent edge = %+v, want the page mirror %s", tg, pg1)
+	if tg := parentRef(mustGetInternal(t, ds, notionPageType, pg2)); tg != notionPageRef(pg1) {
+		t.Fatalf("pg2 parent = %q, want the page mirror %s", tg, pg1)
 	}
 	pend, ok := mustGetInternal(t, ds, notionPageType, pg4).Properties["pendingParent"].([]any)
 	if !ok || len(pend) != 2 || pend[0] != notionPageType || pend[1] != pg5 {
@@ -894,22 +896,24 @@ func TestNotionSyncResolvesParentsBesideASecondPageType(t *testing.T) {
 		t.Fatalf("legacy pendingParent repair: %v", err)
 	}
 	p4 := mustGetInternal(t, ds, notionPageType, pg4)
-	if tg := parentEdge(p4); tg == nil || tg.ID != pg5 {
-		t.Fatalf("pg4 parent edge = %+v after the legacy repair, want %s", tg, pg5)
+	if tg := parentRef(p4); tg != notionPageRef(pg5) {
+		t.Fatalf("pg4 parent = %q after the legacy repair, want %s", tg, pg5)
 	}
 	if _, ok := p4.Properties["pendingParent"]; ok {
 		t.Fatalf("the legacy pendingParent survived its repair: %v", p4.Properties["pendingParent"])
 	}
 }
 
-// parentEdge reads a record's single `parent` edge target, nil when unset.
-func parentEdge(e *substrate.Record) *substrate.EdgeTarget {
-	targets := e.Edges["parent"]
-	if len(targets) == 0 {
-		return nil
-	}
-	return &targets[0]
+// parentRef reads a record's `parent` reference as its record path, "" when
+// unset.
+func parentRef(e *substrate.Record) string {
+	return storedReferencePath(e.Properties["parent"])
 }
+
+// notionPageRef is the stored path a page mirror's `parent` carries when it
+// names another page mirror. The parent is unpinned, so the value is a full
+// path and a test comparing bare ids would be comparing the wrong thing.
+func notionPageRef(id string) string { return vocabulary.RecordPath(notionPageType, id) }
 
 // mustGetInternal is mustPutInternal's read twin, local to this file.
 func mustGetInternal(t *testing.T, ds *dataset, typ, id string) *substrate.Record {

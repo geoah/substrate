@@ -21,19 +21,19 @@ data:
     moved:
       type: json
       required: true
-      description: the edges and properties the merge moved, what a split
-        reads back
-  edges:
-    # `to: any` because two records of any one type may merge — an edge is
-    # the one way one record points at another, so a merge record's own
-    # history is queryable like everything else. The loser is tombstoned,
-    # never erased: a finalizer holds GC off it, so both ends of this record
-    # survive for `recordsplit` to read.
+      description: the properties the merge moved, what a split reads back
+    # Unpinned because two records of any one kind may merge, so a merge
+    # record's own history is queryable like everything else. The loser is
+    # tombstoned, never erased: a finalizer holds GC off it, so both ends of
+    # this record survive for `recordsplit` to read, and a tombstone counts
+    # as existing for `mustExist`.
     winner:
-      to: any
+      type: reference
       required: true
+      mustExist: true
       description: the record that survived the merge
     loser:
-      to: any
+      type: reference
       required: true
+      mustExist: true
       description: the tombstoned record, kept for a possible split

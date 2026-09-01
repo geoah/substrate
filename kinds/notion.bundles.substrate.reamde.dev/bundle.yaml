@@ -63,7 +63,9 @@ data:
   # the rows it synced (docs/decisions/0032).
   # version 7: the inline functions' `timeoutMs` (int ms) is `timeout`, the
   # duration datatype (ISO 8601); the retype rides core's function kind bump.
-  version: 7
+  # version 8: the page's `parent` is a `type: reference` property with
+  # `mustExist: true`, and every account reference carries `onDelete: cascade`.
+  version: 8
 ---
 # ---- the bundle document: the install unit --------------------------------
 # `installs:` names EXACTLY the authority's schema members. NO `oauth2:` manifest
@@ -285,7 +287,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this page was synced from
     pageId:
@@ -323,12 +325,13 @@ data:
       type: json
       displayName: Raw
       description: the raw Notion page object as fetched, for provenance
-  edges:
-    # Optional: a page parented by another page or by a data source links
-    # here once its parent is mirrored too; workspace-parented pages have
-    # none. `to: any` because the parent is a page OR a database.
+    # Optional: a page parented by another page or by a data source names
+    # its parent here once that parent is mirrored too; workspace-parented
+    # pages have none. UNPINNED because the parent is a page OR a database.
     parent:
-      to: any
+      type: reference
+      displayName: Parent
+      mustExist: true
       description: the mirrored parent page or data source, when the parent
         is shared with the integration
 ---
@@ -355,7 +358,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this data source was synced from
     dataSourceId:
@@ -390,7 +393,7 @@ data:
 #   blocks — a bounded batch of block-tree walks per invocation, each
 #     patching its page's `content` (deep pages can no longer eat the budget
 #     before a cursor commits).
-#   links  — deferred parent edges; an unresolved target stays stored as
+#   links  — deferred parent references; an unresolved target stays stored as
 #     `pendingParent` on the child and is repaired by a LATER sync even when
 #     the child's content is unchanged.
 #
@@ -460,8 +463,8 @@ data:
     normalizes) is compared to the fetched object's — an unchanged page
     fetches no blocks and stages no effect. Two repairs run INDEPENDENTLY of
     that skip: a stored pendingParent whose target has since mirrored gets
-    its edge, and a mirror whose blocks phase never completed re-queues its
-    content walk.
+    its parent reference, and a mirror whose blocks phase never completed
+    re-queues its content walk.
     """
     import datetime as _dt
     import json
@@ -477,7 +480,7 @@ data:
     DEFAULT_API = "https://api.notion.com"
     SEARCH_PAGE = 100   # Notion's search maximum — one provider page per invocation
     BLOCKS_PAGE = 3     # pages whose block trees are walked per blocks invocation
-    LINKS_PAGE = 15     # deferred parent edges resolved per links invocation
+    LINKS_PAGE = 15     # parent references resolved per links invocation
     MAX_BLOCKS = 500    # block-walker budget per page (truncation marker past it)
     MAX_DEPTH = 2       # nested-children recursion cap
     MAX_CALL_STEPS = 2000  # the direct-call internal drain's hard stop
@@ -676,9 +679,9 @@ data:
 
 
     def _ref(kind, mid):
-        # An edge reference is {kind, id} — the same kind reference every
-        # host.records.* / host.effects.* call takes.
-        return {"kind": _kind(kind), "id": mid}
+        # A reference VALUE is the flat "<kind>/<id>" path, not the {kind, id}
+        # pair host.records.* / host.effects.* take as two arguments.
+        return _kind(kind) + "/" + mid
 
 
     def _stamp_duplicate(host, acct):
@@ -714,15 +717,15 @@ data:
             # independently of the skip:
             props = (existing or {}).get("properties") or {}
             # 1. A stored pendingParent whose target has since been shared
-            #    gets its edge now — the child being unchanged must not strand
-            #    the link forever.
+            #    gets its parent reference now — the child being unchanged
+            #    must not strand the link forever.
             pend = props.get("pendingParent")
             if isinstance(pend, list) and len(pend) == 2:
                 pkind, pmid = _kind(pend[0]), str(pend[1])
                 if pmid in seen or host.records.get(pkind, pmid):
-                    host.effects.link(PAGE_TYPE, mid, "parent", _ref(pkind, pmid))
                     host.effects.patch(PAGE_TYPE, mid,
-                                       properties={"pendingParent": None})
+                                       properties={"parent": _ref(pkind, pmid),
+                                                   "pendingParent": None})
             # 2. A mirror whose blocks phase never completed (content absent)
             #    re-queues its walk.
             if not props.get("archived") and not props.get("content"):
@@ -737,7 +740,6 @@ data:
             out["lastEditedAt"] = obj["last_edited_time"]
         if obj.get("url"):
             out["url"] = obj["url"]
-        edges = None
         parent = obj.get("parent") or {}
         ptype = parent.get("type") or ""
         pid, pkind = "", ""
@@ -756,13 +758,13 @@ data:
         if pid:
             pmid = host.ids.external("notion", aid, pid)
             if pmid in seen or host.records.get(pkind, pmid):
-                edges = {"parent": _ref(pkind, pmid)}
+                out["parent"] = _ref(pkind, pmid)
             else:
                 # Parent not mirrored yet: keep the reference ON the child so
                 # a later sync can repair it, and defer to the links phase.
                 out["pendingParent"] = [pkind, pmid]
                 state["pending"].append([mid, pkind, pmid])
-        host.effects.put(PAGE_TYPE, mid, properties=out, edges=edges)
+        host.effects.put(PAGE_TYPE, mid, properties=out)
         seen.add(mid)
         state["count"] += 1
         if not archived:
@@ -847,18 +849,18 @@ data:
 
 
     def _links_step(host, state, seen):
-        # Deferred parent edges: a child mirrored before its parent could not
-        # link inline; once the walk drains, this phase probes each target
-        # and links the ones that exist. An absent target stays recorded as
-        # the child's pendingParent — a later sync repairs it if the parent
-        # is ever shared.
+        # Deferred parent references: a child mirrored before its parent could
+        # not name it inline; once the walk drains, this phase probes each
+        # target and writes the ones that exist. An absent target stays
+        # recorded as the child's pendingParent — a later sync repairs it if
+        # the parent is ever shared.
         take, keep = state["pending"][:LINKS_PAGE], state["pending"][LINKS_PAGE:]
         for child, pkind, pmid in take:
             pkind = _kind(pkind)
             if pmid in seen or host.records.get(pkind, pmid):
-                host.effects.link(PAGE_TYPE, child, "parent", _ref(pkind, pmid))
                 host.effects.patch(PAGE_TYPE, child,
-                                   properties={"pendingParent": None})
+                                   properties={"parent": _ref(pkind, pmid),
+                                               "pendingParent": None})
             else:
                 host.log("notion: parent of %s is not mirrored; pendingParent "
                          "stays for a later sync" % child)

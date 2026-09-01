@@ -263,9 +263,10 @@ func TestSchemaEvolutionStringToEnumFollowsTheValues(t *testing.T) {
 
 // The reserved keys of issue 110 travel the same road renamedFrom does: through
 // admission, into the stored declaration row, and back out of it when a later
-// write rebuilds the candidate registry from rows. The edge block is the one
-// that could not be taken on faith: core's own `kind` declaration types
-// `edges` field by field, so a row carrying an undeclared one is refused.
+// write rebuilds the candidate registry from rows. A reference's LINK DATA is
+// the block that could not be taken on faith: it is a property declaration
+// nested inside a property declaration, and it has to survive the round trip
+// with its own reserved keys intact.
 func TestSchemaEvolutionReservedKeysRoundTrip(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -276,25 +277,24 @@ func TestSchemaEvolutionReservedKeysRoundTrip(t *testing.T) {
 	props["level"] = map[string]any{"type": "enum", "values": []any{
 		"low", map[string]any{"value": "high", "deprecated": true},
 	}}
-	edges := map[string]any{
-		"author": map[string]any{
-			"to": "any", "properties": map[string]any{
-				"order": map[string]any{"type": "int"},
-				"since": map[string]any{"type": "datetime", "deprecated": true},
-				"role": map[string]any{"type": "enum", "values": []any{
-					map[string]any{"value": "writer"},
-					map[string]any{"value": "editor"},
-				}},
-			},
+	props["author"] = map[string]any{
+		"type": "reference", "repeated": true,
+		"properties": map[string]any{
+			"order": map[string]any{"type": "int"},
+			"since": map[string]any{"type": "datetime", "deprecated": true},
+			"role": map[string]any{"type": "enum", "values": []any{
+				map[string]any{"value": "writer"},
+				map[string]any{"value": "editor"},
+			}},
 		},
-		"predecessor": map[string]any{"to": "any", "deprecated": true},
 	}
+	props["predecessor"] = map[string]any{"type": "reference", "deprecated": true}
 	apply := func() error {
 		_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
 			vocabulary.AuthorityManifest(evoAuthority, 0),
 			vocabulary.KindManifest(evoAuthority,
 				map[string]any{"singular": "gizmo", "plural": "gizmos"},
-				map[string]any{"properties": props, "edges": edges}),
+				map[string]any{"properties": props}),
 		})
 		return err
 	}
@@ -326,25 +326,24 @@ func TestSchemaEvolutionReservedKeysRoundTrip(t *testing.T) {
 		if got, _ := high["deprecated"].(bool); !got {
 			t.Errorf("%s: stored enum value deprecated = %v", when, values[1])
 		}
-		se, _ := ty.Properties["edges"].(map[string]any)
-		author, _ := se["author"].(map[string]any)
-		edgeProps, _ := author["properties"].(map[string]any)
-		order, _ := edgeProps["order"].(map[string]any)
+		author, _ := stored["author"].(map[string]any)
+		linkProps, _ := author["properties"].(map[string]any)
+		order, _ := linkProps["order"].(map[string]any)
 		if got, _ := order["type"].(string); got != "int" {
-			t.Errorf("%s: stored edge property = %v", when, edgeProps["order"])
+			t.Errorf("%s: stored link property = %v", when, linkProps["order"])
 		}
-		role, _ := edgeProps["role"].(map[string]any)
+		role, _ := linkProps["role"].(map[string]any)
 		roleValues, _ := role["values"].([]any)
 		if len(roleValues) != 2 {
-			t.Fatalf("%s: stored edge enum values = %v", when, role["values"])
+			t.Fatalf("%s: stored link enum values = %v", when, role["values"])
 		}
 		writer, _ := roleValues[0].(map[string]any)
 		if got, _ := writer["value"].(string); got != "writer" {
-			t.Errorf("%s: stored edge enum value = %v", when, roleValues[0])
+			t.Errorf("%s: stored link enum value = %v", when, roleValues[0])
 		}
-		pre, _ := se["predecessor"].(map[string]any)
+		pre, _ := stored["predecessor"].(map[string]any)
 		if got, _ := pre["deprecated"].(bool); !got {
-			t.Errorf("%s: stored edge deprecated = %v", when, pre["deprecated"])
+			t.Errorf("%s: stored reference deprecated = %v", when, pre["deprecated"])
 		}
 	}
 	assertStored("after apply")

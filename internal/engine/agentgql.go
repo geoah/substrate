@@ -258,32 +258,6 @@ func (m *agentMutateDataset) Delete(ctx context.Context, actor substrate.Actor, 
 	return e, err
 }
 
-// Link and Unlink gate on the SOURCE kind: an edge is part of its source
-// record, so writing one is writing that record. They carry no effect ceiling
-// because an edge write drives no state machine: only a patch can enter the
-// accepted state whose transition materializes a change request.
-func (m *agentMutateDataset) Link(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef, props map[string]any) error {
-	if _, err := m.allow(srcType, "link"); err != nil {
-		return err
-	}
-	if err := m.loop.ds.linkBounded(ctx, actor, srcType, src, rel, to, props, m.ceiling()); err != nil {
-		return err
-	}
-	m.tally("link")
-	return nil
-}
-
-func (m *agentMutateDataset) Unlink(ctx context.Context, actor substrate.Actor, srcType, src, rel string, to substrate.EdgeRef) error {
-	if _, err := m.allow(srcType, "unlink"); err != nil {
-		return err
-	}
-	if err := m.loop.ds.unlinkBounded(ctx, actor, srcType, src, rel, to, m.ceiling()); err != nil {
-		return err
-	}
-	m.tally("unlink")
-	return nil
-}
-
 func (m *agentMutateDataset) Merge(context.Context, substrate.Actor, string, string, string) (*substrate.Record, error) {
 	return nil, fmt.Errorf("%w: merge is the owner's decision: its reviewed flow is a recordmergerequest, not an agent mutation", substrate.ErrForbidden)
 }

@@ -48,7 +48,10 @@ data:
   # grammar admits (docs/decisions/0038).
   # version 8: the inline functions' `timeoutMs` (int ms) is `timeout`, the
   # duration datatype (ISO 8601); the retype rides core's function kind bump.
-  version: 8
+  # version 9: `message.room` is a `type: reference` property with
+  # `mustExist: true`, and every owning reference in this closure carries
+  # `onDelete: cascade`.
+  version: 9
 ---
 # ---- the bundle document: the install unit --------------------------------
 # NO `oauth2:` block — an oauth2 block would demand a client input, and this
@@ -275,7 +278,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this room was synced from
     roomId:
@@ -300,9 +303,9 @@ data:
 # ---- the message mirror: one bridged message -------------------------------
 # One row per Matrix event, keyed by account + event id — event ids are
 # globally unique and immutable, so message writes are if_absent puts: a
-# re-read is a no-op, never a rewrite. The room edge is filled by the sync
-# (rooms commit earlier in the same drain); ownerRef so a deleted room
-# takes its mirrored messages with it.
+# re-read is a no-op, never a rewrite. The room reference is filled by the sync
+# (rooms commit earlier in the same drain); `onDelete: cascade` so a deleted
+# room takes its mirrored messages with it.
 kind: core.substrate.reamde.dev/kind
 metadata:
   id: beeper.bundles.substrate.reamde.dev/message
@@ -320,7 +323,7 @@ data:
       type: reference
       kind: account
       required: true
-      ownerRef: true
+      onDelete: cascade
       displayName: Account
       description: the account this message was synced from
     roomId:
@@ -355,11 +358,13 @@ data:
       type: json
       displayName: Raw event
       description: the raw Matrix event as fetched, for provenance
-  edges:
     room:
-      to: beeper.bundles.substrate.reamde.dev/room
+      type: reference
+      kind: beeper.bundles.substrate.reamde.dev/room
+      displayName: Room
       required: true
-      ownerRef: true
+      mustExist: true
+      onDelete: cascade
       description: the mirrored room this message belongs to
 ---
 # ---- the sync function -----------------------------------------------------
@@ -641,7 +646,8 @@ data:
         ts = ev.get("origin_server_ts")
         if cutoff and isinstance(ts, (int, float)) and ts < cutoff:
             return False
-        props = {"account": aid, "roomId": rid, "eventId": event_id,
+        props = {"account": aid, "room": room_eid,
+                 "roomId": rid, "eventId": event_id,
                  "sender": ev.get("sender") or "", "text": str(body), "raw": ev}
         if content.get("msgtype"):
             props["msgtype"] = content["msgtype"]
@@ -649,7 +655,7 @@ data:
             props["sentAt"] = _dt.datetime.fromtimestamp(
                 ts / 1000.0, _dt.timezone.utc).replace(microsecond=0).isoformat()
         host.effects.put(MESSAGE_TYPE, host.ids.external("beeper", aid, event_id),
-                         properties=props, edges={"room": room_eid}, if_absent=True)
+                         properties=props, if_absent=True)
         return True
 
 
@@ -671,8 +677,8 @@ data:
             return None
         if days < 0:
             return 0
-        edge = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)
-        return int(edge.timestamp() * 1000)
+        floor = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)
+        return int(floor.timestamp() * 1000)
 
 
     def _stamp(host, acct, aid, next_batch, pending):

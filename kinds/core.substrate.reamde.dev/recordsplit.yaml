@@ -7,7 +7,7 @@ data:
   description: >-
     The undo of one merge, performed on creation exactly as the merge was.
     It names the recordmerge it reverses and reads that merge's recorded moves
-    to put every edge and property back where it came from.
+    to put every property back where it came from.
   names:
     singular: recordsplit
   # A random-id row reads as the merge it undoes instead of its opaque id.
@@ -17,10 +17,11 @@ data:
       type: json
       required: true
       description: what the split put back where
-  edges:
-    # named, not polymorphic: a split undoes exactly one recorded merge, and
-    # that merge's `moved` set is what tells it where each edge goes back to.
+    # pinned, not polymorphic: a split undoes exactly one recorded merge, and
+    # that merge's `moved` set is what tells it where each value goes back to.
     merge:
-      to: recordmerge
+      type: reference
+      kind: recordmerge
       required: true
+      mustExist: true
       description: the recorded merge this split undoes

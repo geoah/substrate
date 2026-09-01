@@ -87,7 +87,7 @@ type BundleUpgradeChange struct {
 
 // InputStatus is one declared input's resolution.
 type InputStatus struct {
-	// Name is the input's declared name — also the edge rel the bind verb
+	// Name is the input's declared name — also the reference property the bind verb
 	// writes on the bundle's record row.
 	Name string `json:"name"`
 	// Kind is the full identity of the kind whose records satisfy the input.
@@ -96,7 +96,7 @@ type InputStatus struct {
 	Description string `json:"description,omitempty"`
 	// Record is the resolved record's id, empty while unresolved.
 	Record string `json:"record,omitempty"`
-	// Via says how the record was chosen: bound (an explicit edge), default
+	// Via says how the record was chosen: bound (an explicit reference), default
 	// (the record named "default"), or sole (the only live record). Empty
 	// while unresolved.
 	Via string `json:"via,omitempty"`

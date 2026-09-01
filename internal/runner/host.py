@@ -327,14 +327,6 @@ def _need_id(action, field, value):
     return value
 
 
-def _need_rel(action, value):
-    if not isinstance(value, str) or value == "":
-        raise ValueError("effects.%s: rel is required" % action)
-    if not _RE_IDENT.match(value):
-        raise ValueError("effects.%s: %r is not a relation name" % (action, value))
-    return value
-
-
 def _need_bool(action, field, value):
     if not isinstance(value, bool):
         raise ValueError("effects.%s: %s is a boolean, got %s"
@@ -348,43 +340,6 @@ def _opt_map(action, field, value):
     if not isinstance(value, dict):
         raise ValueError("effects.%s: %s is a map, got %s" % (action, field, type(value).__name__))
     return _json_copy(action, field, value)
-
-
-def _edge_target(action, label, to):
-    """Validate one edge/link target: a bare non-empty id string, OR a full
-    {kind, id} record reference (both required — the partial ref the engine
-    would later reject on a polymorphic edge is caught here)."""
-    if isinstance(to, str):
-        if to == "":
-            raise ValueError("effects.%s: %s id is empty" % (action, label))
-        return
-    if isinstance(to, dict):
-        for k in ("kind", "id"):
-            v = to.get(k)
-            if not isinstance(v, str) or v == "":
-                raise ValueError(
-                    "effects.%s: %s reference needs a kind and an id" % (action, label))
-        return
-    raise ValueError(
-        "effects.%s: %s is an id or a {kind, id} reference" % (action, label))
-
-
-def _need_to(action, to):
-    _edge_target(action, "to", to)
-    return _json_copy(action, "to", to)
-
-
-def _need_edges(action, edges):
-    if edges is None:
-        return None
-    if not isinstance(edges, dict):
-        raise ValueError("effects.%s: edges is a map of rel -> target" % action)
-    for rel, targets in edges.items():
-        _need_rel(action, rel)
-        items = targets if isinstance(targets, list) else [targets]
-        for t in items:
-            _edge_target(action, "edges." + rel, t)
-    return _json_copy(action, "edges", edges)
 
 
 # The default for if_version: a private sentinel distinct from None, so an
@@ -418,7 +373,7 @@ class Effects:
     a body that ALSO returns an explicit effect list while the buffer is
     non-empty is refused at return (the two apply orders are unrelated and can
     self-conflict under CAS). No flush() — the buffer IS the return. Shapes are
-    validated here (a known action, a well-formed id/type/rel/edge, a boolean
+    validated here (a known action, a well-formed id and type, a boolean
     ifAbsent, a non-negative integer ifVersion) so a mistake is a clear
     body error that parks once, not an engine park; the engine stays
     authoritative for the emit ceiling and type admission."""
@@ -430,15 +385,12 @@ class Effects:
         self._staged.append(ef)
         return StagedEffect(ef)
 
-    def put(self, kind, id, properties=None, edges=None, if_absent=False, if_version=_UNSET):
+    def put(self, kind, id, properties=None, if_absent=False, if_version=_UNSET):
         ef = {"action": "put", "kind": _need_kind("put", kind),
               "id": _need_id("put", "id", id)}
         props = _opt_map("put", "properties", properties)
         if props is not None:
             ef["properties"] = props
-        eg = _need_edges("put", edges)
-        if eg is not None:
-            ef["edges"] = eg
         if _need_bool("put", "if_absent", if_absent):
             ef["ifAbsent"] = True
         v = _if_version("put", if_version)
@@ -464,20 +416,6 @@ class Effects:
     def delete(self, kind, id):
         return self._add({"action": "delete", "kind": _need_kind("delete", kind),
                           "id": _need_id("delete", "id", id)})
-
-    def link(self, kind, id, rel, to, properties=None):
-        ef = {"action": "link", "kind": _need_kind("link", kind),
-              "id": _need_id("link", "id", id), "rel": _need_rel("link", rel),
-              "to": _need_to("link", to)}
-        props = _opt_map("link", "properties", properties)
-        if props is not None:
-            ef["properties"] = props
-        return self._add(ef)
-
-    def unlink(self, kind, id, rel, to):
-        return self._add({"action": "unlink", "kind": _need_kind("unlink", kind),
-                          "id": _need_id("unlink", "id", id),
-                          "rel": _need_rel("unlink", rel), "to": _need_to("unlink", to)})
 
     def merge(self, kind, id, loser):
         winner = _need_id("merge", "id", id)
@@ -534,7 +472,9 @@ class Effects:
         if op == "create":
             props["targetKind"], props["targetId"] = target_kind, target_id
         else:
-            ef["edges"] = {"target": {"kind": target_kind, "id": target_id}}
+            # The request names its target with an unpinned reference, so the
+            # value is the referent's full "<kind>/<id>" path.
+            props["target"] = "%s/%s" % (target_kind, target_id)
         return self._add(ef)
 
 
@@ -558,7 +498,7 @@ class Records:
         nothing). None when absent — absence is a normal answer."""
         return self._host.get(kind, id)
 
-    def list(self, kinds, where=None, first=None, after=None, order=None, with_edges=False):
+    def list(self, kinds, where=None, first=None, after=None, order=None):
         flt = {"kinds": _as_kinds(kinds)}
         if where:
             flt["properties"] = where
@@ -569,8 +509,6 @@ class Records:
             q["after"] = after
         if order:
             q["orderBy"] = order
-        if with_edges:
-            q["withEdges"] = True
         return self._host.list(**q)
 
     def search(self, q, kinds, k=None, mode=None):

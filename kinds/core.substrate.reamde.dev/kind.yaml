@@ -10,15 +10,19 @@ data:
     is a row here, and these properties are what the engine validates every
     write against.
   # version 11: the first version this kind pins itself, above the 10 it took
-  # from the authority. `edges.<rel>` gained `deprecated` and the reserved
+  # from the authority. A declared link gained `deprecated` and the reserved
   # `properties` block (issue 110): additive, so every stored declaration keeps
   # its shape and the upgrade is what carries the room for the new keys.
   # version 12: `authority` drops `required`, which contradicted "absent on a
-  # repository-local kind"; an index requires the `properties` it covers and an
-  # edge requires its `to` target, both refused empty by the loader.
+  # repository-local kind"; an index requires the `properties` it covers and a
+  # declared link requires its target, both refused empty by the loader.
   # version 13: `names.plural` retired — the collection segment is the kind name
   # now (issue 253, decision 0033), so `names` declares only `singular`.
-  version: 13
+  # version 14: a link between records is a `type: reference` property, so a
+  # declaration's links live in `properties` with everything else and the
+  # loader validates them there. The separate block they used to live in is
+  # gone, with the keys only it took.
+  version: 14
   names:
     singular: kind
   # the declarations this repository holds; id is the kind REFERENCE
@@ -26,7 +30,7 @@ data:
   # repository-local kind) — the one id form that carries a slash.
   displayTemplate: "{localName}"
   # THE PROPERTIES ARE THE DECLARATION. A kind declaration's row holds the
-  # manifest's own keys — names, properties, edges, traits, indices — and there
+  # manifest's own keys — names, properties, traits, indices — and there
   # is no `definition` blob beside them.
   #
   # A new property here is an ordinary versioned change: every row that carries
@@ -94,100 +98,6 @@ data:
           repeated: true
           required: true
           description: the properties the index covers, in order
-    # A MAP in the authored form: the key is the rel, and the value follows
-    # these fields.
-    edges:
-      type: object
-      keyed: true
-      keyPattern: camel
-      description: the named, directed links a record of this kind may hold
-      fields:
-        # NOT a reference: `any` is an admissible value here, and a pin that
-        # admits a non-path is not a pin.
-        to:
-          type: string
-          required: true
-          description: the target kind, or `any`
-        many:
-          type: bool
-          description: several targets instead of one
-        required:
-          type: bool
-          description: a creation without it is refused
-        ownerRef:
-          type: bool
-          description: the target owns this record, so a cascade collects
-            it
-        description:
-          type: string
-          description: what the link means
-        inverse:
-          type: string
-          description: what the target calls this edge
-        inverseDescription:
-          type: string
-          description: what the inverse means, from the target's side
-        deprecated:
-          type: bool
-          description: clients should stop offering this link
-        # What an edge ROW of this rel may carry, and the whole set it may
-        # carry: an edge write naming a property this block does not declare
-        # is refused (issue 111). Reserved by issue 110 one change earlier, so
-        # the key was already one every binary reads before it meant anything.
-        #
-        # An edge property is a FLAT SINGLE VALUE, which is what makes the
-        # block declarable at all: a record's own `properties` is the one json
-        # leaf below, because a property declaration contains property
-        # declarations and no bounded schema states that. Take away the
-        # containers and the object, and what is left is exactly these fields.
-        properties:
-          type: object
-          keyed: true
-          keyPattern: camel
-          description: the values an edge row of this rel may carry
-          fields:
-            type:
-              type: string
-              required: true
-              description: the datatype, or an authority-local refinement
-                of one
-            description:
-              type: string
-              description: what the value means
-            displayName:
-              type: string
-              description: the human label a client renders instead of the
-                name
-            required:
-              type: bool
-              description: an edge written without it is refused
-            deprecated:
-              type: bool
-              description: clients should stop offering this value
-            pattern:
-              type: string
-              description: the regular expression a value matches
-            min:
-              type: float
-              description: the lowest admitted number
-            max:
-              type: float
-              description: the highest admitted number
-            values:
-              type: object
-              repeated: true
-              description: the admitted values, in render order
-              fields:
-                value:
-                  type: string
-                  required: true
-                  description: the stored value
-                label:
-                  type: string
-                  description: the human label a client renders beside it
-                deprecated:
-                  type: bool
-                  description: clients should stop offering this value
     # THE ONE json LEAF IN THE META-KIND, and the reason is a self-reference no
     # bounded schema escapes. A property declaration describes OBJECT FIELDS, and
     # a field declaration is a property declaration again — so describing
@@ -204,8 +114,16 @@ data:
     # reason: the validator that knows the shape is not a schema.
     #
     # Everything else on this kind IS typed — the names, the display template,
-    # the traits, the indices, the edges — none of which recurse.
+    # the traits, the indices — none of which recurse.
+    #
+    # A LINK between records lives here too, and nowhere else: a `type:
+    # reference` property, pinned by `kind:` or `trait:` or unpinned, carrying
+    # `repeated`, `required`, `mustExist` (the referent has to exist at write),
+    # `onDelete: cascade` (the referent owns this record, so a cascade collects
+    # it), `subject: true` (a recordmapping's subject) and its own `properties`
+    # (link data: flat single values, the same set a scalar property declares).
+    # The loader is what holds every one of those keys.
     properties:
       type: json
       description: the declared value slots a record of this kind carries,
-        as the loader admits them
+        as the loader admits them, links to other records included

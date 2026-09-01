@@ -9,20 +9,16 @@
     "payload",
     "hash"
   ],
-  "EdgeInput": [
-    "rel",
-    "to",
-    "properties"
+  "IncomingReference": [
+    "property",
+    "path",
+    "from",
+    "createdAt"
   ],
-  "EdgeRef": [
-    "kind",
-    "id"
-  ],
-  "EdgeTarget": [
+  "IncomingSource": [
     "id",
     "kind",
-    "title",
-    "properties"
+    "title"
   ],
   "Occurrence": [
     "kind",
@@ -67,7 +63,6 @@
     "properties",
     "labels",
     "annotations",
-    "edges",
     "ifVersion"
   ],
   "SubstrateRecord": [
@@ -83,7 +78,6 @@
     "updatedAt",
     "deletedAt",
     "finalizers",
-    "edges",
     "propertyMeta"
   ]
 }

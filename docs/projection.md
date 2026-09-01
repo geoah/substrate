@@ -10,8 +10,8 @@ and tiers, and the merges that join two subjects that turn out to be one.
 ## Record mappings
 
 **What a source holds stays its own record**, pointing at the one subject it
-describes through an ordinary edge. A `recordmapping` names that edge and
-declares how the record's properties reach the subject.
+describes through an ordinary reference. A `recordmapping` names that reference
+and declares how the record's properties reach the subject.
 
 The GitHub [integration](bundles-catalog.md#github) ships a `user` kind
 (GitHub's record of an account, in GitHub's own shape) and this mapping onto
@@ -25,7 +25,7 @@ data:
   authority: github.bundles.substrate.reamde.dev
   from: github.bundles.substrate.reamde.dev/user
   to: people.substrate.reamde.dev/person
-  edge: person                     # the ordinary edge the mapping rides
+  property: person                 # the source's `subject: true` reference
   match:                           # first-link probes: how a new record
     - from: email                  #   finds an existing person
       to: emails
@@ -54,7 +54,7 @@ be empty: a link-only mapping carries structure and copies nothing.
 
 Three behaviors fall out of this one document:
 
-- **Match, or shell birth.** A `user` arriving without its `person` edge is
+- **Match, or shell birth.** A `user` arriving without its `person` reference is
   resolved in the same transaction: exactly one live person carrying that
   email links; zero, or several, mint a fresh person instead of guessing.
   Two syncs racing the same new person mint **one** shell. Nothing ever
@@ -178,10 +178,12 @@ data:
       type: string
     email:
       type: email
-  edges:
     person:
-      to: people.substrate.reamde.dev/person
+      type: reference
+      kind: people.substrate.reamde.dev/person
       required: true
+      mustExist: true
+      subject: true
 ---
 kind: core.substrate.reamde.dev/recordmapping
 metadata:
@@ -190,7 +192,7 @@ data:
   authority: enrich.example.com
   from: enrich.example.com/enrichment
   to: people.substrate.reamde.dev/person
-  edge: person
+  property: person
   match:
     - from: email
       to: emails
@@ -212,7 +214,7 @@ at all, so no amount of syncing can quietly complete a task.
 
 Nothing in the substrate fuses by value: two people holding the same email
 address are two records until somebody merges them. Merging is always a
-deliberate act, one of the seven mutations, and the engine never performs one
+deliberate act, one of the five mutations, and the engine never performs one
 on its own. What it does instead is suggest.
 
 `merge(kind, winner, loser)` takes two live records of the **same kind**,
@@ -221,9 +223,11 @@ out (an edition is not a bad copy of a work, so a merge across that line is a
 category error the engine refuses), and joins them so the winner absorbs the
 loser's place in the graph:
 
-- **Every edge re-points at the winner**, incoming and outgoing, and every
-  source record's subject edge moves with them. Collisions with edges the
-  winner already has dedupe.
+- **Nothing is re-pointed.** Every record that pointed at the loser still
+  holds the loser's path, and every read of that path resolves to the winner
+  through the former-id trail, a source record's subject reference and the
+  winner's `incoming` list included. The winner absorbs the loser's place in
+  the graph by resolution, not by rewriting rows.
 - **Labels fill gaps**: the winner's stand, the loser's land where the winner
   has none. Annotations move too, colliding keys resolving newest-wins.
 - **Properties do not migrate.** The winner now has more sources pointing at
@@ -239,8 +243,9 @@ loser's place in the graph:
   collection off it, so the merge stays reversible.
 
 Every merge writes a `recordmerge` record: an ordinary record carrying
-`winner` and `loser` edges and a `moved` property recording everything the
-merge moved. That record is what makes the undo possible.
+`winner` and `loser` references and a `moved` property recording the labels,
+annotations and manager rows the merge moved. That record is what makes the
+undo possible.
 
 ### Former ids resolve to the winner
 
@@ -268,9 +273,10 @@ POST /api/v1/split
 {"merge": "kq3v9x2m41pf"}
 ```
 
-The loser comes back to life at its own id, the moved edges, subject edges,
-labels, annotations and manager rows go back where the record says they came
-from, and both sides recompute from the source sets they now have. A split
+The loser comes back to life at its own id, the moved labels, annotations and
+manager rows go back where the record says they came from, the former-id trail
+drops the alias so the loser's id resolves to the loser again, and both sides
+recompute from the source sets they now have. A split
 reverts _the merge_, not everything that happened after it: a label or
 annotation rewritten since the merge keeps its newer value. The split writes
 its own `recordsplit` record, pointing at the merge it undid.
@@ -295,15 +301,9 @@ data:
         - signal: email
           value: ada@example.com
     decision: proposed            # a state: proposed, accepted, rejected
-  edges:
-    - rel: winner                 # the record that survives the merge
-      to:
-        kind: people.substrate.reamde.dev/person
-        id: 9f2k
-    - rel: loser                  # the record merged away into the winner
-      to:
-        kind: people.substrate.reamde.dev/person
-        id: x41c
+    # the record that survives, and the one merged away into it
+    winner: people.substrate.reamde.dev/person/9f2k
+    loser: people.substrate.reamde.dev/person/x41c
 ```
 
 The `decision` state is the whole lifecycle: `proposed` until somebody
@@ -351,7 +351,7 @@ re-validated against the version it was computed on. It carries an `op`,
 `create`, `patch` (the default), or `delete`, so a reviewed write can mint a
 new record, edit an existing one, or tombstone one. A create names its target
 by `targetKind` and `targetId`, because the record does not exist yet; a patch
-and a delete carry the `target` edge. These are the request's own words: the
+and a delete carry the `target` reference. These are the request's own words: the
 policy selector that gated the write spells the same act `put` or `patch`, and
 a trigger watching it spells it `create` or `update`
 ([change verbs](changelog.md#change-verbs)). The agent
@@ -361,7 +361,7 @@ verb through review instead of on its own authority.
 
 Three rules keep the review honest. **The reviewed envelope is immutable**:
 once a request is proposed, `op`, `targetKind`, `targetId`, `diff` and the
-`target` edge are frozen, and a write that would change them is refused, so
+`target` reference is frozen, and a write that would change them is refused, so
 the values the reviewer read cannot be swapped underneath them. `decision` and
 `rationale` stay mutable, because deciding is the point. **The decision is
 optimistic**: an owner's accept or reject must carry `ifVersion`, the request
