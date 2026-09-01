@@ -326,7 +326,7 @@ def main(input, host):
 	mustPatch(t, ds, fnActor, g.Kind, g.ID, substrate.PatchInput{Properties: map[string]any{"wire": "point", "target": w.ID}})
 	process(t, ops)
 	want := vocabulary.RecordPath(widgetType, w.ID)
-	if got := mustGet(t, ds, g.Kind, g.ID); got.Properties["widget"] != want {
+	if got := mustGet(t, ds, g.Kind, g.ID); storedRefPath(got.Properties["widget"]) != want {
 		t.Fatalf("the effect did not point the reference: %v", got.Properties)
 	}
 

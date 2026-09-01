@@ -99,7 +99,7 @@ func TestSkepticMergeSplitWinnerLoserReference(t *testing.T) {
 		},
 	})
 	wantReplyTo := vocabulary.RecordPath(m1.Kind, m1.ID)
-	if pre := mustGet(t, ds, m2.Kind, m2.ID); pre.Properties["replyTo"] != wantReplyTo {
+	if pre := mustGet(t, ds, m2.Kind, m2.ID); refPathValue(pre, "replyTo") != wantReplyTo {
 		t.Fatalf("setup: replyTo missing: %+v", pre.Properties)
 	}
 
@@ -110,7 +110,7 @@ func TestSkepticMergeSplitWinnerLoserReference(t *testing.T) {
 	if _, err := ds.Split(ctx, owner, rec.ID); err != nil {
 		t.Fatalf("split: %v", err)
 	}
-	if back := mustGet(t, ds, m2.Kind, m2.ID); back.Properties["replyTo"] != wantReplyTo {
+	if back := mustGet(t, ds, m2.Kind, m2.ID); refPathValue(back, "replyTo") != wantReplyTo {
 		t.Fatalf("the loser->winner pointer is lost across merge+split: %+v", back.Properties["replyTo"])
 	}
 }

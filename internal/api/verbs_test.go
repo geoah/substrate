@@ -27,7 +27,10 @@ func TestRESTReferenceIsWrittenAsAProperty(t *testing.T) {
 	})
 	wantStatus(t, rec, http.StatusOK)
 	e := decodeJSON[substrate.Record](t, rec)
-	if e.Properties["manager"] != "people.substrate.reamde.dev/person/p2" {
+	// The put sent the bare path (write-time shorthand) and the read serves
+	// the object it normalized to (0044).
+	manager, _ := e.Properties["manager"].(map[string]any)
+	if manager["ref"] != "people.substrate.reamde.dev/person/p2" {
 		t.Fatalf("after the put, properties = %+v", e.Properties)
 	}
 

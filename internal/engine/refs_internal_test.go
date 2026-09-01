@@ -139,6 +139,62 @@ func TestDeriveRefsReadsTheLinkDataShape(t *testing.T) {
 	}
 }
 
+// A KEYED MAP'S KEYS ARE FREE TEXT, and a key holding a dot must not spell the
+// same address as a nesting that has the dot as its separator. Without the
+// escape both sites below flatten to path "a.b.c", the two rows collide in the
+// primary key (src, property, path, ord), and the write either loses a pointer
+// or fails on the duplicate.
+func TestDeriveRefsEscapesDottedKeyedMapKeys(t *testing.T) {
+	t.Parallel()
+	// `outer` is a keyed map of objects, each declaring a reference field. Key
+	// "a.b" + field "c" against key "a" + field "b.c" is the collision from
+	// issue #322. The second key's field name cannot itself carry a dot, so
+	// the second half is a nested keyed map.
+	inner := &vocabulary.Property{
+		Datatype: vocabulary.DatatypeObject, Keyed: true,
+		Fields:     map[string]*vocabulary.Property{"c": reference(nil)},
+		FieldOrder: []string{"c"},
+	}
+	_ = inner
+	outer := &vocabulary.Property{
+		Datatype: vocabulary.DatatypeObject, Keyed: true,
+		Fields:     map[string]*vocabulary.Property{"c": reference(nil)},
+		FieldOrder: []string{"c"},
+	}
+	ty := derivedKind(map[string]*vocabulary.Property{"outer": outer}, "outer")
+
+	got := deriveRefs(ty, map[string]any{
+		"outer": map[string]any{
+			"a.b": map[string]any{"c": hubPath("h1")},
+			"a":   map[string]any{"c": hubPath("h2")},
+		},
+	})
+	// "a.b" escapes to "a~1b", so the two rows are distinct addresses. Sorted
+	// by path: "a.c" < "a~1b.c" (Go compares bytes, and '.' is 0x2e < '~').
+	wantRows(t, got, []site{
+		{"outer", "a.c", 0, "h2"},
+		{"outer", "a~1b.c", 0, "h1"},
+	})
+}
+
+// The escape is unambiguous both ways round: a key holding a literal "~1" must
+// not decode to a key holding a dot, which is why "~" escapes first.
+func TestDeriveRefsEscapesTheEscapeCharacter(t *testing.T) {
+	t.Parallel()
+	ty := derivedKind(map[string]*vocabulary.Property{
+		"keys": reference(func(p *vocabulary.Property) { p.Keyed = true }),
+	}, "keys")
+
+	got := deriveRefs(ty, map[string]any{
+		"keys": map[string]any{"a.b": hubPath("h1"), "a~1b": hubPath("h2")},
+	})
+	// "a~1b" escapes to "a~01b" and "a.b" to "a~1b": the two never meet.
+	wantRows(t, got, []site{
+		{"keys", "a~01b", 0, "h2"},
+		{"keys", "a~1b", 0, "h1"},
+	})
+}
+
 // A value the declaration cannot read yields NO ROW rather than a kindless one:
 // the write path refuses these, so reaching one here means a row predates a
 // declaration change, and the index says nothing about it rather than

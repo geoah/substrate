@@ -113,7 +113,7 @@ data:
         ops: [update]
         when: 'record != null && record.properties.fetch == "fetched" && !("class"
           in record.properties)'
-    callable: {kind: core.substrate.reamde.dev/agent, id: web.bundles.substrate.reamde.dev/pageclassifier}
+    callable: core.substrate.reamde.dev/agent/web.bundles.substrate.reamde.dev/pageclassifier
 ```
 
 Because vocabulary is records, a parsed agent projects to a row the console

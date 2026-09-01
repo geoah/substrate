@@ -30,6 +30,19 @@ import (
 // kind's own top-level name, `path` the value address below it (dots joining
 // object field names, list indices and keyed-map keys), `ord` the index inside
 // a repeated reference. A single top-level reference is (name, "", 0).
+//
+// A SEGMENT IS ESCAPED BEFORE IT IS JOINED. A keyed map's keys are free text,
+// so a key holding a dot would otherwise spell the same address as a nesting
+// that has that dot as its separator: key "a.b" holding field "c" and key "a"
+// holding a nested "b.c" both flatten to "a.b.c", one row overwrites the other
+// in the primary key, and a reverse read reports the wrong site. joinRefPath
+// escapes each segment JSON-Pointer style ("~" -> "~0", "." -> "~1") so the
+// separator cannot appear inside a segment.
+//
+// NOTHING DECODES IT. The path is an OPAQUE ADDRESS: the incoming reader serves
+// it as stored, its keyset cursor compares it byte-wise against the same stored
+// bytes, and no caller splits it back into segments. Adding a decoder would
+// create a second spelling of the address that has to agree with this one.
 
 // refRow is one derived reference: where it sits in the source record, what it
 // points at, and the link data written beside it.
@@ -145,7 +158,7 @@ func appendRefValue(out []refRow, property string, path []string, p *vocabulary.
 			return out
 		}
 		return append(out, refRow{
-			Property: property, Path: strings.Join(path, "."), Ord: ord,
+			Property: property, Path: joinRefPath(path), Ord: ord,
 			Dst: dst, Props: props,
 		})
 	}
@@ -161,6 +174,49 @@ func appendRefValue(out []refRow, property string, path []string, p *vocabulary.
 		out = appendRefRows(out, property, append(path, fname), f, m[fname])
 	}
 	return out
+}
+
+// joinRefPath is the ONE place path segments become the `path` column, and the
+// one place the escape is applied: "~" -> "~0" first, then "." -> "~1", so the
+// pair decodes unambiguously even though nothing decodes it. Escaping every
+// segment kind (field name, list index, map key) rather than only the free-text
+// one keeps one rule to state and one to hold.
+func joinRefPath(segments []string) string {
+	if len(segments) == 0 {
+		return ""
+	}
+	out := make([]string, len(segments))
+	for i, s := range segments {
+		out[i] = strings.ReplaceAll(strings.ReplaceAll(s, "~", "~0"), ".", "~1")
+	}
+	return strings.Join(out, ".")
+}
+
+// referenceValueOf renders a record path as THE stored reference value: the
+// object holding it under `ref` (decision 0044). Every SQL containment probe
+// against a reference property is built from this, so a probe cannot drift from
+// what the writer stores.
+//
+// CONTAINMENT STILL MATCHES A REFERENCE CARRYING LINK DATA, because jsonb
+// containment descends: `{"thread": {"ref": "p", "role": "x"}}` contains
+// `{"thread": {"ref": "p"}}`. So the probe names the pointer and ignores
+// whatever else rides beside it, which is what these reads mean.
+func referenceValueOf(path string) map[string]any {
+	return map[string]any{vocabulary.ReferenceValueKey: path}
+}
+
+// referencePathSQL is the SQL that reads a reference property's path out of a
+// props column, in EITHER shape: the `ref` key of the stored object, falling
+// back to the column's own text for a row written before the one-shape rule.
+// The reader rule (splitReferenceValue) holds in SQL exactly as it holds in Go.
+//
+// `property` is an identifier from this package, never caller input; it is
+// rendered through sqlLiteral so a name with a quote in it could not close the
+// string.
+func referencePathSQL(column, property string) string {
+	lit := sqlLiteral(property)
+	return fmt.Sprintf("coalesce(%s->%s->>%s, %s->>%s)",
+		column, lit, sqlLiteral(vocabulary.ReferenceValueKey), column, lit)
 }
 
 // splitReferenceValue reads a stored reference value in EITHER shape: the flat

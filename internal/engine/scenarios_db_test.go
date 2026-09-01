@@ -66,7 +66,7 @@ func TestMeetingScenario(t *testing.T) {
 	if attendees, _ := event.Properties["attendees"].([]any); len(attendees) != 2 {
 		t.Fatalf("attendees = %+v", event.Properties["attendees"])
 	}
-	if event.Properties["series"] != vocabulary.RecordPath(series.Kind, series.ID) {
+	if storedRefPath(event.Properties["series"]) != vocabulary.RecordPath(series.Kind, series.ID) {
 		t.Fatalf("series = %+v", event.Properties["series"])
 	}
 
@@ -81,7 +81,7 @@ func TestMeetingScenario(t *testing.T) {
 		},
 	})
 	if speakers, _ := transcript.Properties["speakers"].([]any); len(speakers) != 1 ||
-		speakers[0] != vocabulary.RecordPath(alex.Kind, alex.ID) {
+		storedRefPath(speakers[0]) != vocabulary.RecordPath(alex.Kind, alex.ID) {
 		t.Fatal("the speakers reference should name the same person")
 	}
 
@@ -179,7 +179,7 @@ func TestQueryGrammar(t *testing.T) {
 	if got := ids(page.Records); len(got) != 3 || got[0] != msgs[2].ID || got[2] != msgs[0].ID {
 		t.Fatalf("ordered reference query = %v", got)
 	}
-	if page.Records[0].Properties["author"] != vocabulary.RecordPath(alex.Kind, alex.ID) {
+	if refPathValue(page.Records[0], "author") != vocabulary.RecordPath(alex.Kind, alex.ID) {
 		t.Fatalf("the pointer is not on the listed record: %+v", page.Records[0].Properties)
 	}
 

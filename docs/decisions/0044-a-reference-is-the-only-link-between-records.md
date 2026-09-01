@@ -90,9 +90,15 @@ and leaving the refusal to the day somebody rebuilds.
 - Bad, because there is no path off an existing changelog: a repository with
   `link` entries stays on the old binary or is thrown away. Pre-v1 the answer
   is `mise run dev:wipe`.
-- Bad, because a reference value now has two shapes, the flat `<kind>/<id>`
-  string and the `{ref, <props>}` object a declaration with `properties:`
-  carries, and every reader handles both.
+- Good, because a reference value has ONE served shape. Stored and served, a
+  reference is always the object `{ref: "<kind>/<id>"}`, with each declared link
+  property beside `ref`; a bare path string is accepted at the write as
+  shorthand and normalized to it. The shape was chosen so a reference can gain
+  an attribute without a response changing shape: adding `properties:` to a live
+  declaration adds a key to the value and a field to its GraphQL object, where a
+  conditional shape would have turned every served string into an object and
+  every scalar field into an object field. Readers still parse both shapes,
+  because a reader never picks its parse from the declaration.
 - Bad, because clearing a link means writing the record. A bundle uninstall
   puts its bound records instead of unlinking them, so the changelog shows a
   record delta where it showed a link delta.

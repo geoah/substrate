@@ -225,9 +225,23 @@ func coerceObject(p *vocabulary.Property, v any) (any, error) {
 	return out, nil
 }
 
-// coerceReference validates a reference value's SHAPE and normalizes it toward
-// the canonical RECORD PATH — "<kind>/<id>", ONE flat string, the whole stored
-// value. Like a blob-ref, this is the PURE half: the existence gate — the
+// coerceReference validates a reference value's SHAPE and normalizes it to THE
+// ONE STORED SHAPE: the object `{ref: "<kind>/<id>", <link property>: …}`,
+// whether or not the declaration carries link `properties:`.
+//
+// ONE SHAPE, ALWAYS, is the decision (0044). A reference may gain link
+// properties later, and under the old rule that changed the served value of
+// every existing pointer from a string to an object, a breaking response
+// change for a purely additive declaration edit. Storing the object from the
+// start means adding an attribute adds a key and nothing else moves.
+//
+// A BARE PATH STRING IS WRITE-TIME SHORTHAND. It is accepted here and
+// normalized to the object with no link properties set, so a document that says
+// `owner: core…/person/ada` still applies and reads back as
+// `owner: {ref: core…/person/ada}`. The shorthand is an input spelling only:
+// nothing stores it and nothing serves it.
+//
+// Like a blob-ref, this is the PURE half. The existence gate (the
 // referent KIND must be known, and the `kind:` pin must match — is taken inside
 // the transaction (validateReferences). Here we only reach a path:
 //
@@ -255,22 +269,16 @@ func coerceObject(p *vocabulary.Property, v any) (any, error) {
 // core's `kind`), and it cannot be read as a path because nothing is left for an
 // id. Only empty-segment shapes are refused there, since "target/" is an id of
 // nothing.
-// A reference that declares LINK DATA stores an object: the pointer under the
-// one reserved key `ref`, every declared link property beside it. A bare string
-// is accepted there too and normalizes to the object with no link properties
-// set, so re-writing a reference whose link data is all optional needs no
-// knowledge of the shape.
 func coerceReference(p *vocabulary.Property, v any) (any, error) {
 	pin := p.To
 	if pin == vocabulary.ToAny {
 		pin = ""
 	}
-	linked := len(p.Properties) > 0
 	switch t := v.(type) {
 	case string:
 		path, err := coerceReferencePath(pin, t)
-		if err != nil || !linked {
-			return path, err
+		if err != nil {
+			return nil, err
 		}
 		props, err := coerceLinkProps(p, nil)
 		if err != nil {
@@ -278,23 +286,22 @@ func coerceReference(p *vocabulary.Property, v any) (any, error) {
 		}
 		return linkValue(path, props), nil
 	case map[string]any:
-		if !linked {
+		raw, held := t[vocabulary.ReferenceValueKey]
+		if !held {
 			// The retired dialect-1 shape, refused BY NAME rather than folded. No
 			// release ever stored one and no rung translates one (#217), so a pair
 			// arriving here is an author writing the dead shape, and quietly
 			// accepting it would keep the old spelling alive in a dialect that says
 			// it is gone.
 			kind, _ := t["kind"].(string)
-			id, _ := t["id"].(string)
+			if id, _ := t["id"].(string); kind != "" || id != "" {
+				return nil, fmt.Errorf(
+					"a reference is a %q path string; the {kind: %q, id: %q} pair is the retired shape, and nothing migrates a stored one",
+					"<kind>/<id>", kind, id)
+			}
 			return nil, fmt.Errorf(
-				"a reference is a %q path string; the {kind: %q, id: %q} pair is the retired shape, and nothing migrates a stored one",
-				"<kind>/<id>", kind, id)
-		}
-		raw, held := t[vocabulary.ReferenceValueKey]
-		if !held {
-			return nil, fmt.Errorf(
-				"%q carries link data, so its value is an object with the referent under %q",
-				p.Name, vocabulary.ReferenceValueKey)
+				"a reference value is an object carrying the referent's %q path under %q",
+				"<kind>/<id>", vocabulary.ReferenceValueKey)
 		}
 		s, ok := raw.(string)
 		if !ok {
@@ -320,7 +327,9 @@ func coerceReference(p *vocabulary.Property, v any) (any, error) {
 	}
 }
 
-// linkValue assembles the stored object shape: the pointer, then the link data.
+// linkValue assembles THE stored shape: the pointer under `ref`, then whatever
+// link data the declaration admitted. `props` is empty for a reference that
+// declares none, and the object is still what gets stored.
 func linkValue(path any, props map[string]any) map[string]any {
 	out := map[string]any{vocabulary.ReferenceValueKey: path}
 	for k, v := range props {

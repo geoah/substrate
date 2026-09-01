@@ -366,6 +366,12 @@ type txn struct {
 	// deputy for an arbitrary create/delete.
 	effEmit    []string
 	effEmitSet bool
+	// heldRegistryDep records that this transaction already took the SHARED
+	// registry-dependency lock, so the several doors that need it (the write's
+	// entry, preRecordLocks, trigger and policy admission) can each ask without
+	// a round trip per ask. An advisory lock is transaction-scoped and released
+	// at commit, so "taken once" is "held to the end".
+	heldRegistryDep bool
 }
 
 func (ds *dataset) inTx(ctx context.Context, actor substrate.Actor, internal bool, fn func(*txn) error) error {

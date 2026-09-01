@@ -164,7 +164,12 @@ func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (bo
 	if err != nil {
 		return false, err
 	}
-	row.Props[m.Property] = vocabulary.RecordPath(m.To, target)
+	// THE STORED SHAPE, not the bare path. This runs AFTER coercion (write.go
+	// ensureSubject), so nothing downstream normalizes what it writes: a bare
+	// string here would be the one value in the store that the one-shape rule
+	// does not hold for (decision 0044), readable only because every reader
+	// still tolerates the old spelling.
+	row.Props[m.Property] = referenceValueOf(vocabulary.RecordPath(m.To, target))
 	return true, nil
 }
 

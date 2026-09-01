@@ -636,9 +636,12 @@ func (t *txn) initTriggerBookkeeping(id string, props map[string]any) error {
 // answers to that identity — a cursor keyed by another live trigger's id is
 // that trigger's, not a pre-wave-1 leftover.
 func (t *txn) adoptableLegacyCursor(id string, props map[string]any) (string, bool) {
-	callable, _ := props["callable"].(map[string]any)
-	cid, _ := callable["id"].(string)
-	if cid == "" || id != "on-"+cid {
+	// The callable is read through the one shape-tolerant reader, not off a
+	// key: `callable` is a reference, stored as `{ref: "<kind>/<id>"}`, and
+	// reaching for an `id` key read the retired dialect-1 pair and answered ""
+	// for every row a release ever wrote.
+	_, cid, ok := vocabulary.SplitRecordPath(storedReferencePath(props["callable"]))
+	if !ok || cid == "" || id != "on-"+cid {
 		return "", false
 	}
 	var one int

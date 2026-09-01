@@ -24,13 +24,18 @@ func TestCanonicalEnvelopeRoundTripIsByteStable(t *testing.T) {
 		Version:   7,
 		CreatedAt: at,
 		UpdatedAt: at,
-		// Deliberately unsorted, and every reference shape at once: a plain
-		// one, a repeated one, and one carrying link properties.
+		// Deliberately unsorted, and every reference SITE at once: a single one,
+		// a repeated one, and one carrying link properties. Every value is the
+		// object the server serves (decision 0044). The string shorthand is an
+		// input spelling, so it never appears in a record read back.
 		Properties: map[string]any{
-			"name":    "Ada",
-			"age":     36,
-			"knows":   "people.substrate.reamde.dev/person/p2",
-			"employs": []any{"people.substrate.reamde.dev/person/p3", "people.substrate.reamde.dev/person/p2"},
+			"name":  "Ada",
+			"age":   36,
+			"knows": map[string]any{"ref": "people.substrate.reamde.dev/person/p2"},
+			"employs": []any{
+				map[string]any{"ref": "people.substrate.reamde.dev/person/p3"},
+				map[string]any{"ref": "people.substrate.reamde.dev/person/p2"},
+			},
 			"memberOf": []any{
 				map[string]any{"ref": "people.substrate.reamde.dev/organization/org2", "role": "member"},
 				map[string]any{"ref": "people.substrate.reamde.dev/organization/org1", "role": "admin"},
@@ -76,8 +81,41 @@ func TestCanonicalEnvelopeRoundTripIsByteStable(t *testing.T) {
 		t.Fatalf("write inputs differ:\n%+v\n%+v", in1, in2)
 	}
 	employs, ok := in1.Properties["employs"].([]any)
-	if !ok || len(employs) != 2 || employs[0] != "people.substrate.reamde.dev/person/p3" {
+	if !ok || len(employs) != 2 {
+		t.Fatalf("repeated reference = %#v, want two entries", in1.Properties["employs"])
+	}
+	first, _ := employs[0].(map[string]any)
+	if first["ref"] != "people.substrate.reamde.dev/person/p3" {
 		t.Fatalf("repeated reference = %#v, want the authored order", in1.Properties["employs"])
+	}
+}
+
+// A document that writes the STRING SHORTHAND still applies, and the CLI hands
+// it to the server unchanged: the shorthand is the server's to normalize, and a
+// client that rewrote it would be a second coercion to keep in step with the
+// first. What the round trip above pins is the other half: what comes BACK is
+// the object.
+func TestApplyCarriesTheReferenceShorthandThrough(t *testing.T) {
+	raw := []byte(`kind: people.substrate.reamde.dev/person
+metadata:
+  id: p1
+data:
+  properties:
+    name: Ada
+    knows: people.substrate.reamde.dev/person/p2
+    employs:
+      - people.substrate.reamde.dev/person/p3
+`)
+	in, err := parseOneDocument(t, raw).putInput()
+	if err != nil {
+		t.Fatalf("putInput: %v", err)
+	}
+	if in.Properties["knows"] != "people.substrate.reamde.dev/person/p2" {
+		t.Fatalf("knows = %#v, want the authored shorthand carried through", in.Properties["knows"])
+	}
+	employs, ok := in.Properties["employs"].([]any)
+	if !ok || len(employs) != 1 || employs[0] != "people.substrate.reamde.dev/person/p3" {
+		t.Fatalf("employs = %#v, want the authored shorthand carried through", in.Properties["employs"])
 	}
 }
 

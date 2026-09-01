@@ -21,7 +21,7 @@ nothing, there are none.
 | **property** | A named, typed value on a record, declared by its kind. |
 | **property type** | A named refinement of a base type plus its validations, declared by an authority and reusable across its kinds. |
 | **trait** | A contract a kind implements: a set of properties a kind promises to declare, so unrelated kinds can be treated alike. |
-| **reference** | A named, directed pointer at one record, declared as a property and stored as the target's `<kind>/<id>` path. The only link between records; it may declare properties of its own, carried beside the path. |
+| **reference** | A named, directed pointer at one record, declared as a property and stored as an object holding the target's `<kind>/<id>` path under `ref`. The only link between records; it may declare properties of its own, carried beside `ref`. |
 
 ## Truth and derivation
 

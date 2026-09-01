@@ -85,7 +85,8 @@ data:
     description: the oat kind
     status: open                  # a state property, see Validation below
     dueAt: 2026-08-13T09:00:00Z
-    project: tasks.substrate.reamde.dev/project/infra7
+    project:                      # a reference, always an object
+      ref: tasks.substrate.reamde.dev/project/infra7
 status:                           # server-set, ignored on input
   version: 4
   createdAt: "2026-08-04T09:00:00Z"
@@ -108,9 +109,11 @@ Three rules make the envelope predictable:
 
 A property is one key under `data.properties`, and a pointer at another record
 is one of them: a property of `type: reference` holding the target's path,
-`<kind>/<id>`. Against a pinned declaration a bare id is accepted as the
-authored short form, because ids are unique per kind; unpinned, the value
-carries the kind or it is refused. Declarations may name their pin by bare kind
+`<kind>/<id>`, under the reserved key `ref`. Writing the bare path instead is
+accepted as shorthand and stored as the object. Against a pinned declaration a
+bare id is accepted as the authored short form, because ids are unique per kind;
+unpinned, the value carries the kind or it is refused. Declarations may name
+their pin by bare kind
 name (`kind: project`): a bare name resolves in the declaring authority first,
 then uniquely across all authorities, and a name that stays ambiguous refuses
 to load. [References](#property-types) below has the rest.
@@ -147,8 +150,9 @@ importantly, who may change that kind's declaration: shipped vocabulary is the
 substrate's to write, and an installed bundle's kinds belong to that bundle.
 
 A **record reference** writes kind and id together:
-`tasks.substrate.reamde.dev/task/t9`. That is the string form; on REST the same
-reference is split into path segments
+`tasks.substrate.reamde.dev/task/t9`. That is the path form, which a reference
+property carries under `ref`; on REST the same reference is split into path
+segments
 (`/api/v1/tasks.substrate.reamde.dev/task/t9`), and on GraphQL it travels as two
 arguments.
 
@@ -386,13 +390,31 @@ value must carry an explicit kind. Which records a property may name is exactly
 what a client needs to offer a picker. A declaration spelling `to:` is refused
 naming the pin.
 
-A value is ONE FLAT STRING, the referent's path:
-`core.substrate.reamde.dev/llmprovider/claude`. Against a concrete pin a bare
-record id is accepted as the authored short form and canonicalized to the full
-path on write, so `provider: default` stores as
-`core.substrate.reamde.dev/llmprovider/default`; unpinned, a bare id names no
-kind and is refused. A path that contradicts its pin is refused naming both
-ends.
+A value is ONE OBJECT, holding the referent's path under the reserved key
+`ref`:
+
+```yaml
+provider:
+  ref: core.substrate.reamde.dev/llmprovider/claude
+```
+
+That is the shape every read serves and every row stores, whether or not the
+declaration carries link properties
+([decision 0044](decisions/0044-a-reference-is-the-only-link-between-records.md)).
+It is one shape so that a reference can gain an attribute without a response
+changing shape: adding `properties:` adds a key beside `ref`, and nothing that
+already reads the pointer moves.
+
+**A bare path string is write-time shorthand.** `provider:
+core.substrate.reamde.dev/llmprovider/claude` applies and is stored as the
+object above, so a hand-written document stays short. Nothing serves the
+shorthand back.
+
+Against a concrete pin a bare record id is accepted as the authored short form
+too, and canonicalized to the full path on write, so `provider: default` stores
+as `{ref: core.substrate.reamde.dev/llmprovider/default}`; unpinned, a bare id
+names no kind and is refused. A path that contradicts its pin is refused naming
+both ends.
 
 Splitting a path back into its two halves needs no registry, because an
 authority always carries a dot and a kind name never does, and every kind
@@ -432,9 +454,8 @@ memberOf:
       type: date
 ```
 
-Where a declaration carries `properties:`, the value is an object whose
-reserved `ref` key holds the path and whose other keys are the declared link
-properties:
+The link properties are the value's other keys, beside the `ref` every
+reference already carries:
 
 ```yaml
 memberOf:
@@ -443,8 +464,10 @@ memberOf:
     since: 2024-03-01
 ```
 
-A bare path is still accepted and normalizes to that object with every link
-property absent. Link properties are single scalars, optional or required: no
+The shorthand works here too: a bare path normalizes to the object with every
+link property absent, so re-writing a reference whose link data is all optional
+needs no knowledge of the shape. Link properties are single scalars, optional or
+required: no
 objects, no state machines, no secrets, no nested references, and none on a
 keyed reference.
 

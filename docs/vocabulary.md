@@ -355,8 +355,9 @@ properties:
 
 A write sends them beside the value's `ref` key, and the engine coerces each
 one exactly as it coerces a record's own property, against the declared
-datatype, enum set, pattern and bounds. An undeclared name answers `422`, and
-so does any key but `ref` on a reference that declares no block. The value is
+datatype, enum set, pattern and bounds. An undeclared name answers `422`, on
+every reference: `ref` alone is always legal, because it is what a read serves,
+and a reference declaring no block admits nothing beside it. The value is
 written whole, like every property value, so a name the write leaves out is a
 name the link stops carrying, and `required:` here means every stored value of
 the property has one.

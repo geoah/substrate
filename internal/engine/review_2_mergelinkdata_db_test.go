@@ -150,12 +150,5 @@ func memberRole(t *testing.T, ds substrate.Dataset, typ, id, org string) string 
 // refPathValue reads a single-valued reference off a projected record, in
 // either value shape.
 func refPathValue(e *substrate.Record, name string) string {
-	switch v := e.Properties[name].(type) {
-	case string:
-		return v
-	case map[string]any:
-		s, _ := v[vocabulary.ReferenceValueKey].(string)
-		return s
-	}
-	return ""
+	return storedRefPath(e.Properties[name])
 }

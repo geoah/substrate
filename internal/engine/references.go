@@ -154,18 +154,27 @@ func (t *txn) normalizeReferenceValue(p *vocabulary.Property, v any, where strin
 	return m, problems
 }
 
-// storedReferencePath reads a STORED reference value as its record path,
-// tolerating the retired dialect-1 {kind, id} pair.
+// storedReferencePath reads a STORED reference value as its record path: the
+// object every write stores, the bare string a pre-0044 row still holds, or the
+// retired dialect-1 {kind, id} pair.
 //
-// NO STORE HOLDS ONE: no release ever wrote a dialect-1 row, and the write path
-// refuses a pair by name (coerceReference). It stays as stated defense, because
-// the failure mode a silent nil would cause here is a dispatcher skipping a live
-// trigger — delivery that stops without saying so.
+// THE OBJECT ARM IS THE LIVE ONE. A reference is stored as `{ref: "<kind>/<id>",
+// …}` whatever its declaration says (decision 0044), so a reader that only knew
+// the string went blind the moment the one-shape rule landed: a dispatcher
+// skipping a live trigger, delivery that stops without saying so. The string arm
+// stays for the same reason splitReferenceValue keeps its: a READER never picks
+// its parse from the declaration.
+//
+// NO STORE HOLDS A DIALECT-1 PAIR: no release ever wrote one and the write path
+// refuses it by name (coerceReference). It stays as stated defense.
 func storedReferencePath(v any) string {
 	switch t := v.(type) {
 	case string:
 		return t
 	case map[string]any:
+		if s, ok := t[vocabulary.ReferenceValueKey].(string); ok {
+			return s
+		}
 		kind, _ := t["kind"].(string)
 		id, _ := t["id"].(string)
 		if kind == "" || id == "" {
@@ -212,11 +221,15 @@ func (t *txn) duplicateRefs(list []any, where string) ([]string, error) {
 
 // normalizeReference resolves ONE reference value: its referent kind against the
 // registry, the declaration's pin, the one admitted mapping hop, and
-// `mustExist:`. It returns the value in its stored shape — the canonical RECORD
-// PATH "<authority>/<kind>/<id>", or that path under `ref` when the declaration
-// carries link data. Coercion already produced a qualified path (a full path, or
-// a pin-completed bare id), so the stored path is spelled one way whatever the
-// writer typed.
+// `mustExist:`. It returns the value in THE stored shape: the object, with the
+// canonical record path "<authority>/<kind>/<id>" under `ref` and any link data
+// beside it, whether or not the declaration declares link properties (0044).
+// Coercion already produced a qualified path (a full path, or a pin-completed
+// bare id) inside that object, so the stored path is spelled one way whatever
+// the writer typed.
+//
+// The rewrite lands on the `ref` KEY, never on the value as a whole: the link
+// data was coerced with it and only the pointer moves.
 func (t *txn) normalizeReference(p *vocabulary.Property, v any) (any, error) {
 	s := referencePathOf(v)
 	if s == "" {
@@ -257,10 +270,6 @@ func (t *txn) normalizeReference(p *vocabulary.Property, v any) (any, error) {
 		}
 	}
 	path := vocabulary.RecordPath(target.Kind, target.ID)
-	if len(p.Properties) == 0 {
-		return path, nil
-	}
-	// The link data was coerced with the value; only the pointer moved.
 	out := map[string]any{}
 	if m, ok := v.(map[string]any); ok {
 		for k, kv := range m {

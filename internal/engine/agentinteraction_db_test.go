@@ -49,7 +49,7 @@ func TestAskLandsAnInteractionAndTheAnswerResumes(t *testing.T) {
 		t.Fatalf("call: %v", err)
 	}
 	interaction := onlyInteraction(t, ds)
-	if got := interaction.Properties["thread"]; got != vocabulary.RecordPath(typeThread, res.Thread) {
+	if got := storedReferencePath(interaction.Properties["thread"]); got != vocabulary.RecordPath(typeThread, res.Thread) {
 		t.Fatalf("interaction thread = %v, want the asking thread", got)
 	}
 	if interaction.Properties["state"] != interactionPending {

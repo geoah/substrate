@@ -23,12 +23,20 @@ DROP TABLE IF EXISTS edges;
 --   property  the kind's own top-level property name;
 --   path      the value address BELOW that property, '' for the property
 --             itself: object field names, list indices and keyed-map keys
---             joined by dots ('callable', '0.callable', 'work');
+--             joined by dots ('callable', '0.callable', 'work'). Each segment
+--             is escaped before it is joined, JSON-Pointer style ('~' -> '~0',
+--             '.' -> '~1'), because a keyed map's keys are free text: without
+--             it the key 'a.b' holding a field 'c' and the key 'a' holding a
+--             nested 'b.c' would spell the same address and collide in the
+--             primary key below. engine/refs.go joinRefPath is the one writer;
 --   ord       the index of the value inside a repeated reference, 0 otherwise.
 --
 -- Those three plus the source record are the primary key, so a re-derive of
 -- one record replaces exactly its own rows and a reader can page the whole
 -- index on a stable order.
+--
+-- The path is an OPAQUE ADDRESS. `incoming` serves it as stored and its cursor
+-- compares it byte-wise; nothing decodes it back into segments.
 CREATE TABLE IF NOT EXISTS refs (
     repository text        NOT NULL DEFAULT current_setting('substrate.repository'),
     src_kind   text        NOT NULL,

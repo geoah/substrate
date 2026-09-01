@@ -480,6 +480,41 @@ func (d *fakeDataset) KindByRef(_ context.Context, identity string) (substrate.K
 	return substrate.KindInfo{}, fmt.Errorf("%w: type %q", substrate.ErrNotFound, identity)
 }
 
+// normalizeReferences mirrors the ONE piece of the engine's coercion the API's
+// own tests depend on (decision 0044): a reference property is STORED as the
+// object `{ref: "<kind>/<id>", …}`, and a bare path string is write-time
+// shorthand that normalizes to it. The fake stands in for the engine's
+// contract, so a fake that kept storing the shorthand would let a handler that
+// only reads strings pass here and fail against the real thing.
+//
+// Declaration-shallow on purpose: it walks a kind's own top-level properties,
+// which is every reference these tests declare. Nested sites are the engine's
+// problem and are tested there.
+func (d *fakeDataset) normalizeReferences(kind string, props map[string]any) map[string]any {
+	ty, err := d.KindByRef(context.Background(), kind)
+	if err != nil || props == nil {
+		return props
+	}
+	defs, _ := ty.Definition["properties"].(map[string]any)
+	for name, raw := range defs {
+		pd, _ := raw.(map[string]any)
+		if dt, _ := pd["type"].(string); dt != "reference" {
+			continue
+		}
+		switch v := props[name].(type) {
+		case string:
+			props[name] = map[string]any{vocabulary.ReferenceValueKey: v}
+		case []any:
+			for i, item := range v {
+				if s, ok := item.(string); ok {
+					v[i] = map[string]any{vocabulary.ReferenceValueKey: s}
+				}
+			}
+		}
+	}
+	return props
+}
+
 func (d *fakeDataset) put(e *substrate.Record) {
 	d.records[e.ID] = e
 	d.changes = append(d.changes, substrate.Change{
@@ -508,7 +543,7 @@ func (d *fakeDataset) Put(ctx context.Context, actor substrate.Actor, in substra
 		version = existing.Version + 1
 	}
 	e := &substrate.Record{
-		ID: id, Kind: in.Kind, Properties: in.Properties, Labels: in.Labels,
+		ID: id, Kind: in.Kind, Properties: d.normalizeReferences(in.Kind, in.Properties), Labels: in.Labels,
 		Version: version, CreatedAt: time.Unix(0, 0).UTC(), UpdatedAt: time.Unix(0, 0).UTC(),
 	}
 	if e.Properties == nil {
@@ -569,14 +604,14 @@ func (d *fakeDataset) Merge(_ context.Context, _ substrate.Actor, typ, winner, l
 	if err := d.fail("Merge"); err != nil {
 		return nil, err
 	}
-	// The merge record names both sides with REFERENCE properties, each the
-	// loser's and the winner's full record path, exactly as the engine writes
-	// them.
+	// The merge record names both sides with REFERENCE properties, each an
+	// object holding the winner's and the loser's full record path under `ref`,
+	// exactly as the engine writes them (decision 0044).
 	return &substrate.Record{
 		ID: "merge1", Kind: coreAuthority + "/recordmerge",
 		Properties: map[string]any{
-			"winner": vocabulary.RecordPath(typ, winner),
-			"loser":  vocabulary.RecordPath(typ, loser),
+			"winner": map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(typ, winner)},
+			"loser":  map[string]any{vocabulary.ReferenceValueKey: vocabulary.RecordPath(typ, loser)},
 		},
 	}, nil
 }
@@ -588,7 +623,9 @@ func (d *fakeDataset) Split(_ context.Context, _ substrate.Actor, mergeID string
 	return &substrate.Record{
 		ID: "split1", Kind: coreAuthority + "/recordsplit",
 		Properties: map[string]any{
-			"merge": vocabulary.RecordPath(coreAuthority+"/recordmerge", mergeID),
+			"merge": map[string]any{
+				vocabulary.ReferenceValueKey: vocabulary.RecordPath(coreAuthority+"/recordmerge", mergeID),
+			},
 		},
 	}, nil
 }

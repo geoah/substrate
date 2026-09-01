@@ -90,12 +90,13 @@ func TestOwnerRefReferenceCascade(t *testing.T) {
 	})
 
 	// The bare id is the authored short form a connector writes; the pin
-	// supplies the kind, so the STORED value is the path the sweep probes.
+	// supplies the kind, so the stored reference carries the path the sweep
+	// probes under `ref` (decision 0044).
 	synced := mustPut(t, ds, owner, substrate.PutInput{
 		Kind: mirrorAuthority + "/owned", ID: "synced-one",
 		Properties: map[string]any{"label": "synced", "account": acc.ID},
 	})
-	if got := mustGet(t, ds, synced.Kind, synced.ID).Properties["account"]; got != enginetest.AccountType+"/"+acc.ID {
+	if got := storedRefPath(mustGet(t, ds, synced.Kind, synced.ID).Properties["account"]); got != enginetest.AccountType+"/"+acc.ID {
 		t.Fatalf("stored account = %v, want the canonical path", got)
 	}
 	elsewhere := mustPut(t, ds, owner, substrate.PutInput{

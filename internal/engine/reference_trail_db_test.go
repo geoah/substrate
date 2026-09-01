@@ -24,8 +24,8 @@ const (
 
 // noteManifest is one kind pointing at people three ways: a cascading owner
 // pointer, a plain pointer that gains link data in version 2, and a repeated
-// one. `credit` is what the declaration upgrade moves, so the rows written
-// before it stay flat strings while later rows are `{ref, role}` objects.
+// one. `credit` is what the declaration upgrade moves, from `{ref}` alone to
+// `{ref, role}`.
 func noteManifest(version int, linkProps bool) enginetest.Manifest {
 	credit := map[string]any{"type": "reference", "kind": typePerson}
 	if linkProps {
@@ -173,14 +173,15 @@ func TestReferenceFilterFollowsTheFormerIDTrail(t *testing.T) {
 	}
 }
 
-// A READER NEVER CONSULTS THE DECLARATION to parse a value. Adding
-// `properties:` to a live reference changes what LATER writes store and leaves
-// every earlier row a flat string, so a filter that probed only the shape the
-// declaration carries now would go blind to exactly the rows the upgrade did
-// not rewrite.
+// A READER NEVER CONSULTS THE DECLARATION to parse a value. A row written
+// before decision 0044 holds a flat path string and nothing rewrites it, so a
+// filter that probed only the object every write stores now would go blind to
+// exactly those rows. No write path produces a flat value any more, so the row
+// is fabricated in the store, the way the pre-0044 release wrote it.
 func TestReferenceFilterMatchesBothStoredShapes(t *testing.T) {
 	t.Parallel()
-	_, ds := newDataset(t)
+	ctx := context.Background()
+	ds, raw, _ := newDatasetWithDB(t)
 	installNotes(t, ds, 1, false)
 
 	person := newPerson(t, ds, "Ada Lovelace")
@@ -190,8 +191,13 @@ func TestReferenceFilterMatchesBothStoredShapes(t *testing.T) {
 		Kind: typeNote, ID: "n-flat",
 		Properties: map[string]any{"label": "before the upgrade", "credit": path},
 	})
+	if _, err := raw.ExecContext(ctx,
+		`UPDATE records SET props = jsonb_set(props, '{credit}', to_jsonb($1::text))
+		 WHERE kind = $2 AND id = $3`, path, typeNote, flat.ID); err != nil {
+		t.Fatalf("fabricate the pre-0044 flat reference: %v", err)
+	}
 	if got := mustGet(t, ds, typeNote, flat.ID).Properties["credit"]; got != path {
-		t.Fatalf("a reference without link data stored %#v, want the flat path", got)
+		t.Fatalf("the fabricated row stored %#v, want the flat path", got)
 	}
 
 	// The declaration gains link data. Nothing rewrites the row above.

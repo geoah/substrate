@@ -16,6 +16,7 @@ import (
 	"github.com/geoah/substrate/internal/engine/enginetest"
 	"github.com/geoah/substrate/internal/substrate"
 	"github.com/geoah/substrate/internal/testdb"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // Almost every test in this package calls t.Parallel(), and that is what makes
@@ -374,4 +375,36 @@ func installEmbedProvider(t *testing.T, ds substrate.Dataset, id, baseURL, model
 	}); err != nil {
 		t.Fatalf("put the embeddings provider row %q: %v", id, err)
 	}
+}
+
+// storedRefPath reads one STORED reference value as the record path it names.
+// A reference is stored as the object `{ref: "<authority>/<kind>/<id>", …}`
+// whatever its declaration says (decision 0044); the string arm is the pre-0044
+// spelling a reader never stops accepting. It takes a value rather than a
+// record so a reference nested in an object or a list answers here too.
+func storedRefPath(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case map[string]any:
+		s, _ := t[vocabulary.ReferenceValueKey].(string)
+		return s
+	}
+	return ""
+}
+
+// storedRefPaths is storedRefPath over a repeated reference, in order, skipping
+// an entry that names nothing.
+func storedRefPaths(v any) []string {
+	list, repeated := v.([]any)
+	if !repeated {
+		list = []any{v}
+	}
+	out := make([]string, 0, len(list))
+	for _, item := range list {
+		if p := storedRefPath(item); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

@@ -144,13 +144,14 @@ func TestLinkPropertiesAreDeclaredOrRefused(t *testing.T) {
 	})
 
 	t.Run("a reference that declares no block accepts nothing", func(t *testing.T) {
-		// Without a `properties:` block the value is a bare path, so the object
-		// shape is the retired {kind, id} pair as far as coercion is concerned.
+		// The value is still the object (decision 0044), so `ref` is legal here
+		// and the refusal is about `role`: a reference declaring no
+		// `properties:` block admits nothing beside the pointer.
 		err := lpPut(ds, "noblock", map[string]any{
 			"plain": []any{lpLink(target.ID, map[string]any{"role": "lead"})},
 		})
 		if err == nil {
-			t.Fatal("a reference declaring no link data must refuse an object value")
+			t.Fatal("a reference declaring no link data must refuse a key beside `ref`")
 		}
 		wantErr(t, err, substrate.ErrValidation, "props.plain")
 	})
@@ -479,7 +480,5 @@ func TestRepeatedReferenceRefusesADuplicate(t *testing.T) {
 // refPathOf reads a single-valued reference's stored path off a record.
 func refPathOf(t *testing.T, ds substrate.Dataset, typ, id, property string) string {
 	t.Helper()
-	rec := mustGet(t, ds, typ, id)
-	s, _ := rec.Properties[property].(string)
-	return s
+	return storedRefPath(mustGet(t, ds, typ, id).Properties[property])
 }

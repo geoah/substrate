@@ -95,9 +95,10 @@ function targetRecord(
   }
 }
 
-/** The `target` REFERENCE as the wire stores it: the referent's whole record
- * path, and nothing else — a reference carries no display sugar. */
-const targetRef = { target: `${TASK_KIND}/task-1` }
+/** The `target` REFERENCE as the wire serves it: the object holding the
+ * referent's whole record path under `ref`, and nothing else. A reference
+ * carries no display sugar. */
+const targetRef = { target: { ref: `${TASK_KIND}/task-1` } }
 
 // ── the op ──────────────────────────────────────────────────────────────────
 

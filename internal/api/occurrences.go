@@ -183,12 +183,14 @@ func indexLogs(logs []*substrate.Record) map[string]*substrate.OccurrenceLog {
 	return marks
 }
 
-// referencePaths reads the record paths a property value holds, whichever
-// shape the declaration gives it: a plain reference is the path itself, a
-// reference carrying link data is an object under the reserved `ref` key, and
-// a repeated one is a list of either. A value that is neither is not a
-// reference and yields nothing — the kind declaration is not on this side of
-// the seam, so the VALUE's shape is what says whether it points anywhere.
+// referencePaths reads the record paths a property value holds. A reference is
+// SERVED as an object carrying the path under the reserved `ref` key, and a
+// repeated one as a list of those. The bare string arm stays because a reader
+// never picks its parse from the declaration (engine/refs.go states the rule):
+// it is what a row written before decision 0044 still holds, and what an
+// unnormalized caller may hand over. A value that is neither is not a reference
+// and yields nothing. The kind declaration is not on this side of the seam, so
+// the VALUE's shape is what says whether it points anywhere.
 func referencePaths(v any) []string {
 	switch v := v.(type) {
 	case string:

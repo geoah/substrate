@@ -151,8 +151,8 @@ describe("mergePair", () => {
     expect(
       mergePair(
         request({
-          winner: "people.substrate.reamde.dev/person/w",
-          loser: "people.substrate.reamde.dev/person/l",
+          winner: { ref: "people.substrate.reamde.dev/person/w" },
+          loser: { ref: "people.substrate.reamde.dev/person/l" },
         })
       )
     ).toEqual({

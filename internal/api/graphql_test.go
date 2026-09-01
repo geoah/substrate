@@ -147,19 +147,18 @@ func TestGraphQLPutPatchRecordRoundTrip(t *testing.T) {
 	}
 }
 
-// A reference property renders through the GraphQL Reference
-// object type: the stored {kind, id} record reference survives put and reads back
-// through its subfields — the GraphQL half of the wire round-trip.
+// A reference property renders through its generated GraphQL object type, and
+// it does so with NO link properties declared: `manager` is a plain reference,
+// and it still selects as `{ ref }`. The write sends the bare path (the
+// shorthand) and the read hands back the object, which is the round trip
+// decision 0044 asks for.
 func TestGraphQLReferenceRoundTrip(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 
-	// A reference is ONE flat path, so it selects as a scalar: asking for
-	// `manager { kind id }` is now a query error, which is the schema saying the
-	// pair is gone rather than answering half of it.
 	const path = "people.substrate.reamde.dev/person/boss1"
 	put := env.gql(t, tok,
-		`mutation ($in: JSON!) { put(input: $in) { id ... on Person { manager } } }`,
+		`mutation ($in: JSON!) { put(input: $in) { id ... on Person { manager { ref } } } }`,
 		map[string]any{"in": map[string]any{
 			"kind": "people.substrate.reamde.dev/person",
 			"properties": map[string]any{
@@ -168,23 +167,41 @@ func TestGraphQLReferenceRoundTrip(t *testing.T) {
 			},
 		}})
 	created, _ := put.Data["put"].(map[string]any)
-	if created["manager"] != path {
-		t.Fatalf("manager reference = %v, want the flat path %q", created["manager"], path)
+	ref, _ := created["manager"].(map[string]any)
+	if ref == nil || ref["ref"] != path {
+		t.Fatalf("manager reference = %v, want an object holding ref %q", created["manager"], path)
 	}
 }
 
-// A Reference is a SCALAR, and a client that still asks for its fields is told
-// so at query time rather than handed a null.
-func TestGraphQLReferenceRefusesASubSelection(t *testing.T) {
+// A reference is an OBJECT even with no link properties, so selecting it bare
+// is the query error: the mirror of the old rule, and the check that the
+// one-shape decision reaches the schema and not only the stored value.
+func TestGraphQLReferenceRequiresASubSelection(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+
+	res := env.gqlRaw(t, tok,
+		`query { records(first: 1) { nodes { ... on Person { manager } } } }`, nil)
+	if len(res.Errors) == 0 {
+		t.Fatalf("a bare selection of a reference object must be a query error, got %+v", res.Data)
+	}
+	if !strings.Contains(res.Errors[0].Message, "must have a sub selection") {
+		t.Fatalf("error = %q", res.Errors[0].Message)
+	}
+}
+
+// The retired {kind, id} pair is not what the object carries: a client asking
+// for it is told at query time rather than handed two nulls.
+func TestGraphQLReferenceRefusesTheRetiredPair(t *testing.T) {
 	env := newTestEnv(t)
 	tok := env.svc.token("geoah")
 
 	res := env.gqlRaw(t, tok,
 		`query { records(first: 1) { nodes { ... on Person { manager { kind id } } } } }`, nil)
 	if len(res.Errors) == 0 {
-		t.Fatalf("a sub-selection on a scalar Reference must be a query error, got %+v", res.Data)
+		t.Fatalf("selecting kind/id on a reference must be a query error, got %+v", res.Data)
 	}
-	if !strings.Contains(res.Errors[0].Message, "must not have a sub selection") {
+	if !strings.Contains(res.Errors[0].Message, `Cannot query field "kind"`) {
 		t.Fatalf("error = %q", res.Errors[0].Message)
 	}
 }
@@ -459,17 +476,24 @@ func TestGraphQLLinkDataReferenceIsItsOwnType(t *testing.T) {
 		}
 	}
 
-	// The plain reference keeps the scalar: only link data generates a type.
+	// A reference that declares NO link data generates a type too (0044): the
+	// value has one shape, so the schema has one shape, and adding a link
+	// property later adds a field instead of replacing a scalar with an object.
 	person, _ := res.Data["person"].(map[string]any)
+	var seen bool
 	for _, f := range person["fields"].([]any) {
 		field, _ := f.(map[string]any)
 		if field["name"] != "manager" {
 			continue
 		}
+		seen = true
 		typ, _ := field["type"].(map[string]any)
-		if typ["name"] != "Reference" || typ["kind"] != "SCALAR" {
-			t.Fatalf("an unpinned reference without link data must stay the Reference scalar: %v", typ)
+		if typ["name"] != "PersonManagerReference" || typ["kind"] != "OBJECT" {
+			t.Fatalf("a reference without link data must still be its own object type: %v", typ)
 		}
+	}
+	if !seen {
+		t.Fatal("Person declares no manager field")
 	}
 }
 

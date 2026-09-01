@@ -89,8 +89,9 @@ export interface PropSpec {
   /** `reference`: the kind this pointer is pinned to, or `any`. */
   to?: string
   /** `reference`: the LINK DATA the declaration hangs off the pointer, each a
-   * property in its own right. A reference that declares these stores an
-   * object (`{ref, <prop>: <val>}`) where a plain one stores the path string. */
+   * property in its own right. EVERY reference stores and serves the object
+   * `{ref, <prop>: <val>}`; these say which keys may sit beside `ref`, and an
+   * empty list means none may. */
   linkFields?: PropSpec[]
   /** `object`: the declared fields, each a property in its own right (a field
    * may narrow, range or enumerate exactly as a property does). Fields NEST:
@@ -528,15 +529,13 @@ export function checkItem(spec: PropSpec, value: unknown): string | undefined {
     if (typeof value === "string") {
       return coerceReferencePath(pin, value.trim()).error
     }
-    // A reference that declares LINK DATA stores the pointer under the one
-    // reserved key with the link properties beside it. A bare string is still
-    // admissible there (every link property absent), which is why the string
-    // arm above runs first.
+    // A reference is STORED and SERVED as the object: the pointer under the one
+    // reserved key, any declared link properties beside it. The bare string
+    // above is write-time shorthand the server normalizes, which is why that
+    // arm runs first: an authored document is checked here before it is sent.
     const held = readReference(value)
     if (!held) {
-      return spec.linkFields?.length
-        ? `a reference with link data is a {${REFERENCE_KEY}: "<kind>/<id>", …} object or the path string alone`
-        : 'a reference is a "<kind>/<id>" path string'
+      return `a reference is a {${REFERENCE_KEY}: "<kind>/<id>"} object, or the path string alone`
     }
     const bad = coerceReferencePath(pin, held.path.trim()).error
     if (bad) return bad

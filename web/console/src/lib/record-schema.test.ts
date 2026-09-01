@@ -265,6 +265,32 @@ describe("checkValue", () => {
       checkValue(spec(wideKind, "owner"), "core.substrate.reamde.dev/actor/a")
     ).toBeUndefined()
   })
+
+  it("accepts the served `ref` object on a reference that declares no link data", () => {
+    // The server serves every reference as the object, link properties or not,
+    // so the shape validates on a declaration that hangs none off it.
+    expect(
+      checkValue(spec(wideKind, "callable"), {
+        ref: "core.substrate.reamde.dev/function/f",
+      })
+    ).toBeUndefined()
+    expect(
+      checkValue(spec(wideKind, "owner"), {
+        ref: "core.substrate.reamde.dev/actor/a",
+      })
+    ).toBeUndefined()
+    // The pin completes a bare id inside the object too.
+    expect(
+      checkValue(spec(wideKind, "owner"), { ref: "alice" })
+    ).toBeUndefined()
+    // A key beside `ref` is link data, and this declaration declares none.
+    expect(
+      checkValue(spec(wideKind, "owner"), {
+        ref: "core.substrate.reamde.dev/actor/a",
+        round: 2,
+      })
+    ).toMatch(/not a declared link property/)
+  })
 })
 
 describe("parseValue / formatValue", () => {

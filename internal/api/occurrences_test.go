@@ -43,10 +43,11 @@ func seedRecurring(ds *fakeDataset) {
 		ID: "log1", Kind: kindMedLog,
 		// The log names the recurring record it marks with a reference
 		// property of its own name (`schedule` here, `routine` or `task`
-		// elsewhere), holding the full record path.
+		// elsewhere), stored as the object holding the full record path
+		// under `ref` (0044).
 		Properties: map[string]any{
 			"scheduledAt": "2026-07-02T06:00:00Z", "status": "done",
-			"schedule": kindMedSchedule + "/meds",
+			"schedule": map[string]any{"ref": kindMedSchedule + "/meds"},
 		},
 	}
 }

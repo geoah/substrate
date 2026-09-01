@@ -200,10 +200,11 @@ func TestDialectWideningsRoundTrip(t *testing.T) {
 }
 
 // assertRef pins a stored reference to the canonical PATH: the whole point of
-// reaching nested positions is that a bare id does not survive as one.
+// reaching nested positions is that a bare id does not survive as one. The
+// stored value is the object holding that path under `ref` (decision 0044).
 func assertRef(t *testing.T, where string, got any, want string) {
 	t.Helper()
-	if got != want {
+	if path := storedRefPath(got); path != want {
 		t.Fatalf("%s = %#v, want the path %q", where, got, want)
 	}
 }

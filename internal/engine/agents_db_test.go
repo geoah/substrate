@@ -424,7 +424,7 @@ func agentThreadsOf(t *testing.T, ds *dataset, agent string) []map[string]any {
 	t.Helper()
 	rows, err := ds.db.QueryContext(context.Background(), `
 		SELECT id, props FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props->>'agent' = $2
+		WHERE kind = $1 AND deleted_at IS NULL AND `+referencePathSQL("props", "agent")+` = $2
 		ORDER BY created_at, id`, typeThread, vocabulary.RecordPath(kindAgent, crewAuthority+"/"+agent))
 	if err != nil {
 		t.Fatal(err)
@@ -449,7 +449,7 @@ func threadMessages(t *testing.T, ds *dataset, threadID string) []map[string]any
 	t.Helper()
 	rows, err := ds.db.QueryContext(context.Background(), `
 		SELECT e.props FROM records e
-		WHERE e.kind = $2 AND e.deleted_at IS NULL AND e.props->>'thread' = $1
+		WHERE e.kind = $2 AND e.deleted_at IS NULL AND `+referencePathSQL("e.props", msgRelThread)+` = $1
 		ORDER BY e.created_at, e.id`, vocabulary.RecordPath(typeThread, threadID), typeMessage)
 	if err != nil {
 		t.Fatal(err)
@@ -475,7 +475,7 @@ func threadCountOf(t *testing.T, ds *dataset, identity string) int {
 	var n int
 	if err := ds.db.QueryRowContext(context.Background(), `
 		SELECT count(*) FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props->>'agent' = $2`,
+		WHERE kind = $1 AND deleted_at IS NULL AND `+referencePathSQL("props", "agent")+` = $2`,
 		typeThread, vocabulary.RecordPath(kindAgent, identity)).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
@@ -592,7 +592,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	}
 	var parent string
 	if err := ds.db.QueryRowContext(ctx, `
-		SELECT props->>'parent' FROM records WHERE kind = $2 AND id = $1`,
+		SELECT `+referencePathSQL("props", "parent")+` FROM records WHERE kind = $2 AND id = $1`,
 		child["__id"], typeThread).Scan(&parent); err != nil {
 		t.Fatal(err)
 	}
@@ -625,7 +625,7 @@ func TestAgentTriggerDispatch(t *testing.T) {
 	var effectsRaw []byte
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT props->'effects' FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props->>'trigger' = $2 AND props->>'status' = 'ok'`,
+		WHERE kind = $1 AND deleted_at IS NULL AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' = 'ok'`,
 		typeRun, vocabulary.RecordPath(typeTrigger, tr.ID)).Scan(&effectsRaw); err != nil {
 		t.Fatalf("the ok run row: %v", err)
 	}
@@ -1056,7 +1056,7 @@ func TestAgentRetryKeepsIdempotencyKeys(t *testing.T) {
 	var okRuns int
 	if err := ds.db.QueryRowContext(ctx, `
 		SELECT count(*) FROM records WHERE kind = $1 AND deleted_at IS NULL
-		  AND props->>'trigger' = $2 AND props->>'status' = 'ok'`,
+		  AND `+referencePathSQL("props", "trigger")+` = $2 AND props->>'status' = 'ok'`,
 		typeRun, vocabulary.RecordPath(typeTrigger, tr.ID)).Scan(&okRuns); err != nil {
 		t.Fatal(err)
 	}

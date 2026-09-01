@@ -69,10 +69,12 @@ func TestMergeSplit(t *testing.T) {
 		map[string]any{"kind": "people.substrate.reamde.dev/person", "winner": "a1", "loser": "b2"})
 	wantStatus(t, rec, http.StatusCreated)
 	merged := decodeJSON[substrate.Record](t, rec)
-	// The merge record names both sides with reference properties, each the
-	// full record path.
-	if merged.Properties["winner"] != "people.substrate.reamde.dev/person/a1" ||
-		merged.Properties["loser"] != "people.substrate.reamde.dev/person/b2" {
+	// The merge record names both sides with reference properties, each served
+	// as the object holding the full record path under `ref` (0044).
+	winner, _ := merged.Properties["winner"].(map[string]any)
+	loser, _ := merged.Properties["loser"].(map[string]any)
+	if winner["ref"] != "people.substrate.reamde.dev/person/a1" ||
+		loser["ref"] != "people.substrate.reamde.dev/person/b2" {
 		t.Fatalf("merge record properties = %v", merged.Properties)
 	}
 

@@ -90,6 +90,16 @@ func refPathsOf(v any) []string {
 	return nil
 }
 
+// refPath reads a SINGLE-valued reference property as the path it points at.
+// A reference is served as the object holding that path under `ref` (decision
+// 0044), so `prop`, which reads a string, answers "" for one.
+func refPath(v any) string {
+	if paths := refPathsOf(v); len(paths) == 1 {
+		return paths[0]
+	}
+	return ""
+}
+
 // linkProp reads one link property off a repeated reference, keyed by the
 // path it points at.
 func linkProp(rec record, name, path, prop string) any {

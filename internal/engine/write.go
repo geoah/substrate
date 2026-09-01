@@ -139,6 +139,13 @@ func (ds *dataset) putWith(ctx context.Context, actor substrate.Actor, in substr
 }
 
 func (t *txn) put(in substrate.PutInput) (*substrate.Record, error) {
+	// The registry-dependency barrier, taken BEFORE the kind is resolved and
+	// held to commit (#321): the declaration this write coerces against is the
+	// declaration its refs rows project against, and a vocabulary apply cannot
+	// slip its reprojection between the two.
+	if err := t.lockRegistryDepShared(); err != nil {
+		return nil, err
+	}
 	ty, err := t.ds.resolveType(in.Kind)
 	if err != nil {
 		return nil, err
@@ -518,6 +525,10 @@ func (ds *dataset) patchWith(ctx context.Context, actor substrate.Actor, typ, id
 }
 
 func (t *txn) patch(ref eref, in substrate.PatchInput) (*substrate.Record, error) {
+	// Before the kind is resolved, for the reason put takes it there (#321).
+	if err := t.lockRegistryDepShared(); err != nil {
+		return nil, err
+	}
 	ty, err := t.ds.resolveType(ref.Kind)
 	if err != nil {
 		return nil, err
@@ -967,14 +978,14 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// the SHARED registry-dependency lock through commit and re-verifies the
 	// callable's record row under it, so a bundle upgrade's dropped-reference
 	// query (exclusive side, schemawrite.go) can never race this trigger into
-	// existence across its breakage check. Internal
-	// writes skip both — a connector registration writes triggers inside the
-	// schema batch that already holds the exclusive side.
+	// existence across its breakage check. Every write now takes that lock at
+	// its entry (#321), so the ask here is a no-op that keeps the requirement
+	// stated where it is depended on. Internal writes skip the callable
+	// re-verification below: a connector registration writes triggers inside
+	// the schema batch that already holds the exclusive side.
 	if sp.ty.Identity == typeTrigger {
-		if !t.internal {
-			if err := t.lockKeyShared(registryDepKey(t.ds)); err != nil {
-				return nil, err
-			}
+		if err := t.lockRegistryDepShared(); err != nil {
+			return nil, err
 		}
 		if err := t.ds.validateTriggerRow(t.ds.registry(), sp.id, row.Props, !t.internal); err != nil {
 			return nil, err
@@ -1010,7 +1021,7 @@ func (t *txn) apply(sp *applySpec) (*substrate.Record, error) {
 	// lock for the reason the trigger admission above does: a bundle upgrade's
 	// exclusive side must not drop the kind across this check.
 	if sp.ty.Identity == vocabulary.KindRecordPatchPolicy && !t.internal {
-		if err := t.lockKeyShared(registryDepKey(t.ds)); err != nil {
+		if err := t.lockRegistryDepShared(); err != nil {
 			return nil, err
 		}
 		if err := validatePolicyRow(t.ds.registry(), row.Props); err != nil {
@@ -2503,10 +2514,15 @@ func (t *txn) forbidSystemKind(ty *vocabulary.Kind, op substrate.Op) error {
 // registry-dep < subject-type < record) places BEFORE a write's own record
 // lock:
 //
-//   - the SHARED registry-dependency lock for a trigger write, so an owner
-//     trigger write can never hold the trigger's record lock while a connector
-//     registration holds the dep lock EXCLUSIVE and reaches for that same
-//     record through its default-trigger installer;
+//   - the SHARED registry-dependency lock, for EVERY kind (#321): the write's
+//     properties and its refs rows both project from the declaration this
+//     transaction resolved, and the barrier is what stops a vocabulary apply
+//     reprojecting the index between them. put and patch take it at their own
+//     entry, ahead of kind resolution; this is the door for putKind's one other
+//     caller, the vocabulary projection. It also keeps an owner trigger write
+//     from holding the trigger's record lock while a connector registration
+//     holds the dep lock EXCLUSIVE and reaches for that same record through its
+//     default-trigger installer;
 //   - the subject-type lock for a mapping-SOURCE write, matching the effect
 //     lock plan so a source write and an effect list never
 //     order subject|<type> and the source's record lock in opposite ways.
@@ -2520,10 +2536,8 @@ func (t *txn) preRecordLocks(ty *vocabulary.Kind) error {
 	if t.recomputing {
 		return nil
 	}
-	if ty.Identity == typeTrigger && !t.internal {
-		if err := t.lockKeyShared(registryDepKey(t.ds)); err != nil {
-			return err
-		}
+	if err := t.lockRegistryDepShared(); err != nil {
+		return err
 	}
 	if m, ok := t.ds.registry().MappingFor(ty.Identity); ok {
 		if err := t.lockKey("subject|" + m.To); err != nil {

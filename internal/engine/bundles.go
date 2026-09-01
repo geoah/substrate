@@ -325,7 +325,7 @@ func droppedCallableGuards(q sqlReader, dropped []droppedCallable) ([]string, er
 		rows, err := q.query(`
 			SELECT id FROM records
 			WHERE kind = $1 AND deleted_at IS NULL
-			  AND props->>'callable' = $2
+			  AND `+referencePathSQL("props", "callable")+` = $2
 			ORDER BY id`, typeTrigger, vocabulary.RecordPath(vocabulary.CoreKind(d.kind), d.identity))
 		if err != nil {
 			return nil, err
@@ -353,10 +353,25 @@ func droppedCallableGuards(q sqlReader, dropped []droppedCallable) ([]string, er
 }
 
 // registryDepKey is the registry-dependency advisory-lock key (wave-3 review
-// #11): trigger create/rewire admission holds it SHARED from callable
-// validation through commit, a schema batch holds it EXCLUSIVE across its
-// dropped-reference query — so a trigger can never be created "across" the
-// upgrade breakage check. The repository is prefixed by lockKey, not here.
+// #11): EVERY data write holds it SHARED from kind resolution through commit,
+// and a vocabulary apply holds it EXCLUSIVE from the top of its transaction
+// through its reprojection and commit. The repository is prefixed by lockKey,
+// not here.
+//
+// WHY EVERY DATA WRITE AND NOT ONLY A TRIGGER (#321). A write derives two
+// things from the declaration it resolved: the row's properties, and the refs
+// index rows those properties project to (refs.go deriveRefs). A vocabulary
+// apply reprojects the index for the kinds whose reference declarations moved,
+// reading the rows COMMITTED at that moment. Without the barrier a data write
+// could resolve the old declaration, be missed by the reprojection because it
+// had not committed yet, and then commit `records.props` carrying a reference
+// with no row in `refs`: a pointer no reverse read can see, and nothing says
+// so. Under it the write either commits before the apply and is reprojected, or
+// waits and re-derives against the new declaration.
+//
+// The lock is also what keeps trigger and policy admission from validating
+// against a registry the apply is about to replace, which is what it was
+// introduced for.
 func registryDepKey(*dataset) string { return "registrydep" }
 
 // checkTriggerCallableRow re-verifies a trigger's callable against the
@@ -553,8 +568,9 @@ func (t *txn) tearDownCallableTriggers(callables map[string]bool) error {
 		return nil
 	}
 	rows, err := t.query(`
-		SELECT id, props->>'callable' FROM records
-		WHERE kind = $1 AND deleted_at IS NULL AND props->>'callable' IS NOT NULL
+		SELECT id, `+referencePathSQL("props", "callable")+` FROM records
+		WHERE kind = $1 AND deleted_at IS NULL
+		  AND `+referencePathSQL("props", "callable")+` IS NOT NULL
 		ORDER BY id`, typeTrigger)
 	if err != nil {
 		return err

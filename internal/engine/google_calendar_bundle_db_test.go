@@ -416,7 +416,7 @@ func TestGoogleCalendarFakeSyncMirrors(t *testing.T) {
 	}
 	// `account` is a trait-pinned cascading reference (0034): the body writes the
 	// full account path as a property, not an edge.
-	if got := core.Properties["account"]; got != googleAccountType+"/acct-step" {
+	if got := storedReferencePath(core.Properties["account"]); got != googleAccountType+"/acct-step" {
 		t.Fatalf("core calendar account = %v, want %s/acct-step", got, googleAccountType)
 	}
 
@@ -775,7 +775,7 @@ func TestGoogleCalendarAccountDisconnectCascades(t *testing.T) {
 	if err != nil {
 		t.Fatalf("core calendar did not sync: %v", err)
 	}
-	if got := core.Properties["account"]; got != googleAccountType+"/acct-step" {
+	if got := storedReferencePath(core.Properties["account"]); got != googleAccountType+"/acct-step" {
 		t.Fatalf("core calendar account = %v, want the trait-pinned path", got)
 	}
 	evtID := substratefn.ExternalID("gcal-event", calID, "e1")

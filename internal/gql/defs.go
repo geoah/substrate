@@ -100,11 +100,10 @@ func typeMachines(def map[string]any) map[string][]string {
 // propertyType maps a declared property type onto its GraphQL type.
 // Refined string types (email, url, asin, …) render as String; secrets are
 // String too — the engine redacts the value, the shape stays stable. A
-// `reference` renders as the Reference scalar — the referent's "<kind>/<id>"
-// path, one string, which is exactly the stored value. A reference that
-// declares link `properties:` stores an object instead, so it renders as its
-// own generated object type (referenceObject). An
-// `object` property carries inline structured data: it renders as
+// `reference` renders as its own generated object type (referenceType), always:
+// the stored value is the object `{ref, <link properties>}`, so the projection
+// is `{ref, target, <link properties>}` whether or not the declaration carries
+// link data. An `object` property carries inline structured data: it renders as
 // the JSON scalar, lossless, rather than flattening to String.
 //
 // A `repeated: true` property is a LIST of its element type for EVERY kind
@@ -162,8 +161,8 @@ func scalarType(kind string) graphql.Output {
 }
 
 // linkProperties returns the names of a reference declaration's link
-// properties, sorted. Empty for a plain reference, which is what decides
-// between the Reference scalar and a generated object type.
+// properties, sorted. Empty for a reference that declares none, which changes
+// which FIELDS the generated object carries and not whether one is generated.
 func linkProperties(pd map[string]any) []string {
 	return sortedKeys(definitionMap(pd, "properties"))
 }
@@ -178,16 +177,18 @@ func referenceObjectName(t substrate.KindInfo, prop string) string {
 	return graphqlTypeName(t) + titleCase(prop) + "Reference"
 }
 
-// referenceType is a reference property's output type: the Reference scalar
-// when the declaration carries no link data, and a generated object otherwise.
-// The object is `{ref, <link properties>, target}` — `ref` is the same path
-// the scalar would have carried, the link properties are typed, and `target`
-// resolves the referent through the registry (null when it dangles).
+// referenceType is a reference property's output type: ALWAYS a generated
+// object, `{ref, target, <link properties>}`. `ref` is the referent's path as
+// the Reference scalar, `target` resolves the referent through the registry
+// (null when it dangles), and each declared link property is typed.
+//
+// EVERY reference, not only a link-carrying one (0044). The stored and served
+// value has one shape, so the schema has one shape too: adding `properties:` to
+// a live reference then adds FIELDS to this object instead of replacing a
+// scalar field with an object field, which is a breaking schema change for a
+// purely additive declaration edit. A client that wants the old string selects
+// `{ ref }`.
 func (b *schemaBuilder) referenceType(t substrate.KindInfo, prop string, pd map[string]any) graphql.Output {
-	props := linkProperties(pd)
-	if len(props) == 0 {
-		return referenceScalar
-	}
 	name := referenceObjectName(t, prop)
 	if obj, built := b.refObjects[name]; built {
 		return obj
@@ -208,7 +209,7 @@ func (b *schemaBuilder) referenceType(t substrate.KindInfo, prop string, pd map[
 			Resolve: resolveReferenceTarget,
 		},
 	}
-	for _, lp := range props {
+	for _, lp := range linkProperties(pd) {
 		lpd, _ := definitionMap(pd, "properties")[lp].(map[string]any)
 		datatype, _ := lpd["type"].(string)
 		fields[camelCase(lp)] = &graphql.Field{
@@ -218,7 +219,7 @@ func (b *schemaBuilder) referenceType(t substrate.KindInfo, prop string, pd map[
 	}
 	obj := graphql.NewObject(graphql.ObjectConfig{
 		Name:        name,
-		Description: t.Identity + "." + prop + ": a reference carrying link data.",
+		Description: t.Identity + "." + prop + ": a pointer at another record.",
 		Fields:      fields,
 	})
 	b.refObjects[name] = obj

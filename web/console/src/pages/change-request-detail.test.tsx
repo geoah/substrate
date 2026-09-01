@@ -90,8 +90,9 @@ const patchRequest = request({
     rationale: "The title moved in the source.",
     targetVersion: 3,
     diff: { properties: { summary: "New summary", note: null } },
-    // The `target` REFERENCE: the referent's whole record path.
-    target: `${TASK_KIND}/task-1`,
+    // The `target` REFERENCE, as served: the referent's whole record path
+    // under `ref`.
+    target: { ref: `${TASK_KIND}/task-1` },
   },
 })
 
@@ -245,6 +246,9 @@ describe("ChangeRequestDetailPage", () => {
           op: "create",
           targetKind: TASK_KIND,
           targetId: "task-9",
+          // `diff` is a `json` property, so nothing normalizes the values
+          // inside it: they are the write this request proposes, where the
+          // bare path is legal shorthand.
           diff: {
             properties: {
               summary: "Write it down",
@@ -274,7 +278,7 @@ describe("ChangeRequestDetailPage", () => {
         properties: {
           op: "delete",
           targetVersion: 3,
-          target: `${TASK_KIND}/task-1`,
+          target: { ref: `${TASK_KIND}/task-1` },
         },
       }),
       { target }
@@ -332,7 +336,7 @@ describe("ChangeRequestDetailPage", () => {
             addFinalizers: ["owner/hold"],
             removeFinalizers: ["app/lock"],
           },
-          target: `${TASK_KIND}/task-1`,
+          target: { ref: `${TASK_KIND}/task-1` },
         },
       }),
       { target }
@@ -403,7 +407,7 @@ describe("ChangeRequestDetailPage", () => {
         properties: {
           targetVersion: 3,
           diff: { properties: [] },
-          target: `${TASK_KIND}/task-1`,
+          target: { ref: `${TASK_KIND}/task-1` },
         },
       }),
       { target }

@@ -480,9 +480,8 @@ func (b *schemaBuilder) buildObjects() error {
 
 // reservedNames is the closed set of GraphQL names a registry type may not
 // claim: the structural types and scalars, the capability and machine
-// interfaces derived from this registry, and the object type every
-// link-carrying reference property generates. A collision is a schema-build
-// error, not a silent rename.
+// interfaces derived from this registry, and the object type EVERY reference
+// property generates. A collision is a schema-build error, not a silent rename.
 func (b *schemaBuilder) reservedNames() map[string]string {
 	r := map[string]string{
 		"Record":           "the Record interface",
@@ -510,9 +509,6 @@ func (b *schemaBuilder) reservedNames() map[string]string {
 		for _, p := range declaredProperties(t.Definition) {
 			pd := propertyDef(t.Definition, p)
 			if kind, _ := pd["type"].(string); kind != "reference" {
-				continue
-			}
-			if len(linkProperties(pd)) == 0 {
 				continue
 			}
 			r[referenceObjectName(t, p)] = "the reference type of " + t.Identity + "." + p

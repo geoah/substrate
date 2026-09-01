@@ -1072,11 +1072,20 @@ data:
     LIST_PAGE = 200
 
 
+    def _ref_path(value):
+        # A reference is STORED as the object {"ref": "<kind>/<id>"}, and a
+        # bare path string is the write-time shorthand a pre-0044 row may
+        # still hold. Read both: str() of the dict would hash the whole
+        # serialized object into an id.
+        if isinstance(value, dict):
+            return str(value.get("ref") or "")
+        return str(value or "")
+
+
     def _account_id(value):
-        # `account` is a reference, so the STORED value is the record path. The
-        # id composed into a contact id is the bare account id the sync passes,
-        # so the path's prefix comes off before it is hashed.
-        v = str(value or "")
+        # The id composed into a contact id is the bare account id the sync
+        # passes, so the path's prefix comes off before it is hashed.
+        v = _ref_path(value)
         return v[len(ACCOUNT_PREFIX):] if v.startswith(ACCOUNT_PREFIX) else v
 
 
@@ -1089,9 +1098,9 @@ data:
 
 
     def _person_of(record):
-        # `person` is a reference, so the STORED value is one record path
-        # string, not a list of targets; the merge effect names the bare id.
-        v = str(((record or {}).get("properties") or {}).get("person") or "")
+        # `person` is a reference, so the STORED value is ONE pointer and not a
+        # list of targets; the merge effect names the bare id.
+        v = _ref_path(((record or {}).get("properties") or {}).get("person"))
         return v[len(PERSON_PREFIX):] if v.startswith(PERSON_PREFIX) else v
 
 

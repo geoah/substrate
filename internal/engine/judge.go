@@ -303,7 +303,7 @@ func (ds *dataset) threadAgent(ctx context.Context, threadID string) (string, er
 // content, never tool payloads) as data for the judge's envelope.
 func (ds *dataset) recentProseTurns(ctx context.Context, threadID string, limit int) ([]map[string]any, error) {
 	probe, err := json.Marshal(map[string]any{
-		msgRelThread: vocabulary.RecordPath(typeThread, threadID),
+		msgRelThread: referenceValueOf(vocabulary.RecordPath(typeThread, threadID)),
 	})
 	if err != nil {
 		return nil, err

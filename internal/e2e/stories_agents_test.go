@@ -517,7 +517,7 @@ func (c *C) quietRuns(trigger string) int {
 	}
 	n := 0
 	for _, rec := range recs {
-		tr, _ := rec.Properties["trigger"].(string)
+		tr := refPath(rec.Properties["trigger"])
 		if strings.HasSuffix(tr, "/"+trigger) && rec.prop("status") == "ok" {
 			n++
 		}

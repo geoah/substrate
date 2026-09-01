@@ -107,7 +107,7 @@ func TestProposalDecisionReportsAndResumesThread(t *testing.T) {
 
 	// The request carries the proposing thread, stamped by the loop.
 	req := onlyPatchRequest(t, ds)
-	if got := req.Properties["thread"]; got != vocabulary.RecordPath(typeThread, res.Thread) {
+	if got := storedReferencePath(req.Properties["thread"]); got != vocabulary.RecordPath(typeThread, res.Thread) {
 		t.Fatalf("request thread = %v, want the proposing thread", got)
 	}
 	// The propose tool row carries the request's changelog entry.

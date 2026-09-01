@@ -90,27 +90,33 @@ export interface SubstrateRecord {
   propertyMeta?: Record<string, PropertyMeta>
 }
 
-/** The one reserved key of a reference value that carries LINK DATA. A
- * reference whose declaration has no `properties:` stores the flat
- * `"<kind>/<id>"` path string; one that declares them stores an object with the
- * path under `ref` and every declared link property beside it
- * (`internal/engine/validate.go`). */
+/** The one reserved key of a reference value. Every reference is SERVED as an
+ * object holding the referent's `"<kind>/<id>"` path under `ref`, with each
+ * declared link property beside it, whether or not the declaration declares any
+ * (`internal/engine/validate.go`, decision 0044). The bare path string is
+ * accepted on WRITE as shorthand and normalized by the server; nothing serves
+ * it. */
 export const REFERENCE_KEY = "ref"
 
-/** One reference value, either shape. A repeated reference is an array of
- * these. */
+/** One reference value. The object is what a read hands back; the string is the
+ * write-time shorthand a document may still author. A repeated reference is an
+ * array of these. */
 export type ReferenceValue = string | LinkedReference
 
-/** A reference value carrying link data: the referent's path under `ref`, the
- * declaration's own link properties beside it. */
+/** A reference value: the referent's path under `ref`, the declaration's own
+ * link properties beside it. */
 export interface LinkedReference {
   ref: string
   [property: string]: unknown
 }
 
-/** Read one stored reference value as its path plus whatever link data rides
- * with it. `undefined` for a value that is neither shape — a reader renders
- * that raw rather than inventing a pointer. */
+/** Read one reference value as its path plus whatever link data rides with it.
+ * `undefined` for a value that is neither shape. A reader renders that raw
+ * rather than inventing a pointer.
+ *
+ * It reads BOTH shapes and keeps doing so: the object is what the server
+ * serves, and the string arm covers an authored document being checked before
+ * it is sent, plus any row written before the one-shape rule landed. */
 export function readReference(
   value: unknown
 ): { path: string; properties: Record<string, unknown> } | undefined {

@@ -293,7 +293,7 @@ func TestGoogleContactsIDMigration(t *testing.T) {
 		// `account` is an owner reference (record 0032): the stored value is the
 		// account's record path, and the migration composes the id off the bare
 		// half of it.
-		if got := e.Properties["account"]; got != googleAccountType+"/"+c.account {
+		if got := storedReferencePath(e.Properties["account"]); got != googleAccountType+"/"+c.account {
 			t.Fatalf("migrated row %s account = %v, want %s", newID, got, c.account)
 		}
 		// Person continuity: the SAME person record, carried explicitly —

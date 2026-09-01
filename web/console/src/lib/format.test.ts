@@ -64,9 +64,26 @@ describe("shortDate", () => {
 
 describe("referenceID / referenceCell", () => {
   it("names the record, not the kind the column already says", () => {
-    expect(referenceID("core.substrate.reamde.dev/llmprovider/claude")).toBe(
-      "claude"
+    // The served shape: the path under `ref`, whether or not the declaration
+    // hangs link properties off it.
+    expect(
+      referenceID({ ref: "core.substrate.reamde.dev/llmprovider/claude" })
+    ).toBe("claude")
+    expect(referenceID({ ref: "tasks.example.com/task/abc123" })).toBe("abc123")
+    expect(referenceID({ ref: "tasks.example.com/task/p1", round: 2 })).toBe(
+      "p1"
     )
+    expect(
+      referenceCell([
+        { ref: "tasks.example.com/task/a" },
+        { ref: "tasks.example.com/task/b" },
+      ])
+    ).toBe("a, b")
+  })
+
+  it("still reads the bare path, the write-time shorthand", () => {
+    // A path string reaches these functions from an authored document the
+    // console has not sent yet; the server serves the object.
     expect(referenceID("tasks.example.com/task/abc123")).toBe("abc123")
     expect(
       referenceCell(["tasks.example.com/task/a", "tasks.example.com/task/b"])

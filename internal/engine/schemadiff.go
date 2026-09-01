@@ -699,15 +699,26 @@ func fieldPresence(ident string, path []fieldStep, key string) (string, []any) {
 // string test buys: a missing value is jsonb NULL, whose jsonb_typeof is not
 // 'string', so it is not counted.
 //
-// A stored reference is ONE flat path ("<kind>/<id>", references.go), so
-// "points at the target" is a PREFIX: the value begins with the target kind and
-// a slash. Compared with `left(…)` rather than LIKE because a kind reference is
+// A stored reference is the OBJECT `{ref: "<kind>/<id>"}` (decision 0044), and a
+// row written before that rule holds the bare path string. The path is read out
+// of whichever shape is there, so one query answers for both, exactly as
+// splitReferenceValue does in Go; reading only the string counted nothing once
+// the object landed, and every pin narrowing was admitted with its stranded rows
+// invisible.
+//
+// "Points at the target" is a PREFIX: the path begins with the target kind and a
+// slash. Compared with `left(…)` rather than LIKE because a kind reference is
 // data here — no pattern of the target's can leak into the operator.
 func refOutsidePath(ident string, path []fieldStep, target string) (string, []any) {
 	return countAtPath(ident, path, func(expr string, a *sqlArgs) string {
 		arg := a.add(target)
-		return fmt.Sprintf("jsonb_typeof(%s) = 'string' AND left(%s #>> '{}', length(%s) + 1) <> %s || '/'",
-			expr, expr, arg, arg)
+		// `->>` on a jsonb scalar answers NULL rather than erroring, so the
+		// coalesce is safe to evaluate against either shape.
+		held := fmt.Sprintf(
+			"coalesce(%s->>%s, CASE WHEN jsonb_typeof(%s) = 'string' THEN %s #>> '{}' END)",
+			expr, sqlLiteral(vocabulary.ReferenceValueKey), expr, expr)
+		return fmt.Sprintf("%s IS NOT NULL AND left(%s, length(%s) + 1) <> %s || '/'",
+			held, held, arg, arg)
 	})
 }
 

@@ -203,8 +203,9 @@ and passed whole to GraphQL's `filter` argument:
 - `kinds` names kinds by reference (implied by the path on a REST collection).
 - `properties` carries one condition per property. The operator set is one
   rule, not a per-type table: `secret` and `digest` properties refuse
-  filtering entirely, `reference` takes `eq`, `in`, `contains` and `exists`,
-  and every other declared property takes the full grammar (`eq`, `gt`,
+  filtering entirely, `reference` takes `eq`, `in`, `contains` and `exists`
+  and is filtered by the PATH string it points at (not by the object the read
+  serves), and every other declared property takes the full grammar (`eq`, `gt`,
   `gte`, `lt`, `lte`, `in`, `prefix`, `contains`, `exists`), compared as its
   declared [property type](data-model.md#property-types). State properties
   filter here like any other.
@@ -489,8 +490,10 @@ mapping round-trips exactly, so `substratectl get -o yaml` output applies back w
 edit, and a generic client can read, modify, and write the same object.
 
 A reference is a property value like any other, so it round-trips the same way:
-the flat `<kind>/<id>` path, or the `{ref, …}` object where the declaration
-carries [link properties](vocabulary.md#reference-properties). A
+the object `{ref: "<kind>/<id>"}`, with any declared
+[link properties](vocabulary.md#reference-properties) beside `ref`. That is what
+a read serves, whether or not the declaration carries link properties; a bare
+path string is accepted on the way in and stored as the object. A
 read-modify-write of a record that points at others is a fixed point.
 
 Every versioned write body and every filter document is decoded **strictly**.

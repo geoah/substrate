@@ -671,8 +671,8 @@ func (ds *dataset) condProp(ctx context.Context, b *builder, types []*vocabulary
 	if ds.sensitiveProp(types, name) {
 		return fmt.Errorf("%w: %s is sensitive and cannot be filtered", substrate.ErrValidation, name)
 	}
-	// A reference value is a path string, or an object holding one under `ref`
-	// when the declaration carries link data. It filters by CONTAINMENT, which
+	// A reference value is the object holding a path under `ref`, or the bare
+	// path string a pre-0044 row still holds. It filters by CONTAINMENT, which
 	// reaches into both shapes and is also the only jsonb operator
 	// `records_props_idx` indexes, so a lookup by pointer is index-backed
 	// without any per-kind declaration.
@@ -791,11 +791,11 @@ func referenceFilterPath(name string, p *vocabulary.Property, v any) (string, er
 // recursive over objects, so a probe names the pointer and says nothing about
 // the link properties beside it — which is what eq on a reference means.
 //
-// BOTH SHAPES, ALWAYS. Which spelling a row holds was decided by the declaration
-// in force WHEN IT WAS WRITTEN: adding `properties:` to a live reference leaves
-// every stored value a flat string, and dropping it leaves every stored value an
-// object. A reader that consulted the current declaration to pick one probe
-// would stop matching those rows (refs.go splitReferenceValue states the rule).
+// BOTH SHAPES, ALWAYS. Every write stores the object (decision 0044), and a row
+// written before that rule holds the bare path; nothing rewrites one when the
+// rule changes. A reader that consulted the current declaration to pick one
+// probe would stop matching those rows (refs.go splitReferenceValue states the
+// rule), so the filter probes both and unions them.
 func referenceValue(name string, p *vocabulary.Property, path string) ([]string, error) {
 	shapes := []any{path, map[string]any{vocabulary.ReferenceValueKey: path}}
 	out := make([]string, 0, len(shapes))
@@ -932,6 +932,27 @@ func (ds *dataset) datetimeProp(name string) bool {
 			continue
 		}
 		if p.Repeated || (p.Datatype != vocabulary.DatatypeDatetime && p.Datatype != vocabulary.DatatypeDate) {
+			return false
+		}
+		found = true
+	}
+	return found
+}
+
+// referenceProp reports whether EVERY loaded kind that declares this property
+// declares it as a single reference, under numericProp's every-not-any rule: a
+// name that is a reference on one kind and text on another has no one
+// expression that reads both, so a disagreement keeps the text ordering.
+//
+// Repeated and keyed are excluded because there is no single path to order by.
+func (ds *dataset) referenceProp(name string) bool {
+	found := false
+	for _, t := range ds.registry().Kinds() {
+		p, ok := t.Prop(name)
+		if !ok {
+			continue
+		}
+		if p.Repeated || p.Keyed || p.Datatype != vocabulary.DatatypeReference {
 			return false
 		}
 		found = true
@@ -1183,6 +1204,14 @@ func (ds *dataset) orderExpr(property string) (string, error) {
 		// tiebreak, so the order stays strict and paging is unaffected.
 		if ds.datetimeProp(property) {
 			return `(props->>` + sqlLiteral(property) + `)::timestamptz`, nil
+		}
+		// A REFERENCE sorts by the path it points at. Its stored value is the
+		// object `{ref: …}` (decision 0044), so `props->>` is the serialized
+		// object text: rows would order by a JSON spelling nobody asked for,
+		// and silently. referencePathSQL reads the path out of either shape,
+		// the same expression the filters use.
+		if ds.referenceProp(property) {
+			return referencePathSQL("props", property), nil
 		}
 		return `props->>` + sqlLiteral(property), nil
 	default:

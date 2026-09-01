@@ -255,7 +255,8 @@ repository:
 `change` says what moved (`op` is `create`, `update` or `delete`, and
 `changed` names the properties when the payload carries them). `record` is the
 row's state **now**, not the old value, and is `null` after a delete, and its
-`properties` carry everything the record points at, as reference paths. A
+`properties` carry everything the record points at, each as an object holding
+the referent's path under `ref`. A
 schedule or
 webhook delivery has no changelog entry underneath it, so its envelope carries
 `fire` (the fire's `id` and `at`) and `repository` in place of `change` and
@@ -273,8 +274,10 @@ envelope, the SDK's reads, the SDK's writes and an explicit
 source = {"kind": change["kind"], "id": change["id"]}
 ```
 
-That reference is what a reference property holds, and what a body compares against
-to know whether a delivery is about the kind it cares about:
+A body compares that kind against the one it cares about to know whether a
+delivery is for it. It is the pair a host READ is addressed by, not a property
+value: a reference property holds the path `<kind>/<id>` under `ref`, and the
+`{kind, id}` pair is the retired shape a write refuses by name.
 
 ```python
 PAGE = "web.bundles.substrate.reamde.dev/page"
@@ -424,8 +427,8 @@ reference:
   stage owns. `ifAbsent` must be a boolean, and it cannot combine with
   `ifVersion` on one put (the version check would be silently dropped).
   A pointer at another record is one of the `properties`, written as the
-  target's path or, where the declaration carries link properties, as the
-  `{ref, …}` object.
+  `{ref: "<kind>/<id>", …}` object or as the bare path, which the engine
+  normalizes to it.
 - **`ifVersion`** (put and patch) is the optimistic-concurrency precondition: an
   integer the write applies against only if the stored version equals it (a
   non-existent record is version 0), else the whole delivery fails
@@ -589,7 +592,7 @@ data:
         kinds: [web.bundles.substrate.reamde.dev/page]
         ops: [create]              # create | update | delete
         when: 'record != null && record.properties.fetch == "pending"'
-    callable: {kind: core.substrate.reamde.dev/function, id: web.bundles.substrate.reamde.dev/fetchpage}
+    callable: core.substrate.reamde.dev/function/web.bundles.substrate.reamde.dev/fetchpage
 ```
 
 `source` takes exactly one arm:

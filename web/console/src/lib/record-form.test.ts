@@ -417,7 +417,40 @@ describe("reference fields", () => {
   })
   const fieldsOf = () => buildFormFields(pointerKind)
 
-  it("seeds a stored path back into the kind and the id it joins", () => {
+  // A SERVED reference is the object `{ref: "<kind>/<id>"}` whether or not the
+  // declaration carries link properties (decision 0044), so this is the shape
+  // every edit of a real record seeds from. Reading only the string arm seeded
+  // the form blank here and wiped the pointer on the next save.
+  it("seeds a served reference object back into the kind and the id it joins", () => {
+    const record = {
+      properties: {
+        owner: { ref: "people.substrate.reamde.dev/person/alice" },
+      },
+    } as unknown as SubstrateRecord
+    expect(initialValues(fieldsOf(), record).owner).toEqual({
+      kind: "people.substrate.reamde.dev/person",
+      id: "alice",
+    })
+  })
+
+  it("seeds a reference that carries link data from the path under `ref`", () => {
+    const record = {
+      properties: {
+        owner: {
+          ref: "people.substrate.reamde.dev/person/alice",
+          role: "lead",
+        },
+      },
+    } as unknown as SubstrateRecord
+    expect(initialValues(fieldsOf(), record).owner).toEqual({
+      kind: "people.substrate.reamde.dev/person",
+      id: "alice",
+    })
+  })
+
+  // The bare path is write-time shorthand, so a hand-authored document still
+  // seeds; the server is what normalizes it.
+  it("seeds the bare path shorthand a hand-authored document may carry", () => {
     const record = {
       properties: { owner: "people.substrate.reamde.dev/person/alice" },
     } as unknown as SubstrateRecord
@@ -429,7 +462,7 @@ describe("reference fields", () => {
 
   it("completes a value short of a path from the declaration's pin", () => {
     const record = {
-      properties: { owner: "alice" },
+      properties: { owner: { ref: "alice" } },
     } as unknown as SubstrateRecord
     expect(initialValues(fieldsOf(), record).owner).toEqual({
       kind: "people.substrate.reamde.dev/person",

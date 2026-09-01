@@ -74,9 +74,10 @@ func TestCanonicalIDReferenceResolution(t *testing.T) {
 		},
 	})
 	// The stored value is what the writer typed, canonicalized only in its
-	// spelling: the former id stands.
-	want := []any{vocabulary.RecordPath(typePerson, loser.ID)}
-	if got := mustGet(t, ds, book.Kind, book.ID).Properties["author"]; !reflect.DeepEqual(got, want) {
+	// spelling: the former id stands. Each entry is the object holding its path
+	// under `ref` (decision 0044), so the comparison reads the paths out.
+	want := []string{vocabulary.RecordPath(typePerson, loser.ID)}
+	if got := storedRefPaths(mustGet(t, ds, book.Kind, book.ID).Properties["author"]); !reflect.DeepEqual(got, want) {
 		t.Fatalf("author = %+v, want the former id kept verbatim %+v", got, want)
 	}
 	// The reverse read is where the trail resolves: the winner sees the book.
@@ -127,8 +128,8 @@ func TestCanonicalIDMergeRepointsNothing(t *testing.T) {
 	if _, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID); err != nil {
 		t.Fatalf("merge: %v", err)
 	}
-	wantAuthor := []any{vocabulary.RecordPath(typePerson, loser.ID)}
-	if got := mustGet(t, ds, book.Kind, book.ID).Properties["author"]; !reflect.DeepEqual(got, wantAuthor) {
+	wantAuthor := []string{vocabulary.RecordPath(typePerson, loser.ID)}
+	if got := storedRefPaths(mustGet(t, ds, book.Kind, book.ID).Properties["author"]); !reflect.DeepEqual(got, wantAuthor) {
 		t.Fatalf("the merge rewrote an inbound pointer: %+v", got)
 	}
 	// Nothing migrated onto the winner either: its own properties are what they

@@ -628,7 +628,7 @@ func (l *agentLoop) openThread(ctx context.Context) ([]llm.Message, error) {
 // thread with nothing new stays settled.
 func (l *agentLoop) recheckResolutions(ctx context.Context) {
 	probe, err := json.Marshal(map[string]any{
-		msgRelThread: vocabulary.RecordPath(typeThread, l.threadID),
+		msgRelThread: referenceValueOf(vocabulary.RecordPath(typeThread, l.threadID)),
 		"role":       msgRoleSystem,
 	})
 	if err != nil {
@@ -697,7 +697,7 @@ func (l *agentLoop) claimThread(ctx context.Context) error {
 // not context — so the replay stays robust against tool renames.
 func (l *agentLoop) loadHistory(ctx context.Context) ([]llm.Message, int, error) {
 	probe, err := json.Marshal(map[string]any{
-		msgRelThread: vocabulary.RecordPath(typeThread, l.threadID),
+		msgRelThread: referenceValueOf(vocabulary.RecordPath(typeThread, l.threadID)),
 	})
 	if err != nil {
 		return nil, 0, err

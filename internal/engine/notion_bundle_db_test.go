@@ -585,7 +585,7 @@ func TestNotionBundleInstallsAndSyncs(t *testing.T) {
 	if !strings.Contains(content, "# Heading") || !strings.Contains(content, "Some paragraph text.") {
 		t.Fatalf("pg1 content not normalized: %q", content)
 	}
-	if p1.Properties["account"] != notionAccountType+"/"+acct.ID || p1.Properties["archived"] != false {
+	if storedReferencePath(p1.Properties["account"]) != notionAccountType+"/"+acct.ID || p1.Properties["archived"] != false {
 		t.Fatalf("pg1 props wrong: account=%v archived=%v", p1.Properties["account"], p1.Properties["archived"])
 	}
 	if _, ok := p1.Properties["lastEditedAt"]; !ok {
@@ -907,8 +907,7 @@ func TestNotionSyncResolvesParentsBesideASecondPageType(t *testing.T) {
 // parentRef reads a record's `parent` reference as its record path, "" when
 // unset.
 func parentRef(e *substrate.Record) string {
-	s, _ := e.Properties["parent"].(string)
-	return s
+	return storedReferencePath(e.Properties["parent"])
 }
 
 // notionPageRef is the stored path a page mirror's `parent` carries when it

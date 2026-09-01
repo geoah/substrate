@@ -349,7 +349,9 @@ describe("toPutInput", () => {
       properties: {
         prompt: "hi",
         enabled: true,
-        uses: ["core.substrate.reamde.dev/function/t1"],
+        // A served reference: the path under `ref`, which the seed carries
+        // through the document and back onto the wire unchanged.
+        uses: [{ ref: "core.substrate.reamde.dev/function/t1" }],
       },
       labels: { a: "b" },
       version: 1,
@@ -362,7 +364,7 @@ describe("toPutInput", () => {
     expect(input.properties).toMatchObject({
       prompt: "hi",
       enabled: true,
-      uses: ["core.substrate.reamde.dev/function/t1"],
+      uses: [{ ref: "core.substrate.reamde.dev/function/t1" }],
     })
     expect(input.labels).toMatchObject({ a: "b" })
     expect(input).not.toHaveProperty("edges")
@@ -417,8 +419,8 @@ const taskKind: KindInfo = {
         kind: "people.substrate.reamde.dev/person",
         mustExist: true,
       },
-      // The one reference here that carries LINK DATA: its value is an object
-      // with the pointer under `ref`, not the bare path.
+      // The one reference here that carries LINK DATA. Every reference serves
+      // the `ref` object; this one serves declared properties beside it.
       reviewer: {
         type: "reference",
         kind: "people.substrate.reamde.dev/person",
@@ -500,11 +502,19 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
 
   it("checks a reference value against its pin, both shapes", () => {
     const path = "people.substrate.reamde.dev/person/p1"
+    // The served shape, on the reference that declares no link property and on
+    // the one that declares `round`.
     const clean =
-      `data:\n  properties:\n    title: hi\n    assignee: ${path}\n` +
+      `data:\n  properties:\n    title: hi\n    assignee:\n      ref: ${path}\n` +
       `    reviewer:\n      ref: ${path}\n      round: 2\n`
     expect(
       validateApplyDoc(clean, taskKind).filter((p) => p.severity === "error")
+    ).toHaveLength(0)
+
+    // The bare path is write-time shorthand and validates on input.
+    const flat = `data:\n  properties:\n    title: hi\n    assignee: ${path}\n`
+    expect(
+      validateApplyDoc(flat, taskKind).filter((p) => p.severity === "error")
     ).toHaveLength(0)
 
     // A bare id under a pin is the authored short form and completes.
@@ -535,13 +545,14 @@ describe("validateApplyDoc: the datatypes and the write's own rules", () => {
     expect(problem?.message).toContain("not a declared link property")
   })
 
-  it("refuses an object under a reference that declares no link data", () => {
+  it("refuses an object with no `ref` under a reference", () => {
     const yaml =
       "data:\n  properties:\n    title: hi\n    assignee:\n      round: 2\n"
     const problem = validateApplyDoc(yaml, taskKind).find(
       (p) => p.path === "assignee"
     )
     expect(problem?.severity).toBe("error")
+    expect(problem?.message).toContain("ref")
   })
 })
 

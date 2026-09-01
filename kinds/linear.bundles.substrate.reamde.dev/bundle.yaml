@@ -950,10 +950,12 @@ data:
 
 
     def _account_id(value):
-        # `account` is a reference, so the STORED value is the record path. The
-        # task id composes off the bare account id the sync passes, so the
-        # path's prefix comes off before it is hashed.
-        v = str(value or "")
+        # `account` is a reference, STORED as the object {"ref": "<kind>/<id>"};
+        # a bare path string is the write-time shorthand a pre-0044 row may
+        # still hold, so both are read. str() of the dict would hash the whole
+        # serialized object into the task id. The task id composes off the bare
+        # account id, so the path's prefix comes off before it is hashed.
+        v = str(value.get("ref") or "") if isinstance(value, dict) else str(value or "")
         return v[len(ACCOUNT_PREFIX):] if v.startswith(ACCOUNT_PREFIX) else v
 
 

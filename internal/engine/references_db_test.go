@@ -39,14 +39,17 @@ func installRefAuthority(t *testing.T, ds substrate.Dataset) {
 	}
 }
 
-// asRef asserts a stored value is a canonical reference — ONE flat
-// "<kind>/<id>" path — and answers its two halves.
+// asRef asserts a stored value is a canonical reference, the object carrying
+// ONE "<kind>/<id>" path under `ref` (decision 0044), and answers the path's
+// two halves.
 func asRef(t *testing.T, v any) (kind, id string) {
 	t.Helper()
-	s, ok := v.(string)
-	if !ok {
-		t.Fatalf("reference did not read back as a path string: %T %v", v, v)
+	s := storedRefPath(v)
+	if s == "" {
+		t.Fatalf("reference did not read back as a path under %q: %T %v",
+			vocabulary.ReferenceValueKey, v, v)
 	}
+	var ok bool
 	kind, id, ok = vocabulary.SplitRecordPath(s)
 	if !ok {
 		t.Fatalf("reference %q is not a \"<kind>/<id>\" path", s)

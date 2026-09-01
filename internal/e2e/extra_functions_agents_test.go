@@ -16,7 +16,7 @@ import (
 const (
 	xfAuthority = "extras.e2e.example"
 
-	xfParkKind       = xfAuthority + "/parkbait"
+	xfParkKind       = xfAuthority + "/triggerbait"
 	xfParkCollection = "/api/v1/" + xfParkKind
 
 	xfFunctionPath = "/api/v1/core.substrate.reamde.dev/function/"
@@ -137,12 +137,12 @@ func xfAgentDoc(name, provider, model, description, prompt string) map[string]an
 	})
 }
 
-// xfParkBaitKind is the kind TRG-03's trigger fires on: a name to write and a
+// xfTriggerBaitKind is the kind TRG-03's trigger fires on: a name to write and a
 // stamp for the function to put back.
-func xfParkBaitKind() map[string]any {
+func xfTriggerBaitKind() map[string]any {
 	return xfDoc("core.substrate.reamde.dev/kind", xfParkKind, map[string]any{
 		"authority":       xfAuthority,
-		"names":           map[string]any{"singular": "parkbait"},
+		"names":           map[string]any{"singular": "triggerbait"},
 		"description":     "A record whose only job is to make a trigger fire.",
 		"displayTemplate": "{name}",
 		"properties": map[string]any{
@@ -229,7 +229,7 @@ func xfRunsFor(c *C, callable string) int {
 	c.requiref(err == nil, "listing the run records: %v", err)
 	n := 0
 	for _, rec := range recs {
-		if rec.prop("callable") == callable {
+		if refPath(rec.Properties["callable"]) == callable {
 			n++
 		}
 	}
@@ -388,7 +388,7 @@ func xfCaseHostFunctions(c *C) {
 // --- TRG-03 -------------------------------------------------------------
 
 func xfCaseTriggerPark(c *C) {
-	xfApply(c, xfParkBaitKind(), xfFunctionDoc("importbomb", map[string]any{
+	xfApply(c, xfTriggerBaitKind(), xfFunctionDoc("importbomb", map[string]any{
 		"description": "A delivery that raises, so its trigger parks it.",
 		"permissions": map[string]any{"writes": []string{xfParkKind}},
 		"source":      xfImportBombSource,
