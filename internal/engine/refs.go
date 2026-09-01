@@ -167,6 +167,16 @@ func appendRefValue(out []refRow, property string, path []string, p *vocabulary.
 // path a declaration without link data stores, or the `{ref, <props>...}`
 // object a declaration with `properties:` stores. It is the one reader of the
 // two shapes, so nothing else has to know which a declaration carries.
+//
+// THE RULE, for every reader in the tree: a WRITER stores the shape the
+// declaration in force at that moment says, and a READER never consults the
+// declaration to parse a value. Adding `properties:` to a live reference leaves
+// every existing row a flat string and dropping it leaves every existing row an
+// object, so a reader that picked its parse from the current declaration would
+// go blind to exactly the rows the change did not rewrite — silently, as a null
+// or a filter that stops matching. Read both shapes, always. The query filter
+// (query.go referenceValue) and the GraphQL reference scalar (gql/schema.go
+// coerceReferencePath) are held to this the same way.
 func splitReferenceValue(v any) (eref, map[string]any, bool) {
 	switch t := v.(type) {
 	case string:

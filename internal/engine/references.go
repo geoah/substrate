@@ -110,7 +110,11 @@ func (t *txn) normalizeReferencesIn(p *vocabulary.Property, v any, where string)
 		// ordinals, so a reverse read would report it twice. Refused at the
 		// write, where the author can see which value to drop.
 		if p.Datatype == vocabulary.DatatypeReference {
-			problems = append(problems, duplicateRefs(list, where)...)
+			dups, err := t.duplicateRefs(list, where)
+			if err != nil {
+				return list, append(problems, fmt.Sprintf("%s: %v", where, err))
+			}
+			problems = append(problems, dups...)
 		}
 		return list, problems
 	}
@@ -174,22 +178,36 @@ func storedReferencePath(v any) string {
 
 // duplicateRefs names every record a repeated reference lists more than once,
 // in the order the duplicates appear.
-func duplicateRefs(list []any, where string) []string {
-	seen := map[string]bool{}
-	reported := map[string]bool{}
+//
+// The comparison is CANONICAL. A merge repoints no stored value, so one record
+// answers to its own id and to every id it was merged from, and two entries
+// spelling it both ways are the same pointer twice — which is what the rule
+// forbids. The path REPORTED is the one the author wrote, because that is the
+// entry they have to find and drop.
+func (t *txn) duplicateRefs(list []any, where string) ([]string, error) {
+	seen := map[eref]bool{}
+	reported := map[eref]bool{}
 	var problems []string
 	for _, item := range list {
 		path := referencePathOf(item)
 		if path == "" {
 			continue
 		}
-		if seen[path] && !reported[path] {
-			reported[path] = true
+		kind, id, ok := vocabulary.SplitRecordPath(path)
+		if !ok {
+			continue
+		}
+		canon, err := t.canonicalOf(eref{Kind: kind, ID: id})
+		if err != nil {
+			return nil, err
+		}
+		if seen[canon] && !reported[canon] {
+			reported[canon] = true
 			problems = append(problems, fmt.Sprintf("%s: names %s twice — a repeated reference holds each record once", where, path))
 		}
-		seen[path] = true
+		seen[canon] = true
 	}
-	return problems
+	return problems, nil
 }
 
 // normalizeReference resolves ONE reference value: its referent kind against the

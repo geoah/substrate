@@ -396,7 +396,7 @@ func (b *builder) jsonArray(vals []string) string {
 
 func (ds *dataset) List(ctx context.Context, q substrate.Query) (*substrate.Page, error) {
 	b := &builder{}
-	if err := ds.buildFilter(b, q.Filter); err != nil {
+	if err := ds.buildFilter(ctx, b, q.Filter); err != nil {
 		return nil, err
 	}
 	terms, err := ds.orderTerms(q.OrderBy)
@@ -547,7 +547,7 @@ func listSQL(where string, keyCols []string, order, limitArg string) string {
 		` FROM records WHERE ` + where + ` ORDER BY ` + order + ` LIMIT ` + limitArg
 }
 
-func (ds *dataset) buildFilter(b *builder, f substrate.Filter) error {
+func (ds *dataset) buildFilter(ctx context.Context, b *builder, f substrate.Filter) error {
 	reg := ds.registry()
 	var types []*vocabulary.Kind
 	seen := map[string]bool{}
@@ -616,7 +616,7 @@ func (ds *dataset) buildFilter(b *builder, f substrate.Filter) error {
 		b.add(`deleted_at IS NOT NULL`)
 	}
 	for _, name := range sortedKeys(f.Properties) {
-		if err := ds.condProp(b, types, name, f.Properties[name]); err != nil {
+		if err := ds.condProp(ctx, b, types, name, f.Properties[name]); err != nil {
 			return err
 		}
 	}
@@ -655,7 +655,7 @@ func columnFor(name string) (string, error) {
 	return "", nil
 }
 
-func (ds *dataset) condProp(b *builder, types []*vocabulary.Kind, name string, c substrate.Cond) error {
+func (ds *dataset) condProp(ctx context.Context, b *builder, types []*vocabulary.Kind, name string, c substrate.Cond) error {
 	col, err := columnFor(name)
 	if err != nil {
 		return err
@@ -677,7 +677,7 @@ func (ds *dataset) condProp(b *builder, types []*vocabulary.Kind, name string, c
 	// `records_props_idx` indexes, so a lookup by pointer is index-backed
 	// without any per-kind declaration.
 	if shapes := ds.referenceShapes(types, name); len(shapes) > 0 {
-		return condReference(b, name, shapes, c)
+		return ds.condReference(ctx, b, name, shapes, c)
 	}
 	kind := vocabulary.Datatype("")
 	for _, t := range types {
@@ -714,11 +714,12 @@ func (ds *dataset) referenceShapes(types []*vocabulary.Kind, name string) []*voc
 		if !ok || p.Datatype != vocabulary.DatatypeReference {
 			continue
 		}
-		// LINK DATA is part of the shape, not a detail of it: a declaration that
-		// carries `properties:` stores an object and one that does not stores a
-		// bare path, so the two need different probes even under the same pin.
-		key := p.To + "\x00" + strconv.FormatBool(p.Repeated) +
-			"\x00" + strconv.FormatBool(len(p.Properties) > 0)
+		// LINK DATA is NOT part of the shape. Which of the two stored spellings
+		// a value carries is a fact about the row, not about the declaration
+		// that is live now (refs.go splitReferenceValue), so the filter probes
+		// for both whatever the declaration says and two declarations differing
+		// only in `properties:` need one probe set.
+		key := p.To + "\x00" + strconv.FormatBool(p.Repeated)
 		if seen[key] {
 			continue
 		}
@@ -728,55 +729,94 @@ func (ds *dataset) referenceShapes(types []*vocabulary.Kind, name string) []*voc
 	return out
 }
 
-// referenceValue renders one filter value as the containment probe for a
-// reference property: `{"agent": "core.substrate.reamde.dev/agent/x"}`, wrapped
-// in an array when the property is repeated (containment reaches inside an
-// array, so one shape answers "holds this reference" for both), and wrapped in
-// `{"ref": …}` when the declaration carries link data, where the pointer sits
-// under that one reserved key. jsonb containment is recursive over objects, so
-// the probe names the pointer and says nothing about the link properties beside
-// it — which is what eq on a reference means.
+// referenceFilterIDs expands one filter path into every path the same record is
+// stored under: its canonical id first, then every id it used to live under. A
+// merge repoints no stored value (decision 0044), so a filter naming the winner
+// must still match the rows written before the merge, and one naming a loser
+// must match the rows written after it — the same trail `Get`, `Incoming` and
+// the GC cascade already follow.
+//
+// An unresolvable path is its own answer: a kind this repository never declared
+// has no trail, and the filter still means the literal pointer.
+func (ds *dataset) referenceFilterIDs(ctx context.Context, path string) ([]string, error) {
+	kind, id, ok := vocabulary.SplitRecordPath(path)
+	if !ok {
+		return []string{path}, nil
+	}
+	canonical, err := ds.canonicalOf(ctx, ds.db, eref{Kind: kind, ID: id})
+	if err != nil {
+		return nil, err
+	}
+	ids, err := ds.idsOf(ctx, canonical)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(ids))
+	for _, one := range ids {
+		out = append(out, vocabulary.RecordPath(canonical.Kind, one))
+	}
+	return out, nil
+}
+
+// referenceFilterPath reads one filter value as the record path it names.
 //
 // The filter admits exactly what a WRITE admits: a full path, or the authored
 // bare id when `kind:` pins a concrete kind to complete it (validate.go
 // coerceReference). Unpinned, a bare id names no kind and therefore no record —
 // it is refused rather than answered by a scan of every kind that might hold
 // the id, which containment on a flat string cannot express anyway.
-func referenceValue(name string, p *vocabulary.Property, v any) (any, error) {
+func referenceFilterPath(name string, p *vocabulary.Property, v any) (string, error) {
 	s, ok := v.(string)
 	if !ok {
-		return nil, fmt.Errorf(`%w: %s is a reference — filter it by its "<kind>/<id>" path`, substrate.ErrValidation, name)
+		return "", fmt.Errorf(`%w: %s is a reference — filter it by its "<kind>/<id>" path`, substrate.ErrValidation, name)
 	}
 	if s == "" {
-		return nil, fmt.Errorf("%w: %s: a reference filter needs an id", substrate.ErrValidation, name)
+		return "", fmt.Errorf("%w: %s: a reference filter needs an id", substrate.ErrValidation, name)
 	}
-	path := s
-	if _, _, isPath := vocabulary.SplitRecordPath(s); !isPath {
-		if p.To == "" || p.To == vocabulary.ToAny {
-			return nil, fmt.Errorf(`%w: %s points at any kind — filter it by a full "<kind>/<id>" path, not the bare id %q`,
-				substrate.ErrValidation, name, s)
+	if _, _, isPath := vocabulary.SplitRecordPath(s); isPath {
+		return s, nil
+	}
+	if p.To == "" || p.To == vocabulary.ToAny {
+		return "", fmt.Errorf(`%w: %s points at any kind — filter it by a full "<kind>/<id>" path, not the bare id %q`,
+			substrate.ErrValidation, name, s)
+	}
+	return vocabulary.RecordPath(p.To, s), nil
+}
+
+// referenceValue renders one path as the containment probes for a reference
+// property: `{"agent": "core.substrate.reamde.dev/agent/x"}` and
+// `{"agent": {"ref": "core.substrate.reamde.dev/agent/x"}}`, each wrapped in an
+// array when the property is repeated (containment reaches inside an array, so
+// one shape answers "holds this reference" for both). jsonb containment is
+// recursive over objects, so a probe names the pointer and says nothing about
+// the link properties beside it — which is what eq on a reference means.
+//
+// BOTH SHAPES, ALWAYS. Which spelling a row holds was decided by the declaration
+// in force WHEN IT WAS WRITTEN: adding `properties:` to a live reference leaves
+// every stored value a flat string, and dropping it leaves every stored value an
+// object. A reader that consulted the current declaration to pick one probe
+// would stop matching those rows (refs.go splitReferenceValue states the rule).
+func referenceValue(name string, p *vocabulary.Property, path string) ([]string, error) {
+	shapes := []any{path, map[string]any{vocabulary.ReferenceValueKey: path}}
+	out := make([]string, 0, len(shapes))
+	for _, inner := range shapes {
+		if p.Repeated {
+			inner = []any{inner}
 		}
-		path = vocabulary.RecordPath(p.To, s)
+		raw, err := json.Marshal(map[string]any{name: inner})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, string(raw))
 	}
-	var inner any = path
-	if len(p.Properties) > 0 {
-		inner = map[string]any{vocabulary.ReferenceValueKey: path}
-	}
-	if p.Repeated {
-		inner = []any{inner}
-	}
-	raw, err := json.Marshal(map[string]any{name: inner})
-	if err != nil {
-		return nil, err
-	}
-	return string(raw), nil
+	return out, nil
 }
 
 // condReference filters a reference property. Only the predicates a POINTER
 // answers are admitted: it names a record or it does not, so equality,
 // membership and presence are the whole grammar — an ordering or a prefix over
 // a record path would be comparing its spelling, not the thing.
-func condReference(b *builder, name string, shapes []*vocabulary.Property, c substrate.Cond) error {
+func (ds *dataset) condReference(ctx context.Context, b *builder, name string, shapes []*vocabulary.Property, c substrate.Cond) error {
 	// A SLICE, not a map: two violated predicates in one filter must name the
 	// same one every time, or the error depends on map iteration order.
 	for _, p := range []struct {
@@ -790,16 +830,37 @@ func condReference(b *builder, name string, shapes []*vocabulary.Property, c sub
 				substrate.ErrValidation, name, p.label)
 		}
 	}
-	// One value, every declared shape, OR-ed: a filter naming several kinds is
-	// asking each of them — in ITS OWN shape — whether it points here.
+	// One value, every declared shape, every id the named record has ever had,
+	// every stored spelling, all OR-ed: a filter naming several kinds is asking
+	// each of them — in ITS OWN shape — whether it points here, and a record
+	// merged since the pointer was written is named by more than one path.
+	//
+	// The trail is read once per distinct PATH: several shapes completing one
+	// bare id the same way share the read.
+	trail := map[string][]string{}
 	probeAll := func(v any) (string, error) {
-		clauses := make([]string, 0, len(shapes))
+		var clauses []string
 		for _, p := range shapes {
-			probe, err := referenceValue(name, p, v)
+			path, err := referenceFilterPath(name, p, v)
 			if err != nil {
 				return "", err
 			}
-			clauses = append(clauses, `props @> `+b.arg(probe)+`::jsonb`)
+			paths, cached := trail[path]
+			if !cached {
+				if paths, err = ds.referenceFilterIDs(ctx, path); err != nil {
+					return "", err
+				}
+				trail[path] = paths
+			}
+			for _, one := range paths {
+				probes, err := referenceValue(name, p, one)
+				if err != nil {
+					return "", err
+				}
+				for _, probe := range probes {
+					clauses = append(clauses, `props @> `+b.arg(probe)+`::jsonb`)
+				}
+			}
 		}
 		return `(` + strings.Join(clauses, " OR ") + `)`, nil
 	}

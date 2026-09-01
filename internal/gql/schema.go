@@ -51,12 +51,26 @@ var referenceScalar = graphql.NewScalar(graphql.ScalarConfig{
 
 // coerceReferencePath passes a path through and answers nil for anything else,
 // which is how a scalar says "not this type" in graphql-go.
+//
+// A STORED VALUE COMES IN EITHER SHAPE. A reference declared with `properties:`
+// stores `{ref, …}` and one declared without stores the flat path, and which a
+// row holds was decided when it was written: dropping `properties:` from a live
+// declaration leaves every stored value an object, and reading only the string
+// would answer null for a pointer that is plainly there. The scalar therefore
+// reads `ref` out of an object rather than consulting the declaration
+// (engine/refs.go splitReferenceValue states the rule).
 func coerceReferencePath(value any) any {
-	s, ok := value.(string)
-	if !ok {
-		return nil
+	switch v := value.(type) {
+	case string:
+		return v
+	case map[string]any:
+		s, ok := v[vocabulary.ReferenceValueKey].(string)
+		if !ok {
+			return nil
+		}
+		return s
 	}
-	return s
+	return nil
 }
 
 func parseReferenceLiteral(valueAST ast.Value) any {

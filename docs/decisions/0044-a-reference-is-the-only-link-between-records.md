@@ -72,8 +72,10 @@ Nothing repoints now: a pointer at a merged-away id resolves at read through
 the former-id trail, which is what references already did.
 
 There is no migration. A changelog carrying `link`, `unlink` or edge fold
-effects is not replayable, and a binary that meets one refuses to open the
-repository rather than skipping the entries it cannot apply.
+effects is not replayable, so opening a repository stamped below the current
+changelog dialect asks the changelog for a `link` or `unlink` op and refuses
+there, rather than serving a store whose links migration `0010` already dropped
+and leaving the refusal to the day somebody rebuilds.
 
 ### Consequences
 
@@ -97,6 +99,17 @@ repository rather than skipping the entries it cannot apply.
 - Bad, because the refs index is derived and unsigned. Nothing in the hash
   chain proves a row, so a wrong row is repaired by a rebuild rather than
   caught by `repository verify`.
+- Bad, because `required:` on a converted link is checked on every write and
+  not only at creation. An edge could be unlinked and left absent; the same
+  pointer as a required property can no longer be cleared, and a kind that
+  wants it clearable drops `required`.
+- Bad, because a repeated reference refuses the same target twice. An edge set
+  could hold two links to one record carrying different link data; that shape
+  is gone, and a second pointer at one record is now a record of its own.
+- Neutral, because a reference FILTER follows the former-id trail: `eq` on
+  either the winner's path or a loser's matches every row naming that record,
+  since the stored value keeps the path its author wrote and only reads
+  resolve.
 
 ### Confirmation
 

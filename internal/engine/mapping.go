@@ -23,20 +23,49 @@ import (
 // --- subject resolution -----------------------------------------------------
 
 // subjectTargetOf reads the LIVE record a source record's subject reference
-// names, "" when it names nothing. A tombstoned target counts as unpointed: the
-// owner deleted that person, and a source record must not go on resolving to a
-// dead id or refusing every later sync because of one. It reads the refs index
-// rather than the property, so the join to `records` is one statement.
+// names, "" when it names nothing. It reads the refs index rather than the
+// property, so the stored destination is one statement away.
+//
+// THE STORED ID IS RESOLVED, NOT TRUSTED. A merge repoints nothing: the value
+// keeps naming the loser and resolution runs on read (decision 0044), so
+// liveness is asked of the CANONICAL record the stored id now denotes. Asking
+// the literal id would call a merged-away subject unpointed and let the next
+// sync mint a duplicate.
+//
+// A tombstoned canonical target counts as unpointed: the owner deleted that
+// person, and a source record must not go on resolving to a dead id or refusing
+// every later sync because of one. The returned eref is the canonical one; the
+// stored value stays as written.
 func (t *txn) subjectTargetOf(src eref, property string) (eref, error) {
-	var dst eref
+	var stored eref
 	err := t.row(`
-		SELECT r.dst_kind, r.dst FROM refs r JOIN records x ON x.kind = r.dst_kind AND x.id = r.dst
-		WHERE r.src_kind = $1 AND r.src = $2 AND r.property = $3 AND r.path = '' AND x.deleted_at IS NULL
-		ORDER BY r.ord LIMIT 1`, src.Kind, src.ID, property).Scan(&dst.Kind, &dst.ID)
+		SELECT r.dst_kind, r.dst FROM refs r
+		WHERE r.src_kind = $1 AND r.src = $2 AND r.property = $3 AND r.path = ''
+		ORDER BY r.ord LIMIT 1`, src.Kind, src.ID, property).Scan(&stored.Kind, &stored.ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return eref{}, nil
 	}
-	return dst, err
+	if err != nil {
+		return eref{}, err
+	}
+	return t.liveCanonical(stored)
+}
+
+// liveCanonical resolves a stored destination through the former-id trail and
+// reports the canonical record when it is live, the zero eref when it is a
+// tombstone or absent. A plain tombstone with no trail behind it resolves to
+// itself and is therefore not live, which is what makes a deleted target
+// re-resolvable.
+func (t *txn) liveCanonical(stored eref) (eref, error) {
+	canon, err := t.canonicalOf(stored)
+	if err != nil {
+		return eref{}, err
+	}
+	row, err := t.loadRow(canon, false)
+	if err != nil || row == nil || row.DeletedAt != nil {
+		return eref{}, err
+	}
+	return canon, nil
 }
 
 // subjectOf resolves the record a source record describes, matching or minting
@@ -62,11 +91,8 @@ func (t *txn) subjectOf(src *erow, srcTy *vocabulary.Kind) (string, error) {
 		return "", err
 	}
 	if linked.ID != "" {
-		canon, err := t.canonicalOf(linked)
-		if err != nil {
-			return "", err
-		}
-		return canon.ID, nil
+		// Already canonical: subjectTargetOf resolves the stored id.
+		return linked.ID, nil
 	}
 	target, err := t.matchOrMint(src, srcTy, m)
 	if err != nil {
@@ -116,14 +142,20 @@ func (t *txn) ensureSubject(sp *applySpec, row *erow, m *vocabulary.Mapping) (bo
 		return false, err
 	}
 	if path := referencePathOf(row.Props[m.Property]); path != "" {
-		// A value naming a live record stands. One naming a tombstone (or
-		// nothing) is re-resolved, exactly as an unset property is.
+		// A value naming a live record stands, and the id it names is RESOLVED
+		// first: a merge repoints nothing, so a subject that was merged away
+		// still spells the loser and asking the literal id for liveness would
+		// call the record unpointed and mint a duplicate over the merge. The
+		// stored value is left exactly as written; resolution stays read-side.
+		//
+		// One naming a tombstone with no trail behind it (or nothing) is
+		// re-resolved, exactly as an unset property is.
 		if kind, id, ok := vocabulary.SplitRecordPath(path); ok {
-			target, err := t.loadRow(eref{Kind: kind, ID: id}, false)
+			live, err := t.liveCanonical(eref{Kind: kind, ID: id})
 			if err != nil {
 				return false, err
 			}
-			if target != nil && target.DeletedAt == nil {
+			if live.ID != "" {
 				return false, nil
 			}
 		}
@@ -279,10 +311,11 @@ func (t *txn) probeCandidates(toIdentity string, tp *vocabulary.Property, values
 
 // checkSubjectWrite enforces proposal §6.1: a subject reference is set when the
 // record is created, and moved only by merge and split. Re-asserting the same
-// target is what every re-sync does, so only a DIFFERENT LIVE target is refused
-// — the stored value is compared canonically, because a merge moves the subject
-// out from under a connector that is still syncing the id it first saw, and a
-// tombstoned target is no pointer at all.
+// target is what every re-sync does, so only a DIFFERENT LIVE target is refused.
+// BOTH SIDES are resolved through the former-id trail before they are compared,
+// because a merge moves the subject out from under a connector that is still
+// syncing the id it first saw: the stored pointer and the incoming one may spell
+// one record two ways. A tombstoned target is no pointer at all.
 func (t *txn) checkSubjectWrite(sp *applySpec, property string, dst eref) error {
 	if sp.existing == nil {
 		return nil
@@ -294,8 +327,10 @@ func (t *txn) checkSubjectWrite(sp *applySpec, property string, dst eref) error 
 	if cur.ID == "" {
 		return nil
 	}
-	if cur, err = t.canonicalOf(cur); err != nil {
-		return err
+	if dst.ID != "" {
+		if dst, err = t.canonicalOf(dst); err != nil {
+			return err
+		}
 	}
 	if cur == dst {
 		return nil
@@ -808,9 +843,6 @@ func (t *txn) managersOf(ref eref) (map[string]managerRow, error) {
 func (t *txn) recomputeSubjectOf(src eref, m *vocabulary.Mapping) error {
 	target, err := t.subjectTargetOf(src, m.Property)
 	if err != nil || target.ID == "" {
-		return err
-	}
-	if target, err = t.canonicalOf(target); err != nil {
 		return err
 	}
 	return t.recompute(target)

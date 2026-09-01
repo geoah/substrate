@@ -198,7 +198,10 @@ func (b *schemaBuilder) referenceType(t substrate.KindInfo, prop string, pd map[
 			Description: `The referent's path, "<kind>/<id>".`,
 			Resolve:     resolveReferencePath,
 		},
-		"target": &graphql.Field{
+		// Reserved in the loader beside `ref` (vocabulary.ReferenceTargetField),
+		// because the link properties below are written into this same map: a
+		// declared `target` would silently replace the referent field.
+		vocabulary.ReferenceTargetField: &graphql.Field{
 			Type: b.recordIF,
 			Description: "The referent itself, null when the pointer dangles: a reference " +
 				"survives its target's purge, so a reader gets the path either way.",
