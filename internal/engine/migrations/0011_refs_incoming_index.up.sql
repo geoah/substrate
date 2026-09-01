@@ -16,8 +16,14 @@ ALTER TABLE refs DROP COLUMN IF EXISTS created_at;
 -- property, path, ord); under the three-column index of 0010 a hot target sorted
 -- its whole match set for every page, so a record with tens of thousands of
 -- pointers paid the sort per page. The ordering key is appended to the match
--- key, in the order the query asks for it, which is what makes the page an
--- index-ordered scan with no sort node.
+-- key, in the order the query asks for it, so the index CAN answer a page in
+-- key order.
+--
+-- Whether it does is the reader's half, and the index alone does not buy it: the
+-- target predicate has to be a scalar (`r.dst = $n`) for the planner to walk
+-- this index in order, so engine/query.go binds one id that way and keeps the
+-- set form only for a record with a former-id trail. That shape may still sort,
+-- which is the price of matching pointers written before a merge.
 --
 -- The old index is a prefix of this one, so it is dropped rather than kept: a
 -- prefix index answers nothing the wider one does not, and it would be a second

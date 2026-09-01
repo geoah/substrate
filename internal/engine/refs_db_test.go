@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/substrate"
@@ -135,19 +134,14 @@ func TestTheRefsIndexStoresNoTimestamp(t *testing.T) {
 // dst_kind, dst) and pages in (src_kind, src, property, path, ord) order, so
 // the index carries the ordering key too: without it a hot target sorts its
 // whole match set once per page.
+//
+// This is the migration's half — which columns the index has, in which order.
+// Whether the reader's own statement plans onto it is
+// TestIncomingPageIsAnIndexOrderedScan, which explains the production SQL.
 func TestTheRefsIndexCoversTheIncomingSort(t *testing.T) {
 	t.Parallel()
-	ds, raw, _ := newDatasetWithDB(t)
+	_, raw, _ := newDatasetWithDB(t)
 	ctx := context.Background()
-	if err := refsVocabulary(t, ds, true); err != nil {
-		t.Fatalf("install the vocabulary: %v", err)
-	}
-	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: "h1"})
-	for _, id := range []string{"s1", "s2", "s3"} {
-		mustPut(t, ds, owner, substrate.PutInput{
-			Kind: refsSpoke, ID: id, Properties: map[string]any{"hub": "h1"},
-		})
-	}
 
 	var cols string
 	if err := raw.QueryRowContext(ctx, `
@@ -161,39 +155,6 @@ func TestTheRefsIndexCoversTheIncomingSort(t *testing.T) {
 	}
 	if want := "repository,dst_kind,dst,src_kind,src,property,path,ord"; cols != want {
 		t.Fatalf("refs_dst_idx = %q, want %q", cols, want)
-	}
-
-	// And the planner uses it that way: the page's ORDER BY is the index's own
-	// order, so the plan carries no sort node. Sequential scans are disabled
-	// because a three-row table is faster to scan than to seek, which says
-	// nothing about the shape a hot target meets.
-	if _, err := raw.ExecContext(ctx, `SET enable_seqscan = off`); err != nil {
-		t.Fatalf("disable seqscan: %v", err)
-	}
-	rows, err := raw.QueryContext(ctx, `
-		EXPLAIN SELECT r.property, r.path, r.ord, r.src_kind, r.src FROM refs r
-		WHERE r.dst_kind = $1 AND r.dst = $2
-		ORDER BY r.src_kind, r.src, r.property, r.path, r.ord LIMIT 2`, refsHub, "h1")
-	if err != nil {
-		t.Fatalf("explain the incoming page: %v", err)
-	}
-	defer func() { _ = rows.Close() }()
-	var plan string
-	for rows.Next() {
-		var line string
-		if err := rows.Scan(&line); err != nil {
-			t.Fatalf("scan the plan: %v", err)
-		}
-		plan += line + "\n"
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("read the plan: %v", err)
-	}
-	if strings.Contains(plan, "Sort") {
-		t.Fatalf("the incoming page sorts its match set:\n%s", plan)
-	}
-	if !strings.Contains(plan, "refs_dst_idx") {
-		t.Fatalf("the incoming page did not read the index:\n%s", plan)
 	}
 }
 
