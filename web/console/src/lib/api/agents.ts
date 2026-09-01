@@ -1,8 +1,8 @@
 /** Agents: the agent registry rows, the llmprovider rows they complete
  * against, the llmthread/llmmessage transcript records, and the ndjson chat
- * stream. Agents/llmproviders/llmthreads/llmmessages are ordinary records the
- * generic browse renders; this module adds the agent-scoped reads and the one
- * thing the record API cannot do — the streaming chat loop.
+ * stream. The agent, llmprovider, llmthread and llmmessage rows are ordinary
+ * records the generic browse renders; this module adds the agent-scoped
+ * reads and the one thing the record API cannot do — the streaming chat loop.
  *
  * The whole agent-loop vocabulary lives in CORE: core absorbed the runtime
  * kinds, so `llmprovider`, `llmthread` and `llmmessage` sit beside `agent`

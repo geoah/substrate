@@ -1187,9 +1187,10 @@ function kindColumns(): DataTableColumn<KindRow>[] {
 }
 
 /** Where a shipped record opens. An agent has its chat surface; every other
- * record opens in Data at its own kind, which needs that kind's plural from the
- * registry — a record of a kind this repository has not installed has nowhere to
- * go, and renders as text. Functions and mappings have no detail route yet. */
+ * record opens in Data at its own kind, which needs that kind's authority and
+ * name from the registry — a record of a kind this repository has not installed
+ * has nowhere to go, and renders as text. Functions and mappings have no detail
+ * route yet. */
 function ShippedRecordName({
   row,
   types,
@@ -1220,7 +1221,7 @@ function ShippedRecordName({
     )
   }
   const k = kindByIdentity(types, row.kind)
-  if (!k?.authority || !k.plural || NO_DETAIL_ROUTE.has(row.kind)) {
+  if (!k?.authority || !k.name || NO_DETAIL_ROUTE.has(row.kind)) {
     return name
   }
   return (

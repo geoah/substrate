@@ -6,7 +6,7 @@
  * The llmprovider rows are NOT here. They are ordinary records of a core kind,
  * they are not agents, and a table of them on this page implied a relationship
  * the page does not have — an agent names a provider by id, and that pointer
- * reads on the agent's own record. Data → llmproviders is where they live. */
+ * reads on the agent's own record. Data → llmprovider is where they live. */
 
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
