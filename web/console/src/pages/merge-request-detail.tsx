@@ -23,6 +23,7 @@ import { z } from "zod"
 
 import { ActorChip } from "@/components/actor-chip"
 import { RecordPeek, type PeekTarget } from "@/components/record-peek"
+import { ReferenceValue } from "@/components/record/reference-value"
 import { StateBadge } from "@/components/state-badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -72,7 +73,7 @@ import {
 } from "@/lib/api/mergerequests"
 import { kindsQueryOptions } from "@/lib/api/kinds"
 import type { SubstrateRecord, KindInfo } from "@/lib/api/types"
-import { cellValue, relativeTime } from "@/lib/format"
+import { cellValue, referenceObjects, relativeTime } from "@/lib/format"
 import {
   DECISION_INITIAL,
   decisionOf,
@@ -141,10 +142,33 @@ function PostureCell({ posture }: { posture: DiffPosture }) {
 
 // ── side-by-side ────────────────────────────────────────────────────────────
 
-function ValueCell({ row, side }: { row: DiffRow; side: "loser" | "winner" }) {
+function ValueCell({
+  row,
+  side,
+  kinds,
+}: {
+  row: DiffRow
+  side: "loser" | "winner"
+  /** The registry, so a reference value renders as its referent's pill. */
+  kinds: KindInfo[]
+}) {
   const value = side === "loser" ? row.loser : row.winner
   const manager = side === "loser" ? row.loserManager : row.winnerManager
 
+  // The cell is datatype-blind, so a served reference is recognized by its own
+  // shape (issue #332): both sides of the pair carry real record values, and a
+  // pointer printed as `{"ref":"…"}` would hide a record the reviewer can open.
+  const references = referenceObjects(value)
+  if (references) {
+    return (
+      <span className="flex min-w-0 flex-col items-start gap-1">
+        {references.map((one, at) => (
+          <ReferenceValue key={at} value={one} kinds={kinds} />
+        ))}
+        {manager && row.posture !== "equal" && <ActorChip actor={manager} />}
+      </span>
+    )
+  }
   const text = value === undefined || value === null ? "" : cellValue(value)
   // A long repeated value truncates; the count says what the ellipsis hides
   // (codex finding, 2026-08-06). The full join rides the title.
@@ -173,7 +197,7 @@ function ValueCell({ row, side }: { row: DiffRow; side: "loser" | "winner" }) {
 /** The diff rides the table system's look (owner ruling, 2026-08-06): real
  * table anatomy — fixed columns, bordered rows, muted lowercase headers —
  * though it stays a comparison, not a list, so no column dropdown or pages. */
-function DiffRows({ rows }: { rows: DiffRow[] }) {
+function DiffRows({ rows, kinds }: { rows: DiffRow[]; kinds: KindInfo[] }) {
   return (
     <>
       {rows.map((row) => (
@@ -201,10 +225,10 @@ function DiffRows({ rows }: { rows: DiffRow[] }) {
             </Tooltip>
           </TableCell>
           <TableCell className="align-top">
-            <ValueCell row={row} side="loser" />
+            <ValueCell row={row} side="loser" kinds={kinds} />
           </TableCell>
           <TableCell className="align-top">
-            <ValueCell row={row} side="winner" />
+            <ValueCell row={row} side="winner" kinds={kinds} />
           </TableCell>
           <TableCell className="pr-4 align-top">
             <PostureCell posture={row.posture} />
@@ -219,10 +243,13 @@ function SideBySide({
   loser,
   winner,
   type,
+  kinds,
 }: {
   loser: SubstrateRecord
   winner: SubstrateRecord
   type?: KindInfo
+  /** The registry, so a reference value renders as its referent's pill. */
+  kinds: KindInfo[]
 }) {
   const rows = useMemo(
     () => deriveDiff(winner, loser, type),
@@ -283,7 +310,7 @@ function SideBySide({
         </TableHeader>
         <TableBody>
           {open.length > 0 ? (
-            <DiffRows rows={open} />
+            <DiffRows rows={open} kinds={kinds} />
           ) : (
             <TableRow className="hover:bg-transparent">
               <TableCell
@@ -316,7 +343,7 @@ function SideBySide({
               </TableCell>
             </TableRow>
           )}
-          {showEqual && <DiffRows rows={equal} />}
+          {showEqual && <DiffRows rows={equal} kinds={kinds} />}
         </TableBody>
       </Table>
     </div>
@@ -715,6 +742,7 @@ export function MergeRequestDetailPage() {
               loser={loserSide.query.data!}
               winner={winnerSide.query.data!}
               type={winnerSide.type}
+              kinds={types}
             />
           ) : sideError ? (
             <div className="mx-6 mb-4 rounded-md border px-4 py-3 text-sm text-muted-foreground">
