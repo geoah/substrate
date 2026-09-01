@@ -419,6 +419,35 @@ func TestBundleInputResolution(t *testing.T) {
 	}
 }
 
+// A BINDING FOLLOWS A MERGE. Nothing repoints a stored reference when a record
+// loses a merge, so a binding written at the loser keeps naming it; the input
+// resolves through the former-id trail to the winner rather than reporting a
+// dangling choice at a record the owner deliberately merged.
+func TestBundleInputBoundToAMergedRecordResolvesToTheWinner(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ds, ops := installMailBundle(t)
+
+	winner := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
+	loser := mustPut(t, ds, owner, substrate.PutInput{Kind: mbConfigType, Properties: mbConfigProps()})
+	if err := ds.(interface {
+		BindBundleInput(ctx context.Context, id, input, record string) error
+	}).BindBundleInput(ctx, mbBundleRow, "client", loser.ID); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+	if _, err := ds.Merge(ctx, owner, winner.Kind, winner.ID, loser.ID); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+
+	st, err := ops.BundleStatus(ctx, mbAuthority)
+	if err != nil || len(st.Setup) != 0 {
+		t.Fatalf("the merged binding must still resolve: %+v %v", st, err)
+	}
+	if st.Inputs[0].Record != winner.ID || st.Inputs[0].Via != substrate.InputViaBound {
+		t.Fatalf("input resolved to %+v, want the merge winner %s", st.Inputs[0], winner.ID)
+	}
+}
+
 // A binding is a changelog write like any other: clear the fold, replay, and
 // the bound resolution must come back — the bind verb's edge and version bump
 // ride its entry's fold ops.

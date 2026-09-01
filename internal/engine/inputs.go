@@ -75,7 +75,17 @@ func (ds *dataset) resolveBundleInput(ctx context.Context, b *vocabulary.Bundle,
 	if err != nil {
 		return ri, err
 	}
-	if dst, bound := bindingOf(bundleRow, name); bound {
+	if written, bound := bindingOf(bundleRow, name); bound {
+		// THE BINDING FOLLOWS A MERGE. Nothing repoints a stored reference when
+		// a record loses a merge (decision 0044), so the binding keeps naming
+		// the id its author wrote and the former-id trail is what says where
+		// that record lives now. Resolving before the liveness check is what
+		// keeps merging two account records from breaking every bundle bound to
+		// the loser.
+		dst, err := ds.canonicalOf(ctx, ds.db, written)
+		if err != nil {
+			return ri, err
+		}
 		row, err := ds.loadRowDB(ctx, dst)
 		if err != nil {
 			return ri, err
@@ -85,7 +95,8 @@ func (ds *dataset) resolveBundleInput(ctx context.Context, b *vocabulary.Bundle,
 			// upgrade). A dangling explicit choice is a problem to show,
 			// never silently papered over by the default rules below.
 			ri.Problem = substrate.SetupDangling
-			ri.Detail = fmt.Sprintf("bound to %s/%s, which no longer resolves — rebind or unbind the input", dst.Kind, dst.ID)
+			ri.Detail = fmt.Sprintf("bound to %s/%s, which no longer resolves — rebind or unbind the input",
+				written.Kind, written.ID)
 			return ri, nil
 		}
 		ri.Row, ri.Via = row, substrate.InputViaBound
