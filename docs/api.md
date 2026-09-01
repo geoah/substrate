@@ -66,7 +66,9 @@ it. `property` names the reference the source points with, and `path` locates
 it where the reference sits inside an object or a keyed map, empty at the top
 level. Every reference answers here, pinned or not. The `cursor` belongs to the
 read that minted it: replaying one with a different `property`, `fromKind` or
-target record is a `400`, not a short page.
+target record is a `400`, not a short page. A merge INTO the target refuses
+outstanding cursors the same way, because the merged-away record's pointers
+join the order mid-walk; start the walk again.
 
 ## The flat record
 

@@ -2,11 +2,14 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -107,7 +110,7 @@ func (ds *dataset) Incoming(ctx context.Context, typ, id string, opts substrate.
 	// KEYSET continuation over the index's OWN key: (src_kind, src, property,
 	// path, ord) addresses one row and nothing else, so a page boundary can
 	// neither drop nor repeat.
-	signature := incomingSignature(canonical, opts)
+	signature := incomingSignature(canonical, ids, opts)
 	var seek *incomingSeek
 	if opts.After != "" {
 		tok, err := decodeKeyset(opts.After)
@@ -210,18 +213,34 @@ const (
 )
 
 // incomingSignature is what the cursor is stamped with: the order AND THE READ
-// IT WAS MINTED AGAINST — the canonical target, the `property` narrowing and
-// the `fromKind` narrowing. The key alone identifies a row in the index, not a
-// row in THIS page's match set, so a cursor from a `property=a` page replayed
-// with `property=b`, another source kind or another target used to seek past
-// unrelated keys and return a short page that looked complete. A mismatch is
-// the same bad-cursor refusal a token from another order gets.
+// IT WAS MINTED AGAINST — the target's whole id set, the `property` narrowing
+// and the `fromKind` narrowing. The key alone identifies a row in the index,
+// not a row in THIS page's match set, so a cursor from a `property=a` page
+// replayed with `property=b`, another source kind or another target used to
+// seek past unrelated keys and return a short page that looked complete. A
+// mismatch is the same bad-cursor refusal a token from another order gets.
 //
-// The narrowings are caller input, so they travel as a JSON array rather than
-// joined by a separator: a `property` holding the separator could otherwise
-// spell another read's signature.
-func incomingSignature(canonical eref, opts substrate.IncomingOptions) string {
-	raw, _ := json.Marshal([]string{canonical.Kind, canonical.ID, opts.Property, opts.FromKind})
+// THE ID SET, not the canonical id alone. A merge INTO the target mid-walk adds
+// the loser's id to the match, and every pointer stored against the loser that
+// sorts before the cursor would be skipped for the rest of the walk — a page
+// that is short and says nothing about it. Digesting the set means the merge
+// invalidates outstanding cursors, and a client that restarts gets a complete
+// answer. The set is sorted first, because idsOf's order is the trail's and not
+// a property of the match.
+//
+// Everything travels through a JSON array and a digest rather than a joined
+// string: the narrowings are caller input, and a `property` holding the
+// separator could otherwise spell another read's signature. The digest is not a
+// SECRET — a cursor carries the reader's own repository-scoped data, so forging
+// one grants nothing — it is only a compact way to say which set was matched.
+func incomingSignature(canonical eref, ids []string, opts substrate.IncomingOptions) string {
+	sorted := append([]string(nil), ids...)
+	sort.Strings(sorted)
+	digest := sha256.Sum256(mustJSON(sorted))
+	raw, _ := json.Marshal([]string{
+		canonical.Kind, canonical.ID, opts.Property, opts.FromKind,
+		hex.EncodeToString(digest[:8]),
+	})
 	return incomingOrder + ":" + string(raw)
 }
 
