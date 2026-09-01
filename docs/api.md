@@ -59,7 +59,7 @@ GET /api/v1/core.substrate.reamde.dev/kind/tasks.substrate.reamde.dev%2Ftask
 
 Incoming references are a derived view of their own, paged separately so a
 popular record's fan-in never inflates its document. The response is
-`{"incoming": [{"property": …, "path": …, "createdAt": …,
+`{"incoming": [{"property": …, "path": …,
 "from": {"id", "kind", "title"}}], "cursor": …, "total": n}`, ordered by
 source kind, then source record, then the property and its position within
 it. `property` names the reference the source points with, and `path` locates

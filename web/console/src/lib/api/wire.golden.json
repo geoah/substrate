@@ -12,8 +12,7 @@
   "IncomingReference": [
     "property",
     "path",
-    "from",
-    "createdAt"
+    "from"
   ],
   "IncomingSource": [
     "id",

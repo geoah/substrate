@@ -131,9 +131,6 @@ func TestIncomingReadsEveryReferenceShape(t *testing.T) {
 	if got := by["n1"]; got.Property != "tool" || got.Path != "callable" {
 		t.Fatalf("the nested pointer reads %+v", got)
 	}
-	if by["s1"].CreatedAt.IsZero() {
-		t.Fatal("a reverse row must carry the source's creation")
-	}
 }
 
 func TestIncomingNarrowsToOneGroup(t *testing.T) {

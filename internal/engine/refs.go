@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/geoah/substrate/internal/vocabulary"
 )
@@ -59,14 +58,6 @@ type refRow struct {
 // key addresses the row inside its source record — the primary key's tail, and
 // what a re-derive replaces.
 func (r refRow) key() [3]string { return [3]string{r.Property, r.Path, strconv.Itoa(r.Ord)} }
-
-// identity is what created_at is preserved across: the SITE and the TARGET,
-// deliberately without `ord`. Reordering a repeated reference moves a value
-// between ordinals without the record pointing anywhere new, and stamping a
-// fresh creation on it would say the pointer was just made.
-func (r refRow) identity() [4]string {
-	return [4]string{r.Property, r.Path, r.Dst.Kind, r.Dst.ID}
-}
 
 // deriveRefs is the one function from a record's stored state to its rows in
 // the refs index. PURE: no registry lookups beyond the declaration it is
@@ -275,68 +266,36 @@ func referencePathOf(v any) string {
 	return ""
 }
 
-// syncRefs makes the stored index equal what the record's properties now say.
-// Called inside the write transaction after the fold, so the index and the row
-// it projects commit together or not at all.
+// syncRefs makes the stored index equal what the record's properties now say:
+// the record's whole row set is deleted and re-derived. Called inside the write
+// transaction after the fold, so the index and the row it projects commit
+// together or not at all.
 //
-// CREATED_AT SURVIVES A RE-DERIVE. A record whose declaration or whose other
-// properties changed re-derives its whole row set, and a pointer that came
-// through unchanged must keep the moment it was first written: the reverse
-// view orders by it, and re-stamping would make every reference look as old as
-// the last unrelated edit. The match is on (property, path, dst) and NOT on
-// `ord`, so reordering a repeated reference keeps each target's own creation.
+// A ROW CARRIES NO TIMESTAMP (migration 0011). The table held a `created_at`
+// that no reader served and that no durable state defined: a live re-projection
+// stamped a re-derived row with the apply's clock, a rebuild stamped the same
+// row with the replayed entry's, and the two snapshots disagreed under an
+// identical changelog. Every column here is now a function of (folded
+// properties, declaration) alone, which is what lets a rebuild reproduce the
+// table exactly.
 func (t *txn) syncRefs(ref eref, ty *vocabulary.Kind, props map[string]any) error {
 	want := deriveRefs(ty, props)
-	born, err := t.refCreatedAt(ref)
-	if err != nil {
-		return err
-	}
 	if _, err := t.exec(`DELETE FROM refs WHERE src_kind = $1 AND src = $2`, ref.Kind, ref.ID); err != nil {
 		return fmt.Errorf("substrate/engine: refs of %s %s: %w", ref.Kind, ref.ID, err)
 	}
 	for _, r := range want {
-		at, had := born[r.identity()]
-		if !had {
-			at = t.now
-		}
 		raw, err := json.Marshal(nonNilMap(r.Props))
 		if err != nil {
 			return err
 		}
 		if _, err := t.exec(`
-			INSERT INTO refs (src_kind, src, property, path, ord, dst_kind, dst, props, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)`,
-			ref.Kind, ref.ID, r.Property, r.Path, r.Ord, r.Dst.Kind, r.Dst.ID, raw, at); err != nil {
+			INSERT INTO refs (src_kind, src, property, path, ord, dst_kind, dst, props)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+			ref.Kind, ref.ID, r.Property, r.Path, r.Ord, r.Dst.Kind, r.Dst.ID, raw); err != nil {
 			return fmt.Errorf("substrate/engine: refs of %s %s (%s): %w", ref.Kind, ref.ID, r.Property, err)
 		}
 	}
 	return nil
-}
-
-// refCreatedAt reads what the record's current rows were born at, keyed by the
-// identity a re-derive preserves. The EARLIEST wins where two ordinals of one
-// repeated reference name the same record: the pointer has existed since the
-// first of them.
-func (t *txn) refCreatedAt(ref eref) (map[[4]string]time.Time, error) {
-	rows, err := t.query(`SELECT property, path, dst_kind, dst, created_at FROM refs
-		WHERE src_kind = $1 AND src = $2`, ref.Kind, ref.ID)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	out := map[[4]string]time.Time{}
-	for rows.Next() {
-		var k [4]string
-		var at time.Time
-		if err := rows.Scan(&k[0], &k[1], &k[2], &k[3], &at); err != nil {
-			return nil, err
-		}
-		at = at.UTC()
-		if cur, had := out[k]; !had || at.Before(cur) {
-			out[k] = at
-		}
-	}
-	return out, rows.Err()
 }
 
 // syncRefsOf re-derives one record's rows from what is STORED, resolving the

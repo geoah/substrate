@@ -288,9 +288,8 @@ func (t *txn) foldRecordOp(op foldOp) (foldResult, error) {
 		// `fts` and unlike everything else here: derived from the folded
 		// properties and the kind's declaration (refs.go), never from an effect
 		// of its own. Deriving it HERE is what makes a rebuild reproduce it
-		// byte for byte — the entry's timestamp is the transaction's clock, so
-		// a replayed pointer is stamped with the moment the live write stamped
-		// it, and a pointer that came through unchanged keeps its own.
+		// byte for byte — every column is a function of those two inputs, and
+		// no column of it reads the clock.
 		ty, _ := t.declarations().ByIdentity(row.Kind)
 		if err := t.syncRefs(ref, ty, row.Props); err != nil {
 			return foldResult{}, err

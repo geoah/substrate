@@ -147,7 +147,7 @@ func (ds *dataset) Incoming(ctx context.Context, typ, id string, opts substrate.
 	b := &builder{}
 	where := ds.incomingWhere(b, canonical, rawIDs, opts, seek)
 	rows, err := ds.db.QueryContext(ctx,
-		`SELECT r.property, r.path, r.ord, s.id, s.kind, s.title, s.created_at`+
+		`SELECT r.property, r.path, r.ord, s.id, s.kind, s.title`+
 			` FROM refs r JOIN records s ON s.kind = r.src_kind AND s.id = r.src`+
 			where+` ORDER BY `+incomingOrderSQL+` LIMIT `+b.arg(first+1), b.args...)
 	if err != nil {
@@ -162,15 +162,14 @@ func (ds *dataset) Incoming(ctx context.Context, typ, id string, opts substrate.
 	for rows.Next() {
 		var in substrate.IncomingReference
 		var ord int
-		if err := rows.Scan(&in.Property, &in.Path, &ord, &in.From.ID, &in.From.Kind, &in.From.Title,
-			&in.CreatedAt); err != nil {
+		if err := rows.Scan(&in.Property, &in.Path, &ord, &in.From.ID, &in.From.Kind,
+			&in.From.Title); err != nil {
 			return nil, err
 		}
 		if len(page.Incoming) == first {
 			page.Cursor = encodeKeyset(incomingOrder, lastKey, 0)
 			break
 		}
-		in.CreatedAt = in.CreatedAt.UTC()
 		lastKey = []*string{
 			ptrTo(in.From.Kind), ptrTo(in.From.ID), ptrTo(in.Property), ptrTo(in.Path),
 			ptrTo(strconv.Itoa(ord)),

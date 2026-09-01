@@ -245,7 +245,7 @@ func foldSnapshot(ctx context.Context, db *sql.DB) (map[string]any, error) {
 					version, created_at, updated_at, deleted_at, finalizers, fts::text
 				FROM records ORDER BY kind, id) r`,
 		"refs": `SELECT to_jsonb(r) FROM (
-				SELECT src_kind, src, property, path, ord, dst_kind, dst, props, created_at
+				SELECT src_kind, src, property, path, ord, dst_kind, dst, props
 				FROM refs ORDER BY src_kind, src, property, path, ord) r`,
 		"annotations": `SELECT to_jsonb(a) FROM (
 				SELECT record_kind, record_id, key, value, updated_at
