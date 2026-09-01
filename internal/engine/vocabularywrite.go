@@ -1966,10 +1966,23 @@ func reprojectedKinds(current, candidate *vocabulary.Registry, touched map[strin
 // derivation reads: where a reference sits, in which container, and which link
 // properties travel with it. Two declarations with the same string project the
 // same rows from the same stored values.
+//
+// EVERY NODE ON A REFERENCE-BEARING PATH, with its datatype and its container
+// flags, not the reference node alone. deriveRefs addresses a nested pointer
+// through its ANCESTORS: an object property that gains `repeated: true` moves
+// the pointer inside it from `callable` to `0.callable`, and an ancestor that
+// changes datatype stops being walked at all. A fingerprint that read only the
+// leaf compared equal across those, so no kind was re-projected and tombstoned
+// records kept rows at addresses the declaration no longer describes.
+//
+// A node holding no reference anywhere below it is skipped whole, because
+// deriveRefs does not walk it either (holdsReference).
 func appendReferenceShape(b *strings.Builder, path string, p *vocabulary.Property) {
-	if p.Datatype == vocabulary.DatatypeReference {
-		fmt.Fprintf(b, "%s|%v|%v|%s;", path, p.Repeated, p.Keyed, strings.Join(p.PropertyOrder, ","))
+	if !holdsReference(p) {
+		return
 	}
+	fmt.Fprintf(b, "%s|%s|%v|%v|%s;", path, p.Datatype, p.Repeated, p.Keyed,
+		strings.Join(p.PropertyOrder, ","))
 	for _, fn := range p.FieldOrder {
 		appendReferenceShape(b, path+"."+fn, p.Fields[fn])
 	}

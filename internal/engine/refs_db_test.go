@@ -280,6 +280,65 @@ func TestReDeriveFollowsTheOrdinals(t *testing.T) {
 	}
 }
 
+// A CONTAINER FLIP ABOVE A NESTED REFERENCE re-projects the kind. deriveRefs
+// addresses a nested pointer through its ANCESTORS — an object property that
+// gains `repeated: true` moves the pointer inside it from `callable` to
+// `0.callable` — so the declaration change is one the kind's stored records
+// must be re-derived against. A tombstone is where it shows: the narrowing
+// counts never see one, so nothing else would have touched its rows and they
+// would answer at an address the declaration no longer describes.
+func TestAContainerFlipAboveAReferenceReDerivesTombstones(t *testing.T) {
+	t.Parallel()
+	ds, raw, _ := newDatasetWithDB(t)
+	ctx := context.Background()
+	const agent = refsAuthority + "/agent"
+	nested := func(repeated bool) error {
+		tool := map[string]any{
+			"type": "object",
+			"fields": map[string]any{
+				"callable": map[string]any{"type": "reference", "kind": refsHub},
+			},
+		}
+		if repeated {
+			tool["repeated"] = true
+		}
+		_, err := applier(t, ds).ApplyVocabularyDocuments(ctx, owner, []map[string]any{
+			vocabulary.AuthorityManifest(refsAuthority, 0),
+			vocabulary.KindManifest(refsAuthority,
+				map[string]any{"singular": "hub", "plural": "hubs"},
+				map[string]any{"properties": map[string]any{"name": map[string]any{"type": "string"}}}),
+			vocabulary.KindManifest(refsAuthority,
+				map[string]any{"singular": "agent", "plural": "agents"},
+				map[string]any{"properties": map[string]any{"tool": tool}}),
+		})
+		return err
+	}
+	if err := nested(false); err != nil {
+		t.Fatalf("install the vocabulary: %v", err)
+	}
+	mustPut(t, ds, owner, substrate.PutInput{Kind: refsHub, ID: "h1"})
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: agent, ID: "a1",
+		Properties: map[string]any{"tool": map[string]any{"callable": "h1"}},
+	})
+	if got := refRows(t, raw, agent, "a1"); len(got) != 1 || got[0].path != "callable" {
+		t.Fatalf("the nested pointer derived %+v, want one row at `callable`", got)
+	}
+	if _, err := ds.Delete(ctx, owner, agent, "a1"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	if err := nested(true); err != nil {
+		t.Fatalf("make the object repeated: %v", err)
+	}
+	// The stored value is the object the old declaration described, which the
+	// new one does not read, so the re-derive leaves nothing rather than a row
+	// addressed as if the flip had not happened.
+	if got := refRows(t, raw, agent, "a1"); len(got) != 0 {
+		t.Fatalf("the flip left %+v, want the old address gone", got)
+	}
+}
+
 // A DELETE keeps the rows and a re-write replaces them: the index mirrors the
 // records table, tombstones included, which is what lets a rebuild re-derive
 // every row and land on what the live path wrote.

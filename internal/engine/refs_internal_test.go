@@ -7,6 +7,7 @@ package engine
 // shape whose rows collide would silently lose pointers.
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/geoah/substrate/internal/vocabulary"
@@ -228,5 +229,55 @@ func TestDeriveRefsOfAnUnknownKindIsEmpty(t *testing.T) {
 	t.Parallel()
 	if got := deriveRefs(nil, map[string]any{"one": hubPath("h1")}); got != nil {
 		t.Fatalf("an undeclared kind derived %+v", got)
+	}
+}
+
+// THE FINGERPRINT SEES EVERY NODE a nested pointer is addressed through. A
+// container or datatype change on an ANCESTOR moves (or removes) the address
+// deriveRefs computes, so two declarations that differ there must not
+// fingerprint the same: reprojectedKinds is what decides whether a stored
+// record's rows are re-derived at all.
+func TestReferenceShapeSeesTheContainersAboveAReference(t *testing.T) {
+	t.Parallel()
+	object := func(mods func(*vocabulary.Property)) *vocabulary.Property {
+		p := &vocabulary.Property{
+			Datatype:   vocabulary.DatatypeObject,
+			Fields:     map[string]*vocabulary.Property{"callable": reference(nil)},
+			FieldOrder: []string{"callable"},
+		}
+		if mods != nil {
+			mods(p)
+		}
+		return p
+	}
+	shape := func(p *vocabulary.Property) string {
+		var b strings.Builder
+		appendReferenceShape(&b, "tool", p)
+		return b.String()
+	}
+
+	single := shape(object(nil))
+	for name, p := range map[string]*vocabulary.Property{
+		// `callable` moves from "callable" to "0.callable".
+		"repeated": object(func(p *vocabulary.Property) { p.Repeated = true }),
+		// ... and to "<key>.callable".
+		"keyed": object(func(p *vocabulary.Property) { p.Keyed = true }),
+		// A datatype change stops the walk at the ancestor: the nested row goes.
+		"json": object(func(p *vocabulary.Property) { p.Datatype = vocabulary.DatatypeJSON }),
+	} {
+		if got := shape(p); got == single {
+			t.Fatalf("a %s ancestor fingerprints as the single one: %q", name, got)
+		}
+	}
+
+	// A property with no reference under it contributes nothing, so an edit to
+	// one never re-projects a kind's records.
+	plain := &vocabulary.Property{
+		Datatype:   vocabulary.DatatypeObject,
+		Fields:     map[string]*vocabulary.Property{"note": {Datatype: vocabulary.DatatypeString}},
+		FieldOrder: []string{"note"},
+	}
+	if got := shape(plain); got != "" {
+		t.Fatalf("a reference-free property fingerprints as %q", got)
 	}
 }
