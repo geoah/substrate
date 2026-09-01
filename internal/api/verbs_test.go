@@ -102,6 +102,31 @@ func TestRESTRefusesAnEdgesKeyNamingItsReplacement(t *testing.T) {
 	}
 }
 
+// THE ADVICE IS THE ENVELOPE'S, not the decoder's. A FILTER carrying `edges` is
+// refused for the same reason and with the same words as any other unknown
+// filter key: `data.properties` is where a record's pointers go, and a caller
+// narrowing a list is not writing a record.
+func TestRESTFilterWithAnEdgesKeyIsAPlainUnknownField(t *testing.T) {
+	env := newTestEnv(t)
+	tok := env.svc.token("geoah")
+	rec := env.do(t, http.MethodPost, graphqlPath, tok, map[string]any{
+		"query":     `query ($f: JSON) { records(filter: $f) { nodes { id } } }`,
+		"variables": map[string]any{"f": map[string]any{"edges": map[string]any{"member_of": "org1"}}},
+	})
+	wantStatus(t, rec, http.StatusOK)
+	out := decodeJSON[gqlResponse](t, rec)
+	if len(out.Errors) != 1 {
+		t.Fatalf("errors = %+v", out.Errors)
+	}
+	msg := out.Errors[0].Message
+	if !strings.Contains(msg, `unknown field "edges"`) {
+		t.Fatalf("the filter refusal must name the key: %q", msg)
+	}
+	if strings.Contains(msg, "data.properties") {
+		t.Fatalf("a filter refusal must not send the caller to data.properties: %q", msg)
+	}
+}
+
 // TestTriggerVerbsLiveUnderCore is ruling A8's verb placement: the trigger
 // verbs answer AT the resource, and trigger records are CORE's — the substrate
 // maintains its own delivery plumbing, so it publishes it (the former

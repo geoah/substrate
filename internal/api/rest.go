@@ -217,7 +217,7 @@ func (h *handler) createInCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in substrate.PutInput
-	if err := decodeBody(r, &in); err != nil {
+	if err := decodeRecordBody(r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
@@ -252,7 +252,7 @@ func (h *handler) putResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in substrate.PutInput
-	if err := decodeBody(r, &in); err != nil {
+	if err := decodeRecordBody(r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
@@ -282,7 +282,7 @@ func (h *handler) patchResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in substrate.PatchInput
-	if err := decodeBody(r, &in); err != nil {
+	if err := decodeRecordBody(r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}

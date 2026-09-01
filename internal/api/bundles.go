@@ -99,7 +99,7 @@ func (h *handler) patchBundleLifecycle(w http.ResponseWriter, r *http.Request, i
 		return
 	}
 	var in substrate.PatchInput
-	if err := decodeBody(r, &in); err != nil {
+	if err := decodeRecordBody(r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, codeBadRequest, err.Error())
 		return
 	}
