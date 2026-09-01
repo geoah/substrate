@@ -337,3 +337,63 @@ func TestIncomingRefusesACursorFromAnotherOrder(t *testing.T) {
 		substrate.IncomingOptions{After: "not-a-cursor"})
 	wantErr(t, err, substrate.ErrValidation, "cursor")
 }
+
+// A CURSOR BELONGS TO ONE READ. Its key addresses a row in the index, not a
+// row in this page's match set, so replaying it under a different narrowing
+// used to seek past unrelated keys and answer a short page that read as a
+// complete one. The target, the `property` and the `fromKind` are stamped into
+// the cursor, and a mismatch is the same refusal a token from another order
+// gets.
+func TestIncomingRefusesACursorReplayedWithAnotherNarrowing(t *testing.T) {
+	t.Parallel()
+	_, ds := newDataset(t)
+	graphVocabulary(t, ds)
+	ctx := context.Background()
+
+	for _, id := range []string{"h1", "h2"} {
+		mustPut(t, ds, owner, substrate.PutInput{Kind: graphAuthority + "/hub", ID: id})
+	}
+	for _, id := range []string{"s1", "s2", "s3"} {
+		mustPut(t, ds, owner, substrate.PutInput{
+			Kind: graphAuthority + "/spoke", ID: id, Properties: map[string]any{"hub": "h1"},
+		})
+	}
+	mustPut(t, ds, owner, substrate.PutInput{
+		Kind: graphAuthority + "/loose", ID: "x1",
+		Properties: map[string]any{"anything": vocabulary.RecordPath(graphAuthority+"/hub", "h1")},
+	})
+
+	minted := incoming(t, ds, "h1", substrate.IncomingOptions{
+		First: 1, Property: "hub", FromKind: graphAuthority + "/spoke",
+	})
+	if minted.Cursor == "" {
+		t.Fatal("the first page minted no cursor")
+	}
+	// The same cursor, still good for the read it came from.
+	next := incoming(t, ds, "h1", substrate.IncomingOptions{
+		First: 1, Property: "hub", FromKind: graphAuthority + "/spoke", After: minted.Cursor,
+	})
+	if len(next.Incoming) != 1 || next.Incoming[0].From.ID != "s2" {
+		t.Fatalf("the second page of the same read = %+v", next.Incoming)
+	}
+
+	for name, opts := range map[string]substrate.IncomingOptions{
+		"another property": {First: 1, Property: "anything", FromKind: graphAuthority + "/spoke"},
+		"another source kind": {
+			First: 1, Property: "hub", FromKind: graphAuthority + "/loose",
+		},
+		"no narrowing at all": {First: 1},
+	} {
+		opts.After = minted.Cursor
+		if _, err := ds.Incoming(ctx, graphAuthority+"/hub", "h1", opts); err == nil {
+			t.Fatalf("%s replayed the cursor instead of refusing it", name)
+		} else {
+			wantErr(t, err, substrate.ErrValidation, "cursor")
+		}
+	}
+	// And a cursor minted at one target says nothing about another.
+	_, err := ds.Incoming(ctx, graphAuthority+"/hub", "h2", substrate.IncomingOptions{
+		First: 1, Property: "hub", FromKind: graphAuthority + "/spoke", After: minted.Cursor,
+	})
+	wantErr(t, err, substrate.ErrValidation, "cursor")
+}

@@ -111,13 +111,14 @@ func (ds *dataset) Incoming(ctx context.Context, typ, id string, opts substrate.
 	// KEYSET continuation over the index's OWN key: (src_kind, src, property,
 	// path, ord) addresses one row and nothing else, so a page boundary can
 	// neither drop nor repeat.
+	signature := incomingSignature(canonical, opts)
 	var seek *incomingSeek
 	if opts.After != "" {
 		tok, err := decodeKeyset(opts.After)
 		if err != nil {
 			return nil, err
 		}
-		if tok.O != incomingOrder || len(tok.K) != 5 {
+		if tok.O != signature || len(tok.K) != 5 {
 			return nil, fmt.Errorf("%w: bad cursor", substrate.ErrValidation)
 		}
 		for _, k := range tok.K {
@@ -167,7 +168,7 @@ func (ds *dataset) Incoming(ctx context.Context, typ, id string, opts substrate.
 			return nil, err
 		}
 		if len(page.Incoming) == first {
-			page.Cursor = encodeKeyset(incomingOrder, lastKey, 0)
+			page.Cursor = encodeKeyset(signature, lastKey, 0)
 			break
 		}
 		lastKey = []*string{
@@ -216,6 +217,22 @@ const (
 	incomingOrderSQL = `r.src_kind, r.src, r.property, r.path, r.ord`
 	incomingOrder    = "incoming:srcKind,src,property,path,ord"
 )
+
+// incomingSignature is what the cursor is stamped with: the order AND THE READ
+// IT WAS MINTED AGAINST — the canonical target, the `property` narrowing and
+// the `fromKind` narrowing. The key alone identifies a row in the index, not a
+// row in THIS page's match set, so a cursor from a `property=a` page replayed
+// with `property=b`, another source kind or another target used to seek past
+// unrelated keys and return a short page that looked complete. A mismatch is
+// the same bad-cursor refusal a token from another order gets.
+//
+// The narrowings are caller input, so they travel as a JSON array rather than
+// joined by a separator: a `property` holding the separator could otherwise
+// spell another read's signature.
+func incomingSignature(canonical eref, opts substrate.IncomingOptions) string {
+	raw, _ := json.Marshal([]string{canonical.Kind, canonical.ID, opts.Property, opts.FromKind})
+	return incomingOrder + ":" + string(raw)
+}
 
 // incomingWhere renders the reverse read's predicate: the target (over every id
 // it has ever had), a live source, the caller's narrowing and the keyset seek.
