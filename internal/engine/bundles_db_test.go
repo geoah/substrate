@@ -446,6 +446,22 @@ func TestBundleInputBoundToAMergedRecordResolvesToTheWinner(t *testing.T) {
 	if st.Inputs[0].Record != winner.ID || st.Inputs[0].Via != substrate.InputViaBound {
 		t.Fatalf("input resolved to %+v, want the merge winner %s", st.Inputs[0], winner.ID)
 	}
+
+	// Delete the winner: the input dangles again, and the message names BOTH
+	// ends of the trail — the id the binding carries, and the record it merged
+	// into — so rebinding is not a search.
+	if _, err := ds.Delete(ctx, owner, winner.Kind, winner.ID); err != nil {
+		t.Fatalf("delete the winner: %v", err)
+	}
+	st, err = ops.BundleStatus(ctx, mbAuthority)
+	if err != nil || len(st.Setup) != 1 || st.Setup[0].Code != substrate.SetupDangling {
+		t.Fatalf("a deleted winner must dangle: %+v %v", st, err)
+	}
+	for _, want := range []string{loser.ID, winner.ID, "merged into", "deleted"} {
+		if !strings.Contains(st.Setup[0].Message, want) {
+			t.Fatalf("the dangling message must name %q: %q", want, st.Setup[0].Message)
+		}
+	}
 }
 
 // A binding is a changelog write like any other: clear the fold, replay, and
