@@ -1091,6 +1091,13 @@ func (l *loader) parseLinkProps(where string, ed map[string]any) (map[string]*Pr
 			l.errf("%s: %q is the reserved key holding the referent's path", pwhere, ReferenceValueKey)
 			continue
 		}
+		if pname == ReferenceTargetField {
+			// Reserved beside `ref`: the reference reads as an object carrying
+			// the path and the referent record itself, and a link property of
+			// this name would take the referent's place on every read.
+			l.errf("%s: %q is the reserved key holding the referent record", pwhere, ReferenceTargetField)
+			continue
+		}
 		pd := asMapOrNil(pdef)
 		if pd == nil {
 			// No bare-datatype shorthand here, and that is deliberate: the

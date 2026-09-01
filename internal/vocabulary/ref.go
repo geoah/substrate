@@ -31,6 +31,14 @@ import (
 // property can never shadow the pointer itself.
 const ReferenceValueKey = "ref"
 
+// ReferenceTargetField is the second reserved link-property name. It is not a
+// key of the stored value: the GraphQL object generated for a reference carries
+// `ref` (the path) beside `target` (the referent record itself), and the
+// declared link properties are written into that same object. A link property
+// spelled `target` would replace the referent field with its own value, so it is
+// refused in the declaration, where the author can rename it.
+const ReferenceTargetField = "target"
+
 // KindRef renders a kind reference from its parts. An empty authority renders
 // the bare shorthand form — there is no `local/` prefix.
 func KindRef(authority, name string) string {
