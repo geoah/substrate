@@ -236,10 +236,11 @@ type schemaBuilder struct {
 	objects   map[string]*graphql.Object // by type identity
 	objByName map[string]string          // GraphQL name -> identity
 	generic   *graphql.Object
-	// refObjects holds the generated object type of every reference property
-	// that carries link data, by GraphQL name. One per (kind, property), built
-	// once and reused, so a repeated reference's list wraps the same type its
-	// single-valued twin would.
+	// refObjects holds the generated object type of every reference property,
+	// keyed by the owning "<kind>.<property>". Built once and reused, so a
+	// repeated reference's list wraps the same type its single-valued twin
+	// would; keyed by owner rather than by generated NAME, so a colliding pair
+	// cannot be served the other pair's fields (reservedNames refuses one).
 	refObjects map[string]*graphql.Object
 }
 
@@ -396,7 +397,10 @@ func (b *schemaBuilder) collectInterfaces() {
 }
 
 func (b *schemaBuilder) buildObjects() error {
-	reserved := b.reservedNames()
+	reserved, err := b.reservedNames()
+	if err != nil {
+		return err
+	}
 	for _, t := range b.types {
 		// The GraphQL name is a PURE FUNCTION of the type's identity and
 		// source: shipped types keep bare names, installed types are always
@@ -482,7 +486,15 @@ func (b *schemaBuilder) buildObjects() error {
 // claim: the structural types and scalars, the capability and machine
 // interfaces derived from this registry, and the object type EVERY reference
 // property generates. A collision is a schema-build error, not a silent rename.
-func (b *schemaBuilder) reservedNames() map[string]string {
+//
+// It also REFUSES a registry whose own reference names collide with each
+// other: `<Kind><Property>Reference` is a pure function of (kind, property),
+// and two pairs can spell one name (`task`.`noteX` and `taskNote`.`x`). One
+// generated object would then carry the fields of whichever pair was built
+// first, and the other property would serve its link data under the wrong
+// schema. Nothing but single-word kind names keeps that from happening, which
+// is not a rule the loader enforces.
+func (b *schemaBuilder) reservedNames() (map[string]string, error) {
 	r := map[string]string{
 		"Record":           "the Record interface",
 		"GenericRecord":    "the fallback record type",
@@ -511,10 +523,17 @@ func (b *schemaBuilder) reservedNames() map[string]string {
 			if kind, _ := pd["type"].(string); kind != "reference" {
 				continue
 			}
-			r[referenceObjectName(t, p)] = "the reference type of " + t.Identity + "." + p
+			name := referenceObjectName(t, p)
+			owner := "the reference type of " + t.Identity + "." + p
+			if prior, taken := r[name]; taken {
+				return nil, fmt.Errorf(
+					"graphql: %s and %s both map to GraphQL name %q — rename one property or its kind",
+					prior, owner, name)
+			}
+			r[name] = owner
 		}
 	}
-	return r
+	return r, nil
 }
 
 // fieldFromDefinition rebuilds an object field from an interface's field
