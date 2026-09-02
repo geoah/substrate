@@ -553,16 +553,18 @@ func (ds *dataset) processScheduleTrigger(ctx context.Context, lt loadedTrigger)
 	if due.IsZero() {
 		return 0, nil
 	}
-	return ds.deliverFire(ctx, lt.trigger, runner.ModeSchedule, fireID(due), due, &lastFire)
+	return ds.deliverFire(ctx, lt.trigger, runner.ModeSchedule, fireID(due), due, &lastFire, nil)
 }
 
-// deliverFire runs one schedule occurrence or webhook wake through the
+// deliverFire runs one schedule occurrence or webhook fire through the
 // delivery path: same retries, same park, mode schedule/webhook, no
 // changelog row underneath. lastFire non-nil means the schedule fire state
 // advances compare-and-swap in the same transaction as the effects — a
 // concurrent dispatcher cannot double-fire an occurrence, which is what
-// makes the stable fire id idempotent.
-func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, lastFire *time.Time) (int, error) {
+// makes the stable fire id idempotent. envelope is the delivery's envelope
+// when the caller built one (a public webhook delivery carries its request);
+// nil means the bare fire envelope.
+func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, lastFire *time.Time, envelope map[string]any) (int, error) {
 	started := nowUTC()
 	var lastErr error
 	attempts := triggerAttempts
@@ -578,9 +580,9 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 		var applied int
 		var err error
 		if tr.Agent != nil {
-			summary, applied, err = ds.agentFire(ctx, tr, mode, fid, at, lastFire)
+			summary, applied, err = ds.agentFire(ctx, tr, mode, fid, at, lastFire, envelope)
 		} else {
-			summary, applied, err = ds.functionFire(ctx, tr, mode, fid, at, lastFire)
+			summary, applied, err = ds.functionFire(ctx, tr, mode, fid, at, lastFire, envelope)
 		}
 		if err == nil {
 			ds.recordRun(ctx, runRecord{
@@ -606,12 +608,17 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 	}
 	// Park-and-advance, fire-shaped: the failure row keeps the fire id, and
 	// the schedule state still moves — a poisoned occurrence never wedges the
-	// ones behind it.
-	err := ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
+	// ones behind it. A built envelope parks with the row, so a retry
+	// re-delivers the request that arrived rather than a bare fire.
+	payload, err := fireEnvelopePayload(envelope)
+	if err != nil {
+		return 0, err
+	}
+	err = ds.inTx(ctx, substrate.ActorSystem, true, func(t *txn) error {
 		if _, err := t.exec(`
-			INSERT INTO trigger_failures (trigger_id, seq, fire_id, record_id, attempts, last_error, parked_at)
-			VALUES ($1, 0, $2, '', $3, $4, $5)`,
-			tr.ID, fid, attempts, lastErr.Error(), t.now); err != nil {
+			INSERT INTO trigger_failures (trigger_id, seq, fire_id, record_id, attempts, last_error, parked_at, payload)
+			VALUES ($1, 0, $2, '', $3, $4, $5, $6)`,
+			tr.ID, fid, attempts, lastErr.Error(), t.now, payload); err != nil {
 			return err
 		}
 		if err := t.putRun(runRecord{
@@ -637,11 +644,33 @@ func (ds *dataset) deliverFire(ctx context.Context, tr *trigger, mode, fid strin
 	return 0, nil
 }
 
+// fireEnvelope is the envelope a fire delivers: the one the caller built
+// (a webhook delivery carrying its request) or, absent that, the bare fire.
+func fireEnvelope(envelope map[string]any, fid string, at time.Time, owner string) map[string]any {
+	if envelope != nil {
+		return envelope
+	}
+	return runner.FireEnvelope(fid, at, owner)
+}
+
+// fireEnvelopePayload is the parked form of a built envelope: its JSON for
+// the failure row's payload column, or SQL NULL when the fire carried none.
+func fireEnvelopePayload(envelope map[string]any) (any, error) {
+	if envelope == nil {
+		return nil, nil
+	}
+	raw, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("substrate: parked fire envelope: %w", err)
+	}
+	return string(raw), nil
+}
+
 // functionFire runs one schedule/webhook fire through the runner: effects
 // and the fire-state CAS in one transaction — the effectively-once half. A
 // paged body (a scheduled backfill) drains off the causal chain, the fire
 // state advancing only when the drain finishes.
-func (ds *dataset) functionFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, lastFire *time.Time) (map[string]int, int, error) {
+func (ds *dataset) functionFire(ctx context.Context, tr *trigger, mode, fid string, at time.Time, lastFire *time.Time, envelope map[string]any) (map[string]int, int, error) {
 	// The lifecycle fence's shared side, admission through effect + fire-state
 	// commit (bundles.go, review #2).
 	ctx, release, err := ds.admitCallable(ctx, tr.Callable.Authority, tr.Callable.Identity())
@@ -660,7 +689,7 @@ func (ds *dataset) functionFire(ctx context.Context, tr *trigger, mode, fid stri
 	}
 	in := runner.Input{
 		Mode:           mode,
-		Envelope:       runner.FireEnvelope(fid, at, ds.Repository().Name),
+		Envelope:       fireEnvelope(envelope, fid, at, ds.Repository().Name),
 		IdempotencyKey: key,
 		Resume:         resume.cursor,
 	}
@@ -1345,6 +1374,7 @@ func (ds *dataset) TriggerStatuses(ctx context.Context) ([]substrate.TriggerStat
 			}
 		case lt.Webhook:
 			st.Kind = substrate.TriggerKindWebhook
+			st.WebhookPath = webhookPath(ds.Repository().Name, lt.ID)
 		}
 		if err := ds.db.QueryRowContext(ctx,
 			`SELECT count(*) FROM trigger_failures WHERE trigger_id = $1`, lt.ID).Scan(&st.Parked); err != nil {
@@ -1432,7 +1462,7 @@ func (ds *dataset) WakeTrigger(ctx context.Context, id string) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		return ds.deliverFire(ctx, tr, runner.ModeWebhook, "wake-"+wid, nowUTC(), nil)
+		return ds.deliverFire(ctx, tr, runner.ModeWebhook, "wake-"+wid, nowUTC(), nil, nil)
 	case tr.Record != nil:
 		return ds.processRecordTrigger(ctx, tr)
 	case tr.Schedule != nil:
@@ -1488,9 +1518,10 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 	var seq int64
 	var fid string
 	var attempts int
+	var payload sql.NullString
 	err = ds.db.QueryRowContext(ctx, `
-		SELECT seq, fire_id, attempts FROM trigger_failures WHERE id = $1 AND trigger_id = $2`,
-		failureID, id).Scan(&seq, &fid, &attempts)
+		SELECT seq, fire_id, attempts, payload FROM trigger_failures WHERE id = $1 AND trigger_id = $2`,
+		failureID, id).Scan(&seq, &fid, &attempts, &payload)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, fmt.Errorf("%w: trigger %s has no parked failure %d", substrate.ErrNotFound, id, failureID)
 	}
@@ -1500,7 +1531,13 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 	var n int
 	var derr error
 	if fid != "" {
-		n, derr = ds.retryFire(ctx, tr, fid)
+		var envelope map[string]any
+		if payload.Valid {
+			if err := json.Unmarshal([]byte(payload.String), &envelope); err != nil {
+				return 0, fmt.Errorf("substrate: parked failure %d: envelope: %w", failureID, err)
+			}
+		}
+		n, derr = ds.retryFire(ctx, tr, fid, envelope)
 	} else {
 		ch, err := ds.changeAt(ctx, seq)
 		if err != nil {
@@ -1536,8 +1573,10 @@ func (ds *dataset) RetryTriggerFailure(ctx context.Context, id string, failureID
 }
 
 // retryFire re-invokes one parked schedule/webhook fire, same fire id, fire
-// state untouched (it advanced when the park did).
-func (ds *dataset) retryFire(ctx context.Context, tr *trigger, fid string) (int, error) {
+// state untouched (it advanced when the park did). envelope is the parked
+// delivery's own envelope when the row kept one, so a webhook retry carries
+// the request that arrived.
+func (ds *dataset) retryFire(ctx context.Context, tr *trigger, fid string, envelope map[string]any) (int, error) {
 	mode := runner.ModeWebhook
 	if tr.Schedule != nil {
 		mode = runner.ModeSchedule
@@ -1547,7 +1586,7 @@ func (ds *dataset) retryFire(ctx context.Context, tr *trigger, fid string) (int,
 		at = t
 	}
 	if tr.Agent != nil {
-		_, applied, err := ds.agentFire(ctx, tr, mode, fid, at, nil)
+		_, applied, err := ds.agentFire(ctx, tr, mode, fid, at, nil, envelope)
 		return applied, err
 	}
 	// The lifecycle fence's shared side, admission through effect commit
@@ -1566,7 +1605,7 @@ func (ds *dataset) retryFire(ctx context.Context, tr *trigger, fid string) (int,
 	}
 	in := runner.Input{
 		Mode:           mode,
-		Envelope:       runner.FireEnvelope(fid, at, ds.Repository().Name),
+		Envelope:       fireEnvelope(envelope, fid, at, ds.Repository().Name),
 		IdempotencyKey: key,
 		Resume:         resume.cursor,
 	}

@@ -9,7 +9,7 @@ import (
 	"github.com/geoah/substrate/internal/vocabulary"
 )
 
-// The invoke protocol (version 4), pinned so a later transport swap (Connect
+// The invoke protocol (version 5), pinned so a later transport swap (Connect
 // Describe/Invoke on a local socket) is mechanical — the frames below map
 // 1:1 onto RPCs and the host-call frames onto a bidirectional stream.
 //
@@ -26,7 +26,7 @@ import (
 //	                 {"op": "invoke", "reqId": N, "id": <key>, "input": Input}
 //	child → parent   {"kind": "response", "reqId": N, "ok": true, "output": ..., "effects": [...], "more": {"cursor": ...}?, "logs": [...]}
 //	                 {"kind": "response", "reqId": N, "ok": false, "error": "...", "logs": [...]}
-//	                 {"kind": "response", "reqId": N, "ok": true, "functions": [...], "protocol": 4}   (describe)
+//	                 {"kind": "response", "reqId": N, "ok": true, "functions": [...], "protocol": 5}   (describe)
 //
 // A response's optional `more` is the PAGED-CHECKPOINT continuation: it means
 // "this page is done — commit its effects, then re-invoke me with this
@@ -65,7 +65,7 @@ import (
 // ProtocolVersion pins the wire contract above. It participates in the Go
 // build cache key, so a binary compiled against an older protocol is rebuilt
 // instead of desyncing; the describe response carries it for verification.
-const ProtocolVersion = 4
+const ProtocolVersion = 5
 
 // The invocation modes.
 const (
@@ -74,8 +74,9 @@ const (
 	// ModeSchedule is a due RRULE fire (advances the trigger's fire state,
 	// no changelog row underneath).
 	ModeSchedule = "schedule"
-	// ModeWebhook is a webhook trigger's wake (mints nothing durable but a
-	// run row).
+	// ModeWebhook is a webhook trigger's delivery: a public POST, whose
+	// request rides the envelope under `request`, or an authenticated wake,
+	// which carries none. Mints nothing durable but a run row.
 	ModeWebhook = "webhook"
 	// ModeManual is an owner's run or a parked retry (no cursor motion).
 	ModeManual = "manual"
@@ -222,7 +223,19 @@ func Envelope(ch substrate.Change, e *substrate.Record, repositoryOwner string) 
 }
 
 // FireEnvelope assembles the envelope for a schedule or webhook delivery:
-// no change, no record — just the fire's identity and the repository.
+// no change, no record — just the fire's identity and the repository. A
+// public webhook delivery adds `request` beside them (engine/webhooks.go):
+//
+//	request:
+//	  method: POST
+//	  contentType: application/json        # the media type, parameters stripped
+//	  headers: {x-github-event: push, …}   # lowercased; no credential headers
+//	  query: {a: [b]}
+//	  body: {text: "…"} | {base64: "…"}    # byte-exact; absent for multipart
+//	  parts:                               # multipart/form-data only
+//	    - {name: transcription, value: "…"}
+//	    - {name: audio, filename: rec.m4a, mediaType: audio/mp4, size: 4194304,
+//	       blob: blob-sha256-…}             # a file part, stored before the fire
 func FireEnvelope(fireID string, at time.Time, repositoryOwner string) map[string]any {
 	return map[string]any{
 		"fire": map[string]any{

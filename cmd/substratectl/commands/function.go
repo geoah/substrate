@@ -39,7 +39,7 @@ records: get/apply/delete them like any other.`,
 func (a *app) triggerStatusCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Per-trigger kind, callable, cursor, lag, last fire and parked count",
+		Short: "Per-trigger kind, callable, cursor, lag, last fire, parked count and webhook path",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cl, err := a.client()
@@ -51,14 +51,14 @@ func (a *app) triggerStatusCommand() *cobra.Command {
 				return err
 			}
 			tw := newTable(a.out)
-			fmt.Fprintln(tw, "ID\tKIND\tCALLABLE\tENABLED\tCURSOR\tHEAD\tLAG\tLASTFIRE\tPARKED\tERROR")
+			fmt.Fprintln(tw, "ID\tKIND\tCALLABLE\tENABLED\tCURSOR\tHEAD\tLAG\tLASTFIRE\tPARKED\tWEBHOOK\tERROR")
 			for _, t := range res.Items {
 				lastFire := ""
 				if t.LastFire != nil {
 					lastFire = humanAge(a.now(), *t.LastFire)
 				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%d\t%d\t%d\t%s\t%d\t%s\n",
-					t.ID, t.Kind, t.Callable, t.Enabled, t.Cursor, t.Head, t.Lag, lastFire, t.Parked, truncate(t.Error, 60))
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%d\t%d\t%d\t%s\t%d\t%s\t%s\n",
+					t.ID, t.Kind, t.Callable, t.Enabled, t.Cursor, t.Head, t.Lag, lastFire, t.Parked, t.WebhookPath, truncate(t.Error, 60))
 			}
 			return tw.Flush()
 		},

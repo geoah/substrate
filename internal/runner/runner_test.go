@@ -634,14 +634,14 @@ read hold
 	r := New()
 	spec := Spec{Repository: "t1", Function: "stale.g.test", Runtime: "go", TimeoutMs: 5000}
 	if _, err := r.startVerified(context.Background(), spec, stale); err == nil ||
-		!strings.Contains(err.Error(), "protocol 2, want 4") {
+		!strings.Contains(err.Error(), "protocol 2, want 5") {
 		t.Fatalf("a stale protocol child was accepted: %v", err)
 	}
 
 	current := filepath.Join(dir, "current-child")
 	if err := os.WriteFile(current, []byte(`#!/bin/sh
 read line
-printf '{"kind":"response","reqId":1,"ok":true,"functions":["main"],"protocol":4}\n'
+printf '{"kind":"response","reqId":1,"ok":true,"functions":["main"],"protocol":5}\n'
 read hold
 `), 0o755); err != nil {
 		t.Fatal(err)

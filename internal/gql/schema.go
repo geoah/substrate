@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -348,7 +349,8 @@ func (b *schemaBuilder) recordFields() graphql.Fields {
 
 // collectInterfaces derives the capability and machine interfaces from the
 // registry: a capability interface promises the properties every type bound
-// to it declares, a machine interface its state plus every declared stamp.
+// to it declares, each at the type those kinds give it, a machine interface
+// its state plus every declared stamp.
 func (b *schemaBuilder) collectInterfaces() {
 	capProps := map[string][][]string{}
 	for _, t := range b.types {
@@ -368,7 +370,9 @@ func (b *schemaBuilder) collectInterfaces() {
 			}
 		} else {
 			for _, p := range intersect(capProps[c]) {
-				fields[camelCase(p)] = &graphql.Field{Type: graphql.String, Resolve: resolveProp(p)}
+				if ft := b.sharedPropertyType(c, p); ft != nil {
+					fields[camelCase(p)] = &graphql.Field{Type: ft, Resolve: resolveProp(p)}
+				}
 			}
 		}
 		if len(fields) == 0 {
@@ -394,6 +398,31 @@ func (b *schemaBuilder) collectInterfaces() {
 			ResolveType: b.resolveType,
 		})
 	}
+}
+
+// sharedPropertyType is the one GraphQL type every kind bound to trait c gives
+// property p, or nil when they disagree. An interface field has one type and
+// an implementing object's field of another type fails the whole schema build,
+// which a repository holding ONE implementer hit whenever that kind declared a
+// non-string property (a task's datetime `completedAt`, also its `status`
+// machine's stamp, against an interface that spelled every field String).
+func (b *schemaBuilder) sharedPropertyType(c, p string) graphql.Output {
+	var shared graphql.Output
+	for _, t := range b.types {
+		if !slices.Contains(typeCapabilities(t.Definition), c) {
+			continue
+		}
+		ft := b.propertyType(t, p)
+		switch {
+		case ft == nil:
+			return nil
+		case shared == nil:
+			shared = ft
+		case ft.String() != shared.String():
+			return nil
+		}
+	}
+	return shared
 }
 
 func (b *schemaBuilder) buildObjects() error {

@@ -817,8 +817,33 @@ func (t *txn) blobReferenced(digest string) (bool, error) {
 			return true, nil
 		}
 	}
-	return false, nil
+	// A parked webhook delivery names the blobs its multipart parts spooled,
+	// and nothing else does until a retry lands them in a record; the parked
+	// row keeps them alive for that retry.
+	var one int
+	err := t.row(parkedBlobExistsSQL, digest).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
+
+// The digests parked webhook payloads name, through request.parts[].blob.
+const (
+	parkedBlobsSQL = `SELECT DISTINCT p ->> 'blob' FROM trigger_failures,
+	     jsonb_array_elements(payload -> 'request' -> 'parts') p
+	     WHERE payload IS NOT NULL
+	       AND jsonb_typeof(payload -> 'request' -> 'parts') = 'array'
+	       AND jsonb_typeof(p -> 'blob') = 'string'`
+	parkedBlobExistsSQL = `SELECT 1 FROM trigger_failures,
+	     jsonb_array_elements(payload -> 'request' -> 'parts') p
+	     WHERE payload IS NOT NULL
+	       AND jsonb_typeof(payload -> 'request' -> 'parts') = 'array'
+	       AND p ->> 'blob' = $1 LIMIT 1`
+)
 
 // referencedDigests gathers every blob digest named by a live record through a
 // blob-ref property, across every declared type.
@@ -856,6 +881,24 @@ func (ds *dataset) referencedDigests(ctx context.Context) (map[string]bool, erro
 			}
 			_ = rows.Close()
 		}
+	}
+	// Plus the blobs parked webhook deliveries still name (blobReferenced).
+	rows, err := ds.db.QueryContext(ctx, parkedBlobsSQL)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var d sql.NullString
+		if err := rows.Scan(&d); err != nil {
+			return nil, err
+		}
+		if d.Valid && d.String != "" {
+			out[d.String] = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
