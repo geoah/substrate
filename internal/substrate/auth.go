@@ -61,6 +61,11 @@ type RegisterInput struct {
 	TOTPCode   string
 	// Label names the token registration mints, exactly as login's does.
 	Label string
+	// Authority is the DNS-style authority the new repository owns, the home
+	// of every kind its user declares (`ada.substrate.example`). The HTTP
+	// layer fills the default from the host the request reached; the engine
+	// requires one, validates the grammar and refuses a taken one.
+	Authority string
 	// RecoveryPublicKey is the age recipient the repository's data-encryption
 	// key wraps to, generated CLIENT-SIDE so the matching identity never
 	// touches the server. Empty asks the server to generate the pair and
@@ -73,6 +78,9 @@ type RegisterInput struct {
 type RegisterResult struct {
 	Token  TokenInfo
 	Secret string
+	// Authority is the authority the repository was created with, echoed so a
+	// client that sent none learns the default it got.
+	Authority string
 	// RecoveryKey is the age identity that opens the repository's recovery
 	// wrap, present ONLY when the server generated the pair (the input named
 	// no recipient). Shown once, never stored.

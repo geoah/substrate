@@ -7,7 +7,10 @@ facility plus bundle functions.
 
 **The model, in one paragraph.** One invite code admits people. Registering
 creates a **user** — username, password and TOTP, all three — and that user's
-one **repository**. Everything the user has lives in it: an append-only,
+one **repository**, which owns one **authority** (`<username>.<server host>`
+unless the registration names one; the home of the kinds the user declares,
+[0046](docs/decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md)).
+Everything the user has lives in it: an append-only,
 strictly sequential, hash-chained and server-signed **changelog**
 is the truth and the **records** table is
 its fold. Tokens and the login credential are themselves records, and a token

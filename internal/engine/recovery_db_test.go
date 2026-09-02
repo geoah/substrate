@@ -65,7 +65,7 @@ func TestRegistrationEnrollsRecoveryKey(t *testing.T) {
 	}
 	u := &authUser{username: "ada", password: testPassword, seed: enrollment.Secret}
 	res, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "ada", Password: testPassword,
+		Username: "ada", Authority: "ada" + ".example.com", Password: testPassword,
 		TOTPSecret: u.seed, TOTPCode: u.code(t),
 		RecoveryPublicKey: clientID.Recipient().String(),
 	})
@@ -163,7 +163,7 @@ func TestServerMintedRecoveryKeyAndEnrollOnce(t *testing.T) {
 	}
 	u := &authUser{username: "bo", password: testPassword, seed: enrollment.Secret}
 	res, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "bo", Password: testPassword,
+		Username: "bo", Authority: "bo" + ".example.com", Password: testPassword,
 		TOTPSecret: u.seed, TOTPCode: u.code(t),
 	})
 	if err != nil {
@@ -214,7 +214,7 @@ func TestEnrollRecoveryKeyMigratesLegacyPayloads(t *testing.T) {
 	}
 	u := &authUser{username: "cleo", password: testPassword, seed: enrollment.Secret}
 	if _, err := svc.Register(ctx, substrate.RegisterInput{
-		Username: "cleo", Password: testPassword,
+		Username: "cleo", Authority: "cleo" + ".example.com", Password: testPassword,
 		TOTPSecret: u.seed, TOTPCode: u.code(t),
 	}); err != nil {
 		t.Fatalf("register: %v", err)

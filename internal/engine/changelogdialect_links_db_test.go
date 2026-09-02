@@ -30,7 +30,7 @@ func TestOpenRefusesAChangelogThatPredatesReferences(t *testing.T) {
 		return svc
 	}
 	svc := open()
-	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	_ = svc.Close()

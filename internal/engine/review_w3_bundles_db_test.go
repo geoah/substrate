@@ -46,7 +46,7 @@ func newW3Env(t *testing.T, opts ...engine.Option) (substrate.Service, substrate
 	}
 	t.Cleanup(func() { _ = svc.Close() })
 	ctx := context.Background()
-	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	ds, err := svc.Dataset(ctx, "geoah")

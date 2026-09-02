@@ -44,7 +44,9 @@ no server and no token.
 it asks for a TOTP enrollment, prints it once for an authenticator, and hands
 back one code with the password you choose. `--totp-secret` brings your own
 seed and skips the enrollment call, which is what makes an unattended
-registration possible.
+registration possible. `--authority` names the DNS-style authority the
+repository owns, the home of every kind you declare; omitted, the substrate
+names it `<username>.<its own host>`, and `register` prints the result.
 
 Against a substrate that verifies no second factor
 ([the local TOTP-off switch](auth.md#the-second-factor-can-be-switched-off-locally)),

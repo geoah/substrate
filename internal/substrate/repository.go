@@ -4,9 +4,12 @@ package substrate
 // the opaque internal id, the owning user's username, and the lifecycle state.
 // There is no schema name — every repository lives in the one shared schema.
 type RepositoryInfo struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	State string `json:"state"` // lifecycle machine state
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Authority is the DNS-style authority this repository owns: the home of
+	// every kind its user declares, chosen at registration and permanent.
+	Authority string `json:"authority"`
+	State     string `json:"state"` // lifecycle machine state
 }
 
 // The legacy connector-registration types (ConnectorManifest / ConnectorTrigger)

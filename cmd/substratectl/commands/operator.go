@@ -136,12 +136,13 @@ func (a *app) controlPlane() (*sql.DB, error) {
 type repositoryRow struct {
 	ID        string
 	Username  string
+	Authority string
 	CreatedAt time.Time
 }
 
 func listRepositoryRows(ctx context.Context, db *sql.DB) ([]repositoryRow, error) {
 	rows, err := db.QueryContext(ctx,
-		`SELECT id, username, created_at FROM repositories ORDER BY created_at, id`)
+		`SELECT id, username, authority, created_at FROM repositories ORDER BY created_at, id`)
 	if err != nil {
 		return nil, controlPlaneError(err)
 	}
@@ -149,7 +150,7 @@ func listRepositoryRows(ctx context.Context, db *sql.DB) ([]repositoryRow, error
 	var out []repositoryRow
 	for rows.Next() {
 		var r repositoryRow
-		if err := rows.Scan(&r.ID, &r.Username, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Username, &r.Authority, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		r.CreatedAt = r.CreatedAt.UTC()
@@ -161,8 +162,8 @@ func listRepositoryRows(ctx context.Context, db *sql.DB) ([]repositoryRow, error
 func repositoryRowByUsername(ctx context.Context, db *sql.DB, username string) (repositoryRow, error) {
 	var r repositoryRow
 	err := db.QueryRowContext(ctx,
-		`SELECT id, username, created_at FROM repositories WHERE username = $1`, username).
-		Scan(&r.ID, &r.Username, &r.CreatedAt)
+		`SELECT id, username, authority, created_at FROM repositories WHERE username = $1`, username).
+		Scan(&r.ID, &r.Username, &r.Authority, &r.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return repositoryRow{}, fmt.Errorf("no user %q on this substrate", username)
 	}

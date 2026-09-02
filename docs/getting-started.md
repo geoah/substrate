@@ -35,7 +35,10 @@ It asks the substrate for a TOTP enrollment, prints the `otpauth://` URI and
 the seed for your authenticator, and takes back one code along with the
 password you choose. Only that second call writes anything, so an abandoned
 registration leaves nothing behind. Registration ends logged in: `substratectl` stores
-the minted token as a context in `~/.config/substratectl/config.yaml`.
+the minted token as a context in `~/.config/substratectl/config.yaml`. The
+repository it created owns an **authority**, a DNS-style name every kind you
+declare lives under: `ada.substrate.example` by default, or whatever
+`--authority` named.
 
 Unattended, bring your own seed and skip the prompts:
 

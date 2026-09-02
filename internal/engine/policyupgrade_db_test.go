@@ -97,7 +97,7 @@ func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 
 	old := openTree(t, dsn, oldPolicyTree(t))
-	if _, err := old.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := old.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	ds, err := old.Dataset(ctx, "geoah")
@@ -164,7 +164,7 @@ func TestPolicySelectorOpsUpgradeRefusedByAStrandedSelector(t *testing.T) {
 	dsn := testdb.NewSchema(t)
 
 	old := openTree(t, dsn, oldPolicyTree(t))
-	if _, err := old.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := old.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	ds, err := old.Dataset(ctx, "geoah")

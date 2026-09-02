@@ -45,7 +45,7 @@ func twoRepositories(t *testing.T) pair {
 	svc, dsn := newService(t)
 	p := pair{svc: svc, dsn: dsn}
 	for _, name := range []string{"alpha", "beta"} {
-		info, err := svc.CreateRepository(ctx, name)
+		info, err := svc.CreateRepository(ctx, name, name+".example.com")
 		if err != nil {
 			t.Fatalf("create %s: %v", name, err)
 		}

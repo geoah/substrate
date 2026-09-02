@@ -399,7 +399,7 @@ func TestRebuildRefusesWhatItCannotReplay(t *testing.T) {
 	t.Parallel()
 	svc, dsn := newService(t)
 	ctx := context.Background()
-	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	ds, err := svc.Dataset(ctx, "geoah")

@@ -18,8 +18,12 @@ import (
 
 // Repository is one row of the control-plane table.
 type Repository struct {
-	ID        string
-	Username  string
+	ID       string
+	Username string
+	// Authority is the DNS-style authority the repository owns, unique across
+	// the substrate like the username, and the home of the kinds its user
+	// declares.
+	Authority string
 	CreatedAt time.Time
 	// DEK is the repository's data-encryption key, WRAPPED under the host
 	// credential key. Nil marks a pre-DEK repository; open adopts one.
@@ -38,7 +42,7 @@ func (r Repository) scope() Scope { return Scope{Repository: r.ID} }
 
 // info renders the repository the way the read surfaces still describe it.
 func (r Repository) info() substrate.RepositoryInfo {
-	return substrate.RepositoryInfo{ID: r.ID, Name: r.Username, State: "active"}
+	return substrate.RepositoryInfo{ID: r.ID, Name: r.Username, Authority: r.Authority, State: "active"}
 }
 
 // ensureRoles creates the two Postgres roles the isolation rests on. It is
@@ -199,9 +203,9 @@ func (s *service) insertRepositoryRow(ctx context.Context, r *Repository) error 
 		signKey, signPublic, signedFrom = r.SigningKey, r.SigningPublic, r.SignedFrom
 	}
 	err := s.maint.QueryRowContext(ctx, `
-		INSERT INTO repositories (id, username, dek, signing_key, signing_public, signed_from_seq)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING created_at`, r.ID, r.Username, r.DEK, signKey, signPublic, signedFrom).Scan(&r.CreatedAt)
+		INSERT INTO repositories (id, username, authority, dek, signing_key, signing_public, signed_from_seq)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING created_at`, r.ID, r.Username, r.Authority, r.DEK, signKey, signPublic, signedFrom).Scan(&r.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("substrate/engine: create repository %q: %w", r.Username, err)
 	}
@@ -333,17 +337,26 @@ var repositoryScopedTables = []string{
 
 func (s *service) repositoryByUsername(ctx context.Context, username string) (Repository, error) {
 	return s.scanRepository(s.maint.QueryRowContext(ctx,
-		`SELECT id, username, created_at, dek FROM repositories WHERE username = $1`, username), username)
+		`SELECT id, username, authority, created_at, dek FROM repositories WHERE username = $1`, username), username)
 }
 
 func (s *service) repositoryByID(ctx context.Context, id string) (Repository, error) {
 	return s.scanRepository(s.maint.QueryRowContext(ctx,
-		`SELECT id, username, created_at, dek FROM repositories WHERE id = $1`, id), id)
+		`SELECT id, username, authority, created_at, dek FROM repositories WHERE id = $1`, id), id)
+}
+
+// repositoryByAuthority finds the repository that owns an authority. Two
+// repositories on one substrate cannot own the same one: a kind reference
+// names its authority and nothing else, so a shared authority would be two
+// homes for one name.
+func (s *service) repositoryByAuthority(ctx context.Context, authority string) (Repository, error) {
+	return s.scanRepository(s.maint.QueryRowContext(ctx,
+		`SELECT id, username, authority, created_at, dek FROM repositories WHERE authority = $1`, authority), authority)
 }
 
 func (s *service) scanRepository(row *sql.Row, what string) (Repository, error) {
 	var r Repository
-	if err := row.Scan(&r.ID, &r.Username, &r.CreatedAt, &r.DEK); err != nil {
+	if err := row.Scan(&r.ID, &r.Username, &r.Authority, &r.CreatedAt, &r.DEK); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Repository{}, fmt.Errorf("%w: repository %q", substrate.ErrNotFound, what)
 		}
@@ -355,7 +368,7 @@ func (s *service) scanRepository(row *sql.Row, what string) (Repository, error) 
 
 func (s *service) listRepositories(ctx context.Context) ([]Repository, error) {
 	rows, err := s.maint.QueryContext(ctx,
-		`SELECT id, username, created_at FROM repositories ORDER BY created_at, id`)
+		`SELECT id, username, authority, created_at FROM repositories ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -363,7 +376,7 @@ func (s *service) listRepositories(ctx context.Context) ([]Repository, error) {
 	var out []Repository
 	for rows.Next() {
 		var r Repository
-		if err := rows.Scan(&r.ID, &r.Username, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Username, &r.Authority, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		r.CreatedAt = r.CreatedAt.UTC()

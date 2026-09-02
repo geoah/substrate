@@ -29,7 +29,7 @@ func newDatasetWithDB(t *testing.T, opts ...engine.Option) (substrate.Dataset, *
 		t.Fatalf("open engine: %v", err)
 	}
 	t.Cleanup(func() { _ = svc.Close() })
-	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	ds, err := svc.Dataset(ctx, "geoah")

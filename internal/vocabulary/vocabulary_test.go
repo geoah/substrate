@@ -2680,3 +2680,35 @@ data:
 		}
 	})
 }
+
+// A repository's own authority is the kind grammar's authority within the DNS
+// length limits, and the default is the username under the request host with
+// the port gone (decision record 0046).
+func TestRepositoryAuthorityGrammar(t *testing.T) {
+	for _, ok := range []string{"ada.example.com", "ada.localhost", "a.b", "ada.127.0.0.1", "kv-t3.tail83e66.ts.net"} {
+		if !vocabulary.ValidRepositoryAuthority(ok) {
+			t.Errorf("vocabulary.ValidRepositoryAuthority(%q) = false", ok)
+		}
+	}
+	long := strings.Repeat("a", 64) + ".example.com"
+	for _, bad := range []string{"", "ada", "Ada.example.com", "ada.example.com/", "ada..example.com", "-ada.example.com", long, strings.Repeat("ab.", 90) + "com"} {
+		if vocabulary.ValidRepositoryAuthority(bad) {
+			t.Errorf("vocabulary.ValidRepositoryAuthority(%q) = true", bad)
+		}
+	}
+	for host, want := range map[string]string{
+		"substrate.example":      "ada.substrate.example",
+		"substrate.example:8080": "ada.substrate.example",
+		"Substrate.Example.":     "ada.substrate.example",
+		"127.0.0.1:5173":         "ada.127.0.0.1",
+		"[::1]:8080":             "ada.::1",
+		"":                       "",
+	} {
+		if got := vocabulary.DefaultRepositoryAuthority("ada", host); got != want {
+			t.Errorf("vocabulary.DefaultRepositoryAuthority(ada, %q) = %q, want %q", host, got, want)
+		}
+	}
+	if vocabulary.ValidRepositoryAuthority(vocabulary.DefaultRepositoryAuthority("ada", "[::1]:8080")) {
+		t.Error("an IPv6 literal host produced a default that passes the grammar")
+	}
+}

@@ -69,7 +69,7 @@ func newCoreDataset(t *testing.T, opts ...engine.Option) (substrate.Service, sub
 	t.Helper()
 	svc, _ := newService(t, opts...)
 	ctx := context.Background()
-	if _, err := svc.CreateRepository(ctx, "geoah"); err != nil {
+	if _, err := svc.CreateRepository(ctx, "geoah", "geoah.example.com"); err != nil {
 		t.Fatalf("create repository: %v", err)
 	}
 	ds, err := svc.Dataset(ctx, "geoah")
@@ -164,6 +164,7 @@ func registerUser(t *testing.T, svc substrate.Service, username string) (*authUs
 	res, err := svc.Register(ctx, substrate.RegisterInput{
 		Username: username, Password: u.password,
 		TOTPSecret: u.seed, TOTPCode: u.code(t), Label: "cli",
+		Authority: username + ".example.com",
 	})
 	if err != nil {
 		t.Fatalf("register %q: %v", username, err)

@@ -324,6 +324,9 @@ type registerRequest struct {
 	TOTPSecret string `json:"totpSecret"`
 	TOTPCode   string `json:"totpCode"`
 	Label      string `json:"label,omitempty"`
+	// Authority is the DNS-style authority the repository will own; empty
+	// lets the substrate default it to the username under its own host.
+	Authority string `json:"authority,omitempty"`
 	// RecoveryPublicKey is the age recipient generated CLIENT-SIDE, so the
 	// matching identity never rides the wire.
 	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
@@ -335,6 +338,7 @@ type registerRequest struct {
 // rides this response.
 type registerResult struct {
 	tokenResult
+	Authority         string `json:"authority,omitempty"`
 	RecoveryKey       string `json:"recoveryKey,omitempty"`
 	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
 	SigningPublicKey  string `json:"signingPublicKey,omitempty"`

@@ -41,12 +41,25 @@ registration leaves no row to expire and nothing to sweep:
 ```http
 POST /register
 {"inviteCode": "…", "username": "ada", "password": "…",
- "totpSecret": "JBSWY3DPEHPK3PXP", "totpCode": "123456", "label": "laptop"}
+ "totpSecret": "JBSWY3DPEHPK3PXP", "totpCode": "123456", "label": "laptop",
+ "authority": "ada.substrate.example"}
 
 → 201 {"token": {…}, "secret": "substrate_tok_…",
+       "authority": "ada.substrate.example",
        "recoveryKey": "AGE-SECRET-KEY-1…", "recoveryPublicKey": "age1…",
        "signingPublicKey": "…"}
 ```
+
+`authority` is the DNS-style name the repository owns: the home of every kind
+its user declares, and what a sample import rewrites a copied closure onto.
+Omitted, it defaults to the username under the host the request reached
+(`ada.substrate.example` for a request to `substrate.example`), and the
+response says what it got. It is lowercase DNS labels with at least one dot,
+within the DNS length limits, never under `substrate.reamde.dev` (where the
+shipped vocabulary publishes), unique across the substrate, and permanent
+([decision record 0046](decisions/0046-a-repository-owns-one-authority-chosen-at-registration.md)).
+The repository's own `repository` record carries it, so a client that only
+speaks the record API can read it back.
 
 A request that names no `recoveryPublicKey` asks the server to mint the
 recovery pair, and the response carries the age identity exactly once,

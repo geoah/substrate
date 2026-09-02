@@ -22,9 +22,11 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/geoah/substrate/internal/substrate"
+	"github.com/geoah/substrate/internal/vocabulary"
 )
 
 // --- wire shapes ---
@@ -41,6 +43,10 @@ type registerRequest struct {
 	TOTPSecret string `json:"totpSecret"`
 	TOTPCode   string `json:"totpCode"`
 	Label      string `json:"label,omitempty"`
+	// Authority is the DNS-style authority the new repository will own, the
+	// home of the kinds its user declares. Absent, it defaults to the
+	// username under the host this request reached (`ada.substrate.example`).
+	Authority string `json:"authority,omitempty"`
 	// RecoveryPublicKey is the client-generated age recipient; absent asks
 	// the server to mint the pair and return the identity once.
 	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
@@ -49,10 +55,13 @@ type registerRequest struct {
 // registerResponse is the one response that may carry a server-minted
 // recovery identity, shown exactly once like the token secret beside it.
 type registerResponse struct {
-	Token             substrate.TokenInfo `json:"token"`
-	Secret            string              `json:"secret"`
-	RecoveryKey       string              `json:"recoveryKey,omitempty"`
-	RecoveryPublicKey string              `json:"recoveryPublicKey,omitempty"`
+	Token  substrate.TokenInfo `json:"token"`
+	Secret string              `json:"secret"`
+	// Authority is the one the repository was created with, so a client that
+	// sent none learns the default it got.
+	Authority         string `json:"authority"`
+	RecoveryKey       string `json:"recoveryKey,omitempty"`
+	RecoveryPublicKey string `json:"recoveryPublicKey,omitempty"`
 	// SigningPublicKey is the repository's Ed25519 changelog-signing public
 	// key (hex) — the pin `repository verify --expect-public-key` checks
 	// against. No private key material rides this response: the seed stays
@@ -195,12 +204,21 @@ func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
 	if !h.inviteOK(w, req.InviteCode) {
 		return
 	}
+	// The default authority is the username under the host the request
+	// reached, the way a handle sits under its server. The HTTP layer is the
+	// one place that knows that host, so the default is filled here and the
+	// engine sees a concrete authority or refuses.
+	authority := strings.TrimSpace(req.Authority)
+	if authority == "" {
+		authority = vocabulary.DefaultRepositoryAuthority(req.Username, r.Host)
+	}
 	res, err := h.svc.Register(r.Context(), substrate.RegisterInput{
 		Username:          req.Username,
 		Password:          req.Password,
 		TOTPSecret:        req.TOTPSecret,
 		TOTPCode:          req.TOTPCode,
 		Label:             req.Label,
+		Authority:         authority,
 		RecoveryPublicKey: req.RecoveryPublicKey,
 	})
 	if err != nil {
@@ -208,7 +226,7 @@ func (h *handler) postRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, registerResponse{
-		Token: res.Token, Secret: res.Secret,
+		Token: res.Token, Secret: res.Secret, Authority: res.Authority,
 		RecoveryKey: res.RecoveryKey, RecoveryPublicKey: res.RecoveryPublicKey,
 		SigningPublicKey: res.SigningPublicKey,
 	})

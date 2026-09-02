@@ -426,6 +426,9 @@ func TestRegisterEnrollsThenCommitsAndEndsLoggedIn(t *testing.T) {
 		"secret:      " + fakeTOTPSecret,
 		"nothing is stored until the code below is accepted",
 		"registered geoah on " + h.server,
+		// The authority the repository owns, defaulted by the substrate from
+		// its own host when none is named.
+		"authority: geoah.127.0.0.1",
 		// The signing PIN, printed so the reader can keep it outside the
 		// substrate: it is what `verify --expect-public-key` is fed.
 		"signing public key: " + fakeSigningPublicKey,
