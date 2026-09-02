@@ -53,6 +53,15 @@ func oldPolicyTree(t *testing.T) string {
 		// new one would declare the same version and no upgrade would run.
 		return pinVersion(t, strings.Replace(doc, opsEnumBlock, opsStringBlock, 1), "9")
 	})
+	// `trigger` pins a version of its own now too (the webhook key, 0045);
+	// back then it took the authority's, so the fixture drops the pin and it
+	// rides the authority's 9 with everything else.
+	patchShipped(t, coreKind(tree, "trigger.yaml"), func(doc string) string {
+		if !strings.Contains(doc, "\n  version: 16\n") {
+			t.Fatal("trigger no longer pins version 16; retune this fixture")
+		}
+		return strings.Replace(doc, "\n  version: 16\n", "\n", 1)
+	})
 	bumpGroupVersion(t, tree, coreAuthority, "9")
 	return tree
 }
@@ -131,10 +140,10 @@ func TestPolicySelectorOpsUpgradeToTheEnum(t *testing.T) {
 	if ops := policySelectorOps(t, ds); strings.Join(ops, ",") != "put,patch,delete" {
 		t.Fatalf("after the upgrade the field declares %v", ops)
 	}
-	// The rest of core's version rode the same projection: `trigger` pins
-	// none of its own, so it carries the authority's.
-	if v := kindVersion(t, ds, coreAuthority+"/trigger"); v != 15 {
-		t.Fatalf("trigger is at version %d, want 15", v)
+	// The rest of core rode the same upgrade: `trigger` was unpinned in the
+	// old tree (oldPolicyTree), and the shipped tree lands it at its own pin.
+	if v := kindVersion(t, ds, coreAuthority+"/trigger"); v != 16 {
+		t.Fatalf("trigger is at version %d, want 16", v)
 	}
 	rec, err := ds.Get(ctx, vocabulary.KindRecordPatchPolicy, "gate-puts")
 	if err != nil {
