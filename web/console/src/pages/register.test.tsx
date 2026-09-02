@@ -151,6 +151,9 @@ describe("RegisterPage", () => {
       totpSecret: "SEED",
       totpCode: "123456",
       label: "console",
+      // The authority the reader left derived: the username under the host
+      // serving the page (jsdom's is `localhost`).
+      authority: "geoah.localhost",
     })
   })
 
@@ -229,6 +232,7 @@ describe("RegisterPage", () => {
       totpSecret: "",
       totpCode: "",
       label: "console",
+      authority: "geoah.localhost",
     })
   })
 
