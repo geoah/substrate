@@ -37,8 +37,9 @@ out.
   agents can call to search and read the web.
 - **Functions and triggers.** A function is real code, Python or Go, stored
   in your repository and run by the substrate; a trigger fires it when a
-  matching record changes, on a schedule, or from a webhook. Automation
-  lives beside the data it manages, installed and removed with its bundle.
+  matching record changes, on a schedule, or when something POSTs to the
+  trigger's public webhook URL. Automation lives beside the data it manages,
+  installed and removed with its bundle.
 - **Agents.** An LLM loop over your records, with threads, tool calls and
   budgets visible in the console. Providers are records in your repository:
   the key is a secret-typed property, redacted on every read, and the server
@@ -294,8 +295,18 @@ data:
 EOF
 ```
 
+A `webhook` source instead makes the trigger a public endpoint,
+`POST /webhooks/<username>/<trigger-id>`, and the callable receives the
+request (headers, query, body or parsed multipart parts, file parts stored
+as blobs) on its envelope. The endpoint is open unless the trigger sets
+`source.webhook.key`; GitHub-style signatures verify inside the function,
+which gets the raw body. The shipped `pebble` bundle
+([kinds/pebble.bundles.substrate.reamde.dev](kinds/pebble.bundles.substrate.reamde.dev))
+is a worked example: a voice-recorder ring POSTs each capture to one URL,
+and a header decides whether it lands as a note or is handed to an agent.
+
 [docs/functions.md](docs/functions.md) is the whole contract: the host SDK,
-permissions, triggers and the sandbox.
+permissions, triggers, webhooks and the sandbox.
 
 ## Give the agent a model
 

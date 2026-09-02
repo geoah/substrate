@@ -151,7 +151,7 @@ console-editable and changelog-visible like anything else
 
 | Kind      | What it is                                                                                                             |
 | --------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `trigger` | One binding of a source (a record subscription, a schedule, or a webhook) to one callable, owning the delivery cursor. |
+| `trigger` | One binding of a source (a record subscription, a schedule, or a public webhook endpoint) to one callable, owning the delivery cursor. |
 | `run`     | One settled trigger delivery attempt, the run ledger's row.                                                            |
 
 So is the agent runtime's data. **Agents are alpha**, so these four are a
